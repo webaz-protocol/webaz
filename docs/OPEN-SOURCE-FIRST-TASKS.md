@@ -1,9 +1,13 @@
-# WebAZ Open-Source First Tasks (15) / 开源首批 Agent-ready 任务清单
+# WebAZ Open-Source First Tasks (16) / 开源首批 Agent-ready 任务清单
 
 > Purpose: the first public task pool when the repo opens (code-public). Load into the
-> `webaz_contribute` task board. Shape: **5 × 30–60 min · 5 × 2–4 h · 3 × tests/audit · 2 × small RFC**.
-> Every task is "use an **existing** protocol capability to verify / transform / document / wrap" —
-> **never the core logic itself**.
+> `webaz_contribute` task board. Shape: **5 × 30–60 min · 5 × 2–4 h · 3 × tests/audit · 2 × small RFC**
+> + **1 flagship feature** (T16, OAuth identity linking — high-audit, maintainer-led; see note below).
+> Tasks **T1–T15** all "use an **existing** protocol capability to verify / transform / document / wrap" —
+> **never the core logic itself**. **T16 is the deliberate exception**: it implements a new auth/identity
+> capability (per [RFC-019](rfcs/RFC-019-github-oauth-identity-linking.md)) and therefore is **NOT** a
+> low-risk entry task — it is **high-risk, human-in-the-loop, not auto-claimable, maintainer-led**, with the
+> iron-rule / Passkey / human-presence core protected in `forbidden_paths`.
 >
 > Status: **draft for maintainer review** → after review, load into `webaz_contribute`.
 > The p2p canonicalization rule (§B) is confirmed against source and baked into T6/T8/T11.
@@ -301,6 +305,42 @@ prices. A produced `content_hash` must round-trip through the protocol's signatu
 - **verification_commands**: maintainer review
 - **expected_output**: one RFC
 - **dependencies**: none
+
+---
+
+## §I Flagship feature (1 · high-audit · maintainer-led) — the deliberate §A exception
+
+### T16 — GitHub OAuth identity linking (per RFC-019)
+- **task_type**: code · **risk**: **high** · **agent_autonomy**: **human_in_the_loop** · **auto_claimable**: **false**
+- **authority**: [`docs/rfcs/RFC-019-github-oauth-identity-linking.md`](rfcs/RFC-019-github-oauth-identity-linking.md) (read first — it is the spec + threat model)
+- **summary**: Implement a low-friction **"Connect GitHub" OAuth** identity-linking path (Authorization Code +
+  PKCE → `GET /user` → authoritative `github_actor_id`) that **preserves the existing security model**: the
+  bind still commits **only** behind the `requireHumanPresence('identity_claim')` Passkey ceremony, GitHub
+  ownership is server-verified against `api.github.com`, and the **Gist proof flow remains as a fallback**.
+  Future contribution facts then auto-attribute via the existing accountable read-overlay (no per-fact claim).
+- **why this is NOT a normal first task**: it touches the **auth/identity trust root** (explicitly inside §A's
+  restricted boundary). It is included as the launch's flagship initiative but is **high-risk, maintainer-led,
+  human-in-the-loop, not auto-claimable**. Milestones **M4/M5** (binding-engine wiring + Passkey-gated routes)
+  are **maintainer-owned / high-audit**; **M2/M3/M6/M7** (additive schema, read-only OAuth adapter, PWA UI,
+  docs) are contributor-friendly under supervision.
+- **allowed_paths**: new files only for the additive parts — `src/.../identity-claim/github-oauth-adapter.ts`,
+  `oauth_link_states` schema+store, the new `oauth/*` endpoints in `routes/contribution-identity.ts`, PWA
+  "Connect GitHub" UI + i18n, `docs/runbooks/github-oauth-setup.md`; **plus** the `proof_method='github_oauth'`
+  extension to the claim engine (M4, **maintainer review required**).
+- **forbidden_paths** (beyond §A): **must not weaken or bypass** `requireHumanPresence` / the human-presence
+  gate; **must not** alter WebAuthn/Passkey core, the existing gist proof verifier trust root, the
+  `identity_bindings_active` double-bind PK, or any money/escrow/auth-permission core. Token must **never** be
+  persisted or logged; scope **read:user only** (no `repo`/write).
+- **acceptance_criteria** (from RFC-019 §2):
+  - bind commits **only** behind the Passkey ceremony — OAuth success alone never binds (an agent cannot self-bind)
+  - GitHub ownership proven by **server-side** `GET /user` (numeric `id`), never client-asserted
+  - **Gist fallback intact**; existing bindings unaffected (no re-link); both paths produce identical bindings
+  - PKCE + single-use session-bound `state` (CSRF); access token used once then discarded; **fail-closed** when OAuth creds unset (503 before consuming state)
+  - double-bind still blocked; rebind still = revoke event + fresh proof + Passkey (append-only)
+- **human_confirmation_points**: ["RFC-019 accepted by maintainer before M2", "maintainer security review confirming Passkey gating + ownership verification are unchanged before M4/M5 merge"]
+- **verification_commands**: new schema/adapter/engine/route tests green **and** the existing identity-claim suite still green; `npm run build`; `npm run check:api-docs-fresh`
+- **expected_output**: the RFC-019 milestones as separate PRs (M2–M7), each independently CI-green
+- **dependencies**: RFC-019 (M1, this PR's companion doc)
 
 ---
 
