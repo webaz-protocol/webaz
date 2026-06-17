@@ -1,0 +1,90 @@
+# CODEOWNERS — WebAZ
+#
+# 路径所有者 / Path ownership
+# - 自动 review 请求:符合 pattern 的 PR 将自动 @ 对应 owner
+# - 文档背景:CHARTER §3.1 5-tier ladder / §3.2 PR multisig matrix
+# - phase A:绝大多数路径由 founder (@seasonkoh) 单签;phase B 开始引入 maintainer 群
+# - 元规则路径需要 founder + 2 名 maintainer 联签(CHARTER §3.2),CODEOWNERS 只触发 review,
+#   联签强制由 ruleset / branch protection 在 phase B 启用
+
+# ============================================================================
+# Phase A default — founder 单签
+# ============================================================================
+*                                       @seasonkoh
+
+# ============================================================================
+# 协议宪法层 / Protocol constitution
+# ============================================================================
+# 元规则 / 宪章 / 许可证 — 永远需要 founder 复核(CHARTER §3.2)
+/docs/META-RULES-FULL.md                @seasonkoh
+/docs/CHARTER.md                        @seasonkoh
+/LICENSE                                @seasonkoh
+/NOTICE                                 @seasonkoh
+
+# ============================================================================
+# 治理与流程 / Governance & process
+# ============================================================================
+/CONTRIBUTING.md                        @seasonkoh
+/SECURITY.md                            @seasonkoh
+/docs/BRAND-GUIDE.md                    @seasonkoh
+/docs/rfcs/                             @seasonkoh
+/.github/                               @seasonkoh
+
+# ============================================================================
+# 核心协议引擎(按 layer 组织 — webaz 实际目录结构)
+# Core protocol engines (by layer — actual repo structure)
+# ============================================================================
+/src/layer0-foundation/                 @seasonkoh
+/src/layer1-agent/                      @seasonkoh
+/src/layer2-business/                   @seasonkoh
+/src/layer2-commerce/                   @seasonkoh
+/src/layer3-trust/                      @seasonkoh
+/src/layer4-economics/                  @seasonkoh
+/src/layer5-decentralized/              @seasonkoh
+/src/layer6-scale/                      @seasonkoh
+/src/cron-enforcement.ts                @seasonkoh
+/src/index.ts                           @seasonkoh
+/scripts/schema-verify.ts               @seasonkoh
+
+# Schema 单源文件(防 schema drift,见 5cab100 修复)
+# Schema single-source file (anti-drift, see 5cab100)
+/src/layer0-foundation/L0-1-database/schema.ts  @seasonkoh
+
+# ============================================================================
+# MCP 工具表面 / MCP tool surface
+# ============================================================================
+/src/mcp.ts                             @seasonkoh
+/src/layer1-agent/L1-1-mcp-server/      @seasonkoh
+
+# ============================================================================
+# Iron-Rule 技术边界(requireHumanPresence + protocol_params)
+# Iron-Rule technical boundary
+# ============================================================================
+# 注:Iron-Rule 逻辑散在 pwa/server.ts 中(L8420 requireHumanPresence
+# + L773-776 require_human_presence_for_* 协议参数)
+# 整个 pwa/server.ts 已在 PWA 段覆盖 → 不需额外路径
+# 修改 require_human_presence_* 默认值视为元规则修改(走 CHARTER §6 60d)
+
+# ============================================================================
+# PWA 应用面 / PWA app surface
+# ============================================================================
+/src/pwa/                               @seasonkoh
+
+# ============================================================================
+# CI / build / deps
+# ============================================================================
+/.github/workflows/                     @seasonkoh
+/package.json                           @seasonkoh
+/package-lock.json                      @seasonkoh
+/tsconfig.json                          @seasonkoh
+
+# ============================================================================
+# Phase B 过渡时需 audit 此文件
+# Phase B transition requires audit of this file
+# ============================================================================
+# 触发条件(见 CHARTER §3 5-tier ladder + maintainer 通道):
+# 多名 active maintainer 形成 + 治理章程 v1 通过
+# 届时需要 / Transition steps:
+# - 把 @seasonkoh 单签 → @webaz-protocol/webaz-maintainers team 多签
+# - 关键路径(元规则 / 资金 / Iron-Rule)仍保留 @seasonkoh founder veto 直至 phase C
+# - 普通 PR 路径转 maintainer team review

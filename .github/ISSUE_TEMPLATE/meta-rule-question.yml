@@ -1,0 +1,82 @@
+name: 🧭 Meta-rule question (元规则解释问题)
+description: 对 10 元规则的解释、边界、应用场景有疑问 / Question about interpretation, boundary, application of the 10 meta-rules
+title: "[META] "
+labels: ["type:meta-rule-question", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # 元规则解释问题 / Meta-rule interpretation question
+
+        本模板用于:
+        - 我读了 META-RULES-FULL.md,但不确定某条规则如何应用到某场景
+        - 我怀疑现有代码/设计违反或边缘踩线某条元规则
+        - 我想澄清两条规则的优先级冲突
+
+        **这不是 RFC**——RFC 用于"修订"元规则,本模板用于"理解"元规则。
+        **This is NOT an RFC** — RFC = revise meta-rules; this = understand meta-rules.
+
+        ⚠️ 如果你怀疑当前实现违反 Iron-Rule(投票/仲裁/agent_revoke/delete_passkey/revoke_key/rotate_key/wallet 7 条路径之一被绕过),请优先用 [Security Advisory](https://github.com/webaz-protocol/webaz/security/advisories/new) 私下提交。
+
+        ## 处理路径 / Handling path
+        - maintainer 会努力在 14 天内回复(phase A 无 SLA 保证)/ maintainer will aim to respond within 14 days (no SLA in phase A)
+        - 若问题揭示元规则有真实歧义,maintainer 会:
+          - 澄清回复(若现有文档已能回答)/ clarification reply (if existing docs cover it)
+          - 提议把澄清写回 META-RULES-FULL.md(走 docs PR + 1 reviewer)/ propose docs PR to META-RULES-FULL.md
+          - 或开 RFC 修订元规则(若需要变更而非澄清)/ or open RFC for revision (if change, not clarification)
+        - 答复 + 澄清将沉淀成判例,未来 contributor 可检索 / Q&A will be referenced for future contributors
+
+  - type: dropdown
+    id: meta-rule
+    attributes:
+      label: 相关元规则 / Related meta-rule
+      description: 对照 docs/META-RULES-FULL.md 的 #1-#10 编号(注意 M1-M7 是协议里程碑,M1-M3 是开放协作 milestone,与元规则无关)
+      multiple: true
+      options:
+        - "#1 当一切可见 / When all is visible"
+        - "#2 代码即规则,协议即信任 / Code is rule, protocol is trust"
+        - "#3 不偷数据 / No data theft"
+        - "#4 不撒谎 / No lies"
+        - "#5 不偏袒 / No favoritism"
+        - "#6 不滥用 / No abuse"
+        - "#7 不操纵 / No manipulation"
+        - "#8 最小介入 / Minimal intervention"
+        - "#9 算法即协议 / Algorithm is protocol"
+        - "#10 参与者即 webazer / Participants are webazers"
+        - "Iron-Rule 技术边界(跨 #4/#5/#6/#7)/ Iron-Rule technical boundary"
+        - "不确定 — 请帮我判断 / Unsure — help me identify"
+    validations:
+      required: true
+
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 场景 / Scenario
+      description: 具体的代码、UI、数据流、agent 行为 / Specific code, UI, data flow, agent behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: 问题 / Question
+      description: "我的具体疑问是: ... / My specific question is: ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: my-reading
+    attributes:
+      label: 我的理解 / My reading
+      description: 你目前如何理解这条规则在此场景下的应用 / How you currently interpret the rule in this scenario
+    validations:
+      required: false
+
+  - type: textarea
+    id: refs
+    attributes:
+      label: 相关链接 / Related links
+      placeholder: |
+        - META-RULES-FULL.md 行号 / line numbers
+        - 相关 PR / 相关代码文件:line
+        - 类似过往讨论

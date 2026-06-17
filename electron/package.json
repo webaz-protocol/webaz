@@ -1,0 +1,55 @@
+{
+  "name": "webaz-desktop",
+  "version": "0.1.0",
+  "description": "WebAZ Desktop Companion — Electron 壳子让 PWA 常驻为 native node",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^42.3.0",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "io.github.webaz-protocol.webaz-desktop",
+    "productName": "WebAZ",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "!**/node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../src",
+        "to": "src"
+      },
+      {
+        "from": "../node_modules/tsx",
+        "to": "node_modules/tsx"
+      },
+      {
+        "from": "../node_modules/better-sqlite3",
+        "to": "node_modules/better-sqlite3"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.business",
+      "icon": "../src/pwa/public/icon-512.png"
+    },
+    "win": {
+      "icon": "../src/pwa/public/icon-512.png"
+    },
+    "linux": {
+      "category": "Office",
+      "icon": "../src/pwa/public/icon-512.png"
+    }
+  }
+}

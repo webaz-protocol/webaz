@@ -1,0 +1,62 @@
+/**
+ * Hot-wallet custody signer abstraction (Phase 0 of docs/HOT-WALLET-CUSTODY-MIGRATION.md).
+ *
+ * All USDC-custody key derivation / signing goes through this interface so the backend can later
+ * swap the in-process seed signer for a KMS / multisig signer WITHOUT touching call sites (same
+ * seam pattern as internal/pv-settlement.ts).
+ *
+ * Three signer ROLES (kept distinct so they can be split later):
+ *   - hot:     the hot wallet — signs USDC withdrawals out + ETH gas-funding (executeWithdrawal,
+ *              sweepToHotWallet). This is the key that must move to KMS first (Phase 1).
+ *   - deposit: per-user deposit address — signs the USDC sweep from each deposit address → hot
+ *              wallet. N keys today; eliminated by CREATE2 forwarders in Phase 3.
+ *   - issuer:  off-chain passport / credential signing (signMessage). ⚠️ Today it shares the hot
+ *              key (LocalSeedSigner below); pointing it at a dedicated key changes the issuer
+ *              address and needs credential re-verification — Phase 0.5, NOT done here.
+ *
+ * Phase 0 ships only `createLocalSeedSigner`, which reproduces the historical
+ * `HMAC-SHA256(masterSeed, role)` derivation EXACTLY — every address + signature is unchanged
+ * (golden-vector tested in scripts/test-wallet-signer.ts). No behavior change.
+ */
+import type { Account } from 'viem'
+import { privateKeyToAccount, privateKeyToAddress } from 'viem/accounts'
+import { createHmac } from 'node:crypto'
+
+export interface WalletSigner {
+  /** Hot wallet account — USDC withdrawals out + ETH gas-funding. */
+  hotAccount(): Account
+  hotAddress(): `0x${string}`
+  /** Per-user deposit address account — sweeps USDC → hot wallet. */
+  depositAccount(userId: string): Account
+  depositAddress(userId: string): `0x${string}`
+  /** Off-chain issuer (passport / credential) signing. Signs via the issuer role; address below. */
+  issuerSignMessage(message: string): Promise<`0x${string}`>
+  issuerAddress(): `0x${string}`
+}
+
+/** Seed string for the hot-wallet role (also the issuer role today — see Phase 0.5). */
+export const HOT_WALLET_SEED = 'platform-hot-wallet'
+
+/**
+ * In-process signer derived from a single master seed (current production behavior; dev/testnet).
+ * `privKey(role) = 0x<HMAC-SHA256(masterSeed, role)>` — byte-for-byte identical to the legacy
+ * `derivePrivKey` in server.ts, so addresses / signatures do not change.
+ *
+ * Phase 1+ will provide `createKmsSigner(...)` / `createSafeSigner(...)` implementing the same
+ * interface, selected via the `HOT_WALLET_SIGNER` env var.
+ */
+export function createLocalSeedSigner(masterSeed: string): WalletSigner {
+  const privKey = (role: string): `0x${string}` =>
+    `0x${createHmac('sha256', masterSeed).update(role).digest('hex')}`
+  // Issuer currently shares the hot-wallet key (unchanged address). Phase 0.5 points it at a
+  // dedicated key + dual-key credential verification; do NOT change this seed before that.
+  const ISSUER_SEED = HOT_WALLET_SEED
+  return {
+    hotAccount: () => privateKeyToAccount(privKey(HOT_WALLET_SEED)),
+    hotAddress: () => privateKeyToAddress(privKey(HOT_WALLET_SEED)),
+    depositAccount: (userId: string) => privateKeyToAccount(privKey(userId)),
+    depositAddress: (userId: string) => privateKeyToAddress(privKey(userId)),
+    issuerSignMessage: (message: string) => privateKeyToAccount(privKey(ISSUER_SEED)).signMessage({ message }),
+    issuerAddress: () => privateKeyToAddress(privKey(ISSUER_SEED)),
+  }
+}

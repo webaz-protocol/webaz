@@ -1,0 +1,107 @@
+name: 📜 RFC (Request for Comments / 重大设计提案)
+description: 重大协议变更、新机制、跨模块设计提案 / Major protocol changes, new mechanisms, cross-module designs
+title: "[RFC] "
+labels: ["type:rfc", "rfc:draft", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # RFC — Request for Comments
+
+        ## 何时使用 RFC / When to use RFC
+        - 修订 **10 元规则**之一 → 必走 RFC + 60d 公示 + 多签 (CHARTER §6)
+        - 修改 **协议参数**(费率、超时、阈值、奖励曲线) → RFC + 14d 公示
+        - 引入 **新协议模块**(新 engine / 新仲裁路径)
+        - 跨多模块的 **架构调整**
+        - **应急修订** (Emergency revision) → 24h fast-track,需 founder + 2 maintainer
+
+        ## 不需要 RFC 的情况 / Skip RFC when
+        - bug 修复 → 用 bug template
+        - 小功能改进 → 用 feature template
+        - 文档措辞 → 直接 PR
+
+  - type: input
+    id: title
+    attributes:
+      label: 提案标题 / Proposal title
+      placeholder: "例如:商家测评免单的退款窗口从 6h 延长到 24h"
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: 动机 / Motivation
+      description: 解决什么问题、为什么现状不够 / What problem, why current state insufficient
+    validations:
+      required: true
+
+  - type: textarea
+    id: design
+    attributes:
+      label: 设计 / Design
+      description: 详细方案、数据流、状态机变化、影响的模块 / Detailed design, data flow, state machine changes, affected modules
+    validations:
+      required: true
+
+  - type: textarea
+    id: meta-rule-impact
+    attributes:
+      label: 元规则影响 / Meta-rule impact
+      description: 对照 10 元规则(#1-#10,见 docs/META-RULES-FULL.md),列出哪些被影响、哪些被增强 / Cross-check 10 meta-rules
+      placeholder: |
+        - #7 不操纵 / No manipulation:本提案增强 — 因为 ...
+        - Iron-Rule(技术边界):无影响 / No impact
+        - #5 不偏袒 / No favoritism:需注意 — 现有用户和新用户的影响差异 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案 / Alternatives
+      description: 至少列 2 个,并说明为什么不选 / At least 2 alternatives, with reasons rejected
+    validations:
+      required: true
+
+  - type: textarea
+    id: migration
+    attributes:
+      label: 迁移与兼容 / Migration & compatibility
+      description: 现有数据怎么处理?现有 agent 行为怎么过渡?需要废弃哪些 API? / Existing data, agent behavior transition, deprecated APIs
+    validations:
+      required: false
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: 风险 / Risks
+      description: 安全、经济、信任、操纵、滥用各维度 / Security, economic, trust, manipulation, abuse dimensions
+    validations:
+      required: true
+
+  - type: dropdown
+    id: rfc-track
+    attributes:
+      label: RFC 类型 / RFC track
+      options:
+        - "normal (14 天公示 / 14-day notice)"
+        - "meta-rule (60 天公示 + 多签 / 60-day + multisig)"
+        - "emergency (24h fast-track,founder + 2 maintainer)"
+        - "exploratory (征求早期反馈;若 90d 无进展 → 归档,可重提为正式 RFC / gathering early feedback; if no progress in 90d → archived, may re-submit as formal RFC)"
+        - "未定 / undecided — maintainer 判定"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: pre-flight
+    attributes:
+      label: 提交前自查 / Pre-flight checklist
+      options:
+        - label: 我已读 CHARTER §6 (修改流程) 和 §3.2 (多签矩阵)
+          required: true
+        - label: 我已对照 META-RULES-FULL.md 全部 10 条,不只是表面相关的
+          required: true
+        - label: 我理解【绕过 ≠ 修改】 — 本提案不通过技术手段绕过 Iron-Rule(7 条真人 Passkey 路径)/ I understand bypass ≠ modify — this proposal does not technically bypass Iron-Rule (7 real-human Passkey paths)
+          required: true
+        - label: 若本提案修改 Iron-Rule 边界 或 元规则 #1-#10 文字,我已在【元规则影响】 字段声明并选 "meta-rule" track(60d + multi-sig)/ If this proposal modifies Iron-Rule boundary or rule #1-#10 text, declared in meta-rule-impact and selected "meta-rule" track

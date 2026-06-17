@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.webaz-protocol/webaz",
+  "description": "[PRE-LAUNCH] Agent-native MCP commerce protocol. Repo private until W8. See webaz.xyz.",
+  "repository": {
+    "url": "https://github.com/webaz-protocol/webaz",
+    "source": "github"
+  },
+  "version": "0.1.16",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@seasonkoh/webaz",
+      "version": "0.1.16",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

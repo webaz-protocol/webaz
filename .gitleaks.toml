@@ -1,0 +1,35 @@
+# gitleaks config — WebAZ secret scan (CI: .github/workflows/ci.yml `secret-scan` job).
+#
+# Purpose: block any NEW secret from entering via a future commit/PR. Keeps all default
+# gitleaks rules; only suppresses a MINIMAL, verified set of known false positives from the
+# current full-history baseline (2343 commits → 18 findings, all confirmed non-secrets on
+# 2026-06-15). No history rewrite. Anything outside this allowlist fails CI.
+#
+# IMPORTANT: every allowlist entry below is a verified FALSE POSITIVE, not a real credential.
+# Real local credentials (e.g. .claude/settings.local.json) are gitignored / never committed,
+# so they are not in scope and are intentionally NOT allowlisted here.
+
+title = "WebAZ gitleaks config"
+
+[extend]
+useDefault = true   # keep the full default ruleset; we only add allowlist entries below
+
+[allowlist]
+description = "Verified false positives in the committed history baseline (2026-06-15). Not real secrets."
+# match against the whole source line (not just the extracted token) so the patterns below are precise.
+regexTarget = "line"
+regexes = [
+  # (1) src/pwa/server.ts `DEFAULT_PARAMS`: `generic-api-key` fires on snake_case protocol-param
+  #     NAMES ≥16 chars (e.g. `key: 'default_commission_rate'`, `key: 'streak_bonus_7'`). These are
+  #     config keys followed by `value:`/`type:`, not credentials. Pattern requires the param shape
+  #     (lowercase name + `, value:`/`, type:`) so a real secret (`key: 'AKIA…'`) is NOT exempted.
+  '''key: '[a-z][a-z0-9_]+', *(value|type):''',
+  # (2) tests/test-claim-notify.sh: `Authorization: Bearer key_test_v2` — local test fixture key
+  #     (matches the `key_test_*` dev-only convention), not a real credential.
+  '''Bearer key_test_v2''',
+]
+paths = [
+  # (3) sdk/agent-template/README.md: curl usage examples with a placeholder api_key
+  #     (`Authorization: Bearer YOUR_API_KEY`). Documentation only — no real secret in this template.
+  '''sdk/agent-template/README\.md''',
+]

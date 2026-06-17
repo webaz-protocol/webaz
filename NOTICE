@@ -1,0 +1,79 @@
+WebAZ — Licensing Notice
+=========================
+
+Copyright (c) 2026 Holden and WebAZ contributors
+
+
+Current License (since 2026-05-18)
+----------------------------------
+
+Business Source License 1.1 (BUSL-1.1).
+See LICENSE for full terms.
+
+  Licensor:              Holden
+  Licensed Work:         WebAZ — Agent-native decentralized commerce protocol
+  Additional Use Grant:  You may make production use of the Licensed Work,
+                         provided that your use does not include offering the
+                         Licensed Work to third parties as a hosted or managed
+                         service that is substantially similar to, or competes
+                         with, the WebAZ commerce protocol service operated by
+                         the Licensor.
+  Change Date:           2030-05-18
+  Change License:        MIT
+
+On the Change Date the Licensed Work automatically converts to the
+Change License (MIT) for all purposes.
+
+
+Historical Licensing
+--------------------
+
+All versions and git commits published BEFORE 2026-05-18 were released under
+the MIT License. That grant is irrevocable. Copies, forks, and derivatives
+made from those earlier versions remain MIT-licensed in perpetuity.
+
+The license change applies only to commits and releases dated on or after
+2026-05-18.
+
+
+Pre-Genesis Authorship
+----------------------
+
+All pre-Genesis development of WebAZ was authored by Holden (GitHub:
+seasonsagents-art), the sole human contributor to the project during the
+pre-Genesis phase.
+
+This NOTICE records authorship and project history only. It does not constitute
+any claim of reward, valuation, governance rights, ownership percentage, or
+economic entitlement (RFC-017 §I-12).
+
+The complete pre-Genesis development history is preserved in the private
+webaz-archive repository.
+
+（创世前 WebAZ 的所有开发均由 Holden(GitHub:seasonsagents-art)完成,是创世前
+阶段项目的唯一【人类】贡献者。本声明仅记录作者归属与项目历史,不构成任何回报、
+估值、治理权、所有权份额或经济权利的主张(RFC-017 §I-12)。完整的创世前开发历史
+保留在私有 webaz-archive 仓库。）
+
+
+Third-Party Components
+----------------------
+
+This software incorporates third-party open-source libraries listed in
+package.json. Each is governed by its own license; see the respective
+package's LICENSE file for terms.
+
+
+Trademarks
+----------
+
+"WebAZ" and the WebAZ logo are unregistered (common-law) trademarks of Holden,
+to be assigned to the project's legal entity once one is formed. The license
+does not grant any trademark rights.
+
+
+Questions
+---------
+
+For licensing questions, including commercial license inquiries that fall
+outside the Additional Use Grant above, contact: licensing@webaz.xyz

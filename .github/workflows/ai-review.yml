@@ -1,0 +1,52 @@
+name: AI triage (advisory)
+
+# RFC-005 — dual-AI advisory PR reviewer. ADVISORY ONLY: posts a comment + label,
+# NEVER approves/merges (humans merge; branch protection enforces). Not a required check.
+#
+# SECURITY: uses pull_request_target so it can read API-key secrets, but it does NOT
+# check out or execute PR code — it only reads the diff TEXT via `gh pr diff`. The
+# checkout is the BASE ref (trusted), used solely to run our own scripts/ai-triage.mjs.
+# Fork PRs therefore cannot exfiltrate secrets (their code never runs here).
+#
+# Inert until repo secrets ANTHROPIC_API_KEY / OPENAI_API_KEY are set (degrades to a
+# deterministic path-floor-only comment if neither is present).
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read          # checkout base
+  pull-requests: write    # post comment + label
+  issues: write           # label create
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout BASE repo (trusted — NOT the PR head)
+        uses: actions/checkout@v4
+        # default ref = base branch (main); we never checkout the PR head → no untrusted code runs
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run advisory triage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ ! -f scripts/ai-triage.mjs ]; then
+            echo "scripts/ai-triage.mjs not on base yet — skipping (merge RFC-005 first)"; exit 0
+          fi
+          node scripts/ai-triage.mjs

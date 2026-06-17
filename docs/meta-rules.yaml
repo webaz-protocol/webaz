@@ -1,0 +1,127 @@
+# WebAZ Meta-Rules — canonical machine-readable form
+#
+# This file is the LOCKED canonical representation of the 10 meta-rules.
+# Hash of this file's content is recorded in docs/META-RULES-LOCK.md.
+# Any change to this file MUST go through CHARTER.md §4 I-1 amendment
+# procedure (60-day public notice + supermajority multisig per
+# constitutional_supermajority_ratio).
+#
+# Full prose expansion: docs/META-RULES-FULL.md
+# CHARTER reference: docs/CHARTER.md §2 (one-liners) + §4 I-1 (invariant)
+#
+# Format: stable. New fields can be added but existing field semantics
+# cannot change without amendment.
+
+version: "1.0"
+locked_at: "2026-06-03"
+lock_doc: "docs/META-RULES-LOCK.md"
+
+# Cross-rule precedence (CHARTER §2 + META-RULES-FULL.md):
+# Red lines (3-7) override Operations (8-9) override Faith (1-2)
+# Identity (10) is orthogonal and applies to all
+layers:
+  - id: faith
+    name_zh: "信仰层"
+    name_en: "Faith Layer"
+    rules: [1, 2]
+  - id: red_lines
+    name_zh: "红线层"
+    name_en: "Red Lines"
+    rules: [3, 4, 5, 6, 7]
+  - id: operations
+    name_zh: "操作层"
+    name_en: "Operations"
+    rules: [8, 9]
+  - id: identity
+    name_zh: "身份层"
+    name_en: "Identity"
+    rules: [10]
+
+rules:
+  - id: 1
+    layer: faith
+    name_zh: "当一切可见,公平就是可能的"
+    name_en: "When all is visible, fairness becomes possible"
+    one_liner_zh: "当一切可见,公平就是可能的。"
+    one_liner_en: "When all is visible, fairness becomes possible."
+    full_anchor: "META-RULES-FULL.md#1"
+
+  - id: 2
+    layer: faith
+    name_zh: "代码即规则,协议即信任"
+    name_en: "Code is Rule, Protocol is Trust"
+    one_liner_zh: "代码即规则,协议即信任。"
+    one_liner_en: "Code is Rule, Protocol is Trust."
+    full_anchor: "META-RULES-FULL.md#2"
+
+  - id: 3
+    layer: red_lines
+    name_zh: "不偷数据"
+    name_en: "No data theft"
+    one_liner_zh: "不偷数据。"
+    one_liner_en: "No data theft."
+    full_anchor: "META-RULES-FULL.md#3"
+
+  - id: 4
+    layer: red_lines
+    name_zh: "不撒谎"
+    name_en: "No lies"
+    one_liner_zh: "不撒谎。"
+    one_liner_en: "No lies."
+    full_anchor: "META-RULES-FULL.md#4"
+
+  - id: 5
+    layer: red_lines
+    name_zh: "不偏袒"
+    name_en: "No favoritism"
+    one_liner_zh: "不偏袒。"
+    one_liner_en: "No favoritism."
+    full_anchor: "META-RULES-FULL.md#5"
+
+  - id: 6
+    layer: red_lines
+    name_zh: "不滥用"
+    name_en: "No abuse"
+    one_liner_zh: "不滥用。"
+    one_liner_en: "No abuse."
+    full_anchor: "META-RULES-FULL.md#6"
+
+  - id: 7
+    layer: red_lines
+    name_zh: "不操纵"
+    name_en: "No manipulation"
+    one_liner_zh: "不操纵。"
+    one_liner_en: "No manipulation."
+    full_anchor: "META-RULES-FULL.md#7"
+
+  - id: 8
+    layer: operations
+    name_zh: "最小介入"
+    name_en: "Minimal intervention"
+    one_liner_zh: "最小介入。"
+    one_liner_en: "Minimal intervention."
+    full_anchor: "META-RULES-FULL.md#8"
+
+  - id: 9
+    layer: operations
+    name_zh: "算法即协议"
+    name_en: "Algorithm is Protocol"
+    one_liner_zh: "算法即协议。"
+    one_liner_en: "Algorithm is Protocol."
+    full_anchor: "META-RULES-FULL.md#9"
+
+  - id: 10
+    layer: identity
+    name_zh: "参与者即 webazer"
+    name_en: "Participants are webazers"
+    one_liner_zh: "参与者即 webazer。"
+    one_liner_en: "Participants are webazers."
+    full_anchor: "META-RULES-FULL.md#10"
+
+# Inviolable principle:
+# "Evolvable, but not deletable. Modifications require constitutional
+#  amendment (CHARTER §4 I-1: 60-day public notice + 2/3 maintainer
+#  multisig with user as one signer)."
+#
+# Deletion of any rule is FORBIDDEN — only refinement of the same rule
+# is permitted, and only through the amendment procedure.

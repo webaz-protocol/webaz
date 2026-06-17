@@ -1,0 +1,85 @@
+name: ✨ Feature request (功能建议)
+description: 建议新功能或改进 / Propose a new feature or improvement
+title: "[FEAT] "
+labels: ["type:feature", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        欢迎建议新功能。先简单说明 "解决什么问题" 比 "怎么做" 更重要。
+        Welcome new feature ideas. Describing "what problem" matters more than "how".
+
+        💡 若想修订协议参数或元规则,请走 RFC discussion 而非 issue。
+        💡 To revise protocol parameters or meta-rules, open an RFC discussion instead.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 解决的问题 / Problem to solve
+      description: 谁在什么场景下遇到什么困难 / Who, in what context, hits what difficulty
+      placeholder: "买家在 #discover 搜索时,看不到卖家信誉,只能一个个点进去看主页"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案 / Proposed solution
+      description: 可选;有想法可以写,没有也可以让社区一起想 / Optional — community can co-design
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案 / Alternatives considered
+      placeholder: 你考虑过的其他做法 / Other approaches you considered
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 主要影响面 / Primary area
+      multiple: false
+      options:
+        - protocol (engines / state machine)
+        - mcp (tool surface)
+        - pwa (web app)
+        - docs / governance
+        - desktop (electron)
+        - ci / build
+        - other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: 改动规模 / Change scope
+      multiple: false
+      options:
+        - 小 (一个文件,< 50 行 / Small — one file, <50 lines)
+        - 中 (几个文件,< 200 行 / Medium — a few files, <200 lines)
+        - 大 (跨模块或 > 200 行,可能需 RFC / Large — cross-module or >200 lines, may need RFC)
+        - 不确定 (Unsure)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: governance-gates
+    attributes:
+      label: 治理门槛检查 / Governance gates check
+      description: 帮 maintainer 判断需要哪一档审批(参见 CHARTER §3.2)
+      options:
+        - label: 涉及修改 10 元规则之一(需走 RFC + 60d + 多签)
+        - label: 涉及协议参数(费率/超时/阈值)(需走 RFC + 14d 公示)
+        - label: 涉及钱包/出金/资金路径(高风险,需 founder + 1 maintainer 联签)
+        - label: 涉及 Iron-Rule 路径(投票/仲裁/agent_revoke 等)
+        - label: 以上都不涉及,常规功能改进
+
+  - type: markdown
+    attributes:
+      value: |
+        💡 **注意 / Note**:若涉及"安全 / Passkey / api_key 紧急修补",**不是新 feature**,请走 [Security Advisory](https://github.com/webaz-protocol/webaz/security/advisories/new)。
+        💡 If your request is "security / Passkey / api_key emergency fix", that's **not a feature** — use Security Advisory.

@@ -1,0 +1,60 @@
+{
+  "spec_version": "1",
+  "task_id": "bt_high_escrow_release_guard",
+  "title": "Harden escrow release guard in the settlement path (HIGH RISK — authorization required)",
+  "summary": "Touches escrow / balance settlement — a money path. NOT open for automatic Agent claiming. Requires explicit human authorization, a dedicated audit, and human review of every diff touching balances. Listed to demonstrate the high-risk no-auto-claim rule.",
+  "task_type": "code",
+  "area": "settlement",
+  "source_ref": "issue#escrow-guard",
+  "rfc_ref": "RFC-014",
+  "allowed_paths": ["src/layer2-business/**/settlement*", "src/layer0-foundation/L0-*/money*", "tests/**"],
+  "forbidden_paths": ["production config", "secrets", "db migration execution", ".env*"],
+  "prohibited_actions": [
+    "auto-claim this task",
+    "move or settle funds without human confirmation",
+    "run a migration",
+    "deploy",
+    "rotate or read any API key / secret"
+  ],
+  "risk_level": "high",
+  "audience": "restricted",
+  "agent_autonomy": "human_only",
+  "human_confirmation_points": [
+    "explicit human authorization before any work begins",
+    "human review of every diff that touches balances / escrow",
+    "human runs and approves any test against real-money fixtures"
+  ],
+  "required_capabilities": ["typescript", "sql", "money-ledger", "security-review"],
+  "auto_claimable": false,
+  "acceptance_criteria": [
+    "Escrow release cannot exceed the locked amount under concurrent settlement",
+    "Conservation holds (zero dust, no double-spend) under the new guard",
+    "Every balance-touching change is human-reviewed and audited"
+  ],
+  "verification_commands": ["npm run build", "npx tsx tests/test-dispute-settlement-conservation.ts"],
+  "expected_results": ["tsc passes", "conservation test exits 0 with zero residual"],
+  "deliverables": [
+    "Hardened escrow release guard (human-reviewed)",
+    "Conservation test extended for the concurrent case",
+    "Independent audit sign-off recorded"
+  ],
+  "definition_of_done": "Guard merged ONLY after explicit human authorization, independent audit, and human review of all balance-touching diffs; conservation proven; nothing deployed by the Agent.",
+  "estimated_duration": { "min_minutes": 120, "max_minutes": 480 },
+  "estimated_context_size": "large",
+  "estimated_agent_budget": "large",
+  "dependencies": ["bt_tests_money_allocate_edge"],
+  "blocking_conditions": ["no explicit human authorization on record", "no independent audit assigned"],
+  "provenance_requirement": ["human", "ai_assisted"],
+  "accountable_party_required": true,
+  "reward_eligibility": "pending",
+  "value_state": "uncommitted",
+  "contribution_type": "code",
+  "status": "open",
+  "version": 1,
+  "assurance": {
+    "required": true,
+    "evidence_refs": ["CI:green", "independent-audit:required", "reviewed-commit:required"],
+    "notes": "HIGH RISK money path: independent audit + reviewed commit + explicit authorization required before merge. Not for ordinary public auto-claim."
+  },
+  "needs_clarification": false
+}

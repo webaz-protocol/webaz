@@ -1,0 +1,115 @@
+name: ⚖️ Regulatory research (合规研究)
+description: 在某特定辖区研究 WebAZ 协议某机制与法规的对照 / Map a WebAZ mechanism to the rules of a specific jurisdiction
+title: "[REG] "
+labels: ["type:regulatory", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > **⚠️ 免责声明 / Disclaimer**
+        >
+        > 本 issue 中的研究输出**不是法律意见**(not legal advice)。
+        > Contributors 不代表 WebAZ 提供法律咨询;读者 / 卖家 / agent 操作者**不得**仅凭本研究做合规决策。
+        > 涉及法律责任时,**必须**咨询持牌律师 + 走 RFC 流程(见 `docs/CHARTER.md §6`)。
+        >
+        > Research output here is **NOT legal advice**. Contributors do not represent WebAZ for legal consulting.
+        > Readers / sellers / agent operators must **NOT** rely on this research alone for compliance decisions.
+        > For legal liability questions: consult licensed counsel + go through RFC process (`docs/CHARTER.md §6`).
+
+        spec:`docs/REGULATORY-CONTRIBUTORS.md`(W3.5-C)
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 一句话总结 / One-line summary
+      placeholder: "例如:在加州,WebAZ 的 commission L1/L2/L3 多层结构与 FTC 关于 MLM 的指南对照"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: jurisdiction
+    attributes:
+      label: 辖区 / Jurisdiction
+      multiple: false
+      options:
+        - US — federal (FTC / SEC / CFPB)
+        - US — state (specify in body)
+        - EU (DSA / MiCA / GDPR)
+        - UK (FCA / Ofcom)
+        - China (CN)
+        - Singapore (MAS)
+        - Hong Kong (SFC)
+        - Japan (FSA)
+        - Other (specify in body)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mechanism
+    attributes:
+      label: 涉及的协议机制 / Protocol mechanism
+      multiple: true
+      options:
+        - License (BSL 1.1 / Change Date)
+        - Iron-Rule (7 paths Passkey)
+        - Commission / referral / PV structure
+        - Arbitration (dispute resolution)
+        - DAO governance (phase D)
+        - KYC / AML
+        - Data / privacy (PII handling)
+        - Tax / accounting
+        - Other (specify in body)
+    validations:
+      required: true
+
+  - type: textarea
+    id: research
+    attributes:
+      label: 研究内容 / Research content
+      description: |
+        引用具体法条 / regulator guidance / case law。
+        Cite specific statutes / regulator guidance / case law.
+      placeholder: |
+        相关条文:
+        - [Code/Regulation/Guidance reference]
+
+        WebAZ 机制描述:
+        - [How the WebAZ protocol mechanism works]
+
+        对照分析:
+        - [Map mechanism to regulation]
+
+        不确定 / 需进一步咨询:
+        - [Open questions for licensed counsel]
+    validations:
+      required: true
+
+  - type: textarea
+    id: confidence
+    attributes:
+      label: 信心度 / Confidence
+      description: |
+        Low(我猜) / Medium(读过法条,未咨询律师)/ High(律师已 review)
+        Low (guessing) / Medium (read regs, no counsel) / High (counsel reviewed)
+      placeholder: "Medium — 已读 16 CFR Part 437 (FTC MLM guidance),未咨询持牌律师"
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: 引用 / References
+      description: 法条 URL / 指南文档 / 学术 paper / 既有判例
+      placeholder: |
+        - [FTC 16 CFR Part 437](https://...)
+        - [CA SB-...](https://...)
+
+  - type: checkboxes
+    id: disclaimer
+    attributes:
+      label: 确认 / Acknowledgement
+      options:
+        - label: 我确认上述输出**不是**法律意见,WebAZ 项目不为基于本研究的合规决策负责 / I confirm this output is NOT legal advice and the WebAZ project is not liable for compliance decisions based on it
+          required: true
+        - label: 我同意按 `docs/CHARTER.md` § 治理结构对本贡献署名 / I agree to attribution per docs/CHARTER.md governance structure
+          required: true

@@ -1,0 +1,7626 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "WebAZ Protocol API",
+    "version": "0.4.14",
+    "description": "Auto-generated endpoint inventory (640 endpoints, 17 with full schema). See docs/ for design context."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "api_key"
+      },
+      "webauthnToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-WebAuthn-Token"
+      }
+    }
+  },
+  "paths": {
+    "/.well-known/did.json": {
+      "get": {
+        "summary": "任何标准 DID resolver(Veramo / SpruceID / KILT / web5 ...)可 GET → 解出 issuer key → 验 Phase 4 凭证签名",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/webaz-acp-feed.json": {
+      "get": {
+        "summary": "GET /.well-known/webaz-acp-feed.json",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/webaz-capabilities.json": {
+      "get": {
+        "summary": "集成方 agent fetch 此端点即知\"我要做的写需要声明哪个 scope / 哪些写无需 scope / 哪些读受约束\"。",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/webaz-economic.json": {
+      "get": {
+        "summary": "GET /.well-known/webaz-economic.json",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/webaz-entities.json": {
+      "get": {
+        "summary": "RFC-011 §① — agent 可读实体字典(订单状态机 doc=code + 保守公开字段 + 可验证标注)。",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/webaz-goals.json": {
+      "get": {
+        "summary": "RFC-011 §① 目标索引 —— intent → action(②)+ endpoint + MCP 工具 + PWA 页(agent 自路由)。",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/webaz-integration.json": {
+      "get": {
+        "summary": "RFC-011 总入口 —— 集成方 agent 一次 fetch 拿到整份契约导航(按旅程组织,指向各维度 live 端点)。",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/webaz-launch-pulse.json": {
+      "get": {
+        "summary": "GET /.well-known/webaz-launch-pulse.json",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/webaz-negative-space.json": {
+      "get": {
+        "summary": "GET /.well-known/webaz-negative-space.json",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/webaz-protocol.json": {
+      "get": {
+        "summary": "GET /.well-known/webaz-protocol.json",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/webaz-verifiability.json": {
+      "get": {
+        "summary": "RFC-011 §⑤ 可验证索引 —— \"什么可验 + 怎么验\"统一表(护照/锚/AP2/订单链),诚实分级。",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/addresses": {
+      "get": {
+        "summary": "GET /api/addresses",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/addresses",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/addresses/:id": {
+      "delete": {
+        "summary": "DELETE /api/addresses/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "summary": "PATCH /api/addresses/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/_dev/recompute-value-badges": {
+      "post": {
+        "summary": "POST /api/admin/_dev/recompute-value-badges",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/admins": {
+      "get": {
+        "summary": "GET 全部 admin 列表",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST 创建 admin（仅 root）",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/admins/:id": {
+      "delete": {
+        "summary": "DELETE 撤销 admin（root only；不能撤自己；至少保留 1 个 root）",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/admins/:id/permissions": {
+      "patch": {
+        "summary": "PATCH 更新权限（root only）",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/agent-strikes/:strikeId/decide": {
+      "post": {
+        "summary": "Admin: 审核 strike 申诉",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/agent-strikes/issue": {
+      "post": {
+        "summary": "P1 fix 4.3: admin 主动 issue strike",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/agent-strikes/pending": {
+      "get": {
+        "summary": "Admin: 列出待审 strike 申诉",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/agents/:api_key/reputation": {
+      "get": {
+        "summary": "GET /api/admin/agents/:api_key/reputation",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/ai/anomaly-check/:user_id": {
+      "post": {
+        "summary": "POST /api/admin/ai/anomaly-check/:user_id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/announcements": {
+      "post": {
+        "summary": "POST /api/admin/announcements",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/announcements/:id": {
+      "patch": {
+        "summary": "PATCH /api/admin/announcements/:id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/arbitrator-applications": {
+      "get": {
+        "summary": "Admin",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/arbitrator-applications/:id/approve": {
+      "post": {
+        "summary": "POST /api/admin/arbitrator-applications/:id/approve",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/arbitrator-applications/:id/reject": {
+      "post": {
+        "summary": "POST /api/admin/arbitrator-applications/:id/reject",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/atomic/process-ledger": {
+      "post": {
+        "summary": "POST /api/admin/atomic/process-ledger",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/auction-reminders/run": {
+      "post": {
+        "summary": "Admin 手动跑提醒派发",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/audit-log": {
+      "get": {
+        "summary": "GET /api/admin/audit-log",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/auditor": {
+      "get": {
+        "summary": "GET /api/admin/auditor",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/build-feedback": {
+      "get": {
+        "summary": "── maintainer triage ────────────────────────────────",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/build-feedback/:id": {
+      "post": {
+        "summary": "POST /api/admin/build-feedback/:id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/build-feedback/triage": {
+      "post": {
+        "summary": "⚠️ 必须在 /:id 之前声明,否则 'triage' 会被 :id 捕获。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/build-task-drafts": {
+      "get": {
+        "summary": "admin list of UNPUBLISHED drafts (internal, open) + source proposal id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/build-task-drafts/:id/publish": {
+      "post": {
+        "summary": "PUBLISH a draft → public open task — explicit human/admin action; records the acting admin",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/build-tasks/:id/resolve": {
+      "post": {
+        "summary": "验收终态 —— 仅 admin/maintainer(验收=真人,RFC-006 不变量 2;不发奖励/不记信誉)",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/categories/:id/seasonal": {
+      "delete": {
+        "summary": "DELETE /api/admin/categories/:id/seasonal",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "─── 类目 季节性配置 ─────────────────────────────────────",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/charity/fund": {
+      "get": {
+        "summary": "GET /api/admin/charity/fund",
+        "tags": [
+          "admin",
+          "charity"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/charity/fund/disburse": {
+      "post": {
+        "summary": "POST /api/admin/charity/fund/disburse",
+        "tags": [
+          "admin",
+          "charity"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/dashboard": {
+      "get": {
+        "summary": "GET /api/admin/dashboard",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/decline-contests": {
+      "get": {
+        "summary": "仲裁员待办:列出所有被举证的临时判责拒单",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/decline-contests/:orderId/resolve": {
+      "post": {
+        "summary": "仲裁员裁决",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/disputes": {
+      "get": {
+        "summary": "GET /api/admin/disputes",
+        "tags": [
+          "admin",
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/economic-summary": {
+      "get": {
+        "summary": "隐私第一：运营财务，仅 protocol admin 可见。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/editor-picks": {
+      "get": {
+        "summary": "GET /api/admin/editor-picks",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/admin/editor-picks",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/editor-picks/:id": {
+      "delete": {
+        "summary": "DELETE /api/admin/editor-picks/:id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/email-subscriptions": {
+      "get": {
+        "summary": "2026-05-25 admin 查邮箱订阅 — 独立端点，与建议分开",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/email-subscriptions/:id/status": {
+      "patch": {
+        "summary": "2026-05-29: admin 标记申请处理状态（pending→contacted→invited→done）— 不动 POST 提交逻辑",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/errors": {
+      "get": {
+        "summary": "GET /api/admin/errors",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/errors/aggregate": {
+      "get": {
+        "summary": "Tier 1 #5: 错误聚合 view（24h / 1h 趋势 + top by source + top messages + burst alert）",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/events/recent": {
+      "get": {
+        "summary": "GET /api/admin/events/recent",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/events/stream": {
+      "get": {
+        "summary": "GET /api/admin/events/stream",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/admin/events/ticket": {
+      "post": {
+        "summary": "POST /api/admin/events/ticket",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/export/:kind": {
+      "get": {
+        "summary": "GET /api/admin/export/:kind",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/feedback": {
+      "get": {
+        "summary": "admin 列出工单",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/feedback/:id/reply": {
+      "post": {
+        "summary": "admin 回复 + 切状态",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/finance/monthly": {
+      "get": {
+        "summary": "GET /api/admin/finance/monthly",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/governance/activate": {
+      "post": {
+        "summary": "body: { application_id, webauthn_token, note? }",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/governance/appeals": {
+      "get": {
+        "summary": "GET /api/admin/governance/appeals — maintainer 看待裁决申诉",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/governance/application/:id": {
+      "get": {
+        "summary": "GET /api/admin/governance/application/:id — 详情(含 expected_verdict 用于对比 — 仅 maintainer 看)",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/governance/applications": {
+      "get": {
+        "summary": "GET /api/admin/governance/applications — 列出 pending_onboarding(可筛 quiz_passed + has_case_review)",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/governance/auto-deactivations": {
+      "get": {
+        "summary": "spec §6.2 公示触发原因(透明 — 元规则 #1)",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/governance/resolve-appeal": {
+      "post": {
+        "summary": "accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/governance/run-auto-deactivate": {
+      "post": {
+        "summary": "Useful for ops + testing. The scheduled cron also runs every N hours.",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/health": {
+      "get": {
+        "summary": "GET /api/admin/health",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/hot-wallet": {
+      "get": {
+        "summary": "Legacy x-admin-key 入口：仅余额",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/admin/hot-wallet/status": {
+      "get": {
+        "summary": "P2-5: protocol 权限（区域 admin 看不到全局热钱包）",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/invite-rotation/toggle": {
+      "post": {
+        "summary": "protocol 开关",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/kyc/:user_id/approve": {
+      "post": {
+        "summary": "POST /api/admin/kyc/:user_id/approve",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/kyc/:user_id/reject": {
+      "post": {
+        "summary": "POST /api/admin/kyc/:user_id/reject",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/kyc/pending": {
+      "get": {
+        "summary": "─── KYC ──────────────────────────────────────────────────────",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/orders": {
+      "get": {
+        "summary": "GET /api/admin/orders",
+        "tags": [
+          "admin",
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/payment-methods": {
+      "get": {
+        "summary": "─── Admin payment_methods CRUD（root admin only · 基础设施变更需根权限）─",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/admin/payment-methods",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/payment-methods/:id": {
+      "delete": {
+        "summary": "DELETE /api/admin/payment-methods/:id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "summary": "PUT /api/admin/payment-methods/:id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/products": {
+      "get": {
+        "summary": "─── 商品 列表 + 强制下架 ───────────────────────────────",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/products/:id/force-delist": {
+      "post": {
+        "summary": "POST /api/admin/products/:id/force-delist",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/protocol-kpi": {
+      "get": {
+        "summary": "GET /api/admin/protocol-kpi",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/protocol-params": {
+      "get": {
+        "summary": "GET /api/admin/protocol-params",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/protocol-params/:key": {
+      "patch": {
+        "summary": "2026-06-03 #1095: + constitutional only-increase 守护",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/protocol-params/:key/history": {
+      "get": {
+        "summary": "A-3: 变更历史",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/protocol-params/:key/reset": {
+      "post": {
+        "summary": "POST /api/admin/protocol-params/:key/reset",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/public-ideas": {
+      "get": {
+        "summary": "─── admin 端 ─────────────────────────────────────────────",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/public-ideas/:id": {
+      "patch": {
+        "summary": "PATCH /api/admin/public-ideas/:id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/quota-applications": {
+      "get": {
+        "summary": "Admin",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/quota-applications/:id/approve": {
+      "post": {
+        "summary": "POST /api/admin/quota-applications/:id/approve",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/quota-applications/:id/reject": {
+      "post": {
+        "summary": "POST /api/admin/quota-applications/:id/reject",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/region-payment-methods": {
+      "get": {
+        "summary": "─── region_payment_methods CRUD ──────────────────────────",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/admin/region-payment-methods",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/region-payment-methods/:id": {
+      "delete": {
+        "summary": "DELETE /api/admin/region-payment-methods/:id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "summary": "PUT /api/admin/region-payment-methods/:id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/reputation/decay": {
+      "post": {
+        "summary": "POST /api/admin/reputation/decay",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/rewards-health": {
+      "get": {
+        "summary": "以及\"在旧 major consent 上仍 opted-in\"= 下次 auto_downgrade cron 的降级候选。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/risk/suspend/:user_id": {
+      "post": {
+        "summary": "POST /api/admin/risk/suspend/:user_id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/risk/suspicious": {
+      "get": {
+        "summary": "─── D-1 风控告警 ────────────────────────────────────────────",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/risk/unsuspend/:user_id": {
+      "post": {
+        "summary": "POST /api/admin/risk/unsuspend/:user_id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/skill-market/:id/audit": {
+      "post": {
+        "summary": "─── Admin：审核 ────────────────────────────────────────────",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/skill-market/pending": {
+      "get": {
+        "summary": "─── Admin：待审列表 ────────────────────────────────────────",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/task-proposals": {
+      "get": {
+        "summary": "admin list (maintainer only)",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/task-proposals/:id/ai-assist": {
+      "post": {
+        "summary": "NEVER a decision: no auto-publish / auto-reject / hide / reward. A human admin must act explicitly.",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/task-proposals/:id/ai-suggestions": {
+      "get": {
+        "summary": "stored AI suggestions (evidence) for a proposal",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/task-proposals/:id/create-task-draft": {
+      "post": {
+        "summary": "No auto-publish (draft is internal/unclaimable until an explicit publish); no reward/credit side effect.",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/task-proposals/:id/review": {
+      "post": {
+        "summary": "admin review (maintainer only): needs_info | rejected | converted — no build_task is created here.",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/tokenomics": {
+      "get": {
+        "summary": "Tokenomics 详细数据 + Tier 配置 + 高额榜",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/tokenomics/require-ref/toggle": {
+      "post": {
+        "summary": "注册必须 ref 开关",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/trial/run-eval": {
+      "post": {
+        "summary": "Admin 手动触发测评评估（测试 + 紧急 + 立即生效）",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/usage": {
+      "get": {
+        "summary": "GET /api/admin/usage",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "summary": "GET /api/admin/users",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/:id/force-delist-all": {
+      "post": {
+        "summary": "POST /api/admin/users/:id/force-delist-all",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/:id/grant-role": {
+      "post": {
+        "summary": "P0.1: admin 角色提权必须 root；其他角色需 users + scope",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/:id/l1-share-override": {
+      "post": {
+        "summary": "L1 分享权限 override：0 auto / 1 强允 / -1 强禁",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/:id/pause-listing": {
+      "post": {
+        "summary": "POST /api/admin/users/:id/pause-listing",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/:id/profile": {
+      "get": {
+        "summary": "完整档案聚合",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/:id/reset-failed-attempts": {
+      "post": {
+        "summary": "解除账号登录锁定：清零失败次数 + 解锁",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/:id/resume-listing": {
+      "post": {
+        "summary": "POST /api/admin/users/:id/resume-listing",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/:id/revoke-role": {
+      "post": {
+        "summary": "P0.3: revoke admin → root only",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/:id/set-product-quota": {
+      "post": {
+        "summary": "POST /api/admin/users/:id/set-product-quota",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/:id/set-roles": {
+      "post": {
+        "summary": "P0.2: preview diff，含 admin 变更 → root only",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/admin/users/:id/suspend": {
+      "post": {
+        "summary": "P0.4: users + scope；suspend admin → root only",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/:id/timeline": {
+      "get": {
+        "summary": "Wave F-3: 完整事件流",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/:id/unsuspend": {
+      "post": {
+        "summary": "POST /api/admin/users/:id/unsuspend",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/batch-action": {
+      "post": {
+        "summary": "POST /api/admin/users/batch-action",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/lookup": {
+      "get": {
+        "summary": "P1-1: 按 handle / id 任意角色查找",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/verifier-appeals": {
+      "get": {
+        "summary": "GET /api/admin/verifier-appeals",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/verifier-appeals/:id/decide": {
+      "post": {
+        "summary": "POST /api/admin/verifier-appeals/:id/decide",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/verifier-applications": {
+      "get": {
+        "summary": "GET /api/admin/verifier-applications",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/verifier-applications/:id/approve": {
+      "post": {
+        "summary": "POST /api/admin/verifier-applications/:id/approve",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/verifier-applications/:id/reject": {
+      "post": {
+        "summary": "POST /api/admin/verifier-applications/:id/reject",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/verifier-whitelist": {
+      "get": {
+        "summary": "GET /api/admin/verifier-whitelist",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/admin/verifier-whitelist",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/verifier-whitelist/:userId": {
+      "delete": {
+        "summary": "DELETE /api/admin/verifier-whitelist/:userId",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/verifier-whitelist/:userId/promote": {
+      "post": {
+        "summary": "POST /api/admin/verifier-whitelist/:userId/promote",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/verifier-whitelist/:userId/revoke": {
+      "post": {
+        "summary": "POST /api/admin/verifier-whitelist/:userId/revoke",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/verifier-whitelist/:userId/suspend": {
+      "post": {
+        "summary": "POST /api/admin/verifier-whitelist/:userId/suspend",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/verify-tasks": {
+      "get": {
+        "summary": "GET /api/admin/verify-tasks",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/wish-reports": {
+      "get": {
+        "summary": "─── admin 慈善管理 ─────────────────────────────────────────",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/wish-reports/:id": {
+      "patch": {
+        "summary": "PATCH /api/admin/wish-reports/:id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/wishes/:id/takedown": {
+      "post": {
+        "summary": "POST /api/admin/wishes/:id/takedown",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/withdrawals": {
+      "get": {
+        "summary": "GET /api/admin/withdrawals",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/admin/withdrawals/:id/approve": {
+      "post": {
+        "summary": "POST /api/admin/withdrawals/:id/approve",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/agent-buy": {
+      "post": {
+        "summary": "Agent 智能下单 — 外链/搜索词输入 → 自动比价 + 推荐 / 锁价",
+        "tags": [
+          "agent"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "type": "object",
+          "properties": {
+            "source_url": {
+              "type": "string",
+              "format": "uri",
+              "description": "外站链接（淘宝/京东/Amazon 等）"
+            },
+            "shipping_address": {
+              "type": "string"
+            },
+            "auto_buy": {
+              "type": "boolean",
+              "default": false,
+              "description": "true 时自动下单，false 时仅返回推荐"
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "recommendation": {
+                "enum": [
+                  "buy_webaz",
+                  "buy_source",
+                  "no_match"
+                ]
+              },
+              "best_product": {
+                "type": "object"
+              },
+              "webaz_products": {
+                "type": "array"
+              },
+              "order_id": {
+                "type": "string",
+                "description": "仅 auto_bought=true 时"
+              },
+              "auto_bought": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/acp-feed": {
+      "get": {
+        "summary": "GET /api/agent/acp-feed",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/agent/capabilities": {
+      "get": {
+        "summary": "GET /api/agent/capabilities",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/agent/changes": {
+      "get": {
+        "summary": "指纹由 tests/test-contract-fingerprint.ts + docs/CONTRACT-LOCK.json 守住(静默改契约不可 merge)。",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/agent/economic-participation": {
+      "get": {
+        "summary": "GET /api/agent/economic-participation",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/agent/entities": {
+      "get": {
+        "summary": "GET /api/agent/entities",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/agent/events": {
+      "get": {
+        "summary": "结构性事件 + 哈希链字段(验链防篡改),完整 payload 仍走 party-gated /chain。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/agent/goals": {
+      "get": {
+        "summary": "GET /api/agent/goals",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/agent/integration": {
+      "get": {
+        "summary": "GET /api/agent/integration",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/agent/negative-space": {
+      "get": {
+        "summary": "GET /api/agent/negative-space",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/agent/verifiability": {
+      "get": {
+        "summary": "GET /api/agent/verifiability",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/agents/me/reputation": {
+      "get": {
+        "summary": "GET /api/agents/me/reputation",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/ai/generate-description": {
+      "post": {
+        "summary": "G-1: AI 文案生成（卖家发品辅助）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/ai/price-suggestion": {
+      "post": {
+        "summary": "G-2: AI 价格建议",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/anchor/:code/lookup": {
+      "get": {
+        "summary": "查口令 — anchor lookup（公开，不需 auth）",
+        "tags": [
+          "anchor"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "found": {
+                "type": "boolean"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "retired",
+                  "reclaimable"
+                ]
+              },
+              "target_kind": {
+                "type": "string"
+              },
+              "target_id": {
+                "type": "string"
+              },
+              "tier_letter": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/anchor/:code/retire": {
+      "post": {
+        "summary": "POST /api/anchor/:code/retire",
+        "tags": [
+          "anchor"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/anchor/:code/touch": {
+      "post": {
+        "summary": "POST /api/anchor/:code/touch — 写 attribution（first-touch + 30d）",
+        "tags": [
+          "anchor"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/anchor/generate": {
+      "post": {
+        "summary": "生成流量口令 anchor（handle + middle 4 字符）",
+        "tags": [
+          "anchor"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "type": "object",
+          "required": [
+            "middle",
+            "target_kind",
+            "target_id"
+          ],
+          "properties": {
+            "middle": {
+              "type": "string",
+              "minLength": 4,
+              "maxLength": 4,
+              "description": "4 字符 [a-z0-9]，需 ≥1 数字，禁顺序/保留词/oil 混淆"
+            },
+            "target_kind": {
+              "type": "string",
+              "enum": [
+                "user",
+                "product",
+                "shareable",
+                "dispute_case"
+              ]
+            },
+            "target_id": {
+              "type": "string"
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "anchor": {
+                "type": "string"
+              },
+              "tier_letter": {
+                "type": "string"
+              }
+            }
+          },
+          "400": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "string"
+              },
+              "reason": {
+                "enum": [
+                  "middle_invalid",
+                  "anchor_taken",
+                  "anchor_retired_not_yet_reclaimable",
+                  "anchor_in_priority_window",
+                  "quota_max_total_100",
+                  "quota_max_per_day_5"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/anchor/me": {
+      "get": {
+        "summary": "GET /api/anchor/me",
+        "tags": [
+          "anchor"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/announcements/:id/read": {
+      "post": {
+        "summary": "POST /api/announcements/:id/read",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/announcements/active": {
+      "get": {
+        "summary": "列出对当前用户可见的活跃公告（按角色 + 区域过滤）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/arbitrator/apply": {
+      "post": {
+        "summary": "POST /api/arbitrator/apply",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/arbitrator/eligibility": {
+      "get": {
+        "summary": "GET /api/arbitrator/eligibility",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/arbitrator/me/kpi": {
+      "get": {
+        "summary": "Arbitrator KPI（仲裁累计 + 裁决分布 + pending）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/arbitrator/status": {
+      "get": {
+        "summary": "GET /api/arbitrator/status",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/arbitrator/withdraw-application": {
+      "post": {
+        "summary": "POST /api/arbitrator/withdraw-application",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auctions": {
+      "get": {
+        "summary": "看板：浏览公开拍卖（匿名可访问）",
+        "tags": [],
+        "security": []
+      },
+      "post": {
+        "summary": "卖家发起拍卖",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auctions/:id": {
+      "delete": {
+        "summary": "卖家：取消（仅未出价时）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "详情：含 bid 历史（buyer 身份脱敏；卖家+出价人本人 可见全名）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auctions/:id/bids": {
+      "post": {
+        "summary": "买家：出价",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auctions/:id/remind": {
+      "delete": {
+        "summary": "DELETE /api/auctions/:id/remind",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "GET /api/auctions/:id/remind",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "拍卖「⏰ 提醒我」(#959)",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auctions/mine": {
+      "get": {
+        "summary": "我的：买家=我出过价的，卖家=我发起的",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auth/logout-all": {
+      "post": {
+        "summary": "要求密码二次验证（防 api_key 被盗后攻击者锁死真用户）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auth/sessions": {
+      "get": {
+        "summary": "GET /api/auth/sessions",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auth/sessions/:id/revoke": {
+      "post": {
+        "summary": "远程吊销某个会话（不影响当前 session）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/bids/:id": {
+      "delete": {
+        "summary": "卖家：撤回 bid（释放 stake）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "summary": "卖家：修改 bid（仅 active；stake 差额自动结算）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/blocklist": {
+      "get": {
+        "summary": "D-2: 列表",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/blocklist/:user_id": {
+      "delete": {
+        "summary": "DELETE /api/blocklist/:user_id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/blocklist/:user_id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/blocklist/:user_id/status": {
+      "get": {
+        "summary": "GET /api/blocklist/:user_id/status",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/blocklist/me": {
+      "get": {
+        "summary": "GET /api/blocklist/me",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/build-feedback": {
+      "post": {
+        "summary": "── 提交 ──────────────────────────────────────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/build-feedback/:id": {
+      "get": {
+        "summary": "GET /api/build-feedback/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/build-feedback/mine": {
+      "get": {
+        "summary": "── 闭环:我的反馈进度 ──(必须在 /:id 之前声明)──────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/build-reputation/me": {
+      "get": {
+        "summary": "BUILD reputation (coordination layer) only and promise no economic value.",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/build-tasks": {
+      "get": {
+        "summary": "uncommitted value_boundary; member scope hides restricted/internal. Bad filter → fail-closed 400.",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/build-tasks",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/build-tasks/:id": {
+      "get": {
+        "summary": "GET /api/build-tasks/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/build-tasks/:id/claim": {
+      "post": {
+        "summary": "task → claim respects auto_claimable. Success appends value_boundary + canonical_contribution_target only.",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/build-tasks/:id/release": {
+      "post": {
+        "summary": "POST /api/build-tasks/:id/release",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/build-tasks/:id/submit": {
+      "post": {
+        "summary": "POST /api/build-tasks/:id/submit",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/cart": {
+      "get": {
+        "summary": "GET /api/cart",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/cart",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/cart/:product_id": {
+      "delete": {
+        "summary": "DELETE /api/cart/:product_id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "summary": "PATCH /api/cart/:product_id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/cart/checkout": {
+      "post": {
+        "summary": "C-1: 购物车批量下单（按 seller 自动分订单）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/charity/fund": {
+      "get": {
+        "summary": "GET 基金概况 + 最近流水",
+        "tags": [
+          "charity"
+        ],
+        "security": []
+      }
+    },
+    "/api/charity/fund/donate": {
+      "post": {
+        "summary": "任何人捐款给慈善基金",
+        "tags": [
+          "charity"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/charity/leaderboard": {
+      "get": {
+        "summary": "慈善排行",
+        "tags": [
+          "charity"
+        ],
+        "security": []
+      }
+    },
+    "/api/charity/me": {
+      "get": {
+        "summary": "GET /api/charity/me — 我的慈善档案",
+        "tags": [
+          "charity"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/charity/stories": {
+      "get": {
+        "summary": "GET /api/charity/stories — 公开披露的故事板",
+        "tags": [
+          "charity"
+        ],
+        "security": []
+      }
+    },
+    "/api/check-url": {
+      "get": {
+        "summary": "GET /api/check-url",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/checkin": {
+      "post": {
+        "summary": "POST /api/checkin",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/checkin/status": {
+      "get": {
+        "summary": "GET /api/checkin/status",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/checkout/tax-preview": {
+      "get": {
+        "summary": "GET /api/checkout/tax-preview",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/claim-tasks/:id": {
+      "get": {
+        "summary": "任务详情",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/claim-tasks/:id/seller-evidence": {
+      "post": {
+        "summary": "卖家提交证据 → 延期 24h；状态保持 open",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/claim-tasks/:id/vote": {
+      "post": {
+        "summary": "verifier 投票 — 铁律 §4",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/claim-tasks/available": {
+      "get": {
+        "summary": "列出可接的 open 任务",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/claim-tasks/mine": {
+      "get": {
+        "summary": "我相关的任务（必须在 /:id 之前注册，否则被 /:id 截获）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/claim-url": {
+      "post": {
+        "summary": "POST /api/claim-url",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/claims/public": {
+      "get": {
+        "summary": "公开 #claims 广场（无 auth — 透明性是验证声明信任的前提）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/contribution-identity/github/claim-challenge": {
+      "post": {
+        "summary": "── 1) issue a publication challenge ─────────────────────────────────────────────────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/contribution-identity/github/claim-complete": {
+      "post": {
+        "summary": "── 2) complete the claim (human gate → re-fetch gist proof → atomic consume+bind) ────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/contribution-identity/github/claimable": {
+      "get": {
+        "summary": "carries the uncommitted-value boundary, and errors never leak SQL/stack.",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/contribution-identity/github/me": {
+      "get": {
+        "summary": "metering/display surface can never read as a payout promise — facts + attribution only.",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/contribution-score/evidence/me": {
+      "get": {
+        "summary": "always the session user. Output is component evidence wrapped in the uncommitted-value boundary.",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/conversations": {
+      "get": {
+        "summary": "我的会话列表",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/conversations/:id": {
+      "get": {
+        "summary": "会话详情 + 消息分页",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/conversations/:id/archive": {
+      "post": {
+        "summary": "归档（仅自己侧）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/conversations/:id/block": {
+      "post": {
+        "summary": "拉黑（双向屏蔽）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/conversations/:id/messages": {
+      "post": {
+        "summary": "发消息",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/conversations/:id/read": {
+      "post": {
+        "summary": "标记已读",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/conversations/:id/report": {
+      "post": {
+        "summary": "举报（人工审核）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/conversations/start": {
+      "post": {
+        "summary": "开会话（idempotent — 已存在则返回 id）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/coupons": {
+      "post": {
+        "summary": "POST /api/coupons",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/coupons/:id": {
+      "patch": {
+        "summary": "PATCH /api/coupons/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/coupons/available": {
+      "get": {
+        "summary": "buyer 视角：全平台 + 已购卖家店铺/单品券 + 历史",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/coupons/mine": {
+      "get": {
+        "summary": "GET /api/coupons/mine",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/coupons/preview": {
+      "get": {
+        "summary": "GET /api/coupons/preview",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/creator/stats": {
+      "get": {
+        "summary": "里程碑 L3：创作者贡献仪表盘",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes": {
+      "get": {
+        "summary": "仲裁员：查看所有开放争议",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/:id": {
+      "get": {
+        "summary": "详情聚合（含 W4 timeline + chain ruling）",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/:id/add-evidence": {
+      "post": {
+        "summary": "参与方主动举证（text）+ SNF 信封分发",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/:id/arbitrate": {
+      "post": {
+        "summary": "仲裁员裁定",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/:id/arbitrator-pause-auto-judge": {
+      "post": {
+        "summary": "POST /api/disputes/:id/arbitrator-pause-auto-judge",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/:id/arbitrator-resume-auto-judge": {
+      "post": {
+        "summary": "POST /api/disputes/:id/arbitrator-resume-auto-judge",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/:id/evidence-blob": {
+      "post": {
+        "summary": "N: limit 精确 = EVIDENCE_MAX_BYTES",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/:id/evidence-list": {
+      "get": {
+        "summary": "当事人 + 仲裁员可查（meta only，blob 单独拉）",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/:id/parties": {
+      "get": {
+        "summary": "涉案三方（仲裁员选择发证据请求的对象）",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/:id/request-evidence": {
+      "post": {
+        "summary": "仲裁员：请求某方补证",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/:id/respond": {
+      "post": {
+        "summary": "被诉方反驳",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/:id/similar-cases": {
+      "get": {
+        "summary": "A2 同类判例推荐",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/cases": {
+      "get": {
+        "summary": "公开列表（全网）— 判例库总览",
+        "tags": [
+          "dispute"
+        ],
+        "security": []
+      }
+    },
+    "/api/disputes/cases/:case_id": {
+      "get": {
+        "summary": "案件详情（含评论 + 评论者身份标签）",
+        "tags": [
+          "dispute"
+        ],
+        "security": []
+      }
+    },
+    "/api/disputes/cases/:case_id/comment": {
+      "post": {
+        "summary": "写评论 — 当事人禁评，一人一案一次",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/cases/:case_id/comments/:comment_id/reply": {
+      "post": {
+        "summary": "W5 子回复 — 任意人可对顶层评论回复多次（不受\"一人一案一次\"限制）",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/cases/:case_id/fairness": {
+      "post": {
+        "summary": "公正度投票（👍 / 👎）— 一人一案一票",
+        "tags": [
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/disputes/cases/by-product/:product_id": {
+      "get": {
+        "summary": "公开列表（按商品）",
+        "tags": [
+          "dispute"
+        ],
+        "security": []
+      }
+    },
+    "/api/editor-picks": {
+      "get": {
+        "summary": "GET /api/editor-picks",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/email-subscriptions": {
+      "post": {
+        "summary": "2026-05-26 加 role_preference + note 字段（welcome 表单丰富化）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/email-subscriptions/unsubscribe": {
+      "post": {
+        "summary": "POST /api/email-subscriptions/unsubscribe",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/error-report": {
+      "post": {
+        "summary": "前端错误上报（30/min/IP 限流，不需 auth）",
+        "tags": [
+          "ops"
+        ],
+        "security": [],
+        "requestBody": {
+          "type": "object",
+          "required": [
+            "message"
+          ],
+          "properties": {
+            "message": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "stack": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "url": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "400": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "const": "message required"
+              }
+            }
+          },
+          "429": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "const": "rate_limited"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/evidence-requests/:requestId/submit": {
+      "post": {
+        "summary": "当事人提交补充证据响应（仲裁员 request 后用）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/evidence/:id": {
+      "delete": {
+        "summary": "撤回证据（仅上传者，争议未结案时）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/evidence/:id/blob": {
+      "get": {
+        "summary": "下载证据 blob（仅参与方/仲裁员）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/evidence/:id/verify": {
+      "get": {
+        "summary": "验签 — 任意参与方",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/external-anchors": {
+      "post": {
+        "summary": "POST /api/external-anchors",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/external-anchors/:id": {
+      "get": {
+        "summary": "GET /api/external-anchors/:id",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/external-anchors/:id/distribute-rewards": {
+      "post": {
+        "summary": "手动 distribute（admin/arbitrator 补救：anchor 已 community 但 fee_paid_out=0）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/external-anchors/:id/issue-token": {
+      "post": {
+        "summary": "POST /api/external-anchors/:id/issue-token",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/external-anchors/:id/revoke": {
+      "post": {
+        "summary": "POST /api/external-anchors/:id/revoke",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/external-anchors/:id/rewards": {
+      "get": {
+        "summary": "透出推荐 fee + anchor 的奖励情况",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/external-anchors/:id/verify": {
+      "post": {
+        "summary": "verifier 提交独立验证（任何已登录用户可做）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/external-anchors/:id/verify-sig": {
+      "get": {
+        "summary": "GET /api/external-anchors/:id/verify-sig",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/external-anchors/by-product/:id": {
+      "get": {
+        "summary": "GET /api/external-anchors/by-product/:id",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/external-anchors/by-seller/:id": {
+      "get": {
+        "summary": "GET /api/external-anchors/by-seller/:id",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/feed": {
+      "get": {
+        "summary": "GET /api/feed",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/feedback": {
+      "post": {
+        "summary": "POST /api/feedback",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/feedback/:id": {
+      "get": {
+        "summary": "工单详情 + timeline",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/feedback/:id/messages": {
+      "post": {
+        "summary": "工单内追加消息（user 或 admin）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/feedback/mine": {
+      "get": {
+        "summary": "GET /api/feedback/mine",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/feedback/seen": {
+      "post": {
+        "summary": "POST /api/feedback/seen",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/flash-sales/:id": {
+      "delete": {
+        "summary": "取消（仅 seller 自己，且未开始）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/flash-sales/live": {
+      "get": {
+        "summary": "buyer 视角：当前全平台正在进行的 flash sales（首屏 discovery）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/follows/:user_id": {
+      "delete": {
+        "summary": "DELETE /api/follows/:user_id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/follows/:user_id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/follows/:user_id/status": {
+      "get": {
+        "summary": "GET /api/follows/:user_id/status",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/follows/feed": {
+      "get": {
+        "summary": "Wave D-1: 关注卖家动态 feed — new_product + restock 合并 + 去重",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/follows/me": {
+      "get": {
+        "summary": "GET /api/follows/me",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/governance/onboarding-stats": {
+      "get": {
+        "summary": "无 auth — agent / 用户 / 第三方都可读;不暴露 PII",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/governance/onboarding/appeal": {
+      "post": {
+        "summary": "必须:source 行 action='auto_deactivate' + window 内 + 未已 appeal + reason 长度",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/governance/onboarding/apply": {
+      "post": {
+        "summary": "POST /api/governance/onboarding/apply",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/governance/onboarding/case-review": {
+      "post": {
+        "summary": "不立即评分 — maintainer 上岗签字前(阶段 3 #1093)对比 expected_verdict",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/governance/onboarding/cases": {
+      "get": {
+        "summary": "实施 docs/GOVERNANCE-ONBOARDING.md §4.2 案例研读",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/governance/onboarding/my": {
+      "get": {
+        "summary": "GET /api/governance/onboarding/my",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/governance/onboarding/progress": {
+      "get": {
+        "summary": "返回 onboarding 整体进度(spec §4):申请状态 + 学习包(client localStorage) + 题目分数 + 案例(后续)",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/governance/onboarding/quiz": {
+      "get": {
+        "summary": "实施 docs/GOVERNANCE-ONBOARDING.md §4.3 题目",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/governance/onboarding/quiz-submit": {
+      "post": {
+        "summary": "body: { role, answers: [{question_id, answer}] }",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/governance/onboarding/resign": {
+      "post": {
+        "summary": "confirm_text 必须等于 'RESIGN arbitrator' 或 'RESIGN verifier'(type-to-confirm 防误触)",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/governance/params": {
+      "get": {
+        "summary": "─── 治理参数 ────────────────────────────────────────────────",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/governance/params/:key/history": {
+      "get": {
+        "summary": "GET /api/governance/params/:key/history",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/group-buys": {
+      "post": {
+        "summary": "卖家开团",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/group-buys/:id": {
+      "get": {
+        "summary": "详情 + participants",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/group-buys/:id/join": {
+      "post": {
+        "summary": "加入团购",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/group-buys/:id/leave": {
+      "delete": {
+        "summary": "离开团购",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/group-buys/live": {
+      "get": {
+        "summary": "公开列表",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/growth/tasks": {
+      "get": {
+        "summary": "GET /api/growth/tasks",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/growth/tasks/:id/claim": {
+      "post": {
+        "summary": "POST /api/growth/tasks/:id/claim",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/growth/tasks/:id/reset": {
+      "post": {
+        "summary": "POST /api/growth/tasks/:id/reset",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/growth/tasks/:id/skip": {
+      "post": {
+        "summary": "POST /api/growth/tasks/:id/skip",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "健康检查 — LB / k8s readinessProbe（不需 auth）",
+        "tags": [
+          "ops"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "enum": [
+                  "ok",
+                  "degraded"
+                ]
+              },
+              "uptime_sec": {
+                "type": "integer"
+              },
+              "db": {
+                "type": "object",
+                "properties": {
+                  "ok": {
+                    "type": "boolean"
+                  },
+                  "latency_ms": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "seed_strength": {
+                "enum": [
+                  "default",
+                  "weak",
+                  "strong"
+                ]
+              },
+              "env": {
+                "type": "string"
+              },
+              "check_ms": {
+                "type": "integer"
+              }
+            }
+          },
+          "503": {
+            "type": "object",
+            "description": "DB 不通时返 503 — LB 自动剔除"
+          }
+        }
+      }
+    },
+    "/api/import-product": {
+      "post": {
+        "summary": "POST /api/import-product",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/invite/rotate": {
+      "post": {
+        "summary": "公开邀请码轮询（开关 ON 时）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/kyc/me": {
+      "get": {
+        "summary": "GET /api/kyc/me",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/kyc/submit": {
+      "post": {
+        "summary": "POST /api/kyc/submit",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/launch-pulse": {
+      "get": {
+        "summary": "GET /api/launch-pulse",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/leaderboard": {
+      "get": {
+        "summary": "GET /api/leaderboard",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/link-challenges/:id/verify": {
+      "post": {
+        "summary": "POST /api/link-challenges/:id/verify",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/listings": {
+      "get": {
+        "summary": "列表搜索（公开）",
+        "tags": [],
+        "security": []
+      },
+      "post": {
+        "summary": "创建 listing（首创者）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/listings/:id": {
+      "get": {
+        "summary": "详情 + offers 加权排序",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/listings/:id/offers": {
+      "post": {
+        "summary": "跟卖：为已有 listing 创建本卖家的 product（即一个 offer）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/listings/mine": {
+      "get": {
+        "summary": "我的跟卖",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/login": {
+      "post": {
+        "summary": "POST /api/login",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/logistics/companies": {
+      "get": {
+        "summary": "GET /api/logistics/companies",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/logistics/me/performance": {
+      "get": {
+        "summary": "物流绩效卡 (Wave B-4)",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/logistics/orders": {
+      "get": {
+        "summary": "GET /api/logistics/orders",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/logistics/return-pickups": {
+      "get": {
+        "summary": "GET /api/logistics/return-pickups",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/manifest": {
+      "get": {
+        "summary": "GET /api/manifest",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/manifests": {
+      "post": {
+        "summary": "POST /api/manifests",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/manifests/:hash": {
+      "get": {
+        "summary": "GET /api/manifests/:hash",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/manifests/:hash/takedown": {
+      "patch": {
+        "summary": "PATCH /api/manifests/:hash/takedown",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/manifests/by-anchor/:anchor": {
+      "get": {
+        "summary": "GET /api/manifests/by-anchor/:anchor",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/manifests/by-product/:pid": {
+      "get": {
+        "summary": "GET /api/manifests/by-product/:pid",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/manifests/me": {
+      "get": {
+        "summary": "GET /api/manifests/me",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/mcp-telemetry": {
+      "post": {
+        "summary": "POST /api/mcp-telemetry",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/me": {
+      "get": {
+        "summary": "GET /api/me",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/agents": {
+      "get": {
+        "summary": "/api/me/agents — 列出本账号所有 agent + declaration / strikes",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/agents/:apiKeyPrefix/log": {
+      "get": {
+        "summary": "GET /api/me/agents/:apiKeyPrefix/log",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/agents/:apiKeyPrefix/passport": {
+      "get": {
+        "summary": "issuer 同时给 did:web:webaz.xyz(标准 DID method)+ 原 did:webaz:0x... 地址(向后兼容)。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/agents/:apiKeyPrefix/revoke": {
+      "post": {
+        "summary": "用户撤销 agent（铁律 §4 human presence）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/agents/attestations": {
+      "post": {
+        "summary": "bilateral attestation（用户批准某 agent 的 scope）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/agents/declarations": {
+      "post": {
+        "summary": "POST /api/me/agents/declarations",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/agents/operators/:operator_name/revoke": {
+      "post": {
+        "summary": "撤销同 operator 名下所有 agent（仅撤销本用户给 operator 旗下 agent 的 attestation）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/agents/strikes/:strikeId/appeal": {
+      "post": {
+        "summary": "P0 audit fix 4.2: 申诉 strike",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/delete-cancel": {
+      "post": {
+        "summary": "POST /api/me/delete-cancel",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/delete-request": {
+      "post": {
+        "summary": "POST /api/me/delete-request",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/delete-status": {
+      "get": {
+        "summary": "GET /api/me/delete-status",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/export": {
+      "get": {
+        "summary": "COP P0-1: 数据导出（用户主权）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/note-prompts": {
+      "get": {
+        "summary": "COP 飞轮: 完成订单 7d 引导发笔记",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/notify-claim-tasks": {
+      "get": {
+        "summary": "GET /api/me/notify-claim-tasks",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "通知偏好",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/seller/trial-campaigns": {
+      "get": {
+        "summary": "卖家：我的测评活动列表（含每个的 claims 计数）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/trial-claims": {
+      "get": {
+        "summary": "买家：我的测评列表",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/my-products": {
+      "get": {
+        "summary": "GET /api/my-products",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/nearby": {
+      "get": {
+        "summary": "window: 24h / 7d / 30d",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/notes": {
+      "get": {
+        "summary": "sort=following: 需登录，仅显示 follows.followee_id 的笔记",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/notes/photo": {
+      "post": {
+        "summary": "Phase C2 笔记图片上传 — raw blob，sha256 重算，返回 hash + dedup",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/notes/photo/:hash": {
+      "get": {
+        "summary": "笔记图片下载 — 公开（笔记 landing page 公开可读，图也得公开）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "summary": "GET /api/notifications",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/notifications/read": {
+      "post": {
+        "summary": "POST /api/notifications/read",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/notifications/stream": {
+      "get": {
+        "summary": "SSE 实时推送流（EventSource 不支持自定义 header，URL ?key= 也兼容）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/offers/:id": {
+      "delete": {
+        "summary": "撤回 offer（status=warehouse + 释放 stake；不真删 product）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "summary": "PATCH /api/offers/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/offers/:id/refresh": {
+      "post": {
+        "summary": "刷新 freshness（卖家点 \"现货确认\"）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders": {
+      "get": {
+        "summary": "GET /api/orders",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "创建订单（含分享分润链路追踪）",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "type": "object",
+          "required": [
+            "product_id",
+            "shipping_address"
+          ],
+          "properties": {
+            "product_id": {
+              "type": "string"
+            },
+            "shipping_address": {
+              "type": "string",
+              "description": "完整收货地址"
+            },
+            "quantity": {
+              "type": "integer",
+              "default": 1
+            },
+            "variant_id": {
+              "type": "string",
+              "description": "SKU 规格 ID（可选）"
+            },
+            "notes": {
+              "type": "string",
+              "description": "买家备注"
+            },
+            "sponsor_hint": {
+              "type": "string",
+              "description": "推荐人 user_id / permanent_code（三层归属用）"
+            },
+            "coupon_code": {
+              "type": "string"
+            },
+            "buy_insurance": {
+              "type": "boolean",
+              "default": false
+            },
+            "expected_price": {
+              "type": "number",
+              "description": "防价格漂移（session_token 模式）"
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "order_id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "total_amount": {
+                "type": "number"
+              }
+            }
+          },
+          "400": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "string"
+              }
+            }
+          },
+          "402": {
+            "type": "object",
+            "description": "钱包余额不足"
+          }
+        }
+      }
+    },
+    "/api/orders/:id": {
+      "get": {
+        "summary": "GET /api/orders/:id",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/action": {
+      "post": {
+        "summary": "通用状态机 action — accept/ship/pickup/transit/deliver/confirm/dispute",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/chain": {
+      "get": {
+        "summary": "订单签名链 — 当事人 + arbitrator + admin 可查",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/claim-task": {
+      "get": {
+        "summary": "通过 order_id 查关联 task",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/claim-verification": {
+      "post": {
+        "summary": "买家发起 claim 验证任务（绑定 paid 及之后的订单）",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/confirm-in-person": {
+      "post": {
+        "summary": "买家确认面交完成 → 直接 completed + settleOrder",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/force-timeout-check": {
+      "post": {
+        "summary": "手动触发超时判责（当事人）",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:order_id/buyer-rating": {
+      "get": {
+        "summary": "查 seller → buyer 评价（双盲遮蔽：buyer 看不到，除非自己也评过 OR 窗口到期）",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "seller → buyer 反向评价",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:order_id/rating": {
+      "get": {
+        "summary": "查 buyer → seller 评价（双盲遮蔽：seller 视角同样）",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "buyer → seller 评价（一单一评，仅 completed 订单可评）",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:order_id/rating/followup": {
+      "post": {
+        "summary": "W3 买家追问 — 在卖家 reply 后可追问一次",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:order_id/rating/reply": {
+      "post": {
+        "summary": "POST /api/orders/:order_id/rating/reply",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:order_id/return-request": {
+      "get": {
+        "summary": "P1-5: 订单级直查",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "buyer 发起退货",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/batch-ship": {
+      "post": {
+        "summary": "C-4: 卖家批量发货",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/export": {
+      "get": {
+        "summary": "Wave D-2: 订单导出 CSV",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/p2p-products": {
+      "get": {
+        "summary": "公开：列表",
+        "tags": [],
+        "security": []
+      },
+      "post": {
+        "summary": "发布 / 重发 P2P 商品",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/p2p-products/:id": {
+      "delete": {
+        "summary": "下架（保留行 + status='warehouse'，在途订单 hash 仍可证）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "公开：详情（含 hash + peer_endpoint）",
+        "tags": [],
+        "security": []
+      },
+      "patch": {
+        "summary": "更新（重发 hash + signature，价格/库存/标题可改；旧 hash 给在途订单保留）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/payment-methods": {
+      "get": {
+        "summary": "─── 公共支付方法 ───────────────────────────────────────────",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/payment-methods/for-region": {
+      "get": {
+        "summary": "某地区可用方法（fallback 到 global）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/payment-methods/log": {
+      "get": {
+        "summary": "公共变更审计日志（COP transparency）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/peers/:hash": {
+      "delete": {
+        "summary": "DELETE /api/peers/:hash",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/peers/heartbeat": {
+      "post": {
+        "summary": "POST /api/peers/heartbeat",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/pin-receipts": {
+      "post": {
+        "summary": "POST /api/pin-receipts",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/pin-receipts/mine": {
+      "get": {
+        "summary": "GET /api/pin-receipts/mine",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/product-share/touch": {
+      "post": {
+        "summary": "商品分享归因落库（前端登录后首次进入带 share_id 时调用）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products": {
+      "get": {
+        "summary": "商品列表（含 q exact match / fuzzy / ship_to / 排序）",
+        "tags": [
+          "product"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "精确商品标题（exact match）"
+          },
+          {
+            "name": "fuzzy",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "true 时模糊匹配"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "max_price",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "ship_to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO region 过滤可派送"
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "pwa",
+                "agent",
+                "raw"
+              ],
+              "default": "pwa"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "trending",
+                "cheap",
+                "new",
+                "completion"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "上架商品（卖家 only）— 含 stake 锁定机制",
+        "tags": [
+          "product"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "type": "object",
+          "required": [
+            "title",
+            "price"
+          ],
+          "properties": {
+            "title": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "price": {
+              "type": "number",
+              "minimum": 0.01
+            },
+            "category": {
+              "type": "string"
+            },
+            "category_id": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 5000
+            },
+            "stock": {
+              "type": "integer",
+              "default": 1
+            },
+            "commission_rate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 0.5,
+              "description": "分享分润率（默认 0.05）"
+            },
+            "images": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "min_return_days": {
+              "type": "integer",
+              "default": 7
+            },
+            "max_handling_hours": {
+              "type": "integer",
+              "default": 48
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "product_id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/products/:id": {
+      "delete": {
+        "summary": "硬删（仅 deleted 状态 + 无进行中订单）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "卖家可查看自己的非上架商品（编辑页用），其他人只能看 active",
+        "tags": [],
+        "security": []
+      },
+      "put": {
+        "summary": "PUT /api/products/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:id/aliases": {
+      "get": {
+        "summary": "M7.2-7: alias CRUD（仅商品 owner）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/products/:id/aliases",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:id/aliases/:aliasId": {
+      "delete": {
+        "summary": "DELETE /api/products/:id/aliases/:aliasId",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:id/can-share": {
+      "get": {
+        "summary": "分享许可：是否真实收货完成该商品(经过 confirmed,排除退款/违约/争议终态)",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:id/claim": {
+      "post": {
+        "summary": "POST /api/products/:id/claim",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:id/claims": {
+      "get": {
+        "summary": "公开：列出某商品的全部声明（含已结算）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/products/:id/get-or-create-share": {
+      "post": {
+        "summary": "获取或创建商品 shareable（被 sharePromoLink 用，走 /s/<id> 短链）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:id/links": {
+      "get": {
+        "summary": "GET /api/products/:id/links",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "新链接（无人认领）直接 verified=1；已被他人认领则发起众包验证任务",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:id/links/:linkId": {
+      "delete": {
+        "summary": "DELETE /api/products/:id/links/:linkId",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:id/preview": {
+      "get": {
+        "summary": "公开预览：未登录可调，返回最小公开信息（分享 banner 用）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/products/:id/price-history": {
+      "get": {
+        "summary": "GET /api/products/:id/price-history",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/products/:id/status": {
+      "patch": {
+        "summary": "状态切换（active / warehouse / deleted）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:product_id/flash-sale": {
+      "get": {
+        "summary": "公开：商品当前生效的 flash sale",
+        "tags": [],
+        "security": []
+      },
+      "post": {
+        "summary": "POST /api/products/:product_id/flash-sale",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:product_id/qa": {
+      "get": {
+        "summary": "GET /api/products/:product_id/qa",
+        "tags": [],
+        "security": []
+      },
+      "post": {
+        "summary": "─── Wave A-2: 商品 Q&A ─────────────────────────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:product_id/qa/:qa_id/answer": {
+      "post": {
+        "summary": "POST /api/products/:product_id/qa/:qa_id/answer",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:product_id/qa/:qa_id/helpful": {
+      "post": {
+        "summary": "POST /api/products/:product_id/qa/:qa_id/helpful",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:product_id/ratings": {
+      "get": {
+        "summary": "公开：商品评价 + 聚合（仅展示双盲已揭晓的）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/products/:product_id/trial-campaign": {
+      "delete": {
+        "summary": "卖家关闭活动（仍允许 pending claims 完成评估）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "公开查询商品的活动状态（任何人）",
+        "tags": [],
+        "security": []
+      },
+      "post": {
+        "summary": "卖家：开/更新活动",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:product_id/trial-claim": {
+      "post": {
+        "summary": "P1: 新账号 < 3 天禁申请；IP/UA 与卖家 session 重叠 → 标 account_link 审计 flag",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:product_id/variants": {
+      "get": {
+        "summary": "公开列出（含 buyer 下单页查可选项）",
+        "tags": [],
+        "security": []
+      },
+      "post": {
+        "summary": "POST /api/products/:product_id/variants",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:product_id/variants/:variant_id": {
+      "delete": {
+        "summary": "DELETE /api/products/:product_id/variants/:variant_id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "summary": "PATCH /api/products/:product_id/variants/:variant_id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:product_id/waitlist": {
+      "delete": {
+        "summary": "DELETE /api/products/:product_id/waitlist",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/products/:product_id/waitlist",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:product_id/waitlist/check": {
+      "get": {
+        "summary": "GET /api/products/:product_id/waitlist/check",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/:product_id/waitlist/count": {
+      "get": {
+        "summary": "seller 查 waitlist count（决定备多少货）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/products/extract-aliases": {
+      "post": {
+        "summary": "M7.2-5: 从外部原文提取候选 alias",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile": {
+      "get": {
+        "summary": "GET /api/profile",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "summary": "通用 profile patch（search_anchor / bio / feed_visible）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/add-role": {
+      "post": {
+        "summary": "POST /api/profile/add-role",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/bind-email": {
+      "post": {
+        "summary": "绑定邮箱 — 步骤 1：发码",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/bind-placement": {
+      "post": {
+        "summary": "POST /api/profile/bind-placement",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/change-handle": {
+      "post": {
+        "summary": "改 handle：累进式冷却 — 第 N 次改需距上次 N × 12 月",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/change-name": {
+      "post": {
+        "summary": "POST /api/profile/change-name",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/clear-location": {
+      "post": {
+        "summary": "POST /api/profile/clear-location",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/confirm-email": {
+      "post": {
+        "summary": "绑定邮箱 — 步骤 2：确认验证码",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/default-address": {
+      "post": {
+        "summary": "默认地址（结构化 + 兼容旧 text/region）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/feed-visible": {
+      "patch": {
+        "summary": "隐私开关（旧 API，向后兼容；新代码用 PATCH /api/profile）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/placement-pref": {
+      "post": {
+        "summary": "POST /api/profile/placement-pref",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/placement-status": {
+      "get": {
+        "summary": "GET /api/profile/placement-status",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/region": {
+      "post": {
+        "summary": "POST /api/profile/region",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/remove-password": {
+      "post": {
+        "summary": "移除密码（恢复只用 API Key 模式）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/set-location": {
+      "post": {
+        "summary": "POST /api/profile/set-location",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/set-password": {
+      "post": {
+        "summary": "设置 / 修改密码",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/switch-role": {
+      "post": {
+        "summary": "POST /api/profile/switch-role",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/profile/verify-password": {
+      "post": {
+        "summary": "验证密码（显示 API Key 前的二次确认）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/promoter/dashboard": {
+      "get": {
+        "summary": "GET /api/promoter/dashboard",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/promoter/team": {
+      "get": {
+        "summary": "直推 L1 列表",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/protocol-status": {
+      "get": {
+        "summary": "GET /api/protocol-status",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/public-ideas": {
+      "post": {
+        "summary": "反 bot：honeypot 字段 + 单 IP+UA 联合 rate limit 5/h + 内容 hash 去重 1h",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/public/build-tasks": {
+      "get": {
+        "summary": "GET /api/public/build-tasks",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/public/build-tasks/:id": {
+      "get": {
+        "summary": "GET /api/public/build-tasks/:id",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/public/task-proposals": {
+      "post": {
+        "summary": "public submit — anonymous; proposer_account_id is never taken from the body (anti-spoof).",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/push/status": {
+      "get": {
+        "summary": "GET /api/push/status",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/push/subscribe": {
+      "delete": {
+        "summary": "DELETE /api/push/subscribe",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/push/subscribe",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/push/vapid-public-key": {
+      "get": {
+        "summary": "GET /api/push/vapid-public-key",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/qr": {
+      "get": {
+        "summary": "二维码生成（24h cache + ETag）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/recommendations/me": {
+      "get": {
+        "summary": "GET /api/recommendations/me",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/recover-key": {
+      "post": {
+        "summary": "POST /api/recover-key",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/recover-key/confirm": {
+      "post": {
+        "summary": "安全等价:本端点本就返回完整 api_key(最高凭证),允许同时重置密码不扩大权限面 —— 验证码已是同等门槛。",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/recover-key/start": {
+      "post": {
+        "summary": "步骤 1：发送验证码到已绑定邮箱（防泄露：找没找到都同响应）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/referral/me": {
+      "get": {
+        "summary": "B-1: 个人邀请 dashboard",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/register": {
+      "post": {
+        "summary": "注册新账户（buyer/seller/logistics/verifier/arbitrator）",
+        "tags": [
+          "auth"
+        ],
+        "security": [],
+        "requestBody": {
+          "type": "object",
+          "required": [
+            "name",
+            "role"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "用户名或店铺名"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "buyer",
+                "seller",
+                "logistics",
+                "verifier",
+                "arbitrator"
+              ]
+            },
+            "region": {
+              "type": "string",
+              "description": "ISO 国家代码（cn/us/sg 等）",
+              "example": "sg"
+            },
+            "handle": {
+              "type": "string",
+              "description": "ASCII handle，3-20 字符 [a-z0-9._]"
+            },
+            "email": {
+              "type": "string",
+              "format": "email"
+            },
+            "phone": {
+              "type": "string"
+            },
+            "referral_code": {
+              "type": "string",
+              "description": "推荐人 permanent_code"
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "user_id": {
+                "type": "string"
+              },
+              "api_key": {
+                "type": "string"
+              },
+              "permanent_code": {
+                "type": "string"
+              }
+            }
+          },
+          "400": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/register/send-code": {
+      "post": {
+        "summary": "注册场景需明确告知\"邮箱已占用\"(无法防枚举,标准取舍),但限流 + captcha 兜底。",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/reputation": {
+      "get": {
+        "summary": "GET /api/reputation",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/reputation/:userId": {
+      "get": {
+        "summary": "GET /api/reputation/:userId",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/return-requests": {
+      "get": {
+        "summary": "GET /api/return-requests",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/return-requests/:id": {
+      "delete": {
+        "summary": "DELETE /api/return-requests/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "─── W2 售后协商时间线 ───────────────────────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/return-requests/:id/decide": {
+      "post": {
+        "summary": "POST /api/return-requests/:id/decide",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/return-requests/:id/escalate": {
+      "post": {
+        "summary": "buyer 升级到争议（仅 rejected 后或 pending ≥ 7 天）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/return-requests/:id/messages": {
+      "post": {
+        "summary": "POST /api/return-requests/:id/messages",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/return-requests/:id/picked-up": {
+      "post": {
+        "summary": "L3 Phase 2: 物流揽收",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/return-requests/:id/received": {
+      "post": {
+        "summary": "L3 Phase 2: 卖家确认收到 → refunded",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/reviews/:type/:id/claim": {
+      "post": {
+        "summary": "POST /api/reviews/:type/:id/claim",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/reviews/:type/:id/claims": {
+      "get": {
+        "summary": "GET /api/reviews/:type/:id/claims",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/reviews/recent": {
+      "get": {
+        "summary": "GET /api/reviews/recent",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/rewards/apply": {
+      "post": {
+        "summary": "POST /api/rewards/apply — activate (or reconfirm) opt-in + drain escrow",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/rewards/deactivate": {
+      "post": {
+        "summary": "POST /api/rewards/deactivate — flip off; subsequent commissions → charity",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/rewards/status": {
+      "get": {
+        "summary": "GET /api/rewards/status — current state + escrow tally",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/rfqs": {
+      "get": {
+        "summary": "卖家 RFQ 看板",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "买家：创建 RFQ",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/rfqs/:id": {
+      "delete": {
+        "summary": "DELETE /api/rfqs/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "GET /api/rfqs/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/rfqs/:id/award": {
+      "post": {
+        "summary": "买家：选定 winning bid",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/rfqs/:id/bids": {
+      "post": {
+        "summary": "POST /api/rfqs/:id/bids",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/rfqs/mine": {
+      "get": {
+        "summary": "GET /api/rfqs/mine",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/search-by-link": {
+      "post": {
+        "summary": "POST /api/search-by-link",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/search-fuzzy": {
+      "get": {
+        "summary": "GET /api/search-fuzzy",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/secondhand": {
+      "get": {
+        "summary": "2. 列表（市场入口）",
+        "tags": [],
+        "security": []
+      },
+      "post": {
+        "summary": "1. 发布",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/secondhand/:id": {
+      "get": {
+        "summary": "4. 详情（view_count++）+ 同卖家其他在售",
+        "tags": [],
+        "security": []
+      },
+      "patch": {
+        "summary": "5. 编辑（仅 owner；可改 price / description / negotiable / status / fulfillment）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/secondhand/:id/order": {
+      "post": {
+        "summary": "6. 下单（CAS 锁库存）— money/escrow + pragma FK-OFF 窗口,保持同步,Phase 3 随资金路径迁移",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/secondhand/mine": {
+      "get": {
+        "summary": "3. 我的二手发布",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/seller/apply-quota-increase": {
+      "post": {
+        "summary": "POST /api/seller/apply-quota-increase",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/seller/insights": {
+      "get": {
+        "summary": "数据中心（30d GMV / 7d 曲线 / Top 5 / 客户洞察 / 状态分布）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/seller/quota-status": {
+      "get": {
+        "summary": "配额状态",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/seller/withdraw-quota-application": {
+      "post": {
+        "summary": "POST /api/seller/withdraw-quota-application",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/sellers/:seller_id/ratings": {
+      "get": {
+        "summary": "公开：卖家评价聚合（卖家主页）。注册在 /me 之后(见上面注释)。",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/sellers/me/analytics": {
+      "get": {
+        "summary": "卖家销售分析 (Wave C-5)",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/sellers/me/flash-sales": {
+      "get": {
+        "summary": "seller 自己的 flash sales（全部状态）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/sellers/me/ratings": {
+      "get": {
+        "summary": "⚠️ 必须注册在 /api/sellers/:seller_id/ratings 【之前】,否则 'me' 会被 :seller_id 参数路由抢匹配。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/sellers/me/return-stats": {
+      "get": {
+        "summary": "卖家退货仪表盘",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/share-link": {
+      "get": {
+        "summary": "pre-public 去左右码:不再接受/返回 side,放置侧别由注册时系统自动决定。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/shareables": {
+      "post": {
+        "summary": "创建笔记/外链 shareable（kind=note 时需 photo_hashes）",
+        "tags": [
+          "share"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "type": "object",
+          "required": [
+            "related_product_id"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "external",
+                "native_text",
+                "note"
+              ],
+              "default": "external"
+            },
+            "related_product_id": {
+              "type": "string"
+            },
+            "related_order_id": {
+              "type": "string",
+              "description": "kind=note 必填，必须是 me 的 completed 订单"
+            },
+            "related_anchor": {
+              "type": "string",
+              "description": "口令 @handle+middle"
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "external_url": {
+              "type": "string",
+              "format": "uri"
+            },
+            "native_text": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "photo_hashes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "kind=note 时必填，1-9 张图 sha256"
+            },
+            "parent_id": {
+              "type": "string",
+              "description": "转发原笔记 ID"
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "tags": {
+                "type": "array"
+              },
+              "mentions": {
+                "type": "array"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shareables/:id": {
+      "delete": {
+        "summary": "DELETE /api/shareables/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "summary": "笔记/外链详情（含 tags / owner_id / 关联商品）",
+        "tags": [
+          "share"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "photo_hashes": {
+                "type": "array"
+              },
+              "owner_id": {
+                "type": "string"
+              },
+              "owner_code": {
+                "type": "string"
+              },
+              "tags": {
+                "type": "array"
+              },
+              "product": {
+                "type": "object"
+              },
+              "stats": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "PATCH /api/shareables/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/shareables/:id/bookmark": {
+      "post": {
+        "summary": "切换收藏（toggle 模式，无单独 DELETE endpoint）",
+        "tags": [
+          "share"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "bookmarked": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shareables/:id/bookmark-status": {
+      "get": {
+        "summary": "查 bookmark 状态",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/shareables/:id/click": {
+      "post": {
+        "summary": "POST /api/shareables/:id/click",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/shareables/:id/comments": {
+      "get": {
+        "summary": "W6 笔记评论 — 楼中楼 1 层（root + replies）",
+        "tags": [],
+        "security": []
+      },
+      "post": {
+        "summary": "POST /api/shareables/:id/comments",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/shareables/:id/like": {
+      "post": {
+        "summary": "LIKE 系统：toggle 点赞（每用户对每 shareable 一票；不能给自己点）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/shareables/:id/like-status": {
+      "get": {
+        "summary": "查询单个 shareable 我是否点赞过（用于 UI 状态）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/shareables/by-anchor/:anchor": {
+      "get": {
+        "summary": "GET /api/shareables/by-anchor/:anchor",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/shareables/by-product/:pid": {
+      "get": {
+        "summary": "策展引用：按 click*1 + like*3 + induced_orders*10 加权排序，取 top 10",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/shareables/me": {
+      "get": {
+        "summary": "GET /api/shareables/me",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/shares/dashboard": {
+      "get": {
+        "summary": "分享中心 — 我买过的（每订单一行）+ 我的创作 + 团队",
+        "tags": [
+          "share"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "bought_products": {
+                "type": "array"
+              },
+              "my_creations": {
+                "type": "array"
+              },
+              "high_commission": {
+                "type": "array"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shop-referral/touch": {
+      "post": {
+        "summary": "POST /api/shop-referral/touch",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/shops/:identifier": {
+      "get": {
+        "summary": "GET /api/shops/:identifier",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/shops/me": {
+      "patch": {
+        "summary": "卖家更新自己店铺装饰",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/signaling/poll": {
+      "get": {
+        "summary": "GET /api/signaling/poll",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/signaling/send": {
+      "post": {
+        "summary": "POST /api/signaling/send",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skill-market": {
+      "get": {
+        "summary": "─── 公开列表 ───────────────────────────────────────────────",
+        "tags": [],
+        "security": []
+      },
+      "post": {
+        "summary": "─── 发布（任意登录用户）────────────────────────────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skill-market/:id": {
+      "get": {
+        "summary": "─── 公开详情 ───────────────────────────────────────────────",
+        "tags": [],
+        "security": []
+      },
+      "patch": {
+        "summary": "─── 修改 ───────────────────────────────────────────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skill-market/:id/delist": {
+      "post": {
+        "summary": "─── 下架 ───────────────────────────────────────────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skill-market/:id/purchase": {
+      "post": {
+        "summary": "─── 购买 / 解锁（free | one_time）──────────────────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skill-market/:id/read": {
+      "post": {
+        "summary": "─── 读取正文（per_use 按次扣费）────────────────────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skill-market/:id/resubmit": {
+      "post": {
+        "summary": "─── 重新提交审核 ───────────────────────────────────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skill-market/library": {
+      "get": {
+        "summary": "─── 我的技能库 ─────────────────────────────────────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skill-market/mine": {
+      "get": {
+        "summary": "─── 我发布的（须在 /:id 之前注册）───────────────────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skills": {
+      "get": {
+        "summary": "公开浏览",
+        "tags": [],
+        "security": []
+      },
+      "post": {
+        "summary": "发布",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skills/:id": {
+      "patch": {
+        "summary": "卖家：修改 Skill",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skills/:id/disable": {
+      "post": {
+        "summary": "卖家：停用",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skills/:id/subscribe": {
+      "delete": {
+        "summary": "取消订阅",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "订阅",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skills/mine": {
+      "get": {
+        "summary": "GET /api/skills/mine",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/skills/subscriptions": {
+      "get": {
+        "summary": "GET /api/skills/subscriptions",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/snf/:id/verify": {
+      "get": {
+        "summary": "验签（仅当事人或 arbitrator/admin）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/snf/ack": {
+      "post": {
+        "summary": "显式 ack（无 ids → ack 全部未读）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/snf/dead-letter": {
+      "get": {
+        "summary": "GET /api/snf/dead-letter",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/snf/designate": {
+      "get": {
+        "summary": "GET /api/snf/designate",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/snf/designate",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/snf/inbox": {
+      "get": {
+        "summary": "只读列表（不消费）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/snf/inbox/pull": {
+      "get": {
+        "summary": "协议级 pull — 一次性消费，agent / 内部组件用",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/snf/nack": {
+      "post": {
+        "summary": "Agent 处理失败 → nack 回放（超 5 次自动死信化）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/snf/pending": {
+      "get": {
+        "summary": "GET /api/snf/pending",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/snf/revive/:id": {
+      "post": {
+        "summary": "POST /api/snf/revive/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/snf/send": {
+      "post": {
+        "summary": "POST /api/snf/send",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/system-flags": {
+      "get": {
+        "summary": "GET /api/system-flags",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/tags/:tag/notes": {
+      "get": {
+        "summary": "话题/标签下笔记列表（公开）",
+        "tags": [
+          "share"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "name": "tag",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 30
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 30,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "tag": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer"
+              },
+              "items": {
+                "type": "array"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tags/trending": {
+      "get": {
+        "summary": "热门标签：24h + 总数综合排序",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/tasks/:key/claim": {
+      "post": {
+        "summary": "POST /api/tasks/:key/claim",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/tokenomics/status": {
+      "get": {
+        "summary": "GET /api/tokenomics/status",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/trial-campaigns/:campaign_id/claims": {
+      "get": {
+        "summary": "卖家：查看某活动的 claims 详情",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/trial-claims/:claim_id/link-note": {
+      "post": {
+        "summary": "买家关联笔记",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/users/:id/auctions": {
+      "get": {
+        "summary": "用户进行中拍卖（公开：open）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/users/:id/bookmarked-shareables": {
+      "get": {
+        "summary": "我收藏过的 shareables（仅 owner 自己可见）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/users/:id/liked-shareables": {
+      "get": {
+        "summary": "用户赞过的 shareables（仅 owner 可见）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/users/:id/products": {
+      "get": {
+        "summary": "用户在售商品（公开：卖家 active 商品）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/users/:id/public-card": {
+      "get": {
+        "summary": "公开卡（未登录可调，分享 banner 用）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/users/:id/pv-summary": {
+      "get": {
+        "summary": "PV 简报：组织图点击节点用",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/users/:id/reputation": {
+      "get": {
+        "summary": "公开 reputation — 仅 level",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/users/:id/reviews": {
+      "get": {
+        "summary": "用户写的测评（公开：作为买家给出的评价）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/users/:id/secondhand": {
+      "get": {
+        "summary": "用户在售二手（公开：available + reserved）",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/users/:id/shareables": {
+      "get": {
+        "summary": "用户公开 shareables",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/users/:user_id": {
+      "get": {
+        "summary": "公开用户主页 + D2 信誉徽章墙",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/verifier/appeal": {
+      "post": {
+        "summary": "POST /api/verifier/appeal",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/verifier/apply": {
+      "post": {
+        "summary": "POST /api/verifier/apply",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/verifier/eligibility": {
+      "get": {
+        "summary": "GET /api/verifier/eligibility",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/verifier/me/kpi": {
+      "get": {
+        "summary": "Verifier KPI（白名单 tier / 配额 / 准确率 / 窗口奖励）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/verifier/status": {
+      "get": {
+        "summary": "GET /api/verifier/status",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/verifier/withdraw-application": {
+      "post": {
+        "summary": "POST /api/verifier/withdraw-application",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/verify-price": {
+      "post": {
+        "summary": "下单前价格锁定 — 返回 session_token 避免决策与下单之间漂移",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "type": "object",
+          "required": [
+            "product_id"
+          ],
+          "properties": {
+            "product_id": {
+              "type": "string"
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "session_token": {
+                "type": "string"
+              },
+              "price": {
+                "type": "number"
+              },
+              "expires_at": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/verify-stats": {
+      "get": {
+        "summary": "GET /api/verify-stats",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/verify-tasks/:id/confirm": {
+      "post": {
+        "summary": "卖家确认：已在原平台添加验证码 → 任务进入分配池",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/verify-tasks/:id/submit": {
+      "post": {
+        "summary": "验证者：提交验证结果（填入式）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/verify-tasks/by-product/:productId": {
+      "get": {
+        "summary": "卖家：查询某商品的进行中验证任务（供编辑页展示验证码）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/verify-tasks/mine": {
+      "get": {
+        "summary": "GET /api/verify-tasks/mine",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/verify-tasks/my-claims": {
+      "get": {
+        "summary": "卖家：查询我发起的所有认领任务（用于\"查看任务进度\"页）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/verify-tasks/open": {
+      "get": {
+        "summary": "公开验证大厅 — 仅显示分配给我的未提交任务",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/waitlist": {
+      "get": {
+        "summary": "GET /api/waitlist",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wallet": {
+      "get": {
+        "summary": "钱包状态",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wallet/connect/challenge": {
+      "post": {
+        "summary": "POST /api/wallet/connect/challenge",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wallet/connect/verify": {
+      "post": {
+        "summary": "POST /api/wallet/connect/verify",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wallet/deposit-qr": {
+      "get": {
+        "summary": "充值地址 QR — SVG（轻量 + 矢量，移动端扫码体验最佳）",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wallet/deposits": {
+      "get": {
+        "summary": "GET /api/wallet/deposits",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wallet/income": {
+      "get": {
+        "summary": "收入构成：销售 / 分享归因 / PV 记录(pre-launch,若适用)",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wallet/rate": {
+      "get": {
+        "summary": "公开汇率",
+        "tags": [
+          "wallet"
+        ],
+        "security": []
+      }
+    },
+    "/api/wallet/topup": {
+      "post": {
+        "summary": "POST /api/wallet/topup",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wallet/whitelist": {
+      "get": {
+        "summary": "白名单 GET / POST / DELETE",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/wallet/whitelist",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wallet/whitelist/:id": {
+      "delete": {
+        "summary": "DELETE /api/wallet/whitelist/:id",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wallet/withdraw": {
+      "post": {
+        "summary": "提现申请（含 KYC 双维度 + WebAuthn gate + 白名单 24h 冷却）",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "webauthnToken": []
+          }
+        ],
+        "requestBody": {
+          "type": "object",
+          "required": [
+            "to_address",
+            "amount"
+          ],
+          "properties": {
+            "to_address": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
+            "amount": {
+              "type": "number",
+              "minimum": 10
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "withdrawal_id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          },
+          "403": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "string"
+              },
+              "error_code": {
+                "enum": [
+                  "KYC_REQUIRED_FOR_WITHDRAW",
+                  "TRUSTED_ROLE_NO_WALLET",
+                  "WEBAUTHN_REQUIRED"
+                ]
+              },
+              "trigger": {
+                "enum": [
+                  "single",
+                  "daily_cumulative"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wallet/withdraw/:id/confirm": {
+      "post": {
+        "summary": "大额提现：邮件验证码确认",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wallet/withdrawals": {
+      "get": {
+        "summary": "我的提现记录",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wallet/withdrawals/:id/cancel": {
+      "post": {
+        "summary": "用户取消尚未 approve 的 withdrawal — 余额自动退回",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/webauthn/auth/finish": {
+      "post": {
+        "summary": "4. 认证：finish — 验证签名 + 颁发短 gate token",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/webauthn/auth/start": {
+      "post": {
+        "summary": "3. 认证：start — 生成 challenge（指定 purpose + 业务数据；同一 challenge 不可复用）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/webauthn/credentials": {
+      "get": {
+        "summary": "列出 / 删除 credential",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/webauthn/credentials/:id": {
+      "delete": {
+        "summary": "DELETE /api/webauthn/credentials/:id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/webauthn/register/finish": {
+      "post": {
+        "summary": "2. 注册：finish — 验证 + 入库",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/webauthn/register/start": {
+      "post": {
+        "summary": "1. 注册：start — 生成 challenge + 选项",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/webauthn/settings": {
+      "post": {
+        "summary": "POST /api/webauthn/settings",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/webhooks": {
+      "get": {
+        "summary": "GET 我的订阅",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST 订阅",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/webhooks/:id": {
+      "delete": {
+        "summary": "DELETE",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "summary": "PATCH active toggle",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/webhooks/test": {
+      "post": {
+        "summary": "P2.4 测试端点：subscribe 前先验 endpoint 可达 + 不私网",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wishes": {
+      "get": {
+        "summary": "GET /api/wishes — 浏览（匿名可访问）",
+        "tags": [],
+        "security": []
+      },
+      "post": {
+        "summary": "POST /api/wishes — 发布愿望",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wishes/:id": {
+      "get": {
+        "summary": "GET /api/wishes/:id — 详情",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/wishes/:id/cancel": {
+      "post": {
+        "summary": "POST /api/wishes/:id/cancel — 许愿人取消（仅 open 状态）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wishes/:id/confirm": {
+      "post": {
+        "summary": "POST /api/wishes/:id/confirm — 许愿人确认",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wishes/:id/disclose": {
+      "post": {
+        "summary": "POST /api/wishes/:id/disclose — 申请公开（双方同意才公开）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wishes/:id/fulfill": {
+      "post": {
+        "summary": "/claim 让 fraud-claim 独占（与 secondhand/auctions 三垂类对称）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wishes/:id/proof": {
+      "post": {
+        "summary": "POST /api/wishes/:id/proof — 提交证据",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wishes/:id/repay": {
+      "post": {
+        "summary": "还愿：许愿人发起",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wishes/:id/repay/:rid/respond": {
+      "post": {
+        "summary": "施善人响应还愿（accept / decline_to_fund）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wishes/:id/report": {
+      "post": {
+        "summary": "P2.3 — 举报愿望",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wishlist": {
+      "get": {
+        "summary": "GET /api/wishlist",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wishlist/:product_id": {
+      "delete": {
+        "summary": "DELETE /api/wishlist/:product_id",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "─── Wave A-1: 心愿单 ────────────────────────────────────",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/wishlist/:product_id/check": {
+      "get": {
+        "summary": "GET /api/wishlist/:product_id/check",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  }
+}

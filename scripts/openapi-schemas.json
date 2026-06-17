@@ -1,0 +1,286 @@
+{
+  "_meta": {
+    "description": "手动维护的 endpoint schema 覆盖（top 核心 path）— gen-openapi.ts 读取并合并到自动生成 inventory",
+    "covered_endpoints": 17,
+    "last_updated": "2026-05-22"
+  },
+  "endpoints": {
+    "POST /api/register": {
+      "summary": "注册新账户（buyer/seller/logistics/verifier/arbitrator）",
+      "tags": ["auth"],
+      "requestBody": {
+        "type": "object",
+        "required": ["name", "role"],
+        "properties": {
+          "name": { "type": "string", "description": "用户名或店铺名" },
+          "role": { "type": "string", "enum": ["buyer", "seller", "logistics", "verifier", "arbitrator"] },
+          "region": { "type": "string", "description": "ISO 国家代码（cn/us/sg 等）", "example": "sg" },
+          "handle": { "type": "string", "description": "ASCII handle，3-20 字符 [a-z0-9._]" },
+          "email": { "type": "string", "format": "email" },
+          "phone": { "type": "string" },
+          "referral_code": { "type": "string", "description": "推荐人 permanent_code" }
+        }
+      },
+      "responses": {
+        "200": { "type": "object", "properties": { "user_id": {"type":"string"}, "api_key": {"type":"string"}, "permanent_code": {"type":"string"} } },
+        "400": { "type": "object", "properties": { "error": {"type":"string"} } }
+      }
+    },
+
+    "POST /api/orders": {
+      "summary": "创建订单（含分享分润链路追踪）",
+      "tags": ["order"],
+      "security": [{"bearerAuth": []}],
+      "requestBody": {
+        "type": "object",
+        "required": ["product_id", "shipping_address"],
+        "properties": {
+          "product_id": { "type": "string" },
+          "shipping_address": { "type": "string", "description": "完整收货地址" },
+          "quantity": { "type": "integer", "default": 1 },
+          "variant_id": { "type": "string", "description": "SKU 规格 ID（可选）" },
+          "notes": { "type": "string", "description": "买家备注" },
+          "sponsor_hint": { "type": "string", "description": "推荐人 user_id / permanent_code（三层归属用）" },
+          "coupon_code": { "type": "string" },
+          "buy_insurance": { "type": "boolean", "default": false },
+          "expected_price": { "type": "number", "description": "防价格漂移（session_token 模式）" }
+        }
+      },
+      "responses": {
+        "200": { "type": "object", "properties": { "order_id": {"type":"string"}, "status": {"type":"string"}, "total_amount": {"type":"number"} } },
+        "400": { "type": "object", "properties": { "error": {"type":"string"} } },
+        "402": { "type": "object", "description": "钱包余额不足" }
+      }
+    },
+
+    "POST /api/shareables": {
+      "summary": "创建笔记/外链 shareable（kind=note 时需 photo_hashes）",
+      "tags": ["share"],
+      "security": [{"bearerAuth": []}],
+      "requestBody": {
+        "type": "object",
+        "required": ["related_product_id"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["external", "native_text", "note"], "default": "external" },
+          "related_product_id": { "type": "string" },
+          "related_order_id": { "type": "string", "description": "kind=note 必填，必须是 me 的 completed 订单" },
+          "related_anchor": { "type": "string", "description": "口令 @handle+middle" },
+          "title": { "type": "string", "maxLength": 100 },
+          "external_url": { "type": "string", "format": "uri" },
+          "native_text": { "type": "string", "maxLength": 2000 },
+          "photo_hashes": { "type": "array", "items": {"type": "string"}, "description": "kind=note 时必填，1-9 张图 sha256" },
+          "parent_id": { "type": "string", "description": "转发原笔记 ID" }
+        }
+      },
+      "responses": {
+        "200": { "type": "object", "properties": { "id": {"type":"string"}, "type": {"type":"string"}, "tags": {"type":"array"}, "mentions": {"type":"array"} } }
+      }
+    },
+
+    "POST /api/wallet/withdraw": {
+      "summary": "提现申请（含 KYC 双维度 + WebAuthn gate + 白名单 24h 冷却）",
+      "tags": ["wallet"],
+      "security": [{"bearerAuth": []}, {"webauthnToken": []}],
+      "requestBody": {
+        "type": "object",
+        "required": ["to_address", "amount"],
+        "properties": {
+          "to_address": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+          "amount": { "type": "number", "minimum": 10 }
+        }
+      },
+      "responses": {
+        "200": { "type": "object", "properties": { "withdrawal_id": {"type":"string"}, "status": {"type":"string"} } },
+        "403": { "type": "object", "properties": { "error": {"type":"string"}, "error_code": { "enum": ["KYC_REQUIRED_FOR_WITHDRAW", "TRUSTED_ROLE_NO_WALLET", "WEBAUTHN_REQUIRED"] }, "trigger": { "enum": ["single", "daily_cumulative"] } } }
+      }
+    },
+
+    "POST /api/disputes": {
+      "summary": "发起争议（订单付款后 14 天内）",
+      "tags": ["dispute"],
+      "security": [{"bearerAuth": []}],
+      "requestBody": {
+        "type": "object",
+        "required": ["order_id", "reason"],
+        "properties": {
+          "order_id": { "type": "string" },
+          "reason": { "type": "string", "enum": ["not_received", "damaged", "fake", "wrong_item", "other"] },
+          "description": { "type": "string", "maxLength": 1000 },
+          "refund_amount": { "type": "number", "description": "期望退款额（可选）" }
+        }
+      },
+      "responses": {
+        "200": { "type": "object", "properties": { "dispute_id": {"type":"string"}, "deadline_at": {"type":"string"} } }
+      }
+    },
+
+    "POST /api/anchor/generate": {
+      "summary": "生成流量口令 anchor（handle + middle 4 字符）",
+      "tags": ["anchor"],
+      "security": [{"bearerAuth": []}],
+      "requestBody": {
+        "type": "object",
+        "required": ["middle", "target_kind", "target_id"],
+        "properties": {
+          "middle": { "type": "string", "minLength": 4, "maxLength": 4, "description": "4 字符 [a-z0-9]，需 ≥1 数字，禁顺序/保留词/oil 混淆" },
+          "target_kind": { "type": "string", "enum": ["user", "product", "shareable", "dispute_case"] },
+          "target_id": { "type": "string" }
+        }
+      },
+      "responses": {
+        "200": { "type": "object", "properties": { "anchor": {"type":"string"}, "tier_letter": {"type":"string"} } },
+        "400": { "type": "object", "properties": { "error": {"type":"string"}, "reason": { "enum": ["middle_invalid", "anchor_taken", "anchor_retired_not_yet_reclaimable", "anchor_in_priority_window", "quota_max_total_100", "quota_max_per_day_5"] } } }
+      }
+    },
+
+    "GET /api/anchor/:code/lookup": {
+      "summary": "查口令 — anchor lookup（公开，不需 auth）",
+      "tags": ["anchor"],
+      "responses": {
+        "200": { "type": "object", "properties": { "found": {"type":"boolean"}, "status": {"enum":["active","retired","reclaimable"]}, "target_kind": {"type":"string"}, "target_id": {"type":"string"}, "tier_letter": {"type":"string"} } }
+      }
+    },
+
+    "POST /api/shareables/:id/bookmark": {
+      "summary": "切换收藏（toggle 模式，无单独 DELETE endpoint）",
+      "tags": ["share"],
+      "security": [{"bearerAuth": []}],
+      "responses": {
+        "200": { "type": "object", "properties": { "bookmarked": {"type":"boolean"} } }
+      }
+    },
+
+    "GET /api/shareables/:id": {
+      "summary": "笔记/外链详情（含 tags / owner_id / 关联商品）",
+      "tags": ["share"],
+      "responses": {
+        "200": { "type": "object", "properties": { "id": {"type":"string"}, "type": {"type":"string"}, "title": {"type":"string"}, "body": {"type":"string"}, "photo_hashes": {"type":"array"}, "owner_id": {"type":"string"}, "owner_code": {"type":"string"}, "tags": {"type":"array"}, "product": {"type":"object"}, "stats": {"type":"object"} } }
+      }
+    },
+
+    "GET /api/tags/:tag/notes": {
+      "summary": "话题/标签下笔记列表（公开）",
+      "tags": ["share"],
+      "parameters": [
+        { "name": "tag", "in": "path", "required": true, "schema": {"type":"string", "maxLength": 30} },
+        { "name": "limit", "in": "query", "schema": {"type":"integer", "default": 30, "maximum": 50} }
+      ],
+      "responses": {
+        "200": { "type": "object", "properties": { "tag": {"type":"string"}, "count": {"type":"integer"}, "items": {"type":"array"} } }
+      }
+    },
+
+    "GET /api/health": {
+      "summary": "健康检查 — LB / k8s readinessProbe（不需 auth）",
+      "tags": ["ops"],
+      "responses": {
+        "200": { "type": "object", "properties": { "status": {"enum":["ok","degraded"]}, "uptime_sec": {"type":"integer"}, "db": {"type": "object", "properties": {"ok":{"type":"boolean"}, "latency_ms":{"type":"integer"}}}, "seed_strength": {"enum":["default","weak","strong"]}, "env": {"type":"string"}, "check_ms": {"type":"integer"} } },
+        "503": { "type": "object", "description": "DB 不通时返 503 — LB 自动剔除" }
+      }
+    },
+
+    "POST /api/error-report": {
+      "summary": "前端错误上报（30/min/IP 限流，不需 auth）",
+      "tags": ["ops"],
+      "requestBody": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string", "maxLength": 1000 },
+          "stack": { "type": "string", "maxLength": 4000 },
+          "url": { "type": "string", "format": "uri" }
+        }
+      },
+      "responses": {
+        "200": { "type": "object", "properties": { "ok": { "const": true } } },
+        "400": { "type": "object", "properties": { "error": { "const": "message required" } } },
+        "429": { "type": "object", "properties": { "error": { "const": "rate_limited" } } }
+      }
+    },
+
+    "POST /api/agent-buy": {
+      "summary": "Agent 智能下单 — 外链/搜索词输入 → 自动比价 + 推荐 / 锁价",
+      "tags": ["agent"],
+      "security": [{"bearerAuth": []}],
+      "requestBody": {
+        "type": "object",
+        "properties": {
+          "source_url": { "type": "string", "format": "uri", "description": "外站链接（淘宝/京东/Amazon 等）" },
+          "shipping_address": { "type": "string" },
+          "auto_buy": { "type": "boolean", "default": false, "description": "true 时自动下单，false 时仅返回推荐" }
+        }
+      },
+      "responses": {
+        "200": { "type": "object", "properties": { "recommendation": {"enum":["buy_webaz","buy_source","no_match"]}, "best_product": {"type":"object"}, "webaz_products": {"type":"array"}, "order_id": {"type":"string", "description": "仅 auto_bought=true 时"}, "auto_bought": {"type":"boolean"} } }
+      }
+    },
+
+    "POST /api/verify-price": {
+      "summary": "下单前价格锁定 — 返回 session_token 避免决策与下单之间漂移",
+      "tags": ["wallet"],
+      "security": [{"bearerAuth": []}],
+      "requestBody": {
+        "type": "object",
+        "required": ["product_id"],
+        "properties": {
+          "product_id": { "type": "string" }
+        }
+      },
+      "responses": {
+        "200": { "type": "object", "properties": { "session_token": {"type":"string"}, "price": {"type":"number"}, "expires_at": {"type":"string"} } }
+      }
+    },
+
+    "GET /api/products": {
+      "summary": "商品列表（含 q exact match / fuzzy / ship_to / 排序）",
+      "tags": ["product"],
+      "parameters": [
+        { "name": "q", "in": "query", "schema": {"type":"string"}, "description": "精确商品标题（exact match）" },
+        { "name": "fuzzy", "in": "query", "schema": {"type":"boolean", "default": false}, "description": "true 时模糊匹配" },
+        { "name": "category", "in": "query", "schema": {"type":"string"} },
+        { "name": "max_price", "in": "query", "schema": {"type":"number"} },
+        { "name": "ship_to", "in": "query", "schema": {"type":"string"}, "description": "ISO region 过滤可派送" },
+        { "name": "mode", "in": "query", "schema": {"enum":["pwa","agent","raw"], "default":"pwa"} },
+        { "name": "sort", "in": "query", "schema": {"enum":["trending","cheap","new","completion"]} },
+        { "name": "limit", "in": "query", "schema": {"type":"integer", "default": 20, "maximum": 100} }
+      ],
+      "responses": {
+        "200": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+
+    "POST /api/products": {
+      "summary": "上架商品（卖家 only）— 含 stake 锁定机制",
+      "tags": ["product"],
+      "security": [{"bearerAuth": []}],
+      "requestBody": {
+        "type": "object",
+        "required": ["title", "price"],
+        "properties": {
+          "title": { "type": "string", "maxLength": 200 },
+          "price": { "type": "number", "minimum": 0.01 },
+          "category": { "type": "string" },
+          "category_id": { "type": "string" },
+          "description": { "type": "string", "maxLength": 5000 },
+          "stock": { "type": "integer", "default": 1 },
+          "commission_rate": { "type": "number", "minimum": 0, "maximum": 0.50, "description": "分享分润率（默认 0.05）" },
+          "images": { "type": "array", "items": {"type":"string"} },
+          "min_return_days": { "type": "integer", "default": 7 },
+          "max_handling_hours": { "type": "integer", "default": 48 }
+        }
+      },
+      "responses": {
+        "200": { "type": "object", "properties": { "product_id": {"type":"string"} } }
+      }
+    },
+
+    "GET /api/shares/dashboard": {
+      "summary": "分享中心 — 我买过的（每订单一行）+ 我的创作 + 团队",
+      "tags": ["share"],
+      "security": [{"bearerAuth": []}],
+      "responses": {
+        "200": { "type": "object", "properties": { "bought_products": {"type":"array"}, "my_creations": {"type":"array"}, "high_commission": {"type":"array"} } }
+      }
+    }
+  }
+}

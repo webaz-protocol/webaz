@@ -1,0 +1,14 @@
+{
+  "repository": { "id": "R_webaz", "owner": { "login": "seasonsagents-art" }, "name": "webaz", "visibility": "private" },
+  "pull_request": {
+    "number": 103, "node_id": "PR_kwDO103", "merged": false, "state": "closed",
+    "merged_at": null, "merge_commit_sha": null,
+    "base": { "ref": "main" }, "head": { "ref": "feat/rejected", "sha": "3333333333333333333333333333333333333333" },
+    "user": { "id": "U_carol", "login": "carol" }, "merged_by": null
+  },
+  "commit_authors": [ { "author_id": "U_carol", "login": "carol", "name": "Carol", "is_coauthor": false } ],
+  "check_conclusions": ["failure"],
+  "reviews": [ { "state": "CHANGES_REQUESTED", "user_id": "U_holden" } ],
+  "dco_state": "present",
+  "observed_at": "2026-06-11T00:00:00Z"
+}

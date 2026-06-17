@@ -1,0 +1,14 @@
+{
+  "repository": { "id": "R_webaz", "owner": { "login": "seasonsagents-art" }, "name": "webaz", "visibility": "private" },
+  "pull_request": {
+    "number": 108, "node_id": "PR_kwDO108", "merged": true, "state": "closed",
+    "merged_at": "2026-06-10T18:00:00Z", "merge_commit_sha": null,
+    "base": { "ref": "main" }, "head": { "ref": "feat/x", "sha": "8888888888888888888888888888888888888888" },
+    "user": { "id": "U_frank", "login": "frank" }, "merged_by": { "id": "U_holden" }
+  },
+  "commit_authors": [],
+  "check_conclusions": ["success"],
+  "reviews": [],
+  "dco_state": "unknown",
+  "observed_at": "2026-06-11T00:00:00Z"
+}

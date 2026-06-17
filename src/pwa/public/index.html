@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN" id="html-root">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>WebAZ — Agent-native decentralized commerce protocol</title>
+  <!-- Crawler / agent discoverability (static, no-JS): so a fetch of this page returns real meaning, not an empty shell. -->
+  <meta name="description" content="WebAZ is an open, agent-native decentralized commerce protocol. Every order is escrow-protected and flows through a state machine; on timeout the protocol auto-rules fault and executes remedy. Buyers get escrow + automatic refunds + transparent seller reputation, price history and arbitration precedents; AI agents browse, order, compare and fulfill via MCP. Pre-launch (simulated test currency, no real settlement yet).">
+  <link rel="canonical" href="https://webaz.xyz/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="WebAZ">
+  <meta property="og:url" content="https://webaz.xyz/">
+  <meta property="og:title" content="WebAZ — Agent-native decentralized commerce protocol">
+  <meta property="og:description" content="Escrow-protected, state-machine commerce: timeouts auto-rule fault + remedy. Buyers get escrow + auto-refund + transparent reputation; AI agents transact via MCP. Pre-launch.">
+  <meta property="og:image" content="https://webaz.xyz/webaz-logo.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="WebAZ — Agent-native decentralized commerce protocol">
+  <meta name="twitter:description" content="Escrow-protected, state-machine commerce. Buyers: escrow + auto-refund + transparent reputation. Agents transact via MCP. Pre-launch.">
+  <meta name="twitter:image" content="https://webaz.xyz/webaz-logo.png">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="WebAZ">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+  <div id="app"></div>
+  <!-- No-JS / crawler fallback: real content for fetchers that don't run the SPA (fixes "scrape only sees an empty <title>"). -->
+  <noscript>
+    <main style="max-width:680px;margin:40px auto;padding:0 20px;font-family:system-ui,sans-serif;line-height:1.7;color:#1f2937">
+      <h1>WebAZ — Agent-native decentralized commerce protocol</h1>
+      <p>WebAZ is an open, agent-native decentralized commerce protocol. Every order is escrow-protected and flows through a state machine; if a responsible party times out, the protocol automatically rules fault and executes the remedy.</p>
+      <p><strong>For buyers:</strong> funds are held in escrow and released only after you confirm receipt; sellers who don't accept/ship/deliver in time trigger an automatic refund; disputes are decided with evidence + neutral arbitration; seller reputation, price history and arbitration precedents are public before you buy.</p>
+      <p><strong>For AI agents:</strong> browse, compare, order and track fulfillment via the Model Context Protocol (MCP). Protocol state is public at <a href="/.well-known/webaz-protocol.json">/.well-known/webaz-protocol.json</a>; the integration contract is at <a href="/.well-known/webaz-integration.json">/.well-known/webaz-integration.json</a>.</p>
+      <p><strong>Status:</strong> pre-launch — WAZ is a simulated test currency; no real money settles yet.</p>
+      <p><strong>Browse now — no account needed:</strong> <a href="/#discover">/#discover</a> · <strong>Want in?</strong> Pre-launch is invite-gated; request an invite (leave your email) at <a href="/#welcome">/#welcome</a>.</p>
+      <p><strong>Follow the launch:</strong> live protocol pulse (real counts + milestones) at <a href="/.well-known/webaz-launch-pulse.json">/.well-known/webaz-launch-pulse.json</a> — watch it wake up.</p>
+      <p style="color:#6b7280;font-size:14px">Source repo opens at public launch — <a href="https://github.com/webaz-protocol/webaz">github.com/webaz-protocol/webaz</a> may 404 until then; the full machine-readable spec is already public at <a href="/.well-known/webaz-integration.json">/.well-known/webaz-integration.json</a>.</p>
+      <p style="color:#6b7280;font-size:14px">This page is an interactive app and needs JavaScript for full functionality.</p>
+    </main>
+  </noscript>
+  <script src="/i18n.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

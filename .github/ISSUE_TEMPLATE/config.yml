@@ -1,0 +1,26 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussion (general question / 一般讨论)
+    url: https://github.com/webaz-protocol/webaz/discussions
+    about: |
+      使用范围 / When to use:
+        提问、想法、社区互动、不确定是否是 bug/feature 时
+        Questions, ideas, community chat, when you're not sure if it's a bug/feature.
+
+  - name: 🛡 Security vulnerability (安全漏洞)
+    url: https://github.com/webaz-protocol/webaz/security/advisories/new
+    about: |
+      ⚠️ 请不要在公开 issue 里报告安全漏洞。
+      ⚠️ Do NOT report security vulnerabilities in public issues.
+      使用 GitHub Security Advisory 私下提交。
+      pre-launch 阶段由 @seasonkoh 一人处理。
+      Use GitHub Security Advisory privately.
+      Pre-launch: handled by @seasonkoh solo.
+
+  - name: 📜 Meta-rule revision (元规则修订)
+    url: https://github.com/webaz-protocol/webaz/discussions/new?category=rfc
+    about: |
+      修订 10 元规则之一?走 RFC + 60 天公示流程(CHARTER §6 + §3.2 emergency-revoke gate)。
+      Revising one of the 10 meta-rules? Follow RFC + 60-day public notice (CHARTER §6).
+      请先开 RFC discussion,被采纳后再开 PR。
+      Open an RFC discussion first; PR comes after acceptance.

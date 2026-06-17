@@ -1,0 +1,791 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 止血:同一 PR/分支连续 push 时,取消同组里仍在跑的过期 run,只保留最新一轮 —— 防重复烧 Actions 分钟。
+# group = workflow + ref:pull_request 的 github.ref = refs/pull/<n>/merge(每个 PR 唯一),push 的 =
+# refs/heads/<branch>(每条分支唯一),因此只取消"同一 PR / 同一分支"的过期 run,不会跨 PR 互相取消。
+# 不减少任何 guard 覆盖:被取消的只是已被新 commit 取代的旧 run,最新 commit 仍跑全部 job。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# CI 目标(phase A 阶段):
+# - typecheck(tsc 编译通过)
+# - schema verify(scripts/schema-verify.ts;wait-for sentinel 防 ALTER race)
+# - DCO sign-off 检查(commit message 必须含 Signed-off-by 或 Co-authored-by;-i 大小写不敏感)
+# - license invariants(scripts/license-invariant-check.ts;RFC-001 §8 mechanical enforce)
+# CI scope (phase A):
+# - typecheck (tsc must compile)
+# - schema verify (sentinel-waited, ALTER-race safe)
+# - DCO sign-off check
+# - license invariants (RFC-001 §8: LICENSE / CHARTER / DCO / dep-policy consistency)
+#
+# 后续(phase B/C)扩展:
+# - de-MLM grep guard(等 ~25 MLM 词清理后启用)
+# - RFC-002 v2 guard(等 rewards opt-in 实施后)
+# - 协议级集成测试 / PWA e2e / MCP tool surface test
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    name: typecheck (npm run build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      # whitepaper public HTML (/whitepaper/{en,zh-CN}) is generated from docs/WHITEPAPER*.md by the build
+      # step above; fail if the committed copy drifted from the source docs (regenerate with npm run build).
+      - run: git diff --exit-code -- src/pwa/public/whitepaper
+      # public API docs (openapi.json + api-endpoints.md) are generated from server.ts + routes/*.ts by
+      # scripts/gen-openapi.ts; fail if the committed copy drifted (regenerate with `npm run gen:api-docs`).
+      - run: npm run check:api-docs-fresh
+      # tsc does not parse the plain-JS PWA bundle; a stray escape there breaks the whole app.js at runtime.
+      - run: npm run check:pwa-syntax
+
+  secret-scan:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # gitleaks detect scans the full commit history; a shallow clone would miss commits
+      - name: Install gitleaks
+        run: |
+          VERSION=8.30.1
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+      # Fails (exit 1) on any secret not covered by the minimal verified-false-positive allowlist in .gitleaks.toml.
+      - name: Scan committed history for secrets
+        run: gitleaks detect --no-banner --redact --config .gitleaks.toml --exit-code 1
+
+  schema-verify:
+    name: schema verify
+    runs-on: ubuntu-latest
+    needs: typecheck
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Initialize DB (boot server until "已启动" sentinel, then kill)
+        run: |
+          mkdir -p ~/.webaz
+          # Server (src/pwa/server.ts) runs CREATE TABLE + ALTER TABLE at module top-level,
+          # then prints "✅ WebAZ 已启动" once boot complete (all schema migrations done).
+          # Waiting for that sentinel is safer than waiting for the DB file (which
+          # appears at first CREATE TABLE — before later ALTERs have run).
+          npm run pwa > /tmp/pwa.log 2>&1 &
+          PWA_PID=$!
+          # Wait up to 30s for boot-complete sentinel
+          for i in $(seq 1 60); do
+            if grep -q "WebAZ 已启动" /tmp/pwa.log 2>/dev/null; then
+              echo "✓ Boot complete after $((i * 5))00ms"
+              break
+            fi
+            # Detect early server crash
+            if ! kill -0 "$PWA_PID" 2>/dev/null; then
+              echo "::error::Server crashed before printing boot-complete sentinel"
+              echo "=== pwa boot log ==="
+              cat /tmp/pwa.log
+              exit 1
+            fi
+            sleep 0.5
+          done
+          kill "$PWA_PID" 2>/dev/null || true
+          wait "$PWA_PID" 2>/dev/null || true
+          if ! grep -q "WebAZ 已启动" /tmp/pwa.log; then
+            echo "::error::Boot sentinel timeout — server didn't print '已启动' within 30s"
+            echo "=== pwa boot log ==="
+            cat /tmp/pwa.log
+            exit 1
+          fi
+          ls -la ~/.webaz/
+
+      - run: npm run schema:verify
+
+  pg-schema-verify:
+    name: pg schema verify (static dialect lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      # Codex #297 P2-2: guard the generated PG DDL in CI. With NO local SQLite DB and NO DATABASE_URL,
+      # pg:verify runs ONLY its static dialect-leak lint (SQLite-isms that would break a PG import) —
+      # which is env-independent. The parity layer (artifact vs a live SQLite introspection) and the
+      # live-connect smoke remain LOCAL-only (parity needs a built DB; live needs a real Postgres).
+      - run: npm run pg:verify
+      - name: On failure — PG dialect leak
+        if: failure()
+        run: |
+          echo "::error title=PG schema dialect leak::"
+          echo "db/schema.pg.sql contains a SQLite-ism that would break a PostgreSQL import"
+          echo "(datetime()/AUTOINCREMENT/INTEGER/REAL/BLOB/?-placeholder/double-quote default/reserved word)."
+          echo "Regenerate with: npm run pg:schema   (then re-run npm run pg:verify locally for parity)."
+
+  dco-check:
+    name: DCO sign-off check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify DCO sign-off on PR commits
+        id: dco
+        run: |
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          # Fetch base branch (full, since fetch-depth:0 above means we're not shallow)
+          # Then compute merge-base (rebase / force-push friendly)
+          git fetch origin "$BASE_REF"
+          BASE_SHA=$(git merge-base "origin/$BASE_REF" "$HEAD_SHA")
+          echo "Comparing $BASE_SHA..$HEAD_SHA"
+          MISSING=0
+          # DCO requires name AND email per Linux convention
+          # Co-authored-by per GitHub convention (case-insensitive)
+          DCO_RE='^(Signed-off-by|Co-authored-by):[[:space:]]+.+[[:space:]]+<[^@]+@[^>]+>'
+          while IFS= read -r sha; do
+            MSG=$(git log -1 --format=%B "$sha")
+            if echo "$MSG" | grep -qiE "$DCO_RE"; then
+              continue
+            fi
+            echo "::error::Commit $sha missing DCO sign-off (need 'Signed-off-by: Name <email>' or 'Co-authored-by: Name <email>')"
+            MISSING=1
+          done < <(git rev-list "${BASE_SHA}..${HEAD_SHA}")
+          if [ "$MISSING" -eq 1 ]; then
+            exit 1
+          fi
+          echo "✅ All commits have DCO sign-off or Co-authored-by"
+
+      - name: On failure — DCO fix instructions
+        if: failure() && steps.dco.outcome == 'failure'
+        run: |
+          echo "::error title=DCO Check Failed::Fix instructions below"
+          echo ""
+          echo "For your most recent commit only:"
+          echo "  git commit --amend -s --no-edit && git push --force-with-lease"
+          echo ""
+          echo "For multiple commits, interactive rebase:"
+          echo "  git rebase -i origin/${{ github.event.pull_request.base.ref }}"
+          echo "  # In editor: change 'pick' to 'edit' for each commit"
+          echo "  # For each: git commit --amend -s --no-edit && git rebase --continue"
+          echo "  git push --force-with-lease"
+          echo ""
+          echo "See CONTRIBUTING.md for DCO requirements."
+
+  license-invariants:
+    name: license invariants (RFC-001 §8)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run license:check
+      - name: On failure — RFC-001 §8 context
+        if: failure()
+        run: |
+          echo "::error title=License invariants drift detected::"
+          echo "RFC-001 §8 mechanical enforcement of LICENSE / CHARTER / DCO / dep-policy."
+          echo "If you intentionally changed Change Date / Change License,"
+          echo "this fails BY DESIGN — those are CHARTER §4 I-2 invariants."
+          echo "Otherwise: sync the doc that drifted to match the others."
+
+  meta-rules-invariants:
+    name: meta-rules invariants (CHARTER §4 I-1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run meta-rules:check
+      - name: On failure — CHARTER §4 I-1 context
+        if: failure()
+        run: |
+          echo "::error title=Meta-rules lock drift detected::"
+          echo "CHARTER §4 I-1 mechanical enforcement of meta-rules.yaml SHA256."
+          echo "Any change to meta-rules.yaml requires constitutional amendment:"
+          echo "  - 60-day public notice (RFC issue on GitHub)"
+          echo "  - Supermajority multisig per constitutional_supermajority_ratio"
+          echo "  - Update docs/META-RULES-LOCK.md §1 hash + §5 version history"
+          echo "  - All in same merge commit"
+          echo "See docs/META-RULES-LOCK.md §3 for amendment procedure."
+
+  routes-seam-guard:
+    name: routes seam ratchet (RFC-016)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run routes:seam-check
+      - name: On failure — RFC-016 routes seam context
+        if: failure()
+        run: |
+          echo "::error title=RFC-016 routes seam ratchet drift::"
+          echo "src/pwa/routes/*.ts db.prepare counts must match scripts/routes-seam-guard.ts allowlist."
+          echo "The allowlist only goes DOWN as sites move to the async seam (dbOne/dbAll/dbRun)."
+          echo "  - count > allow: an unaccounted sync db.prepare — convert it (or, if it must stay"
+          echo "    inside a db.transaction, raise the allowlist with justification)."
+          echo "  - count < allow: you converted more than recorded — lower that file's number."
+
+  meta-rule-locked-params:
+    name: meta-rule-locked params (RFC-002 §3.3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run params:check
+      - name: On failure — CHARTER §4 I-1 context
+        if: failure()
+        run: |
+          echo "::error title=Meta-rule-locked protocol_params drift::"
+          echo "One or more protocol_params flagged metaRuleLocked=true have drifted from baseline."
+          echo "These params reinforce a meta-rule (Iron Rule, anti-induction delay, etc.)"
+          echo "Lowering them requires the same 60-day amendment track as meta-rule changes:"
+          echo "  - RFC issue describing the value change + reason"
+          echo "  - 60-day public notice (CHARTER §4 I-1)"
+          echo "  - Supermajority multisig sign"
+          echo "  - Update src/pwa/server.ts RFC002_PARAMS AND"
+          echo "    scripts/meta-rule-locked-params-check.ts LOCKED_BASELINE in same merge commit"
+          echo "See docs/rfcs/RFC-002-rewards-opt-in.md §3.3 for the locked param list."
+
+  contract-fingerprint:
+    name: contract fingerprint guard (RFC-011 §④)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run contract:verify
+      - name: On failure — RFC-011 §④ context
+        if: failure()
+        run: |
+          echo "::error title=Contract surface fingerprint drift (RFC-011 §④)::"
+          echo "tests/test-contract-fingerprint.ts detected the agent-facing contract surface"
+          echo "(entity / capability fingerprints) changed without a matching CONTRACT_VERSION bump."
+          echo "A silent contract-surface change is un-mergeable by RFC-011 §④."
+          echo "If the change is intentional:"
+          echo "  - bump CONTRACT_VERSION"
+          echo "  - update the fingerprint baseline + add a feed.changes registry entry"
+          echo "  - keep contract_version monotonically non-decreasing"
+          echo "If unintentional: revert the surface change."
+
+  agent-task-spec:
+    name: agent-ready task spec (zod ⇄ JSON Schema)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:agent-task-spec
+      - name: On failure — Agent-ready Task Spec drift
+        if: failure()
+        run: |
+          echo "::error title=Agent-ready Task Spec validation failed::"
+          echo "spec/agent-task fixtures must validate under BOTH the zod schema and the"
+          echo "committed JSON Schema, and the two must stay in lock-step (drift guard)."
+          echo "  - committed agent-task.schema.json out of sync → regenerate from the zod source"
+          echo "  - a fixture violates a cross-field rule (high/critical auto-claim, audience, etc.)"
+          echo "  - a core list field went empty (NonEmptyStrList)"
+          echo "See docs/AGENT-READY-TASK-SPEC.md."
+
+  github-credential:
+    name: github contribution credential (verifier + zod ⇄ JSON Schema)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:github-credential
+      - name: On failure — GitHub Contribution Credential drift
+        if: failure()
+        run: |
+          echo "::error title=GitHub Contribution Credential validation failed::"
+          echo "src/layer2-business/L2-9-contribution/github-credential: the pure verifier + canonical SHA-256 digest must be"
+          echo "deterministic, and credentials must validate under BOTH zod and the committed"
+          echo "JSON Schema (kept in lock-step)."
+          echo "  - committed github-credential.schema.json out of sync → regenerate from zod"
+          echo "  - digest non-determinism (key order / display fields leaking into the core)"
+          echo "  - an authenticity rule regressed (unmerged minted, self-report overrode digest, etc.)"
+          echo "See docs/GITHUB-CONTRIBUTION-CREDENTIAL.md."
+
+  github-fetch-adapter:
+    name: github fetch adapter (fake fetch, no secret)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:github-fetch-adapter
+      - name: On failure — GitHub fetch adapter (PR 3B-1)
+        if: failure()
+        run: |
+          echo "::error title=Authenticated GitHub fetch adapter test failed::"
+          echo "src/layer2-business/L2-9-contribution/github-credential/github-fetch-adapter.ts establishes source authenticity via"
+          echo "WebAZ's own authenticated read. Tests use a FAKE fetch only — no real token, no network."
+          echo "  - a predictable external failure threw instead of a typed outcome"
+          echo "  - the token leaked into a serialized result"
+          echo "  - host/origin constraint or repository anchoring regressed"
+          echo "  - never-guess (visibility/provenance/contribution_type/checks) regressed"
+          echo "See docs/GITHUB-CONTRIBUTION-CREDENTIAL.md (§ authenticated fetch path)."
+
+  github-authenticated-read:
+    name: github authenticated read (origin enforcement, no token leak)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:github-authenticated-read
+      - name: On failure — authenticated read primitive (PR 4b-R)
+        if: failure()
+        run: |
+          echo "::error title=getJson origin enforcement regressed::"
+          echo "getJson attaches Authorization, so as an EXPORTED primitive it must refuse any URL that"
+          echo "is not exactly https://api.github.com BEFORE calling fetch (else a caller-supplied"
+          echo "off-origin URL leaks the token). Likely regressions:"
+          echo "  - an off-origin / non-https / malformed URL was fetched instead of typed-refused"
+          echo "  - Authorization was attached for a public (no-token) read"
+          echo "See src/layer2-business/L2-9-contribution/github-credential/github-fetch-adapter.ts."
+
+  github-credential-store:
+    name: github credential store schema (constraint enforcement)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:github-credential-store
+      - name: On failure — 3B-3a schema constraint enforcement
+        if: failure()
+        run: |
+          echo "::error title=GitHub credential store schema constraints not enforced::"
+          echo "PR 3B-3a — the 4 append-only tables must enforce every FK/UNIQUE/CHECK in the DB"
+          echo "(fresh in-memory SQLite, foreign_keys=ON):"
+          echo "  - merged-only: merge_commit_sha/merged_at NOT NULL, CHECK lifecycle_event='merged'"
+          echo "  - UNIQUE: core_digest, (credential_id,observation_digest), source_event_key, link credential_id"
+          echo "  - CHECK: source/status/provenance/type/immutable; type NULL = unclassified"
+          echo "  - FK orphan inserts rejected (proves foreign_keys=ON)"
+          echo "See docs/GITHUB-CREDENTIAL-INGESTION-DESIGN.md."
+
+  identity-claim-challenge-engine:
+    name: identity claim challenge issuance engine (credential-backed, crypto nonce, hash-only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:identity-claim-challenge-engine
+      - name: On failure — PR-F3b issuance engine
+        if: failure()
+        run: |
+          echo "::error title=identity claim challenge issuance engine regressed::"
+          echo "PR-F3b — issue a challenge ONLY for an active GitHub credential-backed fact. Likely:"
+          echo "  - issued on a governance/in_protocol fact, a github fact without a credential link, or a"
+          echo "    credential naming another actor (must be refused)"
+          echo "  - issued while the actor is already bound (self → already_bound_self / other → refused)"
+          echo "  - accepted a caller-supplied nonce/challengeId/expiresAt (must be engine-generated, strict)"
+          echo "  - stored the plaintext nonce (only sha256 may be stored), or wrote a binding"
+          echo "See src/layer2-business/L2-9-contribution/identity-claim-challenge-engine.ts."
+
+  identity-claim-api:
+    name: identity claim API (PR-F3c — Passkey-gated closed loop)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:identity-claim-api
+      - run: npm run test:identity-claim-ui
+      - run: npm run test:identity-claim-discovery
+      - run: npm run test:operator-ingest-guards
+      - name: On failure — PR-F3c claim API
+        if: failure()
+        run: |
+          echo "::error title=identity claim API regressed::"
+          echo "PR-F3c — the minimal GitHub identity-claim closed loop (challenge → Passkey gate + WebAZ"
+          echo "self-verifies the gist → F2 atomic consume+bind). Likely a broken boundary:"
+          echo "  - accountId taken from the body instead of the session user"
+          echo "  - GitHub read token read from the request, or completion NOT failing closed when unconfigured"
+          echo "  - WebAuthn gate token not bound to THIS {actor, source_event_key, challenge_id} (replay/cross-claim)"
+          echo "  - challenge ownership not confirmed BEFORE the gist re-fetch, or a verifier failure consuming the challenge"
+          echo "  - leaking the token / nonce_hash, or the route writing a core table directly"
+          echo "See src/pwa/routes/contribution-identity.ts and docs/IDENTITY-CLAIM-DESIGN.md §8.6."
+
+  identity-claim-read:
+    name: identity claim read surface (PR-F4 overlay + PR-5A uncommitted-value boundary)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:identity-claim-read
+      - name: On failure — PR-F4 read surface
+        if: failure()
+        run: |
+          echo "::error title=identity claim read surface regressed::"
+          echo "PR-F4 — read-only visibility of the caller's OWN GitHub bindings + attributable facts."
+          echo "Likely a broken scope/overlay boundary:"
+          echo "  - a query not anchored on account_id = the session user (cross-account leak)"
+          echo "  - another account's id / a private binding disclosed; or token/nonce/nonce_hash leaked"
+          echo "  - the accountable overlay mutating contribution_facts.accountable_ref (must stay NULL)"
+          echo "  - a fact surfaced without credential-backing, or whose executor != the bound actor"
+          echo "  - an account_id/github_actor_id query/body param honored (must be ignored)"
+          echo "PR-5A — the uncommitted-value boundary (RFC-017 I-12 / §7). Likely:"
+          echo "  - /github/me missing value_boundary.value_state='uncommitted' (valuation/redemption not_defined, economic_rights=false)"
+          echo "  - an economic-promise field key (amount/currency/yield/payout/reward/price/promise) appeared — metering must promise nothing"
+          echo "  - the display-envelope helper coupling to a reward/KYC/wallet/valuation module"
+          echo "See src/layer2-business/L2-9-contribution/{identity-claim-read,contribution-display-envelope}.ts and docs/IDENTITY-CLAIM-DESIGN.md §8.7/§8.8."
+
+  build-reputation-boundary:
+    name: build-reputation self-view (PR-5B — under PR-5A uncommitted-value boundary)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:build-reputation-boundary
+      - name: On failure — PR-5B build-reputation boundary
+        if: failure()
+        run: |
+          echo "::error title=build-reputation self-view boundary regressed::"
+          echo "PR-5B — the RFC-006 contributor dashboard (GET /api/build-reputation/me) must sit under the"
+          echo "PR-5A uncommitted-value boundary. Likely:"
+          echo "  - response missing value_boundary.value_state='uncommitted' (valuation/redemption not_defined, economic_rights=false)"
+          echo "  - the legacy reward_anchored field reappeared (must be passkey_anchor_present), or another"
+          echo "    economic-promise field key (amount/currency/yield/payout/reward/price/promise) appeared"
+          echo "  - build_points/tier leaking into trade access, or the build_points formula changed"
+          echo "See src/pwa/routes/build-reputation.ts, build-reputation-engine.ts, docs/IDENTITY-CLAIM-DESIGN.md §8.9."
+
+  contribution-score-contract:
+    name: contribution score + relationship + entry + dogfood + task-board (PR5..9B — boundaries + task metadata schema)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:contribution-score-contract
+      - run: npm run test:contribution-score-evidence
+      - run: npm run test:contribution-score-read
+      - run: npm run test:contributor-entry-relationship-contract
+      - run: npm run test-public-contributor-entry-contract
+      - run: npm run test-prelaunch-dogfood-runbook-contract
+      - run: npm run test-prelaunch-dogfood-case-pack-contract
+      - run: npm run test-future-task-board-design-contract
+      - run: npm run test:build-task-agent-metadata
+      - run: npm run test-dogfood-dryrun-gap-report-contract
+      - run: npm run test:task-board-read
+      - run: npm run test:task-board-participation
+      - run: npm run test:task-proposals
+      - run: npm run test:task-proposal-draft-flow
+      - run: npm run test:pv-kill-switch
+      - run: npm run test:pv-settlement-engine
+      - run: npm run test:settlement-breakdown
+      - run: npm run test:wallet-signer
+      - run: npm run test:cf-origin-guard
+      - run: npm run test:public-contribution-pages
+      - run: npm run test:proposal-admin-ui
+      - run: npm run test:rewards-vs-contribution-copy
+      - run: npm run test:rewards-consent-text
+      - run: npm run test:invite-code-narrowing
+      - run: npm run test:shop-referral-attribution
+      - run: npm run test:money-units
+      - run: npm run test:seller-order-actions
+      - run: npm run test:decline-action
+      - run: npm run test:mcp-contribute
+      - run: npm run test:mcp-apikey-fallback
+      - run: npm run test:email-delivery
+      - run: npm run test:recover-key-password-reset
+      - run: npm run test:register-email-verify
+      - run: npm run test:recovery-onboarding-ui
+      - run: npm run test:welcome-signup-button
+      - run: npm run test:share-genuine-receipt
+      - run: npm run test:auto-accept-risk-copy
+      - run: npm run test:order-detail-return-inline
+      - run: npm run test:seller-store-reviews
+      - run: npm run test:seller-ratings-double-blind
+      - run: npm run test:seller-self-fulfill-ship
+      - run: npm run test:public-ratings-double-blind
+      - run: npm run test:admin-security-panel
+      - run: npm run test:admin-economic-trigger-audit
+      - run: npm run test:admin-audit-slice1
+      - run: npm run test:admin-withdrawal-approve-attribution
+      - run: npm run test:admin-bearer-auth
+      - run: npm run test:admin-reputation-decay-audit
+      - name: On failure — score+relationship+entry+dogfood+task-board+proposal boundary
+        if: failure()
+        run: |
+          echo "::error title=contribution score + relationship-graph boundary regressed::"
+          echo "PR5 — Contribution Score v1 is design/boundary + a read-only evidence collector (NO formula). Likely:"
+          echo "  - an economic-promise term (amount/currency/yield/payout/reward/price/promise/claim) entered a"
+          echo "    score field name or evidence component key (must stay contribution/evidence/build/signal)"
+          echo "  - a boundary flag flipped (score must decide no money/rights/redemption/KYC/wallet/tree,"
+          echo "    define no reward formula, and require value_boundary on every display)"
+          echo "  - the contract module started computing/reading/writing (it must stay types + frozen metadata)"
+          echo "  - the evidence collector returned a contribution_score, wrote to the DB, or counted facts not"
+          echo "    attributable to the account via the active credential-backed overlay (incl. reverted from fact.status)"
+          echo "  - the read surface (GET /api/contribution-score/evidence/me) leaked another account, read a"
+          echo "    query/body param, returned a score/total/weight/tier/eligibility, or dropped the value_boundary"
+          echo "PR6A — Contributor Entry & Relationship Graph v1 is design-only (no reward formula). Likely:"
+          echo "  - the boundary doc lost a required phrase (design-only / no reward formula / no payout / uncommitted),"
+          echo "    dropped an invariant (must be 13), or gained a hard-coded economic numeric (percentage/amount/multiplier)"
+          echo "  - relationship position described as a guaranteed reward/right, or an anti-abuse vector dropped"
+          echo "PR7A — the public contributor-entry doc must teach GitHub-first→Passkey claim + register-early/invite-link +"
+          echo "  agent-as-executor+DCO + sandbox≠participation, while staying uncommitted (no reward formula / no payout /"
+          echo "  no post-hoc tree rewrite) and printing no economic numeric literal."
+          echo "PR8A — the private dogfood runbook must stay private/non-production/uncommitted, keep recognized-flow ≠"
+          echo "  auto-recorded honest (deferred), name the high-risk forbidden zones (wallet/escrow/KYC/secrets/prod-DB/"
+          echo "  deploy/migration), and make no positive guaranteed-reward/payout claim (only in a no/not/forbidden context)."
+          echo "PR8B — the dogfood case pack must keep ≥5 sample tasks with the full field set + value_state uncommitted,"
+          echo "  every high-risk task auto_claimable:false + human_in_the_loop/human_only, the auto-claim vs human-in-loop"
+          echo "  + needs_clarification(don't guess) rules, and no economic numeric / no positive reward promise."
+          echo "PR9A — the future task-board design contract must carry the full field set + discovery filters, inherit"
+          echo "  the RFC-006 state machine (open→claimed→in_review→done|abandoned) + atomic claim/TTL/WIP/human acceptance,"
+          echo "  keep high/critical no-auto-claim + critical not public + needs_clarification, route high-risk to higher"
+          echo "  audit, keep done≠merge + sandbox≠participation, and implement NOTHING (no DB/schema/API/MCP/PWA/UI)."
+          echo "PR9B — the build_task_agent_metadata satellite (schema/store only) must enforce the contract by DB CHECK/FK"
+          echo "  + store validation: value_state=uncommitted, the risk/audience/autonomy/context/budget enums, high/critical"
+          echo "  ⇒ auto_claimable=false + human autonomy + ≥1 human_confirmation_point, critical ⇒ not public, duration"
+          echo "  max≥min, non-empty core fields, FK to build_tasks; the RFC-006 build_tasks state machine must not regress."
+          echo "See src/layer2-business/L2-9-contribution/build-task-agent-metadata-store.ts, scripts/test-build-task-agent-metadata.ts, docs/FUTURE-TASK-BOARD-V1-DESIGN.md."
+          echo "PR8C — the dogfood dry-run gap report must keep the minimal LIST + DETAIL fields, the PR9C-1 required"
+          echo "  filters (status=open/area/risk_level/audience/auto_claimable), defer write (create/claim/submit) to"
+          echo "  PR9C-2, and keep sandbox≠participation / value_state uncommitted / needs_clarification / done≠merge."
+          echo "See docs/PRELAUNCH-DOGFOOD-DRYRUN-GAP-REPORT.md."
+          echo "PR9C-1 — the task-board READ API must: public = audience=public + status=open only; never leak"
+          echo "  restricted/internal (404, no existence disclosure); return core + parsed agent_metadata (null for old"
+          echo "  tasks); honor the required filters with fail-closed 400 on a bad value; wrap every response in the"
+          echo "  uncommitted value_boundary; expose no economic field; and NOT change the RFC-006 claim/submit/resolve."
+          echo "See src/layer2-business/L2-9-contribution/build-task-read.ts, src/pwa/routes/{public-build-tasks,build-tasks}.ts, scripts/test-task-board-read.ts."
+          echo "PR9C-2 — the participation guard (claim/submit/release) must: 404-no-leak on restricted/internal (id-guess),"
+          echo "  refuse claim when auto_claimable=false (NOT_AUTO_CLAIMABLE), accept submit only for a canonical-repo PR"
+          echo "  (reject external repo PR URL → WRONG_PR_BASE_REPO), keep old no-metadata tasks legacy-only (not a public"
+          echo "  agent entry), not change the RFC-006 state machine, and append only value_boundary + canonical target."
+          echo "See src/layer2-business/L2-9-contribution/build-task-participation.ts, scripts/test-task-board-participation.ts."
+          echo "Task Proposal Inbox v1 — a suggestion must NOT become a build_task or appear on the public board; public"
+          echo "  submit is anonymous + validated + fail-closed; review is admin-only (new→needs_info/rejected/converted,"
+          echo "  terminal locked); converted creates no build_task but records the proposer→reviewer→converted_ref evidence"
+          echo "  chain; no external input overrides the canonical target; every response carries value_boundary, no econ field."
+          echo "See src/layer2-business/L2-9-contribution/task-proposal-store.ts, src/pwa/routes/task-proposals.ts, scripts/test-task-proposals.ts."
+
+  identity-claim-proof-verifier:
+    name: identity claim proof verifier (gist re-fetch trust-root)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:identity-claim-proof-verifier
+      - name: On failure — PR-F3a proof verifier
+        if: failure()
+        run: |
+          echo "::error title=identity claim gist proof verifier regressed::"
+          echo "PR-F3a — WebAZ re-fetches the gist itself (fixed origin api.github.com). Likely regressions:"
+          echo "  - trusted caller-supplied owner JSON / followed raw_url / escaped the api.github.com host"
+          echo "  - owner.id no longer strictly equals githubActorId, or matched a login instead of the id"
+          echo "  - marker/nonce-hash check weakened, or truncated content not refused (proof_truncated)"
+          echo "  - a non-typed throw, or the token leaked into a result/reason"
+          echo "See src/layer2-business/L2-9-contribution/identity-claim-proof-verifier.ts."
+
+  identity-claim-engine:
+    name: identity claim engine (CAS consume + bind, one tx, typed outcomes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:identity-claim-engine
+      - name: On failure — PR-F2 claim engine
+        if: failure()
+        run: |
+          echo "::error title=identity claim engine regressed::"
+          echo "PR-F2 — consume an issued challenge + bind GitHub actor→WebAZ account in ONE tx. Likely:"
+          echo "  - a doomed claim (actor_mismatch / fact_not_found) consumed the challenge (must stay issued)"
+          echo "  - CAS-then-bind-failure / already_bound_other did NOT roll back (challenge left consumed)"
+          echo "  - proof gate bypassed (proofVerified=false must refuse), or admin_manual touched"
+          echo "  - contribution_facts.accountable_ref mutated (must stay NULL — binding is a read-overlay)"
+          echo "See src/layer2-business/L2-9-contribution/identity-claim-engine.ts."
+
+  identity-claim-challenge:
+    name: identity claim challenge schema (constraint enforcement)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:identity-claim-challenge
+      - name: On failure — PR-F1 challenge schema constraints
+        if: failure()
+        run: |
+          echo "::error title=identity_claim_challenges constraints not enforced::"
+          echo "PR-F1 — the challenge table must DB-enforce: nonce_hash UNIQUE (sha256, no plaintext),"
+          echo "account_id FK→users, status enum CHECK, immutable=1 CHECK, all identity fields NOT NULL."
+          echo "See src/layer2-business/L2-9-contribution/identity-claim-challenge-store.ts and §8.2."
+
+  human-presence:
+    name: human-presence gate (iron-rule WebAuthn token, incl. identity_claim)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:human-presence
+      - name: On failure — human-presence gate regressed
+        if: failure()
+        run: |
+          echo "::error title=Human-presence iron-rule gate regressed::"
+          echo "createHumanPresence (consumeGateToken / requireHumanPresence) must keep:"
+          echo "  - single-use, purpose-bound, expiry-checked, user-bound gate tokens"
+          echo "  - identity_claim enforced by default (param=1); param=0 disables; is_system never bypasses it"
+          echo "  - NO regression of vote / arbitrate / agent_revoke / delete_passkey"
+          echo "See src/pwa/human-presence.ts and tests/test-human-presence.ts."
+
+  identity-claim-iron-rules:
+    name: identity claim iron-rules (PR-S security pipeline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: iron-rule guard (static boundaries for the 4b claim pipeline)
+        run: npm run iron-rules:identity-claim
+      - name: prove the guard actually catches violations
+        run: npm run test:iron-rules-guard
+      - name: On failure — identity-claim iron rule violated
+        if: failure()
+        run: |
+          echo "::error title=Identity-claim iron rule violated::"
+          echo "PR-S locks the security boundaries BEFORE any claim API/MCP/UI exists. A failure means:"
+          echo "  - rule1: admin_manual (high-risk override) leaked into a non-allowlisted/handler file"
+          echo "  - rule2: a row UPDATE/DELETE on the append-only identity_binding_events log was added"
+          echo "  - rule4: an API-layer file writes an identity/contribution CORE table directly (must use the engine)"
+          echo "  - rule5: a contribution engine imported a reward/KYC/wallet/economic module"
+          echo "  - rule7: a real-looking GitHub token appeared in a test/script (use the FAKE sentinel)"
+          echo "See docs/IDENTITY-CLAIM-DESIGN.md §5 and scripts/identity-claim-iron-rules-guard.ts."
+
+  github-credential-ingestion:
+    name: github credential ingestion engine (state machine, append-only, no-PII)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:github-credential-ingestion
+      - name: On failure — 3B-3b ingestion engine
+        if: failure()
+        run: |
+          echo "::error title=GitHub credential ingestion engine regressed::"
+          echo "PR 3B-3b — the ingestion engine re-establishes trust and writes the RFC-017 fact layer."
+          echo "Tests use a FAKE fetch only — no real token, no network. Likely regressions:"
+          echo "  - a refusal stopped failing closed (unmapped repo / adapter failure / PG backend)"
+          echo "  - the state machine mis-decided (ingested/re_observed/already_present/credential_upgraded/invariant)"
+          echo "  - atomicity broke (a mid-tx failure left a half-write instead of rolling back)"
+          echo "  - append-only violated (engine issued UPDATE/DELETE, or an existing row changed)"
+          echo "  - the token or a co-author email got persisted (must never be stored)"
+          echo "See docs/GITHUB-CREDENTIAL-INGESTION-DESIGN.md (§4/§5/§8)."
+
+  identity-binding:
+    name: identity binding (constraints, state machine, append-only event log)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:identity-binding
+      - name: On failure — PR 4a identity binding
+        if: failure()
+        run: |
+          echo "::error title=Identity binding invariants regressed::"
+          echo "PR 4a — GitHub identity → WebAZ account binding. Likely regressions:"
+          echo "  - double-bind allowed (identity_bindings_active PK must reject a 2nd active binding)"
+          echo "  - the immutable event log was UPDATEd/DELETEd (only the active projection may change)"
+          echo "  - a CHECK/FK/visibility-default constraint stopped being enforced by the DB"
+          echo "  - bind/revoke/rebind state machine mis-decided, or PG backend not fail-closed"
+          echo "See docs/IDENTITY-CLAIM-DESIGN.md (§4/§5/§6)."

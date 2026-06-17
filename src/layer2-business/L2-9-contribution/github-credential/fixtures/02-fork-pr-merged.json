@@ -1,0 +1,15 @@
+{
+  "repository": { "id": "R_webaz", "owner": { "login": "seasonsagents-art" }, "name": "webaz", "visibility": "private" },
+  "pull_request": {
+    "number": 102, "node_id": "PR_kwDO102", "merged": true, "state": "closed",
+    "merged_at": "2026-06-10T13:00:00Z", "merge_commit_sha": "bbbb000000000000000000000000000000000000",
+    "base": { "ref": "main" }, "head": { "ref": "contributor:patch-1", "sha": "2222222222222222222222222222222222222222" },
+    "user": { "id": "U_bob", "login": "bob-fork" }, "merged_by": { "id": "U_holden" }
+  },
+  "commit_authors": [ { "author_id": "U_bob", "login": "bob-fork", "name": "Bob", "is_coauthor": false } ],
+  "check_conclusions": ["success", "success"],
+  "reviews": [ { "state": "APPROVED", "user_id": "U_holden" } ],
+  "dco_state": "present",
+  "observed_at": "2026-06-11T00:00:00Z",
+  "self_reported": { "agent_provenance": "human", "contribution_type": "code" }
+}

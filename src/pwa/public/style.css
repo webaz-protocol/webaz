@@ -1,0 +1,535 @@
+/* DCP PWA — 移动优先 */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+:root {
+  --primary: #4f46e5;
+  --primary-light: #ede9fe;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-300: #d1d5db;
+  --gray-500: #6b7280;
+  --gray-700: #374151;
+  --gray-900: #111827;
+  --radius: 12px;
+  --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--gray-50);
+  color: var(--gray-900);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 顶部导航 ── */
+.navbar {
+  background: #fff;
+  border-bottom: 1px solid var(--gray-100);
+  padding: 0 16px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.navbar-brand { font-size: 18px; font-weight: 700; color: var(--primary); text-decoration: none }
+.navbar-actions { display: flex; gap: 8px }
+
+/* ── 底部 Tab 栏 ── */
+.tabbar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: #fff;
+  border-top: 1px solid var(--gray-100);
+  display: flex;
+  height: 60px;
+  z-index: 100;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--gray-500);
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 8px 4px;
+  transition: color .15s;
+}
+.tab-item.active { color: var(--primary) }
+.tab-icon { font-size: 20px; line-height: 1 }
+
+/* ── 主内容区 ── */
+.main { padding: 16px 16px 80px; max-width: 640px; margin: 0 auto }
+
+/* ── 页面标题 ── */
+.page-title { font-size: 22px; font-weight: 700; margin-bottom: 16px }
+.page-sub { font-size: 14px; color: var(--gray-500); margin-bottom: 20px }
+
+/* ── 卡片右上角动作按钮 ── */
+.card-action {
+  padding: 4px 10px;
+  font-size: 11px;
+  background: var(--gray-100);
+  border: none;
+  border-radius: 6px;
+  color: var(--gray-700);
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.card-action:hover { background: var(--gray-300) }
+.card-action.primary {
+  background: var(--primary);
+  color: #fff;
+}
+.card-action.primary:hover { opacity: 0.9 }
+
+/* ── 卡片 ── */
+.card {
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+/* ── 商品卡片 ── */
+.product-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px }
+.product-card {
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s;
+}
+.product-card:active { transform: scale(.97) }
+.product-img {
+  width: 100%; aspect-ratio: 1;
+  background: var(--gray-100);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 40px;
+}
+.product-body { padding: 10px; min-width: 0 }
+/* 2026-05-24 audit：title 2 行截断保持网格等高；长字符不破版 */
+.product-name {
+  font-size: 13px; font-weight: 600; line-height: 1.4; margin-bottom: 4px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; word-break: break-word;
+}
+.product-price { font-size: 16px; font-weight: 700; color: var(--primary) }
+.product-seller { font-size: 11px; color: var(--gray-500); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+
+/* ── 搜索栏 ── */
+.search-bar {
+  display: flex; gap: 8px; margin-bottom: 16px;
+}
+.search-input-wrap { position: relative; flex: 1; min-width: 0; display: flex }
+.search-input {
+  width: 100%;
+  padding: 10px 36px 10px 14px;
+  border: 1px solid var(--gray-300);
+  border-radius: 99px;
+  font-size: 15px;
+  outline: none;
+  box-sizing: border-box;
+}
+.search-input:focus { border-color: var(--primary) }
+.search-clear {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--gray-400, #9ca3af);
+  color: #fff;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.45;
+  font-size: 13px;
+  line-height: 1;
+  border: none;
+  padding: 0;
+}
+.search-clear:hover { opacity: 0.75 }
+.search-input-wrap.has-value .search-clear { display: flex }
+
+/* 输入框左侧内嵌扫码按钮 + 与输入区的竖线分割 */
+.sbh-with-leading .search-input { padding-left: 48px }
+.sbh-leading-scan {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px; height: 24px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+}
+.sbh-leading-scan:hover { color: #1f2937 }
+.sbh-leading-scan:active { transform: translateY(-50%) scale(0.92) }
+.sbh-leading-scan::after {
+  /* 竖线分割：扫码图标与输入区之间，提示这是独立功能按钮 */
+  content: '';
+  position: absolute;
+  right: -7px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 18px;
+  background: rgba(0, 0, 0, 0.10);
+  pointer-events: none;
+}
+
+/* 剪贴板"粘贴"按钮 — 玻璃气泡感，浮在输入框内（避开左侧扫码图标 + 分割线） */
+.sbh-paste-float {
+  position: absolute;
+  top: 50%;
+  left: 48px;
+  transform: translateY(-50%);
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  backdrop-filter: saturate(180%) blur(14px);
+  color: #1f2937;
+  border: 0.5px solid rgba(0, 0, 0, 0.08);
+  border-radius: 99px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10), 0 1px 2px rgba(0, 0, 0, 0.06);
+  z-index: 5;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+.sbh-paste-float:hover { background: rgba(255, 255, 255, 0.88) }
+.sbh-paste-float:active { transform: translateY(-50%) scale(0.96) }
+@keyframes sbh-paste-pop {
+  0%   { opacity: 0; transform: translateY(-50%) scale(0.92); transform-origin: left center }
+  100% { opacity: 1; transform: translateY(-50%) scale(1);    transform-origin: left center }
+}
+.sbh-paste-float-in { animation: sbh-paste-pop 0.16s ease-out }
+
+/* ── 全局输入框清空按钮（auto-attach） ─────────────────────────
+   适用所有 <input type=text/email/tel/search/url/password/number/date/time> + <textarea>
+   半透明 × 按钮位于最右边，仅在有内容时显示。
+   opt-out: 给输入框加 data-no-clear="1" */
+.clear-wrap { position: relative; display: inline-flex; vertical-align: top; max-width: 100% }
+.clear-wrap.block { display: block; width: 100% }
+.clear-wrap > input,
+.clear-wrap > textarea { padding-right: 30px !important }
+.clear-wrap > .clear-btn {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  width: 18px; height: 18px; border-radius: 50%;
+  background: rgba(156, 163, 175, 0.5);
+  color: #fff; border: none; padding: 0;
+  font-size: 13px; line-height: 1;
+  display: none; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  z-index: 2;
+}
+.clear-wrap > .clear-btn:hover { background: rgba(107, 114, 128, 0.85) }
+.clear-wrap.has-value > .clear-btn { display: flex }
+/* textarea 多行 — 按钮固定到右上 */
+.clear-wrap:has(> textarea) > .clear-btn { top: 12px; transform: none }
+/* number input 留出原生 spinner 空间 (Chromium spinners ~16px) */
+.clear-wrap > input[type="number"] { padding-right: 30px !important }
+
+/* ── KPI 卡 ── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.kpi-card {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  padding: 14px 8px;
+  text-align: center;
+}
+.kpi-label { font-size: 12px; color: var(--gray-500); margin-bottom: 6px }
+.kpi-value { font-size: 22px; font-weight: 700; color: var(--gray-900); line-height: 1.1 }
+.kpi-unit  { font-size: 12px; font-weight: 500; color: var(--gray-500); margin-left: 2px }
+
+/* ── 表单 ── */
+.form-group { margin-bottom: 16px }
+.form-label { font-size: 13px; font-weight: 600; color: var(--gray-700); margin-bottom: 6px; display: block }
+.form-control {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--gray-300);
+  border-radius: 10px;
+  font-size: 15px;
+  outline: none;
+  background: #fff;
+  transition: border-color .15s;
+}
+.form-control:focus { border-color: var(--primary) }
+textarea.form-control { min-height: 80px; resize: vertical }
+select.form-control { appearance: none }
+
+/* ── 按钮 ── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 15px; font-weight: 600;
+  border: none; cursor: pointer;
+  transition: opacity .15s, transform .1s;
+  width: 100%;
+}
+.btn:active { transform: scale(.97) }
+.btn-primary { background: var(--primary); color: #fff }
+.btn-success { background: var(--success); color: #fff }
+.btn-danger  { background: var(--danger);  color: #fff }
+.btn-outline { background: #fff; color: var(--primary); border: 1.5px solid var(--primary) }
+.btn-gray    { background: var(--gray-100); color: var(--gray-700) }
+.btn-sm { padding: 8px 16px; font-size: 13px; width: auto }
+.btn:disabled { opacity: .4; cursor: not-allowed }
+.btn-row { display: flex; gap: 8px }
+
+/* ── 状态徽章 ── */
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 12px; font-weight: 600;
+}
+.badge-blue    { background: #dbeafe; color: #1d4ed8 }
+.badge-yellow  { background: #fef3c7; color: #92400e }
+.badge-green   { background: #d1fae5; color: #065f46 }
+.badge-red     { background: #fee2e2; color: #991b1b }
+.badge-gray    { background: var(--gray-100); color: var(--gray-700) }
+.badge-purple  { background: var(--primary-light); color: var(--primary) }
+
+/* ── 订单列表 ── */
+.order-item { display: flex; gap: 12px; align-items: flex-start }
+.order-icon { font-size: 28px; line-height: 1; flex-shrink: 0 }
+.order-info { flex: 1; min-width: 0 }
+.order-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.order-meta  { font-size: 12px; color: var(--gray-500); margin-top: 3px }
+.order-amount { font-size: 15px; font-weight: 700; color: var(--primary); flex-shrink: 0 }
+
+/* ── 状态时间线 ── */
+.timeline { position: relative; padding-left: 24px }
+.timeline::before {
+  content: '';
+  position: absolute; left: 8px; top: 8px; bottom: 0;
+  width: 2px; background: var(--gray-100);
+}
+.timeline-item { position: relative; padding-bottom: 20px; font-size: 13px }
+.timeline-item::before {
+  content: '';
+  position: absolute; left: -20px; top: 4px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px var(--primary);
+}
+.timeline-status { font-weight: 700; color: var(--gray-900) }
+.timeline-actor  { color: var(--gray-500) }
+.timeline-time   { color: var(--gray-300); font-size: 11px }
+.timeline-evidence { color: var(--success); font-size: 11px }
+
+/* ── 钱包卡片 ── */
+.wallet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
+.wallet-item { background: var(--gray-50); border-radius: 10px; padding: 12px }
+.wallet-label { font-size: 11px; color: var(--gray-500); margin-bottom: 4px }
+.wallet-value { font-size: 20px; font-weight: 700; color: var(--gray-900) }
+.wallet-unit  { font-size: 12px; color: var(--gray-500); font-weight: 400 }
+
+/* ── 空状态 ── */
+.empty { text-align: center; padding: 48px 16px; color: var(--gray-500) }
+.empty-icon { font-size: 48px; margin-bottom: 12px }
+.empty-text { font-size: 15px }
+
+/* ── Alert ── */
+.alert {
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+.alert-error   { background: #fee2e2; color: #991b1b }
+.alert-success { background: #d1fae5; color: #065f46 }
+.alert-info    { background: var(--primary-light); color: var(--primary) }
+.alert-warning { background: #fef3c7; color: #92400e }
+
+/* ── 分割线 ── */
+.divider { height: 1px; background: var(--gray-100); margin: 16px 0 }
+
+/* ── 详情行 ── */
+.detail-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 14px }
+.detail-row:not(:last-child) { border-bottom: 1px solid var(--gray-100) }
+.detail-label { color: var(--gray-500) }
+.detail-value { font-weight: 600; text-align: right; max-width: 60% }
+
+/* ── 登录页 ── */
+.login-wrap { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 32px 24px; }
+.login-logo { font-size: 48px; text-align: center; margin-bottom: 8px }
+.login-title { text-align: center; font-size: 24px; font-weight: 700; margin-bottom: 4px }
+.login-sub   { text-align: center; color: var(--gray-500); font-size: 14px; margin-bottom: 32px }
+
+/* ── Tab 切换 ── */
+.seg-ctrl { display: flex; background: var(--gray-100); border-radius: 10px; padding: 4px; margin-bottom: 16px }
+.seg-btn {
+  flex: 1; text-align: center; padding: 8px; border-radius: 8px;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  border: none; background: none; color: var(--gray-500);
+  transition: all .15s;
+}
+.seg-btn.active { background: #fff; color: var(--primary); box-shadow: var(--shadow) }
+
+/* ── 加载态 ── */
+.loading { text-align: center; padding: 40px; color: var(--gray-500); font-size: 14px }
+@keyframes spin { to { transform: rotate(360deg) } }
+.spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--gray-300); border-top-color: var(--primary); border-radius: 50%; animation: spin .6s linear infinite; margin-right: 8px }
+
+/* ── P14.5 骨架屏 ── */
+@keyframes skeleton-pulse { 0% { opacity: 0.4 } 50% { opacity: 0.8 } 100% { opacity: 0.4 } }
+.skeleton { background: linear-gradient(90deg, #f3f4f6 0%, #e5e7eb 50%, #f3f4f6 100%); background-size: 200% 100%; animation: skeleton-pulse 1.4s ease-in-out infinite; border-radius: 4px; display: block }
+
+/* ── 操作区域 ── */
+.action-area { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-top: 16px }
+.action-title { font-size: 13px; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px }
+
+/* ── 响应式：分档自适应（覆盖 320px iPhone SE → 430px Pro Max → 平板） ── */
+
+/* ① 极小屏 ≤ 360px（iPhone SE / 老 Android） */
+@media (max-width: 360px) {
+  .main { padding: 10px 8px 80px }
+  .page-title { font-size: 16px !important; margin: 0 0 8px !important }
+  .card { padding: 10px !important }
+  .card-body { padding: 10px !important }
+  .main h1, .page-title { font-size: 16px !important }
+  .main h2 { font-size: 13px !important }
+  .btn-sm { padding: 4px 8px !important; font-size: 11px !important }
+  .btn { font-size: 13px !important }
+  .navbar-brand { font-size: 14px !important }
+  .tab-icon { font-size: 18px !important }
+  .tab-item { font-size: 10px !important }
+
+  /* 4 列 → 2x2，3 列保留但更紧 */
+  [data-grid="kpi-4"], [data-grid="team-4"], [data-grid="wallet-overview-4"] { grid-template-columns: 1fr 1fr !important; gap: 5px !important }
+  [data-grid="earn-3"], [data-grid="income-3"], [data-grid="share-kpi-3"] { grid-template-columns: 1fr 1fr 1fr !important; gap: 4px !important }
+}
+
+/* ② 主流小屏 361-480px（iPhone 12 mini/13 mini/Android 主流） */
+@media (min-width: 361px) and (max-width: 480px) {
+  .main { padding: 12px 10px 80px }
+  .page-title { font-size: 18px !important; margin: 0 0 10px !important }
+  .card { padding: 12px !important }
+  .card-body { padding: 12px !important }
+  .main h1, .page-title { font-size: 17px !important }
+  .main h2 { font-size: 14px !important }
+  .btn-sm { padding: 5px 10px !important; font-size: 12px !important }
+
+  [data-grid="kpi-4"], [data-grid="team-4"], [data-grid="wallet-overview-4"] { grid-template-columns: 1fr 1fr !important; gap: 6px !important }
+  [data-grid="earn-3"], [data-grid="income-3"], [data-grid="share-kpi-3"] { grid-template-columns: 1fr 1fr 1fr !important; gap: 4px !important }
+}
+
+/* ③ 大屏手机 481-600px（iPhone Pro Max / 横屏 / 折叠机） */
+@media (min-width: 481px) and (max-width: 600px) {
+  .main { padding: 14px 12px 80px }
+  .card { padding: 14px !important }
+  .card-body { padding: 14px !important }
+
+  [data-grid="kpi-4"], [data-grid="team-4"], [data-grid="wallet-overview-4"] { grid-template-columns: repeat(4, 1fr) !important; gap: 7px !important }
+}
+
+/* ④ 平板 / 大屏 ≥ 601px：保持 640 居中 */
+/* 主内容已有 max-width: 640px 居中，无需额外规则 */
+
+/* ⑤ 防止图片/视频溢出 */
+img, video, iframe { max-width: 100%; height: auto }
+
+/* ⑥ 长字符串自动换行（防数字串/hash 溢出） */
+.card { word-wrap: break-word; overflow-wrap: break-word }
+
+/* ⑥-bis 文字溢出工具类（2026-05-24 audit） */
+.text-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+.line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word }
+.line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word }
+.line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word }
+.break-anywhere { word-break: break-all; overflow-wrap: anywhere }   /* hash/code/url */
+/* code / kbd / .mono → 自动 break-all 防长字符撑屏 */
+code, kbd, .mono { word-break: break-all; overflow-wrap: anywhere }
+
+/* 2026-05-24 银金属色 ⇄ — 用于 Use ⇄ Build ⇄ Own */
+.silver-arrow {
+  background: linear-gradient(180deg, #f5f5f7 0%, #c7c7cf 45%, #71717a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-weight: 700;
+  padding: 0 2px;
+  text-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.4);
+}
+
+/* ⑦ PWA 安全区适配（iPhone X+ 刘海屏） */
+@supports (padding: max(0px)) {
+  .main { padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)) }
+  .tab-bar { padding-bottom: max(0px, env(safe-area-inset-bottom)) }
+}
+
+/* ⑧ 横屏适配 */
+@media (orientation: landscape) and (max-height: 480px) {
+  .main { padding-top: 8px }
+  .tab-bar { height: 50px }
+  .tab-icon { font-size: 16px }
+}
+
+/* ⑨ Install banner */
+.install-banner {
+  position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
+  z-index: 99; max-width: calc(100% - 24px); width: auto;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #fff;
+  border-radius: 12px; box-shadow: 0 8px 24px rgba(79,70,229,0.35);
+  padding: 12px 16px; display: flex; align-items: center; gap: 10px;
+  animation: slide-up 0.3s ease-out;
+}
+@keyframes slide-up { from { opacity: 0; transform: translate(-50%, 20px) } to { opacity: 1; transform: translate(-50%, 0) } }
+.install-banner-icon { font-size: 22px; line-height: 1 }
+.install-banner-body { flex: 1; min-width: 0 }
+.install-banner-title { font-size: 13px; font-weight: 600; line-height: 1.2 }
+.install-banner-sub { font-size: 11px; opacity: 0.85; line-height: 1.3; margin-top: 2px }
+.install-banner-btn {
+  background: #fff; color: #4f46e5; border: none; border-radius: 6px;
+  padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.install-banner-close {
+  background: rgba(255,255,255,0.2); color: #fff; border: none; border-radius: 50%;
+  width: 24px; height: 24px; cursor: pointer; font-size: 14px; padding: 0;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+
+/* 发现页 6-pill 横滑导航条：隐藏 scrollbar 保留触感滚动 */
+.disc-nav::-webkit-scrollbar { display: none }
+.disc-nav { scrollbar-width: none; -ms-overflow-style: none }

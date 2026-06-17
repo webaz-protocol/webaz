@@ -1,0 +1,47 @@
+# 私密法律策略(律所 shortlist / 邮件模板 / brief)— 本地保留,不公开
+docs/LAW-CONSULTATION/
+
+# 内部项目快照 — 含运营状态(real_users / issuer key / 内部 task#)+ 机制细节,
+# 不进公开仓(参 privacy-before-scale + open-source history scan 原则);本地保留
+docs/PROJECT-SUMMARY.md
+
+# 本机 agent 工具产物(非共享配置)— Claude Code 调度锁 / Codex 本地 review 配置
+.claude/scheduled_tasks.lock
+.codex/
+
+# 数据库
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+*.js.map
+
+# 环境变量
+.env
+.env.*
+!.env.example
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 日志
+*.log
+npm-debug.log*
+
+# Internal-only: archived reward-engine design (kept local, excluded from public repo per item-4 strategy review)
+docs/modules/tokenomics-pv-commission.md
+
+# internal-only compliance / reward-engine working docs (moved out of public 2026-06-16 for risk control)
+docs/modules/*.INTERNAL.md

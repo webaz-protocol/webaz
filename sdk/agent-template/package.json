@@ -1,0 +1,14 @@
+{
+  "name": "@webaz/agent-template",
+  "version": "0.1.0",
+  "description": "Starter template for third-party agents on WebAZ — handles auth, rate-limit retry, strike/revocation awareness",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "demo": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "tsx": "^4.7.0"
+  },
+  "license": "MIT"
+}

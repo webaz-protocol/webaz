@@ -1,0 +1,104 @@
+name: 🐛 Bug report (报告 bug)
+description: 协议、PWA、MCP 工具或文档中存在错误行为 / Report incorrect behavior in protocol, PWA, MCP tools, or docs
+title: "[BUG] "
+labels: ["type:bug", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你帮 WebAZ 找 bug。请尽量提供可复现的最小步骤,这样 maintainer 可以快速确认。
+        Thanks for helping find a bug in WebAZ. Please give the minimal steps to reproduce so maintainers can confirm fast.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 一句话总结 / One-line summary
+      placeholder: "例如:webaz_search 返回结果不包含价格字段"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响面 / Area
+      multiple: true
+      options:
+        - protocol (engines / state machine)
+        - mcp (tool surface)
+        - pwa (web app)
+        - docs (governance / charter / meta-rules)
+        - desktop (electron)
+        - ci / build
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      description: 越具体越好,粘命令、URL、agent prompt、截图都可以 / The more concrete the better — commands, URLs, agent prompts, screenshots
+      placeholder: |
+        1. 打开 #discover
+        2. 搜索 "iphone 13"
+        3. 第 3 条结果点进去
+        4. 看到 ... 但期望 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为 / Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为 / Actual behavior
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / Version
+      description: package.json 里的 version,或 commit SHA / npm version, or commit SHA
+      placeholder: "0.1.15 / 3268a72"
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境 / Environment
+      placeholder: |
+        - OS: macOS 14.5
+        - Node: v20.11.1
+        - Browser: Chrome 124
+        - MCP client: Claude Desktop 0.7.x
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 截图 / Logs / screenshots
+      description: 可选,但通常很有帮助 / Optional but usually helpful
+      render: shell
+
+  - type: checkboxes
+    id: meta-rule-check
+    attributes:
+      label: 元规则相关性 / Meta-rule relevance
+      description: 这个 bug 是否触及 10 元规则之一?(参见 docs/META-RULES-FULL.md,编号 #1-#10)
+      options:
+        - label: 我已对照 #1-#10,本 bug 不涉及任何元规则违反 / I cross-checked #1-#10, no meta-rule violation
+        - label: 本 bug 可能绕过 Iron-Rule(投票/仲裁/agent_revoke/delete_passkey/revoke_key/rotate_key/wallet 7 条路径)→ 请立刻改走 Security Advisory! / May bypass Iron-Rule — please switch to Security Advisory immediately!
+        - label: 本 bug 涉及具体某条元规则(#1-#10),将在下方说明 / Involves specific meta-rule (#1-#10), will explain below
+
+  - type: textarea
+    id: meta-rule-detail
+    attributes:
+      label: 元规则触及详情 / Meta-rule details
+      description: 若上面勾选了"涉及元规则",请说明哪条(#1-#10)+ 怎样违反 / If checked above, which rule + how violated
+      placeholder: |
+        - #3 不偷数据:授权 token 超出声明 scope 使用
+        - "#7 不操纵: 某 UI 文案越线到操纵(引导 vs 操纵 的区分见 META-RULES-FULL.md §#7)"

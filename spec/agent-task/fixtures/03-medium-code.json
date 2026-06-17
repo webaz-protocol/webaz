@@ -1,0 +1,55 @@
+{
+  "spec_version": "1",
+  "task_id": "bt_code_search_area_filter",
+  "title": "Add an optional area filter to the build-tasks list endpoint response shaping",
+  "summary": "Add a non-financial, read-path refinement: shape the build-tasks list response to include a derived 'is_claimable' boolean. Shared business logic; needs stronger tests and human review before merge.",
+  "task_type": "code",
+  "area": "contribution",
+  "source_ref": "issue#tasks-list-shaping",
+  "rfc_ref": "RFC-006",
+  "allowed_paths": ["src/layer2-business/L2-9-contribution/**", "tests/**"],
+  "forbidden_paths": [
+    "src/layer0-foundation/L0-1-database/**",
+    "src/pwa/routes/orders*",
+    "src/**/wallet*",
+    "src/**/settlement*",
+    "db/**"
+  ],
+  "prohibited_actions": [
+    "touch wallet / fund / escrow / settlement code",
+    "alter the build_tasks state machine",
+    "run migrations",
+    "deploy"
+  ],
+  "risk_level": "medium",
+  "audience": "public",
+  "agent_autonomy": "supervised",
+  "human_confirmation_points": ["maintainer code review before merge"],
+  "required_capabilities": ["typescript", "zod"],
+  "auto_claimable": true,
+  "acceptance_criteria": [
+    "List response gains a derived is_claimable boolean (status === 'open' && not expired)",
+    "Existing state machine and fields are unchanged",
+    "New unit test covers is_claimable derivation for each status"
+  ],
+  "verification_commands": ["npm run build", "npx tsx tests/test-build-tasks-shaping.ts"],
+  "expected_results": ["tsc passes", "shaping test exits 0"],
+  "deliverables": [
+    "Read-path shaping change in the contribution layer",
+    "tests/test-build-tasks-shaping.ts"
+  ],
+  "definition_of_done": "Derived field added on the read path only; no write-path or state-machine change; tests green; maintainer has reviewed the diff.",
+  "estimated_duration": { "min_minutes": 45, "max_minutes": 120 },
+  "estimated_context_size": "medium",
+  "estimated_agent_budget": "moderate",
+  "dependencies": [],
+  "blocking_conditions": [],
+  "provenance_requirement": ["human", "ai_assisted", "ai_authored"],
+  "accountable_party_required": true,
+  "reward_eligibility": "eligible",
+  "value_state": "uncommitted",
+  "contribution_type": "code",
+  "status": "open",
+  "version": 1,
+  "assurance": { "required": true, "evidence_refs": ["CI:required"], "notes": "medium risk: CI green + maintainer review before merge" }
+}

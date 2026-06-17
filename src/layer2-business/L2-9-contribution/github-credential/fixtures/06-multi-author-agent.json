@@ -1,0 +1,19 @@
+{
+  "repository": { "id": "R_webaz", "owner": { "login": "seasonsagents-art" }, "name": "webaz", "visibility": "private" },
+  "pull_request": {
+    "number": 106, "node_id": "PR_kwDO106", "merged": true, "state": "closed",
+    "merged_at": "2026-06-10T16:00:00Z", "merge_commit_sha": "6666000000000000000000000000000000000000",
+    "base": { "ref": "main" }, "head": { "ref": "feat/multi", "sha": "6666aaaa00000000000000000000000000000000" },
+    "user": { "id": "U_dave", "login": "dave" }, "merged_by": { "id": "U_holden" }
+  },
+  "commit_authors": [
+    { "author_id": "U_dave", "login": "dave", "name": "Dave", "is_coauthor": false },
+    { "author_id": "U_erin", "login": "erin", "name": "Erin", "is_coauthor": true },
+    { "author_id": null, "login": null, "name": "Agent Runner", "is_coauthor": true }
+  ],
+  "check_conclusions": ["success", "neutral"],
+  "reviews": [ { "state": "APPROVED", "user_id": "U_holden" }, { "state": "COMMENTED", "user_id": "U_erin" } ],
+  "dco_state": "present",
+  "observed_at": "2026-06-11T00:00:00Z",
+  "self_reported": { "agent_provenance": "ai_authored", "contribution_type": "code", "task_id": "bt_multi" }
+}

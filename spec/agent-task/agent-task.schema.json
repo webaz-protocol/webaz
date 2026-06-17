@@ -1,0 +1,469 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "spec_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 200
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "task_type": {
+      "type": "string",
+      "enum": [
+        "docs",
+        "i18n",
+        "tests",
+        "sdk_example",
+        "ui",
+        "code",
+        "api",
+        "schema",
+        "infra",
+        "governance",
+        "audit",
+        "other"
+      ]
+    },
+    "area": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "source_ref": {
+      "type": "string"
+    },
+    "rfc_ref": {
+      "type": "string"
+    },
+    "allowed_paths": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "forbidden_paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "prohibited_actions": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "audience": {
+      "type": "string",
+      "enum": [
+        "public",
+        "restricted",
+        "internal"
+      ]
+    },
+    "agent_autonomy": {
+      "type": "string",
+      "enum": [
+        "autonomous",
+        "supervised",
+        "human_in_the_loop",
+        "human_only"
+      ]
+    },
+    "human_confirmation_points": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required_capabilities": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "auto_claimable": {
+      "type": "boolean"
+    },
+    "acceptance_criteria": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "verification_commands": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "expected_results": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "deliverables": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "definition_of_done": {
+      "type": "string",
+      "minLength": 1
+    },
+    "estimated_duration": {
+      "type": "object",
+      "properties": {
+        "min_minutes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "max_minutes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "min_minutes",
+        "max_minutes"
+      ],
+      "additionalProperties": false
+    },
+    "estimated_context_size": {
+      "type": "string",
+      "enum": [
+        "small",
+        "medium",
+        "large"
+      ]
+    },
+    "estimated_agent_budget": {
+      "type": "string",
+      "enum": [
+        "minimal",
+        "small",
+        "moderate",
+        "large",
+        "xlarge"
+      ]
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "blocking_conditions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "provenance_requirement": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "human",
+          "ai_assisted",
+          "ai_authored"
+        ]
+      }
+    },
+    "accountable_party_required": {
+      "type": "boolean"
+    },
+    "reward_eligibility": {
+      "type": "string",
+      "enum": [
+        "eligible",
+        "pending",
+        "excluded"
+      ]
+    },
+    "value_state": {
+      "type": "string",
+      "const": "uncommitted"
+    },
+    "contribution_type": {
+      "type": "string",
+      "enum": [
+        "code",
+        "tests",
+        "audit",
+        "maintenance",
+        "governance",
+        "usage",
+        "transaction",
+        "referral"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "claimed",
+        "in_review",
+        "done",
+        "abandoned"
+      ]
+    },
+    "claimed_by": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "claim_expires_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "submission_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "resolution": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "version": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "assurance": {
+      "type": "object",
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "required"
+      ],
+      "additionalProperties": false
+    },
+    "needs_clarification": {
+      "type": "boolean"
+    },
+    "scope_partition": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "spec_version",
+    "task_id",
+    "title",
+    "summary",
+    "task_type",
+    "area",
+    "allowed_paths",
+    "forbidden_paths",
+    "prohibited_actions",
+    "risk_level",
+    "audience",
+    "agent_autonomy",
+    "human_confirmation_points",
+    "required_capabilities",
+    "auto_claimable",
+    "acceptance_criteria",
+    "verification_commands",
+    "expected_results",
+    "deliverables",
+    "definition_of_done",
+    "estimated_duration",
+    "estimated_context_size",
+    "estimated_agent_budget",
+    "dependencies",
+    "blocking_conditions",
+    "provenance_requirement",
+    "accountable_party_required",
+    "reward_eligibility",
+    "value_state",
+    "contribution_type",
+    "status",
+    "version"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "risk_level": {
+            "enum": [
+              "high",
+              "critical"
+            ]
+          }
+        },
+        "required": [
+          "risk_level"
+        ]
+      },
+      "then": {
+        "properties": {
+          "auto_claimable": {
+            "const": false
+          }
+        },
+        "required": [
+          "auto_claimable"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "risk_level": {
+            "enum": [
+              "high",
+              "critical"
+            ]
+          }
+        },
+        "required": [
+          "risk_level"
+        ]
+      },
+      "then": {
+        "properties": {
+          "agent_autonomy": {
+            "enum": [
+              "human_in_the_loop",
+              "human_only"
+            ]
+          }
+        },
+        "required": [
+          "agent_autonomy"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "risk_level": {
+            "enum": [
+              "high",
+              "critical"
+            ]
+          }
+        },
+        "required": [
+          "risk_level"
+        ]
+      },
+      "then": {
+        "properties": {
+          "human_confirmation_points": {
+            "minItems": 1
+          }
+        },
+        "required": [
+          "human_confirmation_points"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "risk_level": {
+            "const": "critical"
+          }
+        },
+        "required": [
+          "risk_level"
+        ]
+      },
+      "then": {
+        "properties": {
+          "audience": {
+            "enum": [
+              "restricted",
+              "internal"
+            ]
+          }
+        },
+        "required": [
+          "audience"
+        ]
+      }
+    }
+  ]
+}
