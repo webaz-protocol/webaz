@@ -26,6 +26,8 @@ import { setSeamDb } from '../layer0-foundation/L0-1-database/db.js'  // RFC-016
 import { initSystemUser, transition, getOrderStatus, checkTimeouts, settleFault } from '../layer0-foundation/L0-2-state-machine/engine.js'
 import { endpointToAction, endpointToReadAction } from './endpoint-actions.js'
 import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYPES, MASS_ACTION_DAILY_CAPS } from './limits.js'
+// #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
+import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
@@ -138,8 +140,8 @@ import {
   notifyEligibleVerifiers as notifyEligibleVerifiersRaw,
   CLAIM_VERIFIERS_NEEDED, CLAIM_TARGET_LABEL_ZH,
   CLAIM_DEADLINE_HOURS, CLAIM_SELLER_EXTENSION_HOURS,
-  // 跨域共用常量（checkVerifierOutlier 跨多 vote table 聚合用）
-  CLAIM_SUSPEND_THRESHOLD, CLAIM_REVOKE_THRESHOLD, CLAIM_SUSPEND_DAYS, CLAIM_OUTLIER_WINDOW_DAYS,
+  // #420 P1-3:verifier outlier 阈值改由 protocol_params 驱动(见 anti-abuse-thresholds.ts),
+  // checkVerifierOutlier 不再 import claim-verify 的 CLAIM_*_THRESHOLD 常量。
 } from './routes/claim-verify.js'
 // Follows (#1013 Phase 10) — 4 endpoints (status/post/delete/me)
 // /api/follows/feed 留 server.ts（依赖 products 跨域，待商品域拆分时一并处理）
@@ -949,6 +951,9 @@ const DEFAULT_PARAMS: Array<{ key: string; value: string; type: string; descript
   // 假设:这两个 param 都满足"increase = more protection"语义(见 admin-protocol-params.ts 头部注释)
   { key: 'constitutional_supermajority_ratio', value: '0.667', type: 'number', description: 'CHARTER §4 I-4:宪法级修改超级多数比例(phase A: user solo 1-of-1;phase B+: maintainer 多签 ratio)— only-increase 防绕过', category: 'constitutional', min: 0.5, max: 1.0 },
   { key: 'constitutional_notice_days', value: '60', type: 'number', description: 'CHARTER §4 I-4:宪法级修改 RFC 公示期(天)— only-increase 防绕过', category: 'constitutional', min: 30, max: 365 },
+  // #420 P1-2/P1-3/P1-4:反滥用阈值(agent 信任公式 / strike 阶梯 / verifier outlier)→ 治理可调。
+  // 默认值 === 抽取前硬编码字面量(单一真相源在 anti-abuse-thresholds.ts;测试强制校验一致)。
+  ...ANTI_ABUSE_PARAMS,
 ]
 for (const p of DEFAULT_PARAMS) {
   try { db.prepare(`INSERT OR IGNORE INTO protocol_params (key, value, type, description, category, default_value, min_value, max_value) VALUES (?,?,?,?,?,?,?,?)`)
@@ -3802,23 +3807,21 @@ function computeAgentTrust(apiKey: string): {
   // 限速命中 — 简化：30 天内 429 状态码次数
   const ratelimitHits = (db.prepare(`SELECT COUNT(*) as n FROM agent_call_log WHERE api_key = ? AND status_code = 429 AND created_at > datetime('now', '-30 days')`).get(apiKey) as { n: number }).n
 
-  // 公式
+  // 公式 — #420 P1-2:penalty 系数 / sybil 阈值 / 等级 cutoff 由 protocol_params 驱动(默认 = 原字面量)
+  const t = readAntiAbuseThresholds(db)
   const agePts        = Math.min(ageDays, 90) * 0.5
   const orderPts      = Math.min(completedBuyer + completedSeller, 50) * 0.5
   const sharePts      = Math.min(shareConversions, 20) * 1.0
   const diversityPts  = Math.min(diversity, 25) * 0.4
-  const disputeP      = -disputeLoss * 10
-  const sybilP        = sybilSize > 3 ? -(sybilSize - 3) * 5 : 0
-  const crossP        = -crossHits * 3
-  const ratelimitP    = -ratelimitHits * 2
+  const disputeP      = -disputeLoss * t.trustDisputePenalty
+  const sybilP        = agentSybilPenalty(sybilSize, t)
+  const crossP        = -crossHits * t.trustCrossPenalty
+  const ratelimitP    = -ratelimitHits * t.trustRatelimitPenalty
 
   const raw = agePts + orderPts + sharePts + diversityPts + disputeP + sybilP + crossP + ratelimitP
   const trust = Math.max(0, Math.round(raw * 100) / 100)
 
-  const level: 'new'|'trusted'|'quality'|'legend' =
-    trust >= 80 ? 'legend' :
-    trust >= 50 ? 'quality' :
-    trust >= 20 ? 'trusted' : 'new'
+  const level: 'new'|'trusted'|'quality'|'legend' = agentTrustLevel(trust, t)
 
   const signals = {
     age_days: Math.round(ageDays * 10) / 10,
@@ -4482,30 +4485,23 @@ function issueAgentStrike(opts: {
 }): { severity: string; expires_at: string | null; escalated: boolean } {
   const { apiKey, userId, reasonCode } = opts
   const initial = opts.initialSeverity || 'warning'
+  // #420 P1-4:升级阶梯阈值/窗口/过期 由 protocol_params 驱动(默认 = 原 7d/30d/≥1/≥2/24h/7d)
+  const t = readAntiAbuseThresholds(db)
   // 看是否需要升级
   const warnings7d = (db.prepare(`SELECT COUNT(*) as n FROM agent_strikes
-    WHERE api_key = ? AND severity = 'warning' AND issued_at > datetime('now', '-7 days')
+    WHERE api_key = ? AND severity = 'warning' AND issued_at > datetime('now', '-${t.strikeWarnWindowDays} days')
       AND appeal_status NOT IN ('approved')`).get(apiKey) as { n: number }).n
   const suspends30d = (db.prepare(`SELECT COUNT(*) as n FROM agent_strikes
-    WHERE api_key = ? AND severity = 'suspend_7d' AND issued_at > datetime('now', '-30 days')
+    WHERE api_key = ? AND severity = 'suspend_7d' AND issued_at > datetime('now', '-${t.strikeSuspendWindowDays} days')
       AND appeal_status NOT IN ('approved')`).get(apiKey) as { n: number }).n
 
-  let severity: 'warning' | 'suspend_7d' | 'permanent' = initial
-  let escalated = false
-  if (initial === 'warning' && warnings7d >= 1) {  // 已有 1 次 warning + 本次新 warning = 累计 2 → 升 suspend
-    severity = 'suspend_7d'; escalated = true
-  }
-  if (initial === 'suspend_7d' || severity === 'suspend_7d') {
-    if (suspends30d >= 2) {  // 已有 2 次 suspend + 本次 = 3 → 升 permanent
-      severity = 'permanent'; escalated = true
-    }
-  }
+  const { severity, escalated } = agentStrikeSeverity(initial, warnings7d, suspends30d, t)
   // expires_at
   let expiresAt: string | null = null
   if (severity === 'warning') {
-    expiresAt = new Date(Date.now() + 24 * 3600_000).toISOString().replace('T', ' ').slice(0, 19)
+    expiresAt = new Date(Date.now() + t.strikeWarnExpiryHours * 3600_000).toISOString().replace('T', ' ').slice(0, 19)
   } else if (severity === 'suspend_7d') {
-    expiresAt = new Date(Date.now() + 7 * 86400_000).toISOString().replace('T', ' ').slice(0, 19)
+    expiresAt = new Date(Date.now() + t.strikeSuspendExpiryDays * 86400_000).toISOString().replace('T', ' ').slice(0, 19)
   }
   db.prepare(`INSERT INTO agent_strikes (api_key, user_id, severity, reason_code, reason_detail, reported_by, related_ref, expires_at)
     VALUES (?,?,?,?,?,?,?,?)`).run(
@@ -8739,7 +8735,7 @@ function settleGenericClaim(taskTable: string, voteTable: string, claimId: strin
 }
 
 // Sprint 4/5 — claim 结算后的后续影响（声誉 + 目标对象计数 + 自动下架 + voter outlier）
-// 复用 line 13482-13485 已存在的 CLAIM_SUSPEND_THRESHOLD / CLAIM_REVOKE_THRESHOLD / CLAIM_SUSPEND_DAYS / CLAIM_OUTLIER_WINDOW_DAYS
+// #420 P1-3:voter outlier 的窗口/暂停/撤销阈值由 protocol_params 驱动(见 checkVerifierOutlier + anti-abuse-thresholds.ts)
 const CLAIM_AUTO_SUSPEND_THRESHOLD = 3          // 商品 / 拍卖 / 二手 累计 N 次 upheld → 自动下架
 
 // Wave A-5: 通用 claim 撤回 helper（只有 0 票时 claimant 可撤回，退 stake）
@@ -8833,10 +8829,12 @@ function checkVerifierOutlier(verifierId: string) {
   const existing = db.prepare(`SELECT type FROM claim_verifier_suspensions WHERE user_id = ? AND type = 'revoked' LIMIT 1`).get(verifierId)
   if (existing) return
 
-  // 统计 180d 内 outlier 票数（跨所有 5 套 vote table）
+  // #420 P1-3:窗口/阈值/暂停时长由 protocol_params 驱动(默认 = 原 180d/≥5/≥3/30d)
+  const t = readAntiAbuseThresholds(db)
+  // 统计窗口内 outlier 票数（跨所有 vote table）
   const VOTE_TABLES = ['claim_verification_votes', 'product_claim_votes', 'review_claim_votes', 'secondhand_claim_votes', 'auction_claim_votes', 'wish_claim_votes']
   let outlierCount = 0
-  const since = new Date(Date.now() - CLAIM_OUTLIER_WINDOW_DAYS * 86400_000).toISOString()
+  const since = new Date(Date.now() - t.outlierWindowDays * 86400_000).toISOString()
   for (const tbl of VOTE_TABLES) {
     try {
       const n = (db.prepare(`SELECT COUNT(*) as n FROM ${tbl} WHERE verifier_id = ? AND was_majority = 0 AND voted_at > ?`).get(verifierId, since) as { n: number }).n
@@ -8844,24 +8842,25 @@ function checkVerifierOutlier(verifierId: string) {
     } catch {}
   }
 
-  if (outlierCount >= CLAIM_REVOKE_THRESHOLD) {
+  const band = verifierOutlierBand(outlierCount, t)
+  if (band === 'revoke') {
     // 永久撤销
     db.prepare(`INSERT INTO claim_verifier_suspensions (id, user_id, type, until_at, reason, outlier_count) VALUES (?,?,?,NULL,?,?)`)
-      .run(generateId('cvs'), verifierId, 'revoked', `累计 ${outlierCount} 次 outlier（180d 内）→ 永久撤销 verifier 资格`, outlierCount)
+      .run(generateId('cvs'), verifierId, 'revoked', `累计 ${outlierCount} 次 outlier（${t.outlierWindowDays}d 内）→ 永久撤销 verifier 资格`, outlierCount)
     try {
       db.prepare(`INSERT INTO notifications (id, user_id, title, body, order_id) VALUES (?,?,?,?,?)`)
-        .run(generateId('ntf'), verifierId, '⚠ Verifier 资格已撤销', `你在 180 天内累计 ${outlierCount} 次 outlier 投票，按协议规则资格被永久撤销。`, null)
+        .run(generateId('ntf'), verifierId, '⚠ Verifier 资格已撤销', `你在 ${t.outlierWindowDays} 天内累计 ${outlierCount} 次 outlier 投票，按协议规则资格被永久撤销。`, null)
     } catch {}
-  } else if (outlierCount >= CLAIM_SUSPEND_THRESHOLD) {
+  } else if (band === 'suspend') {
     // 临时 suspend，避免重复 suspend
     const dup = db.prepare(`SELECT id FROM claim_verifier_suspensions WHERE user_id = ? AND type = 'suspended' AND (until_at IS NULL OR until_at > datetime('now')) LIMIT 1`).get(verifierId)
     if (!dup) {
-      const until = new Date(Date.now() + CLAIM_SUSPEND_DAYS * 86400_000).toISOString()
+      const until = new Date(Date.now() + t.outlierSuspendDays * 86400_000).toISOString()
       db.prepare(`INSERT INTO claim_verifier_suspensions (id, user_id, type, until_at, reason, outlier_count) VALUES (?,?,?,?,?,?)`)
-        .run(generateId('cvs'), verifierId, 'suspended', until, `累计 ${outlierCount} 次 outlier（180d 内）→ 暂停 ${CLAIM_SUSPEND_DAYS} 天`, outlierCount)
+        .run(generateId('cvs'), verifierId, 'suspended', until, `累计 ${outlierCount} 次 outlier（${t.outlierWindowDays}d 内）→ 暂停 ${t.outlierSuspendDays} 天`, outlierCount)
       try {
         db.prepare(`INSERT INTO notifications (id, user_id, title, body, order_id) VALUES (?,?,?,?,?)`)
-          .run(generateId('ntf'), verifierId, '⏳ Verifier 资格已暂停', `你在 180 天内累计 ${outlierCount} 次 outlier 投票，资格暂停 ${CLAIM_SUSPEND_DAYS} 天直至 ${until.slice(0,10)}。`, null)
+          .run(generateId('ntf'), verifierId, '⏳ Verifier 资格已暂停', `你在 ${t.outlierWindowDays} 天内累计 ${outlierCount} 次 outlier 投票，资格暂停 ${t.outlierSuspendDays} 天直至 ${until.slice(0,10)}。`, null)
       } catch {}
     }
   }

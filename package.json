@@ -82,6 +82,7 @@
     "test:decline-action": "tsx tests/test-decline-action.ts",
     "test:recover-key-password-reset": "tsx scripts/test-recover-key-password-reset.ts",
     "test:register-email-verify": "tsx scripts/test-register-email-verify.ts",
+    "test:anti-abuse-params": "tsx scripts/test-anti-abuse-params.ts",
     "test:recovery-onboarding-ui": "tsx scripts/test-recovery-onboarding-ui.ts",
     "test:welcome-signup-button": "tsx scripts/test-welcome-signup-button.ts",
     "test:share-genuine-receipt": "tsx scripts/test-share-genuine-receipt.ts",
