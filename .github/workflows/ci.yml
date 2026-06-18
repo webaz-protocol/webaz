@@ -328,6 +328,30 @@ jobs:
           echo "  - a core list field went empty (NonEmptyStrList)"
           echo "See docs/AGENT-READY-TASK-SPEC.md."
 
+  anti-abuse-params:
+    name: anti-abuse params (governance-adjustable thresholds)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:anti-abuse-params
+      - name: On failure — anti-abuse param guard (#420 P1-2/3/4)
+        if: failure()
+        run: |
+          echo "::error title=Anti-abuse param guard failed::"
+          echo "agent-trust / strike-ladder / verifier-outlier thresholds must stay governance-adjustable"
+          echo "via protocol_params, with defaults === the prior hardcoded literals (behavior-preserving)."
+          echo "Failures usually mean one of:"
+          echo "  - a default drifted from the documented literal (ANTI_ABUSE_PARAMS vs EXPECTED_OLD_LITERALS)"
+          echo "  - a pure decision fn (agentTrustLevel / agentStrikeSeverity / verifierOutlierBand) changed"
+          echo "  - the admin PATCH min/max guardrails or readAntiAbuseThresholds fallback regressed"
+          echo "  - the MCP handleRegister network self-create guard moved after account creation"
+          echo "See src/pwa/anti-abuse-thresholds.ts + scripts/test-anti-abuse-params.ts."
+
   github-credential:
     name: github contribution credential (verifier + zod ⇄ JSON Schema)
     runs-on: ubuntu-latest
