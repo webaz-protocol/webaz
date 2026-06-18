@@ -31,7 +31,7 @@ cd webaz
 npm install
 npm run build       # must pass before opening a PR / PR 前必过
 npm run pwa         # start PWA + auto state-machine enforcement (port 3000) / 启动 PWA + 协议状态机自动判责执行(超时→自动处置)
-npm run mcp         # start MCP server alone (for Claude Desktop) / 单独启 MCP
+npm run mcp         # start MCP server alone (for any MCP client: Claude Desktop/Code, Codex, Cursor, …) / 单独启 MCP
 npm run demo        # full trade demo / 完整交易演示
 ```
 
@@ -53,6 +53,7 @@ DB defaults to `~/.webaz/webaz.db`. Delete to reset local data.
 - **翻译 / Translate**: i18n 缺哪个语种欢迎补 / any missing i18n locale welcome
 - **报 Bug / Report bugs**: 先看 [Issues](https://github.com/webaz-protocol/webaz/issues) 有没有重复,没有就开新 issue;带复现步骤的优先 / check existing issues first; ones with repro steps get priority
 - **写代码 / Write code**: 从 `good-first-issue` 标签挑(如果有),或者直接提 PR / start from `good-first-issue` (if any), or just submit a PR
+- **认领任务 / Claim a task**: 公开任务板有现成任务(MCP `webaz_contribute` 或 webaz.xyz 的 `#contribute/tasks` 页);见 [`docs/OPEN-SOURCE-FIRST-TASKS.md`](docs/OPEN-SOURCE-FIRST-TASKS.md)(16 个 agent-ready 首批任务)/ the public task board has ready tasks (MCP `webaz_contribute` or the `#contribute/tasks` page); see [`docs/OPEN-SOURCE-FIRST-TASKS.md`](docs/OPEN-SOURCE-FIRST-TASKS.md) (16 agent-ready first tasks)
 - **提建议 / Suggest**: Issue / Discussions / RFC — 不必先有代码 / no code required first
 
 > 不写代码也能贡献:直接写 RFC 提想法,agent / maintainer 会评估 + 设计实现。RFC 通过本身就是贡献。
@@ -127,10 +128,6 @@ Protocol-level PRs follow the [CHARTER §3.2](docs/CHARTER.md#32-决策权与多
 - 任何外发数据流(API → 第三方)在 dev 必须 disabled / mocked / Any outbound data flow disabled / mocked in dev
 - 测试敏感场景(资金 / Passkey)用 demo 测试号,不用真号 / Use demo accounts for sensitive scenarios (funds / Passkey)
 
-**TBD(W4+)实现的工具 / TBD (W4+) tooling**:
-- `npm run gen-test-data` — 生成完整 anonymized demo dataset(W4 计划)/ Generate full anonymized demo dataset (planned for W4)
-- `npm run scrub-pii` — 把已有 db 的 PII 字段批量 anonymize(W4 计划)/ Bulk anonymize PII in existing DB (planned for W4)
-- 在 W4 实现前,contributor 只用 `npm run demo` 生成的数据 / Until W4, contributors only use `npm run demo` data
 
 理由:直接对应元规则 #3 / #4 / #6;是 AI review 第一道关检查内容。
 Rationale: Direct mapping to Rule #3 / #4 / #6; first gate for AI review.
