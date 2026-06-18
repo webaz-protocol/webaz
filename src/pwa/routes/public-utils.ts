@@ -7,7 +7,7 @@
  * 6 endpoints:
  *   GET  /api/health         LB/k8s readiness probe（DB ping + uptime + seed_strength）
  *   POST /api/mcp-telemetry  MCP 工具调用埋点（IP 限流 200/min）
- *   GET  /api/system-flags   注册门控公开探测（require_ref / invite_rotation）
+ *   GET  /api/system-flags   注册门控公开探测（require_ref）
  *   GET  /api/editor-picks   生效中的编辑精选（商品 + 卖家各 20）
  *   GET  /api/manifest       协议 manifest dump（generateManifest(db)）
  *   POST /api/error-report   前端错误回传（IP 限流 30/min，不 401）
@@ -99,12 +99,10 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
 
   app.get('/api/system-flags', async (_req, res) => {
     const requireRef = (await dbOne<{ value: string }>("SELECT value FROM system_state WHERE key='require_ref_to_register'"))?.value === '1'
-    const inviteRotation = (await dbOne<{ value: string }>("SELECT value FROM system_state WHERE key='invite_rotation_enabled'"))?.value === '1'
     // #1049 Turnstile 公钥(若启用),前端注册表单 widget 用
     const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY || null
     res.json({
       require_ref_to_register: requireRef,
-      invite_rotation_enabled: inviteRotation,
       turnstile_site_key: turnstileSiteKey,
     })
   })

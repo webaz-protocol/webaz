@@ -2516,18 +2516,7 @@ const _EN = {
   // ── M7.4 conditional order ─────────────────────────────────
   '验证中': 'Pending verification',
 
-  // ── 邀请码轮询 ───────────────────────────────────────────────
-  '获取邀请码': 'Get invite code',
-  '该功能默认关闭，由管理员开启后可用': 'Disabled by default; admin can enable',
-  '点击向系统申领一个邀请码': 'Click to request an invite code',
   '邀请人': 'Inviter',
-  '邀请码轮询': 'Invite-code rotation',
-  '🟢 已开启 — 按钮可用': '🟢 Enabled — button active',
-  '🔒 已关闭 — 按钮置灰': '🔒 Disabled — button greyed',
-  '开启后：注册页"获取邀请码"按钮可用，依次轮询 xiaohua / mian / holden / jiayi / qingliang 5 位用户的 permanent_code':
-    'When ON: register page "Get invite code" button becomes active; rotates through 5 fixed users (xiaohua / mian / holden / jiayi / qingliang) returning their permanent_code.',
-  '确认开启邀请码轮询？访客在注册页点按钮可申领下一个 sponsor 邀请码': 'Enable invite-code rotation? Visitors can request the next sponsor code from the register page.',
-  '确认关闭邀请码轮询？按钮将置灰': 'Disable invite-code rotation? Button will be greyed out.',
 
   // ── #ai-recommend 重塑 ─────────────────────────────────────
   '找礼物':    'Find a gift',
@@ -4659,8 +4648,6 @@ const _EN = {
   '🔍 开始分析':                       '🔍 Start analyzing',
 
   // ─── 设置 / Onboarding 文案 ─────
-  '已开启 — 按钮可用':                'Enabled — button active',
-  '已关闭 — 按钮置灰':                'Disabled — button greyed out',
   '新用户期':                          'New user period',
   '已自动加入「我的分享」':            'Auto added to "My Shares"',
   '完成该商品的购买后再分享':          'Share after completing the purchase of this item',

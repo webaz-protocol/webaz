@@ -45,7 +45,7 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   'products-links.ts': 4,      // claim fee-lock tx (dup task + debit + INSERT link + INSERT task)
   'url-claim.ts': 7,           // challenge-verify CAS tx (2) + claim-url stake+fee tx (5)
   'products-create.ts': 4,     // source_url conflict fee-lock tx (INSERT link + warehouse + debit + INSERT task)
-  'auth-register.ts': 7,   // registerTx (users + wallet + audit + placement + invite rotation + register-code consume)
+  'auth-register.ts': 5,   // registerTx (users + wallet + audit + placement + register-code consume)
   'anchors.ts': 2,         // touch user-anchor batch attribution (loop INSERTs)
   'shareables.ts': 3,      // DELETE soft-remove tx (status + total_likes + photo_index)
   'shareables-interactions.ts': 7,  // like toggle tx (existing/del/upd×2/ins/upd×2)

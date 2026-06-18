@@ -110,7 +110,6 @@ async function main(): Promise<void> {
     clientIpHash: () => 'ipreg', clientUaHash: () => 'uareg',
     VALID_REGIONS: new Set(['global']) as any, pickPreferredSide: (() => 'left') as any,
     joinPowerLeg: (() => { if (placementThrows) throw new Error('tree corrupt'); return { tail: 't', depth: 1 } }) as any,
-    INVITE_ROTATION_HANDLES: [] as any, inviteRotationLookup: (() => null) as any,
     // 邮箱验证优先注册:固定有效码 '111111';consume UPDATE 命中空表(0 行)无碍。
     issueCode: (async () => ({ ok: true, code: '111111', expires_at: '', provider: 'dev_console' })) as any,
     findActiveCode: (() => ({ id: 'vc_fixed', code: '111111', attempts: 0 })) as any,

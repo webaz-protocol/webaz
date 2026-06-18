@@ -13,8 +13,7 @@
  * 跨域注入：db + errorRes + INTERNAL_AUDITOR_ID + isAllowedSponsor + resolveUserRef
  *           + generateId + generateSecureKey + generatePermanentCode + deriveHandle
  *           + clientIpHash + clientUaHash + VALID_REGIONS + pickPreferredSide
- *           + joinPowerLeg + INVITE_ROTATION_HANDLES + inviteRotationLookup
- *           + recordSession + broadcastSystemEvent
+ *           + joinPowerLeg + recordSession + broadcastSystemEvent
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
@@ -46,20 +45,17 @@ export interface AuthRegisterDeps {
   VALID_REGIONS: Set<string>
   pickPreferredSide: (inviterId: string) => 'left' | 'right'
   joinPowerLeg: (inviterId: string, side: 'left' | 'right', newId: string) => { tail: string; depth: number }
-  INVITE_ROTATION_HANDLES: readonly string[]
-  inviteRotationLookup: (slot: number) => { id: string; code: string; handle: string; name: string } | null
   recordSession: (userId: string, apiKey: string, req: Request) => void
   broadcastSystemEvent: (type: string, icon: string, msg: string, refId?: string | null) => void
 }
 
 export function registerAuthRegisterRoutes(app: Application, deps: AuthRegisterDeps): void {
-  // VALID_REGIONS + INVITE_ROTATION_HANDLES 通过 deps.X 在 handler 内延迟读
-  // （server.ts 用 getter 注入；destructure at register-time would trigger TDZ 因为它们在下方 const）
+  // VALID_REGIONS 通过 deps.X 在 handler 内延迟读
+  // （server.ts 用 getter 注入；destructure at register-time would trigger TDZ 因为它在下方 const）
   const { db, errorRes, INTERNAL_AUDITOR_ID, isAllowedSponsor, resolveInviteCodeRef,
           generateId, generateSecureKey, generatePermanentCode, deriveHandle,
           clientIpHash, clientUaHash,
           pickPreferredSide, joinPowerLeg,
-          inviteRotationLookup,
           issueCode, findActiveCode, canDeliverCodes, emailDeliveryNotConfigured,
           recordSession, broadcastSystemEvent } = deps
   // CODE_TTL_MIN / MAX_CODE_ATTEMPTS 通过 deps.X 在 handler 内延迟读(它们在 server.ts 是后置 const,
@@ -260,16 +256,6 @@ export function registerAuthRegisterRoutes(app: Application, deps: AuthRegisterD
         }
       }
 
-      const rotationEnabled = (db.prepare("SELECT value FROM system_state WHERE key='invite_rotation_enabled'").get() as { value: string } | undefined)?.value === '1'
-      if (rotationEnabled && sponsorId) {
-        for (let i = 0; i < deps.INVITE_ROTATION_HANDLES.length; i++) {
-          const u = inviteRotationLookup(i)
-          if (u && u.id === sponsorId) {
-            db.prepare("UPDATE invite_rotation_stats SET registered_count = registered_count + 1 WHERE slot = ?").run(i)
-            break
-          }
-        }
-      }
       return { placement, effectiveInviter, effectiveSide }
     })
 
