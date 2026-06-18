@@ -17,8 +17,8 @@ export function buildIntegrationContract() {
     contract_version: CONTRACT_VERSION,
     software_version: SOFTWARE_VERSION,
     thesis: 'WebAZ is agent-native: you integrate by your agent reading this machine-readable contract and self-integrating — we do NOT build a bespoke API/auth/webhook layer per integrator. The protocol provides rules + semantics + boundaries + accountability + eventing + verifiability + settlement. See docs/RFC-011.',
-    // 源码仓库 launch 前私有 —— 公开声明,防"自称开源但 GitHub 404"被读成 vaporware。
-    source_status: 'The source repo (github.com/webaz-protocol/webaz) is PRIVATE until the W8 public launch, so GitHub links in these surfaces may return 404 until then — they open at launch, not a dead project. The full machine-readable spec is ALREADY public via these /.well-known/* surfaces; an agent never needs the repo to integrate or verify.',
+    // 源码仓库已公开(github.com/webaz-protocol/webaz);机器可读 spec 也在 /.well-known/*。
+    source_status: 'The source repo (github.com/webaz-protocol/webaz) is public (open source). The full machine-readable spec is also available via these /.well-known/* surfaces; an agent never needs the repo to integrate or verify.',
     // 外部 agent 的第一道问题:"我怎么从匿名读升到能写?" —— 入口必须自答(不依赖 GitHub)。
     access: {
       browse_first: 'No account needed to START: browse the live catalog at https://webaz.xyz/#discover and read every well-known surface below anonymously. Try before you commit.',
