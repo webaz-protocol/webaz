@@ -127,10 +127,31 @@ async function main(): Promise<void> {
   { const r = await post('/api/register', { name: 'Bob', role: 'seller', region: 'us', email: 'bob@example.com', code: FIXED_CODE })
     ok('register: second distinct verified email → success', r.json?.success === true && r.json?.email === 'bob@example.com', JSON.stringify(r.json)) }
 
+  // 9) invite gate (#420 pre-registration hardening): when system_state require_ref_to_register=1, a
+  //    verified email + valid code is NOT sufficient — registration without an invite (sponsor_id) is
+  //    refused 403 INVITE_REQUIRED and no user is created; the email-verification gate still runs first
+  //    (no silent bypass); with an invite present the gate passes. Locks the invite-only constraint against
+  //    accidental bypass / refactor regression (the branch was previously untested).
+  db.prepare("INSERT OR REPLACE INTO system_state (key,value) VALUES ('require_ref_to_register','1')").run()
+  { // 9a: require_ref=1 + verified code, NO invite → 403 INVITE_REQUIRED, no user created
+    await post('/api/register/send-code', { email: 'carol@example.com' })
+    const r = await post('/api/register', { name: 'Carol', role: 'buyer', region: 'china', email: 'carol@example.com', code: FIXED_CODE })
+    ok('invite gate: require_ref=1 + verified code + no sponsor → 403 INVITE_REQUIRED', r.status === 403 && r.json?.error_code === 'INVITE_REQUIRED', JSON.stringify(r.json))
+    ok('invite gate: no user created when invite missing', !userByEmail('carol@example.com')) }
+  { // 9b: email-verification gate still composes first (no code → email error, NOT a silent invite bypass)
+    const r = await post('/api/register', { name: 'Dave', role: 'buyer', region: 'china', email: 'dave@example.com' })
+    ok('invite gate: email verification still enforced first (no code → not bypassed)', r.json?.error_code === 'EMAIL_VERIFICATION_REQUIRED' || r.json?.error_code === 'CODE_EXPIRED', JSON.stringify(r.json))
+    ok('invite gate: no user created without code', !userByEmail('dave@example.com')) }
+  { // 9c: require_ref=1 + verified code + invite present → gate passes (not INVITE_REQUIRED)
+    await post('/api/register/send-code', { email: 'erin@example.com' })
+    const r = await post('/api/register', { name: 'Erin', role: 'buyer', region: 'china', email: 'erin@example.com', code: FIXED_CODE, sponsor_id: 'INVITE_X' })
+    ok('invite gate: with sponsor_id present → gate passes (not INVITE_REQUIRED)', r.json?.error_code !== 'INVITE_REQUIRED', JSON.stringify(r.json)) }
+  db.prepare("DELETE FROM system_state WHERE key='require_ref_to_register'").run()
+
   server.close()
 
   if (fail === 0) {
-    console.log(`\n✅ register email-verify: send-code 投递闸门/查重/发码;register 强制 email+code,错码不建号,有效码 → email_verified=1 + 单次消费;重复邮箱 409;agent 路径不受影响(不经此端点)\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)
+    console.log(`\n✅ register email-verify: send-code 投递闸门/查重/发码;register 强制 email+code,错码不建号,有效码 → email_verified=1 + 单次消费;重复邮箱 409;invite gate(require_ref=1 → 无邀请 403 INVITE_REQUIRED + 不建号,email 验证仍先于邀请,有邀请放行);agent 路径不受影响\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)
   } else {
     console.error(`\n❌ register email-verify FAILED\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}\n${fails.join('\n')}`)
     process.exit(1)
