@@ -72,8 +72,6 @@ async function main(): Promise<void> {
     VALID_REGIONS: new Set(['china', 'us', 'global']),
     pickPreferredSide: () => 'left',
     joinPowerLeg: () => ({ tail: 't', depth: 1 }),
-    INVITE_ROTATION_HANDLES: [],
-    inviteRotationLookup: () => null,
     issueCode: issueCode as any, findActiveCode,
     canDeliverCodes: () => deliveryConfigured,
     emailDeliveryNotConfigured: () => ({ ok: false, status: 503, error_code: 'EMAIL_DELIVERY_NOT_CONFIGURED', error: '邮件投递未配置' }) as any,

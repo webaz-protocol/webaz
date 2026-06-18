@@ -2855,24 +2855,6 @@ try {
     if (r.changes > 0) console.log('[D1b] require_ref_to_register 0→1（注册默认需邀请）')
   }
 } catch (e) { console.warn('[D1b] migration', e) }
-// 邀请码轮询：5 用户固定列表（按 handle），admin 可切开关；
-// 默认关闭，前端按钮置灰。开启后访客点 "获取邀请码" → 按"自纠偏轮询"派号。
-// 算法：
-//   · 每槽维护 issued_count / registered_count
-//   · max_reg - min_reg ≥ 3（不均衡）→ 发 registered 最少的（补齐）
-//   · 否则 → 发 issued 最少的（顺序均分）
-//   · 点击即 issued++；注册成功 → registered++
-try { db.prepare("INSERT OR IGNORE INTO system_state (key, value) VALUES ('invite_rotation_enabled', '0')").run() } catch {}
-try {
-  db.exec(`CREATE TABLE IF NOT EXISTS invite_rotation_stats (
-    slot             INTEGER PRIMARY KEY,
-    issued_count     INTEGER NOT NULL DEFAULT 0,
-    registered_count INTEGER NOT NULL DEFAULT 0
-  )`)
-  for (let i = 0; i < 5; i++) {
-    db.prepare("INSERT OR IGNORE INTO invite_rotation_stats (slot) VALUES (?)").run(i)
-  }
-} catch (e) { console.error('[invite-rotation schema]', e) }
 // 让 sys_protocol 可作为公库 sponsor（孤儿注册时分润自动归公库）
 try { db.prepare("UPDATE users SET l1_share_override = 1 WHERE id = 'sys_protocol'").run() } catch {}
 // M7.2.6 + 2026-05-21 PV 合规扩展：按全球各国监管态度分档
@@ -4994,8 +4976,6 @@ registerAuthRegisterRoutes(app, {
   clientIpHash, clientUaHash,
   get VALID_REGIONS() { return VALID_REGIONS },
   pickPreferredSide, joinPowerLeg,
-  get INVITE_ROTATION_HANDLES() { return INVITE_ROTATION_HANDLES },
-  inviteRotationLookup,
   // 邮箱验证优先注册 — issueCode/findActiveCode 是 hoisted 函数声明、isVerificationEmailReady/
   // emailDeliveryNotConfigured 是 import,均可在此安全引用;CODE_TTL_MIN/MAX_CODE_ATTEMPTS 是后置 const,
   // 走 getter 延迟读避免 TDZ。
@@ -5810,43 +5790,6 @@ registerAdminTokenomicsRoutes(app, {
 
 // system-flags — Phase 107 已迁出
 
-// 邀请码轮询 — "issued + registered 自纠偏"模型
-const INVITE_ROTATION_HANDLES = ['xiaohua', 'mian', 'holden', 'jiayi', 'qingliang']
-const INVITE_REBALANCE_THRESHOLD = 5   // max_reg - min_reg ≥ 5 → 进入补齐模式
-
-function readInviteStats(): Array<{ slot: number; issued: number; registered: number }> {
-  return db.prepare("SELECT slot, issued_count as issued, registered_count as registered FROM invite_rotation_stats ORDER BY slot")
-    .all() as Array<{ slot: number; issued: number; registered: number }>
-}
-
-function inviteRotationLookup(handleIdx: number): { id: string; code: string; handle: string; name: string } | null {
-  const handle = INVITE_ROTATION_HANDLES[handleIdx]
-  const u = db.prepare("SELECT id, permanent_code, handle, name FROM users WHERE handle = ?").get(handle) as { id: string; permanent_code: string; handle: string; name: string } | undefined
-  if (!u?.permanent_code) return null
-  return { id: u.id, code: u.permanent_code, handle: u.handle, name: u.name }
-}
-
-// 派号：取 (registered 不均衡 ? min_registered : min_issued)；同值取低 slot
-function pickInviteSlot(stats: ReturnType<typeof readInviteStats>): number {
-  const regs = stats.map(s => s.registered)
-  const maxReg = Math.max(...regs), minReg = Math.min(...regs)
-  const useReg = (maxReg - minReg) >= INVITE_REBALANCE_THRESHOLD
-  const key = useReg ? 'registered' : 'issued'
-  const minVal = useReg ? minReg : Math.min(...stats.map(s => s.issued))
-  for (const s of stats) {
-    if (s[key as 'registered' | 'issued'] === minVal) return s.slot
-  }
-  return 0
-}
-
-// 派号 + issued++ 包在 transaction（better-sqlite3 同步顺序执行）
-const issueInviteSlot = db.transaction((): number => {
-  const stats = readInviteStats()
-  const slot = pickInviteSlot(stats)
-  db.prepare("UPDATE invite_rotation_stats SET issued_count = issued_count + 1 WHERE slot = ?").run(slot)
-  return slot
-})
-
 // #1013 Phase 73: GET /api/reviews/recent 已迁出（claim 2 端点也由同模块注册，定义在下游）
 
 
@@ -5963,11 +5906,9 @@ registerAdminModerationRoutes(app, {
 })
 
 
-// 邀请码 3 endpoints — Phase 98 已迁出
+// 邀请 endpoints — Phase 98 已迁出
 registerReferralRoutes(app, {
   db, auth,
-  requireProtocolAdmin: (req, res) => requireAdminPermission(req, res, 'protocol'),
-  logAdminAction, issueInviteSlot, inviteRotationLookup,
 })
 
 

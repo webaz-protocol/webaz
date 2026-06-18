@@ -5818,12 +5818,6 @@ async function renderAdminTokenomics(app) {
       <div style="font-size:11px;color:#9ca3af;margin-top:6px">${t('开启后：无邀请码不能注册（admin/物流/仲裁/审核员 与 region=china 豁免）')}</div>
     </div>
 
-    <h2 style="font-size:15px;font-weight:600;margin:16px 0 8px">🎟 ${t('邀请码轮询')}</h2>
-    <div class="card" style="margin-bottom:12px">
-      <div id="invite-rotation-status" style="font-size:12px;color:#6b7280">${t('加载中...')}</div>
-      <div style="font-size:11px;color:#9ca3af;margin-top:6px">${t('开启后：注册页"获取邀请码"按钮可用，依次轮询 xiaohua / mian / holden / jiayi / qingliang 5 位用户的 permanent_code')}</div>
-    </div>
-
     <h2 style="font-size:15px;font-weight:600;margin:16px 0 8px">📒 ${t('参与记录(PV)流水')}</h2>
     <div class="card" style="margin-bottom:12px">
       <button class="btn btn-outline btn-sm" style="font-size:11px;margin-bottom:8px" onclick="doTkProcess()">${t('处理 PV 流水')}</button>
@@ -5834,29 +5828,6 @@ async function renderAdminTokenomics(app) {
     <div class="card" style="padding:0;margin-bottom:12px">${commRows}</div>
   `, 'admin')
   setTimeout(loadRequireRefStatus, 100)
-  setTimeout(loadInviteRotationStatus, 100)
-}
-
-window.loadInviteRotationStatus = async () => {
-  const f = await GET('/system-flags').catch(() => null)
-  const el = document.getElementById('invite-rotation-status')
-  if (!el) return
-  const enabled = !!f?.invite_rotation_enabled
-  el.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <strong>${t('邀请码轮询')}</strong>: ${enabled ? `<span style="color:#16a34a">🟢 ${t('已开启 — 按钮可用')}</span>` : `<span style="color:#dc2626">🔒 ${t('已关闭 — 按钮置灰')}</span>`}
-      <button class="btn btn-outline btn-sm" style="font-size:11px" onclick="doToggleInviteRotation(${!enabled})">${enabled ? t('关闭') : t('开启')}</button>
-    </div>`
-}
-
-window.doToggleInviteRotation = async (enable) => {
-  if (!confirm(enable
-    ? t('确认开启邀请码轮询？访客在注册页点按钮可申领下一个 sponsor 邀请码')
-    : t('确认关闭邀请码轮询？按钮将置灰')
-  )) return
-  const res = await POST('/admin/invite-rotation/toggle', { enabled: enable })
-  if (res.error) return alert(res.error)
-  loadInviteRotationStatus()
 }
 
 window.loadRequireRefStatus = async () => {
@@ -7185,10 +7156,7 @@ window.openAuthSheet = (defaultTab) => {
         </div>
         <div class="form-group">
           <label class="form-label">${t('邀请码')} <span style="color:#dc2626">*</span></label>
-          <div style="display:flex;gap:6px;align-items:stretch">
-            <input class="form-control" id="inp-sponsor" placeholder="${t('陆续开放中，请期待')}" style="font-family:monospace;font-size:13px;flex:1">
-            <button id="btn-fetch-ref" type="button" disabled title="${t('该功能默认关闭，由管理员开启后可用')}" onclick="doFetchInviteCode()" style="white-space:nowrap;padding:0 12px;background:#e5e7eb;color:#9ca3af;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:not-allowed">${t('获取邀请码')}</button>
-          </div>
+          <input class="form-control" id="inp-sponsor" placeholder="${t('陆续开放中，请期待')}" style="font-family:monospace;font-size:13px;width:100%">
           <div style="font-size:11px;color:#6b7280;margin-top:4px" id="sponsor-hint-msg">${t('邀请码为 6-7 位永久码；没有就联系老用户拿邀请链接')}</div>
         </div>
         <div class="form-group">
@@ -12027,19 +11995,6 @@ window.switchLoginTab = (tab) => {
 async function checkRegGate() {
   try {
     const f = await GET('/system-flags')
-    // 邀请码轮询按钮开关 — 默认禁用，admin 开启后变可用
-    const btn = document.getElementById('btn-fetch-ref')
-    if (btn) {
-      if (f?.invite_rotation_enabled) {
-        btn.disabled = false
-        btn.title = t('点击向系统申领一个邀请码')
-        btn.style.cssText = 'white-space:nowrap;padding:0 12px;background:#4f46e5;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer'
-      } else {
-        btn.disabled = true
-        btn.title = t('该功能默认关闭，由管理员开启后可用')
-        btn.style.cssText = 'white-space:nowrap;padding:0 12px;background:#e5e7eb;color:#9ca3af;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:not-allowed'
-      }
-    }
     if (!f?.require_ref_to_register) return
     const hint = readShareHint()
     const el = document.getElementById('reg-gate-hint')
@@ -12055,14 +12010,6 @@ async function checkRegGate() {
       el.innerHTML = `🔒 ${t('当前要求邀请码注册')}<br><span style="font-size:11px">${t('请通过已有用户的邀请链接进入，或选择 物流/仲裁员/审核员 角色（豁免）')}</span>`
     }
   } catch {}
-}
-
-window.doFetchInviteCode = async () => {
-  const r = await POST('/invite/rotate', {})
-  if (r.error) { alert(r.error); return }
-  // 仅自动填入推荐码 — 不展示推荐人信息（轮询是被动分配，非主动分享）
-  const inp = document.getElementById('inp-sponsor')
-  if (inp) inp.value = r.code
 }
 
 window.doLogin = async () => {

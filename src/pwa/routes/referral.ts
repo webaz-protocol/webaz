@@ -1,32 +1,27 @@
 /**
- * 邀请码（推土机分享 dashboard + 邀请轮询）
+ * 邀请码（个人邀请 dashboard + 商品分享链接）
  *
  * 由 #1013 Phase 98 从 src/pwa/server.ts 抽出。
  *
- * 3 endpoints:
- *   GET  /api/referral/me                   B-1 个人邀请 dashboard（链接 + 直推 + earning 3 桶）
- *   POST /api/invite/rotate                 公开邀请码轮询（开关 ON 时）
- *   POST /api/admin/invite-rotation/toggle  protocol 开关
+ * endpoints:
+ *   GET  /api/referral/me   B-1 个人邀请 dashboard（链接 + 直推 + earning 3 桶）
+ *   GET  /api/share-link    生成商品分享链接（rewards opt-in gate）
  *
- * 跨域注入：auth + requireProtocolAdmin + logAdminAction + issueInviteSlot + inviteRotationLookup
+ * 跨域注入：auth
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
-import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
 import { genuineSalePredicate } from '../../layer0-foundation/L0-2-state-machine/genuine-sale.js'  // 真实成交单一真相源
 
 export interface ReferralDeps {
   db: Database.Database
   auth: (req: Request, res: Response) => Record<string, unknown> | null
-  requireProtocolAdmin: (req: Request, res: Response) => Record<string, unknown> | null
-  logAdminAction: (adminId: string, action: string, targetType: string | null, targetId: string | null, detail?: Record<string, unknown>) => void
-  issueInviteSlot: () => number
-  inviteRotationLookup: (handleIdx: number) => { id: string; code: string; handle: string; name: string } | null
 }
 
 export function registerReferralRoutes(app: Application, deps: ReferralDeps): void {
   // db 已全量走 RFC-016 异步 seam(dbOne/dbAll/dbRun),不再直接用 deps.db
-  const { auth, requireProtocolAdmin, logAdminAction, issueInviteSlot, inviteRotationLookup } = deps
+  const { auth } = deps
 
   // B-1: 个人邀请 dashboard
   app.get('/api/referral/me', async (req, res) => {
@@ -60,27 +55,6 @@ export function registerReferralRoutes(app: Application, deps: ReferralDeps): vo
         month_waz: monthEarnings,
       },
     })
-  })
-
-  // 公开邀请码轮询（开关 ON 时）
-  app.post('/api/invite/rotate', async (_req, res) => {
-    const enabled = (await dbOne<{ value: string }>("SELECT value FROM system_state WHERE key='invite_rotation_enabled'"))?.value === '1'
-    if (!enabled) return void res.status(403).json({ error: '邀请码获取暂未开放', enabled: false })
-
-    const slot = issueInviteSlot()
-    const u = inviteRotationLookup(slot)
-    if (!u) return void res.status(503).json({ error: `轮询用户未就绪，请联系管理员`, enabled: true })
-    res.json({ enabled: true, code: u.code })
-  })
-
-  // protocol 开关
-  app.post('/api/admin/invite-rotation/toggle', async (req, res) => {
-    const admin = requireProtocolAdmin(req, res); if (!admin) return
-    const { enabled } = req.body
-    const v = enabled ? '1' : '0'
-    await dbRun("INSERT OR REPLACE INTO system_state (key, value) VALUES ('invite_rotation_enabled', ?)", [v])
-    logAdminAction(admin.id as string, 'invite_rotation_toggle', 'system', 'invite_rotation_enabled', { value: v })
-    res.json({ success: true, enabled: !!enabled })
   })
 
   // RFC-003 #1122: 生成商品分享链接(把 MCP webaz_share_link 的本地计算搬到服务端,

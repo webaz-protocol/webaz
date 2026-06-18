@@ -170,7 +170,7 @@ export function registerShareRedirectsRoutes(app: Application, deps: ShareRedire
   // 邀请短链 /i/CODE — invite-code ONLY (permanent_code, 兼容旧的 -L/-R 后缀). usr_xxx / @handle / 裸 handle
   // 一律 404(不再做 handle 解析)。pre-public 去左右码:/i/CODE 与旧 /i/CODE-L、/i/CODE-R 一律
   // 规范化重定向到 /?ref=CODE(丢弃 side;放置侧别由注册时系统自动决定),旧链接/二维码仍可用。
-  // 不受 invite_rotation_enabled 影响:已有用户分享出的 /i/CODE 链接和二维码必须始终可用。
+  // 不受注册门控开关影响:已有用户分享出的 /i/CODE 链接和二维码必须始终可用。
   app.get('/i/:code', (req, res) => {
     const ref = resolveInviteCodeRef(String(req.params.code || ''))
     if (!ref) return void res.status(404).send('Invitation link not found.')

@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (640 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (638 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -859,19 +859,6 @@
     "/api/admin/hot-wallet/status": {
       "get": {
         "summary": "P2-5: protocol 权限（区域 admin 看不到全局热钱包）",
-        "tags": [
-          "admin"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/admin/invite-rotation/toggle": {
-      "post": {
-        "summary": "protocol 开关",
         "tags": [
           "admin"
         ],
@@ -3761,13 +3748,6 @@
             "bearerAuth": []
           }
         ]
-      }
-    },
-    "/api/invite/rotate": {
-      "post": {
-        "summary": "公开邀请码轮询（开关 ON 时）",
-        "tags": [],
-        "security": []
       }
     },
     "/api/kyc/me": {
