@@ -168,8 +168,8 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
       },
       // 公开披露文档(#1050) — 协议层"钱怎么流"的源真理(协议外可读)
       disclosures: {
-        // 源码仓库 launch 前私有,下列 github 链接可能 404(launch 时开),不是死项目;机器可读 spec 已全在 /.well-known/*。
-        source_status: 'repo private until W8 public launch — github.com links below may 404 until then (they open at launch); the full spec is already public via /.well-known/*.',
+        // 源码仓库已公开(github.com/webaz-protocol/webaz);机器可读 spec 也全在 /.well-known/*。
+        source_status: 'repo is public (github.com/webaz-protocol/webaz); the full spec is also available via /.well-known/*.',
         economic_model: 'https://github.com/webaz-protocol/webaz/blob/main/docs/ECONOMIC-MODEL.md',
         mlm_compliance: 'https://github.com/webaz-protocol/webaz/blob/main/docs/PARTICIPATION-ATTRIBUTION-COMPLIANCE.md',
         agent_governance: 'https://github.com/webaz-protocol/webaz/blob/main/docs/AGENT-GOVERNANCE.md',
