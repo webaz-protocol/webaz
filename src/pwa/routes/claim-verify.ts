@@ -24,6 +24,8 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
+// #420 P1-3 — verifier outlier 阈值改由 governance-adjustable protocol_params 驱动
+import { readAntiAbuseThresholds, verifierOutlierBand } from '../anti-abuse-thresholds.js'
 
 // RFC-016 Phase 1 — 仅端点纯校验读/列表/公开查询/读回 + 单语句标记/字段写 + 写后通知 → async seam。
 // 全部保持同步(Phase 3 再用 pg tx/行锁):
@@ -50,11 +52,10 @@ const CLAIM_VALID_VOTES = new Set(['pass', 'fail', 'no_fault', 'abstain'])
 // V3：abstain 不计入 3-vote 共识、不参与 majority、不触发 outlier
 const CLAIM_SELLER_FINE_RATE = 0.10   // pass 时扣 product.stake_amount × 10%
 const CLAIM_NO_FAULT_SUBSIDY = 1      // no_fault 路径协议池补贴每个 verifier 1 WAZ
-// 跨域共用（server.ts checkVerifierOutlier 跨 6 套 vote table 聚合也用同一阈值）
-export const CLAIM_SUSPEND_THRESHOLD = 3     // 180d 内 ≥3 次 outlier → 30d 冻结
-export const CLAIM_REVOKE_THRESHOLD = 5      // 180d 内 ≥5 次 outlier → 永封
-export const CLAIM_SUSPEND_DAYS = 30
-export const CLAIM_OUTLIER_WINDOW_DAYS = 180
+// #420 P1-3:verifier outlier 阈值（暂停/撤销/窗口/暂停时长）已抽到 governance-adjustable
+// protocol_params,单一真相源在 ../anti-abuse-thresholds.ts(DEFAULT_ANTI_ABUSE_THRESHOLDS:
+// outlierSuspendCount=3 / outlierRevokeCount=5 / outlierSuspendDays=30 / outlierWindowDays=180)。
+// checkAndApplyOutlierStrike + server.ts checkVerifierOutlier 通过 readAntiAbuseThresholds(db) 读取。
 
 // ─── helpers (module-level, db 通过参数传) ───────────────────
 // 2026-05-22 V2：通知所有资格内 verifier 有新 claim 任务
@@ -134,27 +135,30 @@ export function activeClaimTaskCountForVerifier(db: Database.Database, userId: s
 
 // M7.3b：单个 outlier 处罚检查
 function checkAndApplyOutlierStrike(db: Database.Database, generateId: (p: string) => string, userId: string): { strikes_180d: number; suspension?: { type: 'suspended' | 'revoked'; until_at: string | null } } {
+  // #420 P1-3:窗口/暂停/撤销阈值由 protocol_params 驱动(默认 = 原 180d/≥5/≥3/30d)
+  const t = readAntiAbuseThresholds(db)
   const cnt = (db.prepare(`
     SELECT COUNT(*) as n FROM claim_verification_votes cvv
     JOIN claim_verification_tasks cvt ON cvt.id = cvv.task_id
     WHERE cvv.verifier_id = ?
       AND cvv.was_majority = 0
       AND cvt.resolved_at IS NOT NULL
-      AND cvt.resolved_at >= datetime('now', '-${CLAIM_OUTLIER_WINDOW_DAYS} days')
+      AND cvt.resolved_at >= datetime('now', '-${t.outlierWindowDays} days')
   `).get(userId) as { n: number }).n
   const existing = db.prepare(`SELECT type, outlier_count FROM claim_verifier_suspensions
     WHERE user_id = ? AND (type = 'revoked' OR until_at > datetime('now'))
     ORDER BY created_at DESC LIMIT 1`).get(userId) as { type: string; outlier_count: number } | undefined
   if (existing?.type === 'revoked') return { strikes_180d: cnt }
-  if (cnt >= CLAIM_REVOKE_THRESHOLD && (!existing || existing.outlier_count < CLAIM_REVOKE_THRESHOLD)) {
+  const band = verifierOutlierBand(cnt, t)
+  if (band === 'revoke' && (!existing || existing.outlier_count < t.outlierRevokeCount)) {
     db.prepare(`INSERT INTO claim_verifier_suspensions (id, user_id, type, reason, outlier_count)
-      VALUES (?,?, 'revoked', ?, ?)`).run(generateId('cvs'), userId, `180d 内累计 ${cnt} 次 outlier`, cnt)
+      VALUES (?,?, 'revoked', ?, ?)`).run(generateId('cvs'), userId, `${t.outlierWindowDays}d 内累计 ${cnt} 次 outlier`, cnt)
     return { strikes_180d: cnt, suspension: { type: 'revoked', until_at: null } }
   }
-  if (cnt >= CLAIM_SUSPEND_THRESHOLD && !existing) {
-    const until = new Date(Date.now() + CLAIM_SUSPEND_DAYS * 86400_000).toISOString()
+  if (band === 'suspend' && !existing) {
+    const until = new Date(Date.now() + t.outlierSuspendDays * 86400_000).toISOString()
     db.prepare(`INSERT INTO claim_verifier_suspensions (id, user_id, type, until_at, reason, outlier_count)
-      VALUES (?,?, 'suspended', ?, ?, ?)`).run(generateId('cvs'), userId, until, `180d 内累计 ${cnt} 次 outlier`, cnt)
+      VALUES (?,?, 'suspended', ?, ?, ?)`).run(generateId('cvs'), userId, until, `${t.outlierWindowDays}d 内累计 ${cnt} 次 outlier`, cnt)
     return { strikes_180d: cnt, suspension: { type: 'suspended', until_at: until } }
   }
   return { strikes_180d: cnt }

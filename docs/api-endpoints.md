@@ -75,7 +75,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/governance/applications` | 🔐 | 👑 | GET /api/admin/governance/applications — 列出 pending_onboarding(可筛 quiz_passed +  | src/pwa/routes/governance-onboarding.ts:358 |
 | GET | `/api/admin/governance/auto-deactivations` | 🔐 | 👑 | spec §6.2 公示触发原因(透明 — 元规则 #1) | src/pwa/routes/governance-onboarding.ts:713 |
 | POST | `/api/admin/governance/resolve-appeal` | 🔐 | 👑 | accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由 | src/pwa/routes/governance-onboarding.ts:751 |
-| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:6527 |
+| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:6523 |
 | GET | `/api/admin/health` | 🔐 | 👑 |  | src/pwa/routes/admin-health.ts:33 |
 | GET | `/api/admin/hot-wallet` |  |  | Legacy x-admin-key 入口：仅余额 | src/pwa/routes/admin-wallet-ops.ts:74 |
 | GET | `/api/admin/hot-wallet/status` | 🔐 | 👑 | P2-5: protocol 权限（区域 admin 看不到全局热钱包） | src/pwa/routes/admin-wallet-ops.ts:48 |
@@ -222,13 +222,13 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/checkin` | 🔐 |  |  | src/pwa/routes/checkin-tasks.ts:78 |
 | GET | `/api/checkin/status` | 🔐 |  |  | src/pwa/routes/checkin-tasks.ts:38 |
 | GET | `/api/checkout/tax-preview` | 🔐 |  |  | src/pwa/routes/checkout-helpers.ts:30 |
-| GET | `/api/claim-tasks/:id` | 🔐 |  | 任务详情 | src/pwa/routes/claim-verify.ts:599 |
-| POST | `/api/claim-tasks/:id/seller-evidence` | 🔐 |  | 卖家提交证据 → 延期 24h；状态保持 open | src/pwa/routes/claim-verify.ts:618 |
-| POST | `/api/claim-tasks/:id/vote` | 🔐 |  | verifier 投票 — 铁律 §4 | src/pwa/routes/claim-verify.ts:444 |
-| GET | `/api/claim-tasks/available` | 🔐 |  | 列出可接的 open 任务 | src/pwa/routes/claim-verify.ts:418 |
-| GET | `/api/claim-tasks/mine` | 🔐 |  | 我相关的任务（必须在 /:id 之前注册，否则被 /:id 截获） | src/pwa/routes/claim-verify.ts:506 |
+| GET | `/api/claim-tasks/:id` | 🔐 |  | 任务详情 | src/pwa/routes/claim-verify.ts:603 |
+| POST | `/api/claim-tasks/:id/seller-evidence` | 🔐 |  | 卖家提交证据 → 延期 24h；状态保持 open | src/pwa/routes/claim-verify.ts:622 |
+| POST | `/api/claim-tasks/:id/vote` | 🔐 |  | verifier 投票 — 铁律 §4 | src/pwa/routes/claim-verify.ts:448 |
+| GET | `/api/claim-tasks/available` | 🔐 |  | 列出可接的 open 任务 | src/pwa/routes/claim-verify.ts:422 |
+| GET | `/api/claim-tasks/mine` | 🔐 |  | 我相关的任务（必须在 /:id 之前注册，否则被 /:id 截获） | src/pwa/routes/claim-verify.ts:510 |
 | POST | `/api/claim-url` | 🔐 |  |  | src/pwa/routes/url-claim.ts:81 |
-| GET | `/api/claims/public` |  |  | 公开 #claims 广场（无 auth — 透明性是验证声明信任的前提） | src/pwa/routes/claim-verify.ts:537 |
+| GET | `/api/claims/public` |  |  | 公开 #claims 广场（无 auth — 透明性是验证声明信任的前提） | src/pwa/routes/claim-verify.ts:541 |
 | POST | `/api/contribution-identity/github/claim-challenge` | 🔐 |  | ── 1) issue a publication challenge ──────────────────────────────────────────── | src/pwa/routes/contribution-identity.ts:80 |
 | POST | `/api/contribution-identity/github/claim-complete` | 🔐 |  | ── 2) complete the claim (human gate → re-fetch gist proof → atomic consume+bind | src/pwa/routes/contribution-identity.ts:111 |
 | GET | `/api/contribution-identity/github/claimable` | 🔐 |  | carries the uncommitted-value boundary, and errors never leak SQL/stack. | src/pwa/routes/contribution-identity.ts:207 |
@@ -358,8 +358,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/me/delete-status` | 🔐 |  |  | src/pwa/routes/account-deletion.ts:70 |
 | GET | `/api/me/export` | 🔐 |  | COP P0-1: 数据导出（用户主权） | src/pwa/routes/me-data.ts:68 |
 | GET | `/api/me/note-prompts` | 🔐 |  | COP 飞轮: 完成订单 7d 引导发笔记 | src/pwa/routes/me-data.ts:29 |
-| GET | `/api/me/notify-claim-tasks` | 🔐 |  |  | src/pwa/routes/claim-verify.ts:530 |
-| POST | `/api/me/notify-claim-tasks` | 🔐 |  | 通知偏好 | src/pwa/routes/claim-verify.ts:524 |
+| GET | `/api/me/notify-claim-tasks` | 🔐 |  |  | src/pwa/routes/claim-verify.ts:534 |
+| POST | `/api/me/notify-claim-tasks` | 🔐 |  | 通知偏好 | src/pwa/routes/claim-verify.ts:528 |
 | GET | `/api/me/seller/trial-campaigns` | 🔐 |  | 卖家：我的测评活动列表（含每个的 claims 计数） | src/pwa/routes/trial.ts:329 |
 | GET | `/api/me/trial-claims` | 🔐 |  | 买家：我的测评列表 | src/pwa/routes/trial.ts:316 |
 | GET | `/api/my-products` | 🔐 |  |  | src/pwa/routes/search.ts:51 |
@@ -378,8 +378,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/orders/:id` | 🔐 |  |  | src/pwa/routes/orders-read.ts:148 |
 | POST | `/api/orders/:id/action` | 🔐 |  | 通用状态机 action — accept/ship/pickup/transit/deliver/confirm/dispute | src/pwa/routes/orders-action.ts:133 |
 | GET | `/api/orders/:id/chain` | 🔐 |  | 订单签名链 — 当事人 + arbitrator + admin 可查 | src/pwa/routes/orders-read.ts:121 |
-| GET | `/api/orders/:id/claim-task` | 🔐 |  | 通过 order_id 查关联 task | src/pwa/routes/claim-verify.ts:405 |
-| POST | `/api/orders/:id/claim-verification` | 🔐 |  | 买家发起 claim 验证任务（绑定 paid 及之后的订单） | src/pwa/routes/claim-verify.ts:327 |
+| GET | `/api/orders/:id/claim-task` | 🔐 |  | 通过 order_id 查关联 task | src/pwa/routes/claim-verify.ts:409 |
+| POST | `/api/orders/:id/claim-verification` | 🔐 |  | 买家发起 claim 验证任务（绑定 paid 及之后的订单） | src/pwa/routes/claim-verify.ts:331 |
 | POST | `/api/orders/:id/confirm-in-person` | 🔐 |  | 买家确认面交完成 → 直接 completed + settleOrder | src/pwa/routes/orders-action.ts:112 |
 | POST | `/api/orders/:id/force-timeout-check` | 🔐 |  | 手动触发超时判责（当事人） | src/pwa/routes/orders-action.ts:395 |
 | GET | `/api/orders/:order_id/buyer-rating` | 🔐 |  | 查 seller → buyer 评价（双盲遮蔽：buyer 看不到，除非自己也评过 OR 窗口到期） | src/pwa/routes/ratings.ts:113 |
