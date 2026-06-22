@@ -121,6 +121,8 @@ async function routeTests(): Promise<void> {
     // mirror requireSupportAdmin: returns the admin or writes 403 + returns null
     requireSupportAdmin: ((_req: any, res: any) => { if (authUser) return authUser; errorRes(res, 403, 'FORBIDDEN', 'admin only'); return null }) as any,
     rateLimitOk: (() => true) as any,
+    auth: ((_req: any, res: any) => { res.status(401).json({ error: 'login required' }); return null }) as any,
+    resolveUser: (() => null) as any,
   })
   server = createServer(app)
   await new Promise<void>(r => server.listen(0, '127.0.0.1', () => { port = (server.address() as any).port; r() }))
