@@ -674,6 +674,7 @@ async function render(page, params) {
       if (params[0] === 'notes')      return renderMyNotes(app)
       if (params[0] === 'settings')   return renderMyHome(app, 'settings')
       if (params[0] === 'advanced')   return renderMyHome(app, 'advanced')
+      if (params[0] === 'quota-requests') return renderMyQuotaRequests(app)
       return renderMyHome(app, 'dashboard')
     case 'note-new':      return renderNoteCreate(app, params[0])  // order_id
     case 'u':             return renderUserProfile(app, params[0])
@@ -713,6 +714,7 @@ async function render(page, params) {
       // 2026-05-24 #welcome 公开 ideas/邮箱订阅查看
       if (params[0] === 'public-ideas')            return renderAdminPublicIdeas(app)
       if (params[0] === 'task-proposals')          return renderAdminTaskProposals(app)
+      if (params[0] === 'quota-requests')          return renderAdminBuildTaskQuota(app)
       if (params[0] === 'params')                  return renderAdminParams(app)
       if (params[0] === 'timeline' && params[1])   return renderAdminUserTimeline(app, params[1])
       if (params[0] === 'timeline')                return renderAdminUserTimelinePicker(app)
@@ -3305,6 +3307,7 @@ window.createTaskDraft = async (id) => {
     definition_of_done: v('dod'), expected_results: v('expect'),
   }
   const r = await POST('/admin/task-proposals/' + encodeURIComponent(id) + '/create-task-draft', body)
+  if (r && r.error_code === 'RATE_LIMITED') { showRateLimitAffordance(r); return }
   if (r.error) { toast$((r.missing && r.missing.length) ? ((en ? 'Missing: ' : '缺少:') + r.missing.join(', ')) : (r.error || 'failed')); return }
   toast$(en ? 'Draft saved (unpublished)' : '草稿已保存(未发布)')
   renderAdminTaskProposals(document.getElementById('app'))
@@ -3345,6 +3348,206 @@ window.publishDraft = async (taskId) => {
   if (r.error) { toast$((r.missing && r.missing.length) ? ((en ? 'Fill before publish: ' : '发布前请填齐:') + r.missing.join(', ')) : (r.error || 'failed')); return }
   toast$(en ? 'Published to task board' : '已发布到任务板')
   renderAdminTaskProposals(document.getElementById('app'))
+}
+
+// ── PR #18 build-task quota-increase requests ─────────────────────────────────
+const _qT = (zh, en) => (window._lang === 'en' ? en : zh)
+const _qStatusBadge = (s) => {
+  const map = {
+    pending:   ['#fef9c3', '#854d0e', _qT('待审核', 'Pending')],
+    approved:  ['#dcfce7', '#166534', _qT('已批准', 'Approved')],
+    rejected:  ['#fee2e2', '#991b1b', _qT('已拒绝', 'Rejected')],
+    expired:   ['#f3f4f6', '#6b7280', _qT('已过期', 'Expired')],
+    exhausted: ['#e0e7ff', '#3730a3', _qT('已用完', 'Exhausted')],
+    revoked:   ['#fae8ff', '#86198f', _qT('已撤销', 'Revoked')],
+  }
+  const [bg, fg, label] = map[s] || ['#f3f4f6', '#6b7280', s]
+  return `<span style="font-size:11px;background:${bg};color:${fg};padding:2px 8px;border-radius:99px;font-weight:600">${escHtml(label)}</span>`
+}
+
+// RATE_LIMITED affordance — shown when build-task creation is capped (structured 429 response).
+window.showRateLimitAffordance = (r) => {
+  const limit = (r && r.limit) != null ? r.limit : '?'
+  const used = (r && r.used) != null ? r.used : '?'
+  document.getElementById('quota-rl-overlay')?.remove()
+  const ov = document.createElement('div')
+  ov.id = 'quota-rl-overlay'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px'
+  ov.innerHTML = `
+    <div style="background:#fff;border-radius:12px;max-width:420px;width:100%;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,.2)">
+      <div style="font-size:16px;font-weight:700;color:#991b1b;margin-bottom:8px">⚠️ ${_qT('已达每日建任务上限', 'Daily task-creation limit reached')}</div>
+      <div style="font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px">
+        ${_qT('当前上限', 'Current limit')}: <b>${escHtml(String(limit))}</b> ${_qT('个 / 24 小时', 'tasks / 24h')}　·　${_qT('已用', 'Used')}: <b>${escHtml(String(used))}</b><br>
+        ${_qT('需要更多额度需经根管理员批准。', 'More headroom requires root-admin approval.')}
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="document.getElementById('quota-rl-overlay').remove()" style="padding:8px 14px;border:1px solid #d1d5db;background:#fff;color:#374151;border-radius:8px;font-size:13px;cursor:pointer">${_qT('关闭', 'Close')}</button>
+        <button onclick="document.getElementById('quota-rl-overlay').remove();navigate('#me/quota-requests')" style="padding:8px 14px;border:none;background:#4338ca;color:#fff;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">${_qT('申请增加额度', 'Request extra quota')}</button>
+      </div>
+    </div>`
+  document.body.appendChild(ov)
+}
+
+// Requester view — own quota requests + a new-request form.
+async function renderMyQuotaRequests(app) {
+  if (!state.user) { renderLogin(); return }
+  app.innerHTML = shell(loading$(), 'me')
+  const r = await GET('/me/quota-requests').catch(() => null)
+  if (!r || r.error) { app.innerHTML = shell(alert$('error', (r && r.error) || _qT('加载失败', 'Failed to load')), 'me'); return }
+  const reqs = r.requests || []
+  const hasPending = reqs.some(x => x.status === 'pending')
+  const field = (label, html) => `<div style="margin-bottom:10px"><label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">${escHtml(label)}</label>${html}</div>`
+  const inputStyle = 'width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box'
+
+  const form = hasPending
+    ? `<div class="card" style="padding:14px;margin-bottom:14px;background:#fffbeb;border:1px solid #fde68a">
+        <div style="font-size:13px;color:#854d0e">${_qT('你已有一个待审核的申请 — 每种额度类型同时只能有一个待审核申请。', 'You already have a pending request — only one pending request per quota type is allowed.')}</div>
+      </div>`
+    : `<div class="card" style="padding:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:700;margin-bottom:12px">📝 ${_qT('申请增加建任务额度', 'Request extra build-task quota')}</div>
+        ${field(_qT('额外任务数(必填,正整数)', 'Extra tasks (required, positive integer)'), `<input id="q-count" type="number" min="1" placeholder="10" style="${inputStyle}">`)}
+        ${field(_qT('理由(必填)', 'Reason (required)'), `<textarea id="q-reason" rows="3" placeholder="${_qT('为什么需要更多额度', 'Why you need more quota')}" style="${inputStyle}"></textarea>`)}
+        ${field(_qT('关联任务/提案/PR(每行一个,可选)', 'Linked task/proposal/PR refs (one per line, optional)'), `<textarea id="q-refs" rows="2" placeholder="#17\\ntp_..." style="${inputStyle}"></textarea>`)}
+        ${field(_qT('紧急程度', 'Urgency'), `<select id="q-urgency" style="${inputStyle}"><option value="normal">${_qT('普通', 'Normal')}</option><option value="low">${_qT('低', 'Low')}</option><option value="high">${_qT('高', 'High')}</option></select>`)}
+        ${field(_qT('期望有效期(小时,可选)', 'Requested duration (hours, optional)'), `<input id="q-duration" type="number" min="1" placeholder="72" style="${inputStyle}">`)}
+        <button onclick="submitQuotaRequest()" style="margin-top:6px;padding:9px 16px;border:none;background:#4338ca;color:#fff;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">${_qT('提交申请', 'Submit request')}</button>
+      </div>`
+
+  const card = (x) => {
+    const granted = x.granted_count != null ? x.granted_count : null
+    const remaining = x.remaining != null ? x.remaining : null
+    return `<div class="card" style="padding:14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+        <div style="font-size:13px;font-weight:600">${escHtml(_qT('额外', 'Extra'))} ${escHtml(String(x.requested_extra_count))} · ${escHtml(x.urgency || 'normal')}</div>
+        ${_qStatusBadge(x.status)}
+      </div>
+      <div style="font-size:12px;color:#374151;margin-top:6px;white-space:pre-wrap">${escHtml(x.reason || '')}</div>
+      ${(x.linked_refs && x.linked_refs.length) ? `<div style="font-size:11px;color:#6b7280;margin-top:4px">${_qT('关联', 'Refs')}: ${x.linked_refs.map(escHtml).join(', ')}</div>` : ''}
+      ${x.status === 'approved' ? `<div style="font-size:12px;color:#166534;margin-top:6px">${_qT('授权', 'Granted')}: ${escHtml(String(granted))} · ${_qT('剩余', 'Remaining')}: <b>${escHtml(String(remaining))}</b>${x.expires_at ? ` · ${_qT('到期', 'Expires')}: ${escHtml(x.expires_at)}` : ''}</div>` : ''}
+      ${x.status === 'exhausted' ? `<div style="font-size:12px;color:#3730a3;margin-top:6px">${_qT('授权已用完', 'Grant fully used')} (${escHtml(String(granted))})</div>` : ''}
+      ${x.status === 'rejected' && x.decision_note ? `<div style="font-size:12px;color:#991b1b;margin-top:6px">${_qT('拒绝原因', 'Rejection reason')}: ${escHtml(x.decision_note)}</div>` : ''}
+      <div style="font-size:10px;color:#9ca3af;margin-top:6px">${escHtml(x.created_at || '')}</div>
+    </div>`
+  }
+
+  const body = `
+    <div style="max-width:560px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-size:18px;font-weight:700">🎟️ ${_qT('我的额度申请', 'My quota requests')}</div>
+        <a href="#me" style="font-size:12px;color:#4338ca;text-decoration:none">← ${_qT('返回', 'Back')}</a>
+      </div>
+      <div class="card" style="padding:12px;margin-bottom:14px;background:linear-gradient(135deg,#eef2ff,#fff)">
+        <div style="font-size:12px;color:#6b7280">${_qT('当前可用临时额度', 'Current temporary quota available')}</div>
+        <div style="font-size:22px;font-weight:700;color:#4338ca">${escHtml(String(r.remaining_quota || 0))}</div>
+      </div>
+      ${form}
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">${_qT('历史申请', 'Request history')}</div>
+      ${reqs.length ? reqs.map(card).join('') : `<div style="font-size:13px;color:#9ca3af">${_qT('暂无申请', 'No requests yet')}</div>`}
+    </div>`
+  app.innerHTML = shell(body, 'me')
+}
+
+window.submitQuotaRequest = async () => {
+  const v = (id) => (document.getElementById(id)?.value || '').trim()
+  const count = Number(v('q-count'))
+  const reason = v('q-reason')
+  if (!count || count <= 0) { toast$(_qT('请填写正整数额外任务数', 'Enter a positive extra-task count')); return }
+  if (reason.length < 5) { toast$(_qT('请填写理由(至少 5 字)', 'Reason required (>= 5 chars)')); return }
+  const refs = v('q-refs').split('\n').map(s => s.trim()).filter(Boolean)
+  const duration = v('q-duration')
+  const body = { requested_extra_count: count, reason, linked_refs: refs, urgency: v('q-urgency') || 'normal' }
+  if (duration) body.requested_duration_hours = Number(duration)
+  const r = await POST('/me/quota-requests', body)
+  if (r && r.error) { toast$(r.error_code === 'ALREADY_PENDING' ? _qT('你已有一个待审核申请', 'You already have a pending request') : (r.error || _qT('提交失败', 'Submit failed'))); return }
+  toast$(_qT('申请已提交,等待根管理员审核', 'Submitted — awaiting root-admin review'))
+  renderMyQuotaRequests(document.getElementById('app'))
+}
+
+// ROOT admin review page.
+async function renderAdminBuildTaskQuota(app, statusFilter) {
+  if (!state.user) { renderLogin(); return }
+  const isRoot = (state.user.admin_type || 'root') === 'root' && (state.user.role === 'admin' || (Array.isArray(state.user.roles) && state.user.roles.includes('admin')))
+  if (!isRoot) { app.innerHTML = shell(`<div class="alert alert-danger">${_qT('仅限根管理员', 'Root admin only')}</div>`, 'admin'); return }
+  app.innerHTML = shell(loading$(), 'admin')
+  const sf = statusFilter || 'pending'
+  const r = await GET('/admin/quota-requests' + (sf === 'all' ? '' : '?status=' + encodeURIComponent(sf))).catch(() => null)
+  if (!r || r.error) { app.innerHTML = shell(alert$('error', (r && r.error) || _qT('加载失败', 'Failed to load')), 'admin'); return }
+  const reqs = r.requests || []
+  const inputStyle = 'width:100%;padding:7px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;box-sizing:border-box'
+  const filterBtn = (s, label) => `<button onclick="renderAdminBuildTaskQuota(document.getElementById('app'),'${s}')" style="padding:5px 10px;border:1px solid ${sf === s ? '#4338ca' : '#d1d5db'};background:${sf === s ? '#4338ca' : '#fff'};color:${sf === s ? '#fff' : '#374151'};border-radius:6px;font-size:12px;cursor:pointer">${escHtml(label)}</button>`
+
+  const card = (x) => {
+    const pending = x.status === 'pending'
+    return `<div class="card" style="padding:14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+        <div style="font-size:13px;font-weight:600">${escHtml(x.requester_user_id)} · ${_qT('请求', 'Wants')} <b>${escHtml(String(x.requested_extra_count))}</b> · ${escHtml(x.urgency || 'normal')}</div>
+        ${_qStatusBadge(x.status)}
+      </div>
+      <div style="font-size:12px;color:#374151;margin-top:6px;white-space:pre-wrap">${escHtml(x.reason || '')}</div>
+      ${(x.linked_refs && x.linked_refs.length) ? `<div style="font-size:11px;color:#6b7280;margin-top:4px">${_qT('关联', 'Refs')}: ${x.linked_refs.map(escHtml).join(', ')}</div>` : ''}
+      <div style="font-size:10px;color:#9ca3af;margin-top:4px">${escHtml(x.created_at || '')} · ${escHtml(x.id)}</div>
+      <div id="usage-${escHtml(x.id)}" style="font-size:11px;color:#6b7280;margin-top:4px"><button onclick="loadQuotaUsage('${escHtml(x.id)}')" style="padding:3px 8px;border:1px solid #d1d5db;background:#fff;border-radius:6px;font-size:11px;cursor:pointer">${_qT('查看申请人近 24h 用量', 'Load requester 24h usage')}</button></div>
+      ${x.status === 'approved' ? `<div style="font-size:12px;color:#166534;margin-top:6px">${_qT('授权', 'Granted')}: ${escHtml(String(x.granted_count))} · ${_qT('剩余', 'Remaining')}: ${escHtml(String(x.remaining))}${x.expires_at ? ` · ${_qT('到期', 'Expires')}: ${escHtml(x.expires_at)}` : ''}
+          <button onclick="revokeQuotaReq('${escHtml(x.id)}')" style="margin-left:8px;padding:3px 8px;border:1px solid #c026d3;background:#fff;color:#86198f;border-radius:6px;font-size:11px;cursor:pointer">${_qT('撤销', 'Revoke')}</button></div>` : ''}
+      ${(x.decision_note && (x.status === 'rejected' || x.status === 'approved' || x.status === 'revoked')) ? `<div style="font-size:11px;color:#6b7280;margin-top:4px">${_qT('备注', 'Note')}: ${escHtml(x.decision_note)}</div>` : ''}
+      ${pending ? `
+        <div style="margin-top:10px;border-top:1px solid #f1f1f4;padding-top:10px;display:grid;gap:8px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <input id="ap-count-${escHtml(x.id)}" type="number" min="1" value="${escHtml(String(x.requested_extra_count))}" placeholder="${_qT('授权数', 'Grant count')}" style="${inputStyle}">
+            <input id="ap-dur-${escHtml(x.id)}" type="number" min="1" value="${escHtml(String(x.requested_duration_hours || 72))}" placeholder="${_qT('有效期(小时)', 'Duration (h)')}" style="${inputStyle}">
+          </div>
+          <input id="ap-note-${escHtml(x.id)}" placeholder="${_qT('批准备注(可选)', 'Approval note (optional)')}" style="${inputStyle}">
+          <input id="rj-note-${escHtml(x.id)}" placeholder="${_qT('拒绝原因(可选)', 'Rejection note (optional)')}" style="${inputStyle}">
+          <div style="display:flex;gap:8px">
+            <button onclick="approveQuotaReq('${escHtml(x.id)}')" style="padding:7px 14px;border:none;background:#16a34a;color:#fff;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">${_qT('批准', 'Approve')}</button>
+            <button onclick="rejectQuotaReq('${escHtml(x.id)}')" style="padding:7px 14px;border:1px solid #ef4444;background:#fff;color:#991b1b;border-radius:6px;font-size:12px;cursor:pointer">${_qT('拒绝', 'Reject')}</button>
+          </div>
+        </div>` : ''}
+    </div>`
+  }
+
+  const body = `
+    <div style="max-width:640px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-size:18px;font-weight:700">🎟️ ${_qT('建任务额度审核', 'Build-task quota review')}</div>
+        <a href="#admin" style="font-size:12px;color:#4338ca;text-decoration:none">← ${_qT('返回', 'Back')}</a>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+        ${filterBtn('pending', _qT('待审核', 'Pending'))}${filterBtn('approved', _qT('已批准', 'Approved'))}${filterBtn('rejected', _qT('已拒绝', 'Rejected'))}${filterBtn('all', _qT('全部', 'All'))}
+      </div>
+      ${reqs.length ? reqs.map(card).join('') : `<div style="font-size:13px;color:#9ca3af">${_qT('暂无申请', 'No requests')}</div>`}
+    </div>`
+  app.innerHTML = shell(body, 'admin')
+}
+
+window.loadQuotaUsage = async (id) => {
+  const box = document.getElementById('usage-' + id)
+  if (box) box.innerHTML = t('加载中...')
+  const r = await GET('/admin/quota-requests/' + encodeURIComponent(id)).catch(() => null)
+  if (box) box.innerHTML = (r && !r.error)
+    ? `${_qT('申请人近 24h 已建任务', 'Requester tasks in last 24h')}: <b>${escHtml(String(r.requester_usage_24h))}</b>`
+    : ((r && r.error) || _qT('加载失败', 'Failed'))
+}
+window.approveQuotaReq = async (id) => {
+  const v = (p) => (document.getElementById(p + '-' + id)?.value || '').trim()
+  const body = { extra_count: Number(v('ap-count')) || undefined, duration_hours: Number(v('ap-dur')) || undefined, approval_note: v('ap-note') || undefined }
+  const r = await POST('/admin/quota-requests/' + encodeURIComponent(id) + '/approve', body)
+  if (r && r.error) { toast$(r.error_code === 'SELF_DECISION' ? _qT('不能审核自己的申请', 'Cannot decide your own request') : (r.error || _qT('批准失败', 'Approve failed'))); return }
+  toast$(_qT('已批准', 'Approved'))
+  renderAdminBuildTaskQuota(document.getElementById('app'), 'pending')
+}
+window.rejectQuotaReq = async (id) => {
+  const note = (document.getElementById('rj-note-' + id)?.value || '').trim()
+  const r = await POST('/admin/quota-requests/' + encodeURIComponent(id) + '/reject', { rejection_note: note || undefined })
+  if (r && r.error) { toast$(r.error_code === 'SELF_DECISION' ? _qT('不能审核自己的申请', 'Cannot decide your own request') : (r.error || _qT('拒绝失败', 'Reject failed'))); return }
+  toast$(_qT('已拒绝', 'Rejected'))
+  renderAdminBuildTaskQuota(document.getElementById('app'), 'pending')
+}
+window.revokeQuotaReq = async (id) => {
+  const r = await POST('/admin/quota-requests/' + encodeURIComponent(id) + '/revoke', {})
+  if (r && r.error) { toast$(r.error || _qT('撤销失败', 'Revoke failed')); return }
+  toast$(_qT('已撤销', 'Revoked'))
+  renderAdminBuildTaskQuota(document.getElementById('app'), 'approved')
 }
 
 async function renderAdminKPI(app) {
@@ -31299,6 +31502,7 @@ async function renderAdminProtocol(app) {
       ${adminLinkCard('🛑', t('错误监控'), t('24h 趋势 + burst 告警'), '#admin/errors')}
       ${adminLinkCard('📨', t('Welcome 提交'), t('#welcome 留下的邮箱订阅 + 建议'), '#admin/public-ideas')}
       ${adminLinkCard('🛠️', t('任务建议收件箱'), t('陌生人 / agent 提交的共建任务建议;审阅 → 转正式任务'), '#admin/task-proposals')}
+      ${((state.user && state.user.admin_type || 'root') === 'root') ? adminLinkCard('🎟️', t('建任务额度审核'), t('非根管理员的建任务扩容申请;批准 = 限时计数授权(仅 root)'), '#admin/quota-requests') : ''}
     </div>
   `, 'admin-protocol')
 }

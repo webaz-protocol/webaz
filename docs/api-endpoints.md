@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (642 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (649 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -78,7 +78,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/governance/applications` | 🔐 | 👑 | GET /api/admin/governance/applications — 列出 pending_onboarding(可筛 quiz_passed +  | src/pwa/routes/governance-onboarding.ts:358 |
 | GET | `/api/admin/governance/auto-deactivations` | 🔐 | 👑 | spec §6.2 公示触发原因(透明 — 元规则 #1) | src/pwa/routes/governance-onboarding.ts:713 |
 | POST | `/api/admin/governance/resolve-appeal` | 🔐 | 👑 | accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由 | src/pwa/routes/governance-onboarding.ts:751 |
-| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:6466 |
+| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:6477 |
 | GET | `/api/admin/health` | 🔐 | 👑 |  | src/pwa/routes/admin-health.ts:33 |
 | GET | `/api/admin/hot-wallet` |  |  | Legacy x-admin-key 入口：仅余额 | src/pwa/routes/admin-wallet-ops.ts:74 |
 | GET | `/api/admin/hot-wallet/status` | 🔐 | 👑 | P2-5: protocol 权限（区域 admin 看不到全局热钱包） | src/pwa/routes/admin-wallet-ops.ts:48 |
@@ -102,6 +102,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/quota-applications` | 🔐 | 👑 | Admin | src/pwa/routes/seller-quota.ts:222 |
 | POST | `/api/admin/quota-applications/:id/approve` | 🔐 | 👑 |  | src/pwa/routes/seller-quota.ts:235 |
 | POST | `/api/admin/quota-applications/:id/reject` | 🔐 | 👑 |  | src/pwa/routes/seller-quota.ts:252 |
+| GET | `/api/admin/quota-requests` | 🔐 | 👑 | list quota requests (optional ?status=) | src/pwa/routes/build-task-quota.ts:74 |
+| GET | `/api/admin/quota-requests/:id` | 🔐 | 👑 | detail of one request + the requester's live 24h create usage (reviewer context) | src/pwa/routes/build-task-quota.ts:82 |
+| POST | `/api/admin/quota-requests/:id/approve` | 🔐 | 👑 | approve → time-boxed counted grant (self-approval rejected in the store) | src/pwa/routes/build-task-quota.ts:90 |
+| POST | `/api/admin/quota-requests/:id/reject` | 🔐 | 👑 | reject (self-rejection also blocked by the store's SELF_DECISION guard) | src/pwa/routes/build-task-quota.ts:104 |
+| POST | `/api/admin/quota-requests/:id/revoke` | 🔐 | 👑 | revoke an already-approved grant (root) | src/pwa/routes/build-task-quota.ts:113 |
 | GET | `/api/admin/region-payment-methods` | 🔐 | 👑 | ─── region_payment_methods CRUD ────────────────────────── | src/pwa/routes/payments-governance.ts:227 |
 | POST | `/api/admin/region-payment-methods` | 🔐 | 👑 |  | src/pwa/routes/payments-governance.ts:243 |
 | DELETE | `/api/admin/region-payment-methods/:id` | 🔐 | 👑 |  | src/pwa/routes/payments-governance.ts:302 |
@@ -361,6 +366,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/me/note-prompts` | 🔐 |  | COP 飞轮: 完成订单 7d 引导发笔记 | src/pwa/routes/me-data.ts:29 |
 | GET | `/api/me/notify-claim-tasks` | 🔐 |  |  | src/pwa/routes/claim-verify.ts:534 |
 | POST | `/api/me/notify-claim-tasks` | 🔐 |  | 通知偏好 | src/pwa/routes/claim-verify.ts:528 |
+| GET | `/api/me/quota-requests` | 🔐 |  | list my own requests + current remaining temporary quota | src/pwa/routes/build-task-quota.ts:66 |
+| POST | `/api/me/quota-requests` | 🔐 |  | submit a quota-increase request | src/pwa/routes/build-task-quota.ts:49 |
 | GET | `/api/me/seller/trial-campaigns` | 🔐 |  | 卖家：我的测评活动列表（含每个的 claims 计数） | src/pwa/routes/trial.ts:329 |
 | GET | `/api/me/task-proposals` | 🔐 |  | proposer-facing read: the caller's OWN proposals + status + public_reply (agent- | src/pwa/routes/task-proposals.ts:72 |
 | GET | `/api/me/trial-claims` | 🔐 |  | 买家：我的测评列表 | src/pwa/routes/trial.ts:316 |

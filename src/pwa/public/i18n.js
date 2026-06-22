@@ -4337,6 +4337,8 @@ const _EN = {
   '邀请码为 6-7 位永久码；没有就联系老用户拿邀请链接': 'The invite code is a 6-7 char permanent code; if you have none, ask an existing user for an invite link',
   '任务建议收件箱':                    'Task proposal inbox',
   '陌生人 / agent 提交的共建任务建议;审阅 → 转正式任务': 'Task suggestions from strangers / agents; review → convert to a formal task',
+  '建任务额度审核': 'Build-task quota review',
+  '非根管理员的建任务扩容申请;批准 = 限时计数授权(仅 root)': 'Non-root admins’ build-task quota requests; approve = time-boxed counted grant (root only)',
   '通过邀请进入会记录归因;分享分润需登录后单独申请。': 'Joining via an invite records attribution; share-commission requires a separate application after login.',
   '完成首笔购买后,可申请分享分润。':    'After your first purchase, you can apply for share-commission.',
   '仅在私密设备打开;不要截图、转发或发送给任何人。': 'Open only on a private device; never screenshot, forward, or send it to anyone.',

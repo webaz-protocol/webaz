@@ -383,6 +383,8 @@ import { initBuildTaskAgentMetadataSchema } from '../layer2-business/L2-9-contri
 import { initTaskProposalSchema } from '../layer2-business/L2-9-contribution/task-proposal-store.js'
 import { initTaskProposalAiSchema } from '../layer2-business/L2-9-contribution/task-proposal-ai-store.js'
 import { initTaskProposalDraftLinkSchema } from '../layer2-business/L2-9-contribution/task-proposal-draft.js'
+import { initBuildTaskQuotaSchema } from '../layer2-business/L2-9-contribution/build-task-quota.js'
+import { registerBuildTaskQuotaRoutes } from './routes/build-task-quota.js'
 import { registerTaskProposalsRoutes } from './routes/task-proposals.js'
 import { participationRecordingActive, matchingRewardsActive } from './pv-kill-switch.js'   // Category C: participation recording (default ON) vs matching-rewards payout (default OFF)
 import { createPvSettlementEngine } from './internal/pv-settlement.js'   // matching-rewards engine EXCISED — no-op stub (see internal/pv-settlement.ts)
@@ -464,6 +466,7 @@ initBuildTaskAgentMetadataSchema(db) // PR9B — agent-ready task metadata satel
 initTaskProposalSchema(db)    // Task Proposal Inbox v1 — suggestion inbox(maintainer review;never auto build_task)
 initTaskProposalAiSchema(db)  // Task Proposal AI-assist — assistant-only recommendation/evidence(human decides)
 initTaskProposalDraftLinkSchema(db) // Task Proposal draft links — source proposal ↔ draft task(converted at publish)
+initBuildTaskQuotaSchema(db)  // PR #18 — build_task create quota-increase requests(non-root request → root grant)
 initBuildReputationSchema(db) // RFC-006 build_reputation(独立池 + 贡献者看板)
 initGithubCredentialStoreSchema(db) // PR 3B-3a — GitHub credential store + RFC-017 fact layer (schema only)
 initIdentityBindingSchema(db) // PR 4a — GitHub identity → WebAZ account binding (append-only events + active projection)
@@ -884,6 +887,8 @@ const DEFAULT_PARAMS: Array<{ key: string; value: string; type: string; descript
   { key: 'max_addresses_per_user', value: '20', type: 'number', description: '单用户最多收货地址数', category: 'limit', min: 1, max: 100 },
   { key: 'max_compare_items', value: '4', type: 'number', description: '商品对比最多件数', category: 'limit', min: 2, max: 10 },
   { key: 'feedback_rate_per_hour', value: '5', type: 'number', description: '反馈工单每小时上限', category: 'limit', min: 1, max: 100 },
+  { key: 'max_quota_extra_count', value: '50', type: 'number', description: 'PR#18 build_task 扩容申请:单次最多额外任务数', category: 'limit', min: 1, max: 500 },
+  { key: 'max_quota_duration_hours', value: '72', type: 'number', description: 'PR#18 build_task 扩容授权:最长有效期(小时)', category: 'limit', min: 1, max: 2160 },
   { key: 'export_csv_limit', value: '5000', type: 'number', description: '订单导出 CSV 行数上限', category: 'limit', min: 100, max: 50000 },
   { key: 'return_window_extension_days', value: '0', type: 'number', description: '退货窗口全局延长天数', category: 'general', min: 0, max: 90 },
   // Wave G-2: USDC / 链上配置
@@ -5023,6 +5028,12 @@ registerTaskProposalsRoutes(app, {
   rateLimitOk: (key) => proposalRateLimiter(key),
   auth,                          // required auth for proposer-facing /api/me/task-proposals
   resolveUser: (req) => getUser(req),   // optional resolver — links a submission to the logged-in submitter
+})
+
+// PR #18 — build_task create quota-increase requests(requester submit + ROOT-only review/approve/reject/revoke)
+registerBuildTaskQuotaRoutes(app, {
+  db, errorRes, auth,
+  requireRootAdmin: (req, res) => requireRootAdmin(req, res),
 })
 
 // RFC-006 Gap 2:贡献者自查看板(build_reputation 独立池)
