@@ -88,7 +88,13 @@ async function main(): Promise<void> {
   }
   registerBuildTasksRoutes(app, { db, auth: auth as any, requireSupportAdmin: () => null })
   registerPublicBuildTasksRoutes(app, { db, errorRes })
-  registerTaskProposalsRoutes(app, { db, errorRes, requireSupportAdmin: () => null, rateLimitOk: () => RATE_OK })
+  // optional resolver (no 401) — mirrors production getUser(): links a submission to the logged-in submitter.
+  const resolveUser = (rq: Request) => {
+    const h = (rq.headers.authorization as string) || ''
+    const key = h.startsWith('Bearer ') ? h.slice(7) : ((rq.body?.api_key as string) || '')
+    return key ? (db.prepare('SELECT id FROM users WHERE api_key = ?').get(key) || null) : null
+  }
+  registerTaskProposalsRoutes(app, { db, errorRes, requireSupportAdmin: () => null, rateLimitOk: () => RATE_OK, auth: auth as any, resolveUser: resolveUser as any })
   const server: Server = createServer(app)
   await new Promise<void>(r => server.listen(0, () => r()))
   const port = (server.address() as any).port

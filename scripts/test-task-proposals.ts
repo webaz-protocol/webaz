@@ -61,7 +61,7 @@ const hasEnvelope = (j: any) => j?.value_boundary?.value_state === 'uncommitted'
 async function main(): Promise<void> {
   freshDb()
   const app = express(); app.use(express.json())
-  registerTaskProposalsRoutes(app, { db, errorRes, rateLimitOk: () => RATE_OK, requireSupportAdmin: (req: Request, res: Response) => { if ((req.headers['x-test-admin'] as string) === '1') return { id: 'admin_a' }; res.status(403).json({ error: 'forbidden', error_code: 'FORBIDDEN' }); return null } })
+  registerTaskProposalsRoutes(app, { db, errorRes, rateLimitOk: () => RATE_OK, requireSupportAdmin: (req: Request, res: Response) => { if ((req.headers['x-test-admin'] as string) === '1') return { id: 'admin_a' }; res.status(403).json({ error: 'forbidden', error_code: 'FORBIDDEN' }); return null }, auth: (_req: Request, res: Response) => { res.status(401).json({ error: 'login required' }); return null }, resolveUser: () => null })
   registerPublicBuildTasksRoutes(app, { db, errorRes })
   server = createServer(app)
   await new Promise<void>(r => server.listen(0, () => { port = (server.address() as any).port; r() }))

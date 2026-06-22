@@ -5021,6 +5021,8 @@ registerTaskProposalsRoutes(app, {
   db, errorRes,
   requireSupportAdmin: (req, res) => requireAdminPermission(req, res, 'support'),
   rateLimitOk: (key) => proposalRateLimiter(key),
+  auth,                          // required auth for proposer-facing /api/me/task-proposals
+  resolveUser: (req) => getUser(req),   // optional resolver — links a submission to the logged-in submitter
 })
 
 // RFC-006 Gap 2:贡献者自查看板(build_reputation 独立池)
