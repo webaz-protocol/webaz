@@ -80,7 +80,9 @@ export function registerTaskProposalsRoutes(app: Application, deps: TaskProposal
   app.get('/api/admin/task-proposals', (req: Request, res: Response) => {
     const admin = requireSupportAdmin(req, res); if (!admin) return
     const status = typeof req.query.status === 'string' ? req.query.status : undefined
-    res.json(withProposalEnvelope({ proposals: listTaskProposals(db, { status }) }))
+    // case_id = the proposal's own id (the case originates at the proposal); shown in the management inbox.
+    const proposals = listTaskProposals(db, { status }).map(p => ({ ...p, case_id: p.id }))
+    res.json(withProposalEnvelope({ proposals }))
   })
 
   // admin review (maintainer only): needs_info | rejected | converted — no build_task is created here.

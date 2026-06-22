@@ -102,6 +102,7 @@ async function main(): Promise<void> {
   { ok('6 admin list without admin → 403', (await reqHttp('GET', '/api/admin/task-proposals')).status === 403)
     ok('6 admin list with admin → 200', (await reqHttp('GET', '/api/admin/task-proposals', { admin: true })).status === 200)
     const some = (await reqHttp('GET', '/api/admin/task-proposals', { admin: true })).json.proposals[0]
+    ok('6 admin list item carries case_id == proposal id', some.case_id === some.id, JSON.stringify({ case_id: some.case_id, id: some.id }))
     ok('6 review without admin → 403', (await reqHttp('POST', `/api/admin/task-proposals/${some.id}/review`, { body: { status: 'rejected' } })).status === 403) }
 
   // 7) status transitions new → needs_info / rejected / converted; terminal cannot be re-reviewed

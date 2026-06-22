@@ -39,6 +39,7 @@ function main(): void {
 
   // calls the real #331 admin endpoints (no new backend)
   ok('GET /admin/task-proposals (with optional status filter)', /GET\('\/admin\/task-proposals'/.test(BLOCK) && /\?status=/.test(BLOCK))
+  ok('case id surfaced in inbox (Case ID label + p.case_id || p.id)', /Case ID/.test(BLOCK) && /p\.case_id \|\| p\.id/.test(BLOCK))
   ok('POST /admin/task-proposals/:id/review', /POST\('\/admin\/task-proposals\/' \+ encodeURIComponent\(id\) \+ '\/review'/.test(BLOCK))
 
   // all four statuses surfaced + filter chips
