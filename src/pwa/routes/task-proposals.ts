@@ -12,7 +12,7 @@
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
-import { validateProposalInput, insertTaskProposal, listTaskProposals, reviewTaskProposal } from '../../layer2-business/L2-9-contribution/task-proposal-store.js'
+import { validateProposalInput, insertTaskProposal, listTaskProposals, listMyProposals, reviewTaskProposal } from '../../layer2-business/L2-9-contribution/task-proposal-store.js'
 import { withUncommittedValueBoundary } from '../../layer2-business/L2-9-contribution/contribution-display-envelope.js'
 import { getCanonicalContributionTarget } from '../../layer2-business/L2-9-contribution/canonical-contribution-target.js'
 import { createDraftFromProposal, listDraftBuildTasks, publishDraftBuildTask } from '../../layer2-business/L2-9-contribution/task-proposal-draft.js'
@@ -32,10 +32,25 @@ export interface TaskProposalsDeps {
   requireSupportAdmin: (req: Request, res: Response) => Record<string, unknown> | null
   // anti-flood for the anonymous public endpoint: true while under the per-key limit (key = proposal:<ip>).
   rateLimitOk: (key: string) => boolean
+  // required auth (sends 401) — for the proposer-facing "my proposals" read.
+  auth: (req: Request, res: Response) => Record<string, unknown> | null
+  // optional resolver (no 401) — links a submission to the logged-in submitter without breaking anonymous submit.
+  resolveUser: (req: Request) => Record<string, unknown> | null
+}
+
+// Agent-readable next-step hint per status (the channel is agent-native both ways).
+function nextActionFor(status: string): string {
+  switch (status) {
+    case 'new': return 'Awaiting maintainer review — no action needed.'
+    case 'needs_info': return 'Maintainer needs more detail. Submit an updated proposal (webaz_feedback type=proposal) referencing this id; see public_reply for what is missing.'
+    case 'rejected': return 'Not converted to a task. See public_reply for the reason; you may submit a revised proposal.'
+    case 'converted': return 'Converted to a task. See converted_ref for the linked task / PR / decision.'
+    default: return 'No action.'
+  }
 }
 
 export function registerTaskProposalsRoutes(app: Application, deps: TaskProposalsDeps): void {
-  const { db, errorRes, requireSupportAdmin, rateLimitOk } = deps
+  const { db, errorRes, requireSupportAdmin, rateLimitOk, auth, resolveUser } = deps
 
   // public submit — anonymous; proposer_account_id is never taken from the body (anti-spoof).
   app.post('/api/public/task-proposals', (req: Request, res: Response) => {
@@ -44,9 +59,20 @@ export function registerTaskProposalsRoutes(app: Application, deps: TaskProposal
     if (!rateLimitOk(`proposal:${ip}`)) return void errorRes(res, 429, 'RATE_LIMITED', '提交过于频繁,请稍后再试')
     const v = validateProposalInput(req.body)
     if (!v.ok) return void errorRes(res, 400, v.code, v.message)
-    const result = insertTaskProposal(db, v.input, null)
+    // Link to the submitter when authenticated (account id comes from the session, NEVER the body — anti-spoof);
+    // anonymous submit still works (account id null) — it just won't show up in "my proposals".
+    const submitter = resolveUser(req)
+    const accountId = submitter ? String(submitter.id) : null
+    const result = insertTaskProposal(db, v.input, accountId)
     if ('duplicate' in result) return void errorRes(res, 409, 'DUPLICATE_PROPOSAL', '相同建议已在收件箱中,请勿重复提交', { existing_id: result.existing_id })
-    res.json(withProposalEnvelope({ proposal: { id: result.id, status: result.status } }))
+    res.json(withProposalEnvelope({ proposal: { id: result.id, status: result.status }, linked_to_account: !!accountId }))
+  })
+
+  // proposer-facing read: the caller's OWN proposals + status + public_reply (agent-readable). No review_note; own rows only.
+  app.get('/api/me/task-proposals', (req: Request, res: Response) => {
+    const user = auth(req, res); if (!user) return
+    const proposals = listMyProposals(db, String(user.id)).map(p => ({ ...p, next_action: nextActionFor(String(p.status)) }))
+    res.json(withProposalEnvelope({ proposals }))
   })
 
   // admin list (maintainer only)
@@ -59,8 +85,8 @@ export function registerTaskProposalsRoutes(app: Application, deps: TaskProposal
   // admin review (maintainer only): needs_info | rejected | converted — no build_task is created here.
   app.post('/api/admin/task-proposals/:id/review', (req: Request, res: Response) => {
     const admin = requireSupportAdmin(req, res); if (!admin) return
-    const { status, note, converted_ref } = req.body ?? {}
-    const result = reviewTaskProposal(db, String(req.params.id), admin.id as string, String(status), note, converted_ref)
+    const { status, note, converted_ref, public_reply } = req.body ?? {}
+    const result = reviewTaskProposal(db, String(req.params.id), admin.id as string, String(status), note, converted_ref, public_reply)
     if ('error' in result) {
       const code = result.code === 'NOT_FOUND' ? 404 : result.code === 'ALREADY_TERMINAL' ? 409 : 400
       return void errorRes(res, code, result.code, result.error)

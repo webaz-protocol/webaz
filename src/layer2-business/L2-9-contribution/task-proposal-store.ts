@@ -38,6 +38,7 @@ const CREATE_TABLE = `
     status                TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','needs_info','rejected','converted')),
     reviewer_id           TEXT,
     review_note           TEXT CHECK (review_note IS NULL OR length(review_note) <= 2000),
+    public_reply          TEXT CHECK (public_reply IS NULL OR length(public_reply) <= 2000),
     converted_ref         TEXT CHECK (converted_ref IS NULL OR length(converted_ref) <= 500),
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
@@ -48,6 +49,12 @@ const CREATE_INDEX = `CREATE INDEX IF NOT EXISTS idx_task_proposals_status ON ta
 export function initTaskProposalSchema(db: Database.Database): void {
   db.exec(CREATE_TABLE)
   db.exec(CREATE_INDEX)
+  // Additive migration for pre-existing DBs (ALTER after CREATE; fresh DBs already have the column via CREATE_TABLE).
+  // public_reply = the proposer-facing reply (distinct from the admin-internal review_note).
+  try {
+    const cols = db.prepare('PRAGMA table_info(task_proposals)').all() as Array<{ name: string }>
+    if (!cols.some(c => c.name === 'public_reply')) db.exec('ALTER TABLE task_proposals ADD COLUMN public_reply TEXT')
+  } catch { /* best-effort additive migration */ }
 }
 
 export interface ProposalInput {
@@ -120,8 +127,20 @@ export function listTaskProposals(db: Database.Database, filter: { status?: stri
   const where: string[] = []; const params: unknown[] = []
   if (filter.status && (PROPOSAL_STATUSES as readonly string[]).includes(filter.status)) { where.push('status = ?'); params.push(filter.status) }
   return db.prepare(`SELECT id, title, summary, suggested_area, expected_outcome, source_ref, proposer_account_id,
-    proposer_github_login, status, reviewer_id, review_note, converted_ref, created_at, updated_at FROM task_proposals
+    proposer_github_login, status, reviewer_id, review_note, public_reply, converted_ref, created_at, updated_at FROM task_proposals
     ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY created_at DESC LIMIT 200`).all(...params) as any[]
+}
+
+/**
+ * Proposer-facing read: returns ONLY the caller's own proposals, and ONLY proposer-safe fields.
+ * Deliberately excludes the admin-internal `review_note`, `reviewer_id`, and never returns other users' rows
+ * (least-privilege; the proposer sees status + the proposer-facing `public_reply` + converted_ref).
+ */
+export function listMyProposals(db: Database.Database, accountId: string): Array<Record<string, unknown>> {
+  if (!accountId) return []
+  return db.prepare(`SELECT id, title, summary, suggested_area, expected_outcome, source_ref, status,
+    public_reply, converted_ref, created_at, updated_at FROM task_proposals
+    WHERE proposer_account_id = ? ORDER BY created_at DESC LIMIT 100`).all(accountId) as any[]
 }
 
 /**
@@ -131,15 +150,18 @@ export function listTaskProposals(db: Database.Database, filter: { status?: stri
  * product decision — the non-code contribution evidence chain { proposer → reviewer → converted_ref }.
  * Recording only; no reward/score is computed.
  */
-export function reviewTaskProposal(db: Database.Database, id: string, reviewerId: string, status: string, note?: string, convertedRef?: string | null):
+export function reviewTaskProposal(db: Database.Database, id: string, reviewerId: string, status: string, note?: string, convertedRef?: string | null, publicReply?: string | null):
   { id: string; status: string; converted_ref: string | null } | { error: string; code: string } {
   if (!(REVIEW_TARGETS as readonly string[]).includes(status)) return { error: 'status must be needs_info | rejected | converted', code: 'BAD_STATUS' }
   if (convertedRef != null && (typeof convertedRef !== 'string' || convertedRef.length > CONVERTED_REF_MAX)) return { error: 'converted_ref invalid/too long', code: 'CONVERTED_REF_TOO_LONG' }
+  if (publicReply != null && typeof publicReply !== 'string') return { error: 'public_reply must be a string', code: 'PUBLIC_REPLY_INVALID' }
   const cur = db.prepare('SELECT status FROM task_proposals WHERE id = ?').get(id) as { status: string } | undefined
   if (!cur) return { error: 'proposal not found', code: 'NOT_FOUND' }
   if (cur.status === 'rejected' || cur.status === 'converted') return { error: `proposal already ${cur.status}`, code: 'ALREADY_TERMINAL' }
   const ref = status === 'converted' && typeof convertedRef === 'string' && convertedRef.trim() ? convertedRef.trim() : null
-  db.prepare(`UPDATE task_proposals SET status = ?, reviewer_id = ?, review_note = ?, converted_ref = ?, updated_at = datetime('now') WHERE id = ?`)
-    .run(status, reviewerId, note ? String(note).slice(0, NOTE_MAX) : null, ref, id)
+  // public_reply: update only when provided (COALESCE keeps a prior reply if this review omits it).
+  const reply = publicReply != null ? String(publicReply).slice(0, NOTE_MAX) : null
+  db.prepare(`UPDATE task_proposals SET status = ?, reviewer_id = ?, review_note = ?, public_reply = COALESCE(?, public_reply), converted_ref = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(status, reviewerId, note ? String(note).slice(0, NOTE_MAX) : null, reply, ref, id)
   return { id, status, converted_ref: ref }
 }

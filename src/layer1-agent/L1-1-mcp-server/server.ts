@@ -1490,7 +1490,8 @@ Discovery + suggesting need NO api_key (anyone / any agent can browse and propos
 Actions:
 - list_open (default): open public tasks (opt. filters: area / risk_level / auto_claimable / required_capabilities / agent_capabilities / max_duration_minutes / estimated_context_size / estimated_agent_budget — estimated_agent_budget is a resource/effort estimate, NOT a payment). Each task carries its execution boundary + the trusted canonical contribution target. NO api_key needed.
 - detail: one task's full execution boundary (allowed/forbidden paths, prohibited actions, acceptance criteria, verification commands, deliverables, definition_of_done) + the canonical repo to PR to + a copy-ready agent_handoff. NO api_key needed.
-- suggest: propose a NEW task (title + summary/reason; opt. area/expected_outcome/source_ref/github_login). It enters the maintainer inbox — it is a suggestion, NOT a contribution fact / reward / participation, and never auto-becomes a task. NO api_key needed.
+- suggest: propose a NEW task (title + summary/reason; opt. area/expected_outcome/source_ref/github_login). It enters the maintainer inbox — it is a suggestion, NOT a contribution fact / reward / participation, and never auto-becomes a task. NO api_key needed (but pass your key to LINK it to your account so you can track it via my_suggestions).
+- my_suggestions: your OWN past proposals + their review status / public_reply / next_action (api_key). Agent-readable 回执 so a proposer-agent can act on the maintainer's decision (needs_info → resubmit; converted → see converted_ref).
 - claim: take an open task (api_key); provenance=human|ai_assisted|ai_authored (self-declared, not detected); auto-expires ~7d if not submitted. Returns a handoff — point a coding agent at it; the human needn't know git but stays accountable (Passkey).
 - submit: mark in_review with pr_ref + verification_summary (api_key). The PR's base repo MUST be the canonical WebAZ repo, and a verification_summary (what you ran/verified) is REQUIRED — both server-enforced. A human maintainer reviews next; done ≠ merge.
 - status: tasks you hold (api_key).
@@ -1500,7 +1501,7 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['list_open', 'detail', 'suggest', 'claim', 'submit', 'status', 'profile'], description: 'list_open (default) | detail | suggest | claim | submit | status | profile' },
+        action: { type: 'string', enum: ['list_open', 'detail', 'suggest', 'my_suggestions', 'claim', 'submit', 'status', 'profile'], description: 'list_open (default) | detail | suggest | my_suggestions | claim | submit | status | profile' },
         api_key: { type: 'string', description: 'claim/submit/status/profile: your api_key (accountable identity). NOT needed for list_open/detail/suggest. (or set the WEBAZ_API_KEY env var)' },
         task_id: { type: 'string', description: 'detail / claim / submit: the task id' },
         area: { type: 'string', description: 'list_open: area filter / suggest: suggested area (e.g. search / docs / mcp)' },
@@ -1629,6 +1630,7 @@ export async function handleContribute(args: Record<string, unknown>): Promise<R
     if (summary.length < 1) return { error: 'summary (the reason) required for action=suggest' }
     const r = await apiCall('/api/public/task-proposals', {
       method: 'POST',
+      apiKey,   // optional — when present, links the proposal to the submitter so it shows up in action=my_suggestions (still works anonymously)
       body: {
         title, summary,
         suggested_area: args.area ?? args.suggested_area,
@@ -1637,6 +1639,7 @@ export async function handleContribute(args: Record<string, unknown>): Promise<R
         proposer_github_login: args.proposer_github_login,
       },
     })
+    if (!r.error && (r as any).linked_to_account) (r as any)._next = 'Track this proposal\'s review status + reply: webaz_contribute action=my_suggestions api_key=<key>.'
     // typed errors (RATE_LIMITED / DUPLICATE_PROPOSAL / validation) are already mapped by apiCall; the
     // success response already carries the route-level `proposal_notice` (suggestion ≠ contribution/reward).
     return r
@@ -1648,6 +1651,12 @@ export async function handleContribute(args: Record<string, unknown>): Promise<R
     error_code: 'API_KEY_REQUIRED',
   }
   if (action === 'status') return apiCall('/api/build-tasks?mine=1', { apiKey })
+  if (action === 'my_suggestions') {
+    // your OWN past proposals + review status/public_reply/next_action (agent-readable 回执). Own rows only (server-enforced).
+    const r = await apiCall('/api/me/task-proposals', { apiKey })
+    if (!r.error) (r as any)._next = 'Each item carries status + public_reply + next_action. needs_info → resubmit via action=suggest referencing the id; converted → see converted_ref.'
+    return r
+  }
   if (action === 'profile') return apiCall('/api/build-reputation/me', { apiKey })
   if (action === 'claim') {
     const tid = args.task_id as string

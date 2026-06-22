@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (638 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (639 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -43,8 +43,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/build-feedback` | 🔐 | 👑 | ── maintainer triage ──────────────────────────────── | src/pwa/routes/build-feedback.ts:74 |
 | POST | `/api/admin/build-feedback/:id` | 🔐 | 👑 |  | src/pwa/routes/build-feedback.ts:94 |
 | POST | `/api/admin/build-feedback/triage` | 🔐 | 👑 | ⚠️ 必须在 /:id 之前声明,否则 'triage' 会被 :id 捕获。 | src/pwa/routes/build-feedback.ts:83 |
-| GET | `/api/admin/build-task-drafts` | 🔐 | 👑 | admin list of UNPUBLISHED drafts (internal, open) + source proposal id | src/pwa/routes/task-proposals.ts:120 |
-| POST | `/api/admin/build-task-drafts/:id/publish` | 🔐 | 👑 | PUBLISH a draft → public open task — explicit human/admin action; records the ac | src/pwa/routes/task-proposals.ts:126 |
+| GET | `/api/admin/build-task-drafts` | 🔐 | 👑 | admin list of UNPUBLISHED drafts (internal, open) + source proposal id | src/pwa/routes/task-proposals.ts:146 |
+| POST | `/api/admin/build-task-drafts/:id/publish` | 🔐 | 👑 | PUBLISH a draft → public open task — explicit human/admin action; records the ac | src/pwa/routes/task-proposals.ts:152 |
 | POST | `/api/admin/build-tasks/:id/resolve` | 🔐 | 👑 | 验收终态 —— 仅 admin/maintainer(验收=真人,RFC-006 不变量 2;不发奖励/不记信誉) | src/pwa/routes/build-tasks.ts:104 |
 | DELETE | `/api/admin/categories/:id/seasonal` | 🔐 | 👑 |  | src/pwa/routes/admin-catalog.ts:46 |
 | POST | `/api/admin/categories/:id/seasonal` | 🔐 | 👑 | ─── 类目 季节性配置 ───────────────────────────────────── | src/pwa/routes/admin-catalog.ts:31 |
@@ -75,7 +75,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/governance/applications` | 🔐 | 👑 | GET /api/admin/governance/applications — 列出 pending_onboarding(可筛 quiz_passed +  | src/pwa/routes/governance-onboarding.ts:358 |
 | GET | `/api/admin/governance/auto-deactivations` | 🔐 | 👑 | spec §6.2 公示触发原因(透明 — 元规则 #1) | src/pwa/routes/governance-onboarding.ts:713 |
 | POST | `/api/admin/governance/resolve-appeal` | 🔐 | 👑 | accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由 | src/pwa/routes/governance-onboarding.ts:751 |
-| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:6464 |
+| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:6466 |
 | GET | `/api/admin/health` | 🔐 | 👑 |  | src/pwa/routes/admin-health.ts:33 |
 | GET | `/api/admin/hot-wallet` |  |  | Legacy x-admin-key 入口：仅余额 | src/pwa/routes/admin-wallet-ops.ts:74 |
 | GET | `/api/admin/hot-wallet/status` | 🔐 | 👑 | P2-5: protocol 权限（区域 admin 看不到全局热钱包） | src/pwa/routes/admin-wallet-ops.ts:48 |
@@ -110,11 +110,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/risk/unsuspend/:user_id` | 🔐 | 👑 |  | src/pwa/routes/admin-moderation.ts:139 |
 | POST | `/api/admin/skill-market/:id/audit` | 🔐 | 👑 | ─── Admin：审核 ──────────────────────────────────────────── | src/pwa/routes/skill-market.ts:172 |
 | GET | `/api/admin/skill-market/pending` | 🔐 | 👑 | ─── Admin：待审列表 ──────────────────────────────────────── | src/pwa/routes/skill-market.ts:166 |
-| GET | `/api/admin/task-proposals` | 🔐 | 👑 | admin list (maintainer only) | src/pwa/routes/task-proposals.ts:53 |
-| POST | `/api/admin/task-proposals/:id/ai-assist` | 🔐 | 👑 | NEVER a decision: no auto-publish / auto-reject / hide / reward. A human admin m | src/pwa/routes/task-proposals.ts:74 |
-| GET | `/api/admin/task-proposals/:id/ai-suggestions` | 🔐 | 👑 | stored AI suggestions (evidence) for a proposal | src/pwa/routes/task-proposals.ts:85 |
-| POST | `/api/admin/task-proposals/:id/create-task-draft` | 🔐 | 👑 | No auto-publish (draft is internal/unclaimable until an explicit publish); no re | src/pwa/routes/task-proposals.ts:92 |
-| POST | `/api/admin/task-proposals/:id/review` | 🔐 | 👑 | admin review (maintainer only): needs_info \| rejected \| converted — no build_tas | src/pwa/routes/task-proposals.ts:60 |
+| GET | `/api/admin/task-proposals` | 🔐 | 👑 | admin list (maintainer only) | src/pwa/routes/task-proposals.ts:79 |
+| POST | `/api/admin/task-proposals/:id/ai-assist` | 🔐 | 👑 | NEVER a decision: no auto-publish / auto-reject / hide / reward. A human admin m | src/pwa/routes/task-proposals.ts:100 |
+| GET | `/api/admin/task-proposals/:id/ai-suggestions` | 🔐 | 👑 | stored AI suggestions (evidence) for a proposal | src/pwa/routes/task-proposals.ts:111 |
+| POST | `/api/admin/task-proposals/:id/create-task-draft` | 🔐 | 👑 | No auto-publish (draft is internal/unclaimable until an explicit publish); no re | src/pwa/routes/task-proposals.ts:118 |
+| POST | `/api/admin/task-proposals/:id/review` | 🔐 | 👑 | admin review (maintainer only): needs_info \| rejected \| converted — no build_tas | src/pwa/routes/task-proposals.ts:86 |
 | GET | `/api/admin/tokenomics` | 🔐 | 👑 | Tokenomics 详细数据 + Tier 配置 + 高额榜 | src/pwa/routes/admin-tokenomics.ts:30 |
 | POST | `/api/admin/tokenomics/require-ref/toggle` | 🔐 | 👑 | 注册必须 ref 开关 | src/pwa/routes/admin-tokenomics.ts:53 |
 | POST | `/api/admin/trial/run-eval` | 🔐 | 👑 | Admin 手动触发测评评估（测试 + 紧急 + 立即生效） | src/pwa/routes/trial.ts:355 |
@@ -359,6 +359,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/me/notify-claim-tasks` | 🔐 |  |  | src/pwa/routes/claim-verify.ts:534 |
 | POST | `/api/me/notify-claim-tasks` | 🔐 |  | 通知偏好 | src/pwa/routes/claim-verify.ts:528 |
 | GET | `/api/me/seller/trial-campaigns` | 🔐 |  | 卖家：我的测评活动列表（含每个的 claims 计数） | src/pwa/routes/trial.ts:329 |
+| GET | `/api/me/task-proposals` | 🔐 |  | proposer-facing read: the caller's OWN proposals + status + public_reply (agent- | src/pwa/routes/task-proposals.ts:72 |
 | GET | `/api/me/trial-claims` | 🔐 |  | 买家：我的测评列表 | src/pwa/routes/trial.ts:316 |
 | GET | `/api/my-products` | 🔐 |  |  | src/pwa/routes/search.ts:51 |
 | GET | `/api/nearby` | 🔐 |  | window: 24h / 7d / 30d | src/pwa/routes/buyer-feeds.ts:182 |
@@ -466,7 +467,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/public-ideas` |  |  | 反 bot：honeypot 字段 + 单 IP+UA 联合 rate limit 5/h + 内容 hash 去重 1h | src/pwa/routes/welcome.ts:135 |
 | GET | `/api/public/build-tasks` |  |  |  | src/pwa/routes/public-build-tasks.ts:23 |
 | GET | `/api/public/build-tasks/:id` |  |  |  | src/pwa/routes/public-build-tasks.ts:30 |
-| POST | `/api/public/task-proposals` |  |  | public submit — anonymous; proposer_account_id is never taken from the body (ant | src/pwa/routes/task-proposals.ts:41 |
+| POST | `/api/public/task-proposals` |  |  | public submit — anonymous; proposer_account_id is never taken from the body (ant | src/pwa/routes/task-proposals.ts:56 |
 | GET | `/api/push/status` | 🔐 |  |  | src/pwa/routes/push.ts:74 |
 | DELETE | `/api/push/subscribe` | 🔐 |  |  | src/pwa/routes/push.ts:63 |
 | POST | `/api/push/subscribe` | 🔐 |  |  | src/pwa/routes/push.ts:44 |
