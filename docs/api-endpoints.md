@@ -43,8 +43,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/build-feedback` | 🔐 | 👑 | ── maintainer triage ──────────────────────────────── | src/pwa/routes/build-feedback.ts:74 |
 | POST | `/api/admin/build-feedback/:id` | 🔐 | 👑 |  | src/pwa/routes/build-feedback.ts:94 |
 | POST | `/api/admin/build-feedback/triage` | 🔐 | 👑 | ⚠️ 必须在 /:id 之前声明,否则 'triage' 会被 :id 捕获。 | src/pwa/routes/build-feedback.ts:83 |
-| GET | `/api/admin/build-task-drafts` | 🔐 | 👑 | admin list of UNPUBLISHED drafts (internal, open) + source proposal id | src/pwa/routes/task-proposals.ts:147 |
-| POST | `/api/admin/build-task-drafts/:id/publish` | 🔐 | 👑 | PUBLISH a draft → public open task — explicit human/admin action; records the ac | src/pwa/routes/task-proposals.ts:153 |
+| GET | `/api/admin/build-task-drafts` | 🔐 | 👑 | admin list of UNPUBLISHED drafts (internal, open) + source proposal id | src/pwa/routes/task-proposals.ts:149 |
+| POST | `/api/admin/build-task-drafts/:id/publish` | 🔐 | 👑 | PUBLISH a draft → public open task — explicit human/admin action; records the ac | src/pwa/routes/task-proposals.ts:155 |
 | POST | `/api/admin/build-tasks/:id/resolve` | 🔐 | 👑 | 验收终态 —— 仅 admin/maintainer(验收=真人,RFC-006 不变量 2;不发奖励/不记信誉) | src/pwa/routes/build-tasks.ts:104 |
 | DELETE | `/api/admin/categories/:id/seasonal` | 🔐 | 👑 |  | src/pwa/routes/admin-catalog.ts:46 |
 | POST | `/api/admin/categories/:id/seasonal` | 🔐 | 👑 | ─── 类目 季节性配置 ───────────────────────────────────── | src/pwa/routes/admin-catalog.ts:31 |
@@ -111,10 +111,10 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/skill-market/:id/audit` | 🔐 | 👑 | ─── Admin：审核 ──────────────────────────────────────────── | src/pwa/routes/skill-market.ts:172 |
 | GET | `/api/admin/skill-market/pending` | 🔐 | 👑 | ─── Admin：待审列表 ──────────────────────────────────────── | src/pwa/routes/skill-market.ts:166 |
 | GET | `/api/admin/task-proposals` | 🔐 | 👑 | admin list (maintainer only) | src/pwa/routes/task-proposals.ts:80 |
-| POST | `/api/admin/task-proposals/:id/ai-assist` | 🔐 | 👑 | NEVER a decision: no auto-publish / auto-reject / hide / reward. A human admin m | src/pwa/routes/task-proposals.ts:101 |
-| GET | `/api/admin/task-proposals/:id/ai-suggestions` | 🔐 | 👑 | stored AI suggestions (evidence) for a proposal | src/pwa/routes/task-proposals.ts:112 |
-| POST | `/api/admin/task-proposals/:id/create-task-draft` | 🔐 | 👑 | No auto-publish (draft is internal/unclaimable until an explicit publish); no re | src/pwa/routes/task-proposals.ts:119 |
-| POST | `/api/admin/task-proposals/:id/review` | 🔐 | 👑 | admin review (maintainer only): needs_info \| rejected \| converted — no build_tas | src/pwa/routes/task-proposals.ts:87 |
+| POST | `/api/admin/task-proposals/:id/ai-assist` | 🔐 | 👑 | NEVER a decision: no auto-publish / auto-reject / hide / reward. A human admin m | src/pwa/routes/task-proposals.ts:103 |
+| GET | `/api/admin/task-proposals/:id/ai-suggestions` | 🔐 | 👑 | stored AI suggestions (evidence) for a proposal | src/pwa/routes/task-proposals.ts:114 |
+| POST | `/api/admin/task-proposals/:id/create-task-draft` | 🔐 | 👑 | No auto-publish (draft is internal/unclaimable until an explicit publish); no re | src/pwa/routes/task-proposals.ts:121 |
+| POST | `/api/admin/task-proposals/:id/review` | 🔐 | 👑 | admin review (maintainer only): needs_info \| rejected \| converted — no build_tas | src/pwa/routes/task-proposals.ts:89 |
 | GET | `/api/admin/tokenomics` | 🔐 | 👑 | Tokenomics 详细数据 + Tier 配置 + 高额榜 | src/pwa/routes/admin-tokenomics.ts:30 |
 | POST | `/api/admin/tokenomics/require-ref/toggle` | 🔐 | 👑 | 注册必须 ref 开关 | src/pwa/routes/admin-tokenomics.ts:53 |
 | POST | `/api/admin/trial/run-eval` | 🔐 | 👑 | Admin 手动触发测评评估（测试 + 紧急 + 立即生效） | src/pwa/routes/trial.ts:355 |

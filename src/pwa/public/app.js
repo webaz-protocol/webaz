@@ -3194,6 +3194,7 @@ async function renderAdminTaskProposals(app) {
       <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
         <div style="font-weight:600;font-size:14px">${escHtml(p.title)}</div>${badge(p.status)}
       </div>
+      <div style="font-family:monospace;font-size:11px;color:#6b7280;margin-top:3px">${T('案件 ID', 'Case ID')}: ${escHtml(p.case_id || p.id)}</div>
       <div style="font-size:13px;color:#52525B;line-height:1.5;margin-top:6px;white-space:pre-wrap">${escHtml(p.summary)}</div>
       ${field(T('建议领域', 'Area'), p.suggested_area)}
       ${field(T('预期结果', 'Outcome'), p.expected_outcome)}
