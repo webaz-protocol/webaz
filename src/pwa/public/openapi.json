@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (640 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (641 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -425,6 +425,19 @@
     "/api/admin/build-task-drafts": {
       "get": {
         "summary": "admin list of UNPUBLISHED drafts (internal, open) + source proposal id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/build-task-drafts/:id": {
+      "get": {
+        "summary": "full stored body of ONE unpublished internal draft — for PRE-PUBLISH PREVIEW (publish against visible content).",
         "tags": [
           "admin"
         ],

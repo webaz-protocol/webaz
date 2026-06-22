@@ -111,6 +111,11 @@ const post = (path: string, body?: any): Promise<{ status: number; json: any }> 
     let raw = ''; res.on('data', c => { raw += c }); res.on('end', () => { let j: any = null; try { j = raw ? JSON.parse(raw) : null } catch {} resolve({ status: res.statusCode ?? 0, json: j }) })
   }); r.on('error', reject); if (p) r.write(p); r.end()
 })
+const get = (path: string): Promise<{ status: number; json: any }> => new Promise((resolve, reject) => {
+  const r = httpRequest({ host: '127.0.0.1', port, method: 'GET', path }, (res) => {
+    let raw = ''; res.on('data', c => { raw += c }); res.on('end', () => { let j: any = null; try { j = raw ? JSON.parse(raw) : null } catch {} resolve({ status: res.statusCode ?? 0, json: j }) })
+  }); r.on('error', reject); r.end()
+})
 
 async function routeTests(): Promise<void> {
   const app = express(); app.use(express.json())
@@ -152,9 +157,23 @@ async function routeTests(): Promise<void> {
   ok('authorized create-task-draft → 200 + actor recorded', cr.status === 200 && !!cr.json?.draft?.draft_task_id && cr.json?.created_by === 'usr_admin', JSON.stringify(cr.json))
   const tId = cr.json.draft.draft_task_id
   ok('route-created draft not on board pre-publish', !boardHas(tId))
+
+  // pre-publish PREVIEW: the full stored body is fetchable + admin-gated; publish acts on this visible content
+  authUser = null
+  ok('preview: unauthorized draft detail → 403', (await get(`/api/admin/build-task-drafts/${tId}`)).status === 403)
+  authUser = { id: 'usr_admin', role: 'admin' }
+  const detail = await get(`/api/admin/build-task-drafts/${tId}`)
+  ok('preview: authorized draft detail → 200 with full body', detail.status === 200
+    && detail.json?.draft?.agent_metadata?.acceptance_criteria?.length > 0
+    && Array.isArray(detail.json?.draft?.agent_metadata?.verification_commands)
+    && Array.isArray(detail.json?.draft?.agent_metadata?.allowed_paths)
+    && typeof detail.json?.draft?.description === 'string', JSON.stringify(detail.json?.draft && Object.keys(detail.json.draft)))
+  ok('preview: unknown draft → 404', (await get(`/api/admin/build-task-drafts/bt_nope`)).status === 404)
+
   const pubR = await post(`/api/admin/build-task-drafts/${tId}/publish`)
   ok('authorized publish → 200 + published_by recorded', pubR.status === 200 && pubR.json?.published?.published === true && pubR.json?.published_by === 'usr_admin', JSON.stringify(pubR.json))
   ok('route-published draft now on board', boardHas(tId))
+  ok('preview: published task no longer previewable as a draft → 404', (await get(`/api/admin/build-task-drafts/${tId}`)).status === 404)
 
   server.close()
 }

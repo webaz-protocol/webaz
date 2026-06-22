@@ -41,6 +41,9 @@ function main(): void {
   ok('GET /admin/task-proposals (with optional status filter)', /GET\('\/admin\/task-proposals'/.test(BLOCK) && /\?status=/.test(BLOCK))
   ok('case id surfaced in inbox (Case ID label + p.case_id || p.id)', /Case ID/.test(BLOCK) && /p\.case_id \|\| p\.id/.test(BLOCK))
   ok('POST /admin/task-proposals/:id/review', /POST\('\/admin\/task-proposals\/' \+ encodeURIComponent\(id\) \+ '\/review'/.test(BLOCK))
+  // pre-publish preview: draft card has a Preview button + the Publish button is gated (disabled) until previewed
+  ok('preview: draft card has Preview button + gated (disabled) Publish', /previewDraft\('/.test(BLOCK) && /id="pub-btn-/.test(BLOCK) && /disabled/.test(BLOCK))
+  ok('preview: previewDraft loads the stored body (GET draft detail) before publish', /window\.previewDraft\s*=/.test(app) && /build-task-drafts\/'\s*\+\s*encodeURIComponent\(taskId\)/.test(app) && /acceptance_criteria/.test(app) && /verification_commands/.test(app))
 
   // all four statuses surfaced + filter chips
   for (const s of ['new', 'needs_info', 'rejected', 'converted']) ok(`status surfaced: ${s}`, BLOCK.includes(`${s}:`) || new RegExp(`'${s}'`).test(BLOCK))

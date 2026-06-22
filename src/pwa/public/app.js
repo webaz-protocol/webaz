@@ -3229,8 +3229,12 @@ async function renderAdminTaskProposals(app) {
       </div>
       ${field(T('风险', 'Risk'), d.risk_level)}${field(T('可自助认领', 'Auto-claimable'), d.auto_claimable === 1 || d.auto_claimable === true ? T('是', 'yes') : T('否(需真人)', 'no (human)'))}
       ${field(T('来源建议', 'Source proposal'), d.source_proposal_id)}${field(T('创建人', 'Created by'), d.created_by)}
+      <div id="draft-preview-${escHtml(d.id)}" style="display:none;margin-top:8px;border-top:1px dashed #c7d2fe;padding-top:8px;font-size:12px;color:#52525B;line-height:1.5"></div>
       <div style="font-size:10px;color:#9ca3af;margin-top:6px">${T('发布前会校验交接字段;发布后进入正常任务板,可被参与者 agent 发现 / 认领 / 提交 PR。', 'Publish validates the handoff fields; once published it enters the normal task board — discoverable / claimable / PR-submittable by participant agents.')}</div>
-      <button onclick="publishDraft('${escHtml(d.id)}')" style="margin-top:8px;padding:6px 14px;border:none;background:#16a34a;color:#fff;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600">${T('发布到任务板', 'Publish to board')}</button>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">
+        <button onclick="previewDraft('${escHtml(d.id)}')" style="padding:6px 12px;border:1px solid #6366f1;background:#fff;color:#4338ca;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600">👁 ${T('预览将发布内容', 'Preview what will be published')}</button>
+        <button id="pub-btn-${escHtml(d.id)}" disabled title="${T('请先预览将发布的存储内容', 'Preview the stored content first')}" onclick="publishDraft('${escHtml(d.id)}')" style="padding:6px 14px;border:none;background:#d1d5db;color:#6b7280;border-radius:6px;font-size:12px;cursor:not-allowed;font-weight:600">${T('发布到任务板', 'Publish to board')}</button>
+      </div>
     </div>`
   app.innerHTML = shell(`
     <div style="padding:14px;max-width:920px;margin:0 auto">
@@ -3305,6 +3309,34 @@ window.createTaskDraft = async (id) => {
   toast$(en ? 'Draft saved (unpublished)' : '草稿已保存(未发布)')
   renderAdminTaskProposals(document.getElementById('app'))
 }
+// Pre-publish preview: load the FULL stored draft body so publish is a decision against visible content.
+// Opening the preview also un-gates the (initially disabled) Publish button for this draft.
+window.previewDraft = async (taskId) => {
+  const box = document.getElementById('draft-preview-' + taskId)
+  if (!box) return
+  box.style.display = ''
+  box.innerHTML = t('加载中...')
+  const r = await GET('/admin/build-task-drafts/' + encodeURIComponent(taskId)).catch(() => null)
+  const d = r && r.draft
+  if (!d) { box.innerHTML = `<span style="color:#dc2626">${T('预览加载失败', 'Preview failed to load')}</span>`; return }
+  const m = d.agent_metadata || {}
+  const li = (arr) => (Array.isArray(arr) && arr.length) ? `<ul style="margin:2px 0 6px 16px;padding:0">${arr.map((x) => `<li>${escHtml(String(x))}</li>`).join('')}</ul>` : `<div style="color:#9ca3af;margin-bottom:6px">—</div>`
+  const txtBlock = (s) => `<div style="white-space:pre-wrap;margin-bottom:6px">${escHtml(String(s || '')) || '<span style="color:#9ca3af">—</span>'}</div>`
+  const sec = (label, html) => `<div style="margin-top:6px"><div style="font-weight:600;color:#374151">${escHtml(label)}</div>${html}</div>`
+  box.innerHTML = `<div style="font-size:11px;color:#6366f1;font-weight:600;margin-bottom:4px">${T('将要发布的存储内容(发布对此生效)', 'Stored content that will be published (publish acts on this)')}</div>`
+    + sec(T('说明', 'Description'), txtBlock(d.description))
+    + sec(T('验收标准', 'Acceptance criteria'), li(m.acceptance_criteria))
+    + sec(T('验证命令', 'Verification commands'), li(m.verification_commands))
+    + sec(T('允许路径', 'Allowed paths'), li(m.allowed_paths))
+    + sec(T('禁止路径', 'Forbidden paths'), li(m.forbidden_paths))
+    + sec(T('禁止动作', 'Forbidden actions'), li(m.prohibited_actions))
+    + sec(T('交付物', 'Deliverables'), li(m.deliverables))
+    + sec(T('完成定义', 'Definition of done'), txtBlock(m.definition_of_done))
+    + sec(T('预期结果', 'Expected results'), txtBlock(m.expected_results))
+  const btn = document.getElementById('pub-btn-' + taskId)
+  if (btn) { btn.disabled = false; btn.title = ''; btn.style.cssText = 'padding:6px 14px;border:none;background:#16a34a;color:#fff;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600' }
+}
+
 window.publishDraft = async (taskId) => {
   const en = window._lang === 'en'
   const r = await POST('/admin/build-task-drafts/' + encodeURIComponent(taskId) + '/publish', {})

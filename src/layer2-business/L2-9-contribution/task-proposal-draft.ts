@@ -282,3 +282,23 @@ export function discardDraft(db: Database.Database, taskId: string, adminId: str
   db.prepare("UPDATE task_proposal_draft_links SET status = 'discarded', discarded_by = ?, discarded_at = datetime('now') WHERE task_id = ?").run(adminId, taskId)
   return { ok: true, task_id: taskId }
 }
+
+/**
+ * Full stored body of an UNPUBLISHED internal draft — for pre-publish PREVIEW so a maintainer publishes
+ * against the exact content that will go live (not a blind button). Returns null unless the task is an
+ * internal-audience draft (getBuildTaskWithAgentMetadata's member/public scopes deliberately hide internal,
+ * so this admin-only read exists). Read-only — does not change publish behavior.
+ */
+export function getDraftBuildTaskDetail(db: Database.Database, taskId: string): Record<string, unknown> | null {
+  const meta = getBuildTaskAgentMetadata(db, taskId)
+  if (!meta || meta.audience !== 'internal') return null   // only unpublished internal drafts are previewable here
+  const t = db.prepare('SELECT id, title, area, description, rfc_ref, status, created_by, created_at FROM build_tasks WHERE id = ?').get(taskId) as Record<string, unknown> | undefined
+  if (!t) return null
+  const link = db.prepare('SELECT proposal_id, status FROM task_proposal_draft_links WHERE task_id = ?').get(taskId) as { proposal_id: string; status: string } | undefined
+  return {
+    ...t,
+    source_proposal_id: link?.proposal_id ?? null,
+    draft_link_status: link?.status ?? null,
+    agent_metadata: meta,   // full body: allowed/forbidden paths, prohibited_actions, acceptance_criteria, verification_commands, deliverables, definition_of_done, expected_results, risk_level, auto_claimable, …
+  }
+}
