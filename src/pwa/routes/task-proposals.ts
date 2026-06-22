@@ -15,7 +15,7 @@ import type Database from 'better-sqlite3'
 import { validateProposalInput, insertTaskProposal, listTaskProposals, listMyProposals, reviewTaskProposal } from '../../layer2-business/L2-9-contribution/task-proposal-store.js'
 import { withUncommittedValueBoundary } from '../../layer2-business/L2-9-contribution/contribution-display-envelope.js'
 import { getCanonicalContributionTarget } from '../../layer2-business/L2-9-contribution/canonical-contribution-target.js'
-import { createDraftFromProposal, listDraftBuildTasks, publishDraftBuildTask, discardDraft } from '../../layer2-business/L2-9-contribution/task-proposal-draft.js'
+import { createDraftFromProposal, listDraftBuildTasks, getDraftBuildTaskDetail, publishDraftBuildTask, discardDraft } from '../../layer2-business/L2-9-contribution/task-proposal-draft.js'
 import { recommendForProposal, insertAiSuggestion, listAiSuggestions, getProposalLite } from '../../layer2-business/L2-9-contribution/task-proposal-ai-store.js'
 
 const AI_NOTICE = 'AI suggestion — assistant only, NOT a decision. A human maintainer must explicitly create / publish / reject the formal task. AI never auto-publishes, auto-rejects, hides proposals, or assigns reward / credit.'
@@ -149,6 +149,14 @@ export function registerTaskProposalsRoutes(app: Application, deps: TaskProposal
   app.get('/api/admin/build-task-drafts', (req: Request, res: Response) => {
     const admin = requireSupportAdmin(req, res); if (!admin) return
     res.json(withProposalEnvelope({ drafts: listDraftBuildTasks(db) }))
+  })
+
+  // full stored body of ONE unpublished internal draft — for PRE-PUBLISH PREVIEW (publish against visible content).
+  app.get('/api/admin/build-task-drafts/:id', (req: Request, res: Response) => {
+    const admin = requireSupportAdmin(req, res); if (!admin) return
+    const draft = getDraftBuildTaskDetail(db, String(req.params.id))
+    if (!draft) return void errorRes(res, 404, 'NOT_FOUND', 'draft not found (or not an unpublished internal draft)')
+    res.json(withProposalEnvelope({ draft }))
   })
 
   // PUBLISH a draft → public open task — explicit human/admin action; records the acting admin
