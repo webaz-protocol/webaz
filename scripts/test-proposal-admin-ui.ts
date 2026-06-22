@@ -44,6 +44,8 @@ function main(): void {
   // pre-publish preview: draft card has a Preview button + the Publish button is gated (disabled) until previewed
   ok('preview: draft card has Preview button + gated (disabled) Publish', /previewDraft\('/.test(BLOCK) && /id="pub-btn-/.test(BLOCK) && /disabled/.test(BLOCK))
   ok('preview: previewDraft loads the stored body (GET draft detail) before publish', /window\.previewDraft\s*=/.test(app) && /build-task-drafts\/'\s*\+\s*encodeURIComponent\(taskId\)/.test(app) && /acceptance_criteria/.test(app) && /verification_commands/.test(app))
+  // regression guard: previewDraft is a TOP-LEVEL fn; T() is local to renderAdminTaskProposals, so previewDraft must define its OWN T (else ReferenceError → stuck on 加载中)
+  ok('preview: previewDraft defines its own T (no render-scoped T ReferenceError)', /window\.previewDraft\s*=\s*async[\s\S]{0,260}const T = \(zh, en\)/.test(app))
 
   // all four statuses surfaced + filter chips
   for (const s of ['new', 'needs_info', 'rejected', 'converted']) ok(`status surfaced: ${s}`, BLOCK.includes(`${s}:`) || new RegExp(`'${s}'`).test(BLOCK))
