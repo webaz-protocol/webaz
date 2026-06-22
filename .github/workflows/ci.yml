@@ -375,6 +375,32 @@ jobs:
           echo "  - isCreateRateLimitExempt no longer fails closed on a lookup error / missing users table / missing admin_type column"
           echo "See src/layer2-business/L2-9-contribution/build-tasks-engine.ts + scripts/test-admin-ratelimit-exempt.ts."
 
+  build-task-quota:
+    name: build-task quota-increase requests (atomic consume + ROOT-only review)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:build-task-quota
+      - run: npm run test:build-task-quota-routes
+      - run: npm run test:quota-admin-ui
+      - name: On failure — build-task quota workflow guard
+        if: failure()
+        run: |
+          echo "::error title=build-task quota-increase workflow failed::"
+          echo "Non-root creators who hit the create cap request extra quota; a ROOT admin approves a"
+          echo "time-boxed counted grant; createBuildTask consumes a unit atomically with the INSERT."
+          echo "Failures usually mean one of:"
+          echo "  - request validation regressed (positive count / max / reason required / one pending per requester)"
+          echo "  - approve/reject lost the SELF_DECISION guard, or a non-root admin reached the review surface"
+          echo "  - the atomic consume broke: a failed create consumed quota, or an exhausted/expired grant kept working"
+          echo "  - fail-closed regressed: a missing table threw instead of staying rate-limited"
+          echo "See src/layer2-business/L2-9-contribution/build-task-quota.ts + src/pwa/routes/build-task-quota.ts."
+
   github-credential:
     name: github contribution credential (verifier + zod ⇄ JSON Schema)
     runs-on: ubuntu-latest

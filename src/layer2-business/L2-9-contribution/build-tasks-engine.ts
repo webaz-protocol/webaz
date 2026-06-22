@@ -16,6 +16,7 @@
 import type Database from 'better-sqlite3'
 import { generateId } from '../../layer0-foundation/L0-1-database/schema.js'
 import { creditBuildReputation, BUILD_POINTS } from './build-reputation-engine.js'
+import { consumeQuotaForCreate, QUOTA_TYPE_BUILD_TASK_CREATE } from './build-task-quota.js'
 
 export const TASK_STATUS = new Set(['open', 'claimed', 'in_review', 'done', 'abandoned'])
 export const TASK_PROVENANCE = new Set(['human', 'ai_assisted', 'ai_authored'])
@@ -104,30 +105,55 @@ function isCreateRateLimitExempt(db: Database.Database, userId: string): boolean
   } catch { return false }
 }
 
-export function createBuildTask(db: Database.Database, input: CreateInput):
-  { id: string; status: string } | { error: string; error_code?: string } {
+type CreateOk = { id: string; status: string; via_grant?: boolean; remaining_quota?: number }
+type CreateErr = { error: string; error_code?: string; limit?: number; used?: number; can_request?: boolean }
+
+// sync INSERT + event log; callable directly or inside a db.transaction (e.g. atomic quota consume)
+function insertBuildTaskRow(db: Database.Database, fields: { title: string; area: string | null; description: string | null; rfcRef: string | null; creatorId: string }): { id: string; status: string } {
+  const id = generateId('bt')
+  db.prepare(`INSERT INTO build_tasks (id, title, area, description, rfc_ref, status, created_by)
+    VALUES (?,?,?,?,?, 'open', ?)`).run(id, fields.title, fields.area, fields.description, fields.rfcRef, fields.creatorId)
+  logTaskEvent(db, id, fields.creatorId, null, 'open', 'created')
+  return { id, status: 'open' }
+}
+
+export function createBuildTask(db: Database.Database, input: CreateInput): CreateOk | CreateErr {
   const title = String(input.title || '').trim()
   if (title.length < 3) return { error: '标题太短(至少 3 字)', error_code: 'TITLE_TOO_SHORT' }
   if (title.length > TITLE_MAX) return { error: `标题过长(上限 ${TITLE_MAX})`, error_code: 'TITLE_TOO_LONG' }
   const description = input.description ? String(input.description).slice(0, TEXT_MAX) : null
   const area = input.area ? String(input.area).slice(0, 64) : null
   const rfcRef = input.rfcRef ? String(input.rfcRef).slice(0, 64) : null
+  const fields = { title, area, description, rfcRef, creatorId: input.creatorId }
 
-  // anti-spam per-user daily cap — root admin accounts are exempt (accountable via auth + admin_audit_log)
-  if (!isCreateRateLimitExempt(db, input.creatorId)) {
-    const todayCount = (db.prepare(
-      `SELECT COUNT(*) AS n FROM build_tasks WHERE created_by = ? AND created_at > datetime('now','-1 day')`
-    ).get(input.creatorId) as { n: number }).n
-    if (todayCount >= CREATE_RATE_PER_DAY) {
-      return { error: `今日建任务已达上限(${CREATE_RATE_PER_DAY}/天)`, error_code: 'RATE_LIMITED' }
+  // root admin accounts are exempt from the cap (accountable via auth + admin_audit_log)
+  if (isCreateRateLimitExempt(db, input.creatorId)) return insertBuildTaskRow(db, fields)
+
+  // anti-spam per-user daily cap
+  const todayCount = (db.prepare(
+    `SELECT COUNT(*) AS n FROM build_tasks WHERE created_by = ? AND created_at > datetime('now','-1 day')`
+  ).get(input.creatorId) as { n: number }).n
+  if (todayCount < CREATE_RATE_PER_DAY) return insertBuildTaskRow(db, fields)
+
+  // cap exhausted — spend one unit of an approved quota grant ATOMICALLY with the INSERT, so a failed
+  // create never consumes quota. No valid grant → RATE_LIMITED (structured, so the UI can offer the
+  // "request extra quota" affordance). consumeQuotaForCreate is fail-closed (missing table → null).
+  const RATE_LIMITED_SENTINEL = '__RATE_LIMITED__'
+  try {
+    let ok: CreateOk | null = null
+    db.transaction(() => {
+      const grant = consumeQuotaForCreate(db, input.creatorId, QUOTA_TYPE_BUILD_TASK_CREATE)
+      if (!grant) throw new Error(RATE_LIMITED_SENTINEL)
+      const r = insertBuildTaskRow(db, fields)
+      ok = { id: r.id, status: r.status, via_grant: true, remaining_quota: grant.remaining }
+    })()
+    return ok as unknown as CreateOk
+  } catch (e) {
+    if ((e as Error).message === RATE_LIMITED_SENTINEL) {
+      return { error: `今日建任务已达上限(${CREATE_RATE_PER_DAY}/天)`, error_code: 'RATE_LIMITED', limit: CREATE_RATE_PER_DAY, used: todayCount, can_request: true }
     }
+    throw e
   }
-
-  const id = generateId('bt')
-  db.prepare(`INSERT INTO build_tasks (id, title, area, description, rfc_ref, status, created_by)
-    VALUES (?,?,?,?,?, 'open', ?)`).run(id, title, area, description, rfcRef, input.creatorId)
-  logTaskEvent(db, id, input.creatorId, null, 'open', 'created')
-  return { id, status: 'open' }
 }
 
 type ListFilter = { status?: string; area?: string; claimerId?: string }

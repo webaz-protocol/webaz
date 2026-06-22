@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (642 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (649 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -1155,6 +1155,71 @@
     "/api/admin/quota-applications/:id/reject": {
       "post": {
         "summary": "POST /api/admin/quota-applications/:id/reject",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/quota-requests": {
+      "get": {
+        "summary": "list quota requests (optional ?status=)",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/quota-requests/:id": {
+      "get": {
+        "summary": "detail of one request + the requester's live 24h create usage (reviewer context)",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/quota-requests/:id/approve": {
+      "post": {
+        "summary": "approve → time-boxed counted grant (self-approval rejected in the store)",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/quota-requests/:id/reject": {
+      "post": {
+        "summary": "reject (self-rejection also blocked by the store's SELF_DECISION guard)",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/quota-requests/:id/revoke": {
+      "post": {
+        "summary": "revoke an already-approved grant (root)",
         "tags": [
           "admin"
         ],
@@ -4176,6 +4241,26 @@
       },
       "post": {
         "summary": "通知偏好",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/quota-requests": {
+      "get": {
+        "summary": "list my own requests + current remaining temporary quota",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "submit a quota-increase request",
         "tags": [],
         "security": [
           {
