@@ -3312,6 +3312,8 @@ window.createTaskDraft = async (id) => {
 // Pre-publish preview: load the FULL stored draft body so publish is a decision against visible content.
 // Opening the preview also un-gates the (initially disabled) Publish button for this draft.
 window.previewDraft = async (taskId) => {
+  // bilingual helper — T is local to renderAdminTaskProposals, NOT a global, so this top-level fn defines its own
+  const T = (zh, en) => (window._lang === 'en' ? en : zh)
   const box = document.getElementById('draft-preview-' + taskId)
   if (!box) return
   box.style.display = ''
