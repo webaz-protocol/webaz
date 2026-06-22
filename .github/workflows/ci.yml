@@ -352,6 +352,29 @@ jobs:
           echo "  - the MCP handleRegister network self-create guard moved after account creation"
           echo "See src/pwa/anti-abuse-thresholds.ts + scripts/test-anti-abuse-params.ts."
 
+  admin-ratelimit-exempt:
+    name: root admin create-rate-limit exemption (fail-closed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:admin-ratelimit-exempt
+      - name: On failure — root admin rate-limit exemption guard
+        if: failure()
+        run: |
+          echo "::error title=Root admin create-rate-limit exemption failed::"
+          echo "createBuildTask must bypass the per-user create cap ONLY for root admin accounts"
+          echo "(users.role='admin' AND users.admin_type='root') while keeping it ENFORCED for everyone"
+          echo "else, fail-closed. Failures usually mean one of:"
+          echo "  - the exemption stopped applying to root admins (role='admin'+admin_type='root' wrongly capped)"
+          echo "  - the cap stopped applying to regional/non-root admins, members, or unknown creators (bypass leaked)"
+          echo "  - isCreateRateLimitExempt no longer fails closed on a lookup error / missing users table / missing admin_type column"
+          echo "See src/layer2-business/L2-9-contribution/build-tasks-engine.ts + scripts/test-admin-ratelimit-exempt.ts."
+
   github-credential:
     name: github contribution credential (verifier + zod ⇄ JSON Schema)
     runs-on: ubuntu-latest
