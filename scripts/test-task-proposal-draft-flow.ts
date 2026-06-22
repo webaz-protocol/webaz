@@ -19,7 +19,7 @@ import { initBuildTasksSchema } from '../src/layer2-business/L2-9-contribution/b
 import { initBuildTaskAgentMetadataSchema } from '../src/layer2-business/L2-9-contribution/build-task-agent-metadata-store.js'
 import { initTaskProposalSchema, insertTaskProposal, reviewTaskProposal } from '../src/layer2-business/L2-9-contribution/task-proposal-store.js'
 import { initTaskProposalAiSchema } from '../src/layer2-business/L2-9-contribution/task-proposal-ai-store.js'
-import { createDraftFromProposal, publishDraftBuildTask, listDraftBuildTasks, discardDraft, initTaskProposalDraftLinkSchema } from '../src/layer2-business/L2-9-contribution/task-proposal-draft.js'
+import { createDraftFromProposal, publishDraftBuildTask, listDraftBuildTasks, discardDraft, withdrawPublishedTask, initTaskProposalDraftLinkSchema } from '../src/layer2-business/L2-9-contribution/task-proposal-draft.js'
 import { listBuildTasksWithAgentMetadata, validateTaskFilters } from '../src/layer2-business/L2-9-contribution/build-task-read.js'
 import { guardParticipation, validatePrRefAgainstCanonical } from '../src/layer2-business/L2-9-contribution/build-task-participation.js'
 import { registerTaskProposalsRoutes } from '../src/pwa/routes/task-proposals.js'
@@ -139,6 +139,7 @@ async function routeTests(): Promise<void> {
   ok('unauthorized create-task-draft → 403', (await post(`/api/admin/task-proposals/${p.id}/create-task-draft`, { title: 'x docs' })).status === 403)
   ok('unauthorized publish → 403', (await post(`/api/admin/build-task-drafts/anytask/publish`)).status === 403)
   ok('unauthorized discard → 403', (await post(`/api/admin/build-task-drafts/anytask/discard`)).status === 403)
+  ok('unauthorized withdraw → 403', (await post(`/api/admin/build-tasks/anytask/withdraw`)).status === 403)
   ok('unauthorized ai-assist → 403', (await post(`/api/admin/task-proposals/${p.id}/ai-assist`)).status === 403)
 
   // AI-assist (authorized): stores a suggestion, NO publish/reject/create-task/proposal-change side effect
@@ -205,9 +206,40 @@ function discardTests(): void {
   ok('discard: unknown task → NOT_FOUND', (discardDraft(db, 'bt_nope', 'usr_admin') as any).error_code === 'NOT_FOUND')
 }
 
+// ── withdraw recovery: pull an UNCLAIMED published task off the board + reopen its proposal (fail-closed) ──
+function withdrawTests(): void {
+  const p = insertTaskProposal(db, { title: 'withdraw recovery flow', summary: 'publish then withdraw then recreate' } as any, 'usr_proposer') as any
+  const d = createDraftFromProposal(db, { proposalId: p.id, adminId: 'usr_admin', ...fullHandoff }) as any
+  const tId = d.draft_task_id
+  ok('withdraw: (setup) publish ok', (publishDraftBuildTask(db, tId, 'usr_admin2') as any).ok === true)
+  const w = withdrawPublishedTask(db, tId, 'usr_admin') as any
+  ok('withdraw: unclaimed published task withdrawn + proposal reopened', w.ok === true && w.reopened_proposal_id === p.id, JSON.stringify(w))
+  ok('withdraw: task set abandoned (off the board)', (db.prepare('SELECT status FROM build_tasks WHERE id = ?').get(tId) as any).status === 'abandoned')
+  ok('withdraw: draft link discarded (provenance kept)', (db.prepare('SELECT status FROM task_proposal_draft_links WHERE task_id = ?').get(tId) as any).status === 'discarded')
+  const prop = db.prepare('SELECT status, converted_ref FROM task_proposals WHERE id = ?').get(p.id) as any
+  ok('withdraw: source proposal reopened (status=new, converted_ref cleared)', prop.status === 'new' && !prop.converted_ref, JSON.stringify(prop))
+  const re = createDraftFromProposal(db, { proposalId: p.id, adminId: 'usr_admin', ...fullHandoff }) as any
+  ok('withdraw: slot freed + proposal non-terminal → recreate succeeds (distinct id)', !!re.draft_task_id && re.draft_task_id !== tId, JSON.stringify(re))
+
+  // fail-closed: a CLAIMED published task cannot be withdrawn
+  const p2 = insertTaskProposal(db, { title: 'withdraw claimed guard', summary: 'x' } as any, 'usr_proposer') as any
+  const d2 = createDraftFromProposal(db, { proposalId: p2.id, adminId: 'usr_admin', ...fullHandoff }) as any
+  publishDraftBuildTask(db, d2.draft_task_id, 'usr_admin2')
+  db.prepare("UPDATE build_tasks SET status='claimed', claimer_id='usr_claimer' WHERE id = ?").run(d2.draft_task_id)
+  ok('withdraw: claimed task refused (TASK_CLAIMED)', (withdrawPublishedTask(db, d2.draft_task_id, 'usr_admin') as any).error_code === 'TASK_CLAIMED')
+
+  // fail-closed: a non-published internal draft → NOT_PUBLISHED (use discard for those)
+  const p3 = insertTaskProposal(db, { title: 'withdraw notpub guard', summary: 'x' } as any, 'usr_proposer') as any
+  const d3 = createDraftFromProposal(db, { proposalId: p3.id, adminId: 'usr_admin', ...fullHandoff }) as any
+  ok('withdraw: internal (unpublished) draft refused (NOT_PUBLISHED)', (withdrawPublishedTask(db, d3.draft_task_id, 'usr_admin') as any).error_code === 'NOT_PUBLISHED')
+
+  ok('withdraw: unknown task → NOT_FOUND', (withdrawPublishedTask(db, 'bt_nope', 'usr_admin') as any).error_code === 'NOT_FOUND')
+}
+
 async function main(): Promise<void> {
   moduleTests()
   discardTests()
+  withdrawTests()
   await routeTests()
   if (fail === 0) {
     console.log(`\n✅ task-proposal draft flow: proposal→AI-assist(evidence only)→internal draft→explicit human publish→normal claimable board task;权限边界 + AI 不做决策 + 发布前校验 handoff 字段\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)

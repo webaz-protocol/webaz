@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (641 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (642 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -48,6 +48,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/build-task-drafts/:id/discard` | 🔐 | 👑 | Fail-closed: refuses a published / claimed draft or an already-converted source  | src/pwa/routes/task-proposals.ts:176 |
 | POST | `/api/admin/build-task-drafts/:id/publish` | 🔐 | 👑 | PUBLISH a draft → public open task — explicit human/admin action; records the ac | src/pwa/routes/task-proposals.ts:163 |
 | POST | `/api/admin/build-tasks/:id/resolve` | 🔐 | 👑 | 验收终态 —— 仅 admin/maintainer(验收=真人,RFC-006 不变量 2;不发奖励/不记信誉) | src/pwa/routes/build-tasks.ts:104 |
+| POST | `/api/admin/build-tasks/:id/withdraw` | 🔐 | 👑 | draft can be built). Fail-closed: refuses a claimed task or a non-published task | src/pwa/routes/task-proposals.ts:189 |
 | DELETE | `/api/admin/categories/:id/seasonal` | 🔐 | 👑 |  | src/pwa/routes/admin-catalog.ts:46 |
 | POST | `/api/admin/categories/:id/seasonal` | 🔐 | 👑 | ─── 类目 季节性配置 ───────────────────────────────────── | src/pwa/routes/admin-catalog.ts:31 |
 | GET | `/api/admin/charity/fund` | 🔐 | 👑 |  | src/pwa/routes/charity.ts:829 |

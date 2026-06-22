@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (641 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (642 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -477,6 +477,19 @@
     "/api/admin/build-tasks/:id/resolve": {
       "post": {
         "summary": "验收终态 —— 仅 admin/maintainer(验收=真人,RFC-006 不变量 2;不发奖励/不记信誉)",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/build-tasks/:id/withdraw": {
+      "post": {
+        "summary": "draft can be built). Fail-closed: refuses a claimed task or a non-published task. Soft-delete (provenance kept).",
         "tags": [
           "admin"
         ],
