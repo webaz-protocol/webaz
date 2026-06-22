@@ -85,6 +85,20 @@ export function releaseExpiredClaims(db: Database.Database): number {
 
 type CreateInput = { creatorId: string; title: string; area?: string; description?: string; rfcRef?: string }
 
+/**
+ * Admin accounts are exempt from the per-user create rate limit. The anti-spam cap
+ * (CREATE_RATE_PER_DAY) targets untrusted / public contributors; maintainer (admin) actions are
+ * already gated by auth and recorded in admin_audit_log, so the cap adds friction without protection.
+ * Fail-closed: any lookup failure (or a non-admin / unknown creator) returns false → the cap still
+ * applies, so non-admin and test behavior is unchanged.
+ */
+function isCreateRateLimitExempt(db: Database.Database, userId: string): boolean {
+  try {
+    const u = db.prepare('SELECT role FROM users WHERE id = ?').get(userId) as { role?: string } | undefined
+    return !!u && u.role === 'admin'
+  } catch { return false }
+}
+
 export function createBuildTask(db: Database.Database, input: CreateInput):
   { id: string; status: string } | { error: string; error_code?: string } {
   const title = String(input.title || '').trim()
@@ -94,11 +108,14 @@ export function createBuildTask(db: Database.Database, input: CreateInput):
   const area = input.area ? String(input.area).slice(0, 64) : null
   const rfcRef = input.rfcRef ? String(input.rfcRef).slice(0, 64) : null
 
-  const todayCount = (db.prepare(
-    `SELECT COUNT(*) AS n FROM build_tasks WHERE created_by = ? AND created_at > datetime('now','-1 day')`
-  ).get(input.creatorId) as { n: number }).n
-  if (todayCount >= CREATE_RATE_PER_DAY) {
-    return { error: `今日建任务已达上限(${CREATE_RATE_PER_DAY}/天)`, error_code: 'RATE_LIMITED' }
+  // anti-spam per-user daily cap — admin accounts are exempt (accountable via auth + admin_audit_log)
+  if (!isCreateRateLimitExempt(db, input.creatorId)) {
+    const todayCount = (db.prepare(
+      `SELECT COUNT(*) AS n FROM build_tasks WHERE created_by = ? AND created_at > datetime('now','-1 day')`
+    ).get(input.creatorId) as { n: number }).n
+    if (todayCount >= CREATE_RATE_PER_DAY) {
+      return { error: `今日建任务已达上限(${CREATE_RATE_PER_DAY}/天)`, error_code: 'RATE_LIMITED' }
+    }
   }
 
   const id = generateId('bt')
