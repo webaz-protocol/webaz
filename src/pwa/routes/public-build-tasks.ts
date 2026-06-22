@@ -11,6 +11,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { listBuildTasksWithAgentMetadata, getBuildTaskWithAgentMetadata, validateTaskFilters, withContributionReadEnvelope } from '../../layer2-business/L2-9-contribution/build-task-read.js'
+import { caseIdForTask } from '../../layer2-business/L2-9-contribution/task-proposal-draft.js'
 
 export interface PublicBuildTasksDeps {
   db: Database.Database
@@ -32,6 +33,9 @@ export function registerPublicBuildTasksRoutes(app: Application, deps: PublicBui
     // 404 (same as truly-missing, so existence of a restricted/internal task is never disclosed).
     const task = getBuildTaskWithAgentMetadata(db, String(req.params.id), 'public')
     if (!task) return void errorRes(res, 404, 'NOT_FOUND', '任务不存在')
-    res.json(withContributionReadEnvelope({ task }))
+    // case_id threads proposal → task → PR (= source proposal id if converted from a proposal, else the task id),
+    // so the proposer, the contributor, and the PR all quote one id. (Helper lives in the store — keeps this
+    // route off the RFC-016 raw-db seam.)
+    res.json(withContributionReadEnvelope({ task: { ...task, case_id: caseIdForTask(db, String(req.params.id)) } }))
   })
 }

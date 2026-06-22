@@ -36,6 +36,19 @@ export function initTaskProposalDraftLinkSchema(db: Database.Database): void {
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tpdl_proposal ON task_proposal_draft_links(proposal_id)`)
 }
 
+/**
+ * case_id threads a case end to end: proposal → task → PR. For a task converted from a proposal it is that
+ * source proposal id (so proposer + contributor + PR all quote the same id); for a directly-created task it
+ * is the task id itself. Guarded: the link table may be absent in minimal setups → fall back to the task id.
+ */
+export function caseIdForTask(db: Database.Database, taskId: string): string {
+  try {
+    const link = db.prepare('SELECT proposal_id FROM task_proposal_draft_links WHERE task_id = ?').get(taskId) as { proposal_id: string } | undefined
+    if (link?.proposal_id) return link.proposal_id
+  } catch { /* link table absent → case_id is the task id */ }
+  return taskId
+}
+
 type DraftArgs = {
   proposalId: string
   adminId: string
