@@ -86,16 +86,21 @@ export function releaseExpiredClaims(db: Database.Database): number {
 type CreateInput = { creatorId: string; title: string; area?: string; description?: string; rfcRef?: string }
 
 /**
- * Admin accounts are exempt from the per-user create rate limit. The anti-spam cap
- * (CREATE_RATE_PER_DAY) targets untrusted / public contributors; maintainer (admin) actions are
- * already gated by auth and recorded in admin_audit_log, so the cap adds friction without protection.
- * Fail-closed: any lookup failure (or a non-admin / unknown creator) returns false → the cap still
- * applies, so non-admin and test behavior is unchanged.
+ * Root admin accounts are exempt from the per-user create rate limit. The anti-spam cap
+ * (CREATE_RATE_PER_DAY) targets untrusted / public contributors; root maintainer actions are already
+ * gated by auth and recorded in admin_audit_log, so the cap adds friction without protection.
+ * Root = users.role = 'admin' AND users.admin_type = 'root' (the boot migration in server.ts forces
+ * any legacy admin with NULL admin_type to 'root', so the live root admin always carries 'root';
+ * matches the existing isRootAdmin / requireRootAdmin distinction).
+ * Regional / non-root admins stay capped — they should request more headroom via the separate
+ * quota-increase request workflow (PR #18) rather than a blanket exemption. Fail-closed: any lookup
+ * failure (unknown creator, non-root role, or a missing users table / missing admin_type column)
+ * returns false → the cap still applies, so non-root and test behavior is unchanged.
  */
 function isCreateRateLimitExempt(db: Database.Database, userId: string): boolean {
   try {
-    const u = db.prepare('SELECT role FROM users WHERE id = ?').get(userId) as { role?: string } | undefined
-    return !!u && u.role === 'admin'
+    const u = db.prepare('SELECT role, admin_type FROM users WHERE id = ?').get(userId) as { role?: string; admin_type?: string } | undefined
+    return !!u && u.role === 'admin' && u.admin_type === 'root'
   } catch { return false }
 }
 
@@ -108,7 +113,7 @@ export function createBuildTask(db: Database.Database, input: CreateInput):
   const area = input.area ? String(input.area).slice(0, 64) : null
   const rfcRef = input.rfcRef ? String(input.rfcRef).slice(0, 64) : null
 
-  // anti-spam per-user daily cap — admin accounts are exempt (accountable via auth + admin_audit_log)
+  // anti-spam per-user daily cap — root admin accounts are exempt (accountable via auth + admin_audit_log)
   if (!isCreateRateLimitExempt(db, input.creatorId)) {
     const todayCount = (db.prepare(
       `SELECT COUNT(*) AS n FROM build_tasks WHERE created_by = ? AND created_at > datetime('now','-1 day')`
