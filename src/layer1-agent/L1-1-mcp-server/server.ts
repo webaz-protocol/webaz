@@ -1566,18 +1566,22 @@ async function handleFeedback(args: Record<string, unknown>): Promise<Record<str
 
 // RFC-006 断点1(b)交接:从【可信】canonical 目标(API 响应里,绝不硬编码/不取自 task metadata)构造"怎么真正
 // 动手"。人的编码 agent 做 git/PR;Passkey 真人担责。sandbox 运行 / 本地草稿不算正式参与。
-function buildContributeHandoff(cct: unknown, taskId: string): Record<string, unknown> {
+function buildContributeHandoff(cct: unknown, taskId: string, caseId?: string | null): Record<string, unknown> {
   const c = (cct ?? {}) as Record<string, string>
   const repoUrl = c.canonical_github_url || 'https://github.com/webaz-protocol/webaz'
   const baseRepo = c.expected_pr_base_repo || c.canonical_repository_full_name || 'webaz-protocol/webaz'
   const baseBranch = c.base_branch || 'main'
+  // case_id threads proposal → task → PR. = the source proposal id when this task came from a proposal,
+  // else the task id itself. Quote it in the PR so the whole case stays traceable end to end.
+  const cid = caseId || taskId
   return {
+    case_id: cid,
     canonical_repo: baseRepo,
     repo: repoUrl,
     base_branch: baseBranch,
     start_here: 'Read AGENTS.md (project map + before-you-code + PR flow), then CONTRIBUTING.md.',
     do_the_work: 'Point a coding agent (e.g. Claude Code) at the repo on a single-topic branch. The buyer/shopping agent is not the coding agent — hand off to one.',
-    submit_pr: `Open a PR whose BASE repo is ${baseRepo} (${repoUrl}), base branch ${baseBranch}. If any target repo differs from this canonical repo, STOP and ask the human — never contribute to a non-canonical repository.`,
+    submit_pr: `Open a PR whose BASE repo is ${baseRepo} (${repoUrl}), base branch ${baseBranch}. Reference case ${cid} in the PR title/body so the proposal → task → PR chain stays traceable. If any target repo differs from this canonical repo, STOP and ask the human — never contribute to a non-canonical repository.`,
     pr_flow: 'Commit with DCO sign-off (git commit -s). If AI-authored, mark the PR per the meta-rule. Humans merge — no auto-merge.',
     then: `When the PR is open, report it back: webaz_contribute action=submit task_id=${taskId} pr_ref=#<N> verification_summary="<the verification_commands you ran + their results>". Both pr_ref and verification_summary are required.`,
     not_participation: 'A sandbox run or a local-only draft is NOT participation and is NOT a contribution; only a merged PR (or recognized issue/task/RFC) on the canonical repo enters the contribution record.',
@@ -1620,7 +1624,7 @@ export async function handleContribute(args: Record<string, unknown>): Promise<R
     const tid = args.task_id as string
     if (!tid) return { error: 'task_id required for action=detail' }
     const r = await apiCall('/api/public/build-tasks/' + encodeURIComponent(tid))
-    if (!r.error && r.task) r.agent_handoff = buildContributeHandoff(r.canonical_contribution_target, tid)
+    if (!r.error && r.task) r.agent_handoff = buildContributeHandoff(r.canonical_contribution_target, tid, (r.task as Record<string, unknown>).case_id as string | undefined)
     return r
   }
   if (action === 'suggest') {

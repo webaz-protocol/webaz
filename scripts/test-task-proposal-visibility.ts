@@ -14,8 +14,12 @@ import Database from 'better-sqlite3'
 import express from 'express'
 import { createServer, request as httpRequest, type Server } from 'node:http'
 import type { Request, Response } from 'express'
-import { initTaskProposalSchema } from '../src/layer2-business/L2-9-contribution/task-proposal-store.js'
+import { initTaskProposalSchema, insertTaskProposal } from '../src/layer2-business/L2-9-contribution/task-proposal-store.js'
 import { registerTaskProposalsRoutes } from '../src/pwa/routes/task-proposals.js'
+import { initBuildTasksSchema } from '../src/layer2-business/L2-9-contribution/build-tasks-engine.js'
+import { initBuildTaskAgentMetadataSchema } from '../src/layer2-business/L2-9-contribution/build-task-agent-metadata-store.js'
+import { initTaskProposalDraftLinkSchema, createDraftFromProposal, publishDraftBuildTask } from '../src/layer2-business/L2-9-contribution/task-proposal-draft.js'
+import { registerPublicBuildTasksRoutes } from '../src/pwa/routes/public-build-tasks.js'
 
 let pass = 0, fail = 0
 const fails: string[] = []
@@ -24,6 +28,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const db: any = new Database(':memory:')
 initTaskProposalSchema(db)
+initBuildTasksSchema(db); initBuildTaskAgentMetadataSchema(db); initTaskProposalDraftLinkSchema(db)
 
 // stub auth: Bearer key → user (kA→usrA, kB→usrB); admin via x-admin header.
 const USERS: Record<string, { id: string }> = { kA: { id: 'usrA' }, kB: { id: 'usrB' } }
@@ -52,6 +57,7 @@ async function main(): Promise<void> {
     rateLimitOk: () => true,
     auth, resolveUser,
   })
+  registerPublicBuildTasksRoutes(app, { db, errorRes })
   server = createServer(app)
   await new Promise<void>(r => server.listen(0, '127.0.0.1', r))
   port = (server.address() as any).port
@@ -77,6 +83,7 @@ async function main(): Promise<void> {
   ok('3: A sees own proposal', aIds.includes(idA))
   ok('3: A sees the spoof one too (it is A\'s)', (meA.json?.proposals ?? []).some((p: any) => p.title === 'spoof attempt xyz'))
   ok('3: A status=new + next_action present', (meA.json?.proposals ?? []).every((p: any) => p.status === 'new' && typeof p.next_action === 'string' && p.next_action.length > 0))
+  ok('3: proposer case_id == proposal id', (meA.json?.proposals ?? []).length > 0 && (meA.json?.proposals ?? []).every((p: any) => p.case_id === p.id))
   const meB = await call('GET', '/api/me/task-proposals', null, 'kB')
   ok('3: B does NOT see A\'s proposals (own-rows guard)', !(meB.json?.proposals ?? []).some((p: any) => p.id === idA))
   ok('3: anonymous proposal not in A nor B', !aIds.includes(anon.json?.proposal?.id) && !(meB.json?.proposals ?? []).some((p: any) => p.id === anon.json?.proposal?.id))
@@ -95,6 +102,23 @@ async function main(): Promise<void> {
   // 5) /api/me requires auth
   const noauth = await call('GET', '/api/me/task-proposals', null)
   ok('5: /api/me unauthenticated → 401', noauth.status === 401)
+
+  // 6) case_id threads proposal → task → PR: a converted task's public detail exposes case_id = source proposal id
+  const fullHandoff = {
+    title: 'Case-id threading task', area: 'docs', description: 'verify case_id surfacing end to end',
+    sourceRef: 'docs/x.md', acceptanceCriteria: ['done'], verificationCommands: ['npm run build'],
+    deliverables: ['x'], allowedPaths: ['docs/x.md'], forbiddenPaths: ['src/layer*/**'],
+    forbiddenActions: ['no funds'], requiredCapabilities: ['docs'], definitionOfDone: 'merged', expectedResults: 'x',
+  }
+  const propC = insertTaskProposal(db, { title: 'case id source proposal', summary: 'becomes a task' } as any, 'usrA') as any
+  const draft = createDraftFromProposal(db, { proposalId: propC.id, adminId: 'admin1', ...fullHandoff }) as any
+  const taskId = (publishDraftBuildTask(db, draft.draft_task_id, 'admin1') as any).task_id
+  const det = await call('GET', `/api/public/build-tasks/${taskId}`, null)
+  ok('6: converted task detail case_id == source proposal id', det.status === 200 && det.json?.task?.case_id === propC.id, JSON.stringify({ s: det.status, cid: det.json?.task?.case_id, pid: propC.id }))
+  // unlinked task → case_id falls back to the task id
+  db.prepare('DELETE FROM task_proposal_draft_links WHERE task_id = ?').run(taskId)
+  const det2 = await call('GET', `/api/public/build-tasks/${taskId}`, null)
+  ok('6: unlinked task case_id falls back to task id', det2.json?.task?.case_id === taskId, JSON.stringify({ cid: det2.json?.task?.case_id, taskId }))
 
   await new Promise<void>(r => server.close(() => r()))
   console.log(`\n${fail === 0 ? '✅' : '❌'} task-proposal-visibility: ${pass} pass / ${fail} fail`)

@@ -71,7 +71,8 @@ export function registerTaskProposalsRoutes(app: Application, deps: TaskProposal
   // proposer-facing read: the caller's OWN proposals + status + public_reply (agent-readable). No review_note; own rows only.
   app.get('/api/me/task-proposals', (req: Request, res: Response) => {
     const user = auth(req, res); if (!user) return
-    const proposals = listMyProposals(db, String(user.id)).map(p => ({ ...p, next_action: nextActionFor(String(p.status)) }))
+    // case_id threads the whole case (proposal → task → PR). For a proposal it is the proposal's own id.
+    const proposals = listMyProposals(db, String(user.id)).map(p => ({ ...p, case_id: p.id, next_action: nextActionFor(String(p.status)) }))
     res.json(withProposalEnvelope({ proposals }))
   })
 
