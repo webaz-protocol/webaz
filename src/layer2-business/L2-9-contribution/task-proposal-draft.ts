@@ -19,7 +19,7 @@
  * publish, when the work actually enters the board.
  */
 import type Database from 'better-sqlite3'
-import { createBuildTask, logTaskEvent } from './build-tasks-engine.js'
+import { createBuildTask, logTaskEvent, releaseExpiredClaims } from './build-tasks-engine.js'
 import { insertBuildTaskAgentMetadata, getBuildTaskAgentMetadata, setBuildTaskAudience,
   type BuildTaskAgentMetadata, RISK_LEVELS, TASK_TYPES } from './build-task-agent-metadata-store.js'
 import { reviewTaskProposal } from './task-proposal-store.js'
@@ -301,4 +301,40 @@ export function getDraftBuildTaskDetail(db: Database.Database, taskId: string): 
     draft_link_status: link?.status ?? null,
     agent_metadata: meta,   // full body: allowed/forbidden paths, prohibited_actions, acceptance_criteria, verification_commands, deliverables, definition_of_done, expected_results, risk_level, auto_claimable, …
   }
+}
+
+/**
+ * Recovery: WITHDRAW a published task that was converted from a proposal — pull it off the public board and
+ * REOPEN the source proposal so a corrected draft can be built. Fail-closed: only an UNCLAIMED, open,
+ * published task (audience='public') may be withdrawn (a claimed / in_review / done task is refused).
+ *
+ * Soft-delete semantics (provenance retained): the build_task is set status='abandoned' (off the board, row
+ * kept), the draft link is marked 'discarded' (kept, frees the slot), and the proposal is un-converted
+ * (status='new', converted_ref cleared) so createDraftFromProposal works again. Scope = recovery only.
+ */
+export function withdrawPublishedTask(db: Database.Database, taskId: string, adminId: string):
+  { ok: true; task_id: string; reopened_proposal_id: string | null } | { error: string; error_code: string } {
+  releaseExpiredClaims(db)   // an expired claim is effectively unclaimed
+  const meta = getBuildTaskAgentMetadata(db, taskId)
+  if (!meta) return { error: 'task not found', error_code: 'NOT_FOUND' }
+  if (meta.audience !== 'public') return { error: 'task is not published (use discard for an internal draft)', error_code: 'NOT_PUBLISHED' }
+  const t = db.prepare('SELECT status, claimer_id FROM build_tasks WHERE id = ?').get(taskId) as { status: string; claimer_id: string | null } | undefined
+  if (!t) return { error: 'task not found', error_code: 'NOT_FOUND' }
+  if (t.claimer_id || t.status !== 'open') return { error: `task is ${t.status}${t.claimer_id ? ' (claimed)' : ''} — only an UNCLAIMED open task can be withdrawn`, error_code: 'TASK_CLAIMED' }
+  const link = db.prepare('SELECT proposal_id, status FROM task_proposal_draft_links WHERE task_id = ?').get(taskId) as { proposal_id: string; status: string } | undefined
+  let reopened: string | null = null
+  db.transaction(() => {
+    db.prepare("UPDATE build_tasks SET status = 'abandoned', updated_at = datetime('now') WHERE id = ?").run(taskId)
+    logTaskEvent(db, taskId, adminId, t.status, 'abandoned', 'withdrawn by admin — published task pulled off the board (recovery)')
+    if (link) {
+      if (link.status !== 'discarded') db.prepare("UPDATE task_proposal_draft_links SET status = 'discarded', discarded_by = ?, discarded_at = datetime('now') WHERE task_id = ?").run(adminId, taskId)
+      const prop = db.prepare('SELECT status, converted_ref FROM task_proposals WHERE id = ?').get(link.proposal_id) as { status: string; converted_ref: string | null } | undefined
+      if (prop && prop.status === 'converted' && prop.converted_ref === taskId) {
+        db.prepare("UPDATE task_proposals SET status = 'new', converted_ref = NULL, reviewer_id = NULL, review_note = ?, updated_at = datetime('now') WHERE id = ?")
+          .run(`reopened: published task ${taskId} withdrawn by admin`, link.proposal_id)
+        reopened = link.proposal_id
+      }
+    }
+  })()
+  return { ok: true, task_id: taskId, reopened_proposal_id: reopened }
 }

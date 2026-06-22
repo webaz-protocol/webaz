@@ -15,7 +15,7 @@ import type Database from 'better-sqlite3'
 import { validateProposalInput, insertTaskProposal, listTaskProposals, listMyProposals, reviewTaskProposal } from '../../layer2-business/L2-9-contribution/task-proposal-store.js'
 import { withUncommittedValueBoundary } from '../../layer2-business/L2-9-contribution/contribution-display-envelope.js'
 import { getCanonicalContributionTarget } from '../../layer2-business/L2-9-contribution/canonical-contribution-target.js'
-import { createDraftFromProposal, listDraftBuildTasks, getDraftBuildTaskDetail, publishDraftBuildTask, discardDraft } from '../../layer2-business/L2-9-contribution/task-proposal-draft.js'
+import { createDraftFromProposal, listDraftBuildTasks, getDraftBuildTaskDetail, publishDraftBuildTask, discardDraft, withdrawPublishedTask } from '../../layer2-business/L2-9-contribution/task-proposal-draft.js'
 import { recommendForProposal, insertAiSuggestion, listAiSuggestions, getProposalLite } from '../../layer2-business/L2-9-contribution/task-proposal-ai-store.js'
 
 const AI_NOTICE = 'AI suggestion — assistant only, NOT a decision. A human maintainer must explicitly create / publish / reject the formal task. AI never auto-publishes, auto-rejects, hides proposals, or assigns reward / credit.'
@@ -182,5 +182,18 @@ export function registerTaskProposalsRoutes(app: Application, deps: TaskProposal
       return void errorRes(res, code, r.error_code, r.error)
     }
     res.json(withProposalEnvelope({ discarded: { task_id: r.task_id, status: 'discarded', already_discarded: !!r.already_discarded }, discarded_by: admin.id }))
+  })
+
+  // RECOVERY: withdraw an UNCLAIMED published task off the board + reopen its source proposal (so a corrected
+  // draft can be built). Fail-closed: refuses a claimed task or a non-published task. Soft-delete (provenance kept).
+  app.post('/api/admin/build-tasks/:id/withdraw', (req: Request, res: Response) => {
+    const admin = requireSupportAdmin(req, res); if (!admin) return
+    const r = withdrawPublishedTask(db, String(req.params.id), admin.id as string)
+    if ('error' in r) {
+      const code = r.error_code === 'NOT_FOUND' ? 404
+        : (r.error_code === 'TASK_CLAIMED' || r.error_code === 'NOT_PUBLISHED') ? 409 : 400
+      return void errorRes(res, code, r.error_code, r.error)
+    }
+    res.json(withProposalEnvelope({ withdrawn: { task_id: r.task_id, reopened_proposal_id: r.reopened_proposal_id }, withdrawn_by: admin.id }))
   })
 }
