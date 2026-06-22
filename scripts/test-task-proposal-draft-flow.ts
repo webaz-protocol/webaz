@@ -19,7 +19,7 @@ import { initBuildTasksSchema } from '../src/layer2-business/L2-9-contribution/b
 import { initBuildTaskAgentMetadataSchema } from '../src/layer2-business/L2-9-contribution/build-task-agent-metadata-store.js'
 import { initTaskProposalSchema, insertTaskProposal, reviewTaskProposal } from '../src/layer2-business/L2-9-contribution/task-proposal-store.js'
 import { initTaskProposalAiSchema } from '../src/layer2-business/L2-9-contribution/task-proposal-ai-store.js'
-import { createDraftFromProposal, publishDraftBuildTask, listDraftBuildTasks, initTaskProposalDraftLinkSchema } from '../src/layer2-business/L2-9-contribution/task-proposal-draft.js'
+import { createDraftFromProposal, publishDraftBuildTask, listDraftBuildTasks, discardDraft, initTaskProposalDraftLinkSchema } from '../src/layer2-business/L2-9-contribution/task-proposal-draft.js'
 import { listBuildTasksWithAgentMetadata, validateTaskFilters } from '../src/layer2-business/L2-9-contribution/build-task-read.js'
 import { guardParticipation, validatePrRefAgainstCanonical } from '../src/layer2-business/L2-9-contribution/build-task-participation.js'
 import { registerTaskProposalsRoutes } from '../src/pwa/routes/task-proposals.js'
@@ -133,6 +133,7 @@ async function routeTests(): Promise<void> {
   authUser = null
   ok('unauthorized create-task-draft → 403', (await post(`/api/admin/task-proposals/${p.id}/create-task-draft`, { title: 'x docs' })).status === 403)
   ok('unauthorized publish → 403', (await post(`/api/admin/build-task-drafts/anytask/publish`)).status === 403)
+  ok('unauthorized discard → 403', (await post(`/api/admin/build-task-drafts/anytask/discard`)).status === 403)
   ok('unauthorized ai-assist → 403', (await post(`/api/admin/task-proposals/${p.id}/ai-assist`)).status === 403)
 
   // AI-assist (authorized): stores a suggestion, NO publish/reject/create-task/proposal-change side effect
@@ -158,8 +159,36 @@ async function routeTests(): Promise<void> {
   server.close()
 }
 
+// ── discard draft: soft-delete frees the slot (provenance retained); fail-closed on published/claimed/converted ──
+function discardTests(): void {
+  // unlock chain: create → discard (soft) → slot freed → recreate succeeds (v2)
+  const p = insertTaskProposal(db, { title: 'discard unlock chain', summary: 'create, discard, recreate' } as any, 'usr_proposer') as any
+  const d1 = createDraftFromProposal(db, { proposalId: p.id, adminId: 'usr_admin', ...fullHandoff }) as any
+  ok('discard: first draft created', !!d1.draft_task_id, JSON.stringify(d1))
+  ok('discard: 2nd create blocked while active (PROPOSAL_HAS_DRAFT)', (createDraftFromProposal(db, { proposalId: p.id, adminId: 'usr_admin', ...fullHandoff }) as any).error_code === 'PROPOSAL_HAS_DRAFT')
+  const disc = discardDraft(db, d1.draft_task_id, 'usr_admin') as any
+  ok('discard: internal draft discarded ok', disc.ok === true && !disc.already_discarded, JSON.stringify(disc))
+  const linkRow = db.prepare('SELECT status, discarded_by FROM task_proposal_draft_links WHERE task_id = ?').get(d1.draft_task_id) as any
+  ok('discard: link row RETAINED + status=discarded + discarded_by recorded (provenance)', !!linkRow && linkRow.status === 'discarded' && linkRow.discarded_by === 'usr_admin', JSON.stringify(linkRow))
+  ok('discard: discarded draft NOT in admin draft list', !listDraftBuildTasks(db).some((x: any) => x.id === d1.draft_task_id))
+  const d2 = createDraftFromProposal(db, { proposalId: p.id, adminId: 'usr_admin', ...fullHandoff }) as any
+  ok('discard: slot freed → recreate succeeds (v2), distinct task id', !!d2.draft_task_id && d2.draft_task_id !== d1.draft_task_id, JSON.stringify(d2))
+  ok('discard: v2 draft IS in the admin draft list', listDraftBuildTasks(db).some((x: any) => x.id === d2.draft_task_id))
+  ok('discard: re-discard is idempotent (already_discarded)', (discardDraft(db, d1.draft_task_id, 'usr_admin') as any).already_discarded === true)
+  ok('discard: publishing a discarded draft → DRAFT_DISCARDED', (publishDraftBuildTask(db, d1.draft_task_id, 'usr_admin') as any).error_code === 'DRAFT_DISCARDED')
+
+  // fail-closed: a PUBLISHED draft cannot be discarded
+  const p2 = insertTaskProposal(db, { title: 'discard published guard', summary: 'x' } as any, 'usr_proposer') as any
+  const d3 = createDraftFromProposal(db, { proposalId: p2.id, adminId: 'usr_admin', ...fullHandoff }) as any
+  ok('discard: (setup) publish ok', (publishDraftBuildTask(db, d3.draft_task_id, 'usr_admin2') as any).ok === true)
+  ok('discard: published draft refused (ALREADY_PUBLISHED)', (discardDraft(db, d3.draft_task_id, 'usr_admin') as any).error_code === 'ALREADY_PUBLISHED')
+
+  ok('discard: unknown task → NOT_FOUND', (discardDraft(db, 'bt_nope', 'usr_admin') as any).error_code === 'NOT_FOUND')
+}
+
 async function main(): Promise<void> {
   moduleTests()
+  discardTests()
   await routeTests()
   if (fail === 0) {
     console.log(`\n✅ task-proposal draft flow: proposal→AI-assist(evidence only)→internal draft→explicit human publish→normal claimable board task;权限边界 + AI 不做决策 + 发布前校验 handoff 字段\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)
