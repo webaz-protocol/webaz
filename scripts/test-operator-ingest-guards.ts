@@ -10,7 +10,7 @@
  * (The engine's own append-only idempotency is additionally covered by test:github-credential-ingestion.)
  */
 import { readFileSync } from 'node:fs'
-import { evaluateActorGuard, runIngestPass } from './operator-ingest-github-pr.mjs'
+import { evaluateActorGuard, runIngestPass, REPOS, OWNER, REPO } from './operator-ingest-github-pr.mjs'
 
 let pass = 0, fail = 0
 const fails: string[] = []
@@ -101,8 +101,40 @@ async function main(): Promise<void> {
     ok('commit openDb fails closed if foreign_keys != 1 (before any write)', /foreign_keys !== 1/.test(src) && /no setSeamDb, no write/.test(src))
     ok('counts() includes github_credential_observations', /observations:[^\n]*github_credential_observations/.test(src)) }
 
+  // ── multi-repo: repoKey resolves ONLY via the REPOS allowlist (no caller-supplied node id is trusted) ──
+  ok('REPOS registry includes canonical + archive repos with their node ids',
+    REPOS['webaz-protocol/webaz'] === 'R_kgDOS9YurA' && REPOS['seasonsagents-art/webaz-archive'] === 'R_kgDOSacm8Q')
+  { const seen = { fetch: [] as any[], ingest: [] as any[] }
+    const io = {
+      fetchPr: async (o: string, r: string, pr: number) => { seen.fetch.push([o, r, pr]); return USER },
+      openDb: () => ({
+        ingest: async (req: any, deps: any) => {
+          seen.ingest.push([req.owner, req.repo, [...deps.repositoryMapping.keys()][0], [...deps.repositoryMapping.values()][0]])
+          return { ok: true, status: 'ingested', fact_id: 'f', source_event_key: 'k' }
+        },
+        counts: () => ({ facts: 0, creds: 0, links: 0, observations: 0 }), close: () => {},
+      }),
+    }
+    await runIngestPass({ prNumbers: [292], ...EXP, commit: true, token: 't', repoKey: 'seasonsagents-art/webaz-archive' }, io)
+    ok('repoKey → fetchPr receives archive owner/name/pr', seen.fetch[0]?.[0] === 'seasonsagents-art' && seen.fetch[0]?.[1] === 'webaz-archive' && seen.fetch[0]?.[2] === 292)
+    ok('repoKey → engine ingest gets archive owner/repo + node-id mapping resolved FROM the allowlist',
+      seen.ingest[0]?.[0] === 'seasonsagents-art' && seen.ingest[0]?.[1] === 'webaz-archive' && seen.ingest[0]?.[2] === 'seasonsagents-art/webaz-archive' && seen.ingest[0]?.[3] === 'R_kgDOSacm8Q', JSON.stringify(seen.ingest[0])) }
+  { const seen: any[] = []
+    const io = { fetchPr: async (o: string, r: string) => { seen.push([o, r]); return USER },
+      openDb: () => ({ ingest: async () => ({ ok: true, status: 'ingested' }), counts: () => ({ facts: 0, creds: 0, links: 0, observations: 0 }), close: () => {} }) }
+    await runIngestPass({ prNumbers: [1], ...EXP, commit: true, token: 't' }, io)
+    ok('no repoKey → backward-compat default to canonical owner/name', seen[0]?.[0] === OWNER && seen[0]?.[1] === REPO) }
+  // SECURITY: an unlisted repoKey can NEVER reach fetch / DB / engine — the allowlist is the only source of
+  // the trusted repositoryMapping, even for a direct programmatic caller (CLI --repo is just one caller).
+  { const calls = { fetch: 0, openDb: 0, ingest: 0 }
+    const io = { fetchPr: async () => { calls.fetch++; return USER },
+      openDb: () => { calls.openDb++; return { ingest: async () => { calls.ingest++; return { ok: true, status: 'ingested' } }, counts: () => ({ facts: 0, creds: 0, links: 0, observations: 0 }), close: () => {} } } }
+    const r = await runIngestPass({ prNumbers: [1], ...EXP, commit: true, token: 't', repoKey: 'evil/repo' }, io)
+    ok('unlisted repoKey → aborted unknown_repo, NOTHING fetched/opened/ingested',
+      r.aborted === 'unknown_repo' && calls.fetch === 0 && calls.openDb === 0 && calls.ingest === 0, JSON.stringify({ aborted: r.aborted, calls })) }
+
   if (fail === 0) {
-    console.log(`\n✅ operator ingestion guards: actor guard (match-only User; mismatch/org/bot/null rejected; allowNonUser override) · fail-closed (no token / no expected actor / no PR) · DRY-RUN opens no DB + calls no engine · mismatch/org NEVER ingested even with --commit · idempotent re_observed surfaced\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)
+    console.log(`\n✅ operator ingestion guards: actor guard (match-only User; mismatch/org/bot/null rejected; allowNonUser override) · fail-closed (no token / no expected actor / no PR) · DRY-RUN opens no DB + calls no engine · mismatch/org NEVER ingested even with --commit · idempotent re_observed surfaced · repoKey resolves only via REPOS allowlist (unlisted → unknown_repo, no fetch/DB/ingest)\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)
   } else {
     console.error(`\n❌ operator ingestion guards FAILED\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}\n${fails.join('\n')}`)
     process.exit(1)
