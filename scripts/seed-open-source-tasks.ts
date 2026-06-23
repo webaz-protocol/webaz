@@ -25,6 +25,9 @@
  *
  * NON-GOALS: no governance scoring / rewards / tokenomics / ranking. value_state is always 'uncommitted'.
  */
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
 import { generateId } from '../src/layer0-foundation/L0-1-database/schema.js'
 import { initBuildTasksSchema, logTaskEvent } from '../src/layer2-business/L2-9-contribution/build-tasks-engine.js'
@@ -33,6 +36,9 @@ import {
   insertBuildTaskAgentMetadata,
   type BuildTaskAgentMetadata,
 } from '../src/layer2-business/L2-9-contribution/build-task-agent-metadata-store.js'
+import { CONTRIBUTION_TYPES } from '../src/layer2-business/L2-9-contribution/github-credential/github-credential.schema.js'
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 // ── shared boundary (mirrors §A of OPEN-SOURCE-FIRST-TASKS.md) ──
 const GLOBAL_PROHIBITED = [
@@ -81,7 +87,7 @@ const base = (m: Partial<BuildTaskAgentMetadata>): BuildTaskAgentMetadata => ({
   dependencies: [],
   blocking_conditions: [],
   value_state: 'uncommitted',
-  contribution_type: 'documentation',
+  contribution_type: 'maintenance',   // RFC-017 §5 canonical default; docs/i18n map here (no docs-specific §5 bucket)
   accountable_party_required: true,
   ...m,
 } as BuildTaskAgentMetadata)
@@ -100,7 +106,7 @@ const TASKS: Seed[] = [
       expected_results: 'one markdown reference doc (docs/manifest-reference.md)', deliverables: ['docs/manifest-reference.md'] }) },
   { ref: 'T2', title: 'i18n: complete one missing language on the public discover page', area: 'i18n',
     description: 'Add a missing-language (en/ja/ko — pick one) translation for the public #discover UI strings, against existing zh/en keys in i18n.js.',
-    meta: base({ task_type: 'i18n', ...lowAuto, contribution_type: 'translation', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T2',
+    meta: base({ task_type: 'i18n', ...lowAuto, contribution_type: 'maintenance', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T2',
       allowed_paths: ['src/pwa/public/i18n.js (translations only)'], forbidden_paths: ['any logic', 'any string implying earnings/recruiting'],
       required_capabilities: ['i18n', 'translation'],
       acceptance_criteria: ['target-language keys map 1:1 to zh with no gaps', 'no recruiting / income-promise wording introduced', 'npm run check:pwa-syntax green'],
@@ -130,14 +136,14 @@ const TASKS: Seed[] = [
   // ── §D Group B — 5 × 2–4 h ──
   { ref: 'T6', title: 'content_hash verification SDK (one language)', area: 'sdk',
     description: 'Reusable library exporting canonicalize() + verifyContentHash(endpoint, expectedHash) for agents to verify p2p content. Implements §B (canonical-JSON) exactly.',
-    meta: base({ ...B, task_type: 'sdk_example', ...lowAuto, contribution_type: 'sdk_example', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#B', dependencies: ['§B canonical-JSON spec'],
+    meta: base({ ...B, task_type: 'sdk_example', ...lowAuto, contribution_type: 'code', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#B', dependencies: ['§B canonical-JSON spec'],
       allowed_paths: ['sdk/p2p-verify/'], forbidden_paths: ['the content_hash generation/admission core in src/ (reuse the rule only to verify)'],
       required_capabilities: ['typescript', 'crypto-sha256'],
       acceptance_criteria: ['canonicalize() byte-identical to order-chain.ts canonicalSerialize on the §B fixture set (no-drift test)', 'tamper any field => verify fails; key reorder => hash unchanged; arrays keep order; null kept; non-ASCII per §B.4', 'follows §B points 1–6 precisely'],
       verification_commands: ['npm test (SDK) green incl. the no-drift diff vs the src serializer'], expected_results: 'SDK package with tests + README citing §B', deliverables: ['sdk/p2p-verify/ package', 'tests', 'README'] }) },
   { ref: 'T7', title: 'seller-export -> list_product field-mapping skill (one platform)', area: 'sdk',
     description: 'Script: input a seller\'s own export (Taobao/Shopify) CSV/JSON; parse + map to webaz_list_product fields; output a publish-ready structure.',
-    meta: base({ ...B, task_type: 'sdk_example', ...medSup, risk_level: 'medium', contribution_type: 'sdk_example', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T7', dependencies: ['T15 (mapping standard) helpful, not blocking'],
+    meta: base({ ...B, task_type: 'sdk_example', ...medSup, risk_level: 'medium', contribution_type: 'code', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T7', dependencies: ['T15 (mapping standard) helpful, not blocking'],
       allowed_paths: ['examples/catalog-import-<platform>/'], forbidden_paths: ['any scraping of external platforms (accept seller-exported files only)', 'payment/inventory core'],
       prohibited_actions: [...GLOBAL_PROHIBITED, 'Do NOT scrape external platforms — only process the seller\'s own exported files'],
       required_capabilities: ['nodejs', 'data-mapping'],
@@ -145,21 +151,21 @@ const TASKS: Seed[] = [
       verification_commands: ['node examples/catalog-import-<platform>/test.js (bundled sample export)'], expected_results: 'parse skill + sample file + mapping doc', deliverables: ['examples/catalog-import-<platform>/', 'sample export', 'mapping doc'] }) },
   { ref: 'T8', title: 'seller p2p endpoint reference implementation', area: 'sdk',
     description: 'Minimal seller p2p endpoint: static service returning product-detail JSON by product_id + a helper computing content_hash (§B) + content_signature HMAC-SHA256(api_key, content_hash|content_signed_at).',
-    meta: base({ ...B, task_type: 'sdk_example', ...medSup, risk_level: 'medium', contribution_type: 'sdk_example', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T8', dependencies: ['§B', 'pairs with T6'],
+    meta: base({ ...B, task_type: 'sdk_example', ...medSup, risk_level: 'medium', contribution_type: 'code', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T8', dependencies: ['§B', 'pairs with T6'],
       allowed_paths: ['examples/seller-p2p-node/'], forbidden_paths: ['src/ core', 'WebAZ-side anchoring/admission (seller-side reference only)'],
       required_capabilities: ['nodejs', 'http', 'crypto-hmac'],
       acceptance_criteria: ['GET /<product_id> returns valid JSON', 'helper content_hash (§B canonical) verifies via T6 and the protocol signature check', 'signature rule matches webaz_p2p_product exactly: HMAC-SHA256(api_key, content_hash + "|" + content_signed_at)', 'README: local start -> cloud migration; cites §B as canonical-hash source of truth'],
       verification_commands: ['start service + verify a fetched product via the T6 SDK'], expected_results: 'reference impl + hash/sign helper + README', deliverables: ['examples/seller-p2p-node/', 'hash/sign helper', 'README'] }) },
   { ref: 'T9', title: 'anti-oversell config end-to-end example (existing fields)', area: 'sdk',
     description: 'Example + doc using list_product existing auto_delist_on_zero / low_stock_threshold to prevent oversell: publish -> simulate stock->0 -> auto-delist -> document the trigger. Existing fields only.',
-    meta: base({ ...B, task_type: 'sdk_example', ...medSup, risk_level: 'medium', contribution_type: 'sdk_example', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T9',
+    meta: base({ ...B, task_type: 'sdk_example', ...medSup, risk_level: 'medium', contribution_type: 'code', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T9',
       allowed_paths: ['examples/inventory-guard/', 'docs/inventory-guard.md'], forbidden_paths: ['inventory-decrement / order core', 'list_product backend'],
       required_capabilities: ['nodejs', 'mcp-tools'],
       acceptance_criteria: ['example walks "stock->0 => auto-delist"', 'doc accurately describes auto_delist_on_zero / low_stock_threshold (existing list_product fields)'],
       verification_commands: ['run the example, observe auto-delist firing'], expected_results: 'example script + doc', deliverables: ['examples/inventory-guard/', 'docs/inventory-guard.md'] }) },
   { ref: 'T10', title: 'seller NL-instruction prototype (read + publish only; never funds)', area: 'sdk',
     description: 'Small agent instruction-layer prototype mapping seller natural language to the right MCP tool calls (list_product / get_status). Read + publish/(de)list only; never funds/withdraw/escrow.',
-    meta: base({ ...B, task_type: 'sdk_example', ...medSup, risk_level: 'medium', contribution_type: 'sdk_example', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T10', dependencies: ['T3 helpful'],
+    meta: base({ ...B, task_type: 'sdk_example', ...medSup, risk_level: 'medium', contribution_type: 'code', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T10', dependencies: ['T3 helpful'],
       allowed_paths: ['examples/seller-agent-cli/'], forbidden_paths: ['any wallet/withdraw/escrow/payment mapping', 'iron-rule actions'],
       prohibited_actions: [...GLOBAL_PROHIBITED, 'A funds-type instruction must be refused with "needs PWA + Passkey" — NEVER proxied'],
       required_capabilities: ['nodejs', 'agent-instruction-design'],
@@ -192,14 +198,14 @@ const TASKS: Seed[] = [
   // ── §F Group D — 2 small RFC ──
   { ref: 'T14', title: 'RFC: node discovery / content_hash -> replica index', area: 'governance',
     description: 'Small RFC designing how WebAZ maintains a content_hash -> list-of-replica-nodes index (design only): what it stores (pointers/metadata, not bytes), node up/down, agent query, composition with §B verification.',
-    meta: base({ ...B, task_type: 'governance', ...medSup, risk_level: 'medium', contribution_type: 'rfc', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T14',
+    meta: base({ ...B, task_type: 'governance', ...medSup, risk_level: 'medium', contribution_type: 'governance', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T14',
       allowed_paths: ['docs/rfcs/RFC-node-discovery.md'], forbidden_paths: ['no code', 'no incentive-accounting design (core, maintainer-owned)'],
       required_capabilities: ['technical-writing', 'protocol-design'],
       acceptance_criteria: ['explicit "pointers/metadata only, not content bytes"', 'fallback when nodes are unstable (origin fallback + multi-replica)', 'does not stray into incentive/anti-sybil design', 'flags open questions for maintainer decision'],
       verification_commands: ['maintainer review'], expected_results: 'one RFC', deliverables: ['docs/rfcs/RFC-node-discovery.md'] }) },
   { ref: 'T15', title: 'RFC: seller-export -> WebAZ field-mapping standard', area: 'governance',
     description: 'RFC defining the standard mapping external-platform seller export -> webaz_list_product fields: field-correspondence table, never-guess missing fields, normalization, compliance boundary (own export only).',
-    meta: base({ ...B, task_type: 'governance', ...lowAuto, risk_level: 'low', contribution_type: 'rfc', estimated_agent_budget: 'small', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T15',
+    meta: base({ ...B, task_type: 'governance', ...lowAuto, risk_level: 'low', contribution_type: 'governance', estimated_agent_budget: 'small', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T15',
       allowed_paths: ['docs/rfcs/RFC-catalog-import-mapping.md'], forbidden_paths: ['no impl', 'no scraping design'],
       prohibited_actions: [...GLOBAL_PROHIBITED, 'Do NOT design scraping — seller\'s own export only'],
       required_capabilities: ['technical-writing', 'data-mapping'],
@@ -210,7 +216,7 @@ const TASKS: Seed[] = [
   { ref: 'T16', title: 'GitHub OAuth identity linking (per RFC-019)', area: 'identity',
     description: 'Implement a low-friction "Connect GitHub" OAuth identity-linking path that preserves the security model (Passkey still gates the bind; ownership server-verified; Gist fallback retained). Per RFC-019, milestones M2–M7.',
     meta: base({ task_type: 'code', risk_level: 'high', agent_autonomy: 'human_in_the_loop', auto_claimable: false,
-      contribution_type: 'feature', estimated_duration_min_minutes: 480, estimated_duration_max_minutes: 2400,
+      contribution_type: 'code', estimated_duration_min_minutes: 480, estimated_duration_max_minutes: 2400,
       estimated_context_size: 'large', estimated_agent_budget: 'large', source_ref: 'docs/rfcs/RFC-019-github-oauth-identity-linking.md', dependencies: ['RFC-019 (M1)'],
       allowed_paths: ['src/layer2-business/L2-9-contribution/github-oauth-adapter.ts (new)', 'oauth_link_states schema + store (new)', 'oauth/* endpoints in src/pwa/routes/contribution-identity.ts', 'PWA "Connect GitHub" UI + i18n', 'docs/runbooks/github-oauth-setup.md', 'proof_method=github_oauth extension to the claim engine (M4, maintainer review required)'],
       forbidden_paths: ['must NOT weaken or bypass requireHumanPresence / the human-presence gate', 'WebAuthn/Passkey core', 'the existing gist proof verifier trust root', 'the identity_bindings_active double-bind PK', 'any money/escrow/auth-permission core'],
@@ -228,7 +234,35 @@ function parseArgs(argv: string[]) {
     db: get('--db') || process.env.WEBAZ_DB_PATH, commit: argv.includes('--commit') }
 }
 
+// Fail-closed preflight (pure, no DB). Runs BEFORE any DB open / write, in BOTH dry-run and --commit:
+//   1. every contribution_type is a canonical RFC-017 §5 type (the store does NOT CHECK this column, so an
+//      off-taxonomy value would otherwise persist silently and later misclassify in metering/ingestion);
+//   2. every local docs source_ref a task cites as its AUTHORITY already exists in the tree — this blocks
+//      seeding a task whose spec/RFC has not landed yet (e.g. a future T-task before its RFC is public).
+//   deliverables/output paths are intentionally NOT checked — those are what the task is meant to produce.
+function preflightSeeds(): void {
+  const valid = new Set<string>(CONTRIBUTION_TYPES)
+  const errors: string[] = []
+  for (const t of TASKS) {
+    if (!valid.has(t.meta.contribution_type)) {
+      errors.push(`${t.ref}: contribution_type '${t.meta.contribution_type}' is not an RFC-017 §5 type {${[...valid].join(', ')}}`)
+    }
+    const ref = t.meta.source_ref
+    if (ref && ref.startsWith('docs/')) {
+      const filePath = ref.split('#')[0]   // strip #anchor
+      if (!existsSync(path.join(REPO_ROOT, filePath))) {
+        errors.push(`${t.ref}: source_ref authority doc absent in tree: ${filePath}`)
+      }
+    }
+  }
+  if (errors.length) {
+    console.error(`FAIL preflight (no DB opened, nothing written):\n  - ${errors.join('\n  - ')}`)
+    process.exit(2)
+  }
+}
+
 function main(): void {
+  preflightSeeds()
   const { creator, db: dbPath, commit } = parseArgs(process.argv.slice(2))
   if (!dbPath) { console.error('FAIL: --db <path> or WEBAZ_DB_PATH required'); process.exit(2) }
   if (!creator) { console.error('FAIL: --creator <usr_id> required (the operator/maintainer account that owns the seeded tasks)'); process.exit(2) }
