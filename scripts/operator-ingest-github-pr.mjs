@@ -17,9 +17,10 @@
  *      org/entity claim model exists.
  *
  * Usage (dry-run first, ALWAYS):
- *   node scripts/operator-ingest-github-pr.mjs --expected-actor-login=<login> --expected-actor-id=<id> <PR> [<PR> ...]
+ *   node scripts/operator-ingest-github-pr.mjs [--repo=<owner/name>] --expected-actor-login=<login> --expected-actor-id=<id> <PR> [<PR> ...]
  *   # then, only after the dry-run looks right:
- *   node scripts/operator-ingest-github-pr.mjs --commit --expected-actor-login=<login> --expected-actor-id=<id> <PR>
+ *   node scripts/operator-ingest-github-pr.mjs --commit [--repo=<owner/name>] --expected-actor-login=<login> --expected-actor-id=<id> <PR>
+ *   # --repo selects a registered repo (see REPOS); omit it to default to the canonical repo.
  *
  * See docs/runbooks/production-contribution-ingestion.md for the full production checklist
  * (minimal read-only PAT, Railway env, pre-write checks, append-only / irreversibility risk).
@@ -30,6 +31,18 @@ import path from 'node:path'
 export const OWNER = 'webaz-protocol'
 export const REPO = 'webaz'
 export const REPO_NODE_ID = 'R_kgDOS9YurA'   // verified: gh api repos/<o>/<r> --jq .node_id
+
+/**
+ * Repos whose merged PRs may be ingested as personal contribution facts. Two repos, ONE contributor
+ * (the PR author, gated by the actor guard): the current public canonical repo carries going-forward
+ * work; the renamed old private repo carries historical work. The engine keys source_event_key on the
+ * repository NODE id (below), so a rename never produces a duplicate (re-run → re_observed).
+ * Verify a node id: gh api repos/<owner>/<name> --jq .node_id
+ */
+export const REPOS = {
+  'webaz-protocol/webaz': 'R_kgDOS9YurA',            // current public canonical repo (prod CANONICAL_GITHUB_REPO)
+  'seasonsagents-art/webaz-archive': 'R_kgDOSacm8Q', // renamed old private repo (historical contributions)
+}
 
 /**
  * Pure guard: decide whether a PR's author may be ingested as a personal claim anchor.
@@ -53,24 +66,32 @@ export function evaluateActorGuard(prUser, { expectedLogin, expectedActorId, all
  * Writes ONLY when `commit === true` AND the actor guard passes; in dry-run io.openDb is never called.
  */
 export async function runIngestPass(opts, io) {
-  const { prNumbers = [], expectedLogin, expectedActorId, commit = false, allowNonUser = false, token } = opts
+  const { prNumbers = [], expectedLogin, expectedActorId, commit = false, allowNonUser = false, token, repoKey } = opts
   if (!token) return { aborted: 'no_token', results: [] }
   if (!expectedLogin || !expectedActorId) return { aborted: 'missing_expected_actor', results: [] }
   if (prNumbers.length === 0) return { aborted: 'no_pr', results: [] }
 
-  const repositoryMapping = new Map([[`${OWNER}/${REPO}`, REPO_NODE_ID]])
+  // Repo to ingest from — ALWAYS resolved from the REPOS allowlist; the caller passes only a key
+  // ('owner/name'), NEVER a node id. This keeps the trusted repositoryMapping (and the engine's
+  // "expectedRepositoryId comes only from a trusted mapping" boundary) un-bypassable even for a direct
+  // programmatic caller. An unknown/unlisted key fails closed BEFORE any fetch / DB open / engine call.
+  const key = repoKey || `${OWNER}/${REPO}`   // default = canonical repo
+  const nodeId = REPOS[key]
+  if (!nodeId) return { aborted: 'unknown_repo', repo: key, results: [] }
+  const [owner, name] = key.split('/')
+  const repositoryMapping = new Map([[key, nodeId]])
   const results = []
   let dbctx = null
   let before = null
 
   for (const pr of prNumbers) {
-    const prUser = await io.fetchPr(OWNER, REPO, pr)
+    const prUser = await io.fetchPr(owner, name, pr)
     const guard = evaluateActorGuard(prUser, { expectedLogin, expectedActorId, allowNonUser })
     if (!guard.ok) { results.push({ pr, action: 'rejected', reason: guard.reason, actor: prUser ? `${prUser.login}#${prUser.id} (${prUser.type})` : null }); continue }
     if (!commit) { results.push({ pr, action: 'would_ingest', actor: `${prUser.login}#${prUser.id}` }); continue }
     // commit path — open the DB lazily on first real write, snapshot once
     if (!dbctx) { dbctx = io.openDb(); before = dbctx.counts() }
-    const res = await dbctx.ingest({ owner: OWNER, repo: REPO, prNumber: pr }, { token, repositoryMapping })
+    const res = await dbctx.ingest({ owner, repo: name, prNumber: pr }, { token, repositoryMapping })
     results.push(res.ok
       ? { pr, action: 'ingested', status: res.status, fact_id: res.fact_id, source_event_key: res.source_event_key }
       : { pr, action: 'refused', status: res.status, reason: res.reason, detail: res.detail })
@@ -89,6 +110,14 @@ if (isCli) {
   const prNumbers = argv.filter(a => /^[0-9]+$/.test(a)).map(Number)
   const token = process.env.GITHUB_CONTRIB_READ_TOKEN
   if (!token) { console.error('✗ GITHUB_CONTRIB_READ_TOKEN not set — abort (no fetch, no write).'); process.exit(2) }
+
+  // --repo=<owner/name> selects which registered repo to ingest from (default: the canonical repo).
+  // Authoritative validation lives in runIngestPass (REPOS allowlist); this is just an early, friendlier
+  // CLI message so an operator typo doesn't reach the pass.
+  const repoArg = opt('repo')
+  if (repoArg && !REPOS[repoArg]) {
+    console.error(`✗ unknown --repo=${repoArg}; known: ${Object.keys(REPOS).join(', ')}`); process.exit(2)
+  }
 
   // build real io with the genuine engine + DB (dynamic import keeps tests dist-free)
   const { setSeamDb } = await import('../dist/layer0-foundation/L0-1-database/db.js')
@@ -131,6 +160,7 @@ if (isCli) {
     commit: flag('commit'),
     allowNonUser: flag('allow-non-user-actor'),
     token,
+    repoKey: repoArg,   // undefined → runIngestPass defaults to the canonical repo
   }, { fetchPr, openDb })
 
   if (out.aborted) {
@@ -138,6 +168,7 @@ if (isCli) {
       missing_expected_actor: 'pass --expected-actor-login=<login> --expected-actor-id=<id>',
       no_pr: 'pass one or more PR numbers',
       no_token: 'set GITHUB_CONTRIB_READ_TOKEN',
+      unknown_repo: `--repo must be one of: ${Object.keys(REPOS).join(', ')}`,
     }[out.aborted] || ''
     console.error(`✗ aborted: ${out.aborted}${hint ? ` — ${hint}` : ''}`)
     process.exit(2)
