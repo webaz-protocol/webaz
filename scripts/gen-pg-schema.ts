@@ -161,7 +161,7 @@ for (const ix of indexes) {
 // triggers (created in each table's init). SQLite triggers don't text-translate to PG, so we emit the
 // equivalent PG plpgsql RAISE EXCEPTION guard here for the tables actually present in this DB.
 // (The function body keeps `BEGIN ... END;` on one line so it never looks like a transaction `BEGIN;`.)
-const APPEND_ONLY_TABLES = ['identity_binding_events']
+const APPEND_ONLY_TABLES = ['identity_binding_events', 'admin_operator_claim_events', 'agent_execution_mandate_events', 'admin_coordination_fact_sources']
 const presentAppendOnly = APPEND_ONLY_TABLES.filter(name => tables.some(t => t.name === name))
 if (presentAppendOnly.length) {
   out.push('')
@@ -196,6 +196,23 @@ if (presentStatusGuards.length) {
     out.push('$$ LANGUAGE plpgsql;')
     out.push(`DROP TRIGGER IF EXISTS ${trg} ON ${g.table};`)
     out.push(`CREATE TRIGGER ${trg} BEFORE INSERT ON ${g.table} FOR EACH ROW EXECUTE FUNCTION ${fn}();`)
+  }
+}
+// ── REFERENCED-EVIDENCE FREEZE ──
+// Once an admin_audit_log row is referenced by admin_coordination_fact_sources it is contribution
+// evidence truth → frozen. SQLite enforces this with a conditional BEFORE UPDATE/DELETE trigger
+// (WHEN EXISTS …, created in admin-coordination-store init); PG can't text-translate it, so emit the
+// equivalent conditional plpgsql guard. Non-referenced audit rows stay mutable.
+if (tables.some(t => t.name === 'admin_audit_log') && tables.some(t => t.name === 'admin_coordination_fact_sources')) {
+  out.push('')
+  out.push('-- ════════════ REFERENCED-EVIDENCE FREEZE (admin_audit_log) ════════════')
+  out.push('CREATE OR REPLACE FUNCTION webaz_aal_freeze_evidence() RETURNS trigger AS $$')
+  out.push(`BEGIN IF EXISTS (SELECT 1 FROM admin_coordination_fact_sources WHERE admin_audit_log_id = OLD.id) THEN RAISE EXCEPTION 'admin_audit_log row is referenced as contribution evidence — immutable'; END IF; RETURN OLD; END;`)
+  out.push('$$ LANGUAGE plpgsql;')
+  for (const op of ['UPDATE', 'DELETE']) {
+    const trg = `trg_aal_freeze_evidence_${op.toLowerCase()}`
+    out.push(`DROP TRIGGER IF EXISTS ${trg} ON admin_audit_log;`)
+    out.push(`CREATE TRIGGER ${trg} BEFORE ${op} ON admin_audit_log FOR EACH ROW EXECUTE FUNCTION webaz_aal_freeze_evidence();`)
   }
 }
 out.push('')

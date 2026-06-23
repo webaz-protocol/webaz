@@ -41,6 +41,7 @@
     "test:github-credential-store": "tsx scripts/test-github-credential-store-schema.ts",
     "test:github-credential-ingestion": "tsx scripts/test-github-credential-ingestion.ts",
     "test:identity-binding": "tsx scripts/test-identity-binding.ts",
+    "test:admin-coordination-contribution": "tsx scripts/test-admin-coordination-contribution.ts",
     "iron-rules:identity-claim": "tsx scripts/identity-claim-iron-rules-guard.ts",
     "test:iron-rules-guard": "tsx scripts/test-identity-claim-iron-rules-guard.ts",
     "test:human-presence": "tsx tests/test-human-presence.ts",
