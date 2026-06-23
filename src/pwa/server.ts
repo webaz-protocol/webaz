@@ -396,6 +396,7 @@ import { initBuildReputationSchema } from '../layer2-business/L2-9-contribution/
 import { initGithubCredentialStoreSchema } from '../layer2-business/L2-9-contribution/github-credential-store.js'
 import { initIdentityBindingSchema } from '../layer2-business/L2-9-contribution/identity-binding-store.js'
 import { initIdentityClaimChallengeSchema } from '../layer2-business/L2-9-contribution/identity-claim-challenge-store.js'
+import { initAdminCoordinationSchema } from '../layer2-business/L2-9-contribution/admin-coordination-store.js'
 import { registerContributionIdentityRoutes } from './routes/contribution-identity.js'
 import { registerContributionScoreRoutes } from './routes/contribution-score.js'
 
@@ -471,6 +472,8 @@ initBuildReputationSchema(db) // RFC-006 build_reputation(独立池 + 贡献者�
 initGithubCredentialStoreSchema(db) // PR 3B-3a — GitHub credential store + RFC-017 fact layer (schema only)
 initIdentityBindingSchema(db) // PR 4a — GitHub identity → WebAZ account binding (append-only events + active projection)
 initIdentityClaimChallengeSchema(db) // PR-F1 — identity-claim publication-challenge state (server-side nonce hash; schema only)
+// NB: initAdminCoordinationSchema is intentionally NOT called here — it FKs admin_audit_log, which is
+// created later; it runs right after the admin_audit_log block below (search initAdminCoordinationSchema).
 initSnfSchema(db)
 initExternalAnchorSchema(db)
 // 启动时检查月衰减（last_decay_at ≥25 天才触发，重启幂等）
@@ -3052,6 +3055,10 @@ db.exec(`
   )
 `)
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created ON admin_audit_log(created_at)') } catch {}
+// admin/agent coordination contribution — operator-claim + agent-mandate event logs + fact-source link
+// (schema only). Placed HERE because it FKs users + contribution_facts (both created above) AND
+// admin_audit_log (created just above). No ingestion runs at boot.
+initAdminCoordinationSchema(db)
 
 // Bootstrap admin（env BOOTSTRAP_ADMIN_NAME → 该用户升为 admin，幂等）
 ;(() => {
