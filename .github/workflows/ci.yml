@@ -296,6 +296,9 @@ jobs:
       # §④ integration-contract entry document (/.well-known/webaz-integration.json): its agent_quickstart
       # block + onboarding boundaries are integrator-observable but NOT fingerprinted, so guard them here.
       - run: npm run test:integration-contract
+      # agent-facing version must be single-sourced from src/version.ts (no hardcoded stale value in the
+      # manifest summary / webaz_info). Guards the #4 drift fix (was MANIFEST_VERSION='0.1.0' vs 0.1.26).
+      - run: npm run test-manifest
       - name: On failure — RFC-011 §④ context
         if: failure()
         run: |

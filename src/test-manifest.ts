@@ -4,12 +4,13 @@
 
 import { initDatabase } from './layer0-foundation/L0-1-database/schema.js'
 import { generateManifest, getManifestSummary, MANIFEST_URI } from './layer0-foundation/L0-5-manifest/manifest.js'
+import { SOFTWARE_VERSION, CONTRACT_VERSION } from './version.js'
 
 const db = initDatabase()
 
 console.log('\n=== L0-5 Protocol Manifest 验证 ===\n')
 
-const m = generateManifest(db)
+const m = await generateManifest(db)
 const s = getManifestSummary()
 
 // ── 1. 基本字段存在 ────────────────────────────────────────────
@@ -23,7 +24,7 @@ required.forEach(f => {
 // ── 2. 内容正确性 ─────────────────────────────────────────────
 console.log('\n【内容正确性】')
 console.log(`  URI: ${m.$uri} ${m.$uri === MANIFEST_URI ? '✅' : '❌'}`)
-console.log(`  协议版本: ${m.protocol.version} ✅`)
+console.log(`  software_version: ${m.protocol.software_version} · contract_version: ${m.protocol.contract_version} ✅`)
 console.log(`  角色数: ${Object.keys(m.roles).length} ${Object.keys(m.roles).length >= 4 ? '✅' : '❌'}`)
 console.log(`  状态数: ${Object.keys(m.state_machine.states).length} ${Object.keys(m.state_machine.states).length >= 13 ? '✅' : '❌'}`)
 console.log(`  转移数: ${m.state_machine.transitions.length} ${m.state_machine.transitions.length >= 15 ? '✅' : '❌'}`)
@@ -68,5 +69,23 @@ console.log(JSON.stringify(s, null, 2))
 const jsonStr = JSON.stringify(m)
 console.log(`\n【体积】全量 Manifest: ${(jsonStr.length / 1024).toFixed(1)} KB`)
 console.log(`        摘要（dcp_info）: ${JSON.stringify(s).length} bytes`)
+
+// ── 8. version single-source guard（#4 drift 守卫）─────────────────
+// 断言 agent-facing surface（webaz_info summary + 全量 manifest）的版本来自 src/version.ts 单一来源,
+// 不再输出 hardcoded stale '0.1.0'。
+console.log('\n【version single-source（#4 drift 守卫）】')
+let vFail = 0
+const vexpect = (name: string, cond: boolean) => { console.log(`  ${cond ? '✅' : '❌'} ${name}`); if (!cond) vFail++ }
+const sj = JSON.stringify(s), mpj = JSON.stringify(m.protocol)
+vexpect(`summary.software_version === SOFTWARE_VERSION (${SOFTWARE_VERSION})`, (s as Record<string, unknown>).software_version === SOFTWARE_VERSION)
+vexpect(`summary.contract_version === CONTRACT_VERSION (${CONTRACT_VERSION})`, (s as Record<string, unknown>).contract_version === CONTRACT_VERSION)
+vexpect('summary 不再输出 bare `version` 字段', !('version' in s))
+vexpect('summary 整体不含 stale 0.1.0', !sj.includes('0.1.0'))
+vexpect('manifest.protocol.software_version === SOFTWARE_VERSION', (m.protocol as Record<string, unknown>).software_version === SOFTWARE_VERSION)
+vexpect('manifest.protocol.contract_version === CONTRACT_VERSION', (m.protocol as Record<string, unknown>).contract_version === CONTRACT_VERSION)
+vexpect('manifest.protocol 不再输出 bare `version` 字段', !('version' in m.protocol))
+vexpect('manifest.protocol 不含 stale 0.1.0', !mpj.includes('0.1.0'))
+
+if (vFail > 0) { console.log(`\n❌ version 守卫失败 ${vFail} 项 — agent-facing 版本必须来自 src/version.ts 单一来源,不得硬编码\n`); process.exit(1) }
 
 console.log('\n✅ 所有验证通过！\n')

@@ -13,8 +13,11 @@
 
 import Database from 'better-sqlite3'
 import { dbOne } from '../L0-1-database/db.js'  // RFC-016 异步 seam
+// Version is single-sourced from src/version.ts — never hardcode it here. The old hardcoded
+// MANIFEST_VERSION='0.1.0' drifted vs the real software (0.1.26) and was the only agent-facing surface
+// still showing 0.1.0 (every /.well-known/* + protocol-status already report software 0.1.26 / contract 5).
+import { SOFTWARE_VERSION, CONTRACT_VERSION } from '../../version.js'
 
-export const MANIFEST_VERSION = '0.1.0'
 export const MANIFEST_URI     = 'webaz://protocol/manifest'
 
 // ─── 协议常量（与状态机保持同步）────────────────────────────
@@ -301,7 +304,8 @@ export async function generateManifest(db?: Database.Database) {
     protocol: {
       name:        'WebAZ',
       full_name:   'WebAZ',
-      version:     MANIFEST_VERSION,
+      software_version: SOFTWARE_VERSION,   // single source = package.json
+      contract_version: CONTRACT_VERSION,   // agent-native integration contract version (= protocol-status schema_version)
       tagline:     'AI Agent 原生商业协议 — 任何 Agent 可以买货、卖货、送货',
       description: 'WebAZ 是一个专为 AI Agent 设计的去中心化商业协议。协议通过状态机强制每个参与方按时举证，超时自动判责，资金自动结算。任何 AI Agent 接入 MCP 工具后即可立即参与真实商业交易。',
       phase:       'Phase 0 — 概念验证（SQLite 模拟，无需真实货币）',
@@ -347,7 +351,8 @@ async function getLiveStats() {
 export function getManifestSummary() {
   return {
     name:        'WebAZ',
-    version:     MANIFEST_VERSION,
+    software_version: SOFTWARE_VERSION,   // single source = package.json (was hardcoded '0.1.0' — agent-facing drift)
+    contract_version: CONTRACT_VERSION,   // = protocol-status schema_version
     tagline:     'AI Agent 原生商业协议',
     roles_count: Object.keys(ROLES).length,
     states_count: Object.keys(STATE_MACHINE.states).length,
