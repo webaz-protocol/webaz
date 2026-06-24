@@ -78,7 +78,43 @@ log**.
 | Centralized admin-audit context writer | `src/pwa/admin-audit.ts` |
 | Schema: operator claims, agent mandates, fact-source link, action catalog | `src/layer2-business/L2-9-contribution/admin-coordination-store.ts` |
 | Read-time as-of resolver | `src/layer2-business/L2-9-contribution/admin-coordination-resolver.ts` |
-| Allowlisted ingestion → `contribution_facts` | `src/layer2-business/L2-9-contribution/admin-coordination-ingestion-engine.ts` |
+| Allowlisted ingestion (single-row + bounded batch) → `contribution_facts` | `src/layer2-business/L2-9-contribution/admin-coordination-ingestion-engine.ts` |
+| Operator entry (manual, dry-run by default) | `scripts/ingest-admin-coordination.ts` (`npm run ingest:admin-coordination`) |
+
+## First production pipeline (allowlist wiring + operator entry)
+
+Phase 1 shipped the engine/resolver/store but the allowlist held only abstract *concept* names that no
+route emits, so nothing was ingestible in practice. This step wires the **real audited action strings**
+and adds a small, manual operator entry. It remains **evidence ingestion only — reward is deferred; no
+amount, payout, eligibility, aggregation, or UI is added.**
+
+- **Allowlist + live set.** The `operator_claim.*` actions logged by the operator-claim workflow routes
+  are in `ADMIN_COORDINATION_ACTIONS`, each mapped to RFC-017 `(governance, governance)`:
+  `operator_claim.propose · confirm · approve · reject · revoke · unlink_request · unlink_approve ·
+  unlink_reject`. The bounded batch / operator CLI selects **only** from
+  `LIVE_ADMIN_COORDINATION_AUDIT_ACTIONS` — exactly those 8 strings. The pre-existing concept names
+  (`task_review`, `proposal_review`, …) remain ingestible by the **single-row** engine (an operator can
+  target a specific `auditId`) but are **explicitly excluded from batch live selection**, so the first
+  pipeline never scans or auto-ingests anything but real operator-claim work. A concept name joins the
+  live set only when a real route begins emitting it as a stable action string. (A module-load invariant
+  asserts every live action has an allowlist spec.)
+- **Fail-closed, unchanged.** Any non-listed action → `unknown_action` (no fact). An action with **no
+  active operator claim as-of the audit row's `created_at`** → `no_attribution` (no fact). A claim
+  created *after* the action is **not** retro-credited; a **revoked** claim stops attribution for later
+  actions. Attribution still resolves at read time (`accountable_ref` stays NULL).
+- **Operator entry (manual, bounded, dry-run by default).**
+  `ingestAdminCoordinationSince(db, { sinceTime?, sinceId?, limit?, commit? })` selects allowlisted
+  audit rows and runs each through the same single-row engine; CLI: `npm run ingest:admin-coordination`
+  (or `node --import tsx scripts/ingest-admin-coordination.ts`). **Default is dry-run (writes nothing)**;
+  `--commit` writes; `--limit` (default 50, max 500) and `--since-time` / `--since-id` scope the run.
+  Re-runs are idempotent (one fact per audit row, keyed on `source_event_key`). **A `--commit` MUST be
+  cursor-bounded** (`--since-time` or `--since-id`) — a no-cursor commit throws `commit_requires_cursor`
+  rather than writing from the earliest row (that would be a backfill). A no-cursor *dry-run* is allowed
+  for preview. A typo'd `--since-id` throws `invalid_cursor` (never a from-earliest scan). `--commit`
+  takes no value (or `=true`); `--commit=false` and the like are rejected.
+- **No historical backfill.** This step does **not** backfill the old ~423 facts / public PRs / legacy
+  admin actions, and the operator entry never scans all of history unbounded — it is cursor + limit
+  scoped and starts from the present. Any historical backfill is a separate, explicitly-approved step.
 
 ## Deferred (explicitly NOT in Phase 1)
 

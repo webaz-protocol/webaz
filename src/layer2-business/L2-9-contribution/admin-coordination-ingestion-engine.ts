@@ -25,7 +25,7 @@
  */
 import type Database from 'better-sqlite3'
 import { generateId } from '../../layer0-foundation/L0-1-database/schema.js'
-import { coordinationActionSpec } from './admin-coordination-store.js'
+import { coordinationActionSpec, LIVE_ADMIN_COORDINATION_AUDIT_ACTIONS } from './admin-coordination-store.js'
 import { resolveOperatorClaimAsOf, resolveAgentMandateAsOf } from './admin-coordination-resolver.js'
 import { readAdminActionContext, type Provenance } from '../../pwa/admin-audit.js'
 
@@ -35,12 +35,15 @@ export interface IngestCoordinationInput {
   auditId: string
   visibility?: Visibility
   redactionSummary?: string
+  /** Evaluate every gate but DO NOT write (read-only preview). Returns status 'would_ingest' /
+   *  'already_present'. Used by the operator dry-run path so a dry run can never touch the DB. */
+  dryRun?: boolean
 }
 export type IngestRefusal =
   | 'invalid_input' | 'audit_row_not_found' | 'unknown_action' | 'not_eligible_context'
   | 'no_attribution' | 'agent_action_not_in_mandate'
 export type IngestCoordinationResult =
-  | { ok: true; status: 'ingested' | 'already_present'; factId: string; sourceEventKey: string; executorRef: string; contributorAccountId: string; via: 'operator_claim' | 'agent_mandate' }
+  | { ok: true; status: 'ingested' | 'already_present' | 'would_ingest'; factId: string; sourceEventKey: string; executorRef: string; contributorAccountId: string; via: 'operator_claim' | 'agent_mandate' }
   | { ok: false; reason: IngestRefusal; detail?: string }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -108,6 +111,12 @@ export function ingestAdminCoordinationFact(db: Database.Database, input: Ingest
   const targetId: string | null = row.target_id ?? null
   const artifactRef = targetId || action
 
+  // dry-run: all gates passed; report what WOULD happen without writing (read-only — no insert, no tx).
+  if (input.dryRun) {
+    const existing = db.prepare('SELECT fact_id FROM contribution_facts WHERE source_event_key = ?').get(sourceEventKey) as any
+    return { ok: true, status: existing ? 'already_present' : 'would_ingest', factId: existing?.fact_id ?? '(dry-run)', sourceEventKey, executorRef, contributorAccountId, via }
+  }
+
   const run = db.transaction(() => {
     const existing = db.prepare('SELECT fact_id FROM contribution_facts WHERE source_event_key = ?').get(sourceEventKey) as any
     if (existing) return { factId: existing.fact_id as string, status: 'already_present' as const }
@@ -124,4 +133,115 @@ export function ingestAdminCoordinationFact(db: Database.Database, input: Ingest
   })
   const out = run.immediate()
   return { ok: true, status: out.status, factId: out.factId, sourceEventKey, executorRef, contributorAccountId, via }
+}
+
+// ───────────────────────────── batch / operator entry ─────────────────────────────
+// Small, bounded, manual-run batch over ALLOWLISTED audit rows. NOT a historical backfill: the operator
+// scopes it with sinceTime / sinceId + a hard limit, and it is DRY-RUN unless `commit` is set. Each row
+// goes through the SAME single-row engine above (same fail-closed gates, same idempotency), so the batch
+// adds no new attribution logic — it only selects candidates and aggregates the per-row outcomes.
+
+export const DEFAULT_INGEST_LIMIT = 50
+export const MAX_INGEST_LIMIT = 500
+
+/**
+ * Parse the `--commit` switch at the production write entry. Accept ONLY a bare flag (`raw === ''`) or
+ * `--commit=true`. Anything else (`false`, `0`, `no`, …) THROWS — an explicit dry-run intent must never
+ * be misread as a write. `undefined` (flag absent) → false (dry-run).
+ */
+export function parseCommitSwitch(raw: string | undefined): boolean {
+  if (raw === undefined) return false
+  if (raw === '' || raw === 'true') return true
+  throw new Error(`invalid_commit_flag: --commit takes no value (or =true); got ${JSON.stringify(raw)}`)
+}
+
+export interface IngestSinceOptions {
+  /** Only rows with created_at strictly after this audit row's (created_at, id) — resume cursor. */
+  sinceId?: string
+  /** Only rows with created_at strictly greater than this ISO/SQLite timestamp. */
+  sinceTime?: string
+  /** Hard cap on candidate rows scanned (default DEFAULT_INGEST_LIMIT, clamped to MAX_INGEST_LIMIT). */
+  limit?: number
+  /** Write facts. Default false → dry-run (read-only). */
+  commit?: boolean
+  visibility?: Visibility
+}
+export type RowOutcome = 'ingested' | 'would_ingest' | 'already_present' | 'skipped'
+export interface IngestBatchRow {
+  auditId: string
+  action: string
+  adminId: string
+  occurredAt: string
+  outcome: RowOutcome
+  reason?: string
+  contributorAccountId?: string
+  via?: string
+  factId?: string
+}
+export interface IngestBatchReport {
+  committed: boolean
+  scanned: number
+  ingested: number
+  wouldIngest: number
+  alreadyPresent: number
+  skipped: number
+  limit: number
+  rows: IngestBatchRow[]
+}
+
+/**
+ * Select rows whose action is in the LIVE production set (only the real `operator_claim.*` actions —
+ * NOT the reserved concept names), run each through the single-row engine, and aggregate. Dry-run by
+ * default (NOTHING written unless `commit: true`). The candidate query filters to the live set so
+ * non-coordination AND reserved-concept rows are never even scanned; unknown/uneligible/no-claim rows
+ * that DO match still fail closed per-row and are reported as `skipped` with a reason.
+ *
+ * THROWS `invalid_cursor` when `sinceId` is supplied but matches no audit row — a fail-closed guard so a
+ * typo'd cursor can NEVER silently degrade into a from-the-beginning (backfill) scan.
+ *
+ * THROWS `commit_requires_cursor` when `commit` is true but NEITHER `sinceTime` nor `sinceId` is given —
+ * a no-cursor commit would write from the earliest live row, i.e. a small historical backfill. This
+ * pipeline is "from the present, cursor + limit scoped", so a write MUST be cursor-bounded. A no-cursor
+ * DRY-RUN is still allowed (preview from the earliest row writes nothing).
+ */
+export function ingestAdminCoordinationSince(db: Database.Database, options: IngestSinceOptions = {}): IngestBatchReport {
+  const commit = options.commit === true
+  if (commit && !options.sinceTime && !options.sinceId) {
+    throw new Error('commit_requires_cursor: --commit requires --since-time or --since-id (no-cursor commit would backfill history); run a dry-run first to find a cursor')
+  }
+  const limit = Math.min(Math.max(1, options.limit ?? DEFAULT_INGEST_LIMIT), MAX_INGEST_LIMIT)
+  const actions = [...LIVE_ADMIN_COORDINATION_AUDIT_ACTIONS]
+  const placeholders = actions.map(() => '?').join(',')
+  const where: string[] = [`action IN (${placeholders})`]
+  const params: any[] = [...actions]
+
+  // resume cursor: rows strictly after (cursorTime, cursorId) in (created_at ASC, id ASC) order.
+  let cursorTime = options.sinceTime
+  let cursorId: string | undefined
+  if (options.sinceId) {
+    const c = db.prepare('SELECT id, created_at FROM admin_audit_log WHERE id = ?').get(options.sinceId) as any
+    // fail-closed: an explicit-but-unknown cursor must NOT degrade into a full from-earliest scan.
+    if (!c) throw new Error(`invalid_cursor: no admin_audit_log row with id=${options.sinceId}`)
+    cursorTime = c.created_at; cursorId = c.id
+  }
+  if (cursorTime && cursorId) { where.push('(created_at > ? OR (created_at = ? AND id > ?))'); params.push(cursorTime, cursorTime, cursorId) }
+  else if (cursorTime) { where.push('created_at > ?'); params.push(cursorTime) }
+
+  params.push(limit)
+  const candidates = db.prepare(
+    `SELECT id, action, admin_id, created_at FROM admin_audit_log WHERE ${where.join(' AND ')} ORDER BY created_at ASC, id ASC LIMIT ?`,
+  ).all(...params) as any[]
+
+  const rows: IngestBatchRow[] = []
+  let ingested = 0, wouldIngest = 0, alreadyPresent = 0, skipped = 0
+  for (const cand of candidates) {
+    const r = ingestAdminCoordinationFact(db, { auditId: cand.id, visibility: options.visibility, dryRun: !commit })
+    const base = { auditId: cand.id as string, action: cand.action as string, adminId: cand.admin_id as string, occurredAt: cand.created_at as string }
+    if (!r.ok) { skipped++; rows.push({ ...base, outcome: 'skipped', reason: r.reason + (r.detail ? `: ${r.detail}` : '') }); continue }
+    if (r.status === 'ingested') ingested++
+    else if (r.status === 'would_ingest') wouldIngest++
+    else alreadyPresent++
+    rows.push({ ...base, outcome: r.status, contributorAccountId: r.contributorAccountId, via: r.via, factId: r.factId })
+  }
+  return { committed: commit, scanned: candidates.length, ingested, wouldIngest, alreadyPresent, skipped, limit, rows }
 }
