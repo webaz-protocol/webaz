@@ -5050,6 +5050,7 @@ registerAdminOperatorClaimRoutes(app, {
   db, errorRes, auth,
   requireAdmin: (req, res) => requireAdmin(req, res),
   requireRootAdmin: (req, res) => requireRootAdmin(req, res),
+  consumeGateToken,   // unlink REQUEST requires a fresh passkey gate (purpose 'operator_claim_unlink')
 })
 
 // RFC-006 Gap 2:贡献者自查看板(build_reputation 独立池)

@@ -1289,14 +1289,17 @@ async function renderMyAdvanced(app) {
   app.innerHTML = shell(loading$(), 'me')
   const role = state.user.role
   const isTrusted = ['admin', 'verifier', 'logistics', 'arbitrator'].includes(role)
-  const [agentRes, skillsRes] = await Promise.all([
+  const [agentRes, skillsRes, ocRes] = await Promise.all([
     GET('/agents/me/reputation').catch(() => null),
     GET('/skills/mine').catch(() => []),
+    GET('/me/operator-claims').catch(() => null),
   ])
   const trustScore = Math.round(agentRes?.trust_score || 0)
   const level = agentRes?.level || 'new'
   const lvlColor = { legend: '#dc2626', quality: '#9333ea', trusted: '#4f46e5', new: '#9ca3af' }[level] || '#6b7280'
   const skillCount = (Array.isArray(skillsRes) ? skillsRes : []).length
+  // 贡献归属入口:admin 常驻;普通用户仅当确有 operator-claim 关系(pending/active/history)时才显示,保持清爽
+  const hasOperatorClaim = !!(ocRes && Array.isArray(ocRes.relationships) && ocRes.relationships.length)
 
   const card = (icon, label, sub, hash) => `
     <div class="card" onclick="location.hash='${hash}'" style="padding:14px;cursor:pointer;display:flex;align-items:center;gap:10px;min-height:64px">
@@ -1338,7 +1341,7 @@ async function renderMyAdvanced(app) {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       ${card('📜', t('Timeline'), t('全部事件按时间排列'), '#me/timeline')}
       ${card('📡', t('Webhook'), t('订阅事件 push 到外部端点'), '#me/webhooks')}
-      ${role === 'admin' ? card('🪪', t('贡献归属'), t('待确认的 admin 关联 / 关联记录'), '#me/operator-claims') : ''}
+      ${(role === 'admin' || hasOperatorClaim) ? card('🪪', t('贡献归属'), t('待确认的 admin 关联 / 关联记录'), '#me/operator-claims') : ''}
     </div>
 
     <div style="font-size:12px;color:#6b7280;font-weight:600;margin:14px 0 6px">🧠 ${t('技能市场')}</div>
@@ -3488,6 +3491,7 @@ async function renderMyOperatorClaims(app) {
   app.innerHTML = shell(loading$(), 'me')
   const isAdmin = state.user.role === 'admin' || (Array.isArray(state.user.roles) && state.user.roles.includes('admin'))
   const pend = await GET('/me/operator-claim-confirmations').catch(() => null)
+  const rel = await GET('/me/operator-claims').catch(() => null)   // ALL relationships pointing at me (active/history)
   const mine = isAdmin ? await GET('/admin/operator-claims/me').catch(() => null) : null
   const inputStyle = 'width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box'
   const field = (label, html) => `<div style="margin-bottom:10px"><label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">${escHtml(label)}</label>${html}</div>`
@@ -3520,6 +3524,21 @@ async function renderMyOperatorClaims(app) {
       </div>
     </div>`
 
+  // 我的贡献归属关系(已生效/历史)+ approved 关系可「申请解除」(不是直接撤销;需 Passkey + root 审批)
+  const relList = (rel && rel.relationships) || []
+  const relCard = (c) => {
+    const active = c.status === 'approved' && c.approved
+    const unlinkArea = !active ? '' : (c.unlink_pending
+      ? `<div style="font-size:11px;color:#b45309;margin-top:8px">⏳ ${_qT('解除申请审批中(待 root)', 'Unlink request pending root review')}</div>`
+      : `<button onclick="requestUnlinkOperatorClaim('${escHtml(c.approved.event_id)}')" style="margin-top:8px;padding:6px 12px;border:1px solid #d1d5db;background:#fff;color:#b91c1c;border-radius:8px;font-size:12px;cursor:pointer">${_qT('申请解除', 'Request unlink')}</button>`)
+    return `<div class="card" style="padding:12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="font-size:12px;font-weight:600">${escHtml(c.admin_account_id)} → ${escHtml(c.contributor_account_id)}</div>${_ocStatusBadge(c.status)}
+      </div>
+      <div style="font-size:10px;color:#9ca3af;margin-top:4px">${escHtml(c.proposed_at || '')}</div>${unlinkArea}
+    </div>`
+  }
+
   const body = `<div style="max-width:560px;margin:0 auto">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
         <div style="font-size:18px;font-weight:700">🪪 ${_qT('贡献归属', 'Contribution attribution')}</div>
@@ -3527,9 +3546,23 @@ async function renderMyOperatorClaims(app) {
       </div>
       ${adminBlock}
       <div style="font-size:13px;font-weight:600;margin-bottom:8px">${_qT('待我确认的关联', 'Awaiting my confirmation')}</div>
-      ${pendList.length ? pendList.map(confirmCard).join('') : `<div style="font-size:13px;color:#9ca3af">${_qT('没有待确认的关联', 'No pending links')}</div>`}
+      ${pendList.length ? pendList.map(confirmCard).join('') : `<div style="font-size:13px;color:#9ca3af;margin-bottom:8px">${_qT('没有待确认的关联', 'No pending links')}</div>`}
+      <div style="font-size:13px;font-weight:600;margin:16px 0 8px">${_qT('我的贡献归属关系 / 历史', 'My contribution-attribution relationships / history')}</div>
+      ${relList.length ? relList.map(relCard).join('') : `<div style="font-size:13px;color:#9ca3af">${_qT('暂无关系', 'No relationships yet')}</div>`}
     </div>`
   app.innerHTML = shell(body, 'me')
+}
+
+window.requestUnlinkOperatorClaim = async (approvedEventId) => {
+  if (!confirm(_qT('确认申请解除该贡献归属关系?需 Passkey 验证,且最终由 root 审批。', 'Request to unlink this attribution relationship? Requires Passkey, then root approval.'))) return
+  let token
+  try { token = await requestPasskeyGate('operator_claim_unlink', { approved_event_id: approvedEventId }) }
+  catch (e) { toast$(e.message || _qT('Passkey 验证失败', 'Passkey verification failed')); return }
+  const reason = (prompt(_qT('解除理由(可选)', 'Reason (optional)')) || '').trim() || undefined
+  const r = await POST('/me/operator-claims/' + encodeURIComponent(approvedEventId) + '/request-unlink', { webauthn_token: token, reason })
+  if (r && r.error) { toast$(r.message || r.error || _qT('提交失败', 'Failed')); return }
+  toast$(_qT('解除申请已提交,等待 root 审批', 'Unlink request submitted — awaiting root review'))
+  renderMyOperatorClaims(document.getElementById('app'))
 }
 
 window.submitOperatorClaim = async () => {
@@ -3558,8 +3591,18 @@ async function renderAdminOperatorClaims(app, statusFilter) {
   const r = await GET('/admin/operator-claims' + (sf === 'all' ? '' : '?status=' + encodeURIComponent(sf))).catch(() => null)
   if (!r || r.error) { app.innerHTML = shell(alert$('error', (r && r.error) || _qT('加载失败', 'Failed to load')), 'admin'); return }
   const claims = r.claims || []
+  const unlinkRes = await GET('/admin/operator-claims/unlink/requests').catch(() => null)
+  const unlinkReqs = (unlinkRes && unlinkRes.requests) || []
   const inputStyle = 'width:100%;padding:7px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;box-sizing:border-box'
   const filterBtn = (s, label) => `<button onclick="renderAdminOperatorClaims(document.getElementById('app'),'${s}')" style="padding:5px 10px;border:1px solid ${sf === s ? '#4338ca' : '#d1d5db'};background:${sf === s ? '#4338ca' : '#fff'};color:${sf === s ? '#fff' : '#374151'};border-radius:6px;font-size:12px;cursor:pointer">${escHtml(label)}</button>`
+  const unlinkCard = (u) => `<div class="card" style="padding:12px;margin-bottom:8px;background:#fff7ed;border:1px solid #fed7aa">
+      <div style="font-size:12px;font-weight:600">🔓 ${escHtml(u.admin_account_id)} → ${escHtml(u.contributor_account_id)}</div>
+      <div style="font-size:11px;color:#6b7280;margin-top:4px">${_qT('申请人', 'Requested by')}: ${escHtml(u.requested_by)} (${escHtml(u.requester_role)})${u.reason ? ' · ' + escHtml(u.reason) : ''}</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button onclick="approveUnlinkReq('${escHtml(u.request_event_id)}')" style="padding:6px 12px;border:none;background:#b91c1c;color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">${_qT('批准解除', 'Approve unlink')}</button>
+        <button onclick="rejectUnlinkReq('${escHtml(u.request_event_id)}')" style="padding:6px 12px;border:1px solid #d1d5db;background:#fff;color:#374151;border-radius:8px;font-size:12px;cursor:pointer">${_qT('驳回', 'Reject')}</button>
+      </div>
+    </div>`
 
   const card = (c) => {
     const selfLink = c.admin_account_id === c.contributor_account_id
@@ -3598,6 +3641,7 @@ async function renderAdminOperatorClaims(app, statusFilter) {
         <div style="font-size:18px;font-weight:700">🪪 ${_qT('操作席位关联审批', 'Operator-claim review')}</div>
         <a href="#admin/protocol" style="font-size:12px;color:#4338ca;text-decoration:none">← ${_qT('返回', 'Back')}</a>
       </div>
+      ${unlinkReqs.length ? `<div style="font-size:13px;font-weight:700;color:#b91c1c;margin-bottom:8px">🔓 ${_qT('待审批的解除申请', 'Pending unlink requests')} (${unlinkReqs.length})</div>${unlinkReqs.map(unlinkCard).join('')}<div style="height:14px"></div>` : ''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
         ${filterBtn('confirmed', _qT('待审批', 'Awaiting approval'))}${filterBtn('proposed', _qT('待确认', 'Proposed'))}${filterBtn('approved', _qT('已生效', 'Active'))}${filterBtn('all', _qT('全部', 'All'))}
       </div>
@@ -3622,6 +3666,17 @@ window.revokeOperatorClaim = async (approvedId) => {
   const r = await POST('/admin/operator-claims/' + encodeURIComponent(approvedId) + '/revoke', {})
   if (r && r.error) { toast$(r.message || r.error || _qT('撤销失败', 'Revoke failed')); return }
   toast$(_qT('已撤销', 'Revoked')); renderAdminOperatorClaims(document.getElementById('app'))
+}
+window.approveUnlinkReq = async (requestId) => {
+  if (!confirm(_qT('批准后将解除该贡献归属关系,确认?', 'Approving will unlink (revoke) this attribution. Confirm?'))) return
+  const r = await POST('/admin/operator-claims/unlink/' + encodeURIComponent(requestId) + '/approve', {})
+  if (r && r.error) { toast$(r.message || r.error || _qT('操作失败', 'Failed')); return }
+  toast$(_qT('已批准解除', 'Unlink approved')); renderAdminOperatorClaims(document.getElementById('app'))
+}
+window.rejectUnlinkReq = async (requestId) => {
+  const r = await POST('/admin/operator-claims/unlink/' + encodeURIComponent(requestId) + '/reject', {})
+  if (r && r.error) { toast$(r.message || r.error || _qT('操作失败', 'Failed')); return }
+  toast$(_qT('已驳回,关系仍有效', 'Rejected — relationship stays active')); renderAdminOperatorClaims(document.getElementById('app'))
 }
 
 // ROOT admin review page.

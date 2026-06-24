@@ -194,8 +194,98 @@ export function revokeApprovedClaim(db: Database.Database, input: { approvedEven
   return { ok: true, revokedEventId }
 }
 
+// ── UNLINK (解除) requests: admin-seat owner OR contributor asks to sever an active approved claim;
+// only ROOT may approve (→ revoke). Append-only; never touches contribution_facts. ──
+export type UnlinkRole = 'admin_seat' | 'contributor'
+export interface UnlinkView { request_event_id: string; approved_event_id: string; claimed_event_id: string; admin_account_id: string; contributor_account_id: string; requested_by: string; requester_role: string; reason: string | null; created_at: string }
+
+/** An approved claim is active iff nothing supersedes it (no revoke/superseded chained on it). */
+function approvedIsActive(db: Database.Database, approvedEventId: string): boolean {
+  const a = db.prepare("SELECT 1 FROM admin_operator_claim_events WHERE event_id = ? AND event_type = 'approved'").get(approvedEventId)
+  return !!a && !supersederOf(db, approvedEventId)
+}
+/** The still-pending unlink 'requested' event for an approved claim (no decision yet), or null. */
+export function pendingUnlinkForApproved(db: Database.Database, approvedEventId: string): any {
+  const reqs = db.prepare("SELECT * FROM admin_operator_unlink_requests WHERE approved_event_id = ? AND event_type = 'requested' ORDER BY created_at DESC, rowid DESC").all(approvedEventId) as any[]
+  for (const r of reqs) {
+    const decided = db.prepare('SELECT 1 FROM admin_operator_unlink_requests WHERE supersedes_request_id = ?').get(r.request_event_id)
+    if (!decided) return r
+  }
+  return null
+}
+
+/** Either party (admin-seat owner OR contributor) requests unlink of an ACTIVE approved claim. The
+ *  caller MUST have already passed the passkey gate; humanAuthRef records which token was consumed. */
+export function requestUnlink(db: Database.Database, input: { approvedEventId: string; requesterId: string; reason?: string; humanAuthRef?: string }):
+  { ok: true; requestEventId: string; requesterRole: UnlinkRole; adminAccountId: string; contributorAccountId: string } | WorkflowError {
+  const { approvedEventId, requesterId, reason, humanAuthRef } = input
+  const ap = db.prepare("SELECT event_id, admin_account_id, contributor_account_id, supersedes_event_id FROM admin_operator_claim_events WHERE event_id = ? AND event_type = 'approved'").get(approvedEventId) as any
+  if (!ap) return err('approved_not_found', 'no such approved claim')
+  if (!approvedIsActive(db, approvedEventId)) return err('bad_state', 'claim is not active (already revoked/superseded)')
+  let role: UnlinkRole
+  if (requesterId === ap.admin_account_id) role = 'admin_seat'
+  else if (requesterId === ap.contributor_account_id) role = 'contributor'
+  else return err('not_party', 'only the admin-seat owner or the contributor may request unlink')
+  if (pendingUnlinkForApproved(db, approvedEventId)) return err('already_pending', 'an unlink request is already pending for this claim')
+  const id = generateId('aour')
+  db.prepare(
+    `INSERT INTO admin_operator_unlink_requests (request_event_id, event_type, approved_event_id, claimed_event_id, admin_account_id, contributor_account_id, requested_by, requester_role, reason, human_auth_ref, immutable)
+     VALUES (?, 'requested', ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+  ).run(id, approvedEventId, ap.supersedes_event_id, ap.admin_account_id, ap.contributor_account_id, requesterId, role, reason ?? null, humanAuthRef ?? null)
+  return { ok: true, requestEventId: id, requesterRole: role, adminAccountId: ap.admin_account_id, contributorAccountId: ap.contributor_account_id }
+}
+
+/** ROOT approves an unlink request → atomically records the decision AND revokes the claim. */
+export function approveUnlink(db: Database.Database, input: { requestEventId: string; approverId: string }):
+  { ok: true; decisionEventId: string; approvedEventId: string; claimedEventId: string; adminAccountId: string; contributorAccountId: string } | WorkflowError {
+  const { requestEventId, approverId } = input
+  if (!isRoot(db, approverId)) return err('not_root', 'only a root admin may approve an unlink request')
+  const req = db.prepare("SELECT * FROM admin_operator_unlink_requests WHERE request_event_id = ? AND event_type = 'requested'").get(requestEventId) as any
+  if (!req) return err('request_not_found', 'no such unlink request')
+  if (db.prepare('SELECT 1 FROM admin_operator_unlink_requests WHERE supersedes_request_id = ?').get(requestEventId)) return err('bad_state', 'this unlink request is already decided')
+  if (!approvedIsActive(db, req.approved_event_id)) return err('bad_state', 'the claim is no longer active')
+  const run = db.transaction(() => {
+    const decId = generateId('aour')
+    db.prepare(
+      `INSERT INTO admin_operator_unlink_requests (request_event_id, event_type, approved_event_id, claimed_event_id, admin_account_id, contributor_account_id, decided_by, supersedes_request_id, immutable)
+       VALUES (?, 'approved', ?, ?, ?, ?, ?, ?, 1)`,
+    ).run(decId, req.approved_event_id, req.claimed_event_id, req.admin_account_id, req.contributor_account_id, approverId, requestEventId)
+    const rev = revokeApprovedClaim(db, { approvedEventId: req.approved_event_id, revokerId: approverId, rationale: 'unlink request approved by root' })
+    if (!(rev as any).ok) throw new Error('revoke failed: ' + (rev as any).code)
+    return decId
+  })
+  return { ok: true, decisionEventId: run(), approvedEventId: req.approved_event_id, claimedEventId: req.claimed_event_id, adminAccountId: req.admin_account_id, contributorAccountId: req.contributor_account_id }
+}
+
+/** ROOT rejects an unlink request → records the decision; the claim stays active. */
+export function rejectUnlink(db: Database.Database, input: { requestEventId: string; approverId: string }):
+  { ok: true; decisionEventId: string; claimedEventId: string; adminAccountId: string; contributorAccountId: string } | WorkflowError {
+  const { requestEventId, approverId } = input
+  if (!isRoot(db, approverId)) return err('not_root', 'only a root admin may reject an unlink request')
+  const req = db.prepare("SELECT * FROM admin_operator_unlink_requests WHERE request_event_id = ? AND event_type = 'requested'").get(requestEventId) as any
+  if (!req) return err('request_not_found', 'no such unlink request')
+  if (db.prepare('SELECT 1 FROM admin_operator_unlink_requests WHERE supersedes_request_id = ?').get(requestEventId)) return err('bad_state', 'this unlink request is already decided')
+  const decId = generateId('aour')
+  db.prepare(
+    `INSERT INTO admin_operator_unlink_requests (request_event_id, event_type, approved_event_id, claimed_event_id, admin_account_id, contributor_account_id, decided_by, supersedes_request_id, immutable)
+     VALUES (?, 'rejected', ?, ?, ?, ?, ?, ?, 1)`,
+  ).run(decId, req.approved_event_id, req.claimed_event_id, req.admin_account_id, req.contributor_account_id, approverId, requestEventId)
+  return { ok: true, decisionEventId: decId, claimedEventId: req.claimed_event_id, adminAccountId: req.admin_account_id, contributorAccountId: req.contributor_account_id }
+}
+
+/** All claims whose CONTRIBUTOR is this user (any status) — the contributor self-view. */
+export function listContributorRelationships(db: Database.Database, contributorId: string): ClaimView[] {
+  const ids = db.prepare("SELECT event_id FROM admin_operator_claim_events WHERE contributor_account_id = ? AND event_type = 'claimed' ORDER BY created_at DESC").all(contributorId) as any[]
+  return ids.map(r => deriveClaimState(db, r.event_id)!).filter(Boolean)
+}
+/** Pending unlink requests across all claims — the ROOT review queue. */
+export function listPendingUnlinkRequests(db: Database.Database): UnlinkView[] {
+  const reqs = db.prepare("SELECT * FROM admin_operator_unlink_requests WHERE event_type = 'requested' ORDER BY created_at DESC").all() as any[]
+  return reqs.filter(r => !db.prepare('SELECT 1 FROM admin_operator_unlink_requests WHERE supersedes_request_id = ?').get(r.request_event_id))
+}
+
 // ── notifications: remind the party who must act next at every transition (clickable deep-link) ──
-export type ClaimTransition = 'proposed' | 'accepted' | 'rejected_by_contributor' | 'approved' | 'rejected_by_root' | 'revoked'
+export type ClaimTransition = 'proposed' | 'accepted' | 'rejected_by_contributor' | 'approved' | 'rejected_by_root' | 'revoked' | 'unlink_requested' | 'unlink_approved' | 'unlink_rejected'
 export interface NotifSpec { userId: string; title: string; body: string; href: string; label: string }
 
 /** Pure: who to notify + what, for a claim transition. Self-link (admin==contributor) → deduped. */
@@ -216,6 +306,12 @@ export function claimNotificationSpecs(kind: ClaimTransition, claim: { admin_acc
       return [{ userId: admin, title: '🔗 关联未通过审批', body: 'root 未通过你发起的归属关联。', href: ME, label: '查看' }]
     case 'revoked':
       return uniq([contrib, admin].map(u => ({ userId: u, title: '🪪 贡献归属关联已撤销', body: '此前的归属关联已被撤销。', href: ME, label: '查看' })))
+    case 'unlink_requested':
+      return uniq(rootIds.map(r => ({ userId: r, title: '🔓 贡献归属解除申请待审批', body: `有人申请解除管理席位 ${admin} 与贡献人的关联,待你审批。`, href: ADMIN, label: '去审批' })))
+    case 'unlink_approved':
+      return uniq([contrib, admin].map(u => ({ userId: u, title: '🔓 解除申请已通过,关联已撤销', body: `管理席位 ${admin} 与该贡献人账号的归属关联已解除。`, href: ME, label: '查看' })))
+    case 'unlink_rejected':
+      return uniq([contrib, admin].map(u => ({ userId: u, title: '🔒 解除申请被驳回,关联仍有效', body: `root 未通过解除申请,管理席位 ${admin} 的归属关联仍然有效。`, href: ME, label: '查看' })))
     default: return []
   }
 }

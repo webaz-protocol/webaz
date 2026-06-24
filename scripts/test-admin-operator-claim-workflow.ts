@@ -171,7 +171,7 @@ async function main(): Promise<void> {
     // the persistent me-menu entry uses card() (NOT adminLinkCard, which only lives inside admin-only pages)
     const meMenuCardLines = appSrc.split('\n').filter(l => /\bcard\(/.test(l) && !/adminLinkCard/.test(l) && l.includes('#me/operator-claims'))
     ok('exactly one persistent me-menu 贡献归属 card', meMenuCardLines.length === 1, JSON.stringify(meMenuCardLines))
-    ok("me-menu 贡献归属 card is gated by role === 'admin' (NOT shown to all users)", meMenuCardLines.every(l => /role === 'admin' \?/.test(l)))
+    ok("me-menu 贡献归属 card is gated (admin OR has-relationship; NOT shown to all users)", meMenuCardLines.every(l => /role === 'admin'/.test(l) && /\?/.test(l)))
     ok('me-menu 贡献归属 card is NOT gated on GitHub binding', meMenuCardLines.every(l => !/github|identity_binding/i.test(l)))
     // and there is no UNCONDITIONAL persistent card for it
     ok('no unconditional persistent 贡献归属 card', !meMenuCardLines.some(l => !/\?/.test(l))) }
