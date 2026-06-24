@@ -37,7 +37,7 @@ function httpFor(code: string): number {
     case 'claim_not_found': case 'approved_not_found': case 'request_not_found': return 404
     case 'not_admin': case 'not_root': case 'not_contributor': case 'not_party': case 'gate_failed': return 403
     case 'bad_state': case 'not_confirmed': case 'contributor_rejected': case 'already_pending': return 409
-    default: return 400   // invalid_input / contributor_not_found / self_link_* / dishonest_marking
+    default: return 400   // invalid_input / contributor_not_found / self_link_* / self_related_* / dishonest_marking
   }
 }
 
@@ -88,10 +88,11 @@ export function registerAdminOperatorClaimRoutes(app: Application, deps: Deps): 
     } catch (e) { errorRes(res, 500, 'internal', (e as Error).message) }
   })
 
-  // ── the calling admin's own seat: its claims + states ──
+  // ── the calling admin's own seat: its claims + states (shapeClaim → carries unlink_pending so the
+  //    admin-seat owner can request/track unlink on their own active claims) ──
   app.get('/api/admin/operator-claims/me', (req: Request, res: Response) => {
     const admin = requireAdmin(req, res); if (!admin) return
-    res.json({ seat: admin.id, claims: listClaimsForSeat(db, admin.id as string).map(shape) })
+    res.json({ seat: admin.id, claims: listClaimsForSeat(db, admin.id as string).map(shapeClaim) })
   })
 
   // ── contributor: claims pointing at ME awaiting my confirmation ──
@@ -204,21 +205,30 @@ export function registerAdminOperatorClaimRoutes(app: Application, deps: Deps): 
     } catch (e) { errorRes(res, 500, 'internal', (e as Error).message) }
   })
 
-  // ── ROOT: pending unlink requests (review queue). Path under /unlink/ to avoid the /:claimedEventId match ──
+  // ── ROOT: pending unlink requests (review queue). Path under /unlink/ to avoid the /:claimedEventId match.
+  //    self_or_related flags each request the viewing root is a party to → the UI then REQUIRES honest marking. ──
   app.get('/api/admin/operator-claims/unlink/requests', (req: Request, res: Response) => {
     const root = requireRootAdmin(req, res); if (!root) return
-    res.json({ requests: listPendingUnlinkRequests(db) })
+    const rid = root.id as string
+    const requests = listPendingUnlinkRequests(db).map((r: any) => ({
+      ...r,
+      self_or_related: rid === r.admin_account_id || rid === r.contributor_account_id || rid === r.requested_by,
+    }))
+    res.json({ requests })
   })
 
-  // ── ROOT: approve an unlink request → revokes the claim ──
+  // ── ROOT: approve an unlink request → revokes the claim. When root is self-or-related to the
+  //    relationship/request, approval_kind + conflict_disclosure are required (governance honesty). ──
   app.post('/api/admin/operator-claims/unlink/:requestEventId/approve', (req: Request, res: Response) => {
     const root = requireRootAdmin(req, res); if (!root) return
     const id = String(req.params.requestEventId)
+    const approvalKind = req.body?.approval_kind ? String(req.body.approval_kind) : undefined
+    const conflictDisclosure = req.body?.conflict_disclosure ? String(req.body.conflict_disclosure) : undefined
     try {
       const out = db.transaction(() => {
-        const r = approveUnlink(db, { requestEventId: id, approverId: root.id as string })
+        const r = approveUnlink(db, { requestEventId: id, approverId: root.id as string, approvalKind, conflictDisclosure })
         if (!(r as any).ok) return r
-        logAdminAction(db, { adminId: root.id as string, action: 'operator_claim.unlink_approve', targetType: 'operator_claim', targetId: id, detail: { result: r }, context: { actorType: 'admin_account', agentMode: 'human_direct' } })
+        logAdminAction(db, { adminId: root.id as string, action: 'operator_claim.unlink_approve', targetType: 'operator_claim', targetId: id, detail: { result: r }, context: { actorType: 'admin_account', agentMode: 'human_direct', approvalKind: (r as any).approvalKind, conflictDisclosure: (r as any).conflictDisclosure } })
         return r
       })()
       if (!(out as any).ok) return errorRes(res, httpFor((out as any).code), (out as any).code, (out as any).message)
@@ -227,15 +237,17 @@ export function registerAdminOperatorClaimRoutes(app: Application, deps: Deps): 
     } catch (e) { errorRes(res, 500, 'internal', (e as Error).message) }
   })
 
-  // ── ROOT: reject an unlink request → claim stays active ──
+  // ── ROOT: reject an unlink request → claim stays active. Same self-or-related marking discipline. ──
   app.post('/api/admin/operator-claims/unlink/:requestEventId/reject', (req: Request, res: Response) => {
     const root = requireRootAdmin(req, res); if (!root) return
     const id = String(req.params.requestEventId)
+    const approvalKind = req.body?.approval_kind ? String(req.body.approval_kind) : undefined
+    const conflictDisclosure = req.body?.conflict_disclosure ? String(req.body.conflict_disclosure) : undefined
     try {
       const out = db.transaction(() => {
-        const r = rejectUnlink(db, { requestEventId: id, approverId: root.id as string })
+        const r = rejectUnlink(db, { requestEventId: id, approverId: root.id as string, approvalKind, conflictDisclosure })
         if (!(r as any).ok) return r
-        logAdminAction(db, { adminId: root.id as string, action: 'operator_claim.unlink_reject', targetType: 'operator_claim', targetId: id, detail: { result: r }, context: { actorType: 'admin_account', agentMode: 'human_direct' } })
+        logAdminAction(db, { adminId: root.id as string, action: 'operator_claim.unlink_reject', targetType: 'operator_claim', targetId: id, detail: { result: r }, context: { actorType: 'admin_account', agentMode: 'human_direct', approvalKind: (r as any).approvalKind, conflictDisclosure: (r as any).conflictDisclosure } })
         return r
       })()
       if (!(out as any).ok) return errorRes(res, httpFor((out as any).code), (out as any).code, (out as any).message)

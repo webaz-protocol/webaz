@@ -3496,11 +3496,21 @@ async function renderMyOperatorClaims(app) {
   const inputStyle = 'width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box'
   const field = (label, html) => `<div style="margin-bottom:10px"><label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">${escHtml(label)}</label>${html}</div>`
 
+  // active approved claim → either an "申请解除" button or a pending-review note. Either PARTY may
+  // request unlink (admin-seat owner OR contributor), so both claimRow and relCard reuse this.
+  const unlinkAreaFor = (c) => {
+    const active = c.status === 'approved' && c.approved
+    if (!active) return ''
+    return c.unlink_pending
+      ? `<div style="font-size:11px;color:#b45309;margin-top:8px">⏳ ${_qT('解除申请审批中(待 root)', 'Unlink request pending root review')}</div>`
+      : `<button onclick="requestUnlinkOperatorClaim('${escHtml(c.approved.event_id)}')" style="margin-top:8px;padding:6px 12px;border:1px solid #d1d5db;background:#fff;color:#b91c1c;border-radius:8px;font-size:12px;cursor:pointer">${_qT('申请解除', 'Request unlink')}</button>`
+  }
+
   const claimRow = (c) => `<div class="card" style="padding:12px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <div style="font-size:12px;font-weight:600">→ ${escHtml(c.contributor_account_id)}</div>${_ocStatusBadge(c.status)}
       </div>
-      <div style="font-size:10px;color:#9ca3af;margin-top:4px">${escHtml(c.proposed_at || '')} · ${escHtml(c.claimed_event_id)}</div>
+      <div style="font-size:10px;color:#9ca3af;margin-top:4px">${escHtml(c.proposed_at || '')} · ${escHtml(c.claimed_event_id)}</div>${unlinkAreaFor(c)}
     </div>`
 
   const adminBlock = isAdmin ? `
@@ -3527,15 +3537,11 @@ async function renderMyOperatorClaims(app) {
   // 我的贡献归属关系(已生效/历史)+ approved 关系可「申请解除」(不是直接撤销;需 Passkey + root 审批)
   const relList = (rel && rel.relationships) || []
   const relCard = (c) => {
-    const active = c.status === 'approved' && c.approved
-    const unlinkArea = !active ? '' : (c.unlink_pending
-      ? `<div style="font-size:11px;color:#b45309;margin-top:8px">⏳ ${_qT('解除申请审批中(待 root)', 'Unlink request pending root review')}</div>`
-      : `<button onclick="requestUnlinkOperatorClaim('${escHtml(c.approved.event_id)}')" style="margin-top:8px;padding:6px 12px;border:1px solid #d1d5db;background:#fff;color:#b91c1c;border-radius:8px;font-size:12px;cursor:pointer">${_qT('申请解除', 'Request unlink')}</button>`)
     return `<div class="card" style="padding:12px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <div style="font-size:12px;font-weight:600">${escHtml(c.admin_account_id)} → ${escHtml(c.contributor_account_id)}</div>${_ocStatusBadge(c.status)}
       </div>
-      <div style="font-size:10px;color:#9ca3af;margin-top:4px">${escHtml(c.proposed_at || '')}</div>${unlinkArea}
+      <div style="font-size:10px;color:#9ca3af;margin-top:4px">${escHtml(c.proposed_at || '')}</div>${unlinkAreaFor(c)}
     </div>`
   }
 
@@ -3595,14 +3601,34 @@ async function renderAdminOperatorClaims(app, statusFilter) {
   const unlinkReqs = (unlinkRes && unlinkRes.requests) || []
   const inputStyle = 'width:100%;padding:7px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;box-sizing:border-box'
   const filterBtn = (s, label) => `<button onclick="renderAdminOperatorClaims(document.getElementById('app'),'${s}')" style="padding:5px 10px;border:1px solid ${sf === s ? '#4338ca' : '#d1d5db'};background:${sf === s ? '#4338ca' : '#fff'};color:${sf === s ? '#fff' : '#374151'};border-radius:6px;font-size:12px;cursor:pointer">${escHtml(label)}</button>`
-  const unlinkCard = (u) => `<div class="card" style="padding:12px;margin-bottom:8px;background:#fff7ed;border:1px solid #fed7aa">
-      <div style="font-size:12px;font-weight:600">🔓 ${escHtml(u.admin_account_id)} → ${escHtml(u.contributor_account_id)}</div>
+  const unlinkCard = (u) => {
+    const rid = u.request_event_id
+    // When THIS root is a party to the relationship/request (self-or-related), root may still decide it
+    // but MUST mark the conflict honestly: approval_kind ∈ {root_approval, founder_bootstrap_override}
+    // (never independent_governance) + conflict_disclosure = self_or_related. Mirrors approveClaim.
+    const markingForm = u.self_or_related ? `
+      <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #fed7aa">
+        <div style="font-size:11px;color:#b45309;margin-bottom:6px">⚠️ ${_qT('你是该关系/申请的关联方:必须如实标记(不可 independent_governance)', 'You are a party to this relationship/request: mark honestly (independent_governance not allowed)')}</div>
+        <div style="display:flex;gap:6px">
+          <select id="uak-${rid}" style="${inputStyle}">
+            <option value="root_approval">root_approval</option>
+            <option value="founder_bootstrap_override">founder_bootstrap_override</option>
+          </select>
+          <select id="ucd-${rid}" style="${inputStyle}">
+            <option value="self_or_related" selected>self_or_related</option>
+          </select>
+        </div>
+      </div>` : ''
+    return `<div class="card" style="padding:12px;margin-bottom:8px;background:#fff7ed;border:1px solid #fed7aa">
+      <div style="font-size:12px;font-weight:600">🔓 ${escHtml(u.admin_account_id)} → ${escHtml(u.contributor_account_id)}${u.self_or_related ? ' 🪞' : ''}</div>
       <div style="font-size:11px;color:#6b7280;margin-top:4px">${_qT('申请人', 'Requested by')}: ${escHtml(u.requested_by)} (${escHtml(u.requester_role)})${u.reason ? ' · ' + escHtml(u.reason) : ''}</div>
+      ${markingForm}
       <div style="display:flex;gap:8px;margin-top:8px">
-        <button onclick="approveUnlinkReq('${escHtml(u.request_event_id)}')" style="padding:6px 12px;border:none;background:#b91c1c;color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">${_qT('批准解除', 'Approve unlink')}</button>
-        <button onclick="rejectUnlinkReq('${escHtml(u.request_event_id)}')" style="padding:6px 12px;border:1px solid #d1d5db;background:#fff;color:#374151;border-radius:8px;font-size:12px;cursor:pointer">${_qT('驳回', 'Reject')}</button>
+        <button onclick="approveUnlinkReq('${escHtml(rid)}')" style="padding:6px 12px;border:none;background:#b91c1c;color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">${_qT('批准解除', 'Approve unlink')}</button>
+        <button onclick="rejectUnlinkReq('${escHtml(rid)}')" style="padding:6px 12px;border:1px solid #d1d5db;background:#fff;color:#374151;border-radius:8px;font-size:12px;cursor:pointer">${_qT('驳回', 'Reject')}</button>
       </div>
     </div>`
+  }
 
   const card = (c) => {
     const selfLink = c.admin_account_id === c.contributor_account_id
@@ -3669,12 +3695,19 @@ window.revokeOperatorClaim = async (approvedId) => {
 }
 window.approveUnlinkReq = async (requestId) => {
   if (!confirm(_qT('批准后将解除该贡献归属关系,确认?', 'Approving will unlink (revoke) this attribution. Confirm?'))) return
-  const r = await POST('/admin/operator-claims/unlink/' + encodeURIComponent(requestId) + '/approve', {})
+  // marking selectors only render when root is self-or-related; pass them through when present.
+  const ak = document.getElementById('uak-' + requestId)?.value
+  const cd = document.getElementById('ucd-' + requestId)?.value
+  const body = ak ? { approval_kind: ak, conflict_disclosure: cd } : {}
+  const r = await POST('/admin/operator-claims/unlink/' + encodeURIComponent(requestId) + '/approve', body)
   if (r && r.error) { toast$(r.message || r.error || _qT('操作失败', 'Failed')); return }
   toast$(_qT('已批准解除', 'Unlink approved')); renderAdminOperatorClaims(document.getElementById('app'))
 }
 window.rejectUnlinkReq = async (requestId) => {
-  const r = await POST('/admin/operator-claims/unlink/' + encodeURIComponent(requestId) + '/reject', {})
+  const ak = document.getElementById('uak-' + requestId)?.value
+  const cd = document.getElementById('ucd-' + requestId)?.value
+  const body = ak ? { approval_kind: ak, conflict_disclosure: cd } : {}
+  const r = await POST('/admin/operator-claims/unlink/' + encodeURIComponent(requestId) + '/reject', body)
   if (r && r.error) { toast$(r.message || r.error || _qT('操作失败', 'Failed')); return }
   toast$(_qT('已驳回,关系仍有效', 'Rejected — relationship stays active')); renderAdminOperatorClaims(document.getElementById('app'))
 }

@@ -235,42 +235,82 @@ export function requestUnlink(db: Database.Database, input: { approvedEventId: s
   return { ok: true, requestEventId: id, requesterRole: role, adminAccountId: ap.admin_account_id, contributorAccountId: ap.contributor_account_id }
 }
 
-/** ROOT approves an unlink request → atomically records the decision AND revokes the claim. */
-export function approveUnlink(db: Database.Database, input: { requestEventId: string; approverId: string }):
-  { ok: true; decisionEventId: string; approvedEventId: string; claimedEventId: string; adminAccountId: string; contributorAccountId: string } | WorkflowError {
+/** A root deciding an unlink is "self-or-related" when they are themselves the admin-seat owner, the
+ *  contributor, or the party who filed the request. The same posture as approveClaim's self-link: a
+ *  root MAY decide it, but MUST mark the conflict honestly (never label a related decision as
+ *  independent_governance). Returns the marking to persist, or a WorkflowError on dishonest/missing marking. */
+function resolveUnlinkMarking(
+  req: any,
+  approverId: string,
+  approvalKind: string | undefined,
+  conflictDisclosure: string | undefined,
+): { approvalKind: string; conflictDisclosure: string } | WorkflowError {
+  const selfOrRelated = approverId === req.admin_account_id || approverId === req.contributor_account_id || approverId === req.requested_by
+  let kind = approvalKind
+  let disc = conflictDisclosure
+  if (selfOrRelated) {
+    if (kind !== 'founder_bootstrap_override' && kind !== 'root_approval') {
+      return err('self_related_requires_marking', 'a self-or-related unlink decision must be marked founder_bootstrap_override or root_approval')
+    }
+    if (disc !== 'self_or_related') {
+      return err('self_related_requires_disclosure', 'a self-or-related unlink decision must disclose conflict_disclosure=self_or_related')
+    }
+  } else {
+    // independent decision: default to the honest baseline when caller omits the marking
+    kind = kind ?? 'root_approval'
+    disc = disc ?? 'none'
+  }
+  if (kind === 'independent_governance' && disc === 'self_or_related') {
+    return err('dishonest_marking', 'self_or_related conflict cannot be labelled independent_governance')
+  }
+  return { approvalKind: kind!, conflictDisclosure: disc! }
+}
+
+/** ROOT approves an unlink request → atomically records the decision AND revokes the claim.
+ *  When root is self-or-related to the relationship/request, approvalKind + conflictDisclosure are
+ *  required and recorded on the decision event (governance honesty, mirrors approveClaim). */
+export function approveUnlink(db: Database.Database, input: { requestEventId: string; approverId: string; approvalKind?: string; conflictDisclosure?: string }):
+  { ok: true; decisionEventId: string; approvedEventId: string; claimedEventId: string; adminAccountId: string; contributorAccountId: string; approvalKind: string; conflictDisclosure: string } | WorkflowError {
   const { requestEventId, approverId } = input
   if (!isRoot(db, approverId)) return err('not_root', 'only a root admin may approve an unlink request')
   const req = db.prepare("SELECT * FROM admin_operator_unlink_requests WHERE request_event_id = ? AND event_type = 'requested'").get(requestEventId) as any
   if (!req) return err('request_not_found', 'no such unlink request')
   if (db.prepare('SELECT 1 FROM admin_operator_unlink_requests WHERE supersedes_request_id = ?').get(requestEventId)) return err('bad_state', 'this unlink request is already decided')
   if (!approvedIsActive(db, req.approved_event_id)) return err('bad_state', 'the claim is no longer active')
+  const marking = resolveUnlinkMarking(req, approverId, input.approvalKind, input.conflictDisclosure)
+  if (!(marking as any).approvalKind) return marking as WorkflowError
+  const { approvalKind, conflictDisclosure } = marking as { approvalKind: string; conflictDisclosure: string }
   const run = db.transaction(() => {
     const decId = generateId('aour')
     db.prepare(
-      `INSERT INTO admin_operator_unlink_requests (request_event_id, event_type, approved_event_id, claimed_event_id, admin_account_id, contributor_account_id, decided_by, supersedes_request_id, immutable)
-       VALUES (?, 'approved', ?, ?, ?, ?, ?, ?, 1)`,
-    ).run(decId, req.approved_event_id, req.claimed_event_id, req.admin_account_id, req.contributor_account_id, approverId, requestEventId)
+      `INSERT INTO admin_operator_unlink_requests (request_event_id, event_type, approved_event_id, claimed_event_id, admin_account_id, contributor_account_id, decided_by, approval_kind, conflict_disclosure, supersedes_request_id, immutable)
+       VALUES (?, 'approved', ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+    ).run(decId, req.approved_event_id, req.claimed_event_id, req.admin_account_id, req.contributor_account_id, approverId, approvalKind, conflictDisclosure, requestEventId)
     const rev = revokeApprovedClaim(db, { approvedEventId: req.approved_event_id, revokerId: approverId, rationale: 'unlink request approved by root' })
     if (!(rev as any).ok) throw new Error('revoke failed: ' + (rev as any).code)
     return decId
   })
-  return { ok: true, decisionEventId: run(), approvedEventId: req.approved_event_id, claimedEventId: req.claimed_event_id, adminAccountId: req.admin_account_id, contributorAccountId: req.contributor_account_id }
+  return { ok: true, decisionEventId: run(), approvedEventId: req.approved_event_id, claimedEventId: req.claimed_event_id, adminAccountId: req.admin_account_id, contributorAccountId: req.contributor_account_id, approvalKind, conflictDisclosure }
 }
 
-/** ROOT rejects an unlink request → records the decision; the claim stays active. */
-export function rejectUnlink(db: Database.Database, input: { requestEventId: string; approverId: string }):
-  { ok: true; decisionEventId: string; claimedEventId: string; adminAccountId: string; contributorAccountId: string } | WorkflowError {
+/** ROOT rejects an unlink request → records the decision; the claim stays active. Same self-or-related
+ *  marking discipline as approveUnlink. */
+export function rejectUnlink(db: Database.Database, input: { requestEventId: string; approverId: string; approvalKind?: string; conflictDisclosure?: string }):
+  { ok: true; decisionEventId: string; claimedEventId: string; adminAccountId: string; contributorAccountId: string; approvalKind: string; conflictDisclosure: string } | WorkflowError {
   const { requestEventId, approverId } = input
   if (!isRoot(db, approverId)) return err('not_root', 'only a root admin may reject an unlink request')
   const req = db.prepare("SELECT * FROM admin_operator_unlink_requests WHERE request_event_id = ? AND event_type = 'requested'").get(requestEventId) as any
   if (!req) return err('request_not_found', 'no such unlink request')
   if (db.prepare('SELECT 1 FROM admin_operator_unlink_requests WHERE supersedes_request_id = ?').get(requestEventId)) return err('bad_state', 'this unlink request is already decided')
+  const marking = resolveUnlinkMarking(req, approverId, input.approvalKind, input.conflictDisclosure)
+  if (!(marking as any).approvalKind) return marking as WorkflowError
+  const { approvalKind, conflictDisclosure } = marking as { approvalKind: string; conflictDisclosure: string }
   const decId = generateId('aour')
   db.prepare(
-    `INSERT INTO admin_operator_unlink_requests (request_event_id, event_type, approved_event_id, claimed_event_id, admin_account_id, contributor_account_id, decided_by, supersedes_request_id, immutable)
-     VALUES (?, 'rejected', ?, ?, ?, ?, ?, ?, 1)`,
-  ).run(decId, req.approved_event_id, req.claimed_event_id, req.admin_account_id, req.contributor_account_id, approverId, requestEventId)
-  return { ok: true, decisionEventId: decId, claimedEventId: req.claimed_event_id, adminAccountId: req.admin_account_id, contributorAccountId: req.contributor_account_id }
+    `INSERT INTO admin_operator_unlink_requests (request_event_id, event_type, approved_event_id, claimed_event_id, admin_account_id, contributor_account_id, decided_by, approval_kind, conflict_disclosure, supersedes_request_id, immutable)
+     VALUES (?, 'rejected', ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+  ).run(decId, req.approved_event_id, req.claimed_event_id, req.admin_account_id, req.contributor_account_id, approverId, approvalKind, conflictDisclosure, requestEventId)
+  return { ok: true, decisionEventId: decId, claimedEventId: req.claimed_event_id, adminAccountId: req.admin_account_id, contributorAccountId: req.contributor_account_id, approvalKind, conflictDisclosure }
 }
 
 /** All claims whose CONTRIBUTOR is this user (any status) — the contributor self-view. */

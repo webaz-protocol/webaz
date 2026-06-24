@@ -86,16 +86,16 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/kyc/:user_id/approve` | 🔐 | 👑 |  | src/pwa/routes/admin-moderation.ts:49 |
 | POST | `/api/admin/kyc/:user_id/reject` | 🔐 | 👑 |  | src/pwa/routes/admin-moderation.ts:61 |
 | GET | `/api/admin/kyc/pending` | 🔐 | 👑 | ─── KYC ────────────────────────────────────────────────────── | src/pwa/routes/admin-moderation.ts:39 |
-| GET | `/api/admin/operator-claims` | 🔐 | 👑 | ── ROOT: review queue (all claims, optional ?status=) ── | src/pwa/routes/admin-operator-claims.ts:122 |
+| GET | `/api/admin/operator-claims` | 🔐 | 👑 | ── ROOT: review queue (all claims, optional ?status=) ── | src/pwa/routes/admin-operator-claims.ts:123 |
 | POST | `/api/admin/operator-claims` | 🔐 | 👑 | ── admin proposes linking THEIR OWN seat to a contributor account ── | src/pwa/routes/admin-operator-claims.ts:73 |
-| POST | `/api/admin/operator-claims/:approvedEventId/revoke` | 🔐 | 👑 | ── ROOT: revoke an APPROVED (active) claim ── | src/pwa/routes/admin-operator-claims.ts:169 |
-| GET | `/api/admin/operator-claims/:claimedEventId` | 🔐 | 👑 | ── ROOT: claim detail ── | src/pwa/routes/admin-operator-claims.ts:129 |
-| POST | `/api/admin/operator-claims/:claimedEventId/approve` | 🔐 | 👑 | ── ROOT: approve a proposed-or-confirmed claim ── | src/pwa/routes/admin-operator-claims.ts:153 |
-| POST | `/api/admin/operator-claims/:claimedEventId/reject` | 🔐 | 👑 | ── ROOT: reject a still-proposed/confirmed claim ── | src/pwa/routes/admin-operator-claims.ts:161 |
-| GET | `/api/admin/operator-claims/me` | 🔐 | 👑 | ── the calling admin's own seat: its claims + states ── | src/pwa/routes/admin-operator-claims.ts:92 |
-| POST | `/api/admin/operator-claims/unlink/:requestEventId/approve` | 🔐 | 👑 | ── ROOT: approve an unlink request → revokes the claim ── | src/pwa/routes/admin-operator-claims.ts:214 |
-| POST | `/api/admin/operator-claims/unlink/:requestEventId/reject` | 🔐 | 👑 | ── ROOT: reject an unlink request → claim stays active ── | src/pwa/routes/admin-operator-claims.ts:231 |
-| GET | `/api/admin/operator-claims/unlink/requests` | 🔐 | 👑 | ── ROOT: pending unlink requests (review queue). Path under /unlink/ to avoid th | src/pwa/routes/admin-operator-claims.ts:208 |
+| POST | `/api/admin/operator-claims/:approvedEventId/revoke` | 🔐 | 👑 | ── ROOT: revoke an APPROVED (active) claim ── | src/pwa/routes/admin-operator-claims.ts:170 |
+| GET | `/api/admin/operator-claims/:claimedEventId` | 🔐 | 👑 | ── ROOT: claim detail ── | src/pwa/routes/admin-operator-claims.ts:130 |
+| POST | `/api/admin/operator-claims/:claimedEventId/approve` | 🔐 | 👑 | ── ROOT: approve a proposed-or-confirmed claim ── | src/pwa/routes/admin-operator-claims.ts:154 |
+| POST | `/api/admin/operator-claims/:claimedEventId/reject` | 🔐 | 👑 | ── ROOT: reject a still-proposed/confirmed claim ── | src/pwa/routes/admin-operator-claims.ts:162 |
+| GET | `/api/admin/operator-claims/me` | 🔐 | 👑 | admin-seat owner can request/track unlink on their own active claims) ── | src/pwa/routes/admin-operator-claims.ts:93 |
+| POST | `/api/admin/operator-claims/unlink/:requestEventId/approve` | 🔐 | 👑 | relationship/request, approval_kind + conflict_disclosure are required (governan | src/pwa/routes/admin-operator-claims.ts:222 |
+| POST | `/api/admin/operator-claims/unlink/:requestEventId/reject` | 🔐 | 👑 | ── ROOT: reject an unlink request → claim stays active. Same self-or-related mar | src/pwa/routes/admin-operator-claims.ts:241 |
+| GET | `/api/admin/operator-claims/unlink/requests` | 🔐 | 👑 | self_or_related flags each request the viewing root is a party to → the UI then  | src/pwa/routes/admin-operator-claims.ts:210 |
 | GET | `/api/admin/orders` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:30 |
 | GET | `/api/admin/payment-methods` | 🔐 | 👑 | ─── Admin payment_methods CRUD（root admin only · 基础设施变更需根权限）─ | src/pwa/routes/payments-governance.ts:136 |
 | POST | `/api/admin/payment-methods` | 🔐 | 👑 |  | src/pwa/routes/payments-governance.ts:142 |
@@ -377,10 +377,10 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/me/note-prompts` | 🔐 |  | COP 飞轮: 完成订单 7d 引导发笔记 | src/pwa/routes/me-data.ts:29 |
 | GET | `/api/me/notify-claim-tasks` | 🔐 |  |  | src/pwa/routes/claim-verify.ts:534 |
 | POST | `/api/me/notify-claim-tasks` | 🔐 |  | 通知偏好 | src/pwa/routes/claim-verify.ts:528 |
-| GET | `/api/me/operator-claim-confirmations` | 🔐 |  | ── contributor: claims pointing at ME awaiting my confirmation ── | src/pwa/routes/admin-operator-claims.ts:98 |
-| POST | `/api/me/operator-claim-confirmations/:claimedEventId` | 🔐 |  | ── contributor accepts/rejects a claim pointing at them ── | src/pwa/routes/admin-operator-claims.ts:104 |
-| GET | `/api/me/operator-claims` | 🔐 |  | ── contributor self-view: ALL relationships pointing at me (pending/confirmed/ap | src/pwa/routes/admin-operator-claims.ts:178 |
-| POST | `/api/me/operator-claims/:approvedEventId/request-unlink` | 🔐 |  | ── EITHER PARTY requests UNLINK of an active approved claim — passkey-gated (not | src/pwa/routes/admin-operator-claims.ts:184 |
+| GET | `/api/me/operator-claim-confirmations` | 🔐 |  | ── contributor: claims pointing at ME awaiting my confirmation ── | src/pwa/routes/admin-operator-claims.ts:99 |
+| POST | `/api/me/operator-claim-confirmations/:claimedEventId` | 🔐 |  | ── contributor accepts/rejects a claim pointing at them ── | src/pwa/routes/admin-operator-claims.ts:105 |
+| GET | `/api/me/operator-claims` | 🔐 |  | ── contributor self-view: ALL relationships pointing at me (pending/confirmed/ap | src/pwa/routes/admin-operator-claims.ts:179 |
+| POST | `/api/me/operator-claims/:approvedEventId/request-unlink` | 🔐 |  | ── EITHER PARTY requests UNLINK of an active approved claim — passkey-gated (not | src/pwa/routes/admin-operator-claims.ts:185 |
 | GET | `/api/me/quota-requests` | 🔐 |  | list my own requests + current remaining temporary quota | src/pwa/routes/build-task-quota.ts:66 |
 | POST | `/api/me/quota-requests` | 🔐 |  | submit a quota-increase request | src/pwa/routes/build-task-quota.ts:49 |
 | GET | `/api/me/seller/trial-campaigns` | 🔐 |  | 卖家：我的测评活动列表（含每个的 claims 计数） | src/pwa/routes/trial.ts:329 |

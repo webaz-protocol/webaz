@@ -110,6 +110,70 @@ async function main(): Promise<void> {
     ok('unlink requests: UPDATE rejected', threw(() => db.prepare("UPDATE admin_operator_unlink_requests SET event_type='approved' WHERE request_event_id=?").run(req.requestEventId)))
     ok('unlink requests: DELETE rejected', threw(() => db.prepare('DELETE FROM admin_operator_unlink_requests WHERE request_event_id=?').run(req.requestEventId))) }
 
+  // ── P2-2: self-or-related unlink decisions REQUIRE honest marking; independent decisions default ──
+  // build an approved claim whose CONTRIBUTOR is root → root is self-or-related when deciding the unlink.
+  const makeApprovedToRoot = (db: any) => makeApproved(db, 'usr_admin', 'usr_root')
+  { const db = freshDb(); const { approvedEventId } = makeApprovedToRoot(db)
+    const req = requestUnlink(db, { approvedEventId, requesterId: 'usr_admin' }) as any
+    ok('self-or-related approve WITHOUT marking → self_related_requires_marking',
+      (approveUnlink(db, { requestEventId: req.requestEventId, approverId: 'usr_root' }) as any).code === 'self_related_requires_marking') }
+  { const db = freshDb(); const { approvedEventId } = makeApprovedToRoot(db)
+    const req = requestUnlink(db, { approvedEventId, requesterId: 'usr_admin' }) as any
+    // self-or-related path rejects independent_governance at the marking gate (never reaches the claim revoke)
+    ok('self-or-related approve marked independent_governance → rejected',
+      (approveUnlink(db, { requestEventId: req.requestEventId, approverId: 'usr_root', approvalKind: 'independent_governance', conflictDisclosure: 'self_or_related' }) as any).code === 'self_related_requires_marking') }
+  // dishonest_marking backstop: an INDEPENDENT root who explicitly mislabels independent_governance + self_or_related
+  { const db = freshDb(); const { approvedEventId } = makeApproved(db)   // admin→holden; root is neither
+    const req = requestUnlink(db, { approvedEventId, requesterId: 'usr_admin' }) as any
+    ok('independent root labelling independent_governance + self_or_related → dishonest_marking',
+      (approveUnlink(db, { requestEventId: req.requestEventId, approverId: 'usr_root', approvalKind: 'independent_governance', conflictDisclosure: 'self_or_related' }) as any).code === 'dishonest_marking') }
+  { const db = freshDb(); const { approvedEventId } = makeApprovedToRoot(db)
+    const req = requestUnlink(db, { approvedEventId, requesterId: 'usr_admin' }) as any
+    ok('self-or-related approve marked root_approval but conflict_disclosure=none → self_related_requires_disclosure',
+      (approveUnlink(db, { requestEventId: req.requestEventId, approverId: 'usr_root', approvalKind: 'root_approval', conflictDisclosure: 'none' }) as any).code === 'self_related_requires_disclosure') }
+  { const db = freshDb(); const { approvedEventId } = makeApprovedToRoot(db)
+    const req = requestUnlink(db, { approvedEventId, requesterId: 'usr_admin' }) as any
+    const ap = approveUnlink(db, { requestEventId: req.requestEventId, approverId: 'usr_root', approvalKind: 'founder_bootstrap_override', conflictDisclosure: 'self_or_related' }) as any
+    ok('self-or-related approve with honest marking → ok', ap.ok === true && ap.approvalKind === 'founder_bootstrap_override' && ap.conflictDisclosure === 'self_or_related')
+    const dec = db.prepare("SELECT approval_kind, conflict_disclosure FROM admin_operator_unlink_requests WHERE request_event_id = ?").get(ap.decisionEventId) as any
+    ok('decision event PERSISTS the marking', dec?.approval_kind === 'founder_bootstrap_override' && dec?.conflict_disclosure === 'self_or_related') }
+  { const db = freshDb(); const { approvedEventId } = makeApprovedToRoot(db)
+    const req = requestUnlink(db, { approvedEventId, requesterId: 'usr_admin' }) as any
+    const rj = rejectUnlink(db, { requestEventId: req.requestEventId, approverId: 'usr_root', approvalKind: 'root_approval', conflictDisclosure: 'self_or_related' }) as any
+    ok('self-or-related reject with honest marking → ok', rj.ok === true && rj.conflictDisclosure === 'self_or_related')
+    ok('self-or-related reject WITHOUT marking → self_related_requires_marking',
+      (rejectUnlink(db, { requestEventId: (requestUnlink(db, { approvedEventId, requesterId: 'usr_admin' }) as any).requestEventId, approverId: 'usr_root' }) as any).code === 'self_related_requires_marking') }
+  // independent (root NOT a party) → marking optional, defaults recorded honestly
+  { const db = freshDb(); const { approvedEventId } = makeApproved(db)   // admin→holden; root is neither
+    const req = requestUnlink(db, { approvedEventId, requesterId: 'usr_admin' }) as any
+    const ap = approveUnlink(db, { requestEventId: req.requestEventId, approverId: 'usr_root' }) as any
+    ok('independent approve WITHOUT marking → ok (defaults)', ap.ok === true && ap.approvalKind === 'root_approval' && ap.conflictDisclosure === 'none')
+    const dec = db.prepare("SELECT approval_kind, conflict_disclosure FROM admin_operator_unlink_requests WHERE request_event_id = ?").get(ap.decisionEventId) as any
+    ok('independent decision records default marking', dec?.approval_kind === 'root_approval' && dec?.conflict_disclosure === 'none') }
+
+  // ── P2-1 route contract: admin-seat self-view returns unlink_pending (uses shapeClaim, not shape) ──
+  { const routeSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/pwa/routes/admin-operator-claims.ts'), 'utf8')
+    const meRouteLine = routeSrc.split('\n').find(l => l.includes("'/api/admin/operator-claims/me'") || l.includes('listClaimsForSeat'))
+    const meMapsShapeClaim = /listClaimsForSeat\(db, admin\.id as string\)\.map\(shapeClaim\)/.test(routeSrc)
+    ok('/admin/operator-claims/me maps with shapeClaim (carries unlink_pending)', meMapsShapeClaim, meRouteLine || '(not found)')
+    // unlink/requests route flags self_or_related for the viewing root
+    ok('unlink/requests route computes self_or_related for the viewing root', /self_or_related:\s*rid === r\.admin_account_id/.test(routeSrc))
+    // approve/reject unlink routes forward approval_kind / conflict_disclosure
+    ok('unlink approve route forwards marking to engine', /approveUnlink\(db, \{ requestEventId: id, approverId: root\.id as string, approvalKind, conflictDisclosure \}\)/.test(routeSrc))
+    ok('unlink reject route forwards marking to engine', /rejectUnlink\(db, \{ requestEventId: id, approverId: root\.id as string, approvalKind, conflictDisclosure \}\)/.test(routeSrc)) }
+
+  // ── P2-1 static UI contract: admin's OWN approved claims expose an unlink control (claimRow shares unlinkAreaFor) ──
+  { const appSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/pwa/public/app.js'), 'utf8')
+    ok('shared unlinkAreaFor helper exists', /const unlinkAreaFor = \(c\) =>/.test(appSrc))
+    ok('admin claimRow renders the unlink area', /claimRow = \(c\) => `[\s\S]*?\$\{unlinkAreaFor\(c\)\}[\s\S]*?<\/div>`/.test(appSrc))
+    ok('contributor relCard renders the unlink area', /relCard = \(c\) => \{[\s\S]*?\$\{unlinkAreaFor\(c\)\}/.test(appSrc))
+    // unlink review card shows marking selectors when root is self-or-related
+    ok('unlink review card shows marking selectors when self_or_related', /u\.self_or_related \? `[\s\S]*?uak-\$\{rid\}/.test(appSrc))
+    ok('self-or-related unlink marking omits independent_governance OPTION', (() => {
+      const m = appSrc.match(/const markingForm = u\.self_or_related \? `([\s\S]*?)` : ''/)
+      return !!m && !/<option value="independent_governance"/.test(m[1]) && /<option value="founder_bootstrap_override"/.test(m[1])
+    })()) }
+
   // ── static UI contract: 我的→高级 「贡献归属」entry is shown when the user has relationships ──
   { const appSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/pwa/public/app.js'), 'utf8')
     const meMenuCardLines = appSrc.split('\n').filter(l => /\bcard\(/.test(l) && !/adminLinkCard/.test(l) && l.includes('#me/operator-claims'))
