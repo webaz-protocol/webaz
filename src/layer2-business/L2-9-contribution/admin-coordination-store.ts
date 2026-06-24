@@ -213,6 +213,23 @@ export function initAdminCoordinationSchema(db: Database.Database): void {
  * admin` / routine risk-control are deliberately absent.
  */
 export const ADMIN_COORDINATION_ACTIONS = {
+  // ── REAL production audit actions (the FIRST live pipeline). These are the exact `action` strings that
+  // logAdminAction writes from the operator-claim workflow routes (admin-operator-claims.ts) — the only
+  // coordination/governance admin actions currently audited with a stable, explicit action name. All map
+  // to (governance, governance): operating the contribution-attribution machinery IS governance work.
+  // (factType ∈ RFC-017 taxonomy: code|tests|audit|maintenance|governance|usage|transaction|referral.) ──
+  'operator_claim.propose':        { factSource: 'governance', factType: 'governance' },
+  'operator_claim.confirm':        { factSource: 'governance', factType: 'governance' },
+  'operator_claim.approve':        { factSource: 'governance', factType: 'governance' },
+  'operator_claim.reject':         { factSource: 'governance', factType: 'governance' },
+  'operator_claim.revoke':         { factSource: 'governance', factType: 'governance' },
+  'operator_claim.unlink_request': { factSource: 'governance', factType: 'governance' },
+  'operator_claim.unlink_approve': { factSource: 'governance', factType: 'governance' },
+  'operator_claim.unlink_reject':  { factSource: 'governance', factType: 'governance' },
+  // ── Reserved CONCEPT names (no route emits these yet → no production effect). Kept as the representative
+  // catalog for build-task-quota / task-proposal / dispute / release work, to be mapped to their real
+  // audited action strings (and added above) ONLY once those routes log a stable, explicit action name.
+  // Until then they stay fail-closed in practice (nothing produces them). ──
   proposal_review:      { factSource: 'governance',  factType: 'governance' },
   task_review:          { factSource: 'in_protocol', factType: 'audit' },
   dispute_coordination: { factSource: 'governance',  factType: 'governance' },
@@ -222,6 +239,26 @@ export const ADMIN_COORDINATION_ACTIONS = {
 } as const
 
 export type CoordinationAction = keyof typeof ADMIN_COORDINATION_ACTIONS
+
+/**
+ * The LIVE production set — the only actions the bounded batch / operator CLI selects from. These are
+ * the real `operator_claim.*` audit action strings emitted by routes today. The reserved CONCEPT names
+ * in ADMIN_COORDINATION_ACTIONS stay ingestible by the SINGLE-row engine (an operator can target a
+ * specific auditId), but they are deliberately EXCLUDED from batch live selection so the first pipeline
+ * only ever scans/auto-ingests real operator-claim work. Add a concept name here only when a real route
+ * begins emitting it as a stable action string.
+ */
+export const LIVE_ADMIN_COORDINATION_AUDIT_ACTIONS = [
+  'operator_claim.propose', 'operator_claim.confirm', 'operator_claim.approve', 'operator_claim.reject',
+  'operator_claim.revoke', 'operator_claim.unlink_request', 'operator_claim.unlink_approve', 'operator_claim.unlink_reject',
+] as const
+// invariant: every live action MUST have a spec in the allowlist (else the batch would select a row the
+// single-row engine then refuses as unknown_action). Fail LOUD at module load if they ever drift apart.
+for (const a of LIVE_ADMIN_COORDINATION_AUDIT_ACTIONS) {
+  if (!Object.prototype.hasOwnProperty.call(ADMIN_COORDINATION_ACTIONS, a)) {
+    throw new Error(`LIVE_ADMIN_COORDINATION_AUDIT_ACTIONS contains '${a}' with no ADMIN_COORDINATION_ACTIONS spec`)
+  }
+}
 
 export function coordinationActionSpec(action: string): { factSource: string; factType: string } | null {
   return Object.prototype.hasOwnProperty.call(ADMIN_COORDINATION_ACTIONS, action)
