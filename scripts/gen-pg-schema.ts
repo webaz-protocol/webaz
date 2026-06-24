@@ -161,7 +161,7 @@ for (const ix of indexes) {
 // triggers (created in each table's init). SQLite triggers don't text-translate to PG, so we emit the
 // equivalent PG plpgsql RAISE EXCEPTION guard here for the tables actually present in this DB.
 // (The function body keeps `BEGIN ... END;` on one line so it never looks like a transaction `BEGIN;`.)
-const APPEND_ONLY_TABLES = ['identity_binding_events', 'admin_operator_claim_events', 'agent_execution_mandate_events', 'admin_coordination_fact_sources', 'admin_operator_claim_confirmations', 'admin_operator_unlink_requests']
+const APPEND_ONLY_TABLES = ['identity_binding_events', 'admin_operator_claim_events', 'agent_execution_mandate_events', 'admin_coordination_fact_sources', 'admin_operator_claim_confirmations', 'admin_operator_unlink_requests', 'admin_operator_claim_marking_corrections']
 const presentAppendOnly = APPEND_ONLY_TABLES.filter(name => tables.some(t => t.name === name))
 if (presentAppendOnly.length) {
   out.push('')

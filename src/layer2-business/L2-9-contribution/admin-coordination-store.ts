@@ -31,7 +31,7 @@
  */
 import type Database from 'better-sqlite3'
 
-const COORD_TABLES = ['admin_coordination_fact_sources', 'admin_operator_claim_confirmations', 'admin_operator_unlink_requests', 'admin_operator_claim_events', 'agent_execution_mandate_events'] as const
+const COORD_TABLES = ['admin_coordination_fact_sources', 'admin_operator_claim_confirmations', 'admin_operator_unlink_requests', 'admin_operator_claim_marking_corrections', 'admin_operator_claim_events', 'agent_execution_mandate_events'] as const
 
 const CREATE_OPERATOR_CLAIM_EVENTS = `
   CREATE TABLE IF NOT EXISTS admin_operator_claim_events (
@@ -135,6 +135,25 @@ const ALTER_UNLINK_MARKING = [
   `ALTER TABLE admin_operator_unlink_requests ADD COLUMN approval_kind TEXT`,
   `ALTER TABLE admin_operator_unlink_requests ADD COLUMN conflict_disclosure TEXT`,
 ]
+// Append-only GOVERNANCE-MARKING CORRECTION overlay. An already-approved claim's disclosure label can be
+// wrong (e.g. a founder/root self/related bootstrap recorded as 'independent_governance' / 'none'). We do
+// NOT UPDATE/backdate the original approved event (that would corrupt the as-of interval); instead a root
+// admin appends a correction that REFERENCES the approved event and supplies the honest marking. The
+// resolver overlays the latest correction at read time. Only honest markings are storable: approval_kind
+// must be root_approval|founder_bootstrap_override (NEVER independent_governance) and conflict_disclosure
+// must be self_or_related; correction_reason is required. Append-only (BEFORE UPDATE/DELETE → ABORT).
+const CREATE_MARKING_CORRECTIONS = `
+  CREATE TABLE IF NOT EXISTS admin_operator_claim_marking_corrections (
+    correction_event_id        TEXT PRIMARY KEY,
+    approved_event_id          TEXT NOT NULL REFERENCES admin_operator_claim_events(event_id),
+    approval_kind              TEXT NOT NULL CHECK (approval_kind IN ('root_approval','founder_bootstrap_override')),
+    conflict_disclosure        TEXT NOT NULL CHECK (conflict_disclosure IN ('self_or_related')),
+    correction_reason          TEXT NOT NULL CHECK (length(trim(correction_reason)) > 0),
+    corrected_by_root_admin_id TEXT NOT NULL REFERENCES users(id),
+    corrected_at               TEXT NOT NULL DEFAULT (datetime('now')),
+    immutable                  INTEGER NOT NULL DEFAULT 1 CHECK (immutable = 1)
+  )
+`
 const CREATE_INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_aoce_admin ON admin_operator_claim_events(admin_account_id)`,
   `CREATE INDEX IF NOT EXISTS idx_aoce_supersedes ON admin_operator_claim_events(supersedes_event_id)`,
@@ -143,6 +162,7 @@ const CREATE_INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_aocc_contributor ON admin_operator_claim_confirmations(contributor_account_id)`,
   `CREATE INDEX IF NOT EXISTS idx_aour_approved ON admin_operator_unlink_requests(approved_event_id)`,
   `CREATE INDEX IF NOT EXISTS idx_aour_supersedes ON admin_operator_unlink_requests(supersedes_request_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_aocmc_approved ON admin_operator_claim_marking_corrections(approved_event_id)`,
 ]
 const TRIGGER_AOCE_NO_UPDATE = `CREATE TRIGGER IF NOT EXISTS trg_aoce_no_update BEFORE UPDATE ON admin_operator_claim_events BEGIN SELECT RAISE(ABORT, 'admin_operator_claim_events is append-only (UPDATE forbidden)'); END`
 const TRIGGER_AOCE_NO_DELETE = `CREATE TRIGGER IF NOT EXISTS trg_aoce_no_delete BEFORE DELETE ON admin_operator_claim_events BEGIN SELECT RAISE(ABORT, 'admin_operator_claim_events is append-only (DELETE forbidden)'); END`
@@ -164,6 +184,8 @@ const TRIGGER_AOCC_NO_DELETE = `CREATE TRIGGER IF NOT EXISTS trg_aocc_no_delete 
 const TRIGGER_AOCC_MATCH = `CREATE TRIGGER IF NOT EXISTS trg_aocc_match_claim BEFORE INSERT ON admin_operator_claim_confirmations WHEN NOT EXISTS (SELECT 1 FROM admin_operator_claim_events e WHERE e.event_id = NEW.claimed_event_id AND e.event_type = 'claimed' AND e.admin_account_id = NEW.admin_account_id AND e.contributor_account_id = NEW.contributor_account_id) BEGIN SELECT RAISE(ABORT, 'confirmation admin/contributor must match its claimed event'); END`
 const TRIGGER_AOUR_NO_UPDATE = `CREATE TRIGGER IF NOT EXISTS trg_aour_no_update BEFORE UPDATE ON admin_operator_unlink_requests BEGIN SELECT RAISE(ABORT, 'admin_operator_unlink_requests is append-only (UPDATE forbidden)'); END`
 const TRIGGER_AOUR_NO_DELETE = `CREATE TRIGGER IF NOT EXISTS trg_aour_no_delete BEFORE DELETE ON admin_operator_unlink_requests BEGIN SELECT RAISE(ABORT, 'admin_operator_unlink_requests is append-only (DELETE forbidden)'); END`
+const TRIGGER_AOCMC_NO_UPDATE = `CREATE TRIGGER IF NOT EXISTS trg_aocmc_no_update BEFORE UPDATE ON admin_operator_claim_marking_corrections BEGIN SELECT RAISE(ABORT, 'admin_operator_claim_marking_corrections is append-only (UPDATE forbidden)'); END`
+const TRIGGER_AOCMC_NO_DELETE = `CREATE TRIGGER IF NOT EXISTS trg_aocmc_no_delete BEFORE DELETE ON admin_operator_claim_marking_corrections BEGIN SELECT RAISE(ABORT, 'admin_operator_claim_marking_corrections is append-only (DELETE forbidden)'); END`
 
 function tableExists(db: Database.Database, name: string): boolean {
   return db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`).get(name) !== undefined
@@ -176,6 +198,7 @@ export function initAdminCoordinationSchema(db: Database.Database): void {
     db.exec(CREATE_CLAIM_CONFIRMATIONS)
     db.exec(CREATE_FACT_SOURCES)
     db.exec(CREATE_UNLINK_REQUESTS)
+    db.exec(CREATE_MARKING_CORRECTIONS)
     // Additive: backfill marking columns onto an unlink table created by an earlier deploy.
     const aourCols = new Set(
       (db.prepare(`PRAGMA table_info(admin_operator_unlink_requests)`).all() as Array<{ name: string }>).map((c) => c.name),
@@ -200,6 +223,8 @@ export function initAdminCoordinationSchema(db: Database.Database): void {
     db.exec(TRIGGER_AOCC_MATCH)
     db.exec(TRIGGER_AOUR_NO_UPDATE)
     db.exec(TRIGGER_AOUR_NO_DELETE)
+    db.exec(TRIGGER_AOCMC_NO_UPDATE)
+    db.exec(TRIGGER_AOCMC_NO_DELETE)
   })
   apply.immediate()
   void tableExists

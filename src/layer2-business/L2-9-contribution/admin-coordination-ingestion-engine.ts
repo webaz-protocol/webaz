@@ -41,7 +41,7 @@ export interface IngestCoordinationInput {
 }
 export type IngestRefusal =
   | 'invalid_input' | 'audit_row_not_found' | 'unknown_action' | 'not_eligible_context'
-  | 'no_attribution' | 'agent_action_not_in_mandate'
+  | 'no_attribution' | 'agent_action_not_in_mandate' | 'self_related_not_disclosed'
 export type IngestCoordinationResult =
   | { ok: true; status: 'ingested' | 'already_present' | 'would_ingest'; factId: string; sourceEventKey: string; executorRef: string; contributorAccountId: string; via: 'operator_claim' | 'agent_mandate' }
   | { ok: false; reason: IngestRefusal; detail?: string }
@@ -98,6 +98,11 @@ export function ingestAdminCoordinationFact(db: Database.Database, input: Ingest
   } else {
     const c = resolveOperatorClaimAsOf(db, adminAccountId, occurredAt)
     if (!c) return { ok: false, reason: 'no_attribution', detail: 'no approved operator claim as-of occurred_at' }
+    // A self/related (root/founder bootstrap) approval that is NOT honestly disclosed must NOT enter
+    // production evidence — fail closed until an append-only marking correction discloses self_or_related.
+    if (c.self_related && !c.honestly_disclosed) {
+      return { ok: false, reason: 'self_related_not_disclosed', detail: `claim ${c.claim_event_id} is self/related but marked ${c.approval_kind}/${c.conflict_disclosure}; needs a governance-marking correction` }
+    }
     contributorAccountId = c.contributor_account_id
     via = 'operator_claim'
     executorRef = `admin:${adminAccountId}`

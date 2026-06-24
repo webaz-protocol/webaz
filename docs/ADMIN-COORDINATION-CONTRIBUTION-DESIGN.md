@@ -116,6 +116,28 @@ amount, payout, eligibility, aggregation, or UI is added.**
   admin actions, and the operator entry never scans all of history unbounded — it is cursor + limit
   scoped and starts from the present. Any historical backfill is a separate, explicitly-approved step.
 
+## Governance-marking correction (append-only overlay)
+
+A self/related approval (the approver is itself a party — `approved_by ∈ {admin_account_id,
+contributor_account_id}`, i.e. a root/founder bootstrap) MUST disclose `self_or_related` + a
+non-`independent_governance` kind. When such an approval was recorded dishonestly (e.g.
+`independent_governance` / `none`), it is **not** fixed by UPDATE or by revoke+re-approve — revoking and
+re-approving would push the effective time to *now* and break the as-of attribution of the original
+historical acts. Instead a **root** appends a correction:
+
+- `admin_operator_claim_marking_corrections` (append-only; BEFORE UPDATE/DELETE → ABORT) references the
+  approved event id and records `approval_kind` (`root_approval` | `founder_bootstrap_override`),
+  `conflict_disclosure` (`self_or_related`), a required `correction_reason`, `corrected_by_root_admin_id`,
+  `corrected_at`. DB CHECKs make a dishonest correction (e.g. `independent_governance`) unstorable.
+- The **resolver** overlays the latest correction's marking at read time — it never changes the
+  contributor or the effective interval, so as-of attribution is preserved.
+- **Ingestion fails closed** on a self/related-but-not-honestly-disclosed claim
+  (`self_related_not_disclosed`) — such evidence cannot enter `contribution_facts` until a correction
+  discloses it. After correction, the original-time acts ingest normally.
+- Engine: `correctClaimMarking()` (root-only) · operator CLI: `scripts/correct-operator-claim-marking.ts`
+  (`npm run correct:operator-claim-marking`, dry-run by default). Genuinely independent claims
+  (`approved_by` not a party) are unaffected.
+
 ## Deferred (explicitly NOT in Phase 1)
 
 - No reward / valuation / payout / redemption / eligibility scoring.

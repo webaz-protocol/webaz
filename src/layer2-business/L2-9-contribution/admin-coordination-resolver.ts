@@ -20,6 +20,14 @@ export interface OperatorClaimResolution {
   approval_kind: string | null
   conflict_disclosure: string
   claim_event_id: string
+  approved_by: string | null
+  /** approver was a party to the claim (root/founder self/related bootstrap): approved_by ∈ {admin, contributor}. */
+  self_related: boolean
+  /** a marking correction overlaid the original (dishonest) approval marking. */
+  corrected: boolean
+  /** self/related approvals MUST disclose self_or_related + a non-independent_governance kind. For a
+   *  non-self/related approval this is trivially true (no disclosure obligation). */
+  honestly_disclosed: boolean
 }
 export interface MandateResolution {
   owner_contributor_account_id: string
@@ -38,7 +46,7 @@ export interface CoordinationResolution {
 /** As-of resolution of which contributor a non-root admin SEAT was attributed to at `asOf`. */
 export function resolveOperatorClaimAsOf(db: Database.Database, adminAccountId: string, asOf: string): OperatorClaimResolution | null {
   const events = db.prepare(
-    `SELECT event_type, contributor_account_id, approval_kind, conflict_disclosure, event_id, effective_from, supersedes_event_id, created_at
+    `SELECT event_type, contributor_account_id, approval_kind, approved_by, conflict_disclosure, event_id, effective_from, supersedes_event_id, created_at
      FROM admin_operator_claim_events WHERE admin_account_id = ? ORDER BY effective_from ASC, created_at ASC, rowid ASC`,
   ).all(adminAccountId) as any[]
   // An approval is terminated as-of `asOf` iff a revoked/superseded event that is EFFECTIVE by then
@@ -50,11 +58,32 @@ export function resolveOperatorClaimAsOf(db: Database.Database, adminAccountId: 
   const active = events.filter(e => e.event_type === 'approved' && e.effective_from && e.effective_from <= asOf && !terminatedIds.has(e.event_id))
   if (active.length === 0) return null
   const latest = active[active.length - 1]   // latest effective approval still active as-of asOf
+
+  // Overlay the LATEST append-only marking correction (if any). The correction never changes the
+  // contributor or the effective interval — only the disclosure marking — so it applies regardless of
+  // asOf (the approval was always self/related; we are only recording that honestly now).
+  const correction = db.prepare(
+    `SELECT approval_kind, conflict_disclosure FROM admin_operator_claim_marking_corrections
+     WHERE approved_event_id = ? ORDER BY corrected_at DESC, rowid DESC LIMIT 1`,
+  ).get(latest.event_id) as any
+  const approvalKind = (correction?.approval_kind ?? latest.approval_kind) ?? null
+  const conflictDisclosure = correction?.conflict_disclosure ?? latest.conflict_disclosure
+  const approvedBy: string | null = latest.approved_by ?? null
+
+  // self/related = the approver was itself a party to the claim (admin seat or contributor) — a
+  // root/founder bootstrap self-approval. Such an approval MUST disclose self_or_related + a
+  // non-independent_governance kind; otherwise it is dishonestly marked (gated downstream).
+  const selfRelated = !!approvedBy && (approvedBy === adminAccountId || approvedBy === latest.contributor_account_id)
+  const honestlyDisclosed = !selfRelated || (conflictDisclosure === 'self_or_related' && approvalKind !== 'independent_governance')
   return {
     contributor_account_id: latest.contributor_account_id,
-    approval_kind: latest.approval_kind ?? null,
-    conflict_disclosure: latest.conflict_disclosure,
+    approval_kind: approvalKind,
+    conflict_disclosure: conflictDisclosure,
     claim_event_id: latest.event_id,
+    approved_by: approvedBy,
+    self_related: selfRelated,
+    corrected: !!correction,
+    honestly_disclosed: honestlyDisclosed,
   }
 }
 
