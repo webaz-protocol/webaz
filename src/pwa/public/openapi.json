@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (659 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (664 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -1039,6 +1039,45 @@
     "/api/admin/operator-claims/me": {
       "get": {
         "summary": "── the calling admin's own seat: its claims + states ──",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/operator-claims/unlink/:requestEventId/approve": {
+      "post": {
+        "summary": "── ROOT: approve an unlink request → revokes the claim ──",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/operator-claims/unlink/:requestEventId/reject": {
+      "post": {
+        "summary": "── ROOT: reject an unlink request → claim stays active ──",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/operator-claims/unlink/requests": {
+      "get": {
+        "summary": "── ROOT: pending unlink requests (review queue). Path under /unlink/ to avoid the /:claimedEventId match ──",
         "tags": [
           "admin"
         ],
@@ -4365,6 +4404,28 @@
     "/api/me/operator-claim-confirmations/:claimedEventId": {
       "post": {
         "summary": "── contributor accepts/rejects a claim pointing at them ──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/operator-claims": {
+      "get": {
+        "summary": "── contributor self-view: ALL relationships pointing at me (pending/confirmed/approved/history) ──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/operator-claims/:approvedEventId/request-unlink": {
+      "post": {
+        "summary": "── EITHER PARTY requests UNLINK of an active approved claim — passkey-gated (not just a UI confirm) ──",
         "tags": [],
         "security": [
           {

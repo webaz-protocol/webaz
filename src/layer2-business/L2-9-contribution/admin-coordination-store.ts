@@ -31,7 +31,7 @@
  */
 import type Database from 'better-sqlite3'
 
-const COORD_TABLES = ['admin_coordination_fact_sources', 'admin_operator_claim_confirmations', 'admin_operator_claim_events', 'agent_execution_mandate_events'] as const
+const COORD_TABLES = ['admin_coordination_fact_sources', 'admin_operator_claim_confirmations', 'admin_operator_unlink_requests', 'admin_operator_claim_events', 'agent_execution_mandate_events'] as const
 
 const CREATE_OPERATOR_CLAIM_EVENTS = `
   CREATE TABLE IF NOT EXISTS admin_operator_claim_events (
@@ -103,12 +103,38 @@ const CREATE_FACT_SOURCES = `
     created_at           TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `
+// Unlink (解除) requests — admin-seat owner OR contributor asks to sever an ACTIVE approved claim;
+// only ROOT may approve, which then revokes the claim. Append-only event log: 'requested' → 'approved'
+// | 'rejected' (decision supersedes the request via supersedes_request_id). NEVER touches
+// contribution_facts. requester_role distinguishes who asked; human_auth_ref records the passkey gate.
+const CREATE_UNLINK_REQUESTS = `
+  CREATE TABLE IF NOT EXISTS admin_operator_unlink_requests (
+    request_event_id        TEXT PRIMARY KEY,
+    event_type              TEXT NOT NULL CHECK (event_type IN ('requested','approved','rejected')),
+    approved_event_id       TEXT NOT NULL REFERENCES admin_operator_claim_events(event_id),
+    claimed_event_id        TEXT NOT NULL,
+    admin_account_id        TEXT NOT NULL REFERENCES users(id),
+    contributor_account_id  TEXT NOT NULL REFERENCES users(id),
+    requested_by            TEXT REFERENCES users(id),
+    requester_role          TEXT CHECK (requester_role IS NULL OR requester_role IN ('admin_seat','contributor')),
+    decided_by              TEXT REFERENCES users(id),
+    reason                  TEXT,
+    human_auth_ref          TEXT,
+    supersedes_request_id   TEXT REFERENCES admin_operator_unlink_requests(request_event_id),
+    created_at              TEXT NOT NULL DEFAULT (datetime('now')),
+    immutable               INTEGER NOT NULL DEFAULT 1 CHECK (immutable = 1),
+    CHECK (event_type <> 'requested' OR (requested_by IS NOT NULL AND requester_role IN ('admin_seat','contributor'))),
+    CHECK (event_type = 'requested' OR decided_by IS NOT NULL)
+  )
+`
 const CREATE_INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_aoce_admin ON admin_operator_claim_events(admin_account_id)`,
   `CREATE INDEX IF NOT EXISTS idx_aoce_supersedes ON admin_operator_claim_events(supersedes_event_id)`,
   `CREATE INDEX IF NOT EXISTS idx_aeme_agent ON agent_execution_mandate_events(agent_ref)`,
   `CREATE INDEX IF NOT EXISTS idx_aocc_claimed ON admin_operator_claim_confirmations(claimed_event_id)`,
   `CREATE INDEX IF NOT EXISTS idx_aocc_contributor ON admin_operator_claim_confirmations(contributor_account_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_aour_approved ON admin_operator_unlink_requests(approved_event_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_aour_supersedes ON admin_operator_unlink_requests(supersedes_request_id)`,
 ]
 const TRIGGER_AOCE_NO_UPDATE = `CREATE TRIGGER IF NOT EXISTS trg_aoce_no_update BEFORE UPDATE ON admin_operator_claim_events BEGIN SELECT RAISE(ABORT, 'admin_operator_claim_events is append-only (UPDATE forbidden)'); END`
 const TRIGGER_AOCE_NO_DELETE = `CREATE TRIGGER IF NOT EXISTS trg_aoce_no_delete BEFORE DELETE ON admin_operator_claim_events BEGIN SELECT RAISE(ABORT, 'admin_operator_claim_events is append-only (DELETE forbidden)'); END`
@@ -128,6 +154,8 @@ const TRIGGER_AOCC_NO_DELETE = `CREATE TRIGGER IF NOT EXISTS trg_aocc_no_delete 
 // confirmation can never be attached to a mismatched/forged (admin,contributor) pair. (gen-pg-schema
 // emits the equivalent conditional plpgsql BEFORE INSERT guard.)
 const TRIGGER_AOCC_MATCH = `CREATE TRIGGER IF NOT EXISTS trg_aocc_match_claim BEFORE INSERT ON admin_operator_claim_confirmations WHEN NOT EXISTS (SELECT 1 FROM admin_operator_claim_events e WHERE e.event_id = NEW.claimed_event_id AND e.event_type = 'claimed' AND e.admin_account_id = NEW.admin_account_id AND e.contributor_account_id = NEW.contributor_account_id) BEGIN SELECT RAISE(ABORT, 'confirmation admin/contributor must match its claimed event'); END`
+const TRIGGER_AOUR_NO_UPDATE = `CREATE TRIGGER IF NOT EXISTS trg_aour_no_update BEFORE UPDATE ON admin_operator_unlink_requests BEGIN SELECT RAISE(ABORT, 'admin_operator_unlink_requests is append-only (UPDATE forbidden)'); END`
+const TRIGGER_AOUR_NO_DELETE = `CREATE TRIGGER IF NOT EXISTS trg_aour_no_delete BEFORE DELETE ON admin_operator_unlink_requests BEGIN SELECT RAISE(ABORT, 'admin_operator_unlink_requests is append-only (DELETE forbidden)'); END`
 
 function tableExists(db: Database.Database, name: string): boolean {
   return db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`).get(name) !== undefined
@@ -139,6 +167,7 @@ export function initAdminCoordinationSchema(db: Database.Database): void {
     db.exec(CREATE_MANDATE_EVENTS)
     db.exec(CREATE_CLAIM_CONFIRMATIONS)
     db.exec(CREATE_FACT_SOURCES)
+    db.exec(CREATE_UNLINK_REQUESTS)
     for (const idx of CREATE_INDEXES) db.exec(idx)
     db.exec(TRIGGER_AOCE_NO_UPDATE)
     db.exec(TRIGGER_AOCE_NO_DELETE)
@@ -151,6 +180,8 @@ export function initAdminCoordinationSchema(db: Database.Database): void {
     db.exec(TRIGGER_AOCC_NO_UPDATE)
     db.exec(TRIGGER_AOCC_NO_DELETE)
     db.exec(TRIGGER_AOCC_MATCH)
+    db.exec(TRIGGER_AOUR_NO_UPDATE)
+    db.exec(TRIGGER_AOUR_NO_DELETE)
   })
   apply.immediate()
   void tableExists

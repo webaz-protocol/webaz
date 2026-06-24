@@ -17,6 +17,8 @@ import {
   proposeClaim, confirmClaim, approveClaim, rejectClaim, revokeApprovedClaim,
   deriveClaimState, listClaimsForSeat, listPendingConfirmationsForContributor, listAllClaims,
   emitClaimNotifications, claimedEventIdOfApproved,
+  requestUnlink, approveUnlink, rejectUnlink, pendingUnlinkForApproved,
+  listContributorRelationships, listPendingUnlinkRequests,
   type ClaimStatus, type ClaimTransition,
 } from '../../layer2-business/L2-9-contribution/admin-operator-claim-workflow.js'
 
@@ -26,13 +28,15 @@ interface Deps {
   auth: (req: Request, res: Response) => Record<string, unknown> | null
   requireAdmin: (req: Request, res: Response) => Record<string, unknown> | null
   requireRootAdmin: (req: Request, res: Response) => Record<string, unknown> | null
+  // passkey gate (createHumanPresence → consumeGateToken): unlink REQUEST needs a fresh WebAuthn token.
+  consumeGateToken: (userId: string, token: string | undefined, purpose: string, validate: (data: unknown) => boolean) => { ok: boolean; reason?: string }
 }
 
 function httpFor(code: string): number {
   switch (code) {
-    case 'claim_not_found': case 'approved_not_found': return 404
-    case 'not_admin': case 'not_root': case 'not_contributor': return 403
-    case 'bad_state': case 'not_confirmed': case 'contributor_rejected': return 409
+    case 'claim_not_found': case 'approved_not_found': case 'request_not_found': return 404
+    case 'not_admin': case 'not_root': case 'not_contributor': case 'not_party': case 'gate_failed': return 403
+    case 'bad_state': case 'not_confirmed': case 'contributor_rejected': case 'already_pending': return 409
     default: return 400   // invalid_input / contributor_not_found / self_link_* / dishonest_marking
   }
 }
@@ -52,9 +56,18 @@ function shape(v: any): any {
 }
 
 export function registerAdminOperatorClaimRoutes(app: Application, deps: Deps): void {
-  const { db, errorRes, auth, requireAdmin, requireRootAdmin } = deps
+  const { db, errorRes, auth, requireAdmin, requireRootAdmin, consumeGateToken } = deps
   // Best-effort: a notify failure must never roll back / fail the claim mutation.
   const notify = (kind: ClaimTransition, claimedEventId: string) => { try { emitClaimNotifications(db, kind, claimedEventId) } catch { /* notifications are degradable */ } }
+  // shape + surface whether an ACTIVE approved claim has a pending unlink request (drives the UI).
+  const shapeClaim = (v: any) => {
+    const base = shape(v)
+    if (base && v?.status === 'approved' && v.approved) {
+      const pu = pendingUnlinkForApproved(db, v.approved.event_id)
+      base.unlink_pending = pu ? { request_event_id: pu.request_event_id, requested_by: pu.requested_by, requester_role: pu.requester_role, at: pu.created_at } : null
+    }
+    return base
+  }
 
   // ── admin proposes linking THEIR OWN seat to a contributor account ──
   app.post('/api/admin/operator-claims', (req: Request, res: Response) => {
@@ -159,5 +172,75 @@ export function registerAdminOperatorClaimRoutes(app: Application, deps: Deps): 
     const claimedId = claimedEventIdOfApproved(db, id) ?? undefined   // resolve the claim behind the approval for notifications
     runRootMutation(res, root, req, 'operator_claim.revoke', id, () =>
       revokeApprovedClaim(db, { approvedEventId: id, revokerId: root.id as string, rationale: req.body?.rationale ? String(req.body.rationale) : undefined }), 'revoked', claimedId)
+  })
+
+  // ── contributor self-view: ALL relationships pointing at me (pending/confirmed/approved/history) ──
+  app.get('/api/me/operator-claims', (req: Request, res: Response) => {
+    const user = auth(req, res); if (!user) return
+    res.json({ relationships: listContributorRelationships(db, user.id as string).map(shapeClaim) })
+  })
+
+  // ── EITHER PARTY requests UNLINK of an active approved claim — passkey-gated (not just a UI confirm) ──
+  app.post('/api/me/operator-claims/:approvedEventId/request-unlink', (req: Request, res: Response) => {
+    const user = auth(req, res); if (!user) return
+    const approvedEventId = String(req.params.approvedEventId)
+    const webauthnToken = req.body?.webauthn_token ? String(req.body.webauthn_token) : undefined
+    const reason = req.body?.reason ? String(req.body.reason) : undefined
+    // fresh passkey gate bound to THIS approved claim (purpose 'operator_claim_unlink'). TODO: could be
+    // promoted to the typed requireHumanPresence iron-rule purpose; consumeGateToken is the same token store.
+    const gate = consumeGateToken(user.id as string, webauthnToken, 'operator_claim_unlink',
+      (data) => !!data && typeof data === 'object' && (data as any).approved_event_id === approvedEventId)
+    if (!gate.ok) return errorRes(res, 403, 'gate_failed', gate.reason || '需要 Passkey 验证（重新发起解除申请）')
+    try {
+      const out = db.transaction(() => {
+        const r = requestUnlink(db, { approvedEventId, requesterId: user.id as string, reason, humanAuthRef: webauthnToken })
+        if (!(r as any).ok) return r
+        logAdminAction(db, { adminId: user.id as string, action: 'operator_claim.unlink_request', targetType: 'operator_claim', targetId: approvedEventId, detail: { request_event_id: (r as any).requestEventId, requester_role: (r as any).requesterRole, reason: reason ?? null, human_auth_ref: webauthnToken ?? null }, context: { actorType: 'human', agentMode: 'human_direct', humanAuthorizationId: webauthnToken } })
+        return r
+      })()
+      if (!(out as any).ok) return errorRes(res, httpFor((out as any).code), (out as any).code, (out as any).message)
+      notify('unlink_requested', claimedEventIdOfApproved(db, approvedEventId) ?? '')   // → root review queue
+      res.json({ ok: true, request_event_id: (out as any).requestEventId, requester_role: (out as any).requesterRole })
+    } catch (e) { errorRes(res, 500, 'internal', (e as Error).message) }
+  })
+
+  // ── ROOT: pending unlink requests (review queue). Path under /unlink/ to avoid the /:claimedEventId match ──
+  app.get('/api/admin/operator-claims/unlink/requests', (req: Request, res: Response) => {
+    const root = requireRootAdmin(req, res); if (!root) return
+    res.json({ requests: listPendingUnlinkRequests(db) })
+  })
+
+  // ── ROOT: approve an unlink request → revokes the claim ──
+  app.post('/api/admin/operator-claims/unlink/:requestEventId/approve', (req: Request, res: Response) => {
+    const root = requireRootAdmin(req, res); if (!root) return
+    const id = String(req.params.requestEventId)
+    try {
+      const out = db.transaction(() => {
+        const r = approveUnlink(db, { requestEventId: id, approverId: root.id as string })
+        if (!(r as any).ok) return r
+        logAdminAction(db, { adminId: root.id as string, action: 'operator_claim.unlink_approve', targetType: 'operator_claim', targetId: id, detail: { result: r }, context: { actorType: 'admin_account', agentMode: 'human_direct' } })
+        return r
+      })()
+      if (!(out as any).ok) return errorRes(res, httpFor((out as any).code), (out as any).code, (out as any).message)
+      notify('unlink_approved', (out as any).claimedEventId)
+      res.json({ ok: true, result: out })
+    } catch (e) { errorRes(res, 500, 'internal', (e as Error).message) }
+  })
+
+  // ── ROOT: reject an unlink request → claim stays active ──
+  app.post('/api/admin/operator-claims/unlink/:requestEventId/reject', (req: Request, res: Response) => {
+    const root = requireRootAdmin(req, res); if (!root) return
+    const id = String(req.params.requestEventId)
+    try {
+      const out = db.transaction(() => {
+        const r = rejectUnlink(db, { requestEventId: id, approverId: root.id as string })
+        if (!(r as any).ok) return r
+        logAdminAction(db, { adminId: root.id as string, action: 'operator_claim.unlink_reject', targetType: 'operator_claim', targetId: id, detail: { result: r }, context: { actorType: 'admin_account', agentMode: 'human_direct' } })
+        return r
+      })()
+      if (!(out as any).ok) return errorRes(res, httpFor((out as any).code), (out as any).code, (out as any).message)
+      notify('unlink_rejected', (out as any).claimedEventId)
+      res.json({ ok: true, result: out })
+    } catch (e) { errorRes(res, 500, 'internal', (e as Error).message) }
   })
 }

@@ -111,7 +111,7 @@ export function registerWebauthnRoutes(app: Application, deps: WebauthnDeps): vo
   app.post('/api/webauthn/auth/start', async (req, res) => {
     const user = auth(req, res); if (!user) return
     const purpose = String(req.body?.purpose || '').trim()
-    const allowed = new Set(['withdraw', 'change-password', 'reveal-key', 'region', 'delete_passkey', 'governance_apply', 'governance_activate', 'governance_resign', 'governance_appeal_resolve', 'rewards_apply', 'rewards_deactivate', 'identity_claim'])
+    const allowed = new Set(['withdraw', 'change-password', 'reveal-key', 'region', 'delete_passkey', 'governance_apply', 'governance_activate', 'governance_resign', 'governance_appeal_resolve', 'rewards_apply', 'rewards_deactivate', 'identity_claim', 'operator_claim_unlink'])
     if (!allowed.has(purpose)) return void res.status(400).json({ error: 'invalid purpose' })
     const purpose_data = req.body?.purpose_data ?? null
 
