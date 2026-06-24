@@ -86,9 +86,11 @@ function shapeMetadata(row: any, shape: 'list' | 'detail'): Record<string, unkno
   // budget 'minimal' as a "no real estimate yet" placeholder — NOT a claim the task is instant / zero-cost.
   // Surface a typed status so an agent never reads the placeholder as a real estimate. The raw
   // estimated_duration / estimated_agent_budget / auto_claimable fields above are left untouched (no storage
-  // change); these are derived, advisory fields. estimate_status='unknown' means BOTH duration and budget are
-  // placeholders. A 0–0/placeholder task that is nominally auto_claimable is downgraded to manual_review so a
-  // missing estimate is reviewed before the task is treated as routine.
+  // change); these are derived, advisory fields. estimate_status keys on the DURATION sentinel (null or 0–0):
+  // the draft path sets duration 0–0 together with budget 'minimal', so a 0–0 duration marks the whole estimate
+  // (duration + budget) as a placeholder. Budget alone is NOT used as the signal — 'minimal' is also a valid
+  // value for a genuinely tiny task. A 0–0/placeholder task that is nominally auto_claimable is downgraded to
+  // manual_review so a missing estimate is reviewed before the task is treated as routine.
   const durMin = row.estimated_duration_min_minutes, durMax = row.estimated_duration_max_minutes
   const estimateUnknown = durMin == null || durMax == null || (durMin === 0 && durMax === 0)
   const autoClaimable = row.auto_claimable === 1
@@ -125,7 +127,13 @@ function buildWhere(scope: VisibilityScope, f: TaskFilters): { where: string[]; 
   if (f.claimerId) { where.push('t.claimer_id = ?'); params.push(f.claimerId) }
   if (f.risk_level) { where.push('m.risk_level = ?'); params.push(f.risk_level) }
   if (f.audience) { where.push('m.audience = ?'); params.push(f.audience) }
-  if (f.auto_claimable !== undefined) { where.push('m.auto_claimable = ?'); params.push(f.auto_claimable ? 1 : 0) }
+  // auto_claimable filter parity with the derived claimability (#5): `=true` means "tasks an agent can just
+  // do", so it must EXCLUDE the 0–0 / null estimate placeholder (claimability downgrades those to
+  // manual_review). Otherwise the legacy raw-field filter would still surface placeholder tasks as auto-doable.
+  if (f.auto_claimable !== undefined) {
+    where.push('m.auto_claimable = ?'); params.push(f.auto_claimable ? 1 : 0)
+    if (f.auto_claimable) where.push('m.estimated_duration_min_minutes IS NOT NULL AND m.estimated_duration_max_minutes IS NOT NULL AND NOT (m.estimated_duration_min_minutes = 0 AND m.estimated_duration_max_minutes = 0)')
+  }
   // required_capabilities (AND): required_capabilities is a JSON array of strings; match an exact element
   // via a quoted LIKE (dialect-agnostic; no json_each). ESCAPE so %/_ in a capability stay literal. This
   // ANDs with the scope clause above, so restricted/internal never leak even when a filter matches.

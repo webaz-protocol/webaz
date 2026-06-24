@@ -265,7 +265,13 @@ async function main(): Promise<void> {
     ok('16 real estimate → estimate_status provided', byId['bt_estd']?.estimate_status === 'provided')
     ok('16 real estimate + auto_claimable=false → manual_review', byId['bt_estd']?.claimability === 'manual_review' && byId['bt_estd']?.human_review_required === true)
     ok('16 provided + auto_claimable=true → claimability auto_claimable', byId['bt_pub']?.estimate_status === 'provided' && byId['bt_pub']?.claimability === 'auto_claimable')
-    ok('16 no economic-promise field on the derived signal', !FORBIDDEN.test(JSON.stringify({ a: byId['bt_noest'], b: byId['bt_estd'] }))) }
+    ok('16 no economic-promise field on the derived signal', !FORBIDDEN.test(JSON.stringify({ a: byId['bt_noest'], b: byId['bt_estd'] })))
+    // filter parity: auto_claimable=true must EXCLUDE the 0–0 placeholder (matches claimability=auto_claimable),
+    // so the legacy raw-field filter can no longer surface a placeholder task as auto-doable.
+    const rf = await get('/api/public/build-tasks?auto_claimable=true')
+    const acIds = ((rf.json.tasks || []) as any[]).map(tid)
+    ok('16 auto_claimable=true filter excludes 0–0 placeholder (bt_noest)', !acIds.includes('bt_noest'), acIds.join(','))
+    ok('16 auto_claimable=true filter still includes a real-estimate auto task (bt_pub)', acIds.includes('bt_pub')) }
 
   // 15) Codex P2 — subset filter must match BEFORE the 200-row cap. Seed 201 public/open tasks; the only
   //   one the agent can do sorts LAST (oldest updated_at → row 201). With LIMIT-before-filter it was dropped.
