@@ -44,6 +44,7 @@
     "test:admin-coordination-contribution": "tsx scripts/test-admin-coordination-contribution.ts",
     "test:admin-coordination-ingest-pipeline": "tsx scripts/test-admin-coordination-ingest-pipeline.ts",
     "test:admin-claim-marking-correction": "tsx scripts/test-admin-claim-marking-correction.ts",
+    "test:contribution-facts-read": "tsx scripts/test-contribution-facts-read.ts",
     "ingest:admin-coordination": "tsx scripts/ingest-admin-coordination.ts",
     "correct:operator-claim-marking": "tsx scripts/correct-operator-claim-marking.ts",
     "test:admin-operator-claim-workflow": "tsx scripts/test-admin-operator-claim-workflow.ts",

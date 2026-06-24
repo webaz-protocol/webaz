@@ -400,6 +400,7 @@ import { initIdentityClaimChallengeSchema } from '../layer2-business/L2-9-contri
 import { initAdminCoordinationSchema } from '../layer2-business/L2-9-contribution/admin-coordination-store.js'
 import { registerContributionIdentityRoutes } from './routes/contribution-identity.js'
 import { registerContributionScoreRoutes } from './routes/contribution-score.js'
+import { registerContributionFactsRoutes } from './routes/contribution-facts.js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -5068,6 +5069,11 @@ registerContributionIdentityRoutes(app, {
 // PR5F — Contribution Score v1 evidence READ surface (logged-in self-view; read-only, no score).
 // Returns the caller's OWN component evidence wrapped in the PR5A uncommitted-value boundary.
 registerContributionScoreRoutes(app, { auth, errorRes })
+
+// Contribution read-out V1 — the caller's OWN attributable facts (GitHub + admin coordination), grouped
+// by source, read-only, wrapped in the uncommitted-value boundary. Attribution is read-time (GitHub
+// binding overlay + operator-claim as-of); writes nothing, no reward/payout.
+registerContributionFactsRoutes(app, { db, auth, errorRes })
 
 // #1013 Phase 48: 3 auth/sessions endpoints 已迁出到 routes/auth-sessions.ts
 registerAuthSessionsRoutes(app, { db, auth, verifyPassword, recordSession, generateSecureKey })
