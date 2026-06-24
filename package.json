@@ -1,6 +1,6 @@
 {
   "name": "@seasonkoh/webaz",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "[PRE-LAUNCH] Agent-native decentralized commerce protocol. Humans and AI agents trade on the same protocol via MCP tools. ⚠️ Repository currently private until W8 public launch — GitHub links may return 404. See https://webaz.xyz for status.",
   "main": "dist/mcp.js",
   "bin": {
