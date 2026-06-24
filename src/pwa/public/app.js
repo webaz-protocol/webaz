@@ -675,6 +675,7 @@ async function render(page, params) {
       if (params[0] === 'settings')   return renderMyHome(app, 'settings')
       if (params[0] === 'advanced')   return renderMyHome(app, 'advanced')
       if (params[0] === 'quota-requests') return renderMyQuotaRequests(app)
+      if (params[0] === 'operator-claims') return renderMyOperatorClaims(app)
       return renderMyHome(app, 'dashboard')
     case 'note-new':      return renderNoteCreate(app, params[0])  // order_id
     case 'u':             return renderUserProfile(app, params[0])
@@ -715,6 +716,7 @@ async function render(page, params) {
       if (params[0] === 'public-ideas')            return renderAdminPublicIdeas(app)
       if (params[0] === 'task-proposals')          return renderAdminTaskProposals(app)
       if (params[0] === 'quota-requests')          return renderAdminBuildTaskQuota(app)
+      if (params[0] === 'operator-claims')         return renderAdminOperatorClaims(app)
       if (params[0] === 'params')                  return renderAdminParams(app)
       if (params[0] === 'timeline' && params[1])   return renderAdminUserTimeline(app, params[1])
       if (params[0] === 'timeline')                return renderAdminUserTimelinePicker(app)
@@ -3461,6 +3463,164 @@ window.submitQuotaRequest = async () => {
   if (r && r.error) { toast$(r.error_code === 'ALREADY_PENDING' ? _qT('你已有一个待审核申请', 'You already have a pending request') : (r.error || _qT('提交失败', 'Submit failed'))); return }
   toast$(_qT('申请已提交,等待根管理员审核', 'Submitted — awaiting root-admin review'))
   renderMyQuotaRequests(document.getElementById('app'))
+}
+
+// ── Admin operator-claim workflow (Phase 2): link an admin SEAT → a personal contributor account ──
+function _ocStatusBadge(s) {
+  const map = {
+    proposed:                ['#fef9c3', '#854d0e', _qT('待贡献人确认', 'Awaiting contributor')],
+    confirmed:               ['#dbeafe', '#1e40af', _qT('待 root 审批', 'Awaiting root approval')],
+    rejected_by_contributor: ['#fee2e2', '#991b1b', _qT('贡献人已拒绝', 'Rejected by contributor')],
+    approved:                ['#dcfce7', '#166534', _qT('已生效', 'Active')],
+    rejected_by_root:        ['#fee2e2', '#991b1b', _qT('root 已拒绝', 'Rejected by root')],
+    revoked:                 ['#fae8ff', '#86198f', _qT('已撤销', 'Revoked')],
+    superseded:              ['#f3f4f6', '#6b7280', _qT('已被取代', 'Superseded')],
+  }
+  const [bg, fg, label] = map[s] || ['#f3f4f6', '#6b7280', s]
+  return `<span style="background:${bg};color:${fg};padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600">${escHtml(label)}</span>`
+}
+
+// Page for any user: (a) if admin — their seat + a "link personal contributor account" form;
+// (b) for everyone — claims pointing at ME awaiting my accept/reject.
+async function renderMyOperatorClaims(app) {
+  if (!state.user) { renderLogin(); return }
+  app.innerHTML = shell(loading$(), 'me')
+  const isAdmin = state.user.role === 'admin' || (Array.isArray(state.user.roles) && state.user.roles.includes('admin'))
+  const pend = await GET('/me/operator-claim-confirmations').catch(() => null)
+  const mine = isAdmin ? await GET('/admin/operator-claims/me').catch(() => null) : null
+  const inputStyle = 'width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;box-sizing:border-box'
+  const field = (label, html) => `<div style="margin-bottom:10px"><label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">${escHtml(label)}</label>${html}</div>`
+
+  const claimRow = (c) => `<div class="card" style="padding:12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="font-size:12px;font-weight:600">→ ${escHtml(c.contributor_account_id)}</div>${_ocStatusBadge(c.status)}
+      </div>
+      <div style="font-size:10px;color:#9ca3af;margin-top:4px">${escHtml(c.proposed_at || '')} · ${escHtml(c.claimed_event_id)}</div>
+    </div>`
+
+  const adminBlock = isAdmin ? `
+    <div class="card" style="padding:16px;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:4px">🔗 ${_qT('关联个人贡献账号', 'Link a personal contributor account')}</div>
+      <div style="font-size:12px;color:#6b7280;margin-bottom:12px">${_qT('把这个管理席位的协调贡献,归属到你的真实个人账号。需对方确认 + 根管理员审批。', 'Attribute this admin seat\'s coordination work to your real personal account. Requires the contributor to accept + root approval.')}</div>
+      ${field(_qT('贡献人账号 ID(必填)', 'Contributor account ID (required)'), `<input id="oc-contributor" placeholder="usr_..." style="${inputStyle}">`)}
+      ${field(_qT('理由(可选)', 'Rationale (optional)'), `<input id="oc-rationale" placeholder="${_qT('为何关联', 'why')}" style="${inputStyle}">`)}
+      <button onclick="submitOperatorClaim()" style="margin-top:4px;padding:9px 16px;border:none;background:#4338ca;color:#fff;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">${_qT('发起关联', 'Propose link')}</button>
+      <div style="font-size:13px;font-weight:600;margin:16px 0 8px">${_qT('本席位的关联记录', 'This seat\'s claims')}</div>
+      ${(mine && mine.claims && mine.claims.length) ? mine.claims.map(claimRow).join('') : `<div style="font-size:13px;color:#9ca3af">${_qT('暂无', 'None yet')}</div>`}
+    </div>` : '' /* adminBlock */
+
+  const pendList = (pend && pend.pending) || []
+  const confirmCard = (c) => `<div class="card" style="padding:14px;margin-bottom:10px;background:#fffbeb;border:1px solid #fde68a">
+      <div style="font-size:13px">${_qT('管理席位', 'Admin seat')} <b>${escHtml(c.admin_account_id)}</b> ${_qT('请求关联到你的账号作为贡献归属。', 'requests to attribute its coordination work to your account.')}</div>
+      <div style="font-size:10px;color:#9ca3af;margin:6px 0">${escHtml(c.claimed_event_id)}</div>
+      <div style="display:flex;gap:8px">
+        <button onclick="confirmOperatorClaim('${escHtml(c.claimed_event_id)}','accepted')" style="padding:8px 14px;border:none;background:#166534;color:#fff;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">${_qT('接受', 'Accept')}</button>
+        <button onclick="confirmOperatorClaim('${escHtml(c.claimed_event_id)}','rejected')" style="padding:8px 14px;border:1px solid #d1d5db;background:#fff;color:#991b1b;border-radius:8px;font-size:13px;cursor:pointer">${_qT('拒绝', 'Reject')}</button>
+      </div>
+    </div>`
+
+  const body = `<div style="max-width:560px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-size:18px;font-weight:700">🪪 ${_qT('贡献归属', 'Contribution attribution')}</div>
+        <a href="#me" style="font-size:12px;color:#4338ca;text-decoration:none">← ${_qT('返回', 'Back')}</a>
+      </div>
+      ${adminBlock}
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">${_qT('待我确认的关联', 'Awaiting my confirmation')}</div>
+      ${pendList.length ? pendList.map(confirmCard).join('') : `<div style="font-size:13px;color:#9ca3af">${_qT('没有待确认的关联', 'No pending links')}</div>`}
+    </div>`
+  app.innerHTML = shell(body, 'me')
+}
+
+window.submitOperatorClaim = async () => {
+  const contributor = (document.getElementById('oc-contributor')?.value || '').trim()
+  const rationale = (document.getElementById('oc-rationale')?.value || '').trim()
+  if (!contributor) { toast$(_qT('请填写贡献人账号 ID', 'Enter contributor account ID')); return }
+  const r = await POST('/admin/operator-claims', { contributor_account_id: contributor, rationale })
+  if (r && r.error) { toast$(r.message || r.error || _qT('发起失败', 'Failed')); return }
+  toast$(_qT('已发起,等待对方确认 + root 审批', 'Proposed — awaiting contributor + root'))
+  renderMyOperatorClaims(document.getElementById('app'))
+}
+window.confirmOperatorClaim = async (claimedEventId, decision) => {
+  const r = await POST('/me/operator-claim-confirmations/' + encodeURIComponent(claimedEventId), { decision })
+  if (r && r.error) { toast$(r.message || r.error || _qT('操作失败', 'Failed')); return }
+  toast$(decision === 'accepted' ? _qT('已接受', 'Accepted') : _qT('已拒绝', 'Rejected'))
+  renderMyOperatorClaims(document.getElementById('app'))
+}
+
+// ROOT review queue for operator claims.
+async function renderAdminOperatorClaims(app, statusFilter) {
+  if (!state.user) { renderLogin(); return }
+  const isRoot = (state.user.admin_type || 'root') === 'root' && (state.user.role === 'admin' || (Array.isArray(state.user.roles) && state.user.roles.includes('admin')))
+  if (!isRoot) { app.innerHTML = shell(`<div class="alert alert-danger">${_qT('仅限根管理员', 'Root admin only')}</div>`, 'admin'); return }
+  app.innerHTML = shell(loading$(), 'admin')
+  const sf = statusFilter || 'confirmed'
+  const r = await GET('/admin/operator-claims' + (sf === 'all' ? '' : '?status=' + encodeURIComponent(sf))).catch(() => null)
+  if (!r || r.error) { app.innerHTML = shell(alert$('error', (r && r.error) || _qT('加载失败', 'Failed to load')), 'admin'); return }
+  const claims = r.claims || []
+  const inputStyle = 'width:100%;padding:7px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;box-sizing:border-box'
+  const filterBtn = (s, label) => `<button onclick="renderAdminOperatorClaims(document.getElementById('app'),'${s}')" style="padding:5px 10px;border:1px solid ${sf === s ? '#4338ca' : '#d1d5db'};background:${sf === s ? '#4338ca' : '#fff'};color:${sf === s ? '#fff' : '#374151'};border-radius:6px;font-size:12px;cursor:pointer">${escHtml(label)}</button>`
+
+  const card = (c) => {
+    const selfLink = c.admin_account_id === c.contributor_account_id
+    const id = c.claimed_event_id
+    const approveForm = (c.status === 'confirmed' || (selfLink && c.status === 'proposed')) ? `
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee">
+        ${selfLink ? `<div style="font-size:11px;color:#b45309;margin-bottom:6px">⚠️ ${_qT('自链(席位=贡献人):必须 founder_bootstrap_override + self_or_related', 'Self-link (seat == contributor): must be founder_bootstrap_override + self_or_related')}</div>` : ''}
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <select id="ak-${id}" style="${inputStyle}">
+            ${selfLink ? '' : `<option value="independent_governance">independent_governance</option>`}
+            <option value="root_approval">root_approval</option>
+            <option value="founder_bootstrap_override">founder_bootstrap_override</option>
+          </select>
+          <select id="cd-${id}" style="${inputStyle}">
+            <option value="none">none</option>
+            <option value="self_or_related"${selfLink ? ' selected' : ''}>self_or_related</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button onclick="approveOperatorClaim('${escHtml(id)}')" style="padding:7px 14px;border:none;background:#166534;color:#fff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">${_qT('批准', 'Approve')}</button>
+          <button onclick="rejectOperatorClaim('${escHtml(id)}')" style="padding:7px 14px;border:1px solid #d1d5db;background:#fff;color:#991b1b;border-radius:8px;font-size:12px;cursor:pointer">${_qT('拒绝', 'Reject')}</button>
+        </div>
+      </div>` : ''
+    const revokeBtn = (c.status === 'approved' && c.approved) ? `<button onclick="revokeOperatorClaim('${escHtml(c.approved.event_id)}')" style="margin-top:8px;padding:6px 12px;border:1px solid #d1d5db;background:#fff;color:#86198f;border-radius:8px;font-size:12px;cursor:pointer">${_qT('撤销', 'Revoke')}</button>` : ''
+    return `<div class="card" style="padding:14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="font-size:12px;font-weight:600">${escHtml(c.admin_account_id)} → ${escHtml(c.contributor_account_id)}${selfLink ? ' 🪞' : ''}</div>${_ocStatusBadge(c.status)}
+      </div>
+      <div style="font-size:11px;color:#6b7280;margin-top:4px">${c.confirmation ? `${_qT('贡献人', 'Contributor')}: ${escHtml(c.confirmation.decision)}` : _qT('未确认', 'not confirmed')} · ${escHtml(c.proposed_at || '')}</div>
+      ${approveForm}${revokeBtn}
+    </div>`
+  }
+
+  const body = `<div style="max-width:620px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="font-size:18px;font-weight:700">🪪 ${_qT('操作席位关联审批', 'Operator-claim review')}</div>
+        <a href="#admin/protocol" style="font-size:12px;color:#4338ca;text-decoration:none">← ${_qT('返回', 'Back')}</a>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+        ${filterBtn('confirmed', _qT('待审批', 'Awaiting approval'))}${filterBtn('proposed', _qT('待确认', 'Proposed'))}${filterBtn('approved', _qT('已生效', 'Active'))}${filterBtn('all', _qT('全部', 'All'))}
+      </div>
+      ${claims.length ? claims.map(card).join('') : `<div style="font-size:13px;color:#9ca3af">${_qT('暂无', 'None')}</div>`}
+    </div>`
+  app.innerHTML = shell(body, 'admin')
+}
+
+window.approveOperatorClaim = async (id) => {
+  const ak = document.getElementById('ak-' + id)?.value
+  const cd = document.getElementById('cd-' + id)?.value
+  const r = await POST('/admin/operator-claims/' + encodeURIComponent(id) + '/approve', { approval_kind: ak, conflict_disclosure: cd })
+  if (r && r.error) { toast$(r.message || r.error || _qT('审批失败', 'Approve failed')); return }
+  toast$(_qT('已批准', 'Approved')); renderAdminOperatorClaims(document.getElementById('app'))
+}
+window.rejectOperatorClaim = async (id) => {
+  const r = await POST('/admin/operator-claims/' + encodeURIComponent(id) + '/reject', {})
+  if (r && r.error) { toast$(r.message || r.error || _qT('操作失败', 'Failed')); return }
+  toast$(_qT('已拒绝', 'Rejected')); renderAdminOperatorClaims(document.getElementById('app'))
+}
+window.revokeOperatorClaim = async (approvedId) => {
+  const r = await POST('/admin/operator-claims/' + encodeURIComponent(approvedId) + '/revoke', {})
+  if (r && r.error) { toast$(r.message || r.error || _qT('撤销失败', 'Revoke failed')); return }
+  toast$(_qT('已撤销', 'Revoked')); renderAdminOperatorClaims(document.getElementById('app'))
 }
 
 // ROOT admin review page.
@@ -31503,6 +31663,8 @@ async function renderAdminProtocol(app) {
       ${adminLinkCard('📨', t('Welcome 提交'), t('#welcome 留下的邮箱订阅 + 建议'), '#admin/public-ideas')}
       ${adminLinkCard('🛠️', t('任务建议收件箱'), t('陌生人 / agent 提交的共建任务建议;审阅 → 转正式任务'), '#admin/task-proposals')}
       ${((state.user && state.user.admin_type || 'root') === 'root') ? adminLinkCard('🎟️', t('建任务额度审核'), t('非根管理员的建任务扩容申请;批准 = 限时计数授权(仅 root)'), '#admin/quota-requests') : ''}
+      ${adminLinkCard('🔗', t('关联个人贡献账号'), t('把本管理席位的协调贡献归属到你的真实个人账号(需对方确认 + root 审批)'), '#me/operator-claims')}
+      ${((state.user && state.user.admin_type || 'root') === 'root') ? adminLinkCard('🪪', t('操作席位关联审批'), t('管理席位→个人贡献账号的关联申请;确认 + 审批 / 撤销(仅 root)'), '#admin/operator-claims') : ''}
     </div>
   `, 'admin-protocol')
 }

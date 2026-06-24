@@ -385,6 +385,7 @@ import { initTaskProposalAiSchema } from '../layer2-business/L2-9-contribution/t
 import { initTaskProposalDraftLinkSchema } from '../layer2-business/L2-9-contribution/task-proposal-draft.js'
 import { initBuildTaskQuotaSchema } from '../layer2-business/L2-9-contribution/build-task-quota.js'
 import { registerBuildTaskQuotaRoutes } from './routes/build-task-quota.js'
+import { registerAdminOperatorClaimRoutes } from './routes/admin-operator-claims.js'
 import { registerTaskProposalsRoutes } from './routes/task-proposals.js'
 import { participationRecordingActive, matchingRewardsActive } from './pv-kill-switch.js'   // Category C: participation recording (default ON) vs matching-rewards payout (default OFF)
 import { createPvSettlementEngine } from './internal/pv-settlement.js'   // matching-rewards engine EXCISED — no-op stub (see internal/pv-settlement.ts)
@@ -5040,6 +5041,14 @@ registerTaskProposalsRoutes(app, {
 // PR #18 — build_task create quota-increase requests(requester submit + ROOT-only review/approve/reject/revoke)
 registerBuildTaskQuotaRoutes(app, {
   db, errorRes, auth,
+  requireRootAdmin: (req, res) => requireRootAdmin(req, res),
+})
+
+// Phase 2 — admin operator-claim workflow: link an admin SEAT → a real contributor account
+// (propose → confirm → approve → revoke/supersede). Claim workflow only; writes NO contribution_facts.
+registerAdminOperatorClaimRoutes(app, {
+  db, errorRes, auth,
+  requireAdmin: (req, res) => requireAdmin(req, res),
   requireRootAdmin: (req, res) => requireRootAdmin(req, res),
 })
 

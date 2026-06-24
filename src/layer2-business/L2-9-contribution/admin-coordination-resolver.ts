@@ -38,16 +38,18 @@ export interface CoordinationResolution {
 /** As-of resolution of which contributor a non-root admin SEAT was attributed to at `asOf`. */
 export function resolveOperatorClaimAsOf(db: Database.Database, adminAccountId: string, asOf: string): OperatorClaimResolution | null {
   const events = db.prepare(
-    `SELECT event_type, contributor_account_id, approval_kind, conflict_disclosure, event_id, effective_from, created_at
-     FROM admin_operator_claim_events WHERE admin_account_id = ? ORDER BY effective_from ASC, created_at ASC`,
+    `SELECT event_type, contributor_account_id, approval_kind, conflict_disclosure, event_id, effective_from, supersedes_event_id, created_at
+     FROM admin_operator_claim_events WHERE admin_account_id = ? ORDER BY effective_from ASC, created_at ASC, rowid ASC`,
   ).all(adminAccountId) as any[]
-  const approvals = events.filter(e => e.event_type === 'approved' && e.effective_from && e.effective_from <= asOf)
-  if (approvals.length === 0) return null
-  const latest = approvals[approvals.length - 1]
-  const terminated = events.some(e =>
-    (e.event_type === 'revoked' || e.event_type === 'superseded') &&
-    e.effective_from && e.effective_from > latest.effective_from && e.effective_from <= asOf)
-  if (terminated) return null
+  // An approval is terminated as-of `asOf` iff a revoked/superseded event that is EFFECTIVE by then
+  // LINKS to it (supersedes_event_id). Link-based (not a timestamp window) so a same-second
+  // approve→revoke and a same-instant rotation both resolve deterministically.
+  const terminatedIds = new Set(events
+    .filter(e => (e.event_type === 'revoked' || e.event_type === 'superseded') && e.effective_from && e.effective_from <= asOf && e.supersedes_event_id)
+    .map(e => e.supersedes_event_id as string))
+  const active = events.filter(e => e.event_type === 'approved' && e.effective_from && e.effective_from <= asOf && !terminatedIds.has(e.event_id))
+  if (active.length === 0) return null
+  const latest = active[active.length - 1]   // latest effective approval still active as-of asOf
   return {
     contributor_account_id: latest.contributor_account_id,
     approval_kind: latest.approval_kind ?? null,

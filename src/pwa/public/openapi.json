@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (649 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (658 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -937,6 +937,95 @@
     "/api/admin/kyc/pending": {
       "get": {
         "summary": "─── KYC ──────────────────────────────────────────────────────",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/operator-claims": {
+      "get": {
+        "summary": "── ROOT: review queue (all claims, optional ?status=) ──",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "── admin proposes linking THEIR OWN seat to a contributor account ──",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/operator-claims/:approvedEventId/revoke": {
+      "post": {
+        "summary": "── ROOT: revoke an APPROVED (active) claim ──",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/operator-claims/:claimedEventId": {
+      "get": {
+        "summary": "── ROOT: claim detail ──",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/operator-claims/:claimedEventId/approve": {
+      "post": {
+        "summary": "── ROOT: approve a proposed-or-confirmed claim ──",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/operator-claims/:claimedEventId/reject": {
+      "post": {
+        "summary": "── ROOT: reject a still-proposed/confirmed claim ──",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/operator-claims/me": {
+      "get": {
+        "summary": "── the calling admin's own seat: its claims + states ──",
         "tags": [
           "admin"
         ],
@@ -4241,6 +4330,28 @@
       },
       "post": {
         "summary": "通知偏好",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/operator-claim-confirmations": {
+      "get": {
+        "summary": "── contributor: claims pointing at ME awaiting my confirmation ──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/me/operator-claim-confirmations/:claimedEventId": {
+      "post": {
+        "summary": "── contributor accepts/rejects a claim pointing at them ──",
         "tags": [],
         "security": [
           {
