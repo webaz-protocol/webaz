@@ -127,12 +127,15 @@ function buildWhere(scope: VisibilityScope, f: TaskFilters): { where: string[]; 
   if (f.claimerId) { where.push('t.claimer_id = ?'); params.push(f.claimerId) }
   if (f.risk_level) { where.push('m.risk_level = ?'); params.push(f.risk_level) }
   if (f.audience) { where.push('m.audience = ?'); params.push(f.audience) }
-  // auto_claimable filter parity with the derived claimability (#5): `=true` means "tasks an agent can just
-  // do", so it must EXCLUDE the 0–0 / null estimate placeholder (claimability downgrades those to
-  // manual_review). Otherwise the legacy raw-field filter would still surface placeholder tasks as auto-doable.
+  // auto_claimable filter is CLAIMABILITY-EQUIVALENT (#5), not a raw-field match — both directions mirror the
+  // derived claimability so list/filter/guard agree:
+  //   claimability='auto_claimable' ⟺ raw auto_claimable=1 AND a real (non 0–0/non-null) estimate
+  //   claimability='manual_review'  ⟺ raw auto_claimable=0 OR a 0–0/null placeholder estimate
+  // So `=true` excludes placeholder tasks, and `=false` INCLUDES a placeholder task even if its raw flag is 1.
   if (f.auto_claimable !== undefined) {
-    where.push('m.auto_claimable = ?'); params.push(f.auto_claimable ? 1 : 0)
-    if (f.auto_claimable) where.push('m.estimated_duration_min_minutes IS NOT NULL AND m.estimated_duration_max_minutes IS NOT NULL AND NOT (m.estimated_duration_min_minutes = 0 AND m.estimated_duration_max_minutes = 0)')
+    const ESTIMATE_REAL = '(m.estimated_duration_min_minutes IS NOT NULL AND m.estimated_duration_max_minutes IS NOT NULL AND NOT (m.estimated_duration_min_minutes = 0 AND m.estimated_duration_max_minutes = 0))'
+    if (f.auto_claimable) where.push(`m.auto_claimable = 1 AND ${ESTIMATE_REAL}`)
+    else where.push(`(m.auto_claimable = 0 OR NOT ${ESTIMATE_REAL})`)
   }
   // required_capabilities (AND): required_capabilities is a JSON array of strings; match an exact element
   // via a quoted LIKE (dialect-agnostic; no json_each). ESCAPE so %/_ in a capability stay literal. This

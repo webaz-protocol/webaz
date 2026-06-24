@@ -136,6 +136,11 @@ export function registerTaskProposalsRoutes(app: Application, deps: TaskProposal
       definitionOfDone: (b.definition_of_done as string) ?? null,
       expectedResults: (b.expected_results as string) ?? null,
       autoClaimable: b.auto_claimable === false ? false : undefined,
+      // optional real effort estimate (#34/#5); if omitted the draft is a 0–0 placeholder and publish is fail-closed.
+      estimatedDurationMinMinutes: typeof b.estimated_duration_min_minutes === 'number' ? b.estimated_duration_min_minutes : undefined,
+      estimatedDurationMaxMinutes: typeof b.estimated_duration_max_minutes === 'number' ? b.estimated_duration_max_minutes : undefined,
+      estimatedAgentBudget: b.estimated_agent_budget as string | undefined,
+      estimatedContextSize: b.estimated_context_size as string | undefined,
       riskLevel: b.risk_level as string | undefined, taskType: b.task_type as string | undefined, note: (b.note as string) ?? null,
     })
     if ('error' in r) {
@@ -162,7 +167,15 @@ export function registerTaskProposalsRoutes(app: Application, deps: TaskProposal
   // PUBLISH a draft → public open task — explicit human/admin action; records the acting admin
   app.post('/api/admin/build-task-drafts/:id/publish', (req: Request, res: Response) => {
     const admin = requireSupportAdmin(req, res); if (!admin) return
-    const r = publishDraftBuildTask(db, String(req.params.id), admin.id as string)
+    const b = (req.body ?? {}) as Record<string, unknown>
+    // a published task MUST carry a real effort estimate (#34/#5). The maintainer supplies it here when the
+    // draft is still a 0–0 placeholder; without it publishDraftBuildTask fails closed (DRAFT_ESTIMATE_REQUIRED).
+    const r = publishDraftBuildTask(db, String(req.params.id), admin.id as string, {
+      minMinutes: typeof b.estimated_duration_min_minutes === 'number' ? b.estimated_duration_min_minutes : undefined,
+      maxMinutes: typeof b.estimated_duration_max_minutes === 'number' ? b.estimated_duration_max_minutes : undefined,
+      budget: b.estimated_agent_budget as string | undefined,
+      contextSize: b.estimated_context_size as string | undefined,
+    })
     if ('error' in r) {
       const code = r.error_code === 'NOT_FOUND' ? 404
         : (r.error_code === 'PROPOSAL_REJECTED' || r.error_code === 'PROPOSAL_CONVERTED_ELSEWHERE') ? 409 : 400

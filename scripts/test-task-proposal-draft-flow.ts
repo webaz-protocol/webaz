@@ -41,6 +41,9 @@ const fullHandoff = {
   allowedPaths: ['src/pwa/public/i18n.js'], forbiddenPaths: ['src/layer*/**'], forbiddenActions: ['do not touch funds/orders'],
   requiredCapabilities: ['i18n'], definitionOfDone: 'zh/en parity test green', expectedResults: 'EN strings render on checkout',
 }
+// #34/#5: fullHandoff carries NO estimate (a draft is a 0–0 placeholder by default), so a publish that should
+// SUCCEED must pass a real estimate. EST is that real estimate for setup-publishes.
+const EST = { minMinutes: 20, maxMinutes: 40 }
 
 // ── module-level: create / linkage / discoverability / claimability / validation ──
 function moduleTests(): void {
@@ -66,12 +69,23 @@ function moduleTests(): void {
   const dup = createDraftFromProposal(db, { proposalId: p1.id, adminId: 'usr_admin', ...fullHandoff }) as any
   ok('one draft per proposal (PROPOSAL_HAS_DRAFT, not terminal)', dup.error_code === 'PROPOSAL_HAS_DRAFT', JSON.stringify(dup))
 
-  // publish (complete) → discoverable + claimable via existing flow + acceptance recorded HERE
-  const pub = publishDraftBuildTask(db, taskId, 'usr_admin2') as any
-  ok('publish complete draft ok', pub.ok === true && pub.task_id === taskId, JSON.stringify(pub))
-  ok('published task ON member board', boardHas(taskId))
+  // #34/#5 option (a): the draft (fullHandoff carries NO estimate) is a 0–0 placeholder, so PUBLISH is
+  // FAIL-CLOSED until a real effort estimate is supplied — never "published but unclaimable".
+  // (1) publish with no estimate → DRAFT_ESTIMATE_REQUIRED; the task stays internal/off-board.
+  const pubNoEst = publishDraftBuildTask(db, taskId, 'usr_admin2') as any
+  ok('1 publish without a real estimate → DRAFT_ESTIMATE_REQUIRED', pubNoEst.error_code === 'DRAFT_ESTIMATE_REQUIRED', JSON.stringify(pubNoEst))
+  ok('1 placeholder draft NOT published (stays off the board)', !boardHas(taskId))
+  // (2) maintainer supplies a real estimate at publish → success + discoverable + acceptance recorded HERE.
+  const pub = publishDraftBuildTask(db, taskId, 'usr_admin2', { minMinutes: 20, maxMinutes: 40 }) as any
+  ok('2 publish WITH a real estimate → ok', pub.ok === true && pub.task_id === taskId, JSON.stringify(pub))
+  ok('2 published task ON member board', boardHas(taskId))
+  // (3)+(4) published task carries a real estimate → estimate_status provided + claimability auto_claimable
+  // (raw auto_claimable defaults true on a draft). guardParticipation returns the shaped task on success.
   const g = guardParticipation(db, taskId, 'claim')
-  ok('published task claimable via existing guard', g.ok === true, JSON.stringify(g))
+  ok('5 published task claimable via existing guard', g.ok === true, JSON.stringify(g))
+  const dm = g.ok ? (g.task.agent_metadata as any) : null
+  ok('3 published estimate_status=provided', dm?.estimate_status === 'provided', JSON.stringify(dm?.estimate_status))
+  ok('4 published claimability=auto_claimable (raw auto_claimable=true + real estimate)', dm?.claimability === 'auto_claimable', JSON.stringify(dm?.claimability))
   ok('canonical PR target enforced by existing submit path', validatePrRefAgainstCanonical('#123').ok === true && (validatePrRefAgainstCanonical('https://evilgithub.com/x/y#1') as any).ok === false)
   // acceptance happens at PUBLISH: only now is the proposal converted + linked + reviewer recorded
   const propPub = db.prepare('SELECT status, converted_ref, reviewer_id FROM task_proposals WHERE id = ?').get(p1.id) as any
@@ -171,7 +185,11 @@ async function routeTests(): Promise<void> {
     && typeof detail.json?.draft?.description === 'string', JSON.stringify(detail.json?.draft && Object.keys(detail.json.draft)))
   ok('preview: unknown draft → 404', (await get(`/api/admin/build-task-drafts/bt_nope`)).status === 404)
 
-  const pubR = await post(`/api/admin/build-task-drafts/${tId}/publish`)
+  // #34/#5: publish supplies a real effort estimate (the draft is a 0–0 placeholder); without it the route
+  // fails closed (DRAFT_ESTIMATE_REQUIRED). This also exercises the route's estimate passthrough.
+  const pubMissingEst = await post(`/api/admin/build-task-drafts/${tId}/publish`)
+  ok('authorized publish without estimate → 400 DRAFT_ESTIMATE_REQUIRED', pubMissingEst.status === 400 && pubMissingEst.json?.error === 'DRAFT_ESTIMATE_REQUIRED', JSON.stringify(pubMissingEst.json))
+  const pubR = await post(`/api/admin/build-task-drafts/${tId}/publish`, { estimated_duration_min_minutes: 20, estimated_duration_max_minutes: 40 })
   ok('authorized publish → 200 + published_by recorded', pubR.status === 200 && pubR.json?.published?.published === true && pubR.json?.published_by === 'usr_admin', JSON.stringify(pubR.json))
   ok('route-published draft now on board', boardHas(tId))
   ok('preview: published task no longer previewable as a draft → 404', (await get(`/api/admin/build-task-drafts/${tId}`)).status === 404)
@@ -200,7 +218,7 @@ function discardTests(): void {
   // fail-closed: a PUBLISHED draft cannot be discarded
   const p2 = insertTaskProposal(db, { title: 'discard published guard', summary: 'x' } as any, 'usr_proposer') as any
   const d3 = createDraftFromProposal(db, { proposalId: p2.id, adminId: 'usr_admin', ...fullHandoff }) as any
-  ok('discard: (setup) publish ok', (publishDraftBuildTask(db, d3.draft_task_id, 'usr_admin2') as any).ok === true)
+  ok('discard: (setup) publish ok', (publishDraftBuildTask(db, d3.draft_task_id, 'usr_admin2', EST) as any).ok === true)
   ok('discard: published draft refused (ALREADY_PUBLISHED)', (discardDraft(db, d3.draft_task_id, 'usr_admin') as any).error_code === 'ALREADY_PUBLISHED')
 
   ok('discard: unknown task → NOT_FOUND', (discardDraft(db, 'bt_nope', 'usr_admin') as any).error_code === 'NOT_FOUND')
@@ -211,7 +229,7 @@ function withdrawTests(): void {
   const p = insertTaskProposal(db, { title: 'withdraw recovery flow', summary: 'publish then withdraw then recreate' } as any, 'usr_proposer') as any
   const d = createDraftFromProposal(db, { proposalId: p.id, adminId: 'usr_admin', ...fullHandoff }) as any
   const tId = d.draft_task_id
-  ok('withdraw: (setup) publish ok', (publishDraftBuildTask(db, tId, 'usr_admin2') as any).ok === true)
+  ok('withdraw: (setup) publish ok', (publishDraftBuildTask(db, tId, 'usr_admin2', EST) as any).ok === true)
   const w = withdrawPublishedTask(db, tId, 'usr_admin') as any
   ok('withdraw: unclaimed published task withdrawn + proposal reopened', w.ok === true && w.reopened_proposal_id === p.id, JSON.stringify(w))
   ok('withdraw: task set abandoned (off the board)', (db.prepare('SELECT status FROM build_tasks WHERE id = ?').get(tId) as any).status === 'abandoned')
@@ -224,7 +242,7 @@ function withdrawTests(): void {
   // fail-closed: a CLAIMED published task cannot be withdrawn
   const p2 = insertTaskProposal(db, { title: 'withdraw claimed guard', summary: 'x' } as any, 'usr_proposer') as any
   const d2 = createDraftFromProposal(db, { proposalId: p2.id, adminId: 'usr_admin', ...fullHandoff }) as any
-  publishDraftBuildTask(db, d2.draft_task_id, 'usr_admin2')
+  publishDraftBuildTask(db, d2.draft_task_id, 'usr_admin2', EST)
   db.prepare("UPDATE build_tasks SET status='claimed', claimer_id='usr_claimer' WHERE id = ?").run(d2.draft_task_id)
   ok('withdraw: claimed task refused (TASK_CLAIMED)', (withdrawPublishedTask(db, d2.draft_task_id, 'usr_admin') as any).error_code === 'TASK_CLAIMED')
 

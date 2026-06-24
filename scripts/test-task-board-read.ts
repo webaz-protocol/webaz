@@ -271,7 +271,14 @@ async function main(): Promise<void> {
     const rf = await get('/api/public/build-tasks?auto_claimable=true')
     const acIds = ((rf.json.tasks || []) as any[]).map(tid)
     ok('16 auto_claimable=true filter excludes 0–0 placeholder (bt_noest)', !acIds.includes('bt_noest'), acIds.join(','))
-    ok('16 auto_claimable=true filter still includes a real-estimate auto task (bt_pub)', acIds.includes('bt_pub')) }
+    ok('16 auto_claimable=true filter still includes a real-estimate auto task (bt_pub)', acIds.includes('bt_pub'))
+    // filter parity the OTHER way: auto_claimable=false is claimability-equivalent to manual_review, so it must
+    // INCLUDE a 0–0 placeholder whose raw auto_claimable=true (bt_noest) AND a genuinely non-auto task (bt_estd).
+    const rfFalse = await get('/api/public/build-tasks?auto_claimable=false')
+    const mrIds = ((rfFalse.json.tasks || []) as any[]).map(tid)
+    ok('16 auto_claimable=false includes 0–0 placeholder w/ raw auto_claimable=true (bt_noest)', mrIds.includes('bt_noest'), mrIds.join(','))
+    ok('16 auto_claimable=false includes a genuinely non-auto task (bt_estd)', mrIds.includes('bt_estd'))
+    ok('16 auto_claimable=false EXCLUDES a real-estimate auto task (bt_pub)', !mrIds.includes('bt_pub')) }
 
   // 15) Codex P2 — subset filter must match BEFORE the 200-row cap. Seed 201 public/open tasks; the only
   //   one the agent can do sorts LAST (oldest updated_at → row 201). With LIMIT-before-filter it was dropped.
