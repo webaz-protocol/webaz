@@ -29,6 +29,9 @@ db.exec(`CREATE TABLE withdrawal_requests (id TEXT PRIMARY KEY, user_id TEXT, am
 db.exec(`CREATE TABLE kyc_records (user_id TEXT PRIMARY KEY, status TEXT, reviewed_by TEXT, reviewed_at TEXT, reject_reason TEXT)`)
 db.exec(`CREATE TABLE user_moderation (user_id TEXT PRIMARY KEY, suspended INTEGER, reason TEXT, suspended_by TEXT, suspended_at TEXT)`)
 db.exec(`CREATE TABLE notifications (id TEXT PRIMARY KEY, user_id TEXT, title TEXT, body TEXT, order_id TEXT)`)
+// batch-action now does a per-uid users lookup (admin_type/region boundary) — provide the targets.
+db.exec(`CREATE TABLE users (id TEXT PRIMARY KEY, admin_type TEXT, region TEXT)`)
+db.prepare("INSERT INTO users (id,admin_type,region) VALUES ('usr_b',NULL,NULL),('usr_c',NULL,NULL)").run()
 db.prepare("INSERT INTO withdrawal_requests (id,user_id,amount,status) VALUES ('wr1','usr_b',100,'pending')").run()
 db.prepare("INSERT INTO kyc_records (user_id,status) VALUES ('usr_b','pending')").run()
 setSeamDb(db)

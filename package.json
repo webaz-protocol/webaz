@@ -102,6 +102,7 @@
     "test:admin-security-panel": "tsx scripts/test-admin-security-panel.ts",
     "test:admin-economic-trigger-audit": "tsx scripts/test-admin-economic-trigger-audit.ts",
     "test:admin-audit-slice1": "tsx scripts/test-admin-audit-slice1.ts",
+    "test:admin-risk-controls": "tsx scripts/test-admin-risk-controls.ts",
     "test:admin-withdrawal-approve-attribution": "tsx scripts/test-admin-withdrawal-approve-attribution.ts",
     "test:admin-bearer-auth": "tsx scripts/test-admin-bearer-auth.ts",
     "test:admin-reputation-decay-audit": "tsx scripts/test-admin-reputation-decay-audit.ts",
