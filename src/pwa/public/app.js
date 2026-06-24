@@ -1338,6 +1338,7 @@ async function renderMyAdvanced(app) {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       ${card('📜', t('Timeline'), t('全部事件按时间排列'), '#me/timeline')}
       ${card('📡', t('Webhook'), t('订阅事件 push 到外部端点'), '#me/webhooks')}
+      ${role === 'admin' ? card('🪪', t('贡献归属'), t('待确认的 admin 关联 / 关联记录'), '#me/operator-claims') : ''}
     </div>
 
     <div style="font-size:12px;color:#6b7280;font-weight:600;margin:14px 0 6px">🧠 ${t('技能市场')}</div>

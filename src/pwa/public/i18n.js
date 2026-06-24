@@ -4342,6 +4342,8 @@ const _EN = {
   '关联个人贡献账号': 'Link a personal contributor account',
   '把本管理席位的协调贡献归属到你的真实个人账号(需对方确认 + root 审批)': 'Attribute this admin seat’s coordination work to your real personal account (needs the contributor to accept + root approval)',
   '操作席位关联审批': 'Operator-claim review',
+  '贡献归属': 'Contribution attribution',
+  '待确认的 admin 关联 / 关联记录': 'Pending admin links / your claim history',
   '管理席位→个人贡献账号的关联申请;确认 + 审批 / 撤销(仅 root)': 'Admin seat → personal contributor account links; confirm + approve / revoke (root only)',
   '通过邀请进入会记录归因;分享分润需登录后单独申请。': 'Joining via an invite records attribution; share-commission requires a separate application after login.',
   '完成首笔购买后,可申请分享分润。':    'After your first purchase, you can apply for share-commission.',
