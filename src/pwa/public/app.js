@@ -10553,7 +10553,7 @@ function contributionFactsSectionHtml(cf, lang) {
   return `
     <div class="card" style="padding:14px;margin-bottom:12px">
       <div style="font-size:13px;font-weight:600;margin-bottom:4px">📜 ${_qT('贡献事实记录', 'Contribution evidence')} <span style="color:#9ca3af;font-weight:400">· ${total}</span></div>
-      <div style="font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 8px;margin-bottom:8px">⚠️ ${_qT('这里是贡献事实与归属记录,不是奖励、不是付款、不是兑现权利。', 'These are contribution facts and attribution records — not a reward, not a payment, and not a redemption right.')}</div>
+      <div style="font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 8px;margin-bottom:8px">⚠️ ${_qT('这里是贡献事实与归属记录,不是奖励、不是付款、不是兑现权利。', 'These are contribution facts and attribution records only — not a payment, and they confer no economic or redemption right.')}</div>
       ${total === 0 ? `<div style="font-size:12px;color:#9ca3af">${_qT('暂无已归属到你的贡献事实。', 'No contribution facts attributed to you yet.')}</div>` : `
         ${group('GitHub', 'GitHub', gh, '暂无 GitHub 贡献事实', 'No GitHub facts')}
         ${group('管理协调', 'Admin coordination', ac, '暂无管理协调贡献事实', 'No admin-coordination facts')}

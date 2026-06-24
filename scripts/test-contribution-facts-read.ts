@@ -147,7 +147,9 @@ function main(): void {
     ok('app.js fetches /contribution-facts/me', appSrc.includes("GET('/contribution-facts/me')"))
     ok('app.js has contributionFactsSectionHtml block rendered in renderMyContributions', /contributionFactsSectionHtml\(cf, lang\)/.test(appSrc) && /function contributionFactsSectionHtml\(/.test(appSrc))
     ok('app.js block title 贡献事实记录 present', appSrc.includes('贡献事实记录'))
-    ok('app.js carries the no-reward copy', appSrc.includes('不是奖励、不是付款、不是兑现权利') && /not a reward, not a payment/.test(appSrc)) }
+    ok('app.js carries the no-reward copy', appSrc.includes('不是奖励、不是付款、不是兑现权利') && /not a payment, and they confer no economic or redemption right/.test(appSrc))
+    // the F9 UI guard substring-bans promissory words in app.js — our new block must not reintroduce them
+    ok('new block uses no banned promissory word (reward/payout/income) in EN', !/not a reward|payout|income/i.test('These are contribution facts and attribution records only — not a payment, and they confer no economic or redemption right.')) }
 
   if (fail === 0) {
     console.log(`\n✅ contribution read-out V1: own GitHub-bound facts only · admin coordination as-of resolves to caller (others excluded) · accountable_ref stays NULL · rotation preserves history by occurred_at · no admin detail leak · no reward/payout/amount (whitelisted keys) · empty user → empty · agent reserved · UI block + no-reward copy + endpoint\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)
