@@ -54,6 +54,8 @@ function freshDb(): void {
   task('bt_claimable'); insertBuildTaskAgentMetadata(db, 'bt_claimable', META())
   task('bt_submit'); insertBuildTaskAgentMetadata(db, 'bt_submit', META())
   task('bt_no_auto'); insertBuildTaskAgentMetadata(db, 'bt_no_auto', META({ auto_claimable: false, agent_autonomy: 'supervised' }))
+  // #34 P2: raw auto_claimable=true BUT a 0–0 placeholder estimate → derived claimability 'manual_review'
+  task('bt_placeholder'); insertBuildTaskAgentMetadata(db, 'bt_placeholder', META({ estimated_duration_min_minutes: 0, estimated_duration_max_minutes: 0, estimated_agent_budget: 'minimal', auto_claimable: true }))
   task('bt_restricted'); insertBuildTaskAgentMetadata(db, 'bt_restricted', META({ audience: 'restricted', risk_level: 'high', auto_claimable: false, agent_autonomy: 'human_only', human_confirmation_points: ['route to audit'] }))
   task('bt_internal'); insertBuildTaskAgentMetadata(db, 'bt_internal', META({ audience: 'internal', risk_level: 'critical', auto_claimable: false, agent_autonomy: 'human_only', human_confirmation_points: ['route to audit'] }))
   task('bt_old')   // no metadata
@@ -109,6 +111,12 @@ async function main(): Promise<void> {
   { const r = await post('/api/build-tasks/bt_no_auto/claim', 'usr_a')
     ok('4 claim auto_claimable=false → 409 NOT_AUTO_CLAIMABLE', r.status === 409 && r.json.error_code === 'NOT_AUTO_CLAIMABLE', r.raw)
     ok('4 task not claimed', (db.prepare(`SELECT status FROM build_tasks WHERE id='bt_no_auto'`).get() as any).status === 'open') }
+
+  // 4b) #34 P2 — a 0–0/placeholder estimate with raw auto_claimable=true derives to claimability=manual_review;
+  //   the claim endpoint must refuse it server-side (manual_review is a server fact, not just a display hint).
+  { const r = await post('/api/build-tasks/bt_placeholder/claim', 'usr_a')
+    ok('4b claim 0–0 placeholder (raw auto_claimable=true) → 409 NOT_AUTO_CLAIMABLE', r.status === 409 && r.json.error_code === 'NOT_AUTO_CLAIMABLE', r.raw)
+    ok('4b placeholder task not claimed', (db.prepare(`SELECT status FROM build_tasks WHERE id='bt_placeholder'`).get() as any).status === 'open') }
 
   // 5) submit must target canonical repo — FAIL-CLOSED (Codex P1: lookalike host / non-GitHub / arbitrary text)
   { // 5a) pure-function matrix (strict parse): only canonical github.com URL or #N/N is accepted
