@@ -161,7 +161,7 @@ for (const ix of indexes) {
 // triggers (created in each table's init). SQLite triggers don't text-translate to PG, so we emit the
 // equivalent PG plpgsql RAISE EXCEPTION guard here for the tables actually present in this DB.
 // (The function body keeps `BEGIN ... END;` on one line so it never looks like a transaction `BEGIN;`.)
-const APPEND_ONLY_TABLES = ['identity_binding_events', 'admin_operator_claim_events', 'agent_execution_mandate_events', 'admin_coordination_fact_sources']
+const APPEND_ONLY_TABLES = ['identity_binding_events', 'admin_operator_claim_events', 'agent_execution_mandate_events', 'admin_coordination_fact_sources', 'admin_operator_claim_confirmations']
 const presentAppendOnly = APPEND_ONLY_TABLES.filter(name => tables.some(t => t.name === name))
 if (presentAppendOnly.length) {
   out.push('')
@@ -214,6 +214,18 @@ if (tables.some(t => t.name === 'admin_audit_log') && tables.some(t => t.name ==
     out.push(`DROP TRIGGER IF EXISTS ${trg} ON admin_audit_log;`)
     out.push(`CREATE TRIGGER ${trg} BEFORE ${op} ON admin_audit_log FOR EACH ROW EXECUTE FUNCTION webaz_aal_freeze_evidence();`)
   }
+}
+// ── CONFIRMATION-MATCH GUARD (admin_operator_claim_confirmations) ──
+// A confirmation must reference a 'claimed' event whose admin/contributor match it. SQLite enforces
+// this with a conditional BEFORE INSERT trigger; emit the equivalent plpgsql guard for PG.
+if (tables.some(t => t.name === 'admin_operator_claim_confirmations') && tables.some(t => t.name === 'admin_operator_claim_events')) {
+  out.push('')
+  out.push('-- ════════════ CONFIRMATION-MATCH GUARD (admin_operator_claim_confirmations) ════════════')
+  out.push('CREATE OR REPLACE FUNCTION webaz_aocc_match_claim() RETURNS trigger AS $$')
+  out.push(`BEGIN IF NOT EXISTS (SELECT 1 FROM admin_operator_claim_events e WHERE e.event_id = NEW.claimed_event_id AND e.event_type = 'claimed' AND e.admin_account_id = NEW.admin_account_id AND e.contributor_account_id = NEW.contributor_account_id) THEN RAISE EXCEPTION 'confirmation admin/contributor must match its claimed event'; END IF; RETURN NEW; END;`)
+  out.push('$$ LANGUAGE plpgsql;')
+  out.push('DROP TRIGGER IF EXISTS trg_aocc_match_claim ON admin_operator_claim_confirmations;')
+  out.push('CREATE TRIGGER trg_aocc_match_claim BEFORE INSERT ON admin_operator_claim_confirmations FOR EACH ROW EXECUTE FUNCTION webaz_aocc_match_claim();')
 }
 out.push('')
 out.push('COMMIT;')

@@ -31,7 +31,7 @@
  */
 import type Database from 'better-sqlite3'
 
-const COORD_TABLES = ['admin_coordination_fact_sources', 'admin_operator_claim_events', 'agent_execution_mandate_events'] as const
+const COORD_TABLES = ['admin_coordination_fact_sources', 'admin_operator_claim_confirmations', 'admin_operator_claim_events', 'agent_execution_mandate_events'] as const
 
 const CREATE_OPERATOR_CLAIM_EVENTS = `
   CREATE TABLE IF NOT EXISTS admin_operator_claim_events (
@@ -77,6 +77,21 @@ const CREATE_MANDATE_EVENTS = `
     CHECK (event_type <> 'granted' OR (cost_bearer_account_id IS NOT NULL AND approved_by IS NOT NULL AND allowed_actions <> '[]' AND allowed_actions <> ''))
   )
 `
+const CREATE_CLAIM_CONFIRMATIONS = `
+  CREATE TABLE IF NOT EXISTS admin_operator_claim_confirmations (
+    confirmation_id         TEXT PRIMARY KEY,
+    claimed_event_id        TEXT NOT NULL REFERENCES admin_operator_claim_events(event_id),
+    admin_account_id        TEXT NOT NULL REFERENCES users(id),
+    contributor_account_id  TEXT NOT NULL REFERENCES users(id),
+    decision                TEXT NOT NULL CHECK (decision IN ('accepted','rejected')),
+    decided_by              TEXT NOT NULL REFERENCES users(id),
+    rationale               TEXT,
+    created_at              TEXT NOT NULL DEFAULT (datetime('now')),
+    immutable               INTEGER NOT NULL DEFAULT 1 CHECK (immutable = 1),
+    CHECK (decided_by = contributor_account_id),
+    UNIQUE (claimed_event_id)
+  )
+`
 const CREATE_FACT_SOURCES = `
   CREATE TABLE IF NOT EXISTS admin_coordination_fact_sources (
     fact_id              TEXT PRIMARY KEY REFERENCES contribution_facts(fact_id),
@@ -90,7 +105,10 @@ const CREATE_FACT_SOURCES = `
 `
 const CREATE_INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_aoce_admin ON admin_operator_claim_events(admin_account_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_aoce_supersedes ON admin_operator_claim_events(supersedes_event_id)`,
   `CREATE INDEX IF NOT EXISTS idx_aeme_agent ON agent_execution_mandate_events(agent_ref)`,
+  `CREATE INDEX IF NOT EXISTS idx_aocc_claimed ON admin_operator_claim_confirmations(claimed_event_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_aocc_contributor ON admin_operator_claim_confirmations(contributor_account_id)`,
 ]
 const TRIGGER_AOCE_NO_UPDATE = `CREATE TRIGGER IF NOT EXISTS trg_aoce_no_update BEFORE UPDATE ON admin_operator_claim_events BEGIN SELECT RAISE(ABORT, 'admin_operator_claim_events is append-only (UPDATE forbidden)'); END`
 const TRIGGER_AOCE_NO_DELETE = `CREATE TRIGGER IF NOT EXISTS trg_aoce_no_delete BEFORE DELETE ON admin_operator_claim_events BEGIN SELECT RAISE(ABORT, 'admin_operator_claim_events is append-only (DELETE forbidden)'); END`
@@ -104,6 +122,12 @@ const TRIGGER_ACFS_NO_DELETE = `CREATE TRIGGER IF NOT EXISTS trg_acfs_no_delete 
 // equivalent conditional plpgsql guard.)
 const TRIGGER_AAL_FREEZE_UPDATE = `CREATE TRIGGER IF NOT EXISTS trg_aal_freeze_evidence_update BEFORE UPDATE ON admin_audit_log WHEN EXISTS (SELECT 1 FROM admin_coordination_fact_sources WHERE admin_audit_log_id = OLD.id) BEGIN SELECT RAISE(ABORT, 'admin_audit_log row is referenced as contribution evidence — immutable (UPDATE forbidden)'); END`
 const TRIGGER_AAL_FREEZE_DELETE = `CREATE TRIGGER IF NOT EXISTS trg_aal_freeze_evidence_delete BEFORE DELETE ON admin_audit_log WHEN EXISTS (SELECT 1 FROM admin_coordination_fact_sources WHERE admin_audit_log_id = OLD.id) BEGIN SELECT RAISE(ABORT, 'admin_audit_log row is referenced as contribution evidence — immutable (DELETE forbidden)'); END`
+const TRIGGER_AOCC_NO_UPDATE = `CREATE TRIGGER IF NOT EXISTS trg_aocc_no_update BEFORE UPDATE ON admin_operator_claim_confirmations BEGIN SELECT RAISE(ABORT, 'admin_operator_claim_confirmations is append-only (UPDATE forbidden)'); END`
+const TRIGGER_AOCC_NO_DELETE = `CREATE TRIGGER IF NOT EXISTS trg_aocc_no_delete BEFORE DELETE ON admin_operator_claim_confirmations BEGIN SELECT RAISE(ABORT, 'admin_operator_claim_confirmations is append-only (DELETE forbidden)'); END`
+// A confirmation MUST reference a real 'claimed' event whose admin+contributor match this row — a
+// confirmation can never be attached to a mismatched/forged (admin,contributor) pair. (gen-pg-schema
+// emits the equivalent conditional plpgsql BEFORE INSERT guard.)
+const TRIGGER_AOCC_MATCH = `CREATE TRIGGER IF NOT EXISTS trg_aocc_match_claim BEFORE INSERT ON admin_operator_claim_confirmations WHEN NOT EXISTS (SELECT 1 FROM admin_operator_claim_events e WHERE e.event_id = NEW.claimed_event_id AND e.event_type = 'claimed' AND e.admin_account_id = NEW.admin_account_id AND e.contributor_account_id = NEW.contributor_account_id) BEGIN SELECT RAISE(ABORT, 'confirmation admin/contributor must match its claimed event'); END`
 
 function tableExists(db: Database.Database, name: string): boolean {
   return db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`).get(name) !== undefined
@@ -113,6 +137,7 @@ export function initAdminCoordinationSchema(db: Database.Database): void {
   const apply = db.transaction(() => {
     db.exec(CREATE_OPERATOR_CLAIM_EVENTS)
     db.exec(CREATE_MANDATE_EVENTS)
+    db.exec(CREATE_CLAIM_CONFIRMATIONS)
     db.exec(CREATE_FACT_SOURCES)
     for (const idx of CREATE_INDEXES) db.exec(idx)
     db.exec(TRIGGER_AOCE_NO_UPDATE)
@@ -123,6 +148,9 @@ export function initAdminCoordinationSchema(db: Database.Database): void {
     db.exec(TRIGGER_ACFS_NO_DELETE)
     db.exec(TRIGGER_AAL_FREEZE_UPDATE)
     db.exec(TRIGGER_AAL_FREEZE_DELETE)
+    db.exec(TRIGGER_AOCC_NO_UPDATE)
+    db.exec(TRIGGER_AOCC_NO_DELETE)
+    db.exec(TRIGGER_AOCC_MATCH)
   })
   apply.immediate()
   void tableExists
