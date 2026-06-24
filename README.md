@@ -79,7 +79,7 @@ WebAZ deliberately separates **principle** (permanent) from **mechanism** (tunab
 - Money flows are fully parameterized and on-chain-auditable. The operator earns only an explicit platform fee + risk-event slashing — most of it rerouted to a public-good fund. Full walk-through: [`docs/ECONOMIC-MODEL.md`](docs/ECONOMIC-MODEL.md).
 - The constitution (meta-rules) and amendment thresholds live in [`docs/CHARTER.md`](docs/CHARTER.md) / [`docs/META-RULES-FULL.md`](docs/META-RULES-FULL.md).
 
-> **No MLM / matching-reward engine.** The binary/PV matching-reward engine has been **excised** from the public code (`src/pwa/internal/pv-settlement.ts` is a permanent no-op stub). PV is a **participation record only — not income, not redeemable, no entitlement.** See [`docs/REWARD-ENGINES-DECOUPLING.md`](docs/REWARD-ENGINES-DECOUPLING.md).
+> Matching rewards are disabled by default; PV / position is a participation record only — not income, not redeemable, no entitlement. See [`docs/REWARD-ENGINES-DECOUPLING.md`](docs/REWARD-ENGINES-DECOUPLING.md).
 
 **Fund split** (current `protocol_params` defaults, DAO-adjustable; 100-unit shop order):
 
