@@ -82,6 +82,21 @@ function shapeMetadata(row: any, shape: 'list' | 'detail'): Record<string, unkno
     estimated_context_size: row.estimated_context_size, estimated_agent_budget: row.estimated_agent_budget,
     value_state: row.value_state,
   }
+  // Honest estimate signal (#5): a proposal→draft conversion (task-proposal-draft.ts) seeds duration 0–0 +
+  // budget 'minimal' as a "no real estimate yet" placeholder — NOT a claim the task is instant / zero-cost.
+  // Surface a typed status so an agent never reads the placeholder as a real estimate. The raw
+  // estimated_duration / estimated_agent_budget / auto_claimable fields above are left untouched (no storage
+  // change); these are derived, advisory fields. estimate_status keys on the DURATION sentinel (null or 0–0):
+  // the draft path sets duration 0–0 together with budget 'minimal', so a 0–0 duration marks the whole estimate
+  // (duration + budget) as a placeholder. Budget alone is NOT used as the signal — 'minimal' is also a valid
+  // value for a genuinely tiny task. A 0–0/placeholder task that is nominally auto_claimable is downgraded to
+  // manual_review so a missing estimate is reviewed before the task is treated as routine.
+  const durMin = row.estimated_duration_min_minutes, durMax = row.estimated_duration_max_minutes
+  const estimateUnknown = durMin == null || durMax == null || (durMin === 0 && durMax === 0)
+  const autoClaimable = row.auto_claimable === 1
+  m.estimate_status = estimateUnknown ? 'unknown' : 'provided'
+  m.claimability = !autoClaimable || estimateUnknown ? 'manual_review' : 'auto_claimable'
+  m.human_review_required = m.claimability === 'manual_review'
   for (const k of LIST_ARRAY_FIELDS) m[k] = parseJsonList(row[k])
   if (shape === 'detail') {
     m.source_ref = row.source_ref; m.version = row.version
@@ -112,7 +127,16 @@ function buildWhere(scope: VisibilityScope, f: TaskFilters): { where: string[]; 
   if (f.claimerId) { where.push('t.claimer_id = ?'); params.push(f.claimerId) }
   if (f.risk_level) { where.push('m.risk_level = ?'); params.push(f.risk_level) }
   if (f.audience) { where.push('m.audience = ?'); params.push(f.audience) }
-  if (f.auto_claimable !== undefined) { where.push('m.auto_claimable = ?'); params.push(f.auto_claimable ? 1 : 0) }
+  // auto_claimable filter is CLAIMABILITY-EQUIVALENT (#5), not a raw-field match — both directions mirror the
+  // derived claimability so list/filter/guard agree:
+  //   claimability='auto_claimable' ⟺ raw auto_claimable=1 AND a real (non 0–0/non-null) estimate
+  //   claimability='manual_review'  ⟺ raw auto_claimable=0 OR a 0–0/null placeholder estimate
+  // So `=true` excludes placeholder tasks, and `=false` INCLUDES a placeholder task even if its raw flag is 1.
+  if (f.auto_claimable !== undefined) {
+    const ESTIMATE_REAL = '(m.estimated_duration_min_minutes IS NOT NULL AND m.estimated_duration_max_minutes IS NOT NULL AND NOT (m.estimated_duration_min_minutes = 0 AND m.estimated_duration_max_minutes = 0))'
+    if (f.auto_claimable) where.push(`m.auto_claimable = 1 AND ${ESTIMATE_REAL}`)
+    else where.push(`(m.auto_claimable = 0 OR NOT ${ESTIMATE_REAL})`)
+  }
   // required_capabilities (AND): required_capabilities is a JSON array of strings; match an exact element
   // via a quoted LIKE (dialect-agnostic; no json_each). ESCAPE so %/_ in a capability stay literal. This
   // ANDs with the scope clause above, so restricted/internal never leak even when a filter matches.

@@ -112,7 +112,7 @@ async function main(): Promise<void> {
   }
   const propC = insertTaskProposal(db, { title: 'case id source proposal', summary: 'becomes a task' } as any, 'usrA') as any
   const draft = createDraftFromProposal(db, { proposalId: propC.id, adminId: 'admin1', ...fullHandoff }) as any
-  const taskId = (publishDraftBuildTask(db, draft.draft_task_id, 'admin1') as any).task_id
+  const taskId = (publishDraftBuildTask(db, draft.draft_task_id, 'admin1', { minMinutes: 20, maxMinutes: 40 }) as any).task_id   // #34/#5: publish needs a real estimate
   const det = await call('GET', `/api/public/build-tasks/${taskId}`, null)
   ok('6: converted task detail case_id == source proposal id', det.status === 200 && det.json?.task?.case_id === propC.id, JSON.stringify({ s: det.status, cid: det.json?.task?.case_id, pid: propC.id }))
   // unlinked task → case_id falls back to the task id

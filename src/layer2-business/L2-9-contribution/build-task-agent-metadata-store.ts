@@ -221,3 +221,22 @@ export function setBuildTaskAudience(db: Database.Database, taskId: string, audi
   const r = db.prepare(`UPDATE build_task_agent_metadata SET audience = ? WHERE task_id = ?`).run(a, taskId)
   return r.changes
 }
+
+/**
+ * Set a task's real effort estimate (publish gate, #34/#5). Validates a non-zero duration (max >= min,
+ * max >= 1 — i.e. NOT the 0–0 placeholder) and optional budget / context-size enums. Used by the
+ * proposal→draft publish path so a placeholder draft can be given a real estimate before going public.
+ */
+export function setBuildTaskEstimate(db: Database.Database, taskId: string, e: { minMinutes: number; maxMinutes: number; budget?: string; contextSize?: string }): number {
+  if (!Number.isInteger(e.minMinutes) || !Number.isInteger(e.maxMinutes) || e.minMinutes < 0 || e.maxMinutes < e.minMinutes || e.maxMinutes < 1) {
+    throw new Error('estimated_duration must be integer minutes with max >= min and max >= 1 (a real, non-zero estimate)')
+  }
+  const budget = e.budget !== undefined ? assertEnum('estimated_agent_budget', e.budget, AGENT_BUDGETS) : null
+  const context = e.contextSize !== undefined ? assertEnum('estimated_context_size', e.contextSize, CONTEXT_SIZES) : null
+  const sets = ['estimated_duration_min_minutes = ?', 'estimated_duration_max_minutes = ?']
+  const params: unknown[] = [e.minMinutes, e.maxMinutes]
+  if (budget !== null) { sets.push('estimated_agent_budget = ?'); params.push(budget) }
+  if (context !== null) { sets.push('estimated_context_size = ?'); params.push(context) }
+  params.push(taskId)
+  return db.prepare(`UPDATE build_task_agent_metadata SET ${sets.join(', ')} WHERE task_id = ?`).run(...params).changes
+}

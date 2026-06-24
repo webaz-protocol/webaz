@@ -7,11 +7,14 @@
  * restricted/internal or missing tasks → the endpoint 404s with NO existence disclosure (id-guessing leak
  * closed). It also runs releaseExpiredClaims (RFC-006 TTL) before the action.
  *
- * Agent-ready rule: a metadata-bearing task is an agent-ready public task; `claim` must respect
- * `auto_claimable` (false → typed NOT_AUTO_CLAIMABLE, route it to a human-in-the-loop path). An OLD
- * no-metadata task stays legacy-compatible (the existing RFC-006 coordination flow keeps working) but is
- * never surfaced as a public agent-ready task — the public read endpoint excludes it, so the public agent
- * discovery→participation path only ever reaches metadata `audience=public` tasks.
+ * Agent-ready rule: a metadata-bearing task is an agent-ready public task; `claim` must respect the DERIVED
+ * `claimability` (≠ 'auto_claimable' → typed NOT_AUTO_CLAIMABLE, route it to a human-in-the-loop path). This
+ * is the SAME field shapeMetadata derives for display/filter (#5), so the server enforces exactly what the
+ * UI/MCP advertise: a task is refused not only when auto_claimable=false, but also when its estimate is a
+ * 0–0/null placeholder (claimability downgrades those to manual_review) — making manual_review a server fact,
+ * not just a display hint. An OLD no-metadata task stays legacy-compatible (the existing RFC-006 coordination
+ * flow keeps working) but is never surfaced as a public agent-ready task — the public read endpoint excludes
+ * it, so the public agent discovery→participation path only ever reaches metadata `audience=public` tasks.
  *
  * No reward/score/economic field is ever added; value stays uncommitted.
  */
@@ -28,9 +31,13 @@ export type GuardResult =
 export function guardParticipation(db: Database.Database, id: string, action: ParticipationAction): GuardResult {
   const task = getBuildTaskWithAgentMetadata(db, id, 'member')   // member scope hides restricted/internal; releaseExpiredClaims runs inside
   if (!task) return { ok: false, status: 404, code: 'NOT_FOUND', message: '任务不存在' }   // also covers restricted/internal → no existence leak
-  const meta = task.agent_metadata as { auto_claimable?: boolean } | null
-  if (action === 'claim' && meta && meta.auto_claimable === false) {
-    return { ok: false, status: 409, code: 'NOT_AUTO_CLAIMABLE', message: '该任务不可自助认领,需真人在环(human_in_the_loop / human_only),不能由 agent 自动认领' }
+  // Enforce on the DERIVED claimability (shapeMetadata, #5), NOT the raw auto_claimable — so a 0–0/null
+  // placeholder estimate (→ claimability 'manual_review') is refused server-side even when its raw
+  // auto_claimable flag is true, matching the list/detail/MCP/filter behavior. A metadata-bearing task always
+  // carries claimability; a no-metadata legacy task (meta null) keeps the legacy RFC-006 flow (not gated here).
+  const meta = task.agent_metadata as { auto_claimable?: boolean; claimability?: string } | null
+  if (action === 'claim' && meta && meta.claimability !== 'auto_claimable') {
+    return { ok: false, status: 409, code: 'NOT_AUTO_CLAIMABLE', message: '该任务不可自助认领(claimability=manual_review):需真人在环(human_in_the_loop / human_only),或其估算为占位(0–0/未知)、须人工复核后再认领。 / Not auto-claimable (claimability=manual_review): needs a human in the loop, or its estimate is a placeholder (0–0/unknown) and must be reviewed before claiming.' }
   }
   return { ok: true, task }
 }

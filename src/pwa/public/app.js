@@ -7343,7 +7343,7 @@ async function renderContributeTasks(app) {
       return `<div onclick="location.hash='#contribute/tasks/${_cEsc(task.task_id)}'" style="background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:14px;margin-bottom:10px;cursor:pointer">
         <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
           <div style="font-weight:600;color:#18181B;font-size:15px">${_cEsc(task.title)}</div>
-          ${m.auto_claimable ? `<span style="background:#dbeafe;color:#1e40af;padding:1px 8px;border-radius:99px;font-size:11px;font-weight:600;white-space:nowrap">${T('可自动认领', 'auto-claimable')}</span>` : ''}
+          ${m.claimability === 'auto_claimable' ? `<span style="background:#dbeafe;color:#1e40af;padding:1px 8px;border-radius:99px;font-size:11px;font-weight:600;white-space:nowrap">${T('可自动认领', 'auto-claimable')}</span>` : ''}
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
           ${task.area ? `<span style="font-size:11px;color:#6b7280">📂 ${_cEsc(task.area)}</span>` : ''}
@@ -7381,7 +7381,7 @@ async function renderContributeTaskDetail(app, id) {
   CONTRIBUTE_PROMPT_STATE.text = buildContributeAgentPrompt(task, cct, T)
   const section = (icon, title, inner) => `<section style="background:#fff;border:1px solid #e4e4e7;border-radius:12px;padding:18px;margin-bottom:14px">
     <h3 style="margin:0 0 10px;color:#18181B;font-size:16px">${icon} ${title}</h3>${inner}</section>`
-  const claimBtn = m.auto_claimable
+  const claimBtn = m.claimability === 'auto_claimable'
     ? (state.apiKey
         ? `<button onclick="contributeClaim('${_cEsc(task.task_id)}')" style="padding:10px 20px;background:#6366f1;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer">✋ ${T('认领此任务', 'Claim this task')}</button>`
         : `<button onclick="contributeClaim('${_cEsc(task.task_id)}')" style="padding:10px 20px;background:#fff;color:#18181B;border:1px solid #6366f1;border-radius:8px;font-size:14px;cursor:pointer">🔑 ${T('登录后认领', 'Log in to claim')}</button><div style="font-size:11px;color:#6b7280;margin-top:6px">${T('认领需要登录(真人 Passkey 账户);浏览器不会自动执行 GitHub 操作。', 'Claiming requires login (a real Passkey account); the browser performs no automatic GitHub action.')}</div>`)
@@ -7394,7 +7394,7 @@ async function renderContributeTaskDetail(app, id) {
       ${task.area ? `<span style="font-size:12px;color:#6b7280">📂 ${_cEsc(task.area)}</span>` : ''}
       ${m.task_type ? `<span style="font-size:12px;color:#6b7280">🔖 ${_cEsc(m.task_type)}</span>` : ''}
       ${_cRiskBadge(m.risk_level, T)} ${_cDuration(m.estimated_duration, T)}
-      ${m.auto_claimable ? `<span style="background:#dbeafe;color:#1e40af;padding:1px 8px;border-radius:99px;font-size:11px;font-weight:600">${T('可自动认领', 'auto-claimable')}</span>` : ''}
+      ${m.claimability === 'auto_claimable' ? `<span style="background:#dbeafe;color:#1e40af;padding:1px 8px;border-radius:99px;font-size:11px;font-weight:600">${T('可自动认领', 'auto-claimable')}</span>` : ''}
     </div>
     ${_cBoundaryHTML(task.value_boundary || j.value_boundary, T)}
 

@@ -252,6 +252,34 @@ async function main(): Promise<void> {
       ok('14 filtered response keeps canonical target + value_boundary', r.json.canonical_contribution_target?.expected_pr_base_repo === 'webaz-protocol/webaz' && r.json.value_boundary?.value_state === 'uncommitted') }
   }
 
+  // 16) #5 — honest estimate presentation. 0–0 duration + 'minimal' budget is the proposal→draft "no real
+  //   estimate yet" placeholder; it must read as estimate_status:'unknown' and be downgraded to
+  //   claimability:'manual_review' (even when nominally auto_claimable), while the raw fields stay untouched.
+  { task('bt_noest', 'open'); insertBuildTaskAgentMetadata(db, 'bt_noest', META({ estimated_duration_min_minutes: 0, estimated_duration_max_minutes: 0, estimated_agent_budget: 'minimal', auto_claimable: true }))
+    task('bt_estd', 'open'); insertBuildTaskAgentMetadata(db, 'bt_estd', META({ estimated_duration_min_minutes: 30, estimated_duration_max_minutes: 60, auto_claimable: false }))
+    const r = await get('/api/public/build-tasks')
+    const byId: Record<string, any> = Object.fromEntries(((r.json.tasks || []) as any[]).map(t => [t.task_id, t.agent_metadata]))
+    ok('16 0–0 duration → estimate_status unknown', byId['bt_noest']?.estimate_status === 'unknown', JSON.stringify(byId['bt_noest']?.estimate_status))
+    ok('16 0–0 + auto_claimable → claimability manual_review + human_review_required', byId['bt_noest']?.claimability === 'manual_review' && byId['bt_noest']?.human_review_required === true)
+    ok('16 raw auto_claimable still exposed unchanged (true)', byId['bt_noest']?.auto_claimable === true)
+    ok('16 real estimate → estimate_status provided', byId['bt_estd']?.estimate_status === 'provided')
+    ok('16 real estimate + auto_claimable=false → manual_review', byId['bt_estd']?.claimability === 'manual_review' && byId['bt_estd']?.human_review_required === true)
+    ok('16 provided + auto_claimable=true → claimability auto_claimable', byId['bt_pub']?.estimate_status === 'provided' && byId['bt_pub']?.claimability === 'auto_claimable')
+    ok('16 no economic-promise field on the derived signal', !FORBIDDEN.test(JSON.stringify({ a: byId['bt_noest'], b: byId['bt_estd'] })))
+    // filter parity: auto_claimable=true must EXCLUDE the 0–0 placeholder (matches claimability=auto_claimable),
+    // so the legacy raw-field filter can no longer surface a placeholder task as auto-doable.
+    const rf = await get('/api/public/build-tasks?auto_claimable=true')
+    const acIds = ((rf.json.tasks || []) as any[]).map(tid)
+    ok('16 auto_claimable=true filter excludes 0–0 placeholder (bt_noest)', !acIds.includes('bt_noest'), acIds.join(','))
+    ok('16 auto_claimable=true filter still includes a real-estimate auto task (bt_pub)', acIds.includes('bt_pub'))
+    // filter parity the OTHER way: auto_claimable=false is claimability-equivalent to manual_review, so it must
+    // INCLUDE a 0–0 placeholder whose raw auto_claimable=true (bt_noest) AND a genuinely non-auto task (bt_estd).
+    const rfFalse = await get('/api/public/build-tasks?auto_claimable=false')
+    const mrIds = ((rfFalse.json.tasks || []) as any[]).map(tid)
+    ok('16 auto_claimable=false includes 0–0 placeholder w/ raw auto_claimable=true (bt_noest)', mrIds.includes('bt_noest'), mrIds.join(','))
+    ok('16 auto_claimable=false includes a genuinely non-auto task (bt_estd)', mrIds.includes('bt_estd'))
+    ok('16 auto_claimable=false EXCLUDES a real-estimate auto task (bt_pub)', !mrIds.includes('bt_pub')) }
+
   // 15) Codex P2 — subset filter must match BEFORE the 200-row cap. Seed 201 public/open tasks; the only
   //   one the agent can do sorts LAST (oldest updated_at → row 201). With LIMIT-before-filter it was dropped.
   { // seed under a separate creator (not usr_a) so the engine's per-creator anti-flood limit in block 10 is untouched

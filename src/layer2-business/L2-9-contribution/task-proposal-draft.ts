@@ -20,8 +20,8 @@
  */
 import type Database from 'better-sqlite3'
 import { createBuildTask, logTaskEvent, releaseExpiredClaims } from './build-tasks-engine.js'
-import { insertBuildTaskAgentMetadata, getBuildTaskAgentMetadata, setBuildTaskAudience,
-  type BuildTaskAgentMetadata, RISK_LEVELS, TASK_TYPES } from './build-task-agent-metadata-store.js'
+import { insertBuildTaskAgentMetadata, getBuildTaskAgentMetadata, setBuildTaskAudience, setBuildTaskEstimate,
+  type BuildTaskAgentMetadata, RISK_LEVELS, TASK_TYPES, CONTEXT_SIZES, AGENT_BUDGETS } from './build-task-agent-metadata-store.js'
 import { reviewTaskProposal } from './task-proposal-store.js'
 
 /** Source-proposal ↔ draft-task link (lets a draft preserve its origin WITHOUT marking the proposal terminal). */
@@ -83,6 +83,12 @@ type DraftArgs = {
   taskType?: string
   riskLevel?: string
   note?: string | null
+  // (a) #34/#5: an OPTIONAL real effort estimate at draft creation. If omitted the draft is a 0–0 placeholder
+  // (internal/unclaimable) and publish fails closed until a real estimate is supplied (at publish or here).
+  estimatedDurationMinMinutes?: number
+  estimatedDurationMaxMinutes?: number
+  estimatedAgentBudget?: string
+  estimatedContextSize?: string
 }
 
 const strList = (v: unknown): string[] => Array.isArray(v) ? v.slice(0, 50).map(s => String(s).slice(0, 500)).filter(s => s.trim()) : []
@@ -128,6 +134,17 @@ export function createDraftFromProposal(db: Database.Database, a: DraftArgs):
   if (a.riskLevel === 'high' || a.riskLevel === 'critical') return { error: 'draft risk_level must be low or medium (high/critical deferred)', error_code: 'RISK_TOO_HIGH_FOR_DRAFT' }
   const taskType = (a.taskType && (TASK_TYPES as readonly string[]).includes(a.taskType)) ? a.taskType : 'other'
 
+  // (a) #34/#5: an OPTIONAL real effort estimate. Provided → validated + stored; omitted → 0–0 placeholder
+  // (draft stays internal/unclaimable, and publishDraftBuildTask fails closed until a real estimate exists).
+  let durMin = 0, durMax = 0
+  if (a.estimatedDurationMinMinutes !== undefined || a.estimatedDurationMaxMinutes !== undefined) {
+    const mn = Number(a.estimatedDurationMinMinutes), mx = Number(a.estimatedDurationMaxMinutes)
+    if (!Number.isInteger(mn) || !Number.isInteger(mx) || mn < 0 || mx < mn || mx < 1) return { error: 'estimated_duration must be integer minutes with max >= min and max >= 1 (a real, non-zero estimate)', error_code: 'BAD_ESTIMATE' }
+    durMin = mn; durMax = mx
+  }
+  if (a.estimatedAgentBudget !== undefined && !(AGENT_BUDGETS as readonly string[]).includes(a.estimatedAgentBudget)) return { error: 'invalid estimated_agent_budget', error_code: 'BAD_AGENT_BUDGET' }
+  if (a.estimatedContextSize !== undefined && !(CONTEXT_SIZES as readonly string[]).includes(a.estimatedContextSize)) return { error: 'invalid estimated_context_size', error_code: 'BAD_CONTEXT_SIZE' }
+
   // 2) assemble the agent-handoff fields and VALIDATE completeness BEFORE creating anything — the existing
   //    task model requires these to be executable, so we never create an incomplete/orphan task.
   const allowed = strList(a.allowedPaths)
@@ -166,10 +183,10 @@ export function createDraftFromProposal(db: Database.Database, a: DraftArgs):
     expected_results: expected,
     deliverables: deliver,
     definition_of_done: dod,
-    estimated_duration_min_minutes: 0,
-    estimated_duration_max_minutes: 0,
-    estimated_context_size: 'small',
-    estimated_agent_budget: 'minimal',
+    estimated_duration_min_minutes: durMin,
+    estimated_duration_max_minutes: durMax,
+    estimated_context_size: (a.estimatedContextSize as BuildTaskAgentMetadata['estimated_context_size']) ?? 'small',
+    estimated_agent_budget: (a.estimatedAgentBudget as BuildTaskAgentMetadata['estimated_agent_budget']) ?? 'minimal',
     value_state: 'uncommitted',
     contribution_type: 'task',
     accountable_party_required: true,
@@ -221,7 +238,8 @@ export function validateDraftForPublish(task: { title?: string | null; descripti
  * so a public, claimable task can never coexist with a rejected source proposal. The audience flip + proposal
  * conversion run in one transaction (both or neither).
  */
-export function publishDraftBuildTask(db: Database.Database, taskId: string, adminId: string):
+export function publishDraftBuildTask(db: Database.Database, taskId: string, adminId: string,
+  estimate?: { minMinutes?: number; maxMinutes?: number; budget?: string; contextSize?: string }):
   { ok: true; task_id: string } | { error: string; error_code: string; missing?: string[] } {
   const meta = getBuildTaskAgentMetadata(db, taskId)
   if (!meta) return { error: 'task has no draft metadata', error_code: 'NOT_A_DRAFT' }
@@ -244,8 +262,30 @@ export function publishDraftBuildTask(db: Database.Database, taskId: string, adm
     }
   }
 
-  // all validation passed → publish atomically: flip audience + (if applicable) mark the proposal converted.
+  // (a) #34/#5: FAIL-CLOSED on a placeholder estimate (checked AFTER proposal validity, so a dead/rejected
+  // source surfaces its own error first). A published task must carry a REAL effort estimate (non 0–0 /
+  // non-null duration), else the claim guard would correctly refuse it as manual_review forever ("published
+  // but unclaimable"). The maintainer may supply the estimate here; otherwise the draft's stored estimate must
+  // already be real. The override is validated + persisted inside the publish transaction below.
+  const overrideEstimate = !!estimate && (estimate.minMinutes !== undefined || estimate.maxMinutes !== undefined)
+  let effMin = meta.estimated_duration_min_minutes as number | null
+  let effMax = meta.estimated_duration_max_minutes as number | null
+  if (overrideEstimate) {
+    const mn = Number(estimate!.minMinutes), mx = Number(estimate!.maxMinutes)
+    if (!Number.isInteger(mn) || !Number.isInteger(mx) || mn < 0 || mx < mn || mx < 1) return { error: 'estimated_duration must be integer minutes with max >= min and max >= 1 (a real, non-zero estimate)', error_code: 'BAD_ESTIMATE' }
+    effMin = mn; effMax = mx
+  }
+  if (estimate?.budget !== undefined && !(AGENT_BUDGETS as readonly string[]).includes(estimate.budget)) return { error: 'invalid estimated_agent_budget', error_code: 'BAD_AGENT_BUDGET' }
+  if (estimate?.contextSize !== undefined && !(CONTEXT_SIZES as readonly string[]).includes(estimate.contextSize)) return { error: 'invalid estimated_context_size', error_code: 'BAD_CONTEXT_SIZE' }
+  const estimateReal = effMin != null && effMax != null && !(effMin === 0 && effMax === 0)
+  if (!estimateReal) return { error: 'a real effort estimate is required before publishing (the draft still has the 0–0 placeholder); supply estimate {minMinutes, maxMinutes}', error_code: 'DRAFT_ESTIMATE_REQUIRED' }
+
+  // all validation passed → publish atomically: persist any estimate override + flip audience + (if
+  // applicable) mark the proposal converted. All-or-nothing.
   db.transaction(() => {
+    if (overrideEstimate || estimate?.budget !== undefined || estimate?.contextSize !== undefined) {
+      setBuildTaskEstimate(db, taskId, { minMinutes: effMin as number, maxMinutes: effMax as number, budget: estimate?.budget, contextSize: estimate?.contextSize })
+    }
     setBuildTaskAudience(db, taskId, 'public')
     logTaskEvent(db, taskId, adminId, t.status, t.status, 'published from draft (audience → public)')
     if (proposalToConvert) {

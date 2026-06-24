@@ -1506,7 +1506,7 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
         task_id: { type: 'string', description: 'detail / claim / submit: the task id' },
         area: { type: 'string', description: 'list_open: area filter / suggest: suggested area (e.g. search / docs / mcp)' },
         risk_level: { type: 'string', enum: ['low', 'medium', 'high', 'critical'], description: 'list_open: optional risk filter' },
-        auto_claimable: { type: 'boolean', description: 'list_open: optional filter — only auto-claimable (true) or manual-claim (false) tasks' },
+        auto_claimable: { type: 'boolean', description: 'list_open: optional filter — true returns tasks an agent can just do (auto-claimable AND with a real effort estimate; matches the derived claimability=auto_claimable), false returns manual-claim tasks. A task with a placeholder (unknown) estimate is treated as manual_review even if its raw auto_claimable flag is true, so it is excluded from true.' },
         required_capabilities: { type: 'string', description: 'list_open: optional filter — comma-separated; matches tasks that REQUIRE ALL of the listed capabilities (superset/AND match on the task requirement). For "tasks my agent can do", use agent_capabilities instead.' },
         agent_capabilities: { type: 'string', description: 'list_open: optional filter — capabilities your agent HAS (comma-separated); matches tasks whose required_capabilities are a SUBSET of these, i.e. tasks your agent can actually do' },
         max_duration_minutes: { type: 'number', description: 'list_open: optional filter — only tasks whose estimated max duration fits within this many minutes (your idle time)' },
