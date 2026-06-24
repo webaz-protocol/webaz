@@ -140,11 +140,51 @@ export function registerAdminAdminsRoutes(app: Application, deps: AdminAdminsDep
       try { rolesArr = JSON.parse(cur.roles || '[]') } catch {}
       rolesArr = rolesArr.filter(r => r !== 'admin')
       const newRole = rolesArr[0] || 'buyer'
-      db.prepare(`UPDATE users SET role = ?, roles = ?, admin_type = NULL, admin_scope = NULL, updated_at = datetime('now') WHERE id = ?`)
+      db.prepare(`UPDATE users SET role = ?, roles = ?, admin_type = NULL, admin_scope = NULL, admin_permissions = NULL, updated_at = datetime('now') WHERE id = ?`)
         .run(newRole, JSON.stringify(rolesArr), targetId)
       db.prepare(`INSERT INTO admin_audit_log (id, admin_id, action, target_type, target_id, detail) VALUES (?,?,?,?,?,?)`)
         .run(generateId('audit'), root.id, 'admin_revoke', 'user', targetId, JSON.stringify({ revoked_type: target.admin_type, new_role: newRole }))
     })()
     res.json({ ok: true })
+  })
+
+  // ── ROOT-only emergency freeze of an admin: suspend + strip ALL admin capability + revoke sessions ──
+  // For incident response (e.g. a compromised / rogue admin). Atomic. Cannot freeze self or the last root.
+  app.post('/api/admin/admins/:id/emergency-freeze', async (req, res) => {
+    const root = requireRootAdmin(req, res); if (!root) return
+    const targetId = req.params.id
+    if (targetId === root.id) return void res.json({ error: '不能冻结自己' })
+    const reason = (req.body?.reason ? String(req.body.reason).slice(0, 200) : '') || 'emergency admin freeze'
+    const target = await dbOne<{ id: string; role: string; roles: string; admin_type: string }>(`SELECT id, role, roles, admin_type FROM users WHERE id = ?`, [targetId])
+    if (!target) return void res.json({ error: '用户不存在' })
+    if (!target.admin_type) return void res.json({ error: '目标必须是 admin 账号' })
+    if (target.admin_type === 'root') {
+      const rootCount = (await dbOne<{ n: number }>(`SELECT COUNT(1) as n FROM users WHERE admin_type = 'root'`, []))!.n
+      if (rootCount <= 1) return void res.json({ error: '不能冻结最后一个 root admin' })
+    }
+    let sessionsRevoked = 0
+    db.transaction(() => {
+      let rolesArr: string[] = []
+      try { rolesArr = JSON.parse(target.roles || '[]') } catch {}
+      const oldRoles = [...rolesArr]
+      rolesArr = rolesArr.filter(r => r !== 'admin')
+      const newRole = rolesArr[0] || 'buyer'
+      // 1) suspend
+      db.prepare(`INSERT INTO user_moderation (user_id, suspended, reason, suspended_by, suspended_at)
+        VALUES (?, 1, ?, ?, datetime('now'))
+        ON CONFLICT(user_id) DO UPDATE SET suspended = 1, reason = excluded.reason, suspended_by = excluded.suspended_by, suspended_at = excluded.suspended_at`)
+        .run(targetId, reason, root.id)
+      // 2) strip ALL admin capability
+      db.prepare(`UPDATE users SET role = ?, roles = ?, admin_type = NULL, admin_scope = NULL, admin_permissions = NULL, updated_at = datetime('now') WHERE id = ?`)
+        .run(newRole, JSON.stringify(rolesArr), targetId)
+      // 3) revoke all active sessions
+      const r = db.prepare(`UPDATE user_sessions SET revoked_at = datetime('now') WHERE user_id = ? AND revoked_at IS NULL`).run(targetId)
+      sessionsRevoked = r.changes
+      // 4) audit
+      db.prepare(`INSERT INTO admin_audit_log (id, admin_id, action, target_type, target_id, detail) VALUES (?,?,?,?,?,?)`)
+        .run(generateId('audit'), root.id, 'admin_emergency_freeze', 'user', targetId,
+          JSON.stringify({ old_admin_type: target.admin_type, old_roles: oldRoles, sessions_revoked: sessionsRevoked, reason }))
+    })()
+    res.json({ ok: true, frozen: targetId, sessions_revoked: sessionsRevoked })
   })
 }

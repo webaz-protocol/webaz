@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (658 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (659 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -25,6 +25,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/admins` | 🔐 | 👑 | GET 全部 admin 列表 | src/pwa/routes/admin-admins.ts:39 |
 | POST | `/api/admin/admins` | 🔐 | 👑 | POST 创建 admin（仅 root） | src/pwa/routes/admin-admins.ts:63 |
 | DELETE | `/api/admin/admins/:id` | 🔐 | 👑 | DELETE 撤销 admin（root only；不能撤自己；至少保留 1 个 root） | src/pwa/routes/admin-admins.ts:126 |
+| POST | `/api/admin/admins/:id/emergency-freeze` | 🔐 | 👑 | For incident response (e.g. a compromised / rogue admin). Atomic. Cannot freeze  | src/pwa/routes/admin-admins.ts:153 |
 | PATCH | `/api/admin/admins/:id/permissions` | 🔐 | 👑 | PATCH 更新权限（root only） | src/pwa/routes/admin-admins.ts:104 |
 | POST | `/api/admin/agent-strikes/:strikeId/decide` | 🔐 | 👑 | Admin: 审核 strike 申诉 | src/pwa/routes/agent-governance.ts:297 |
 | POST | `/api/admin/agent-strikes/issue` | 🔐 | 👑 | P1 fix 4.3: admin 主动 issue strike | src/pwa/routes/agent-governance.ts:333 |
@@ -134,12 +135,12 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/tokenomics/require-ref/toggle` | 🔐 | 👑 | 注册必须 ref 开关 | src/pwa/routes/admin-tokenomics.ts:53 |
 | POST | `/api/admin/trial/run-eval` | 🔐 | 👑 | Admin 手动触发测评评估（测试 + 紧急 + 立即生效） | src/pwa/routes/trial.ts:355 |
 | GET | `/api/admin/usage` |  |  |  | src/pwa/routes/admin-analytics.ts:34 |
-| GET | `/api/admin/users` | 🔐 | 👑 |  | src/pwa/routes/admin-users-query.ts:153 |
+| GET | `/api/admin/users` | 🔐 | 👑 |  | src/pwa/routes/admin-users-query.ts:167 |
 | POST | `/api/admin/users/:id/force-delist-all` | 🔐 | 👑 |  | src/pwa/routes/admin-users-lifecycle.ts:74 |
 | POST | `/api/admin/users/:id/grant-role` | 🔐 | 👑 | P0.1: admin 角色提权必须 root；其他角色需 users + scope | src/pwa/routes/admin-users-lifecycle.ts:123 |
 | POST | `/api/admin/users/:id/l1-share-override` | 🔐 | 👑 | L1 分享权限 override：0 auto / 1 强允 / -1 强禁 | src/pwa/routes/admin-users-lifecycle.ts:52 |
 | POST | `/api/admin/users/:id/pause-listing` | 🔐 | 👑 |  | src/pwa/routes/admin-users-lifecycle.ts:214 |
-| GET | `/api/admin/users/:id/profile` | 🔐 | 👑 | 完整档案聚合 | src/pwa/routes/admin-users-query.ts:230 |
+| GET | `/api/admin/users/:id/profile` | 🔐 | 👑 | 完整档案聚合 | src/pwa/routes/admin-users-query.ts:244 |
 | POST | `/api/admin/users/:id/reset-failed-attempts` | 🔐 | 👑 | 解除账号登录锁定：清零失败次数 + 解锁 | src/pwa/routes/admin-users-lifecycle.ts:66 |
 | POST | `/api/admin/users/:id/resume-listing` | 🔐 | 👑 |  | src/pwa/routes/admin-users-lifecycle.ts:225 |
 | POST | `/api/admin/users/:id/revoke-role` | 🔐 | 👑 | P0.3: revoke admin → root only | src/pwa/routes/admin-users-lifecycle.ts:183 |

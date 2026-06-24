@@ -121,9 +121,23 @@ export function registerAdminUsersQueryRoutes(app: Application, deps: AdminUsers
     if (!['suspend', 'unsuspend'].includes(String(action))) return void res.status(400).json({ error: 'action 必须 suspend/unsuspend' })
     const reasonStr = action === 'suspend' ? (reason ? String(reason).slice(0, 200) : 'admin 批量暂停') : null
     const results: Array<{ user_id: string; status: 'ok' | 'skipped'; reason?: string }> = []
+    // Per-uid authorization boundary (res-free, so one bad uid never aborts the whole batch). Mirrors
+    // adminCanOperateOn but stricter for admin targets: an admin target is ROOT-only regardless of scope.
+    const actingRoot = isRootAdmin(admin)
+    const actingScope = (admin.admin_scope as string) || 'global'
+    const canOperate = (t: { admin_type: string | null; region: string | null }): { ok: boolean; reason?: string } => {
+      if (t.admin_type) return actingRoot ? { ok: true } : { ok: false, reason: '仅 root 可操作 admin 账号' }
+      if (actingRoot || actingScope === 'global') return { ok: true }
+      if (t.region && t.region !== actingScope) return { ok: false, reason: `跨区用户(${t.region})仅本区/全局 admin 可操作` }
+      return { ok: true }
+    }
     for (const uid of user_ids) {
       try {
         if (uid === 'sys_protocol' || uid === admin.id) { results.push({ user_id: uid, status: 'skipped', reason: '保留账户或自己' }); continue }
+        const target = await dbOne<{ admin_type: string | null; region: string | null }>('SELECT admin_type, region FROM users WHERE id = ?', [uid])
+        if (!target) { results.push({ user_id: uid, status: 'skipped', reason: '用户不存在' }); continue }
+        const gate = canOperate(target)
+        if (!gate.ok) { results.push({ user_id: uid, status: 'skipped', reason: gate.reason }); continue }
         if (action === 'suspend') {
           await dbRun(`INSERT INTO user_moderation (user_id, suspended, reason, suspended_by, suspended_at)
             VALUES (?, 1, ?, ?, datetime('now'))

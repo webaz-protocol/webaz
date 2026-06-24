@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (658 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (659 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -180,6 +180,19 @@
     "/api/admin/admins/:id": {
       "delete": {
         "summary": "DELETE 撤销 admin（root only；不能撤自己；至少保留 1 个 root）",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/admins/:id/emergency-freeze": {
+      "post": {
+        "summary": "For incident response (e.g. a compromised / rogue admin). Atomic. Cannot freeze self or the last root.",
         "tags": [
           "admin"
         ],

@@ -54,7 +54,7 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   'variants.ts': 10,       // 3 stock-aggregate tx (insert/update + product.stock sync)
   'ratings.ts': 4,         // 2 insert+notify tx (rating/buyer-rating → reputation)
   'addresses.ts': 8,       // 3 default-mutex tx (insert/update/delete + is_default flip)
-  'admin-admins.ts': 5,    // create + revoke tx (role update + audit log)
+  'admin-admins.ts': 9,    // create + revoke tx + emergency-freeze tx (suspend + strip admin + revoke sessions + audit — atomic, sync db.transaction)
   'checkin-tasks.ts': 4,   // 2 reward tx (checkin/task insert + notification)
   'admin-protocol-params.ts': 4,  // patch + reset update+log tx (constitutional guard)
   'rewards-apply.ts': 8,   // apply escrow-drain tx + deactivate tx (RFC-002 money path)
