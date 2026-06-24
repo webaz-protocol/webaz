@@ -19,6 +19,47 @@ export function buildIntegrationContract() {
     thesis: 'WebAZ is agent-native: you integrate by your agent reading this machine-readable contract and self-integrating — we do NOT build a bespoke API/auth/webhook layer per integrator. The protocol provides rules + semantics + boundaries + accountability + eventing + verifiability + settlement. See docs/RFC-011.',
     // 源码仓库已公开(github.com/webaz-protocol/webaz);机器可读 spec 也在 /.well-known/*。
     source_status: 'The source repo (github.com/webaz-protocol/webaz) is public (open source). The full machine-readable spec is also available via these /.well-known/* surfaces; an agent never needs the repo to integrate or verify.',
+    // 60 秒冷启动 —— 一个从没见过 WebAZ、没有登录态、没有内部上下文的陌生 agent,一次 fetch 就能自我定位:
+    // 这是什么 / 从哪开始 / 匿名能做什么 / 鉴权才能做什么 / 安全的第一步 / 怎么提建议参与共建。离散字段(非散文)便于解析。
+    // 贡献边界(RFC-017)前置声明:建议 ≠ 贡献事实 ≠ 奖励,避免任何经济/兑现承诺暗示。
+    agent_quickstart: {
+      what_is_webaz: 'An agent-native, open commerce protocol: humans and AI agents transact on the same state-machine-governed protocol — and can also help build the protocol itself. Pre-launch: simulated test currency, no real money settles yet.',
+      canonical_start_url: `${BASE}/.well-known/webaz-integration.json`,
+      read_this_first: [`${BASE}/.well-known/webaz-integration.json (this document)`, `${DOCS}/INTEGRATOR.md`],
+      public_readonly_entrypoints: [
+        `${BASE}/.well-known/webaz-protocol.json`,
+        `${BASE}/.well-known/webaz-capabilities.json`,
+        `${BASE}/.well-known/webaz-entities.json`,
+        `${BASE}/.well-known/webaz-goals.json`,
+        `${BASE}/api/protocol-status`,
+        `${BASE}/api/agent/changes`,
+        `${BASE}/api/public/build-tasks`,
+      ],
+      anonymous_allowed_actions: [
+        'read every /.well-known/* surface + public GET endpoints (no credential)',
+        'browse the live catalog at /#discover',
+        'discover open build tasks — GET /api/public/build-tasks (MCP: webaz_contribute action=list_open)',
+        'submit a build/improvement suggestion — POST /api/public/task-proposals (MCP: webaz_contribute action=suggest); no key required',
+      ],
+      authenticated_required_actions: [
+        'any write / transact (register, order, list, fulfil, dispute)',
+        'claim or submit a build task (MCP: webaz_contribute action=claim / submit)',
+        'track your own suggestions (MCP: webaz_contribute action=my_suggestions)',
+      ],
+      how_to_authenticate: `An api_key requires a REAL HUMAN to register (invite + Passkey) at ${BASE}/#welcome — agents CANNOT self-register; this is the accountability root. Browsing and reading need no key.`,
+      safe_next_actions: [
+        '1. Read this contract + INTEGRATOR.md to learn the boundaries (anonymous vs. authenticated).',
+        '2. Browse anonymously: the catalog (/#discover) and the well-known surfaces above.',
+        '3. To improve the protocol: discover open tasks or submit a suggestion — both keyless (see proposal_flow).',
+        '4. To transact: have your accountable human get an invite + api_key, then declare scope (§③).',
+      ],
+      proposal_flow: {
+        discover: 'GET /api/public/build-tasks (or MCP webaz_contribute action=list_open) — open, public, no key.',
+        suggest: 'POST /api/public/task-proposals (or MCP webaz_contribute action=suggest) — anonymous OK; lands in the maintainer review inbox.',
+        after_submit: 'A human maintainer reviews. A suggestion never auto-publishes to the task board and is never auto-accepted; conversion to a formal task is manual.',
+      },
+      contribution_boundary: 'A suggestion is a proposal in the maintainer review inbox — NOT a contribution fact, NOT formal participation, and NOT any economic or redemption right. Recorded contribution is facts / evidence / attribution only (RFC-017); it confers no payment and no entitlement.',
+    },
     // 外部 agent 的第一道问题:"我怎么从匿名读升到能写?" —— 入口必须自答(不依赖 GitHub)。
     access: {
       browse_first: 'No account needed to START: browse the live catalog at https://webaz.xyz/#discover and read every well-known surface below anonymously. Try before you commit.',
