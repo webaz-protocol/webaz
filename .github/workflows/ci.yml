@@ -257,6 +257,26 @@ jobs:
           echo "    inside a db.transaction, raise the allowlist with justification)."
           echo "  - count < allow: you converted more than recorded — lower that file's number."
 
+  complexity-ratchet:
+    name: complexity ratchet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run guard:complexity
+      - name: On failure — complexity ratchet context
+        if: failure()
+        run: |
+          echo "::error title=complexity ratchet drift::"
+          echo "Baselines in scripts/complexity-ratchet-guard.ts EQUAL current debt and may only be LOWERED intentionally, never raised."
+          echo "  - LOC ceiling exceeded: the tracked large file grew — extract instead of adding here."
+          echo "  - server.ts CREATE/ALTER count rose: new DDL belongs in schema-init, not server.ts."
+          echo "  - count fell: you paid down debt — lower that baseline so the gain is locked in."
+
   meta-rule-locked-params:
     name: meta-rule-locked params (RFC-002 §3.3)
     runs-on: ubuntu-latest
