@@ -313,6 +313,43 @@ export function rejectUnlink(db: Database.Database, input: { requestEventId: str
   return { ok: true, decisionEventId: decId, claimedEventId: req.claimed_event_id, adminAccountId: req.admin_account_id, contributorAccountId: req.contributor_account_id, approvalKind, conflictDisclosure }
 }
 
+// ── GOVERNANCE-MARKING CORRECTION (append-only): fix a mis-marked self/related approval's disclosure
+// WITHOUT touching the original approved event (no UPDATE, no backdate, no change to effective interval).
+// A root appends a correction referencing the approved event; the resolver overlays it at read time. ──
+export function correctClaimMarking(db: Database.Database, input: { approvedEventId: string; correctorId: string; approvalKind: string; conflictDisclosure: string; correctionReason: string }):
+  { ok: true; correctionEventId: string; approvedEventId: string } | WorkflowError {
+  const { approvedEventId, correctorId, approvalKind, conflictDisclosure, correctionReason } = input
+  if (!isRoot(db, correctorId)) return err('not_root', 'only a root admin may correct a claim marking')
+  const ap = db.prepare("SELECT event_id, admin_account_id, contributor_account_id, approved_by, approval_kind, conflict_disclosure FROM admin_operator_claim_events WHERE event_id = ? AND event_type = 'approved'").get(approvedEventId) as any
+  if (!ap) return err('approved_not_found', 'no such approved claim event')
+  // ONLY a self/related approval (approver was itself a party) may be corrected — a genuinely
+  // independent claim has no self_or_related disclosure to make, and appending one would falsify its
+  // provenance (and is append-only/irreversible). Guards a typo'd approvedEventId.
+  const selfRelated = !!ap.approved_by && (ap.approved_by === ap.admin_account_id || ap.approved_by === ap.contributor_account_id)
+  if (!selfRelated) return err('not_self_related', 'only self/related approvals may receive a marking correction')
+  // honest marking only — a correction can NEVER (re)assert independent_governance or drop disclosure.
+  if (approvalKind !== 'root_approval' && approvalKind !== 'founder_bootstrap_override') {
+    return err('dishonest_marking', 'correction approval_kind must be root_approval or founder_bootstrap_override')
+  }
+  if (conflictDisclosure !== 'self_or_related') {
+    return err('dishonest_marking', 'correction conflict_disclosure must be self_or_related')
+  }
+  if (!correctionReason || !correctionReason.trim()) return err('reason_required', 'correction_reason is required')
+  const id = generateId('aocmc')
+  db.prepare(
+    `INSERT INTO admin_operator_claim_marking_corrections (correction_event_id, approved_event_id, approval_kind, conflict_disclosure, correction_reason, corrected_by_root_admin_id, immutable)
+     VALUES (?, ?, ?, ?, ?, ?, 1)`,
+  ).run(id, approvedEventId, approvalKind, conflictDisclosure, correctionReason.trim(), correctorId)
+  return { ok: true, correctionEventId: id, approvedEventId }
+}
+
+/** Latest append-only marking correction for an approved claim event (or null). */
+export function latestMarkingCorrection(db: Database.Database, approvedEventId: string): any {
+  return db.prepare(
+    "SELECT * FROM admin_operator_claim_marking_corrections WHERE approved_event_id = ? ORDER BY corrected_at DESC, rowid DESC LIMIT 1",
+  ).get(approvedEventId) ?? null
+}
+
 /** All claims whose CONTRIBUTOR is this user (any status) — the contributor self-view. */
 export function listContributorRelationships(db: Database.Database, contributorId: string): ClaimView[] {
   const ids = db.prepare("SELECT event_id FROM admin_operator_claim_events WHERE contributor_account_id = ? AND event_type = 'claimed' ORDER BY created_at DESC").all(contributorId) as any[]
