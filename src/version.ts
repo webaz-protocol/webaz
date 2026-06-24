@@ -29,7 +29,9 @@ const pkg = require('../package.json') as { version: string }
 export const SOFTWARE_VERSION: string = pkg.version
 
 /** Integration-contract version. Bump on ANY integrator-observable contract-surface change
- *  (capability matrix §② / entity dictionary §①); the CONTRACT_CHANGES `kind` classifies whether
- *  it is breaking. Additive changes (kind:'added') are safe for agents to ignore. Guarded by
- *  tests/test-contract-fingerprint.ts + docs/CONTRACT-LOCK.json. */
-export const CONTRACT_VERSION = 4
+ *  (capability matrix §② / entity dictionary §① / the §④ integration-contract entry document itself);
+ *  the CONTRACT_CHANGES `kind` classifies whether it is breaking. Additive changes (kind:'added') are
+ *  safe for agents to ignore. Guarded by tests/test-contract-fingerprint.ts + docs/CONTRACT-LOCK.json.
+ *  NB: the fingerprint hashes only §②/§① content; a change to the §④ entry document (e.g. agent_quickstart)
+ *  is integrator-observable but NOT fingerprinted, so it must be registered here by hand. */
+export const CONTRACT_VERSION = 5
