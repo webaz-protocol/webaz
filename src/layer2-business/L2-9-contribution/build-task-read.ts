@@ -82,6 +82,19 @@ function shapeMetadata(row: any, shape: 'list' | 'detail'): Record<string, unkno
     estimated_context_size: row.estimated_context_size, estimated_agent_budget: row.estimated_agent_budget,
     value_state: row.value_state,
   }
+  // Honest estimate signal (#5): a proposal→draft conversion (task-proposal-draft.ts) seeds duration 0–0 +
+  // budget 'minimal' as a "no real estimate yet" placeholder — NOT a claim the task is instant / zero-cost.
+  // Surface a typed status so an agent never reads the placeholder as a real estimate. The raw
+  // estimated_duration / estimated_agent_budget / auto_claimable fields above are left untouched (no storage
+  // change); these are derived, advisory fields. estimate_status='unknown' means BOTH duration and budget are
+  // placeholders. A 0–0/placeholder task that is nominally auto_claimable is downgraded to manual_review so a
+  // missing estimate is reviewed before the task is treated as routine.
+  const durMin = row.estimated_duration_min_minutes, durMax = row.estimated_duration_max_minutes
+  const estimateUnknown = durMin == null || durMax == null || (durMin === 0 && durMax === 0)
+  const autoClaimable = row.auto_claimable === 1
+  m.estimate_status = estimateUnknown ? 'unknown' : 'provided'
+  m.claimability = !autoClaimable || estimateUnknown ? 'manual_review' : 'auto_claimable'
+  m.human_review_required = m.claimability === 'manual_review'
   for (const k of LIST_ARRAY_FIELDS) m[k] = parseJsonList(row[k])
   if (shape === 'detail') {
     m.source_ref = row.source_ref; m.version = row.version
