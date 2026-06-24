@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (664 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (665 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -79,7 +79,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/governance/applications` | 🔐 | 👑 | GET /api/admin/governance/applications — 列出 pending_onboarding(可筛 quiz_passed +  | src/pwa/routes/governance-onboarding.ts:358 |
 | GET | `/api/admin/governance/auto-deactivations` | 🔐 | 👑 | spec §6.2 公示触发原因(透明 — 元规则 #1) | src/pwa/routes/governance-onboarding.ts:713 |
 | POST | `/api/admin/governance/resolve-appeal` | 🔐 | 👑 | accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由 | src/pwa/routes/governance-onboarding.ts:751 |
-| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:6494 |
+| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:6500 |
 | GET | `/api/admin/health` | 🔐 | 👑 |  | src/pwa/routes/admin-health.ts:33 |
 | GET | `/api/admin/hot-wallet` |  |  | Legacy x-admin-key 入口：仅余额 | src/pwa/routes/admin-wallet-ops.ts:74 |
 | GET | `/api/admin/hot-wallet/status` | 🔐 | 👑 | P2-5: protocol 权限（区域 admin 看不到全局热钱包） | src/pwa/routes/admin-wallet-ops.ts:48 |
@@ -247,6 +247,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/claim-tasks/mine` | 🔐 |  | 我相关的任务（必须在 /:id 之前注册，否则被 /:id 截获） | src/pwa/routes/claim-verify.ts:510 |
 | POST | `/api/claim-url` | 🔐 |  |  | src/pwa/routes/url-claim.ts:81 |
 | GET | `/api/claims/public` |  |  | 公开 #claims 广场（无 auth — 透明性是验证声明信任的前提） | src/pwa/routes/claim-verify.ts:541 |
+| GET | `/api/contribution-facts/me` | 🔐 |  | ── READ-ONLY: the caller's OWN attributable contribution facts (GitHub + admin c | src/pwa/routes/contribution-facts.ts:28 |
 | POST | `/api/contribution-identity/github/claim-challenge` | 🔐 |  | ── 1) issue a publication challenge ──────────────────────────────────────────── | src/pwa/routes/contribution-identity.ts:80 |
 | POST | `/api/contribution-identity/github/claim-complete` | 🔐 |  | ── 2) complete the claim (human gate → re-fetch gist proof → atomic consume+bind | src/pwa/routes/contribution-identity.ts:111 |
 | GET | `/api/contribution-identity/github/claimable` | 🔐 |  | carries the uncommitted-value boundary, and errors never leak SQL/stack. | src/pwa/routes/contribution-identity.ts:207 |

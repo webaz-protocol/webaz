@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (664 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (665 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2936,6 +2936,17 @@
         "summary": "公开 #claims 广场（无 auth — 透明性是验证声明信任的前提）",
         "tags": [],
         "security": []
+      }
+    },
+    "/api/contribution-facts/me": {
+      "get": {
+        "summary": "── READ-ONLY: the caller's OWN attributable contribution facts (GitHub + admin coordination) ──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/contribution-identity/github/claim-challenge": {

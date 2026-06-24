@@ -10435,6 +10435,8 @@ async function renderMyContributions(app) {
   const gid = await GET('/contribution-identity/github/me').catch(() => null)
   // F10 — 自动发现可认领的 GitHub 贡献(只读;失败优雅降级)
   const claimable = await GET('/contribution-identity/github/claimable').catch(() => null)
+  // Contribution read-out V1 — 已归属到本账号的贡献事实(GitHub + 管理协调;只读;失败优雅降级)
+  const cf = await GET('/contribution-facts/me').catch(() => null)
   const lang = window._lang === 'zh' ? 'zh' : 'en'
   const tier = p.tier || {}
   const k = p.kpi || {}
@@ -10472,6 +10474,7 @@ async function renderMyContributions(app) {
     ${provRows ? `<div class="card" style="padding:10px;margin-bottom:12px"><div style="font-size:11px;color:#6b7280;margin-bottom:4px">${t('署名构成(自报)')}</div>${provRows}</div>` : ''}
     ${!p.passkey_anchor_present ? `<div class="card" style="padding:10px;margin-bottom:12px;border-left:3px solid #d97706"><div style="font-size:12px;color:#92400e">${t('未绑 Passkey:贡献可受理致谢,但需绑定真人锚点才记入建设信誉。')}</div></div>` : ''}
     ${ghClaimSectionHtml(gid, claimable, lang)}
+    ${contributionFactsSectionHtml(cf, lang)}
     <div class="card" onclick="location.hash='#contribute/tasks'" style="padding:12px 14px;margin-bottom:12px;cursor:pointer;display:flex;align-items:center;gap:10px">
       <div style="font-size:20px;flex-shrink:0">📋</div>
       <div style="flex:1;min-width:0">
@@ -10510,6 +10513,56 @@ function ghClaimErrText(code, fallback) {
     INVALID_REQUEST: t('请求参数无效 — 请检查两个输入框'),
   }
   return m[code] || fallback || t('操作失败')
+}
+
+// Contribution read-out V1 — 「贡献事实记录」只读区块。展示已归属到本账号的 contribution facts
+// (GitHub + 管理协调),按来源分组。这是事实与归属记录,不是奖励/付款/兑现权利。不暴露 admin audit detail。
+function contributionFactsSectionHtml(cf, lang) {
+  const ok = cf && !cf.error
+  const groups = ok ? (cf.groups || {}) : {}
+  const gh = ok ? (groups.github || []) : []
+  const ac = ok ? (groups.admin_coordination || []) : []
+  const total = ok ? (cf.total || 0) : 0
+  const notice = ok && cf.value_boundary ? (lang === 'zh' ? cf.value_boundary.notice_zh : cf.value_boundary.notice_en) : ''
+  if (!ok) {
+    return `<div class="card" style="padding:14px;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">📜 ${_qT('贡献事实记录', 'Contribution evidence')}</div>
+      <div style="font-size:12px;color:#9ca3af">${_qT('暂不可用,稍后再试', 'Unavailable, try again later')}</div>
+    </div>`
+  }
+  const statusLabel = (s) => ({ active: _qT('有效', 'active'), superseded: _qT('被替代', 'superseded'), reverted: _qT('已撤销', 'reverted'), void: _qT('作废', 'void'), forfeited: _qT('已没收', 'forfeited') }[String(s)] || escHtml(String(s)))
+  const factRow = (f) => {
+    const label = lang === 'zh' ? (f.display_source_label || '') : (f.display_source_label_en || f.display_source_label || '')
+    const middle = (f.evidence_ref && f.evidence_ref.source_type) ? f.evidence_ref.source_type : (f.type || f.source || '')
+    const date = String(f.occurred_at || '').slice(0, 10)
+    return `<div style="font-size:11px;color:#374151;padding:6px 8px;background:#f9fafb;border-radius:6px;margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="background:#eef2ff;color:#4338ca;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:600">${escHtml(label)}</span>
+          <b style="word-break:break-all">${escHtml(String(middle))}</b>
+          ${date ? `<span style="color:#6b7280">· ${escHtml(date)}</span>` : ''}
+          <span style="color:#9ca3af">· ${statusLabel(f.status)}</span>
+        </div>
+        <div style="color:#9ca3af;font-size:10px;margin-top:2px">fact <code>${escHtml(String(f.fact_id).slice(0, 18))}…</code></div>
+      </div>`
+  }
+  const group = (titleZh, titleEn, items, emptyZh, emptyEn) => `
+    <div style="margin-top:10px">
+      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px">${_qT(titleZh, titleEn)} <span style="color:#9ca3af;font-weight:400">(${items.length})</span></div>
+      ${items.length ? items.map(factRow).join('') : `<div style="font-size:11px;color:#9ca3af">${_qT(emptyZh, emptyEn)}</div>`}
+    </div>`
+  return `
+    <div class="card" style="padding:14px;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">📜 ${_qT('贡献事实记录', 'Contribution evidence')} <span style="color:#9ca3af;font-weight:400">· ${total}</span></div>
+      <div style="font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 8px;margin-bottom:8px">⚠️ ${_qT('这里是贡献事实与归属记录,不是奖励、不是付款、不是兑现权利。', 'These are contribution facts and attribution records only — not a payment, and they confer no economic or redemption right.')}</div>
+      ${total === 0 ? `<div style="font-size:12px;color:#9ca3af">${_qT('暂无已归属到你的贡献事实。', 'No contribution facts attributed to you yet.')}</div>` : `
+        ${group('GitHub', 'GitHub', gh, '暂无 GitHub 贡献事实', 'No GitHub facts')}
+        ${group('管理协调', 'Admin coordination', ac, '暂无管理协调贡献事实', 'No admin-coordination facts')}
+        <div style="margin-top:10px">
+          <div style="font-size:12px;font-weight:600;color:#9ca3af;margin-bottom:4px">${_qT('Agent 授权执行', 'Agent-authorized execution')} <span style="font-weight:400">(${_qT('未来', 'future')})</span></div>
+          <div style="font-size:11px;color:#9ca3af">${_qT('暂无', 'None yet')}</div>
+        </div>`}
+      ${notice ? `<div style="font-size:10px;color:#9ca3af;background:#f4f4f5;border-radius:6px;padding:6px 8px;margin-top:10px">🔒 ${escHtml(notice)}</div>` : ''}
+    </div>`
 }
 
 function ghClaimSectionHtml(gid, claimable, lang) {
