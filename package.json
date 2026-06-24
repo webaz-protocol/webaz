@@ -68,6 +68,7 @@
     "test:task-proposals": "tsx scripts/test-task-proposals.ts",
     "test:public-contribution-pages": "tsx scripts/test-public-contribution-pages.ts",
     "test:mcp-contribute": "tsx scripts/test-mcp-contribute.ts",
+    "test:mcp-auth-firebreak": "tsx scripts/test-mcp-auth-firebreak.ts",
     "test:proposal-admin-ui": "tsx scripts/test-proposal-admin-ui.ts",
     "check:pwa-syntax": "node --check src/pwa/public/app.js && node --check src/pwa/public/i18n.js && node --check src/pwa/public/sw.js",
     "test:rewards-vs-contribution-copy": "tsx scripts/test-rewards-vs-contribution-copy.ts",

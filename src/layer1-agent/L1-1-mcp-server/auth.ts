@@ -20,9 +20,19 @@ export function authenticate(
   apiKey: string
 ): AuthUser | null {
   if (!apiKey || apiKey === '') return null
-  return db
+  const user = db
     .prepare('SELECT id, name, handle, role, roles, api_key FROM users WHERE api_key = ?')
     .get(apiKey) as AuthUser | null
+  if (!user) return null
+  // Firebreak: a suspended account (e.g. an emergency-frozen admin) must FAIL the api_key path too —
+  // not only the PWA session path (server.ts auth() blocks suspended before session use). The MCP path
+  // authenticates by api_key with no session, so honor user_moderation here. fail-closed: suspended →
+  // no access. Single chokepoint, so every caller of authenticate (incl. requireAuth) is covered.
+  const mod = db
+    .prepare('SELECT suspended FROM user_moderation WHERE user_id = ?')
+    .get(user.id) as { suspended?: number } | undefined
+  if (mod && mod.suspended) return null
+  return user
 }
 
 export function requireAuth(
