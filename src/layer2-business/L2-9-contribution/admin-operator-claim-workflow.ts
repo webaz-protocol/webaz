@@ -194,6 +194,55 @@ export function revokeApprovedClaim(db: Database.Database, input: { approvedEven
   return { ok: true, revokedEventId }
 }
 
+// ── notifications: remind the party who must act next at every transition (clickable deep-link) ──
+export type ClaimTransition = 'proposed' | 'accepted' | 'rejected_by_contributor' | 'approved' | 'rejected_by_root' | 'revoked'
+export interface NotifSpec { userId: string; title: string; body: string; href: string; label: string }
+
+/** Pure: who to notify + what, for a claim transition. Self-link (admin==contributor) → deduped. */
+export function claimNotificationSpecs(kind: ClaimTransition, claim: { admin_account_id: string; contributor_account_id: string }, rootIds: string[]): NotifSpec[] {
+  const admin = claim.admin_account_id, contrib = claim.contributor_account_id
+  const ME = '#me/operator-claims', ADMIN = '#admin/operator-claims'
+  const uniq = (xs: NotifSpec[]) => { const seen = new Set<string>(); return xs.filter(s => s.userId && !seen.has(s.userId) && seen.add(s.userId)) }
+  switch (kind) {
+    case 'proposed':
+      return [{ userId: contrib, title: '🔗 待确认的贡献归属关联', body: `管理席位 ${admin} 请求把协调贡献归属到你的账号,请确认或拒绝。`, href: ME, label: '去确认' }]
+    case 'accepted':
+      return uniq(rootIds.map(r => ({ userId: r, title: '🪪 操作席位关联待审批', body: `贡献人已确认来自管理席位 ${admin} 的关联,待你审批。`, href: ADMIN, label: '去审批' })))
+    case 'rejected_by_contributor':
+      return [{ userId: admin, title: '🔗 关联被贡献人拒绝', body: '贡献人拒绝了你发起的归属关联。', href: ME, label: '查看' }]
+    case 'approved':
+      return uniq([contrib, admin].map(u => ({ userId: u, title: '✅ 贡献归属关联已生效', body: `管理席位 ${admin} 的协调贡献现归属到该贡献人账号。`, href: ME, label: '查看' })))
+    case 'rejected_by_root':
+      return [{ userId: admin, title: '🔗 关联未通过审批', body: 'root 未通过你发起的归属关联。', href: ME, label: '查看' }]
+    case 'revoked':
+      return uniq([contrib, admin].map(u => ({ userId: u, title: '🪪 贡献归属关联已撤销', body: '此前的归属关联已被撤销。', href: ME, label: '查看' })))
+    default: return []
+  }
+}
+
+/**
+ * Insert the transition's notifications (best-effort; caller should try/catch so a notify failure never
+ * rolls back the claim). Returns the specs emitted. Uses the existing notifications table + its `actions`
+ * deep-link column so the notification is clickable straight to the right page.
+ */
+export function emitClaimNotifications(db: Database.Database, kind: ClaimTransition, claimedEventId: string): NotifSpec[] {
+  const claim = db.prepare("SELECT admin_account_id, contributor_account_id FROM admin_operator_claim_events WHERE event_id = ? AND event_type = 'claimed'").get(claimedEventId) as any
+  if (!claim) return []
+  const rootIds = (db.prepare("SELECT id FROM users WHERE role = 'admin' AND admin_type = 'root'").all() as any[]).map(r => r.id as string)
+  const specs = claimNotificationSpecs(kind, claim, rootIds)
+  const ins = db.prepare(`INSERT INTO notifications (id, user_id, type, title, body, actions, created_at) VALUES (?,?,?,?,?,?,datetime('now'))`)
+  for (const s of specs) {
+    ins.run(generateId('ntf'), s.userId, 'operator_claim', s.title, s.body, JSON.stringify([{ kind: 'navigate', href: s.href, label: s.label, style: 'primary' }]))
+  }
+  return specs
+}
+
+/** Resolve the claim (claimed) event id behind an approved event (for revoke notifications). */
+export function claimedEventIdOfApproved(db: Database.Database, approvedEventId: string): string | null {
+  const r = db.prepare("SELECT supersedes_event_id FROM admin_operator_claim_events WHERE event_id = ? AND event_type = 'approved'").get(approvedEventId) as any
+  return r?.supersedes_event_id ?? null
+}
+
 // ── read helpers (route surfaces) ──
 export function listClaimsForSeat(db: Database.Database, adminAccountId: string): ClaimView[] {
   const ids = db.prepare("SELECT event_id FROM admin_operator_claim_events WHERE admin_account_id = ? AND event_type = 'claimed' ORDER BY created_at DESC").all(adminAccountId) as any[]

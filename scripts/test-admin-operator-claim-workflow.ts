@@ -13,9 +13,12 @@
  * approved claim and returns null with none; and NO contribution_facts are produced.
  */
 import Database from 'better-sqlite3'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { initGithubCredentialStoreSchema } from '../src/layer2-business/L2-9-contribution/github-credential-store.js'
 import { initAdminCoordinationSchema } from '../src/layer2-business/L2-9-contribution/admin-coordination-store.js'
-import { proposeClaim, confirmClaim, approveClaim, rejectClaim, revokeApprovedClaim, deriveClaimState } from '../src/layer2-business/L2-9-contribution/admin-operator-claim-workflow.js'
+import { proposeClaim, confirmClaim, approveClaim, rejectClaim, revokeApprovedClaim, deriveClaimState, claimNotificationSpecs, emitClaimNotifications, claimedEventIdOfApproved } from '../src/layer2-business/L2-9-contribution/admin-operator-claim-workflow.js'
 import { resolveOperatorClaimAsOf } from '../src/layer2-business/L2-9-contribution/admin-coordination-resolver.js'
 
 let pass = 0, fail = 0
@@ -34,6 +37,7 @@ function freshDb(): any {
     ('usr_holden','Holden','buyer',NULL,'["buyer"]','k_h'),
     ('usr_eve','Eve','buyer',NULL,'["buyer"]','k_e')`).run()
   db.exec(`CREATE TABLE admin_audit_log (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL, action TEXT NOT NULL, target_type TEXT, target_id TEXT, detail TEXT, created_at TEXT DEFAULT (datetime('now')))`)
+  db.exec(`CREATE TABLE notifications (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, order_id TEXT, type TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, read INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')), actions TEXT)`)
   initGithubCredentialStoreSchema(db)   // contribution_facts — must stay empty
   initAdminCoordinationSchema(db)
   return db
@@ -138,6 +142,39 @@ async function main(): Promise<void> {
     ins({})   // one valid confirmation
     ok('DB UNIQUE rejects a second confirmation for the same claim', threw(() => ins({ confirmation_id: 'aocc_dup', decision: 'rejected' })))
     ok('valid confirmation is read as confirmed', deriveClaimState(db, c.claimedEventId)!.status === 'confirmed') }
+
+  // ── notifications: each transition reminds the party who must act next, with a clickable deep-link ──
+  { const SELF = { admin_account_id: 'usr_root', contributor_account_id: 'usr_root' }
+    const X = { admin_account_id: 'usr_regional', contributor_account_id: 'usr_holden' }
+    const sp = (k: any, c: any) => claimNotificationSpecs(k, c, ['usr_root'])
+    ok('proposed → notify contributor, link to #me/operator-claims', sp('proposed', X).length === 1 && sp('proposed', X)[0].userId === 'usr_holden' && sp('proposed', X)[0].href === '#me/operator-claims')
+    ok('accepted → notify root, link to #admin/operator-claims', sp('accepted', X)[0].userId === 'usr_root' && sp('accepted', X)[0].href === '#admin/operator-claims')
+    ok('rejected_by_contributor → notify proposing admin', sp('rejected_by_contributor', X)[0].userId === 'usr_regional')
+    ok('approved → notify BOTH contributor + admin', sp('approved', X).map(s => s.userId).sort().join() === ['usr_holden', 'usr_regional'].sort().join())
+    ok('self-link approved → deduped to ONE recipient', sp('approved', SELF).length === 1) }
+  { const db = freshDb()
+    // GitHub binding is NOT a precondition: this test DB has NO identity-binding tables at all, yet the
+    // whole claim + notification flow runs for a plain buyer contributor (no GitHub link required).
+    ok('no GitHub identity infra present (claim flow needs none)', !db.prepare("SELECT 1 FROM sqlite_master WHERE name='identity_bindings_active'").get())
+    const c = proposeClaim(db, { actorAdminId: 'usr_regional', contributorAccountId: 'usr_holden' }) as any
+    const emitted = emitClaimNotifications(db, 'proposed', c.claimedEventId)
+    ok('emitClaimNotifications inserts a notification for the contributor (no GitHub binding needed)', emitted.length === 1 && emitted[0].userId === 'usr_holden')
+    const row = db.prepare("SELECT user_id, type, actions FROM notifications WHERE user_id='usr_holden' AND type='operator_claim'").get() as any
+    ok('notification row persisted with clickable navigate action to #me/operator-claims', !!row && /"href":"#me\/operator-claims"/.test(row.actions) && /"kind":"navigate"/.test(row.actions))
+    // revoke path resolves the claim behind the approved event
+    confirmClaim(db, { claimedEventId: c.claimedEventId, deciderId: 'usr_holden', decision: 'accepted' })
+    const a = approveClaim(db, { claimedEventId: c.claimedEventId, approverId: 'usr_root', approvalKind: 'root_approval', conflictDisclosure: 'none' }) as any
+    ok('claimedEventIdOfApproved resolves the claim behind an approved event', claimedEventIdOfApproved(db, a.approvedEventId) === c.claimedEventId) }
+
+  // ── static UI contract: the persistent "贡献归属" me-menu card is admin-ONLY (not unconditional, not GitHub-gated) ──
+  { const appSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/pwa/public/app.js'), 'utf8')
+    // the persistent me-menu entry uses card() (NOT adminLinkCard, which only lives inside admin-only pages)
+    const meMenuCardLines = appSrc.split('\n').filter(l => /\bcard\(/.test(l) && !/adminLinkCard/.test(l) && l.includes('#me/operator-claims'))
+    ok('exactly one persistent me-menu 贡献归属 card', meMenuCardLines.length === 1, JSON.stringify(meMenuCardLines))
+    ok("me-menu 贡献归属 card is gated by role === 'admin' (NOT shown to all users)", meMenuCardLines.every(l => /role === 'admin' \?/.test(l)))
+    ok('me-menu 贡献归属 card is NOT gated on GitHub binding', meMenuCardLines.every(l => !/github|identity_binding/i.test(l)))
+    // and there is no UNCONDITIONAL persistent card for it
+    ok('no unconditional persistent 贡献归属 card', !meMenuCardLines.some(l => !/\?/.test(l))) }
 
   if (fail === 0) {
     console.log(`\n✅ admin operator-claim workflow (Phase 2): propose(admin-only) → confirm(contributor-only) → approve(root, confirmed-gated) → revoke/supersede · self-link founder_bootstrap_override/self_or_related (independent_governance rejected) · append-only events+confirmations · resolver as-of · zero contribution_facts\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)

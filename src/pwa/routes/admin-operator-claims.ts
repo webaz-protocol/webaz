@@ -16,7 +16,8 @@ import { logAdminAction } from '../admin-audit.js'
 import {
   proposeClaim, confirmClaim, approveClaim, rejectClaim, revokeApprovedClaim,
   deriveClaimState, listClaimsForSeat, listPendingConfirmationsForContributor, listAllClaims,
-  type ClaimStatus,
+  emitClaimNotifications, claimedEventIdOfApproved,
+  type ClaimStatus, type ClaimTransition,
 } from '../../layer2-business/L2-9-contribution/admin-operator-claim-workflow.js'
 
 interface Deps {
@@ -52,6 +53,8 @@ function shape(v: any): any {
 
 export function registerAdminOperatorClaimRoutes(app: Application, deps: Deps): void {
   const { db, errorRes, auth, requireAdmin, requireRootAdmin } = deps
+  // Best-effort: a notify failure must never roll back / fail the claim mutation.
+  const notify = (kind: ClaimTransition, claimedEventId: string) => { try { emitClaimNotifications(db, kind, claimedEventId) } catch { /* notifications are degradable */ } }
 
   // ── admin proposes linking THEIR OWN seat to a contributor account ──
   app.post('/api/admin/operator-claims', (req: Request, res: Response) => {
@@ -67,6 +70,7 @@ export function registerAdminOperatorClaimRoutes(app: Application, deps: Deps): 
         return r
       })()
       if (!(out as any).ok) return errorRes(res, httpFor((out as any).code), (out as any).code, (out as any).message)
+      notify('proposed', (out as any).claimedEventId)   // → tell the contributor to confirm
       res.json({ ok: true, claim: shape(deriveClaimState(db, (out as any).claimedEventId)) })
     } catch (e) { errorRes(res, 500, 'internal', (e as Error).message) }
   })
@@ -96,6 +100,7 @@ export function registerAdminOperatorClaimRoutes(app: Application, deps: Deps): 
         return r
       })()
       if (!(out as any).ok) return errorRes(res, httpFor((out as any).code), (out as any).code, (out as any).message)
+      notify(decision === 'accepted' ? 'accepted' : 'rejected_by_contributor', String(req.params.claimedEventId))   // → root to approve, or admin that it was declined
       res.json({ ok: true, claim: shape(deriveClaimState(db, String(req.params.claimedEventId))) })
     } catch (e) { errorRes(res, 500, 'internal', (e as Error).message) }
   })
@@ -117,7 +122,7 @@ export function registerAdminOperatorClaimRoutes(app: Application, deps: Deps): 
 
   // Shared tx + audit + error boilerplate. Each ROOT route below inlines requireRootAdmin(req, res)
   // FIRST (so the api-docs/OpenAPI generator detects the auth gate) then delegates here.
-  const runRootMutation = (res: Response, root: Record<string, unknown>, req: Request, action: string, targetId: string, fn: () => any) => {
+  const runRootMutation = (res: Response, root: Record<string, unknown>, req: Request, action: string, targetId: string, fn: () => any, notifyKind?: ClaimTransition, notifyClaimedEventId?: string) => {
     try {
       const out = db.transaction(() => {
         const r = fn()
@@ -126,6 +131,7 @@ export function registerAdminOperatorClaimRoutes(app: Application, deps: Deps): 
         return r
       })()
       if (!(out as any).ok) return errorRes(res, httpFor((out as any).code), (out as any).code, (out as any).message)
+      if (notifyKind && notifyClaimedEventId) notify(notifyKind, notifyClaimedEventId)   // → tell contributor + proposing admin
       res.json({ ok: true, result: out })
     } catch (e) { errorRes(res, 500, 'internal', (e as Error).message) }
   }
@@ -135,7 +141,7 @@ export function registerAdminOperatorClaimRoutes(app: Application, deps: Deps): 
     const root = requireRootAdmin(req, res); if (!root) return
     const id = String(req.params.claimedEventId)
     runRootMutation(res, root, req, 'operator_claim.approve', id, () =>
-      approveClaim(db, { claimedEventId: id, approverId: root.id as string, approvalKind: String(req.body?.approval_kind ?? ''), conflictDisclosure: String(req.body?.conflict_disclosure ?? ''), rationale: req.body?.rationale ? String(req.body.rationale) : undefined }))
+      approveClaim(db, { claimedEventId: id, approverId: root.id as string, approvalKind: String(req.body?.approval_kind ?? ''), conflictDisclosure: String(req.body?.conflict_disclosure ?? ''), rationale: req.body?.rationale ? String(req.body.rationale) : undefined }), 'approved', id)
   })
 
   // ── ROOT: reject a still-proposed/confirmed claim ──
@@ -143,14 +149,15 @@ export function registerAdminOperatorClaimRoutes(app: Application, deps: Deps): 
     const root = requireRootAdmin(req, res); if (!root) return
     const id = String(req.params.claimedEventId)
     runRootMutation(res, root, req, 'operator_claim.reject', id, () =>
-      rejectClaim(db, { claimedEventId: id, approverId: root.id as string, rationale: req.body?.rationale ? String(req.body.rationale) : undefined }))
+      rejectClaim(db, { claimedEventId: id, approverId: root.id as string, rationale: req.body?.rationale ? String(req.body.rationale) : undefined }), 'rejected_by_root', id)
   })
 
   // ── ROOT: revoke an APPROVED (active) claim ──
   app.post('/api/admin/operator-claims/:approvedEventId/revoke', (req: Request, res: Response) => {
     const root = requireRootAdmin(req, res); if (!root) return
     const id = String(req.params.approvedEventId)
+    const claimedId = claimedEventIdOfApproved(db, id) ?? undefined   // resolve the claim behind the approval for notifications
     runRootMutation(res, root, req, 'operator_claim.revoke', id, () =>
-      revokeApprovedClaim(db, { approvedEventId: id, revokerId: root.id as string, rationale: req.body?.rationale ? String(req.body.rationale) : undefined }))
+      revokeApprovedClaim(db, { approvedEventId: id, revokerId: root.id as string, rationale: req.body?.rationale ? String(req.body.rationale) : undefined }), 'revoked', claimedId)
   })
 }
