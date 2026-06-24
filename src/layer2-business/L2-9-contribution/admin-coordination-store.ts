@@ -118,6 +118,8 @@ const CREATE_UNLINK_REQUESTS = `
     requested_by            TEXT REFERENCES users(id),
     requester_role          TEXT CHECK (requester_role IS NULL OR requester_role IN ('admin_seat','contributor')),
     decided_by              TEXT REFERENCES users(id),
+    approval_kind           TEXT CHECK (approval_kind IS NULL OR approval_kind IN ('independent_governance','root_approval','founder_bootstrap_override')),
+    conflict_disclosure     TEXT CHECK (conflict_disclosure IS NULL OR conflict_disclosure IN ('none','self_or_related','unknown')),
     reason                  TEXT,
     human_auth_ref          TEXT,
     supersedes_request_id   TEXT REFERENCES admin_operator_unlink_requests(request_event_id),
@@ -127,6 +129,12 @@ const CREATE_UNLINK_REQUESTS = `
     CHECK (event_type = 'requested' OR decided_by IS NOT NULL)
   )
 `
+// Additive migration: add the decision-marking columns to an EXISTING unlink table (it may already
+// exist from the lifecycle deploy; CREATE IF NOT EXISTS won't add columns). Guarded → idempotent.
+const ALTER_UNLINK_MARKING = [
+  `ALTER TABLE admin_operator_unlink_requests ADD COLUMN approval_kind TEXT`,
+  `ALTER TABLE admin_operator_unlink_requests ADD COLUMN conflict_disclosure TEXT`,
+]
 const CREATE_INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_aoce_admin ON admin_operator_claim_events(admin_account_id)`,
   `CREATE INDEX IF NOT EXISTS idx_aoce_supersedes ON admin_operator_claim_events(supersedes_event_id)`,
@@ -168,6 +176,16 @@ export function initAdminCoordinationSchema(db: Database.Database): void {
     db.exec(CREATE_CLAIM_CONFIRMATIONS)
     db.exec(CREATE_FACT_SOURCES)
     db.exec(CREATE_UNLINK_REQUESTS)
+    // Additive: backfill marking columns onto an unlink table created by an earlier deploy.
+    const aourCols = new Set(
+      (db.prepare(`PRAGMA table_info(admin_operator_unlink_requests)`).all() as Array<{ name: string }>).map((c) => c.name),
+    )
+    if (!aourCols.has('approval_kind') || !aourCols.has('conflict_disclosure')) {
+      for (const stmt of ALTER_UNLINK_MARKING) {
+        const col = stmt.includes('approval_kind') ? 'approval_kind' : 'conflict_disclosure'
+        if (!aourCols.has(col)) db.exec(stmt)
+      }
+    }
     for (const idx of CREATE_INDEXES) db.exec(idx)
     db.exec(TRIGGER_AOCE_NO_UPDATE)
     db.exec(TRIGGER_AOCE_NO_DELETE)

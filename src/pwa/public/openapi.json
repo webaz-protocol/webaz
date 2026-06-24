@@ -1038,7 +1038,7 @@
     },
     "/api/admin/operator-claims/me": {
       "get": {
-        "summary": "── the calling admin's own seat: its claims + states ──",
+        "summary": "admin-seat owner can request/track unlink on their own active claims) ──",
         "tags": [
           "admin"
         ],
@@ -1051,7 +1051,7 @@
     },
     "/api/admin/operator-claims/unlink/:requestEventId/approve": {
       "post": {
-        "summary": "── ROOT: approve an unlink request → revokes the claim ──",
+        "summary": "relationship/request, approval_kind + conflict_disclosure are required (governance honesty). ──",
         "tags": [
           "admin"
         ],
@@ -1064,7 +1064,7 @@
     },
     "/api/admin/operator-claims/unlink/:requestEventId/reject": {
       "post": {
-        "summary": "── ROOT: reject an unlink request → claim stays active ──",
+        "summary": "── ROOT: reject an unlink request → claim stays active. Same self-or-related marking discipline. ──",
         "tags": [
           "admin"
         ],
@@ -1077,7 +1077,7 @@
     },
     "/api/admin/operator-claims/unlink/requests": {
       "get": {
-        "summary": "── ROOT: pending unlink requests (review queue). Path under /unlink/ to avoid the /:claimedEventId match ──",
+        "summary": "self_or_related flags each request the viewing root is a party to → the UI then REQUIRES honest marking. ──",
         "tags": [
           "admin"
         ],
