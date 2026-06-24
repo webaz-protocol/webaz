@@ -34,5 +34,28 @@ expect('含三层责任 tiers', c.liability_tiers.length === 3 && c.liability_ti
 expect('含 enters_core_test + iron_rule', typeof c.enters_core_test === 'string' && /WebAuthn/.test(c.iron_rule))
 expect('所有 URL 引用非空', JSON.stringify(c).split('"').filter(s => s.startsWith('https://webaz.xyz')).every(u => u.length > 'https://webaz.xyz/'.length))
 
+// ── agent_quickstart: 陌生 agent 60 秒冷启动块(离散可解析 + 贡献边界前置 + 无经济承诺) ──
+const q = (c as any).agent_quickstart
+expect('含 agent_quickstart 块', !!q && typeof q === 'object')
+expect('quickstart.canonical_start_url 指向 integration.json', /\/\.well-known\/webaz-integration\.json$/.test(q.canonical_start_url))
+expect('quickstart 一句话定位(agent-native + pre-launch 诚实)', /agent-native/i.test(q.what_is_webaz) && /pre-launch|no real money/i.test(q.what_is_webaz))
+expect('quickstart.public_readonly_entrypoints 是数组且含 well-known + 公开任务板',
+  Array.isArray(q.public_readonly_entrypoints) && q.public_readonly_entrypoints.some((u: string) => /webaz-protocol\.json/.test(u)) && q.public_readonly_entrypoints.some((u: string) => /\/api\/public\/build-tasks/.test(u)))
+expect('quickstart.anonymous_allowed_actions 含只读 + keyless suggest',
+  Array.isArray(q.anonymous_allowed_actions) && q.anonymous_allowed_actions.some((a: string) => /no credential|no key/i.test(a)) && q.anonymous_allowed_actions.some((a: string) => /suggest/i.test(a)))
+expect('quickstart.authenticated_required_actions 含 write/transact',
+  Array.isArray(q.authenticated_required_actions) && q.authenticated_required_actions.some((a: string) => /write|transact/i.test(a)))
+expect('quickstart.how_to_authenticate 讲明真人 + Passkey + agent 不能自助',
+  /human/i.test(q.how_to_authenticate) && /Passkey/i.test(q.how_to_authenticate) && /CANNOT self-register|cannot self-register/i.test(q.how_to_authenticate))
+expect('quickstart.safe_next_actions 是有序数组(≥3)', Array.isArray(q.safe_next_actions) && q.safe_next_actions.length >= 3)
+expect('quickstart.proposal_flow 含 discover + suggest + after_submit(人工审、非自动采纳)',
+  !!q.proposal_flow && /build-tasks/.test(q.proposal_flow.discover) && /task-proposals/.test(q.proposal_flow.suggest) && /manual|maintainer/i.test(q.proposal_flow.after_submit))
+// 贡献边界:建议明确 NOT 贡献事实 / NOT 自动奖励;facts/evidence/attribution only
+expect('quickstart.contribution_boundary 说明 建议≠贡献事实 + facts/evidence/attribution only',
+  /NOT a contribution fact/i.test(q.contribution_boundary) && /facts \/ evidence \/ attribution only/i.test(q.contribution_boundary))
+// 无经济承诺:quickstart 块整体不得出现 reward/payout/income/收益/提现 等承诺性措辞
+expect('quickstart 块无承诺性经济措辞(reward/payout/income/收益/提现)',
+  !/reward|payout|income|收益|提现/i.test(JSON.stringify(q)), JSON.stringify(q).match(/reward|payout|income|收益|提现/i)?.[0])
+
 console.log(`\n${pass} pass · ${fail} fail`)
 if (fail > 0) process.exit(1)

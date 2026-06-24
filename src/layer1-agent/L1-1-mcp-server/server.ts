@@ -1773,6 +1773,9 @@ async function handleInfo() {
       note: 'Want to change WebAZ itself (not just use it)? This is an open, agent-native protocol — AI-authored PRs are welcome, with accountability. / 想改 WebAZ 本身(不只是用)?这是开放的 agent 原生协议,欢迎 AI 提 PR,但需问责。',
       repo: 'https://github.com/webaz-protocol/webaz',
       start_here: 'AGENTS.md (project map + before-you-code + PR flow) → CONTRIBUTING.md (full guide)',
+      // 低门槛路径:无需 api_key、无需 clone 仓库,直接经协议发现任务 / 提建议(对外 well-known 入口也有,见 agent_quickstart)。
+      no_key_path: 'No api_key needed to START contributing: discover open tasks and submit a suggestion via webaz_contribute action=list_open / action=suggest (mirrors GET /api/public/build-tasks + POST /api/public/task-proposals). / 无需 key 即可起步:webaz_contribute action=list_open 发现开放任务、action=suggest 提建议。',
+      contribution_boundary: 'A suggestion is a proposal in the maintainer review inbox — NOT a contribution fact, NOT formal participation, and NOT any economic or redemption right; recorded contribution is facts / evidence / attribution only (RFC-017). / 建议只是进入维护者审阅箱的提议,不是贡献事实、不是正式参与、不构成任何经济或兑现权利;记录的贡献只是事实/证据/归属(RFC-017)。',
       ai_accountability: 'AI-authored PRs: add 🤖🤖🤖 to the PR title; the agent must be triggered by a Passkey-bound human (webazer) who is accountable. / AI 提 PR:标题加 🤖🤖🤖,且须由已绑 Passkey 的真人(webazer)触发并担责。',
     },
     // NETWORK 模式:真网络 live 状态(best-effort 拉自 webaz.xyz);SANDBOX 模式为 null。

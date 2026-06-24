@@ -35,12 +35,13 @@ export function contractFingerprints(): { contract_version: number; capability: 
 }
 
 // 契约变更注册表(authored)—— 每个 integrator-observable 变更一条;agent 按 since 取比它新的。
-export interface ContractChange { contract_version: number; date: string; surface: 'capability' | 'entity' | 'versioning' | 'eventing' | 'all'; kind: 'genesis' | 'added' | 'changed' | 'deprecated' | 'removed'; summary: string; migration?: string }
+export interface ContractChange { contract_version: number; date: string; surface: 'capability' | 'entity' | 'versioning' | 'eventing' | 'integration' | 'all'; kind: 'genesis' | 'added' | 'changed' | 'deprecated' | 'removed'; summary: string; migration?: string }
 export const CONTRACT_CHANGES: ContractChange[] = [
   { contract_version: 1, date: '2026-06-06', surface: 'all', kind: 'genesis', summary: 'Contract v1 baseline: capability matrix (§②), entity dictionary + order lifecycle (§①), event cursor stream (§⑥), two version axes (§④).' },
   { contract_version: 2, date: '2026-06-06', surface: 'entity', kind: 'added', summary: '§① entity dictionary gains product + dispute entities (conservative public fields; dispute = redacted dispute_cases) + goal_index pointer. Additive — existing order entity unchanged; agents may ignore.' },
   { contract_version: 3, date: '2026-06-09', surface: 'entity', kind: 'changed', summary: '§① order lifecycle: corrected declined_nofault state meaning text — it is NOT terminal (transitions declined_nofault→completed on settlement). Dropped the contradictory "(terminal)" label that conflicted with the auto-derived terminal:false. Semantics/state-machine unchanged; text-only clarification for agents reading the entity dictionary.' },
   { contract_version: 4, date: '2026-06-09', surface: 'capability', kind: 'changed', summary: '§② capability matrix: POST /api/reviews/:type/:id/claim now requires the new "review_claim" action scope instead of being SAFE (unscoped). The review-claim path locks a 5 WAZ stake (escrow), so it belongs under default-deny accountability like other value writes. GET reviews endpoints stay open.', migration: 'A declared agent that calls review claim must add the "review_claim" scope to its api_key (or hold a Passkey, or declare "*"). Passkey-bound humans and "*" agents are unaffected; GET reviews unchanged.' },
+  { contract_version: 5, date: '2026-06-24', surface: 'integration', kind: 'added', summary: '§④ integration-contract entry (/.well-known/webaz-integration.json) gains an agent_quickstart block: a 60-second stranger-agent cold-start with discrete, machine-parseable fields (canonical_start_url, public_readonly_entrypoints, anonymous_allowed_actions, authenticated_required_actions, safe_next_actions, proposal_flow, contribution_boundary). Additive — no existing field changed; agents may ignore. NB: this surface is NOT covered by the §②/§① fingerprint, so it is registered here by hand.' },
 ]
 
 export function buildChangeFeed() {

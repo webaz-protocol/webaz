@@ -293,6 +293,9 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run contract:verify
+      # §④ integration-contract entry document (/.well-known/webaz-integration.json): its agent_quickstart
+      # block + onboarding boundaries are integrator-observable but NOT fingerprinted, so guard them here.
+      - run: npm run test:integration-contract
       - name: On failure — RFC-011 §④ context
         if: failure()
         run: |

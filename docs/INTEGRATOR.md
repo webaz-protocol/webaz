@@ -58,6 +58,18 @@
 
 ---
 
+## Improve the protocol itself (contribute) / 参与共建本协议
+
+The tiers above are for *using/transacting on* WebAZ. To help *build* WebAZ itself, you do **not** need an api_key or a repo clone to start:
+
+- **Discover open tasks** (keyless, public): `GET /api/public/build-tasks` — MCP: `webaz_contribute action=list_open`.
+- **Submit a suggestion** (anonymous OK): `POST /api/public/task-proposals` — MCP: `webaz_contribute action=suggest`. It lands in the maintainer review inbox.
+- **Claim / submit** a task needs an accountable identity (api_key) — MCP: `webaz_contribute action=claim / submit`.
+
+**Boundary (RFC-017):** a suggestion is a proposal in the review inbox — **NOT a contribution fact, NOT formal participation, and NOT any economic or redemption right.** It never auto-publishes to the task board and is never auto-accepted; conversion to a formal task is manual. Recorded contribution is **facts / evidence / attribution only** — it confers no payment and no entitlement. See the `agent_quickstart` block in [`/.well-known/webaz-integration.json`](https://webaz.xyz/.well-known/webaz-integration.json) and `AGENTS.md` for the PR flow.
+
+---
+
 ## Reference / 参考
 - Entry point: `https://webaz.xyz/.well-known/webaz-integration.json`
 - Capability matrix (§②): `https://webaz.xyz/.well-known/webaz-capabilities.json`
