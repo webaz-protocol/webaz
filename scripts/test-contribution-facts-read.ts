@@ -57,7 +57,7 @@ function auditAt(db: any, action: string, createdAt: string, o: any = {}): strin
 }
 // build a real GitHub-bound fact (binding event → active binding → credential → fact → link)
 function insGithubFact(db: any, account: string, actor: string, fid: string, sek: string): void {
-  db.prepare(`INSERT INTO identity_binding_events (event_id,event_type,github_actor_id,account_id,visibility,proof_method,immutable) VALUES (?, 'bound', ?, ?, 'public', 'admin_manual', 1)`).run('ibe_' + fid, actor, account)
+  db.prepare(`INSERT INTO identity_binding_events (event_id,event_type,github_actor_id,account_id,visibility,proof_method,immutable) VALUES (?, 'bound', ?, ?, 'public', 'github_publication_challenge', 1)`).run('ibe_' + fid, actor, account)
   db.prepare(`INSERT INTO identity_bindings_active (github_actor_id,account_id,visibility,bound_event_id,ref_event_type,bound_at) VALUES (?,?,'public',?, 'bound', ?)`).run(actor, account, 'ibe_' + fid, T0)
   db.prepare(`INSERT INTO github_contribution_credentials (credential_id,core_digest,credential_version,source_event_key,repository_id,pr_node_id,pr_number,merge_commit_sha,merged_at,github_actor_id,lifecycle_event,core_json) VALUES (?,?, 'v1', ?, 'R_1','prn_1',7,'sha7',?,?, 'merged','{}')`).run('cred_' + fid, 'dig_' + fid, sek, T1, actor)
   db.prepare(`INSERT INTO contribution_facts (fact_id,source_event_key,source,type,artifact_ref,occurred_at,executor_ref,accountable_ref,provenance,status,immutable) VALUES (?,?, 'github','code','pr#7',?, ?, NULL, 'human','active',1)`).run(fid, sek, T1, 'github:' + actor)
