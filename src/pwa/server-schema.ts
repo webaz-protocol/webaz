@@ -996,3 +996,179 @@ export function initErrorLogSchema(db: Database.Database): void {
 `)
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_error_log_created ON error_log(created_at)') } catch {}
 }
+
+// ─── 二手市场（1 件即 1 件，个人卖家，协议费 1%）───────────────────
+// 注：调用方 server.ts 保留原 try/catch + [secondhand schema] label；
+// 这些 DDL 原本无逐句 try/catch（靠外层 try 兜底），此处照搬不加。
+export function initSecondhandItemsSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS secondhand_items (
+    id            TEXT PRIMARY KEY,
+    seller_id     TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    description   TEXT,
+    category      TEXT NOT NULL,        -- phone/computer/appliance/furniture/clothing/book/toy/sports/other
+    condition_grade TEXT NOT NULL,      -- brand_new/like_new/lightly_used/well_used/heavily_used
+    price         REAL NOT NULL,
+    negotiable    INTEGER DEFAULT 0,
+    images        TEXT,                 -- JSON 数组：dataURL 字符串 (最多 9 张)
+    region        TEXT,
+    fulfillment   TEXT DEFAULT 'both',  -- shipping / in_person / both
+    status        TEXT DEFAULT 'available',  -- available / reserved / sold / closed
+    view_count    INTEGER DEFAULT 0,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT DEFAULT (datetime('now')),
+    sold_at       TEXT,
+    sold_order_id TEXT
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_si_status_created ON secondhand_items(status, created_at DESC)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_si_seller ON secondhand_items(seller_id, status)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_si_cat ON secondhand_items(category, status)`)
+}
+
+// ─── 测评免单计划（1 product 1 row；后续无 ALTER）──────────────────
+export function initProductTrialCampaignsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS product_trial_campaigns (
+    id                TEXT PRIMARY KEY,                   -- ptc_xxxx
+    -- 1 product 1 row (复用同一行：关闭后再开 = UPDATE status='active'，避免 UNIQUE 阻断 reopen)
+    product_id        TEXT NOT NULL UNIQUE REFERENCES products(id),
+    seller_id         TEXT NOT NULL REFERENCES users(id),
+    quota_total       INTEGER NOT NULL,                   -- 总名额 1-200
+    quota_claimed     INTEGER NOT NULL DEFAULT 0,
+    reach_threshold   INTEGER NOT NULL,                   -- 综合 reach 阈值 (默认 50)
+    min_chars         INTEGER NOT NULL DEFAULT 50,        -- 笔记最少字数
+    min_days_live     INTEGER NOT NULL DEFAULT 7,         -- 笔记需 live 至少 N 天才评估
+    status            TEXT NOT NULL DEFAULT 'active',     -- active / paused / closed
+    created_at        TEXT DEFAULT (datetime('now')),
+    closed_at         TEXT
+  )
+`)
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_ptc_seller ON product_trial_campaigns(seller_id, status)") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_ptc_product ON product_trial_campaigns(product_id, status)") } catch {}
+}
+
+// ─── 测评免单认领（snap/audit ALTER 刻意留 server.ts 原位）──────────
+export function initProductTrialClaimsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS product_trial_claims (
+    id                TEXT PRIMARY KEY,                   -- pcl_xxxx
+    campaign_id       TEXT NOT NULL REFERENCES product_trial_campaigns(id),
+    product_id        TEXT NOT NULL REFERENCES products(id),
+    seller_id         TEXT NOT NULL REFERENCES users(id),
+    buyer_id          TEXT NOT NULL REFERENCES users(id),
+    order_id          TEXT NOT NULL REFERENCES orders(id),
+    note_id           TEXT,                               -- shareables.id with type='note'
+    status            TEXT NOT NULL DEFAULT 'pending_note', -- pending_note / pending_threshold / refunded / expired / cancelled
+    reach_score       REAL DEFAULT 0,
+    metrics_json      TEXT,                               -- 最新评估的 {views, shares, conversions} 快照
+    refund_amount     REAL,
+    refunded_at       TEXT,
+    expired_at        TEXT,
+    last_eval_at      TEXT,
+    claimed_at        TEXT DEFAULT (datetime('now')),
+    note_linked_at    TEXT,
+    UNIQUE(buyer_id, product_id)                          -- 一买家一商品仅 1 个名额
+  )
+`)
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_pcl_campaign ON product_trial_claims(campaign_id, status)") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_pcl_buyer ON product_trial_claims(buyer_id, status)") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_pcl_seller ON product_trial_claims(seller_id, status)") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_pcl_eval ON product_trial_claims(status, last_eval_at)") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_pcl_note ON product_trial_claims(note_id) WHERE note_id IS NOT NULL") } catch {}
+}
+
+// ─── Wave B-3: 退货请求（pickup ALTER 刻意留 server.ts 原位）────────
+export function initReturnRequestsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS return_requests (
+    id                   TEXT PRIMARY KEY,
+    order_id             TEXT NOT NULL,
+    buyer_id             TEXT NOT NULL,
+    seller_id            TEXT NOT NULL,
+    product_id           TEXT NOT NULL,
+    reason               TEXT NOT NULL,          -- 'quality' | 'wrong_item' | 'damaged' | 'no_longer_needed' | 'other'
+    reason_text          TEXT,
+    refund_amount        DECIMAL(18,2),          -- 默认 = order.total_amount
+    status               TEXT NOT NULL DEFAULT 'pending', -- pending | accepted | rejected | refunded | escalated | cancelled
+    seller_response      TEXT,
+    escalated_dispute_id TEXT,
+    created_at           TEXT DEFAULT (datetime('now')),
+    resolved_at          TEXT
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_returns_seller_pending ON return_requests(seller_id, status) WHERE status = \'pending\'') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_returns_buyer ON return_requests(buyer_id, created_at)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_returns_order ON return_requests(order_id)') } catch {}
+}
+
+// ─── W2 售后协商时间线（flagged/flag_reasons ALTER 刻意留 server.ts 原位）──
+export function initReturnMessagesSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS return_messages (
+    id          TEXT PRIMARY KEY,            -- rmsg_xxx
+    return_id   TEXT NOT NULL,
+    sender_id   TEXT NOT NULL,
+    sender_role TEXT NOT NULL,               -- 'buyer' | 'seller' | 'system'
+    body        TEXT NOT NULL,
+    created_at  TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_rmsg_return ON return_messages(return_id, created_at)') } catch {}
+}
+
+// ─── Wave B-1: 商品 variants（has_variants/options_key ALTER + 回填 + uniq 索引刻意留 server.ts 原位）──
+export function initProductVariantsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS product_variants (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT NOT NULL,
+    sku             TEXT,                 -- 卖家内部 SKU 编号（可选）
+    options_json    TEXT NOT NULL,        -- {"颜色":"红","尺寸":"L"} 必填
+    price_override  REAL,                 -- null = 用 product.price
+    stock           INTEGER DEFAULT 0,
+    images_json     TEXT,                 -- variant 专属图（可选，null = 用 product.images）
+    is_active       INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_pv_product ON product_variants(product_id, is_active)') } catch {}
+}
+
+// ─── B-4: 编辑精选 / 每周推荐 ──────────────────────────────────────
+export function initEditorPicksSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS editor_picks (
+    id          TEXT PRIMARY KEY,
+    kind        TEXT NOT NULL,     -- 'product' | 'seller'
+    target_id   TEXT NOT NULL,
+    title       TEXT,              -- 编辑推荐语
+    note        TEXT,
+    starts_at   TEXT NOT NULL,
+    ends_at     TEXT NOT NULL,
+    sort_order  INTEGER DEFAULT 0,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_ep_active ON editor_picks(kind, ends_at, sort_order)') } catch {}
+}
+
+// ─── D-3: KYC light — 实名认证（轻度，不存原始证件号）──────────────
+export function initKycRecordsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS kyc_records (
+    user_id        TEXT PRIMARY KEY,
+    real_name      TEXT NOT NULL,
+    id_type        TEXT NOT NULL,            -- 'passport' | 'national_id' | 'driver_license'
+    id_number_hash TEXT NOT NULL,            -- sha256(id_number + MASTER_SEED)
+    id_number_last4 TEXT,                    -- 末 4 位明文（便于核对）
+    status         TEXT NOT NULL DEFAULT 'pending',  -- pending / approved / rejected
+    reject_reason  TEXT,
+    reviewed_by    TEXT,
+    reviewed_at    TEXT,
+    submitted_at   TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_kyc_status ON kyc_records(status, submitted_at)') } catch {}
+}

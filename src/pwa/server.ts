@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema, initCartItemsSchema, initFollowsSchema, initPushSubscriptionsSchema, initUserSessionsSchema, initUserBlocklistSchema, initImportLogsSchema, initErrorLogSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema, initCartItemsSchema, initFollowsSchema, initPushSubscriptionsSchema, initUserSessionsSchema, initUserBlocklistSchema, initImportLogsSchema, initErrorLogSchema, initSecondhandItemsSchema, initProductTrialCampaignsSchema, initProductTrialClaimsSchema, initReturnRequestsSchema, initReturnMessagesSchema, initProductVariantsSchema, initEditorPicksSchema, initKycRecordsSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -635,28 +635,7 @@ for (const stmt of [
 // M8 二手板块：独立表，避免污染 products 商家货架
 // 关键差异：1 件即 1 件（无库存）、个人卖家无需 seller 角色、无质保、协议费 1%（vs 商家 2%）
 try {
-  db.exec(`CREATE TABLE IF NOT EXISTS secondhand_items (
-    id            TEXT PRIMARY KEY,
-    seller_id     TEXT NOT NULL,
-    title         TEXT NOT NULL,
-    description   TEXT,
-    category      TEXT NOT NULL,        -- phone/computer/appliance/furniture/clothing/book/toy/sports/other
-    condition_grade TEXT NOT NULL,      -- brand_new/like_new/lightly_used/well_used/heavily_used
-    price         REAL NOT NULL,
-    negotiable    INTEGER DEFAULT 0,
-    images        TEXT,                 -- JSON 数组：dataURL 字符串 (最多 9 张)
-    region        TEXT,
-    fulfillment   TEXT DEFAULT 'both',  -- shipping / in_person / both
-    status        TEXT DEFAULT 'available',  -- available / reserved / sold / closed
-    view_count    INTEGER DEFAULT 0,
-    created_at    TEXT DEFAULT (datetime('now')),
-    updated_at    TEXT DEFAULT (datetime('now')),
-    sold_at       TEXT,
-    sold_order_id TEXT
-  )`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_si_status_created ON secondhand_items(status, created_at DESC)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_si_seller ON secondhand_items(seller_id, status)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_si_cat ON secondhand_items(category, status)`)
+  initSecondhandItemsSchema(db)
 } catch (e) { console.error('[secondhand schema]', e) }
 
 db.exec(`
@@ -1315,51 +1294,9 @@ const getActiveFlashSale = (productId: string, variantId?: string | null) =>
 // 2026-05-24 #978: 测评免单 (Trial Review Refund)
 // 卖家发新品时可开启「测评免单」计划：买家以原价正常下单，发笔记达 reach 阈值后系统自动退款
 // reach_score = views * 0.1 + shares * 1 + conversions * 10
-db.exec(`
-  CREATE TABLE IF NOT EXISTS product_trial_campaigns (
-    id                TEXT PRIMARY KEY,                   -- ptc_xxxx
-    -- 1 product 1 row (复用同一行：关闭后再开 = UPDATE status='active'，避免 UNIQUE 阻断 reopen)
-    product_id        TEXT NOT NULL UNIQUE REFERENCES products(id),
-    seller_id         TEXT NOT NULL REFERENCES users(id),
-    quota_total       INTEGER NOT NULL,                   -- 总名额 1-200
-    quota_claimed     INTEGER NOT NULL DEFAULT 0,
-    reach_threshold   INTEGER NOT NULL,                   -- 综合 reach 阈值 (默认 50)
-    min_chars         INTEGER NOT NULL DEFAULT 50,        -- 笔记最少字数
-    min_days_live     INTEGER NOT NULL DEFAULT 7,         -- 笔记需 live 至少 N 天才评估
-    status            TEXT NOT NULL DEFAULT 'active',     -- active / paused / closed
-    created_at        TEXT DEFAULT (datetime('now')),
-    closed_at         TEXT
-  )
-`)
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_ptc_seller ON product_trial_campaigns(seller_id, status)") } catch {}
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_ptc_product ON product_trial_campaigns(product_id, status)") } catch {}
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS product_trial_claims (
-    id                TEXT PRIMARY KEY,                   -- pcl_xxxx
-    campaign_id       TEXT NOT NULL REFERENCES product_trial_campaigns(id),
-    product_id        TEXT NOT NULL REFERENCES products(id),
-    seller_id         TEXT NOT NULL REFERENCES users(id),
-    buyer_id          TEXT NOT NULL REFERENCES users(id),
-    order_id          TEXT NOT NULL REFERENCES orders(id),
-    note_id           TEXT,                               -- shareables.id with type='note'
-    status            TEXT NOT NULL DEFAULT 'pending_note', -- pending_note / pending_threshold / refunded / expired / cancelled
-    reach_score       REAL DEFAULT 0,
-    metrics_json      TEXT,                               -- 最新评估的 {views, shares, conversions} 快照
-    refund_amount     REAL,
-    refunded_at       TEXT,
-    expired_at        TEXT,
-    last_eval_at      TEXT,
-    claimed_at        TEXT DEFAULT (datetime('now')),
-    note_linked_at    TEXT,
-    UNIQUE(buyer_id, product_id)                          -- 一买家一商品仅 1 个名额
-  )
-`)
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_pcl_campaign ON product_trial_claims(campaign_id, status)") } catch {}
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_pcl_buyer ON product_trial_claims(buyer_id, status)") } catch {}
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_pcl_seller ON product_trial_claims(seller_id, status)") } catch {}
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_pcl_eval ON product_trial_claims(status, last_eval_at)") } catch {}
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_pcl_note ON product_trial_claims(note_id) WHERE note_id IS NOT NULL") } catch {}
+// 测评免单计划 + 认领 → server-schema.ts；claims 的 snap/audit ALTER 刻意留原位（紧跟下方）
+initProductTrialCampaignsSchema(db)
+initProductTrialClaimsSchema(db)
 // 审计 P0-1：claim 时快照 campaign 配置，cron 评估按快照而非当前活动（防卖家中途上调阈值白嫖）
 for (const col of [
   'ALTER TABLE product_trial_claims ADD COLUMN snap_reach_threshold INTEGER',
@@ -1449,66 +1386,24 @@ initBuyerRatingsSchema(db)
 // Wave C-2: 多收货地址簿 → server-schema.ts
 initUserAddressesSchema(db)
 
-// Wave B-3: 退货请求 — 买家在 return_days 窗口内可发起，卖家可接受/拒绝；拒绝后可走 dispute
-db.exec(`
-  CREATE TABLE IF NOT EXISTS return_requests (
-    id                   TEXT PRIMARY KEY,
-    order_id             TEXT NOT NULL,
-    buyer_id             TEXT NOT NULL,
-    seller_id            TEXT NOT NULL,
-    product_id           TEXT NOT NULL,
-    reason               TEXT NOT NULL,          -- 'quality' | 'wrong_item' | 'damaged' | 'no_longer_needed' | 'other'
-    reason_text          TEXT,
-    refund_amount        DECIMAL(18,2),          -- 默认 = order.total_amount
-    status               TEXT NOT NULL DEFAULT 'pending', -- pending | accepted | rejected | refunded | escalated | cancelled
-    seller_response      TEXT,
-    escalated_dispute_id TEXT,
-    created_at           TEXT DEFAULT (datetime('now')),
-    resolved_at          TEXT
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_returns_seller_pending ON return_requests(seller_id, status) WHERE status = \'pending\'') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_returns_buyer ON return_requests(buyer_id, created_at)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_returns_order ON return_requests(order_id)') } catch {}
+// Wave B-3: 退货请求 → server-schema.ts；pickup ALTER 刻意留原位（紧跟下方）
+initReturnRequestsSchema(db)
 
 // 2026-05-22 L3+B3：退货上门取件（MVP — 仅声明阶段）
 // 完整状态机（accepted_pickup_pending → picked_up → refunded）留 Phase 2
 try { db.exec('ALTER TABLE return_requests ADD COLUMN pickup_requested INTEGER DEFAULT 0') } catch {}
 try { db.exec('ALTER TABLE return_requests ADD COLUMN pickup_address TEXT') } catch {}
 
-// W2 售后协商时间线 — 多轮消息（buyer ↔ seller）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS return_messages (
-    id          TEXT PRIMARY KEY,            -- rmsg_xxx
-    return_id   TEXT NOT NULL,
-    sender_id   TEXT NOT NULL,
-    sender_role TEXT NOT NULL,               -- 'buyer' | 'seller' | 'system'
-    body        TEXT NOT NULL,
-    created_at  TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_rmsg_return ON return_messages(return_id, created_at)') } catch {}
+// W2 售后协商时间线 — 多轮消息（buyer ↔ seller）→ server-schema.ts；flagged/flag_reasons ALTER 刻意留原位（紧跟下方）
+initReturnMessagesSchema(db)
 // 跨窗反诈一致性
 try { db.exec('ALTER TABLE return_messages ADD COLUMN flagged INTEGER DEFAULT 0') } catch {}
 try { db.exec('ALTER TABLE return_messages ADD COLUMN flag_reasons TEXT') } catch {}
 
 // Wave B-1 Phase 1: 商品 variants（同款多 SKU — 颜色/尺寸/规格组合）
 // schema + CRUD 端点；Phase 2 再集成订单/购物车
-db.exec(`
-  CREATE TABLE IF NOT EXISTS product_variants (
-    id              TEXT PRIMARY KEY,
-    product_id      TEXT NOT NULL,
-    sku             TEXT,                 -- 卖家内部 SKU 编号（可选）
-    options_json    TEXT NOT NULL,        -- {"颜色":"红","尺寸":"L"} 必填
-    price_override  REAL,                 -- null = 用 product.price
-    stock           INTEGER DEFAULT 0,
-    images_json     TEXT,                 -- variant 专属图（可选，null = 用 product.images）
-    is_active       INTEGER DEFAULT 1,
-    created_at      TEXT DEFAULT (datetime('now')),
-    updated_at      TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_pv_product ON product_variants(product_id, is_active)') } catch {}
+// Wave B-1: 商品 variants → server-schema.ts；has_variants/options_key ALTER + 回填 + uniq 索引刻意留原位（紧跟下方）
+initProductVariantsSchema(db)
 // 给 products 加 has_variants 标记（避免每次查 join 检查）
 try { db.exec('ALTER TABLE products ADD COLUMN has_variants INTEGER DEFAULT 0') } catch {}
 // P2-1: variants 唯一性 — options 的 canonical key (sorted keys) 用于防止同 product 内重复 SKU
@@ -5119,22 +5014,8 @@ registerAdminTokenomicsRoutes(app, {
 // #1013 Phase 73: GET /api/reviews/recent 已迁出（claim 2 端点也由同模块注册，定义在下游）
 
 
-// B-4: 编辑精选 / 每周推荐
-db.exec(`
-  CREATE TABLE IF NOT EXISTS editor_picks (
-    id          TEXT PRIMARY KEY,
-    kind        TEXT NOT NULL,     -- 'product' | 'seller'
-    target_id   TEXT NOT NULL,
-    title       TEXT,              -- 编辑推荐语
-    note        TEXT,
-    starts_at   TEXT NOT NULL,
-    ends_at     TEXT NOT NULL,
-    sort_order  INTEGER DEFAULT 0,
-    created_by  TEXT,
-    created_at  TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_ep_active ON editor_picks(kind, ends_at, sort_order)') } catch {}
+// B-4: 编辑精选 / 每周推荐 → server-schema.ts
+initEditorPicksSchema(db)
 
 // editor-picks 公开 — Phase 107 已迁出
 
@@ -5203,22 +5084,8 @@ registerAdminOpsRoutes(app, {
 // AI 2 endpoints — Phase 100 已迁出
 registerAiRoutes(app, { db, auth, anthropic })
 
-// D-3: KYC light — 实名认证（轻度，不存原始证件号）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS kyc_records (
-    user_id        TEXT PRIMARY KEY,
-    real_name      TEXT NOT NULL,
-    id_type        TEXT NOT NULL,            -- 'passport' | 'national_id' | 'driver_license'
-    id_number_hash TEXT NOT NULL,            -- sha256(id_number + MASTER_SEED)
-    id_number_last4 TEXT,                    -- 末 4 位明文（便于核对）
-    status         TEXT NOT NULL DEFAULT 'pending',  -- pending / approved / rejected
-    reject_reason  TEXT,
-    reviewed_by    TEXT,
-    reviewed_at    TEXT,
-    submitted_at   TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_kyc_status ON kyc_records(status, submitted_at)') } catch {}
+// D-3: KYC light — 实名认证（轻度，不存原始证件号）→ server-schema.ts
+initKycRecordsSchema(db)
 
 // KYC 2 endpoints — Phase 97 已迁出
 registerKycRoutes(app, { db, auth, MASTER_SEED })
