@@ -561,3 +561,63 @@ export function initSignalingQueueSchema(db: Database.Database): void {
 `)
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_sig_to ON signaling_queue(to_peer_id, delivered_at)") } catch {}
 }
+
+// ─── CHAT — 上下文绑定聊天（order / rfq / listing_qa）────────────────
+export function initConversationsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS conversations (
+    id              TEXT PRIMARY KEY,
+    kind            TEXT NOT NULL,
+    context_id      TEXT NOT NULL,
+    user_a          TEXT NOT NULL,
+    user_b          TEXT NOT NULL,
+    last_message_at TEXT,
+    last_preview    TEXT,
+    unread_a        INTEGER NOT NULL DEFAULT 0,
+    unread_b        INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'active',
+    created_at      TEXT DEFAULT (datetime('now')),
+    UNIQUE(kind, context_id, user_a, user_b)
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_a ON conversations(user_a, last_message_at DESC)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_b ON conversations(user_b, last_message_at DESC)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_ctx ON conversations(kind, context_id)') } catch {}
+}
+
+// ─── 聊天消息（后续 kind/meta ALTER 刻意保留在 server.ts 原位）────────
+export function initMessagesSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS messages (
+    id              TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    sender_id       TEXT NOT NULL,
+    body            TEXT NOT NULL DEFAULT '',
+    attachments     TEXT,
+    flagged         INTEGER NOT NULL DEFAULT 0,
+    flag_reasons    TEXT,
+    read_at         TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_msg_conv ON messages(conversation_id, created_at)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_msg_sender ON messages(sender_id, created_at DESC)') } catch {}
+}
+
+// ─── 反诈举报表（chat report → 人工审核）──────────────────────────────
+export function initChatReportsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_reports (
+    id              TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    message_id      TEXT,
+    reporter_id     TEXT NOT NULL,
+    reported_id     TEXT NOT NULL,
+    reason          TEXT NOT NULL,
+    note            TEXT,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    created_at      TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_chatrpt_status ON chat_reports(status, created_at)') } catch {}
+}
