@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -1600,112 +1600,15 @@ for (const stmt of [
 ]) { try { db.exec(stmt) } catch {} }
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_products_p2p ON products(p2p_mode, status)') } catch {}
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS p2p_shops (
-    id              TEXT PRIMARY KEY,
-    owner_id        TEXT NOT NULL,
-    name            TEXT NOT NULL,
-    description     TEXT,
-    thumbnail_uri   TEXT,
-    peer_endpoint   TEXT,
-    peer_pubkey     TEXT,
-    status          TEXT NOT NULL DEFAULT 'active',
-    created_at      TEXT DEFAULT (datetime('now')),
-    updated_at      TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_p2p_shops_owner ON p2p_shops(owner_id, status)') } catch {}
-db.exec(`
-  CREATE TABLE IF NOT EXISTS shareable_likes (
-    id            TEXT PRIMARY KEY,
-    shareable_id  TEXT NOT NULL,
-    user_id       TEXT NOT NULL,
-    created_at    TEXT DEFAULT (datetime('now')),
-    UNIQUE(shareable_id, user_id)
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_shr_likes_shr ON shareable_likes(shareable_id)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_shr_likes_user ON shareable_likes(user_id, created_at DESC)') } catch {}
-
-// 2026-05-22 audit P2：收藏功能（小红书风格"收藏" tab）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS shareable_bookmarks (
-    id            TEXT PRIMARY KEY,
-    shareable_id  TEXT NOT NULL,
-    user_id       TEXT NOT NULL,
-    created_at    TEXT DEFAULT (datetime('now')),
-    UNIQUE(shareable_id, user_id)
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_shr_bm_user ON shareable_bookmarks(user_id, created_at DESC)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_shr_bm_shr ON shareable_bookmarks(shareable_id)') } catch {}
-
-// 2026-05-22 audit P1 backlog：# 话题/标签系统（小红书风格内容分发）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS shareable_tags (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    shareable_id  TEXT NOT NULL,
-    tag           TEXT NOT NULL,          -- 已 lowercase + trim，最长 30 字符
-    created_at    TEXT DEFAULT (datetime('now')),
-    UNIQUE(shareable_id, tag)
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_shr_tags_tag ON shareable_tags(tag, created_at DESC)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_shr_tags_shr ON shareable_tags(shareable_id)') } catch {}
-
-// manifest_registry = 原生 P2P 内容索引（仅 hash + 签名 + 元数据；字节在用户设备）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS manifest_registry (
-    hash                 TEXT PRIMARY KEY,
-    owner_id             TEXT NOT NULL,
-    content_type         TEXT NOT NULL,
-    byte_size            INTEGER NOT NULL,
-    title                TEXT,
-    description          TEXT,
-    thumbnail_data_uri   TEXT,
-    signature            TEXT NOT NULL,
-    signed_at            TEXT NOT NULL,
-    related_product_id   TEXT,
-    related_anchor       TEXT,
-    status               TEXT DEFAULT 'active',
-    takedown_reason      TEXT,
-    takedown_at          TEXT,
-    takedown_by          TEXT,
-    created_at           TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_mfst_owner ON manifest_registry(owner_id, status)") } catch {}
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_mfst_product ON manifest_registry(related_product_id, status)") } catch {}
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_mfst_anchor ON manifest_registry(related_anchor, status)") } catch {}
-
-// peer_directory = 在线 peer 注册（哪些 user 持有哪些 hash 的 cache，heartbeat 5min 失效）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS peer_directory (
-    peer_id             TEXT NOT NULL,
-    manifest_hash       TEXT NOT NULL,
-    is_owner            INTEGER DEFAULT 0,
-    pin_intent          INTEGER DEFAULT 0,
-    last_heartbeat      TEXT NOT NULL,
-    bytes_served_total  INTEGER DEFAULT 0,
-    PRIMARY KEY (peer_id, manifest_hash)
-  )
-`)
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_peer_hash ON peer_directory(manifest_hash, last_heartbeat DESC)") } catch {}
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_peer_heartbeat ON peer_directory(last_heartbeat)") } catch {}
-
-// signaling_queue = WebRTC SDP/ICE 中继（TTL 2min，cron 清理）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS signaling_queue (
-    id              TEXT PRIMARY KEY,
-    to_peer_id      TEXT NOT NULL,
-    from_peer_id    TEXT NOT NULL,
-    signal_type     TEXT NOT NULL,
-    signal_data     TEXT NOT NULL,
-    created_at      TEXT NOT NULL,
-    delivered_at    TEXT
-  )
-`)
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_sig_to ON signaling_queue(to_peer_id, delivered_at)") } catch {}
+// P2P 店铺 / 笔记点赞·收藏·标签 / manifest·peer·signaling（原生 P2P 内容层）→ server-schema.ts
+// 纯幂等建表/建索引 DDL，原位调用保持 boot 顺序不变
+initP2pShopsSchema(db)
+initShareableLikesSchema(db)
+initShareableBookmarksSchema(db)
+initShareableTagsSchema(db)
+initManifestRegistrySchema(db)
+initPeerDirectorySchema(db)
+initSignalingQueueSchema(db)
 
 // pin_receipts = 服务证明（pinner 给 recipient 传输 N bytes 时双签的回执）
 // recipient 之后下单同商品 → settlePinRewards 从 basin 拨 0.5% 订单额分给最近 5 个 pinners
