@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -1451,39 +1451,10 @@ try { db.exec("ALTER TABLE email_subscriptions ADD COLUMN handle_status TEXT DEF
 try { db.exec("ALTER TABLE email_subscriptions ADD COLUMN handled_at    TEXT") } catch {}
 try { db.exec("ALTER TABLE email_subscriptions ADD COLUMN handled_by    TEXT") } catch {}
 
-// 2026-05-24 首屏「我有建议」公开收集（匿名可投，登录态自动绑 user_id）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS public_ideas (
-    id            TEXT PRIMARY KEY,
-    user_id       TEXT,                                  -- 可空（匿名提交）
-    contact       TEXT,                                  -- 可选 email / handle / 任何联系方式
-    content       TEXT NOT NULL,
-    ip_hash       TEXT,
-    ua_hash       TEXT,
-    status        TEXT NOT NULL DEFAULT 'new',          -- new / triaged / resolved / spam
-    created_at    TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_pi_status ON public_ideas(status, created_at DESC)") } catch {}
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_pi_rate ON public_ideas(ip_hash, created_at)") } catch {}
-
-// 2026-05-24 #959: 拍卖「⏰ 提醒我」
-// 买家订阅拍卖，cron 在 deadline - lead_minutes 时发通知；1 个订阅 = 多行（每个 lead 时间一行）
-// 默认订阅 = [60, 10]（结束前 1h + 10min 各提醒一次）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS auction_reminders (
-    id            TEXT PRIMARY KEY,                   -- arm_xxxx
-    auction_id    TEXT NOT NULL REFERENCES auctions(id),
-    user_id       TEXT NOT NULL REFERENCES users(id),
-    lead_minutes  INTEGER NOT NULL,                   -- 提前多少分钟提醒
-    fire_at       TEXT NOT NULL,                      -- deadline - lead_minutes（创建时算好）
-    sent_at       TEXT,
-    created_at    TEXT DEFAULT (datetime('now')),
-    UNIQUE(auction_id, user_id, lead_minutes)
-  )
-`)
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_arm_due ON auction_reminders(sent_at, fire_at) WHERE sent_at IS NULL") } catch {}
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_arm_user ON auction_reminders(user_id, auction_id)") } catch {}
+// 首屏「我有建议」公开收集 / #959 拍卖「⏰ 提醒我」 → server-schema.ts
+// 纯幂等建表/建索引 DDL，原位调用保持 boot 顺序不变（email_subscriptions 仍留原位）
+initPublicIdeasSchema(db)
+initAuctionRemindersSchema(db)
 
 // Wave D-3: 用户反馈 / 客服工单（buyer-to-platform，独立于 disputes）
 db.exec(`
