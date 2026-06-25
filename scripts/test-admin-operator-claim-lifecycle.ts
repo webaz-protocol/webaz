@@ -163,7 +163,12 @@ async function main(): Promise<void> {
     ok('unlink reject route forwards marking to engine', /rejectUnlink\(db, \{ requestEventId: id, approverId: root\.id as string, approvalKind, conflictDisclosure \}\)/.test(routeSrc)) }
 
   // ── P2-1 static UI contract: admin's OWN approved claims expose an unlink control (claimRow shares unlinkAreaFor) ──
+  // The operator-claim render surface (unlinkAreaFor / claimRow / relCard / markingForm)
+  // was moved out of app.js into app-contribution.js by the classic-script split
+  // (PR D / #57), so this contract reads BOTH files. (The me-menu block below stays
+  // app.js-only — its negative assertions need the tight app.js source span.)
   { const appSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/pwa/public/app.js'), 'utf8')
+      + '\n' + readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/pwa/public/app-contribution.js'), 'utf8')
     ok('shared unlinkAreaFor helper exists', /const unlinkAreaFor = \(c\) =>/.test(appSrc))
     ok('admin claimRow renders the unlink area', /claimRow = \(c\) => `[\s\S]*?\$\{unlinkAreaFor\(c\)\}[\s\S]*?<\/div>`/.test(appSrc))
     ok('contributor relCard renders the unlink area', /relCard = \(c\) => \{[\s\S]*?\$\{unlinkAreaFor\(c\)\}/.test(appSrc))

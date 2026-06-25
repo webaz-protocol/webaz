@@ -578,6 +578,7 @@ jobs:
       - run: npm run test:identity-claim-ui
       - run: npm run test:identity-claim-discovery
       - run: npm run test:operator-ingest-guards
+      - run: npm run test:admin-operator-claim-lifecycle   # static UI contract spans app.js + app-contribution.js (post classic-split)
       - name: On failure — PR-F3c claim API
         if: failure()
         run: |
