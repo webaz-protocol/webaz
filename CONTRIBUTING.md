@@ -76,6 +76,15 @@ DB defaults to `~/.webaz/webaz.db`. Delete to reset local data.
 PR 描述写清楚:**改了什么 / 为什么 / 怎么验证**。PR 模板第一项【改动分类】必填(AI review 据此分流)。
 In the PR: **what / why / how to verify**. The PR template's first item [change category] is required (AI review routes by it).
 
+代码 PR 还必须遵守 [`docs/ENGINEERING-PR-CONSTRAINTS.md`](docs/ENGINEERING-PR-CONSTRAINTS.md):
+一个 PR 只做一类事;不要让新逻辑回流到 `server.ts` / `app.js`;不要为了过 CI 抬高 ratchet
+baseline;结构拆分、UI polish、schema/migration、钱/订单/状态路径必须分开。
+
+Code PRs must also obey [`docs/ENGINEERING-PR-CONSTRAINTS.md`](docs/ENGINEERING-PR-CONSTRAINTS.md):
+one PR has one change type; do not backflow new logic into `server.ts` / `app.js`;
+do not raise ratchet baselines just to pass CI; keep structure refactors, UI
+polish, schema/migrations, and money/order/status-path work in separate PRs.
+
 > 文档 / i18n / 小修不必懂治理细节,放心提。涉及协议状态机 / 资金 / 治理的改动,见下面 [深入贡献](#深入贡献协议级改动--going-deeper-protocol-level-changes)。
 > Docs / i18n / small fixes need no governance knowledge — just send it. For protocol-state / funds / governance changes, see [Going deeper](#深入贡献协议级改动--going-deeper-protocol-level-changes) below.
 
