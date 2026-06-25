@@ -246,3 +246,41 @@ export function initEmailSubscriptionsSchema(db: Database.Database): void {
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_es_status ON email_subscriptions(unsubscribed_at, created_at DESC)") } catch {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_es_source ON email_subscriptions(source, created_at DESC)") } catch {}
 }
+
+// ─── Wave D-3: 用户反馈 / 客服工单（buyer-to-platform，独立于 disputes）──
+// 注：后续 ALTER 列扩展刻意保留在 server.ts 原位（紧跟本 init 调用之后）
+export function initFeedbackTicketsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS feedback_tickets (
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL,
+    category      TEXT NOT NULL,         -- 'bug' | 'abuse' | 'feature' | 'account' | 'other'
+    severity      TEXT DEFAULT 'medium', -- 'low' | 'medium' | 'high'
+    subject       TEXT NOT NULL,
+    body          TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'open',  -- open | in_progress | resolved | closed
+    admin_reply   TEXT,
+    replied_by    TEXT,
+    replied_at    TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback_tickets(user_id, created_at DESC)') } catch {}
+}
+
+// ─── W7 客服 ticket-thread — 多轮消息（user ↔ admin）─────────────────
+// 注：后续 ALTER 列扩展刻意保留在 server.ts 原位（紧跟本 init 调用之后）
+export function initFeedbackMessagesSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS feedback_messages (
+    id          TEXT PRIMARY KEY,            -- fmsg_xxx
+    ticket_id   TEXT NOT NULL,
+    sender_id   TEXT NOT NULL,
+    sender_role TEXT NOT NULL,               -- 'user' | 'admin'
+    body        TEXT NOT NULL,
+    created_at  TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_fmsg_ticket ON feedback_messages(ticket_id, created_at)') } catch {}
+}
