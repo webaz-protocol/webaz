@@ -74,7 +74,6 @@ if (!baseSrc) {
   console.log(`  ⚠ base ref '${BASE_REF}' not resolvable (shallow clone / no remote) — skipping monotonicity locally; CI enforces it.`)
 } else {
   const base = parseGuard(baseSrc)
-  let raises = 0
   for (const [key, cur] of current.all) {
     const prev = base.all.get(key)
     if (prev === undefined) {
@@ -86,11 +85,26 @@ if (!baseSrc) {
       }
       continue
     }
-    if (cur > prev) { raises++; fail(`baseline '${key}' rose ${prev} → ${cur}. Ratchet baselines may only be LOWERED, never raised (fail-closed: no exception channel).`) }
+    if (cur > prev) fail(`baseline '${key}' rose ${prev} → ${cur}. Ratchet baselines may only be LOWERED, never raised (fail-closed: no exception channel).`)
     else if (cur < prev) console.log(`  ✓ '${key}' lowered ${prev} → ${cur}`)
     else console.log(`  ✓ '${key}' unchanged (${cur})`)
   }
-  if (raises === 0) console.log('  Guard A OK')
+  // Deleting a baseline line also dismantles the ratchet — catch keys present in
+  // base but gone from current. A LOC ceiling may only disappear if the tracked
+  // file was itself removed; the server.ts DDL baselines may never be deleted.
+  for (const [key, prev] of base.all) {
+    if (current.all.has(key)) continue
+    if (base.loc.has(key)) {
+      if (existsSync(join(ROOT, key))) {
+        fail(`baseline '${key}' was removed (was ${prev}) but the file still exists — ratchet baselines may not be deleted unless the tracked LOC file was removed.`)
+      } else {
+        console.log(`  ✓ '${key}' baseline removed with its now-deleted file (allowed)`)
+      }
+    } else {
+      fail(`baseline '${key}' was removed (was ${prev}) — ratchet baselines may not be deleted (fail-closed).`)
+    }
+  }
+  if (!failed) console.log('  Guard A OK')
 }
 
 // ─────────────────────────── Guard B: app-*.js fully wired ───────────────────────────

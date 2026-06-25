@@ -53,10 +53,12 @@ Complexity baselines are current debt ceilings, not quality targets.
 
 基线只能有意降低,不能为了过 CI 自己抬高。新增拆分文件也必须进入 ratchet。
 
-> CI-enforced (fail-closed) by `npm run guard:pr-constraints` (Guard A): any
-> existing ratchet baseline that rises vs the merge-base with `main` fails the
-> build. There is no in-PR exception channel — a baseline that genuinely must
-> rise is a separate, explicit decision. / 由 `guard:pr-constraints` 机械强制,无例外通道。
+> CI-enforced (fail-closed) by `npm run guard:pr-constraints` (Guard A): vs the
+> merge-base with `main`, any existing ratchet baseline that **rises** fails the
+> build, and a baseline that is **deleted** also fails (a LOC ceiling may only be
+> removed together with its tracked file; the server.ts DDL baselines may never be
+> removed) — deleting the line must not be a way to dismantle the ratchet. No
+> in-PR exception channel. / 由 `guard:pr-constraints` 机械强制:抬高或删除基线都 fail,无例外通道。
 
 ## 4. Schema And Migration Rules
 
