@@ -621,3 +621,133 @@ export function initChatReportsSchema(db: Database.Database): void {
 `)
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_chatrpt_status ON chat_reports(status, created_at)') } catch {}
 }
+
+// ─── 配额提升申请 ──────────────────────────────────────────────────
+export function initQuotaIncreaseApplicationsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS quota_increase_applications (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    current_quota   INTEGER,
+    requested_quota INTEGER,
+    reason          TEXT,
+    status          TEXT DEFAULT 'pending',
+    applied_at      TEXT DEFAULT (datetime('now')),
+    reviewed_at     TEXT,
+    reviewed_by     TEXT,
+    decision_note   TEXT
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_quota_apps_status ON quota_increase_applications(status)') } catch {}
+}
+
+// ─── Verifier 申请记录 ─────────────────────────────────────────────
+export function initVerifierApplicationsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS verifier_applications (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    status          TEXT DEFAULT 'pending',
+    applied_at      TEXT DEFAULT (datetime('now')),
+    reviewed_at     TEXT,
+    reviewed_by     TEXT,
+    decision_note   TEXT,
+    snapshot        TEXT
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_verifier_apps_status ON verifier_applications(status)') } catch {}
+}
+
+// ─── Arbitrator 申请 + 白名单（外部仲裁员路径 — 与 verifier 平行）────
+// 注：legacy 内部仲裁员 → 白名单的 migration INSERT 刻意保留在 server.ts 原位
+export function initArbitratorReviewSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS arbitrator_applications (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    status          TEXT DEFAULT 'pending',
+    applied_at      TEXT DEFAULT (datetime('now')),
+    reviewed_at     TEXT,
+    reviewed_by     TEXT,
+    decision_note   TEXT,
+    snapshot        TEXT
+  );
+  CREATE TABLE IF NOT EXISTS arbitrator_whitelist (
+    user_id         TEXT PRIMARY KEY,
+    added_at        TEXT DEFAULT (datetime('now')),
+    note            TEXT,
+    is_system       INTEGER DEFAULT 0,
+    granted_by      TEXT,
+    stake_amount    INTEGER DEFAULT 0
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_arb_apps_status ON arbitrator_applications(status)') } catch {}
+}
+
+// ─── Verifier 申诉记录 ─────────────────────────────────────────────
+export function initVerifierAppealsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS verifier_appeals (
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL,
+    task_id       TEXT,
+    submission_id TEXT,
+    reason        TEXT NOT NULL,
+    evidence_urls TEXT DEFAULT '[]',
+    status        TEXT DEFAULT 'pending',
+    admin_note    TEXT,
+    reviewed_by   TEXT,
+    reviewed_at   TEXT,
+    created_at    TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_verifier_appeals_status ON verifier_appeals(status)') } catch {}
+}
+
+// ─── 用户暂停状态（admin 管理）────────────────────────────────────
+export function initUserModerationSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS user_moderation (
+    user_id        TEXT PRIMARY KEY,
+    suspended      INTEGER DEFAULT 0,
+    reason         TEXT,
+    suspended_by   TEXT,
+    suspended_at   TEXT
+  )
+`)
+}
+
+// ─── admin 操作审计日志（initAdminCoordinationSchema FK 依赖本表，须先建）──
+export function initAdminAuditLogSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS admin_audit_log (
+    id           TEXT PRIMARY KEY,
+    admin_id     TEXT NOT NULL,
+    action       TEXT NOT NULL,
+    target_type  TEXT,
+    target_id    TEXT,
+    detail       TEXT,
+    created_at   TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created ON admin_audit_log(created_at)') } catch {}
+}
+
+// ─── 验证码表（邮箱绑定 / 找回密钥 / 改密码 等共用）────────────────
+export function initVerificationCodesSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS verification_codes (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL,
+    channel     TEXT NOT NULL,           -- 'email' / 'phone'
+    target      TEXT NOT NULL,           -- 邮箱地址 / 手机号
+    code        TEXT NOT NULL,           -- 6 位数字
+    purpose     TEXT NOT NULL,           -- 'bind_email' / 'recover_key' / ...
+    attempts    INTEGER DEFAULT 0,
+    used_at     TEXT,
+    expires_at  TEXT NOT NULL,
+    created_at  TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_verification_codes_lookup ON verification_codes(channel, target, purpose)') } catch {}
+}

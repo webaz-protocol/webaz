@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -2477,61 +2477,15 @@ for (const stmt of [
   'ALTER TABLE users ADD COLUMN listing_paused_at TEXT',
 ]) { try { db.exec(stmt) } catch {} }
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS quota_increase_applications (
-    id              TEXT PRIMARY KEY,
-    user_id         TEXT NOT NULL,
-    current_quota   INTEGER,
-    requested_quota INTEGER,
-    reason          TEXT,
-    status          TEXT DEFAULT 'pending',
-    applied_at      TEXT DEFAULT (datetime('now')),
-    reviewed_at     TEXT,
-    reviewed_by     TEXT,
-    decision_note   TEXT
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_quota_apps_status ON quota_increase_applications(status)') } catch {}
+// 配额提升申请 → server-schema.ts
+initQuotaIncreaseApplicationsSchema(db)
 
-// Verifier 申请记录
-db.exec(`
-  CREATE TABLE IF NOT EXISTS verifier_applications (
-    id              TEXT PRIMARY KEY,
-    user_id         TEXT NOT NULL,
-    status          TEXT DEFAULT 'pending',
-    applied_at      TEXT DEFAULT (datetime('now')),
-    reviewed_at     TEXT,
-    reviewed_by     TEXT,
-    decision_note   TEXT,
-    snapshot        TEXT
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_verifier_apps_status ON verifier_applications(status)') } catch {}
+// Verifier 申请记录 → server-schema.ts
+initVerifierApplicationsSchema(db)
 
-// Arbitrator 申请 + 白名单（外部仲裁员路径 — 与 verifier 平行）
-// 内部仲裁员：role='arbitrator'（admin 通过 /admin/admins 创建，自动 is_system=1）
-// 外部仲裁员：role='buyer' + arbitrator_whitelist 行（buyer 申请→admin 批准）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS arbitrator_applications (
-    id              TEXT PRIMARY KEY,
-    user_id         TEXT NOT NULL,
-    status          TEXT DEFAULT 'pending',
-    applied_at      TEXT DEFAULT (datetime('now')),
-    reviewed_at     TEXT,
-    reviewed_by     TEXT,
-    decision_note   TEXT,
-    snapshot        TEXT
-  );
-  CREATE TABLE IF NOT EXISTS arbitrator_whitelist (
-    user_id         TEXT PRIMARY KEY,
-    added_at        TEXT DEFAULT (datetime('now')),
-    note            TEXT,
-    is_system       INTEGER DEFAULT 0,
-    granted_by      TEXT,
-    stake_amount    INTEGER DEFAULT 0
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_arb_apps_status ON arbitrator_applications(status)') } catch {}
+// Arbitrator 申请 + 白名单（外部仲裁员路径）→ server-schema.ts
+// legacy 内部仲裁员 → 白名单的 migration INSERT 刻意留原位（紧跟下方）
+initArbitratorReviewSchema(db)
 // Migration：legacy 内部仲裁员 (role='arbitrator') → 自动加入白名单（is_system=1）
 try {
   db.prepare(`
@@ -2540,23 +2494,8 @@ try {
   `).run()
 } catch (e) { console.warn('[arb migration]', (e as Error).message) }
 
-// Verifier 申诉记录
-db.exec(`
-  CREATE TABLE IF NOT EXISTS verifier_appeals (
-    id            TEXT PRIMARY KEY,
-    user_id       TEXT NOT NULL,
-    task_id       TEXT,
-    submission_id TEXT,
-    reason        TEXT NOT NULL,
-    evidence_urls TEXT DEFAULT '[]',
-    status        TEXT DEFAULT 'pending',
-    admin_note    TEXT,
-    reviewed_by   TEXT,
-    reviewed_at   TEXT,
-    created_at    TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_verifier_appeals_status ON verifier_appeals(status)') } catch {}
+// Verifier 申诉记录 → server-schema.ts
+initVerifierAppealsSchema(db)
 
 // 扩展 verifier_whitelist
 for (const stmt of [
@@ -2574,30 +2513,11 @@ for (const stmt of [
 // 系统兜底标记 + 永不限流（兜底用，可靠性优先）
 try { db.prepare("UPDATE verifier_whitelist SET is_system = 1, tier = 'active-2', daily_quota = 9999 WHERE user_id = ?").run(INTERNAL_AUDITOR_ID) } catch {}
 
-// 用户暂停状态（admin 管理）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS user_moderation (
-    user_id        TEXT PRIMARY KEY,
-    suspended      INTEGER DEFAULT 0,
-    reason         TEXT,
-    suspended_by   TEXT,
-    suspended_at   TEXT
-  )
-`)
+// 用户暂停状态（admin 管理）→ server-schema.ts
+initUserModerationSchema(db)
 
-// admin 操作审计日志
-db.exec(`
-  CREATE TABLE IF NOT EXISTS admin_audit_log (
-    id           TEXT PRIMARY KEY,
-    admin_id     TEXT NOT NULL,
-    action       TEXT NOT NULL,
-    target_type  TEXT,
-    target_id    TEXT,
-    detail       TEXT,
-    created_at   TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created ON admin_audit_log(created_at)') } catch {}
+// admin 操作审计日志 → server-schema.ts（initAdminCoordinationSchema FK 依赖本表，须先建）
+initAdminAuditLogSchema(db)
 // admin/agent coordination contribution — operator-claim + agent-mandate event logs + fact-source link
 // (schema only). Placed HERE because it FKs users + contribution_facts (both created above) AND
 // admin_audit_log (created just above). No ingestion runs at boot.
@@ -2619,22 +2539,8 @@ initAdminCoordinationSchema(db)
   console.log(`[WebAZ] ✓ ${u.name} 已升级为 admin (bootstrap)`)
 })()
 
-// 验证码表（邮箱绑定 / 找回密钥 / 改密码 等共用）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS verification_codes (
-    id          TEXT PRIMARY KEY,
-    user_id     TEXT NOT NULL,
-    channel     TEXT NOT NULL,           -- 'email' / 'phone'
-    target      TEXT NOT NULL,           -- 邮箱地址 / 手机号
-    code        TEXT NOT NULL,           -- 6 位数字
-    purpose     TEXT NOT NULL,           -- 'bind_email' / 'recover_key' / ...
-    attempts    INTEGER DEFAULT 0,
-    used_at     TEXT,
-    expires_at  TEXT NOT NULL,
-    created_at  TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_verification_codes_lookup ON verification_codes(channel, target, purpose)') } catch {}
+// 验证码表（邮箱绑定 / 找回密钥 / 改密码 等共用）→ server-schema.ts
+initVerificationCodesSchema(db)
 
 const NEW_PRODUCT_COLS = [
   'ALTER TABLE products ADD COLUMN specs TEXT',
