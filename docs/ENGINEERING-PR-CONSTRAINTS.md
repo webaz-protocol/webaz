@@ -53,6 +53,13 @@ Complexity baselines are current debt ceilings, not quality targets.
 
 基线只能有意降低,不能为了过 CI 自己抬高。新增拆分文件也必须进入 ratchet。
 
+> CI-enforced (fail-closed) by `npm run guard:pr-constraints` (Guard A): vs the
+> merge-base with `main`, any existing ratchet baseline that **rises** fails the
+> build, and a baseline that is **deleted** also fails (a LOC ceiling may only be
+> removed together with its tracked file; the server.ts DDL baselines may never be
+> removed) — deleting the line must not be a way to dismantle the ratchet. No
+> in-PR exception channel. / 由 `guard:pr-constraints` 机械强制:抬高或删除基线都 fail,无例外通道。
+
 ## 4. Schema And Migration Rules
 
 - `CREATE TABLE` must run before dependent `ALTER TABLE`.
@@ -80,6 +87,12 @@ The current PWA uses classic scripts, not ES modules or a bundler.
 当前阶段不要顺手切 ES module/bundler。拆文件要同时接入加载顺序、syntax check、静态测试和
 浏览器 smoke。
 
+> CI-enforced (fail-closed) by `npm run guard:pr-constraints` (Guard B): every
+> `src/pwa/public/app-*.js` must appear in BOTH `check:pwa-syntax` and the ratchet
+> `LOC_CEILINGS`, so complexity cannot hide under an unchecked new filename. (Load
+> order and browser-smoke remain author/review responsibilities.) /
+> 由 `guard:pr-constraints` 机械强制接入 syntax + ratchet。
+
 ## 6. Money, Order, And Status Paths Are Protected
 
 Do not touch payment, wallet, order status, settlement, fund, tokenomics,
@@ -105,6 +118,7 @@ Every code PR should run the relevant subset:
 
 - `git diff --check`
 - `npm run guard:complexity`
+- `npm run guard:pr-constraints` (ratchet monotonicity + app-*.js wiring; CI-enforced)
 - `npm run check:pwa-syntax` for PWA frontend changes
 - `npm run build`
 - `npm run schema:verify` for schema/migration changes
