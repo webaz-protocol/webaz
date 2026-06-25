@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -1483,25 +1483,9 @@ try { db.exec('ALTER TABLE shareable_comments ADD COLUMN flag_reasons TEXT') } c
 initDisputeFairnessVotesSchema(db)
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_feedback_open ON feedback_tickets(status, created_at DESC) WHERE status IN (\'open\', \'in_progress\')') } catch {}
 
-// Wave C-3: 买家评价 / 评分 — 完成订单后给卖家 1-5 星 + 文字
-db.exec(`
-  CREATE TABLE IF NOT EXISTS order_ratings (
-    order_id     TEXT PRIMARY KEY,
-    buyer_id     TEXT NOT NULL,
-    seller_id    TEXT NOT NULL,
-    product_id   TEXT NOT NULL,
-    stars        INTEGER NOT NULL,            -- 1-5
-    comment      TEXT,
-    reply        TEXT,                        -- seller 可回复
-    replied_at   TEXT,
-    created_at   TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_rating_seller ON order_ratings(seller_id, created_at DESC)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_rating_product ON order_ratings(product_id, created_at DESC)') } catch {}
-// P2 hot-path：覆盖 recommend_count 子查询（COUNT DISTINCT buyer_id WHERE product_id=? AND stars>=4）
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_rating_recommend ON order_ratings(product_id, stars, buyer_id)') } catch {}
-// P2 hot-path：覆盖 sales_count 子查询（COUNT WHERE product_id=? AND status=completed）
+// Wave C-3: 买家评价 / 评分 → server-schema.ts；后续结构化维度 ALTER + 跨表 orders 索引刻意留原位
+initOrderRatingsSchema(db)
+// P2 hot-path：覆盖 sales_count 子查询（COUNT WHERE product_id=? AND status=completed）—— orders 表索引，留原位
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_orders_product_status ON orders(product_id, status)') } catch {}
 
 // L2-5 评价系统升级 — 结构化维度 + 双盲 + 反向评价
@@ -1512,38 +1496,12 @@ try { db.exec('ALTER TABLE order_ratings ADD COLUMN hidden_until TEXT') } catch 
 // W3 评价两回合：买家在 seller reply 后可追问一次（限 200 字），追完锁
 try { db.exec('ALTER TABLE order_ratings ADD COLUMN buyer_followup TEXT') } catch {}
 try { db.exec('ALTER TABLE order_ratings ADD COLUMN buyer_followup_at TEXT') } catch {}
-db.exec(`
-  CREATE TABLE IF NOT EXISTS buyer_ratings (
-    order_id              TEXT PRIMARY KEY,
-    seller_id             TEXT NOT NULL,
-    buyer_id              TEXT NOT NULL,
-    stars                 INTEGER NOT NULL,
-    comment               TEXT,
-    dim_payment_speed     INTEGER,
-    dim_communication     INTEGER,
-    dim_responsiveness    INTEGER,
-    hidden_until          TEXT,
-    created_at            TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_buyer_ratings_buyer ON buyer_ratings(buyer_id, created_at DESC)') } catch {}
 
-// Wave C-2: 多收货地址簿 — buyer 保存常用地址，下单时选择默认地址
-db.exec(`
-  CREATE TABLE IF NOT EXISTS user_addresses (
-    id           TEXT PRIMARY KEY,
-    user_id      TEXT NOT NULL,
-    label        TEXT NOT NULL,           -- 标签（家 / 公司 / 父母家）
-    recipient    TEXT NOT NULL,
-    phone        TEXT,
-    region       TEXT,                    -- 省/市/区
-    detail       TEXT NOT NULL,           -- 详细地址
-    is_default   INTEGER DEFAULT 0,
-    created_at   TEXT DEFAULT (datetime('now')),
-    updated_at   TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_addr_user ON user_addresses(user_id, is_default DESC)') } catch {}
+// 反向评价：卖家给买家评分（双盲）→ server-schema.ts
+initBuyerRatingsSchema(db)
+
+// Wave C-2: 多收货地址簿 → server-schema.ts
+initUserAddressesSchema(db)
 
 // Wave B-3: 退货请求 — 买家在 return_days 窗口内可发起，卖家可接受/拒绝；拒绝后可走 dispute
 db.exec(`
