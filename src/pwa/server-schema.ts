@@ -377,3 +377,63 @@ export function initDisputeFairnessVotesSchema(db: Database.Database): void {
   )
 `)
 }
+
+// ─── Wave C-3: 买家评价 / 评分（完成订单后给卖家 1-5 星 + 文字）──────
+// 注：后续结构化维度 ALTER + 跨表 orders 索引刻意保留在 server.ts 原位
+export function initOrderRatingsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS order_ratings (
+    order_id     TEXT PRIMARY KEY,
+    buyer_id     TEXT NOT NULL,
+    seller_id    TEXT NOT NULL,
+    product_id   TEXT NOT NULL,
+    stars        INTEGER NOT NULL,            -- 1-5
+    comment      TEXT,
+    reply        TEXT,                        -- seller 可回复
+    replied_at   TEXT,
+    created_at   TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_rating_seller ON order_ratings(seller_id, created_at DESC)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_rating_product ON order_ratings(product_id, created_at DESC)') } catch {}
+  // P2 hot-path：覆盖 recommend_count 子查询（COUNT DISTINCT buyer_id WHERE product_id=? AND stars>=4）
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_rating_recommend ON order_ratings(product_id, stars, buyer_id)') } catch {}
+}
+
+// ─── 反向评价：卖家给买家评分（双盲）──────────────────────────────
+export function initBuyerRatingsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS buyer_ratings (
+    order_id              TEXT PRIMARY KEY,
+    seller_id             TEXT NOT NULL,
+    buyer_id              TEXT NOT NULL,
+    stars                 INTEGER NOT NULL,
+    comment               TEXT,
+    dim_payment_speed     INTEGER,
+    dim_communication     INTEGER,
+    dim_responsiveness    INTEGER,
+    hidden_until          TEXT,
+    created_at            TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_buyer_ratings_buyer ON buyer_ratings(buyer_id, created_at DESC)') } catch {}
+}
+
+// ─── Wave C-2: 多收货地址簿（buyer 保存常用地址，下单时选默认）──────
+export function initUserAddressesSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS user_addresses (
+    id           TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL,
+    label        TEXT NOT NULL,           -- 标签（家 / 公司 / 父母家）
+    recipient    TEXT NOT NULL,
+    phone        TEXT,
+    region       TEXT,                    -- 省/市/区
+    detail       TEXT NOT NULL,           -- 详细地址
+    is_default   INTEGER DEFAULT 0,
+    created_at   TEXT DEFAULT (datetime('now')),
+    updated_at   TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_addr_user ON user_addresses(user_id, is_default DESC)') } catch {}
+}
