@@ -277,6 +277,29 @@ jobs:
           echo "  - server.ts CREATE/ALTER count rose: new DDL belongs in schema-init, not server.ts."
           echo "  - count fell: you paid down debt — lower that baseline so the gain is locked in."
 
+  pr-constraints:
+    name: pr constraints (ratchet monotonicity + app-*.js wiring)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # Guard A diffs ratchet baselines against the merge-base with main
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Fetch base branch (for ratchet monotonicity merge-base)
+        run: git fetch --quiet origin main
+      - run: npm run guard:pr-constraints
+      - name: On failure — pr-constraints context
+        if: failure()
+        run: |
+          echo "::error title=pr-constraints guard::"
+          echo "Mechanical enforcement of docs/ENGINEERING-PR-CONSTRAINTS.md §3 + §5:"
+          echo "  - Guard A: a complexity ratchet baseline rose vs main. Baselines may only be LOWERED, never raised (fail-closed — no exception channel)."
+          echo "  - Guard B: a src/pwa/public/app-*.js is missing from check:pwa-syntax and/or LOC_CEILINGS — wire it into both."
+
   meta-rule-locked-params:
     name: meta-rule-locked params (RFC-002 §3.3)
     runs-on: ubuntu-latest

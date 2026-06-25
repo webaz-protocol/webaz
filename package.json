@@ -26,6 +26,7 @@
     "schema:verify": "tsx scripts/schema-verify.ts",
     "routes:seam-check": "tsx scripts/routes-seam-guard.ts",
     "guard:complexity": "tsx scripts/complexity-ratchet-guard.ts",
+    "guard:pr-constraints": "tsx scripts/pr-constraints-guard.ts",
     "pg:schema": "tsx scripts/gen-pg-schema.ts",
     "pg:verify": "tsx scripts/pg-schema-verify.ts",
     "test:pg-placeholders": "tsx scripts/test-pg-placeholders.ts",
