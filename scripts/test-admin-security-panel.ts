@@ -7,7 +7,11 @@
  * 普通 admin vs root/破玻璃 + 经济操作审计须知。纯前端(/me + 只读 github/me),无后端、无经济动作。
  */
 import { readFileSync } from 'node:fs'
+// app.js + app-admin.js: renderAdminSecurity + the admin-dashboard quick links
+// were split into a second classic script; this static-source contract spans
+// both files so it survives the relocation.
 const app = readFileSync('src/pwa/public/app.js', 'utf8')
+  + '\n' + readFileSync('src/pwa/public/app-admin.js', 'utf8')
 const i18n = readFileSync('src/pwa/public/i18n.js', 'utf8')
 
 let pass = 0, fail = 0
