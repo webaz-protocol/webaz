@@ -891,3 +891,108 @@ export function initRegionChangeLogSchema(db: Database.Database): void {
   )`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_region_change_user_ts ON region_change_log(user_id, created_at DESC)`)
 }
+
+// ─── P13: 购物车 ───────────────────────────────────────────────────
+export function initCartItemsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS cart_items (
+    user_id     TEXT NOT NULL,
+    product_id  TEXT NOT NULL,
+    qty         INTEGER NOT NULL DEFAULT 1,
+    added_at    TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, product_id)
+  )
+`)
+}
+
+// ─── P14: 关注关系（社交电商）──────────────────────────────────────
+export function initFollowsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS follows (
+    follower_id  TEXT NOT NULL,
+    followee_id  TEXT NOT NULL,
+    created_at   TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (follower_id, followee_id)
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id)') } catch {}
+}
+
+// ─── Web Push 订阅 ─────────────────────────────────────────────────
+export function initPushSubscriptionsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL,
+    endpoint      TEXT NOT NULL,
+    p256dh        TEXT NOT NULL,
+    auth          TEXT NOT NULL,
+    user_agent    TEXT,
+    enabled       INTEGER DEFAULT 1,
+    created_at    TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, endpoint)
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id, enabled)') } catch {}
+}
+
+// ─── 用户会话（一键全登出 = rotate users.api_key）──────────────────
+export function initUserSessionsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS user_sessions (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    api_key         TEXT NOT NULL,
+    ip              TEXT,
+    user_agent      TEXT,
+    fingerprint_hash TEXT,
+    created_at      TEXT DEFAULT (datetime('now')),
+    last_seen_at    TEXT DEFAULT (datetime('now')),
+    revoked_at      TEXT
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id, revoked_at)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_key ON user_sessions(api_key)') } catch {}
+}
+
+// ─── A2 黑名单（精准匹配护栏）──────────────────────────────────────
+export function initUserBlocklistSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS user_blocklist (
+    blocker_id  TEXT NOT NULL,
+    blocked_id  TEXT NOT NULL,
+    reason      TEXT,
+    created_at  TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (blocker_id, blocked_id)
+  )
+`)
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_blocklist_blocker ON user_blocklist(blocker_id)") } catch {}
+}
+
+// ─── 导入次数追踪表 ────────────────────────────────────────────────
+export function initImportLogsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS import_logs (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  )
+`)
+}
+
+// ─── 错误日志（server uncaught/rejection + client onerror）──────────
+export function initErrorLogSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS error_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    source      TEXT NOT NULL,    -- 'server-uncaught' | 'server-rejection' | 'client'
+    message     TEXT NOT NULL,
+    stack       TEXT,
+    url         TEXT,             -- 客户端 location.href
+    user_agent  TEXT,             -- 客户端 UA
+    user_id     TEXT,             -- 已登录用户（可空）
+    created_at  TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_error_log_created ON error_log(created_at)') } catch {}
+}

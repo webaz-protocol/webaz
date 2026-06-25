@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema, initCartItemsSchema, initFollowsSchema, initPushSubscriptionsSchema, initUserSessionsSchema, initUserBlocklistSchema, initImportLogsSchema, initErrorLogSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -785,27 +785,9 @@ try { db.exec('ALTER TABLE region_config ADD COLUMN est_import_threshold_waz REA
   } catch {}
 })
 
-// P13: 购物车
-db.exec(`
-  CREATE TABLE IF NOT EXISTS cart_items (
-    user_id     TEXT NOT NULL,
-    product_id  TEXT NOT NULL,
-    qty         INTEGER NOT NULL DEFAULT 1,
-    added_at    TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (user_id, product_id)
-  )
-`)
-
-// P14: 关注关系（社交电商）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS follows (
-    follower_id  TEXT NOT NULL,
-    followee_id  TEXT NOT NULL,
-    created_at   TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (follower_id, followee_id)
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id)') } catch {}
+// P13: 购物车 / P14: 关注关系（社交电商）→ server-schema.ts
+initCartItemsSchema(db)
+initFollowsSchema(db)
 
 // P14: 用户 feed 可见性开关（默认公开）
 try { db.exec("ALTER TABLE users ADD COLUMN feed_visible INTEGER DEFAULT 1") } catch {}
@@ -1117,20 +1099,7 @@ function disbursePlatformReward(userId: string, amount: number, source: string, 
 // Wave E-5: PWA Push 订阅
 // 注：实际 push 投递需要 web-push 库（npm i web-push）+ VAPID 私钥签名；
 // 当前实现只做订阅层 + SW push 事件处理，留待 web-push 接入后即可发送
-db.exec(`
-  CREATE TABLE IF NOT EXISTS push_subscriptions (
-    id            TEXT PRIMARY KEY,
-    user_id       TEXT NOT NULL,
-    endpoint      TEXT NOT NULL,
-    p256dh        TEXT NOT NULL,
-    auth          TEXT NOT NULL,
-    user_agent    TEXT,
-    enabled       INTEGER DEFAULT 1,
-    created_at    TEXT DEFAULT (datetime('now')),
-    UNIQUE(user_id, endpoint)
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id, enabled)') } catch {}
+initPushSubscriptionsSchema(db)
 
 // 2026-05-22 V2：verifier 新任务通知偏好（默认开，可关）
 try { db.exec('ALTER TABLE users ADD COLUMN notify_claim_tasks INTEGER DEFAULT 1') } catch {}
@@ -1259,21 +1228,7 @@ const LARGE_WITHDRAW_THRESHOLD = 100
 // 用途：防 api_key 泄露后无法吊销的根本问题。每个 api_key 关联一个 session 行；
 // 用户可在 "活跃会话" 页查看 IP/UA/最后活跃，单点吊销或一键全登出。
 // "一键全登出" = rotate users.api_key（所有旧 key 即刻 401，新 key 在 session 表里）。
-db.exec(`
-  CREATE TABLE IF NOT EXISTS user_sessions (
-    id              TEXT PRIMARY KEY,
-    user_id         TEXT NOT NULL,
-    api_key         TEXT NOT NULL,
-    ip              TEXT,
-    user_agent      TEXT,
-    fingerprint_hash TEXT,
-    created_at      TEXT DEFAULT (datetime('now')),
-    last_seen_at    TEXT DEFAULT (datetime('now')),
-    revoked_at      TEXT
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id, revoked_at)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_key ON user_sessions(api_key)') } catch {}
+initUserSessionsSchema(db)
 
 // A4 智能下单：用户默认地址（搜索时自动过滤不可达商品 + 下单时预填）
 try { db.exec("ALTER TABLE users ADD COLUMN default_address_text TEXT") } catch {}
@@ -1282,16 +1237,7 @@ try { db.exec("ALTER TABLE users ADD COLUMN default_address_region TEXT") } catc
 try { db.exec("ALTER TABLE users ADD COLUMN default_address_json TEXT") } catch {}
 
 // A2 黑名单（精准匹配护栏）：买家可拉黑卖家，搜索时自动过滤
-db.exec(`
-  CREATE TABLE IF NOT EXISTS user_blocklist (
-    blocker_id  TEXT NOT NULL,
-    blocked_id  TEXT NOT NULL,
-    reason      TEXT,
-    created_at  TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (blocker_id, blocked_id)
-  )
-`)
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_blocklist_blocker ON user_blocklist(blocker_id)") } catch {}
+initUserBlocklistSchema(db)
 
 // P-Distrib β：分布式内容层（外链 shareables + P2P 原生 manifests + pin 经济）
 // shareables = 外链分享（YouTube/TikTok/小红书 等外部内容）— 仅索引 URL，零内容存储
@@ -6658,14 +6604,8 @@ setInterval(() => {
 // ============================================================
 registerChatRoutes(app, { db, auth, generateId, rateLimitOk })
 
-// 初始化导入次数追踪表
-db.exec(`
-  CREATE TABLE IF NOT EXISTS import_logs (
-    id         TEXT PRIMARY KEY,
-    user_id    TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now'))
-  )
-`)
+// 初始化导入次数追踪表 → server-schema.ts
+initImportLogsSchema(db)
 
 const FREE_IMPORT_LIMIT = 10
 
@@ -8652,19 +8592,7 @@ function startDepositWatcher() {
 // 轻量级自建错误上报 — 避免外部 Sentry 依赖
 // 后端：进程级 uncaughtException + unhandledRejection
 // 前端：POST /api/error-report（window.onerror → 入此表）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS error_log (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    source      TEXT NOT NULL,    -- 'server-uncaught' | 'server-rejection' | 'client'
-    message     TEXT NOT NULL,
-    stack       TEXT,
-    url         TEXT,             -- 客户端 location.href
-    user_agent  TEXT,             -- 客户端 UA
-    user_id     TEXT,             -- 已登录用户（可空）
-    created_at  TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_error_log_created ON error_log(created_at)') } catch {}
+initErrorLogSchema(db)
 
 // ─── 治理岗位上岗(W3.5-B,2026-06-02)──────────────────────────
 // docs/GOVERNANCE-ONBOARDING.md — arbitrator + verifier 申请 / 上岗 / 卸任 / 申诉
