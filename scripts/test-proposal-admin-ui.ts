@@ -19,12 +19,16 @@ const fails: string[] = []
 const ok = (name: string, cond: boolean, detail = ''): void => { if (cond) pass++; else { fail++; fails.push(`✗ ${name}${detail ? `\n    ${detail}` : ''}`) } }
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const app = readFileSync(join(HERE, '..', 'src', 'pwa', 'public', 'app.js'), 'utf8')
+// PWA split into classic multi-scripts: read all three so router (app.js) and the
+// proposal inbox/draft flow (now app-contribution.js) are both in scope.
+// app-contribution.js is concatenated LAST so the PR9I BLOCK slices off the tail.
+const P = (f: string): string => readFileSync(join(HERE, '..', 'src', 'pwa', 'public', f), 'utf8')
+const app = P('app.js') + '\n' + P('app-admin.js') + '\n' + P('app-contribution.js')
 
 const startIdx = app.indexOf('PR9I — Task Proposal Inbox admin review')
-// end-anchor: was `async function renderAdminKPI(app)` until that page was split
-// out to app-admin.js; the stable next-section marker in app.js is now TAG_MAP.
-const endIdx = app.indexOf('const TAG_MAP = () => ({')
+// The proposal workflow now lives in app-contribution.js; BLOCK runs from the
+// PR9I marker to end-of-source (the same span the old renderAdminKPI anchor gave).
+const endIdx = app.length
 const BLOCK = startIdx >= 0 && endIdx > startIdx ? app.slice(startIdx, endIdx) : ''
 const CODE = BLOCK.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
 
