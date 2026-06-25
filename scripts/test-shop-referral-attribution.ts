@@ -239,7 +239,10 @@ async function main(): Promise<void> {
   ok('B10 isAllowedSponsor=false → 不升级', !psa('prod_A', 'usr_buyer'))
 
   // ── C) PWA + 边界 statics ───────────────────────────────────────────────────────────────────────────
-  const app_js = read('src/pwa/public/app.js')
+  // app.js + app-shop.js: renderShopPage / copyShopReferralLink moved to app-shop.js
+  // in the classic-script split (slice I). The negative check on line below stays
+  // scoped to the copyShopReferralLink match (now in app-shop.js), so it still holds.
+  const app_js = read('src/pwa/public/app.js') + '\n' + read('src/pwa/public/app-shop.js')
   ok('C ShareCtx captures pending_shop_referral from #shop/ + ref', /pending_shop_referral = \{ seller_identifier: sellerIdent, ref_code: hint\.sponsor_id/.test(app_js))
   ok('C maybeClaimPendingShopReferral validates code-only + clears stale', /maybeClaimPendingShopReferral/.test(app_js) && /\^\[A-Za-z0-9\]\{6,7\}\$\/\.test\(p\.ref_code\)/.test(app_js))
   ok('C claim wired at login/register/boot (≥5 call sites incl. def)', (app_js.match(/maybeClaimPendingShopReferral\(\)/g) || []).length >= 5)
