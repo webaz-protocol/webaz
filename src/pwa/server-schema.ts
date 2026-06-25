@@ -121,3 +121,71 @@ export function initCouponsSchema(db: Database.Database): void {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_coupons_seller ON coupons(seller_id, is_active)') } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_coupons_scope ON coupons(scope, scope_id) WHERE is_active = 1') } catch {}
 }
+
+// ─── Wave A-4: 平台公告（admin 发布 → 角色 / 区域定向）+ 阅读记录 ──
+export function initAnnouncementsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS announcements (
+    id              TEXT PRIMARY KEY,
+    author_id       TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    body            TEXT NOT NULL,
+    target_roles    TEXT,                    -- JSON array: ['buyer','seller'] or null=all
+    target_regions  TEXT,                    -- JSON array: ['china','us'] or null=all
+    severity        TEXT DEFAULT 'info',     -- 'info' | 'warning' | 'critical'
+    is_active       INTEGER DEFAULT 1,
+    starts_at       TEXT,
+    expires_at      TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_ann_active ON announcements(is_active, created_at DESC)') } catch {}
+
+  // 用户阅读记录（PK 防重复 dismiss）
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS announcement_reads (
+    user_id      TEXT NOT NULL,
+    announcement_id TEXT NOT NULL,
+    read_at      TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, announcement_id)
+  )
+`)
+}
+
+// ─── Wave B-2: 预售 / waitlist（缺货商品允许买家排队 → 回货时通知）──
+export function initProductWaitlistSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS product_waitlist (
+    user_id      TEXT NOT NULL,
+    product_id   TEXT NOT NULL,
+    desired_qty  INTEGER DEFAULT 1,
+    note         TEXT,
+    notified_at  TEXT,                    -- 回货时填，表示已发通知
+    created_at   TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, product_id)
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_waitlist_product ON product_waitlist(product_id) WHERE notified_at IS NULL') } catch {}
+}
+
+// ─── Wave D-4: 限时促销 / Flash Sale ───────────────────────────────
+export function initFlashSalesSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS flash_sales (
+    id              TEXT PRIMARY KEY,
+    seller_id       TEXT NOT NULL,
+    product_id      TEXT NOT NULL,
+    variant_id      TEXT,                 -- 可选，绑定具体规格
+    sale_price      REAL NOT NULL,
+    original_price  REAL NOT NULL,        -- 创建时快照，用于显示「省 X」
+    max_qty         INTEGER DEFAULT 0,    -- 0 = 不限
+    sold_count      INTEGER DEFAULT 0,
+    starts_at       TEXT NOT NULL,
+    ends_at         TEXT NOT NULL,
+    is_active       INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_flash_product ON flash_sales(product_id, is_active)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_flash_seller ON flash_sales(seller_id, ends_at DESC)') } catch {}
+}
