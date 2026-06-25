@@ -18,13 +18,18 @@ const fails: string[] = []
 const ok = (name: string, cond: boolean, detail = ''): void => { if (cond) pass++; else { fail++; fails.push(`✗ ${name}${detail ? `\n    ${detail}` : ''}`) } }
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const app = readFileSync(join(HERE, '..', 'src', 'pwa', 'public', 'app.js'), 'utf8')
-const i18n = readFileSync(join(HERE, '..', 'src', 'pwa', 'public', 'i18n.js'), 'utf8')
+// PWA split into classic multi-scripts: read all three so router (app.js),
+// admin hub links (app-admin.js), and the quota workflow (now app-contribution.js)
+// are all in scope. app-contribution.js is concatenated LAST so the quota BLOCK
+// (PR #18 → end of that file) slices cleanly off the tail.
+const P = (f: string): string => readFileSync(join(HERE, '..', 'src', 'pwa', 'public', f), 'utf8')
+const app = P('app.js') + '\n' + P('app-admin.js') + '\n' + P('app-contribution.js')
+const i18n = P('i18n.js')
 
 const startIdx = app.indexOf('PR #18 build-task quota-increase requests')
-// end-anchor: was `async function renderAdminKPI(app)` until that page was split
-// out to app-admin.js; the stable next-section marker in app.js is now TAG_MAP.
-const endIdx = app.indexOf('const TAG_MAP = () => ({')
+// The quota workflow now lives at the tail of app-contribution.js; BLOCK runs
+// from the PR #18 marker to end-of-source.
+const endIdx = app.length
 const BLOCK = startIdx >= 0 && endIdx > startIdx ? app.slice(startIdx, endIdx) : ''
 
 function main(): void {
@@ -58,7 +63,7 @@ function main(): void {
 
   // bilingual: dashboard-card strings (t()) have _EN entries; in-page strings use local _qT(zh,en)
   ok('_EN has the quota review card label', /'建任务额度审核':/.test(i18n))
-  ok('in-page strings use local bilingual _qT(zh, en)', /const _qT = \(zh, en\) =>/.test(app))
+  ok('in-page strings use local bilingual _qT(zh, en)', /(?:const|var) _qT = \(zh, en\) =>/.test(app))
 
   console.log('\ntest:quota-admin-ui')
   console.log('────────────────────────────────────')
