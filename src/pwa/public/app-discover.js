@@ -1,7 +1,7 @@
 // WebAZ — Discover / Search / Feed domain (classic multi-script split, slice F / app-discover.js)
 //
 // Loaded as a CLASSIC script in this order (index.html):
-//   i18n.js -> app-admin.js -> app-contribution.js -> app-ai.js -> app-discover.js -> app.js
+//   i18n → app-admin → app-contribution → app-ai → app-discover → app-profile → app-account → app-shop → app-listings → app-seller → app.js (source of truth: index.html)
 // Top-level functions / window.* handlers are global; these pages run only on
 // route/click (after app.js loads), so cross-file globals (GET/POST/state/shell/
 // escHtml/navigate/t/toast$/skeleton$/productImageGallery/feedActor/feedEmpty/

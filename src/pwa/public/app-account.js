@@ -1,7 +1,7 @@
 // WebAZ — Account Settings domain (classic multi-script split, slice H / app-account.js)
 //
 // Loaded as a CLASSIC script in this order (index.html):
-//   … -> app-discover.js -> app-profile.js -> app-account.js -> app.js
+//   i18n → app-admin → app-contribution → app-ai → app-discover → app-profile → app-account → app-shop → app-listings → app-seller → app.js (source of truth: index.html)
 // Top-level functions / window.* handlers are global; pages run on route/click
 // (after app.js loads), so cross-file globals (GET/POST/PATCH/DELETE/state/shell/
 // escHtml/navigate/t/toast$/confirmModal/requireApiKeyPassword/openPasswordPromptModal/

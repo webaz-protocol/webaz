@@ -1,7 +1,7 @@
 // WebAZ — contribution / admin-intake workflows (classic multi-script split, slice D)
 //
 // Loaded as a CLASSIC script in this order (index.html):
-//   i18n.js -> app-admin.js -> app-contribution.js -> app.js
+//   i18n → app-admin → app-contribution → app-ai → app-discover → app-profile → app-account → app-shop → app-listings → app-seller → app.js (source of truth: index.html)
 // Top-level function declarations are global; window.* handlers are global; the
 // blocks here run only on route/click (after app.js loads), so cross-file globals
 // (GET/POST/api/state/escHtml/requestPasskeyGate/render*/toast$/...) resolve at
