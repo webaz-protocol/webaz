@@ -180,7 +180,12 @@ async function main(): Promise<void> {
     })()) }
 
   // ── static UI contract: 我的→高级 「贡献归属」entry is shown when the user has relationships ──
+  // renderMyAdvanced (which renders this me-menu card) was moved to app-account.js by
+  // the classic-script split (slice H); read both files so the contract follows it.
+  // The adminLinkCard '#me/operator-claims' line in app.js is filtered out below, so
+  // there is still exactly ONE matching me-menu card( line.
   { const appSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/pwa/public/app.js'), 'utf8')
+      + '\n' + readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/pwa/public/app-account.js'), 'utf8')
     const meMenuCardLines = appSrc.split('\n').filter(l => /\bcard\(/.test(l) && !/adminLinkCard/.test(l) && l.includes('#me/operator-claims'))
     ok('me-menu 贡献归属 card exists', meMenuCardLines.length === 1, JSON.stringify(meMenuCardLines))
     ok('me-menu 贡献归属 card is NOT shown unconditionally to all users', meMenuCardLines.every(l => /\?/.test(l)))

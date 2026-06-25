@@ -167,7 +167,11 @@ async function main(): Promise<void> {
     ok('claimedEventIdOfApproved resolves the claim behind an approved event', claimedEventIdOfApproved(db, a.approvedEventId) === c.claimedEventId) }
 
   // ── static UI contract: the persistent "贡献归属" me-menu card is admin-ONLY (not unconditional, not GitHub-gated) ──
+  // renderMyAdvanced (which renders this card) moved to app-account.js in the classic
+  // split (slice H); read both. app.js's '#me/operator-claims' line is adminLinkCard
+  // (filtered out below), so there is still exactly ONE matching me-menu card( line.
   { const appSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/pwa/public/app.js'), 'utf8')
+      + '\n' + readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/pwa/public/app-account.js'), 'utf8')
     // the persistent me-menu entry uses card() (NOT adminLinkCard, which only lives inside admin-only pages)
     const meMenuCardLines = appSrc.split('\n').filter(l => /\bcard\(/.test(l) && !/adminLinkCard/.test(l) && l.includes('#me/operator-claims'))
     ok('exactly one persistent me-menu 贡献归属 card', meMenuCardLines.length === 1, JSON.stringify(meMenuCardLines))
