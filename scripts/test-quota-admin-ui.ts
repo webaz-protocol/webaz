@@ -22,7 +22,9 @@ const app = readFileSync(join(HERE, '..', 'src', 'pwa', 'public', 'app.js'), 'ut
 const i18n = readFileSync(join(HERE, '..', 'src', 'pwa', 'public', 'i18n.js'), 'utf8')
 
 const startIdx = app.indexOf('PR #18 build-task quota-increase requests')
-const endIdx = app.indexOf('async function renderAdminKPI(app)')
+// end-anchor: was `async function renderAdminKPI(app)` until that page was split
+// out to app-admin.js; the stable next-section marker in app.js is now TAG_MAP.
+const endIdx = app.indexOf('const TAG_MAP = () => ({')
 const BLOCK = startIdx >= 0 && endIdx > startIdx ? app.slice(startIdx, endIdx) : ''
 
 function main(): void {

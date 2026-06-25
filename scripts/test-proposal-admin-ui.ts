@@ -22,7 +22,9 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const app = readFileSync(join(HERE, '..', 'src', 'pwa', 'public', 'app.js'), 'utf8')
 
 const startIdx = app.indexOf('PR9I — Task Proposal Inbox admin review')
-const endIdx = app.indexOf('async function renderAdminKPI(app)')
+// end-anchor: was `async function renderAdminKPI(app)` until that page was split
+// out to app-admin.js; the stable next-section marker in app.js is now TAG_MAP.
+const endIdx = app.indexOf('const TAG_MAP = () => ({')
 const BLOCK = startIdx >= 0 && endIdx > startIdx ? app.slice(startIdx, endIdx) : ''
 const CODE = BLOCK.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
 
