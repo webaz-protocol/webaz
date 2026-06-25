@@ -10,18 +10,24 @@
 // Pure relocation of low-risk storefront utilities: announcements, wishlist,
 // waitlist, address book, my-coupons, push settings, daily check-in/task claim,
 // for-you + product compare, public shop page + shop-edit, editor-picks (public +
-// admin mgmt), group-buy (live/detail/join/leave), and flash-sale (modal/submit/live).
+// admin mgmt), and flash-sale (modal/submit/live).
 //
-// Group-buy join/leave and flash-sale create/list hit participation/config endpoints
-// (/group-buys/:id/join|leave, /products/:id/flash-sale, /flash-sales/live) — NOT
-// /orders /checkout /settle /stock — so they are storefront utilities, not the
+// Flash-sale create/list only write pricing config (flash-sales.ts); the only
+// order/wallet coupling lives server-side in orders-create.ts (at purchase time),
+// not in these moved handlers — so they are storefront utilities, not the
 // order/settlement/inventory state machine.
 //
-// INTENTIONALLY LEFT in app.js: cart/orders/order-detail/payment/wallet/dispute/
-// return/status, auth boot/login/register/recover, the seller workbench
-// (renderSeller/renderEditProduct) incl. renderSellerFlashSales, and the
-// non-listed renderReviewsFeed/renderAnchorEntry/lookupAnchorAction +
-// refreshAnnouncementsBadge (core-nav badge). No UI/behavior change.
+// INTENTIONALLY LEFT in app.js:
+//   - group-buy (renderGroupBuysLive/renderGroupBuyDetail/openJoinGroupBuy/
+//     submitJoinGroupBuy/leaveGroupBuy): join/leave touch escrow/order/refund
+//     (group-buys.ts creates a paid order + wallet escrow on join, refunds on
+//     leave) — a money/order/status path, NOT a plain shop utility. Defer to a
+//     dedicated group-buy / money-path PR.
+//   - cart/orders/order-detail/payment/wallet/dispute/return/status, auth boot/
+//     login/register/recover, the seller workbench (renderSeller/renderEditProduct)
+//     incl. renderSellerFlashSales, and the non-listed renderReviewsFeed/
+//     renderAnchorEntry/lookupAnchorAction + refreshAnnouncementsBadge (core-nav
+//     badge). No UI/behavior change.
 
 async function renderAnnouncements(app) {
   if (!state.user) { renderLogin(); return }

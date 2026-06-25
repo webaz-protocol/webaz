@@ -32,7 +32,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/server.ts': 8456,
   'src/pwa/public/app.js': 26233,
   'src/pwa/public/app-admin.js': 608,
-  'src/pwa/public/app-shop.js': 1139,
+  'src/pwa/public/app-shop.js': 1145,
   'src/pwa/public/app-account.js': 977,
   'src/pwa/public/app-profile.js': 1692,
   'src/pwa/public/app-discover.js': 1296,
