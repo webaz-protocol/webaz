@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -1355,67 +1355,11 @@ for (const stmt of [
   'ALTER TABLE orders ADD COLUMN coupon_discount REAL DEFAULT 0',
 ]) { try { db.exec(stmt) } catch {} }
 
-// Wave A-4: 平台公告（admin 发布 → 角色 / 区域定向）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS announcements (
-    id              TEXT PRIMARY KEY,
-    author_id       TEXT NOT NULL,
-    title           TEXT NOT NULL,
-    body            TEXT NOT NULL,
-    target_roles    TEXT,                    -- JSON array: ['buyer','seller'] or null=all
-    target_regions  TEXT,                    -- JSON array: ['china','us'] or null=all
-    severity        TEXT DEFAULT 'info',     -- 'info' | 'warning' | 'critical'
-    is_active       INTEGER DEFAULT 1,
-    starts_at       TEXT,
-    expires_at      TEXT,
-    created_at      TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_ann_active ON announcements(is_active, created_at DESC)') } catch {}
-
-// 用户阅读记录（PK 防重复 dismiss）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS announcement_reads (
-    user_id      TEXT NOT NULL,
-    announcement_id TEXT NOT NULL,
-    read_at      TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (user_id, announcement_id)
-  )
-`)
-
-// Wave B-2: 预售 / waitlist（缺货商品允许买家排队 → 回货时通知）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS product_waitlist (
-    user_id      TEXT NOT NULL,
-    product_id   TEXT NOT NULL,
-    desired_qty  INTEGER DEFAULT 1,
-    note         TEXT,
-    notified_at  TEXT,                    -- 回货时填，表示已发通知
-    created_at   TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (user_id, product_id)
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_waitlist_product ON product_waitlist(product_id) WHERE notified_at IS NULL') } catch {}
-
-// Wave D-4: 限时促销 / Flash Sale
-db.exec(`
-  CREATE TABLE IF NOT EXISTS flash_sales (
-    id              TEXT PRIMARY KEY,
-    seller_id       TEXT NOT NULL,
-    product_id      TEXT NOT NULL,
-    variant_id      TEXT,                 -- 可选，绑定具体规格
-    sale_price      REAL NOT NULL,
-    original_price  REAL NOT NULL,        -- 创建时快照，用于显示「省 X」
-    max_qty         INTEGER DEFAULT 0,    -- 0 = 不限
-    sold_count      INTEGER DEFAULT 0,
-    starts_at       TEXT NOT NULL,
-    ends_at         TEXT NOT NULL,
-    is_active       INTEGER DEFAULT 1,
-    created_at      TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_flash_product ON flash_sales(product_id, is_active)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_flash_seller ON flash_sales(seller_id, ends_at DESC)') } catch {}
+// Wave A-4 公告+阅读 / Wave B-2 预售waitlist / Wave D-4 限时促销 → server-schema.ts
+// 纯幂等建表/建索引 DDL，原位调用保持 boot 顺序不变
+initAnnouncementsSchema(db)
+initProductWaitlistSchema(db)
+initFlashSalesSchema(db)
 
 // 公共助手：拿商品（含 variant 选项）当前生效的 flash sale
 // #1013 Phase 23: 已迁出到 routes/flash-sales.ts，本地 wrapper 让 orders 流程签名不变
