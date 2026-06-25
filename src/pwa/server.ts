@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -1343,81 +1343,12 @@ for (const stmt of [
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_share_parent ON shareables(parent_id) WHERE parent_id IS NOT NULL") } catch {}
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_share_order ON shareables(related_order_id) WHERE related_order_id IS NOT NULL") } catch {}
 
-// 审计修 C-1：笔记图片 hash 索引表 — O(1) 剽窃检测，替代全表扫描
-// hash PRIMARY KEY 天然唯一约束；删笔记时同步删对应行
-db.exec(`
-  CREATE TABLE IF NOT EXISTS note_photo_index (
-    hash         TEXT PRIMARY KEY,
-    shareable_id TEXT NOT NULL
-  )
-`)
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_npi_shareable ON note_photo_index(shareable_id)") } catch {}
-
-// Wave A-1: 个人心愿单（独立于慈善 wishes）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS user_wishlist (
-    user_id      TEXT NOT NULL,
-    product_id   TEXT NOT NULL,
-    note         TEXT,
-    notify_price_drop    INTEGER DEFAULT 1,
-    notify_back_in_stock INTEGER DEFAULT 1,
-    price_at_add REAL,
-    created_at   TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY(user_id, product_id)
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_wl_product ON user_wishlist(product_id)') } catch {}
-
-// Wave A-2: 商品 Q&A（公开问答 — 自动 FAQ + 防虚假承诺）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS product_qa (
-    id           TEXT PRIMARY KEY,
-    product_id   TEXT NOT NULL,
-    asker_id     TEXT NOT NULL,
-    seller_id    TEXT NOT NULL,
-    question     TEXT NOT NULL,
-    answer       TEXT,
-    answered_at  TEXT,
-    is_public    INTEGER DEFAULT 1,
-    helpful_count INTEGER DEFAULT 0,
-    created_at   TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_qa_product ON product_qa(product_id, created_at DESC)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_qa_seller ON product_qa(seller_id, answered_at)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_qa_asker ON product_qa(asker_id)') } catch {}
-// 防重复 +1 的 votes 表
-db.exec(`
-  CREATE TABLE IF NOT EXISTS product_qa_helpful_voters (
-    qa_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    voted_at TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (qa_id, user_id)
-  )
-`)
-
-// Wave A-3: 优惠券 / 限时折扣（卖家发券 · 全店满减 · 单品限时）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS coupons (
-    id               TEXT PRIMARY KEY,
-    seller_id        TEXT NOT NULL,
-    code             TEXT NOT NULL,
-    scope            TEXT NOT NULL,           -- 'product' | 'shop' | 'all'
-    scope_id         TEXT,                    -- product_id when scope='product'
-    discount_type    TEXT NOT NULL,           -- 'percentage' | 'fixed'
-    discount_value   REAL NOT NULL,
-    min_order_amount REAL DEFAULT 0,
-    max_uses         INTEGER DEFAULT 0,       -- 0 = unlimited
-    uses_count       INTEGER DEFAULT 0,
-    starts_at        TEXT,
-    expires_at       TEXT,
-    is_active        INTEGER DEFAULT 1,
-    created_at       TEXT DEFAULT (datetime('now')),
-    UNIQUE(seller_id, code)
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_coupons_seller ON coupons(seller_id, is_active)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_coupons_scope ON coupons(scope, scope_id) WHERE is_active = 1') } catch {}
+// 笔记图片 hash 索引 / Wave A 购物表（心愿单 · 商品Q&A · 优惠券）→ server-schema.ts
+// 纯幂等建表/建索引 DDL，原位调用保持 boot 顺序不变
+initNotePhotoIndexSchema(db)
+initUserWishlistSchema(db)
+initProductQaSchema(db)
+initCouponsSchema(db)
 // Orders 表加 coupon 字段（记录使用了哪张券、折扣多少）
 for (const stmt of [
   'ALTER TABLE orders ADD COLUMN coupon_id TEXT',
