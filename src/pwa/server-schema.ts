@@ -189,3 +189,39 @@ export function initFlashSalesSchema(db: Database.Database): void {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_flash_product ON flash_sales(product_id, is_active)') } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_flash_seller ON flash_sales(seller_id, ends_at DESC)') } catch {}
 }
+
+// ─── 首屏「我有建议」公开收集（匿名可投，登录态自动绑 user_id）──────
+export function initPublicIdeasSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS public_ideas (
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT,                                  -- 可空（匿名提交）
+    contact       TEXT,                                  -- 可选 email / handle / 任何联系方式
+    content       TEXT NOT NULL,
+    ip_hash       TEXT,
+    ua_hash       TEXT,
+    status        TEXT NOT NULL DEFAULT 'new',          -- new / triaged / resolved / spam
+    created_at    TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_pi_status ON public_ideas(status, created_at DESC)") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_pi_rate ON public_ideas(ip_hash, created_at)") } catch {}
+}
+
+// ─── #959: 拍卖「⏰ 提醒我」（1 订阅 = 多行，每个 lead 时间一行）────
+export function initAuctionRemindersSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS auction_reminders (
+    id            TEXT PRIMARY KEY,                   -- arm_xxxx
+    auction_id    TEXT NOT NULL REFERENCES auctions(id),
+    user_id       TEXT NOT NULL REFERENCES users(id),
+    lead_minutes  INTEGER NOT NULL,                   -- 提前多少分钟提醒
+    fire_at       TEXT NOT NULL,                      -- deadline - lead_minutes（创建时算好）
+    sent_at       TEXT,
+    created_at    TEXT DEFAULT (datetime('now')),
+    UNIQUE(auction_id, user_id, lead_minutes)
+  )
+`)
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_arm_due ON auction_reminders(sent_at, fire_at) WHERE sent_at IS NULL") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_arm_user ON auction_reminders(user_id, auction_id)") } catch {}
+}
