@@ -315,7 +315,9 @@ function heartbeatTokenSync() {
 
 // ─── 状态 ────────────────────────────────────────────────────
 
-const state = {
+// NB: var (not const) so `state` is a global property — required for classic
+// multi-script split (extracted admin/domain files reference state cross-file).
+var state = {
   user: null,
   // 同步 fallback：读 + 解混淆（兼容旧明文 — _obfUnwrap 检测 wz1: 前缀）
   apiKey: _obfUnwrap(localStorage.getItem('webaz_key')) || null,
@@ -402,11 +404,13 @@ async function api(method, path, body, extraHeaders) {
   return res.json()
 }
 
-const GET    = (path)               => api('GET',    path)
-const POST   = (path, body, h)      => api('POST',   path, body, h)
-const PUT    = (path, body, h)      => api('PUT',    path, body, h)
-const PATCH  = (path, body, h)      => api('PATCH',  path, body, h)
-const DELETE = (path)               => api('DELETE', path)
+// NB: var (not const) so these are global properties — required for classic
+// multi-script split (app-admin.js etc. reference GET/POST cross-file).
+var GET    = (path)               => api('GET',    path)
+var POST   = (path, body, h)      => api('POST',   path, body, h)
+var PUT    = (path, body, h)      => api('PUT',    path, body, h)
+var PATCH  = (path, body, h)      => api('PATCH',  path, body, h)
+var DELETE = (path)               => api('DELETE', path)
 
 // GET that also returns X-Next-Cursor header（里程碑 2：cursor 分页）
 async function GET_WITH_CURSOR(path) {
