@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -2187,61 +2187,17 @@ db.exec(`
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_aucbids_auction ON auction_bids(auction_id, status, price DESC)') } catch {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_aucbids_buyer ON auction_bids(buyer_id, status, submitted_at DESC)') } catch {}
 
-// CHAT — 上下文绑定聊天（order / rfq / listing_qa）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS conversations (
-    id              TEXT PRIMARY KEY,
-    kind            TEXT NOT NULL,
-    context_id      TEXT NOT NULL,
-    user_a          TEXT NOT NULL,
-    user_b          TEXT NOT NULL,
-    last_message_at TEXT,
-    last_preview    TEXT,
-    unread_a        INTEGER NOT NULL DEFAULT 0,
-    unread_b        INTEGER NOT NULL DEFAULT 0,
-    status          TEXT NOT NULL DEFAULT 'active',
-    created_at      TEXT DEFAULT (datetime('now')),
-    UNIQUE(kind, context_id, user_a, user_b)
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_a ON conversations(user_a, last_message_at DESC)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_b ON conversations(user_b, last_message_at DESC)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_conv_ctx ON conversations(kind, context_id)') } catch {}
+// CHAT — 上下文绑定聊天（order / rfq / listing_qa）→ server-schema.ts
+initConversationsSchema(db)
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS messages (
-    id              TEXT PRIMARY KEY,
-    conversation_id TEXT NOT NULL,
-    sender_id       TEXT NOT NULL,
-    body            TEXT NOT NULL DEFAULT '',
-    attachments     TEXT,
-    flagged         INTEGER NOT NULL DEFAULT 0,
-    flag_reasons    TEXT,
-    read_at         TEXT,
-    created_at      TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_msg_conv ON messages(conversation_id, created_at)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_msg_sender ON messages(sender_id, created_at DESC)') } catch {}
+// 聊天消息 → server-schema.ts；kind/meta ALTER 刻意留原位（紧跟下方）
+initMessagesSchema(db)
 // W1 私信结构化消息：kind = 'text' | 'offer' | 'tracking'；meta = JSON payload
 try { db.exec("ALTER TABLE messages ADD COLUMN kind TEXT DEFAULT 'text'") } catch {}
 try { db.exec('ALTER TABLE messages ADD COLUMN meta TEXT') } catch {}
 
-// 反诈举报表（chat report → 人工审核）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS chat_reports (
-    id              TEXT PRIMARY KEY,
-    conversation_id TEXT NOT NULL,
-    message_id      TEXT,
-    reporter_id     TEXT NOT NULL,
-    reported_id     TEXT NOT NULL,
-    reason          TEXT NOT NULL,
-    note            TEXT,
-    status          TEXT NOT NULL DEFAULT 'pending',
-    created_at      TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_chatrpt_status ON chat_reports(status, created_at)') } catch {}
+// 反诈举报表（chat report → 人工审核）→ server-schema.ts
+initChatReportsSchema(db)
 
 // 基金池入池流水（depositToFund 审计 + 4 周历史均值数据源）
 db.exec(`

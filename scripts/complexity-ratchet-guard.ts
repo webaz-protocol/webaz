@@ -29,7 +29,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 // LOC ceilings — wc -l semantics (newline count). File must not exceed this.
 // Lower a ceiling when you trim the file; never raise one.
 const LOC_CEILINGS: Record<string, number> = {
-  'src/pwa/server.ts': 9230,
+  'src/pwa/server.ts': 9186,
   'src/pwa/public/app.js': 34741,
   'src/pwa/routes/orders-create.ts': 514,
 }
@@ -37,7 +37,7 @@ const LOC_CEILINGS: Record<string, number> = {
 // server.ts inline DDL — strict equality. Lower only as DDL moves to schema-init.
 const SERVER_TS = 'src/pwa/server.ts'
 const SERVER_DDL_EXACT: Record<string, number> = {
-  'CREATE TABLE': 115,
+  'CREATE TABLE': 112,
   'ALTER TABLE': 250,
 }
 
