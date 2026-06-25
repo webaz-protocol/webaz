@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -2711,33 +2711,12 @@ try {
 // 协议级精准匹配：卖家声明该 SKU 的多种 alias（外部 id / 标题 / 短链 / 淘口令 token / 标题片段）
 // 服务端用 findProductsByAlias 做"完全相等 + 包含"判定。alias 至少 6 字符，反通用词。
 try {
-  db.exec(`CREATE TABLE IF NOT EXISTS product_aliases (
-    id              TEXT PRIMARY KEY,
-    product_id      TEXT NOT NULL,
-    alias_type      TEXT NOT NULL,            -- 'external_id' | 'external_title' | 'short_url' | 'kouling_token' | 'title_substring'
-    alias_value     TEXT NOT NULL,
-    min_match_chars INTEGER DEFAULT 6,
-    created_at      TEXT DEFAULT (datetime('now')),
-    challenged_at   TEXT,                     -- M7.4 verifier 挑战时间
-    status          TEXT DEFAULT 'active',    -- 'active' | 'revoked' | 'challenged'
-    UNIQUE(alias_type, alias_value, product_id)
-  )`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_alias_value ON product_aliases(alias_value)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_alias_product ON product_aliases(product_id)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_alias_type ON product_aliases(alias_type)`)
+  initProductAliasesSchema(db)
 } catch (e) { console.error('[M7.2 schema product_aliases]', e) }
 
-// M-5：region 切换 audit log + 24h 限流
+// M-5：region 切换 audit log + 24h 限流 → server-schema.ts
 try {
-  db.exec(`CREATE TABLE IF NOT EXISTS region_change_log (
-    id          TEXT PRIMARY KEY,
-    user_id     TEXT NOT NULL,
-    from_region TEXT,
-    to_region   TEXT NOT NULL,
-    ip          TEXT,
-    created_at  TEXT DEFAULT (datetime('now'))
-  )`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_region_change_user_ts ON region_change_log(user_id, created_at DESC)`)
+  initRegionChangeLogSchema(db)
 } catch (e) { console.error('[M-5 schema region_change_log]', e) }
 
 // WebAuthn / Passkey — 大额提现 等敏感操作的二次确认（commit B）
