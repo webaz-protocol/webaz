@@ -6498,9 +6498,132 @@ window.lookupAnchorAction = async () => {
   `
 }
 
-// editor-picks (public + admin mgmt), group-buy (live/detail/join/leave), and
-// flash-sale (modal/submit/live) → moved to app-shop.js (classic split, slice I).
-// renderSellerFlashSales (seller mgmt page) intentionally stays here.
+// editor-picks (public + admin mgmt) + flash-sale (modal/submit/live) → moved to
+// app-shop.js (classic split, slice I). group-buy stays here: join/leave create a
+// paid order + wallet escrow/refund (group-buys.ts) — a money/order/status path,
+// not a plain shop utility; defer to a dedicated group-buy PR. renderSellerFlashSales
+// (seller mgmt page) also stays here.
+
+// B-3: 群组团购
+async function renderGroupBuysLive(app) {
+  app.innerHTML = shell(loading$(), 'discover')
+  const r = await GET('/group-buys/live')
+  const items = r?.items || []
+  const rows = items.length === 0
+    ? `<div style="text-align:center;padding:40px;color:#9ca3af"><div style="font-size:48px">👥</div><div style="font-size:13px;margin-top:8px">${t('暂无进行中的团购')}</div></div>`
+    : items.map(it => {
+        let imageUrl = ''
+        try { const imgs = typeof it.images === 'string' ? JSON.parse(it.images) : it.images; if (Array.isArray(imgs) && imgs[0]) imageUrl = imgs[0] } catch {}
+        const pct = (Number(it.discount_pct) * 100).toFixed(0)
+        const final = (Number(it.original_price) * (1 - Number(it.discount_pct))).toFixed(2)
+        const progress = Math.min(100, (Number(it.joined_count) / Number(it.target_count)) * 100)
+        return `
+          <div class="card" style="padding:12px;margin-bottom:8px;cursor:pointer;border-left:3px solid #16a34a" onclick="location.hash='#group-buy/${it.id}'">
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+              <div style="font-size:32px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(it.category) || '📦'}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.product_title)}</div>
+                <div style="font-size:12px;margin-top:2px"><span style="color:#16a34a;font-weight:700">${final}</span> WAZ <span style="font-size:10px;color:#9ca3af;text-decoration:line-through margin-left:4px">${it.original_price}</span> <span style="font-size:10px;color:#16a34a;background:#dcfce7;padding:1px 5px;border-radius:99px;margin-left:4px;font-weight:600">-${pct}%</span></div>
+                <div style="font-size:10px;color:#9ca3af;margin-top:2px">@${escHtml(it.seller_handle || '')} · ${t('截止')} ${fmtTime(it.ends_at)}</div>
+              </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#374151;margin-bottom:4px">
+              <span>${t('已成团')} ${it.joined_count}/${it.target_count}</span>
+              <span style="color:#16a34a">${progress.toFixed(0)}%</span>
+            </div>
+            <div style="height:6px;background:#f3f4f6;border-radius:3px;overflow:hidden"><div style="height:100%;width:${progress}%;background:#16a34a;transition:width 0.3s"></div></div>
+          </div>`
+      }).join('')
+  app.innerHTML = shell(`
+    <h1 class="page-title">👥 ${t('群组团购')}</h1>
+    <div style="font-size:12px;color:#6b7280;margin-bottom:14px">${t('多人凑单解锁折扣 · 未达成全额退款')}</div>
+    ${rows}
+  `, 'discover')
+}
+
+async function renderGroupBuyDetail(app, id) {
+  if (!id) { navigate('#group-buys'); return }
+  app.innerHTML = shell(loading$(), 'discover')
+  const r = await GET(`/group-buys/${id}`)
+  if (r.error) { app.innerHTML = shell(alert$('error', r.error), 'discover'); return }
+  const pct = (Number(r.discount_pct) * 100).toFixed(0)
+  const final = (Number(r.original_price) * (1 - Number(r.discount_pct))).toFixed(2)
+  const isParticipant = state.user && (r.participants || []).some(p => p.buyer_id === state.user.id)
+  const isOwn = state.user?.id === r.seller_id
+  const joined = (r.participants || []).length
+  const progress = Math.min(100, joined / Number(r.target_count) * 100)
+  const expired = new Date(r.ends_at) <= new Date()
+  const remaining = expired ? null : Math.max(0, new Date(r.ends_at).getTime() - Date.now())
+  const remainingStr = remaining != null ? `${Math.floor(remaining / 3600000)}h ${Math.floor((remaining % 3600000) / 60000)}m` : t('已结束')
+
+  app.innerHTML = shell(`
+    <button class="btn btn-gray btn-sm" style="width:auto;margin-bottom:10px" onclick="navigate('#group-buys')">${t('← 全部团购')}</button>
+    <h1 class="page-title">👥 ${escHtml(r.product_title)}</h1>
+    <div class="card" style="background:linear-gradient(135deg,#ecfdf5,#fff);padding:14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div><div style="font-size:24px;font-weight:800;color:#16a34a">${final} WAZ</div><div style="font-size:11px;color:#9ca3af;text-decoration:line-through">${r.original_price} WAZ</div></div>
+        <div style="font-size:18px;font-weight:700;color:#16a34a;background:#dcfce7;padding:6px 12px;border-radius:8px">-${pct}%</div>
+      </div>
+      <div style="font-size:12px;color:#374151;margin-bottom:4px">${t('已成团')} <strong>${joined}/${r.target_count}</strong> · ${t('剩余时间')} ${remainingStr}</div>
+      <div style="height:8px;background:#f3f4f6;border-radius:4px;overflow:hidden;margin-bottom:8px"><div style="height:100%;width:${progress}%;background:#16a34a"></div></div>
+      ${r.status === 'succeeded' ? `<div style="color:#16a34a;font-weight:600">🎉 ${t('已成团')}</div>`
+        : r.status === 'failed' ? `<div style="color:#dc2626;font-weight:600">⏰ ${t('未成团已退款')}</div>`
+        : expired ? `<div style="color:#9ca3af">${t('已结束，等待结算')}</div>`
+        : isOwn ? `<div style="color:#9ca3af">${t('自己开的团，等待成团')}</div>`
+        : isParticipant ? `<button class="btn btn-outline btn-sm" style="width:100%;color:#dc2626;border-color:#fca5a5" onclick="leaveGroupBuy('${r.id}')">${t('退出团购')}</button>`
+        : state.user?.role === 'buyer' ? `<button class="btn btn-primary" style="width:100%" onclick="openJoinGroupBuy('${r.id}')">+ ${t('加入团购')} (${r.original_price} WAZ ${t('预付')})</button>`
+        : `<div style="color:#9ca3af">${t('仅买家可加入')}</div>`}
+    </div>
+    <div style="font-size:13px;font-weight:600;margin:14px 0 8px">${t('已加入')} (${joined})</div>
+    ${(r.participants || []).map(p => `
+      <div class="card" style="padding:8px 10px;margin-bottom:4px;font-size:12px;display:flex;justify-content:space-between">
+        <span>@${escHtml(p.buyer_handle || '?')}</span>
+        <span style="color:#9ca3af">${fmtTime(p.created_at)}</span>
+      </div>
+    `).join('')}
+  `, 'discover')
+}
+
+window.openJoinGroupBuy = (id) => {
+  const html = `
+    <div class="js-modal" style="background:rgba(0,0,0,0.6);position:fixed;inset:0;z-index:1000;display:flex;align-items:flex-end;justify-content:center" onclick="this.remove()">
+      <div style="background:#fff;width:100%;max-width:560px;border-radius:16px 16px 0 0;padding:20px" onclick="event.stopPropagation()">
+        <h2 style="font-size:16px;font-weight:700;margin-bottom:8px">👥 ${t('加入团购')}</h2>
+        <div style="font-size:12px;color:#6b7280;margin-bottom:12px">${t('预付原价，成团后退差价；未成团全额退款')}</div>
+        <div class="form-group">
+          <label class="form-label">${t('收货地址')} *</label>
+          <input class="form-control" id="gb-addr" placeholder="${t('省市区 详细地址')}">
+        </div>
+        <div id="gb-msg" style="margin:8px 0"></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-gray" style="flex:1" onclick="this.closest('[style*=position]').remove()">${t('取消')}</button>
+          <button class="btn btn-primary" style="flex:1" onclick="submitJoinGroupBuy('${id}')">${t('确认加入')}</button>
+        </div>
+      </div>
+    </div>
+  `
+  const div = document.createElement('div')
+  div.innerHTML = html
+  document.body.appendChild(div.firstElementChild)
+}
+
+window.submitJoinGroupBuy = async (id) => {
+  const addr = document.getElementById('gb-addr').value.trim()
+  if (!addr) { document.getElementById('gb-msg').innerHTML = alert$('error', t('请填写收货地址')); return }
+  const res = await POST(`/group-buys/${id}/join`, { shipping_address: addr })
+  if (res.error) { document.getElementById('gb-msg').innerHTML = alert$('error', res.error); return }
+  document.querySelector('.js-modal')?.remove()
+  toast$(`${t('已加入')} (${res.joined_count}/${res.target_count})`)
+  renderGroupBuyDetail(document.getElementById('app'), id)
+}
+
+window.leaveGroupBuy = async (id) => {
+  if (!confirm(t('确认退出？预付金额将退回'))) return
+  const res = await fetch(`/api/group-buys/${id}/leave`, { method: 'DELETE', headers: { Authorization: 'Bearer ' + state.apiKey } }).then(r => r.json())
+  if (res.error) { alert(res.error); return }
+  toast$(t('已退出'))
+  renderGroupBuyDetail(document.getElementById('app'), id)
+}
 
 // seller 自己的 flash sales
 async function renderSellerFlashSales(app) {
