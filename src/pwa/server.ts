@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -1459,94 +1459,28 @@ try { db.exec('ALTER TABLE feedback_messages ADD COLUMN flagged INTEGER DEFAULT 
 try { db.exec('ALTER TABLE feedback_messages ADD COLUMN flag_reasons TEXT') } catch {}
 
 // ─── 公开仲裁判例 (P1) ─────────────────────────────────────
-// disputes 是当事人/仲裁员私域；dispute_cases 是裁决后的公开脱敏版本
-db.exec(`
-  CREATE TABLE IF NOT EXISTS dispute_cases (
-    id              TEXT PRIMARY KEY,            -- dcase_xxx
-    dispute_id      TEXT,                         -- 原始 disputes.id (内部追溯)
-    order_id        TEXT,
-    product_id      TEXT,                         -- 关键索引：按商品查公开判例
-    seller_id       TEXT,
-    buyer_id        TEXT,                         -- 仅内部使用，不外露
-    category_tag    TEXT,                         -- 物流 / 质量 / 描述不符 / 售后 / 拒收 / 其他
-    winner          TEXT,                         -- buyer / seller / split / dismissed
-    resolution      TEXT,                         -- 简短人读判决 (如 '全额退款')
-    amount_bucket   TEXT,                         -- '0-100' / '100-500' / '500-2000' / '2000+' WAZ
-    buyer_argument  TEXT,                         -- 脱敏后买家陈述
-    seller_argument TEXT,                         -- 脱敏后卖家陈述
-    ruling_text     TEXT,                         -- 仲裁员判决书
-    arbitrator_id   TEXT,
-    fairness_yes    INTEGER DEFAULT 0,
-    fairness_no     INTEGER DEFAULT 0,
-    comment_count   INTEGER DEFAULT 0,
-    published_at    TEXT DEFAULT (datetime('now')),
-    created_at      TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_dcase_product ON dispute_cases(product_id, published_at DESC)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_dcase_seller ON dispute_cases(seller_id, published_at DESC)') } catch {}
+// 公开判例（裁决后脱敏版本，disputes 是当事人/仲裁员私域）→ server-schema.ts
+initDisputeCasesSchema(db)
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS dispute_comments (
-    id              TEXT PRIMARY KEY,            -- dcom_xxx
-    case_id         TEXT NOT NULL,
-    commenter_id    TEXT NOT NULL,
-    body            TEXT NOT NULL,
-    flagged         INTEGER DEFAULT 0,
-    likes           INTEGER DEFAULT 0,
-    created_at      TEXT DEFAULT (datetime('now')),
-    UNIQUE(case_id, commenter_id)                -- 一案一人一次（防刷）
-  )
-`)
+// 公开判例评论 → server-schema.ts；anonymous ALTER + idx_dcom_case 刻意留原位
+initDisputeCommentsSchema(db)
 try { db.exec('ALTER TABLE dispute_comments ADD COLUMN anonymous INTEGER DEFAULT 0') } catch {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_dcom_case ON dispute_comments(case_id, created_at DESC)') } catch {}
 
-// W5 仲裁公开评论楼中楼 — 单层子回复；保留原 dispute_comments UNIQUE
-db.exec(`
-  CREATE TABLE IF NOT EXISTS dispute_comment_replies (
-    id                TEXT PRIMARY KEY,           -- drep_xxx
-    parent_comment_id TEXT NOT NULL,              -- 指向 dispute_comments.id
-    case_id           TEXT NOT NULL,
-    replier_id        TEXT NOT NULL,
-    body              TEXT NOT NULL,
-    anonymous         INTEGER DEFAULT 0,
-    likes             INTEGER DEFAULT 0,
-    created_at        TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_drep_parent ON dispute_comment_replies(parent_comment_id, created_at)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_drep_case ON dispute_comment_replies(case_id, created_at DESC)') } catch {}
+// W5 仲裁公开评论楼中楼 — 单层子回复 → server-schema.ts；后续 ALTER 刻意留原位
+initDisputeCommentRepliesSchema(db)
 // 跨窗反诈一致性
 try { db.exec('ALTER TABLE dispute_comment_replies ADD COLUMN flagged INTEGER DEFAULT 0') } catch {}
 try { db.exec('ALTER TABLE dispute_comment_replies ADD COLUMN flag_reasons TEXT') } catch {}
 // dispute_comments 已有 flagged，但缺 flag_reasons
 try { db.exec('ALTER TABLE dispute_comments ADD COLUMN flag_reasons TEXT') } catch {}
 
-// W6 笔记评论 — 原生 parent_id 楼中楼（仅 1 层；非 root 不可再 reply）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS shareable_comments (
-    id           TEXT PRIMARY KEY,                -- scom_xxx
-    shareable_id TEXT NOT NULL,                    -- shareables.id
-    commenter_id TEXT NOT NULL,
-    parent_id    TEXT,                             -- 子评论指向父评论；root = NULL
-    body         TEXT NOT NULL,
-    flagged      INTEGER DEFAULT 0,
-    likes        INTEGER DEFAULT 0,
-    created_at   TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_scom_shareable ON shareable_comments(shareable_id, parent_id, created_at DESC)') } catch {}
+// W6 笔记评论 — 原生 parent_id 楼中楼（仅 1 层）→ server-schema.ts；flag_reasons ALTER 刻意留原位
+initShareableCommentsSchema(db)
 try { db.exec('ALTER TABLE shareable_comments ADD COLUMN flag_reasons TEXT') } catch {}
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS dispute_fairness_votes (
-    case_id     TEXT NOT NULL,
-    voter_id    TEXT NOT NULL,
-    vote        TEXT NOT NULL,                   -- 'yes' / 'no'
-    created_at  TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (case_id, voter_id)
-  )
-`)
+// 公开判例公平性投票 → server-schema.ts；idx_feedback_open 刻意留原位（非本表索引，不相邻）
+initDisputeFairnessVotesSchema(db)
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_feedback_open ON feedback_tickets(status, created_at DESC) WHERE status IN (\'open\', \'in_progress\')') } catch {}
 
 // Wave C-3: 买家评价 / 评分 — 完成订单后给卖家 1-5 星 + 文字
