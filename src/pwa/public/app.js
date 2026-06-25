@@ -6163,32 +6163,7 @@ window.doL1ShareOverride = async (userId, value) => {
   renderAdminUserDetail(document.getElementById('app'), userId)
 }
 
-async function renderAdminAudit(app) {
-  if (!state.user) { renderLogin(); return }
-  if (!isAdmin()) { app.innerHTML = shell(`<div class="alert alert-info">${t('仅限管理员')}</div>`, 'admin-audit'); return }
-  app.innerHTML = shell(loading$(), 'admin-audit')
-  const data = await GET('/admin/audit-log')
-  if (data.error) { app.innerHTML = shell(alert$('error', data.error), 'admin-audit'); return }
-  const items = data.entries.length
-    ? data.entries.map(e => `
-        <div class="card" style="margin-bottom:10px;font-size:13px">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-            <div style="flex:1;min-width:0">
-              <div><strong>${e.action}</strong> · <span style="color:#6b7280">${escHtml(e.admin_name || e.admin_id)}</span></div>
-              ${e.target_id ? `<div style="font-size:11px;color:#6b7280;margin-top:2px">${e.target_type || ''}: ${e.target_id}</div>` : ''}
-              ${e.detail && Object.keys(e.detail).length ? `<pre style="font-size:11px;background:#f9fafb;padding:6px;border-radius:4px;margin-top:6px;overflow:auto;white-space:pre-wrap">${escHtml(JSON.stringify(e.detail))}</pre>` : ''}
-            </div>
-            <div style="font-size:11px;color:#9ca3af;white-space:nowrap">${fmtTime(e.created_at)}</div>
-          </div>
-        </div>`).join('')
-    : `<div class="empty"><div class="empty-icon">📜</div><div class="empty-text">${t('暂无操作记录')}</div></div>`
-  app.innerHTML = shell(`
-    <h1 class="page-title">📜 ${t('操作审计')}</h1>
-    <div style="font-size:12px;color:#6b7280;margin-bottom:12px">${t('最近 50 条 admin 操作记录')}</div>
-    ${items}
-  `, 'admin-audit')
-}
-
+// renderAdminAudit → moved to app-admin.js (classic split, slice B).
 window.doSetPassword = async () => {
   const oldInp = document.getElementById('pwd-old')         // 仅"修改密码"模式下存在
   const newPwd = document.getElementById('pwd-new')?.value
@@ -31530,53 +31505,9 @@ function pageHeader(icon, title, subtitle, theme = 'admin') {
     </div>
   `
 }
-// 向后兼容 — 老 admin 代码用 adminPageHeader
-function adminPageHeader(icon, title, subtitle) { return pageHeader(icon, title, subtitle, 'admin') }
-// admin 通用卡片网格 helper
-function adminLinkCard(icon, label, sub, hash, badge) {
-  return `<div onclick="location.hash='${hash}'" class="card" style="padding:14px;cursor:pointer;display:flex;align-items:center;gap:10px;min-height:64px;position:relative;transition:transform 0.1s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
-    <div style="font-size:24px;flex-shrink:0">${icon}</div>
-    <div style="flex:1;min-width:0">
-      <div style="font-weight:600;font-size:14px">${label}</div>
-      ${sub ? `<div style="font-size:11px;color:#9ca3af;margin-top:2px">${sub}</div>` : ''}
-    </div>
-    ${badge != null && badge !== '' ? `<div style="background:#dc2626;color:#fff;border-radius:99px;font-size:10px;padding:2px 7px;min-width:18px;text-align:center;flex-shrink:0;font-weight:600">${badge}</div>` : ''}
-  </div>`
-}
 
-// === #admin/content 内容管理 hub ===
-async function renderAdminContent(app) {
-  if (!isAdmin()) { app.innerHTML = shell(`<div class="alert alert-info">${t('仅限管理员')}</div>`, 'admin-content'); return }
-  app.innerHTML = shell(loading$(), 'admin-content')
-  const [dash, reportsRes] = await Promise.all([
-    GET('/admin/dashboard').catch(() => ({})),
-    GET('/admin/wish-reports?status=pending').catch(() => ({ items: [] })),
-  ])
-  const pendingReports = reportsRes?.items?.length || 0
-  app.innerHTML = shell(`
-    ${adminPageHeader('📦', t('内容管理'), t('商品 / 订单 / 慈善举报 集中处理'))}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      ${adminLinkCard('📦', t('商品管理'), t('强制下架 / 批量'), '#admin/products')}
-      ${adminLinkCard('🧾', t('订单只读'), t('全平台监控'), '#admin/orders')}
-      ${adminLinkCard('🌸', t('慈善举报'), pendingReports > 0 ? t('待处理 ') + pendingReports : t('无待处理'), '#admin/wish-reports', pendingReports || '')}
-      ${adminLinkCard('🚫', t('用户黑名单'), t('封号 / 警告记录'), '#admin/users')}
-    </div>
-  `, 'admin-content')
-}
-
-// === #admin/arbitration 仲裁与审核 hub ===
-async function renderAdminArbitration(app) {
-  if (!isAdmin()) { app.innerHTML = shell(`<div class="alert alert-info">${t('仅限管理员')}</div>`, 'admin-arbitration'); return }
-  app.innerHTML = shell(loading$(), 'admin-arbitration')
-  const dash = await GET('/admin/dashboard').catch(() => ({}))
-  app.innerHTML = shell(`
-    ${adminPageHeader('⚖', t('仲裁与审核'), t('争议案件 / 验证任务 / 仲裁员监管'))}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      ${adminLinkCard('⚖️', t('争议监控'), t('全平台仲裁案件'), '#admin/disputes', dash.disputes_open || '')}
-      ${adminLinkCard('🔎', t('验证任务'), t('claim 任务监控'), '#admin/tasks', dash.verify_tasks_open || '')}
-    </div>
-  `, 'admin-arbitration')
-}
+// adminPageHeader / adminLinkCard / renderAdminContent / renderAdminArbitration
+// → moved to app-admin.js (classic split, slice B). They remain global.
 
 // === #admin/protocol 协议管理 hub ===
 async function renderAdminProtocol(app) {
