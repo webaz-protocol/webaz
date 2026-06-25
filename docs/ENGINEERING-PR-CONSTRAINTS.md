@@ -73,6 +73,17 @@ Complexity baselines are current debt ceilings, not quality targets.
 
 ## 5. Frontend Split Rules
 
+> **Status — the app.js classic-split main line is closed out (PR A–K, #54–#67).**
+> `app.js` went 34741 → 25856 LOC; nine domain files exist: `app-admin` /
+> `app-contribution` / `app-ai` / `app-discover` / `app-profile` / `app-account` /
+> `app-shop` / `app-listings` / `app-seller`. Going forward: **new frontend domain
+> logic must NOT backflow into `app.js`** — put it in the owning `app-<domain>.js`
+> (or a new one, fully wired per the rules below). The remaining `app.js` is
+> money/order/status-dense (cart/checkout/orders/wallet/disputes/returns/auctions/
+> rfq/secondhand/wish-charity escrow/group-buy/seller workbench); **any further
+> extraction there is a dedicated, money-path-aware PR with targeted tests + smoke,
+> not a plain structure slice.**
+
 The current PWA uses classic scripts, not ES modules or a bundler.
 
 - Keep the classic multi-script model unless a dedicated PR changes the build

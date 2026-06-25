@@ -1,7 +1,7 @@
 // WebAZ — admin monitoring pages (classic multi-script split, first slice)
 //
 // Loaded as a CLASSIC script BEFORE app.js (see index.html order):
-//   i18n.js -> app-admin.js -> app.js
+//   i18n → app-admin → app-contribution → app-ai → app-discover → app-profile → app-account → app-shop → app-listings → app-seller → app.js (source of truth: index.html)
 // These are top-level function declarations → global, callable from app.js's
 // router (render() dispatches #admin/health|errors|events here). They only run
 // on route/click, by which point app.js has finished loading and all shared

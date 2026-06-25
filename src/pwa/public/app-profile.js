@@ -1,7 +1,7 @@
 // WebAZ — Profile / Social / My-Home domain (classic multi-script split, slice G / app-profile.js)
 //
 // Loaded as a CLASSIC script in this order (index.html):
-//   i18n.js -> app-admin.js -> app-contribution.js -> app-ai.js -> app-discover.js -> app-profile.js -> app.js
+//   i18n → app-admin → app-contribution → app-ai → app-discover → app-profile → app-account → app-shop → app-listings → app-seller → app.js (source of truth: index.html)
 // (after app-discover.js, since profile/nearby feeds call productCardHtml/
 // discoverGoodsTabs which live there). Top-level functions / window.* handlers
 // are global; pages run on route/click (after app.js loads), so cross-file

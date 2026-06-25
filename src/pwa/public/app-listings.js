@@ -1,7 +1,7 @@
 // WebAZ — Listings (multi-seller follow-sell) read-only display (classic split, slice J / app-listings.js)
 //
 // Loaded as a CLASSIC script in this order (index.html):
-//   … -> app-account.js -> app-shop.js -> app-listings.js -> app.js
+//   i18n → app-admin → app-contribution → app-ai → app-discover → app-profile → app-account → app-shop → app-listings → app-seller → app.js (source of truth: index.html)
 // Top-level functions / window.* handlers are global; pages run on route/click
 // (after app.js loads), so cross-file globals (GET/state/shell/escHtml/navigate/t/
 // productCardHtml/LISTING_CATEGORY_NAMES/LISTING_TAG_DEFS/FULFILLMENT_LABELS/...) resolve
