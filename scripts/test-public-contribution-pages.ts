@@ -28,7 +28,12 @@ const fails: string[] = []
 const ok = (name: string, cond: boolean, detail = ''): void => { if (cond) pass++; else { fail++; fails.push(`✗ ${name}${detail ? `\n    ${detail}` : ''}`) } }
 
 const HERE = dirname(fileURLToPath(import.meta.url))
+// app.js + app-account.js: the #me/advanced grid (which holds the 公开共建任务 card)
+// was moved to app-account.js by the classic-script split (slice H). app.js is
+// concatenated first so the PR9E-1 BLOCK slice and route() regexes still resolve
+// against the app.js portion.
 const app = readFileSync(join(HERE, '..', 'src', 'pwa', 'public', 'app.js'), 'utf8')
+  + '\n' + readFileSync(join(HERE, '..', 'src', 'pwa', 'public', 'app-account.js'), 'utf8')
 const i18n = readFileSync(join(HERE, '..', 'src', 'pwa', 'public', 'i18n.js'), 'utf8')
 
 // Slice just the PR9E-1 block (marker → renderRule) so assertions are scoped to the contribute pages.

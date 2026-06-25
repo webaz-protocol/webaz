@@ -24,7 +24,11 @@ const ok = (name: string, cond: boolean, detail = ''): void => { if (cond) pass+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8')
 
-const app = read('src/pwa/public/app.js')
+// app.js + app-account.js: the #me menu grid (rewards / 我的共建 cards) moved to
+// app-account.js in the classic-script split (slice H). Reading both keeps the
+// positive card-copy contracts AND extends the negative "no Builder-identity copy"
+// scan to cover app-account.js too.
+const app = read('src/pwa/public/app.js') + '\n' + read('src/pwa/public/app-account.js')
 const i18n = read('src/pwa/public/i18n.js')
 const productsMeta = read('src/pwa/routes/products-meta.ts')
 const referral = read('src/pwa/routes/referral.ts')
