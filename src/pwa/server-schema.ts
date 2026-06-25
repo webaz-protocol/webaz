@@ -284,3 +284,96 @@ export function initFeedbackMessagesSchema(db: Database.Database): void {
 `)
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_fmsg_ticket ON feedback_messages(ticket_id, created_at)') } catch {}
 }
+
+// ─── 公开判例（裁决后脱敏版本，disputes 是当事人/仲裁员私域）────────
+export function initDisputeCasesSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS dispute_cases (
+    id              TEXT PRIMARY KEY,            -- dcase_xxx
+    dispute_id      TEXT,                         -- 原始 disputes.id (内部追溯)
+    order_id        TEXT,
+    product_id      TEXT,                         -- 关键索引：按商品查公开判例
+    seller_id       TEXT,
+    buyer_id        TEXT,                         -- 仅内部使用，不外露
+    category_tag    TEXT,                         -- 物流 / 质量 / 描述不符 / 售后 / 拒收 / 其他
+    winner          TEXT,                         -- buyer / seller / split / dismissed
+    resolution      TEXT,                         -- 简短人读判决 (如 '全额退款')
+    amount_bucket   TEXT,                         -- '0-100' / '100-500' / '500-2000' / '2000+' WAZ
+    buyer_argument  TEXT,                         -- 脱敏后买家陈述
+    seller_argument TEXT,                         -- 脱敏后卖家陈述
+    ruling_text     TEXT,                         -- 仲裁员判决书
+    arbitrator_id   TEXT,
+    fairness_yes    INTEGER DEFAULT 0,
+    fairness_no     INTEGER DEFAULT 0,
+    comment_count   INTEGER DEFAULT 0,
+    published_at    TEXT DEFAULT (datetime('now')),
+    created_at      TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_dcase_product ON dispute_cases(product_id, published_at DESC)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_dcase_seller ON dispute_cases(seller_id, published_at DESC)') } catch {}
+}
+
+// ─── 公开判例评论（一案一人一次；anonymous ALTER + 索引留 server.ts 原位）──
+export function initDisputeCommentsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS dispute_comments (
+    id              TEXT PRIMARY KEY,            -- dcom_xxx
+    case_id         TEXT NOT NULL,
+    commenter_id    TEXT NOT NULL,
+    body            TEXT NOT NULL,
+    flagged         INTEGER DEFAULT 0,
+    likes           INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT (datetime('now')),
+    UNIQUE(case_id, commenter_id)                -- 一案一人一次（防刷）
+  )
+`)
+}
+
+// ─── W5 仲裁公开评论楼中楼 — 单层子回复 ────────────────────────────
+export function initDisputeCommentRepliesSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS dispute_comment_replies (
+    id                TEXT PRIMARY KEY,           -- drep_xxx
+    parent_comment_id TEXT NOT NULL,              -- 指向 dispute_comments.id
+    case_id           TEXT NOT NULL,
+    replier_id        TEXT NOT NULL,
+    body              TEXT NOT NULL,
+    anonymous         INTEGER DEFAULT 0,
+    likes             INTEGER DEFAULT 0,
+    created_at        TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_drep_parent ON dispute_comment_replies(parent_comment_id, created_at)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_drep_case ON dispute_comment_replies(case_id, created_at DESC)') } catch {}
+}
+
+// ─── W6 笔记评论 — 原生 parent_id 楼中楼（仅 1 层）─────────────────
+export function initShareableCommentsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS shareable_comments (
+    id           TEXT PRIMARY KEY,                -- scom_xxx
+    shareable_id TEXT NOT NULL,                    -- shareables.id
+    commenter_id TEXT NOT NULL,
+    parent_id    TEXT,                             -- 子评论指向父评论；root = NULL
+    body         TEXT NOT NULL,
+    flagged      INTEGER DEFAULT 0,
+    likes        INTEGER DEFAULT 0,
+    created_at   TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_scom_shareable ON shareable_comments(shareable_id, parent_id, created_at DESC)') } catch {}
+}
+
+// ─── 公开判例公平性投票（一案一人一票）──────────────────────────────
+export function initDisputeFairnessVotesSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS dispute_fairness_votes (
+    case_id     TEXT NOT NULL,
+    voter_id    TEXT NOT NULL,
+    vote        TEXT NOT NULL,                   -- 'yes' / 'no'
+    created_at  TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (case_id, voter_id)
+  )
+`)
+}
