@@ -8,7 +8,11 @@
  * 纯只读 + 复用 endpoint,不改评价 / 资金逻辑。
  */
 import { readFileSync } from 'node:fs'
+// app.js + app-seller.js: renderSellerAnalytics + hydrateSellerReviews moved to
+// app-seller.js (classic split, slice K). app.js is concatenated first so the
+// submitSellerReviewReply assertion still resolves in the app.js portion.
 const app = readFileSync('src/pwa/public/app.js', 'utf8')
+  + '\n' + readFileSync('src/pwa/public/app-seller.js', 'utf8')
 const i18n = readFileSync('src/pwa/public/i18n.js', 'utf8')
 const ratings = readFileSync('src/pwa/routes/ratings.ts', 'utf8')
 
