@@ -858,3 +858,36 @@ export function initAgentRevocationsSchema(db: Database.Database): void {
   )`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_arev_target ON agent_revocations(target_kind, target_value)`)
 }
+
+// ─── 里程碑 7.2：商品 alias 系统 schema ─────────────────────────────
+// 注：调用方 server.ts 保留原 try/catch 边界与 console.error label；
+// 这些 DDL 原本无逐句 try/catch（靠外层 try 兜底），此处照搬不加。
+export function initProductAliasesSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS product_aliases (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT NOT NULL,
+    alias_type      TEXT NOT NULL,            -- 'external_id' | 'external_title' | 'short_url' | 'kouling_token' | 'title_substring'
+    alias_value     TEXT NOT NULL,
+    min_match_chars INTEGER DEFAULT 6,
+    created_at      TEXT DEFAULT (datetime('now')),
+    challenged_at   TEXT,                     -- M7.4 verifier 挑战时间
+    status          TEXT DEFAULT 'active',    -- 'active' | 'revoked' | 'challenged'
+    UNIQUE(alias_type, alias_value, product_id)
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_alias_value ON product_aliases(alias_value)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_alias_product ON product_aliases(product_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_alias_type ON product_aliases(alias_type)`)
+}
+
+// ─── M-5：region 切换 audit log + 24h 限流 ──────────────────────────
+export function initRegionChangeLogSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS region_change_log (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL,
+    from_region TEXT,
+    to_region   TEXT NOT NULL,
+    ip          TEXT,
+    created_at  TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_region_change_user_ts ON region_change_log(user_id, created_at DESC)`)
+}
