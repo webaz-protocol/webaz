@@ -39,11 +39,32 @@ Key entry files / 关键入口:
 
 ## 2. Before you change code / 改代码前
 
-1. **Build must pass** before any PR: `npm install && npm run build`. (also `npm run pwa` / `npm run mcp` to run locally)
-2. If your change touches **the protocol itself** (state machine / funds / governance / meta-rules / security), first align with the 3 canonical docs — see [CONTRIBUTING.md → Going deeper](CONTRIBUTING.md#深入贡献协议级改动--going-deeper-protocol-level-changes). Light changes (docs / i18n / small bugs) can skip that.
-3. **Minimize the diff** — touch only task-relevant lines; no incidental "cleanup" or reordering.
-4. **Bilingual UI strings**: every user-facing string needs both zh and an `_EN` counterpart. / 每条 UI 文案要 zh + en 双语。
-5. **Schema rule**: `ALTER TABLE` must run *after* `CREATE TABLE` (fresh-DB silent-fail trap; CI `schema:verify` guards it).
+1. **Read and obey the engineering PR constraints**: [`docs/ENGINEERING-PR-CONSTRAINTS.md`](docs/ENGINEERING-PR-CONSTRAINTS.md). If the requested work conflicts with those constraints, stop before coding and ask for an explicit split or exception.
+2. **Build must pass** before any PR: `npm install && npm run build`. (also `npm run pwa` / `npm run mcp` to run locally)
+3. If your change touches **the protocol itself** (state machine / funds / governance / meta-rules / security), first align with the 3 canonical docs — see [CONTRIBUTING.md → Going deeper](CONTRIBUTING.md#深入贡献协议级改动--going-deeper-protocol-level-changes). Light changes (docs / i18n / small bugs) can skip that.
+4. **Minimize the diff** — touch only task-relevant lines; no incidental "cleanup" or reordering.
+5. **Bilingual UI strings**: every user-facing string needs both zh and an `_EN` counterpart. / 每条 UI 文案要 zh + en 双语。
+6. **Schema rule**: `ALTER TABLE` must run *after* `CREATE TABLE` (fresh-DB silent-fail trap; CI `schema:verify` guards it).
+
+### Claude Code hard stop rules / Claude Code 硬停规则
+
+If you are Claude Code or another AI coding agent, do not continue coding when any
+of these are true unless the user explicitly approves the exception:
+
+- The PR mixes structure refactor, UI polish, schema/migration, behavior change,
+  or money/order/status-path work.
+- The change adds new feature logic to `src/pwa/server.ts`, `src/pwa/public/app.js`,
+  or another very large file without explaining why it cannot live in a domain file.
+- The change raises a complexity ratchet baseline just to make CI pass.
+- The change touches payment, wallet, order status, settlement, fund, tokenomics,
+  commission, escrow, or protocol-parameter paths inside an unrelated PR.
+- A new `app-*.js` file is not loaded before `app.js`, not covered by
+  `check:pwa-syntax`, or not browser-smoked on its moved routes.
+
+Final PR responses from AI agents must include: PR type, touched money/order/status
+path yes/no, touched UI behavior yes/no, touched schema/migration yes/no,
+large-file LOC delta, ratchet delta, syntax/build/static tests updated, validation
+run, and known risks.
 
 ---
 

@@ -6,6 +6,9 @@ Either language is fine, but keep both section skeletons for cross-language revi
 
 📚 提交前请读: CONTRIBUTING.md + CHARTER §3.2 (多签矩阵) + META-RULES-FULL.md (相关条目)
 📚 Before submitting: CONTRIBUTING.md + CHARTER §3.2 (multisig matrix) + META-RULES-FULL.md
+
+代码 PR 还必须遵守 docs/ENGINEERING-PR-CONSTRAINTS.md。
+Code PRs must also obey docs/ENGINEERING-PR-CONSTRAINTS.md.
 -->
 
 ## Summary / 摘要
@@ -61,10 +64,35 @@ Note: this repo also uses M1-M7 (protocol milestones) and M1-M3 (open-collab mil
 <!-- 列出验证方式 — 自动测试 + 手测都可以 / Auto tests + manual checks both fine -->
 
 - [ ] `npm run build` 通过 / passes
+- [ ] `npm run guard:complexity` 通过 / passes
 - [ ] `npm run schema:verify` 通过 / passes
+- [ ] `npm run check:pwa-syntax` 通过(若改 PWA frontend) / passes if PWA frontend changed
 - [ ] 浏览器手测路径:
 - [ ] MCP 工具手测(如适用):
 - [ ] 写了新的 test(`tests/test-*.ts` 或 `.sh`):
+
+## Engineering PR constraints / 工程 PR 约束自证
+
+<!--
+代码 PR 必填。若不适用,写 N/A 并说明。
+Required for code PRs. If not applicable, write N/A and explain.
+-->
+
+- PR type / PR 类型:  <!-- structure / behavior / UI / schema-migration / money-order-status / docs-tests-chore -->
+- Touched UI behavior? / 是否改 UI 行为:  <!-- yes/no -->
+- Touched schema/migration? / 是否改 schema/migration:  <!-- yes/no -->
+- Touched money/order/status path? / 是否碰钱/订单/状态路径:  <!-- yes/no -->
+- Large-file LOC delta / 大文件行数变化:  <!-- server.ts/app.js/large route files -->
+- Ratchet baseline delta / ratchet 基线变化:
+- New files added to syntax/build checks / 新文件是否接入 syntax/build:
+- Static/source tests updated / 静态或 source-span 测试是否更新:
+- Browser smoke routes / 浏览器 smoke 路径:
+
+- [ ] This PR is single-purpose; it does not mix structure refactor, UI polish, schema/migration, behavior change, or money/order/status-path work.
+- [ ] I did not add new feature logic to `src/pwa/server.ts`, `src/pwa/public/app.js`, or another very large file without explaining why.
+- [ ] I did not raise complexity ratchet baselines just to make CI pass.
+- [ ] New `app-*.js` files, if any, are loaded before `app.js` and included in `check:pwa-syntax`.
+- [ ] I did not loosen or delete static/source tests to hide moved-code coverage loss.
 
 ## Risks / 风险
 
