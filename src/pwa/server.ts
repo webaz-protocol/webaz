@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -1441,24 +1441,9 @@ try { db.exec("ALTER TABLE email_subscriptions ADD COLUMN handled_by    TEXT") }
 initPublicIdeasSchema(db)
 initAuctionRemindersSchema(db)
 
-// Wave D-3: 用户反馈 / 客服工单（buyer-to-platform，独立于 disputes）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS feedback_tickets (
-    id            TEXT PRIMARY KEY,
-    user_id       TEXT NOT NULL,
-    category      TEXT NOT NULL,         -- 'bug' | 'abuse' | 'feature' | 'account' | 'other'
-    severity      TEXT DEFAULT 'medium', -- 'low' | 'medium' | 'high'
-    subject       TEXT NOT NULL,
-    body          TEXT NOT NULL,
-    status        TEXT NOT NULL DEFAULT 'open',  -- open | in_progress | resolved | closed
-    admin_reply   TEXT,
-    replied_by    TEXT,
-    replied_at    TEXT,
-    created_at    TEXT DEFAULT (datetime('now')),
-    updated_at    TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback_tickets(user_id, created_at DESC)') } catch {}
+// Wave D-3: 用户反馈 / 客服工单（buyer-to-platform，独立于 disputes）→ server-schema.ts
+// 后续 ALTER 列扩展刻意留原位（紧跟下方）
+initFeedbackTicketsSchema(db)
 // G-4: AI 建议回复
 try { db.exec('ALTER TABLE feedback_tickets ADD COLUMN ai_suggested_reply TEXT') } catch {}
 try { db.exec('ALTER TABLE feedback_tickets ADD COLUMN ai_generated_at TEXT') } catch {}
@@ -1466,18 +1451,9 @@ try { db.exec('ALTER TABLE feedback_tickets ADD COLUMN user_seen_reply_at TEXT')
 // W7: admin 上次读取时间（用于 admin 端未读计数）
 try { db.exec('ALTER TABLE feedback_tickets ADD COLUMN admin_seen_at TEXT') } catch {}
 
-// W7 客服 ticket-thread — 多轮消息（user ↔ admin）
-db.exec(`
-  CREATE TABLE IF NOT EXISTS feedback_messages (
-    id          TEXT PRIMARY KEY,            -- fmsg_xxx
-    ticket_id   TEXT NOT NULL,
-    sender_id   TEXT NOT NULL,
-    sender_role TEXT NOT NULL,               -- 'user' | 'admin'
-    body        TEXT NOT NULL,
-    created_at  TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_fmsg_ticket ON feedback_messages(ticket_id, created_at)') } catch {}
+// W7 客服 ticket-thread — 多轮消息（user ↔ admin）→ server-schema.ts
+// 后续 ALTER 列扩展刻意留原位（紧跟下方）
+initFeedbackMessagesSchema(db)
 // 跨窗反诈一致性：所有 thread 消息表加 flagged + flag_reasons
 try { db.exec('ALTER TABLE feedback_messages ADD COLUMN flagged INTEGER DEFAULT 0') } catch {}
 try { db.exec('ALTER TABLE feedback_messages ADD COLUMN flag_reasons TEXT') } catch {}
