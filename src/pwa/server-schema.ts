@@ -1172,3 +1172,285 @@ export function initKycRecordsSchema(db: Database.Database): void {
 `)
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_kyc_status ON kyc_records(status, submitted_at)') } catch {}
 }
+
+// ─── WebAuthn / Passkey — 敏感操作二次确认 ─────────────────────────
+// 注：调用方 server.ts 保留原外层 try/catch + [webauthn schema] label，并在本
+// init 调用之后、同一 try 内保留 users.webauthn_required_for_withdraw ALTER。
+// 这些 DDL 原本无逐句 try/catch（靠外层 try 兜底），此处照搬不加。
+export function initWebauthnSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS webauthn_credentials (
+    id              TEXT PRIMARY KEY,         -- credential.id (base64url)
+    user_id         TEXT NOT NULL,
+    public_key      BLOB NOT NULL,            -- COSE public key
+    counter         INTEGER NOT NULL DEFAULT 0,
+    transports      TEXT,                     -- JSON array
+    device_label    TEXT,                     -- user-friendly label
+    created_at      TEXT DEFAULT (datetime('now')),
+    last_used_at    TEXT
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_wac_user ON webauthn_credentials(user_id)`)
+
+  db.exec(`CREATE TABLE IF NOT EXISTS webauthn_challenges (
+    id           TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL,
+    challenge    TEXT NOT NULL,
+    purpose      TEXT NOT NULL,                -- 'register' | 'withdraw' | 'change-password' | 'reveal-key' | 'region'
+    purpose_data TEXT,                          -- JSON：例如 {amount: 1000, to_address: '0x...'}
+    created_at   TEXT DEFAULT (datetime('now')),
+    expires_at   TEXT NOT NULL,
+    consumed_at  TEXT
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_wac_chall_user ON webauthn_challenges(user_id, expires_at)`)
+
+  // gate token：auth/finish 成功后颁发，绑定 user + purpose + 业务参数（防重放）
+  db.exec(`CREATE TABLE IF NOT EXISTS webauthn_gate_tokens (
+    id           TEXT PRIMARY KEY,             -- token
+    user_id      TEXT NOT NULL,
+    purpose      TEXT NOT NULL,
+    purpose_data TEXT,                          -- JSON
+    expires_at   TEXT NOT NULL,                 -- now + 60s
+    consumed_at  TEXT
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_wac_gate_user ON webauthn_gate_tokens(user_id, expires_at)`)
+}
+
+// ─── M7.3：claim 验证任务系统（base） ──────────────────────────────
+// 注：调用方 server.ts 保留原外层 try/catch + [M7.3 schema claim_verification]；
+// 本函数只含 claim_verification_tasks/votes + indexes，结算扩展 ALTER
+// (majority_vote / was_majority) 刻意留在 server.ts 本函数调用之后。
+export function initClaimVerificationBaseSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS claim_verification_tasks (
+    id                  TEXT PRIMARY KEY,
+    order_id            TEXT NOT NULL,
+    buyer_id            TEXT NOT NULL,
+    seller_id           TEXT NOT NULL,
+    product_id          TEXT NOT NULL,
+    claim_target        TEXT NOT NULL,    -- 'price' | 'commission' | 'protection' | 'return' | 'warranty' | 'handling' | 'other'
+    claim_text          TEXT NOT NULL,    -- 买家陈述（≤ 500 字）
+    evidence_uri        TEXT,             -- 买家证据（URL / hash）
+    stake_buyer         REAL NOT NULL,    -- 买家锁定的质押金
+    seller_evidence_uri TEXT,             -- 卖家提交的证据
+    seller_evidence_at  TEXT,
+    deadline_at         TEXT NOT NULL,    -- 默认 48h；卖家提交证据后 +24h
+    status              TEXT NOT NULL DEFAULT 'open',  -- 'open' | 'sealed' | 'resolved_pass' | 'resolved_fail' | 'resolved_no_fault' | 'timeout_pass' | 'timeout_fail'
+    resolved_at         TEXT,
+    created_at          TEXT DEFAULT (datetime('now')),
+    UNIQUE(order_id)
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_cvt_status ON claim_verification_tasks(status)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_cvt_buyer ON claim_verification_tasks(buyer_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_cvt_seller ON claim_verification_tasks(seller_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_cvt_deadline ON claim_verification_tasks(deadline_at) WHERE status = 'open'`)
+
+  db.exec(`CREATE TABLE IF NOT EXISTS claim_verification_votes (
+    id           TEXT PRIMARY KEY,
+    task_id      TEXT NOT NULL,
+    verifier_id  TEXT NOT NULL,
+    vote         TEXT NOT NULL,   -- 'pass' | 'fail' | 'no_fault'
+    evidence_uri TEXT,
+    note         TEXT,
+    voted_at     TEXT DEFAULT (datetime('now')),
+    UNIQUE(task_id, verifier_id)
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_cvv_task ON claim_verification_votes(task_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_cvv_verifier ON claim_verification_votes(verifier_id)`)
+}
+
+// ─── verifier 禁言 / 永封记录（outlier 累计触发）────────────────────
+export function initClaimVerifierSuspensionsSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS claim_verifier_suspensions (
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL,
+    type          TEXT NOT NULL,    -- 'suspended' | 'revoked'
+    until_at      TEXT,             -- NULL = permanent (revoked)
+    reason        TEXT,
+    outlier_count INTEGER,
+    created_at    TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_cvs_user ON claim_verifier_suspensions(user_id, created_at DESC)`)
+}
+
+// ─── Sprint 1: 商品声明验证（product 层，与 order claim 平行）────────
+export function initProductClaimSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS product_claim_tasks (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT NOT NULL,
+    claimant_id     TEXT NOT NULL,
+    seller_id       TEXT NOT NULL,
+    claim_target    TEXT NOT NULL,    -- 'title' | 'description' | 'condition' | 'return_days' | 'handling_hours' | 'warranty_days' | 'shipping_regions' | 'origin' | 'other'
+    claim_text      TEXT NOT NULL,    -- 发起人陈述 6-500 字
+    evidence_uri    TEXT,             -- 发起人证据 URL
+    stake_claimant  REAL NOT NULL,    -- 发起人锁定质押
+    seller_evidence_uri TEXT,         -- 卖家反驳证据
+    seller_evidence_at  TEXT,
+    deadline_at     TEXT NOT NULL,    -- 默认 72h；卖家提交证据后 +24h
+    status          TEXT NOT NULL DEFAULT 'open',  -- 'open' | 'sealed' | 'resolved_upheld' | 'resolved_dismissed' | 'expired'
+    ruling          TEXT,             -- 'upheld' | 'dismissed' | 'insufficient'
+    majority_vote   TEXT,
+    resolved_at     TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_pct_status ON product_claim_tasks(status)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_pct_product ON product_claim_tasks(product_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_pct_claimant ON product_claim_tasks(claimant_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_pct_seller ON product_claim_tasks(seller_id)`)
+
+  db.exec(`CREATE TABLE IF NOT EXISTS product_claim_votes (
+    id           TEXT PRIMARY KEY,
+    claim_id     TEXT NOT NULL,
+    verifier_id  TEXT NOT NULL,
+    vote         TEXT NOT NULL,    -- 'upheld' | 'dismissed' | 'insufficient'
+    evidence_uri TEXT,
+    note         TEXT,
+    was_majority INTEGER,
+    voted_at     TEXT DEFAULT (datetime('now')),
+    UNIQUE(claim_id, verifier_id)
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_pcv_claim ON product_claim_votes(claim_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_pcv_verifier ON product_claim_votes(verifier_id)`)
+}
+
+// ─── Sprint 2-A: 测评真实性验证（shareables / manifests）────────────
+export function initReviewClaimSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS review_claim_tasks (
+    id              TEXT PRIMARY KEY,
+    review_type     TEXT NOT NULL,    -- 'shareable' | 'manifest'
+    review_id       TEXT NOT NULL,    -- shareable.id 或 manifest.hash
+    product_id      TEXT,             -- 关联商品（用于显示）
+    reviewer_id     TEXT NOT NULL,    -- 被诉评测作者
+    claimant_id     TEXT NOT NULL,
+    claim_target    TEXT NOT NULL,    -- 'not_real_purchase' | 'paid_promo' | 'incentivized' | 'misleading' | 'fake' | 'other'
+    claim_text      TEXT NOT NULL,
+    evidence_uri    TEXT,
+    stake_claimant  REAL NOT NULL,
+    deadline_at     TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'open',
+    ruling          TEXT,
+    majority_vote   TEXT,
+    resolved_at     TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_rct_status ON review_claim_tasks(status)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_rct_review ON review_claim_tasks(review_type, review_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_rct_reviewer ON review_claim_tasks(reviewer_id)`)
+
+  db.exec(`CREATE TABLE IF NOT EXISTS review_claim_votes (
+    id           TEXT PRIMARY KEY,
+    claim_id     TEXT NOT NULL,
+    verifier_id  TEXT NOT NULL,
+    vote         TEXT NOT NULL,    -- 'upheld' | 'dismissed' | 'insufficient'
+    evidence_uri TEXT,
+    note         TEXT,
+    was_majority INTEGER,
+    voted_at     TEXT DEFAULT (datetime('now')),
+    UNIQUE(claim_id, verifier_id)
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_rcv_claim ON review_claim_votes(claim_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_rcv_verifier ON review_claim_votes(verifier_id)`)
+}
+
+// ─── Sprint 2-B: 二手成色验证（secondhand_items）───────────────────
+export function initSecondhandClaimSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS secondhand_claim_tasks (
+    id              TEXT PRIMARY KEY,
+    sh_item_id      TEXT NOT NULL,
+    seller_id       TEXT NOT NULL,    -- 二手卖家
+    claimant_id     TEXT NOT NULL,
+    claim_target    TEXT NOT NULL,    -- 'condition' | 'images' | 'description' | 'title' | 'price' | 'other'
+    claim_text      TEXT NOT NULL,
+    evidence_uri    TEXT,
+    stake_claimant  REAL NOT NULL,
+    deadline_at     TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'open',
+    ruling          TEXT,
+    majority_vote   TEXT,
+    resolved_at     TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sct_status ON secondhand_claim_tasks(status)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sct_item ON secondhand_claim_tasks(sh_item_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sct_seller ON secondhand_claim_tasks(seller_id)`)
+
+  db.exec(`CREATE TABLE IF NOT EXISTS secondhand_claim_votes (
+    id           TEXT PRIMARY KEY,
+    claim_id     TEXT NOT NULL,
+    verifier_id  TEXT NOT NULL,
+    vote         TEXT NOT NULL,
+    evidence_uri TEXT,
+    note         TEXT,
+    was_majority INTEGER,
+    voted_at     TEXT DEFAULT (datetime('now')),
+    UNIQUE(claim_id, verifier_id)
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_scv_claim ON secondhand_claim_votes(claim_id)`)
+}
+
+// ─── Sprint 3-A: 拍卖声明（auctions）───────────────────────────────
+export function initAuctionClaimSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS auction_claim_tasks (
+    id              TEXT PRIMARY KEY,
+    auction_id      TEXT NOT NULL,
+    seller_id       TEXT NOT NULL,
+    claimant_id     TEXT NOT NULL,
+    claim_target    TEXT NOT NULL,    -- 'unreasonable_reserve' | 'shill_bidding' | 'collusion' | 'fake_listing' | 'other'
+    claim_text      TEXT NOT NULL,
+    evidence_uri    TEXT,
+    stake_claimant  REAL NOT NULL,
+    deadline_at     TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'open',
+    ruling          TEXT,
+    majority_vote   TEXT,
+    resolved_at     TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_act_status ON auction_claim_tasks(status)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_act_auction ON auction_claim_tasks(auction_id)`)
+
+  db.exec(`CREATE TABLE IF NOT EXISTS auction_claim_votes (
+    id           TEXT PRIMARY KEY,
+    claim_id     TEXT NOT NULL,
+    verifier_id  TEXT NOT NULL,
+    vote         TEXT NOT NULL,
+    evidence_uri TEXT,
+    note         TEXT,
+    was_majority INTEGER,
+    voted_at     TEXT DEFAULT (datetime('now')),
+    UNIQUE(claim_id, verifier_id)
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_acv_claim ON auction_claim_votes(claim_id)`)
+}
+
+// ─── Sprint 3-B: 慈善许愿声明（wishes）─────────────────────────────
+export function initWishClaimSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS wish_claim_tasks (
+    id              TEXT PRIMARY KEY,
+    wish_id         TEXT NOT NULL,
+    wisher_id       TEXT NOT NULL,
+    claimant_id     TEXT NOT NULL,
+    claim_target    TEXT NOT NULL,    -- 'fake_identity' | 'fake_story' | 'already_fulfilled' | 'duplicate' | 'inappropriate' | 'other'
+    claim_text      TEXT NOT NULL,
+    evidence_uri    TEXT,
+    stake_claimant  REAL NOT NULL,
+    deadline_at     TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'open',
+    ruling          TEXT,
+    majority_vote   TEXT,
+    resolved_at     TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_wct_status ON wish_claim_tasks(status)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_wct_wish ON wish_claim_tasks(wish_id)`)
+
+  db.exec(`CREATE TABLE IF NOT EXISTS wish_claim_votes (
+    id           TEXT PRIMARY KEY,
+    claim_id     TEXT NOT NULL,
+    verifier_id  TEXT NOT NULL,
+    vote         TEXT NOT NULL,
+    evidence_uri TEXT,
+    note         TEXT,
+    was_majority INTEGER,
+    voted_at     TEXT DEFAULT (datetime('now')),
+    UNIQUE(claim_id, verifier_id)
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_wcv_claim ON wish_claim_votes(claim_id)`)
+}
