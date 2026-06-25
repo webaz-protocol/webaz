@@ -437,3 +437,127 @@ export function initUserAddressesSchema(db: Database.Database): void {
 `)
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_addr_user ON user_addresses(user_id, is_default DESC)') } catch {}
 }
+
+// ─── P2P 店铺 ──────────────────────────────────────────────────────
+export function initP2pShopsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS p2p_shops (
+    id              TEXT PRIMARY KEY,
+    owner_id        TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    thumbnail_uri   TEXT,
+    peer_endpoint   TEXT,
+    peer_pubkey     TEXT,
+    status          TEXT NOT NULL DEFAULT 'active',
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_p2p_shops_owner ON p2p_shops(owner_id, status)') } catch {}
+}
+
+// ─── 笔记点赞 ──────────────────────────────────────────────────────
+export function initShareableLikesSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS shareable_likes (
+    id            TEXT PRIMARY KEY,
+    shareable_id  TEXT NOT NULL,
+    user_id       TEXT NOT NULL,
+    created_at    TEXT DEFAULT (datetime('now')),
+    UNIQUE(shareable_id, user_id)
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_shr_likes_shr ON shareable_likes(shareable_id)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_shr_likes_user ON shareable_likes(user_id, created_at DESC)') } catch {}
+}
+
+// ─── audit P2：收藏功能（小红书风格"收藏" tab）───────────────────────
+export function initShareableBookmarksSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS shareable_bookmarks (
+    id            TEXT PRIMARY KEY,
+    shareable_id  TEXT NOT NULL,
+    user_id       TEXT NOT NULL,
+    created_at    TEXT DEFAULT (datetime('now')),
+    UNIQUE(shareable_id, user_id)
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_shr_bm_user ON shareable_bookmarks(user_id, created_at DESC)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_shr_bm_shr ON shareable_bookmarks(shareable_id)') } catch {}
+}
+
+// ─── audit P1 backlog：# 话题/标签系统（小红书风格内容分发）──────────
+export function initShareableTagsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS shareable_tags (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    shareable_id  TEXT NOT NULL,
+    tag           TEXT NOT NULL,          -- 已 lowercase + trim，最长 30 字符
+    created_at    TEXT DEFAULT (datetime('now')),
+    UNIQUE(shareable_id, tag)
+  )
+`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_shr_tags_tag ON shareable_tags(tag, created_at DESC)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_shr_tags_shr ON shareable_tags(shareable_id)') } catch {}
+}
+
+// ─── manifest_registry = 原生 P2P 内容索引（仅 hash + 签名 + 元数据）──
+export function initManifestRegistrySchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS manifest_registry (
+    hash                 TEXT PRIMARY KEY,
+    owner_id             TEXT NOT NULL,
+    content_type         TEXT NOT NULL,
+    byte_size            INTEGER NOT NULL,
+    title                TEXT,
+    description          TEXT,
+    thumbnail_data_uri   TEXT,
+    signature            TEXT NOT NULL,
+    signed_at            TEXT NOT NULL,
+    related_product_id   TEXT,
+    related_anchor       TEXT,
+    status               TEXT DEFAULT 'active',
+    takedown_reason      TEXT,
+    takedown_at          TEXT,
+    takedown_by          TEXT,
+    created_at           TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_mfst_owner ON manifest_registry(owner_id, status)") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_mfst_product ON manifest_registry(related_product_id, status)") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_mfst_anchor ON manifest_registry(related_anchor, status)") } catch {}
+}
+
+// ─── peer_directory = 在线 peer 注册（hash cache 持有者，heartbeat 5min 失效）──
+export function initPeerDirectorySchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS peer_directory (
+    peer_id             TEXT NOT NULL,
+    manifest_hash       TEXT NOT NULL,
+    is_owner            INTEGER DEFAULT 0,
+    pin_intent          INTEGER DEFAULT 0,
+    last_heartbeat      TEXT NOT NULL,
+    bytes_served_total  INTEGER DEFAULT 0,
+    PRIMARY KEY (peer_id, manifest_hash)
+  )
+`)
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_peer_hash ON peer_directory(manifest_hash, last_heartbeat DESC)") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_peer_heartbeat ON peer_directory(last_heartbeat)") } catch {}
+}
+
+// ─── signaling_queue = WebRTC SDP/ICE 中继（TTL 2min，cron 清理）─────
+export function initSignalingQueueSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS signaling_queue (
+    id              TEXT PRIMARY KEY,
+    to_peer_id      TEXT NOT NULL,
+    from_peer_id    TEXT NOT NULL,
+    signal_type     TEXT NOT NULL,
+    signal_data     TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    delivered_at    TEXT
+  )
+`)
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_sig_to ON signaling_queue(to_peer_id, delivered_at)") } catch {}
+}
