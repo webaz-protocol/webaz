@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -1426,23 +1426,8 @@ for (const col of [
   'ALTER TABLE product_trial_claims ADD COLUMN audit_flags TEXT',
 ]) { try { db.exec(col) } catch { /* 已存在 */ } }
 
-// 2026-05-25 邮箱订阅独立表（GDPR-ready）— 与 ideas 解耦
-// consent 显式存；unsubscribe_token 让用户主动退订；source 区分来源
-db.exec(`
-  CREATE TABLE IF NOT EXISTS email_subscriptions (
-    id                   TEXT PRIMARY KEY,
-    email                TEXT NOT NULL UNIQUE,
-    source               TEXT NOT NULL DEFAULT 'welcome',
-    consent_at           TEXT NOT NULL DEFAULT (datetime('now')),
-    unsubscribe_token    TEXT NOT NULL UNIQUE,
-    unsubscribed_at      TEXT,
-    ip_hash              TEXT,
-    user_id              TEXT,
-    created_at           TEXT DEFAULT (datetime('now'))
-  )
-`)
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_es_status ON email_subscriptions(unsubscribed_at, created_at DESC)") } catch {}
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_es_source ON email_subscriptions(source, created_at DESC)") } catch {}
+// 邮箱订阅独立表（GDPR-ready）→ server-schema.ts；后续 ALTER 列扩展刻意留原位（紧跟下方）
+initEmailSubscriptionsSchema(db)
 // 2026-05-26: 用户期望身份 + 备注（welcome 表单丰富化）
 try { db.exec("ALTER TABLE email_subscriptions ADD COLUMN role_preference TEXT") } catch {}
 try { db.exec("ALTER TABLE email_subscriptions ADD COLUMN note             TEXT") } catch {}

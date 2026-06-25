@@ -225,3 +225,24 @@ export function initAuctionRemindersSchema(db: Database.Database): void {
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_arm_due ON auction_reminders(sent_at, fire_at) WHERE sent_at IS NULL") } catch {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_arm_user ON auction_reminders(user_id, auction_id)") } catch {}
 }
+
+// ─── 邮箱订阅独立表（GDPR-ready）— 与 ideas 解耦 ───────────────────
+// consent 显式存；unsubscribe_token 让用户主动退订；source 区分来源
+// 注：后续 ALTER 列扩展刻意保留在 server.ts 原位（紧跟本 init 调用之后）
+export function initEmailSubscriptionsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS email_subscriptions (
+    id                   TEXT PRIMARY KEY,
+    email                TEXT NOT NULL UNIQUE,
+    source               TEXT NOT NULL DEFAULT 'welcome',
+    consent_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    unsubscribe_token    TEXT NOT NULL UNIQUE,
+    unsubscribed_at      TEXT,
+    ip_hash              TEXT,
+    user_id              TEXT,
+    created_at           TEXT DEFAULT (datetime('now'))
+  )
+`)
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_es_status ON email_subscriptions(unsubscribed_at, created_at DESC)") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_es_source ON email_subscriptions(source, created_at DESC)") } catch {}
+}
