@@ -751,3 +751,110 @@ export function initVerificationCodesSchema(db: Database.Database): void {
 `)
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_verification_codes_lookup ON verification_codes(channel, target, purpose)') } catch {}
 }
+
+// ─── 里程碑 4：Agent observability/reputation schema ─────────────────
+// 注：调用方 server.ts 保留原 try/catch 边界与 console.error label；
+// 这些 DDL 原本无逐句 try/catch（靠外层大 try 兜底），此处照搬不加。
+export function initAgentCallLogSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS agent_call_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    api_key TEXT,
+    user_id TEXT,
+    endpoint TEXT NOT NULL,
+    method TEXT,
+    status_code INTEGER,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_acl_apikey_ts ON agent_call_log(api_key, created_at)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_acl_user_ts ON agent_call_log(user_id, created_at)`)
+}
+
+export function initAgentReputationSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS agent_reputation (
+    api_key TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    trust_score REAL DEFAULT 0,
+    level TEXT DEFAULT 'new',
+    signals TEXT,                    -- JSON
+    last_calculated_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ar_user ON agent_reputation(user_id)`)
+}
+
+// ─── Agent 治理（spec: docs/AGENT-GOVERNANCE.md）────────────────────
+// agent_declarations：agent 自声明（trust > new 必须先登记）
+export function initAgentDeclarationsSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS agent_declarations (
+    api_key           TEXT PRIMARY KEY,
+    user_id           TEXT NOT NULL,
+    operator_name     TEXT NOT NULL,             -- 公司/开发者名
+    operator_contact  TEXT NOT NULL,             -- email/handle/DID
+    purpose           TEXT NOT NULL,             -- ≤200 字
+    declared_scope    TEXT NOT NULL,             -- JSON: {roles, actions, regions}
+    attestations      TEXT,                      -- JSON: {gdpr, kids_safe, no_pii_export, ...}
+    repo_url          TEXT,
+    homepage          TEXT,
+    revoked_at        TEXT,                      -- 撤销时间（用户主动 revoke）
+    revoked_reason    TEXT,
+    created_at        TEXT DEFAULT (datetime('now')),
+    updated_at        TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agd_operator ON agent_declarations(operator_name)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agd_revoked ON agent_declarations(revoked_at) WHERE revoked_at IS NOT NULL`)
+}
+
+// agent_attestations：bilateral consent（用户主动同意某 agent 的 scope）
+export function initAgentAttestationsSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS agent_attestations (
+    id                TEXT PRIMARY KEY,
+    api_key           TEXT NOT NULL,             -- agent 的 api_key
+    user_id           TEXT NOT NULL,             -- 同意此 agent 行动的用户
+    approved_scope    TEXT NOT NULL,             -- JSON：用户实际批准的子集
+    spend_cap_per_order REAL,                    -- 该用户给此 agent 的单笔下单上限（可空 = 沿用 declared_scope）
+    spend_cap_daily   REAL,                      -- 24h 累计上限
+    granted_at        TEXT DEFAULT (datetime('now')),
+    revoked_at        TEXT,
+    UNIQUE(api_key, user_id)
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_aat_user ON agent_attestations(user_id, revoked_at)`)
+}
+
+// agent_strikes：违规累积（3-strike state machine）
+export function initAgentStrikesSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS agent_strikes (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    api_key           TEXT NOT NULL,
+    user_id           TEXT NOT NULL,
+    severity          TEXT NOT NULL,             -- 'warning' | 'suspend_7d' | 'permanent'
+    reason_code       TEXT NOT NULL,             -- 'fake_shipment' | 'mass_spam' | 'overlimit_order' | 'fraud_claim' | ...
+    reason_detail     TEXT,
+    reported_by       TEXT,                      -- user_id（举报人 / system / admin）
+    related_ref       TEXT,                      -- 关联 order/dispute/claim_task id
+    issued_at         TEXT DEFAULT (datetime('now')),
+    expires_at        TEXT,                      -- warning=24h; suspend_7d=7d; permanent=null
+    appeal_status     TEXT DEFAULT 'none',       -- 'none' | 'pending' | 'approved' | 'denied'
+    appeal_reason     TEXT,
+    appeal_decided_by TEXT,
+    appeal_decided_at TEXT
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ast_apikey ON agent_strikes(api_key, issued_at DESC)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ast_user ON agent_strikes(user_id, issued_at DESC)`)
+  // 注：SQLite 不允许 partial index 用非确定性函数 (datetime('now'))；用 expires_at 普通索引代替
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ast_active ON agent_strikes(api_key, expires_at)`)
+}
+
+// agent_revocations：operator-级撤销（封禁同 operator 名下所有 agent）
+export function initAgentRevocationsSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS agent_revocations (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_kind       TEXT NOT NULL,             -- 'api_key' | 'operator_name'
+    target_value      TEXT NOT NULL,
+    revoked_by        TEXT NOT NULL,             -- user_id（用户自己 OR root admin）
+    revoked_by_role   TEXT,                      -- 'self' | 'admin'
+    reason            TEXT,
+    revoked_at        TEXT DEFAULT (datetime('now')),
+    UNIQUE(target_kind, target_value, revoked_by)
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_arev_target ON agent_revocations(target_kind, target_value)`)
+}
