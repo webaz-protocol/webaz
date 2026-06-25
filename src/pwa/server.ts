@@ -29,6 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -520,28 +521,10 @@ try {
 } catch (e) { console.warn('[anchor-registry] migration:', (e as Error).message) }
 
 // ─── 验证员白名单表 ───────────────────────────────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS verifier_whitelist (
-    user_id   TEXT PRIMARY KEY,
-    added_at  TEXT DEFAULT (datetime('now')),
-    note      TEXT
-  )
-`)
+initVerifierWhitelistSchema(db)
 
 // ─── MCP 工具调用埋点表（远程上报）─────────────────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS mcp_tool_calls (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    tool_name      TEXT NOT NULL,
-    user_id_hash   TEXT,
-    server_version TEXT,
-    outcome        TEXT NOT NULL,
-    latency_ms     INTEGER NOT NULL,
-    ts             TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`)
-db.exec(`CREATE INDEX IF NOT EXISTS idx_mcp_tc_ts   ON mcp_tool_calls(ts)`)
-db.exec(`CREATE INDEX IF NOT EXISTS idx_mcp_tc_tool ON mcp_tool_calls(tool_name, ts)`)
+initMcpToolCallsSchema(db)
 
 // ─── 内部审核账号（固定 ID，密钥由 MASTER_SEED 派生，幂等）────────
 const INTERNAL_AUDITOR_ID  = 'usr_iaudit_001'
