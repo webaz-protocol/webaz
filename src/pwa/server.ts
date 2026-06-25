@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema, initCartItemsSchema, initFollowsSchema, initPushSubscriptionsSchema, initUserSessionsSchema, initUserBlocklistSchema, initImportLogsSchema, initErrorLogSchema, initSecondhandItemsSchema, initProductTrialCampaignsSchema, initProductTrialClaimsSchema, initReturnRequestsSchema, initReturnMessagesSchema, initProductVariantsSchema, initEditorPicksSchema, initKycRecordsSchema, initWebauthnSchema, initClaimVerificationBaseSchema, initClaimVerifierSuspensionsSchema, initProductClaimSchema, initReviewClaimSchema, initSecondhandClaimSchema, initAuctionClaimSchema, initWishClaimSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema, initCartItemsSchema, initFollowsSchema, initPushSubscriptionsSchema, initUserSessionsSchema, initUserBlocklistSchema, initImportLogsSchema, initErrorLogSchema, initSecondhandItemsSchema, initProductTrialCampaignsSchema, initProductTrialClaimsSchema, initReturnRequestsSchema, initReturnMessagesSchema, initProductVariantsSchema, initEditorPicksSchema, initKycRecordsSchema, initWebauthnSchema, initClaimVerificationBaseSchema, initClaimVerifierSuspensionsSchema, initProductClaimSchema, initReviewClaimSchema, initSecondhandClaimSchema, initAuctionClaimSchema, initWishClaimSchema, initShareableClickLogSchema, initCommissionAuditLogSchema, initRegistrationAuditLogSchema, initProductExternalLinksBaseSchema, initLinkChallengesSchema, initVerifyTasksSchema, initVerifySubmissionsSchema, initVerifierStatsSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -2484,18 +2484,10 @@ try { db.exec(`ALTER TABLE product_categories ADD COLUMN seasonal_months TEXT`) 
 
 // ─── 里程碑 3：反操纵层 schema ─────────────────────────────────
 try {
-  db.exec(`CREATE TABLE IF NOT EXISTS shareable_click_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    shareable_id TEXT NOT NULL,
-    ip_hash TEXT NOT NULL,
-    ua_hash TEXT NOT NULL,
-    ref_path TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-  )`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_scl_share_ts ON shareable_click_log(shareable_id, created_at)`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_scl_share_ipua ON shareable_click_log(shareable_id, ip_hash, ua_hash, created_at)`)
+  initShareableClickLogSchema(db)
 } catch (e) { console.error('[M3 schema scl]', e) }
 
+// shareables ALTER 刻意留原位（scl init 之后、cal init 之前）
 try {
   db.exec('ALTER TABLE shareables ADD COLUMN unique_click_count INTEGER DEFAULT 0')
 } catch {}
@@ -2504,28 +2496,11 @@ try {
 } catch {}
 
 try {
-  db.exec(`CREATE TABLE IF NOT EXISTS commission_audit_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id TEXT,
-    buyer_id TEXT NOT NULL,
-    seller_id TEXT NOT NULL,
-    flag TEXT NOT NULL,                  -- 'sponsor_chain_cross' / 'self_in_chain'
-    detail TEXT,                          -- JSON: { relation: 'buyer_ancestor_of_seller' | ..., path: '...' }
-    created_at TEXT DEFAULT (datetime('now'))
-  )`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_cal_buyer ON commission_audit_log(buyer_id, created_at)`)
+  initCommissionAuditLogSchema(db)
 } catch (e) { console.error('[M3 schema cal]', e) }
 
 try {
-  db.exec(`CREATE TABLE IF NOT EXISTS registration_audit_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT NOT NULL,
-    ip_hash TEXT NOT NULL,
-    ua_hash TEXT NOT NULL,
-    sponsor_id TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-  )`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_ral_ip_ts ON registration_audit_log(ip_hash, created_at)`)
+  initRegistrationAuditLogSchema(db)
 } catch (e) { console.error('[M3 schema ral]', e) }
 
 // ─── 里程碑 4：Agent observability/reputation schema → server-schema.ts ─
@@ -3151,19 +3126,8 @@ db.exec(`
     used_at    TEXT
   )
 `)
-db.exec(`
-  CREATE TABLE IF NOT EXISTS product_external_links (
-    id          TEXT PRIMARY KEY,
-    product_id  TEXT NOT NULL,
-    url         TEXT NOT NULL,
-    source      TEXT DEFAULT 'manual',
-    verified    INTEGER DEFAULT 0,
-    verify_note TEXT,
-    added_at    TEXT DEFAULT (datetime('now')),
-    verified_at TEXT,
-    UNIQUE(product_id, url)
-  )
-`)
+// 外部链接验证 base → server-schema.ts；ALTER/index/回填 IIFE 刻意留原位（紧跟下方）
+initProductExternalLinksBaseSchema(db)
 try { db.exec('ALTER TABLE product_external_links ADD COLUMN revoked INTEGER DEFAULT 0') } catch {}
 // 平台 / 外部 ID / 外部全标题（用于买家粘贴外链搜索）
 try { db.exec('ALTER TABLE product_external_links ADD COLUMN platform TEXT') } catch {}
@@ -3192,58 +3156,12 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_pel_ext_title    ON product_extern
     if (n) console.log(`[WebAZ] backfilled ${n} product_external_links rows with platform/external_id/external_title`)
   } catch (e) { console.error('[backfill failed]', (e as Error).message) }
 })()
-// link_challenges 保留用于向后兼容，新流程用 verify_tasks
-db.exec(`
-  CREATE TABLE IF NOT EXISTS link_challenges (
-    id          TEXT PRIMARY KEY,
-    product_id  TEXT NOT NULL,
-    url         TEXT NOT NULL,
-    code        TEXT NOT NULL,
-    status      TEXT DEFAULT 'pending',
-    created_at  TEXT DEFAULT (datetime('now')),
-    expires_at  TEXT NOT NULL,
-    verified_at TEXT
-  )
-`)
-db.exec(`
-  CREATE TABLE IF NOT EXISTS verify_tasks (
-    id                  TEXT PRIMARY KEY,
-    type                TEXT NOT NULL DEFAULT 'code_check',
-    product_id          TEXT NOT NULL,
-    url                 TEXT NOT NULL,
-    code                TEXT,
-    verifiers_needed    INTEGER NOT NULL DEFAULT 3,
-    reward_per_verifier REAL NOT NULL DEFAULT 0.1,
-    fee_locked          REAL NOT NULL DEFAULT 0,
-    status              TEXT NOT NULL DEFAULT 'open',
-    result              TEXT,
-    created_at          TEXT DEFAULT (datetime('now')),
-    expires_at          TEXT NOT NULL,
-    settled_at          TEXT
-  )
-`)
-db.exec(`
-  CREATE TABLE IF NOT EXISTS verify_submissions (
-    id           TEXT PRIMARY KEY,
-    task_id      TEXT NOT NULL,
-    verifier_id  TEXT NOT NULL,
-    submission   TEXT,
-    verdict      TEXT,
-    claimed_at   TEXT DEFAULT (datetime('now')),
-    submitted_at TEXT,
-    UNIQUE(task_id, verifier_id)
-  )
-`)
-db.exec(`
-  CREATE TABLE IF NOT EXISTS verifier_stats (
-    user_id       TEXT PRIMARY KEY,
-    verify_rights INTEGER NOT NULL DEFAULT 3,
-    tasks_done    INTEGER NOT NULL DEFAULT 0,
-    tasks_correct INTEGER NOT NULL DEFAULT 0,
-    tasks_wrong   INTEGER NOT NULL DEFAULT 0,
-    suspended_until TEXT
-  )
-`)
+// link_challenges 保留用于向后兼容，新流程用 verify_tasks → server-schema.ts
+initLinkChallengesSchema(db)
+initVerifyTasksSchema(db)
+initVerifySubmissionsSchema(db)
+// verifier_stats 须在 PERMANENT_ACCOUNTS bootstrap 之前完成 → server-schema.ts
+initVerifierStatsSchema(db)
 
 // ─── PERMANENT_ACCOUNTS bootstrap (moved here 2026-05-26 by boot-order fix) ───
 // 原在 line ~496 但引用 users.email_verified / verifier_whitelist.tier 等

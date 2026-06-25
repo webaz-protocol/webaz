@@ -1454,3 +1454,129 @@ export function initWishClaimSchema(db: Database.Database): void {
   )`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_wcv_claim ON wish_claim_votes(claim_id)`)
 }
+
+// ─── 里程碑 3：反操纵层 schema ──────────────────────────────────────
+// 注：调用方 server.ts 保留原外层 try/catch + label（[M3 schema scl/cal/ral]）；
+// 这些 DDL 原本无逐句 try/catch（靠外层 try 兜底），此处照搬不加。
+// shareables 的 unique_click_count / flag_new_account ALTER 刻意留在 server.ts
+// 原位（scl init 之后、cal init 之前）。
+export function initShareableClickLogSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS shareable_click_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shareable_id TEXT NOT NULL,
+    ip_hash TEXT NOT NULL,
+    ua_hash TEXT NOT NULL,
+    ref_path TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_scl_share_ts ON shareable_click_log(shareable_id, created_at)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_scl_share_ipua ON shareable_click_log(shareable_id, ip_hash, ua_hash, created_at)`)
+}
+
+export function initCommissionAuditLogSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS commission_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id TEXT,
+    buyer_id TEXT NOT NULL,
+    seller_id TEXT NOT NULL,
+    flag TEXT NOT NULL,                  -- 'sponsor_chain_cross' / 'self_in_chain'
+    detail TEXT,                          -- JSON: { relation: 'buyer_ancestor_of_seller' | ..., path: '...' }
+    created_at TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_cal_buyer ON commission_audit_log(buyer_id, created_at)`)
+}
+
+export function initRegistrationAuditLogSchema(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS registration_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    ip_hash TEXT NOT NULL,
+    ua_hash TEXT NOT NULL,
+    sponsor_id TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ral_ip_ts ON registration_audit_log(ip_hash, created_at)`)
+}
+
+// ─── 外部链接验证 schema ────────────────────────────────────────────
+// 注：product_external_links 的 revoked/platform/external_id/external_title ALTER、
+// idx_pel_platform_ext / idx_pel_ext_title 索引、以及回填 IIFE 刻意留 server.ts 原位。
+// 这些 DDL 原本是 top-level db.exec 无外层 catch，helper 不新增 catch。
+export function initProductExternalLinksBaseSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS product_external_links (
+    id          TEXT PRIMARY KEY,
+    product_id  TEXT NOT NULL,
+    url         TEXT NOT NULL,
+    source      TEXT DEFAULT 'manual',
+    verified    INTEGER DEFAULT 0,
+    verify_note TEXT,
+    added_at    TEXT DEFAULT (datetime('now')),
+    verified_at TEXT,
+    UNIQUE(product_id, url)
+  )
+`)
+}
+
+export function initLinkChallengesSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS link_challenges (
+    id          TEXT PRIMARY KEY,
+    product_id  TEXT NOT NULL,
+    url         TEXT NOT NULL,
+    code        TEXT NOT NULL,
+    status      TEXT DEFAULT 'pending',
+    created_at  TEXT DEFAULT (datetime('now')),
+    expires_at  TEXT NOT NULL,
+    verified_at TEXT
+  )
+`)
+}
+
+export function initVerifyTasksSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS verify_tasks (
+    id                  TEXT PRIMARY KEY,
+    type                TEXT NOT NULL DEFAULT 'code_check',
+    product_id          TEXT NOT NULL,
+    url                 TEXT NOT NULL,
+    code                TEXT,
+    verifiers_needed    INTEGER NOT NULL DEFAULT 3,
+    reward_per_verifier REAL NOT NULL DEFAULT 0.1,
+    fee_locked          REAL NOT NULL DEFAULT 0,
+    status              TEXT NOT NULL DEFAULT 'open',
+    result              TEXT,
+    created_at          TEXT DEFAULT (datetime('now')),
+    expires_at          TEXT NOT NULL,
+    settled_at          TEXT
+  )
+`)
+}
+
+export function initVerifySubmissionsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS verify_submissions (
+    id           TEXT PRIMARY KEY,
+    task_id      TEXT NOT NULL,
+    verifier_id  TEXT NOT NULL,
+    submission   TEXT,
+    verdict      TEXT,
+    claimed_at   TEXT DEFAULT (datetime('now')),
+    submitted_at TEXT,
+    UNIQUE(task_id, verifier_id)
+  )
+`)
+}
+
+export function initVerifierStatsSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS verifier_stats (
+    user_id       TEXT PRIMARY KEY,
+    verify_rights INTEGER NOT NULL DEFAULT 3,
+    tasks_done    INTEGER NOT NULL DEFAULT 0,
+    tasks_correct INTEGER NOT NULL DEFAULT 0,
+    tasks_wrong   INTEGER NOT NULL DEFAULT 0,
+    suspended_until TEXT
+  )
+`)
+}
