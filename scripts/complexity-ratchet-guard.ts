@@ -30,8 +30,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 // Lower a ceiling when you trim the file; never raise one.
 const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/server.ts': 8456,
-  'src/pwa/public/app.js': 31214,
+  'src/pwa/public/app.js': 29948,
   'src/pwa/public/app-admin.js': 608,
+  'src/pwa/public/app-discover.js': 1296,
   'src/pwa/public/app-contribution.js': 836,
   'src/pwa/public/app-ai.js': 2162,
   'src/pwa/routes/orders-create.ts': 514,
