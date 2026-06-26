@@ -350,7 +350,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/kyc/me` | 🔐 |  |  | src/pwa/routes/kyc.ts:51 |
 | POST | `/api/kyc/submit` | 🔐 |  |  | src/pwa/routes/kyc.ts:29 |
 | GET | `/api/launch-pulse` |  |  |  | src/pwa/routes/public-utils.ts:278 |
-| GET | `/api/leaderboard` |  |  |  | src/pwa/routes/leaderboard.ts:36 |
+| GET | `/api/leaderboard` |  |  |  | src/pwa/routes/leaderboard.ts:69 |
 | POST | `/api/link-challenges/:id/verify` | 🔐 |  |  | src/pwa/routes/url-claim.ts:33 |
 | GET | `/api/listings` |  |  | 列表搜索（公开） | src/pwa/routes/listings.ts:82 |
 | POST | `/api/listings` | 🔐 |  | 创建 listing（首创者） | src/pwa/routes/listings.ts:205 |

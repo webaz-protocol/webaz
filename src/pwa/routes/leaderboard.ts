@@ -28,6 +28,39 @@ export interface LeaderboardDeps {
   rateLimitOk: (ip: string, max?: number, windowMs?: number) => boolean
 }
 
+// ── Anonymous-projection allowlist (security: this is a NO-AUTH public endpoint) ──────────────
+// Each board's anon payload carries ONLY what the public value proposition needs: a public
+// identity for linking (handle/name) + the reputation/content signal. It must NEVER carry
+// internal canonical user ids (usr_xxx — those are the keyed inputs the #1043 cross-user-read
+// cap rate-limits; emitting them here would be a free enumeration seed-list), account-structure
+// metadata (keys_count), or behavior-fingerprint integers (calls_30d). ALLOWLIST, not denylist,
+// so a future SELECT column can't silently ride to the public surface. (Product boards keep `id`
+// — that's a public PRODUCT id for linking, not a user id.)
+export const BOARD_ALLOWLIST: Record<string, string[]> = {
+  products:       ['id', 'title', 'price', 'total_likes', 'completion_count', 'seller_handle', 'seller_name', 'recommend_count', 'rank_score'],
+  value_products: ['id', 'title', 'price', 'category', 'value_badge_rank', 'value_badge_pct', 'value_badge_at', 'completion_count', 'total_likes', 'seller_handle', 'seller_name'],
+  creators:       ['handle', 'name', 'region', 'products_shared', 'shareable_count', 'total_likes', 'total_clicks'],
+  buyers:         ['handle', 'name', 'region', 'orders_count'],
+  sellers:        ['handle', 'name', 'region', 'orders_count', 'avg_rating', 'rating_count'],
+  agents:         ['handle', 'name', 'trust_score', 'level', 'activity'],   // NO id / keys_count / calls_30d
+  arbitrators:    ['handle', 'name', 'cases_count', 'total_yes', 'total_no', 'fairness_score'],
+  verifiers:      ['handle', 'name', 'tasks_done', 'tasks_correct', 'tasks_wrong', 'accuracy', 'tier'],
+}
+// calls_30d (behavior fingerprint) → coarse activity bucket (keeps "busy vs dormant" product signal
+// without leaking a raw per-account integer or the all-zero "network looks dead" aggregate).
+function activityBucket(calls: number): 'active' | 'quiet' | 'dormant' {
+  return calls >= 20 ? 'active' : calls >= 1 ? 'quiet' : 'dormant'
+}
+function projectBoard(kind: string, rows: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const allow = BOARD_ALLOWLIST[kind] || []
+  return rows.map(r => {
+    const src = kind === 'agents' ? { ...r, activity: activityBucket(Number(r.calls_30d) || 0) } : r
+    const out: Record<string, unknown> = {}
+    for (const k of allow) if (k in src) out[k] = src[k]
+    return out
+  })
+}
+
 export function registerLeaderboardRoutes(app: Application, deps: LeaderboardDeps): void {
   // db 已走 RFC-016 异步 seam(dbAll),不再直接用 deps.db
   const { internalAuditorId, rateLimitOk } = deps
@@ -57,7 +90,7 @@ export function registerLeaderboardRoutes(app: Application, deps: LeaderboardDep
         ORDER BY rank_score DESC, p.id DESC
         LIMIT ?
       `, [limit])
-      return void res.json({ kind, items: rows })
+      return void res.json({ kind, items: projectBoard(kind, rows) })
     }
 
     if (kind === 'creators') {
@@ -74,7 +107,7 @@ export function registerLeaderboardRoutes(app: Application, deps: LeaderboardDep
         ORDER BY total_likes DESC, shareable_count DESC, u.id DESC
         LIMIT ?
       `, [limit])
-      return void res.json({ kind, items: rows })
+      return void res.json({ kind, items: projectBoard(kind, rows) })
     }
 
     // B-2: 用户排行 — top buyers / sellers / verifiers
@@ -87,7 +120,7 @@ export function registerLeaderboardRoutes(app: Application, deps: LeaderboardDep
         WHERE o.status = 'completed' AND u.id NOT IN ('sys_protocol', ?)
         GROUP BY u.id ORDER BY orders_count DESC, u.id DESC LIMIT ?
       `, [internalAuditorId, limit])
-      return void res.json({ kind, items: rows })
+      return void res.json({ kind, items: projectBoard(kind, rows) })
     }
     if (kind === 'sellers') {
       // 排序改为 评分主导（avg_rating × log(1+rating_count)），不再按 GMV
@@ -102,7 +135,7 @@ export function registerLeaderboardRoutes(app: Application, deps: LeaderboardDep
         ORDER BY (avg_rating * (1.0 + log(1.0 + rating_count))) DESC, rating_count DESC, orders_count DESC
         LIMIT ?
       `, [limit])
-      return void res.json({ kind, items: rows })
+      return void res.json({ kind, items: projectBoard(kind, rows) })
     }
     if (kind === 'value_products') {
       // 2026-05-23 S5：极致性价比榜 — 按 value_badge=1 + 同类目 rank 排
@@ -117,7 +150,7 @@ export function registerLeaderboardRoutes(app: Application, deps: LeaderboardDep
         WHERE p.value_badge = 1 AND p.status = 'active' AND p.stock > 0
         ORDER BY p.value_badge_rank ASC, p.value_badge_pct DESC LIMIT ?
       `, [limit])
-      return void res.json({ kind, items: rows })
+      return void res.json({ kind, items: projectBoard(kind, rows) })
     }
     if (kind === 'agents') {
       // 2026-05-22 AG1：Agent 评测竞赛榜单
@@ -133,12 +166,12 @@ export function registerLeaderboardRoutes(app: Application, deps: LeaderboardDep
             AND acl.created_at > datetime('now', '-30 days')) as calls_30d
         FROM agent_reputation ar
         JOIN users u ON u.id = ar.user_id
-        WHERE u.id != 'sys_protocol'
+        WHERE u.id != 'sys_protocol' AND u.role != 'admin'
         GROUP BY u.id
         HAVING calls_30d > 0 OR trust_score > 0
         ORDER BY trust_score DESC, calls_30d DESC LIMIT ?
       `, [limit])
-      return void res.json({ kind, items: rows })
+      return void res.json({ kind, items: projectBoard(kind, rows) })
     }
     if (kind === 'arbitrators') {
       // 2026-05-22 A3：仲裁员声誉排行
@@ -164,7 +197,7 @@ export function registerLeaderboardRoutes(app: Application, deps: LeaderboardDep
         GROUP BY u.id
         ORDER BY cases_count DESC, u.id DESC LIMIT ?
       `, [limit])
-      return void res.json({ kind, items: rows })
+      return void res.json({ kind, items: projectBoard(kind, rows) })
     }
     if (kind === 'verifiers') {
       // 2026-05-22 V1：移除 tasks_done >= 5 门槛 — 小协议早期阶段会卡死榜单
@@ -184,7 +217,7 @@ export function registerLeaderboardRoutes(app: Application, deps: LeaderboardDep
         WHERE vs.tasks_done >= 1
         ORDER BY vs.tasks_done DESC, u.id DESC LIMIT ?
       `, [limit])
-      return void res.json({ kind, items: rows })
+      return void res.json({ kind, items: projectBoard(kind, rows) })
     }
 
     return void res.json({ error: 'kind 必须是 products / creators / buyers / sellers / verifiers / arbitrators / agents / value_products' })
