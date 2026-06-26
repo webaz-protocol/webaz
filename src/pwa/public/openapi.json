@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (665 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (668 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2084,6 +2084,37 @@
             }
           }
         }
+      }
+    },
+    "/api/agent-grants": {
+      "get": {
+        "summary": "── Read: the human's connected agents (no secrets). ──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "── Issue a grant (human-authenticated). Safe scopes only; risk/never-delegable rejected. ──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/agent-grants/:grant_id/revoke": {
+      "post": {
+        "summary": "── Revoke (online, one-click). ──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/agent/acp-feed": {
