@@ -1701,3 +1701,26 @@ export function initAgentPairingSchema(db: Database.Database): void {
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_aps_user_code ON agent_pairing_sessions(user_code)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_aps_status ON agent_pairing_sessions(status, expires_at)`)
 }
+
+/**
+ * RFC-020 PR-C2a — per-request audit of delegation-grant authorizations (RFC-020 §3.7).
+ *
+ * Records each grant-scoped access attempt (allow/deny + reason) so "every agent action
+ * is backed by an accountable human" is checkable. Append-only log; pure idempotent DDL;
+ * composition root auto-runs it for MCP. NO money/order/status columns.
+ */
+export function initAgentGrantAuthLogSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_grant_auth_log (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      grant_id    TEXT,                              -- null when token missing / grant not found
+      human_id    TEXT,                              -- the accountable human (when resolved)
+      capability  TEXT NOT NULL,                     -- the required safe scope checked
+      outcome     TEXT NOT NULL,                     -- 'allow' | 'deny'
+      error_code  TEXT,                              -- typed denial reason (null on allow)
+      ts          TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agal_grant ON agent_grant_auth_log(grant_id, ts)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agal_ts ON agent_grant_auth_log(ts)`)
+}

@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (672 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (673 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -21,6 +21,11 @@
         "type": "apiKey",
         "in": "header",
         "name": "X-WebAuthn-Token"
+      },
+      "grantBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "gtk_ delegation-grant (RFC-020, safe scope)"
       }
     }
   },
@@ -2151,6 +2156,18 @@
         "summary": "(pair 1) Agent starts a pairing — UNAUTHENTICATED (agent has no credential yet). Safe scopes only.",
         "tags": [],
         "security": []
+      }
+    },
+    "/api/agent-grants/whoami": {
+      "get": {
+        "summary": "end-to-end on a brand-new read-only endpoint that touches NO existing route and NO money path.",
+        "tags": [],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "read_public"
       }
     },
     "/api/agent/acp-feed": {

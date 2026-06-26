@@ -25,9 +25,10 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
-import { initAgentDelegationGrantsSchema, initAgentPairingSchema } from '../../runtime/webaz-schema-helpers.js'
+import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrantAuthLogSchema } from '../../runtime/webaz-schema-helpers.js'
 import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive } from '../../runtime/agent-grant-scopes.js'
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
+import { verifyGrantToken, type GrantPrincipal } from '../../runtime/agent-grant-verifier.js'
 
 export interface AgentGrantsDeps {
   db: Database.Database
@@ -62,6 +63,52 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   // PWA runtime self-init (MCP gets the tables via applyWebazRuntimeSchema). Idempotent.
   initAgentDelegationGrantsSchema(db)
   initAgentPairingSchema(db)
+  initAgentGrantAuthLogSchema(db)
+
+  // ─────────────────────────── RFC-020 PR-C2a: opt-in grant-scope enforcement ───────────────────────────
+  // EXPLICIT, per-route, per-SAFE-scope. NOT global auth — a gtk_* token is accepted ONLY by routes that
+  // deliberately mount requireAgentGrantScope(scope); auth()/api_key is untouched and never accepts gtk_*.
+  // Risk / never-delegable scopes can never pass (the verifier hard-fails non-safe required scopes).
+  const requireAgentGrantScope = (scope: string) =>
+    async (req: Request, res: Response, next: () => void): Promise<void> => {
+      // Anti-abuse: throttle the grant-consumption path BEFORE any DB work (parity with pair/start).
+      // Bounds both anonymous probing and valid-grant spam, and caps audit-log growth.
+      if (!rateLimitOk(`agent_grant:${req.ip || 'anon'}`, 30, 60_000)) {
+        return void res.status(429).json({ error: 'too_many_grant_requests', error_code: 'GRANT_RATE_LIMITED', retry_after_s: 60 })
+      }
+      const bearer = (req.header('authorization') || '').replace(/^Bearer\s+/i, '')
+      const presentedGrant = bearer.startsWith('gtk_')   // a request that presents no grant bearer isn't "grant-authorized"
+      const r = await verifyGrantToken(bearer, scope)
+      // Append-only audit (RFC-020 §3.7 + invariant: every grant-authorized request is audited). Only audit
+      // requests that actually presented a grant bearer — a no-token request is pure noise (and an unauth
+      // bloat vector), not a grant-authorized request.
+      let audited = false
+      if (presentedGrant) {
+        try {
+          await dbRun(
+            'INSERT INTO agent_grant_auth_log (grant_id, human_id, capability, outcome, error_code) VALUES (?,?,?,?,?)',
+            [r.ok ? r.principal.grant_id : (r.grant_id ?? null), r.ok ? r.principal.human_id : (r.human_id ?? null), scope, r.ok ? 'allow' : 'deny', r.ok ? null : r.error_code],
+          )
+          audited = true
+        } catch (e) {
+          console.error('[agent-grant] audit write failed:', (e as Error).message)
+        }
+      }
+      // Deny path: return the denial regardless of audit (no access is granted, so nothing to fail closed on).
+      if (!r.ok) return void res.status(r.status).json({ error: r.error, error_code: r.error_code })
+      // Success path: FAIL CLOSED if the authorization could not be audited — a grant-authorized request
+      // must never proceed unaudited (RFC-020 invariant). Better to deny (503, retryable) than act unaccountably.
+      if (!audited) return void res.status(503).json({ error: 'authorization audit unavailable; refusing to proceed unaudited', error_code: 'GRANT_AUDIT_FAILED' })
+      ;(req as Request & { agentGrant?: GrantPrincipal }).agentGrant = r.principal
+      next()
+    }
+
+  // Vertical slice (zero-risk): grant principal introspection. Proves the verifier + opt-in middleware
+  // end-to-end on a brand-new read-only endpoint that touches NO existing route and NO money path.
+  app.get('/api/agent-grants/whoami', requireAgentGrantScope('read_public'), (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant
+    res.json({ grant: p, note: 'Authorized via delegation grant (safe scope read_public). This is a grant principal, not a human session.' })
+  })
 
   // ─────────────────────────── RFC-020 PR-C1: pairing (device-flow + PKCE) ───────────────────────────
   // C1 = pairing + credential delivery ONLY. No grant is consumed by any tool here (that is PR-C2).
