@@ -216,8 +216,11 @@ export function registerWalletReadRoutes(app: Application, deps: WalletReadDeps)
     `, [user.id]))!
     const totalIncome =
       commMap.l1.total + commMap.l2.total + commMap.l3.total + Number(sales.total)
+    // RFC-018: commission accrued but still in the clearing window (matures into commissions/total_income). Pure read.
+    const clearing = (await dbOne<{ s: number }>("SELECT COALESCE(SUM(amount),0) as s FROM pending_commission_escrow WHERE recipient_user_id = ? AND matures_at IS NOT NULL AND status = 'pending'", [user.id]))!.s
     res.json({
       commissions: commMap,
+      commission_clearing: Number(clearing.toFixed(2)),   // RFC-018: accrued, maturing after the return window (not yet paid)
       sales: { count: sales.cnt, total: Number(Number(sales.total).toFixed(2)) },
       total_income: Number(totalIncome.toFixed(2)),
     })
