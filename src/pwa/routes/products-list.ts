@@ -29,6 +29,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { createHmac } from 'crypto'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { genuineSalePredicate } from '../../layer0-foundation/L0-2-state-machine/genuine-sale.js'  // RFC-018 PR4: 真实成交(排除全额退货)
 
 export interface ProductsListDeps {
   db: Database.Database
@@ -104,7 +105,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       COALESCE(rs.total_points, 0) as rep_points, COALESCE(rs.level, 'new') as rep_level,
       COALESCE(rs.transactions_done, 0) as seller_tx_count,
       pc.seasonal_months as seasonal_months,
-      (SELECT COUNT(1) FROM orders o WHERE o.product_id = p.id AND o.status = 'completed') as sales_count,
+      (SELECT COUNT(1) FROM orders o WHERE o.product_id = p.id AND ${genuineSalePredicate('o')}) as sales_count,
       (SELECT COUNT(DISTINCT buyer_id) FROM order_ratings r WHERE r.product_id = p.id AND r.stars >= 4) as recommend_count,
       (SELECT COUNT(*) FROM dispute_cases dc WHERE dc.seller_id = p.seller_id) as seller_dispute_count,
       -- 卖家仲裁胜率：无案件视为 0.8 中性（未经检验）；有案件按真实比率

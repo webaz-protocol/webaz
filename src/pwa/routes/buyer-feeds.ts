@@ -13,6 +13,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { genuineSalePredicate } from '../../layer0-foundation/L0-2-state-machine/genuine-sale.js'  // RFC-018 PR4: 真实成交(排除全额退货)
 
 export interface BuyerFeedsDeps {
   db: Database.Database
@@ -54,7 +55,7 @@ export function registerBuyerFeedsRoutes(app: Application, deps: BuyerFeedsDeps)
       : ''
 
     const baseCols = `p.id, p.title, p.price, p.stock, p.category, p.images, p.has_variants, p.seller_id,
-      (SELECT COUNT(1) FROM orders o WHERE o.product_id = p.id AND o.status = 'completed') as sales_count,
+      (SELECT COUNT(1) FROM orders o WHERE o.product_id = p.id AND ${genuineSalePredicate('o')}) as sales_count,
       u.name as seller_name, u.handle as seller_handle`
 
     let followedProducts: Array<Record<string, unknown>> = []

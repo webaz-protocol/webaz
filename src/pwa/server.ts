@@ -23,7 +23,7 @@ import crypto from 'crypto'
 
 import { initDatabase, generateId } from '../layer0-foundation/L0-1-database/schema.js'
 import { setSeamDb } from '../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
-import { initSystemUser, transition, getOrderStatus, checkTimeouts, settleFault } from '../layer0-foundation/L0-2-state-machine/engine.js'
+import { initSystemUser, transition, getOrderStatus, checkTimeouts, settleFault } from '../layer0-foundation/L0-2-state-machine/engine.js'; import { genuineSalePredicate } from '../layer0-foundation/L0-2-state-machine/genuine-sale.js'  // RFC-018 PR4: 真实成交(排除全额退货)SSOT
 import { endpointToAction, endpointToReadAction } from './endpoint-actions.js'
 import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYPES, MASS_ACTION_DAILY_CAPS } from './limits.js'
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
@@ -2446,7 +2446,7 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_products_last_sold ON products(las
     const upd = db.prepare(`UPDATE products SET
       last_sold_at = (SELECT MAX(COALESCE(updated_at, created_at)) FROM orders WHERE product_id = ? AND status = 'completed'),
       first_sold_at = (SELECT MIN(COALESCE(updated_at, created_at)) FROM orders WHERE product_id = ? AND status = 'completed'),
-      completion_count = (SELECT COUNT(1) FROM orders WHERE product_id = ? AND status = 'completed'),
+      completion_count = (SELECT COUNT(1) FROM orders WHERE product_id = ? AND ${genuineSalePredicate('orders')}),
       dispute_loss_count = (
         SELECT COUNT(1) FROM disputes d JOIN orders o ON o.id = d.order_id
         WHERE o.product_id = ? AND d.ruling_type IN ('refund_buyer','partial_refund')
@@ -2683,8 +2683,8 @@ function computeAgentTrust(apiKey: string): {
   if (!user) return null
 
   const ageDays = Math.max(0, (Date.now() - new Date(user.created_at.replace(' ', 'T') + 'Z').getTime()) / 86400_000)
-  const completedBuyer = (db.prepare(`SELECT COUNT(*) as n FROM orders WHERE buyer_id = ? AND status = 'completed'`).get(user.id) as { n: number }).n
-  const completedSeller = (db.prepare(`SELECT COUNT(*) as n FROM orders WHERE seller_id = ? AND status = 'completed'`).get(user.id) as { n: number }).n
+  const completedBuyer = (db.prepare(`SELECT COUNT(*) as n FROM orders WHERE buyer_id = ? AND ${genuineSalePredicate('orders')}`).get(user.id) as { n: number }).n
+  const completedSeller = (db.prepare(`SELECT COUNT(*) as n FROM orders WHERE seller_id = ? AND ${genuineSalePredicate('orders')}`).get(user.id) as { n: number }).n
   const disputeLoss = (db.prepare(`SELECT COUNT(*) as n FROM disputes WHERE defendant_id = ? AND ruling_type IN ('refund_buyer','partial_refund')`).get(user.id) as { n: number }).n
 
   // 商品分享带来的真实成交（创作者贡献）
@@ -5107,7 +5107,7 @@ function checkVerifierEligibility(userId: string): { eligible: boolean; items: E
   items.push({ key: 'age', label: '账户年龄 ≥ 60 天', current: ageDays, required: 60, ok: ageDays >= 60 })
   items.push({ key: 'email', label: '邮箱已验证', current: user.email_verified ? '✓' : '✗', required: '✓', ok: !!user.email_verified })
 
-  const orders = (db.prepare("SELECT COUNT(*) as n FROM orders WHERE (buyer_id = ? OR seller_id = ?) AND status = 'completed'").get(userId, userId) as { n: number }).n
+  const orders = (db.prepare(`SELECT COUNT(*) as n FROM orders WHERE (buyer_id = ? OR seller_id = ?) AND ${genuineSalePredicate('orders')}`).get(userId, userId) as { n: number }).n
   items.push({ key: 'orders', label: '完成订单 ≥ 20 笔', current: orders, required: 20, ok: orders >= 20 })
 
   const disputeLost = (db.prepare(`
@@ -5258,7 +5258,7 @@ function checkArbitratorEligibility(userId: string): { eligible: boolean; items:
   const ageDays = Math.floor((Date.now() - new Date(user.created_at as string).getTime()) / 86400_000)
   items.push({ key: 'age', label: '账户年龄 ≥ 90 天', current: ageDays, required: 90, ok: ageDays >= 90 })
   items.push({ key: 'email', label: '邮箱已验证', current: user.email_verified ? '✓' : '✗', required: '✓', ok: !!user.email_verified })
-  const orders = (db.prepare("SELECT COUNT(*) as n FROM orders WHERE (buyer_id = ? OR seller_id = ?) AND status = 'completed'").get(userId, userId) as { n: number }).n
+  const orders = (db.prepare(`SELECT COUNT(*) as n FROM orders WHERE (buyer_id = ? OR seller_id = ?) AND ${genuineSalePredicate('orders')}`).get(userId, userId) as { n: number }).n
   items.push({ key: 'orders', label: '完成订单 ≥ 50 笔', current: orders, required: 50, ok: orders >= 50 })
   const disputeLost = (db.prepare(`
     SELECT COUNT(*) as n FROM disputes
@@ -6194,7 +6194,7 @@ const TASK_DEFS = {
 
 // 计算用户当前任务进度（不写库，纯读）
 function computeTaskProgress(userId: string): Record<string, { progress: number; goal: number; eligible: boolean }> {
-  const completed = (db.prepare(`SELECT COUNT(*) as n FROM orders WHERE buyer_id = ? AND status = 'completed'`).get(userId) as { n: number }).n
+  const completed = (db.prepare(`SELECT COUNT(*) as n FROM orders WHERE buyer_id = ? AND ${genuineSalePredicate('orders')}`).get(userId) as { n: number }).n
   const ratingsGiven = (db.prepare(`SELECT COUNT(*) as n FROM order_ratings WHERE buyer_id = ?`).get(userId) as { n: number }).n
   const ratingsReceived = (db.prepare(`SELECT COUNT(*) as n FROM order_ratings WHERE seller_id = ?`).get(userId) as { n: number }).n
   const follows = (db.prepare(`SELECT COUNT(*) as n FROM follows WHERE follower_id = ?`).get(userId) as { n: number }).n

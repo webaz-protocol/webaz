@@ -311,7 +311,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/external-anchors/:id/verify-sig` | 🔐 |  |  | src/pwa/routes/external-anchors.ts:94 |
 | GET | `/api/external-anchors/by-product/:id` |  |  |  | src/pwa/routes/external-anchors.ts:80 |
 | GET | `/api/external-anchors/by-seller/:id` |  |  |  | src/pwa/routes/external-anchors.ts:84 |
-| GET | `/api/feed` | 🔐 |  |  | src/pwa/routes/buyer-feeds.ts:127 |
+| GET | `/api/feed` | 🔐 |  |  | src/pwa/routes/buyer-feeds.ts:128 |
 | POST | `/api/feedback` | 🔐 |  |  | src/pwa/routes/feedback.ts:41 |
 | GET | `/api/feedback/:id` | 🔐 |  | 工单详情 + timeline | src/pwa/routes/feedback.ts:160 |
 | POST | `/api/feedback/:id/messages` | 🔐 |  | 工单内追加消息（user 或 admin） | src/pwa/routes/feedback.ts:241 |
@@ -361,7 +361,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/logistics/companies` |  |  |  | src/pwa/routes/logistics.ts:25 |
 | GET | `/api/logistics/me/performance` | 🔐 |  | 物流绩效卡 (Wave B-4) | src/pwa/routes/analytics.ts:36 |
 | GET | `/api/logistics/orders` | 🔐 |  |  | src/pwa/routes/logistics.ts:32 |
-| GET | `/api/logistics/return-pickups` | 🔐 |  |  | src/pwa/routes/returns.ts:405 |
+| GET | `/api/logistics/return-pickups` | 🔐 |  |  | src/pwa/routes/returns.ts:413 |
 | GET | `/api/manifest` |  |  |  | src/pwa/routes/public-utils.ts:463 |
 | POST | `/api/manifests` | 🔐 |  |  | src/pwa/routes/manifests.ts:49 |
 | GET | `/api/manifests/:hash` | 🔐 |  |  | src/pwa/routes/manifests.ts:97 |
@@ -396,7 +396,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/me/task-proposals` | 🔐 |  | proposer-facing read: the caller's OWN proposals + status + public_reply (agent- | src/pwa/routes/task-proposals.ts:72 |
 | GET | `/api/me/trial-claims` | 🔐 |  | 买家：我的测评列表 | src/pwa/routes/trial.ts:316 |
 | GET | `/api/my-products` | 🔐 |  |  | src/pwa/routes/search.ts:51 |
-| GET | `/api/nearby` | 🔐 |  | window: 24h / 7d / 30d | src/pwa/routes/buyer-feeds.ts:182 |
+| GET | `/api/nearby` | 🔐 |  | window: 24h / 7d / 30d | src/pwa/routes/buyer-feeds.ts:183 |
 | GET | `/api/notes` |  |  | sort=following: 需登录，仅显示 follows.followee_id 的笔记 | src/pwa/routes/shareables.ts:322 |
 | POST | `/api/notes/photo` | 🔐 |  | Phase C2 笔记图片上传 — raw blob，sha256 重算，返回 hash + dedup | src/pwa/routes/shareables.ts:51 |
 | GET | `/api/notes/photo/:hash` |  |  | 笔记图片下载 — 公开（笔记 landing page 公开可读，图也得公开） | src/pwa/routes/shareables.ts:78 |
@@ -421,8 +421,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/orders/:order_id/rating` | 🔐 |  | buyer → seller 评价（一单一评，仅 completed 订单可评） | src/pwa/routes/ratings.ts:50 |
 | POST | `/api/orders/:order_id/rating/followup` | 🔐 |  | W3 买家追问 — 在卖家 reply 后可追问一次 | src/pwa/routes/ratings.ts:169 |
 | POST | `/api/orders/:order_id/rating/reply` | 🔐 |  |  | src/pwa/routes/ratings.ts:150 |
-| GET | `/api/orders/:order_id/return-request` | 🔐 |  | P1-5: 订单级直查 | src/pwa/routes/returns.ts:174 |
-| POST | `/api/orders/:order_id/return-request` | 🔐 |  | buyer 发起退货 | src/pwa/routes/returns.ts:113 |
+| GET | `/api/orders/:order_id/return-request` | 🔐 |  | P1-5: 订单级直查 | src/pwa/routes/returns.ts:182 |
+| POST | `/api/orders/:order_id/return-request` | 🔐 |  | buyer 发起退货 | src/pwa/routes/returns.ts:121 |
 | POST | `/api/orders/batch-ship` | 🔐 |  | C-4: 卖家批量发货 | src/pwa/routes/orders-action.ts:61 |
 | GET | `/api/orders/export` | 🔐 |  | Wave D-2: 订单导出 CSV | src/pwa/routes/orders-read.ts:60 |
 | GET | `/api/p2p-products` |  |  | 公开：列表 | src/pwa/routes/p2p-products.ts:177 |
@@ -438,7 +438,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/pin-receipts` | 🔐 |  |  | src/pwa/routes/pin-receipts.ts:29 |
 | GET | `/api/pin-receipts/mine` | 🔐 |  |  | src/pwa/routes/pin-receipts.ts:53 |
 | POST | `/api/product-share/touch` | 🔐 |  | 商品分享归因落库（前端登录后首次进入带 share_id 时调用） | src/pwa/routes/share-redirects.ts:129 |
-| GET | `/api/products` |  |  |  | src/pwa/routes/products-list.ts:56 |
+| GET | `/api/products` |  |  |  | src/pwa/routes/products-list.ts:57 |
 | POST | `/api/products` | 🔐 |  |  | src/pwa/routes/products-create.ts:47 |
 | DELETE | `/api/products/:id` | 🔐 |  | 硬删（仅 deleted 状态 + 无进行中订单） | src/pwa/routes/products-crud.ts:71 |
 | GET | `/api/products/:id` |  |  | 卖家可查看自己的非上架商品（编辑页用），其他人只能看 active | src/pwa/routes/products-crud.ts:33 |
@@ -507,7 +507,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/push/subscribe` | 🔐 |  |  | src/pwa/routes/push.ts:44 |
 | GET | `/api/push/vapid-public-key` | 🔐 |  |  | src/pwa/routes/push.ts:39 |
 | GET | `/api/qr` |  |  | 二维码生成（24h cache + ETag） | src/pwa/routes/share-redirects.ts:52 |
-| GET | `/api/recommendations/me` | 🔐 |  |  | src/pwa/routes/buyer-feeds.ts:30 |
+| GET | `/api/recommendations/me` | 🔐 |  |  | src/pwa/routes/buyer-feeds.ts:31 |
 | POST | `/api/recover-key` |  |  |  | src/pwa/routes/recover-key.ts:51 |
 | POST | `/api/recover-key/confirm` |  |  | 安全等价:本端点本就返回完整 api_key(最高凭证),允许同时重置密码不扩大权限面 —— 验证码已是同等门槛。 | src/pwa/routes/recover-key.ts:134 |
 | POST | `/api/recover-key/start` |  |  | 步骤 1：发送验证码到已绑定邮箱（防泄露：找没找到都同响应） | src/pwa/routes/recover-key.ts:101 |
@@ -516,14 +516,14 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/register/send-code` |  |  | 注册场景需明确告知"邮箱已占用"(无法防枚举,标准取舍),但限流 + captcha 兜底。 | src/pwa/routes/auth-register.ts:71 |
 | GET | `/api/reputation` | 🔐 |  |  | src/pwa/routes/reputation.ts:29 |
 | GET | `/api/reputation/:userId` |  |  |  | src/pwa/routes/reputation.ts:44 |
-| GET | `/api/return-requests` | 🔐 |  |  | src/pwa/routes/returns.ts:191 |
-| DELETE | `/api/return-requests/:id` | 🔐 |  |  | src/pwa/routes/returns.ts:264 |
-| GET | `/api/return-requests/:id` | 🔐 |  | ─── W2 售后协商时间线 ─────────────────────────────── | src/pwa/routes/returns.ts:275 |
-| POST | `/api/return-requests/:id/decide` | 🔐 |  |  | src/pwa/routes/returns.ts:217 |
-| POST | `/api/return-requests/:id/escalate` | 🔐 |  | buyer 升级到争议（仅 rejected 后或 pending ≥ 7 天） | src/pwa/routes/returns.ts:452 |
-| POST | `/api/return-requests/:id/messages` | 🔐 |  |  | src/pwa/routes/returns.ts:422 |
-| POST | `/api/return-requests/:id/picked-up` | 🔐 |  | L3 Phase 2: 物流揽收 | src/pwa/routes/returns.ts:364 |
-| POST | `/api/return-requests/:id/received` | 🔐 |  | L3 Phase 2: 卖家确认收到 → refunded | src/pwa/routes/returns.ts:387 |
+| GET | `/api/return-requests` | 🔐 |  |  | src/pwa/routes/returns.ts:199 |
+| DELETE | `/api/return-requests/:id` | 🔐 |  |  | src/pwa/routes/returns.ts:272 |
+| GET | `/api/return-requests/:id` | 🔐 |  | ─── W2 售后协商时间线 ─────────────────────────────── | src/pwa/routes/returns.ts:283 |
+| POST | `/api/return-requests/:id/decide` | 🔐 |  |  | src/pwa/routes/returns.ts:225 |
+| POST | `/api/return-requests/:id/escalate` | 🔐 |  | buyer 升级到争议（仅 rejected 后或 pending ≥ 7 天） | src/pwa/routes/returns.ts:460 |
+| POST | `/api/return-requests/:id/messages` | 🔐 |  |  | src/pwa/routes/returns.ts:430 |
+| POST | `/api/return-requests/:id/picked-up` | 🔐 |  | L3 Phase 2: 物流揽收 | src/pwa/routes/returns.ts:372 |
+| POST | `/api/return-requests/:id/received` | 🔐 |  | L3 Phase 2: 卖家确认收到 → refunded | src/pwa/routes/returns.ts:395 |
 | POST | `/api/reviews/:type/:id/claim` | 🔐 |  |  | src/pwa/routes/reviews.ts:54 |
 | GET | `/api/reviews/:type/:id/claims` |  |  |  | src/pwa/routes/reviews.ts:113 |
 | GET | `/api/reviews/recent` |  |  |  | src/pwa/routes/reviews.ts:38 |
@@ -569,10 +569,10 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/shareables/by-anchor/:anchor` | 🔐 |  |  | src/pwa/routes/shareables.ts:307 |
 | GET | `/api/shareables/by-product/:pid` | 🔐 |  | 策展引用：按 click*1 + like*3 + induced_orders*10 加权排序，取 top 10 | src/pwa/routes/shareables.ts:285 |
 | GET | `/api/shareables/me` | 🔐 |  |  | src/pwa/routes/shareables.ts:204 |
-| GET | `/api/shares/dashboard` | 🔐 |  |  | src/pwa/routes/dashboards.ts:64 |
+| GET | `/api/shares/dashboard` | 🔐 |  |  | src/pwa/routes/dashboards.ts:65 |
 | POST | `/api/shop-referral/touch` | 🔐 |  |  | src/pwa/routes/shop-referral.ts:27 |
-| GET | `/api/shops/:identifier` |  |  |  | src/pwa/routes/shops.ts:35 |
-| PATCH | `/api/shops/me` | 🔐 |  | 卖家更新自己店铺装饰 | src/pwa/routes/shops.ts:100 |
+| GET | `/api/shops/:identifier` |  |  |  | src/pwa/routes/shops.ts:36 |
+| PATCH | `/api/shops/me` | 🔐 |  | 卖家更新自己店铺装饰 | src/pwa/routes/shops.ts:101 |
 | GET | `/api/signaling/poll` | 🔐 |  |  | src/pwa/routes/signaling.ts:40 |
 | POST | `/api/signaling/send` | 🔐 |  |  | src/pwa/routes/signaling.ts:28 |
 | GET | `/api/skill-market` |  |  | ─── 公开列表 ─────────────────────────────────────────────── | src/pwa/routes/skill-market.ts:62 |
@@ -608,7 +608,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/tags/:tag/notes` |  |  | db 已全量走 RFC-016 异步 seam(dbOne/dbAll),不再用 deps.db | src/pwa/routes/tags.ts:23 |
 | GET | `/api/tags/trending` |  |  | 热门标签：24h + 总数综合排序 | src/pwa/routes/tags.ts:51 |
 | POST | `/api/tasks/:key/claim` | 🔐 |  |  | src/pwa/routes/checkin-tasks.ts:110 |
-| GET | `/api/tokenomics/status` |  |  |  | src/pwa/routes/dashboards.ts:25 |
+| GET | `/api/tokenomics/status` |  |  |  | src/pwa/routes/dashboards.ts:26 |
 | GET | `/api/trial-campaigns/:campaign_id/claims` | 🔐 |  | 卖家：查看某活动的 claims 详情 | src/pwa/routes/trial.ts:343 |
 | POST | `/api/trial-claims/:claim_id/link-note` | 🔐 |  | 买家关联笔记 | src/pwa/routes/trial.ts:287 |
 | GET | `/api/users/:id/auctions` |  |  | 用户进行中拍卖（公开：open） | src/pwa/routes/users-public.ts:155 |
