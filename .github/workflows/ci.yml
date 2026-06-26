@@ -695,6 +695,7 @@ jobs:
       - run: npm run test:clearing-escrow-schema
       - run: npm run test:clearing-commission
       - run: npm run test:clearing-surfaces
+      - run: npm run test:returns-aware-counts
       - run: npm run test:email-delivery
       - run: npm run test:recover-key-password-reset
       - run: npm run test:register-email-verify

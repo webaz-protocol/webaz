@@ -77,7 +77,7 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   'claim-verify.ts': 42,  // 模块级结算/资格/通知 helper(settleClaimTask 裸多写结算+distributePool+outlier+notifyEligibleVerifiers+isEligible+activeCount+processQueue,34)+ claim 发起锁押(Codex #237 P1:原裸 3 连写已包进 db.transaction + tx 内 dup 重检 + 余额守卫扣押 + 订单 flag CAS,4)+ vote 共识 guard/insert/recount/seal 4;端点纯校验读/列表/公开查询/读回 + 单语句标记写(seller-evidence 加 status+evidence_at 守卫 409)+ 写后通知已迁 seam
   'governance-auto-deactivate.ts': 6,  // cron role-sweep:候选扫描读已迁 seam,逐用户卸任 db.transaction 写仍同步(Phase 3)+ tx 内重读 verifier_stats 守卫(Codex #231 P1:扫描与 tx 间 tasks_wrong 可能因申诉成功递减,故 tx 内重读 stats 重算阈值,不再越线则不写)
   'governance-onboarding.ts': 12,  // activate/resign/resolve-appeal 的 3 个角色态 CAS db.transaction(各 4);申请/题目/案例/申诉端点纯读+单写已迁 seam
-  'returns.ts': 13,        // executeReturnRefund 退款 db.transaction(CAS return 行 + 余额守卫扣款 + 库存 + 状态,8)+ escalate 建争议 tx(2);RFC-018 新增 3:退款 tx 内读 order total + 冲销本单 clearing 行(全退 reversed / 部分按比例减额),与退款原子(10→13)。端点校验读/列表/状态写/消息/通知已迁 seam
+  'returns.ts': 14,        // executeReturnRefund 退款 db.transaction(CAS return 行 + 余额守卫扣款 + 库存 + 状态,8)+ escalate 建争议 tx(2);RFC-018 新增 3:退款 tx 内读 order total + 冲销本单 clearing 行(全退 reversed / 部分按比例减额),与退款原子(10→13);PR4 新增 1:全额退货 tx 内 completion_count -1(13→14)。端点校验读/列表/状态写/消息/通知已迁 seam
   'rewards-auto-downgrade.ts': 4,  // cron consent-sweep:currentMajor + 候选扫描读已迁 seam,逐用户降级 db.transaction 写仍同步(Phase 3)
   'rewards-clearing-mature.ts': 7,  // RFC-018 maturation:matureClearingRow 的同步钱路 db.transaction(order/dispute 重校验读 + CAS pending→settled + region 读 + commission_records 写 + commissionSourceType 的 2 读);sweep 扫描用 async seam(dbAll)。Phase 3 迁 pg
   'rewards-escrow-expire.ts': 2,  // cron money-sweep:扫描读已迁 seam,到期 materialize 的 db.transaction 写仍同步(Phase 3)

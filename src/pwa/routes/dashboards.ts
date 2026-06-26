@@ -12,6 +12,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { genuineSalePredicate } from '../../layer0-foundation/L0-2-state-machine/genuine-sale.js'  // RFC-018 PR4: 真实成交(排除全额退货)
 
 export interface DashboardsDeps {
   db: Database.Database
@@ -87,7 +88,7 @@ export function registerDashboardsRoutes(app: Application, deps: DashboardsDeps)
 
     const highComm = await dbAll(`
       SELECT p.id, p.title, p.price, p.commission_rate, p.images, p.category,
-        (SELECT COUNT(*) FROM orders o WHERE o.product_id = p.id AND o.status = 'completed') as sales_count
+        (SELECT COUNT(*) FROM orders o WHERE o.product_id = p.id AND ${genuineSalePredicate('o')}) as sales_count
       FROM products p
       WHERE p.status = 'active'
         AND p.commission_rate > 0
