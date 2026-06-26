@@ -27,6 +27,7 @@ const { initDatabase, generateId } = await import('../src/layer0-foundation/L0-1
 const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')
 const { registerAgentGrantsRoutes } = await import('../src/pwa/routes/agent-grants.js')
 const { pkceChallengeS256, generateCodeVerifier, verifyPkceS256 } = await import('../src/runtime/agent-pairing.js')
+const { toolAllowedInNetworkMode, NETWORK_TOOLS } = await import('../src/layer1-agent/L1-1-mcp-server/network-mode.js')
 
 let pass = 0, fail = 0
 const fails: string[] = []
@@ -57,6 +58,12 @@ const j = async (path: string, opts: { method?: string; body?: unknown; user?: s
 const hasTokenField = (o: unknown): boolean => JSON.stringify(o).match(/"token"\s*:|"token_hash"\s*:|gtk_/) != null
 
 try {
+  // ── NETWORK-mode gate (P1 regression): webaz_pair must NOT be blocked in network/readonly ──
+  ok('webaz_pair allowed through the NETWORK gate', toolAllowedInNetworkMode('webaz_pair') === true)
+  ok('webaz_pair is in NETWORK_TOOLS', NETWORK_TOOLS.has('webaz_pair'))
+  ok('migrated tool still allowed (webaz_search)', toolAllowedInNetworkMode('webaz_search') === true)
+  ok('un-migrated tool still hard-fails the gate', toolAllowedInNetworkMode('webaz_not_a_real_tool') === false)
+
   // ── pure PKCE ──
   const vv = generateCodeVerifier()
   ok('pkce verify matches', verifyPkceS256(vv, pkceChallengeS256(vv)))

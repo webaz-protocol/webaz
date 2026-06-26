@@ -34,6 +34,7 @@ import { initDatabase, generateId } from '../../layer0-foundation/L0-1-database/
 import { setSeamDb } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam(本进程注入)
 import { applyWebazRuntimeSchema } from '../../runtime/apply-webaz-runtime-schema.js'  // 与 PWA 同源的纯 schema 桥(防 MCP fresh DB 漂移)
 import { generateCodeVerifier, pkceChallengeS256 } from '../../runtime/agent-pairing.js'  // RFC-020 PR-C1 — PKCE 配对
+import { NETWORK_TOOLS, NETWORK_SELF_AWARE, toolAllowedInNetworkMode } from './network-mode.js'  // RFC-003 网络门(可单测)
 import { homedir } from 'node:os'
 import { join as pathJoin } from 'node:path'
 import { existsSync as fsExists, mkdirSync, writeFileSync, readFileSync, unlinkSync, chmodSync } from 'node:fs'
@@ -123,56 +124,9 @@ const MODE: 'network' | 'network_readonly' | 'sandbox' =
   : (WEBAZ_API_KEY ? 'network' : 'network_readonly')
 // network 或 network_readonly 都"走真网络"(后者无 Bearer)。sandbox 才是本地。
 const isNetworkMode = (): boolean => MODE === 'network' || MODE === 'network_readonly'
-// 已迁移到 NETWORK 的工具名。P1/P2 逐个加入;未在集合里的工具仍走 sandbox(本地)。
-// P1(读工具): 纯公开读,无写无 Passkey,作"MCP 连得上生产网络"的首验证。
-const NETWORK_TOOLS = new Set<string>([
-  'webaz_price_history',
-  'webaz_leaderboard',
-  'webaz_verify_price',
-  'webaz_place_order',
-  'webaz_list_product',
-  'webaz_update_order',
-  'webaz_search',
-  'webaz_get_status',
-  'webaz_feedback',
-  'webaz_contribute',
-  // Batch 1(只读 + 低危自身写):走 webaz.xyz Bearer api_key。
-  'webaz_notifications',
-  'webaz_nearby',
-  'webaz_profile',
-  'webaz_shareables',
-  'webaz_mykey',
-  // Batch 2(低危写,无钱无 escrow):走 webaz.xyz Bearer api_key。
-  // 注:share_link 暂不迁(无对应服务端端点,需新建,留待后续)。
-  'webaz_follows',
-  'webaz_like',
-  'webaz_blocklist',
-  'webaz_default_address',
-  'webaz_chat',
-  'webaz_rfq',
-  'webaz_referral',
-  // Batch 3(商务):secondhand/skill_market/auction 纯 pwaApi(mode-aware 自动走网络);
-  // skill 直连本地引擎,加了显式 apiCall network 分支。
-  'webaz_secondhand',
-  'webaz_skill',
-  'webaz_skill_market',
-  'webaz_auction',
-  // Batch 4(资金/质押,守恒由服务端 RFC-014 保证;wallet 只读,写=Passkey 仅 PWA):
-  'webaz_wallet',
-  'webaz_trial',
-  'webaz_charity',
-  'webaz_bid',
-  'webaz_auto_bid',
-  // Batch 5(铁律/敏感):claim_verify 纯 pwaApi(真人门由服务端 require_human_presence 强制);
-  // dispute view/list_open/respond/add_evidence 走网络,arbitrate 仅返回 Passkey 指引;
-  // rotate_key/revoke_key 仅返回 Passkey 指引(不本地校验)。
-  'webaz_dispute',
-  'webaz_claim_verify',
-  'webaz_rotate_key',
-  'webaz_revoke_key',
-  // #1122:share_link 现有服务端端点 /api/share-link,可走网络。
-  'webaz_share_link',
-])
+// NETWORK_TOOLS / NETWORK_SELF_AWARE / toolAllowedInNetworkMode moved to
+// ./network-mode.ts (imported at top) so the gate is unit-testable without booting
+// the stdio server. NETWORK_TOOLS now includes webaz_pair (RFC-020 onboarding/auth).
 
 // RFC-004 现场证据:进程内 ring buffer,记最近工具调用的【脱敏摘要】(只存 arg key 名,不存值)。
 // webaz_feedback 提交时附带,让 maintainer 拿到"问题发生时的现场",而不只是一句抱怨。
@@ -188,9 +142,8 @@ function toolBackend(tool: string): 'network' | 'sandbox' {
   return (isNetworkMode() && NETWORK_TOOLS.has(tool)) ? 'network' : 'sandbox'
 }
 
-// 未在 NETWORK_TOOLS 名单、但 NETWORK 模式下仍可本地运行的"自省/引导"工具(非数据操作)。
-// info = 本地自省(并拉 live 网络状态);register = 引导真人去 webaz.xyz。其余未迁工具一律硬失败。
-const NETWORK_SELF_AWARE = new Set<string>(['webaz_info', 'webaz_register'])
+// NETWORK_SELF_AWARE imported from ./network-mode.ts (info = local introspection;
+// register = redirect human to webaz.xyz). Everything else un-migrated hard-fails.
 
 // RFC-003 Batch 0 安全网:NETWORK 模式下调用【未迁移】工具时的诚实拒绝(而非静默落本地沙盒)。
 // 否则带 key 的用户调未迁工具会被悄悄喂本地结果——写操作=幻影操作(根本没到 webaz.xyz)。
@@ -5015,7 +4968,7 @@ export async function startMCPServer() {
       // ─── RFC-003 Batch 0 安全网:NETWORK 模式下未迁移的工具【硬失败】,不静默落本地沙盒 ───
       // 例外:info / register(NETWORK_SELF_AWARE)有专门 network-aware 处理,照常放行。
       let handled = false
-      if (isNetworkMode() && !NETWORK_TOOLS.has(name) && !NETWORK_SELF_AWARE.has(name)) {
+      if (isNetworkMode() && !toolAllowedInNetworkMode(name)) {
         result = networkMigrationPending(name)
         handled = true
       }
