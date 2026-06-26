@@ -148,6 +148,15 @@ try {
   const expRetr = await j(`/api/agent-grants/pair/${expApproved}/retrieve`, { method: 'POST', body: { code_verifier: verifier } })
   ok('expired approved cannot be retrieved', expRetr.status === 409)
 
+  // ── mode isolation (P2 regression): handlePair in explicit sandbox must NOT hit the live API ──
+  // Set sandbox env BEFORE importing the MCP server (MODE is read at module load).
+  process.env.WEBAZ_MODE = 'sandbox'
+  delete process.env.WEBAZ_API_KEY
+  const mcp = await import('../src/layer1-agent/L1-1-mcp-server/server.js')
+  const sb = await mcp.handlePair({ action: 'start', capabilities: ['search'] })
+  ok('sandbox handlePair is fail-closed (no live pairing call)', sb.error_code === 'PAIRING_REQUIRES_NETWORK')
+  ok('sandbox handlePair did NOT return a pairing session', !sb.pairing_id && !sb.user_code)
+
   if (fail === 0) {
     console.log(`\n✅ agent pairing (PR-C1): safe-only start, risk+never-delegable reject, PKCE-gated one-time retrieval, expired reject, bearer shown once + never in reads\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)
   } else {

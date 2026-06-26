@@ -233,7 +233,16 @@ function readPending(): { pairing_id: string; code_verifier: string } | null {
 }
 function clearPending(): void { try { if (fsExists(PENDING_PATH)) unlinkSync(PENDING_PATH) } catch { /* best effort */ } }
 
-async function handlePair(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function handlePair(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // Mode isolation (fail-closed): pairing talks to the LIVE webaz.xyz API. In explicit
+  // sandbox mode (local-only) we must NOT create a pairing session on the live network.
+  if (!isNetworkMode()) {
+    return {
+      _mode: MODE,
+      error: 'Pairing requires NETWORK mode — you are in sandbox (local-only, isolated from webaz.xyz). Unset WEBAZ_MODE (or set WEBAZ_MODE=network / network_readonly) to pair with a real human account.',
+      error_code: 'PAIRING_REQUIRES_NETWORK',
+    }
+  }
   const action = (args.action as string) || 'start'
 
   if (action === 'start') {
