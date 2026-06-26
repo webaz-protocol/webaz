@@ -5473,7 +5473,7 @@ async function renderPromoter(app) {
         <div class="card" style="text-align:center;padding:10px 6px">
           <div style="font-size:11px;color:#6b7280">💰 ${t('累计收益')}</div>
           <div style="font-size:17px;font-weight:700;color:#059669;margin-top:2px">${totalEarnings.toFixed(2)}</div>
-          <div style="font-size:10px;color:#9ca3af">WAZ</div>
+          <div style="font-size:10px;color:#9ca3af">WAZ</div>${(data.earnings?.clearing_total||0)>0?`<div style="font-size:9px;color:#9ca3af;margin-top:1px" title="${t('清算中:退货期满后到账')}">${t('清算中')} ${Number(data.earnings.clearing_total).toFixed(2)}</div>`:''}
         </div>
         <div class="card" style="text-align:center;padding:10px 6px">
           <div style="font-size:11px;color:#6b7280">📊 ${t('近 30 日')}</div>
@@ -6904,10 +6904,10 @@ async function renderReferral(app) {
 
     <div class="card" style="background:linear-gradient(135deg,#ecfdf5,#fff);padding:14px;margin-bottom:10px">
       <div style="font-size:13px;font-weight:600;margin-bottom:8px">💰 ${t('邀请收益')}</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">
+      <div style="display:grid;grid-template-columns:repeat(${Number(e.clearing_waz||0)>0?4:3},1fr);gap:8px;text-align:center">
         <div><div style="font-size:18px;font-weight:700;color:#16a34a">${Number(e.total_waz || 0).toFixed(2)}</div><div style="font-size:10px;color:#9ca3af">${t('累计收益')}</div></div>
         <div><div style="font-size:18px;font-weight:700;color:#4f46e5">${Number(e.month_waz || 0).toFixed(2)}</div><div style="font-size:10px;color:#9ca3af">${t('近 30 天')}</div></div>
-        <div><div style="font-size:18px;font-weight:700;color:#d97706">${Number(e.today_waz || 0).toFixed(2)}</div><div style="font-size:10px;color:#9ca3af">${t('今日')}</div></div>
+        <div><div style="font-size:18px;font-weight:700;color:#d97706">${Number(e.today_waz || 0).toFixed(2)}</div><div style="font-size:10px;color:#9ca3af">${t('今日')}</div></div>${Number(e.clearing_waz||0)>0?`<div><div style="font-size:18px;font-weight:700;color:#9ca3af" title="${t('清算中:退货期满后到账')}">${Number(e.clearing_waz).toFixed(2)}</div><div style="font-size:10px;color:#9ca3af">${t('清算中')}</div></div>`:''}
       </div>
       <div style="font-size:10px;color:#9ca3af;margin-top:6px;text-align:center">${e.total_records} ${t('条记录')} · WAZ</div>
     </div>
@@ -18349,7 +18349,7 @@ async function renderWallet(app) {
           <div style="background:#ecfdf5;border-radius:6px;padding:8px">
             <div style="font-size:9px;color:#065f46">📡 ${t('推荐分润')}</div>
             <div style="font-size:14px;font-weight:700;color:#059669;margin-top:2px">${((inc.commissions?.l1?.total||0)+(inc.commissions?.l2?.total||0)+(inc.commissions?.l3?.total||0)).toFixed(2)}</div>
-            <div style="font-size:9px;color:#9ca3af">${((inc.commissions?.l1?.count||0)+(inc.commissions?.l2?.count||0)+(inc.commissions?.l3?.count||0))} ${t('单')}</div>
+            <div style="font-size:9px;color:#9ca3af">${((inc.commissions?.l1?.count||0)+(inc.commissions?.l2?.count||0)+(inc.commissions?.l3?.count||0))} ${t('单')}</div>${(inc.commission_clearing||0)>0?`<div style="font-size:8px;color:#9ca3af" title="${t('清算中:退货期满后到账')}">${t('清算中')} ${Number(inc.commission_clearing).toFixed(2)}</div>`:''}
           </div>
           <div style="background:#fef3c7;border-radius:6px;padding:8px">
             <div style="font-size:9px;color:#92400e">⏳ ${t('待结算')}</div>
