@@ -43,7 +43,15 @@ const auth = (req: express.Request, res: express.Response) => {
   if (!u) { res.status(401).json({ error: 'unauthorized' }); return null }
   return { id: u }
 }
-registerAgentGrantsRoutes(app, { db, auth, generateId })
+registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true })
+
+// second app with the limiter "exceeded" — to prove pair/start 429s + writes no row
+const appLimited = express()
+appLimited.use(express.json())
+registerAgentGrantsRoutes(appLimited, { db, auth, generateId, rateLimitOk: () => false })
+const serverLimited = appLimited.listen(0)
+const portLimited = (serverLimited.address() as AddressInfo).port
+const countPairings = (): number => (db.prepare('SELECT COUNT(*) n FROM agent_pairing_sessions').get() as { n: number }).n
 const server = app.listen(0)
 const port = (server.address() as AddressInfo).port
 const base = `http://127.0.0.1:${port}`
@@ -78,6 +86,17 @@ try {
   ok('start rejects never-delegable scope', neverStart.status === 403 && neverStart.body.rejected?.[0]?.error_code === 'NEVER_DELEGABLE')
   const noChal = await j('/api/agent-grants/pair/start', { method: 'POST', body: { capabilities: [{ capability: 'search' }] } })
   ok('start requires code_challenge', noChal.status === 400)
+  const tooMany = await j('/api/agent-grants/pair/start', { method: 'POST', body: { code_challenge: challenge, capabilities: Array.from({ length: 20 }, () => ({ capability: 'search' })) } })
+  ok('start rejects too many capabilities', tooMany.status === 400 && tooMany.body.error === 'too_many_capabilities')
+
+  // rate limit: when the limiter says no, start → 429 and writes NO row
+  const before = countPairings()
+  const limited = await (async () => {
+    const r = await fetch(`http://127.0.0.1:${portLimited}/api/agent-grants/pair/start`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code_challenge: challenge, capabilities: [{ capability: 'search' }] }) })
+    return { status: r.status, body: await r.json().catch(() => ({})) as any }
+  })()
+  ok('rate-limited start → 429', limited.status === 429 && limited.body.error === 'too_many_pairing_starts')
+  ok('rate-limited start writes NO row', countPairings() === before)
 
   // ── happy path: start (safe) → consent → approve → retrieve ──
   const start = await j('/api/agent-grants/pair/start', { method: 'POST', body: { code_challenge: challenge, capabilities: [{ capability: 'search' }, { capability: 'read_public' }], agent_label: 'TestAgent', reason: 'help me browse' } })
@@ -137,5 +156,6 @@ try {
   }
 } finally {
   server.close()
+  serverLimited.close()
   rmSync(tmpHome, { recursive: true, force: true })
 }

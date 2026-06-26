@@ -33,7 +33,12 @@ export interface AgentGrantsDeps {
   db: Database.Database
   auth: (req: Request, res: Response) => Record<string, unknown> | null
   generateId: (prefix: string) => string
+  rateLimitOk: (key: string, max?: number, windowMs?: number) => boolean  // throttles the anonymous pair/start
 }
+
+// Bounds on a pairing request (anti-bloat for the anonymous start endpoint).
+const MAX_CAPABILITIES = 12
+const MAX_CONSTRAINTS_JSON = 2000
 
 function safeParseCaps(json: unknown): unknown {
   try { return JSON.parse(String(json)) } catch { return [] }
@@ -53,7 +58,7 @@ function consentView(p: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDeps): void {
-  const { db, auth, generateId } = deps
+  const { db, auth, generateId, rateLimitOk } = deps
   // PWA runtime self-init (MCP gets the tables via applyWebazRuntimeSchema). Idempotent.
   initAgentDelegationGrantsSchema(db)
   initAgentPairingSchema(db)
@@ -63,10 +68,15 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
 
   // (pair 1) Agent starts a pairing — UNAUTHENTICATED (agent has no credential yet). Safe scopes only.
   app.post('/api/agent-grants/pair/start', async (req, res) => {
+    // Rate-limit the anonymous write FIRST (anti-bloat: no DB row unless under the cap).
+    if (!rateLimitOk(`agent_pair_start:${req.ip || 'anon'}`, 10, 60_000)) {
+      return void res.status(429).json({ error: 'too_many_pairing_starts', retry_after_s: 60 })
+    }
     const body = (req.body || {}) as Record<string, unknown>
     const codeChallenge = typeof body.code_challenge === 'string' ? body.code_challenge : ''
-    if (!codeChallenge || codeChallenge.length < 32) return void res.status(400).json({ error: 'code_challenge required (PKCE S256)' })
+    if (!codeChallenge || codeChallenge.length < 32 || codeChallenge.length > 256) return void res.status(400).json({ error: 'code_challenge required (PKCE S256)' })
     const caps = Array.isArray(body.capabilities) ? body.capabilities as Array<{ capability: string; constraints?: Record<string, unknown> }> : []
+    if (caps.length > MAX_CAPABILITIES) return void res.status(400).json({ error: 'too_many_capabilities', max: MAX_CAPABILITIES })
     const v = validateRequestedCapabilities(caps)
     if (!v.ok) return void res.status(403).json({ error: 'pairing_rejected', rejected: v.rejected })  // risk + never-delegable hard-reject
 
@@ -78,6 +88,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const reason = typeof body.reason === 'string' ? body.reason.slice(0, 280) : null               // agent free text only
     const pubkey = typeof body.agent_pubkey === 'string' ? body.agent_pubkey.slice(0, 1000) : null  // RESERVED (PoP), not verified in C1
     const capsJson = JSON.stringify(v.safe.map(c => ({ capability: c, constraints: (caps.find(x => x?.capability === c)?.constraints) || {} })))
+    if (capsJson.length > MAX_CONSTRAINTS_JSON) return void res.status(400).json({ error: 'capabilities_too_large', max_bytes: MAX_CONSTRAINTS_JSON })
 
     await dbRun(
       'INSERT INTO agent_pairing_sessions (pairing_id, user_code, code_challenge, agent_label, agent_pubkey, reason, capabilities, status, expires_at) VALUES (?,?,?,?,?,?,?,?,?)',
