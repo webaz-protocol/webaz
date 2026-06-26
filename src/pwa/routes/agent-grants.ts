@@ -71,18 +71,28 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   // Risk / never-delegable scopes can never pass (the verifier hard-fails non-safe required scopes).
   const requireAgentGrantScope = (scope: string) =>
     async (req: Request, res: Response, next: () => void): Promise<void> => {
+      // Anti-abuse: throttle the grant-consumption path BEFORE any DB work (parity with pair/start).
+      // Bounds both anonymous probing and valid-grant spam, and caps audit-log growth.
+      if (!rateLimitOk(`agent_grant:${req.ip || 'anon'}`, 30, 60_000)) {
+        return void res.status(429).json({ error: 'too_many_grant_requests', error_code: 'GRANT_RATE_LIMITED', retry_after_s: 60 })
+      }
       const bearer = (req.header('authorization') || '').replace(/^Bearer\s+/i, '')
+      const presentedGrant = bearer.startsWith('gtk_')   // a request that presents no grant bearer isn't "grant-authorized"
       const r = await verifyGrantToken(bearer, scope)
-      // Append-only audit (RFC-020 §3.7 + invariant: every grant-authorized request is audited).
+      // Append-only audit (RFC-020 §3.7 + invariant: every grant-authorized request is audited). Only audit
+      // requests that actually presented a grant bearer — a no-token request is pure noise (and an unauth
+      // bloat vector), not a grant-authorized request.
       let audited = false
-      try {
-        await dbRun(
-          'INSERT INTO agent_grant_auth_log (grant_id, human_id, capability, outcome, error_code) VALUES (?,?,?,?,?)',
-          [r.ok ? r.principal.grant_id : (r.grant_id ?? null), r.ok ? r.principal.human_id : (r.human_id ?? null), scope, r.ok ? 'allow' : 'deny', r.ok ? null : r.error_code],
-        )
-        audited = true
-      } catch (e) {
-        console.error('[agent-grant] audit write failed:', (e as Error).message)
+      if (presentedGrant) {
+        try {
+          await dbRun(
+            'INSERT INTO agent_grant_auth_log (grant_id, human_id, capability, outcome, error_code) VALUES (?,?,?,?,?)',
+            [r.ok ? r.principal.grant_id : (r.grant_id ?? null), r.ok ? r.principal.human_id : (r.human_id ?? null), scope, r.ok ? 'allow' : 'deny', r.ok ? null : r.error_code],
+          )
+          audited = true
+        } catch (e) {
+          console.error('[agent-grant] audit write failed:', (e as Error).message)
+        }
       }
       // Deny path: return the denial regardless of audit (no access is granted, so nothing to fail closed on).
       if (!r.ok) return void res.status(r.status).json({ error: r.error, error_code: r.error_code })

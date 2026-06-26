@@ -55,6 +55,13 @@ registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true }
 app.get('/api/_test/human-only', (req, res) => { const u = auth(req, res); if (!u) return; res.json({ ok: true, user_id: u.id }) })
 const server = app.listen(0)
 const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+// second app with the limiter "exceeded" — to prove the grant route 429s before verify/audit
+const appLimited = express()
+appLimited.use(express.json())
+registerAgentGrantsRoutes(appLimited, { db, auth, generateId, rateLimitOk: () => false })
+const serverLimited = appLimited.listen(0)
+const baseLimited = `http://127.0.0.1:${(serverLimited.address() as AddressInfo).port}`
+const countAuth = (): number => (db.prepare('SELECT COUNT(*) n FROM agent_grant_auth_log').get() as { n: number }).n
 const j = async (path: string, bearer?: string) => {
   const r = await fetch(base + path, { headers: bearer ? { authorization: `Bearer ${bearer}` } : {} })
   return { status: r.status, body: await r.json().catch(() => ({})) as any }
@@ -117,6 +124,17 @@ try {
   ok('8b suspended human → grant fails GRANT_SUBJECT_INACTIVE', after.status === 403 && after.body.error_code === 'GRANT_SUBJECT_INACTIVE')
   db.prepare("UPDATE user_moderation SET suspended=0 WHERE user_id=?").run(human)   // unsuspend for any later asserts
 
+  // P2: rate-limited grant route → 429 before verify/audit (even with a valid token), no audit row
+  const cBeforeRL = countAuth()
+  const rl = await (async () => { const r = await fetch(`${baseLimited}/api/agent-grants/whoami`, { headers: { authorization: 'Bearer gtk_ok' } }); return { status: r.status, body: await r.json().catch(() => ({})) as any } })()
+  ok('rate-limited grant route → 429 GRANT_RATE_LIMITED', rl.status === 429 && rl.body.error_code === 'GRANT_RATE_LIMITED')
+  ok('rate-limited request writes NO audit row', countAuth() === cBeforeRL)
+
+  // P2: a no-token request is not "grant-authorized" → 401 and writes NO audit noise
+  const cBeforeNoTok = countAuth()
+  const noTok = await j('/api/agent-grants/whoami')
+  ok('no-token request → 401 and no audit row', noTok.status === 401 && countAuth() === cBeforeNoTok)
+
   // audit: allow + deny rows recorded
   const allow = (db.prepare("SELECT COUNT(*) n FROM agent_grant_auth_log WHERE outcome='allow'").get() as { n: number }).n
   const deny = (db.prepare("SELECT COUNT(*) n FROM agent_grant_auth_log WHERE outcome='deny'").get() as { n: number }).n
@@ -137,5 +155,6 @@ try {
   }
 } finally {
   server.close()
+  serverLimited.close()
   rmSync(tmpHome, { recursive: true, force: true })
 }
