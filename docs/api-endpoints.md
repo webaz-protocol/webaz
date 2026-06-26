@@ -79,7 +79,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/governance/applications` | 🔐 | 👑 | GET /api/admin/governance/applications — 列出 pending_onboarding(可筛 quiz_passed +  | src/pwa/routes/governance-onboarding.ts:358 |
 | GET | `/api/admin/governance/auto-deactivations` | 🔐 | 👑 | spec §6.2 公示触发原因(透明 — 元规则 #1) | src/pwa/routes/governance-onboarding.ts:713 |
 | POST | `/api/admin/governance/resolve-appeal` | 🔐 | 👑 | accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由 | src/pwa/routes/governance-onboarding.ts:751 |
-| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:5323 |
+| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:5324 |
 | GET | `/api/admin/health` | 🔐 | 👑 |  | src/pwa/routes/admin-health.ts:33 |
 | GET | `/api/admin/hot-wallet` |  |  | Legacy x-admin-key 入口：仅余额 | src/pwa/routes/admin-wallet-ops.ts:74 |
 | GET | `/api/admin/hot-wallet/status` | 🔐 | 👑 | P2-5: protocol 权限（区域 admin 看不到全局热钱包） | src/pwa/routes/admin-wallet-ops.ts:48 |
@@ -361,7 +361,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/logistics/companies` |  |  |  | src/pwa/routes/logistics.ts:25 |
 | GET | `/api/logistics/me/performance` | 🔐 |  | 物流绩效卡 (Wave B-4) | src/pwa/routes/analytics.ts:36 |
 | GET | `/api/logistics/orders` | 🔐 |  |  | src/pwa/routes/logistics.ts:32 |
-| GET | `/api/logistics/return-pickups` | 🔐 |  |  | src/pwa/routes/returns.ts:394 |
+| GET | `/api/logistics/return-pickups` | 🔐 |  |  | src/pwa/routes/returns.ts:405 |
 | GET | `/api/manifest` |  |  |  | src/pwa/routes/public-utils.ts:463 |
 | POST | `/api/manifests` | 🔐 |  |  | src/pwa/routes/manifests.ts:49 |
 | GET | `/api/manifests/:hash` | 🔐 |  |  | src/pwa/routes/manifests.ts:97 |
@@ -414,15 +414,15 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/orders/:id/claim-task` | 🔐 |  | 通过 order_id 查关联 task | src/pwa/routes/claim-verify.ts:409 |
 | POST | `/api/orders/:id/claim-verification` | 🔐 |  | 买家发起 claim 验证任务（绑定 paid 及之后的订单） | src/pwa/routes/claim-verify.ts:331 |
 | POST | `/api/orders/:id/confirm-in-person` | 🔐 |  | 买家确认面交完成 → 直接 completed + settleOrder | src/pwa/routes/orders-action.ts:112 |
-| POST | `/api/orders/:id/force-timeout-check` | 🔐 |  | 手动触发超时判责（当事人） | src/pwa/routes/orders-action.ts:395 |
+| POST | `/api/orders/:id/force-timeout-check` | 🔐 |  | 手动触发超时判责（当事人） | src/pwa/routes/orders-action.ts:397 |
 | GET | `/api/orders/:order_id/buyer-rating` | 🔐 |  | 查 seller → buyer 评价（双盲遮蔽：buyer 看不到，除非自己也评过 OR 窗口到期） | src/pwa/routes/ratings.ts:113 |
 | POST | `/api/orders/:order_id/buyer-rating` | 🔐 |  | seller → buyer 反向评价 | src/pwa/routes/ratings.ts:83 |
 | GET | `/api/orders/:order_id/rating` | 🔐 |  | 查 buyer → seller 评价（双盲遮蔽：seller 视角同样） | src/pwa/routes/ratings.ts:132 |
 | POST | `/api/orders/:order_id/rating` | 🔐 |  | buyer → seller 评价（一单一评，仅 completed 订单可评） | src/pwa/routes/ratings.ts:50 |
 | POST | `/api/orders/:order_id/rating/followup` | 🔐 |  | W3 买家追问 — 在卖家 reply 后可追问一次 | src/pwa/routes/ratings.ts:169 |
 | POST | `/api/orders/:order_id/rating/reply` | 🔐 |  |  | src/pwa/routes/ratings.ts:150 |
-| GET | `/api/orders/:order_id/return-request` | 🔐 |  | P1-5: 订单级直查 | src/pwa/routes/returns.ts:163 |
-| POST | `/api/orders/:order_id/return-request` | 🔐 |  | buyer 发起退货 | src/pwa/routes/returns.ts:102 |
+| GET | `/api/orders/:order_id/return-request` | 🔐 |  | P1-5: 订单级直查 | src/pwa/routes/returns.ts:174 |
+| POST | `/api/orders/:order_id/return-request` | 🔐 |  | buyer 发起退货 | src/pwa/routes/returns.ts:113 |
 | POST | `/api/orders/batch-ship` | 🔐 |  | C-4: 卖家批量发货 | src/pwa/routes/orders-action.ts:61 |
 | GET | `/api/orders/export` | 🔐 |  | Wave D-2: 订单导出 CSV | src/pwa/routes/orders-read.ts:60 |
 | GET | `/api/p2p-products` |  |  | 公开：列表 | src/pwa/routes/p2p-products.ts:177 |
@@ -516,19 +516,19 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/register/send-code` |  |  | 注册场景需明确告知"邮箱已占用"(无法防枚举,标准取舍),但限流 + captcha 兜底。 | src/pwa/routes/auth-register.ts:71 |
 | GET | `/api/reputation` | 🔐 |  |  | src/pwa/routes/reputation.ts:29 |
 | GET | `/api/reputation/:userId` |  |  |  | src/pwa/routes/reputation.ts:44 |
-| GET | `/api/return-requests` | 🔐 |  |  | src/pwa/routes/returns.ts:180 |
-| DELETE | `/api/return-requests/:id` | 🔐 |  |  | src/pwa/routes/returns.ts:253 |
-| GET | `/api/return-requests/:id` | 🔐 |  | ─── W2 售后协商时间线 ─────────────────────────────── | src/pwa/routes/returns.ts:264 |
-| POST | `/api/return-requests/:id/decide` | 🔐 |  |  | src/pwa/routes/returns.ts:206 |
-| POST | `/api/return-requests/:id/escalate` | 🔐 |  | buyer 升级到争议（仅 rejected 后或 pending ≥ 7 天） | src/pwa/routes/returns.ts:441 |
-| POST | `/api/return-requests/:id/messages` | 🔐 |  |  | src/pwa/routes/returns.ts:411 |
-| POST | `/api/return-requests/:id/picked-up` | 🔐 |  | L3 Phase 2: 物流揽收 | src/pwa/routes/returns.ts:353 |
-| POST | `/api/return-requests/:id/received` | 🔐 |  | L3 Phase 2: 卖家确认收到 → refunded | src/pwa/routes/returns.ts:376 |
+| GET | `/api/return-requests` | 🔐 |  |  | src/pwa/routes/returns.ts:191 |
+| DELETE | `/api/return-requests/:id` | 🔐 |  |  | src/pwa/routes/returns.ts:264 |
+| GET | `/api/return-requests/:id` | 🔐 |  | ─── W2 售后协商时间线 ─────────────────────────────── | src/pwa/routes/returns.ts:275 |
+| POST | `/api/return-requests/:id/decide` | 🔐 |  |  | src/pwa/routes/returns.ts:217 |
+| POST | `/api/return-requests/:id/escalate` | 🔐 |  | buyer 升级到争议（仅 rejected 后或 pending ≥ 7 天） | src/pwa/routes/returns.ts:452 |
+| POST | `/api/return-requests/:id/messages` | 🔐 |  |  | src/pwa/routes/returns.ts:422 |
+| POST | `/api/return-requests/:id/picked-up` | 🔐 |  | L3 Phase 2: 物流揽收 | src/pwa/routes/returns.ts:364 |
+| POST | `/api/return-requests/:id/received` | 🔐 |  | L3 Phase 2: 卖家确认收到 → refunded | src/pwa/routes/returns.ts:387 |
 | POST | `/api/reviews/:type/:id/claim` | 🔐 |  |  | src/pwa/routes/reviews.ts:54 |
 | GET | `/api/reviews/:type/:id/claims` |  |  |  | src/pwa/routes/reviews.ts:113 |
 | GET | `/api/reviews/recent` |  |  |  | src/pwa/routes/reviews.ts:38 |
-| POST | `/api/rewards/apply` | 🔐 |  | POST /api/rewards/apply — activate (or reconfirm) opt-in + drain escrow | src/pwa/routes/rewards-apply.ts:110 |
-| POST | `/api/rewards/deactivate` | 🔐 |  | POST /api/rewards/deactivate — flip off; subsequent commissions → charity | src/pwa/routes/rewards-apply.ts:214 |
+| POST | `/api/rewards/apply` | 🔐 |  | POST /api/rewards/apply — activate (or reconfirm) opt-in + drain escrow | src/pwa/routes/rewards-apply.ts:112 |
+| POST | `/api/rewards/deactivate` | 🔐 |  | POST /api/rewards/deactivate — flip off; subsequent commissions → charity | src/pwa/routes/rewards-apply.ts:219 |
 | GET | `/api/rewards/status` | 🔐 |  | GET /api/rewards/status — current state + escrow tally | src/pwa/routes/rewards-apply.ts:58 |
 | GET | `/api/rfqs` | 🔐 |  | 卖家 RFQ 看板 | src/pwa/routes/rfqs.ts:166 |
 | POST | `/api/rfqs` | 🔐 |  | 买家：创建 RFQ | src/pwa/routes/rfqs.ts:79 |
@@ -554,7 +554,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/sellers/me/flash-sales` | 🔐 |  | seller 自己的 flash sales（全部状态） | src/pwa/routes/flash-sales.ts:109 |
 | GET | `/api/sellers/me/ratings` | 🔐 |  | ⚠️ 必须注册在 /api/sellers/:seller_id/ratings 【之前】,否则 'me' 会被 :seller_id 参数路由抢匹配。 | src/pwa/routes/ratings.ts:212 |
 | GET | `/api/sellers/me/return-stats` | 🔐 |  | 卖家退货仪表盘 | src/pwa/routes/analytics.ts:285 |
-| GET | `/api/share-link` | 🔐 |  | pre-public 去左右码:不再接受/返回 side,放置侧别由注册时系统自动决定。 | src/pwa/routes/referral.ts:63 |
+| GET | `/api/share-link` | 🔐 |  | pre-public 去左右码:不再接受/返回 side,放置侧别由注册时系统自动决定。 | src/pwa/routes/referral.ts:67 |
 | POST | `/api/shareables` | 🔐 |  | 创建 shareable — 双路径：笔记模式 / 外链或 native_text 模式 | src/pwa/routes/shareables.ts:93 |
 | DELETE | `/api/shareables/:id` | 🔐 |  |  | src/pwa/routes/shareables.ts:449 |
 | GET | `/api/shareables/:id` |  |  | Phase C 笔记公开读 — 任何人可读 | src/pwa/routes/shareables.ts:380 |

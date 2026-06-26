@@ -3755,8 +3755,9 @@ async function handleReferral(args: Record<string, unknown>) {
         state = 'never_activated'
         note = 'Rewards inactive — attributions recorded; commissions held in pending_commission_escrow (30d window per protocol_params.rewards_opt_in.escrow_days) until you activate via PWA #me.'
       }
-      const pending = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total FROM pending_commission_escrow WHERE recipient_user_id = ? AND status = 'pending'").get(userId) as { n: number; total: number }
-      const expired = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total FROM pending_commission_escrow WHERE recipient_user_id = ? AND status = 'expired'").get(userId) as { n: number; total: number }
+      // RFC-018: matures_at IS NULL = opt-out escrow only (clearing rows auto-mature; surfaced separately in PR3).
+      const pending = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total FROM pending_commission_escrow WHERE recipient_user_id = ? AND status = 'pending' AND matures_at IS NULL").get(userId) as { n: number; total: number }
+      const expired = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total FROM pending_commission_escrow WHERE recipient_user_id = ? AND status = 'expired' AND matures_at IS NULL").get(userId) as { n: number; total: number }
       return {
         state,
         opted_in: optIn === 1,

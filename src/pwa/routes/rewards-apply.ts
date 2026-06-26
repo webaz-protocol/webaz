@@ -80,8 +80,10 @@ export function registerRewardsApplyRoutes(app: Application, deps: RewardsApplyD
     if (completedOrders < minOrders) missing.push(`completed_orders ${completedOrders}/${minOrders}`)
     if (requirePasskey === 1 && passkeyCount === 0) missing.push('passkey_not_registered')
 
-    const pending = (await dbOne<{ n: number; total: number }>("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total FROM pending_commission_escrow WHERE recipient_user_id = ? AND status = 'pending'", [userId]))!
-    const expired = (await dbOne<{ n: number; total: number }>("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total FROM pending_commission_escrow WHERE recipient_user_id = ? AND status = 'expired'", [userId]))!
+    // RFC-018: matures_at IS NULL = opt-out escrow (claimable on activation). Clearing rows
+    // (matures_at NOT NULL) auto-mature via rewards-clearing-mature and must NOT be drained here.
+    const pending = (await dbOne<{ n: number; total: number }>("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total FROM pending_commission_escrow WHERE recipient_user_id = ? AND status = 'pending' AND matures_at IS NULL", [userId]))!
+    const expired = (await dbOne<{ n: number; total: number }>("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total FROM pending_commission_escrow WHERE recipient_user_id = ? AND status = 'expired' AND matures_at IS NULL", [userId]))!
 
     res.json({
       state,
@@ -184,12 +186,15 @@ export function registerRewardsApplyRoutes(app: Application, deps: RewardsApplyD
                sha256_hex(String(req.headers['user-agent'] || '')).slice(0, 16),
                now)
 
-        // Activate batch settle: drain pending escrow to wallet
+        // Activate batch settle: drain OPT-OUT escrow to wallet. RFC-018: matures_at IS NULL excludes
+        // clearing rows — those are NOT claimable on opt-in; they auto-mature after the return window
+        // (rewards-clearing-mature). Draining them here would pay commission early and defeat the
+        // clearing window's reversal guarantee (a returned order could no longer be reversed → clawback).
         const pending = db.prepare(`SELECT id, amount, attribution_path FROM pending_commission_escrow
-                                    WHERE recipient_user_id = ? AND status = 'pending' AND expires_at > ?`).all(userId, now) as Array<{ id: number; amount: number; attribution_path: string }>
+                                    WHERE recipient_user_id = ? AND status = 'pending' AND matures_at IS NULL AND expires_at > ?`).all(userId, now) as Array<{ id: number; amount: number; attribution_path: string }>
         let total = 0
         for (const p of pending) {
-          const upd = db.prepare(`UPDATE pending_commission_escrow SET status='settled', settled_at=? WHERE id=? AND status='pending'`).run(now, p.id)
+          const upd = db.prepare(`UPDATE pending_commission_escrow SET status='settled', settled_at=? WHERE id=? AND status='pending' AND matures_at IS NULL`).run(now, p.id)
           if (upd.changes === 0) continue  // race: expire cron took it
           db.prepare(`UPDATE wallets SET balance = balance + ?, earned = earned + ? WHERE user_id = ?`).run(p.amount, p.amount, userId)
           // #1106：pv_pair escrow 的钱在结算时已从 pool 移入 pv_escrow_reserve，兑付从 reserve 出。

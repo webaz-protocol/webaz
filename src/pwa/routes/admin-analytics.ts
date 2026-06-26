@@ -294,10 +294,12 @@ export function registerAdminAnalyticsRoutes(app: Application, deps: AdminAnalyt
     const nowSec = Math.floor(Date.now() / 1000)
     const escrowByStatus = await dbAll(`SELECT status, COUNT(*) AS n, COALESCE(SUM(amount),0) AS total
       FROM pending_commission_escrow GROUP BY status`)
+    // RFC-018: these "pending escrow" stats mean opt-out escrow (matures_at IS NULL); clearing rows
+    // (matures_at NOT NULL) don't expire-to-reserve and would mislabel "expiring soon".
     const escrowPendingByPath = await dbAll(`SELECT attribution_path, COUNT(*) AS n, COALESCE(SUM(amount),0) AS total
-      FROM pending_commission_escrow WHERE status='pending' GROUP BY attribution_path`)
+      FROM pending_commission_escrow WHERE status='pending' AND matures_at IS NULL GROUP BY attribution_path`)
     const expiringSoon = (await dbOne<{ n: number; total: number }>(`SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total
-      FROM pending_commission_escrow WHERE status='pending' AND expires_at <= ?`, [nowSec + 86400]))!
+      FROM pending_commission_escrow WHERE status='pending' AND matures_at IS NULL AND expires_at <= ?`, [nowSec + 86400]))!
 
     // 3. consent 版本:当前 major + 仍停留在旧 major 上的 opted-in 用户数(= auto_downgrade 候选)
     const currentMajor = await dbOne<{ version: string; effective_at: number }>(

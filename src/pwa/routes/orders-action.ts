@@ -347,7 +347,9 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
             else if (r.kind === 'redirect_escrow_expired')      reserveByKind.escrow_expired      = round2(Number(r.s))
           }
           const redirectedToCommissionReserve = round2(reserveByKind.region_cap + reserveByKind.chain_gap + reserveByKind.orphan_sponsor + reserveByKind.opt_out_deactivated + reserveByKind.escrow_expired)
-          const escrowRow = (await dbOne<{ s: number }>("SELECT COALESCE(SUM(amount),0) AS s FROM pending_commission_escrow WHERE order_id = ? AND status = 'pending'", [req.params.id]))!
+          // RFC-018: matures_at IS NULL = opt-out escrow only; clearing rows (matures_at NOT NULL) are
+          // surfaced separately (PR3), not mislabeled as opt-out escrow here.
+          const escrowRow = (await dbOne<{ s: number }>("SELECT COALESCE(SUM(amount),0) AS s FROM pending_commission_escrow WHERE order_id = ? AND status = 'pending' AND matures_at IS NULL", [req.params.id]))!
           const heldInOptOutEscrow = round2(Number(escrowRow.s))
           // QA 轮 9.5 P2：payouts 表只 MCP legacy 写，PWA settleOrder 直更 wallet.balance 不写 payouts
           // 改用公式推算 sellerAmount（跟 PWA settleOrder 内部计算一致），更可靠
