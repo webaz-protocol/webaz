@@ -36,6 +36,8 @@ interface Endpoint {
   line: number
   needs_auth: boolean
   is_admin: boolean
+  needs_grant: boolean        // RFC-020 — gated by requireAgentGrantScope(...) (Bearer gtk_*, NOT human auth)
+  grant_scope: string | null  // the required safe scope, when grant-gated
   comment: string  // 前 10 行内最近的注释（如果有）
 }
 
@@ -65,14 +67,18 @@ for (const file of SCAN_FILES) {
       const t = lines[j].trim()
       if (t && !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*')) break
     }
-    // 后 8 行内探测 auth / admin 守卫
+    // 后 8 行内探测 auth / admin / 委托凭证守卫(requireAgentGrantScope 多在 route 注册行上)
     let needsAuth = false
     let isAdmin = false
+    let needsGrant = false
+    let grantScope: string | null = null
     for (let j = i; j < Math.min(lines.length, i + 8); j++) {
       if (/\bauth\(req\b/.test(lines[j]) || /\brequireAuth\(/.test(lines[j])) needsAuth = true
       if (/\brequire[A-Za-z]*Admin\(req\b/.test(lines[j]) || /hasAdminPermission|requireAdminPermission|isRootAdmin/.test(lines[j])) { isAdmin = true; needsAuth = true }
+      const gm = lines[j].match(/requireAgentGrantScope\(\s*['"]([^'"]+)['"]/)   // RFC-020 delegation-grant gate
+      if (gm) { needsGrant = true; grantScope = gm[1] }
     }
-    endpoints.push({ method, path: apiPath, file: rel, line: i + 1, needs_auth: needsAuth, is_admin: isAdmin, comment })
+    endpoints.push({ method, path: apiPath, file: rel, line: i + 1, needs_auth: needsAuth, is_admin: isAdmin, needs_grant: needsGrant, grant_scope: grantScope, comment })
   }
 }
 
@@ -90,7 +96,7 @@ if (wantMarkdown) {
   console.log('| Method | Path | Auth | Admin | Description | Source |')
   console.log('|---|---|---|---|---|---|')
   for (const e of endpoints) {
-    const auth = e.needs_auth ? '🔐' : ''
+    const auth = e.needs_auth ? '🔐' : (e.needs_grant ? `🎫 grant:${e.grant_scope}` : '')
     const admin = e.is_admin ? '👑' : ''
     const desc = e.comment.slice(0, 80).replace(/\|/g, '\\|')
     console.log(`| ${e.method} | \`${e.path}\` | ${auth} | ${admin} | ${desc} | ${e.file}:${e.line} |`)
@@ -124,7 +130,8 @@ if (wantMarkdown) {
     const baseSpec: Record<string, unknown> = {
       summary: e.comment || `${e.method} ${e.path}`,
       tags,
-      security: e.needs_auth ? [{ bearerAuth: [] }] : [],
+      // RFC-020: grant-gated routes require a delegation-grant bearer (gtk_*), NOT human auth — never blank.
+      security: e.needs_grant ? [{ grantBearer: e.grant_scope ? [e.grant_scope] : [] }] : (e.needs_auth ? [{ bearerAuth: [] }] : []),
     }
     // 合并手动 schema 覆盖（覆盖优先）
     const overrideKey = `${e.method} ${e.path}`
@@ -147,6 +154,9 @@ if (wantMarkdown) {
       securitySchemes: {
         bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'api_key' },
         webauthnToken: { type: 'apiKey', in: 'header', name: 'X-WebAuthn-Token' },
+        // RFC-020 — scoped delegation grant (Authorization: Bearer gtk_*). NOT a human session / api_key;
+        // accepted ONLY by routes that explicitly opt in via requireAgentGrantScope(<safe scope>).
+        grantBearer: { type: 'http', scheme: 'bearer', bearerFormat: 'gtk_ delegation-grant (RFC-020, safe scope)' },
       },
     },
     paths,
