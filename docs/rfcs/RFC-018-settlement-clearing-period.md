@@ -1,6 +1,6 @@
 # RFC-018: Settlement Clearing Period — accrue in real time, pay after the order is fully closed
 
-**Status**: deferred (parked — design + investigation recorded; to be refined later against mature e-commerce return/clearing practices; gated on real-money phase + external review)
+**Status**: accepted — open decisions resolved 2026-06-26 (benchmarked against affiliate-network "locking period" practice); implementing in staged PRs on simulated currency. The model (accrue-then-mature) matches the industry norm for referral/affiliate commission. Real-money cutover (when matured balances back real funds) remains gated on external review (Category C).
 **Author**: @holden
 **Created**: 2026-06-16
 **Track**: normal-but-sensitive (money path — payout timing)
@@ -61,14 +61,14 @@ This is the natural complement to the genuine-sale work (#395 / #396): *genuine 
 
 These are **policy levers**, deliberately not pre-decided here (avoid a fait-accompli RFC):
 
-1. **Scope** — does the clearing period apply to **(a) commission + reputation score only** [recommended], or **(b) also the seller's escrow payout**? Today seller funds release on `completed`. Holding seller funds 15 days is a larger marketplace-policy change (sellers expect timely payout) and reintroduces clawback risk if funds already moved. Recommendation: start with commission + score; treat seller-payout timing as a separate decision.
+1. **Scope** — ~~(a) commission + reputation score only [recommended] vs (b) also the seller's escrow payout~~ **RESOLVED 2026-06-26 → (a) commission + reputation score.** Affiliate "locking period" governs the *referral commission*, not the merchant's own funds; seller escrow continues to release on `completed`. Seller-payout timing (and using the existing RFC-008 stake as a return-reserve) is a **separate, later decision**, explicitly out of scope here. Eligibility / `sales_count` / `completion_count` are live `COUNT(status='completed')` subqueries that returns don't currently exclude; making them returned-aware is a **separate follow-up PR** (not gated by this clearing model).
 2. **~~What reverses an order *after* completion?~~ — RESOLVED (2026-06-16 investigation).** The order state machine makes `completed` immutable (only exit is `confirmed→completed`; no `completed→*`; disputes open only pre-completion, so fault/refund/resolved are all pre-completion and already handled — commission never accrues or is clawed back by `settleFault`). **But a separate post-completion reversal path exists: the returns flow (`src/pwa/routes/returns.ts`).** It operates **only on `completed` orders** within the per-product `return_days` window, refunds the buyer (full or partial, seller wallet → buyer wallet), restores stock, and records a seller fault rep event — but it **leaves `orders.status='completed'` and never touches commission / PV / score.** So today a fully-returned order keeps the promoter's commission paid and still counts as a genuine sale. This makes the clearing window **load-bearing**, and pins:
    - `clearing_days` **≥ the product's `return_days`**, anchored at `completed_at`;
    - a return during the window **reverses the pending commission/score**, **proportionally** for partial refunds (`refund_amount / total_amount`);
    - returns become a first-class **reversal trigger** for the maturation gate (alongside any future late-dispute path).
 
    (Independent current gap, noted under Risks: returns already inflate commission + eligibility/sales counts; the deferred clearing model is the holistic fix.)
-3. **Clearing length + anchor** — proposed 15 days from `completed_at`, as a governance param. Confirm the number and the anchor event.
+3. **Clearing length + anchor** — ~~proposed flat 15 days~~ **RESOLVED 2026-06-26 → per-product, self-adapting to the return window.** `matures_at = completed_at + product.return_days + settlement.clearing_buffer_days`. Anchor = `completed_at`. The buffer (`settlement.clearing_buffer_days`, governance param, default **2** days) covers late-dispute / processing slack beyond the product's own return window. Rationale: on crypto rails there is no chargeback, so the return window is the dominant (only) reversal clock — tying the hold to each product's `return_days` (default 7 → matures ≈ day 9) is the *minimum-intervention* correct hold (#8), not a one-size 15-day over-hold. Products with `return_days = 0` (no returns) mature after just the buffer. Both `return_days` (per product) and `clearing_buffer_days` (global) are governance-tunable.
 
 ## Meta-rule impact / 元规则影响
 
@@ -132,7 +132,13 @@ Argue that #395/#396 (only genuine `confirmed` orders accrue) already excludes f
 
 ## Implementation tracking / 实现追踪
 
-- PR: (pending decisions #1/#2/#3)
+Staged (money-path → each its own Draft PR → Codex audit → merge):
+- **PR1 (schema + RFC, additive, no behavior change)**: this PR — resolve decisions #1/#3, status → accepted; add `pending_commission_escrow.matures_at` (fresh via inline CREATE, existing via the generalized rebuild — no new server.ts DDL occurrence per the complexity ratchet); `reversed` is a new TEXT status value (no schema change); seed `settlement.clearing_buffer_days` param (default 2).
+- **PR2 (core mechanism)**: `settleCommission` accrues to pending (not the wallet) with `matures_at`; reputation engine splits pending vs finalized score (adds pending-score column via runtime helper, not server.ts); maturation cron (re-validate order still genuinely closed → CAS `pending→settled`, tx-atomic + conservation + idempotent); `returns.ts` marks linked pending rows `reversed` proportionally.
+- **PR3 (surfaces)**: API / UI / MCP distinguish `清算中 · matures in N days` vs settled.
+- **PR4 (follow-up, separate)**: make eligibility / `sales_count` / `completion_count` returned-aware.
+
+- PR: (PR1) feat/rfc018-clearing-schema
 - Commit:
 - Closes issue:
 
@@ -143,3 +149,4 @@ Argue that #395/#396 (only genuine `confirmed` orders accrue) already excludes f
 - 2026-06-16: draft created by @holden (design-only; gated on resolving open decisions #1/#2/#3 + real-money phase + external review)
 - 2026-06-16: open decision #2 RESOLVED — post-completion reversal path identified = the returns flow (`returns.ts`); clearing window confirmed load-bearing; constraints pinned (`clearing_days ≥ return_days`, proportional reversal, returns as a reversal trigger).
 - 2026-06-16: **deferred / parked** by @holden — design + investigation recorded; to be refined later against mature e-commerce platforms' established return-window / settlement-hold / clearing-period practices before implementation. Decisions #1 (scope) and #3 (length/anchor) remain open and should be informed by that benchmarking.
+- 2026-06-26: **un-parked / accepted** by @holden after benchmarking against affiliate-network "locking period" practice (the accrue-then-mature model is the industry norm for referral commission). Open decisions resolved: **#1 → (a) commission + reputation score** (seller escrow payout out of scope; eligibility-count fix = separate follow-up); **#3 → per-product** `matures_at = completed_at + return_days + settlement.clearing_buffer_days` (buffer default 2d, governance-tunable). Implementation begins as staged PRs (PR1 = schema + this RFC). Real-money cutover still gated on external review (Category C).
