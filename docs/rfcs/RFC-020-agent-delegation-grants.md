@@ -200,10 +200,23 @@ Each phase is gated on a threat-model review; money/iron-rule paths follow the m
 
 ## 8. Open questions
 
-1. Exact capability taxonomy mapped to current endpoint actions (read / `order.place` / `product.list` / …).
-2. PoP scheme specifics (DPoP-style header vs mTLS-lite) and Phase-1→2 migration of live grants.
+> **Onboarding journeys + capability taxonomy + PR slicing** are operationalized in the companion
+> [RFC-020 Implementation Plan](RFC-020-implementation-plan.md) (J1 member+agent vs J2 stranger+agent; the
+> stranger-join case is guide-only — no agent path creates a live account).
+
+1. ~~Exact capability taxonomy mapped to current endpoint actions.~~ **Resolved** — see the capability
+   taxonomy (keyless / safe / risk / never-delegable) in the [Implementation Plan §3](RFC-020-implementation-plan.md).
+2. PoP scheme specifics (DPoP-style header vs mTLS-lite) and Phase-1→2 migration of live grants. **Partly
+   resolved:** Phase-1 MAY ship a short-TTL **bearer for short-lived *safe* scopes only**; **PoP is required
+   before any risk scope or longer-lived delegation**, and PoP columns are reserved in the schema from day
+   one. Exact PoP header/scheme remains open.
 3. Secret-store UX across MCP clients that don't expose Keychain (the strict-perms file fallback contract).
-4. Whether `human_confirm_required` per-action uses the existing Passkey human-presence gate inline.
+   *(Open.)*
+4. ~~Whether `human_confirm_required` per-action uses the existing Passkey human-presence gate inline.~~
+   **Resolved — yes:** it reuses the existing `webauthn_gate_tokens` / `requireHumanPresence` gate inline; no
+   separate grant-scoped confirmation mechanism.
+5. **Grant storage (resolved):** a **new `agent_delegation_grants` table**, cross-linked to
+   `agent_attestations` where useful — `agent_attestations` is **not** overloaded as the grant table.
 
 ## 9. Proposed invariants
 
