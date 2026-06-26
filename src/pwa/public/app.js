@@ -648,6 +648,7 @@ async function render(page, params) {
       return renderSeller(app)
     case 'edit-product':  return renderEditProduct(app, params[0])
     case 'wallet':        return renderWallet(app)
+    case 'agents':        return renderConnectedAgents(app)
     case 'note':          return renderNoteLanding(app, params[0])
     case 'tag':           return renderTagPage(app, decodeURIComponent(params[0] || ''))
     case 'governance':    return renderGovernance(app)
@@ -9026,7 +9027,6 @@ window.doLoginByPassword = async () => {
   try { document.querySelectorAll('.js-modal, .js-sheet').forEach(m => m.remove()) } catch {}
   navigateIntended(roleHome(res.role))
 }
-
 
 // 从 URL 解析分享 hint（30 天 cookie 持久化）
 //   ?ref=CODE                  → 三级佣金 sponsor(同时作 placement inviter)

@@ -246,7 +246,6 @@ async function renderProfile(app) {
 
     <!-- 2026-05-24 社交资料/我的分享 入口移除 — Dashboard "👁 公开主页" tile 已覆盖（同 #u/:id 目标）-->
 
-
     <!-- M7.2.7：A2 黑名单 — 降权到次要位置，默认折叠（卡片放在偏好之后，作为辅助管理项）-->
     <!-- 内容下移见下方 -->
 
@@ -439,6 +438,7 @@ async function renderProfile(app) {
             ${t('提现等敏感操作可要求设备指纹 / Face ID 二次确认。私钥不离开你的手机，手机丢失也不会泄露。')}
           </div>
           <div id="passkey-list" style="font-size:12px;color:#6b7280">${t('加载中…')}</div>
+          <a onclick="navigate('#agents')" style="display:block;margin-top:12px;font-size:12px;color:#4f46e5;cursor:pointer">🔌 ${t('已连接的 Agent')} →</a>
         </div>
       </div>
     </div>
