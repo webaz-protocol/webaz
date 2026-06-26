@@ -49,13 +49,13 @@ covered there.
 | Session revocation | `user_sessions.revoked_at` checked per request (remote logout) | `src/pwa/server-schema.ts`; `server.ts` |
 | Agent attestation (precursor) | `agent_attestations(approved_scope JSON, spend_cap_per_order, spend_cap_daily, granted_at, revoked_at)` UNIQUE(api_key,user_id) | `src/pwa/server-schema.ts` |
 | Audit | `admin_audit_log`, `agent_call_log`, `agent_reputation`, `agent_declarations` | `src/pwa/server-schema.ts` |
+| Delegation grants / `webaz_pair` | **Not implemented** — RFC-020 design only | — |
 
 > **Schema-file location note:** the schema-helper definitions above live in `src/pwa/server-schema.ts` on
 > `main`. PR #69 (MCP fresh-DB schema bridge, currently Draft) relocates them to
 > `src/runtime/webaz-schema-helpers.ts` with `src/pwa/server-schema.ts` kept as a re-export. The
 > implementation PRs below should target whichever has landed: **if #69 is merged first, use the runtime
 > helpers; otherwise the current location is `src/pwa/server-schema.ts`.**
-| Delegation grants / `webaz_pair` | **Not implemented** — RFC-020 design only | — |
 
 **Onboarding-copy problem (drives the wrong default):** README (EN/zh-CN), `RFC-003`, `RFC-004`, MCP
 `handleRegister` step 3, and ~every keyed MCP tool's `api_key` property description ("…or omit and set the
