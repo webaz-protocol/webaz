@@ -691,6 +691,7 @@ jobs:
       - run: npm run test:connected-agents-read
       - run: npm run test:connected-agents-ui
       - run: npm run test:leaderboard-anon-projection
+      - run: npm run test:reputation-handle-resolution
       - run: npm run test:email-delivery
       - run: npm run test:recover-key-password-reset
       - run: npm run test:register-email-verify

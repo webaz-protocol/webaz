@@ -51,6 +51,12 @@ export function registerUsersPublicRoutes(app: Application, deps: UsersPublicDep
     if (userId === 'me') {
       const user = auth(req, res); if (!user) return
       userId = user.id as string
+    } else {
+      // ref 三态(usr_xxx / permanent_code / @handle)必须解析为 canonical id;
+      // 漏掉解析会让 @handle/permanent_code 当字面 user_id 去查 → 永远落到默认 'new'。
+      const resolved = await resolveUserId(userId)
+      if (!resolved) return void res.status(404).json({ error: 'user not found' })
+      userId = resolved
     }
     const row = await dbOne<{ level: string; max_score: number }>(`
       SELECT level, MAX(trust_score) as max_score
