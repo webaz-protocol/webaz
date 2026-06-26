@@ -78,10 +78,12 @@ try {
   // ── static allowlist contract for ALL kinds (the class-killer: a new SELECT column can't ride out) ──
   // (Live-querying every board needs inline product columns absent in the minimal test DB and would
   // crash on an uncaught SQL error; the agents live-check above proves projectBoard actually applies.)
-  // user boards must never carry a canonical id even when populated
-  for (const kind of ['creators', 'buyers', 'sellers', 'agents', 'arbitrators', 'verifiers']) {
-    ok(`${kind}: 'id' not in allowlist (no canonical user id)`, !BOARD_ALLOWLIST[kind].includes('id'))
+  // usr_id dropped from the boards that don't need it for nav (seller links via handle)
+  for (const kind of ['buyers', 'sellers', 'agents', 'arbitrators', 'verifiers']) {
+    ok(`${kind}: canonical user id dropped (no enumeration seed)`, !BOARD_ALLOWLIST[kind].includes('id'))
   }
+  // creators KEEPS id by design (card navs #u/${id}; #u/ handle-routing = deferred follow-up)
+  ok("creators keeps id (deferred: needs #u/ handle-routing)", BOARD_ALLOWLIST.creators.includes('id'))
   // product boards legitimately keep a public product id
   ok("products keeps public product 'id'", BOARD_ALLOWLIST.products.includes('id') && BOARD_ALLOWLIST.value_products.includes('id'))
 

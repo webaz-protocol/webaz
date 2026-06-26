@@ -22433,7 +22433,7 @@ async function renderLeaderboard(app) {
         const hasRating = u.rating_count > 0
         const ratingColor = hasRating && u.avg_rating >= 4.5 ? '#16a34a' : hasRating && u.avg_rating >= 4 ? '#d97706' : '#9ca3af'
         return `
-        <div class="card" style="padding:12px;margin-bottom:8px;display:flex;gap:10px;align-items:center;cursor:pointer" onclick="location.hash='#shop/${u.id}'">
+        <div class="card" style="padding:12px;margin-bottom:8px;display:flex;gap:10px;align-items:center;cursor:pointer" onclick="location.hash='#shop/${u.handle}'">
           <div style="font-size:24px;font-weight:800;color:${i<3?'#dc2626':'#9ca3af'};min-width:32px;text-align:center">${i+1}</div>
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:14px">@${escHtml(u.handle || u.name?.slice(0,8) || '?')}</div>
@@ -22458,7 +22458,7 @@ async function renderLeaderboard(app) {
                 🤖 @${escHtml(u.handle || u.name?.slice(0,8) || '?')}
                 <span style="font-size:10px;background:${lvlColor}22;color:${lvlColor};padding:1px 7px;border-radius:99px;font-weight:600">${lvlLabel}</span>
               </div>
-              <div style="font-size:11px;color:#6b7280;margin-top:2px">${u.calls_30d || 0} ${t('次调用')} (30d) · ${u.keys_count} ${t('个 key')}</div>
+              <div style="font-size:11px;color:#6b7280;margin-top:2px">${t('活跃度')}: ${t({ active: '活跃', quiet: '较少', dormant: '休眠' }[u.activity] || '休眠')}</div>
             </div>
             <div style="text-align:right">
               <div style="font-size:13px;font-weight:700;color:${lvlColor}">${ts}</div>
