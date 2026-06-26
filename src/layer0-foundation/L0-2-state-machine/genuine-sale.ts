@@ -11,8 +11,9 @@
  *
  * RFC-018 PR4:退货发生在 `confirmed→completed` **之后**(returns 只作用于 completed 单),所以仅靠 confirmed
  * 判据会把【已全额退货】的单仍算成真实成交 —— 退货虚增资格门 / completion_count / sales_count。故再排除
- * 存在「全额退款」return(`return_requests.status='refunded' AND refund_amount >= 订单总额`)的订单。
- * 部分退款仍算真实成交(确曾成交,只是部分退款)。
+ * 【累计退款达到订单总额】的单:`SUM(return_requests.refund_amount WHERE status='refunded') >= 订单总额`。
+ * 用累计 SUM 而非单行 `refund_amount >= total` —— 同一单可先后多次退货(已退款的旧 return 不挡新 return),
+ * 多次部分退款累计到全额也应排除。累计 < total 仍算真实成交(确曾成交,只是部分退款)。
  *
  * 用法:把查询里的 `status='completed'` 条件替换为本谓词。
  *   单表:`... WHERE buyer_id = ? AND ${genuineSalePredicate()}`           // 默认别名 orders
@@ -22,5 +23,5 @@
  * 若将来规模下相关子查询成性能瓶颈,再升级为 settleOrder 写入的 `orders.settled_ok_at` 列(届时只改本文件)。
  */
 export function genuineSalePredicate(ordersAlias = 'orders'): string {
-  return `(EXISTS (SELECT 1 FROM order_state_history osh WHERE osh.order_id = ${ordersAlias}.id AND osh.to_status = 'confirmed') AND NOT EXISTS (SELECT 1 FROM return_requests rr WHERE rr.order_id = ${ordersAlias}.id AND rr.status = 'refunded' AND rr.refund_amount >= ${ordersAlias}.total_amount))`
+  return `(EXISTS (SELECT 1 FROM order_state_history osh WHERE osh.order_id = ${ordersAlias}.id AND osh.to_status = 'confirmed') AND (SELECT COALESCE(SUM(rr.refund_amount), 0) FROM return_requests rr WHERE rr.order_id = ${ordersAlias}.id AND rr.status = 'refunded') < ${ordersAlias}.total_amount)`
 }

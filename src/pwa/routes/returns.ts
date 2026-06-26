@@ -80,9 +80,13 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
       const refundFrac = ordTotal > 0 ? Math.min(1, refundAmt / ordTotal) : 1
       if (refundFrac >= 1) {
         db.prepare(`UPDATE pending_commission_escrow SET status='reversed' WHERE order_id = ? AND status='pending' AND matures_at IS NOT NULL`).run(rr.order_id)
-        // RFC-018 PR4: a FULL return is no longer a genuine sale — decrement the stored product
+        // RFC-018 PR4: a single FULL return is no longer a genuine sale — decrement the stored product
         // completion_count (incremented at settleOrder). Idempotent: the return CAS'd to 'refunded'
         // exactly once above, so this runs once. Partial refund stays a genuine sale (no decrement).
+        // Edge: multiple partial refunds cumulatively reaching full aren't caught here (each refundFrac<1),
+        // so the stored counter may transiently over-count by 1 — but the AUTHORITATIVE genuine count
+        // (genuineSalePredicate, cumulative SUM) is correct everywhere on-read, and the completion_count
+        // backfill (genuine-aware) self-heals the stored counter. completion_count is best-effort social proof.
         db.prepare(`UPDATE products SET completion_count = MAX(0, COALESCE(completion_count,0) - 1) WHERE id = ?`).run(rr.product_id)
       } else {
         db.prepare(`UPDATE pending_commission_escrow SET amount = amount * ? WHERE order_id = ? AND status='pending' AND matures_at IS NOT NULL`).run(1 - refundFrac, rr.order_id)

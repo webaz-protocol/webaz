@@ -34,14 +34,15 @@ try { db.exec("ALTER TABLE products ADD COLUMN completion_count INTEGER DEFAULT 
 db.prepare("INSERT INTO users (id, name, role, api_key) VALUES ('usr_b','b','buyer','k')").run()
 
 let n = 0
-// seed an order; reachedConfirmed = did it pass confirmed; refund = {amount} for a refunded return (optional)
-const seedOrder = (total: number, reachedConfirmed: boolean, refund?: number): string => {
+let rn = 0
+// seed an order; reachedConfirmed = did it pass confirmed; refunds = list of refunded return amounts
+const seedOrder = (total: number, reachedConfirmed: boolean, ...refunds: number[]): string => {
   const id = 'ord_' + (++n)
   db.prepare("INSERT INTO orders (id, buyer_id, seller_id, product_id, unit_price, total_amount, escrow_amount, status) VALUES (?,?,?,?,?,?,?,'completed')")
     .run(id, 'usr_b', 'usr_b', 'prod_1', total, total, total)
   if (reachedConfirmed) db.prepare("INSERT INTO order_state_history (id, order_id, from_status, to_status, actor_id, actor_role) VALUES (?,?, 'delivered', 'confirmed', 'usr_b', 'buyer')").run('osh_' + id, id)
-  if (refund != null) db.prepare("INSERT INTO return_requests (id, order_id, buyer_id, seller_id, product_id, reason, refund_amount, status) VALUES (?,?,?,?,?,?,?,'refunded')")
-    .run('ret_' + id, id, 'usr_b', 'usr_b', 'prod_1', 'quality', refund)
+  for (const refund of refunds) db.prepare("INSERT INTO return_requests (id, order_id, buyer_id, seller_id, product_id, reason, refund_amount, status) VALUES (?,?,?,?,?,?,?,'refunded')")
+    .run('ret_' + (++rn), id, 'usr_b', 'usr_b', 'prod_1', 'quality', refund)
   return id
 }
 
@@ -49,19 +50,21 @@ const isGenuine = (id: string): boolean => !!db.prepare(`SELECT 1 FROM orders WH
 
 try {
   const a = seedOrder(100, true)             // confirmed, no return → genuine
-  const b = seedOrder(100, true, 100)        // confirmed, FULL refund → not genuine
-  const c = seedOrder(100, true, 40)         // confirmed, PARTIAL refund (40<100) → genuine
+  const b = seedOrder(100, true, 100)        // confirmed, single FULL refund → not genuine
+  const c = seedOrder(100, true, 40)         // confirmed, single PARTIAL refund (40<100) → genuine
   const d = seedOrder(100, false)            // never confirmed (fault terminal) → not genuine
-  const e = seedOrder(100, true, 100)        // another full refund → not genuine
+  const e = seedOrder(100, true, 40, 60)     // confirmed, TWO partials summing to full (cumulative) → not genuine
+  const f = seedOrder(100, true, 30, 30)     // confirmed, two partials summing to 60 (<100) → genuine
 
   ok('A: confirmed, no return → genuine', isGenuine(a))
-  ok('B: confirmed, FULL refund → NOT genuine', !isGenuine(b))
-  ok('C: confirmed, PARTIAL refund → genuine (still a real sale)', isGenuine(c))
+  ok('B: confirmed, single FULL refund → NOT genuine', !isGenuine(b))
+  ok('C: confirmed, single PARTIAL refund → genuine (still a real sale)', isGenuine(c))
   ok('D: never reached confirmed → NOT genuine', !isGenuine(d))
-  ok('E: full refund → NOT genuine', !isGenuine(e))
+  ok('E: cumulative partials (40+60) reach full → NOT genuine (the audit P2)', !isGenuine(e))
+  ok('F: cumulative partials (30+30=60 < 100) → genuine', isGenuine(f))
 
   const total = (db.prepare(`SELECT COUNT(*) AS n FROM orders WHERE ${genuineSalePredicate('orders')}`).get() as { n: number }).n
-  ok('aggregate COUNT excludes the 2 full-returns + 1 fault (5 orders → 2 genuine: A,C)', total === 2, `got ${total}`)
+  ok('aggregate COUNT → 3 genuine (A, C, F); excludes single-full, cumulative-full, fault', total === 3, `got ${total}`)
 
   // edge: refund_amount EXACTLY == total is a full refund (>= boundary) → excluded
   ok('boundary: refund == total counts as full (excluded)', !isGenuine(b))
