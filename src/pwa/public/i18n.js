@@ -4,6 +4,11 @@
 window._lang = localStorage.getItem('webaz_lang') || 'zh'
 
 const _EN = {
+  // ── Leaderboard agent activity bucket (coarse, replaces raw call count) ──
+  '活跃度': 'Activity',
+  '活跃': 'Active',
+  '较少': 'Light',
+  '休眠': 'Dormant',
   // ── RFC-020 Connected agents (app-agents.js) ─────────────────
   '🔌 已连接的 Agent': '🔌 Connected agents',
   '尚无已连接的 Agent': 'No connected agents yet',
