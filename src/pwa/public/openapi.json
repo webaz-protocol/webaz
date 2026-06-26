@@ -2093,7 +2093,7 @@
     },
     "/api/agent-grants": {
       "get": {
-        "summary": "── Read: the human's connected agents (no secrets). ──",
+        "summary": "\"Connected agents\" UI shows so a human can spot stale/unused or busy agents before revoking.",
         "tags": [],
         "security": [
           {
