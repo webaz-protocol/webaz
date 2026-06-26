@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (668 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (672 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2115,6 +2115,42 @@
             "bearerAuth": []
           }
         ]
+      }
+    },
+    "/api/agent-grants/pair/:pairing_id/retrieve": {
+      "post": {
+        "summary": "(pair 4) Agent retrieves the credential ONCE via PKCE verifier — UNAUTHENTICATED (PKCE-gated).",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/agent-grants/pair/:user_code": {
+      "get": {
+        "summary": "(pair 2) Human reviews the server-generated consent — human-authenticated.",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/agent-grants/pair/:user_code/approve": {
+      "post": {
+        "summary": "(pair 3) Human approves — human-authenticated. Issues the grant (token_hash filled at retrieve).",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/agent-grants/pair/start": {
+      "post": {
+        "summary": "(pair 1) Agent starts a pairing — UNAUTHENTICATED (agent has no credential yet). Safe scopes only.",
+        "tags": [],
+        "security": []
       }
     },
     "/api/agent/acp-feed": {
