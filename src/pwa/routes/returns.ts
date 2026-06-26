@@ -72,6 +72,17 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
       const debited = db.prepare('UPDATE wallets SET balance = balance - ? WHERE user_id = ? AND balance >= ?').run(refundAmt, rr.seller_id, refundAmt)
       if (debited.changes !== 1) throw new Error('INSUFFICIENT_SELLER_BALANCE')
       db.prepare('UPDATE wallets SET balance = balance + ? WHERE user_id = ?').run(refundAmt, rr.buyer_id)
+      // RFC-018: reverse this order's in-window clearing commission, proportional to the refund.
+      // These pending rows were never paid (maturation is gated on matures_at), so this is a pure
+      // reversal — no clawback. matures_at IS NOT NULL targets clearing rows only; opt-out escrow
+      // rows (matures_at IS NULL) are untouched. Atomic with the refund.
+      const ordTotal = Number((db.prepare('SELECT total_amount FROM orders WHERE id = ?').get(rr.order_id) as { total_amount: number } | undefined)?.total_amount ?? 0)
+      const refundFrac = ordTotal > 0 ? Math.min(1, refundAmt / ordTotal) : 1
+      if (refundFrac >= 1) {
+        db.prepare(`UPDATE pending_commission_escrow SET status='reversed' WHERE order_id = ? AND status='pending' AND matures_at IS NOT NULL`).run(rr.order_id)
+      } else {
+        db.prepare(`UPDATE pending_commission_escrow SET amount = amount * ? WHERE order_id = ? AND status='pending' AND matures_at IS NOT NULL`).run(1 - refundFrac, rr.order_id)
+      }
       // 3. 恢复库存(CAS + 扣款成功后)
       const ord = db.prepare('SELECT quantity, source, variant_id FROM orders WHERE id = ?').get(rr.order_id) as { quantity: number; source: string; variant_id: string | null } | undefined
       if (ord && ord.source !== 'secondhand') {

@@ -41,6 +41,9 @@ export function registerReferralRoutes(app: Application, deps: ReferralDeps): vo
     `, [user.id]))!
     const todayEarnings = (await dbOne<{ t: number }>(`SELECT COALESCE(SUM(amount), 0) as t FROM commission_records WHERE beneficiary_id = ? AND created_at > datetime('now', '-1 day')`, [user.id]))!.t
     const monthEarnings = (await dbOne<{ t: number }>(`SELECT COALESCE(SUM(amount), 0) as t FROM commission_records WHERE beneficiary_id = ? AND created_at > datetime('now', '-30 days')`, [user.id]))!.t
+    // RFC-018: commission accrued but still in the clearing window (pending → matures into total_waz).
+    // Pure read; surfaced so earnings don't appear to vanish during clearing (Option A keeps total_waz = paid).
+    const clearingWaz = (await dbOne<{ t: number }>(`SELECT COALESCE(SUM(amount), 0) as t FROM pending_commission_escrow WHERE recipient_user_id = ? AND matures_at IS NOT NULL AND status = 'pending'`, [user.id]))!.t
 
     res.json({
       invite_code: code,
@@ -53,6 +56,7 @@ export function registerReferralRoutes(app: Application, deps: ReferralDeps): vo
         total_waz: earnings.total,
         today_waz: todayEarnings,
         month_waz: monthEarnings,
+        clearing_waz: clearingWaz,   // RFC-018: accrued, maturing after the return window (not yet paid)
       },
     })
   })

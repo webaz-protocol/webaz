@@ -219,6 +219,7 @@ import { registerArbitratorRoutes } from './routes/arbitrator.js'
 import { registerGovernanceOnboardingRoutes } from './routes/governance-onboarding.js'
 import { startAutoDeactivateCron, runAutoDeactivateSweep } from './routes/governance-auto-deactivate.js'
 import { startEscrowExpireCron, runEscrowExpireSweep } from './routes/rewards-escrow-expire.js'
+import { startClearingMatureCron } from './routes/rewards-clearing-mature.js'
 import { startAutoDowngradeCron, runAutoDowngradeSweep } from './routes/rewards-auto-downgrade.js'
 import { registerRewardsApplyRoutes } from './routes/rewards-apply.js'
 // 卖家配额 + 数据中心 (#1013 Phase 45) — 4 user + 3 admin
@@ -6694,26 +6695,20 @@ function settleCommission(orderId: string, effectiveBase?: number): CommissionRe
     { level: 3, beneficiary: l3Uid },
   ]
 
-  // #7 Commission source_type — 查 attribution 找到带来 buyer 的 shareable，确定 channel 类型
-  // 反推: 该 uid 作为 sharer 把 product 分享给"下家"的 shareable 类型
-  function resolveSourceType(uid: string | null): 'note' | 'link' | 'sponsor' {
-    if (!uid) return 'sponsor'
-    const attr = db.prepare(`
-      SELECT shareable_id FROM product_share_attribution
-      WHERE product_id = ? AND sharer_id = ? AND shareable_id IS NOT NULL
-      ORDER BY created_at DESC LIMIT 1
-    `).get(order!.product_id, uid) as { shareable_id: string } | undefined
-    if (!attr) return 'sponsor'
-    const sh = db.prepare(`SELECT type FROM shareables WHERE id = ?`).get(attr.shareable_id) as { type: string } | undefined
-    if (!sh) return 'sponsor'
-    return sh.type === 'note' ? 'note' : 'link'
-  }
+  // #7 Commission source_type resolution moved to module-level commissionSourceType() — RFC-018
+  // Option A writes commission_records at MATURATION (not here), so source_type is stamped there.
 
   // 2026-06-04：所有兜底统一入 commission_reserve（三级公池，独立科目，只进不出）。
   // commission 不再回流 global_fund（PV 资金）—— 三套科目解耦，redirected 始终 0。
   let toCommissionReserve = 0     // → commission_reserve（仅作日志/返回信息用）
   // 三级金额一次性 allocate(精确求和 ≡ poolU);各级再按 gate 路由到钱包/公池/escrow。
   const levelAmtU = allocate(poolU, [LEVEL_RATES[1], LEVEL_RATES[2], LEVEL_RATES[3]])
+  // RFC-018 clearing window: opted-in commission accrues to pending_commission_escrow and matures
+  // after the product's return window + buffer. Anchor = now (settleCommission runs at order→completed).
+  const nowMsClearing = Date.now()
+  const returnDaysClearing = Number((db.prepare("SELECT return_days FROM products WHERE id = ?").get(order.product_id) as { return_days: number } | undefined)?.return_days ?? 7)
+  const clearingBufferDays = Number((db.prepare("SELECT value FROM protocol_params WHERE key = 'settlement.clearing_buffer_days'").get() as { value: string } | undefined)?.value ?? 2)
+  const maturesAtClearing = nowMsClearing + Math.max(0, returnDaysClearing + clearingBufferDays) * 86400 * 1000
   for (const { level, beneficiary } of recipients) {
     const amountU = levelAmtU[level - 1]
     const amount = toDecimal(amountU)
@@ -6762,14 +6757,16 @@ function settleCommission(orderId: string, effectiveBase?: number): CommissionRe
       continue
     }
 
-    // ⑤ 正常分账
+    // ⑤ RFC-018 clearing (Option A): opted-in commission ACCRUES to pending_commission_escrow with a
+    // matures_at — it is NOT credited to the wallet now and writes NO commission_records yet. The
+    // maturation cron (rewards-clearing-mature) re-validates the order is still genuinely closed, then
+    // writes commission_records + credits the wallet. A return in-window reverses the pending row
+    // (proportionally) — never paid, never clawed back. expires_at is a NOT-NULL filler = matures_at;
+    // the escrow-expire cron ignores rows where matures_at IS NOT NULL (i.e. clearing rows).
     try {
-      const srcType = resolveSourceType(beneficiary)
-      db.prepare(`INSERT INTO commission_records (id, order_id, beneficiary_id, source_buyer_id, level, amount, rate, region, source, source_type)
-                  VALUES (?,?,?,?,?,?,?,?,?,?)`)
-        .run(generateId('comm'), orderId, beneficiary, order.buyer_id, level, amount, rate, region, routeSource, srcType)
-      applyWalletDelta(db, beneficiary, { balance: amountU, earned: amountU })
-    } catch (e) { /* UNIQUE 冲突 */ }
+      db.prepare(`INSERT INTO pending_commission_escrow (recipient_user_id, order_id, amount, attribution_path, status, created_at, expires_at, matures_at) VALUES (?,?,?,?,'pending',?,?,?)`)
+        .run(beneficiary, orderId, amount, `L${level}`, nowMsClearing, maturesAtClearing, maturesAtClearing)
+    } catch (e) { /* UNIQUE (recipient,order,path) — settleCommission re-entry idempotent */ }
   }
   db.prepare("UPDATE orders SET settled_commission_at = datetime('now') WHERE id = ?").run(orderId)
   // redirected 恒为 0：commission 兜底全部入 commission_reserve，不再回流 global_fund(PV 资金)。
@@ -6777,6 +6774,7 @@ function settleCommission(orderId: string, effectiveBase?: number): CommissionRe
   void toCommissionReserve
   return { pool, redirected: 0, source: routeSource }
 }
+
 
 // ─── 原子能：基金池入金 (depositToFund) ──────────────────────────
 // 1% 永远入池（默认）；commission 端回流由 settleCommission 返回，作为 extraFromCommission 传入
@@ -8298,6 +8296,7 @@ const RFC002_PARAMS: Array<{ key: string; value: string; type: string; descripti
   { key: 'rewards_opt_in.min_completed_orders',  value: '1',  type: 'number', description: 'RFC-002 §3.2:申请 rewards opt-in 的最小已完成订单数', category: 'rewards', min: 0, max: 100, metaRuleLocked: false },
   { key: 'rewards_opt_in.require_passkey',       value: '1',  type: 'number', description: 'RFC-002 §3.3:申请 / 关闭是否需 Passkey(1=必须,0=允许 password)— META-RULE LOCKED,降低需 60d meta-rule track', category: 'rewards', min: 0, max: 1, metaRuleLocked: true },
   { key: 'rewards_opt_in.escrow_days',           value: '30', type: 'number', description: 'RFC-002 §3.5b:pending commission escrow 过期天数(过期后流入 charity_fund)', category: 'rewards', min: 7, max: 180, metaRuleLocked: false },
+  { key: 'settlement.clearing_buffer_days',      value: '2',  type: 'number', description: 'RFC-018:佣金清算期 = 商品 return_days + 此 buffer(成熟才入钱包;窗内退货则冲销,永不 clawback)', category: 'rewards', min: 0, max: 30, metaRuleLocked: false },
   { key: 'rewards_opt_in.consent_delay_seconds', value: '8',  type: 'number', description: 'RFC-002 §3.3:server-side 8s 反诱导延迟 — META-RULE LOCKED,降低需 60d meta-rule track', category: 'rewards', min: 0, max: 60, metaRuleLocked: true },
   { key: 'rewards_opt_in.reconfirm_grace_days',  value: '14', type: 'number', description: 'RFC-002 §3.10:major consent 变更后用户重新确认 grace 期(过期 auto_downgrade)', category: 'rewards', min: 3, max: 90, metaRuleLocked: false },
 ]
@@ -8383,6 +8382,7 @@ app.listen(PORT, () => {
 
   // #1090 RFC-002 PR-1c-a: escrow expire cron (every 1h)
   startEscrowExpireCron({ db, redirectToCommissionReserve })
+  startClearingMatureCron({ db })  // RFC-018: pay/hold matured clearing commission (logic in the cron module)
 
   // #1090 RFC-002 PR-3 slice 2: auto_downgrade cron (every 24h)
   // Triggered when a new major consent text is published; opted-in users

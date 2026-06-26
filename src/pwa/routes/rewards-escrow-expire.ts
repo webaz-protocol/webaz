@@ -43,10 +43,14 @@ export interface EscrowExpireResult {
 export async function runEscrowExpireSweep(deps: EscrowExpireDeps): Promise<EscrowExpireResult> {
   const { db, redirectToCommissionReserve } = deps
   const now = Date.now()
+  // RFC-018: pending_commission_escrow now holds TWO lifecycles, discriminated by matures_at:
+  //   - matures_at IS NULL  → opt-out escrow (this cron: expire → commission_reserve / pool).
+  //   - matures_at NOT NULL → clearing rows (the SEPARATE rewards-clearing-mature cron: pay/reverse).
+  // We MUST exclude clearing rows here, or they'd be wrongly expired to the pool instead of paid.
   const rows = await dbAll<{ id: number; recipient_user_id: string; order_id: string; amount: number; attribution_path: string; expires_at: number }>(`
     SELECT id, recipient_user_id, order_id, amount, attribution_path, expires_at
     FROM pending_commission_escrow
-    WHERE status = 'pending' AND expires_at <= ?
+    WHERE status = 'pending' AND matures_at IS NULL AND expires_at <= ?
     ORDER BY expires_at ASC
     LIMIT 1000
   `, [now])
@@ -54,7 +58,7 @@ export async function runEscrowExpireSweep(deps: EscrowExpireDeps): Promise<Escr
   const expired: EscrowExpireResult['expired'] = []
   for (const r of rows) {
     db.transaction(() => {
-      const upd = db.prepare(`UPDATE pending_commission_escrow SET status='expired', expired_to_charity_at=? WHERE id=? AND status='pending'`).run(now, r.id)
+      const upd = db.prepare(`UPDATE pending_commission_escrow SET status='expired', expired_to_charity_at=? WHERE id=? AND status='pending' AND matures_at IS NULL`).run(now, r.id)
       if (upd.changes === 0) return  // race lost — another sweep already took it
       if (r.attribution_path === 'pv_pair') {
         // #1106：pv_pair escrow 的钱结算时已从 pool 移入 pv_escrow_reserve。到期未兑付 → 退回 pool。
