@@ -58,6 +58,16 @@ try {
     ok(`${label}: surfaces a clearing total (matures_at IS NOT NULL read present)`, /matures_at IS NOT NULL/.test(src))
   }
 
+  // 3. UI CONSUMPTION (PR3-UI) — the PWA frontend must actually RENDER each API clearing field, else
+  // the "earnings don't vanish during clearing" goal isn't met (the gap the PR3 audit found: API-only).
+  const appJs = readFileSync(join(process.cwd(), 'src/pwa/public/app.js'), 'utf8')
+  ok('app.js renders promoter clearing_total', /clearing_total/.test(appJs))
+  ok('app.js renders referral clearing_waz', /clearing_waz/.test(appJs))
+  ok('app.js renders wallet commission_clearing', /commission_clearing/.test(appJs))
+  // bilingual: the clearing label must have an EN entry (zh/en parity rule)
+  const i18n = readFileSync(join(process.cwd(), 'src/pwa/public/i18n.js'), 'utf8')
+  ok("'清算中' has a bilingual EN entry", /'清算中':\s*'[^']+'/.test(i18n))
+
   if (fail === 0) {
     console.log(`\n✅ clearing surfaces: canonical query is in-window-only; all 5 earnings surfaces carry the clearing read\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)
   } else {

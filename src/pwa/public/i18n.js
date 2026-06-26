@@ -368,6 +368,8 @@ const _EN = {
   'PV 是参与 / 贡献的记录,不是收益、不可兑付、不构成任何奖励权益。匹配奖励当前未启用。': 'PV is a record of participation / contribution — not income, not redeemable, and confers no reward entitlement. Matching rewards are currently not enabled.',
   '二级': 'L2',
   '累计佣金': 'Total earnings',
+  '清算中': 'Clearing',
+  '清算中:退货期满后到账': 'Clearing — paid after the return window closes',
   '最近佣金流水': 'Recent commissions',
   '暂无佣金记录': 'No commissions yet',
   '已复制邀请链接': 'Referral link copied',
