@@ -236,7 +236,11 @@ function readGrantPointer(): { grant_id: string; handle: string; capabilities?: 
   try { return fsExists(CRED_POINTER_PATH) ? JSON.parse(readFileSync(CRED_POINTER_PATH, 'utf8')) : null } catch { return null }
 }
 
-/** Resolve the stored grant bearer (reverse of storeGrantCredential). Returns null if not paired. */
+/**
+ * Resolve the stored grant bearer (reverse of storeGrantCredential). Returns null if not paired.
+ * ⚠️ The returned `token` is the RAW bearer — pass it only as an Authorization header; NEVER log it,
+ * print it, or return it in a tool response.
+ */
 export function resolveGrantCredential(): { grant_id: string; token: string; handle: string; capabilities?: unknown; expires_at?: unknown } | null {
   const ptr = readGrantPointer()
   if (!ptr?.grant_id) return null
@@ -260,12 +264,12 @@ function readPending(): { pairing_id: string; code_verifier: string } | null {
 function clearPending(): void { try { if (fsExists(PENDING_PATH)) unlinkSync(PENDING_PATH) } catch { /* best effort */ } }
 
 export async function handlePair(args: Record<string, unknown>): Promise<Record<string, unknown>> {
-  // Mode isolation (fail-closed): pairing talks to the LIVE webaz.xyz API. In explicit
-  // sandbox mode (local-only) we must NOT create a pairing session on the live network.
+  // Mode isolation (fail-closed): every webaz_pair action (start / complete / verify) talks to the
+  // LIVE webaz.xyz API. In explicit sandbox mode (local-only) we must NOT touch the live network.
   if (!isNetworkMode()) {
     return {
       _mode: MODE,
-      error: 'Pairing requires NETWORK mode — you are in sandbox (local-only, isolated from webaz.xyz). Unset WEBAZ_MODE (or set WEBAZ_MODE=network / network_readonly) to pair with a real human account.',
+      error: 'webaz_pair requires NETWORK mode — you are in sandbox (local-only, isolated from webaz.xyz). Unset WEBAZ_MODE (or set WEBAZ_MODE=network / network_readonly) to pair with / verify against a real human account.',
       error_code: 'PAIRING_REQUIRES_NETWORK',
     }
   }
@@ -342,10 +346,9 @@ export async function handlePair(args: Record<string, unknown>): Promise<Record<
     }
     return {
       status: 'active',
-      grant: resp.grant,                 // narrow principal echoed by the server (grant_id/human_id/agent_label/capability)
-      capabilities: cred.capabilities,
-      expires_at: cred.expires_at,
-      note: 'Grant verified LIVE by the server (per-call: active/expiry/revoked/subject-suspension/scope + audited). Safe scopes only; no business tool or risk scope consumes this grant.',
+      grant: resp.grant,                 // SERVER-AUTHORITATIVE principal (grant_id/human_id/agent_label/capability)
+      local_cache: { capabilities: cred.capabilities, expires_at: cred.expires_at },  // advisory only, may be stale — NOT authoritative
+      note: 'Grant verified LIVE by the server (per-call: active/expiry/revoked/subject-suspension/scope + audited). `grant` is authoritative; `local_cache` is advisory. Safe scopes only; no business tool or risk scope consumes this grant.',
     }
   }
 

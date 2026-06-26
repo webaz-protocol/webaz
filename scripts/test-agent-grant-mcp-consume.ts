@@ -82,6 +82,7 @@ try {
   const active = await mcp.handlePair({ action: 'verify' })
   ok('3 verify valid grant → active', active.status === 'active' && (active.grant as any)?.grant_id === gid && (active.grant as any)?.human_id === human)
   ok('3b verify response does not leak the raw token', !JSON.stringify(active).includes('gtk_int'))
+  ok('3c advisory local_cache is labeled separately from the authoritative grant', !!active.local_cache && (active.grant as any)?.capability === 'read_public')
 
   // 4) revoke the grant → verify now fails per-call (revocation honored live)
   db.prepare("UPDATE agent_delegation_grants SET status='revoked', revoked_at=datetime('now') WHERE grant_id=?").run(gid)
