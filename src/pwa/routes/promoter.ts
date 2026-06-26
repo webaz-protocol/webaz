@@ -60,6 +60,8 @@ export function registerPromoterRoutes(app: Application, deps: PromoterDeps): vo
     const byLevel: Record<number, { orders: number; total: number }> = { 1: { orders: 0, total: 0 }, 2: { orders: 0, total: 0 }, 3: { orders: 0, total: 0 } }
     for (const r of earned) byLevel[r.level] = { orders: r.orders, total: r.total }
     const grand = byLevel[1].total + byLevel[2].total + byLevel[3].total
+    // RFC-018: commission accrued but still in the clearing window (matures into grand_total). Pure read.
+    const clearing = (await dbOne<{ s: number }>("SELECT COALESCE(SUM(amount),0) as s FROM pending_commission_escrow WHERE recipient_user_id = ? AND matures_at IS NOT NULL AND status = 'pending'", [userId]))!.s
 
     const recent = await dbAll(`
       SELECT cr.id, cr.order_id, cr.level, cr.amount, cr.rate, cr.created_at,
@@ -178,6 +180,7 @@ export function registerPromoterRoutes(app: Application, deps: PromoterDeps): vo
       team: { l1, l2, l3, total: l1 + l2 + l3 },
       earnings: {
         grand_total: grand,
+        clearing_total: clearing,   // RFC-018: accrued, maturing after the return window (not yet paid)
         l1: byLevel[1],
         l2: byLevel[2],
         l3: byLevel[3],

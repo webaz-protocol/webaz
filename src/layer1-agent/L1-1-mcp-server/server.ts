@@ -3758,11 +3758,15 @@ async function handleReferral(args: Record<string, unknown>) {
       // RFC-018: matures_at IS NULL = opt-out escrow only (clearing rows auto-mature; surfaced separately in PR3).
       const pending = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total FROM pending_commission_escrow WHERE recipient_user_id = ? AND status = 'pending' AND matures_at IS NULL").get(userId) as { n: number; total: number }
       const expired = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total FROM pending_commission_escrow WHERE recipient_user_id = ? AND status = 'expired' AND matures_at IS NULL").get(userId) as { n: number; total: number }
+      // RFC-018 clearing window: opted-in commission accrued but not yet matured into the wallet
+      // (matures_at NOT NULL). Distinct from opt-out escrow above — pure read, surfaced for the agent.
+      const clearing = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total FROM pending_commission_escrow WHERE recipient_user_id = ? AND status = 'pending' AND matures_at IS NOT NULL").get(userId) as { n: number; total: number }
       return {
         state,
         opted_in: optIn === 1,
         note,
         pending_escrow:  { count: pending.n, total_amount: pending.total },
+        clearing: { count: clearing.n, total_amount: clearing.total },  // RFC-018: accrued, maturing after the return window (not yet paid)
         expired_to_charity: { count: expired.n, total_amount: expired.total },
         spec: 'RFC-002 §3.5 — rewards / share-commission opt-in (RFC-002)',
       }

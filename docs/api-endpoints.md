@@ -496,7 +496,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/profile/switch-role` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:79 |
 | POST | `/api/profile/verify-password` | 🔐 |  | 验证密码（显示 API Key 前的二次确认） | src/pwa/routes/profile-credentials.ts:62 |
 | GET | `/api/promoter/dashboard` | 🔐 |  |  | src/pwa/routes/promoter.ts:39 |
-| GET | `/api/promoter/team` | 🔐 |  | 直推 L1 列表 | src/pwa/routes/promoter.ts:204 |
+| GET | `/api/promoter/team` | 🔐 |  | 直推 L1 列表 | src/pwa/routes/promoter.ts:207 |
 | GET | `/api/protocol-status` |  |  |  | src/pwa/routes/public-utils.ts:223 |
 | POST | `/api/public-ideas` |  |  | 反 bot：honeypot 字段 + 单 IP+UA 联合 rate limit 5/h + 内容 hash 去重 1h | src/pwa/routes/welcome.ts:135 |
 | GET | `/api/public/build-tasks` |  |  |  | src/pwa/routes/public-build-tasks.ts:24 |
@@ -644,7 +644,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/wallet/deposits` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:175 |
 | GET | `/api/wallet/income` | 🔐 |  | 收入构成：销售 / 分享归因 / PV 记录(pre-launch,若适用) | src/pwa/routes/wallet-read.ts:201 |
 | GET | `/api/wallet/rate` |  |  | 公开汇率 | src/pwa/routes/wallet-read.ts:84 |
-| POST | `/api/wallet/topup` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:239 |
+| POST | `/api/wallet/topup` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:242 |
 | GET | `/api/wallet/whitelist` | 🔐 |  | 白名单 GET / POST / DELETE | src/pwa/routes/wallet-read.ts:98 |
 | POST | `/api/wallet/whitelist` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:115 |
 | DELETE | `/api/wallet/whitelist/:id` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:144 |
