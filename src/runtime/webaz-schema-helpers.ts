@@ -1724,3 +1724,86 @@ export function initAgentGrantAuthLogSchema(db: Database.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_agal_grant ON agent_grant_auth_log(grant_id, ts)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_agal_ts ON agent_grant_auth_log(ts)`)
 }
+
+/**
+ * pending_commission_escrow — opt-out promoter activation queue (§3.5b) + RFC-018 clearing ledger.
+ *
+ * Relocated VERBATIM from src/pwa/server.ts (RFC-018 PR1) so the table's whole schema is built once,
+ * in the early helper batch — never half-here / half-inline (the fresh-DB silent-fail铁律 bites a
+ * half-migration the hardest). RFC-018 adds two things, SCHEMA-ONLY (no settle / escrow read-write
+ * logic touched):
+ *   - `matures_at` column — the accrue-then-mature clock (= completed_at + return_days +
+ *     settlement.clearing_buffer_days); NULL until the PR2 clearing model writes it.
+ *   - `reversed` status value — a return inside the clearing window flips pending→reversed; it is a
+ *     TEXT value, so it needs no schema change (documented in the column comment).
+ * order_id stays NULLable for pv_pair rows (PR-1c-b).
+ *
+ * Migration rebuilds the table when its schema is behind — (a) order_id NOT NULL (pre-1c-b), or
+ * (b) missing matures_at (pre-RFC-018). Idempotent; explicit-column INSERT maps an older DB cleanly
+ * (matures_at → NULL for pre-existing rows). The OFF/ON foreign_keys dance only runs when a rebuild
+ * is actually needed and restores L0's global foreign_keys=ON.
+ */
+export function initPendingCommissionEscrowSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pending_commission_escrow (
+      id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+      recipient_user_id        TEXT NOT NULL,
+      order_id                 TEXT,                                 -- NULL for pv_pair (PR-1c-b)
+      amount                   REAL NOT NULL,    -- WAZ amount
+      attribution_path         TEXT NOT NULL,    -- 'L1' | 'L2' | 'L3' | 'pv_pair' | etc.
+      status                   TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'settled' | 'expired' | 'reversed' (RFC-018)
+      created_at               INTEGER NOT NULL,
+      expires_at               INTEGER NOT NULL,
+      settled_at               INTEGER,
+      expired_to_charity_at    INTEGER,
+      matures_at               INTEGER,          -- RFC-018: completed_at + return_days + clearing_buffer_days; NULL until the clearing model writes it
+      FOREIGN KEY (recipient_user_id) REFERENCES users(id),
+      FOREIGN KEY (order_id) REFERENCES orders(id)
+    )
+  `)
+
+  ;(function migrateEscrowSchema() {
+    const cols = db.prepare("PRAGMA table_info(pending_commission_escrow)").all() as Array<{ name: string; notnull: number }>
+    if (cols.length === 0) return  // table absent (shouldn't happen — CREATE above just ran)
+    const orderIdCol = cols.find(c => c.name === 'order_id')
+    const orderIdNotNull = !!orderIdCol && orderIdCol.notnull === 1
+    const missingMaturesAt = !cols.some(c => c.name === 'matures_at')
+    if (!orderIdNotNull && !missingMaturesAt) return  // already current
+    console.log(`[pc-escrow-migrate] rebuilding (orderIdNotNull=${orderIdNotNull}, missingMaturesAt=${missingMaturesAt})`)
+    db.exec('PRAGMA foreign_keys = OFF')
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE pending_commission_escrow_new (
+          id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+          recipient_user_id        TEXT NOT NULL,
+          order_id                 TEXT,
+          amount                   REAL NOT NULL,
+          attribution_path         TEXT NOT NULL,
+          status                   TEXT NOT NULL DEFAULT 'pending',
+          created_at               INTEGER NOT NULL,
+          expires_at               INTEGER NOT NULL,
+          settled_at               INTEGER,
+          expired_to_charity_at    INTEGER,
+          matures_at               INTEGER,
+          FOREIGN KEY (recipient_user_id) REFERENCES users(id),
+          FOREIGN KEY (order_id) REFERENCES orders(id)
+        )
+      `)
+      // explicit columns: an older DB lacks matures_at → it defaults to NULL in _new (never SELECT *)
+      db.exec(`INSERT INTO pending_commission_escrow_new
+        (id, recipient_user_id, order_id, amount, attribution_path, status, created_at, expires_at, settled_at, expired_to_charity_at)
+        SELECT id, recipient_user_id, order_id, amount, attribution_path, status, created_at, expires_at, settled_at, expired_to_charity_at
+        FROM pending_commission_escrow`)
+      db.exec('DROP TABLE pending_commission_escrow')
+      db.exec('ALTER TABLE pending_commission_escrow_new RENAME TO pending_commission_escrow')
+    })()
+    db.exec('PRAGMA foreign_keys = ON')
+  })()
+
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_escrow_recipient ON pending_commission_escrow(recipient_user_id, status, expires_at)') } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_escrow_expiry ON pending_commission_escrow(status, expires_at)') } catch {}
+  // PR-1c-a: UNIQUE (recipient, order, path) defends against double-insert if settleCommission ever retries
+  // Note: NULL order_id (PR-1c-b pv_pair) is distinct in SQLite UNIQUE — idempotency for pv_pair relies
+  // on binary_score_records.settled_at instead (source-side dedup).
+  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS uniq_escrow_recipient_order_path ON pending_commission_escrow(recipient_user_id, order_id, attribution_path)') } catch {}
+}

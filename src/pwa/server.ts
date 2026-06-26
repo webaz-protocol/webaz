@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema, initCartItemsSchema, initFollowsSchema, initPushSubscriptionsSchema, initUserSessionsSchema, initUserBlocklistSchema, initImportLogsSchema, initErrorLogSchema, initSecondhandItemsSchema, initProductTrialCampaignsSchema, initProductTrialClaimsSchema, initReturnRequestsSchema, initReturnMessagesSchema, initProductVariantsSchema, initEditorPicksSchema, initKycRecordsSchema, initWebauthnSchema, initClaimVerificationBaseSchema, initClaimVerifierSuspensionsSchema, initProductClaimSchema, initReviewClaimSchema, initSecondhandClaimSchema, initAuctionClaimSchema, initWishClaimSchema, initShareableClickLogSchema, initCommissionAuditLogSchema, initRegistrationAuditLogSchema, initProductExternalLinksBaseSchema, initLinkChallengesSchema, initVerifyTasksSchema, initVerifySubmissionsSchema, initVerifierStatsSchema, initRegisterListSearchColumns } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema, initCartItemsSchema, initFollowsSchema, initPushSubscriptionsSchema, initUserSessionsSchema, initUserBlocklistSchema, initImportLogsSchema, initErrorLogSchema, initSecondhandItemsSchema, initProductTrialCampaignsSchema, initProductTrialClaimsSchema, initReturnRequestsSchema, initReturnMessagesSchema, initProductVariantsSchema, initEditorPicksSchema, initKycRecordsSchema, initWebauthnSchema, initClaimVerificationBaseSchema, initClaimVerifierSuspensionsSchema, initProductClaimSchema, initReviewClaimSchema, initSecondhandClaimSchema, initAuctionClaimSchema, initWishClaimSchema, initShareableClickLogSchema, initCommissionAuditLogSchema, initRegistrationAuditLogSchema, initProductExternalLinksBaseSchema, initLinkChallengesSchema, initVerifyTasksSchema, initVerifySubmissionsSchema, initVerifierStatsSchema, initRegisterListSearchColumns, initPendingCommissionEscrowSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -464,6 +464,7 @@ initSkillSchema(db)
 initSkillMarketSchema(db)
 initReputationSchema(db)
 initOrderChainSchema(db)
+initPendingCommissionEscrowSchema(db) // RFC-018 PR1: relocated from inline (was ~8250) so all escrow schema is built in this early batch — see helper. matures_at + reversed added (schema-only).
 initBuildFeedbackSchema(db)   // RFC-004 build_feedback
 initBuildTasksSchema(db)      // RFC-006 build_tasks(协调层)
 initBuildTaskAgentMetadataSchema(db) // PR9B — agent-ready task metadata satellite(schema only;FUTURE-TASK-BOARD-V1-DESIGN #326)
@@ -8247,66 +8248,10 @@ db.exec(`
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_rewards_apps_user ON rewards_applications(user_id, created_at DESC)') } catch {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_rewards_apps_action ON rewards_applications(user_id, action, created_at DESC)') } catch {}
 
-// 5. pending_commission_escrow:opt-out promoter 待激活领取队列(§3.5b)
-// PR-1c-b: order_id is NULLable so attribution_path='pv_pair' rows (which accrue
-// across many orders) can record amount without inventing a fake order_id.
-// L1/L2/L3 rows still carry a real order_id, enforced by the gate code path
-// in settleCommission (not by NOT NULL constraint).
-db.exec(`
-  CREATE TABLE IF NOT EXISTS pending_commission_escrow (
-    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
-    recipient_user_id        TEXT NOT NULL,
-    order_id                 TEXT,                                 -- NULL for pv_pair (PR-1c-b)
-    amount                   REAL NOT NULL,    -- WAZ amount
-    attribution_path         TEXT NOT NULL,    -- 'L1' | 'L2' | 'L3' | 'pv_pair' | etc.
-    status                   TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'settled' | 'expired'
-    created_at               INTEGER NOT NULL,
-    expires_at               INTEGER NOT NULL,
-    settled_at               INTEGER,
-    expired_to_charity_at    INTEGER,
-    FOREIGN KEY (recipient_user_id) REFERENCES users(id),
-    FOREIGN KEY (order_id) REFERENCES orders(id)
-  )
-`)
-
-// PR-1c-b: migration — if existing DB has order_id NOT NULL (from PR-1a / pre-1c-b),
-// recreate the table. PRAGMA notnull=1 means NOT NULL. Idempotent: skips if already 0.
-;(function migrateEscrowOrderIdNullable() {
-  const cols = db.prepare("PRAGMA table_info(pending_commission_escrow)").all() as Array<{ name: string; notnull: number }>
-  const orderIdCol = cols.find(c => c.name === 'order_id')
-  if (!orderIdCol || orderIdCol.notnull === 0) return  // already nullable (or table missing entirely)
-  console.log('[pc-escrow-migrate] order_id is NOT NULL — recreating table to allow NULL for pv_pair')
-  db.exec('PRAGMA foreign_keys = OFF')
-  db.transaction(() => {
-    db.exec(`
-      CREATE TABLE pending_commission_escrow_new (
-        id                       INTEGER PRIMARY KEY AUTOINCREMENT,
-        recipient_user_id        TEXT NOT NULL,
-        order_id                 TEXT,
-        amount                   REAL NOT NULL,
-        attribution_path         TEXT NOT NULL,
-        status                   TEXT NOT NULL DEFAULT 'pending',
-        created_at               INTEGER NOT NULL,
-        expires_at               INTEGER NOT NULL,
-        settled_at               INTEGER,
-        expired_to_charity_at    INTEGER,
-        FOREIGN KEY (recipient_user_id) REFERENCES users(id),
-        FOREIGN KEY (order_id) REFERENCES orders(id)
-      )
-    `)
-    db.exec('INSERT INTO pending_commission_escrow_new SELECT * FROM pending_commission_escrow')
-    db.exec('DROP TABLE pending_commission_escrow')
-    db.exec('ALTER TABLE pending_commission_escrow_new RENAME TO pending_commission_escrow')
-  })()
-  db.exec('PRAGMA foreign_keys = ON')
-})()
-
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_escrow_recipient ON pending_commission_escrow(recipient_user_id, status, expires_at)') } catch {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_escrow_expiry ON pending_commission_escrow(status, expires_at)') } catch {}
-// PR-1c-a: UNIQUE (recipient, order, path) defends against double-insert if settleCommission ever retries
-// Note: NULL order_id (PR-1c-b pv_pair) is distinct in SQLite UNIQUE — idempotency for pv_pair relies
-// on binary_score_records.settled_at instead (source-side dedup).
-try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS uniq_escrow_recipient_order_path ON pending_commission_escrow(recipient_user_id, order_id, attribution_path)') } catch {}
+// pending_commission_escrow schema (table + migration + indexes) lives in
+// initPendingCommissionEscrowSchema (early helper batch above) — RFC-018 PR1 relocated it there so
+// all of its DDL is built once, never half-inline (fresh-DB silent-fail铁律). The backfill below
+// only READS the table; it still runs after the build (early batch precedes this line).
 
 // Codex #69 P1:pv_escrow_reserve(#1106 隔离负债账)回填历史 pending pv_pair escrow —— 按 delta 对账,不全量转。
 //   该列在 global_fund 上新增(line ~2319);#1106 之后新建的 pv_pair escrow 结算时【已】pv_escrow_reserve += wazAmount,
