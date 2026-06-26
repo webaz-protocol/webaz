@@ -45,10 +45,16 @@ covered there.
 | Live PWA register | Invite gate (`require_ref_to_register` system_state) + `resolveInviteCodeRef()` (permanent_code ± L/R) + **email-code** verification | `src/pwa/routes/auth-register.ts` (`/api/register/send-code`, `/api/register`) |
 | Request auth | `Authorization: Bearer <api_key>` **or** `body.api_key` → `getUser()`/`auth()`; strict Bearer money-path resolver | `src/pwa/server.ts` (`getUser`/`auth`/`recordSession`); `src/pwa/admin-bearer-auth.ts` |
 | Human-presence iron-rule | `requireHumanPresence()` → 412 `HUMAN_PRESENCE_REQUIRED`, consumes one-time `webauthn_gate_tokens` minted by a Passkey ceremony | `src/pwa/human-presence.ts`; params `require_human_presence_for_*` in `server.ts` |
-| Passkey ceremony | `/api/webauthn/{register,auth}/{start,finish}` with `purpose` + `purpose_data`; finish issues `wgt_*` gate token (~60s) | `src/pwa/routes/webauthn.ts`; tables `webauthn_credentials` / `_challenges` / `_gate_tokens` in `src/runtime/webaz-schema-helpers.ts` |
-| Session revocation | `user_sessions.revoked_at` checked per request (remote logout) | `webaz-schema-helpers.ts`; `server.ts` |
-| Agent attestation (precursor) | `agent_attestations(approved_scope JSON, spend_cap_per_order, spend_cap_daily, granted_at, revoked_at)` UNIQUE(api_key,user_id) | `webaz-schema-helpers.ts` |
-| Audit | `admin_audit_log`, `agent_call_log`, `agent_reputation`, `agent_declarations` | `webaz-schema-helpers.ts` |
+| Passkey ceremony | `/api/webauthn/{register,auth}/{start,finish}` with `purpose` + `purpose_data`; finish issues `wgt_*` gate token (~60s) | `src/pwa/routes/webauthn.ts`; tables `webauthn_credentials` / `_challenges` / `_gate_tokens` in `src/pwa/server-schema.ts` |
+| Session revocation | `user_sessions.revoked_at` checked per request (remote logout) | `src/pwa/server-schema.ts`; `server.ts` |
+| Agent attestation (precursor) | `agent_attestations(approved_scope JSON, spend_cap_per_order, spend_cap_daily, granted_at, revoked_at)` UNIQUE(api_key,user_id) | `src/pwa/server-schema.ts` |
+| Audit | `admin_audit_log`, `agent_call_log`, `agent_reputation`, `agent_declarations` | `src/pwa/server-schema.ts` |
+
+> **Schema-file location note:** the schema-helper definitions above live in `src/pwa/server-schema.ts` on
+> `main`. PR #69 (MCP fresh-DB schema bridge, currently Draft) relocates them to
+> `src/runtime/webaz-schema-helpers.ts` with `src/pwa/server-schema.ts` kept as a re-export. The
+> implementation PRs below should target whichever has landed: **if #69 is merged first, use the runtime
+> helpers; otherwise the current location is `src/pwa/server-schema.ts`.**
 | Delegation grants / `webaz_pair` | **Not implemented** — RFC-020 design only | — |
 
 **Onboarding-copy problem (drives the wrong default):** README (EN/zh-CN), `RFC-003`, `RFC-004`, MCP
@@ -75,10 +81,22 @@ public product/profile reads (current `network_readonly`).
 | `product_publish_request` | submit a listing for publish (queued; **stake/commit stays human-side**) | `allowed_categories`, `max_active_listings` |
 | `draft_order` | build cart / price session (`price_sessions` exists), **not** pay | `allowed_product_ids` / `allowed_categories`, `max_single_amount` (advisory at draft) |
 
-**Risk scopes — require a live Passkey *each time* via the existing `requireHumanPresence` 412 gate:**
+**Risk scopes — target invariant: a live Passkey *each time* (NOT yet enforced on all of them):**
 `place_order` (pay/escrow), order-status transitions (`accept`/`ship`/…), `wallet` ops, `payout`, `refund`,
-dispute `arbitrate`, governance `vote`, verifier judgment, `claim_verify` decisions. These already sit behind
-`require_human_presence_for_*` and the money/state routes. **No grant alone authorizes them.**
+dispute `arbitrate`, governance `vote`, verifier judgment, `claim_verify` decisions.
+
+> ⚠️ **Current reality (verified on main):** the `requireHumanPresence` / 412 gate is wired today for
+> **withdraw, governance `vote`, dispute `arbitrate`, identity-claim, the governance lifecycle
+> (apply/activate/resign/appeal-resolve), `delete_passkey`, and `agent_revoke`** — i.e. the
+> `require_human_presence_for_*` params in `server.ts`. It is **NOT** wired on order creation / order actions /
+> returns / refunds / generic wallet ops — those are plain `auth()` paths today (e.g.
+> `src/pwa/routes/orders-create.ts`, `src/pwa/routes/orders-action.ts`). So the "Passkey each time" line above
+> is a **target / future enforcement**, not an existing protection.
+>
+> **Consequence for the grant work:** the grant PR (PR-B/C) **MUST default to hard-rejecting every risk scope**
+> — exactly like a never-delegable action — **until** the corresponding money/state route actually adds a
+> Passkey gate in its own dedicated, money-path-aware PR. A grant must never silently authorize a risk action
+> just because the route lacks a gate. **No grant alone authorizes a risk scope.**
 
 **Never-delegable (server hard-reject — RFC-020 §3.2; no grant may ever satisfy these):** withdraw / transfer
 / convert / deposit funds; create / rotate / reveal `api_key`; change Passkey; **raise a grant's own limits**
@@ -121,9 +139,11 @@ implementation PRs.)
   over `WEBAZ_API_KEY` and demotes the permanent key to "advanced / not for agents" with a blast-radius
   warning. **No code.**
 - **PR B — grant schema + PWA issue/revoke endpoints.** New `agent_delegation_grants` table (PoP-ready
-  columns) via `webaz-schema-helpers.ts` + `applyWebazRuntimeSchema` wiring; `routes/agent-grants.ts`
-  (pair-request, server-generated consent, Passkey-approve → issue, list, revoke). Reuses
-  `requireHumanPresence` / `webauthn_*`. Schema PR (own type): ratchet + `schema:verify` + fresh-DB. **No
+  columns) added to the schema helpers — **if #69 has landed, in `src/runtime/webaz-schema-helpers.ts` +
+  `applyWebazRuntimeSchema` wiring; otherwise in `src/pwa/server-schema.ts`** (and wire MCP boot to create it
+  too); plus `routes/agent-grants.ts` (pair-request, server-generated consent, Passkey-approve → issue, list,
+  revoke). Reuses `requireHumanPresence` / `webauthn_*`. Schema PR (own type): ratchet + `schema:verify` +
+  fresh-DB. **No
   money path.**
 - **PR C — MCP delegation-grant auth + scope enforcement.** `webaz_pair` tool (device-flow + PKCE),
   secret-store + handle delivery (RFC-020 §3.4), per-request capability/constraint/expiry/revocation check,
@@ -158,9 +178,10 @@ Codex-gated dedicated reviews per the money-path tx-atomicity + "don't fake succ
 - Human-presence gate: `src/pwa/human-presence.ts` + `require_human_presence_for_*` params in `server.ts`.
 - Registration / invite gate: `src/pwa/routes/auth-register.ts` (J2 invite-request lives near here; **gate
   not weakened**).
-- Schema: `src/runtime/webaz-schema-helpers.ts` (new `agent_delegation_grants`; cross-link
-  `agent_attestations`; revocation via the `user_sessions` pattern; honor ALTER-after-CREATE + ratchet +
-  `applyWebazRuntimeSchema` wiring so MCP gets the table too).
+- Schema: `src/pwa/server-schema.ts` on `main` (relocated to `src/runtime/webaz-schema-helpers.ts` +
+  `applyWebazRuntimeSchema` if #69 lands first) — new `agent_delegation_grants`; cross-link
+  `agent_attestations`; revocation via the `user_sessions` pattern; honor ALTER-after-CREATE + ratchet + (if
+  on the runtime helper) `applyWebazRuntimeSchema` wiring so MCP gets the table too.
 - Audit: `admin_audit_log` / `agent_call_log` (add grant audit fields per RFC-020 §3.7).
 - Docs/onboarding copy: `README.md`, `README.zh-CN.md`, `docs/rfcs/RFC-003-*.md`, `RFC-004-*.md`,
   `RFC-020-agent-delegation-grants.md`.
