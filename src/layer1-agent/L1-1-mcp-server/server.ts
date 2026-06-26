@@ -225,6 +225,32 @@ function storeGrantCredential(grantId: string, token: string): string {
   return `file:~/.webaz/credentials#${grantId}`
 }
 
+// Non-secret index of the current grant (grant_id + handle + metadata) so the stored
+// credential can be resolved back without re-pairing. The SECRET (token) lives only in
+// the OS secret store / 0600 file — never in this pointer.
+const CRED_POINTER_PATH = pathJoin(WEBAZ_DIR, 'grant-current.json')
+function saveGrantPointer(grantId: string, handle: string, capabilities: unknown, expiresAt: unknown): void {
+  write0600(CRED_POINTER_PATH, JSON.stringify({ grant_id: grantId, handle, capabilities: capabilities ?? null, expires_at: expiresAt ?? null, stored_at: new Date().toISOString() }))
+}
+function readGrantPointer(): { grant_id: string; handle: string; capabilities?: unknown; expires_at?: unknown } | null {
+  try { return fsExists(CRED_POINTER_PATH) ? JSON.parse(readFileSync(CRED_POINTER_PATH, 'utf8')) : null } catch { return null }
+}
+
+/** Resolve the stored grant bearer (reverse of storeGrantCredential). Returns null if not paired. */
+export function resolveGrantCredential(): { grant_id: string; token: string; handle: string; capabilities?: unknown; expires_at?: unknown } | null {
+  const ptr = readGrantPointer()
+  if (!ptr?.grant_id) return null
+  let token = ''
+  if (typeof ptr.handle === 'string' && ptr.handle.startsWith('keychain:') && process.platform === 'darwin') {
+    try { token = execFileSync('security', ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', ptr.grant_id, '-w'], { encoding: 'utf8' }).trim() } catch { token = '' }
+  }
+  if (!token) {   // file fallback (also covers keychain-read failure)
+    try { const store = JSON.parse(readFileSync(CRED_FALLBACK_PATH, 'utf8')) as Record<string, { token: string }>; token = store[ptr.grant_id]?.token || '' } catch { token = '' }
+  }
+  if (!token) return null
+  return { grant_id: ptr.grant_id, token, handle: ptr.handle, capabilities: ptr.capabilities, expires_at: ptr.expires_at }
+}
+
 function savePending(pairingId: string, codeVerifier: string): void {
   write0600(PENDING_PATH, JSON.stringify({ pairing_id: pairingId, code_verifier: codeVerifier, started_at: new Date().toISOString() }))
 }
@@ -291,6 +317,7 @@ export async function handlePair(args: Record<string, unknown>): Promise<Record<
     const grantId = String(resp.grant_id || '')
     if (!token || !grantId) { clearPending(); return { error: 'retrieval returned no credential', error_code: 'RETRIEVE_EMPTY' } }
     const handle = storeGrantCredential(grantId, token)   // raw bearer goes straight to secret store
+    saveGrantPointer(grantId, handle, resp.capabilities, resp.expires_at)   // non-secret index for later resolve
     clearPending()
     return {
       status: 'stored',
@@ -298,11 +325,31 @@ export async function handlePair(args: Record<string, unknown>): Promise<Record<
       grant_id: grantId,
       capabilities: resp.capabilities,
       expires_at: resp.expires_at,
-      note: 'Credential stored in your OS secret store. The raw token is NOT shown (server keeps only a hash). This grant is paired but not yet usable by any tool (per-request enforcement lands in a later phase).',
+      note: 'Credential stored in your OS secret store (raw token NOT shown; server keeps only a hash). Use webaz_pair action="verify" to confirm it; the server enforces active/expiry/revoked/scope on every call. Safe scopes only.',
     }
   }
 
-  return { error: `unknown action "${action}" — use "start" or "complete"`, error_code: 'BAD_ACTION' }
+  if (action === 'verify') {
+    // Consume the stored grant against a SAFE grant-gated route (read_public). The SERVER is authoritative:
+    // it re-checks active/expiry/revoked/subject-suspension/scope + audits on EVERY call. We resolve the
+    // bearer from the secret store and attach it; the raw token is never printed. Safe scopes only — no
+    // business tool and no risk scope is wired to grants here.
+    const cred = resolveGrantCredential()
+    if (!cred) return { status: 'not_paired', error_code: 'NO_GRANT_CREDENTIAL', hint: 'No stored grant. Run webaz_pair action="start", have the human approve, then action="complete".' }
+    const resp = await apiCall('/api/agent-grants/whoami', { method: 'GET', apiKey: cred.token })
+    if (resp.error) {
+      return { status: 'grant_invalid', grant_id: cred.grant_id, error: resp.error, error_code: resp.error_code, hint: 'Grant is no longer valid (revoked / expired / suspended). Re-pair with webaz_pair action="start".' }
+    }
+    return {
+      status: 'active',
+      grant: resp.grant,                 // narrow principal echoed by the server (grant_id/human_id/agent_label/capability)
+      capabilities: cred.capabilities,
+      expires_at: cred.expires_at,
+      note: 'Grant verified LIVE by the server (per-call: active/expiry/revoked/subject-suspension/scope + audited). Safe scopes only; no business tool or risk scope consumes this grant.',
+    }
+  }
+
+  return { error: `unknown action "${action}" — use "start" | "complete" | "verify"`, error_code: 'BAD_ACTION' }
 }
 
 // 启动 banner(stderr)+ status 声明用 —— 让用户/agent 一眼知道现在是真网络还是沙盒
@@ -453,14 +500,15 @@ No auth required, no parameters needed.
     description: `Pair this agent with a human's WebAZ account via a Passkey-approved, scoped, short-lived **delegation grant** (RFC-020) — NOT by pasting a permanent api_key. Two steps:
 1. action="start" → returns an approve_url + short user_code. The human opens it at webaz.xyz (logged in) and approves the server-shown consent (safe scopes only).
 2. action="complete" → retrieves the credential ONCE (PKCE) and stores it in your OS secret store (macOS Keychain → ~/.webaz/credentials 0600 fallback). Returns only a credential_handle + status — the raw token is never shown.
+3. action="verify" → uses the stored grant against a safe read endpoint to confirm it is still valid. The server re-checks active/expiry/revoked/suspension/scope and audits the call every time. Returns the grant principal/status; never the raw token.
 
 Scopes: SAFE only (read_public, profile_read, search, list_product_draft, product_publish_request, draft_order). Risk scopes (place_order/wallet/refund/...) and never-delegable actions (withdraw/key-change/vote/...) are hard-rejected.
 
-NOTE: this phase only pairs + stores the credential; the grant is NOT yet used by any tool. No account is created (registration stays human-only at webaz.xyz).`,
+NOTE: this consumes the grant only on safe read paths; no business tool and no risk scope is wired to grants. No account is created (registration stays human-only at webaz.xyz).`,
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['start', 'complete'], description: 'start a pairing, or complete it after the human approves (default: start)' },
+        action: { type: 'string', enum: ['start', 'complete', 'verify'], description: 'start a pairing, complete it after the human approves, or verify the stored grant (default: start)' },
         capabilities: { type: 'array', items: { type: 'string' }, description: 'Requested SAFE scopes (default: read_public, search). Non-safe scopes are rejected.' },
         agent_label: { type: 'string', description: 'Human-friendly name for this agent (shown in the consent screen)' },
         reason: { type: 'string', description: 'Free-text reason shown to the human (you cannot relabel the scopes)' },
