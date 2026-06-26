@@ -28,6 +28,7 @@ import { randomBytes } from 'node:crypto'
 // RFC-004 体验补:绑定 Passkey 后,追溯补发此前"已受理但无锚点跳过"的建设信誉。
 import { grantPendingAnchorCredits } from '../../layer2-business/L2-8-feedback/build-feedback-engine.js'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { registerAgentGrantsRoutes } from './agent-grants.js'  // RFC-020 PR-B — Passkey-domain delegation grants (keeps server.ts untouched)
 
 export interface WebauthnDeps {
   db: Database.Database
@@ -214,4 +215,9 @@ export function registerWebauthnRoutes(app: Application, deps: WebauthnDeps): vo
     await dbRun('UPDATE users SET webauthn_required_for_withdraw = ? WHERE id = ?', [required, user.id])
     res.json({ success: true, required_for_withdraw: !!required })
   })
+
+  // RFC-020 PR-B — agent delegation grants (issue/read/revoke). Co-registered with the
+  // Passkey security routes so the money-dense server.ts stays untouched. Safe scopes
+  // only; risk scopes default-hard-reject. Reuses db/auth/generateId from WebauthnDeps.
+  registerAgentGrantsRoutes(app, { db, auth, generateId })
 }

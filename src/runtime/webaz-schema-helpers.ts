@@ -1630,3 +1630,40 @@ export function initRegisterListSearchColumns(db: Database.Database): void {
   try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_permanent_code ON users(permanent_code) WHERE permanent_code IS NOT NULL") } catch { /* exists */ }
   try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_handle ON users(handle) WHERE handle IS NOT NULL") } catch { /* exists */ }
 }
+
+/**
+ * RFC-020 PR-B — agent delegation grants (Passkey-approved, scoped, short-lived,
+ * revocable agent credentials; NOT a permanent api_key). A NEW table — deliberately
+ * separate from `agent_attestations` (RFC-020 decision: do not overload it). Pure
+ * idempotent DDL; the composition root (applyWebazRuntimeSchema) auto-runs this so
+ * MCP also has the table for the future `webaz_pair` consumer.
+ *
+ * Bearer-first: `token_hash` stores a SHA-256 of the bearer (raw bearer is shown
+ * once, never stored). `agent_pubkey` / `pkce_challenge` are RESERVED for the PoP /
+ * device-flow phase (required before any risk scope or longer-lived delegation) —
+ * unused/NULL in PR-B. `human_confirm_required` is a design field only; its
+ * enforcement reuses the existing `webauthn_gate_tokens` / requireHumanPresence
+ * gate (no second confirmation mechanism). NO money/order/status columns.
+ */
+export function initAgentDelegationGrantsSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_delegation_grants (
+      grant_id        TEXT PRIMARY KEY,                 -- grt_xxx
+      human_id        TEXT NOT NULL,                    -- delegating human (users.id)
+      agent_label     TEXT,                             -- human-friendly agent name
+      capabilities    TEXT NOT NULL DEFAULT '[]',       -- JSON [{capability, constraints}] — SAFE scopes only in PR-B
+      token_hash      TEXT,                             -- SHA-256 of bearer (bearer-first); raw never stored
+      agent_pubkey    TEXT,                             -- RESERVED (PoP, RFC-020 §3.3); NULL in PR-B
+      pkce_challenge  TEXT,                             -- RESERVED (device-flow pairing); NULL in PR-B
+      human_confirm_required INTEGER NOT NULL DEFAULT 0,-- design field; enforcement reuses webauthn_gate_tokens
+      status          TEXT NOT NULL DEFAULT 'active',   -- active | revoked | expired
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at      TEXT NOT NULL,                    -- short-lived (clamped, RFC-020 bearer-first)
+      revoked_at      TEXT,
+      revoked_reason  TEXT
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_adg_human  ON agent_delegation_grants(human_id, status)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_adg_token  ON agent_delegation_grants(token_hash)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_adg_expiry ON agent_delegation_grants(status, expires_at)`)
+}

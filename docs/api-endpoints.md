@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (665 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (668 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -172,6 +172,9 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/withdrawals` |  |  |  | src/pwa/routes/admin-wallet-ops.ts:88 |
 | POST | `/api/admin/withdrawals/:id/approve` |  |  |  | src/pwa/routes/admin-wallet-ops.ts:98 |
 | POST | `/api/agent-buy` | 🔐 |  |  | src/pwa/routes/agent-buy.ts:41 |
+| GET | `/api/agent-grants` | 🔐 |  | ── Read: the human's connected agents (no secrets). ── | src/pwa/routes/agent-grants.ts:85 |
+| POST | `/api/agent-grants` | 🔐 |  | ── Issue a grant (human-authenticated). Safe scopes only; risk/never-delegable r | src/pwa/routes/agent-grants.ts:47 |
+| POST | `/api/agent-grants/:grant_id/revoke` | 🔐 |  | ── Revoke (online, one-click). ── | src/pwa/routes/agent-grants.ts:102 |
 | GET | `/api/agent/acp-feed` |  |  |  | src/pwa/routes/public-utils.ts:398 |
 | GET | `/api/agent/capabilities` |  |  |  | src/pwa/routes/public-utils.ts:290 |
 | GET | `/api/agent/changes` |  |  | 指纹由 tests/test-contract-fingerprint.ts + docs/CONTRACT-LOCK.json 守住(静默改契约不可 merg | src/pwa/routes/public-utils.ts:334 |
@@ -644,13 +647,13 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/wallet/withdraw/:id/confirm` | 🔐 |  | 大额提现：邮件验证码确认 | src/pwa/routes/wallet-write.ts:233 |
 | GET | `/api/wallet/withdrawals` | 🔐 |  | 我的提现记录 | src/pwa/routes/wallet-read.ts:153 |
 | POST | `/api/wallet/withdrawals/:id/cancel` | 🔐 |  | 用户取消尚未 approve 的 withdrawal — 余额自动退回 | src/pwa/routes/wallet-write.ts:261 |
-| POST | `/api/webauthn/auth/finish` | 🔐 |  | 4. 认证：finish — 验证签名 + 颁发短 gate token | src/pwa/routes/webauthn.ts:136 |
-| POST | `/api/webauthn/auth/start` | 🔐 |  | 3. 认证：start — 生成 challenge（指定 purpose + 业务数据；同一 challenge 不可复用） | src/pwa/routes/webauthn.ts:111 |
-| GET | `/api/webauthn/credentials` | 🔐 |  | 列出 / 删除 credential | src/pwa/routes/webauthn.ts:181 |
-| DELETE | `/api/webauthn/credentials/:id` | 🔐 |  |  | src/pwa/routes/webauthn.ts:188 |
-| POST | `/api/webauthn/register/finish` | 🔐 |  | 2. 注册：finish — 验证 + 入库 | src/pwa/routes/webauthn.ts:75 |
-| POST | `/api/webauthn/register/start` | 🔐 |  | 1. 注册：start — 生成 challenge + 选项 | src/pwa/routes/webauthn.ts:55 |
-| POST | `/api/webauthn/settings` | 🔐 |  |  | src/pwa/routes/webauthn.ts:206 |
+| POST | `/api/webauthn/auth/finish` | 🔐 |  | 4. 认证：finish — 验证签名 + 颁发短 gate token | src/pwa/routes/webauthn.ts:137 |
+| POST | `/api/webauthn/auth/start` | 🔐 |  | 3. 认证：start — 生成 challenge（指定 purpose + 业务数据；同一 challenge 不可复用） | src/pwa/routes/webauthn.ts:112 |
+| GET | `/api/webauthn/credentials` | 🔐 |  | 列出 / 删除 credential | src/pwa/routes/webauthn.ts:182 |
+| DELETE | `/api/webauthn/credentials/:id` | 🔐 |  |  | src/pwa/routes/webauthn.ts:189 |
+| POST | `/api/webauthn/register/finish` | 🔐 |  | 2. 注册：finish — 验证 + 入库 | src/pwa/routes/webauthn.ts:76 |
+| POST | `/api/webauthn/register/start` | 🔐 |  | 1. 注册：start — 生成 challenge + 选项 | src/pwa/routes/webauthn.ts:56 |
+| POST | `/api/webauthn/settings` | 🔐 |  |  | src/pwa/routes/webauthn.ts:207 |
 | GET | `/api/webhooks` | 🔐 |  | GET 我的订阅 | src/pwa/routes/webhooks.ts:125 |
 | POST | `/api/webhooks` | 🔐 |  | POST 订阅 | src/pwa/routes/webhooks.ts:103 |
 | DELETE | `/api/webhooks/:id` | 🔐 |  | DELETE | src/pwa/routes/webhooks.ts:133 |
