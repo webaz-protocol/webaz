@@ -1667,3 +1667,37 @@ export function initAgentDelegationGrantsSchema(db: Database.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_adg_token  ON agent_delegation_grants(token_hash)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_adg_expiry ON agent_delegation_grants(status, expires_at)`)
 }
+
+/**
+ * RFC-020 PR-C1 — agent pairing sessions (OAuth device-flow + PKCE shape).
+ *
+ * One short-lived, one-time pairing per attempt: the agent starts a pairing (sends a
+ * PKCE code_challenge), a logged-in human approves it (server-generated consent), and
+ * the agent retrieves the credential ONCE using its PKCE verifier. NO raw bearer is
+ * ever stored here — the bearer is generated at retrieval and only its SHA-256 hash is
+ * persisted on the grant (agent_delegation_grants). `agent_pubkey` is reserved for the
+ * PoP phase (stored if sent, NOT verified in C1). Pure idempotent DDL; the composition
+ * root auto-runs it so MCP also has the table. NO money/order/status columns.
+ */
+export function initAgentPairingSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_pairing_sessions (
+      pairing_id      TEXT PRIMARY KEY,                 -- par_xxx (agent holds this)
+      user_code       TEXT NOT NULL,                    -- short one-time code the human approves
+      code_challenge  TEXT NOT NULL,                    -- PKCE S256 = base64url(sha256(verifier))
+      agent_label     TEXT,
+      agent_pubkey    TEXT,                             -- RESERVED (PoP); stored if sent, NOT verified in C1
+      reason          TEXT,                             -- agent free-text reason (shown in consent)
+      capabilities    TEXT NOT NULL DEFAULT '[]',       -- requested SAFE scopes (validated safe-only at start)
+      status          TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | consumed | expired | revoked
+      human_id        TEXT,                             -- set on approve
+      grant_id        TEXT,                             -- set on approve (issued grant; token_hash filled at retrieve)
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at      TEXT NOT NULL,                    -- short TTL
+      approved_at     TEXT,
+      consumed_at     TEXT                              -- one-time retrieval marker
+    )
+  `)
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_aps_user_code ON agent_pairing_sessions(user_code)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_aps_status ON agent_pairing_sessions(status, expires_at)`)
+}

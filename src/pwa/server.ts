@@ -7361,7 +7361,7 @@ registerEvidenceRoutes(app, { db, auth, detectFraud })
 // #1013 Phase 1: 7 endpoint handlers 已迁出到 src/pwa/routes/webauthn.ts
 // helpers (consumeGateToken / requireHumanPresence) 仍在本文件，被 withdraw/arbitrate/vote 等引用
 registerWebauthnRoutes(app, {
-  db, auth, generateId,
+  db, auth, generateId, rateLimitOk,
   rpId: WEBAUTHN_RP_ID,
   rpName: WEBAUTHN_RP_NAME,
   origin: WEBAUTHN_ORIGIN,

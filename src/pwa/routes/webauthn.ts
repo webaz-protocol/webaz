@@ -34,6 +34,7 @@ export interface WebauthnDeps {
   db: Database.Database
   auth: (req: Request, res: Response) => Record<string, unknown> | null
   generateId: (prefix: string) => string
+  rateLimitOk: (key: string, max?: number, windowMs?: number) => boolean  // RFC-020 PR-C1 — throttles anon pair/start
   rpId: string                              // WEBAUTHN_RP_ID
   rpName: string                            // WEBAUTHN_RP_NAME
   origin: string | string[]                 // WEBAUTHN_ORIGIN
@@ -50,7 +51,7 @@ export interface WebauthnDeps {
 }
 
 export function registerWebauthnRoutes(app: Application, deps: WebauthnDeps): void {
-  const { db, auth, generateId, rpId, rpName, origin, challengeTtlMs, gateTtlMs, invalidateAgentRiskCacheForUser, requireHumanPresence } = deps
+  const { db, auth, generateId, rateLimitOk, rpId, rpName, origin, challengeTtlMs, gateTtlMs, invalidateAgentRiskCacheForUser, requireHumanPresence } = deps
 
   // 1. 注册：start — 生成 challenge + 选项
   app.post('/api/webauthn/register/start', async (req, res) => {
@@ -219,5 +220,5 @@ export function registerWebauthnRoutes(app: Application, deps: WebauthnDeps): vo
   // RFC-020 PR-B — agent delegation grants (issue/read/revoke). Co-registered with the
   // Passkey security routes so the money-dense server.ts stays untouched. Safe scopes
   // only; risk scopes default-hard-reject. Reuses db/auth/generateId from WebauthnDeps.
-  registerAgentGrantsRoutes(app, { db, auth, generateId })
+  registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk })
 }

@@ -33,6 +33,12 @@ import Database from 'better-sqlite3'
 import { initDatabase, generateId } from '../../layer0-foundation/L0-1-database/schema.js'
 import { setSeamDb } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam(本进程注入)
 import { applyWebazRuntimeSchema } from '../../runtime/apply-webaz-runtime-schema.js'  // 与 PWA 同源的纯 schema 桥(防 MCP fresh DB 漂移)
+import { generateCodeVerifier, pkceChallengeS256 } from '../../runtime/agent-pairing.js'  // RFC-020 PR-C1 — PKCE 配对
+import { NETWORK_TOOLS, NETWORK_SELF_AWARE, toolAllowedInNetworkMode } from './network-mode.js'  // RFC-003 网络门(可单测)
+import { homedir } from 'node:os'
+import { join as pathJoin } from 'node:path'
+import { existsSync as fsExists, mkdirSync, writeFileSync, readFileSync, unlinkSync, chmodSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import {
   transition,
   getOrderStatus,
@@ -118,56 +124,9 @@ const MODE: 'network' | 'network_readonly' | 'sandbox' =
   : (WEBAZ_API_KEY ? 'network' : 'network_readonly')
 // network 或 network_readonly 都"走真网络"(后者无 Bearer)。sandbox 才是本地。
 const isNetworkMode = (): boolean => MODE === 'network' || MODE === 'network_readonly'
-// 已迁移到 NETWORK 的工具名。P1/P2 逐个加入;未在集合里的工具仍走 sandbox(本地)。
-// P1(读工具): 纯公开读,无写无 Passkey,作"MCP 连得上生产网络"的首验证。
-const NETWORK_TOOLS = new Set<string>([
-  'webaz_price_history',
-  'webaz_leaderboard',
-  'webaz_verify_price',
-  'webaz_place_order',
-  'webaz_list_product',
-  'webaz_update_order',
-  'webaz_search',
-  'webaz_get_status',
-  'webaz_feedback',
-  'webaz_contribute',
-  // Batch 1(只读 + 低危自身写):走 webaz.xyz Bearer api_key。
-  'webaz_notifications',
-  'webaz_nearby',
-  'webaz_profile',
-  'webaz_shareables',
-  'webaz_mykey',
-  // Batch 2(低危写,无钱无 escrow):走 webaz.xyz Bearer api_key。
-  // 注:share_link 暂不迁(无对应服务端端点,需新建,留待后续)。
-  'webaz_follows',
-  'webaz_like',
-  'webaz_blocklist',
-  'webaz_default_address',
-  'webaz_chat',
-  'webaz_rfq',
-  'webaz_referral',
-  // Batch 3(商务):secondhand/skill_market/auction 纯 pwaApi(mode-aware 自动走网络);
-  // skill 直连本地引擎,加了显式 apiCall network 分支。
-  'webaz_secondhand',
-  'webaz_skill',
-  'webaz_skill_market',
-  'webaz_auction',
-  // Batch 4(资金/质押,守恒由服务端 RFC-014 保证;wallet 只读,写=Passkey 仅 PWA):
-  'webaz_wallet',
-  'webaz_trial',
-  'webaz_charity',
-  'webaz_bid',
-  'webaz_auto_bid',
-  // Batch 5(铁律/敏感):claim_verify 纯 pwaApi(真人门由服务端 require_human_presence 强制);
-  // dispute view/list_open/respond/add_evidence 走网络,arbitrate 仅返回 Passkey 指引;
-  // rotate_key/revoke_key 仅返回 Passkey 指引(不本地校验)。
-  'webaz_dispute',
-  'webaz_claim_verify',
-  'webaz_rotate_key',
-  'webaz_revoke_key',
-  // #1122:share_link 现有服务端端点 /api/share-link,可走网络。
-  'webaz_share_link',
-])
+// NETWORK_TOOLS / NETWORK_SELF_AWARE / toolAllowedInNetworkMode moved to
+// ./network-mode.ts (imported at top) so the gate is unit-testable without booting
+// the stdio server. NETWORK_TOOLS now includes webaz_pair (RFC-020 onboarding/auth).
 
 // RFC-004 现场证据:进程内 ring buffer,记最近工具调用的【脱敏摘要】(只存 arg key 名,不存值)。
 // webaz_feedback 提交时附带,让 maintainer 拿到"问题发生时的现场",而不只是一句抱怨。
@@ -183,9 +142,8 @@ function toolBackend(tool: string): 'network' | 'sandbox' {
   return (isNetworkMode() && NETWORK_TOOLS.has(tool)) ? 'network' : 'sandbox'
 }
 
-// 未在 NETWORK_TOOLS 名单、但 NETWORK 模式下仍可本地运行的"自省/引导"工具(非数据操作)。
-// info = 本地自省(并拉 live 网络状态);register = 引导真人去 webaz.xyz。其余未迁工具一律硬失败。
-const NETWORK_SELF_AWARE = new Set<string>(['webaz_info', 'webaz_register'])
+// NETWORK_SELF_AWARE imported from ./network-mode.ts (info = local introspection;
+// register = redirect human to webaz.xyz). Everything else un-migrated hard-fails.
 
 // RFC-003 Batch 0 安全网:NETWORK 模式下调用【未迁移】工具时的诚实拒绝(而非静默落本地沙盒)。
 // 否则带 key 的用户调未迁工具会被悄悄喂本地结果——写操作=幻影操作(根本没到 webaz.xyz)。
@@ -234,6 +192,117 @@ async function apiCall(path: string, opts: { method?: string; body?: unknown; ap
     const msg = (e as Error).name === 'TimeoutError' ? '请求超时(15s)' : (e as Error).message
     return { error: `网络错误:${msg}`, network_error: true }
   }
+}
+
+// ─────────────────────────── RFC-020 PR-C1: webaz_pair (pairing + local credential storage) ───────────────────────────
+// C1 scope: pairing / consent / retrieval / LOCAL credential storage ONLY. The grant is
+// NOT wired into any business tool (that is PR-C2 — per-request scope enforcement + audit).
+// The raw bearer appears exactly once, in the server→MCP retrieval response; it is written
+// straight to the OS secret store (Keychain → 0600 file fallback) and NEVER returned to the
+// user / chat / tool-response / log. webaz_pair returns only a credential handle + status.
+
+const WEBAZ_DIR = pathJoin(homedir(), '.webaz')
+const PENDING_PATH = pathJoin(WEBAZ_DIR, 'pairing-pending.json')   // holds the PKCE verifier between start→complete
+const CRED_FALLBACK_PATH = pathJoin(WEBAZ_DIR, 'credentials')      // 0600 fallback when Keychain unavailable
+const KEYCHAIN_SERVICE = 'webaz-grant'
+
+function ensureWebazDir(): void { if (!fsExists(WEBAZ_DIR)) mkdirSync(WEBAZ_DIR, { recursive: true, mode: 0o700 }) }
+function write0600(path: string, data: string): void { ensureWebazDir(); writeFileSync(path, data, { mode: 0o600 }); try { chmodSync(path, 0o600) } catch { /* best effort */ } }
+
+/** Store the raw bearer in the OS secret store; never log it. Returns an opaque handle. */
+function storeGrantCredential(grantId: string, token: string): string {
+  // macOS Keychain first (non-interactive upsert). Any failure → strict-perms file fallback.
+  if (process.platform === 'darwin') {
+    try {
+      execFileSync('security', ['add-generic-password', '-U', '-s', KEYCHAIN_SERVICE, '-a', grantId, '-w', token], { stdio: ['ignore', 'ignore', 'ignore'] })
+      return `keychain:${KEYCHAIN_SERVICE}/${grantId}`
+    } catch { /* fall through to file */ }
+  }
+  let store: Record<string, { token: string; stored_at: string }> = {}
+  try { if (fsExists(CRED_FALLBACK_PATH)) store = JSON.parse(readFileSync(CRED_FALLBACK_PATH, 'utf8')) } catch { store = {} }
+  store[grantId] = { token, stored_at: new Date().toISOString() }
+  write0600(CRED_FALLBACK_PATH, JSON.stringify(store, null, 2))
+  return `file:~/.webaz/credentials#${grantId}`
+}
+
+function savePending(pairingId: string, codeVerifier: string): void {
+  write0600(PENDING_PATH, JSON.stringify({ pairing_id: pairingId, code_verifier: codeVerifier, started_at: new Date().toISOString() }))
+}
+function readPending(): { pairing_id: string; code_verifier: string } | null {
+  try { return fsExists(PENDING_PATH) ? JSON.parse(readFileSync(PENDING_PATH, 'utf8')) : null } catch { return null }
+}
+function clearPending(): void { try { if (fsExists(PENDING_PATH)) unlinkSync(PENDING_PATH) } catch { /* best effort */ } }
+
+export async function handlePair(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // Mode isolation (fail-closed): pairing talks to the LIVE webaz.xyz API. In explicit
+  // sandbox mode (local-only) we must NOT create a pairing session on the live network.
+  if (!isNetworkMode()) {
+    return {
+      _mode: MODE,
+      error: 'Pairing requires NETWORK mode — you are in sandbox (local-only, isolated from webaz.xyz). Unset WEBAZ_MODE (or set WEBAZ_MODE=network / network_readonly) to pair with a real human account.',
+      error_code: 'PAIRING_REQUIRES_NETWORK',
+    }
+  }
+  const action = (args.action as string) || 'start'
+
+  if (action === 'start') {
+    const caps = Array.isArray(args.capabilities) && (args.capabilities as unknown[]).length
+      ? (args.capabilities as string[]).map(c => ({ capability: String(c) }))
+      : [{ capability: 'read_public' }, { capability: 'search' }]   // default: minimal safe scopes
+    const verifier = generateCodeVerifier()
+    const challenge = pkceChallengeS256(verifier)
+    const resp = await apiCall('/api/agent-grants/pair/start', {
+      method: 'POST',
+      body: {
+        code_challenge: challenge,
+        capabilities: caps,
+        agent_label: typeof args.agent_label === 'string' ? args.agent_label : undefined,
+        reason: typeof args.reason === 'string' ? args.reason : undefined,   // free-text reason only
+      },
+    })
+    if (resp.error) return resp
+    savePending(String(resp.pairing_id), verifier)   // verifier stays LOCAL; never sent until retrieve
+    return {
+      status: 'awaiting_human_approval',
+      pairing_id: resp.pairing_id,
+      user_code: resp.user_code,
+      approve_url: `${WEBAZ_API_URL}${String(resp.approve_url || '')}`,
+      expires_at: resp.expires_at,
+      next: `Ask the human to open approve_url (logged in at webaz.xyz) and approve. Then call webaz_pair again with action="complete".`,
+      capabilities_requested: caps.map(c => c.capability),
+      note: 'Safe scopes only. The credential is delivered once on completion and stored in your OS secret store — it is never shown here.',
+    }
+  }
+
+  if (action === 'complete') {
+    const pending = readPending()
+    if (!pending) return { error: 'no pending pairing — run webaz_pair (action="start") first', error_code: 'NO_PENDING_PAIRING' }
+    const resp = await apiCall(`/api/agent-grants/pair/${pending.pairing_id}/retrieve`, {
+      method: 'POST',
+      body: { code_verifier: pending.code_verifier },
+    })
+    if (resp.error) {
+      // not approved yet → keep pending so the human can still approve + a later retry works
+      if (resp.http_status === 409) return { status: 'not_ready', detail: resp.error, hint: 'Human has not approved yet (or it expired). Approve, then call action="complete" again.' }
+      clearPending()
+      return resp
+    }
+    const token = String(resp.token || '')
+    const grantId = String(resp.grant_id || '')
+    if (!token || !grantId) { clearPending(); return { error: 'retrieval returned no credential', error_code: 'RETRIEVE_EMPTY' } }
+    const handle = storeGrantCredential(grantId, token)   // raw bearer goes straight to secret store
+    clearPending()
+    return {
+      status: 'stored',
+      credential_handle: handle,                          // opaque handle — NOT the token
+      grant_id: grantId,
+      capabilities: resp.capabilities,
+      expires_at: resp.expires_at,
+      note: 'Credential stored in your OS secret store. The raw token is NOT shown (server keeps only a hash). This grant is paired but not yet usable by any tool (per-request enforcement lands in a later phase).',
+    }
+  }
+
+  return { error: `unknown action "${action}" — use "start" or "complete"`, error_code: 'BAD_ACTION' }
 }
 
 // 启动 banner(stderr)+ status 声明用 —— 让用户/agent 一眼知道现在是真网络还是沙盒
@@ -377,6 +446,25 @@ No auth required, no parameters needed.
     inputSchema: {
       type: 'object',
       properties: {},
+    },
+  },
+  {
+    name: 'webaz_pair',
+    description: `Pair this agent with a human's WebAZ account via a Passkey-approved, scoped, short-lived **delegation grant** (RFC-020) — NOT by pasting a permanent api_key. Two steps:
+1. action="start" → returns an approve_url + short user_code. The human opens it at webaz.xyz (logged in) and approves the server-shown consent (safe scopes only).
+2. action="complete" → retrieves the credential ONCE (PKCE) and stores it in your OS secret store (macOS Keychain → ~/.webaz/credentials 0600 fallback). Returns only a credential_handle + status — the raw token is never shown.
+
+Scopes: SAFE only (read_public, profile_read, search, list_product_draft, product_publish_request, draft_order). Risk scopes (place_order/wallet/refund/...) and never-delegable actions (withdraw/key-change/vote/...) are hard-rejected.
+
+NOTE: this phase only pairs + stores the credential; the grant is NOT yet used by any tool. No account is created (registration stays human-only at webaz.xyz).`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['start', 'complete'], description: 'start a pairing, or complete it after the human approves (default: start)' },
+        capabilities: { type: 'array', items: { type: 'string' }, description: 'Requested SAFE scopes (default: read_public, search). Non-safe scopes are rejected.' },
+        agent_label: { type: 'string', description: 'Human-friendly name for this agent (shown in the consent screen)' },
+        reason: { type: 'string', description: 'Free-text reason shown to the human (you cannot relabel the scopes)' },
+      },
     },
   },
   {
@@ -4889,12 +4977,13 @@ export async function startMCPServer() {
       // ─── RFC-003 Batch 0 安全网:NETWORK 模式下未迁移的工具【硬失败】,不静默落本地沙盒 ───
       // 例外:info / register(NETWORK_SELF_AWARE)有专门 network-aware 处理,照常放行。
       let handled = false
-      if (isNetworkMode() && !NETWORK_TOOLS.has(name) && !NETWORK_SELF_AWARE.has(name)) {
+      if (isNetworkMode() && !toolAllowedInNetworkMode(name)) {
         result = networkMigrationPending(name)
         handled = true
       }
       if (!handled) switch (name) {
         case 'webaz_info':          result = await handleInfo(); break
+        case 'webaz_pair':          result = await handlePair(args); break
         case 'webaz_register':      result = handleRegister(args); break
         case 'webaz_search':        result = await handleSearch(args); break
         case 'webaz_verify_price':  result = await handleVerifyPrice(args); break
