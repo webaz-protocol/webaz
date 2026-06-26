@@ -29,7 +29,7 @@ import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYP
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
-import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema, initCartItemsSchema, initFollowsSchema, initPushSubscriptionsSchema, initUserSessionsSchema, initUserBlocklistSchema, initImportLogsSchema, initErrorLogSchema, initSecondhandItemsSchema, initProductTrialCampaignsSchema, initProductTrialClaimsSchema, initReturnRequestsSchema, initReturnMessagesSchema, initProductVariantsSchema, initEditorPicksSchema, initKycRecordsSchema, initWebauthnSchema, initClaimVerificationBaseSchema, initClaimVerifierSuspensionsSchema, initProductClaimSchema, initReviewClaimSchema, initSecondhandClaimSchema, initAuctionClaimSchema, initWishClaimSchema, initShareableClickLogSchema, initCommissionAuditLogSchema, initRegistrationAuditLogSchema, initProductExternalLinksBaseSchema, initLinkChallengesSchema, initVerifyTasksSchema, initVerifySubmissionsSchema, initVerifierStatsSchema } from './server-schema.js'
+import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema, initCartItemsSchema, initFollowsSchema, initPushSubscriptionsSchema, initUserSessionsSchema, initUserBlocklistSchema, initImportLogsSchema, initErrorLogSchema, initSecondhandItemsSchema, initProductTrialCampaignsSchema, initProductTrialClaimsSchema, initReturnRequestsSchema, initReturnMessagesSchema, initProductVariantsSchema, initEditorPicksSchema, initKycRecordsSchema, initWebauthnSchema, initClaimVerificationBaseSchema, initClaimVerifierSuspensionsSchema, initProductClaimSchema, initReviewClaimSchema, initSecondhandClaimSchema, initAuctionClaimSchema, initWishClaimSchema, initShareableClickLogSchema, initCommissionAuditLogSchema, initRegistrationAuditLogSchema, initProductExternalLinksBaseSchema, initLinkChallengesSchema, initVerifyTasksSchema, initVerifySubmissionsSchema, initVerifierStatsSchema, initRegisterListSearchColumns } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js'
 import { applyWalletDelta, creditColumns } from '../ledger.js'
@@ -490,8 +490,11 @@ initAnchorRegistrySchema(db)
 
 // boot-order fix（2026-05-26）：anchor migration 引用 users.handle / search_anchor，
 // 但对应 ALTER TABLE 在 735+/958+ 行才跑。旧 DB（v3 era）触发 prepare 失败 → 此处 catch
-// 后 warn 不阻塞 server，但日志噪音 → 预热那两列让 migration 真正能跑
-try { db.exec("ALTER TABLE users ADD COLUMN handle TEXT") } catch {}
+// 后 warn 不阻塞 server，但日志噪音 → 预热那两列让 migration 真正能跑。
+// handle 现由 initRegisterListSearchColumns 在此预热(与 MCP runtime schema 同源,见
+// src/runtime/webaz-schema-helpers.ts)；该 helper 同时建 permanent_code/region + 11 个
+// products 结构化字段(纯非钱列,从下方各 inline 块单点收口到此处,CREATE-before-ALTER 不变)。
+initRegisterListSearchColumns(db)
 try { db.exec("ALTER TABLE users ADD COLUMN search_anchor TEXT") } catch {}
 
 // E1 一次性迁移：把 users.search_anchor 旧数据搬进 anchor_registry（target_kind='user'）
@@ -581,7 +584,7 @@ try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)
 for (const stmt of [
   'ALTER TABLE users ADD COLUMN sponsor_id   TEXT',
   'ALTER TABLE users ADD COLUMN sponsor_path TEXT',
-  "ALTER TABLE users ADD COLUMN region       TEXT DEFAULT 'global'",
+  // users.region moved to initRegisterListSearchColumns (single source, shared w/ MCP) — see ~line 494.
   // Admin 分级：root 全权 / regional 按 admin_scope 区域受限
   "ALTER TABLE users ADD COLUMN admin_type   TEXT",   // root | regional
   "ALTER TABLE users ADD COLUMN admin_scope  TEXT",   // global | china | us | eu | india | singapore
@@ -1134,12 +1137,10 @@ try { db.exec("ALTER TABLE users ADD COLUMN shop_intro TEXT") } catch {}    // �
 // ─── 4 层身份模型 ─────────────────────────────────────────
 // id (内部 usr_xxx, 永不可改) + permanent_code (6 位 Crockford base32, 永不可改, 对外短码)
 // + handle (@username, 可改 7天1次/年3次) + name (昵称, 可重复可改)
-try { db.exec("ALTER TABLE users ADD COLUMN permanent_code TEXT") } catch {}
-try { db.exec("ALTER TABLE users ADD COLUMN handle TEXT") } catch {}
+// permanent_code / handle + 其唯一索引已上移到 initRegisterListSearchColumns(~line 494,
+// 与 MCP runtime schema 同源);此处仅保留 handle 的附属列(不在 register/list/search 路径上)。
 try { db.exec("ALTER TABLE users ADD COLUMN handle_last_created_at TEXT") } catch {}
 try { db.exec("ALTER TABLE users ADD COLUMN handle_change_log TEXT") } catch {}  // JSON: [{at, from}], 保留近 365 天
-try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_permanent_code ON users(permanent_code) WHERE permanent_code IS NOT NULL") } catch {}
-try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_handle ON users(handle) WHERE handle IS NOT NULL") } catch {}
 // P15 雷达扫描：粗粒度地理位置（0.1° ≈ 11km × 11km，QVOD 风格匿名聚合）
 try { db.exec("ALTER TABLE users ADD COLUMN geo_lat REAL") } catch {}
 try { db.exec("ALTER TABLE users ADD COLUMN geo_lng REAL") } catch {}
@@ -2384,21 +2385,13 @@ initAdminCoordinationSchema(db)
 initVerificationCodesSchema(db)
 
 const NEW_PRODUCT_COLS = [
-  'ALTER TABLE products ADD COLUMN specs TEXT',
-  'ALTER TABLE products ADD COLUMN brand TEXT',
-  'ALTER TABLE products ADD COLUMN model TEXT',
+  // specs/brand/model/source_price/ship_regions/handling_hours/estimated_days/
+  // fragile/return_days/return_condition/warranty_days moved to
+  // initRegisterListSearchColumns (single source, shared w/ MCP) — see ~line 494.
   'ALTER TABLE products ADD COLUMN source_url TEXT',
-  'ALTER TABLE products ADD COLUMN source_price REAL',
   'ALTER TABLE products ADD COLUMN source_price_at TEXT',
   'ALTER TABLE products ADD COLUMN weight_kg REAL',
-  'ALTER TABLE products ADD COLUMN ship_regions TEXT DEFAULT "全国"',
   'ALTER TABLE products ADD COLUMN excluded_regions TEXT',
-  'ALTER TABLE products ADD COLUMN handling_hours INTEGER DEFAULT 24',
-  'ALTER TABLE products ADD COLUMN estimated_days TEXT',
-  'ALTER TABLE products ADD COLUMN fragile INTEGER DEFAULT 0',
-  'ALTER TABLE products ADD COLUMN return_days INTEGER DEFAULT 7',
-  'ALTER TABLE products ADD COLUMN return_condition TEXT',
-  'ALTER TABLE products ADD COLUMN warranty_days INTEGER DEFAULT 0',
   'ALTER TABLE products ADD COLUMN commitment_hash TEXT',
   'ALTER TABLE products ADD COLUMN description_hash TEXT',
   'ALTER TABLE products ADD COLUMN price_hash TEXT',

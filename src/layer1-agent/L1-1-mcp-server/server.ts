@@ -32,6 +32,7 @@ import Database from 'better-sqlite3'
 
 import { initDatabase, generateId } from '../../layer0-foundation/L0-1-database/schema.js'
 import { setSeamDb } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam(本进程注入)
+import { applyWebazRuntimeSchema } from '../../runtime/apply-webaz-runtime-schema.js'  // 与 PWA 同源的纯 schema 桥(防 MCP fresh DB 漂移)
 import {
   transition,
   getOrderStatus,
@@ -252,6 +253,13 @@ function modeBanner(): string {
 
 const db: Database.Database = initDatabase()
 setSeamDb(db)  // RFC-016 Phase 1:注入异步 DB seam(本进程)—— 共享引擎迁 seam 后 MCP 进程也能用,否则 dbOne/dbAll 抛"未初始化"
+// MCP fresh-DB schema bridge: apply the SAME pure schema helpers the PWA boot
+// runs (incl. product_aliases + users.permanent_code/handle/region), so an
+// MCP-initialized DB is schema-complete for the sandbox tool path WITHOUT first
+// booting the PWA server. Pure idempotent DDL only — no business writes, no
+// money/order/status path. (MCP_PRODUCT_COLS below now overlaps the products
+// columns and is redundant-but-harmless; left untouched to avoid scope creep.)
+applyWebazRuntimeSchema(db)
 initSystemUser(db)
 initDisputeSchema(db)
 initNotificationSchema(db)
