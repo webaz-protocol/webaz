@@ -611,17 +611,17 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/tokenomics/status` |  |  |  | src/pwa/routes/dashboards.ts:25 |
 | GET | `/api/trial-campaigns/:campaign_id/claims` | 🔐 |  | 卖家：查看某活动的 claims 详情 | src/pwa/routes/trial.ts:343 |
 | POST | `/api/trial-claims/:claim_id/link-note` | 🔐 |  | 买家关联笔记 | src/pwa/routes/trial.ts:287 |
-| GET | `/api/users/:id/auctions` |  |  | 用户进行中拍卖（公开：open） | src/pwa/routes/users-public.ts:149 |
+| GET | `/api/users/:id/auctions` |  |  | 用户进行中拍卖（公开：open） | src/pwa/routes/users-public.ts:155 |
 | GET | `/api/users/:id/bookmarked-shareables` | 🔐 |  | 我收藏过的 shareables（仅 owner 自己可见） | src/pwa/routes/shareables-interactions.ts:198 |
-| GET | `/api/users/:id/liked-shareables` | 🔐 |  | 用户赞过的 shareables（仅 owner 可见） | src/pwa/routes/users-public.ts:190 |
-| GET | `/api/users/:id/products` |  |  | 用户在售商品（公开：卖家 active 商品） | src/pwa/routes/users-public.ts:177 |
-| GET | `/api/users/:id/public-card` |  |  | 公开卡（未登录可调，分享 banner 用） | src/pwa/routes/users-public.ts:217 |
-| GET | `/api/users/:id/pv-summary` | 🔐 |  | PV 简报：组织图点击节点用 | src/pwa/routes/users-public.ts:65 |
+| GET | `/api/users/:id/liked-shareables` | 🔐 |  | 用户赞过的 shareables（仅 owner 可见） | src/pwa/routes/users-public.ts:196 |
+| GET | `/api/users/:id/products` |  |  | 用户在售商品（公开：卖家 active 商品） | src/pwa/routes/users-public.ts:183 |
+| GET | `/api/users/:id/public-card` |  |  | 公开卡（未登录可调，分享 banner 用） | src/pwa/routes/users-public.ts:223 |
+| GET | `/api/users/:id/pv-summary` | 🔐 |  | PV 简报：组织图点击节点用 | src/pwa/routes/users-public.ts:71 |
 | GET | `/api/users/:id/reputation` | 🔐 |  | 公开 reputation — 仅 level | src/pwa/routes/users-public.ts:49 |
-| GET | `/api/users/:id/reviews` |  |  | 用户写的测评（公开：作为买家给出的评价） | src/pwa/routes/users-public.ts:162 |
-| GET | `/api/users/:id/secondhand` |  |  | 用户在售二手（公开：available + reserved） | src/pwa/routes/users-public.ts:136 |
-| GET | `/api/users/:id/shareables` |  |  | 用户公开 shareables | src/pwa/routes/users-public.ts:104 |
-| GET | `/api/users/:user_id` | 🔐 |  | 公开用户主页 + D2 信誉徽章墙 | src/pwa/routes/users-public.ts:247 |
+| GET | `/api/users/:id/reviews` |  |  | 用户写的测评（公开：作为买家给出的评价） | src/pwa/routes/users-public.ts:168 |
+| GET | `/api/users/:id/secondhand` |  |  | 用户在售二手（公开：available + reserved） | src/pwa/routes/users-public.ts:142 |
+| GET | `/api/users/:id/shareables` |  |  | 用户公开 shareables | src/pwa/routes/users-public.ts:110 |
+| GET | `/api/users/:user_id` | 🔐 |  | 公开用户主页 + D2 信誉徽章墙 | src/pwa/routes/users-public.ts:253 |
 | POST | `/api/verifier/appeal` | 🔐 |  |  | src/pwa/routes/verifier-user.ts:154 |
 | POST | `/api/verifier/apply` | 🔐 |  |  | src/pwa/routes/verifier-user.ts:70 |
 | GET | `/api/verifier/eligibility` | 🔐 |  |  | src/pwa/routes/verifier-user.ts:47 |

@@ -85,6 +85,7 @@
     "test:connected-agents-read": "tsx scripts/test-connected-agents-read.ts",
     "test:connected-agents-ui": "tsx scripts/test-connected-agents-ui.ts",
     "test:leaderboard-anon-projection": "tsx scripts/test-leaderboard-anon-projection.ts",
+    "test:reputation-handle-resolution": "tsx scripts/test-reputation-handle-resolution.ts",
     "test:mcp-auth-firebreak": "tsx scripts/test-mcp-auth-firebreak.ts",
     "test:proposal-admin-ui": "tsx scripts/test-proposal-admin-ui.ts",
     "check:pwa-syntax": "node --check src/pwa/public/app.js && node --check src/pwa/public/app-admin.js && node --check src/pwa/public/app-contribution.js && node --check src/pwa/public/app-ai.js && node --check src/pwa/public/app-discover.js && node --check src/pwa/public/app-profile.js && node --check src/pwa/public/app-account.js && node --check src/pwa/public/app-shop.js && node --check src/pwa/public/app-listings.js && node --check src/pwa/public/app-seller.js && node --check src/pwa/public/app-agents.js && node --check src/pwa/public/i18n.js && node --check src/pwa/public/sw.js",
