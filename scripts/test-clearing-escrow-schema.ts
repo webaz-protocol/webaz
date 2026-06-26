@@ -55,8 +55,13 @@ try {
   db.prepare(`INSERT INTO pending_commission_escrow (recipient_user_id, order_id, amount, attribution_path, status, created_at, expires_at) VALUES (?,?,?,?,?,?,?)`)
     .run('usr_a', null, 7, 'L1', 'pending', 100, 200)
   ok('existing(no matures_at): precondition — column absent', !hasCol(db, 'matures_at'))
-  initPendingCommissionEscrowSchema(db)   // migration should add matures_at, preserve the row
+  const rootpage = (): number => (db.prepare("SELECT rootpage FROM sqlite_master WHERE type='table' AND name='pending_commission_escrow'").get() as any)?.rootpage
+  const rpBefore = rootpage()
+  initPendingCommissionEscrowSchema(db)   // additive path: ADD COLUMN, NOT a rebuild
   ok('existing(no matures_at): matures_at added by migration', hasCol(db, 'matures_at'))
+  // ADD COLUMN is metadata-only → rootpage is stable. A DROP+rebuild would change it. This is the
+  // money-path-prudence assertion: the common prod path must NOT rebuild the table.
+  ok('existing(no matures_at): added via ADD COLUMN, NOT rebuilt (rootpage stable)', rootpage() === rpBefore, `before=${rpBefore} after=${rootpage()}`)
   const m = db.prepare(`SELECT amount, status, matures_at FROM pending_commission_escrow WHERE attribution_path='L1'`).get() as any
   ok('existing(no matures_at): legacy row preserved', m?.amount === 7 && m?.status === 'pending', JSON.stringify(m))
   ok('existing(no matures_at): legacy matures_at backfilled NULL', m?.matures_at === null, JSON.stringify(m))

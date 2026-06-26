@@ -1738,10 +1738,15 @@ export function initAgentGrantAuthLogSchema(db: Database.Database): void {
  *     TEXT value, so it needs no schema change (documented in the column comment).
  * order_id stays NULLable for pv_pair rows (PR-1c-b).
  *
- * Migration rebuilds the table when its schema is behind — (a) order_id NOT NULL (pre-1c-b), or
- * (b) missing matures_at (pre-RFC-018). Idempotent; explicit-column INSERT maps an older DB cleanly
- * (matures_at → NULL for pre-existing rows). The OFF/ON foreign_keys dance only runs when a rebuild
- * is actually needed and restores L0's global foreign_keys=ON.
+ * Migration, two independent cases (both idempotent, both skip when already current):
+ *   (a) order_id NOT NULL (pre-1c-b) → full rebuild — SQLite ADD COLUMN cannot relax a NOT NULL
+ *       constraint. Explicit-column INSERT maps the old rows; FK OFF/ON restores L0's global ON. The
+ *       rebuilt table already carries matures_at, so (b) then no-ops.
+ *   (b) missing matures_at (pre-RFC-018) → a cheap, NON-destructive `ALTER TABLE ADD COLUMN`. No
+ *       DROP, rows + indexes preserved. This is the common existing-DB path (every pre-RFC-018 DB,
+ *       incl. prod). We deliberately do NOT rebuild for an additive column — a money-path table on a
+ *       persistent prod volume should take the smallest safe migration. (Allowed here because the
+ *       complexity ratchet counts DDL in server.ts only, not this helper.)
  */
 export function initPendingCommissionEscrowSchema(db: Database.Database): void {
   db.exec(`
@@ -1767,37 +1772,45 @@ export function initPendingCommissionEscrowSchema(db: Database.Database): void {
     if (cols.length === 0) return  // table absent (shouldn't happen — CREATE above just ran)
     const orderIdCol = cols.find(c => c.name === 'order_id')
     const orderIdNotNull = !!orderIdCol && orderIdCol.notnull === 1
-    const missingMaturesAt = !cols.some(c => c.name === 'matures_at')
-    if (!orderIdNotNull && !missingMaturesAt) return  // already current
-    console.log(`[pc-escrow-migrate] rebuilding (orderIdNotNull=${orderIdNotNull}, missingMaturesAt=${missingMaturesAt})`)
-    db.exec('PRAGMA foreign_keys = OFF')
-    db.transaction(() => {
-      db.exec(`
-        CREATE TABLE pending_commission_escrow_new (
-          id                       INTEGER PRIMARY KEY AUTOINCREMENT,
-          recipient_user_id        TEXT NOT NULL,
-          order_id                 TEXT,
-          amount                   REAL NOT NULL,
-          attribution_path         TEXT NOT NULL,
-          status                   TEXT NOT NULL DEFAULT 'pending',
-          created_at               INTEGER NOT NULL,
-          expires_at               INTEGER NOT NULL,
-          settled_at               INTEGER,
-          expired_to_charity_at    INTEGER,
-          matures_at               INTEGER,
-          FOREIGN KEY (recipient_user_id) REFERENCES users(id),
-          FOREIGN KEY (order_id) REFERENCES orders(id)
-        )
-      `)
-      // explicit columns: an older DB lacks matures_at → it defaults to NULL in _new (never SELECT *)
-      db.exec(`INSERT INTO pending_commission_escrow_new
-        (id, recipient_user_id, order_id, amount, attribution_path, status, created_at, expires_at, settled_at, expired_to_charity_at)
-        SELECT id, recipient_user_id, order_id, amount, attribution_path, status, created_at, expires_at, settled_at, expired_to_charity_at
-        FROM pending_commission_escrow`)
-      db.exec('DROP TABLE pending_commission_escrow')
-      db.exec('ALTER TABLE pending_commission_escrow_new RENAME TO pending_commission_escrow')
-    })()
-    db.exec('PRAGMA foreign_keys = ON')
+
+    // (a) STRUCTURAL (pre-1c-b): order_id NOT NULL → nullable. Unavoidable full rebuild (ADD COLUMN
+    // cannot relax NOT NULL). The rebuilt table already includes matures_at, so (b) below no-ops.
+    if (orderIdNotNull) {
+      console.log('[pc-escrow-migrate] order_id NOT NULL — rebuilding table to allow NULL for pv_pair')
+      db.exec('PRAGMA foreign_keys = OFF')
+      db.transaction(() => {
+        db.exec(`
+          CREATE TABLE pending_commission_escrow_new (
+            id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+            recipient_user_id        TEXT NOT NULL,
+            order_id                 TEXT,
+            amount                   REAL NOT NULL,
+            attribution_path         TEXT NOT NULL,
+            status                   TEXT NOT NULL DEFAULT 'pending',
+            created_at               INTEGER NOT NULL,
+            expires_at               INTEGER NOT NULL,
+            settled_at               INTEGER,
+            expired_to_charity_at    INTEGER,
+            matures_at               INTEGER,
+            FOREIGN KEY (recipient_user_id) REFERENCES users(id),
+            FOREIGN KEY (order_id) REFERENCES orders(id)
+          )
+        `)
+        // explicit columns: an older DB lacks matures_at → it defaults to NULL in _new (never SELECT *)
+        db.exec(`INSERT INTO pending_commission_escrow_new
+          (id, recipient_user_id, order_id, amount, attribution_path, status, created_at, expires_at, settled_at, expired_to_charity_at)
+          SELECT id, recipient_user_id, order_id, amount, attribution_path, status, created_at, expires_at, settled_at, expired_to_charity_at
+          FROM pending_commission_escrow`)
+        db.exec('DROP TABLE pending_commission_escrow')
+        db.exec('ALTER TABLE pending_commission_escrow_new RENAME TO pending_commission_escrow')
+      })()
+      db.exec('PRAGMA foreign_keys = ON')
+    }
+
+    // (b) ADDITIVE (pre-RFC-018): matures_at missing → cheap, non-destructive column add (no DROP;
+    // rows + indexes preserved). Idempotent: throws "duplicate column" once present (fresh DB, or
+    // just-rebuilt in (a)) → swallowed. This is the path every existing prod DB takes.
+    try { db.exec('ALTER TABLE pending_commission_escrow ADD COLUMN matures_at INTEGER') } catch { /* column already exists */ }
   })()
 
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_escrow_recipient ON pending_commission_escrow(recipient_user_id, status, expires_at)') } catch {}
