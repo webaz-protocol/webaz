@@ -259,11 +259,20 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     })
   })
 
-  // ── Read: the human's connected agents (no secrets). ──
+  // ── Read: the human's connected agents (no secrets) + recent-use from the audit log (PR-D). ──
+  // last_used_at / use_count come from agent_grant_auth_log (RFC-020 §3.7) — the data the
+  // "Connected agents" UI shows so a human can spot stale/unused or busy agents before revoking.
   app.get('/api/agent-grants', async (req, res) => {
     const user = auth(req, res); if (!user) return
     const rows = await dbAll<Record<string, unknown>>(
-      'SELECT grant_id, agent_label, capabilities, status, created_at, expires_at, revoked_at, revoked_reason FROM agent_delegation_grants WHERE human_id = ? ORDER BY created_at DESC',
+      `SELECT g.grant_id, g.agent_label, g.capabilities, g.status, g.created_at, g.expires_at, g.revoked_at, g.revoked_reason,
+              MAX(CASE WHEN l.outcome = 'allow' THEN l.ts END) AS last_used_at,
+              COUNT(CASE WHEN l.outcome = 'allow' THEN 1 END) AS use_count
+         FROM agent_delegation_grants g
+         LEFT JOIN agent_grant_auth_log l ON l.grant_id = g.grant_id
+        WHERE g.human_id = ?
+        GROUP BY g.grant_id
+        ORDER BY g.created_at DESC`,
       [user.id],
     )
     const now = new Date().toISOString()
@@ -271,6 +280,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       grants: rows.map(g => ({
         ...g,
         capabilities: safeParseCaps(g.capabilities),
+        use_count: Number(g.use_count) || 0,
         active: grantIsActive(g as { status?: string; expires_at?: string; revoked_at?: string | null }, now),
       })),
     })
