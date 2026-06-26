@@ -2164,11 +2164,10 @@
         "tags": [],
         "security": [
           {
-            "grantBearer": [
-              "read_public"
-            ]
+            "grantBearer": []
           }
-        ]
+        ],
+        "x-webaz-grant-scope": "read_public"
       }
     },
     "/api/agent/acp-feed": {

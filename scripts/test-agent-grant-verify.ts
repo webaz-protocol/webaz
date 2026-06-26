@@ -29,6 +29,7 @@ const { initDatabase, generateId } = await import('../src/layer0-foundation/L0-1
 const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')
 const { registerAgentGrantsRoutes } = await import('../src/pwa/routes/agent-grants.js')
 const { verifyGrantToken } = await import('../src/runtime/agent-grant-verifier.js')
+const { initUserModerationSchema } = await import('../src/runtime/webaz-schema-helpers.js')
 
 let pass = 0, fail = 0
 const fails: string[] = []
@@ -37,6 +38,7 @@ const sha = (s: string) => createHash('sha256').update(s).digest('hex')
 
 const db = initDatabase()
 setSeamDb(db)
+initUserModerationSchema(db)   // the verifier joins user_moderation (created at boot in prod)
 
 // Realistic human auth: Authorization: Bearer <api_key> → users lookup (mirrors real auth()'s key path).
 const auth = (req: express.Request, res: express.Response) => {
@@ -105,6 +107,15 @@ try {
 
   // 7) human-auth (money/order-style) route does NOT accept a grant token
   ok('7 grant token rejected by ordinary human route', (await j('/api/_test/human-only', 'gtk_ok')).status === 401)
+
+  // 8) grant must NOT bypass account suspension (mirror auth()): suspend the human → grant fails
+  mkGrant('gtk_suspended', ['read_public'])
+  const before = await j('/api/agent-grants/whoami', 'gtk_suspended')
+  ok('8a grant works before suspension', before.status === 200)
+  db.prepare("INSERT INTO user_moderation (user_id, suspended, reason) VALUES (?,1,'abuse') ON CONFLICT(user_id) DO UPDATE SET suspended=1").run(human)
+  const after = await j('/api/agent-grants/whoami', 'gtk_suspended')
+  ok('8b suspended human → grant fails GRANT_SUBJECT_INACTIVE', after.status === 403 && after.body.error_code === 'GRANT_SUBJECT_INACTIVE')
+  db.prepare("UPDATE user_moderation SET suspended=0 WHERE user_id=?").run(human)   // unsuspend for any later asserts
 
   // audit: allow + deny rows recorded
   const allow = (db.prepare("SELECT COUNT(*) n FROM agent_grant_auth_log WHERE outcome='allow'").get() as { n: number }).n

@@ -72,6 +72,19 @@ export async function verifyGrantToken(
   if (!grantIsActive(row, nowIso)) {
     return { ok: false, status: 403, error_code: 'GRANT_INACTIVE', error: 'delegation grant is revoked, expired, or inactive', grant_id: row.grant_id, human_id: row.human_id }
   }
+  // The grant is only as valid as its accountable human. Mirror auth(): the subject must still
+  // exist and not be suspended (user_moderation.suspended) — else a grant minted before an admin
+  // suspension would outlive it. Fail closed.
+  const subject = await dbOne<{ id: string; suspended: number | null }>(
+    'SELECT u.id AS id, m.suspended AS suspended FROM users u LEFT JOIN user_moderation m ON m.user_id = u.id WHERE u.id = ?',
+    [row.human_id],
+  )
+  if (!subject) {
+    return { ok: false, status: 403, error_code: 'GRANT_SUBJECT_INACTIVE', error: 'grant subject (human) no longer exists', grant_id: row.grant_id, human_id: row.human_id }
+  }
+  if (subject.suspended) {
+    return { ok: false, status: 403, error_code: 'GRANT_SUBJECT_INACTIVE', error: 'grant subject (human) is suspended', grant_id: row.grant_id, human_id: row.human_id }
+  }
   const caps = parseCaps(row.capabilities)
   const holds = caps.some(c => c?.capability === requiredScope && classifyScope(String(c.capability)) === 'safe')
   if (!holds) {

@@ -131,7 +131,10 @@ if (wantMarkdown) {
       summary: e.comment || `${e.method} ${e.path}`,
       tags,
       // RFC-020: grant-gated routes require a delegation-grant bearer (gtk_*), NOT human auth — never blank.
-      security: e.needs_grant ? [{ grantBearer: e.grant_scope ? [e.grant_scope] : [] }] : (e.needs_auth ? [{ bearerAuth: [] }] : []),
+      // The required scope is an x- extension (not the security-requirement array, which is the OAuth
+      // scope slot and doesn't apply to an http/bearer scheme).
+      security: e.needs_grant ? [{ grantBearer: [] }] : (e.needs_auth ? [{ bearerAuth: [] }] : []),
+      ...(e.needs_grant && e.grant_scope ? { 'x-webaz-grant-scope': e.grant_scope } : {}),
     }
     // 合并手动 schema 覆盖（覆盖优先）
     const overrideKey = `${e.method} ${e.path}`
