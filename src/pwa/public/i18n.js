@@ -4,6 +4,22 @@
 window._lang = localStorage.getItem('webaz_lang') || 'zh'
 
 const _EN = {
+  // ── RFC-020 Connected agents (app-agents.js) ─────────────────
+  '🔌 已连接的 Agent': '🔌 Connected agents',
+  '尚无已连接的 Agent': 'No connected agents yet',
+  'AI agent 通过 webaz_pair 配对、经你 Passkey 批准后出现在这里': 'Agents appear here after pairing via webaz_pair and your Passkey approval',
+  '这些是你授权给 AI agent 的委托凭证（作用域受限、短期、可随时撤销）。它们不是你的账号或密钥，永远无法动用资金、投票或改密钥。': 'These are scoped, short-lived, revocable delegation grants you authorized for AI agents. They are not your account or keys, and can never move funds, vote, or change keys.',
+  '有效': 'Active',
+  '最近使用': 'Last used',
+  '次调用': 'calls',
+  '从未使用': 'Never used',
+  '有效期至': 'Expires',
+  '未命名 Agent': 'Unnamed agent',
+  '仅安全只读权限': 'Safe read-only scopes',
+  '撤销访问': 'Revoke access',
+  '确认撤销此 Agent 的访问权限？该凭证将立即失效。': "Revoke this agent's access? The credential is invalidated immediately.",
+  '已撤销该 Agent 的访问': 'Agent access revoked',
+  '已连接的 Agent': 'Connected agents',
   // ── General ──────────────────────────────────────────────────
   '← 返回': '← Back',
   '登录': 'Login',
