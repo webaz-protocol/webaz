@@ -77,6 +77,7 @@
     "test:task-proposals": "tsx scripts/test-task-proposals.ts",
     "test:public-contribution-pages": "tsx scripts/test-public-contribution-pages.ts",
     "test:mcp-contribute": "tsx scripts/test-mcp-contribute.ts",
+    "test:mcp-fresh-db-schema": "tsx scripts/test-mcp-fresh-db-schema.ts",
     "test:mcp-auth-firebreak": "tsx scripts/test-mcp-auth-firebreak.ts",
     "test:proposal-admin-ui": "tsx scripts/test-proposal-admin-ui.ts",
     "check:pwa-syntax": "node --check src/pwa/public/app.js && node --check src/pwa/public/app-admin.js && node --check src/pwa/public/app-contribution.js && node --check src/pwa/public/app-ai.js && node --check src/pwa/public/app-discover.js && node --check src/pwa/public/app-profile.js && node --check src/pwa/public/app-account.js && node --check src/pwa/public/app-shop.js && node --check src/pwa/public/app-listings.js && node --check src/pwa/public/app-seller.js && node --check src/pwa/public/i18n.js && node --check src/pwa/public/sw.js",
