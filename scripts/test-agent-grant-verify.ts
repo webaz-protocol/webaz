@@ -123,6 +123,12 @@ try {
   ok('audit logged an allow', allow >= 1)
   ok('audit logged denies', deny >= 4)
 
+  // 9) fail-closed audit: if the audit write fails, a VALID grant must NOT be authorized (no unaudited access).
+  //    Simulate an unwritable audit log by dropping the table, then a valid grant → 503 GRANT_AUDIT_FAILED.
+  db.exec('DROP TABLE agent_grant_auth_log')
+  const noAudit = await j('/api/agent-grants/whoami', 'gtk_ok')
+  ok('9 valid grant is NOT granted when audit write fails (fail-closed)', noAudit.status === 503 && noAudit.body.error_code === 'GRANT_AUDIT_FAILED')
+
   if (fail === 0) {
     console.log(`\n✅ grant verifier (PR-C2a): opt-in safe-scope enforcement; grant tokens are NOT global auth; risk/never hard-rejected; human auth unchanged; audited\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)
   } else {

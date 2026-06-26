@@ -73,14 +73,22 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     async (req: Request, res: Response, next: () => void): Promise<void> => {
       const bearer = (req.header('authorization') || '').replace(/^Bearer\s+/i, '')
       const r = await verifyGrantToken(bearer, scope)
-      // Append-only audit (RFC-020 §3.7): allow/deny + reason, every attempt.
+      // Append-only audit (RFC-020 §3.7 + invariant: every grant-authorized request is audited).
+      let audited = false
       try {
         await dbRun(
           'INSERT INTO agent_grant_auth_log (grant_id, human_id, capability, outcome, error_code) VALUES (?,?,?,?,?)',
           [r.ok ? r.principal.grant_id : (r.grant_id ?? null), r.ok ? r.principal.human_id : (r.human_id ?? null), scope, r.ok ? 'allow' : 'deny', r.ok ? null : r.error_code],
         )
-      } catch { /* audit best-effort; never block on logging */ }
+        audited = true
+      } catch (e) {
+        console.error('[agent-grant] audit write failed:', (e as Error).message)
+      }
+      // Deny path: return the denial regardless of audit (no access is granted, so nothing to fail closed on).
       if (!r.ok) return void res.status(r.status).json({ error: r.error, error_code: r.error_code })
+      // Success path: FAIL CLOSED if the authorization could not be audited — a grant-authorized request
+      // must never proceed unaudited (RFC-020 invariant). Better to deny (503, retryable) than act unaccountably.
+      if (!audited) return void res.status(503).json({ error: 'authorization audit unavailable; refusing to proceed unaudited', error_code: 'GRANT_AUDIT_FAILED' })
       ;(req as Request & { agentGrant?: GrantPrincipal }).agentGrant = r.principal
       next()
     }
