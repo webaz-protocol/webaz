@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (673 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (675 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -3234,6 +3234,28 @@
     "/api/creator/stats": {
       "get": {
         "summary": "里程碑 L3：创作者贡献仪表盘",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-pay/disclosure-acks": {
+      "post": {
+        "summary": "POST — 记录一次 ack(D1 pre_select / D2 pre_confirm)。需现场真人(Passkey + gate token)。幂等(INSERT OR IGNORE)。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-pay/disclosure-acks/:orderId": {
+      "get": {
+        "summary": "GET — 查询某单两次 ack 状态 + 买家视角披露文案(无卖家机制)。只读(本人),不需 gate token。",
         "tags": [],
         "security": [
           {

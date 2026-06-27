@@ -310,6 +310,7 @@ import { registerOrdersReadRoutes } from './routes/orders-read.js'
 import { registerOrdersActionRoutes } from './routes/orders-action.js'
 // Orders 下单端点 (#1013 Phase 85) — 1 endpoint (338-line POST /api/orders)
 import { registerOrdersCreateRoutes } from './routes/orders-create.js'
+import { registerDirectPayDisclosureAckRoutes } from './routes/direct-pay-disclosure-acks.js'  // PR-4d: Direct Pay 风险披露 ack 端点(薄 adapter)
 // Disputes 读端点 (#1013 Phase 86) — 5 endpoints (list/similar/detail/evidence-list/parties)
 import { registerDisputesReadRoutes } from './routes/disputes-read.js'
 // Disputes 写端点 (#1013 Phase 87) — 5 endpoints (respond/arbitrate/add-evidence/evidence-blob/request-evidence)
@@ -3850,12 +3851,10 @@ registerAuthRegisterRoutes(app, {
   get MAX_CODE_ATTEMPTS() { return MAX_CODE_ATTEMPTS },
   recordSession, broadcastSystemEvent,
 })
-
 // #1013 Phase 116: me + profile 已迁出
 registerAuthReadRoutes(app, {
   db, auth, safeRoles, getRegionMaxLevels, userMlmGate, getUserLevel,
 })
-
 // #1013 Phase 108: agents/me/reputation + admin/agents/:api_key/reputation 已迁出
 // getter for RAW_MODE_MIN_TRUST — 下方 const，避免 TDZ
 registerAgentReputationRoutes(app, {
@@ -3865,6 +3864,7 @@ registerAgentReputationRoutes(app, {
 
 // #1013 Phase 47: 6 公开用户主页 endpoints 已迁出到 routes/users-public.ts
 registerUsersPublicRoutes(app, { db, auth, noteAuthenticityBadges })
+registerDirectPayDisclosureAckRoutes(app, { db, auth, generateId, consumeGateToken })  // PR-4d
 
 // RFC-004 build_feedback — agent-native "use → build" 反馈管道
 registerBuildFeedbackRoutes(app, {
