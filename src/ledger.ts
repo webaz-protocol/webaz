@@ -10,13 +10,21 @@
 import type Database from 'better-sqlite3'
 import { toUnits, toDecimal, type Units } from './money.js'
 
-export type WalletField = 'balance' | 'staked' | 'escrowed' | 'earned'
+export type WalletField = 'balance' | 'staked' | 'escrowed' | 'earned' | 'fee_staked'
 
 /** 读某用户钱包当前余额(整数 base-units)。无钱包行 → 全 0。 */
 export function walletUnits(db: Database.Database, userId: string): Record<WalletField, Units> {
-  const r = db.prepare('SELECT COALESCE(balance,0) balance, COALESCE(staked,0) staked, COALESCE(escrowed,0) escrowed, COALESCE(earned,0) earned FROM wallets WHERE user_id = ?')
-    .get(userId) as Record<WalletField, number> | undefined
-  return { balance: toUnits(r?.balance ?? 0), staked: toUnits(r?.staked ?? 0), escrowed: toUnits(r?.escrowed ?? 0), earned: toUnits(r?.earned ?? 0) }
+  // fee_staked 是 Direct Pay 新增列。向后兼容缺该列的库(迁移前 / 测试用最小 schema):
+  //   先按含 fee_staked 查;若该列不存在(no such column)→ 退回 4 列查,fee_staked=0。
+  let r: Record<WalletField, number> | undefined
+  try {
+    r = db.prepare('SELECT COALESCE(balance,0) balance, COALESCE(staked,0) staked, COALESCE(escrowed,0) escrowed, COALESCE(earned,0) earned, COALESCE(fee_staked,0) fee_staked FROM wallets WHERE user_id = ?')
+      .get(userId) as Record<WalletField, number> | undefined
+  } catch {
+    r = db.prepare('SELECT COALESCE(balance,0) balance, COALESCE(staked,0) staked, COALESCE(escrowed,0) escrowed, COALESCE(earned,0) earned FROM wallets WHERE user_id = ?')
+      .get(userId) as Record<WalletField, number> | undefined
+  }
+  return { balance: toUnits(r?.balance ?? 0), staked: toUnits(r?.staked ?? 0), escrowed: toUnits(r?.escrowed ?? 0), earned: toUnits(r?.earned ?? 0), fee_staked: toUnits(r?.fee_staked ?? 0) }
 }
 
 /**
