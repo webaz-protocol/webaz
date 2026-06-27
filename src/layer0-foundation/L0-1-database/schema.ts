@@ -191,16 +191,17 @@ export function initDatabase(): Database.Database {
       updated_at       TEXT DEFAULT (datetime('now'))
     );
 
-    -- base bond = 履约担保物(security deposit);法律/会计上独立于货款。
-    -- 外部资产(USDC/法币,非 WAZ);生产收款经 deposit-rail 网关,本 PR 仅非生产确认。
+    -- base bond = 履约担保物(merchant performance security deposit);法律/会计上独立于买家货款。
+    -- currency 必须【显式传入】,只允许 usdc | fiat(外部真实资产,生产收款经 deposit-rail 网关 legal-review gated;本 PR/4b 仅非生产确认)。
+    -- WAZ【未启用】为 base-bond currency —— 无默认值 + CHECK 双重拦截;domain helper openDeposit 亦拒(4c 前路由不得 raw-insert 绕过)。
     CREATE TABLE IF NOT EXISTS direct_receive_deposits (
       id              TEXT PRIMARY KEY,
       user_id         TEXT NOT NULL REFERENCES users(id),
       tier            TEXT NOT NULL DEFAULT 'T0',
-      required_amount REAL NOT NULL,                  -- 该档要求的 bond(S$ 参考值)
+      required_amount REAL NOT NULL,                  -- 该档要求的 bond
       amount          REAL NOT NULL DEFAULT 0,        -- 实际到位
-      currency        TEXT NOT NULL DEFAULT 'waz',    -- waz | usdc | fiat (waz=internal,不 legal-gated;usdc/fiat=外部真实资产,legal-review gated)
-      deposit_rail    TEXT NOT NULL DEFAULT 'manual', -- manual | usdc_onchain | fiat_psp (后两者 GATED)
+      currency        TEXT NOT NULL CHECK (currency IN ('usdc','fiat')),  -- 显式传入,无默认;只允许 usdc|fiat;WAZ 未启用(生产收款 legal-review gated)
+      deposit_rail    TEXT NOT NULL DEFAULT 'manual', -- manual(仅 test/非生产) | usdc_onchain | fiat_psp (后两者 GATED)
       external_ref    TEXT,                           -- 链上 tx / PSP 凭证引用
       status          TEXT NOT NULL DEFAULT 'pending',-- pending|confirmed|locked|insufficient|expired|refunding|refunded|slashed
       confirmed_at    TEXT,
