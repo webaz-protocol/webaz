@@ -135,5 +135,14 @@ ok('refund not-blocked-here → null (still NOT executed in 4b)', refundOnExitBl
 ok('DEFAULT_BASE_BOND_CONFIG T0 = toUnits(500)', DEFAULT_BASE_BOND_CONFIG.tierRequiredUnits.T0 === REQ)
 ok('DEFAULT pendingTtlDays = 7', DEFAULT_BASE_BOND_CONFIG.pendingTtlDays === 7)
 
+// ── 14. fresh DB schema:currency 不再默认 waz(无默认 + CHECK usdc|fiat)── PR-4b.1
+const cols = db.prepare('PRAGMA table_info(direct_receive_deposits)').all() as Array<{ name: string; notnull: number; dflt_value: unknown }>
+const cur = cols.find(c => c.name === 'currency')!
+ok('schema: currency has NO default (no longer waz)', cur.dflt_value === null || cur.dflt_value === undefined, `dflt=${JSON.stringify(cur.dflt_value)}`)
+ok('schema: currency NOT NULL', cur.notnull === 1)
+ok('schema: raw INSERT currency=waz → rejected by CHECK', throws(() => db.prepare("INSERT INTO direct_receive_deposits (id,user_id,required_amount,currency) VALUES ('rw1','seller1',1,'waz')").run()))
+ok('schema: raw INSERT without currency → rejected by NOT NULL', throws(() => db.prepare("INSERT INTO direct_receive_deposits (id,user_id,required_amount) VALUES ('rw2','seller1',1)").run()))
+ok('schema: raw INSERT currency=usdc → allowed (CHECK permits valid currency)', !throws(() => db.prepare("INSERT INTO direct_receive_deposits (id,user_id,required_amount,currency) VALUES ('rw3','seller1',1,'usdc')").run()))
+
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-receive-deposits tests passed`)
