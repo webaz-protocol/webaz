@@ -1,0 +1,204 @@
+/**
+ * Direct Pay (Rail 1) — base-bond (merchant performance security deposit / 履约担保物) LIFECYCLE — PR-4b-min。
+ * 设计稿 §6 / §10.3。本模块只做【域逻辑层 + 状态机】,**绝不动真实资金**。
+ *
+ * ════════════ 硬边界(PR-4b-min,Holden 批准 + WAZ 更正)════════════
+ *  - 这是 base bond = 卖家【履约担保物 / security deposit】,法律/会计上独立于买家货款;
+ *    【绝不】是买家支付、订单本金、escrow、平台对订单资金的托管。不碰 orders/payment/settlement/escrow/refund。
+ *  - **WAZ NOT enabled:** 不锁卖家 WAZ 余额、不把 WAZ 罚没进 penalty balance、**openDeposit 拒绝 currency='waz'**(只允许 usdc|fiat,
+ *    生产收款仍 GATED)—— 不把 schema 默认 currency='waz' 固化成合法路径。本 PR【没有任何真实资产移动】——
+ *    lockBond 只是状态迁移;slashBond 只记 provenance(复用 recordBaseBondSlash)。
+ *  - **生产收款全部 GATED:** manual rail 仅 test/non-production,且【永不】设 production_receipt_confirmed_at;
+ *    usdc_onchain / fiat_psp 经 deposit-rail 网关 throw(fail-closed)。本 PR 后【仍无生产 base-bond rail】→ direct-receive
+ *    仍不能 production go-live(需后续单独实现 legal-cleared USDC/fiat 生产收款)。不声称 go-live、不声称 legal clearance。
+ *  - penalty 只进不出:slash 只记 provenance(total_base_bond_slash + txn),无 outflow 代码路径(append-only,设计稿 §10.1)。
+ *  - 整数 base-units(RFC-014):比较/罚没用 toUnits;落库用 toDecimal。分数/负/越界 → fail-closed。
+ *  - refund-on-exit 不在本 PR:仅提供【纯判断占位】refundOnExitBlockedReason(open-dispute/cooling-window 阻止),
+ *    真实退款状态流 + RFC-018 clearing lock 集成 = 4b-2。
+ *
+ *  STOP:若实现需要真实 WAZ 余额 lock / USDC/fiat 收款 / 退款出款 / 订单创建·支付·结算·escrow 路由 / schema·boot 迁移 —— 立即停止汇报。
+ */
+import type Database from 'better-sqlite3'
+import { toUnits, toDecimal, type Units } from './money.js'
+import { getDepositRail } from './deposit-rails.js'
+import { recordBaseBondSlash } from './direct-pay-ledger.js'
+
+export type DepositTier = 'T0' | 'T1' | 'T2'
+export type DepositStatus = 'pending' | 'confirmed' | 'locked' | 'insufficient' | 'expired' | 'refunding' | 'refunded' | 'slashed'
+
+export interface BaseBondConfig {
+  /** 各档【固定 token 数】(整数 base-units)。T0 即可;T1/T2 + reputation 折扣 = PR-5。
+   *  ⚠️ 固定 token 数,NO per-deposit FX —— "≈ S$500" 只是档位参考标签,不是汇率换算(设计稿 Rev h)。治理可调。 */
+  tierRequiredUnits: Partial<Record<DepositTier, Units>>
+  /** pending 存款过期天数。 */
+  pendingTtlDays: number
+}
+/** LOCKED 保守默认(治理可调)。T0 = 固定 token 数(标签 ≈ S$500,非 FX)。 */
+export const DEFAULT_BASE_BOND_CONFIG: BaseBondConfig = {
+  tierRequiredUnits: { T0: toUnits(500) },
+  pendingTtlDays: 7,
+}
+
+export type DepositOpResult =
+  | { ok: true; status: DepositStatus; already?: boolean }
+  | { ok: false; reason: string }
+
+interface DepositRow {
+  id: string; user_id: string; tier: string; required_amount: number; amount: number
+  currency: string; deposit_rail: string; status: string; production_receipt_confirmed_at: string | null; created_at: string
+}
+
+const isNonNegUnits = (x: unknown): x is Units => typeof x === 'number' && Number.isSafeInteger(x) && x >= 0
+const getRow = (db: Database.Database, id: string): DepositRow | undefined =>
+  db.prepare('SELECT id, user_id, tier, required_amount, amount, currency, deposit_rail, status, production_receipt_confirmed_at, created_at FROM direct_receive_deposits WHERE id = ?').get(id) as DepositRow | undefined
+
+/** 某档要求的【固定 token 数】(整数 base-units)。未配置的档 → 抛(T1/T2 在 PR-5 才支持)。 */
+export function requiredBondUnits(tier: DepositTier, config: BaseBondConfig = DEFAULT_BASE_BOND_CONFIG): Units {
+  const u = config.tierRequiredUnits[tier]
+  if (!isNonNegUnits(u) || u <= 0) throw new Error(`requiredBondUnits: tier '${tier}' 未配置或非正整数 units(4b-min 仅支持已配置档,通常 T0)`)
+  return u
+}
+
+/** 开新存款:创建 pending 行。required = 该档固定 token 数。amount=0(待 confirm)。 */
+export function openDeposit(db: Database.Database, args: {
+  depositId: string; userId: string; tier: DepositTier; currency: string; depositRail: string; config?: BaseBondConfig
+}): DepositOpResult {
+  const { depositId, userId, tier, currency, depositRail, config } = args
+  if (!depositId || !userId) return { ok: false, reason: 'missing depositId/userId' }
+  // WAZ NOT enabled:base bond 只接受【外部资产币种】usdc | fiat(生产收款仍 GATED);'waz' 一律 fail-closed,
+  //   杜绝把 schema 默认 currency='waz' 固化成合法路径(防 4c/4f 误接成"WAZ 担保物可用")。
+  if (!['usdc', 'fiat'].includes(currency)) return { ok: false, reason: `currency '${currency}' not allowed for base bond (only usdc|fiat; WAZ not enabled)` }
+  if (!['manual', 'usdc_onchain', 'fiat_psp'].includes(depositRail)) return { ok: false, reason: `invalid deposit_rail '${depositRail}'` }
+  if (getRow(db, depositId)) return { ok: false, reason: 'deposit already exists' }
+  let required: Units
+  try { required = requiredBondUnits(tier, config) } catch (e) { return { ok: false, reason: (e as Error).message } }
+  db.prepare(`INSERT INTO direct_receive_deposits (id, user_id, tier, required_amount, amount, currency, deposit_rail, status, created_at, updated_at)
+    VALUES (?,?,?,?,0,?,?, 'pending', datetime('now'), datetime('now'))`)
+    .run(depositId, userId, tier, toDecimal(required), currency, depositRail)
+  return { ok: true, status: 'pending' }
+}
+
+/**
+ * 确认到账(经 deposit-rail 网关)。
+ *  - manual rail:仅 test/non-production —— 置 amount + status=confirmed,**绝不**设 production_receipt_confirmed_at。
+ *  - usdc_onchain / fiat_psp:getDepositRail().confirmReceipt() 直接【抛】(GATED,fail-closed),本函数不吞。
+ * production_receipt_confirmed_at 只由【未来的 legal-cleared 生产 rail】设置(当前不存在)→ 本 PR 后恒 NULL。
+ */
+export function confirmDepositReceipt(db: Database.Database, args: {
+  depositId: string; expectedAmountUnits: Units; externalRef?: string
+}): DepositOpResult {
+  const { depositId, expectedAmountUnits, externalRef } = args
+  const row = getRow(db, depositId)
+  if (!row) return { ok: false, reason: 'deposit not found' }
+  if (row.status === 'confirmed' || row.status === 'locked') return { ok: true, status: row.status as DepositStatus, already: true } // 幂等
+  if (row.status !== 'pending' && row.status !== 'insufficient') return { ok: false, reason: `cannot confirm from status '${row.status}'` }
+  if (!isNonNegUnits(expectedAmountUnits) || expectedAmountUnits <= 0) return { ok: false, reason: 'expectedAmount must be a positive integer base-units' }
+
+  // 网关:manual → confirmed(test);usdc/fiat → 抛(GATED)。本函数不 try/catch 网关,让 GATED 抛穿透(fail-closed)。
+  const conf = getDepositRail(row.deposit_rail as 'manual' | 'usdc_onchain' | 'fiat_psp')
+    .confirmReceipt({ depositId, expectedAmount: expectedAmountUnits, currency: row.currency, externalRef })
+  if (!conf.confirmed) return { ok: false, reason: conf.reason || 'receipt not confirmed' }
+
+  // manual = 非生产 → 绝不写 production_receipt_confirmed_at(保持 NULL)。
+  db.prepare(`UPDATE direct_receive_deposits SET amount = ?, status = 'confirmed', confirmed_at = datetime('now'),
+    external_ref = COALESCE(?, external_ref), updated_at = datetime('now') WHERE id = ?`)
+    .run(toDecimal(expectedAmountUnits), conf.externalRef ?? externalRef ?? null, depositId)
+  return { ok: true, status: 'confirmed' }
+}
+
+/** 锁定:confirmed 且 amount ≥ required → locked + 激活 privilege(单事务)。WAZ NOT enabled → 不动任何余额。 */
+export function lockBond(db: Database.Database, args: { depositId: string }): DepositOpResult {
+  const row = getRow(db, args.depositId)
+  if (!row) return { ok: false, reason: 'deposit not found' }
+  if (row.status === 'locked') return { ok: true, status: 'locked', already: true } // 幂等
+  if (row.status !== 'confirmed') return { ok: false, reason: `cannot lock from status '${row.status}' (must be confirmed)` }
+  if (toUnits(row.amount) < toUnits(row.required_amount)) return { ok: false, reason: 'insufficient: amount < required' }
+  db.transaction(() => {
+    db.prepare("UPDATE direct_receive_deposits SET status = 'locked', locked_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(args.depositId)
+    // ⚠️ privilege=active 在 4b-min 是【非生产】(manual/test;本 PR 的 lock 不带 production_receipt_confirmed_at)。
+    //   active 本身【不是】production go-live 的充分条件 —— 生产门是 isProductionBaseBondLocked()(production receipt 非 NULL),
+    //   由 4c 强制;active 仅表示"已走完非生产 lock 流程"。
+    db.prepare(`INSERT INTO direct_receive_privileges (user_id, status, tier, granted_at, updated_at)
+      VALUES (?, 'active', ?, datetime('now'), datetime('now'))
+      ON CONFLICT(user_id) DO UPDATE SET status='active', tier=excluded.tier, suspended_reason=NULL, granted_at=COALESCE(direct_receive_privileges.granted_at, excluded.granted_at), updated_at=datetime('now')`)
+      .run(row.user_id, row.tier)
+  })()
+  return { ok: true, status: 'locked' }
+}
+
+/** 标记不足:confirmed 但 amount < required → insufficient(待 top-up)。 */
+export function markInsufficient(db: Database.Database, args: { depositId: string }): DepositOpResult {
+  const row = getRow(db, args.depositId)
+  if (!row) return { ok: false, reason: 'deposit not found' }
+  if (row.status === 'insufficient') return { ok: true, status: 'insufficient', already: true }
+  if (row.status !== 'confirmed') return { ok: false, reason: `cannot mark insufficient from status '${row.status}'` }
+  if (toUnits(row.amount) >= toUnits(row.required_amount)) return { ok: false, reason: 'amount already meets required' }
+  db.prepare("UPDATE direct_receive_deposits SET status = 'insufficient', updated_at = datetime('now') WHERE id = ?").run(args.depositId)
+  return { ok: true, status: 'insufficient' }
+}
+
+/** 补足:amount += add(整数 units)。若达/超 required 且当前 insufficient/confirmed → 置 confirmed(可再 lock)。 */
+export function topUp(db: Database.Database, args: { depositId: string; addUnits: Units }): DepositOpResult {
+  const row = getRow(db, args.depositId)
+  if (!row) return { ok: false, reason: 'deposit not found' }
+  if (!isNonNegUnits(args.addUnits) || args.addUnits <= 0) return { ok: false, reason: 'addUnits must be a positive integer base-units' }
+  if (!['confirmed', 'insufficient'].includes(row.status)) return { ok: false, reason: `cannot top-up from status '${row.status}'` }
+  const newAmount = toUnits(row.amount) + args.addUnits
+  db.prepare("UPDATE direct_receive_deposits SET amount = ?, status = 'confirmed', updated_at = datetime('now') WHERE id = ?")
+    .run(toDecimal(newAmount), args.depositId)
+  return { ok: true, status: 'confirmed' }
+}
+
+/** 过期:pending 且超过 TTL → expired。 */
+export function expireDeposit(db: Database.Database, args: { depositId: string; nowIso: string; config?: BaseBondConfig }): DepositOpResult {
+  const row = getRow(db, args.depositId)
+  if (!row) return { ok: false, reason: 'deposit not found' }
+  if (row.status !== 'pending') return { ok: false, reason: `only pending can expire (got '${row.status}')` }
+  const ttlDays = args.config?.pendingTtlDays ?? DEFAULT_BASE_BOND_CONFIG.pendingTtlDays
+  const created = Date.parse(row.created_at), now = Date.parse(args.nowIso)
+  if (!Number.isFinite(created) || !Number.isFinite(now)) return { ok: false, reason: 'unparseable timestamps' }
+  if (now - created < ttlDays * 86_400_000) return { ok: false, reason: 'not yet past TTL' }
+  db.prepare("UPDATE direct_receive_deposits SET status = 'expired', updated_at = datetime('now') WHERE id = ?").run(args.depositId)
+  return { ok: true, status: 'expired' }
+}
+
+/**
+ * 罚没(卖家违约):locked → slashed,仅记 provenance(recordBaseBondSlash:total_base_bond_slash + txn),
+ *  **不动任何 balance / 无 outflow**(WAZ NOT enabled),并吊销 privilege(suspended)。单事务,幂等。
+ */
+export function slashBond(db: Database.Database, args: { depositId: string; txnId: string; reason?: string }): DepositOpResult {
+  const row = getRow(db, args.depositId)
+  if (!row) return { ok: false, reason: 'deposit not found' }
+  if (row.status === 'slashed') return { ok: true, status: 'slashed', already: true } // 幂等:不重复记 provenance
+  if (row.status !== 'locked') return { ok: false, reason: `can only slash a locked bond (got '${row.status}')` }
+  db.transaction(() => {
+    recordBaseBondSlash(db, { userId: row.user_id, amountUnits: toUnits(row.amount), txnId: args.txnId, reason: args.reason }) // provenance only
+    db.prepare("UPDATE direct_receive_deposits SET status = 'slashed', updated_at = datetime('now') WHERE id = ?").run(args.depositId)
+    db.prepare(`INSERT INTO direct_receive_privileges (user_id, status, tier, suspended_reason, updated_at)
+      VALUES (?, 'suspended', ?, ?, datetime('now'))
+      ON CONFLICT(user_id) DO UPDATE SET status='suspended', suspended_reason=excluded.suspended_reason, updated_at=datetime('now')`)
+      .run(row.user_id, row.tier, args.reason ?? 'base_bond_slashed')
+  })()
+  return { ok: true, status: 'slashed' }
+}
+
+/**
+ * 生产门读取:某存款是否【生产级】锁定 = status='locked' 且 production_receipt_confirmed_at 非 NULL。
+ * 4b-min 永远 false(manual rail 不设该列;无生产 rail)。供后续 4c 生产 go-live 事实装配【单一真相】,杜绝 manual 冒充。
+ */
+export function isProductionBaseBondLocked(db: Database.Database, args: { depositId: string }): boolean {
+  const row = getRow(db, args.depositId)
+  return !!row && row.status === 'locked' && row.production_receipt_confirmed_at != null
+}
+
+/**
+ * refund-on-exit 阻止原因(纯判断占位 —— 真实退款状态流 + RFC-018 clearing lock 集成 = 4b-2)。
+ * 返回阻止原因码;null = 在这些条件下【不被阻止】(但本 PR 不执行任何退款)。无副作用,不读库,不出款。
+ */
+export function refundOnExitBlockedReason(facts: { status?: string; hasOpenDispute?: boolean; withinCoolingWindow?: boolean }):
+  'NOT_LOCKED' | 'OPEN_DISPUTE' | 'COOLING_WINDOW' | null {
+  if (facts.status !== 'locked') return 'NOT_LOCKED'
+  if (facts.hasOpenDispute === true) return 'OPEN_DISPUTE'
+  if (facts.withinCoolingWindow === true) return 'COOLING_WINDOW'
+  return null
+}
