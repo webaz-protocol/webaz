@@ -19,9 +19,13 @@
  *   单表:`... WHERE buyer_id = ? AND ${genuineSalePredicate()}`           // 默认别名 orders
  *   相关子查询:`... FROM orders o WHERE ... AND ${genuineSalePredicate('o')}`
  *
+ * Direct Pay (Rail 1) 排除:`payment_rail='direct_p2p'` 是场外直付,付款不可观测、本档无资金保障,
+ * 不计真实成交/佣金/PV(设计稿 §3「Commission/PV/genuine-sale on Rail 1」)。escrow 及将来可观测的
+ * Rail 2(链上全额质押)仍计入。NULL → 视为 escrow(老行)。
+ *
  * 注:这是纯 SQL 片段(无 DB 依赖),保证所有消费方用同一定义。整体加括号防 OR 上下文优先级。
  * 若将来规模下相关子查询成性能瓶颈,再升级为 settleOrder 写入的 `orders.settled_ok_at` 列(届时只改本文件)。
  */
 export function genuineSalePredicate(ordersAlias = 'orders'): string {
-  return `(EXISTS (SELECT 1 FROM order_state_history osh WHERE osh.order_id = ${ordersAlias}.id AND osh.to_status = 'confirmed') AND (SELECT COALESCE(SUM(rr.refund_amount), 0) FROM return_requests rr WHERE rr.order_id = ${ordersAlias}.id AND rr.status = 'refunded') < ${ordersAlias}.total_amount)`
+  return `(EXISTS (SELECT 1 FROM order_state_history osh WHERE osh.order_id = ${ordersAlias}.id AND osh.to_status = 'confirmed') AND (SELECT COALESCE(SUM(rr.refund_amount), 0) FROM return_requests rr WHERE rr.order_id = ${ordersAlias}.id AND rr.status = 'refunded') < ${ordersAlias}.total_amount AND COALESCE(${ordersAlias}.payment_rail, 'escrow') != 'direct_p2p')`
 }

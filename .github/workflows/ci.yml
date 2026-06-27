@@ -681,6 +681,8 @@ jobs:
       - run: npm run test:money-units
       - run: npm run test:direct-pay-ledger
       - run: npm run test:deposit-rails
+      - run: npm run test:direct-pay-timeouts
+      - run: npm run test:direct-pay-actions
       - run: npm run test:seller-order-actions
       - run: npm run test:decline-action
       - run: npm run test:mcp-contribute

@@ -24,6 +24,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import type { OrderStatus } from '../../layer0-foundation/L0-2-state-machine/transitions.js'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'
+import { releaseFeeStake, hasLockedFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:取消释放质押 / 完成前预检 locked 质押
 
 export interface OrdersActionDeps {
   db: Database.Database
@@ -118,14 +119,22 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     if (order.buyer_id !== user.id) return void res.status(403).json({ error: '仅买家可确认面交完成' })
     if (!['paid', 'accepted'].includes(order.status as string)) return void res.status(400).json({ error: `订单状态 ${order.status} 不可确认面交` })
     if (order.has_pending_claim) return void res.status(400).json({ error: '存在进行中的验证任务，不可确认' })
+    // Rail1 fail-closed(审计 P1):direct_p2p 面交完成同样必须有 locked fee-stake,且取费与 completed 同一原子边界。
+    const isDirectP2p = order.payment_rail === 'direct_p2p'
+    if (isDirectP2p && !hasLockedFeeStake(db, req.params.id)) {
+      return void res.status(409).json({ error: '直付订单缺少锁定的平台费质押,无法确认完成', error_code: 'DIRECT_PAY_NO_FEE_STAKE' })
+    }
     const tx = db.transaction(() => {
       db.prepare(`UPDATE orders SET status='completed', updated_at=datetime('now') WHERE id = ?`).run(req.params.id)
       db.prepare(`INSERT INTO order_state_history (id, order_id, from_status, to_status, actor_id, actor_role, notes)
         VALUES (?,?,?,?,?,?, '面交完成 — 买家确认')`)
         .run(generateId('hst'), req.params.id, order.status, 'completed', user.id, (user as Record<string, unknown>).role || 'buyer')
+      // direct_p2p:取平台费进同一事务 → 取费失败(缺 locked stake)回滚 completed,订单不会 terminal-completed 而费用落空。
+      if (isDirectP2p) settleOrder(req.params.id)
     })
-    try { tx() } catch (e) { return void res.status(500).json({ error: '状态写入失败：' + (e as Error).message }) }
-    try { settleOrder(req.params.id) } catch (e) { console.error('[settleOrder in-person]', e) }
+    try { tx() } catch (e) { return void res.status(isDirectP2p ? 409 : 500).json({ error: (isDirectP2p ? '直付完成结算失败,订单未完成：' : '状态写入失败：') + (e as Error).message, ...(isDirectP2p ? { error_code: 'DIRECT_PAY_SETTLE_FAILED' } : {}) }) }
+    // escrow:沿用原有非原子结算(失败仅记日志,不回滚 completed —— 与既有行为一致,本次不改 escrow)。
+    if (!isDirectP2p) { try { settleOrder(req.params.id) } catch (e) { console.error('[settleOrder in-person]', e) } }
     res.json({ success: true })
   })
 
@@ -151,6 +160,21 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     }
     if (action === 'confirm' && uid !== buyerId) {
       return void res.status(403).json({ error: '你不是本订单的买家', error_code: 'NOT_ORDER_BUYER' })
+    }
+    // Rail1 直付:买家专属动作。mark_paid = 买家声明"我已付款"→ accepted(进卖家发货流程);
+    //   cancel = 付款前买家取消 → cancelled(释放费用质押)。仅 buyer、仅 direct_p2p 且仍在付款窗口。
+    if (action === 'mark_paid' || action === 'cancel') {
+      if (uid !== buyerId) {
+        return void res.status(403).json({ error: '你不是本订单的买家', error_code: 'NOT_ORDER_BUYER' })
+      }
+      if (order.payment_rail !== 'direct_p2p' || order.status !== 'direct_pay_window') {
+        return void res.status(409).json({ error: '该操作仅适用于直付订单的付款窗口', error_code: 'NOT_DIRECT_PAY_WINDOW' })
+      }
+    }
+    // Rail1 fail-closed(审计 P1):direct_p2p 完成前必须有 locked fee-stake。缺则【拒绝确认】——
+    //   绝不让订单进入 terminal completed 而平台费落空。完成时取费与状态转移另在下方放进同一原子边界。
+    if (action === 'confirm' && order.payment_rail === 'direct_p2p' && !hasLockedFeeStake(db, req.params.id)) {
+      return void res.status(409).json({ error: '直付订单缺少锁定的平台费质押,无法确认完成', error_code: 'DIRECT_PAY_NO_FEE_STAKE' })
     }
     if (action === 'pickup' || action === 'transit' || action === 'deliver') {
       // pickup 时若订单尚无物流，允许领取（孤儿单兜底）
@@ -268,9 +292,27 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       })
     }
 
+    // Rail1 直付:付款窗口内买家取消 → cancelled + 释放费用质押(单事务:转移成功必同步放质押,
+    //   杜绝"已取消但质押漏放"泄漏 —— cancelled 单超时 cron 不再扫,放质押无后备路径,故必须原子)。
+    if (action === 'cancel') {
+      const fromStatusCancel = order.status as string
+      try {
+        db.transaction(() => {
+          const r = transition(db, req.params.id, 'cancelled', uid, [], notes)
+          if (!r.success) throw new Error(r.error || '状态转移失败')
+          releaseFeeStake(db, { orderId: req.params.id })
+        })()
+      } catch (e) {
+        return void res.status(409).json({ error: (e as Error).message, error_code: 'CANCEL_FAILED' })
+      }
+      notifyTransition(db, req.params.id, fromStatusCancel, 'cancelled')
+      return void res.json({ success: true, status: 'cancelled', fee_stake_released: true })
+    }
+
     const actionMap: Record<string, string> = {
       accept: 'accepted', ship: 'shipped', pickup: 'picked_up',
-      transit: 'in_transit', deliver: 'delivered', confirm: 'confirmed', dispute: 'disputed'
+      transit: 'in_transit', deliver: 'delivered', confirm: 'confirmed', dispute: 'disputed',
+      mark_paid: 'accepted',   // Rail1 直付:买家声明"我已付款" → accepted(汇入既有卖家发货流程;协议不验真实付款)
     }
     const toStatus = actionMap[action]
     if (!toStatus) return void res.json({ error: `未知操作：${action}` })
@@ -304,6 +346,22 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     let settlementBreakdown: Record<string, unknown> | null = null
     if (toStatus === 'confirmed') {
       const sysUser = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string }
+      // Rail1 fail-closed(审计 P1):direct_p2p 的 completed 与取平台费必须【同一原子边界】——
+      //   settleOrder→takeFeeAtCompletion 缺 locked stake 即抛 → 回滚 completed 转移,订单【绝不】terminal-completed 而费用落空。
+      if (order.payment_rail === 'direct_p2p') {
+        try {
+          db.transaction(() => {
+            const rc = transition(db, req.params.id, 'completed', sysUser.id, [], '系统自动结算')
+            if (!rc.success) throw new Error(rc.error || 'completed transition failed')
+            settleOrder(req.params.id)   // direct_p2p 分支 = takeFeeAtCompletion(缺 locked stake → 抛 → 整体回滚)
+          })()
+        } catch (e) {
+          return void res.status(409).json({ error: `直付平台费收取失败,订单未完成:${(e as Error).message}`, error_code: 'DIRECT_PAY_SETTLE_FAILED' })
+        }
+        notifyTransition(db, req.params.id, 'confirmed', 'completed')
+        try { broadcastSystemEvent('order_completed', '✓', `订单完成 ${req.params.id}`, req.params.id) } catch {}
+        return void res.json({ success: true, status: 'completed', settlement: { rail: 'direct_p2p', fee_taken: true } })
+      }
       transition(db, req.params.id, 'completed', sysUser.id, [], '系统自动结算')
       notifyTransition(db, req.params.id, 'confirmed', 'completed')
       settleOrder(req.params.id)
