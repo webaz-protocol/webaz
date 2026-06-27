@@ -23,7 +23,7 @@ import crypto from 'crypto'
 
 import { initDatabase, generateId } from '../layer0-foundation/L0-1-database/schema.js'
 import { setSeamDb } from '../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
-import { initSystemUser, transition, getOrderStatus, checkTimeouts, settleFault } from '../layer0-foundation/L0-2-state-machine/engine.js'; import { genuineSalePredicate } from '../layer0-foundation/L0-2-state-machine/genuine-sale.js'  // RFC-018 PR4: 真实成交(排除全额退货)SSOT
+import { initSystemUser, transition, getOrderStatus, checkTimeouts, settleFault } from '../layer0-foundation/L0-2-state-machine/engine.js'; import { genuineSalePredicate } from '../layer0-foundation/L0-2-state-machine/genuine-sale.js'; import { takeFeeAtCompletion } from '../direct-pay-ledger.js'  // RFC-018 PR4 genuine-sale SSOT + Direct Pay Rail 1 fee-at-completion
 import { endpointToAction, endpointToReadAction } from './endpoint-actions.js'
 import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYPES, MASS_ACTION_DAILY_CAPS } from './limits.js'
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
@@ -218,7 +218,7 @@ import { registerArbitratorRoutes } from './routes/arbitrator.js'
 // Governance onboarding (W3.5-B 实施 #1093 阶段 1) — 2 user endpoints
 import { registerGovernanceOnboardingRoutes } from './routes/governance-onboarding.js'
 import { startAutoDeactivateCron, runAutoDeactivateSweep } from './routes/governance-auto-deactivate.js'
-import { startEscrowExpireCron, runEscrowExpireSweep } from './routes/rewards-escrow-expire.js'
+import { startEscrowExpireCron, runEscrowExpireSweep } from './routes/rewards-escrow-expire.js'; import { startDirectPayTimeoutCron } from './routes/direct-pay-timeouts.js'
 import { startClearingMatureCron } from './routes/rewards-clearing-mature.js'
 import { startAutoDowngradeCron, runAutoDowngradeSweep } from './routes/rewards-auto-downgrade.js'
 import { registerRewardsApplyRoutes } from './routes/rewards-apply.js'
@@ -6899,7 +6899,7 @@ function settleOrder(orderId: string) {
   // Bug-C fix：所有资金/PV/状态写入包在单一事务内，避免迁 PG / 多 worker 后出现部分提交
   // 内部 try/catch 用于非关键 hook（settlePinRewards / metrics 更新）失败不回滚资金主流程
   db.transaction(() => {
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<string, unknown>
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<string, unknown>; if (order && order.payment_rail === 'direct_p2p') { takeFeeAtCompletion(db, { orderId }); return }  // Rail1 直付:跳过 escrow 结算,仅从 fee-stake 取平台费(无 escrow 释放 / commission / PV / 信誉)
     const total = order.total_amount as number
     const isSecondhand = order.source === 'secondhand'
     const isInPerson = order.fulfillment_mode === 'in_person'
@@ -8381,7 +8381,7 @@ app.listen(PORT, () => {
   startAutoDeactivateCron({ db, generateId, getProtocolParam })
 
   // #1090 RFC-002 PR-1c-a: escrow expire cron (every 1h)
-  startEscrowExpireCron({ db, redirectToCommissionReserve })
+  startEscrowExpireCron({ db, redirectToCommissionReserve }); startDirectPayTimeoutCron({ db })
   startClearingMatureCron({ db })  // RFC-018: pay/hold matured clearing commission (logic in the cron module)
 
   // #1090 RFC-002 PR-3 slice 2: auto_downgrade cron (every 24h)
