@@ -80,5 +80,18 @@ const outflowish = exported.filter(n => /debit|disburse|withdraw|payout|outflow|
 ok('penalty append-only: no outflow function exported', outflowish.length === 0, `found: ${outflowish.join(',')}`)
 ok('exports exactly the 5 intended helpers', exported.slice().sort().join(',') === ['lockFeeStake', 'takeFeeAtCompletion', 'releaseFeeStake', 'slashFeeStakeToPenalty', 'recordBaseBondSlash'].sort().join(','), exported.join(','))
 
+// 7. FAIL-CLOSED(审计 P1-2):direct_p2p 完成必须有可取的 locked fee-stake,否则平台费会被静默落空。
+//    takeFeeAtCompletion 缺 stake / 非-locked 时必须【抛】(settleOrder 在 db.transaction 内 → 回滚),
+//    绝不静默 return(那正是 fail-open 漏洞);已 fee_taken 则幂等返回 already_taken。
+const throws = (fn: () => unknown): boolean => { try { fn(); return false } catch { return true } }
+ok('take: NO stake row → THROWS (fail-closed, no silent fee-skip)', throws(() => takeFeeAtCompletion(db, { orderId: 'no_such_order' })))
+lockFeeStake(db, { orderId: 'o7', sellerId: 'seller1', feeUnits: FEE, stakeId: 's7' })
+releaseFeeStake(db, { orderId: 'o7' })
+ok('take: released(non-locked) stake → THROWS', throws(() => takeFeeAtCompletion(db, { orderId: 'o7' })))
+ok('take: failed take moved NO funds (o7 stays released, fee_staked 0)', stakeStatus('o7') === 'released' && bal('seller1').fee_staked === 0)
+lockFeeStake(db, { orderId: 'o8', sellerId: 'seller1', feeUnits: FEE, stakeId: 's8' })
+ok('take: locked → outcome=taken', takeFeeAtCompletion(db, { orderId: 'o8' }).outcome === 'taken')
+ok('take: re-call → outcome=already_taken (idempotent, no throw)', takeFeeAtCompletion(db, { orderId: 'o8' }).outcome === 'already_taken')
+
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-ledger tests passed`)

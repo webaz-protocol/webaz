@@ -60,17 +60,24 @@ export function lockFeeStake(db: Database.Database, opts: { orderId: string; sel
 
 /**
  * 完成时取费:整笔 fee-stake → 协议(reserve 50% + sys_protocol 50%,与 settleOrder 协议费去向一致)。
- * 幂等:非 locked 不重复。fee-stake == 平台费,故无 remainder(若将来 stake>fee 可在此退差额给卖家)。
+ * **FAIL-CLOSED(钱路不变量):** direct_p2p 单完成必须有可取的 locked fee-stake,否则平台费会被静默落空。
+ *   - 无 stake 行 / 状态非 locked 且非 fee_taken → **抛错**(调用方 settleOrder 在 db.transaction 内 → 回滚,
+ *     拒绝"完成但零平台费")。绝不静默 return(那正是审计 P1-2 指出的 fail-open 漏洞)。
+ *   - 已 fee_taken → 幂等:返回 'already_taken',不重复取费(支持重结算)。
+ * fee-stake == 平台费,故无 remainder(若将来 stake>fee 可在此退差额给卖家)。
  */
-export function takeFeeAtCompletion(db: Database.Database, opts: { orderId: string }): void {
+export function takeFeeAtCompletion(db: Database.Database, opts: { orderId: string }): { outcome: 'taken' | 'already_taken' } {
   const s = getStake(db, opts.orderId)
-  if (!s || s.status !== 'locked') return
+  if (!s) throw new Error(`takeFeeAtCompletion: no fee-stake for direct_p2p order ${opts.orderId} — refusing to settle without platform fee (fail-closed)`)
+  if (s.status === 'fee_taken') return { outcome: 'already_taken' }   // 幂等:重结算不重复取费
+  if (s.status !== 'locked') throw new Error(`takeFeeAtCompletion: fee-stake for order ${opts.orderId} is '${s.status}', not 'locked' — refusing to settle (fail-closed)`)
   const feeU = toUnits(s.amount)
   applyWalletDelta(db, s.seller_id, { fee_staked: -feeU })
   const [toReserveU, toOpsU] = allocate(feeU, [1, 1])
   if (toReserveU > 0) creditColumns(db, 'protocol_reserve_pool', 'id = 1', [], { balance: toReserveU })
   if (toOpsU > 0) applyWalletDelta(db, 'sys_protocol', { balance: toOpsU })
   db.prepare("UPDATE direct_pay_fee_stakes SET status='fee_taken', settled_at=datetime('now') WHERE order_id=? AND status='locked'").run(opts.orderId)
+  return { outcome: 'taken' }
 }
 
 /** 释放(未付/取消/超时):整笔退回卖家可用余额。幂等。 */

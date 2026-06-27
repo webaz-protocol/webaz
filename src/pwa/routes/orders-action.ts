@@ -24,6 +24,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import type { OrderStatus } from '../../layer0-foundation/L0-2-state-machine/transitions.js'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'
+import { releaseFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:买家在付款窗口取消 → 释放卖家费用质押
 
 export interface OrdersActionDeps {
   db: Database.Database
@@ -152,6 +153,16 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     if (action === 'confirm' && uid !== buyerId) {
       return void res.status(403).json({ error: '你不是本订单的买家', error_code: 'NOT_ORDER_BUYER' })
     }
+    // Rail1 直付:买家专属动作。mark_paid = 买家声明"我已付款"→ accepted(进卖家发货流程);
+    //   cancel = 付款前买家取消 → cancelled(释放费用质押)。仅 buyer、仅 direct_p2p 且仍在付款窗口。
+    if (action === 'mark_paid' || action === 'cancel') {
+      if (uid !== buyerId) {
+        return void res.status(403).json({ error: '你不是本订单的买家', error_code: 'NOT_ORDER_BUYER' })
+      }
+      if (order.payment_rail !== 'direct_p2p' || order.status !== 'direct_pay_window') {
+        return void res.status(409).json({ error: '该操作仅适用于直付订单的付款窗口', error_code: 'NOT_DIRECT_PAY_WINDOW' })
+      }
+    }
     if (action === 'pickup' || action === 'transit' || action === 'deliver') {
       // pickup 时若订单尚无物流，允许领取（孤儿单兜底）
       const isOrphanPickup = action === 'pickup' && !logisticsId
@@ -268,9 +279,27 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       })
     }
 
+    // Rail1 直付:付款窗口内买家取消 → cancelled + 释放费用质押(单事务:转移成功必同步放质押,
+    //   杜绝"已取消但质押漏放"泄漏 —— cancelled 单超时 cron 不再扫,放质押无后备路径,故必须原子)。
+    if (action === 'cancel') {
+      const fromStatusCancel = order.status as string
+      try {
+        db.transaction(() => {
+          const r = transition(db, req.params.id, 'cancelled', uid, [], notes)
+          if (!r.success) throw new Error(r.error || '状态转移失败')
+          releaseFeeStake(db, { orderId: req.params.id })
+        })()
+      } catch (e) {
+        return void res.status(409).json({ error: (e as Error).message, error_code: 'CANCEL_FAILED' })
+      }
+      notifyTransition(db, req.params.id, fromStatusCancel, 'cancelled')
+      return void res.json({ success: true, status: 'cancelled', fee_stake_released: true })
+    }
+
     const actionMap: Record<string, string> = {
       accept: 'accepted', ship: 'shipped', pickup: 'picked_up',
-      transit: 'in_transit', deliver: 'delivered', confirm: 'confirmed', dispute: 'disputed'
+      transit: 'in_transit', deliver: 'delivered', confirm: 'confirmed', dispute: 'disputed',
+      mark_paid: 'accepted',   // Rail1 直付:买家声明"我已付款" → accepted(汇入既有卖家发货流程;协议不验真实付款)
     }
     const toStatus = actionMap[action]
     if (!toStatus) return void res.json({ error: `未知操作：${action}` })
