@@ -35,6 +35,9 @@ export const WRITE_RULES: WriteRule[] = [
   { method: 'POST',     re: /^\/api\/skill-market\/[^/]+\/purchase/,             action: 'purchase' },
   { method: 'POST',     re: /^\/api\/secondhand\/[^/]+\/order/,                  action: 'buy_secondhand' },
   { method: 'POST',     re: /^\/api\/group-buys\/[^/]+\/join/,                   action: 'group_buy_join' },
+  // Direct Pay (Rail 1) = RISK scope:为【未来】/api/direct-pay/* 写面【保留】'direct_pay' 分类(该面尚无路由)。
+  //   ⚠️ SCAFFOLD:Passkey/两次披露门当前是 helper,【尚未】接到任何 handler;真实 enforcement 随 create-route/UI/ack 端点在后续 PR 落地。
+  { method: 'WRITE',    re: /^\/api\/direct-pay\//,                              action: 'direct_pay' },
   // Codex #98 P1:review claim 锁 5 WAZ stake(扣 balance + escrowed)—— 资金写,绝不能落 SAFE,纳入 default-deny 问责门。
   //   只命中 .../:type/:id/claim;其余 reviews 写无规则 → 落通用 'write'(仍 default-deny),GET reviews 由 endpointToAction(GET) 返回 null。
   { method: 'POST',     re: /^\/api\/reviews\/[^/]+\/[^/]+\/claim$/,             action: 'review_claim' },

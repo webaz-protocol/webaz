@@ -26,6 +26,7 @@ function legacy(method: string, path: string): string | null {
   if (method === 'POST' && /^\/api\/skill-market\/[^/]+\/purchase/.test(path)) return 'purchase'
   if (method === 'POST' && /^\/api\/secondhand\/[^/]+\/order/.test(path)) return 'buy_secondhand'
   if (method === 'POST' && /^\/api\/group-buys\/[^/]+\/join/.test(path)) return 'group_buy_join'
+  if (method !== 'GET' && /^\/api\/direct-pay\//.test(path)) return 'direct_pay'   // Direct Pay (Rail 1) RISK scope
   if (method === 'POST' && /^\/api\/reviews\/[^/]+\/[^/]+\/claim$/.test(path)) return 'review_claim'   // Codex #98:质押资金写,上提出 SAFE
   if (method !== 'GET' && (/^\/api\/addresses(\/|$)/.test(path) || path === '/api/profile/default-address')) return 'set_address'
   if (method !== 'GET' && /^\/api\/wallet\//.test(path)) return 'wallet'
@@ -60,7 +61,7 @@ const paths = [
   '/api/charity/fund/donate', '/api/wishes', '/api/wishes/w1/proof', '/api/charity/x', '/api/shareables',
   '/api/conversations', '/api/conversations/c1/messages', '/api/skills', '/api/skills/s1', '/api/rfqs',
   '/api/rfqs/r1/bids', '/api/auctions/a1/bid', '/api/skill-market/s1/purchase', '/api/secondhand/x1/order',
-  '/api/group-buys/g1/join',
+  '/api/group-buys/g1/join', '/api/direct-pay/orders', '/api/direct-pay/receive/enable',
   // PII / wallet / profile 子集(WRITE 多方法)
   '/api/addresses', '/api/addresses/a1', '/api/profile/default-address', '/api/wallet/withdraw',
   '/api/wallet/connect', '/api/profile/bind-email', '/api/profile/confirm-email', '/api/profile/change-handle',
@@ -101,6 +102,10 @@ expect('default-address→set_address(非 set_profile)', endpointToAction('POST'
 expect('cart/checkout 非 SAFE→write', endpointToAction('POST', '/api/cart/checkout') === 'write')
 expect('未映射写→write(default-deny)', endpointToAction('POST', '/api/some-new-sensitive-write') === 'write')
 expect('SAFE login→null', endpointToAction('POST', '/api/login') === null)
+// Direct Pay (Rail 1) RISK scope:全部写 → direct_pay(WRITE 多方法);GET 不锁
+expect('POST /api/direct-pay/orders → direct_pay', endpointToAction('POST', '/api/direct-pay/orders') === 'direct_pay')
+expect('PATCH /api/direct-pay/receive/enable → direct_pay', endpointToAction('PATCH', '/api/direct-pay/receive/enable') === 'direct_pay')
+expect('GET /api/direct-pay/orders → null(读不锁)', endpointToAction('GET', '/api/direct-pay/orders') === null)
 // Codex #98 P1:review claim(5 WAZ 质押)绝不能落 SAFE —— 必须命中 review_claim;非 claim reviews 写落 default-deny 'write';GET reviews 仍开放。
 expect('POST reviews/:type/:id/claim → review_claim(非 null)', endpointToAction('POST', '/api/reviews/shareable/x/claim') === 'review_claim')
 expect('POST reviews/:type/:id/claim ≠ null(资金写不放行)', endpointToAction('POST', '/api/reviews/shareable/x/claim') !== null)
@@ -116,7 +121,8 @@ expect('read 普通→null', endpointToReadAction('/api/products') === null)
 
 // ── capabilityMatrix 自洽 ──
 const cm = capabilityMatrix()
-expect('matrix 含全部命名 action', cm.write_actions.length === 22, cm.write_actions.length)
+expect('matrix 含全部命名 action', cm.write_actions.length === 23, cm.write_actions.length)
+expect('matrix 含 direct_pay', cm.write_actions.some(w => w.action === 'direct_pay'))
 expect('matrix 含 review_claim', cm.write_actions.some(w => w.action === 'review_claim'))
 expect('matrix 有 read_scopes', cm.read_scopes.length === 3)
 expect('matrix 带版本双轴', typeof cm.software_version === 'string' && typeof cm.contract_version === 'number')
