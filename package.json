@@ -101,6 +101,7 @@
     "test:deposit-rails": "tsx scripts/test-deposit-rails.ts",
     "test:direct-pay-timeouts": "tsx scripts/test-direct-pay-timeouts.ts",
     "test:direct-pay-actions": "tsx scripts/test-direct-pay-actions.ts",
+    "test:direct-pay-disclosures": "tsx scripts/test-direct-pay-disclosures.ts",
     "test:identity-claim-ui": "tsx scripts/test-identity-claim-ui.ts",
     "test:identity-claim-discovery": "tsx scripts/test-identity-claim-discovery.ts",
     "test:operator-ingest-guards": "tsx scripts/test-operator-ingest-guards.ts",

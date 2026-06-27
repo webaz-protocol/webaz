@@ -35,6 +35,8 @@ export const WRITE_RULES: WriteRule[] = [
   { method: 'POST',     re: /^\/api\/skill-market\/[^/]+\/purchase/,             action: 'purchase' },
   { method: 'POST',     re: /^\/api\/secondhand\/[^/]+\/order/,                  action: 'buy_secondhand' },
   { method: 'POST',     re: /^\/api\/group-buys\/[^/]+\/join/,                   action: 'group_buy_join' },
+  // Direct Pay (Rail 1) = RISK scope:直付/直接收款全部写 → 'direct_pay'(handler 另强制真人 Passkey 铁律,agent 硬拒)
+  { method: 'WRITE',    re: /^\/api\/direct-pay\//,                              action: 'direct_pay' },
   // Codex #98 P1:review claim 锁 5 WAZ stake(扣 balance + escrowed)—— 资金写,绝不能落 SAFE,纳入 default-deny 问责门。
   //   只命中 .../:type/:id/claim;其余 reviews 写无规则 → 落通用 'write'(仍 default-deny),GET reviews 由 endpointToAction(GET) 返回 null。
   { method: 'POST',     re: /^\/api\/reviews\/[^/]+\/[^/]+\/claim$/,             action: 'review_claim' },
