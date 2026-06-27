@@ -45,6 +45,11 @@ function getStake(db: Database.Database, orderId: string): FeeStakeRow | undefin
     .get(orderId) as FeeStakeRow | undefined
 }
 
+/** 只读断言:订单是否有【locked】fee-stake(可在完成时取费)。完成路径预检用,缺则拒绝 direct_p2p 进 completed。 */
+export function hasLockedFeeStake(db: Database.Database, orderId: string): boolean {
+  return getStake(db, orderId)?.status === 'locked'
+}
+
 /** 锁定逐单费用质押(= 平台费):卖家可用余额 → fee_staked。余额不足返回 {ok:false}(调用方不开单)。 */
 export function lockFeeStake(db: Database.Database, opts: { orderId: string; sellerId: string; feeUnits: Units; stakeId: string }): { ok: boolean; reason?: string } {
   const { orderId, sellerId, feeUnits, stakeId } = opts
