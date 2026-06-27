@@ -175,6 +175,139 @@ export function initDatabase(): Database.Database {
       created_at   TEXT DEFAULT (datetime('now'))
     );
 
+    /* ──────────────────────────────────────────
+       直接支付(Direct Pay)Rail 1 · 非托管撮合 + 信誉轨
+       本金(货款)不经协议;以下表仅记录【资格/担保物/费用质押/风控/AML/披露】元数据。
+       设计稿: docs/modules/DIRECT-PAYMENT-MODULE-DESIGN.INTERNAL.md (Rev 2026-06-27e)
+    ────────────────────────────────────────── */
+
+    -- 卖家"直接收款"资格(一真人一资格;档位 T0/T1/T2 决定配额)
+    CREATE TABLE IF NOT EXISTS direct_receive_privileges (
+      user_id          TEXT PRIMARY KEY REFERENCES users(id),
+      status           TEXT NOT NULL DEFAULT 'none',  -- none | active | suspended
+      tier             TEXT NOT NULL DEFAULT 'T0',    -- T0 | T1 | T2
+      suspended_reason TEXT,
+      granted_at       TEXT,
+      updated_at       TEXT DEFAULT (datetime('now'))
+    );
+
+    -- base bond = 履约担保物(security deposit);法律/会计上独立于货款。
+    -- 外部资产(USDC/法币,非 WAZ);生产收款经 deposit-rail 网关,本 PR 仅非生产确认。
+    CREATE TABLE IF NOT EXISTS direct_receive_deposits (
+      id              TEXT PRIMARY KEY,
+      user_id         TEXT NOT NULL REFERENCES users(id),
+      tier            TEXT NOT NULL DEFAULT 'T0',
+      required_amount REAL NOT NULL,                  -- 该档要求的 bond(S$ 参考值)
+      amount          REAL NOT NULL DEFAULT 0,        -- 实际到位
+      currency        TEXT NOT NULL DEFAULT 'waz',    -- waz | usdc | fiat (waz=internal,不 legal-gated;usdc/fiat=外部真实资产,legal-review gated)
+      deposit_rail    TEXT NOT NULL DEFAULT 'manual', -- manual | usdc_onchain | fiat_psp (后两者 GATED)
+      external_ref    TEXT,                           -- 链上 tx / PSP 凭证引用
+      status          TEXT NOT NULL DEFAULT 'pending',-- pending|confirmed|locked|insufficient|expired|refunding|refunded|slashed
+      confirmed_at    TEXT,
+      locked_at       TEXT,
+      released_at     TEXT,
+      production_receipt_confirmed_at TEXT,  -- 仅【真实生产收款】(USDC 链上 / 法币 PSP)确认时置;manual/非生产恒 NULL。生产 go-live 必须要求非 NULL,杜绝 manual rail 冒充 base bond 到位。
+      created_at      TEXT DEFAULT (datetime('now')),
+      updated_at      TEXT DEFAULT (datetime('now'))
+    );
+
+    -- 缓交(deferred-deposit)申请;审批=真人(RISK),绝不自动;缓交期配额压低,绝不零威慑。
+    CREATE TABLE IF NOT EXISTS direct_receive_deferrals (
+      id                   TEXT PRIMARY KEY,
+      user_id              TEXT NOT NULL REFERENCES users(id),
+      reason               TEXT,
+      period_days          INTEGER NOT NULL,
+      reduced_quota_factor REAL NOT NULL DEFAULT 0.5,   -- 缓交期配额压低系数(<1,带下限)
+      status               TEXT NOT NULL DEFAULT 'pending', -- pending|granted|rejected|expired
+      approved_by          TEXT REFERENCES users(id),      -- 真人 admin
+      approved_at          TEXT,
+      expires_at           TEXT,
+      grace_until          TEXT,
+      created_at           TEXT DEFAULT (datetime('now'))
+    );
+
+    -- 逐单费用质押(fee-stake = 平台应收费用,非买家保障)。锁在现有 WAZ 账本。
+    CREATE TABLE IF NOT EXISTS direct_pay_fee_stakes (
+      id          TEXT PRIMARY KEY,
+      order_id    TEXT NOT NULL REFERENCES orders(id),
+      seller_id   TEXT NOT NULL REFERENCES users(id),
+      amount      REAL NOT NULL,                  -- 锁定额(= 该单平台费)
+      status      TEXT NOT NULL DEFAULT 'locked', -- locked|fee_taken|released|slashed
+      created_at  TEXT DEFAULT (datetime('now')),
+      settled_at  TEXT,
+      UNIQUE(order_id)
+    );
+
+    -- penalty 科目(独立、物理隔离、只进不出)。出账【无代码路径】= append-only 硬保证。
+    -- 三条出账红线(永不可破):①不退买家 ②不计 WebAZ 利润 ③不按个案裁决结果流向裁决者。
+    CREATE TABLE IF NOT EXISTS penalty_fund (
+      id                    TEXT PRIMARY KEY,       -- 恒为 'main'
+      balance               REAL DEFAULT 0,
+      total_fee_stake_slash REAL DEFAULT 0,
+      total_base_bond_slash REAL DEFAULT 0,
+      updated_at            TEXT
+    );
+    CREATE TABLE IF NOT EXISTS penalty_fund_txns (
+      id               TEXT PRIMARY KEY,
+      kind             TEXT NOT NULL,               -- fee_stake_slash | base_bond_slash
+      source           TEXT NOT NULL,               -- fee_stake | base_bond (provenance)
+      from_user_id     TEXT,
+      amount           REAL NOT NULL,
+      related_order_id TEXT,
+      reason           TEXT,
+      created_at       TEXT DEFAULT (datetime('now'))
+    );
+
+    -- 制裁/合规筛查(本仓原无;direct-pay 含加密=最重洗钱形态,硬要求)
+    CREATE TABLE IF NOT EXISTS sanctions_screening (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES users(id),
+      status      TEXT NOT NULL DEFAULT 'clear',   -- clear | flagged | blocked
+      source      TEXT,
+      reason      TEXT,
+      screened_at TEXT DEFAULT (datetime('now')),
+      created_at  TEXT DEFAULT (datetime('now'))
+    );
+
+    -- AML 监控 flag(进【独立复核队列】,与配额节流分开);AML 能力 = INVARIANT。
+    CREATE TABLE IF NOT EXISTS aml_flags (
+      id               TEXT PRIMARY KEY,
+      subject_user_id  TEXT NOT NULL REFERENCES users(id),
+      related_order_id TEXT,
+      rule             TEXT NOT NULL,              -- structuring|concentration|cumulative|crypto|velocity
+      severity         TEXT NOT NULL DEFAULT 'low',-- low|medium|high
+      detail           TEXT,                       -- JSON
+      status           TEXT NOT NULL DEFAULT 'open',-- open|reviewing|cleared|escalated|str_filed
+      disposition      TEXT,                       -- review_queue|downgrade|suspend (非资金手段)
+      reviewed_by      TEXT REFERENCES users(id),
+      reviewed_at      TEXT,
+      created_at       TEXT DEFAULT (datetime('now'))
+    );
+    -- STR 申报(具名 compliance 责任人);留存默认 5 年(legal 可调)。
+    CREATE TABLE IF NOT EXISTS aml_str_filings (
+      id              TEXT PRIMARY KEY,
+      flag_id         TEXT REFERENCES aml_flags(id),
+      filed_by        TEXT NOT NULL,              -- 具名 compliance officer
+      filing_ref      TEXT,
+      narrative       TEXT,
+      filed_at        TEXT DEFAULT (datetime('now')),
+      retention_until TEXT NOT NULL              -- filed_at + 留存年限
+    );
+
+    -- 披露契约层凭证(append-only 事件):两次风险提醒各一行 —— stage='pre_select'(展示/选择直付前)
+    -- 与 stage='pre_confirm'(最终下单/确认付款前)。每行记 notice_version + acked_at,可证两次【分别】发生、
+    -- 第二次在最终确认前。最终确认逻辑只在【两 stage 都 ack】时放行(见 direct-pay-disclosures.ts)。
+    -- 这是 Direct Pay「无经济保障、风险自担」边界的证据层 —— 不可压成单次 ack。
+    CREATE TABLE IF NOT EXISTS direct_pay_disclosure_acks (
+      id             TEXT PRIMARY KEY,
+      order_id       TEXT NOT NULL REFERENCES orders(id),
+      buyer_id       TEXT NOT NULL REFERENCES users(id),
+      stage          TEXT NOT NULL,   -- pre_select | pre_confirm
+      notice_version TEXT NOT NULL,   -- 该次提醒的披露文案版本
+      acked_at       TEXT DEFAULT (datetime('now')),
+      UNIQUE(order_id, stage)         -- 每单每阶段一次;两阶段=两行
+    );
+
   `)
 
   // 迁移：为已有数据库添加 roles 列
@@ -182,6 +315,14 @@ export function initDatabase(): Database.Database {
     db.exec(`ALTER TABLE users ADD COLUMN roles TEXT DEFAULT '[]'`)
   } catch { /* 列已存在 */ }
   db.exec(`UPDATE users SET roles = json_array(role) WHERE roles = '[]' OR roles IS NULL`)
+
+  // 迁移(Direct Pay Rail 1): 既有库补列。ADD COLUMN(非 rebuild),fresh-DB 与 existing-DB 两路均生效。
+  try { db.exec(`ALTER TABLE orders ADD COLUMN payment_rail TEXT DEFAULT 'escrow'`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_window_deadline TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN direct_grace_deadline TEXT`) } catch { /* 已存在 */ } // Rail1 paid-but-timeout 宽限期:系统在此之前绝不关单(买家 →disputed 窗口)
+  try { db.exec(`ALTER TABLE wallets ADD COLUMN fee_staked REAL DEFAULT 0`) } catch { /* 已存在 */ }
+  // penalty 科目单行种子(只进不出;无出账代码路径)
+  db.exec(`INSERT OR IGNORE INTO penalty_fund (id, balance, total_fee_stake_slash, total_base_bond_slash, updated_at) VALUES ('main', 0, 0, 0, datetime('now'))`)
 
   console.error('✅ L0-1 数据库初始化完成：', DB_PATH)
   return db
