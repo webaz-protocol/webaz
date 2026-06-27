@@ -17,6 +17,9 @@ export interface DepositConfirmation {
 export interface DepositRail {
   id: DepositRailId
   isProduction: boolean
+  /** 法务清门 + 真实生产实现就绪。【所有现有轨均 false】(manual=非生产;usdc/fiat=GATED 未实现)。
+   *  只有真实 legal-cleared 生产收款实现落地后,该轨才置 true —— 在此之前 assertProductionDepositRail 一律拒。 */
+  legalCleared: boolean
   /** 确认外部到账。manual: 真人 admin/operator 在受控环境确认;生产实现 GATED → 抛错。 */
   confirmReceipt(args: { depositId: string; expectedAmount: Units; currency: string; externalRef?: string }): DepositConfirmation
 }
@@ -30,23 +33,26 @@ export interface DepositRail {
 export const MANUAL_DEPOSIT_RAIL: DepositRail = {
   id: 'manual',
   isProduction: false,
+  legalCleared: false,
   confirmReceipt: ({ externalRef }) => ({ confirmed: true, externalRef: externalRef ?? 'manual' }),
 }
 
 /**
- * 生产闸:任何【生产 go-live】路径在依赖 base bond 到位前必须调用本函数 —— 非生产轨(manual)即抛,
- * 杜绝把 manual confirm 当成真实担保物收款。生产收款实现就绪(法务清门后)才会有 isProduction=true 的轨通过。
+ * 生产闸:任何【生产 go-live】路径在依赖 base bond 到位前必须调用本函数。
+ * 要求 isProduction **且** legalCleared —— 二者缺一即抛。当前【所有】轨都过不了:
+ *   manual = 非生产;usdc_onchain / fiat_psp = GATED 未实现(legalCleared=false)。
+ * 故在真实 legal-cleared 生产收款实现落地前,生产路径无法把任何轨当成 base bond 到位。
  */
 export function assertProductionDepositRail(rail: DepositRail): void {
-  if (!rail.isProduction) {
-    throw new Error(`deposit-rail '${rail.id}' is NON-PRODUCTION (test/admin-only) — cannot be used for production base-bond receipt; production requires a legal-cleared, isProduction rail + production_receipt_confirmed_at`)
+  if (!rail.isProduction || !rail.legalCleared) {
+    throw new Error(`deposit-rail '${rail.id}' is NOT a legal-cleared production rail (isProduction=${rail.isProduction}, legalCleared=${rail.legalCleared}) — cannot be used for production base-bond receipt; requires a legal-cleared production implementation + production_receipt_confirmed_at`)
   }
 }
 
-/** 生产收款轨【GATED】—— 未实现,调用即抛(防真钱 / 链上 / PSP 误接线上)。 */
+/** 生产收款轨【GATED】—— 未实现,调用即抛(防真钱 / 链上 / PSP 误接线上)。legalCleared=false → 也过不了生产闸。 */
 function gated(id: DepositRailId): DepositRail {
   return {
-    id, isProduction: true,
+    id, isProduction: true, legalCleared: false,
     confirmReceipt: () => { throw new Error(`deposit-rail '${id}' is GATED: real-money/on-chain/PSP receipt not built (legal review: security-deposit characterisation + USDC DTSP + real-money boundary required)`) },
   }
 }
