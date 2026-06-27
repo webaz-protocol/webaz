@@ -409,7 +409,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | PATCH | `/api/offers/:id` | 🔐 |  |  | src/pwa/routes/offers.ts:33 |
 | POST | `/api/offers/:id/refresh` | 🔐 |  | 刷新 freshness（卖家点 "现货确认"） | src/pwa/routes/offers.ts:105 |
 | GET | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-read.ts:35 |
-| POST | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-create.ts:118 |
+| POST | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-create.ts:119 |
 | GET | `/api/orders/:id` | 🔐 |  |  | src/pwa/routes/orders-read.ts:148 |
 | POST | `/api/orders/:id/action` | 🔐 |  | 通用状态机 action — accept/ship/pickup/transit/deliver/confirm/dispute | src/pwa/routes/orders-action.ts:167 |
 | GET | `/api/orders/:id/chain` | 🔐 |  | 订单签名链 — 当事人 + arbitrator + admin 可查 | src/pwa/routes/orders-read.ts:121 |

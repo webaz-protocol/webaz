@@ -104,6 +104,7 @@
     "test:direct-pay-eligibility": "tsx scripts/test-direct-pay-eligibility.ts",
     "test:direct-receive-deposits": "tsx scripts/test-direct-receive-deposits.ts",
     "test:direct-pay-disclosure-acks": "tsx scripts/test-direct-pay-disclosure-acks.ts",
+    "test:direct-pay-create": "tsx scripts/test-direct-pay-create.ts",
     "test:direct-pay-disclosures": "tsx scripts/test-direct-pay-disclosures.ts",
     "test:identity-claim-ui": "tsx scripts/test-identity-claim-ui.ts",
     "test:identity-claim-discovery": "tsx scripts/test-identity-claim-discovery.ts",
