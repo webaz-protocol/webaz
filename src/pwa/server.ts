@@ -5489,7 +5489,7 @@ registerOrdersReadRoutes(app, { db, auth, getOrderStatus, getOrderChain, verifyO
 registerOrdersActionRoutes(app, {
   db, auth, isTrustedRole, generateId, transition, notifyTransition,
   settleOrder, settleFault, detectFraud, createDispute, checkTimeouts, recordViolationReputation,
-  broadcastSystemEvent,
+  broadcastSystemEvent, consumeGateToken,
 })
 
 // #1013 Phase 85: POST /api/orders 巨型事务已迁出

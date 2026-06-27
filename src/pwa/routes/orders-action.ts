@@ -25,6 +25,8 @@ import type Database from 'better-sqlite3'
 import type { OrderStatus } from '../../layer0-foundation/L0-2-state-machine/transitions.js'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'
 import { releaseFeeStake, hasLockedFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:取消释放质押 / 完成前预检 locked 质押
+import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'   // PR-4e: D1/D2 披露契约门
+import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'          // PR-4e: 现场真人 Passkey/gate-token 门
 
 export interface OrdersActionDeps {
   db: Database.Database
@@ -40,12 +42,30 @@ export interface OrdersActionDeps {
   checkTimeouts: any
   recordViolationReputation: any
   broadcastSystemEvent: (type: string, icon: string, msg: string, refId?: string | null) => void
+  /** PR-4e: 一次性真人 WebAuthn gate token 消费器(server.ts createHumanPresence 注入)。 */
+  consumeGateToken: (userId: string, token: string | undefined, purpose: string, validate: (data: unknown) => boolean) => { ok: boolean; reason?: string }
 }
 
 export function registerOrdersActionRoutes(app: Application, deps: OrdersActionDeps): void {
   const { db, auth, isTrustedRole, generateId, transition, notifyTransition,
           settleOrder, settleFault, detectFraud, createDispute, checkTimeouts, recordViolationReputation,
-          broadcastSystemEvent } = deps
+          broadcastSystemEvent, consumeGateToken } = deps
+
+  // PR-4e: direct_p2p 风险动作门 —— ① D1/D2 两次披露都 ack(缺则 DISCLOSURE_NOT_ACKED);② 现场真人 Passkey + 一次性
+  //   WebAuthn gate token(purpose 固定 direct_pay_order_action,order+action 走 purpose_data + validate)。
+  //   纯前置门:返回 ok 才允许后续写入。【先 disclosure(只读)再 Passkey(消费 token)】→ 缺 ack 不浪费 token。
+  //   调用方必须在【任何写入前 + 只读状态预检之后】调用,避免错误状态消耗 token。
+  function directPayActionGate(orderId: string, action: string, userId: string, webauthnToken: string | undefined):
+    { ok: true } | { ok: false; status: number; error: string; error_code: string } {
+    const disc = requireBothDisclosuresAcked(db, orderId)
+    if (!disc.ok) return { ok: false, status: 409, error: disc.reason || '需先完成两次风险披露确认', error_code: disc.error_code || 'DISCLOSURE_NOT_ACKED' }
+    const gate = requireDirectPayHumanPasskey({ db, consumeGateToken }, {
+      userId, webauthnToken, purpose: 'direct_pay_order_action',
+      validate: (data) => { const d = data as { order_id?: string; action?: string } | null; return !!d && d.order_id === orderId && d.action === action },
+    })
+    if (!gate.ok) return { ok: false, status: 403, error: gate.reason || '需现场真人 Passkey 确认', error_code: gate.error_code || 'HUMAN_PRESENCE_REQUIRED' }
+    return { ok: true }
+  }
 
   // RFC-007 stage 2：卖家主动拒单 reason_code 白名单。
   //   classification(客观无责 vs 主观有责)是 stage 3 auto-verify 的事;stage 2 仅捕获 + 一律走违约结算。
@@ -124,6 +144,11 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     if (isDirectP2p && !hasLockedFeeStake(db, req.params.id)) {
       return void res.status(409).json({ error: '直付订单缺少锁定的平台费质押,无法确认完成', error_code: 'DIRECT_PAY_NO_FEE_STAKE' })
     }
+    // PR-4e:direct_p2p 面交完成 = RISK 动作 → 两次披露门 + 现场真人 Passkey 门(已过 in_person/status/fee-stake 只读预检,token 不被错误状态浪费)。
+    if (isDirectP2p) {
+      const g = directPayActionGate(req.params.id, 'confirm_in_person', user.id as string, req.body?.webauthn_token as string | undefined)
+      if (!g.ok) return void res.status(g.status).json({ error: g.error, error_code: g.error_code })
+    }
     const tx = db.transaction(() => {
       db.prepare(`UPDATE orders SET status='completed', updated_at=datetime('now') WHERE id = ?`).run(req.params.id)
       db.prepare(`INSERT INTO order_state_history (id, order_id, from_status, to_status, actor_id, actor_role, notes)
@@ -171,10 +196,21 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
         return void res.status(409).json({ error: '该操作仅适用于直付订单的付款窗口', error_code: 'NOT_DIRECT_PAY_WINDOW' })
       }
     }
+    // PR-4e:mark_paid = direct_p2p RISK 动作(已过 direct_pay_window 只读预检)→ 两次披露门 + 现场真人 Passkey 门。cancel 不门控。
+    if (action === 'mark_paid') {
+      const g = directPayActionGate(req.params.id, 'mark_paid', uid, req.body?.webauthn_token as string | undefined)
+      if (!g.ok) return void res.status(g.status).json({ error: g.error, error_code: g.error_code })
+    }
     // Rail1 fail-closed(审计 P1):direct_p2p 完成前必须有 locked fee-stake。缺则【拒绝确认】——
     //   绝不让订单进入 terminal completed 而平台费落空。完成时取费与状态转移另在下方放进同一原子边界。
     if (action === 'confirm' && order.payment_rail === 'direct_p2p' && !hasLockedFeeStake(db, req.params.id)) {
       return void res.status(409).json({ error: '直付订单缺少锁定的平台费质押,无法确认完成', error_code: 'DIRECT_PAY_NO_FEE_STAKE' })
+    }
+    // PR-4e:direct_p2p confirm = RISK 动作。先【只读状态预检】(仅 delivered 可确认收货,杜绝错误状态消耗 token),再两次披露门 + 现场真人 Passkey 门。
+    if (action === 'confirm' && order.payment_rail === 'direct_p2p') {
+      if (order.status !== 'delivered') return void res.status(409).json({ error: `订单状态 ${order.status} 不可确认收货(仅 delivered)`, error_code: 'ORDER_NOT_DELIVERED' })
+      const g = directPayActionGate(req.params.id, 'confirm', uid, req.body?.webauthn_token as string | undefined)
+      if (!g.ok) return void res.status(g.status).json({ error: g.error, error_code: g.error_code })
     }
     if (action === 'pickup' || action === 'transit' || action === 'deliver') {
       // pickup 时若订单尚无物流，允许领取（孤儿单兜底）
