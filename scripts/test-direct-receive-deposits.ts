@@ -14,7 +14,7 @@ process.env.HOME = mkdtempSync(join(tmpdir(), 'dp-bond-'))
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const {
   requiredBondUnits, openDeposit, confirmDepositReceipt, lockBond, markInsufficient, topUp,
-  expireDeposit, slashBond, isProductionBaseBondLocked, refundOnExitBlockedReason, DEFAULT_BASE_BOND_CONFIG,
+  expireDeposit, slashBond, isProductionBaseBondLocked, sellerHasProductionBaseBondLocked, refundOnExitBlockedReason, DEFAULT_BASE_BOND_CONFIG,
 } = await import('../src/direct-receive-deposits.js')
 const { toUnits } = await import('../src/money.js')
 
@@ -143,6 +143,18 @@ ok('schema: currency NOT NULL', cur.notnull === 1)
 ok('schema: raw INSERT currency=waz → rejected by CHECK', throws(() => db.prepare("INSERT INTO direct_receive_deposits (id,user_id,required_amount,currency) VALUES ('rw1','seller1',1,'waz')").run()))
 ok('schema: raw INSERT without currency → rejected by NOT NULL', throws(() => db.prepare("INSERT INTO direct_receive_deposits (id,user_id,required_amount) VALUES ('rw2','seller1',1)").run()))
 ok('schema: raw INSERT currency=usdc → allowed (CHECK permits valid currency)', !throws(() => db.prepare("INSERT INTO direct_receive_deposits (id,user_id,required_amount,currency) VALUES ('rw3','seller1',1,'usdc')").run()))
+
+// ── PR-4b-1: 生产收款 provenance 快照列存在且 manual/test 轨恒 NULL;seller-level 生产门 fail-closed ──
+// d4 = manual 轨已 locked(上文)。新增 production_* 列必须存在(schema)且全部 NULL(本 PR 无任何写入方)。
+const provCols = (id: string) => {
+  const r = row(id) as Record<string, unknown>
+  return ['production_receipt_ref', 'production_rail_id', 'production_jurisdiction', 'production_policy_version'].map(c => r[c])
+}
+ok('4b-1: production_* provenance columns exist (schema migrated)', (() => { try { provCols('d4'); return true } catch { return false } })())
+ok('4b-1: manual locked deposit → all production_* provenance columns NULL', provCols('d4').every(v => v == null))
+ok('4b-1: manual locked deposit → production_receipt_confirmed_at NULL (unchanged)', prodFlag('d4') === null)
+// seller1 此时有 manual locked 担保物(d4/d5),但【没有生产级】→ seller-level 生产门必须 false(Direct Pay 仍 fail-closed)。
+ok('4b-1: sellerHasProductionBaseBondLocked false despite manual locked bond (non-launchable)', sellerHasProductionBaseBondLocked(db, 'seller1') === false)
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-receive-deposits tests passed`)

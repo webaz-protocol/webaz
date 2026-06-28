@@ -208,6 +208,12 @@ export function initDatabase(): Database.Database {
       locked_at       TEXT,
       released_at     TEXT,
       production_receipt_confirmed_at TEXT,  -- 仅【真实生产收款】(USDC 链上 / 法币 PSP)确认时置;manual/非生产恒 NULL。生产 go-live 必须要求非 NULL,杜绝 manual rail 冒充 base bond 到位。
+      -- PR-4b-1 生产收款 provenance 快照(仅在 production_receipt_confirmed_at 一并写;manual/非生产恒 NULL)。
+      -- 刻意 production_ 前缀以区别于运营列 currency/deposit_rail/external_ref(后三者 manual 轨也用)。本 PR 只加列,无写入方。
+      production_receipt_ref     TEXT,  -- 生产收款凭证引用(链上 tx / PSP receipt id);独立于 external_ref(manual 也写)
+      production_rail_id         TEXT,  -- 确认时的 legal-cleared 生产轨 id 快照(usdc_onchain / fiat_psp)
+      production_jurisdiction    TEXT,  -- 法务管辖区快照(担保物定性所适用法域)
+      production_policy_version  TEXT,  -- 确认时生效的 base-bond/合规 policy 版本快照(审计可追溯)
       created_at      TEXT DEFAULT (datetime('now')),
       updated_at      TEXT DEFAULT (datetime('now'))
     );
@@ -335,6 +341,11 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_grace_deadline TEXT`) } catch { /* 已存在 */ } // Rail1 paid-but-timeout 宽限期:系统在此之前绝不关单(买家 →disputed 窗口)
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_instruction_snapshot TEXT`) } catch { /* 已存在 */ } // Rail1 4c:下单时快照卖家收款说明(冻结买家所见;卖家事后改/停用不影响)
   try { db.exec(`ALTER TABLE wallets ADD COLUMN fee_staked REAL DEFAULT 0`) } catch { /* 已存在 */ }
+  // PR-4b-1: direct_receive_deposits 生产收款 provenance 快照列(既有库补列;additive nullable,无写入方,无 flow 启用)。
+  try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_receipt_ref TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_rail_id TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_jurisdiction TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_policy_version TEXT`) } catch { /* 已存在 */ }
   // penalty 科目单行种子(只进不出;无出账代码路径)
   db.exec(`INSERT OR IGNORE INTO penalty_fund (id, balance, total_fee_stake_slash, total_base_bond_slash, updated_at) VALUES ('main', 0, 0, 0, datetime('now'))`)
 
