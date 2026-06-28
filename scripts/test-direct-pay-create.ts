@@ -260,6 +260,31 @@ cp['direct_pay.aml.velocity_max_orders'] = 1
 cp['direct_pay.aml.velocity_max_orders'] = 0  // reset inert(后续 Part 不受影响)
 db.prepare("DELETE FROM aml_flags WHERE subject_user_id='seller1'").run()  // 清理:seller1 在 Part D/E 仍需可用
 
+// ══════ Part C-Quota: PR-③ 缓交期额度门(笔数 + 金额)在 create 真实接线(非桩)══════
+// 缓交卖家(active deferral,无生产 bond)缓交期内额度压低:base=1 + factor(默认 clamp→0.5)→ countLimit=floor(1×0.5)=0→max(1,0)=1。
+// 第 1 单过(额度内),第 2 单超笔数上限 → 409 DIRECT_PAY_DEFERRAL_QUOTA_EXCEEDED,且【无】order/stake/stock 变更。
+{
+  const { requestDeferral, approveDeferral } = await import('../src/direct-receive-deferral.js')
+  db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller_q','sq','seller','k_sq')").run()
+  db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('seller_q', 100)").run()   // fee-stake 余额
+  db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('pq','seller_q','TQ','d',50,100,'active')").run()
+  seedKyb('seller_q'); seedSanctions('seller_q'); seedInstr('seller_q')   // 合规全过 + instr active(无 production bond → 靠 deferral 入场)
+  const nowIso = new Date().toISOString()
+  requestDeferral(db, { deferralId: 'dq', userId: 'seller_q', periodDays: 30, nowIso })
+  approveDeferral(db, { deferralId: 'dq', adminId: 'admin1', nowIso })   // factor 默认 clamp → 0.5
+  cp['direct_pay.deferral_base_order_count'] = 1   // countLimit = max(1, floor(1×0.5)) = 1
+  const pqStock = () => (db.prepare("SELECT stock n FROM products WHERE id='pq'").get() as any).n
+  const qCtx = { product: { id: 'pq', seller_uid: 'seller_q', source: null }, buyerId: 'buyer1', reqQty: 1, basePrice: 50, totalAmount: 50, totalAmountU: toUnits(50), shippingAddress: 'addr' }
+  const oN = ordersN(); const r1 = mres()
+  createDirectPayResponse(r1, db, cdeps, qCtx)
+  ok('③ 缓交 seller 1st direct_p2p create → 200 (within reduced quota)', r1._s === 200 && r1._b?.status === 'direct_pay_window' && ordersN() === oN + 1, JSON.stringify(r1._b))
+  const oN2 = ordersN(), sN2 = stakesN(), st2 = pqStock(); const r2 = mres()
+  createDirectPayResponse(r2, db, cdeps, qCtx)
+  ok('③ 缓交 seller 2nd create over count limit → 409 DEFERRAL_QUOTA_EXCEEDED, no order/stake/stock mutation',
+    r2._s === 409 && r2._b?.error_code === 'DIRECT_PAY_DEFERRAL_QUOTA_EXCEEDED' && ordersN() === oN2 && stakesN() === sN2 && pqStock() === st2, JSON.stringify(r2._b))
+  delete cp['direct_pay.deferral_base_order_count']   // reset(seller1/seller2 有生产 bond → quota no-op,后续 Part 不受影响)
+}
+
 // ══════ Part D: GET /orders/:id 响应契约门 —— buyer 在 D1/D2 both-acked 前拿不到 snapshot ══════
 // 生产由 runtime schema bridge(webaz-schema-helpers)给 products 加 return_days;本测试用 schema.ts initDatabase,补上以匹配。
 db.exec("ALTER TABLE products ADD COLUMN return_days INTEGER DEFAULT 7")
@@ -320,6 +345,12 @@ db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller3','s3','sel
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p3','seller3','T3','d',50,10,'active')").run()
 const av3 = await getJson('/api/direct-pay/availability?product_id=p3', 'buyer1')
 ok('availability: seller not eligible → coarsened DIRECT_PAY_SELLER_NOT_ELIGIBLE (no base-bond/KYC leak)', av3.json?.available === false && av3.json?.error_code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE', JSON.stringify(av3.json))
+// PR-③: availability 镜像 create 的缓交额度门 —— seller_q 已有 1 单(Part C-Quota),base=1 → 超额 → 脱敏 SELLER_NOT_ELIGIBLE。
+cp['direct_pay.deferral_base_order_count'] = 1
+const avQuota = await getJson('/api/direct-pay/availability?product_id=pq', 'buyer1')
+ok('availability: 缓交 seller over reduced quota → available:false, coarsened DIRECT_PAY_SELLER_NOT_ELIGIBLE (no quota/deferral leak)',
+  avQuota.json?.available === false && avQuota.json?.error_code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE' && !/quota|deferral|缓交/i.test(JSON.stringify(avQuota.json)), JSON.stringify(avQuota.json))
+delete cp['direct_pay.deferral_base_order_count']
 ok('availability: missing product_id → 400', (await getJson('/api/direct-pay/availability', 'buyer1')).status === 400)
 
 server!.close()

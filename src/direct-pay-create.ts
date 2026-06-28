@@ -17,6 +17,7 @@ import { mulRate, type Units } from './money.js'
 import { sellerBaseBondEntrySatisfied } from './direct-pay-base-bond-entry.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
 import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, type DirectPayControlsConfig } from './direct-pay-controls.js'
+import { checkDeferralQuota, readDeferralQuotaConfig } from './direct-pay-deferral-quota.js'
 import { safeRunDirectPayAmlMonitor } from './direct-pay-aml-monitor.js'
 
 export interface DirectPayCreateDeps {
@@ -106,6 +107,10 @@ export function createDirectPayResponse(
   if (!ctrl.ok) { res.status(ctrl.status).json({ error: ctrl.reason, error_code: ctrl.error_code }); return }
   const instr = getActivePaymentInstruction(db, sellerId)
   if (!instr) { res.status(409).json({ error: '卖家未设置收款说明,无法创建直付订单', error_code: 'NO_PAYMENT_INSTRUCTION' }); return }
+  // ③ 缓交期额度门(launch blocker):靠 active deferral 入场(无生产 bond)的卖家,缓交期内笔数/累计金额压低。
+  //   控制面全过后、任何 DB write 之前判(fail-closed);非缓交卖家 = no-op。超额 → 409,绝不建单。
+  const quota = checkDeferralQuota(db, sellerId, ctx.totalAmountU, new Date().toISOString(), readDeferralQuotaConfig(deps.getProtocolParam))
+  if (!quota.ok) { res.status(409).json({ error: quota.reason, error_code: quota.code }); return }
   const feeU = mulRate(ctx.totalAmountU, (ctx.product.source as string) === 'secondhand' ? 0.01 : 0.02)
   const windowHours = deps.getProtocolParam<number>('direct_pay.payment_window_hours', 4)
   try {
