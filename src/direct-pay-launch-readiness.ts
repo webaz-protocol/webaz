@@ -16,6 +16,8 @@ import {
   sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear,
 } from './direct-pay-controls.js'
 import { sellerHasProductionBaseBondLocked } from './direct-receive-deposits.js'
+import { sellerBaseBondEntrySatisfied } from './direct-pay-base-bond-entry.js'
+import { getActiveDeferral } from './direct-receive-deferral.js'
 import { bondRailClearanceBlockers, isBondRailClearedForProduction } from './direct-pay-bond-rail-clearance.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
 
@@ -57,7 +59,9 @@ export interface DirectPayLaunchReadiness {
     sellerEvaluated: boolean
     sellerId: string | null
     sellerSuspended: boolean | null
-    productionBaseBondLocked: boolean | null
+    productionBaseBondLocked: boolean | null   // raw:已交生产级 base-bond(production receipt 非 NULL)
+    activeDeferral: boolean | null             // raw:有有效缓交(getActiveDeferral)
+    baseBondSatisfied: boolean | null          // 入场门:bond OR active deferral(= create gate 用的同一组合器)
     kybPassed: boolean | null
     sanctionsClear: boolean | null
     amlClear: boolean | null
@@ -102,18 +106,24 @@ export function readDirectPayLaunchReadiness(
 
   // ── seller-specific(仅当传入 sellerId)──
   let sellerSuspended: boolean | null = null, productionBaseBondLocked: boolean | null = null
+  let activeDeferral: boolean | null = null, baseBondSatisfied: boolean | null = null
   let kybPassed: boolean | null = null, sanctionsClear: boolean | null = null, amlClear: boolean | null = null
   let paymentInstructionPresent: boolean | null = null
   if (sellerId) {
+    const nowIso = new Date().toISOString()
     sellerSuspended = sellerDirectPayBreakerTripped(db, sellerId)
     productionBaseBondLocked = sellerHasProductionBaseBondLocked(db, sellerId)
+    activeDeferral = getActiveDeferral(db, sellerId, nowIso) != null
+    // 镜像 create gate(direct-pay-base-bond-entry):保证金门 = 生产 bond OR 有效缓交。
+    baseBondSatisfied = sellerBaseBondEntrySatisfied(db, sellerId, nowIso)
     kybPassed = sellerDirectPayKybPassed(db, sellerId)
     sanctionsClear = sellerDirectPaySanctionsClear(db, sellerId)
     amlClear = sellerDirectPayAmlClear(db, sellerId)
     // 镜像真实建单硬门(direct-pay-create.ts):无 active 收款说明 → create 返回 NO_PAYMENT_INSTRUCTION,绝不建单。
     paymentInstructionPresent = getActivePaymentInstruction(db, sellerId) != null
     if (sellerSuspended) blockers.push('DIRECT_PAY_SELLER_SUSPENDED')
-    if (!productionBaseBondLocked) blockers.push('DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND')
+    // 与 create gate 一致:有生产 bond 或有效缓交即满足;两者都无才 blocker。
+    if (!baseBondSatisfied) blockers.push('DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND')
     if (!kybPassed) blockers.push('DIRECT_PAY_SELLER_KYB_NOT_APPROVED')
     if (!sanctionsClear) blockers.push('DIRECT_PAY_SELLER_SANCTIONS_NOT_CLEARED')
     if (!amlClear) blockers.push('DIRECT_PAY_SELLER_AML_REVIEW_REQUIRED')
@@ -128,7 +138,7 @@ export function readDirectPayLaunchReadiness(
       regionAllowlist: cfg.regionAllowlist, perTxCapUnits: cfg.perTxCapUnits,
       perRailClearance, anyRailLegalCleared,
       sellerEvaluated: !!sellerId, sellerId: sellerId ?? null,
-      sellerSuspended, productionBaseBondLocked, kybPassed, sanctionsClear, amlClear, paymentInstructionPresent,
+      sellerSuspended, productionBaseBondLocked, activeDeferral, baseBondSatisfied, kybPassed, sanctionsClear, amlClear, paymentInstructionPresent,
     },
   }
 }
@@ -172,7 +182,7 @@ export function sellerDirectPayReadinessView(
     { code: 'PLATFORM_OPEN', ok: platformOpen, actionable: false },
     { code: 'PAYMENT_INSTRUCTION', ok: f.paymentInstructionPresent === true, actionable: true },
     { code: 'PASSKEY', ok: hasPasskey, actionable: true },
-    { code: 'BASE_BOND', ok: f.productionBaseBondLocked === true, actionable: false },
+    { code: 'BASE_BOND', ok: f.baseBondSatisfied === true, actionable: false },   // 生产 bond 或有效缓交即算满足(与 create gate 一致)
     { code: 'COMPLIANCE_REVIEW', ok: complianceCleared, actionable: false },
     { code: 'NOT_SUSPENDED', ok: f.sellerSuspended === false, actionable: false },
   ]

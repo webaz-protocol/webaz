@@ -13,6 +13,7 @@ import { tmpdir } from 'os'
 process.env.HOME = mkdtempSync(join(tmpdir(), 'dp-readiness-'))
 
 const { readDirectPayLaunchReadiness, sellerDirectPayReadinessView } = await import('../src/direct-pay-launch-readiness.js')
+const { requestDeferral, approveDeferral } = await import('../src/direct-receive-deferral.js')
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { toUnits } = await import('../src/money.js')
 
@@ -136,6 +137,19 @@ ok('8k. AML flag → COMPLIANCE_REVIEW not-ok, still NO AML term leaked', sv2.it
 const svBefore = snap()
 for (let i = 0; i < 3; i++) sellerDirectPayReadinessView(db, { getProtocolParam: gp, sellerId: 'seller1' })
 ok('8l. seller view is read-only', JSON.stringify(snap()) === JSON.stringify(svBefore))
+
+// ══════ 9. P1 fix: readiness mirrors the create gate — active 缓交 satisfies base-bond (no false NO_PRODUCTION_BASE_BOND) ══════
+// seller_dfr: no production bond, but an active granted deferral → base-bond门 satisfied, just like the real create gate.
+const nowIso = new Date().toISOString()
+requestDeferral(db, { deferralId: 'dfr_rdy', userId: 'seller_dfr', periodDays: 30, nowIso })
+approveDeferral(db, { deferralId: 'dfr_rdy', adminId: 'admin1', nowIso })
+const rDfr = readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller_dfr' })
+ok('9. active 缓交 → facts.baseBondSatisfied true + activeDeferral true (no production bond)', rDfr.facts.baseBondSatisfied === true && rDfr.facts.activeDeferral === true && rDfr.facts.productionBaseBondLocked === false)
+ok('9a. active 缓交 → NO DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND blocker (mirrors create gate)', !has(rDfr, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND'))
+ok('9b. seller without deferral/bond STILL gets the blocker', has(readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller_dfr_none' }), 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND'))
+// seller de-id view: BASE_BOND item ok for a 缓交 seller (was wrongly false before the fix)
+const svDfr = sellerDirectPayReadinessView(db, { getProtocolParam: gp, sellerId: 'seller_dfr' })
+ok('9c. seller view BASE_BOND ok=true for 缓交 seller', svDfr.items.find((i: any) => i.code === 'BASE_BOND')?.ok === true)
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-launch-readiness tests passed`)
