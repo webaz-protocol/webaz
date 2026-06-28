@@ -32,11 +32,8 @@ export type DirectPayLaunchBlocker =
   | 'DIRECT_PAY_RAIL_BREAKER_TRIPPED'
   | 'DIRECT_PAY_REGION_NOT_ALLOWED'
   | 'DIRECT_PAY_PER_TX_CAP_UNSET'
-  // ── production rail clearance(#112;总是评估)──
-  | 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'
-  | 'DIRECT_PAY_RAIL_IMPLEMENTATION_GATED'
-  | 'DIRECT_PAY_RAIL_POLICY_VERSION_UNSET'
-  | 'DIRECT_PAY_RAIL_JURISDICTION_ALLOWLIST_EMPTY'
+  // 注:production bond-rail clearance(#112)【不是】blocker —— 它只 gate 真实保证金路(confirmProductionReceipt),
+  //   缓交卖家无需 cleared rail 即可直付;rail-clearance 仅作诊断 facts(anyRailLegalCleared / perRailClearance)下发。
   // ── seller-specific(仅当传入 sellerId 时评估)──
   | 'DIRECT_PAY_SELLER_SUSPENDED'
   | 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND'
@@ -88,21 +85,16 @@ export function readDirectPayLaunchReadiness(
   if (!allow.length || !cfg.region || !allow.includes(cfg.region)) blockers.push('DIRECT_PAY_REGION_NOT_ALLOWED')
   if (!(Number.isSafeInteger(cfg.perTxCapUnits) && cfg.perTxCapUnits > 0)) blockers.push('DIRECT_PAY_PER_TX_CAP_UNSET')
 
-  // ── production rail clearance(#112;rail-level,jurisdiction-independent)──
-  //   hasProductionReceipt:true 只为剔除 per-deposit 的 NO_PRODUCTION_RECEIPT,得到纯 rail-level blockers。
+  // ── production bond-rail clearance(#112;rail-level,jurisdiction-aware)── 【诊断 facts,非 launch blocker】
+  //   关键:真实建单/可用性门(evaluateDirectPayLaunchControls + direct-pay-create/availability)从不校验 rail-clearance。
+  //   rail-clearance 只 gate【有人交真实保证金】这一条路(confirmProductionReceipt 的 Lock B);缓交卖家根本不交 bond,
+  //   也就不需要任何 cleared rail 即可直付。因此把 rail-clearance 当全局 launch blocker 会让 readiness 误报"未开放"——
+  //   与真实门不一致(Codex #117 P1)。这里只【计算并下发为诊断 facts】(anyRailLegalCleared / perRailClearance),
+  //   供运营判断"若要接收真实保证金,bonded-deposit 轨是否就绪",但绝不进 blockers / 不影响 ready / PLATFORM_OPEN。
   const perRailClearance: Record<string, string[]> = {}
   for (const rid of PRODUCTION_BOND_RAILS) perRailClearance[rid] = bondRailClearanceBlockers(rid, { hasProductionReceipt: true })
-  // ⚠️ 用 #112 的【jurisdiction-aware】判定决定 cleared/anyRailLegalCleared —— 必须把【当前部署 region】传进去:
-  //   isBondRailClearedForProduction(rid, cfg.region) 会校验 region ∈ rail 的 legal jurisdictionAllowlist。
-  //   仅看 coarse bondRailClearanceBlockers(allowlist 是否为空)会漏判"rail 只 cleared for US 而 region=SG"→ 误报 cleared。
-  //   coarse perRailClearance 仅保留作【诊断 facts】。
+  // jurisdiction-aware:把【当前部署 region】传进去,校验 region ∈ rail 的 legal jurisdictionAllowlist(coarse 判定会误报 cleared)。
   const anyRailLegalCleared = PRODUCTION_BOND_RAILS.some(rid => isBondRailClearedForProduction(rid, cfg.region))
-  if (!anyRailLegalCleared) blockers.push('DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL')
-  // 跨所有候选轨【都】命中才算 launch-level blocker(交集语义:某缺陷对每条轨都成立 → 它阻断上线)。
-  const everyRail = (code: string): boolean => PRODUCTION_BOND_RAILS.every(rid => perRailClearance[rid].includes(code))
-  if (everyRail('RAIL_IMPLEMENTATION_GATED')) blockers.push('DIRECT_PAY_RAIL_IMPLEMENTATION_GATED')
-  if (everyRail('POLICY_VERSION_UNSET')) blockers.push('DIRECT_PAY_RAIL_POLICY_VERSION_UNSET')
-  if (everyRail('EMPTY_JURISDICTION_ALLOWLIST')) blockers.push('DIRECT_PAY_RAIL_JURISDICTION_ALLOWLIST_EMPTY')
 
   // ── seller-specific(仅当传入 sellerId)──
   let sellerSuspended: boolean | null = null, productionBaseBondLocked: boolean | null = null
@@ -158,10 +150,10 @@ export type SellerReadinessItemCode =
 export interface SellerReadinessItem { code: SellerReadinessItemCode; ok: boolean; actionable: boolean }
 export interface SellerDirectPayReadinessView { directPayReady: boolean; items: SellerReadinessItem[] }
 
+// PLATFORM_OPEN 只折叠【真实全局建单门】(镜像 evaluateDirectPayLaunchControls 的非订单条件):enabled / rail-breaker /
+//   region / per-tx cap。rail-clearance 不在此列(它不 gate 直付,见上),否则缓交卖家会被误显示"平台未开放"。
 const GLOBAL_LAUNCH_BLOCKERS = new Set<string>([
   'DIRECT_PAY_NOT_ENABLED', 'DIRECT_PAY_RAIL_BREAKER_TRIPPED', 'DIRECT_PAY_REGION_NOT_ALLOWED', 'DIRECT_PAY_PER_TX_CAP_UNSET',
-  'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL', 'DIRECT_PAY_RAIL_IMPLEMENTATION_GATED',
-  'DIRECT_PAY_RAIL_POLICY_VERSION_UNSET', 'DIRECT_PAY_RAIL_JURISDICTION_ALLOWLIST_EMPTY',
 ])
 
 /**
