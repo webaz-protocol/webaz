@@ -15515,7 +15515,7 @@ async function renderSeller(app) {
       ${subTabBtn('settings', '⚙️ ' + t('设置'))}
     </div>
   `
-  const settingsSection = sellerSubTab === 'settings' ? ((window.dpSellerReadinessSection ? window.dpSellerReadinessSection() : '') + (window.dpSellerInstructionSection ? window.dpSellerInstructionSection() : '')) : ''
+  const settingsSection = sellerSubTab === 'settings' ? ((window.dpSellerReadinessSection ? window.dpSellerReadinessSection() : '') + (window.dpSellerDeferralSection ? window.dpSellerDeferralSection() : '') + (window.dpSellerInstructionSection ? window.dpSellerInstructionSection() : '')) : ''
 
   // 数据中心区块（30 天聚合 — 销售曲线 / Top 商品 / 客户洞察 / 状态分布）
   const insightsBlock = insights ? renderInsightsBlock(insights) : ''
@@ -15850,7 +15850,7 @@ async function renderSeller(app) {
       </div>
     </div>
   `, 'seller')
-  if (sellerSubTab === 'settings') { window.dpHydrateInstruction && window.dpHydrateInstruction(); window.dpHydrateSellerReadiness && window.dpHydrateSellerReadiness() }
+  if (sellerSubTab === 'settings') { window.dpHydrateInstruction && window.dpHydrateInstruction(); window.dpHydrateSellerReadiness && window.dpHydrateSellerReadiness(); window.dpHydrateSellerDeferral && window.dpHydrateSellerDeferral() }
 
   // 智能下单"我也要上架"跳过来时：自动切到商品 tab + 展开手工上架表单 + 预填标题
   // hashchange 可能多次触发 renderSeller — 用 window cache 保证每次重渲都能应用
