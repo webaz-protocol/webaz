@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (681 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (684 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -605,6 +605,13 @@
         ]
       }
     },
+    "/api/admin/direct-receive/aml-flags": {
+      "post": {
+        "summary": "POST /api/admin/direct-receive/aml-flags",
+        "tags": [],
+        "security": []
+      }
+    },
     "/api/admin/direct-receive/aml-flags/:id/review": {
       "post": {
         "summary": "route 只做 auth + gate + 参数校验 + 调 reviewAmlFlag(唯一 review writer,原子改 flag + 写 audit)。",
@@ -629,6 +636,20 @@
             "bearerAuth": []
           }
         ]
+      }
+    },
+    "/api/admin/direct-receive/kyb-reviews": {
+      "post": {
+        "summary": "Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B 一律拒。",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/admin/direct-receive/sanctions-screenings": {
+      "post": {
+        "summary": "purpose_data 绑定 user_id+status+provider_ref+expires_at。",
+        "tags": [],
+        "security": []
       }
     },
     "/api/admin/disputes": {
