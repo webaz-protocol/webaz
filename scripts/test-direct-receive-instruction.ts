@@ -34,6 +34,8 @@ for (const [u, role] of [['buyer1', 'buyer'], ['seller1', 'seller'], ['seller2',
 db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('buyer1', 100)").run()
 db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('seller1', 100)").run()
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p1','seller1','T','d',50,10,'active')").run()
+// PR-④ per-product verification is a HARD GATE before the instruction gate; verify p1 so this test reaches the instruction check it targets.
+db.prepare("INSERT INTO product_verifications (id, product_id, seller_id, code, status, reviewed_by, reviewed_at) VALUES ('pvf_p1','p1','seller1','wzv_p1','verified','admin1',datetime('now'))").run()
 const seedBond = (sellerId: string) => db.prepare("INSERT INTO direct_receive_deposits (id,user_id,tier,required_amount,amount,currency,deposit_rail,status,production_receipt_confirmed_at) VALUES (?,?,?,?,?,?,?,?,?)")
   .run('dep_' + sellerId, sellerId, 'T0', 500, 500, 'usdc', 'manual', 'locked', new Date().toISOString())
 
