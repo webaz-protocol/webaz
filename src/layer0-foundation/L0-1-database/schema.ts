@@ -276,6 +276,25 @@ export function initDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_product_verifications_product ON product_verifications(product_id, status);
     CREATE INDEX IF NOT EXISTS idx_product_verifications_seller ON product_verifications(seller_id, status);
 
+    -- 【按卖家】店铺认证(store verification)= 逐品验证的【豁免】路径。卖家申请一次店铺(发码→贴外部店铺页→提交店铺链接),
+    -- 真人 admin 手动核对时【勾选 per_product_exempt】:置 1 = 该卖家所有商品免逐品验证、可直付;置 0(默认)= 仍需逐品验证。
+    -- 诚实边界同 product_verifications:WebAZ 绝不抓取 external_url(无 SSRF/无超claim),只存链接+码+真人 attest。单一活跃 per seller。
+    CREATE TABLE IF NOT EXISTS store_verifications (
+      id                 TEXT PRIMARY KEY,
+      user_id            TEXT NOT NULL REFERENCES users(id),
+      code               TEXT NOT NULL,
+      platform           TEXT,
+      external_url       TEXT,
+      status             TEXT NOT NULL DEFAULT 'issued',   -- issued|submitted|verified|rejected
+      per_product_exempt INTEGER NOT NULL DEFAULT 0,       -- 1 = 该卖家免逐品验证(admin 核店铺时勾选);0 = 仍需逐品
+      reviewed_by        TEXT REFERENCES users(id),
+      reviewed_at        TEXT,
+      notes              TEXT,
+      created_at         TEXT DEFAULT (datetime('now')),
+      updated_at         TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_store_verifications_user ON store_verifications(user_id, status);
+
     -- 逐单费用质押(fee-stake = 平台应收费用,非买家保障)。锁在现有 WAZ 账本。
     CREATE TABLE IF NOT EXISTS direct_pay_fee_stakes (
       id          TEXT PRIMARY KEY,

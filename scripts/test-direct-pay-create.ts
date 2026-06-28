@@ -344,6 +344,22 @@ ok('availability: unverified product → available:false DIRECT_PAY_PRODUCT_NOT_
 seedProductVerified('p2uv', 'seller2')
 const avUv2 = await getJson('/api/direct-pay/availability?product_id=p2uv', 'buyer1')
 ok('availability: after verifying that product → available:true (per-product, not seller-wide)', avUv2.json?.available === true, JSON.stringify(avUv2.json))
+// PR-⑤ EXEMPTION: a seller with a verified store marked per_product_exempt → their UNVERIFIED products are eligible.
+db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller_ex','sx','seller','k_sx')").run()
+db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('seller_ex', 100)").run()
+db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('pex','seller_ex','EX','d',50,10,'active')").run()  // NOT product-verified
+seedBond('seller_ex', true); seedKyb('seller_ex'); seedSanctions('seller_ex'); seedInstr('seller_ex')
+db.prepare("INSERT INTO store_verifications (id, user_id, code, status, per_product_exempt, reviewed_by, reviewed_at) VALUES ('svx','seller_ex','wzs_x','verified',1,'admin1',datetime('now'))").run()
+const avEx = await getJson('/api/direct-pay/availability?product_id=pex', 'buyer1')
+ok('availability: exempt seller UNVERIFIED product → available:true (store exemption blesses all products)', avEx.json?.available === true, JSON.stringify(avEx.json))
+{
+  const oN = ordersN(); const r = mres()
+  createDirectPayResponse(r, db, cdeps, { product: { id: 'pex', seller_uid: 'seller_ex', source: null }, buyerId: 'buyer1', reqQty: 1, basePrice: 50, totalAmount: 50, totalAmountU: toUnits(50), shippingAddress: 'addr' })
+  ok('create: exempt seller unverified product → 200 created (per-product gate bypassed by exemption)', r._s === 200 && r._b?.status === 'direct_pay_window' && ordersN() === oN + 1, JSON.stringify(r._b))
+}
+// exemption is per-seller: a NON-exempt seller's unverified product is still blocked (seller2 not exempt)
+db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p2uv2','seller2','UV2','d',50,10,'active')").run()
+ok('availability: non-exempt seller unverified product still blocked', (await getJson('/api/direct-pay/availability?product_id=p2uv2', 'buyer1')).json?.error_code === 'DIRECT_PAY_PRODUCT_NOT_VERIFIED')
 // PR-6B: AML 断路器阻断 → available:false,买家只见脱敏 SELLER_NOT_ELIGIBLE(不泄露 AML/STR/severity/status 细节)
 db.prepare("INSERT INTO aml_flags (id, subject_user_id, rule, severity, status) VALUES ('af_e2','seller2','velocity','high','open')").run()
 const avAml = await getJson('/api/direct-pay/availability?product_id=p2', 'buyer1')
