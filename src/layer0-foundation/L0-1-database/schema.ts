@@ -381,6 +381,9 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_policy_version TEXT`) } catch { /* 已存在 */ }
   // PR-6A: sanctions 结论有有效期(过期 → fail-closed)。additive nullable;NULL = 无期限(不过期)。
   try { db.exec(`ALTER TABLE sanctions_screening ADD COLUMN expires_at TEXT`) } catch { /* 已存在 */ }
+  // PR-6D: 支撑 #108 AML 监控的窗口查询(seller_id + payment_rail='direct_p2p' + created_at 范围)。
+  //   纯只读索引;不改行为、不打开任何规则。命名随既有 idx_orders_* 风格。
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_direct_pay_seller_window ON orders(seller_id, payment_rail, created_at)`) } catch { /* 已存在 */ }
   // penalty 科目单行种子(只进不出;无出账代码路径)
   db.exec(`INSERT OR IGNORE INTO penalty_fund (id, balance, total_fee_stake_slash, total_base_bond_slash, updated_at) VALUES ('main', 0, 0, 0, datetime('now'))`)
 

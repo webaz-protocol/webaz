@@ -119,5 +119,34 @@ ok('fail-soft: safeRun does NOT throw on monitor error', threw === false)
 ok('fail-soft: returns { ok:false, error }', res8 && res8.ok === false && typeof res8.error === 'string', JSON.stringify(res8))
 ok('fail-soft: no aml_flags written on error', (db.prepare("SELECT COUNT(*) n FROM aml_flags").get() as { n: number }).n === amlTotalBefore)
 
+// ── 9. PR-6D: params seeded into protocol_params are readable end-to-end and stay INERT ──
+// re-export 路径(server.ts DEFAULT_PARAMS 经 direct-pay-controls.ts 取用同一数组)
+const ctrlMod = await import('../src/direct-pay-controls.js')
+ok('6D: DIRECT_PAY_AML_PARAMS re-exported from controls (server.ts seed import path)', (ctrlMod as any).DIRECT_PAY_AML_PARAMS === DIRECT_PAY_AML_PARAMS)
+ok('6D: exactly the 4 AML keys', DIRECT_PAY_AML_PARAMS.length === 4)
+// 模拟 server.ts seed loop:把描述写入 protocol_params(INSERT OR IGNORE)
+db.exec("CREATE TABLE protocol_params (key TEXT PRIMARY KEY, value TEXT, type TEXT, description TEXT, category TEXT, default_value TEXT, min_value REAL, max_value REAL)")
+for (const p of DIRECT_PAY_AML_PARAMS) {
+  db.prepare("INSERT OR IGNORE INTO protocol_params (key, value, type, description, category, default_value) VALUES (?,?,?,?,?,?)").run(p.key, p.value, p.type, p.description, p.category, p.value)
+}
+// getProtocolParam over seeded rows(按 type 强转,模拟 server.getProtocolParam)
+const ppGet = <T,>(key: string, fb: T): T => {
+  const row = db.prepare("SELECT value, type FROM protocol_params WHERE key=?").get(key) as { value: string; type: string } | undefined
+  if (!row) return fb
+  if (row.type === 'number') return Number(row.value) as unknown as T
+  if (row.type === 'boolean') return (row.value === 'true' || row.value === '1') as unknown as T
+  return row.value as unknown as T
+}
+ok('6D: all 4 keys present in protocol_params', ['direct_pay.aml.window_hours', 'direct_pay.aml.velocity_max_orders', 'direct_pay.aml.small_order_amount', 'direct_pay.aml.concentration_max_small_orders'].every(k => !!db.prepare("SELECT 1 FROM protocol_params WHERE key=?").get(k)))
+ok('6D: seeded velocity_max_orders → 0 (inert)', ppGet('direct_pay.aml.velocity_max_orders', -1) === 0)
+ok('6D: seeded small_order_amount → 0 (inert)', ppGet('direct_pay.aml.small_order_amount', -1) === 0)
+ok('6D: seeded concentration_max_small_orders → 0 (inert)', ppGet('direct_pay.aml.concentration_max_small_orders', -1) === 0)
+ok('6D: seeded window_hours → 24', ppGet('direct_pay.aml.window_hours', -1) === 24)
+// end-to-end:用 seeded(inert)params 跑 monitor → 即便有很多单也不写 flag
+for (let i = 0; i < 8; i++) seedOrder('s_seed', 10, 1)
+const seedTrigger = seedOrder('s_seed', 10, 0)
+runDirectPayAmlMonitor(db, { sellerId: 's_seed', orderId: seedTrigger, nowIso: NOW, getProtocolParam: ppGet })
+ok('6D: monitor with SEEDED inert params → no flag (defaults stay inert)', amlCount('s_seed') === 0)
+
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-aml-monitor tests passed`)
