@@ -7,7 +7,7 @@
  */
 import Database from 'better-sqlite3'
 
-const { requestDeferral, approveDeferral, rejectDeferral, getActiveDeferral, expireDeferrals, clampReducedQuotaFactor, DEFAULT_DEFERRAL_CONFIG } = await import('../src/direct-receive-deferral.js')
+const { requestDeferral, approveDeferral, rejectDeferral, getActiveDeferral, expireDeferrals, clampReducedQuotaFactor, DEFAULT_DEFERRAL_CONFIG, listDeferrals, getLatestDeferral } = await import('../src/direct-receive-deferral.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -78,6 +78,37 @@ ok('6b. after expiry, user may request again (single-active freed)', requestDefe
 
 // ── 7. read-only re: money/state — only direct_receive_deferrals is touched ──
 ok('7. NO wallet/deposit/privilege side effects', sideN() === 0)
+
+// ── 8. listDeferrals (admin view): status filter + newest-first; getLatestDeferral per-user ──
+const allList = listDeferrals(db)
+ok('8. listDeferrals() returns all rows', allList.length >= 3)
+const pendingList = listDeferrals(db, { status: 'pending' })
+ok('8a. listDeferrals({status:pending}) only pending', pendingList.length > 0 && pendingList.every(r => r.status === 'pending'))
+const expiredList = listDeferrals(db, { status: 'expired' })
+ok('8b. listDeferrals({status:expired}) only expired (d3 present)', expiredList.some(r => r.id === 'd3') && expiredList.every(r => r.status === 'expired'))
+ok('8c. getLatestDeferral(u3) = newest row for that user (d3b after re-request)', getLatestDeferral(db, 'u3')?.id === 'd3b')
+ok('8d. getLatestDeferral(unknown user) → null', getLatestDeferral(db, 'nobody') === null)
+
+// ── 9. period/grace upper bounds (P2-1): huge values must NOT pass / must NOT throw on approve ──
+const MAXP = DEFAULT_DEFERRAL_CONFIG.maxPeriodDays, MAXG = DEFAULT_DEFERRAL_CONFIG.maxGraceDays
+// huge periodDays rejected at request time (the actual seller attack vector) — never reaches pending
+const huge = requestDeferral(db, { deferralId: 'd_huge', userId: 'u_huge', periodDays: 100_000_000_000, nowIso: T0 })
+ok('9. huge periodDays → request rejected (not pending)', huge.ok === false && row('d_huge') === undefined)
+// boundary: exactly max ok, max+1 rejected
+ok('9a. periodDays == max → ok', requestDeferral(db, { deferralId: 'd_max', userId: 'u_max', periodDays: MAXP, nowIso: T0 }).ok === true)
+ok('9b. periodDays max+1 → rejected', requestDeferral(db, { deferralId: 'd_over', userId: 'u_over', periodDays: MAXP + 1, nowIso: T0 }).ok === false)
+// approve with huge graceDays → structured error, NEVER throws (the 500-after-token-consume bug)
+requestDeferral(db, { deferralId: 'd_g', userId: 'u_g', periodDays: 30, nowIso: T0 })
+let threw = false, gres: any = null
+try { gres = approveDeferral(db, { deferralId: 'd_g', adminId: 'admin1', nowIso: T0, graceDays: 100_000_000_000 }) } catch { threw = true }
+ok('9c. approve huge graceDays → structured error, no throw', threw === false && gres && gres.ok === false)
+ok('9d. d_g stayed pending after rejected approve (no half-grant)', row('d_g').status === 'pending')
+ok('9e. graceDays == max → approve ok', approveDeferral(db, { deferralId: 'd_g', adminId: 'admin1', nowIso: T0, graceDays: MAXG }).ok === true && row('d_g').status === 'granted')
+// defensive: a legacy/bypass row with out-of-bound period_days → approve returns structured error, not RangeError
+db.prepare("INSERT INTO direct_receive_deferrals (id, user_id, period_days, status) VALUES ('d_legacy','u_legacy',100000000000,'pending')").run()
+let threw2 = false, lres: any = null
+try { lres = approveDeferral(db, { deferralId: 'd_legacy', adminId: 'admin1', nowIso: T0 }) } catch { threw2 = true }
+ok('9f. approve legacy oversized period_days → structured error, no RangeError', threw2 === false && lres && lres.ok === false && row('d_legacy').status === 'pending')
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-receive-deferral tests passed`)

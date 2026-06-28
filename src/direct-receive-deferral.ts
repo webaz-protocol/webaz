@@ -22,9 +22,12 @@ export interface DeferralConfig {
   defaultGraceDays: number
   minReducedQuotaFactor: number   // >0:不零威慑下限
   maxReducedQuotaFactor: number   // <1:缓交期必压低
+  maxPeriodDays: number           // 缓交期上限:防卖家提交超大期限 → approve 时日期溢出 RangeError / 超长期缓交
+  maxGraceDays: number            // 宽限期上限:同上(approve 用 period+grace 算 grace_until,任一超大都会溢出)
 }
 export const DEFAULT_DEFERRAL_CONFIG: DeferralConfig = {
   defaultPeriodDays: 30, defaultGraceDays: 7, minReducedQuotaFactor: 0.1, maxReducedQuotaFactor: 0.9,
+  maxPeriodDays: 365, maxGraceDays: 90,
 }
 
 export type DeferralOpResult =
@@ -65,6 +68,9 @@ export function requestDeferral(db: Database.Database, args: {
   if (getRow(db, deferralId)) return { ok: false, reason: 'deferral id already exists' }
   const periodDays = args.periodDays ?? config.defaultPeriodDays
   if (!isPosInt(periodDays)) return { ok: false, reason: 'periodDays must be a positive integer' }
+  // 上限校验:超大 periodDays 会在 approve 时令 new Date(now + days*86_400_000) 溢出 → RangeError(approve 500)。
+  //   在【申请入口】就 fail-closed,既挡 500 也挡超长期缓交。
+  if (periodDays > config.maxPeriodDays) return { ok: false, reason: `periodDays exceeds max (${config.maxPeriodDays})` }
   if (hasActiveDeferral(db, userId, nowIso)) return { ok: false, reason: 'user already has an active deferral' }
   db.prepare(`INSERT INTO direct_receive_deferrals (id, user_id, reason, period_days, status, created_at)
     VALUES (?,?,?,?, 'pending', datetime('now'))`).run(deferralId, userId, reason ?? null, periodDays)
@@ -87,6 +93,11 @@ export function approveDeferral(db: Database.Database, args: {
   if (!Number.isFinite(now)) return { ok: false, reason: 'unparseable nowIso' }
   const graceDays = args.graceDays ?? config.defaultGraceDays
   if (!isPosInt(row.period_days) || !(Number.isInteger(graceDays) && graceDays >= 0)) return { ok: false, reason: 'invalid period/grace days' }
+  // 上限校验(防溢出 / 超长期):period 是申请时存的(理应已被 requestDeferral 卡住,这里防御 legacy/旁路行),
+  //   grace 是 admin 本次输入。任一超大都会让 new Date(now + (period+grace)*86_400_000) 溢出 → RangeError。
+  //   返回【结构化错误】(由 route 转 409),绝不抛 → 杜绝"消耗 Passkey token 后 500"。
+  if (row.period_days > config.maxPeriodDays) return { ok: false, reason: `periodDays exceeds max (${config.maxPeriodDays})` }
+  if (graceDays > config.maxGraceDays) return { ok: false, reason: `graceDays exceeds max (${config.maxGraceDays})` }
   const expiresAt = new Date(now + row.period_days * 86_400_000).toISOString().slice(0, 19).replace('T', ' ')
   const graceUntil = new Date(now + (row.period_days + graceDays) * 86_400_000).toISOString().slice(0, 19).replace('T', ' ')
   const factor = clampReducedQuotaFactor(args.reducedQuotaFactor, config)
@@ -125,6 +136,33 @@ export function getActiveDeferral(db: Database.Database, userId: string, nowIso:
     }
   }
   return null
+}
+
+/** 取某 user【最新一条】缓交申请(任意状态)。无 → null。纯读。供卖家自助 status 端点展示当前申请状态。 */
+export function getLatestDeferral(db: Database.Database, userId: string): {
+  id: string; status: string; period_days: number; reduced_quota_factor: number
+  expires_at: string | null; grace_until: string | null; created_at: string | null
+} | null {
+  // created_at 同秒并列时用 rowid(插入序)兜底,保证"最新"=最后插入,确定性。
+  return (db.prepare(`SELECT id, status, period_days, reduced_quota_factor, expires_at, grace_until, created_at
+    FROM direct_receive_deferrals WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(userId) as {
+      id: string; status: string; period_days: number; reduced_quota_factor: number
+      expires_at: string | null; grace_until: string | null; created_at: string | null
+    } | undefined) ?? null
+}
+
+/** 列出缓交申请(admin 视图)。可按 status 过滤;默认全部。最新在前。纯读,不改任何状态。供 admin route 渲染审批队列。 */
+export interface DeferralListRow {
+  id: string; user_id: string; reason: string | null; period_days: number; reduced_quota_factor: number
+  status: string; approved_by: string | null; approved_at: string | null
+  expires_at: string | null; grace_until: string | null; created_at: string | null
+}
+export function listDeferrals(db: Database.Database, opts: { status?: DeferralStatus } = {}): DeferralListRow[] {
+  const cols = 'id, user_id, reason, period_days, reduced_quota_factor, status, approved_by, approved_at, expires_at, grace_until, created_at'
+  if (opts.status) {
+    return db.prepare(`SELECT ${cols} FROM direct_receive_deferrals WHERE status = ? ORDER BY created_at DESC, rowid DESC`).all(opts.status) as DeferralListRow[]
+  }
+  return db.prepare(`SELECT ${cols} FROM direct_receive_deferrals ORDER BY created_at DESC, rowid DESC`).all() as DeferralListRow[]
 }
 
 /** 到期清理(cron):granted 且【超过 grace_until】→ expired。返回受影响的 user_id(调用方据此停权;本模块不改 privileges)。 */

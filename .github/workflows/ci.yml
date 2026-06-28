@@ -693,6 +693,7 @@ jobs:
       - run: npm run test:direct-pay-base-bond-entry
       - run: npm run test:direct-pay-launch-readiness
       - run: npm run test:direct-pay-readiness-routes
+      - run: npm run test:direct-pay-deferral-routes
       - run: npm run test:direct-pay-order-snapshot-schema
       - run: npm run test:direct-pay-disclosure-acks
       - run: npm run test:direct-pay-create
