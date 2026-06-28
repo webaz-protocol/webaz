@@ -85,6 +85,9 @@ ok('helper rollback: no fee-stake rows for poor seller', !db.prepare("SELECT 1 F
 ok('helper rollback: stock UNCHANGED', pstock() === stBefore)
 
 // ══════ Part B: route integration (POST /api/orders payment_rail=direct_p2p) ══════
+// Phase 4a 控制面参数:可变,便于在同一 app 上分别测 disabled/region/cap/enabled。默认空 = fail-closed(disabled)。
+const cp: Record<string, unknown> = {}
+const seedSanctions = (sellerId: string) => db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES (?,?,'clear')").run('sc_' + sellerId, sellerId)
 let oc = 0
 const app = express(); app.use(express.json())
 registerOrdersCreateRoutes(app, {
@@ -94,7 +97,7 @@ registerOrdersCreateRoutes(app, {
   DONATION_VALID_PCTS: new Set([0, 1, 2, 5]), INTERNAL_AUDITOR_ID: 'audit',
   addHours: (d: Date, h: number) => new Date(d.getTime() + h * 3600_000).toISOString(),
   getActiveFlashSale: () => null, applyCouponToOrder: () => ({ ok: false }),
-  getProtocolParam: <T,>(_k: string, fb: T): T => fb,
+  getProtocolParam: <T,>(k: string, fb: T): T => (k in cp ? cp[k] as T : fb),
   getProductShareChain: () => [], isAllowedSponsor: () => false, resolveInviteCodeRef: () => null,
   checkStockAndMaybeDelist: () => {}, auditSponsorChainCross: () => {},
   appendOrderEvent, transition, notifyTransition: () => {}, shouldAutoAccept: () => false,
@@ -116,16 +119,32 @@ db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller2','s2','sel
 db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('seller2', 100)").run()
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p2','seller2','T2','d',50,10,'active')").run()
 
+const dp = (uid?: string) => post({ product_id: 'p2', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr' }, uid)
 // unauthenticated
-ok('unauthenticated → 401', (await post({ product_id: 'p2', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr' })).status === 401)
+ok('unauthenticated → 401', (await dp()).status === 401)
+// Phase 4a 控制面:默认(cp 空)= 全局 disabled → fail-closed
+const rDisabled = await dp('buyer1')
+ok('direct_p2p disabled by default → 409 DIRECT_PAY_DISABLED', rDisabled.status === 409 && rDisabled.json?.error_code === 'DIRECT_PAY_DISABLED', JSON.stringify(rDisabled))
+// 开启全局,但地区不在白名单 → REGION_UNSUPPORTED
+Object.assign(cp, { 'direct_pay.enabled': true, 'direct_pay.region': 'US', 'direct_pay.region_allowlist': 'SG', 'direct_pay.per_tx_cap_units': toUnits(1000) })
+ok('enabled but region not allowed → 409 DIRECT_PAY_REGION_UNSUPPORTED', (await dp('buyer1')).json?.error_code === 'DIRECT_PAY_REGION_UNSUPPORTED')
+// 地区放开,但单笔上限低于金额(p2=50,cap=10)→ CAP_EXCEEDED
+cp['direct_pay.region'] = 'SG'; cp['direct_pay.per_tx_cap_units'] = toUnits(10)
+ok('amount over per-tx cap → 409 DIRECT_PAY_CAP_EXCEEDED', (await dp('buyer1')).json?.error_code === 'DIRECT_PAY_CAP_EXCEEDED')
+// 上限恢复;此后控制面全开,仅卖家事实(bond/KYC/instruction)决定结果
+cp['direct_pay.per_tx_cap_units'] = toUnits(1000)
 // no production bond → 409 DIRECT_PAY_NOT_AVAILABLE
-const rNoBond = await post({ product_id: 'p2', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr' }, 'buyer1')
+const rNoBond = await dp('buyer1')
 ok('direct_p2p no production bond → 409 DIRECT_PAY_NOT_AVAILABLE', rNoBond.status === 409 && rNoBond.json?.error_code === 'DIRECT_PAY_NOT_AVAILABLE', JSON.stringify(rNoBond))
-// production bond but no instruction → 409 NO_PAYMENT_INSTRUCTION
+// bond 到位但未过 KYC/制裁 → 409 DIRECT_PAY_KYC_REQUIRED
 seedBond('seller2', true)
-const rNoInstr = await post({ product_id: 'p2', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr' }, 'buyer1')
-ok('direct_p2p bond, no instruction → 409 NO_PAYMENT_INSTRUCTION', rNoInstr.status === 409 && rNoInstr.json?.error_code === 'NO_PAYMENT_INSTRUCTION', JSON.stringify(rNoInstr))
-// bond + instruction → 200 happy
+const rNoKyc = await dp('buyer1')
+ok('direct_p2p bond but no KYC/sanctions → 409 DIRECT_PAY_KYC_REQUIRED', rNoKyc.status === 409 && rNoKyc.json?.error_code === 'DIRECT_PAY_KYC_REQUIRED', JSON.stringify(rNoKyc))
+// KYC/制裁通过但无收款说明 → 409 NO_PAYMENT_INSTRUCTION
+seedSanctions('seller2')
+const rNoInstr = await dp('buyer1')
+ok('direct_p2p controls pass, no instruction → 409 NO_PAYMENT_INSTRUCTION', rNoInstr.status === 409 && rNoInstr.json?.error_code === 'NO_PAYMENT_INSTRUCTION', JSON.stringify(rNoInstr))
+// 全部满足 → 200 happy
 seedInstr('seller2')
 const bBal2 = walletUnits(db, 'buyer1').balance
 const rOk = await post({ product_id: 'p2', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr' }, 'buyer1')
@@ -144,7 +163,8 @@ ok('route happy: simple product, NO logistics required (logistics_id NULL)', (db
 // 注:拒的是 escrow-only 修饰,不是按 product_type 拒 digital/service(schema 无该字段)。
 const { createDirectPayResponse } = await import('../src/direct-pay-create.js')
 function mres(): any { const r: any = { _s: 200, _b: null, status(c: number) { r._s = c; return r }, json(b: any) { r._b = b; return r } }; return r }
-const cdeps = { generateId: (p: string) => `${p}_${Math.random().toString(36).slice(2, 8)}`, transition, appendOrderEvent, getProtocolParam: <T,>(_k: string, fb: T): T => fb }
+// 复用 Part B 的 cp(此时已 enabled + SG 白名单 + cap 1000),让 okRes 能过控制面到达建单。
+const cdeps = { generateId: (p: string) => `${p}_${Math.random().toString(36).slice(2, 8)}`, transition, appendOrderEvent, getProtocolParam: <T,>(k: string, fb: T): T => (k in cp ? cp[k] as T : fb) }
 const baseCtx = { product: { id: 'p1', seller_uid: 'seller1', source: null }, buyerId: 'buyer1', reqQty: 1, basePrice: 50, totalAmount: 50, totalAmountU: toUnits(50), shippingAddress: 'addr' }
 const ordersN = () => (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n
 const stakesN = () => (db.prepare('SELECT COUNT(*) n FROM direct_pay_fee_stakes').get() as { n: number }).n
@@ -162,11 +182,12 @@ rejects('donation', { donationPct: 0.01 }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
 rejects('gift', { isGift: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
 rejects('anonymous', { anonymous: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
 rejects('delivery_window', { deliveryWindow: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
-// 正向:无任何修饰(simple product)→ 不被 Part C 门拦(继续到生产门;seller1 有 production bond+instr → 建单成功)
+// 正向:无任何修饰(simple product)+ 控制面全过(enabled/region/cap)+ seller1 bond+KYC+instr → 建单成功
+seedSanctions('seller1')  // seller1 过 KYC/制裁(bond 在 Part A 已 production-locked;instr Part A active)
 const okRes = mres()
 const oN0 = ordersN()
 createDirectPayResponse(okRes, db, cdeps, baseCtx)
-ok('simple product (no modifiers) passes the modifier gate → 200 created', okRes._s === 200 && okRes._b?.status === 'direct_pay_window' && ordersN() === oN0 + 1, JSON.stringify(okRes._b))
+ok('simple product + controls pass → 200 created', okRes._s === 200 && okRes._b?.status === 'direct_pay_window' && ordersN() === oN0 + 1, JSON.stringify(okRes._b))
 
 // ══════ Part D: GET /orders/:id 响应契约门 —— buyer 在 D1/D2 both-acked 前拿不到 snapshot ══════
 // 生产由 runtime schema bridge(webaz-schema-helpers)给 products 加 return_days;本测试用 schema.ts initDatabase,补上以匹配。
@@ -197,6 +218,27 @@ recordDisclosureAck(db, { orderId: createdId, buyerId: 'buyer1', stage: STAGE.PR
 recordDisclosureAck(db, { orderId: createdId, buyerId: 'buyer1', stage: STAGE.PRE_CONFIRM, ackId: 'dpa_t2' })
 const gPost = await getJson(`/api/orders/${createdId}`, 'buyer1')
 ok('GET buyer post-both-ack: snapshot VISIBLE', typeof snapOf(gPost.json) === 'string' && snapOf(gPost.json).length > 0, JSON.stringify(snapOf(gPost.json)))
+
+// ══════ Part E: 可用性只读端点(控制面 SSOT,脱敏)══════
+const { registerDirectPayAvailabilityRoutes } = await import('../src/pwa/routes/direct-pay-availability.js')
+registerDirectPayAvailabilityRoutes(app, {
+  db,
+  auth: (req: Request, res: Response) => { const uid = req.headers['x-test-uid'] as string | undefined; if (!uid) { res.status(401).json({ error: 'login' }); return null } return { id: uid, role: 'buyer' } },
+  getProtocolParam: <T,>(k: string, fb: T): T => (k in cp ? cp[k] as T : fb),
+})
+// p2:控制面全开 + seller2 bond+KYC+instr → available:true
+const av1 = await getJson('/api/direct-pay/availability?product_id=p2', 'buyer1')
+ok('availability: eligible product → available:true', av1.json?.available === true, JSON.stringify(av1.json))
+// 全局关 → available:false + 非敏感码 DIRECT_PAY_DISABLED(原样透出)
+cp['direct_pay.enabled'] = false
+ok('availability: global off → DIRECT_PAY_DISABLED (non-sensitive, passthrough)', (await getJson('/api/direct-pay/availability?product_id=p2', 'buyer1')).json?.error_code === 'DIRECT_PAY_DISABLED')
+cp['direct_pay.enabled'] = true
+// 卖家合规类拒绝 → 脱敏为 DIRECT_PAY_SELLER_NOT_ELIGIBLE(不暴露 base-bond/KYC 具体状态)
+db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller3','s3','seller','k_s3')").run()
+db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p3','seller3','T3','d',50,10,'active')").run()
+const av3 = await getJson('/api/direct-pay/availability?product_id=p3', 'buyer1')
+ok('availability: seller not eligible → coarsened DIRECT_PAY_SELLER_NOT_ELIGIBLE (no base-bond/KYC leak)', av3.json?.available === false && av3.json?.error_code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE', JSON.stringify(av3.json))
+ok('availability: missing product_id → 400', (await getJson('/api/direct-pay/availability', 'buyer1')).status === 400)
 
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }

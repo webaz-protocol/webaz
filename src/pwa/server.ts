@@ -312,6 +312,7 @@ import { registerOrdersActionRoutes } from './routes/orders-action.js'
 import { registerOrdersCreateRoutes } from './routes/orders-create.js'
 import { registerDirectPayDisclosureAckRoutes } from './routes/direct-pay-disclosure-acks.js'  // PR-4d: Direct Pay 风险披露 ack 端点(薄 adapter)
 import { registerDirectReceivePaymentInstructionRoutes } from './routes/direct-receive-payment-instructions.js'  // PR-4f-a: 卖家收款说明 CRUD(薄 adapter)
+import { registerDirectPayAvailabilityRoutes } from './routes/direct-pay-availability.js'  // PR-4a: Direct Pay 可用性只读(控制面 SSOT)
 // Disputes 读端点 (#1013 Phase 86) — 5 endpoints (list/similar/detail/evidence-list/parties)
 import { registerDisputesReadRoutes } from './routes/disputes-read.js'
 // Disputes 写端点 (#1013 Phase 87) — 5 endpoints (respond/arbitrate/add-evidence/evidence-blob/request-evidence)
@@ -3866,6 +3867,7 @@ registerAgentReputationRoutes(app, {
 registerUsersPublicRoutes(app, { db, auth, noteAuthenticityBadges })
 registerDirectPayDisclosureAckRoutes(app, { db, auth, generateId, consumeGateToken })  // PR-4d
 registerDirectReceivePaymentInstructionRoutes(app, { db, auth, generateId })  // PR-4f-a
+registerDirectPayAvailabilityRoutes(app, { db, auth, getProtocolParam })  // PR-4a
 // RFC-004 build_feedback — agent-native "use → build" 反馈管道
 registerBuildFeedbackRoutes(app, {
   db, auth,
@@ -4249,8 +4251,6 @@ const TRENDING_SCORE_EXPR = `ROUND(
 const SERVICE_START_MS = Date.now()
 // #1013 Phase 107: health + mcp-telemetry + system-flags + editor-picks + manifest + error-report 已迁出
 // 注意：register 在底部统一调用（generateManifest/logError 在下方定义，避免 TDZ）
-
-
 
 // A2 黑名单 (#1013 Phase 32) — 5 endpoints 已迁出到 routes/blocklist.ts
 registerBlocklistRoutes(app, { db, auth })
