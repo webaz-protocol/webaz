@@ -15,7 +15,8 @@
  */
 import type Database from 'better-sqlite3'
 
-export type ProductVerificationStatus = 'issued' | 'submitted' | 'verified' | 'rejected'
+// 'stale' = 因商品重大编辑(标题/价格/详情/外链)被作废,需重新验证(防"验一个品再改成另一个品")。非 active、非 verified。
+export type ProductVerificationStatus = 'issued' | 'submitted' | 'verified' | 'rejected' | 'stale'
 export const MAX_URL_LEN = 2048
 export const MAX_PLATFORM_LEN = 60
 export const MAX_NOTES_LEN = 500
@@ -118,4 +119,16 @@ export function listProductVerifications(db: Database.Database, opts: { status?:
 /** 硬门读取:该产品是否【已验证】(有 verified 记录)。供 direct-pay create/availability 强制(未验证 → 不可直付)。 */
 export function productStoreVerified(db: Database.Database, productId: string): boolean {
   return !!db.prepare("SELECT 1 FROM product_verifications WHERE product_id = ? AND status = 'verified' LIMIT 1").get(productId)
+}
+
+/**
+ * 反作弊生命周期:商品发生【重大编辑】(标题/价格/详情/外部链接)时作废其验证 → status='stale'。
+ *   之后 productStoreVerified=false(硬门重新拦截),且 active 记录被清(卖家可重新申领→提交→admin 重核)。
+ *   防"先把商品 A 验证通过,再改标题/价格/详情/链接变成商品 B"绕过逐品门。返回作废条数。纯写,只改本表。
+ *   注:store-level 豁免卖家不依赖逐品验证,本作废对其直付资格无影响。
+ */
+export function invalidateProductVerification(db: Database.Database, productId: string): { invalidated: number } {
+  const r = db.prepare(`UPDATE product_verifications SET status = 'stale', updated_at = datetime('now')
+    WHERE product_id = ? AND status IN ('issued','submitted','verified')`).run(productId)
+  return { invalidated: r.changes }
 }

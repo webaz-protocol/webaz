@@ -9,7 +9,7 @@ import Database from 'better-sqlite3'
 
 const PV = await import('../src/product-verification.js')
 const { requestProductVerification, submitProductVerificationLink, reviewProductVerification,
-  getProductVerification, listSellerProductVerifications, listProductVerifications, productStoreVerified } = PV
+  getProductVerification, listSellerProductVerifications, listProductVerifications, productStoreVerified, invalidateProductVerification } = PV
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -52,5 +52,11 @@ ok('5b. after reject, pB may request again (single-active freed)', requestProduc
 ok('6. listSellerProductVerifications(s1) returns all rows for seller', listSellerProductVerifications(db, 's1').length >= 3)
 ok('6a. listProductVerifications({status:verified}) only verified', listProductVerifications(db, { status: 'verified' }).every(r => r.status === 'verified') && listProductVerifications(db, { status: 'verified' }).some(r => r.product_id === 'pA'))
 
-if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
-console.log(`✅ ${pass} product-verification tests passed`)
+// ── 7. invalidateProductVerification (PR-⑥ 反作弊:重大编辑后重验)──
+// pA 当前 verified(section 3c)。作废 → stale → 不再 verified;active 被清,可重新申领。
+const inv = invalidateProductVerification(db, 'pA')
+ok('7. invalidate pA → 1 row invalidated', inv.invalidated === 1)
+ok('7a. pA no longer verified (hard gate re-blocks)', productStoreVerified(db, 'pA') === false)
+ok('7b. pA latest status = stale', getProductVerification(db, 'pA')?.status === 'stale')
+ok('7c. after invalidate, pA may re-request (active freed)', requestProductVerification(db, { id: 'v_re', productId: 'pA', sellerId: 's1', code: 'wzv_re' }).ok === true)
+ok('7d. invalidate product with no active verification → 0', invalidateProductVerification(db, 'no_such_product').invalidated === 0)

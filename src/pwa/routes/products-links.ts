@@ -20,6 +20,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { invalidateProductVerification } from '../../product-verification.js'
 
 export interface ProductsLinksDeps {
   db: Database.Database
@@ -103,6 +104,7 @@ export function registerProductsLinksRoutes(app: Application, deps: ProductsLink
         (id, product_id, url, source, verified, verified_at, platform, external_id, external_title)
         VALUES (?, ?, ?, 'manual', 1, datetime('now'), ?, ?, ?)`,
           [linkId, req.params.id, url, meta?.platform ?? null, meta?.external_id ?? null, linkExternalTitle])
+      try { invalidateProductVerification(db, String(req.params.id)) } catch (e) { console.error('[product-verify invalidate]', e) }  // PR-⑥ 反作弊:外链变更 → 作废直付逐品验证
       return void res.json({ link_id: linkId, verified: 1, external_title: linkExternalTitle, message: '链接已关联' })
     }
 
@@ -163,6 +165,7 @@ export function registerProductsLinksRoutes(app: Application, deps: ProductsLink
       console.error('[products-links claim tx]', msg)
       return void res.status(500).json({ error: '发起认领失败,请重试' })
     }
+    try { invalidateProductVerification(db, String(req.params.id)) } catch (e) { console.error('[product-verify invalidate]', e) }  // PR-⑥ 反作弊:外链变更 → 作废直付逐品验证
 
     res.json({
       link_id:  linkId,
@@ -180,6 +183,7 @@ export function registerProductsLinksRoutes(app: Application, deps: ProductsLink
     const product = await dbOne<{ seller_id: string }>('SELECT seller_id FROM products WHERE id = ?', [req.params.id])
     if (!product || product.seller_id !== user.id) return void res.status(403).json({ error: '无权限' })
     await dbRun('DELETE FROM product_external_links WHERE id = ? AND product_id = ?', [req.params.linkId, req.params.id])
+    try { invalidateProductVerification(db, String(req.params.id)) } catch (e) { console.error('[product-verify invalidate]', e) }  // PR-⑥ 反作弊:外链变更 → 作废直付逐品验证
     res.json({ success: true })
   })
 }

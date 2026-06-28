@@ -23,6 +23,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { invalidateProductVerification } from '../../product-verification.js'
 
 export interface ProductsUpdateDeps {
   db: Database.Database
@@ -36,8 +37,8 @@ export interface ProductsUpdateDeps {
 }
 
 export function registerProductsUpdateRoutes(app: Application, deps: ProductsUpdateDeps): void {
-  // db 已走 RFC-016 异步 seam(dbOne/dbRun),不再直接用 deps.db
-  const { auth, makeCommitmentHash, makeDescriptionHash, makePriceHash,
+  // db 已走 RFC-016 异步 seam(dbOne/dbRun);deps.db 仅用于 direct-pay 逐品验证作废(sync helper,反作弊生命周期)
+  const { db, auth, makeCommitmentHash, makeDescriptionHash, makePriceHash,
           notifyWaitlist, notifyWishlistPriceDrop, checkStockAndMaybeDelist } = deps
 
   app.put('/api/products/:id', async (req: Request, res: Response) => {
@@ -160,6 +161,12 @@ export function registerProductsUpdateRoutes(app: Application, deps: ProductsUpd
     if (newPrice < oldPrice) {
       try { notifyWishlistPriceDrop(String(req.params.id), String(newTitle), oldPrice, newPrice) } catch (e) { console.error('[wishlist price-drop notify]', e) }
     }
+
+    // 反作弊(PR-⑥):标题/价格/详情(description/specs)等【重大字段】变更 → 作废该商品的直付逐品验证,强制重新验证,
+    //   防"先验证商品 A,再改成商品 B"绕过逐品硬门。external-link 变更在 products-links 路由另行作废。fail-soft,不阻断编辑。
+    const materialChanged = String(newTitle) !== String(product.title) || String(newDesc) !== String(product.description ?? '')
+      || Number(newPrice) !== Number(product.price) || String(specsJson ?? '') !== String(product.specs ?? '')
+    if (materialChanged) { try { invalidateProductVerification(db, String(req.params.id)) } catch (e) { console.error('[product-verify invalidate]', e) } }
 
     res.json({ success: true })
   })
