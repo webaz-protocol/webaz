@@ -24,19 +24,18 @@ export type DirectPayControlReason =
   | 'DIRECT_PAY_NOT_AVAILABLE'      // 卖家未完成生产级 base-bond
   | 'DIRECT_PAY_KYC_REQUIRED'       // 卖家未通过 KYC/制裁筛查
 
-/** 治理可调控制配置(protocol_params 装配;默认 fail-closed)。 */
+/** 治理【可调】控制配置(protocol_params 装配;默认 fail-closed)。
+ *  注意:production base-bond 与 KYC/制裁是【不可关闭的硬不变量】(launch blockers),【不】放进可调配置 ——
+ *  evaluate 始终强制,治理无法通过任何 param 绕过(见下方 evaluate)。这里只放运营节流类(开关/地区/上限)。 */
 export interface DirectPayControlsConfig {
   enabled: boolean              // 全局主开关 / 断路器(默认 false)
   region: string                // 本部署/运营所在地区(operator 声明;默认 '')
   regionAllowlist: string[]     // 已开放 Direct Pay 的地区(默认 [])
   perTxCapUnits: Units          // 单笔金额上限(整数 base-units;默认 0 = 无放行)
-  requireProductionBaseBond: boolean  // 默认 true
-  requireKycSanctions: boolean        // 默认 true
 }
 
 export const DEFAULT_DIRECT_PAY_CONTROLS: DirectPayControlsConfig = {
   enabled: false, region: '', regionAllowlist: [], perTxCapUnits: 0,
-  requireProductionBaseBond: true, requireKycSanctions: true,
 }
 
 /** 已核实事实快照(调用方装配;缺失即 fail-closed)。 */
@@ -72,8 +71,9 @@ export function evaluateDirectPayLaunchControls(
   if (!allow.length || !c.region || !allow.includes(c.region)) return deny('DIRECT_PAY_REGION_UNSUPPORTED', '直付在本地区暂未开放')
   if (!isNonNegUnits(c.perTxCapUnits) || c.perTxCapUnits <= 0) return deny('DIRECT_PAY_CAP_EXCEEDED', '直付单笔上限未配置')
   if (!isNonNegUnits(f.amountUnits) || f.amountUnits <= 0 || f.amountUnits > c.perTxCapUnits) return deny('DIRECT_PAY_CAP_EXCEEDED', '直付单笔金额超出上限')
-  if (c.requireProductionBaseBond !== false && f.productionBaseBondLocked !== true) return deny('DIRECT_PAY_NOT_AVAILABLE', '直付暂不可用:卖家未完成生产级履约担保(production base-bond)')
-  if (c.requireKycSanctions !== false && f.kycSanctionsPassed !== true) return deny('DIRECT_PAY_KYC_REQUIRED', '直付暂不可用:卖家未通过 KYC/制裁筛查')
+  // 硬不变量(launch blockers):production base-bond 与 KYC/制裁【始终强制】,无 cfg 开关、治理不可绕过。
+  if (f.productionBaseBondLocked !== true) return deny('DIRECT_PAY_NOT_AVAILABLE', '直付暂不可用:卖家未完成生产级履约担保(production base-bond)')
+  if (f.kycSanctionsPassed !== true) return deny('DIRECT_PAY_KYC_REQUIRED', '直付暂不可用:卖家未通过 KYC/制裁筛查')
   return { ok: true, status: 200 }
 }
 
@@ -86,14 +86,14 @@ export function readDirectPayControlsConfig(getProtocolParam: <T>(key: string, f
     region: String(getProtocolParam('direct_pay.region', '') || ''),
     regionAllowlist: csv.split(',').map(s => s.trim()).filter(Boolean),
     perTxCapUnits: Number.isSafeInteger(cap) && cap >= 0 ? cap : 0,
-    requireProductionBaseBond: getProtocolParam<boolean>('direct_pay.require_production_base_bond', true) !== false,
-    requireKycSanctions: getProtocolParam<boolean>('direct_pay.require_kyc_sanctions', true) !== false,
   }
 }
 
 /**
  * protocol_params 默认 seed(供 server.ts DEFAULT_PARAMS 展开)。默认全 fail-closed —— Direct Pay non-launchable;
  *   治理经 PATCH /api/admin/protocol-params/<key> 开通(无 seed 则 PATCH 404、boot 不建行 → 控制面打不开)。
+ *   只含【运营节流】可调项(开关/地区/上限)。production base-bond 与 KYC/制裁是【不可关闭的硬不变量】,
+ *   刻意【不】做成 param —— 治理无法关掉它们绕过 launch blockers(evaluate 始终强制)。
  *   key/默认值必须与 readDirectPayControlsConfig / DEFAULT_DIRECT_PAY_CONTROLS 对齐。
  */
 export const DIRECT_PAY_CONTROL_PARAMS: Array<{ key: string; value: string; type: string; description: string; category: string; min?: number; max?: number }> = [
@@ -101,8 +101,6 @@ export const DIRECT_PAY_CONTROL_PARAMS: Array<{ key: string; value: string; type
   { key: 'direct_pay.region', value: '', type: 'string', description: 'Direct Pay 本部署/运营所在地区码(与白名单比对);默认空=fail-closed。', category: 'system' },
   { key: 'direct_pay.region_allowlist', value: '', type: 'string', description: 'Direct Pay 已开放地区白名单(逗号分隔);默认空=无地区开放。', category: 'system' },
   { key: 'direct_pay.per_tx_cap_units', value: '0', type: 'number', description: 'Direct Pay 单笔金额上限(整数 base-units);默认 0=无放行,治理设正值方可。', category: 'system', min: 0 },
-  { key: 'direct_pay.require_production_base_bond', value: 'true', type: 'boolean', description: 'Direct Pay 是否要求卖家生产级 base-bond;默认 true(必需)。', category: 'system' },
-  { key: 'direct_pay.require_kyc_sanctions', value: 'true', type: 'boolean', description: 'Direct Pay 是否要求卖家 KYC/制裁筛查通过;默认 true(必需)。', category: 'system' },
 ]
 
 /**

@@ -14,8 +14,8 @@ const { toUnits } = await import('../src/money.js')
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
-// all-pass baseline
-const CFG = { enabled: true, region: 'SG', regionAllowlist: ['SG', 'MY'], perTxCapUnits: toUnits(100), requireProductionBaseBond: true, requireKycSanctions: true }
+// all-pass baseline (production base-bond + KYC are hard invariants — no cfg flags for them)
+const CFG = { enabled: true, region: 'SG', regionAllowlist: ['SG', 'MY'], perTxCapUnits: toUnits(100) }
 const FACTS = { amountUnits: toUnits(50), productionBaseBondLocked: true, kycSanctionsPassed: true }
 
 // ── 1. defaults fail-closed ──
@@ -35,13 +35,13 @@ ok('amount <= 0 → CAP_EXCEEDED', evaluateDirectPayLaunchControls(CFG, { ...FAC
 ok('fractional amount → CAP_EXCEEDED (not valid units)', evaluateDirectPayLaunchControls(CFG, { ...FACTS, amountUnits: 50.5 as any }).error_code === 'DIRECT_PAY_CAP_EXCEEDED')
 ok('amount == cap → allowed (boundary)', evaluateDirectPayLaunchControls(CFG, { ...FACTS, amountUnits: toUnits(100) }).ok === true)
 
-// ── 4. production base-bond ──
+// ── 4. production base-bond (HARD INVARIANT — always enforced, no cfg flag can disable) ──
 ok('no production base-bond → NOT_AVAILABLE', evaluateDirectPayLaunchControls(CFG, { ...FACTS, productionBaseBondLocked: false }).error_code === 'DIRECT_PAY_NOT_AVAILABLE')
-ok('requireProductionBaseBond=false skips base-bond', evaluateDirectPayLaunchControls({ ...CFG, requireProductionBaseBond: false }, { ...FACTS, productionBaseBondLocked: false }).ok === true)
+ok('base-bond enforced even if a stray requireProductionBaseBond:false is passed (no bypass)', evaluateDirectPayLaunchControls({ ...CFG, requireProductionBaseBond: false } as any, { ...FACTS, productionBaseBondLocked: false }).error_code === 'DIRECT_PAY_NOT_AVAILABLE')
 
-// ── 5. KYC/sanctions ──
+// ── 5. KYC/sanctions (HARD INVARIANT — always enforced, no cfg flag can disable) ──
 ok('no KYC/sanctions → KYC_REQUIRED', evaluateDirectPayLaunchControls(CFG, { ...FACTS, kycSanctionsPassed: false }).error_code === 'DIRECT_PAY_KYC_REQUIRED')
-ok('requireKycSanctions=false skips KYC', evaluateDirectPayLaunchControls({ ...CFG, requireKycSanctions: false }, { ...FACTS, kycSanctionsPassed: false }).ok === true)
+ok('KYC enforced even if a stray requireKycSanctions:false is passed (no bypass)', evaluateDirectPayLaunchControls({ ...CFG, requireKycSanctions: false } as any, { ...FACTS, kycSanctionsPassed: false }).error_code === 'DIRECT_PAY_KYC_REQUIRED')
 
 // ── 6. all conditions pass ──
 const okd = evaluateDirectPayLaunchControls(CFG, FACTS)
@@ -54,10 +54,10 @@ const cfgDefault = readDirectPayControlsConfig(<T,>(_k: string, fb: T): T => fb)
 ok('loader default: disabled', cfgDefault.enabled === false)
 ok('loader default: empty allowlist', cfgDefault.regionAllowlist.length === 0)
 ok('loader default: cap 0', cfgDefault.perTxCapUnits === 0)
-ok('loader default: base-bond + KYC required', cfgDefault.requireProductionBaseBond === true && cfgDefault.requireKycSanctions === true)
-const params: Record<string, unknown> = { 'direct_pay.enabled': true, 'direct_pay.region': 'SG', 'direct_pay.region_allowlist': 'SG, MY ,', 'direct_pay.per_tx_cap_units': toUnits(50), 'direct_pay.require_kyc_sanctions': false }
+ok('loader config has NO require* fields (hard invariants not config-driven)', !('requireProductionBaseBond' in cfgDefault) && !('requireKycSanctions' in cfgDefault))
+const params: Record<string, unknown> = { 'direct_pay.enabled': true, 'direct_pay.region': 'SG', 'direct_pay.region_allowlist': 'SG, MY ,', 'direct_pay.per_tx_cap_units': toUnits(50) }
 const cfgSet = readDirectPayControlsConfig(<T,>(k: string, fb: T): T => (k in params ? params[k] as T : fb))
-ok('loader parses enabled/region/allowlist(csv trim+drop empties)/cap/flags', cfgSet.enabled === true && cfgSet.region === 'SG' && JSON.stringify(cfgSet.regionAllowlist) === JSON.stringify(['SG', 'MY']) && cfgSet.perTxCapUnits === toUnits(50) && cfgSet.requireKycSanctions === false && cfgSet.requireProductionBaseBond === true, JSON.stringify(cfgSet))
+ok('loader parses enabled/region/allowlist(csv trim+drop empties)/cap', cfgSet.enabled === true && cfgSet.region === 'SG' && JSON.stringify(cfgSet.regionAllowlist) === JSON.stringify(['SG', 'MY']) && cfgSet.perTxCapUnits === toUnits(50), JSON.stringify(cfgSet))
 
 // ── 8. sellerKycSanctionsPassed (fail-closed; needs explicit clear, no flag/block) ──
 const db = new Database(':memory:')
@@ -78,13 +78,14 @@ const EXPECTED: Record<string, string> = {
   'direct_pay.region': '',
   'direct_pay.region_allowlist': '',
   'direct_pay.per_tx_cap_units': '0',
-  'direct_pay.require_production_base_bond': 'true',
-  'direct_pay.require_kyc_sanctions': 'true',
 }
 for (const [k, v] of Object.entries(EXPECTED)) {
   ok(`seed list has ${k} (fail-closed default '${v}')`, !!seedByKey[k] && seedByKey[k].value === v, JSON.stringify(seedByKey[k]))
 }
-ok('seed list has exactly the 6 control keys', DIRECT_PAY_CONTROL_PARAMS.length === 6)
+ok('seed list has exactly the 4 operational control keys', DIRECT_PAY_CONTROL_PARAMS.length === 4)
+// hard invariants must NOT be governance params (no operator soft-bypass of launch blockers)
+ok('require_production_base_bond NOT a param (hard invariant)', !seedByKey['direct_pay.require_production_base_bond'])
+ok('require_kyc_sanctions NOT a param (hard invariant)', !seedByKey['direct_pay.require_kyc_sanctions'])
 // 用 seed 默认构造 getProtocolParam(按 type 强转,模拟 server.getProtocolParam)→ readConfig → evaluate 必须全关
 const seedGet = <T,>(key: string, fb: T): T => {
   const p = seedByKey[key]; if (!p) return fb
