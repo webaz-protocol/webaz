@@ -57,6 +57,7 @@ const _EN = {
   '已进入宽限期,请尽快补交履约保证金,否则直付资格将被暂停': 'You are in the grace period — please post the performance bond soon, or your Direct Pay eligibility will be suspended',
   '缓交申请已提交,等待管理员审批': 'Deferral application submitted — awaiting admin approval',
   '履约保证金缓交审批': 'Performance-bond deferral approvals',
+  '商户缓交申请;批准设压低额度 + 真人 Passkey(仅 root)': 'Merchant deferral applications; approval sets a reduced quota + live Passkey (root only)',
   '批准后该卖家可先入场直付、保证金延后交;直付仍需满足全部合规条件,且缓交期内额度被压低。批准/拒绝均需真人 Passkey。': 'Once approved, the seller may use Direct Pay first and post the bond later; Direct Pay still requires all compliance conditions, and the quota is reduced during the deferral period. Both approve and reject require a live Passkey.',
   '缓交期(天)': 'Deferral period (days)',
   '批准缓交(需真人 Passkey)': 'Approve deferral (live Passkey required)',

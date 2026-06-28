@@ -200,6 +200,18 @@ ok('12h. reject uses live Passkey gate (direct_pay_deferral_reject)', /requestPa
 ok('12i. approve binds purpose_data to the posted terms (same body to gate + POST)', /requestPasskeyGate\('direct_pay_deferral_approve',\s*body\)/.test(ADFR) && /\.\.\.body,\s*webauthn_token/.test(ADFR))
 // admin panel must NOT touch money/state endpoints beyond the deferral approve/reject
 ok('12j. admin panel touches no wallet/escrow/settle/refund', !/\/wallet|\/escrow|\/settle|\/refund|\/returns/.test(ADFRCODE))
+// 12k. CRITICAL (Codex #121 P1): every requestPasskeyGate purpose the admin UI requests MUST be in the
+//   WebAuthn /api/webauthn/auth/start allowed set — else /auth/start returns 400 'invalid purpose', no gate
+//   token is minted, and approve/reject are dead buttons. Cross-check source-to-source so it can't regress.
+const WEBAUTHN = readFileSync('src/pwa/routes/webauthn.ts', 'utf8')
+const allowedDecl = WEBAUTHN.slice(WEBAUTHN.indexOf('const allowed = new Set('), WEBAUTHN.indexOf('const allowed = new Set(') + 1500)
+const adminGatePurposes = [...ADFR.matchAll(/requestPasskeyGate\('([^']+)'/g)].map(m => m[1])
+ok('12k. admin UI requests both approve + reject Passkey purposes', adminGatePurposes.includes('direct_pay_deferral_approve') && adminGatePurposes.includes('direct_pay_deferral_reject'))
+for (const p of adminGatePurposes) {
+  ok(`12k. WebAuthn allowed set includes '${p}' (token actually mintable)`, allowedDecl.includes(`'${p}'`))
+}
+// 12l. discoverability: admin overview links to #admin/deferrals (root-only entry card), not hash-only
+ok('12l. admin hub exposes a #admin/deferrals entry card', has(APP, "'#admin/deferrals')") && has(APP, '履约保证金缓交审批'))
 // EN parity for the new admin copy
 for (const k of ['履约保证金缓交审批', '缓交期(天)', '真人确认批准', '真人确认拒绝', '暂无待审缓交申请', '额度系数(如 0.5)']) {
   ok(`12-i18n EN present: ${k.slice(0, 10)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
