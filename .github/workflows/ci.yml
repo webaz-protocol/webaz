@@ -292,6 +292,7 @@ jobs:
       - name: Fetch base branch (for ratchet monotonicity merge-base)
         run: git fetch --quiet origin main
       - run: npm run guard:pr-constraints
+      - run: npm run guard:direct-pay-deposit
       - name: On failure — pr-constraints context
         if: failure()
         run: |
