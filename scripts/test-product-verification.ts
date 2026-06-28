@@ -60,3 +60,6 @@ ok('7a. pA no longer verified (hard gate re-blocks)', productStoreVerified(db, '
 ok('7b. pA latest status = stale', getProductVerification(db, 'pA')?.status === 'stale')
 ok('7c. after invalidate, pA may re-request (active freed)', requestProductVerification(db, { id: 'v_re', productId: 'pA', sellerId: 's1', code: 'wzv_re' }).ok === true)
 ok('7d. invalidate product with no active verification → 0', invalidateProductVerification(db, 'no_such_product').invalidated === 0)
+
+if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
+console.log(`✅ ${pass} product-verification tests passed`)
