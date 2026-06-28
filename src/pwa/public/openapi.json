@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (675 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (678 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -3262,6 +3262,23 @@
             "bearerAuth": []
           }
         ]
+      }
+    },
+    "/api/direct-receive/payment-instruction": {
+      "delete": {
+        "summary": "DELETE — 停用卖家当前 active 收款说明(软停用,留历史为 inactive)。停用后 create route fail-closed。",
+        "tags": [],
+        "security": []
+      },
+      "get": {
+        "summary": "GET — 卖家本人当前 active 收款说明;无则 instruction:null(200,显式空状态,便于 UI 渲染“尚未设置”)。",
+        "tags": [],
+        "security": []
+      },
+      "put": {
+        "summary": "PUT — 设置/替换卖家当前 active 收款说明。instruction 必填、trim、长度上限;label 可选、trim、长度上限。",
+        "tags": [],
+        "security": []
       }
     },
     "/api/disputes": {
