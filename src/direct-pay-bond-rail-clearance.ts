@@ -60,10 +60,11 @@ export function getBondRailClearance(railId: string): BondRailClearance | null {
 export function isBondRailClearedForProduction(railId: string, jurisdiction: string): boolean {
   const c = getBondRailClearance(railId)
   if (!c) return false
-  // Lock A:真实 legal-cleared 生产收款实现(deposit-rails)。manual=非生产;usdc/fiat=GATED(legalCleared=false)。
+  // Lock A:已实现的生产收款轨(deposit-rails)。与 assertProductionDepositRail 一致用 implemented(非 legalCleared)——
+  //   legal/治理放行全归 Lock B(本函数下半段 registry)。manual=非生产;usdc/fiat=GATED(implemented=false)。
   let rail
   try { rail = getDepositRail(railId as DepositRailId) } catch { return false }
-  if (!rail.isProduction || !rail.legalCleared) return false
+  if (!rail.isProduction || !rail.implemented) return false
   // Lock B:registry 放行(全字段)。
   return c.legalCleared && c.productionReady
     && c.policyVersion !== BOND_POLICY_VERSION_PLACEHOLDER && c.policyVersion.length > 0
@@ -90,7 +91,7 @@ export function bondRailClearanceBlockers(railId: string, opts?: { hasProduction
   const out: BondRailBlocker[] = []
   let rail = null
   try { rail = getDepositRail(railId as DepositRailId) } catch { rail = null }
-  if (!rail || !rail.isProduction || !rail.legalCleared) out.push('RAIL_IMPLEMENTATION_GATED')
+  if (!rail || !rail.isProduction || !rail.implemented) out.push('RAIL_IMPLEMENTATION_GATED')
   const c = getBondRailClearance(railId)
   if (!c || !c.legalCleared || !c.productionReady) out.push('NO_LEGAL_CLEARED_RAIL')
   if (!c || c.jurisdictionAllowlist.length === 0) out.push('EMPTY_JURISDICTION_ALLOWLIST')

@@ -68,5 +68,15 @@ openDeposit(db, { depositId: 'dM', userId: 'seller1', tier: 'T0', currency: 'fia
 ok('confirmProductionReceipt(manual) THROWS (Lock A: non-production)', throws(() => confirmProductionReceipt(db, { depositId: 'dM', railId: 'manual', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' })))
 ok('seller-level production gate STILL false (Direct Pay non-launchable)', sellerHasProductionBaseBondLocked(db, 'seller1') === false)
 
+// ── consistency with Lock A: impl-check uses `implemented`, not `legalCleared` ──
+// operator_attested IS implemented (a built rail) but unregistered → blockers must say NO_LEGAL_CLEARED_RAIL,
+// NOT RAIL_IMPLEMENTATION_GATED. (Locks the legalCleared→implemented audit fix; prevents regression.)
+const oaB = bondRailClearanceBlockers('operator_attested', { hasProductionReceipt: true })
+ok('operator_attested NOT flagged RAIL_IMPLEMENTATION_GATED (it IS implemented)', !oaB.includes('RAIL_IMPLEMENTATION_GATED'))
+ok('operator_attested flagged NO_LEGAL_CLEARED_RAIL (unregistered → Lock B blocks)', oaB.includes('NO_LEGAL_CLEARED_RAIL'))
+ok('operator_attested NOT cleared for production (registry null → false)', isBondRailClearedForProduction('operator_attested', 'SG') === false)
+// gated usdc/fiat still flagged RAIL_IMPLEMENTATION_GATED (implemented=false)
+ok('usdc_onchain still RAIL_IMPLEMENTATION_GATED (gated, implemented=false)', bondRailClearanceBlockers('usdc_onchain').includes('RAIL_IMPLEMENTATION_GATED'))
+
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-bond-rail-clearance tests passed`)
