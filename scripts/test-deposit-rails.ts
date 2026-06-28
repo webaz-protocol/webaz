@@ -24,5 +24,13 @@ ok('manual confirmReceipt returns confirmed (test/admin only)', getDepositRail('
 ok('usdc_onchain confirmReceipt THROWS (GATED)', throws(() => getDepositRail('usdc_onchain').confirmReceipt({ depositId: 'd', expectedAmount: 1, currency: 'usdc' })))
 ok('fiat_psp confirmReceipt THROWS (GATED)', throws(() => getDepositRail('fiat_psp').confirmReceipt({ depositId: 'd', expectedAmount: 1, currency: 'fiat' })))
 
+// Lock A 语义:isProduction && implemented(是不是一条建好的生产轨);legal/治理放行是独立的 Lock B(rail-clearance registry)。
+ok('implemented flag: manual/operator_attested=true, gated usdc/fiat=false', getDepositRail('manual').implemented === true && getDepositRail('operator_attested').implemented === true && getDepositRail('usdc_onchain').implemented === false && getDepositRail('fiat_psp').implemented === false)
+// operator_attested = 已实现的运营核实生产轨:过 Lock A(放行仍由 Lock B 治理开关挡,见 production-confirm 测试)
+ok('operator_attested isProduction=true + implemented', getDepositRail('operator_attested').isProduction === true && getDepositRail('operator_attested').implemented === true)
+ok('assertProductionDepositRail(operator_attested) does NOT throw (Lock A passes — implemented prod rail)', !throws(() => assertProductionDepositRail(getDepositRail('operator_attested'))))
+ok('operator_attested confirmReceipt = record-only (confirmed; no money/keys/transfer in code)', getDepositRail('operator_attested').confirmReceipt({ depositId: 'd', expectedAmount: 1, currency: 'usdc' }).confirmed === true)
+ok('operator_attested legalCleared still false (放行靠 Lock B 治理,不在 rail 代码置 true)', getDepositRail('operator_attested').legalCleared === false)
+
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} deposit-rails tests passed`)

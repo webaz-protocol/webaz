@@ -36,11 +36,14 @@ ok('1a. NOT_ENABLED', has(r1, 'DIRECT_PAY_NOT_ENABLED'))
 ok('1b. REGION_NOT_ALLOWED', has(r1, 'DIRECT_PAY_REGION_NOT_ALLOWED'))
 ok('1c. PER_TX_CAP_UNSET', has(r1, 'DIRECT_PAY_PER_TX_CAP_UNSET'))
 ok('1d. NO_LEGAL_CLEARED_PRODUCTION_RAIL', has(r1, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
-ok('1e. RAIL_IMPLEMENTATION_GATED (#112)', has(r1, 'DIRECT_PAY_RAIL_IMPLEMENTATION_GATED'))
+// 1e. operator_attested 是【已实现】生产轨(#116) → "无实现 rail"(RAIL_IMPLEMENTATION_GATED)不再是上线 blocker;
+//   真正的 blocker 是"无 legal-cleared rail"(1d)。usdc/fiat 虽仍 gated,但只要有一条 rail 已实现,该项就不成立(intersection 语义)。
+ok('1e. RAIL_IMPLEMENTATION_GATED NOT a launch blocker (operator_attested IS implemented)', !has(r1, 'DIRECT_PAY_RAIL_IMPLEMENTATION_GATED'))
 ok('1f. RAIL_POLICY_VERSION_UNSET (#112)', has(r1, 'DIRECT_PAY_RAIL_POLICY_VERSION_UNSET'))
 ok('1g. RAIL_JURISDICTION_ALLOWLIST_EMPTY (#112)', has(r1, 'DIRECT_PAY_RAIL_JURISDICTION_ALLOWLIST_EMPTY'))
 ok('1h. anyRailLegalCleared=false', r1.facts.anyRailLegalCleared === false)
-ok('1i. #112 per-rail blockers surfaced in facts', r1.facts.perRailClearance['usdc_onchain'].includes('NO_LEGAL_CLEARED_RAIL') && r1.facts.perRailClearance['fiat_psp'].includes('POLICY_VERSION_UNSET'))
+ok('1i. readiness enumerates operator_attested too (not just usdc/fiat)', !!r1.facts.perRailClearance['operator_attested'] && r1.facts.perRailClearance['usdc_onchain'].includes('NO_LEGAL_CLEARED_RAIL') && r1.facts.perRailClearance['fiat_psp'].includes('POLICY_VERSION_UNSET'))
+ok('1i2. operator_attested perRail: NO_LEGAL_CLEARED_RAIL but NOT RAIL_IMPLEMENTATION_GATED (implemented, just unregistered)', r1.facts.perRailClearance['operator_attested'].includes('NO_LEGAL_CLEARED_RAIL') && !r1.facts.perRailClearance['operator_attested'].includes('RAIL_IMPLEMENTATION_GATED'))
 // no sellerId → seller facts null, no seller blockers
 ok('1j. no sellerId → seller facts null, no seller blockers', r1.facts.sellerEvaluated === false && r1.facts.productionBaseBondLocked === null && !has(r1, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND'))
 

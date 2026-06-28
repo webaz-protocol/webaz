@@ -20,7 +20,9 @@ import { bondRailClearanceBlockers, isBondRailClearedForProduction } from './dir
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
 
 /** 候选生产 base-bond 收款轨(与 #112 registry 一致;manual 是非生产确认轨,不算)。 */
-const PRODUCTION_BOND_RAILS = ['usdc_onchain', 'fiat_psp'] as const
+// 候选生产 base-bond 收款轨。operator_attested(#116,已实现的运营核实轨)是 v1 实际要用的那条,必须纳入诊断,
+//   否则它被 registry 放行后 readiness 仍误报"无 legal-cleared rail"。manual=非生产确认轨,不算。
+const PRODUCTION_BOND_RAILS = ['operator_attested', 'usdc_onchain', 'fiat_psp'] as const
 
 export type DirectPayLaunchBlocker =
   // ── global / policy(总是评估)──
