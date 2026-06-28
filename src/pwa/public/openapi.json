@@ -607,7 +607,7 @@
     },
     "/api/admin/direct-receive/aml-flags": {
       "post": {
-        "summary": "POST /api/admin/direct-receive/aml-flags — AML flag ingress(ROOT + 真人 Passkey;high-risk)。与 .../aml-flags/:id/review 区分。",
+        "summary": "POST /api/admin/direct-receive/aml-flags",
         "tags": [],
         "security": []
       }
@@ -640,14 +640,14 @@
     },
     "/api/admin/direct-receive/kyb-reviews": {
       "post": {
-        "summary": "POST /api/admin/direct-receive/kyb-reviews — KYB 复核结论 ingress(ROOT + 真人 Passkey)。",
+        "summary": "Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B 一律拒。",
         "tags": [],
         "security": []
       }
     },
     "/api/admin/direct-receive/sanctions-screenings": {
       "post": {
-        "summary": "POST /api/admin/direct-receive/sanctions-screenings — 制裁筛查结论 ingress(ROOT + 真人 Passkey;high-risk)。",
+        "summary": "purpose_data 绑定 user_id+status+provider_ref+expires_at。",
         "tags": [],
         "security": []
       }

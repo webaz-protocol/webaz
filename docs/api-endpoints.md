@@ -57,11 +57,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/dashboard` | 🔐 | 👑 |  | src/pwa/routes/admin-analytics.ts:230 |
 | GET | `/api/admin/decline-contests` | 🔐 |  | 仲裁员待办:列出所有被举证的临时判责拒单 | src/pwa/routes/disputes-write.ts:88 |
 | POST | `/api/admin/decline-contests/:orderId/resolve` | 🔐 |  | 仲裁员裁决 | src/pwa/routes/disputes-write.ts:102 |
-| POST | `/api/admin/direct-receive/aml-flags` |  |  | POST /api/admin/direct-receive/aml-flags — AML flag ingress(ROOT + 真人 Passkey;hi | src/pwa/routes/admin-direct-receive-deposits.ts:147 |
+| POST | `/api/admin/direct-receive/aml-flags` |  |  |  | src/pwa/routes/admin-direct-receive-deposits.ts:155 |
 | POST | `/api/admin/direct-receive/aml-flags/:id/review` | 🔐 | 👑 | route 只做 auth + gate + 参数校验 + 调 reviewAmlFlag(唯一 review writer,原子改 flag + 写 audi | src/pwa/routes/admin-direct-receive-deposits.ts:79 |
 | POST | `/api/admin/direct-receive/deposits/:id/confirm-production` | 🔐 | 👑 | 当前恒 fail-closed(无 legal-cleared rail → assert 抛 → PRODUCTION_RAIL_NOT_CLEARED)。 | src/pwa/routes/admin-direct-receive-deposits.ts:35 |
-| POST | `/api/admin/direct-receive/kyb-reviews` |  |  | POST /api/admin/direct-receive/kyb-reviews — KYB 复核结论 ingress(ROOT + 真人 Passkey) | src/pwa/routes/admin-direct-receive-deposits.ts:135 |
-| POST | `/api/admin/direct-receive/sanctions-screenings` |  |  | POST /api/admin/direct-receive/sanctions-screenings — 制裁筛查结论 ingress(ROOT + 真人 P | src/pwa/routes/admin-direct-receive-deposits.ts:141 |
+| POST | `/api/admin/direct-receive/kyb-reviews` |  |  | Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B  | src/pwa/routes/admin-direct-receive-deposits.ts:136 |
+| POST | `/api/admin/direct-receive/sanctions-screenings` |  |  | purpose_data 绑定 user_id+status+provider_ref+expires_at。 | src/pwa/routes/admin-direct-receive-deposits.ts:145 |
 | GET | `/api/admin/disputes` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:47 |
 | GET | `/api/admin/economic-summary` | 🔐 | 👑 | 隐私第一：运营财务，仅 protocol admin 可见。 | src/pwa/routes/admin-reports.ts:82 |
 | GET | `/api/admin/editor-picks` | 🔐 | 👑 |  | src/pwa/routes/admin-editor-picks.ts:60 |

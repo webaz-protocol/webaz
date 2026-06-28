@@ -17,7 +17,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { confirmProductionReceipt } from '../../direct-receive-deposits.js'
 import { reviewAmlFlag } from '../../direct-pay-aml-review.js'
-import { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress } from '../../direct-pay-compliance-ingress.js'
+import { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress, amlDetailHash } from '../../direct-pay-compliance-ingress.js'
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'
 
 export interface AdminDirectReceiveDepositsDeps {
@@ -132,20 +132,30 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
   }
 
   // POST /api/admin/direct-receive/kyb-reviews — KYB 复核结论 ingress(ROOT + 真人 Passkey)。
+  // Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B 一律拒。
   app.post('/api/admin/direct-receive/kyb-reviews', gatedIngress('direct_pay_kyb_ingress',
-    (req) => (data) => { const d = data as { user_id?: string; status?: string } | null; return !!d && d.user_id === str(req.body?.user_id) && d.status === str(req.body?.status) },
+    (req) => (data) => { const d = data as { user_id?: string; status?: string; provider_ref?: string; expires_at?: string } | null
+      return !!d && str(d.user_id) === str(req.body?.user_id) && str(d.status) === str(req.body?.status)
+        && str(d.provider_ref) === str(req.body?.provider_ref) && str(d.expires_at) === str(req.body?.expires_at) },
     (req, adminId) => recordKybReview(db, { userId: str(req.body?.user_id), reviewerId: adminId, status: str(req.body?.status), providerRef: opt(req.body?.provider_ref), expiresAt: opt(req.body?.expires_at) }),
     (req) => ({ targetId: str(req.body?.user_id), detail: { kyb_status: str(req.body?.status) } })))
 
   // POST /api/admin/direct-receive/sanctions-screenings — 制裁筛查结论 ingress(ROOT + 真人 Passkey;high-risk)。
+  // purpose_data 绑定 user_id+status+provider_ref+expires_at。
   app.post('/api/admin/direct-receive/sanctions-screenings', gatedIngress('direct_pay_sanctions_ingress',
-    (req) => (data) => { const d = data as { user_id?: string; status?: string } | null; return !!d && d.user_id === str(req.body?.user_id) && d.status === str(req.body?.status) },
+    (req) => (data) => { const d = data as { user_id?: string; status?: string; provider_ref?: string; expires_at?: string } | null
+      return !!d && str(d.user_id) === str(req.body?.user_id) && str(d.status) === str(req.body?.status)
+        && str(d.provider_ref) === str(req.body?.provider_ref) && str(d.expires_at) === str(req.body?.expires_at) },
     (req, adminId) => recordSanctionsScreening(db, { userId: str(req.body?.user_id), reviewerId: adminId, status: str(req.body?.status), providerRef: opt(req.body?.provider_ref), expiresAt: opt(req.body?.expires_at) }),
     (req) => ({ targetId: str(req.body?.user_id), detail: { sanctions_status: str(req.body?.status) } })))
 
   // POST /api/admin/direct-receive/aml-flags — AML flag ingress(ROOT + 真人 Passkey;high-risk)。与 .../aml-flags/:id/review 区分。
+  // purpose_data 绑定 user_id+rule+severity+status+related_order_id+detail_hash(canonical):签 A 写 B 一律拒。
+  const amlDetail = (req: Request): Record<string, unknown> | undefined => (req.body?.detail && typeof req.body.detail === 'object' && !Array.isArray(req.body.detail)) ? req.body.detail as Record<string, unknown> : undefined
   app.post('/api/admin/direct-receive/aml-flags', gatedIngress('direct_pay_aml_ingress',
-    (req) => (data) => { const d = data as { user_id?: string; rule?: string; severity?: string; status?: string } | null; return !!d && d.user_id === str(req.body?.user_id) && d.rule === str(req.body?.rule) && d.severity === str(req.body?.severity) && d.status === str(req.body?.status) },
-    (req, adminId) => recordAmlFlagIngress(db, { userId: str(req.body?.user_id), reviewerId: adminId, rule: str(req.body?.rule), severity: str(req.body?.severity), status: str(req.body?.status), relatedOrderId: opt(req.body?.related_order_id), detail: (req.body?.detail && typeof req.body.detail === 'object') ? req.body.detail as Record<string, unknown> : undefined }),
+    (req) => (data) => { const d = data as { user_id?: string; rule?: string; severity?: string; status?: string; related_order_id?: string; detail_hash?: string } | null
+      return !!d && str(d.user_id) === str(req.body?.user_id) && str(d.rule) === str(req.body?.rule) && str(d.severity) === str(req.body?.severity)
+        && str(d.status) === str(req.body?.status) && str(d.related_order_id) === str(req.body?.related_order_id) && str(d.detail_hash) === amlDetailHash(amlDetail(req)) },
+    (req, adminId) => recordAmlFlagIngress(db, { userId: str(req.body?.user_id), reviewerId: adminId, rule: str(req.body?.rule), severity: str(req.body?.severity), status: str(req.body?.status), relatedOrderId: opt(req.body?.related_order_id), detail: amlDetail(req) }),
     (req) => ({ targetId: str(req.body?.user_id), detail: { rule: str(req.body?.rule), severity: str(req.body?.severity), aml_status: str(req.body?.status) } })))
 }

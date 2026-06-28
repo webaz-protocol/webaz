@@ -37,6 +37,26 @@ function providerRefHash(providerRef?: string): string | undefined {
   return createHash('sha256').update(providerRef).digest('hex').slice(0, 16)
 }
 
+/**
+ * AML detail = 仅【聚合数字】(与 #108 monitor 纪律一致,防 PII 落库:邮箱/地址/钱包/叙述性笔记一律拒)。
+ * 非纯数字 object → 不是合法 detail。 undefined 视为"无 detail"(合法)。
+ */
+export function isNumericDetail(detail: unknown): boolean {
+  if (detail === undefined || detail === null) return true
+  if (typeof detail !== 'object' || Array.isArray(detail)) return false
+  return Object.values(detail as Record<string, unknown>).every(v => typeof v === 'number' && Number.isFinite(v))
+}
+
+/**
+ * AML detail 的 canonical hash(key 排序后 JSON → sha256 前 16 hex),供 Passkey purpose_data 绑定【写入内容】用
+ *   (route 与签名方用同一函数,保证"签的 detail = 写的 detail")。无 detail → 固定 'none'。
+ */
+export function amlDetailHash(detail?: Record<string, unknown>): string {
+  if (detail === undefined || detail === null) return 'none'
+  const canonical = JSON.stringify(Object.keys(detail).sort().reduce((o, k) => { o[k] = (detail as Record<string, unknown>)[k]; return o }, {} as Record<string, unknown>))
+  return createHash('sha256').update(canonical).digest('hex').slice(0, 16)
+}
+
 /** 审计写入(append-only;PII-free)。与台账 INSERT 同事务调用。 */
 function writeAudit(db: Database.Database, adminId: string, action: string, targetType: string, targetId: string, detail: Record<string, unknown>): void {
   db.prepare(`INSERT INTO admin_audit_log (id, admin_id, action, target_type, target_id, detail) VALUES (?,?,?,?,?,?)`)
@@ -83,6 +103,8 @@ export function recordAmlFlagIngress(db: Database.Database, args: RecordAmlFlagI
   if (!AML_RULES.has(rule)) return { ok: false, error: 'INVALID_RULE' }
   if (!AML_SEVERITIES.has(severity)) return { ok: false, error: 'INVALID_SEVERITY' }
   if (!AML_STATUSES.has(status)) return { ok: false, error: 'INVALID_STATUS' }
+  // P2: detail 仅允许聚合数字(防 PII 落库)。非纯数字 → fail-closed,不写。
+  if (!isNumericDetail(detail)) return { ok: false, error: 'INVALID_DETAIL' }
   const id = 'amlf_' + randomUUID()
   db.transaction(() => {
     db.prepare(`INSERT INTO aml_flags (id, subject_user_id, related_order_id, rule, severity, detail, status)

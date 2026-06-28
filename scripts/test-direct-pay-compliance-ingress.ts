@@ -10,7 +10,7 @@ import Database from 'better-sqlite3'
 import express, { type Request, type Response } from 'express'
 import { createServer, request as httpRequest, type Server } from 'node:http'
 
-const { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress } = await import('../src/direct-pay-compliance-ingress.js')
+const { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress, amlDetailHash, isNumericDetail } = await import('../src/direct-pay-compliance-ingress.js')
 const { sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear } = await import('../src/direct-pay-controls.js')
 const { createHumanPresence } = await import('../src/pwa/human-presence.js')
 const { registerAdminDirectReceiveDepositsRoutes } = await import('../src/pwa/routes/admin-direct-receive-deposits.js')
@@ -51,6 +51,14 @@ ok('5. recordSanctionsScreening(clear, expired) → reader false (fail-closed)',
 ok('5b. recordKybReview(approved, expired) → reader false (fail-closed)', (() => { const r = recordKybReview(db, { userId: 'u_k4', reviewerId: 'rv', status: 'approved', expiresAt: PAST }); return r.ok && sellerDirectPayKybPassed(db, 'u_k4') === false })())
 // 6. AML high/open ingress → breaker false
 ok('6. recordAmlFlagIngress(structuring/high/open) → ok + sellerDirectPayAmlClear false', (() => { const r = recordAmlFlagIngress(db, { userId: 'u_a1', reviewerId: 'rv', rule: 'structuring', severity: 'high', status: 'open' }); return r.ok && sellerDirectPayAmlClear(db, 'u_a1') === false })())
+// 6b. P2: AML detail 仅允许聚合数字;PII-like(字符串)detail → INVALID_DETAIL,不写
+ok('6b. isNumericDetail: numbers ok / strings rejected / undefined ok', isNumericDetail({ count: 3, window: 24 }) === true && isNumericDetail({ email: 'a@b.com' }) === false && isNumericDetail(undefined) === true && isNumericDetail([1, 2]) === false)
+const amlBeforePII = (db.prepare("SELECT COUNT(*) n FROM aml_flags").get() as any).n
+const rPII = recordAmlFlagIngress(db, { userId: 'u_pii_aml', reviewerId: 'rv', rule: 'crypto', severity: 'high', status: 'open', detail: { wallet: '0xabc', note: 'lives at 5th ave' } as any })
+ok('6c. AML ingress with PII-like (string) detail → INVALID_DETAIL, NOT written', rPII.error === 'INVALID_DETAIL' && (db.prepare("SELECT COUNT(*) n FROM aml_flags").get() as any).n === amlBeforePII)
+const rNum = recordAmlFlagIngress(db, { userId: 'u_num_aml', reviewerId: 'rv', rule: 'velocity', severity: 'medium', status: 'open', detail: { order_count: 7, window_hours: 24 } })
+ok('6d. AML ingress with numeric detail → ok, stored', rNum.ok === true && JSON.parse((db.prepare("SELECT detail FROM aml_flags WHERE id=?").get(rNum.id) as any).detail).order_count === 7)
+
 // 7. invalid enums → rejected AND not written
 const beforeInvalid = { kyb: (db.prepare("SELECT COUNT(*) n FROM direct_receive_kyb_reviews").get() as any).n, sc: (db.prepare("SELECT COUNT(*) n FROM sanctions_screening").get() as any).n, aml: (db.prepare("SELECT COUNT(*) n FROM aml_flags").get() as any).n, aud: auditN() }
 ok('7a. KYB invalid status → INVALID_STATUS', recordKybReview(db, { userId: 'x', reviewerId: 'rv', status: 'banana' }).error === 'INVALID_STATUS')
@@ -59,8 +67,8 @@ ok('7c. AML invalid rule → INVALID_RULE', recordAmlFlagIngress(db, { userId: '
 ok('7d. AML invalid severity → INVALID_SEVERITY', recordAmlFlagIngress(db, { userId: 'x', reviewerId: 'rv', rule: 'crypto', severity: 'critical', status: 'open' }).error === 'INVALID_SEVERITY')
 ok('7e. AML invalid status → INVALID_STATUS', recordAmlFlagIngress(db, { userId: 'x', reviewerId: 'rv', rule: 'crypto', severity: 'high', status: 'weird' }).error === 'INVALID_STATUS')
 ok('7f. invalid calls wrote NOTHING (tables + audit unchanged)', (db.prepare("SELECT COUNT(*) n FROM direct_receive_kyb_reviews").get() as any).n === beforeInvalid.kyb && (db.prepare("SELECT COUNT(*) n FROM sanctions_screening").get() as any).n === beforeInvalid.sc && (db.prepare("SELECT COUNT(*) n FROM aml_flags").get() as any).n === beforeInvalid.aml && auditN() === beforeInvalid.aud)
-// 8. every success wrote exactly one audit row (8 successful writes so far: k1,k2,k3,k4,s1,s2,s3,s4,a1 = 9)
-ok('8. each success wrote one admin_audit_log row', auditN() === 9, `audit=${auditN()}`)
+// 8. every success wrote exactly one audit row (k1,k2,k3,k4,s1,s2,s3,s4,a1 + rNum = 10; rejected PII/enum writes none)
+ok('8. each success wrote one admin_audit_log row', auditN() === 10, `audit=${auditN()}`)
 // 8b. audit PII-free: provider_ref stored as HASH, raw never appears
 recordKybReview(db, { userId: 'u_pii', reviewerId: 'rv', status: 'approved', providerRef: 'VENDOR-SECRET-123' })
 const piiAudit = db.prepare("SELECT detail FROM admin_audit_log WHERE target_id='u_pii'").get() as { detail: string }
@@ -117,13 +125,34 @@ ok('10f. kyb ingress root+token → 200 + reader true (end-to-end)', r10f.status
 mkTok('ts', 'direct_pay_sanctions_ingress', { user_id: 'r_sc', status: 'clear' })
 const r10g = await call(SANC, { user_id: 'r_sc', status: 'clear', webauthn_token: 'ts' }, ROOT)
 ok('10g. sanctions ingress root+token → 200 + reader true', r10g.status === 200 && sellerDirectPaySanctionsClear(db, 'r_sc') === true, JSON.stringify(r10g))
-mkTok('ta', 'direct_pay_aml_ingress', { user_id: 'r_aml', rule: 'velocity', severity: 'high', status: 'open' })
+mkTok('ta', 'direct_pay_aml_ingress', { user_id: 'r_aml', rule: 'velocity', severity: 'high', status: 'open', related_order_id: '', detail_hash: amlDetailHash(undefined) })
 const r10h = await call(AML, { user_id: 'r_aml', rule: 'velocity', severity: 'high', status: 'open', webauthn_token: 'ta' }, ROOT)
 ok('10h. aml ingress root+token → 200 + breaker false', r10h.status === 200 && sellerDirectPayAmlClear(db, 'r_aml') === false, JSON.stringify(r10h))
 // 10i. invalid enum through route → 400 (helper fail-closed)
 mkTok('tx', 'direct_pay_kyb_ingress', { user_id: 'r_bad', status: 'banana' })
 const r10i = await call(KYB, { user_id: 'r_bad', status: 'banana', webauthn_token: 'tx' }, ROOT)
 ok('10i. invalid status via route → 400 INVALID_STATUS', r10i.status === 400 && r10i.json?.error_code === 'INVALID_STATUS', JSON.stringify(r10i))
+
+// ══════ P1 negative: token signs A, body writes B → 403, NO ledger/audit write ══════
+const kybN = (): number => (db.prepare("SELECT COUNT(*) n FROM direct_receive_kyb_reviews WHERE user_id='r_bind'").get() as any).n
+// token bound to provider_ref='REF_A' + expires_at='' ; body sends provider_ref='REF_B' → mismatch
+mkTok('tb1', 'direct_pay_kyb_ingress', { user_id: 'r_bind', status: 'approved', provider_ref: 'REF_A', expires_at: '' })
+const auditB1 = auditN()
+const rN1 = await call(KYB, { user_id: 'r_bind', status: 'approved', provider_ref: 'REF_B', webauthn_token: 'tb1' }, ROOT)
+ok('P1a. KYB token signs provider_ref=A, body=B → 403, no row', rN1.status === 403 && rN1.json?.error_code === 'HUMAN_PRESENCE_REQUIRED' && kybN() === 0, JSON.stringify(rN1))
+ok('P1a-2. gate-fail audited, ledger untouched', auditN() === auditB1 + 1)
+// token bound to expires_at='' ; body sends a non-empty expires_at → mismatch (token single-use consumed above, fresh token)
+mkTok('tb2', 'direct_pay_kyb_ingress', { user_id: 'r_bind', status: 'approved', provider_ref: '', expires_at: '' })
+const rN2 = await call(KYB, { user_id: 'r_bind', status: 'approved', expires_at: '2099-01-01 00:00:00', webauthn_token: 'tb2' }, ROOT)
+ok('P1b. KYB token signs expires_at="", body sets expiry → 403, no row', rN2.status === 403 && kybN() === 0, JSON.stringify(rN2))
+// AML: token signs detail {count:1}, body sends detail {count:2} → detail_hash mismatch → 403, no flag
+mkTok('tb3', 'direct_pay_aml_ingress', { user_id: 'r_bind2', rule: 'velocity', severity: 'high', status: 'open', related_order_id: '', detail_hash: amlDetailHash({ count: 1 }) })
+const rN3 = await call(AML, { user_id: 'r_bind2', rule: 'velocity', severity: 'high', status: 'open', detail: { count: 2 }, webauthn_token: 'tb3' }, ROOT)
+ok('P1c. AML token signs detail{count:1}, body writes {count:2} → 403, no flag', rN3.status === 403 && (db.prepare("SELECT COUNT(*) n FROM aml_flags WHERE subject_user_id='r_bind2'").get() as any).n === 0, JSON.stringify(rN3))
+// AML: matching detail_hash → 200 (positive control for the binding)
+mkTok('tb4', 'direct_pay_aml_ingress', { user_id: 'r_bind3', rule: 'velocity', severity: 'high', status: 'open', related_order_id: '', detail_hash: amlDetailHash({ count: 2 }) })
+const rN4 = await call(AML, { user_id: 'r_bind3', rule: 'velocity', severity: 'high', status: 'open', detail: { count: 2 }, webauthn_token: 'tb4' }, ROOT)
+ok('P1d. AML token detail_hash matches body detail → 200 (binding positive control)', rN4.status === 200 && (db.prepare("SELECT COUNT(*) n FROM aml_flags WHERE subject_user_id='r_bind3'").get() as any).n === 1, JSON.stringify(rN4))
 
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
