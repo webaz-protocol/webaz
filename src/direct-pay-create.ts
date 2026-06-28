@@ -16,7 +16,7 @@ import { lockFeeStake } from './direct-pay-ledger.js'
 import { mulRate, type Units } from './money.js'
 import { sellerHasProductionBaseBondLocked } from './direct-receive-deposits.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
-import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayBreakerTripped, type DirectPayControlsConfig } from './direct-pay-controls.js'
+import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, type DirectPayControlsConfig } from './direct-pay-controls.js'
 
 export interface DirectPayCreateDeps {
   generateId: (prefix: string) => string
@@ -90,7 +90,7 @@ export function createDirectPayResponse(
   const unsupported = o.flashActive ? 'flash_sale' : o.couponCode ? 'coupon' : o.buyInsurance ? 'insurance' : (Number(o.donationPct) > 0) ? 'donation' : o.isGift ? 'gift' : o.anonymous ? 'anonymous_recipient' : o.deliveryWindow ? 'delivery_window' : null
   if (unsupported) { res.status(409).json({ error: `直付 v1 不支持该选项:${unsupported}`, error_code: 'DIRECT_PAY_UNSUPPORTED_OPTION', option: unsupported }); return }
   const sellerId = ctx.product.seller_uid as string
-  // ② Phase 4a 入口控制(SSOT,默认 fail-closed):全局开关/熔断 → 地区白名单 → 单笔上限 → production base-bond → KYC/制裁。
+  // ② Phase 4a 入口控制(SSOT,默认 fail-closed):全局开关/熔断 → 地区白名单 → 单笔上限 → production base-bond → KYC/制裁 → AML 断路器。
   //    任一不过即拒(不建单/不锁质押/不扣库存)。base-bond 已折进控制面(DIRECT_PAY_NOT_AVAILABLE),不再单独判。
   const cfg: DirectPayControlsConfig = readDirectPayControlsConfig(deps.getProtocolParam)
   const sellerBreakerTripped = sellerDirectPayBreakerTripped(db, sellerId)
@@ -99,6 +99,7 @@ export function createDirectPayResponse(
     sellerBreakerTripped,
     productionBaseBondLocked: sellerHasProductionBaseBondLocked(db, sellerId),
     kycSanctionsPassed: sellerDirectPayKybPassed(db, sellerId) && sellerDirectPaySanctionsClear(db, sellerId),
+    amlClear: sellerDirectPayAmlClear(db, sellerId),
   })
   // control deny 发生在【任何 DB write / order insert / fee-stake lock / stock decrement 之前】(fail-closed)。
   if (!ctrl.ok) { res.status(ctrl.status).json({ error: ctrl.reason, error_code: ctrl.error_code }); return }
