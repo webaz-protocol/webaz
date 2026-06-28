@@ -128,3 +128,11 @@ export function sellerKycSanctionsPassed(db: Database.Database, sellerId: string
   const bad = db.prepare("SELECT 1 FROM sanctions_screening WHERE user_id = ? AND status IN ('flagged','blocked') LIMIT 1").get(sellerId)
   return !!clear && !bad
 }
+
+/**
+ * 卖家熔断事实(per-seller breaker)。【唯一来源】= direct_receive_privileges.status = 'suspended'(复用既有暂停语义,
+ *   如 slashBond 罚没后置 suspended);【不】新增第二套 suspension 概念。无行 / 'none' / 'active' → false;'suspended' → true。
+ */
+export function sellerDirectPayBreakerTripped(db: Database.Database, sellerId: string): boolean {
+  return !!db.prepare("SELECT 1 FROM direct_receive_privileges WHERE user_id = ? AND status = 'suspended' LIMIT 1").get(sellerId)
+}

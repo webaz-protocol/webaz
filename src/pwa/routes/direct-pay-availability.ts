@@ -11,7 +11,7 @@ import type Database from 'better-sqlite3'
 import { dbOne } from '../../layer0-foundation/L0-1-database/db.js'
 import { toUnits } from '../../money.js'
 import { sellerHasProductionBaseBondLocked } from '../../direct-receive-deposits.js'
-import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerKycSanctionsPassed } from '../../direct-pay-controls.js'
+import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerKycSanctionsPassed, sellerDirectPayBreakerTripped } from '../../direct-pay-controls.js'
 
 export interface DirectPayAvailabilityDeps {
   db: Database.Database
@@ -20,7 +20,7 @@ export interface DirectPayAvailabilityDeps {
 }
 
 // 卖家合规类拒绝 → 对外通用码(不暴露具体是 base-bond 还是 KYC/制裁)。其余(全局/地区/上限)非敏感,原样透出。
-const SELLER_PRIVATE_REASONS = new Set(['DIRECT_PAY_NOT_AVAILABLE', 'DIRECT_PAY_KYC_REQUIRED'])
+const SELLER_PRIVATE_REASONS = new Set(['DIRECT_PAY_NOT_AVAILABLE', 'DIRECT_PAY_KYC_REQUIRED', 'DIRECT_PAY_SELLER_SUSPENDED'])
 
 export function registerDirectPayAvailabilityRoutes(app: Application, deps: DirectPayAvailabilityDeps): void {
   const { db, auth, getProtocolParam } = deps
@@ -37,6 +37,7 @@ export function registerDirectPayAvailabilityRoutes(app: Application, deps: Dire
     const cfg = readDirectPayControlsConfig(getProtocolParam)
     const decision = evaluateDirectPayLaunchControls(cfg, {
       amountUnits: toUnits(Number(product.price) || 0),
+      sellerBreakerTripped: sellerDirectPayBreakerTripped(db, product.seller_id),  // 与 create 路径同源:卖家熔断也判不可用
       productionBaseBondLocked: sellerHasProductionBaseBondLocked(db, product.seller_id),
       kycSanctionsPassed: sellerKycSanctionsPassed(db, product.seller_id),
     })
