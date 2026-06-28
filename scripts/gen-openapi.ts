@@ -74,6 +74,10 @@ for (const file of SCAN_FILES) {
     let grantScope: string | null = null
     for (let j = i; j < Math.min(lines.length, i + 8); j++) {
       if (/\bauth\(req\b/.test(lines[j]) || /\brequireAuth\(/.test(lines[j])) needsAuth = true
+      // 本仓库约定:`require<Name>(req, res)` 是鉴权/权限守卫 helper —— 它内部调 auth(req,res),非授权者写错误响应并返回 null
+      //   (如 requireSeller / requireRootAdmin / requireSupportAdmin)。识别这类 wrapper,避免把受保护接口在生成契约里
+      //   误标为 public(handler 经 wrapper 鉴权,而非在 8 行内直接 auth(req)。注:仓库内所有 require*(req) 均为此类守卫。
+      if (/\brequire[A-Z][A-Za-z]*\(\s*req\b/.test(lines[j])) needsAuth = true
       if (/\brequire[A-Za-z]*Admin\(req\b/.test(lines[j]) || /hasAdminPermission|requireAdminPermission|isRootAdmin/.test(lines[j])) { isAdmin = true; needsAuth = true }
       const gm = lines[j].match(/requireAgentGrantScope\(\s*['"]([^'"]+)['"]/)   // RFC-020 delegation-grant gate
       if (gm) { needsGrant = true; grantScope = gm[1] }
