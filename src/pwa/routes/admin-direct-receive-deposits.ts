@@ -47,7 +47,13 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
           && d.receipt_ref === receiptRef && d.jurisdiction === jurisdiction
       },
     })
-    if (!gate.ok) return void res.status(403).json({ error: gate.reason, error_code: gate.error_code })
+    // 每次 ROOT 尝试都审计 —— 含【gate 失败】(生产保证金确认本身是敏感控制事件,缺 Passkey / 缺 token /
+    //   purpose_data 不符的 ROOT 尝试同样要留痕)。非 ROOT 不审计(requireRootAdmin 已拦,无可信 admin 身份)。
+    if (!gate.ok) {
+      logAdminAction(admin.id as string, 'direct_receive.production_confirm', 'direct_receive_deposit', depositId,
+        { rail_id: railId, jurisdiction, ok: false, outcome: gate.error_code === 'PASSKEY_REQUIRED_FOR_DIRECT_PAY' ? 'passkey_required' : 'human_presence_required', error_code: gate.error_code })
+      return void res.status(403).json({ error: gate.reason, error_code: gate.error_code })
+    }
 
     // 写入只走唯一 writer。assert 抛 → 当前恒 fail-closed。每次 ROOT 尝试都审计(含结果)。
     try {

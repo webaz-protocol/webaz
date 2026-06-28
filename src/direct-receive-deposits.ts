@@ -205,16 +205,18 @@ export function confirmProductionReceipt(db: Database.Database, args: {
   depositId: string; railId: string; expectedAmountUnits: Units; receiptRef: string; jurisdiction: string
 }): DepositOpResult {
   const { depositId, railId, expectedAmountUnits, receiptRef, jurisdiction } = args
+  // ⚠️ 生产/法务硬闸 —— assert【真正第一】:在任何 row 读取 / 幂等 / 拒绝 / 写之前。当前所有 rail 都被拒 → 抛 → 恒 fail-closed。
+  //   置于最前的语义意义:即便某 deposit 之前在【已 cleared 的 rail】下确认过,若该 rail 后被【撤回】(legalCleared→false),
+  //   重新确认也不再被当"幂等已确认"放过 —— 必须重新通过闸。#100 guard 要求本 helper body 必含此调用。
+  assertProductionDepositRail(getDepositRail(railId as DepositRailId))
+  // ───── 以下在 legal-cleared 生产 rail 落地前【全部不可达】(assert 已抛)─────
   const row = getRow(db, depositId)
   if (!row) return { ok: false, reason: 'deposit not found' }
-  // 幂等:已生产确认 → already(不重复写)
+  if (railId !== row.deposit_rail) return { ok: false, reason: 'rail_id does not match the deposit rail' }
+  // 幂等:已生产确认 → already(此时 rail 仍 cleared,assert 已过)
   if (row.status === 'locked' && row.production_receipt_confirmed_at != null) return { ok: true, status: 'locked', already: true }
   // 拒绝把【非生产 locked】(manual/test lock,无 production receipt)升级成生产
   if (row.status === 'locked') return { ok: false, reason: 'deposit is locked WITHOUT a production receipt (manual/test) — cannot be upgraded to production' }
-  // ⚠️ 生产/法务硬闸:当前所有 rail 都被拒 → 抛 → fail-closed。#100 guard 要求本 helper body 必含此调用;assert 在所有写之前。
-  assertProductionDepositRail(getDepositRail(railId as DepositRailId))
-  // ───── 以下在 legal-cleared 生产 rail 落地前【不可达】(assert 已抛)─────
-  if (railId !== row.deposit_rail) return { ok: false, reason: 'rail_id does not match the deposit rail' }
   if (!receiptRef) return { ok: false, reason: 'missing production receipt ref' }
   if (!DIRECT_PAY_BOND_JURISDICTIONS.includes(jurisdiction)) return { ok: false, reason: `jurisdiction '${jurisdiction}' not in allowlist` }
   if (!['pending', 'confirmed', 'insufficient'].includes(row.status)) return { ok: false, reason: `cannot production-confirm from status '${row.status}'` }

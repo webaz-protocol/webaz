@@ -147,4 +147,4 @@ if (failed) {
   console.error('\nDirect Pay deposit write-boundary guard FAILED — see above. These boundaries keep the base-bond production gate fail-closed and un-bypassable.')
   process.exit(1)
 }
-console.log(`✅ direct-pay deposit write-boundary guard: no route raw-writes; direct_receive_deposits writes confined to ${DEPOSIT_WRITER_FILE}; production_receipt_confirmed_at writable ONLY inside ${PRODUCTION_RECEIPT_WRITER_FN}() AND only if it calls ${PRODUCTION_RECEIPT_GATE_FN}() (helper absent → zero writes); self-test ${selfErrs.length === 0 ? 'OK' : 'FAILED'}.`)
+console.log(`✅ direct-pay deposit write-boundary guard: no route raw-writes; direct_receive_deposits writes confined to ${DEPOSIT_WRITER_FILE}; production_receipt_confirmed_at writable ONLY inside ${PRODUCTION_RECEIPT_WRITER_FN}() AND only if it calls ${PRODUCTION_RECEIPT_GATE_FN}() (writes stay unreachable until a rail is legal-cleared); self-test ${selfErrs.length === 0 ? 'OK' : 'FAILED'}.`)

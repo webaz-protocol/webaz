@@ -51,11 +51,11 @@ ok('confirmProductionReceipt(fiat_psp) THROWS (GATED)', throws(() => confirmProd
 openDeposit(db, { depositId: 'dL', userId: 'seller1', tier: 'T0', currency: 'fiat', depositRail: 'manual' })
 confirmDepositReceipt(db, { depositId: 'dL', expectedAmountUnits: REQ })
 lockBond(db, { depositId: 'dL' })
-const rL = confirmProductionReceipt(db, { depositId: 'dL', railId: 'manual', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' }) as { ok: boolean; reason?: string }
-ok('manual-locked (no production receipt) → rejected, not upgraded', rL.ok === false && /WITHOUT a production receipt/.test(rL.reason || ''), JSON.stringify(rL))
+// assert-FIRST:manual-locked 旧/测试行 → 经 assert(manual 非生产)即抛(fail-closed),不会到达升级逻辑;production receipt 不写。
+ok('manual-locked row → THROWS (assert-first, rail not production)', throws(() => confirmProductionReceipt(db, { depositId: 'dL', railId: 'manual', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' })))
 ok('dL production_receipt_confirmed_at STAYS NULL', prodFlag('dL') === null)
-const rNF = confirmProductionReceipt(db, { depositId: 'nope', railId: 'usdc_onchain', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' }) as { ok: boolean; reason?: string }
-ok('not found → ok:false', rNF.ok === false)
+// not-found:assert(usdc_onchain) 在 row 读取之前即抛(assert-first)→ fail-closed。
+ok('not found + gated rail → THROWS (assert-first)', throws(() => confirmProductionReceipt(db, { depositId: 'nope', railId: 'usdc_onchain', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' })))
 ok('seller-level production gate STILL false (non-launchable)', sellerHasProductionBaseBondLocked(db, 'seller1') === false)
 
 // ══════ Part B: admin endpoint(ROOT + Passkey;恒 PRODUCTION_RAIL_NOT_CLEARED;审计;零变更)══════
@@ -91,17 +91,25 @@ function seedToken(id: string, user: string, data: Record<string, unknown>, purp
 const fullData = { deposit_id: 'dU', rail_id: 'usdc_onchain', amount_units: REQ, receipt_ref: 'rcpt-1', jurisdiction: 'SG' }
 const body = { rail_id: 'usdc_onchain', expected_amount_units: REQ, receipt_ref: 'rcpt-1', jurisdiction: 'SG' }
 
-// 1. non-root → 403
+// 1. non-root → 403,且【不】审计(无可信 admin 身份)
+const aNon = auditN()
 ok('non-root → 403', (await call(body, {})).status === 403)
-// 2. root without Passkey → 403 PASSKEY_REQUIRED
+ok('non-root → NOT audited (no trusted admin identity)', auditN() === aNon)
+// 2. root without Passkey → 403 PASSKEY_REQUIRED + 审计(passkey_required)
+const a2 = auditN()
 const r2 = await call({ ...body, webauthn_token: seedToken('t_npk', 'rootNoPk', fullData) }, { 'x-root': '1', 'x-uid': 'rootNoPk' })
 ok('root without Passkey → 403 PASSKEY_REQUIRED_FOR_DIRECT_PAY', r2.status === 403 && r2.json?.error_code === 'PASSKEY_REQUIRED_FOR_DIRECT_PAY', JSON.stringify(r2))
-// 3. root + Passkey, no token → 403 HUMAN_PRESENCE_REQUIRED
+ok('root no-Passkey attempt AUDITED (outcome passkey_required)', auditN() === a2 + 1 && /passkey_required/.test(lastAudit()?.detail || ''), JSON.stringify(lastAudit()))
+// 3. root + Passkey, no token → 403 HUMAN_PRESENCE_REQUIRED + 审计
+const a3 = auditN()
 const r3 = await call(body, { 'x-root': '1', 'x-uid': 'root1' })
 ok('root + Passkey, no token → 403 HUMAN_PRESENCE_REQUIRED', r3.status === 403 && r3.json?.error_code === 'HUMAN_PRESENCE_REQUIRED', JSON.stringify(r3))
-// 4. purpose_data mismatch (wrong amount) → 403(validate 拒)
+ok('root no-token attempt AUDITED (outcome human_presence_required)', auditN() === a3 + 1 && /human_presence_required/.test(lastAudit()?.detail || ''), JSON.stringify(lastAudit()))
+// 4. purpose_data mismatch (wrong amount) → 403(validate 拒)+ 审计
+const a4 = auditN()
 const r4 = await call({ ...body, expected_amount_units: REQ + 1, webauthn_token: seedToken('t_mm', 'root1', fullData) }, { 'x-root': '1', 'x-uid': 'root1' })
 ok('purpose_data mismatch → 403 (token bound to full action)', r4.status === 403 && r4.json?.error_code === 'HUMAN_PRESENCE_REQUIRED', JSON.stringify(r4))
+ok('root purpose_data-mismatch attempt AUDITED', auditN() === a4 + 1 && /human_presence_required/.test(lastAudit()?.detail || ''), JSON.stringify(lastAudit()))
 // 5. root + Passkey + valid token → 409 PRODUCTION_RAIL_NOT_CLEARED (assert 抛 → fail-closed)
 const a0 = auditN()
 const r5 = await call({ ...body, webauthn_token: seedToken('t_ok', 'root1', fullData) }, { 'x-root': '1', 'x-uid': 'root1' })
