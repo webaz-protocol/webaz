@@ -702,6 +702,7 @@ jobs:
       - run: npm run test:product-verification-routes
       - run: npm run test:store-verification
       - run: npm run test:store-verification-routes
+      - run: npm run test:product-verification-reverify
       - run: npm run test:direct-pay-controls
       - run: npm run test:direct-pay-aml-monitor
       - run: npm run test:direct-pay-aml-review

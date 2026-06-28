@@ -470,7 +470,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/products` | 🔐 |  |  | src/pwa/routes/products-create.ts:47 |
 | DELETE | `/api/products/:id` | 🔐 |  | 硬删（仅 deleted 状态 + 无进行中订单） | src/pwa/routes/products-crud.ts:71 |
 | GET | `/api/products/:id` |  |  | 卖家可查看自己的非上架商品（编辑页用），其他人只能看 active | src/pwa/routes/products-crud.ts:33 |
-| PUT | `/api/products/:id` | 🔐 |  |  | src/pwa/routes/products-update.ts:43 |
+| PUT | `/api/products/:id` | 🔐 |  |  | src/pwa/routes/products-update.ts:44 |
 | GET | `/api/products/:id/aliases` | 🔐 |  | M7.2-7: alias CRUD（仅商品 owner） | src/pwa/routes/products-aliases.ts:46 |
 | POST | `/api/products/:id/aliases` | 🔐 |  |  | src/pwa/routes/products-aliases.ts:56 |
 | DELETE | `/api/products/:id/aliases/:aliasId` | 🔐 |  |  | src/pwa/routes/products-aliases.ts:118 |
@@ -478,9 +478,9 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/products/:id/claim` | 🔐 |  |  | src/pwa/routes/products-claims.ts:39 |
 | GET | `/api/products/:id/claims` |  |  | 公开：列出某商品的全部声明（含已结算） | src/pwa/routes/products-claims.ts:95 |
 | POST | `/api/products/:id/get-or-create-share` | 🔐 |  | 获取或创建商品 shareable（被 sharePromoLink 用，走 /s/<id> 短链） | src/pwa/routes/products-meta.ts:185 |
-| GET | `/api/products/:id/links` | 🔐 |  |  | src/pwa/routes/products-links.ts:38 |
-| POST | `/api/products/:id/links` | 🔐 |  | 新链接（无人认领）直接 verified=1；已被他人认领则发起众包验证任务 | src/pwa/routes/products-links.ts:48 |
-| DELETE | `/api/products/:id/links/:linkId` | 🔐 |  |  | src/pwa/routes/products-links.ts:178 |
+| GET | `/api/products/:id/links` | 🔐 |  |  | src/pwa/routes/products-links.ts:39 |
+| POST | `/api/products/:id/links` | 🔐 |  | 新链接（无人认领）直接 verified=1；已被他人认领则发起众包验证任务 | src/pwa/routes/products-links.ts:49 |
+| DELETE | `/api/products/:id/links/:linkId` | 🔐 |  |  | src/pwa/routes/products-links.ts:181 |
 | GET | `/api/products/:id/preview` |  |  | 公开预览：未登录可调，返回最小公开信息（分享 banner 用） | src/pwa/routes/products-meta.ts:162 |
 | GET | `/api/products/:id/price-history` |  |  |  | src/pwa/routes/products-meta.ts:58 |
 | PATCH | `/api/products/:id/status` | 🔐 |  | 状态切换（active / warehouse / deleted） | src/pwa/routes/products-crud.ts:49 |
