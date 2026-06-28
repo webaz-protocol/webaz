@@ -721,7 +721,7 @@ async function render(page, params) {
       if (params[0] === 'public-ideas')            return renderAdminPublicIdeas(app)
       if (params[0] === 'task-proposals')          return renderAdminTaskProposals(app)
       if (params[0] === 'quota-requests')          return renderAdminBuildTaskQuota(app)
-      if (params[0] === 'operator-claims')         return renderAdminOperatorClaims(app)
+      if (params[0] === 'operator-claims')         return renderAdminOperatorClaims(app); if (params[0] === 'deferrals') return renderAdminDirectPayDeferrals(app)  // PR-②c 缓交审批
       if (params[0] === 'params')                  return renderAdminParams(app)
       if (params[0] === 'timeline' && params[1])   return renderAdminUserTimeline(app, params[1])
       if (params[0] === 'timeline')                return renderAdminUserTimelinePicker(app)
