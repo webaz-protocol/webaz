@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (681 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (684 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -605,6 +605,13 @@
         ]
       }
     },
+    "/api/admin/direct-receive/aml-flags": {
+      "post": {
+        "summary": "POST /api/admin/direct-receive/aml-flags — AML flag ingress(ROOT + 真人 Passkey;high-risk)。与 .../aml-flags/:id/review 区分。",
+        "tags": [],
+        "security": []
+      }
+    },
     "/api/admin/direct-receive/aml-flags/:id/review": {
       "post": {
         "summary": "route 只做 auth + gate + 参数校验 + 调 reviewAmlFlag(唯一 review writer,原子改 flag + 写 audit)。",
@@ -629,6 +636,20 @@
             "bearerAuth": []
           }
         ]
+      }
+    },
+    "/api/admin/direct-receive/kyb-reviews": {
+      "post": {
+        "summary": "POST /api/admin/direct-receive/kyb-reviews — KYB 复核结论 ingress(ROOT + 真人 Passkey)。",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/admin/direct-receive/sanctions-screenings": {
+      "post": {
+        "summary": "POST /api/admin/direct-receive/sanctions-screenings — 制裁筛查结论 ingress(ROOT + 真人 Passkey;high-risk)。",
+        "tags": [],
+        "security": []
       }
     },
     "/api/admin/disputes": {
