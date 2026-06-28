@@ -62,6 +62,21 @@ ok('6c2. AML ingress with PII in KEY ({"alice@example.com":1}) → INVALID_DETAI
 const rNum = recordAmlFlagIngress(db, { userId: 'u_num_aml', reviewerId: 'rv', rule: 'velocity', severity: 'medium', status: 'open', detail: { order_count: 7, window_hours: 24 } })
 ok('6d. AML ingress with numeric detail → ok, stored', rNum.ok === true && JSON.parse((db.prepare("SELECT detail FROM aml_flags WHERE id=?").get(rNum.id) as any).detail).order_count === 7)
 
+// 6e. P1: invalid expires_at(任意字符串)→ INVALID_EXPIRES_AT,不写;reader 不会被坏日期误判为通过
+const kybBeforeBadExp = (db.prepare("SELECT COUNT(*) n FROM direct_receive_kyb_reviews WHERE user_id='u_badexp'").get() as any).n
+const rBadKyb = recordKybReview(db, { userId: 'u_badexp', reviewerId: 'rv', status: 'approved', expiresAt: 'not-a-date' })
+ok('6e. KYB approved + bad expires_at → INVALID_EXPIRES_AT, NOT written', rBadKyb.error === 'INVALID_EXPIRES_AT' && (db.prepare("SELECT COUNT(*) n FROM direct_receive_kyb_reviews WHERE user_id='u_badexp'").get() as any).n === kybBeforeBadExp)
+ok('6e-2. bad-date KYB never created → reader false (not fooled by lexical "future")', sellerDirectPayKybPassed(db, 'u_badexp') === false)
+const rBadSanc = recordSanctionsScreening(db, { userId: 'u_badexp2', reviewerId: 'rv', status: 'clear', expiresAt: 'not-a-date' })
+ok('6f. sanctions clear + bad expires_at → INVALID_EXPIRES_AT, NOT written', rBadSanc.error === 'INVALID_EXPIRES_AT' && (db.prepare("SELECT COUNT(*) n FROM sanctions_screening WHERE user_id='u_badexp2'").get() as any).n === 0)
+ok('6f-2. bad-date sanctions never created → reader false', sellerDirectPaySanctionsClear(db, 'u_badexp2') === false)
+// partial / nonsense dates also rejected
+ok('6g. partial date "2024" → INVALID_EXPIRES_AT', recordKybReview(db, { userId: 'u_p', reviewerId: 'rv', status: 'approved', expiresAt: '2024' }).error === 'INVALID_EXPIRES_AT')
+ok('6h. impossible date "2024-13-99 99:99:99" → INVALID_EXPIRES_AT', recordKybReview(db, { userId: 'u_p2', reviewerId: 'rv', status: 'approved', expiresAt: '2024-13-99 99:99:99' }).error === 'INVALID_EXPIRES_AT')
+// valid ISO future expiry → normalized + reader true; valid ISO past → reader false (fail-closed)
+ok('6i. valid ISO future expiry → normalized + reader true', (() => { const r = recordKybReview(db, { userId: 'u_iso', reviewerId: 'rv', status: 'approved', expiresAt: '2099-01-01T00:00:00Z' }); const stored = (db.prepare("SELECT expires_at e FROM direct_receive_kyb_reviews WHERE user_id='u_iso'").get() as any)?.e; return r.ok && stored === '2099-01-01 00:00:00' && sellerDirectPayKybPassed(db, 'u_iso') === true })())
+ok('6j. valid ISO past expiry → reader false (fail-closed)', (() => { const r = recordSanctionsScreening(db, { userId: 'u_iso2', reviewerId: 'rv', status: 'clear', expiresAt: '2000-01-01T00:00:00Z' }); return r.ok && sellerDirectPaySanctionsClear(db, 'u_iso2') === false })())
+
 // 7. invalid enums → rejected AND not written
 const beforeInvalid = { kyb: (db.prepare("SELECT COUNT(*) n FROM direct_receive_kyb_reviews").get() as any).n, sc: (db.prepare("SELECT COUNT(*) n FROM sanctions_screening").get() as any).n, aml: (db.prepare("SELECT COUNT(*) n FROM aml_flags").get() as any).n, aud: auditN() }
 ok('7a. KYB invalid status → INVALID_STATUS', recordKybReview(db, { userId: 'x', reviewerId: 'rv', status: 'banana' }).error === 'INVALID_STATUS')
@@ -70,8 +85,8 @@ ok('7c. AML invalid rule → INVALID_RULE', recordAmlFlagIngress(db, { userId: '
 ok('7d. AML invalid severity → INVALID_SEVERITY', recordAmlFlagIngress(db, { userId: 'x', reviewerId: 'rv', rule: 'crypto', severity: 'critical', status: 'open' }).error === 'INVALID_SEVERITY')
 ok('7e. AML invalid status → INVALID_STATUS', recordAmlFlagIngress(db, { userId: 'x', reviewerId: 'rv', rule: 'crypto', severity: 'high', status: 'weird' }).error === 'INVALID_STATUS')
 ok('7f. invalid calls wrote NOTHING (tables + audit unchanged)', (db.prepare("SELECT COUNT(*) n FROM direct_receive_kyb_reviews").get() as any).n === beforeInvalid.kyb && (db.prepare("SELECT COUNT(*) n FROM sanctions_screening").get() as any).n === beforeInvalid.sc && (db.prepare("SELECT COUNT(*) n FROM aml_flags").get() as any).n === beforeInvalid.aml && auditN() === beforeInvalid.aud)
-// 8. every success wrote exactly one audit row (k1,k2,k3,k4,s1,s2,s3,s4,a1 + rNum = 10; rejected PII/enum writes none)
-ok('8. each success wrote one admin_audit_log row', auditN() === 10, `audit=${auditN()}`)
+// 8. every success wrote exactly one audit row (k1-k4,s1-s4,a1,rNum,u_iso,u_iso2 = 12; rejected PII/enum/bad-expiry write none)
+ok('8. each success wrote one admin_audit_log row', auditN() === 12, `audit=${auditN()}`)
 // 8b. audit PII-free: provider_ref stored as HASH, raw never appears
 recordKybReview(db, { userId: 'u_pii', reviewerId: 'rv', status: 'approved', providerRef: 'VENDOR-SECRET-123' })
 const piiAudit = db.prepare("SELECT detail FROM admin_audit_log WHERE target_id='u_pii'").get() as { detail: string }
@@ -135,6 +150,10 @@ ok('10h. aml ingress root+token → 200 + breaker false', r10h.status === 200 &&
 mkTok('tx', 'direct_pay_kyb_ingress', { user_id: 'r_bad', status: 'banana' })
 const r10i = await call(KYB, { user_id: 'r_bad', status: 'banana', webauthn_token: 'tx' }, ROOT)
 ok('10i. invalid status via route → 400 INVALID_STATUS', r10i.status === 400 && r10i.json?.error_code === 'INVALID_STATUS', JSON.stringify(r10i))
+// 10j. bad expires_at via route (token bound to same bad value so gate passes) → 400 INVALID_EXPIRES_AT, no row
+mkTok('tj', 'direct_pay_sanctions_ingress', { user_id: 'r_badexp', status: 'clear', provider_ref: '', expires_at: 'not-a-date' })
+const r10j = await call(SANC, { user_id: 'r_badexp', status: 'clear', expires_at: 'not-a-date', webauthn_token: 'tj' }, ROOT)
+ok('10j. bad expires_at via route → 400 INVALID_EXPIRES_AT, no sanctions row', r10j.status === 400 && r10j.json?.error_code === 'INVALID_EXPIRES_AT' && (db.prepare("SELECT COUNT(*) n FROM sanctions_screening WHERE user_id='r_badexp'").get() as any).n === 0, JSON.stringify(r10j))
 
 // ══════ P1 negative: token signs A, body writes B → 403, NO ledger/audit write ══════
 const kybN = (): number => (db.prepare("SELECT COUNT(*) n FROM direct_receive_kyb_reviews WHERE user_id='r_bind'").get() as any).n

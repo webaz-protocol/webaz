@@ -31,6 +31,25 @@ const AML_STATUSES = new Set(['open', 'reviewing', 'cleared', 'escalated', 'str_
 
 export interface IngressResult { ok: boolean; error?: string; id?: string }
 
+// expires_at 形态:reader 用 `expires_at > datetime('now')` 做【字符串比较】,datetime('now') = 'YYYY-MM-DD HH:MM:SS'。
+//   任意字符串(如 'not-a-date')会被字典序当成"未来"→ 错误地通过 fail-closed reader。故 ingress 必须校验+规范化:
+//   只接受 SQLite datetime 'YYYY-MM-DD HH:MM:SS' 或完整 ISO-8601,且能真实解析;ISO 一律规范化为可比的 SQLite 格式。
+const SQLITE_DT_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/
+const ISO_DT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})?$/
+/** 校验+规范化 expiresAt:空→null(无期限,允许);合法→可比的 'YYYY-MM-DD HH:MM:SS';非法→ false。 */
+export function normalizeExpiry(expiresAt?: string): { ok: true; value: string | null } | { ok: false } {
+  if (expiresAt === undefined || expiresAt === null || expiresAt === '') return { ok: true, value: null }
+  if (SQLITE_DT_RE.test(expiresAt)) {
+    const ms = Date.parse(expiresAt.replace(' ', 'T') + 'Z')   // 当作 UTC 校验真实性(如 13 月 / 99 时 → NaN)
+    return Number.isFinite(ms) ? { ok: true, value: expiresAt } : { ok: false }
+  }
+  if (ISO_DT_RE.test(expiresAt)) {
+    const ms = Date.parse(expiresAt)
+    return Number.isFinite(ms) ? { ok: true, value: new Date(ms).toISOString().slice(0, 19).replace('T', ' ') } : { ok: false }
+  }
+  return { ok: false }
+}
+
 /** providerRef → 审计用短引用(sha256 前 16 hex);无则 undefined。原值不进审计明文。 */
 function providerRefHash(providerRef?: string): string | undefined {
   if (!providerRef) return undefined
@@ -76,10 +95,12 @@ export function recordKybReview(db: Database.Database, args: RecordKybReviewArgs
   const { userId, reviewerId, status, providerRef, expiresAt } = args
   if (!userId || !reviewerId) return { ok: false, error: 'MISSING_ARGS' }
   if (!KYB_STATUSES.has(status)) return { ok: false, error: 'INVALID_STATUS' }
+  const exp = normalizeExpiry(expiresAt)
+  if (!exp.ok) return { ok: false, error: 'INVALID_EXPIRES_AT' }
   const id = 'kyb_' + randomUUID()
   db.transaction(() => {
     db.prepare(`INSERT INTO direct_receive_kyb_reviews (id, user_id, status, reviewed_by, reviewed_at, expires_at, reason)
-      VALUES (?,?,?,?,datetime('now'),?,?)`).run(id, userId, status, reviewerId, expiresAt ?? null, providerRef ?? null)
+      VALUES (?,?,?,?,datetime('now'),?,?)`).run(id, userId, status, reviewerId, exp.value, providerRef ?? null)
     writeAudit(db, reviewerId, 'direct_pay.kyb_ingress', 'user', userId,
       { kyb_status: status, provider_ref_hash: providerRefHash(providerRef), has_expiry: !!expiresAt, review_id: id })
   })()
@@ -92,10 +113,12 @@ export function recordSanctionsScreening(db: Database.Database, args: RecordSanc
   const { userId, reviewerId, status, providerRef, expiresAt } = args
   if (!userId || !reviewerId) return { ok: false, error: 'MISSING_ARGS' }
   if (!SANCTIONS_STATUSES.has(status)) return { ok: false, error: 'INVALID_STATUS' }
+  const exp = normalizeExpiry(expiresAt)
+  if (!exp.ok) return { ok: false, error: 'INVALID_EXPIRES_AT' }
   const id = 'sc_' + randomUUID()
   db.transaction(() => {
     db.prepare(`INSERT INTO sanctions_screening (id, user_id, status, source, reason, screened_at, expires_at)
-      VALUES (?,?,?,?,?,datetime('now'),?)`).run(id, userId, status, 'manual_ingress', providerRef ?? null, expiresAt ?? null)
+      VALUES (?,?,?,?,?,datetime('now'),?)`).run(id, userId, status, 'manual_ingress', providerRef ?? null, exp.value)
     writeAudit(db, reviewerId, 'direct_pay.sanctions_ingress', 'user', userId,
       { sanctions_status: status, provider_ref_hash: providerRefHash(providerRef), has_expiry: !!expiresAt, screening_id: id })
   })()
