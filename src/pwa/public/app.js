@@ -721,7 +721,7 @@ async function render(page, params) {
       if (params[0] === 'public-ideas')            return renderAdminPublicIdeas(app)
       if (params[0] === 'task-proposals')          return renderAdminTaskProposals(app)
       if (params[0] === 'quota-requests')          return renderAdminBuildTaskQuota(app)
-      if (params[0] === 'operator-claims')         return renderAdminOperatorClaims(app)
+      if (params[0] === 'operator-claims')         return renderAdminOperatorClaims(app); if (params[0] === 'deferrals') return renderAdminDirectPayDeferrals(app)  // PR-②c 缓交审批
       if (params[0] === 'params')                  return renderAdminParams(app)
       if (params[0] === 'timeline' && params[1])   return renderAdminUserTimeline(app, params[1])
       if (params[0] === 'timeline')                return renderAdminUserTimelinePicker(app)
@@ -22921,7 +22921,7 @@ async function renderAdminProtocol(app) {
       ${adminLinkCard('🛠️', t('任务建议收件箱'), t('陌生人 / agent 提交的共建任务建议;审阅 → 转正式任务'), '#admin/task-proposals')}
       ${((state.user && state.user.admin_type || 'root') === 'root') ? adminLinkCard('🎟️', t('建任务额度审核'), t('非根管理员的建任务扩容申请;批准 = 限时计数授权(仅 root)'), '#admin/quota-requests') : ''}
       ${adminLinkCard('🔗', t('关联个人贡献账号'), t('把本管理席位的协调贡献归属到你的真实个人账号(需对方确认 + root 审批)'), '#me/operator-claims')}
-      ${((state.user && state.user.admin_type || 'root') === 'root') ? adminLinkCard('🪪', t('操作席位关联审批'), t('管理席位→个人贡献账号的关联申请;确认 + 审批 / 撤销(仅 root)'), '#admin/operator-claims') : ''}
+      ${((state.user && state.user.admin_type || 'root') === 'root') ? adminLinkCard('🪪', t('操作席位关联审批'), t('管理席位→个人贡献账号的关联申请;确认 + 审批 / 撤销(仅 root)'), '#admin/operator-claims') : ''}${((state.user && state.user.admin_type || 'root') === 'root') ? adminLinkCard('🪙', t('履约保证金缓交审批'), t('商户缓交申请;批准设压低额度 + 真人 Passkey(仅 root)'), '#admin/deferrals') : ''}
     </div>
   `, 'admin-protocol')
 }
