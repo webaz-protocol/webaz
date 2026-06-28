@@ -34,18 +34,40 @@ export interface IngressResult { ok: boolean; error?: string; id?: string }
 // expires_at 形态:reader 用 `expires_at > datetime('now')` 做【字符串比较】,datetime('now') = 'YYYY-MM-DD HH:MM:SS'。
 //   任意字符串(如 'not-a-date')会被字典序当成"未来"→ 错误地通过 fail-closed reader。故 ingress 必须校验+规范化:
 //   只接受 SQLite datetime 'YYYY-MM-DD HH:MM:SS' 或完整 ISO-8601,且能真实解析;ISO 一律规范化为可比的 SQLite 格式。
-const SQLITE_DT_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/
-const ISO_DT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})?$/
-/** 校验+规范化 expiresAt:空→null(无期限,允许);合法→可比的 'YYYY-MM-DD HH:MM:SS';非法→ false。 */
+// SQLite UTC civil 形态 'YYYY-MM-DD HH:MM:SS';ISO 形态【强制带 timezone】(Z 或 ±hh:mm)——无 tz 会按服务器本地时区归一,拒。
+const SQLITE_DT_RE = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/
+const ISO_DT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/
+
+/**
+ * 逐字段校验【真实存在】的 civil datetime —— 用 Date.UTC 重建后逐字段回比,杜绝 JS 自动滚动
+ *   (如 2099-02-31 → 03-03、25:00 → 次日)。把字段当 UTC 校验真实性即可(与 SQLite datetime('now') UTC 语义一致)。
+ */
+function isRealCivil(y: number, mo: number, d: number, h: number, mi: number, s: number): boolean {
+  const t = Date.UTC(y, mo - 1, d, h, mi, s)
+  if (!Number.isFinite(t)) return false
+  const dt = new Date(t)
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d
+    && dt.getUTCHours() === h && dt.getUTCMinutes() === mi && dt.getUTCSeconds() === s
+}
+
+/**
+ * 校验+规范化 expiresAt:空→null(无期限,允许);合法→可比的 'YYYY-MM-DD HH:MM:SS'(UTC);非法→ false。
+ * 不依赖 Date.parse 的宽松解析:先正则定形、再逐字段 isRealCivil 校验(拒不存在的日期),ISO 必须显式带 tz。
+ */
 export function normalizeExpiry(expiresAt?: string): { ok: true; value: string | null } | { ok: false } {
   if (expiresAt === undefined || expiresAt === null || expiresAt === '') return { ok: true, value: null }
-  if (SQLITE_DT_RE.test(expiresAt)) {
-    const ms = Date.parse(expiresAt.replace(' ', 'T') + 'Z')   // 当作 UTC 校验真实性(如 13 月 / 99 时 → NaN)
-    return Number.isFinite(ms) ? { ok: true, value: expiresAt } : { ok: false }
+  const sm = SQLITE_DT_RE.exec(expiresAt)
+  if (sm) {
+    if (!isRealCivil(+sm[1], +sm[2], +sm[3], +sm[4], +sm[5], +sm[6])) return { ok: false }
+    return { ok: true, value: expiresAt }   // 已是可比的 UTC civil 形态
   }
-  if (ISO_DT_RE.test(expiresAt)) {
-    const ms = Date.parse(expiresAt)
-    return Number.isFinite(ms) ? { ok: true, value: new Date(ms).toISOString().slice(0, 19).replace('T', ' ') } : { ok: false }
+  const im = ISO_DT_RE.exec(expiresAt)
+  if (im) {
+    // 先逐字段校验【字面 civil 日期】真实存在(2099-02-31 此处即被拒,与 tz 无关)。
+    if (!isRealCivil(+im[1], +im[2], +im[3], +im[4], +im[5], +im[6])) return { ok: false }
+    const ms = Date.parse(expiresAt)   // 字面已合法 + 强制带 tz → 此处只做 tz 偏移换算得真实 UTC instant
+    if (!Number.isFinite(ms)) return { ok: false }
+    return { ok: true, value: new Date(ms).toISOString().slice(0, 19).replace('T', ' ') }
   }
   return { ok: false }
 }

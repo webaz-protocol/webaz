@@ -10,7 +10,7 @@ import Database from 'better-sqlite3'
 import express, { type Request, type Response } from 'express'
 import { createServer, request as httpRequest, type Server } from 'node:http'
 
-const { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress, amlDetailHash, isNumericDetail } = await import('../src/direct-pay-compliance-ingress.js')
+const { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress, amlDetailHash, isNumericDetail, normalizeExpiry } = await import('../src/direct-pay-compliance-ingress.js')
 const { sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear } = await import('../src/direct-pay-controls.js')
 const { createHumanPresence } = await import('../src/pwa/human-presence.js')
 const { registerAdminDirectReceiveDepositsRoutes } = await import('../src/pwa/routes/admin-direct-receive-deposits.js')
@@ -73,6 +73,14 @@ ok('6f-2. bad-date sanctions never created → reader false', sellerDirectPaySan
 // partial / nonsense dates also rejected
 ok('6g. partial date "2024" → INVALID_EXPIRES_AT', recordKybReview(db, { userId: 'u_p', reviewerId: 'rv', status: 'approved', expiresAt: '2024' }).error === 'INVALID_EXPIRES_AT')
 ok('6h. impossible date "2024-13-99 99:99:99" → INVALID_EXPIRES_AT', recordKybReview(db, { userId: 'u_p2', reviewerId: 'rv', status: 'approved', expiresAt: '2024-13-99 99:99:99' }).error === 'INVALID_EXPIRES_AT')
+// 6h2-6h4: well-formed but non-existent dates must NOT be auto-rolled into a valid future fact (no Date.parse leniency)
+ok('6h2. rollover dates rejected (Feb-31 / Apr-31 / hour 25, sqlite + ISO)', normalizeExpiry('2099-02-31 00:00:00').ok === false && normalizeExpiry('2099-02-31T00:00:00Z').ok === false && normalizeExpiry('2099-04-31 00:00:00').ok === false && normalizeExpiry('2099-01-01T25:00:00Z').ok === false)
+ok('6h3. ISO without timezone rejected (no local-tz normalization)', normalizeExpiry('2099-01-01T00:00:00').ok === false)
+ok('6h4. real leap day / real date accepted (positive control)', normalizeExpiry('2096-02-29 00:00:00').ok === true && normalizeExpiry('2099-02-28T00:00:00Z').ok === true)
+const rRoll = recordKybReview(db, { userId: 'u_roll', reviewerId: 'rv', status: 'approved', expiresAt: '2099-02-31 00:00:00' })
+ok('6h5. KYB Feb-31 expiry → INVALID_EXPIRES_AT, not written, reader false', rRoll.error === 'INVALID_EXPIRES_AT' && (db.prepare("SELECT COUNT(*) n FROM direct_receive_kyb_reviews WHERE user_id='u_roll'").get() as any).n === 0 && sellerDirectPayKybPassed(db, 'u_roll') === false)
+const rRollS = recordSanctionsScreening(db, { userId: 'u_roll2', reviewerId: 'rv', status: 'clear', expiresAt: '2099-02-31T00:00:00Z' })
+ok('6h6. sanctions Feb-31 ISO expiry → INVALID_EXPIRES_AT, not written, reader false', rRollS.error === 'INVALID_EXPIRES_AT' && (db.prepare("SELECT COUNT(*) n FROM sanctions_screening WHERE user_id='u_roll2'").get() as any).n === 0 && sellerDirectPaySanctionsClear(db, 'u_roll2') === false)
 // valid ISO future expiry → normalized + reader true; valid ISO past → reader false (fail-closed)
 ok('6i. valid ISO future expiry → normalized + reader true', (() => { const r = recordKybReview(db, { userId: 'u_iso', reviewerId: 'rv', status: 'approved', expiresAt: '2099-01-01T00:00:00Z' }); const stored = (db.prepare("SELECT expires_at e FROM direct_receive_kyb_reviews WHERE user_id='u_iso'").get() as any)?.e; return r.ok && stored === '2099-01-01 00:00:00' && sellerDirectPayKybPassed(db, 'u_iso') === true })())
 ok('6j. valid ISO past expiry → reader false (fail-closed)', (() => { const r = recordSanctionsScreening(db, { userId: 'u_iso2', reviewerId: 'rv', status: 'clear', expiresAt: '2000-01-01T00:00:00Z' }); return r.ok && sellerDirectPaySanctionsClear(db, 'u_iso2') === false })())
@@ -154,6 +162,10 @@ ok('10i. invalid status via route → 400 INVALID_STATUS', r10i.status === 400 &
 mkTok('tj', 'direct_pay_sanctions_ingress', { user_id: 'r_badexp', status: 'clear', provider_ref: '', expires_at: 'not-a-date' })
 const r10j = await call(SANC, { user_id: 'r_badexp', status: 'clear', expires_at: 'not-a-date', webauthn_token: 'tj' }, ROOT)
 ok('10j. bad expires_at via route → 400 INVALID_EXPIRES_AT, no sanctions row', r10j.status === 400 && r10j.json?.error_code === 'INVALID_EXPIRES_AT' && (db.prepare("SELECT COUNT(*) n FROM sanctions_screening WHERE user_id='r_badexp'").get() as any).n === 0, JSON.stringify(r10j))
+// 10k. rollover date (Feb-31) via route → 400 INVALID_EXPIRES_AT, no row
+mkTok('tk2', 'direct_pay_kyb_ingress', { user_id: 'r_roll', status: 'approved', provider_ref: '', expires_at: '2099-02-31 00:00:00' })
+const r10k = await call(KYB, { user_id: 'r_roll', status: 'approved', expires_at: '2099-02-31 00:00:00', webauthn_token: 'tk2' }, ROOT)
+ok('10k. Feb-31 expiry via route → 400 INVALID_EXPIRES_AT, no kyb row', r10k.status === 400 && r10k.json?.error_code === 'INVALID_EXPIRES_AT' && (db.prepare("SELECT COUNT(*) n FROM direct_receive_kyb_reviews WHERE user_id='r_roll'").get() as any).n === 0, JSON.stringify(r10k))
 
 // ══════ P1 negative: token signs A, body writes B → 403, NO ledger/audit write ══════
 const kybN = (): number => (db.prepare("SELECT COUNT(*) n FROM direct_receive_kyb_reviews WHERE user_id='r_bind'").get() as any).n
