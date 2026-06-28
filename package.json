@@ -112,6 +112,7 @@
     "test:direct-pay-create": "tsx scripts/test-direct-pay-create.ts",
     "test:direct-pay-controls": "tsx scripts/test-direct-pay-controls.ts",
     "test:direct-pay-aml-monitor": "tsx scripts/test-direct-pay-aml-monitor.ts",
+    "test:direct-pay-aml-review": "tsx scripts/test-direct-pay-aml-review.ts",
     "test:direct-pay-disclosures": "tsx scripts/test-direct-pay-disclosures.ts",
     "test:identity-claim-ui": "tsx scripts/test-identity-claim-ui.ts",
     "test:identity-claim-discovery": "tsx scripts/test-identity-claim-discovery.ts",

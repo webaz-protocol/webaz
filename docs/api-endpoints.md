@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (680 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (681 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -57,7 +57,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/dashboard` | 🔐 | 👑 |  | src/pwa/routes/admin-analytics.ts:230 |
 | GET | `/api/admin/decline-contests` | 🔐 |  | 仲裁员待办:列出所有被举证的临时判责拒单 | src/pwa/routes/disputes-write.ts:88 |
 | POST | `/api/admin/decline-contests/:orderId/resolve` | 🔐 |  | 仲裁员裁决 | src/pwa/routes/disputes-write.ts:102 |
-| POST | `/api/admin/direct-receive/deposits/:id/confirm-production` | 🔐 | 👑 | 当前恒 fail-closed(无 legal-cleared rail → assert 抛 → PRODUCTION_RAIL_NOT_CLEARED)。 | src/pwa/routes/admin-direct-receive-deposits.ts:31 |
+| POST | `/api/admin/direct-receive/aml-flags/:id/review` | 🔐 | 👑 | route 只做 auth + gate + 参数校验 + 调 reviewAmlFlag(唯一 review writer,原子改 flag + 写 audi | src/pwa/routes/admin-direct-receive-deposits.ts:78 |
+| POST | `/api/admin/direct-receive/deposits/:id/confirm-production` | 🔐 | 👑 | 当前恒 fail-closed(无 legal-cleared rail → assert 抛 → PRODUCTION_RAIL_NOT_CLEARED)。 | src/pwa/routes/admin-direct-receive-deposits.ts:34 |
 | GET | `/api/admin/disputes` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:47 |
 | GET | `/api/admin/economic-summary` | 🔐 | 👑 | 隐私第一：运营财务，仅 protocol admin 可见。 | src/pwa/routes/admin-reports.ts:82 |
 | GET | `/api/admin/editor-picks` | 🔐 | 👑 |  | src/pwa/routes/admin-editor-picks.ts:60 |

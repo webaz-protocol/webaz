@@ -693,6 +693,7 @@ jobs:
       - run: npm run test:direct-pay-create
       - run: npm run test:direct-pay-controls
       - run: npm run test:direct-pay-aml-monitor
+      - run: npm run test:direct-pay-aml-review
       - run: npm run test:direct-pay-ui
       - run: npm run test:direct-pay-disclosures
       - run: npm run test:seller-order-actions
