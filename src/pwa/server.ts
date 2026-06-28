@@ -28,6 +28,7 @@ import { endpointToAction, endpointToReadAction } from './endpoint-actions.js'
 import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYPES, MASS_ACTION_DAILY_CAPS } from './limits.js'
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
+import { DIRECT_PAY_CONTROL_PARAMS } from '../direct-pay-controls.js'  // PR-4a: Direct Pay 入口控制面默认 seed(fail-closed)
 import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain } from '../layer0-foundation/L0-2-state-machine/order-chain.js'
 import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema, initCartItemsSchema, initFollowsSchema, initPushSubscriptionsSchema, initUserSessionsSchema, initUserBlocklistSchema, initImportLogsSchema, initErrorLogSchema, initSecondhandItemsSchema, initProductTrialCampaignsSchema, initProductTrialClaimsSchema, initReturnRequestsSchema, initReturnMessagesSchema, initProductVariantsSchema, initEditorPicksSchema, initKycRecordsSchema, initWebauthnSchema, initClaimVerificationBaseSchema, initClaimVerifierSuspensionsSchema, initProductClaimSchema, initReviewClaimSchema, initSecondhandClaimSchema, initAuctionClaimSchema, initWishClaimSchema, initShareableClickLogSchema, initCommissionAuditLogSchema, initRegistrationAuditLogSchema, initProductExternalLinksBaseSchema, initLinkChallengesSchema, initVerifyTasksSchema, initVerifySubmissionsSchema, initVerifierStatsSchema, initRegisterListSearchColumns, initPendingCommissionEscrowSchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
@@ -312,6 +313,7 @@ import { registerOrdersActionRoutes } from './routes/orders-action.js'
 import { registerOrdersCreateRoutes } from './routes/orders-create.js'
 import { registerDirectPayDisclosureAckRoutes } from './routes/direct-pay-disclosure-acks.js'  // PR-4d: Direct Pay 风险披露 ack 端点(薄 adapter)
 import { registerDirectReceivePaymentInstructionRoutes } from './routes/direct-receive-payment-instructions.js'  // PR-4f-a: 卖家收款说明 CRUD(薄 adapter)
+import { registerDirectPayAvailabilityRoutes } from './routes/direct-pay-availability.js'  // PR-4a: Direct Pay 可用性只读(控制面 SSOT)
 // Disputes 读端点 (#1013 Phase 86) — 5 endpoints (list/similar/detail/evidence-list/parties)
 import { registerDisputesReadRoutes } from './routes/disputes-read.js'
 // Disputes 写端点 (#1013 Phase 87) — 5 endpoints (respond/arbitrate/add-evidence/evidence-blob/request-evidence)
@@ -915,6 +917,7 @@ const DEFAULT_PARAMS: Array<{ key: string; value: string; type: string; descript
   // #420 P1-2/P1-3/P1-4:反滥用阈值(agent 信任公式 / strike 阶梯 / verifier outlier)→ 治理可调。
   // 默认值 === 抽取前硬编码字面量(单一真相源在 anti-abuse-thresholds.ts;测试强制校验一致)。
   ...ANTI_ABUSE_PARAMS,
+  ...DIRECT_PAY_CONTROL_PARAMS,
 ]
 for (const p of DEFAULT_PARAMS) {
   try { db.prepare(`INSERT OR IGNORE INTO protocol_params (key, value, type, description, category, default_value, min_value, max_value) VALUES (?,?,?,?,?,?,?,?)`)
@@ -3866,6 +3869,7 @@ registerAgentReputationRoutes(app, {
 registerUsersPublicRoutes(app, { db, auth, noteAuthenticityBadges })
 registerDirectPayDisclosureAckRoutes(app, { db, auth, generateId, consumeGateToken })  // PR-4d
 registerDirectReceivePaymentInstructionRoutes(app, { db, auth, generateId })  // PR-4f-a
+registerDirectPayAvailabilityRoutes(app, { db, auth, getProtocolParam })  // PR-4a
 // RFC-004 build_feedback — agent-native "use → build" 反馈管道
 registerBuildFeedbackRoutes(app, {
   db, auth,
@@ -4250,8 +4254,6 @@ const SERVICE_START_MS = Date.now()
 // #1013 Phase 107: health + mcp-telemetry + system-flags + editor-picks + manifest + error-report 已迁出
 // 注意：register 在底部统一调用（generateManifest/logError 在下方定义，避免 TDZ）
 
-
-
 // A2 黑名单 (#1013 Phase 32) — 5 endpoints 已迁出到 routes/blocklist.ts
 registerBlocklistRoutes(app, { db, auth })
 
@@ -4350,7 +4352,6 @@ registerProfilePrefsRoutes(app, { db, auth })
 // ─── 话题 / 标签 API ─────────────────────────────────────
 // #1013 Phase 50: 2 tags endpoints 已迁出到 routes/tags.ts
 registerTagsRoutes(app, { db })
-
 
 // my-products — Phase 104 已迁出
 
@@ -4651,7 +4652,6 @@ registerAdminEventsRoutes(app, {
   db, generateId, requireAdmin,
   systemEventBuffer, SYSTEM_EVENT_BUFFER_SIZE, adminEventClients,
 })
-
 
 // ─── Wave F-2: 协议参数配置 ─────────────────────────────
 // #1013 Phase 60: 4 protocol-params endpoints 已迁出到 routes/admin-protocol-params.ts

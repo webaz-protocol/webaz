@@ -16,6 +16,7 @@ import { lockFeeStake } from './direct-pay-ledger.js'
 import { mulRate, type Units } from './money.js'
 import { sellerHasProductionBaseBondLocked } from './direct-receive-deposits.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
+import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerKycSanctionsPassed } from './direct-pay-controls.js'
 
 export interface DirectPayCreateDeps {
   generateId: (prefix: string) => string
@@ -78,7 +79,14 @@ export function createDirectPayResponse(
   const unsupported = o.flashActive ? 'flash_sale' : o.couponCode ? 'coupon' : o.buyInsurance ? 'insurance' : (Number(o.donationPct) > 0) ? 'donation' : o.isGift ? 'gift' : o.anonymous ? 'anonymous_recipient' : o.deliveryWindow ? 'delivery_window' : null
   if (unsupported) { res.status(409).json({ error: `直付 v1 不支持该选项:${unsupported}`, error_code: 'DIRECT_PAY_UNSUPPORTED_OPTION', option: unsupported }); return }
   const sellerId = ctx.product.seller_uid as string
-  if (!sellerHasProductionBaseBondLocked(db, sellerId)) { res.status(409).json({ error: '直付暂不可用:卖家未完成生产级履约担保(production base-bond)', error_code: 'DIRECT_PAY_NOT_AVAILABLE' }); return }
+  // ② Phase 4a 入口控制(SSOT,默认 fail-closed):全局开关/熔断 → 地区白名单 → 单笔上限 → production base-bond → KYC/制裁。
+  //    任一不过即拒(不建单/不锁质押/不扣库存)。base-bond 已折进控制面(DIRECT_PAY_NOT_AVAILABLE),不再单独判。
+  const ctrl = evaluateDirectPayLaunchControls(readDirectPayControlsConfig(deps.getProtocolParam), {
+    amountUnits: ctx.totalAmountU,
+    productionBaseBondLocked: sellerHasProductionBaseBondLocked(db, sellerId),
+    kycSanctionsPassed: sellerKycSanctionsPassed(db, sellerId),
+  })
+  if (!ctrl.ok) { res.status(ctrl.status).json({ error: ctrl.reason, error_code: ctrl.error_code }); return }
   const instr = getActivePaymentInstruction(db, sellerId)
   if (!instr) { res.status(409).json({ error: '卖家未设置收款说明,无法创建直付订单', error_code: 'NO_PAYMENT_INSTRUCTION' }); return }
   const feeU = mulRate(ctx.totalAmountU, (ctx.product.source as string) === 'secondhand' ? 0.01 : 0.02)

@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (678 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (679 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -3234,6 +3234,17 @@
     "/api/creator/stats": {
       "get": {
         "summary": "里程碑 L3：创作者贡献仪表盘",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-pay/availability": {
+      "get": {
+        "summary": "GET /api/direct-pay/availability?product_id=... — 该商品(以 qty=1 计)当前是否可直付 + 不可用原因(脱敏)。",
         "tags": [],
         "security": [
           {

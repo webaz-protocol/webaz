@@ -56,7 +56,8 @@ registerOrdersCreateRoutes(app, {
   DONATION_VALID_PCTS: new Set([0, 1, 2, 5]), INTERNAL_AUDITOR_ID: 'audit',
   addHours: (d: Date, h: number) => new Date(d.getTime() + h * 3600_000).toISOString(),
   getActiveFlashSale: () => null, applyCouponToOrder: () => ({ ok: false }),
-  getProtocolParam: <T,>(_k: string, fb: T): T => fb,
+  // Phase 4a 控制面:开启全局/地区/上限,让 create 走到收款指令门(本测试聚焦 instruction gate,不测控制面拒绝矩阵)。
+  getProtocolParam: <T,>(k: string, fb: T): T => { const m: Record<string, unknown> = { 'direct_pay.enabled': true, 'direct_pay.region': 'SG', 'direct_pay.region_allowlist': 'SG', 'direct_pay.per_tx_cap_units': 1_000_000_000 }; return k in m ? m[k] as T : fb },
   getProductShareChain: () => [], isAllowedSponsor: () => false, resolveInviteCodeRef: () => null,
   checkStockAndMaybeDelist: () => {}, auditSponsorChainCross: () => {},
   appendOrderEvent, transition, notifyTransition: () => {}, shouldAutoAccept: () => false,
@@ -118,7 +119,9 @@ ok('still single active after label-less set', activeCount('seller1') === 1)
 ok('seller2 GET → null (no cross-seller leak)', (await call('GET', PI, null, seller('seller2'))).json?.instruction === null)
 
 // ── 7. create route gate is REAL: with active instruction + production bond, instruction gate passes ──
-seedBond('seller1')  // production base-bond fixture (so the only remaining gate is the instruction one)
+seedBond('seller1')  // production base-bond fixture
+db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES ('sc_seller1','seller1','clear')").run()  // Phase 4a KYC/制裁门通过 → 只剩 instruction 门
+
 const co1 = await call('POST', '/api/orders', { product_id: 'p1', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr' }, { 'x-test-uid': 'buyer1' })
 ok('create route passes instruction gate when active instruction exists', co1.status === 200 && co1.json?.error_code !== 'NO_PAYMENT_INSTRUCTION', JSON.stringify(co1))
 
