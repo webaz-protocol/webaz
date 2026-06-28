@@ -686,6 +686,7 @@ jobs:
       - run: npm run test:direct-pay-eligibility
       - run: npm run test:direct-receive-deposits
       - run: npm run test:direct-pay-disclosure-acks
+      - run: npm run test:direct-pay-create
       - run: npm run test:direct-pay-disclosures
       - run: npm run test:seller-order-actions
       - run: npm run test:decline-action

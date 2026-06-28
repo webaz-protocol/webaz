@@ -31,6 +31,7 @@ import type Database from 'better-sqlite3'
 import { buildCartMandate, buildPaymentMandate, signMandate } from './ap2-mandate.js'
 // RFC-014 PR3 — 金额走整数 base-units;钱包写绝对值(防 REAL 浮点加法 dust)。
 import { toUnits, toDecimal, mulQty, mulRate } from '../../money.js'
+import { createDirectPayResponse } from '../../direct-pay-create.js'                    // PR-4c: direct_p2p 建单分叉(生产门+收款指令门+原子建单;本金不入协议)
 import { applyWalletDelta } from '../../ledger.js'
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam(仅下单事务外的预检查;事务内 escrow/INSERT 保持同步)
 
@@ -297,21 +298,20 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     const insurancePremium = toDecimal(insurancePremiumU)
     const totalAmount = toDecimal(totalAmountU)
     const donationAmount = toDecimal(donationAmountU)
+    // PR-4c:direct_p2p 分叉 —— 本金不入协议,跳过下方 escrow 预检/事务,改走直付建单(生产门+收款指令门+原子建单,仅锁卖家 fee-stake)。
+    if (String(req.body?.payment_rail || '') === 'direct_p2p') return void createDirectPayResponse(res, db, { generateId, transition, appendOrderEvent, getProtocolParam }, { product, buyerId: user.id as string, reqQty, basePrice, totalAmount, totalAmountU, shippingAddress: String(shipping_address), opts: { variantId: variant_id, hasVariants: Number(product.has_variants) === 1, flashActive: !!flashSale, couponCode: coupon_code, buyInsurance: !!buy_insurance, donationPct: donationPctNum, isGift: !!is_gift, anonymous: anonymousFlag === 1, deliveryWindow: !!delivery_window } })
     // 友好预检查(读):真正的守恒在下面的同步事务内(applyWalletDelta 绝对值落库)。
     const wallet = await dbOne<{ balance: number }>('SELECT balance FROM wallets WHERE user_id = ?', [user.id])
     if (!wallet) return void res.status(500).json({ error: '钱包记录缺失', error_code: 'WALLET_MISSING' })
     if (toUnits(wallet.balance) < totalAmountU + donationAmountU) return void res.json({ error: `余额不足：需 ${(totalAmount + donationAmount).toFixed(2)} WAZ（含 ${donationAmount} WAZ 捐赠），当前 ${wallet.balance} WAZ` })
-
     const now = new Date()
     const orderId = generateId('ord')
     let autoAccepted = false
-
     // P0: 整个下单流程原子化 — INSERT order + UPDATE wallet + UPDATE products + transition 任一步抛错全部回滚
     try {
       db.transaction(() => {
         // 推土机分享快照：从 buyer.sponsor_path 解析 L1/L2/L3，应用 region 限制
         const buyer = db.prepare("SELECT sponsor_id, sponsor_path, region FROM users WHERE id = ?").get(user.id) as { sponsor_id: string | null; sponsor_path: string | null; region: string | null }
-
         // 孤儿用户首次绑 sponsor：buyer 无 sponsor + 客户端传 sponsor_hint
         // 校验：① 非自己 ② 防环路 ③ hint 必须是 verified buyer
         // sponsor_hint from the client is now an invite code (permanent_code [+ -L/-R]) — resolve it to a

@@ -212,6 +212,18 @@ export function initDatabase(): Database.Database {
       updated_at      TEXT DEFAULT (datetime('now'))
     );
 
+    -- 卖家自填【收款说明】(展示给买家的纯文本/handle/label)。这【不是】payment rail / escrow / PSP / 币种路由:
+    -- WebAZ 只存储 + 下单时快照,绝不验证/路由/托管/判断币种/做 allowlist。下单读取卖家当前 active 一条,快照进 order。
+    CREATE TABLE IF NOT EXISTS direct_receive_payment_instructions (
+      id           TEXT PRIMARY KEY,
+      seller_id    TEXT NOT NULL REFERENCES users(id),
+      instruction  TEXT NOT NULL,                 -- 卖家自填、展示给买家的收款说明(场外结算用;WebAZ 不解析)
+      label        TEXT,                          -- 可选短标签(如 "PayNow" / "Bank")
+      status       TEXT NOT NULL DEFAULT 'active',-- active | inactive
+      created_at   TEXT DEFAULT (datetime('now')),
+      updated_at   TEXT DEFAULT (datetime('now'))
+    );
+
     -- 缓交(deferred-deposit)申请;审批=真人(RISK),绝不自动;缓交期配额压低,绝不零威慑。
     CREATE TABLE IF NOT EXISTS direct_receive_deferrals (
       id                   TEXT PRIMARY KEY,
@@ -321,6 +333,7 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE orders ADD COLUMN payment_rail TEXT DEFAULT 'escrow'`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_window_deadline TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_grace_deadline TEXT`) } catch { /* 已存在 */ } // Rail1 paid-but-timeout 宽限期:系统在此之前绝不关单(买家 →disputed 窗口)
+  try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_instruction_snapshot TEXT`) } catch { /* 已存在 */ } // Rail1 4c:下单时快照卖家收款说明(冻结买家所见;卖家事后改/停用不影响)
   try { db.exec(`ALTER TABLE wallets ADD COLUMN fee_staked REAL DEFAULT 0`) } catch { /* 已存在 */ }
   // penalty 科目单行种子(只进不出;无出账代码路径)
   db.exec(`INSERT OR IGNORE INTO penalty_fund (id, balance, total_fee_stake_slash, total_base_bond_slash, updated_at) VALUES ('main', 0, 0, 0, datetime('now'))`)

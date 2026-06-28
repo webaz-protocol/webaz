@@ -192,6 +192,18 @@ export function isProductionBaseBondLocked(db: Database.Database, args: { deposi
 }
 
 /**
+ * 卖家级生产门(PR-4c go-live 充分必要的担保侧条件):该卖家是否有任一【生产级】锁定 base bond
+ *   (status='locked' 且 production_receipt_confirmed_at 非 NULL)。**非仅看 direct_receive_privileges.status='active'**。
+ * 4b-min 无生产 base-bond rail(WAZ 未启用 / USDC·fiat 生产收款 GATED)→ 恒 false → 直付建单 fail-closed / non-launchable。
+ * 一个生产级 receipt 只会发给已 KYC + 制裁筛查的商户,故该门也承接了 KYC/sanctions(独立 4a 事实门待其系统就绪再接)。
+ */
+export function sellerHasProductionBaseBondLocked(db: Database.Database, sellerId: string): boolean {
+  return !!db.prepare(
+    "SELECT 1 FROM direct_receive_deposits WHERE user_id = ? AND status = 'locked' AND production_receipt_confirmed_at IS NOT NULL LIMIT 1",
+  ).get(sellerId)
+}
+
+/**
  * refund-on-exit 阻止原因(纯判断占位 —— 真实退款状态流 + RFC-018 clearing lock 集成 = 4b-2)。
  * 返回阻止原因码;null = 在这些条件下【不被阻止】(但本 PR 不执行任何退款)。无副作用,不读库,不出款。
  */
