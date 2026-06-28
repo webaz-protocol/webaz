@@ -47,6 +47,10 @@ openDeposit(db, { depositId: 'dM', userId: 'seller1', tier: 'T0', currency: 'fia
 ok('confirmProductionReceipt(manual) THROWS (isProduction=false)', throws(() => confirmProductionReceipt(db, { depositId: 'dM', railId: 'manual', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' })))
 openDeposit(db, { depositId: 'dFi', userId: 'seller1', tier: 'T0', currency: 'fiat', depositRail: 'fiat_psp' })
 ok('confirmProductionReceipt(fiat_psp) THROWS (GATED)', throws(() => confirmProductionReceipt(db, { depositId: 'dFi', railId: 'fiat_psp', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' })))
+// operator_attested: 过 Lock A(已实现),但仍被 Lock B(rail-clearance registry,未登记/治理默认关)挡 → 全程 fail-closed
+openDeposit(db, { depositId: 'dOA', userId: 'seller1', tier: 'T0', currency: 'usdc', depositRail: 'operator_attested' })
+ok('confirmProductionReceipt(operator_attested) THROWS (Lock B: registry not cleared — governance default off)', throws(() => confirmProductionReceipt(db, { depositId: 'dOA', railId: 'operator_attested', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' })))
+ok('dOA production_receipt_confirmed_at STAYS NULL (operator_attested still fail-closed)', prodFlag('dOA') === null)
 // manual-locked(无 production receipt)旧/测试行 → 拒(不抛,显式 reason),不得冒充生产
 openDeposit(db, { depositId: 'dL', userId: 'seller1', tier: 'T0', currency: 'fiat', depositRail: 'manual' })
 confirmDepositReceipt(db, { depositId: 'dL', expectedAmountUnits: REQ })

@@ -69,7 +69,7 @@ export function openDeposit(db: Database.Database, args: {
   // WAZ NOT enabled:base bond 只接受【外部资产币种】usdc | fiat(生产收款仍 GATED);'waz' 一律 fail-closed,
   //   杜绝把 schema 默认 currency='waz' 固化成合法路径(防 4c/4f 误接成"WAZ 担保物可用")。
   if (!['usdc', 'fiat'].includes(currency)) return { ok: false, reason: `currency '${currency}' not allowed for base bond (only usdc|fiat; WAZ not enabled)` }
-  if (!['manual', 'usdc_onchain', 'fiat_psp'].includes(depositRail)) return { ok: false, reason: `invalid deposit_rail '${depositRail}'` }
+  if (!['manual', 'operator_attested', 'usdc_onchain', 'fiat_psp'].includes(depositRail)) return { ok: false, reason: `invalid deposit_rail '${depositRail}'` }
   if (getRow(db, depositId)) return { ok: false, reason: 'deposit already exists' }
   let required: Units
   try { required = requiredBondUnits(tier, config) } catch (e) { return { ok: false, reason: (e as Error).message } }
