@@ -252,6 +252,11 @@ registerDirectPayAvailabilityRoutes(app, {
 // p2:控制面全开 + seller2 bond+KYC+instr → available:true
 const av1 = await getJson('/api/direct-pay/availability?product_id=p2', 'buyer1')
 ok('availability: eligible product → available:true', av1.json?.available === true, JSON.stringify(av1.json))
+// P1 fix: 卖家 suspended 但 bond/KYC/instruction 都满足 → availability 必须 available:false(与 create 门一致),脱敏成 SELLER_NOT_ELIGIBLE
+db.prepare("INSERT INTO direct_receive_privileges (user_id, status, tier) VALUES ('seller2','suspended','T0') ON CONFLICT(user_id) DO UPDATE SET status='suspended'").run()
+const avSusp = await getJson('/api/direct-pay/availability?product_id=p2', 'buyer1')
+ok('availability: suspended seller (otherwise eligible) → available:false, coarsened DIRECT_PAY_SELLER_NOT_ELIGIBLE', avSusp.json?.available === false && avSusp.json?.error_code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE', JSON.stringify(avSusp.json))
+db.prepare("UPDATE direct_receive_privileges SET status='none' WHERE user_id='seller2'").run()
 // 全局关 → available:false + 非敏感码 DIRECT_PAY_DISABLED(原样透出)
 cp['direct_pay.enabled'] = false
 ok('availability: global off → DIRECT_PAY_DISABLED (non-sensitive, passthrough)', (await getJson('/api/direct-pay/availability?product_id=p2', 'buyer1')).json?.error_code === 'DIRECT_PAY_DISABLED')
