@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (691 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (696 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -682,6 +682,32 @@
         "summary": "Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B 一律拒。",
         "tags": [],
         "security": []
+      }
+    },
+    "/api/admin/direct-receive/product-verifications": {
+      "get": {
+        "summary": "GET /api/admin/direct-receive/product-verifications?status=submitted — ROOT 审核队列(默认全部)。纯读。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/direct-receive/product-verifications/:id/review": {
+      "post": {
+        "summary": "Passkey purpose_data 绑 verification_id + decision:签 A 用 B / 改结论一律拒。verify = 放行该产品直付(逐品,绝不放行全部)。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/admin/direct-receive/readiness": {
@@ -3415,6 +3441,37 @@
       },
       "put": {
         "summary": "PUT — 设置/替换卖家当前 active 收款说明。instruction 必填、trim、长度上限;label 可选、trim、长度上限。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/product-verification": {
+      "post": {
+        "summary": "POST /api/direct-receive/product-verification — 卖家为某产品申领验证码(单一活跃 per product)。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "summary": "PUT /api/direct-receive/product-verification — 卖家为某产品提交外部商品链接(链接仅存储,WebAZ 不抓取)。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/product-verifications": {
+      "get": {
+        "summary": "GET /api/direct-receive/product-verifications — 卖家本人所有产品的认证状态(逐产品)。",
         "tags": [],
         "security": [
           {

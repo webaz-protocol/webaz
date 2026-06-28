@@ -44,6 +44,9 @@ const pstock = () => (db.prepare("SELECT stock FROM products WHERE id='p1'").get
 const seedBond = (sellerId: string, production: boolean) => db.prepare(`INSERT INTO direct_receive_deposits (id,user_id,tier,required_amount,amount,currency,deposit_rail,status,production_receipt_confirmed_at) VALUES (?,?,?,?,?,?,?,?,?)`)
   .run('dep_' + sellerId, sellerId, 'T0', 500, 500, 'usdc', 'manual', 'locked', production ? new Date().toISOString() : null)
 const seedInstr = (sellerId: string) => db.prepare("INSERT INTO direct_receive_payment_instructions (id, seller_id, instruction, label, status) VALUES (?,?,?,?,'active')").run('pi_' + sellerId, sellerId, 'PayNow +65 9xxx (off-protocol)', 'PayNow')
+// PR-④ per-product verification is now a HARD GATE on direct-pay. Seed a verified row so existing happy-path products stay eligible.
+const seedProductVerified = (productId: string, sellerId: string) => db.prepare("INSERT INTO product_verifications (id, product_id, seller_id, code, status, reviewed_by, reviewed_at) VALUES (?,?,?,?, 'verified', 'admin1', datetime('now'))").run('pvf_' + productId, productId, sellerId, 'wzv_' + productId)
+seedProductVerified('p1', 'seller1')
 
 // ══════ Part A: helper units ══════
 // getActivePaymentInstruction
@@ -126,6 +129,7 @@ function post(body: Record<string, unknown>, uid?: string): Promise<{ status: nu
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller2','s2','seller','k_s2')").run()
 db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('seller2', 100)").run()
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p2','seller2','T2','d',50,10,'active')").run()
+seedProductVerified('p2', 'seller2')
 
 const dp = (uid?: string) => post({ product_id: 'p2', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr' }, uid)
 // unauthenticated
@@ -269,6 +273,7 @@ db.prepare("DELETE FROM aml_flags WHERE subject_user_id='seller1'").run()  // �
   db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller_q','sq','seller','k_sq')").run()
   db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('seller_q', 100)").run()   // fee-stake 余额
   db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('pq','seller_q','TQ','d',50,100,'active')").run()
+  seedProductVerified('pq', 'seller_q')
   seedKyb('seller_q'); seedSanctions('seller_q'); seedInstr('seller_q')   // 合规全过 + instr active(无 production bond → 靠 deferral 入场)
   const nowIso = new Date().toISOString()
   requestDeferral(db, { deferralId: 'dq', userId: 'seller_q', periodDays: 30, nowIso })
@@ -326,6 +331,19 @@ registerDirectPayAvailabilityRoutes(app, {
 // p2:控制面全开 + seller2 bond+KYC+instr → available:true
 const av1 = await getJson('/api/direct-pay/availability?product_id=p2', 'buyer1')
 ok('availability: eligible product → available:true', av1.json?.available === true, JSON.stringify(av1.json))
+// PR-④ HARD GATE: a fresh UNVERIFIED product of an otherwise-fully-eligible seller is NOT direct-pay-eligible
+// (proves one verification does NOT bless all products). Verifying THIS product then enables only it.
+db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p2uv','seller2','UV','d',50,10,'active')").run()
+const avUv = await getJson('/api/direct-pay/availability?product_id=p2uv', 'buyer1')
+ok('availability: unverified product → available:false DIRECT_PAY_PRODUCT_NOT_VERIFIED', avUv.json?.available === false && avUv.json?.error_code === 'DIRECT_PAY_PRODUCT_NOT_VERIFIED', JSON.stringify(avUv.json))
+{
+  const oN = ordersN(); const r = mres()
+  createDirectPayResponse(r, db, cdeps, { product: { id: 'p2uv', seller_uid: 'seller2', source: null }, buyerId: 'buyer1', reqQty: 1, basePrice: 50, totalAmount: 50, totalAmountU: toUnits(50), shippingAddress: 'addr' })
+  ok('create: unverified product → 409 DIRECT_PAY_PRODUCT_NOT_VERIFIED, no order', r._s === 409 && r._b?.error_code === 'DIRECT_PAY_PRODUCT_NOT_VERIFIED' && ordersN() === oN, JSON.stringify(r._b))
+}
+seedProductVerified('p2uv', 'seller2')
+const avUv2 = await getJson('/api/direct-pay/availability?product_id=p2uv', 'buyer1')
+ok('availability: after verifying that product → available:true (per-product, not seller-wide)', avUv2.json?.available === true, JSON.stringify(avUv2.json))
 // PR-6B: AML 断路器阻断 → available:false,买家只见脱敏 SELLER_NOT_ELIGIBLE(不泄露 AML/STR/severity/status 细节)
 db.prepare("INSERT INTO aml_flags (id, subject_user_id, rule, severity, status) VALUES ('af_e2','seller2','velocity','high','open')").run()
 const avAml = await getJson('/api/direct-pay/availability?product_id=p2', 'buyer1')
