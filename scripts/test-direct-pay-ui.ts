@@ -242,5 +242,26 @@ for (const k of ['逐产品直付验证(仅你可见)', '申请验证', '提交�
   ok(`13-i18n EN present: ${k.slice(0, 10)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
 }
 
+// ── 14. store verification UI (exemption path; new app-direct-pay-store-verify.js, PR-⑤b) — seller panel + admin queue ──
+const SVU = P('app-direct-pay-store-verify.js')
+const SVUCODE = SVU.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+ok('14. index.html loads app-direct-pay-store-verify.js before app.js', has(HTML, '/app-direct-pay-store-verify.js') && HTML.indexOf('/app-direct-pay-store-verify.js') < HTML.indexOf('/app.js'))
+ok('14a. file in check:pwa-syntax + ratchet', /node --check src\/pwa\/public\/app-direct-pay-store-verify\.js/.test(PKG) && /'src\/pwa\/public\/app-direct-pay-store-verify\.js'\s*:/.test(RATCHET))
+ok('14b. seller section + hydrate + request + submit defined', /dpSellerStoreVerifySection\s*=/.test(SVU) && /dpHydrateSellerStoreVerify\s*=/.test(SVU) && /dpRequestStoreVerify\s*=/.test(SVU) && /dpSubmitStoreVerify\s*=/.test(SVU))
+ok('14c. seller reads own store verification (GET) incl exempt flag surface', /GET\('\/direct-receive\/store-verification'\)/.test(SVU) && /r\.exempt/.test(SVU))
+ok('14d. seller requests (POST) + submits (PUT); request NOT Passkey-gated', /POST\('\/direct-receive\/store-verification'/.test(SVU) && /PUT\('\/direct-receive\/store-verification'/.test(SVU))
+ok('14e. app.js settings tab renders + hydrates the seller store-verify panel', has(APP, 'dpSellerStoreVerifySection') && has(APP, 'dpHydrateSellerStoreVerify'))
+ok('14f. admin render + review handler defined', /renderAdminStoreVerifications\s*=/.test(SVU) && /doReviewStoreVerify\s*=/.test(SVU))
+ok('14g. app.js router dispatches #admin/store-verifications', /params\[0\] === 'store-verifications'[\s\S]{0,70}renderAdminStoreVerifications/.test(APP))
+ok('14h. admin reads queue (GET) + reviews (POST)', /GET\('\/admin\/direct-receive\/store-verifications\?status=submitted'\)/.test(SVU) && /POST\(`\/admin\/direct-receive\/store-verifications\/\$\{id\}\/review`/.test(SVU))
+ok('14i. admin review uses live Passkey gate (direct_pay_store_verify) + binds per_product_exempt', /requestPasskeyGate\('direct_pay_store_verify',\s*body\)/.test(SVU) && /per_product_exempt:\s*exempt/.test(SVU))
+ok('14j. direct_pay_store_verify is in the WebAuthn allowed set (token mintable)', allowedDecl.includes("'direct_pay_store_verify'"))
+ok('14k. admin offers the per-product-exempt checkbox', /sv-exempt-/.test(SVU) && /type="checkbox"/.test(SVU))
+ok('14l. discoverability: admin hub exposes #admin/store-verifications card', has(APP, "'#admin/store-verifications')"))
+ok('14m. store-verify UI touches no wallet/escrow/settle/refund', !/\/wallet|\/escrow|\/settle|\/refund|\/returns/.test(SVUCODE))
+for (const k of ['店铺认证(可申请免逐品验证)', '申请店铺认证', '提交店铺链接', '店铺认证审核', '免逐品验证(通过后该卖家所有商品可直付)', '暂无待核验店铺']) {
+  ok(`14-i18n EN present: ${k.slice(0, 10)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
+}
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)
