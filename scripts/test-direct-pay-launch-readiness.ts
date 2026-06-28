@@ -57,6 +57,8 @@ ok('3b. SELLER_KYB_NOT_APPROVED', has(r3, 'DIRECT_PAY_SELLER_KYB_NOT_APPROVED'))
 ok('3c. SELLER_SANCTIONS_NOT_CLEARED', has(r3, 'DIRECT_PAY_SELLER_SANCTIONS_NOT_CLEARED'))
 // no AML flags → AML clear → no AML blocker; not suspended → no suspend blocker
 ok('3d. no AML flags → no AML blocker; not suspended → no suspend blocker', !has(r3, 'DIRECT_PAY_SELLER_AML_REVIEW_REQUIRED') && !has(r3, 'DIRECT_PAY_SELLER_SUSPENDED'))
+// no active payment instruction → PAYMENT_INSTRUCTION_MISSING (mirrors real create's NO_PAYMENT_INSTRUCTION gate)
+ok('3e. no active instruction → PAYMENT_INSTRUCTION_MISSING + fact false', has(r3, 'DIRECT_PAY_SELLER_PAYMENT_INSTRUCTION_MISSING') && r3.facts.paymentInstructionPresent === false)
 
 // ══════ 4. AML breaker + suspension surface when present ══════
 db.prepare("INSERT INTO aml_flags (id, subject_user_id, rule, severity, status) VALUES ('afr','seller2','structuring','high','open')").run()
@@ -73,6 +75,13 @@ const r5 = readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 's
 ok('5. controls open + KYB/sanctions cleared → global control blockers gone', !has(r5, 'DIRECT_PAY_NOT_ENABLED') && !has(r5, 'DIRECT_PAY_REGION_NOT_ALLOWED') && !has(r5, 'DIRECT_PAY_PER_TX_CAP_UNSET') && !has(r5, 'DIRECT_PAY_SELLER_KYB_NOT_APPROVED') && !has(r5, 'DIRECT_PAY_SELLER_SANCTIONS_NOT_CLEARED'))
 ok('5a. STILL ready=false (production bond + rail clearance unmet)', r5.ready === false)
 ok('5b. remaining blockers include SELLER_NO_PRODUCTION_BASE_BOND + NO_LEGAL_CLEARED_PRODUCTION_RAIL', has(r5, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND') && has(r5, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
+// still no active instruction → instruction blocker present
+ok('5c. no instruction yet → PAYMENT_INSTRUCTION_MISSING present', has(r5, 'DIRECT_PAY_SELLER_PAYMENT_INSTRUCTION_MISSING'))
+// seed an active payment instruction → that blocker clears (but bond/rail keep ready=false)
+db.prepare("INSERT INTO direct_receive_payment_instructions (id, seller_id, instruction, label, status) VALUES ('pi_s1','seller1','PayNow +65 9xxx (off-protocol)','PayNow','active')").run()
+const r5b = readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller1' })
+ok('5d. after seeding active instruction → blocker gone, fact true', !has(r5b, 'DIRECT_PAY_SELLER_PAYMENT_INSTRUCTION_MISSING') && r5b.facts.paymentInstructionPresent === true)
+ok('5e. STILL ready=false (bond + rail clearance remain)', r5b.ready === false && has(r5b, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND') && has(r5b, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
 
 // ══════ 6. read-only: readiness writes NOTHING ══════
 const snap = () => ({
@@ -81,6 +90,7 @@ const snap = () => ({
   activePrivs: (db.prepare("SELECT COUNT(*) n FROM direct_receive_privileges WHERE status='active'").get() as any).n,
   amlFlags: (db.prepare("SELECT COUNT(*) n FROM aml_flags").get() as any).n,
   kyb: (db.prepare("SELECT COUNT(*) n FROM direct_receive_kyb_reviews").get() as any).n,
+  instructions: (db.prepare("SELECT COUNT(*) n FROM direct_receive_payment_instructions").get() as any).n,
 })
 const before = snap()
 for (let i = 0; i < 5; i++) { readDirectPayLaunchReadiness(db, { getProtocolParam: gp }); readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller1' }) }

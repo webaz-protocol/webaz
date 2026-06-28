@@ -17,6 +17,7 @@ import {
 } from './direct-pay-controls.js'
 import { sellerHasProductionBaseBondLocked } from './direct-receive-deposits.js'
 import { bondRailClearanceBlockers } from './direct-pay-bond-rail-clearance.js'
+import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
 
 /** 候选生产 base-bond 收款轨(与 #112 registry 一致;manual 是非生产确认轨,不算)。 */
 const PRODUCTION_BOND_RAILS = ['usdc_onchain', 'fiat_psp'] as const
@@ -38,6 +39,7 @@ export type DirectPayLaunchBlocker =
   | 'DIRECT_PAY_SELLER_KYB_NOT_APPROVED'
   | 'DIRECT_PAY_SELLER_SANCTIONS_NOT_CLEARED'
   | 'DIRECT_PAY_SELLER_AML_REVIEW_REQUIRED'
+  | 'DIRECT_PAY_SELLER_PAYMENT_INSTRUCTION_MISSING'
 
 export interface DirectPayLaunchReadiness {
   ready: boolean
@@ -57,6 +59,7 @@ export interface DirectPayLaunchReadiness {
     kybPassed: boolean | null
     sanctionsClear: boolean | null
     amlClear: boolean | null
+    paymentInstructionPresent: boolean | null
   }
 }
 
@@ -94,17 +97,21 @@ export function readDirectPayLaunchReadiness(
   // ── seller-specific(仅当传入 sellerId)──
   let sellerSuspended: boolean | null = null, productionBaseBondLocked: boolean | null = null
   let kybPassed: boolean | null = null, sanctionsClear: boolean | null = null, amlClear: boolean | null = null
+  let paymentInstructionPresent: boolean | null = null
   if (sellerId) {
     sellerSuspended = sellerDirectPayBreakerTripped(db, sellerId)
     productionBaseBondLocked = sellerHasProductionBaseBondLocked(db, sellerId)
     kybPassed = sellerDirectPayKybPassed(db, sellerId)
     sanctionsClear = sellerDirectPaySanctionsClear(db, sellerId)
     amlClear = sellerDirectPayAmlClear(db, sellerId)
+    // 镜像真实建单硬门(direct-pay-create.ts):无 active 收款说明 → create 返回 NO_PAYMENT_INSTRUCTION,绝不建单。
+    paymentInstructionPresent = getActivePaymentInstruction(db, sellerId) != null
     if (sellerSuspended) blockers.push('DIRECT_PAY_SELLER_SUSPENDED')
     if (!productionBaseBondLocked) blockers.push('DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND')
     if (!kybPassed) blockers.push('DIRECT_PAY_SELLER_KYB_NOT_APPROVED')
     if (!sanctionsClear) blockers.push('DIRECT_PAY_SELLER_SANCTIONS_NOT_CLEARED')
     if (!amlClear) blockers.push('DIRECT_PAY_SELLER_AML_REVIEW_REQUIRED')
+    if (!paymentInstructionPresent) blockers.push('DIRECT_PAY_SELLER_PAYMENT_INSTRUCTION_MISSING')
   }
 
   return {
@@ -115,7 +122,7 @@ export function readDirectPayLaunchReadiness(
       regionAllowlist: cfg.regionAllowlist, perTxCapUnits: cfg.perTxCapUnits,
       perRailClearance, anyRailLegalCleared,
       sellerEvaluated: !!sellerId, sellerId: sellerId ?? null,
-      sellerSuspended, productionBaseBondLocked, kybPassed, sanctionsClear, amlClear,
+      sellerSuspended, productionBaseBondLocked, kybPassed, sanctionsClear, amlClear, paymentInstructionPresent,
     },
   }
 }
