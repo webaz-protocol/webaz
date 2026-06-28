@@ -16,7 +16,7 @@ import {
   sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear,
 } from './direct-pay-controls.js'
 import { sellerHasProductionBaseBondLocked } from './direct-receive-deposits.js'
-import { bondRailClearanceBlockers } from './direct-pay-bond-rail-clearance.js'
+import { bondRailClearanceBlockers, isBondRailClearedForProduction } from './direct-pay-bond-rail-clearance.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
 
 /** 候选生产 base-bond 收款轨(与 #112 registry 一致;manual 是非生产确认轨,不算)。 */
@@ -86,7 +86,11 @@ export function readDirectPayLaunchReadiness(
   //   hasProductionReceipt:true 只为剔除 per-deposit 的 NO_PRODUCTION_RECEIPT,得到纯 rail-level blockers。
   const perRailClearance: Record<string, string[]> = {}
   for (const rid of PRODUCTION_BOND_RAILS) perRailClearance[rid] = bondRailClearanceBlockers(rid, { hasProductionReceipt: true })
-  const anyRailLegalCleared = PRODUCTION_BOND_RAILS.some(rid => perRailClearance[rid].length === 0)
+  // ⚠️ 用 #112 的【jurisdiction-aware】判定决定 cleared/anyRailLegalCleared —— 必须把【当前部署 region】传进去:
+  //   isBondRailClearedForProduction(rid, cfg.region) 会校验 region ∈ rail 的 legal jurisdictionAllowlist。
+  //   仅看 coarse bondRailClearanceBlockers(allowlist 是否为空)会漏判"rail 只 cleared for US 而 region=SG"→ 误报 cleared。
+  //   coarse perRailClearance 仅保留作【诊断 facts】。
+  const anyRailLegalCleared = PRODUCTION_BOND_RAILS.some(rid => isBondRailClearedForProduction(rid, cfg.region))
   if (!anyRailLegalCleared) blockers.push('DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL')
   // 跨所有候选轨【都】命中才算 launch-level blocker(交集语义:某缺陷对每条轨都成立 → 它阻断上线)。
   const everyRail = (code: string): boolean => PRODUCTION_BOND_RAILS.every(rid => perRailClearance[rid].includes(code))

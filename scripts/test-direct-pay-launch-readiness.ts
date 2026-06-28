@@ -7,7 +7,7 @@
  *   rail clearance / KYB-sanctions-AML 不满足仍 ready=false。
  * Usage: npm run test:direct-pay-launch-readiness
  */
-import { mkdtempSync } from 'fs'
+import { mkdtempSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 process.env.HOME = mkdtempSync(join(tmpdir(), 'dp-readiness-'))
@@ -82,6 +82,8 @@ db.prepare("INSERT INTO direct_receive_payment_instructions (id, seller_id, inst
 const r5b = readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller1' })
 ok('5d. after seeding active instruction → blocker gone, fact true', !has(r5b, 'DIRECT_PAY_SELLER_PAYMENT_INSTRUCTION_MISSING') && r5b.facts.paymentInstructionPresent === true)
 ok('5e. STILL ready=false (bond + rail clearance remain)', r5b.ready === false && has(r5b, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND') && has(r5b, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
+// jurisdiction-aware: even with a concrete region (SG) configured, no rail is legal-cleared FOR THAT region → still not cleared
+ok('5f. jurisdiction-aware: region=SG configured but anyRailLegalCleared=false + NO_LEGAL_CLEARED_PRODUCTION_RAIL', r5b.facts.anyRailLegalCleared === false && has(r5b, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
 
 // ══════ 6. read-only: readiness writes NOTHING ══════
 const snap = () => ({
@@ -97,6 +99,14 @@ for (let i = 0; i < 5; i++) { readDirectPayLaunchReadiness(db, { getProtocolPara
 const after = snap()
 ok('6. readiness is READ-ONLY: deposits/prodReceipts/activePrivs/amlFlags/kyb all unchanged', JSON.stringify(before) === JSON.stringify(after), `${JSON.stringify(before)} vs ${JSON.stringify(after)}`)
 ok('6a. zero production receipts ever (sellerHasProductionBaseBondLocked can never be true on main)', after.prodReceipts === 0)
+
+// ══════ 7. contract: rail-clearance decision MUST be jurisdiction-aware (regression guard) ══════
+// Prevent silently reverting the cleared/anyRailLegalCleared decision back to the coarse
+// bondRailClearanceBlockers(...).length===0 (which ignores cfg.region vs the rail's legal allowlist).
+const src = readFileSync(new URL('../src/direct-pay-launch-readiness.ts', import.meta.url), 'utf8')
+ok('7. readiness imports the jurisdiction-aware isBondRailClearedForProduction', /import\s*\{[^}]*\bisBondRailClearedForProduction\b[^}]*\}\s*from\s*'\.\/direct-pay-bond-rail-clearance\.js'/.test(src))
+ok('7a. anyRailLegalCleared derived via isBondRailClearedForProduction(rid, cfg.region)', /isBondRailClearedForProduction\s*\(\s*rid\s*,\s*cfg\.region\s*\)/.test(src))
+ok('7b. cleared decision does NOT use coarse perRailClearance length for anyRailLegalCleared', !/anyRailLegalCleared\s*=\s*[^\n]*perRailClearance\[[^\]]*\]\.length\s*===\s*0/.test(src))
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-launch-readiness tests passed`)
