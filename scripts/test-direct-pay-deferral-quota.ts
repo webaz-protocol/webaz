@@ -11,6 +11,7 @@ import { toUnits } from '../src/money.js'
 
 const { requestDeferral, approveDeferral } = await import('../src/direct-receive-deferral.js')
 const { checkDeferralQuota, readDeferralQuotaConfig, DEFERRAL_QUOTA_CODES } = await import('../src/direct-pay-deferral-quota.js')
+const { coarsenBuyerFacingDirectPayCode } = await import('../src/direct-pay-controls.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -88,6 +89,10 @@ const snap = () => JSON.stringify(['orders', 'direct_receive_deferrals', 'direct
 const before = snap()
 for (let i = 0; i < 5; i++) check('s_count', 10)
 ok('6. checkDeferralQuota is read-only (no row count change)', snap() === before)
+
+// ── 7. de-id drift guard:两个 quota code 必须被 coarsenBuyerFacingDirectPayCode 收敛(买家面不泄露缓交/超额)──
+ok('7. COUNT code coarsens to SELLER_NOT_ELIGIBLE', coarsenBuyerFacingDirectPayCode(DEFERRAL_QUOTA_CODES.COUNT) === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE')
+ok('7a. AMOUNT code coarsens to SELLER_NOT_ELIGIBLE', coarsenBuyerFacingDirectPayCode(DEFERRAL_QUOTA_CODES.AMOUNT) === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE')
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-deferral-quota tests passed`)

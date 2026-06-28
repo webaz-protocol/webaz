@@ -147,23 +147,24 @@ ok('amount over per-tx cap → 409 DIRECT_PAY_CAP_EXCEEDED', (await dp('buyer1')
 cp['direct_pay.per_tx_cap_units'] = toUnits(1000)
 // 卖家熔断(direct_receive_privileges.status='suspended')→ SELLER_SUSPENDED(在 base-bond/KYC 之前)
 db.prepare("INSERT INTO direct_receive_privileges (user_id, status, tier) VALUES ('seller2','suspended','T0') ON CONFLICT(user_id) DO UPDATE SET status='suspended'").run()
-ok('seller suspended → 409 DIRECT_PAY_SELLER_SUSPENDED (checked before base-bond/KYC)', (await dp('buyer1')).json?.error_code === 'DIRECT_PAY_SELLER_SUSPENDED')
+// 买家面脱敏:卖家私密拒因一律收敛为 SELLER_NOT_ELIGIBLE(精确 code + gate 顺序在 test-direct-pay-controls 覆盖)。
+ok('seller suspended → 409 coarsened SELLER_NOT_ELIGIBLE (no precise code leaked to buyer)', (await dp('buyer1')).json?.error_code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE')
 db.prepare("UPDATE direct_receive_privileges SET status='none' WHERE user_id='seller2'").run()
 // no production bond → 409 DIRECT_PAY_NOT_AVAILABLE
 const rNoBond = await dp('buyer1')
-ok('direct_p2p no production bond → 409 DIRECT_PAY_NOT_AVAILABLE', rNoBond.status === 409 && rNoBond.json?.error_code === 'DIRECT_PAY_NOT_AVAILABLE', JSON.stringify(rNoBond))
+ok('direct_p2p no production bond → 409 coarsened SELLER_NOT_ELIGIBLE (no base-bond leak)', rNoBond.status === 409 && rNoBond.json?.error_code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE', JSON.stringify(rNoBond))
 // bond 到位但 KYB+制裁都无记录 → 409 DIRECT_PAY_KYC_REQUIRED(fail-closed:无记录=不可用)
 seedBond('seller2', true)
 const rNoKyc = await dp('buyer1')
-ok('direct_p2p bond but no KYB/sanctions records → 409 DIRECT_PAY_KYC_REQUIRED', rNoKyc.status === 409 && rNoKyc.json?.error_code === 'DIRECT_PAY_KYC_REQUIRED', JSON.stringify(rNoKyc))
+ok('direct_p2p bond but no KYB/sanctions records → 409 coarsened SELLER_NOT_ELIGIBLE (no KYC leak)', rNoKyc.status === 409 && rNoKyc.json?.error_code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE', JSON.stringify(rNoKyc))
 // 仅制裁 clear、KYB 仍缺失 → 仍 KYC_REQUIRED(AND 门:KYB 与 sanctions 都须通过)
 seedSanctions('seller2')
 const rSanctOnly = await dp('buyer1')
-ok('direct_p2p sanctions clear but KYB missing → still 409 DIRECT_PAY_KYC_REQUIRED (AND gate)', rSanctOnly.status === 409 && rSanctOnly.json?.error_code === 'DIRECT_PAY_KYC_REQUIRED', JSON.stringify(rSanctOnly))
+ok('direct_p2p sanctions clear but KYB missing → still 409 coarsened SELLER_NOT_ELIGIBLE (AND gate)', rSanctOnly.status === 409 && rSanctOnly.json?.error_code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE', JSON.stringify(rSanctOnly))
 // KYB 记录存在但 status=pending(非 approved)→ 仍 KYC_REQUIRED(fail-closed:仅 approved 才放行)
 seedKyb('seller2', 'pending')
 const rKybPending = await dp('buyer1')
-ok('direct_p2p KYB pending → still 409 DIRECT_PAY_KYC_REQUIRED (only approved passes)', rKybPending.status === 409 && rKybPending.json?.error_code === 'DIRECT_PAY_KYC_REQUIRED', JSON.stringify(rKybPending))
+ok('direct_p2p KYB pending → still 409 coarsened SELLER_NOT_ELIGIBLE (only approved passes)', rKybPending.status === 409 && rKybPending.json?.error_code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE', JSON.stringify(rKybPending))
 // KYB → approved + 制裁 clear → 越过 KYC/制裁门,但无收款说明 → 409 NO_PAYMENT_INSTRUCTION
 db.prepare("UPDATE direct_receive_kyb_reviews SET status='approved' WHERE user_id='seller2'").run()
 const rNoInstr = await dp('buyer1')
@@ -234,8 +235,8 @@ db.prepare("INSERT INTO aml_flags (id, subject_user_id, rule, severity, status) 
 {
   const oN = ordersN(), sN = stakesN(), st = pstock(); const r = mres()
   createDirectPayResponse(r, db, cdeps, baseCtx)
-  ok('AML open/high flag → 409 DIRECT_PAY_AML_REVIEW_REQUIRED, no order/stake/stock mutation',
-    r._s === 409 && r._b?.error_code === 'DIRECT_PAY_AML_REVIEW_REQUIRED' && ordersN() === oN && stakesN() === sN && pstock() === st, JSON.stringify(r._b))
+  ok('AML open/high flag → 409 coarsened SELLER_NOT_ELIGIBLE (no AML leak), no order/stake/stock mutation',
+    r._s === 409 && r._b?.error_code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE' && ordersN() === oN && stakesN() === sN && pstock() === st, JSON.stringify(r._b))
 }
 // 清理:移除 open flag,避免影响后续 Part(seller1 在 Part D/E 仍需可用)
 db.prepare("DELETE FROM aml_flags WHERE id='af_open'").run()
@@ -262,7 +263,7 @@ db.prepare("DELETE FROM aml_flags WHERE subject_user_id='seller1'").run()  // �
 
 // ══════ Part C-Quota: PR-③ 缓交期额度门(笔数 + 金额)在 create 真实接线(非桩)══════
 // 缓交卖家(active deferral,无生产 bond)缓交期内额度压低:base=1 + factor(默认 clamp→0.5)→ countLimit=floor(1×0.5)=0→max(1,0)=1。
-// 第 1 单过(额度内),第 2 单超笔数上限 → 409 DIRECT_PAY_DEFERRAL_QUOTA_EXCEEDED,且【无】order/stake/stock 变更。
+// 第 1 单过(额度内),第 2 单超笔数上限 → 409 买家面脱敏 SELLER_NOT_ELIGIBLE(精确 quota code 在 deferral-quota 单测),且【无】order/stake/stock 变更。
 {
   const { requestDeferral, approveDeferral } = await import('../src/direct-receive-deferral.js')
   db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller_q','sq','seller','k_sq')").run()
@@ -280,8 +281,8 @@ db.prepare("DELETE FROM aml_flags WHERE subject_user_id='seller1'").run()  // �
   ok('③ 缓交 seller 1st direct_p2p create → 200 (within reduced quota)', r1._s === 200 && r1._b?.status === 'direct_pay_window' && ordersN() === oN + 1, JSON.stringify(r1._b))
   const oN2 = ordersN(), sN2 = stakesN(), st2 = pqStock(); const r2 = mres()
   createDirectPayResponse(r2, db, cdeps, qCtx)
-  ok('③ 缓交 seller 2nd create over count limit → 409 DEFERRAL_QUOTA_EXCEEDED, no order/stake/stock mutation',
-    r2._s === 409 && r2._b?.error_code === 'DIRECT_PAY_DEFERRAL_QUOTA_EXCEEDED' && ordersN() === oN2 && stakesN() === sN2 && pqStock() === st2, JSON.stringify(r2._b))
+  ok('③ 缓交 seller 2nd create over count limit → 409 coarsened SELLER_NOT_ELIGIBLE (no quota/缓交 leak), no order/stake/stock mutation',
+    r2._s === 409 && r2._b?.error_code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE' && !/DEFERRAL|缓交|quota/i.test(JSON.stringify(r2._b)) && ordersN() === oN2 && stakesN() === sN2 && pqStock() === st2, JSON.stringify(r2._b))
   delete cp['direct_pay.deferral_base_order_count']   // reset(seller1/seller2 有生产 bond → quota no-op,后续 Part 不受影响)
 }
 

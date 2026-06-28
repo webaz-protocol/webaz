@@ -32,6 +32,22 @@ export type DirectPayControlReason =
   | 'DIRECT_PAY_KYC_REQUIRED'       // 卖家未通过 KYC/制裁筛查
   | 'DIRECT_PAY_AML_REVIEW_REQUIRED'// 卖家存在未清除的中/高风险 AML flag(运行期断路器;PR-6B)
 
+// ── buyer-facing de-identification(SSOT)─────────────────────────────────────────────────────────
+// 买家边界脱敏:卖家【私密类】拒因(暂停 / 保证金未交 / KYC·制裁 / AML / 缓交额度)一律收敛为单一
+//   DIRECT_PAY_SELLER_NOT_ELIGIBLE,绝不向买家暴露卖家具体合规/额度状态。全局/运营类(DISABLED / RAIL_BREAKER /
+//   REGION / CAP)非敏感,原样透出。create 与 availability 两个买家面端点【共用】本判定,避免 de-id 集合漂移。
+//   精确 code 仍保留在 helper 返回值 + 单测(controls / deferral-quota)层,供运营/调试与 gate 逻辑验证。
+//   缓交额度码须与 direct-pay-deferral-quota.ts 的 DEFERRAL_QUOTA_CODES 对齐(test-direct-pay-deferral-quota 漂移断言守护)。
+export const DIRECT_PAY_SELLER_NOT_ELIGIBLE = 'DIRECT_PAY_SELLER_NOT_ELIGIBLE'
+export const BUYER_FACING_SELLER_PRIVATE_CODES: ReadonlySet<string> = new Set([
+  'DIRECT_PAY_SELLER_SUSPENDED', 'DIRECT_PAY_NOT_AVAILABLE', 'DIRECT_PAY_KYC_REQUIRED', 'DIRECT_PAY_AML_REVIEW_REQUIRED',
+  'DIRECT_PAY_DEFERRAL_QUOTA_EXCEEDED', 'DIRECT_PAY_DEFERRAL_AMOUNT_EXCEEDED',
+])
+/** 买家面脱敏:私密拒因 → 通用 SELLER_NOT_ELIGIBLE;全局/运营类原样;undefined → 通用(fail-safe,绝不泄露)。 */
+export function coarsenBuyerFacingDirectPayCode(code: string | undefined): string {
+  return !code || BUYER_FACING_SELLER_PRIVATE_CODES.has(code) ? DIRECT_PAY_SELLER_NOT_ELIGIBLE : code
+}
+
 /** 治理【可调】控制配置(protocol_params 装配;默认 fail-closed)。
  *  注意:production base-bond 与 KYC/制裁是【不可关闭的硬不变量】(launch blockers),【不】放进可调配置 ——
  *  evaluate 始终强制,治理无法通过任何 param 绕过(见下方 evaluate)。这里只放运营节流类(开关/地区/上限)。 */

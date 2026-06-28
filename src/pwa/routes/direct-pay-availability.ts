@@ -11,7 +11,7 @@ import type Database from 'better-sqlite3'
 import { dbOne } from '../../layer0-foundation/L0-1-database/db.js'
 import { toUnits } from '../../money.js'
 import { sellerBaseBondEntrySatisfied } from '../../direct-pay-base-bond-entry.js'
-import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped } from '../../direct-pay-controls.js'
+import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, coarsenBuyerFacingDirectPayCode, DIRECT_PAY_SELLER_NOT_ELIGIBLE } from '../../direct-pay-controls.js'
 import { checkDeferralQuota, readDeferralQuotaConfig } from '../../direct-pay-deferral-quota.js'
 import { sellerDirectPayReadinessView } from '../../direct-pay-launch-readiness.js'
 import { requestDeferral, getActiveDeferral, getLatestDeferral } from '../../direct-receive-deferral.js'
@@ -22,9 +22,6 @@ export interface DirectPayAvailabilityDeps {
   getProtocolParam: <T>(key: string, fallback: T) => T
   generateId: (prefix: string) => string
 }
-
-// 卖家合规类拒绝 → 对外通用码(不暴露具体是 base-bond 还是 KYC/制裁)。其余(全局/地区/上限)非敏感,原样透出。
-const SELLER_PRIVATE_REASONS = new Set(['DIRECT_PAY_NOT_AVAILABLE', 'DIRECT_PAY_KYC_REQUIRED', 'DIRECT_PAY_AML_REVIEW_REQUIRED', 'DIRECT_PAY_SELLER_SUSPENDED'])
 
 export function registerDirectPayAvailabilityRoutes(app: Application, deps: DirectPayAvailabilityDeps): void {
   const { db, auth, getProtocolParam, generateId } = deps
@@ -57,14 +54,14 @@ export function registerDirectPayAvailabilityRoutes(app: Application, deps: Dire
       // 镜像 create 的缓交额度门(qty=1 预览;以商品单价为本次拟建单金额)。超额是【缓交卖家私密状态】→ 收敛为通用不可用,
       //   不向买家暴露"该卖家在缓交期/已超额"。create 仍是权威强制点。
       const quota = checkDeferralQuota(db, product.seller_id, toUnits(Number(product.price) || 0), new Date().toISOString(), readDeferralQuotaConfig(getProtocolParam))
-      if (!quota.ok) return void res.json({ available: false, error_code: 'DIRECT_PAY_SELLER_NOT_ELIGIBLE', reason: '该卖家暂不支持直付', per_tx_cap_units: cfg.perTxCapUnits })
+      if (!quota.ok) return void res.json({ available: false, error_code: coarsenBuyerFacingDirectPayCode(quota.code), reason: '该卖家暂不支持直付', per_tx_cap_units: cfg.perTxCapUnits })
       return void res.json({ available: true, per_tx_cap_units: cfg.perTxCapUnits })
     }
-    const code = SELLER_PRIVATE_REASONS.has(decision.error_code as string) ? 'DIRECT_PAY_SELLER_NOT_ELIGIBLE' : decision.error_code
+    const code = coarsenBuyerFacingDirectPayCode(decision.error_code as string)
     return void res.json({
       available: false,
       error_code: code,
-      reason: code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE' ? '该卖家暂不支持直付' : decision.reason,
+      reason: code === DIRECT_PAY_SELLER_NOT_ELIGIBLE ? '该卖家暂不支持直付' : decision.reason,
       per_tx_cap_units: cfg.perTxCapUnits,
     })
   })
