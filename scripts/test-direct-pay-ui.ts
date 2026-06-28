@@ -138,5 +138,28 @@ ok('flag set true only on av.available === true', /av\.available === true[\s\S]{
 ok('copy: off-platform + WebAZ 不托管/不担保/不退款', /场外/.test(DP) && /不托管/.test(DP) && /不担保/.test(DP) && /不退款/.test(DP))
 ok('no production-ready claim', !/production[- ]?ready|可上线|已上线/i.test(DPCODE))
 
+// ── 10. seller de-identified readiness panel (new app-direct-pay-readiness.js) ──
+const RDY = P('app-direct-pay-readiness.js')
+const RDYCODE = RDY.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+const PKG = readFileSync('package.json', 'utf8')
+const RATCHET = readFileSync('scripts/complexity-ratchet-guard.ts', 'utf8')
+ok('10. index.html loads app-direct-pay-readiness.js before app.js', has(HTML, '/app-direct-pay-readiness.js') && HTML.indexOf('/app-direct-pay-readiness.js') < HTML.indexOf('/app.js'))
+ok('10a. readiness file in check:pwa-syntax', /node --check src\/pwa\/public\/app-direct-pay-readiness\.js/.test(PKG))
+ok('10b. readiness file has a LOC ceiling (ratchet covered)', /'src\/pwa\/public\/app-direct-pay-readiness\.js'\s*:/.test(RATCHET))
+ok('10c. seller readiness panel + hydrate defined', /dpSellerReadinessSection\s*=/.test(RDY) && /dpHydrateSellerReadiness\s*=/.test(RDY))
+ok('10d. reads the seller self readiness endpoint', /GET\('\/direct-receive\/readiness'\)/.test(RDY))
+ok('10e. app.js settings tab renders + hydrates the readiness panel', has(APP, 'dpSellerReadinessSection') && has(APP, 'dpHydrateSellerReadiness'))
+// de-identified: the seller UI must NOT contain KYB / sanctions / AML / KYC terms or raw launch blocker codes
+ok('10f. seller UI exposes NO KYB/sanctions/AML/KYC terms', !/KYB|SANCTION|AML|KYC/i.test(RDYCODE))
+ok('10g. seller UI exposes NO raw launch blocker codes', !/DIRECT_PAY_(NOT_ENABLED|RAIL_|REGION_NOT|PER_TX|NO_LEGAL|SELLER_)/.test(RDYCODE))
+ok('10h. seller copy de-identified ("履约保证金未完成", collapsed compliance)', has(RDY, '履约保证金未完成') && has(RDY, '商户审核进行中或未通过'))
+ok('10i. no production-ready / launched claim in readiness UI', !/production[- ]?ready|已上线|可上线/i.test(RDYCODE))
+// EN parity for the new readiness copy
+for (const k of ['直付开通进度(仅你可见)', '履约保证金未完成', '商户审核进行中或未通过', '直付平台侧暂未开放(无需你操作)', '直付资格已被暂停']) {
+  ok(`10-i18n EN present: ${k.slice(0, 12)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
+}
+// readiness UI is read-only too: no money/state endpoint writes
+ok('10j. readiness UI touches no wallet/escrow/settle/refund', !/\/wallet|\/escrow|\/settle|\/refund|\/returns/.test(RDYCODE))
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)

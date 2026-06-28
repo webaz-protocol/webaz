@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (684 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (686 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -643,6 +643,19 @@
         "summary": "Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B 一律拒。",
         "tags": [],
         "security": []
+      }
+    },
+    "/api/admin/direct-receive/readiness": {
+      "post": {
+        "summary": "含 KYB/sanctions/AML/base-bond/rail clearance 全细节)。只读诊断(不写库、不 flip launch);ROOT 专用,买家/卖家拿不到。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/admin/direct-receive/sanctions-screenings": {
@@ -3343,6 +3356,17 @@
       },
       "put": {
         "summary": "PUT — 设置/替换卖家当前 active 收款说明。instruction 必填、trim、长度上限;label 可选、trim、长度上限。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/readiness": {
+      "get": {
+        "summary": "绝不下发 raw blocker / KYB·制裁·AML 分项(见 sellerDirectPayReadinessView)。只读 self(auth 用户自身 id)。",
         "tags": [],
         "security": [
           {

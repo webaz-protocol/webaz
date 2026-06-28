@@ -130,3 +130,49 @@ export function readDirectPayLaunchReadiness(
     },
   }
 }
+
+// ── seller-facing DE-IDENTIFIED readiness view ────────────────────────────────────────────────
+// 卖家自助视角:只暴露【卖家可行动 / 脱敏状态】项,绝不下发 raw blocker codes,也绝不暴露 KYB / sanctions / AML
+//   的【具体】判定 —— 三者一律折叠成单一 COMPLIANCE_REVIEW(仅"是否全部通过"一个布尔);全局/法务/rail 细节折叠成
+//   单一 PLATFORM_OPEN。供 seller workbench 渲染脱敏文案(内部 code→卖家可读文案的映射在前端)。
+export type SellerReadinessItemCode =
+  | 'PLATFORM_OPEN'        // 平台侧直付是否开放(全局 + rail-clearance 折叠;不暴露具体哪项)
+  | 'PAYMENT_INSTRUCTION'  // 是否已设有效收款说明(卖家可行动)
+  | 'PASSKEY'              // 卖家是否已注册 Passkey(卖家可行动)
+  | 'BASE_BOND'            // 履约保证金是否完成(状态;当前 gated)
+  | 'COMPLIANCE_REVIEW'    // 商户审核是否全部通过(KYB+制裁+AML 折叠,绝不分项暴露)
+  | 'NOT_SUSPENDED'        // 直付资格是否未被暂停(状态)
+
+export interface SellerReadinessItem { code: SellerReadinessItemCode; ok: boolean; actionable: boolean }
+export interface SellerDirectPayReadinessView { directPayReady: boolean; items: SellerReadinessItem[] }
+
+const GLOBAL_LAUNCH_BLOCKERS = new Set<string>([
+  'DIRECT_PAY_NOT_ENABLED', 'DIRECT_PAY_RAIL_BREAKER_TRIPPED', 'DIRECT_PAY_REGION_NOT_ALLOWED', 'DIRECT_PAY_PER_TX_CAP_UNSET',
+  'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL', 'DIRECT_PAY_RAIL_IMPLEMENTATION_GATED',
+  'DIRECT_PAY_RAIL_POLICY_VERSION_UNSET', 'DIRECT_PAY_RAIL_JURISDICTION_ALLOWLIST_EMPTY',
+])
+
+/**
+ * 卖家脱敏 readiness 视图。复用 readDirectPayLaunchReadiness(只读),把内部 blockers/facts 折叠成卖家安全的项目集。
+ * 输出【不含】任何 raw blocker code、KYB/sanctions/AML 分项或法务/rail 细节。纯读。
+ */
+export function sellerDirectPayReadinessView(
+  db: Database.Database,
+  args: { getProtocolParam: <T>(key: string, fallback: T) => T; sellerId: string },
+): SellerDirectPayReadinessView {
+  const { getProtocolParam, sellerId } = args
+  const r = readDirectPayLaunchReadiness(db, { getProtocolParam, sellerId })
+  const f = r.facts
+  const platformOpen = !r.blockers.some(b => GLOBAL_LAUNCH_BLOCKERS.has(b))
+  const hasPasskey = !!db.prepare('SELECT 1 FROM webauthn_credentials WHERE user_id = ? LIMIT 1').get(sellerId)
+  const complianceCleared = f.kybPassed === true && f.sanctionsClear === true && f.amlClear === true   // 折叠;不分项
+  const items: SellerReadinessItem[] = [
+    { code: 'PLATFORM_OPEN', ok: platformOpen, actionable: false },
+    { code: 'PAYMENT_INSTRUCTION', ok: f.paymentInstructionPresent === true, actionable: true },
+    { code: 'PASSKEY', ok: hasPasskey, actionable: true },
+    { code: 'BASE_BOND', ok: f.productionBaseBondLocked === true, actionable: false },
+    { code: 'COMPLIANCE_REVIEW', ok: complianceCleared, actionable: false },
+    { code: 'NOT_SUSPENDED', ok: f.sellerSuspended === false, actionable: false },
+  ]
+  return { directPayReady: items.every(i => i.ok), items }
+}

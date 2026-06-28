@@ -18,6 +18,7 @@ import type Database from 'better-sqlite3'
 import { confirmProductionReceipt } from '../../direct-receive-deposits.js'
 import { reviewAmlFlag } from '../../direct-pay-aml-review.js'
 import { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress, amlDetailHash } from '../../direct-pay-compliance-ingress.js'
+import { readDirectPayLaunchReadiness } from '../../direct-pay-launch-readiness.js'
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'
 
 export interface AdminDirectReceiveDepositsDeps {
@@ -25,10 +26,11 @@ export interface AdminDirectReceiveDepositsDeps {
   requireRootAdmin: (req: Request, res: Response) => Record<string, unknown> | null
   consumeGateToken: (userId: string, token: string | undefined, purpose: string, validate: (data: unknown) => boolean) => { ok: boolean; reason?: string }
   logAdminAction: (adminId: string, action: string, targetType: string | null, targetId: string | null, detail?: Record<string, unknown>) => void
+  getProtocolParam: <T>(key: string, fallback: T) => T
 }
 
 export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps: AdminDirectReceiveDepositsDeps): void {
-  const { db, requireRootAdmin, consumeGateToken, logAdminAction } = deps
+  const { db, requireRootAdmin, consumeGateToken, logAdminAction, getProtocolParam } = deps
 
   // POST /api/admin/direct-receive/deposits/:id/confirm-production — ROOT + 真人 Passkey 手动确认生产保证金 receipt。
   //   当前恒 fail-closed(无 legal-cleared rail → assert 抛 → PRODUCTION_RAIL_NOT_CLEARED)。
@@ -158,4 +160,22 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
         && str(d.status) === str(req.body?.status) && str(d.related_order_id) === str(req.body?.related_order_id) && str(d.detail_hash) === amlDetailHash(amlDetail(req)) },
     (req, adminId) => recordAmlFlagIngress(db, { userId: str(req.body?.user_id), reviewerId: adminId, rule: str(req.body?.rule), severity: str(req.body?.severity), status: str(req.body?.status), relatedOrderId: opt(req.body?.related_order_id), detail: amlDetail(req) }),
     (req) => ({ targetId: str(req.body?.user_id), detail: { rule: str(req.body?.rule), severity: str(req.body?.severity), aml_status: str(req.body?.status) } })))
+
+  // POST /api/admin/direct-receive/readiness — ROOT + 真人 Passkey:返回【完整】Direct Pay launch readiness(blockers + facts,
+  //   含 KYB/sanctions/AML/base-bond/rail clearance 全细节)。只读诊断(不写库、不 flip launch);ROOT 专用,买家/卖家拿不到。
+  app.post('/api/admin/direct-receive/readiness', (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const sellerId = req.body?.seller_id != null ? String(req.body.seller_id) : undefined
+    const gate = requireDirectPayHumanPasskey({ db, consumeGateToken }, {
+      userId: admin.id as string, webauthnToken: req.body?.webauthn_token as string | undefined, purpose: 'direct_pay_admin_readiness',
+      validate: (data) => { const d = data as { seller_id?: string } | null; return !!d && String(d.seller_id ?? '') === String(sellerId ?? '') },
+    })
+    if (!gate.ok) {
+      logAdminAction(admin.id as string, 'direct_pay.admin_readiness', 'user', sellerId ?? null, { ok: false, error_code: gate.error_code })
+      return void res.status(403).json({ error: gate.reason, error_code: gate.error_code })
+    }
+    const readiness = readDirectPayLaunchReadiness(db, { getProtocolParam, sellerId })
+    logAdminAction(admin.id as string, 'direct_pay.admin_readiness', 'user', sellerId ?? null, { ok: true, ready: readiness.ready, blocker_count: readiness.blockers.length })
+    return void res.json(readiness)
+  })
 }

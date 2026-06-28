@@ -3871,7 +3871,7 @@ registerUsersPublicRoutes(app, { db, auth, noteAuthenticityBadges })
 registerDirectPayDisclosureAckRoutes(app, { db, auth, generateId, consumeGateToken })  // PR-4d
 registerDirectReceivePaymentInstructionRoutes(app, { db, auth, generateId })  // PR-4f-a
 registerDirectPayAvailabilityRoutes(app, { db, auth, getProtocolParam })  // PR-4a
-registerAdminDirectReceiveDepositsRoutes(app, { db, requireRootAdmin: (req, res) => requireRootAdmin(req, res), consumeGateToken, logAdminAction })  // PR-4b-3
+registerAdminDirectReceiveDepositsRoutes(app, { db, requireRootAdmin: (req, res) => requireRootAdmin(req, res), consumeGateToken, logAdminAction, getProtocolParam })  // PR-4b-3 + readiness
 // RFC-004 build_feedback — agent-native "use → build" 反馈管道
 registerBuildFeedbackRoutes(app, {
   db, auth,
