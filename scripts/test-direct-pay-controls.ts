@@ -16,7 +16,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 // all-pass baseline (production base-bond + KYC are hard invariants — no cfg flags for them)
 const CFG = { enabled: true, railBreakerTripped: false, region: 'SG', regionAllowlist: ['SG', 'MY'], perTxCapUnits: toUnits(100) }
-const FACTS = { amountUnits: toUnits(50), sellerBreakerTripped: false, productionBaseBondLocked: true, kycSanctionsPassed: true, amlClear: true }
+const FACTS = { amountUnits: toUnits(50), sellerBreakerTripped: false, baseBondSatisfied: true, kycSanctionsPassed: true, amlClear: true }
 
 // ── 1. defaults fail-closed ──
 ok('DEFAULT config is disabled', DEFAULT_DIRECT_PAY_CONTROLS.enabled === false)
@@ -43,11 +43,11 @@ ok('amount == cap → allowed (boundary)', evaluateDirectPayLaunchControls(CFG, 
 // ── 3b. seller breaker (per-seller; fact, checked after cap, before invariants) ──
 ok('sellerBreakerTripped → DIRECT_PAY_SELLER_SUSPENDED', evaluateDirectPayLaunchControls(CFG, { ...FACTS, sellerBreakerTripped: true }).error_code === 'DIRECT_PAY_SELLER_SUSPENDED')
 ok('cap checked BEFORE seller breaker (over-cap + seller tripped → CAP_EXCEEDED first)', evaluateDirectPayLaunchControls(CFG, { ...FACTS, amountUnits: toUnits(101), sellerBreakerTripped: true }).error_code === 'DIRECT_PAY_CAP_EXCEEDED')
-ok('seller breaker checked BEFORE base-bond invariant (seller tripped + no bond → SELLER_SUSPENDED first)', evaluateDirectPayLaunchControls(CFG, { ...FACTS, sellerBreakerTripped: true, productionBaseBondLocked: false }).error_code === 'DIRECT_PAY_SELLER_SUSPENDED')
+ok('seller breaker checked BEFORE base-bond invariant (seller tripped + no bond → SELLER_SUSPENDED first)', evaluateDirectPayLaunchControls(CFG, { ...FACTS, sellerBreakerTripped: true, baseBondSatisfied: false }).error_code === 'DIRECT_PAY_SELLER_SUSPENDED')
 
 // ── 4. production base-bond (HARD INVARIANT — always enforced, no cfg flag can disable) ──
-ok('no production base-bond → NOT_AVAILABLE', evaluateDirectPayLaunchControls(CFG, { ...FACTS, productionBaseBondLocked: false }).error_code === 'DIRECT_PAY_NOT_AVAILABLE')
-ok('base-bond enforced even if a stray requireProductionBaseBond:false is passed (no bypass)', evaluateDirectPayLaunchControls({ ...CFG, requireProductionBaseBond: false } as any, { ...FACTS, productionBaseBondLocked: false }).error_code === 'DIRECT_PAY_NOT_AVAILABLE')
+ok('no production base-bond → NOT_AVAILABLE', evaluateDirectPayLaunchControls(CFG, { ...FACTS, baseBondSatisfied: false }).error_code === 'DIRECT_PAY_NOT_AVAILABLE')
+ok('base-bond enforced even if a stray requireProductionBaseBond:false is passed (no bypass)', evaluateDirectPayLaunchControls({ ...CFG, requireProductionBaseBond: false } as any, { ...FACTS, baseBondSatisfied: false }).error_code === 'DIRECT_PAY_NOT_AVAILABLE')
 
 // ── 5. KYC/sanctions (HARD INVARIANT — always enforced, no cfg flag can disable) ──
 ok('no KYC/sanctions → KYC_REQUIRED', evaluateDirectPayLaunchControls(CFG, { ...FACTS, kycSanctionsPassed: false }).error_code === 'DIRECT_PAY_KYC_REQUIRED')
@@ -61,7 +61,7 @@ ok('AML enforced even with stray requireAmlClear:false cfg (no bypass)', evaluat
 // order: KYC checked BEFORE AML (both invariants; KYC fails first when both fail)
 ok('KYC checked BEFORE AML (no KYC + AML blocked → KYC_REQUIRED first)', evaluateDirectPayLaunchControls(CFG, { ...FACTS, kycSanctionsPassed: false, amlClear: false }).error_code === 'DIRECT_PAY_KYC_REQUIRED')
 // order: base-bond checked BEFORE AML
-ok('base-bond checked BEFORE AML (no bond + AML blocked → NOT_AVAILABLE first)', evaluateDirectPayLaunchControls(CFG, { ...FACTS, productionBaseBondLocked: false, amlClear: false }).error_code === 'DIRECT_PAY_NOT_AVAILABLE')
+ok('base-bond checked BEFORE AML (no bond + AML blocked → NOT_AVAILABLE first)', evaluateDirectPayLaunchControls(CFG, { ...FACTS, baseBondSatisfied: false, amlClear: false }).error_code === 'DIRECT_PAY_NOT_AVAILABLE')
 
 // ── 6. all conditions pass ──
 const okd = evaluateDirectPayLaunchControls(CFG, FACTS)

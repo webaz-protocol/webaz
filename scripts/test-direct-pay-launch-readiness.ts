@@ -13,6 +13,7 @@ import { tmpdir } from 'os'
 process.env.HOME = mkdtempSync(join(tmpdir(), 'dp-readiness-'))
 
 const { readDirectPayLaunchReadiness, sellerDirectPayReadinessView } = await import('../src/direct-pay-launch-readiness.js')
+const { requestDeferral, approveDeferral } = await import('../src/direct-receive-deferral.js')
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { toUnits } = await import('../src/money.js')
 
@@ -28,20 +29,20 @@ let cp: Record<string, unknown> = {}
 const gp = <T,>(k: string, fb: T): T => (k in cp ? cp[k] as T : fb)
 const has = (r: { blockers: string[] }, code: string): boolean => r.blockers.includes(code)
 
-// ══════ 1. default fresh DB / empty config → ready=false with global + rail blockers ══════
+// ══════ 1. default fresh DB / empty config → ready=false with global blockers; rail-clearance is DIAGNOSTIC fact ══════
 cp = {}
 const r1 = readDirectPayLaunchReadiness(db, { getProtocolParam: gp })
 ok('1. default → ready=false', r1.ready === false)
 ok('1a. NOT_ENABLED', has(r1, 'DIRECT_PAY_NOT_ENABLED'))
 ok('1b. REGION_NOT_ALLOWED', has(r1, 'DIRECT_PAY_REGION_NOT_ALLOWED'))
 ok('1c. PER_TX_CAP_UNSET', has(r1, 'DIRECT_PAY_PER_TX_CAP_UNSET'))
-ok('1d. NO_LEGAL_CLEARED_PRODUCTION_RAIL', has(r1, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
-// 1e. operator_attested 是【已实现】生产轨(#116) → "无实现 rail"(RAIL_IMPLEMENTATION_GATED)不再是上线 blocker;
-//   真正的 blocker 是"无 legal-cleared rail"(1d)。usdc/fiat 虽仍 gated,但只要有一条 rail 已实现,该项就不成立(intersection 语义)。
-ok('1e. RAIL_IMPLEMENTATION_GATED NOT a launch blocker (operator_attested IS implemented)', !has(r1, 'DIRECT_PAY_RAIL_IMPLEMENTATION_GATED'))
-ok('1f. RAIL_POLICY_VERSION_UNSET (#112)', has(r1, 'DIRECT_PAY_RAIL_POLICY_VERSION_UNSET'))
-ok('1g. RAIL_JURISDICTION_ALLOWLIST_EMPTY (#112)', has(r1, 'DIRECT_PAY_RAIL_JURISDICTION_ALLOWLIST_EMPTY'))
-ok('1h. anyRailLegalCleared=false', r1.facts.anyRailLegalCleared === false)
+// 1d–1g. rail-clearance(#112)【不再是 launch blocker】(Codex #117 P1):真实建单/可用性门从不校验 rail-clearance,
+//   缓交卖家无需 cleared rail 即可直付。这些只作【诊断 facts】(anyRailLegalCleared / perRailClearance),不进 blockers。
+ok('1d. NO_LEGAL_CLEARED_PRODUCTION_RAIL NOT a blocker (diagnostic only)', !has(r1, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
+ok('1e. RAIL_IMPLEMENTATION_GATED NOT a blocker', !has(r1, 'DIRECT_PAY_RAIL_IMPLEMENTATION_GATED'))
+ok('1f. RAIL_POLICY_VERSION_UNSET NOT a blocker', !has(r1, 'DIRECT_PAY_RAIL_POLICY_VERSION_UNSET'))
+ok('1g. RAIL_JURISDICTION_ALLOWLIST_EMPTY NOT a blocker', !has(r1, 'DIRECT_PAY_RAIL_JURISDICTION_ALLOWLIST_EMPTY'))
+ok('1h. anyRailLegalCleared=false (diagnostic fact still surfaced)', r1.facts.anyRailLegalCleared === false)
 ok('1i. readiness enumerates operator_attested too (not just usdc/fiat)', !!r1.facts.perRailClearance['operator_attested'] && r1.facts.perRailClearance['usdc_onchain'].includes('NO_LEGAL_CLEARED_RAIL') && r1.facts.perRailClearance['fiat_psp'].includes('POLICY_VERSION_UNSET'))
 ok('1i2. operator_attested perRail: NO_LEGAL_CLEARED_RAIL but NOT RAIL_IMPLEMENTATION_GATED (implemented, just unregistered)', r1.facts.perRailClearance['operator_attested'].includes('NO_LEGAL_CLEARED_RAIL') && !r1.facts.perRailClearance['operator_attested'].includes('RAIL_IMPLEMENTATION_GATED'))
 // no sellerId → seller facts null, no seller blockers
@@ -70,23 +71,23 @@ db.prepare("INSERT INTO direct_receive_privileges (user_id, status, tier) VALUES
 ok('4b. suspended privilege → SELLER_SUSPENDED', has(readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller3' }), 'DIRECT_PAY_SELLER_SUSPENDED'))
 
 // ══════ 5. controls fully "open" + KYB/sanctions/AML cleared for seller → STILL ready=false ══════
-// (production base-bond + rail clearance can't be satisfied on main → never ready)
+// (seller 无生产 base-bond 且无有效缓交 → SELLER_NO_PRODUCTION_BASE_BOND 仍 block;rail-clearance 已非 blocker)
 cp = { 'direct_pay.enabled': true, 'direct_pay.rail_breaker_tripped': false, 'direct_pay.region': 'SG', 'direct_pay.region_allowlist': 'SG', 'direct_pay.per_tx_cap_units': toUnits(1000) }
 db.prepare("INSERT INTO direct_receive_kyb_reviews (id, user_id, status) VALUES ('kyb_s1','seller1','approved')").run()
 db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES ('sc_s1','seller1','clear')").run()
 const r5 = readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller1' })
 ok('5. controls open + KYB/sanctions cleared → global control blockers gone', !has(r5, 'DIRECT_PAY_NOT_ENABLED') && !has(r5, 'DIRECT_PAY_REGION_NOT_ALLOWED') && !has(r5, 'DIRECT_PAY_PER_TX_CAP_UNSET') && !has(r5, 'DIRECT_PAY_SELLER_KYB_NOT_APPROVED') && !has(r5, 'DIRECT_PAY_SELLER_SANCTIONS_NOT_CLEARED'))
-ok('5a. STILL ready=false (production bond + rail clearance unmet)', r5.ready === false)
-ok('5b. remaining blockers include SELLER_NO_PRODUCTION_BASE_BOND + NO_LEGAL_CLEARED_PRODUCTION_RAIL', has(r5, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND') && has(r5, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
+ok('5a. STILL ready=false (no production bond AND no active deferral)', r5.ready === false)
+ok('5b. remaining blocker = SELLER_NO_PRODUCTION_BASE_BOND; rail-clearance NOT a blocker', has(r5, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND') && !has(r5, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
 // still no active instruction → instruction blocker present
 ok('5c. no instruction yet → PAYMENT_INSTRUCTION_MISSING present', has(r5, 'DIRECT_PAY_SELLER_PAYMENT_INSTRUCTION_MISSING'))
-// seed an active payment instruction → that blocker clears (but bond/rail keep ready=false)
+// seed an active payment instruction → that blocker clears (but base-bond keeps ready=false)
 db.prepare("INSERT INTO direct_receive_payment_instructions (id, seller_id, instruction, label, status) VALUES ('pi_s1','seller1','PayNow +65 9xxx (off-protocol)','PayNow','active')").run()
 const r5b = readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller1' })
 ok('5d. after seeding active instruction → blocker gone, fact true', !has(r5b, 'DIRECT_PAY_SELLER_PAYMENT_INSTRUCTION_MISSING') && r5b.facts.paymentInstructionPresent === true)
-ok('5e. STILL ready=false (bond + rail clearance remain)', r5b.ready === false && has(r5b, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND') && has(r5b, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
-// jurisdiction-aware: even with a concrete region (SG) configured, no rail is legal-cleared FOR THAT region → still not cleared
-ok('5f. jurisdiction-aware: region=SG configured but anyRailLegalCleared=false + NO_LEGAL_CLEARED_PRODUCTION_RAIL', r5b.facts.anyRailLegalCleared === false && has(r5b, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
+ok('5e. STILL ready=false (base-bond unmet); rail-clearance NOT a blocker', r5b.ready === false && has(r5b, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND') && !has(r5b, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
+// jurisdiction-aware diagnostic: region=SG configured but no rail legal-cleared FOR THAT region → fact stays false (not a blocker)
+ok('5f. diagnostic fact: region=SG but anyRailLegalCleared=false (still NOT a blocker)', r5b.facts.anyRailLegalCleared === false && !has(r5b, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
 
 // ══════ 6. read-only: readiness writes NOTHING ══════
 const snap = () => ({
@@ -126,7 +127,8 @@ const item = (c: string): any => sv.items.find((i: any) => i.code === c)
 ok('8f. PAYMENT_INSTRUCTION ok (seeded) + actionable', item('PAYMENT_INSTRUCTION').ok === true && item('PAYMENT_INSTRUCTION').actionable === true)
 ok('8g. COMPLIANCE_REVIEW ok (KYB+sanctions seeded, no AML flag) — collapsed, not actionable', item('COMPLIANCE_REVIEW').ok === true && item('COMPLIANCE_REVIEW').actionable === false)
 ok('8h. BASE_BOND not ok (gated on main)', item('BASE_BOND').ok === false)
-ok('8i. PLATFORM_OPEN not ok (rail clearance gated)', item('PLATFORM_OPEN').ok === false)
+// 8i. global config is open (test-5 cp: enabled/region/cap) and rail-clearance no longer gates PLATFORM_OPEN → now ok=true.
+ok('8i. PLATFORM_OPEN ok (global config open; rail-clearance is NOT a platform gate)', item('PLATFORM_OPEN').ok === true)
 ok('8j. PASSKEY not ok (no credential seeded)', item('PASSKEY').ok === false && item('PASSKEY').actionable === true)
 // a flagged seller: AML flag must NOT surface as AML — only collapses COMPLIANCE_REVIEW to not-ok
 db.prepare("INSERT INTO aml_flags (id, subject_user_id, rule, severity, status) VALUES ('af_sv','seller1','structuring','high','open')").run()
@@ -136,6 +138,34 @@ ok('8k. AML flag → COMPLIANCE_REVIEW not-ok, still NO AML term leaked', sv2.it
 const svBefore = snap()
 for (let i = 0; i < 3; i++) sellerDirectPayReadinessView(db, { getProtocolParam: gp, sellerId: 'seller1' })
 ok('8l. seller view is read-only', JSON.stringify(snap()) === JSON.stringify(svBefore))
+
+// ══════ 9. P1 fix: readiness mirrors the create gate — active 缓交 satisfies base-bond (no false NO_PRODUCTION_BASE_BOND) ══════
+// seller_dfr: no production bond, but an active granted deferral → base-bond门 satisfied, just like the real create gate.
+const nowIso = new Date().toISOString()
+requestDeferral(db, { deferralId: 'dfr_rdy', userId: 'seller_dfr', periodDays: 30, nowIso })
+approveDeferral(db, { deferralId: 'dfr_rdy', adminId: 'admin1', nowIso })
+const rDfr = readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller_dfr' })
+ok('9. active 缓交 → facts.baseBondSatisfied true + activeDeferral true (no production bond)', rDfr.facts.baseBondSatisfied === true && rDfr.facts.activeDeferral === true && rDfr.facts.productionBaseBondLocked === false)
+ok('9a. active 缓交 → NO DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND blocker (mirrors create gate)', !has(rDfr, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND'))
+ok('9b. seller without deferral/bond STILL gets the blocker', has(readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller_dfr_none' }), 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND'))
+// seller de-id view: BASE_BOND item ok for a 缓交 seller (was wrongly false before the fix)
+const svDfr = sellerDirectPayReadinessView(db, { getProtocolParam: gp, sellerId: 'seller_dfr' })
+ok('9c. seller view BASE_BOND ok=true for 缓交 seller', svDfr.items.find((i: any) => i.code === 'BASE_BOND')?.ok === true)
+
+// ══════ 10. KEYSTONE (Codex #117 P1): a fully-equipped 缓交 seller → ready=true even with NO cleared rail ══════
+// Mirrors the real create gate (which never checks rail-clearance): global config open + 缓交 base-bond + KYB +
+//   sanctions clear + no AML + active instruction + not suspended → ready=true; rail-clearance stays an unsatisfied
+//   diagnostic fact (anyRailLegalCleared=false) but does NOT block launch. Locks the fix against regression.
+// cp is still the test-5 open config (enabled/region=SG/cap). Use a fresh seller untouched by prior AML/suspend seeds.
+requestDeferral(db, { deferralId: 'dfr_full', userId: 'seller_full', periodDays: 30, nowIso })
+approveDeferral(db, { deferralId: 'dfr_full', adminId: 'admin1', nowIso })
+db.prepare("INSERT INTO direct_receive_kyb_reviews (id, user_id, status) VALUES ('kyb_full','seller_full','approved')").run()
+db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES ('sc_full','seller_full','clear')").run()
+db.prepare("INSERT INTO direct_receive_payment_instructions (id, seller_id, instruction, label, status) VALUES ('pi_full','seller_full','PayNow +65 8xxx (off-protocol)','PayNow','active')").run()
+const rFull = readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller_full' })
+ok('10. fully-equipped 缓交 seller → ready=true (no blockers)', rFull.ready === true && rFull.blockers.length === 0, JSON.stringify(rFull.blockers))
+ok('10a. ready=true DESPITE anyRailLegalCleared=false (rail-clearance not required for 缓交 launch)', rFull.facts.anyRailLegalCleared === false)
+ok('10b. no rail-clearance blocker present', !has(rFull, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL') && !has(rFull, 'DIRECT_PAY_RAIL_POLICY_VERSION_UNSET'))
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-launch-readiness tests passed`)
