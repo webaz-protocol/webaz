@@ -135,6 +135,35 @@ ok('route happy: buyer wallet UNCHANGED (no principal/escrow)', walletUnits(db, 
 const createdId = rOk.json?.order_id
 ok('route happy: order escrow_amount=0, rail=direct_p2p', ord(createdId)?.escrow_amount === 0 && ord(createdId)?.payment_rail === 'direct_p2p')
 ok('route happy: seller fee-stake locked', stake(createdId)?.status === 'locked')
+// self-fulfill 兼容:无 logistics_id / 未传 logistics_company_id 也能建单(后续走卖家自发货 action path)
+ok('route happy: simple physical, NO logistics required (logistics_id NULL)', (db.prepare('SELECT logistics_id FROM orders WHERE id=?').get(createdId) as { logistics_id: string | null }).logistics_id == null)
+
+// ══════ Part C: escrow-only / 不支持修饰 → fail-closed(helper 级,绕过 route 预校验)═══════
+const { createDirectPayResponse } = await import('../src/direct-pay-create.js')
+function mres(): any { const r: any = { _s: 200, _b: null, status(c: number) { r._s = c; return r }, json(b: any) { r._b = b; return r } }; return r }
+const cdeps = { generateId: (p: string) => `${p}_${Math.random().toString(36).slice(2, 8)}`, transition, appendOrderEvent, getProtocolParam: <T,>(_k: string, fb: T): T => fb }
+const baseCtx = { product: { id: 'p1', seller_uid: 'seller1', source: null }, buyerId: 'buyer1', reqQty: 1, basePrice: 50, totalAmount: 50, totalAmountU: toUnits(50), shippingAddress: 'addr' }
+const ordersN = () => (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n
+const stakesN = () => (db.prepare('SELECT COUNT(*) n FROM direct_pay_fee_stakes').get() as { n: number }).n
+function rejects(name: string, opts: Record<string, unknown>, code: string): void {
+  const oN = ordersN(), sN = stakesN(), st = pstock(); const r = mres()
+  createDirectPayResponse(r, db, cdeps, { ...baseCtx, opts })
+  ok(`reject ${name} → 409 ${code}, no order/stake/stock`, r._s === 409 && r._b?.error_code === code && ordersN() === oN && stakesN() === sN && pstock() === st, JSON.stringify(r._b))
+}
+rejects('has_variants', { hasVariants: true }, 'DIRECT_PAY_SIMPLE_PRODUCT_ONLY')
+rejects('variant_id', { variantId: 'v1' }, 'DIRECT_PAY_SIMPLE_PRODUCT_ONLY')
+rejects('flash sale', { flashActive: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
+rejects('coupon', { couponCode: 'SAVE10' }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
+rejects('insurance', { buyInsurance: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
+rejects('donation', { donationPct: 0.01 }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
+rejects('gift', { isGift: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
+rejects('anonymous', { anonymous: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
+rejects('delivery_window', { deliveryWindow: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
+// 正向:无任何修饰(simple physical)→ 不被 Part C 门拦(继续到生产门;seller1 有 production bond+instr → 建单成功,验证 simple 物理单可建)
+const okRes = mres()
+const oN0 = ordersN()
+createDirectPayResponse(okRes, db, cdeps, baseCtx)
+ok('simple physical (no modifiers) passes the modifier gate → 200 created', okRes._s === 200 && okRes._b?.status === 'direct_pay_window' && ordersN() === oN0 + 1, JSON.stringify(okRes._b))
 
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }

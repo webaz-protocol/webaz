@@ -56,15 +56,27 @@ export function createDirectPayOrder(db: Database.Database, deps: DirectPayCreat
   return { orderId }
 }
 
+/** direct_p2p v1 不支持的 escrow-only 修饰快照(调用方从 req.body / 计算结果收集)。任一为真 → fail-closed。 */
+export interface DirectPayUnsupportedOpts {
+  variantId?: unknown; hasVariants?: boolean; flashActive?: boolean; couponCode?: unknown
+  buyInsurance?: boolean; donationPct?: number; isGift?: boolean; anonymous?: boolean; deliveryWindow?: boolean
+}
+
 /**
  * direct_p2p 建单【完整分叉处理】(供 orders-create.ts 单行调用,保持该 route 文件不臌胀)。
- * 顺序:生产 base-bond 门(production receipt,非仅 privilege active)→ 收款指令门(只读+快照)→ 原子建单。
- * 任一门缺失 → fail-closed(本片 non-launchable);全部直接写 res。不碰 buyer wallet/escrow/principal/refund/settlement。
+ * 顺序:① v1 only-simple-product 门(任一 escrow-only 修饰 → fail-closed)→ ② 生产 base-bond 门(production receipt,
+ *   非仅 privilege active)→ ③ 收款指令门(只读+快照)→ ④ 原子建单。任一门未过 → 直接写 res 并 return,
+ *   【绝不】建单 / 锁质押 / 扣库存。不碰 buyer wallet/escrow/principal/refund/settlement。
  */
 export function createDirectPayResponse(
   res: Response, db: Database.Database, deps: DirectPayCreateDeps & { getProtocolParam: <T>(k: string, fb: T) => T },
-  ctx: { product: Record<string, unknown>; buyerId: string; reqQty: number; basePrice: number; totalAmount: number; totalAmountU: Units; shippingAddress: string },
+  ctx: { product: Record<string, unknown>; buyerId: string; reqQty: number; basePrice: number; totalAmount: number; totalAmountU: Units; shippingAddress: string; opts?: DirectPayUnsupportedOpts },
 ): void {
+  // ① direct_p2p v1 = simple product only。escrow-only 修饰一律 fail-closed(本片不支持,不半支持)。
+  const o = ctx.opts ?? {}
+  if (o.hasVariants || o.variantId != null) { res.status(409).json({ error: '直付 v1 仅支持简单商品(无规格);该商品有规格或传了 variant_id', error_code: 'DIRECT_PAY_SIMPLE_PRODUCT_ONLY' }); return }
+  const unsupported = o.flashActive ? 'flash_sale' : o.couponCode ? 'coupon' : o.buyInsurance ? 'insurance' : (Number(o.donationPct) > 0) ? 'donation' : o.isGift ? 'gift' : o.anonymous ? 'anonymous_recipient' : o.deliveryWindow ? 'delivery_window' : null
+  if (unsupported) { res.status(409).json({ error: `直付 v1 不支持该选项:${unsupported}`, error_code: 'DIRECT_PAY_UNSUPPORTED_OPTION', option: unsupported }); return }
   const sellerId = ctx.product.seller_uid as string
   if (!sellerHasProductionBaseBondLocked(db, sellerId)) { res.status(409).json({ error: '直付暂不可用:卖家未完成生产级履约担保(production base-bond)', error_code: 'DIRECT_PAY_NOT_AVAILABLE' }); return }
   const instr = getActivePaymentInstruction(db, sellerId)
