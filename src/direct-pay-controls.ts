@@ -17,6 +17,9 @@
  */
 import type Database from 'better-sqlite3'
 import type { Units } from './money.js'
+// PR-6D: 把 #108 的 AML 监控 param 描述(默认 inert)经控制面统一再导出,使 server.ts DEFAULT_PARAMS
+//   可在【既有 import 行】上一并取用(server.ts 已到 LOC 上限,避免新增行)。SSOT 仍在 direct-pay-aml-monitor.ts。
+export { DIRECT_PAY_AML_PARAMS } from './direct-pay-aml-monitor.js'
 
 /** 拒绝原因(机器码;UI 映射双语 t())。 */
 export type DirectPayControlReason =
