@@ -11,7 +11,7 @@ import type Database from 'better-sqlite3'
 import { dbOne } from '../../layer0-foundation/L0-1-database/db.js'
 import { toUnits } from '../../money.js'
 import { sellerHasProductionBaseBondLocked } from '../../direct-receive-deposits.js'
-import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerKycSanctionsPassed, sellerDirectPayBreakerTripped } from '../../direct-pay-controls.js'
+import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayBreakerTripped } from '../../direct-pay-controls.js'
 
 export interface DirectPayAvailabilityDeps {
   db: Database.Database
@@ -39,7 +39,7 @@ export function registerDirectPayAvailabilityRoutes(app: Application, deps: Dire
       amountUnits: toUnits(Number(product.price) || 0),
       sellerBreakerTripped: sellerDirectPayBreakerTripped(db, product.seller_id),  // 与 create 路径同源:卖家熔断也判不可用
       productionBaseBondLocked: sellerHasProductionBaseBondLocked(db, product.seller_id),
-      kycSanctionsPassed: sellerKycSanctionsPassed(db, product.seller_id),
+      kycSanctionsPassed: sellerDirectPayKybPassed(db, product.seller_id) && sellerDirectPaySanctionsClear(db, product.seller_id),
     })
     if (decision.ok) return void res.json({ available: true, per_tx_cap_units: cfg.perTxCapUnits })
     const code = SELLER_PRIVATE_REASONS.has(decision.error_code as string) ? 'DIRECT_PAY_SELLER_NOT_ELIGIBLE' : decision.error_code

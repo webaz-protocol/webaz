@@ -16,7 +16,7 @@ import { lockFeeStake } from './direct-pay-ledger.js'
 import { mulRate, type Units } from './money.js'
 import { sellerHasProductionBaseBondLocked } from './direct-receive-deposits.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
-import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerKycSanctionsPassed, sellerDirectPayBreakerTripped, type DirectPayControlsConfig } from './direct-pay-controls.js'
+import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayBreakerTripped, type DirectPayControlsConfig } from './direct-pay-controls.js'
 
 export interface DirectPayCreateDeps {
   generateId: (prefix: string) => string
@@ -98,7 +98,7 @@ export function createDirectPayResponse(
     amountUnits: ctx.totalAmountU,
     sellerBreakerTripped,
     productionBaseBondLocked: sellerHasProductionBaseBondLocked(db, sellerId),
-    kycSanctionsPassed: sellerKycSanctionsPassed(db, sellerId),
+    kycSanctionsPassed: sellerDirectPayKybPassed(db, sellerId) && sellerDirectPaySanctionsClear(db, sellerId),
   })
   // control deny 发生在【任何 DB write / order insert / fee-stake lock / stock decrement 之前】(fail-closed)。
   if (!ctrl.ok) { res.status(ctrl.status).json({ error: ctrl.reason, error_code: ctrl.error_code }); return }

@@ -7,7 +7,7 @@
  */
 import Database from 'better-sqlite3'
 
-const { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerKycSanctionsPassed, DEFAULT_DIRECT_PAY_CONTROLS, DIRECT_PAY_CONTROL_PARAMS } =
+const { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, DEFAULT_DIRECT_PAY_CONTROLS, DIRECT_PAY_CONTROL_PARAMS } =
   await import('../src/direct-pay-controls.js')
 const { toUnits } = await import('../src/money.js')
 
@@ -70,16 +70,35 @@ const params: Record<string, unknown> = { 'direct_pay.enabled': true, 'direct_pa
 const cfgSet = readDirectPayControlsConfig(<T,>(k: string, fb: T): T => (k in params ? params[k] as T : fb))
 ok('loader parses enabled/region/allowlist(csv trim+drop empties)/cap', cfgSet.enabled === true && cfgSet.region === 'SG' && JSON.stringify(cfgSet.regionAllowlist) === JSON.stringify(['SG', 'MY']) && cfgSet.perTxCapUnits === toUnits(50), JSON.stringify(cfgSet))
 
-// ── 8. sellerKycSanctionsPassed (fail-closed; needs explicit clear, no flag/block) ──
+// ── 8. PR-6A AML/KYB fail-closed readers (sanctions + KYB, with expiry) ──
 const db = new Database(':memory:')
-db.exec("CREATE TABLE sanctions_screening (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'clear', source TEXT, reason TEXT, screened_at TEXT, created_at TEXT)")
-ok('no screening row → false (fail-closed)', sellerKycSanctionsPassed(db, 's1') === false)
+db.exec("CREATE TABLE sanctions_screening (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'clear', source TEXT, reason TEXT, screened_at TEXT, created_at TEXT, expires_at TEXT)")
+db.exec("CREATE TABLE direct_receive_kyb_reviews (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', reviewed_by TEXT, reviewed_at TEXT, expires_at TEXT, reason TEXT, created_at TEXT, updated_at TEXT)")
+const PAST = "datetime('now','-1 day')", FUT = "datetime('now','+1 day')"
+// sanctions clear reader
+ok('sanctions: no row → false (fail-closed)', sellerDirectPaySanctionsClear(db, 's1') === false)
 db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES ('sc1','s1','clear')").run()
-ok('clear row → true', sellerKycSanctionsPassed(db, 's1') === true)
+ok('sanctions: clear (no expiry) → true', sellerDirectPaySanctionsClear(db, 's1') === true)
+db.prepare(`INSERT INTO sanctions_screening (id, user_id, status, expires_at) VALUES ('scx','s3','clear',${PAST})`).run()
+ok('sanctions: clear but EXPIRED → false', sellerDirectPaySanctionsClear(db, 's3') === false)
 db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES ('sc2','s1','flagged')").run()
-ok('clear + flagged → false (any flag/block fails-closed)', sellerKycSanctionsPassed(db, 's1') === false)
+ok('sanctions: clear + flagged → false (any flag/block fails-closed)', sellerDirectPaySanctionsClear(db, 's1') === false)
 db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES ('sc3','s2','blocked')").run()
-ok('only blocked → false', sellerKycSanctionsPassed(db, 's2') === false)
+ok('sanctions: only blocked → false', sellerDirectPaySanctionsClear(db, 's2') === false)
+// KYB reader
+ok('kyb: no review → false (fail-closed)', sellerDirectPayKybPassed(db, 'k1') === false)
+db.prepare("INSERT INTO direct_receive_kyb_reviews (id, user_id, status) VALUES ('kr1','k1','pending')").run()
+ok('kyb: pending → false', sellerDirectPayKybPassed(db, 'k1') === false)
+db.prepare("INSERT INTO direct_receive_kyb_reviews (id, user_id, status) VALUES ('kr2','k2','rejected')").run()
+ok('kyb: rejected → false', sellerDirectPayKybPassed(db, 'k2') === false)
+db.prepare("INSERT INTO direct_receive_kyb_reviews (id, user_id, status) VALUES ('kr3','k3','approved')").run()
+ok('kyb: approved (no expiry) → true', sellerDirectPayKybPassed(db, 'k3') === true)
+db.prepare(`INSERT INTO direct_receive_kyb_reviews (id, user_id, status, expires_at) VALUES ('kr4','k4','approved',${PAST})`).run()
+ok('kyb: approved but EXPIRED → false', sellerDirectPayKybPassed(db, 'k4') === false)
+db.prepare(`INSERT INTO direct_receive_kyb_reviews (id, user_id, status, expires_at) VALUES ('kr5','k5','approved',${FUT})`).run()
+ok('kyb: approved + not-expired → true', sellerDirectPayKybPassed(db, 'k5') === true)
+db.prepare("INSERT INTO direct_receive_kyb_reviews (id, user_id, status) VALUES ('kr6','k5','revoked')").run()
+ok('kyb: approved then REVOKED → false (revocation blocks)', sellerDirectPayKybPassed(db, 'k5') === false)
 
 // ── 9. seed list (DIRECT_PAY_CONTROL_PARAMS) — boot 必 seed 这 6 个 key,默认仍全部 fail-closed ──
 // server.ts 把它展开进 DEFAULT_PARAMS(boot seed + admin PATCH 依赖 key 存在);此处守 key 齐全 + 默认全关。

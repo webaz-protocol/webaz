@@ -295,6 +295,22 @@ export function initDatabase(): Database.Database {
       reason      TEXT,
       screened_at TEXT DEFAULT (datetime('now')),
       created_at  TEXT DEFAULT (datetime('now'))
+      -- PR-6A: expires_at 由 ALTER 补(见迁移段);制裁结论有有效期,过期视作未通过(fail-closed)。
+    );
+
+    -- PR-6A: Direct Pay KYB(商户尽调)复核台账。Direct Pay AML/KYB fail-closed runtime —— 无第三方 vendor、无真实
+    -- API 调用,仅记录【真人/合规复核结论】。fail-closed:missing/pending/rejected/revoked/expired 一律不通过,
+    -- 只有 approved 且未过期(且无 rejected/revoked)才算 KYB 通过。本表无生产写入方 → 真实卖家天然 fail-closed。
+    CREATE TABLE IF NOT EXISTS direct_receive_kyb_reviews (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES users(id),
+      status      TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected | revoked
+      reviewed_by TEXT,                             -- 复核人(真人/合规);无第三方集成
+      reviewed_at TEXT,
+      expires_at  TEXT,                             -- 复核有效期;过期视作未通过
+      reason      TEXT,
+      created_at  TEXT DEFAULT (datetime('now')),
+      updated_at  TEXT DEFAULT (datetime('now'))
     );
 
     -- AML 监控 flag(进【独立复核队列】,与配额节流分开);AML 能力 = INVARIANT。
@@ -363,6 +379,8 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_rail_id TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_jurisdiction TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_policy_version TEXT`) } catch { /* 已存在 */ }
+  // PR-6A: sanctions 结论有有效期(过期 → fail-closed)。additive nullable;NULL = 无期限(不过期)。
+  try { db.exec(`ALTER TABLE sanctions_screening ADD COLUMN expires_at TEXT`) } catch { /* 已存在 */ }
   // penalty 科目单行种子(只进不出;无出账代码路径)
   db.exec(`INSERT OR IGNORE INTO penalty_fund (id, balance, total_fee_stake_slash, total_base_bond_slash, updated_at) VALUES ('main', 0, 0, 0, datetime('now'))`)
 

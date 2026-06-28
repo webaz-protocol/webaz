@@ -95,6 +95,7 @@ ok('helper rollback: stock UNCHANGED', pstock() === stBefore)
 // Phase 4a 控制面参数:可变,便于在同一 app 上分别测 disabled/region/cap/enabled。默认空 = fail-closed(disabled)。
 const cp: Record<string, unknown> = {}
 const seedSanctions = (sellerId: string) => db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES (?,?,'clear')").run('sc_' + sellerId, sellerId)
+const seedKyb = (sellerId: string, status = 'approved') => db.prepare("INSERT INTO direct_receive_kyb_reviews (id, user_id, status) VALUES (?,?,?)").run('kyb_' + sellerId, sellerId, status)
 let oc = 0
 const app = express(); app.use(express.json())
 registerOrdersCreateRoutes(app, {
@@ -151,14 +152,22 @@ db.prepare("UPDATE direct_receive_privileges SET status='none' WHERE user_id='se
 // no production bond → 409 DIRECT_PAY_NOT_AVAILABLE
 const rNoBond = await dp('buyer1')
 ok('direct_p2p no production bond → 409 DIRECT_PAY_NOT_AVAILABLE', rNoBond.status === 409 && rNoBond.json?.error_code === 'DIRECT_PAY_NOT_AVAILABLE', JSON.stringify(rNoBond))
-// bond 到位但未过 KYC/制裁 → 409 DIRECT_PAY_KYC_REQUIRED
+// bond 到位但 KYB+制裁都无记录 → 409 DIRECT_PAY_KYC_REQUIRED(fail-closed:无记录=不可用)
 seedBond('seller2', true)
 const rNoKyc = await dp('buyer1')
-ok('direct_p2p bond but no KYC/sanctions → 409 DIRECT_PAY_KYC_REQUIRED', rNoKyc.status === 409 && rNoKyc.json?.error_code === 'DIRECT_PAY_KYC_REQUIRED', JSON.stringify(rNoKyc))
-// KYC/制裁通过但无收款说明 → 409 NO_PAYMENT_INSTRUCTION
+ok('direct_p2p bond but no KYB/sanctions records → 409 DIRECT_PAY_KYC_REQUIRED', rNoKyc.status === 409 && rNoKyc.json?.error_code === 'DIRECT_PAY_KYC_REQUIRED', JSON.stringify(rNoKyc))
+// 仅制裁 clear、KYB 仍缺失 → 仍 KYC_REQUIRED(AND 门:KYB 与 sanctions 都须通过)
 seedSanctions('seller2')
+const rSanctOnly = await dp('buyer1')
+ok('direct_p2p sanctions clear but KYB missing → still 409 DIRECT_PAY_KYC_REQUIRED (AND gate)', rSanctOnly.status === 409 && rSanctOnly.json?.error_code === 'DIRECT_PAY_KYC_REQUIRED', JSON.stringify(rSanctOnly))
+// KYB 记录存在但 status=pending(非 approved)→ 仍 KYC_REQUIRED(fail-closed:仅 approved 才放行)
+seedKyb('seller2', 'pending')
+const rKybPending = await dp('buyer1')
+ok('direct_p2p KYB pending → still 409 DIRECT_PAY_KYC_REQUIRED (only approved passes)', rKybPending.status === 409 && rKybPending.json?.error_code === 'DIRECT_PAY_KYC_REQUIRED', JSON.stringify(rKybPending))
+// KYB → approved + 制裁 clear → 越过 KYC/制裁门,但无收款说明 → 409 NO_PAYMENT_INSTRUCTION
+db.prepare("UPDATE direct_receive_kyb_reviews SET status='approved' WHERE user_id='seller2'").run()
 const rNoInstr = await dp('buyer1')
-ok('direct_p2p controls pass, no instruction → 409 NO_PAYMENT_INSTRUCTION', rNoInstr.status === 409 && rNoInstr.json?.error_code === 'NO_PAYMENT_INSTRUCTION', JSON.stringify(rNoInstr))
+ok('direct_p2p KYB approved + sanctions clear, no instruction → 409 NO_PAYMENT_INSTRUCTION', rNoInstr.status === 409 && rNoInstr.json?.error_code === 'NO_PAYMENT_INSTRUCTION', JSON.stringify(rNoInstr))
 // 全部满足 → 200 happy
 seedInstr('seller2')
 const bBal2 = walletUnits(db, 'buyer1').balance
@@ -206,7 +215,7 @@ rejects('gift', { isGift: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
 rejects('anonymous', { anonymous: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
 rejects('delivery_window', { deliveryWindow: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
 // 正向:无任何修饰(simple product)+ 控制面全过(enabled/region/cap)+ seller1 bond+KYC+instr → 建单成功
-seedSanctions('seller1')  // seller1 过 KYC/制裁(bond 在 Part A 已 production-locked;instr Part A active)
+seedSanctions('seller1'); seedKyb('seller1')  // seller1 过 KYB+制裁(bond 在 Part A 已 production-locked;instr Part A active)
 const okRes = mres()
 const oN0 = ordersN()
 createDirectPayResponse(okRes, db, cdeps, baseCtx)
