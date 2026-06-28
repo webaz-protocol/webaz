@@ -16,6 +16,7 @@ import { checkDeferralQuota, readDeferralQuotaConfig } from '../../direct-pay-de
 import { sellerDirectPayReadinessView } from '../../direct-pay-launch-readiness.js'
 import { requestDeferral, getActiveDeferral, getLatestDeferral } from '../../direct-receive-deferral.js'
 import { requestProductVerification, submitProductVerificationLink, listSellerProductVerifications, toSellerProductVerificationView, productStoreVerified } from '../../product-verification.js'
+import { requestStoreVerification, submitStoreVerificationLink, getStoreVerification, toSellerStoreVerificationView, sellerExemptFromPerProduct } from '../../store-verification.js'
 
 export interface DirectPayAvailabilityDeps {
   db: Database.Database
@@ -52,8 +53,8 @@ export function registerDirectPayAvailabilityRoutes(app: Application, deps: Dire
       amlClear: sellerDirectPayAmlClear(db, product.seller_id),
     })
     if (decision.ok) {
-      // 硬门(镜像 create):该产品必须【单独】通过验证。未验证 → 不可直付(产品级、非敏感)。
-      if (!productStoreVerified(db, productId)) return void res.json({ available: false, error_code: 'DIRECT_PAY_PRODUCT_NOT_VERIFIED', reason: '该商品暂不支持直付(待平台逐品验证)', per_tx_cap_units: cfg.perTxCapUnits })
+      // 硬门(镜像 create):产品逐品验证 OR 卖家被豁免(店铺 verified + per_product_exempt)。都不满足 → 不可直付(产品级、非敏感)。
+      if (!(productStoreVerified(db, productId) || sellerExemptFromPerProduct(db, product.seller_id))) return void res.json({ available: false, error_code: 'DIRECT_PAY_PRODUCT_NOT_VERIFIED', reason: '该商品暂不支持直付(待平台验证)', per_tx_cap_units: cfg.perTxCapUnits })
       // 镜像 create 的缓交额度门(qty=1 预览;以商品单价为本次拟建单金额)。超额是【缓交卖家私密状态】→ 收敛为通用不可用,
       //   不向买家暴露"该卖家在缓交期/已超额"。create 仍是权威强制点。
       const quota = checkDeferralQuota(db, product.seller_id, toUnits(Number(product.price) || 0), new Date().toISOString(), readDeferralQuotaConfig(getProtocolParam))
@@ -142,5 +143,33 @@ export function registerDirectPayAvailabilityRoutes(app: Application, deps: Dire
     const user = requireSeller(req, res); if (!user) return
     // 脱敏:DTO 去掉 reviewed_by(admin 身份)+ notes(内部审核备注),与缓交/readiness 卖家侧一致。
     return void res.json({ verifications: listSellerProductVerifications(db, user.id as string).map(toSellerProductVerificationView) })
+  })
+
+  // ── 店铺认证(per-seller)= 逐品验证的豁免申请路径。卖家申领码 → 提交店铺链接 → admin 核对时勾选豁免。 ──
+  //   申请/提交【不】门 Passkey(只建记录,不授予;豁免授予 = admin ROOT+Passkey 在审核侧)。
+  // POST /api/direct-receive/store-verification — 卖家申领店铺验证码(单一活跃 per seller)。
+  app.post('/api/direct-receive/store-verification', (req, res) => {
+    const user = requireSeller(req, res); if (!user) return
+    const platform = typeof req.body?.platform === 'string' ? req.body.platform.trim().slice(0, 60) : undefined
+    const r = requestStoreVerification(db, { id: generateId('sv'), userId: user.id as string, code: generateId('wzs'), platform })
+    if (!r.ok) return void res.status(400).json({ error: r.reason, error_code: 'STORE_VERIFICATION_REJECTED' })
+    return void res.json({ ok: true, status: r.status, code: r.code })
+  })
+
+  // PUT /api/direct-receive/store-verification — 卖家提交店铺外链(仅存储,不抓取)。
+  app.put('/api/direct-receive/store-verification', (req, res) => {
+    const user = requireSeller(req, res); if (!user) return
+    const externalUrl = typeof req.body?.external_url === 'string' ? req.body.external_url.trim() : ''
+    const platform = typeof req.body?.platform === 'string' ? req.body.platform.trim().slice(0, 60) : undefined
+    const r = submitStoreVerificationLink(db, { userId: user.id as string, externalUrl, platform })
+    if (!r.ok) return void res.status(400).json({ error: r.reason, error_code: 'STORE_VERIFICATION_SUBMIT_REJECTED' })
+    return void res.json({ ok: true, status: r.status })
+  })
+
+  // GET /api/direct-receive/store-verification — 卖家本人店铺认证状态(脱敏 DTO,含豁免位)。
+  app.get('/api/direct-receive/store-verification', (req, res) => {
+    const user = requireSeller(req, res); if (!user) return
+    const row = getStoreVerification(db, user.id as string)
+    return void res.json({ verification: row ? toSellerStoreVerificationView(row) : null, exempt: sellerExemptFromPerProduct(db, user.id as string) })
   })
 }

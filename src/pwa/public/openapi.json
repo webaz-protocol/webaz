@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (696 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (701 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -728,6 +728,32 @@
         "summary": "purpose_data 绑定 user_id+status+provider_ref+expires_at。",
         "tags": [],
         "security": []
+      }
+    },
+    "/api/admin/direct-receive/store-verifications": {
+      "get": {
+        "summary": "GET /api/admin/direct-receive/store-verifications?status=submitted — ROOT 审核队列(默认全部)。纯读。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/direct-receive/store-verifications/:id/review": {
+      "post": {
+        "summary": "POST /api/admin/direct-receive/store-verifications/:id/review — ROOT + 真人 Passkey 核店铺 + 勾选逐品豁免。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/admin/disputes": {
@@ -3483,6 +3509,35 @@
     "/api/direct-receive/readiness": {
       "get": {
         "summary": "绝不下发 raw blocker / KYB·制裁·AML 分项(见 sellerDirectPayReadinessView)。只读 self(auth 用户自身 id)。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/store-verification": {
+      "get": {
+        "summary": "GET /api/direct-receive/store-verification — 卖家本人店铺认证状态(脱敏 DTO,含豁免位)。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/direct-receive/store-verification — 卖家申领店铺验证码(单一活跃 per seller)。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "summary": "PUT /api/direct-receive/store-verification — 卖家提交店铺外链(仅存储,不抓取)。",
         "tags": [],
         "security": [
           {

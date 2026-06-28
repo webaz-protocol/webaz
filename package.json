@@ -115,6 +115,8 @@
     "test:direct-pay-deferral-quota": "tsx scripts/test-direct-pay-deferral-quota.ts",
     "test:product-verification": "tsx scripts/test-product-verification.ts",
     "test:product-verification-routes": "tsx scripts/test-product-verification-routes.ts",
+    "test:store-verification": "tsx scripts/test-store-verification.ts",
+    "test:store-verification-routes": "tsx scripts/test-store-verification-routes.ts",
     "test:direct-pay-controls": "tsx scripts/test-direct-pay-controls.ts",
     "test:direct-pay-aml-monitor": "tsx scripts/test-direct-pay-aml-monitor.ts",
     "test:direct-pay-aml-review": "tsx scripts/test-direct-pay-aml-review.ts",

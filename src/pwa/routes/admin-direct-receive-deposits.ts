@@ -21,6 +21,7 @@ import { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress, amlDet
 import { readDirectPayLaunchReadiness } from '../../direct-pay-launch-readiness.js'
 import { approveDeferral, rejectDeferral, listDeferrals, type DeferralStatus } from '../../direct-receive-deferral.js'
 import { listProductVerifications, reviewProductVerification, type ProductVerificationStatus } from '../../product-verification.js'
+import { listStoreVerifications, reviewStoreVerification, type StoreVerificationStatus } from '../../store-verification.js'
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'
 
 export interface AdminDirectReceiveDepositsDeps {
@@ -275,5 +276,43 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
       { decision, ok: r.ok, outcome: r.ok ? (r.already ? 'already' : r.status) : r.reason })
     if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'PRODUCT_VERIFICATION_REVIEW_REJECTED' })
     return void res.json({ ok: true, status: r.status, already: !!r.already })
+  })
+
+  // ── 店铺认证(per-seller)审批 = 逐品验证豁免决定。读 = ROOT;verify/reject = ROOT + 真人 Passkey。 ──
+  //   核店铺时勾选 per_product_exempt:true → 该卖家所有商品免逐品验证(capability-granting → 铁律 Passkey;
+  //   purpose_data 绑 verification_id+decision+per_product_exempt,签 A 用 B / 改豁免位一律拒)。reviewStoreVerification 唯一 writer。
+  const SV_STATUSES = new Set<StoreVerificationStatus>(['issued', 'submitted', 'verified', 'rejected'])
+
+  // GET /api/admin/direct-receive/store-verifications?status=submitted — ROOT 审核队列(默认全部)。纯读。
+  app.get('/api/admin/direct-receive/store-verifications', (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const status = req.query?.status != null ? String(req.query.status) : ''
+    if (status && !SV_STATUSES.has(status as StoreVerificationStatus)) return void res.status(400).json({ error: '非法 status', error_code: 'BAD_STATUS' })
+    return void res.json({ verifications: listStoreVerifications(db, status ? { status: status as StoreVerificationStatus } : {}) })
+  })
+
+  // POST /api/admin/direct-receive/store-verifications/:id/review — ROOT + 真人 Passkey 核店铺 + 勾选逐品豁免。
+  app.post('/api/admin/direct-receive/store-verifications/:id/review', (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const verificationId = req.params.id
+    const decision = String(req.body?.decision || '')
+    const perProductExempt = req.body?.per_product_exempt === true
+    const notes = req.body?.notes != null ? String(req.body.notes) : undefined
+    const webauthnToken = req.body?.webauthn_token as string | undefined
+    const gate = requireDirectPayHumanPasskey({ db, consumeGateToken }, {
+      userId: admin.id as string, webauthnToken, purpose: 'direct_pay_store_verify',
+      validate: (data) => { const d = data as { verification_id?: string; decision?: string; per_product_exempt?: unknown } | null
+        return !!d && str(d.verification_id) === verificationId && str(d.decision) === decision && (d.per_product_exempt === true) === perProductExempt },
+    })
+    if (!gate.ok) {
+      logAdminAction(admin.id as string, 'direct_pay.store_verify', 'store_verification', verificationId,
+        { decision, per_product_exempt: perProductExempt, ok: false, outcome: gate.error_code === 'PASSKEY_REQUIRED_FOR_DIRECT_PAY' ? 'passkey_required' : 'human_presence_required', error_code: gate.error_code })
+      return void res.status(403).json({ error: gate.reason, error_code: gate.error_code })
+    }
+    const r = reviewStoreVerification(db, { id: verificationId, reviewerId: admin.id as string, decision: decision as 'verified' | 'rejected', perProductExempt, notes })
+    logAdminAction(admin.id as string, 'direct_pay.store_verify', 'store_verification', verificationId,
+      { decision, per_product_exempt: perProductExempt, ok: r.ok, outcome: r.ok ? (r.already ? 'already' : r.status) : r.reason })
+    if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'STORE_VERIFICATION_REVIEW_REJECTED' })
+    return void res.json({ ok: true, status: r.status, per_product_exempt: !!r.perProductExempt, already: !!r.already })
   })
 }
