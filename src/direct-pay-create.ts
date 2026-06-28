@@ -16,7 +16,8 @@ import { lockFeeStake } from './direct-pay-ledger.js'
 import { mulRate, type Units } from './money.js'
 import { sellerBaseBondEntrySatisfied } from './direct-pay-base-bond-entry.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
-import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, type DirectPayControlsConfig } from './direct-pay-controls.js'
+import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, coarsenBuyerFacingDirectPayCode, type DirectPayControlsConfig } from './direct-pay-controls.js'
+import { checkDeferralQuota, readDeferralQuotaConfig } from './direct-pay-deferral-quota.js'
 import { safeRunDirectPayAmlMonitor } from './direct-pay-aml-monitor.js'
 
 export interface DirectPayCreateDeps {
@@ -103,9 +104,17 @@ export function createDirectPayResponse(
     amlClear: sellerDirectPayAmlClear(db, sellerId),
   })
   // control deny 发生在【任何 DB write / order insert / fee-stake lock / stock decrement 之前】(fail-closed)。
-  if (!ctrl.ok) { res.status(ctrl.status).json({ error: ctrl.reason, error_code: ctrl.error_code }); return }
+  //   买家面脱敏:卖家私密拒因(暂停/保证金/KYC·制裁/AML)收敛为通用 SELLER_NOT_ELIGIBLE,与 availability 同源,
+  //   不向买家泄露卖家具体合规状态;全局/运营类(DISABLED/REGION/CAP)原样透出。精确 code 由 controls 单测覆盖。
+  if (!ctrl.ok) { const code = coarsenBuyerFacingDirectPayCode(ctrl.error_code); res.status(ctrl.status).json({ error_code: code, error: code === ctrl.error_code ? ctrl.reason : '该卖家暂不支持直付' }); return }
   const instr = getActivePaymentInstruction(db, sellerId)
   if (!instr) { res.status(409).json({ error: '卖家未设置收款说明,无法创建直付订单', error_code: 'NO_PAYMENT_INSTRUCTION' }); return }
+  // ③ 缓交期额度门(launch blocker):靠 active deferral 入场(无生产 bond)的卖家,缓交期内笔数/累计金额压低。
+  //   控制面全过后、任何 DB write 之前判(fail-closed);非缓交卖家 = no-op。超额 → 409,绝不建单。
+  const quota = checkDeferralQuota(db, sellerId, ctx.totalAmountU, new Date().toISOString(), readDeferralQuotaConfig(deps.getProtocolParam))
+  // 买家面脱敏:缓交额度拒因(笔数/金额)也收敛为通用 SELLER_NOT_ELIGIBLE,不向买家泄露卖家处于缓交/超额。
+  //   精确 code(quota.code)留在 checkDeferralQuota 返回值 + 其单测,供运营/调试。
+  if (!quota.ok) { res.status(409).json({ error_code: coarsenBuyerFacingDirectPayCode(quota.code), error: '该卖家暂不支持直付' }); return }
   const feeU = mulRate(ctx.totalAmountU, (ctx.product.source as string) === 'secondhand' ? 0.01 : 0.02)
   const windowHours = deps.getProtocolParam<number>('direct_pay.payment_window_hours', 4)
   try {

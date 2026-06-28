@@ -697,6 +697,7 @@ jobs:
       - run: npm run test:direct-pay-order-snapshot-schema
       - run: npm run test:direct-pay-disclosure-acks
       - run: npm run test:direct-pay-create
+      - run: npm run test:direct-pay-deferral-quota
       - run: npm run test:direct-pay-controls
       - run: npm run test:direct-pay-aml-monitor
       - run: npm run test:direct-pay-aml-review
