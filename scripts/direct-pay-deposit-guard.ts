@@ -27,12 +27,15 @@ const ROUTES = join(SRC, 'pwa', 'routes')
 const DEPOSIT_WRITER_FILE = 'src/direct-receive-deposits.ts'
 // production_receipt_confirmed_at 的写入只允许这一个【helper 函数名】(无论在哪个文件)。
 const PRODUCTION_RECEIPT_WRITER_FN = 'confirmProductionReceipt'
-// 且该 helper body 必须调用此【生产/法务闸】不变量 —— 没调它就不许写生产 receipt(防 4b-3 写出未 gate 的 writer)。
+// 且该 helper body 必须调用【两把独立闸】不变量 —— 任一缺失就不许写生产 receipt:
+//   Lock A = assertProductionDepositRail(真实 legal-cleared 生产收款实现);Lock B = assertBondRailCleared(Phase 4 rail-clearance registry 放行)。
 const PRODUCTION_RECEIPT_GATE_FN = 'assertProductionDepositRail'
+const PRODUCTION_RECEIPT_REGISTRY_GATE_FN = 'assertBondRailCleared'
 
 const DEPOSIT_WRITE_RE = /\b(INSERT\s+INTO|UPDATE)\s+direct_receive_deposits\b/i
 const PROD_RECEIPT_SET_RE = /production_receipt_confirmed_at\s*=/   // SQL SET 赋值(读如 `!= null` / `IS NOT NULL` 不匹配;`TEXT,` 列声明不匹配)
 const GATE_CALL_RE = new RegExp(`\\b${PRODUCTION_RECEIPT_GATE_FN}\\s*\\(`)
+const REGISTRY_GATE_CALL_RE = new RegExp(`\\b${PRODUCTION_RECEIPT_REGISTRY_GATE_FN}\\s*\\(`)
 
 /** 某行所属的【模块级】符号名(最近的 `function NAME` / `const NAME =`,锚定行首=模块级,跳过函数体内缩进的 const)。 */
 function enclosingModuleSymbol(lines: string[], idx: number): string | null {
@@ -74,7 +77,9 @@ function illegalProdReceiptWrites(src: string): Array<{ line: number; reason: st
     }
     const body = moduleFnBody(lines, PRODUCTION_RECEIPT_WRITER_FN)
     if (!body || !GATE_CALL_RE.test(body)) {
-      bad.push({ line: i + 1, reason: `'${PRODUCTION_RECEIPT_WRITER_FN}' writes the production receipt but does not call ${PRODUCTION_RECEIPT_GATE_FN}() — the legal-cleared production-rail gate is mandatory` })
+      bad.push({ line: i + 1, reason: `'${PRODUCTION_RECEIPT_WRITER_FN}' writes the production receipt but does not call ${PRODUCTION_RECEIPT_GATE_FN}() — the legal-cleared production-rail gate (Lock A) is mandatory` })
+    } else if (!REGISTRY_GATE_CALL_RE.test(body)) {
+      bad.push({ line: i + 1, reason: `'${PRODUCTION_RECEIPT_WRITER_FN}' writes the production receipt but does not call ${PRODUCTION_RECEIPT_REGISTRY_GATE_FN}() — the rail-clearance registry gate (Lock B) is mandatory` })
     }
   }
   return bad
@@ -104,9 +109,12 @@ function selfTest(): string[] {
   // prod-receipt SET INSIDE confirmProductionReceipt 但【未调用 assertProductionDepositRail】→ 抓(原因=missing gate)
   const badFix2 = ['export function confirmProductionReceipt(db, args) {', "  const ref = args.ref", "  db.prepare(\"UPDATE direct_receive_deposits SET production_receipt_confirmed_at = datetime('now') WHERE id=?\")", '}'].join('\n')
   expect('catches confirmProductionReceipt write WITHOUT assertProductionDepositRail', illegalProdReceiptWrites(badFix2).length === 1 && /assertProductionDepositRail/.test(illegalProdReceiptWrites(badFix2)[0].reason))
-  // prod-receipt SET INSIDE confirmProductionReceipt 且【先调用 assertProductionDepositRail(...)】(还带内层 const)→ 允许
-  const okFix = ['export function confirmProductionReceipt(db, args) {', "  const ref = args.ref", '  assertProductionDepositRail(getDepositRail(args.railId))', "  db.prepare(\"UPDATE direct_receive_deposits SET production_receipt_confirmed_at = datetime('now'), production_receipt_ref = ? WHERE id=?\")", '}'].join('\n')
-  expect('allows prod-receipt SET inside gated confirmProductionReceipt (skips inner const)', illegalProdReceiptWrites(okFix).length === 0)
+  // prod-receipt SET INSIDE confirmProductionReceipt 但【调了 Lock A、缺 Lock B assertBondRailCleared】→ 抓(原因=missing registry gate)
+  const badFix3 = ['export function confirmProductionReceipt(db, args) {', '  assertProductionDepositRail(getDepositRail(args.railId))', "  db.prepare(\"UPDATE direct_receive_deposits SET production_receipt_confirmed_at = datetime('now') WHERE id=?\")", '}'].join('\n')
+  expect('catches confirmProductionReceipt write WITHOUT assertBondRailCleared (Lock B)', illegalProdReceiptWrites(badFix3).length === 1 && /assertBondRailCleared/.test(illegalProdReceiptWrites(badFix3)[0].reason))
+  // prod-receipt SET INSIDE confirmProductionReceipt 且【两把闸都调】(还带内层 const)→ 允许
+  const okFix = ['export function confirmProductionReceipt(db, args) {', "  const ref = args.ref", '  assertProductionDepositRail(getDepositRail(args.railId))', '  assertBondRailCleared(args.railId, args.jurisdiction)', "  db.prepare(\"UPDATE direct_receive_deposits SET production_receipt_confirmed_at = datetime('now'), production_receipt_ref = ? WHERE id=?\")", '}'].join('\n')
+  expect('allows prod-receipt SET inside doubly-gated confirmProductionReceipt (skips inner const)', illegalProdReceiptWrites(okFix).length === 0)
   // reads → 忽略
   expect('ignores != null read', illegalProdReceiptWrites('return row.production_receipt_confirmed_at != null').length === 0)
   expect('ignores IS NOT NULL read', illegalProdReceiptWrites("SELECT 1 FROM direct_receive_deposits WHERE production_receipt_confirmed_at IS NOT NULL").length === 0)

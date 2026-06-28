@@ -21,6 +21,7 @@
 import type Database from 'better-sqlite3'
 import { toUnits, toDecimal, type Units } from './money.js'
 import { getDepositRail, assertProductionDepositRail, type DepositRailId } from './deposit-rails.js'
+import { assertBondRailCleared } from './direct-pay-bond-rail-clearance.js'
 import { recordBaseBondSlash } from './direct-pay-ledger.js'
 
 export type DepositTier = 'T0' | 'T1' | 'T2'
@@ -209,7 +210,10 @@ export function confirmProductionReceipt(db: Database.Database, args: {
   //   置于最前的语义意义:即便某 deposit 之前在【已 cleared 的 rail】下确认过,若该 rail 后被【撤回】(legalCleared→false),
   //   重新确认也不再被当"幂等已确认"放过 —— 必须重新通过闸。#100 guard 要求本 helper body 必含此调用。
   assertProductionDepositRail(getDepositRail(railId as DepositRailId))
-  // ───── 以下在 legal-cleared 生产 rail 落地前【全部不可达】(assert 已抛)─────
+  // Lock B(Phase 4 scaffold):rail-clearance registry 放行闸 —— legal_cleared + production_ready + 非占位 policy_version +
+  //   jurisdiction ∈ allowlist。与 Lock A【独立】,缺一即拒;当前 registry 全 fail-closed → 恒抛。置于任何 row 读/写之前。
+  assertBondRailCleared(railId, jurisdiction)
+  // ───── 以下在 legal-cleared 生产 rail 落地前【全部不可达】(两把闸已抛)─────
   const row = getRow(db, depositId)
   if (!row) return { ok: false, reason: 'deposit not found' }
   if (railId !== row.deposit_rail) return { ok: false, reason: 'rail_id does not match the deposit rail' }
