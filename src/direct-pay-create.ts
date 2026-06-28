@@ -17,6 +17,7 @@ import { mulRate, type Units } from './money.js'
 import { sellerHasProductionBaseBondLocked } from './direct-receive-deposits.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
 import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, type DirectPayControlsConfig } from './direct-pay-controls.js'
+import { safeRunDirectPayAmlMonitor } from './direct-pay-aml-monitor.js'
 
 export interface DirectPayCreateDeps {
   generateId: (prefix: string) => string
@@ -116,6 +117,9 @@ export function createDirectPayResponse(
       // frozen-at-create policy 快照:control 全过(ctrl.ok)才到此,decisionCode='OK'。
       snapshot: { enabled: cfg.enabled, railBreakerTripped: cfg.railBreakerTripped, region: cfg.region, regionAllowlist: cfg.regionAllowlist, perTxCapUnits: cfg.perTxCapUnits, sellerBreakerTripped, decisionCode: 'OK' },
     })
+    // PR-6C: 建单事务已提交后,运行【append-only AML 监控】(fail-soft;命中治理阈值即 append aml_flags,仅影响【后续】
+    //   create/availability 的 #107 breaker)。safe 包装吞异常 → 监控失败【绝不】回流成建单失败,也不碰当前订单。
+    safeRunDirectPayAmlMonitor(db, { sellerId, orderId, nowIso: new Date().toISOString(), getProtocolParam: deps.getProtocolParam })
     // ⚠️ 不在 create 响应里下发卖家收款说明(payment_instruction/label)——D1/D2 both-acked 前不得泄露(响应契约门,
     //   非仅 UI 软门)。买家先完成披露 ack,再经 GET /orders/:id 读取 redaction-gated 的 direct_pay_instruction_snapshot。
     res.json({

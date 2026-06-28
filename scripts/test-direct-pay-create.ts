@@ -239,6 +239,26 @@ db.prepare("INSERT INTO aml_flags (id, subject_user_id, rule, severity, status) 
 }
 // 清理:移除 open flag,避免影响后续 Part(seller1 在 Part D/E 仍需可用)
 db.prepare("DELETE FROM aml_flags WHERE id='af_open'").run()
+// 同时清掉 6B 的 cleared flag,让 seller1 干净,验证 PR-6C monitor 是【唯一】新增 flag 来源
+db.prepare("DELETE FROM aml_flags WHERE subject_user_id='seller1'").run()
+
+// ══════ Part C-AML2: PR-6C AML 监控接线(建单成功后 append-only 写 flag;fail-soft,不破坏建单)══════
+// 设 velocity 阈值=1 → 本次 direct_p2p 建单成功后 monitor 必 append 一条 velocity flag(related_order_id=新单)。
+cp['direct_pay.aml.velocity_max_orders'] = 1
+{
+  const amlBefore = (db.prepare("SELECT COUNT(*) n FROM aml_flags WHERE subject_user_id='seller1' AND rule='velocity'").get() as { n: number }).n
+  const oN = ordersN(); const r = mres()
+  createDirectPayResponse(r, db, cdeps, baseCtx)
+  const flag = db.prepare("SELECT severity, status, related_order_id FROM aml_flags WHERE subject_user_id='seller1' AND rule='velocity'").get() as any
+  ok('PR-6C: create still 200 AND monitor appended exactly one velocity flag post-commit',
+    r._s === 200 && r._b?.status === 'direct_pay_window' && ordersN() === oN + 1 &&
+    (db.prepare("SELECT COUNT(*) n FROM aml_flags WHERE subject_user_id='seller1' AND rule='velocity'").get() as { n: number }).n === amlBefore + 1,
+    JSON.stringify({ s: r._s, flag }))
+  ok('PR-6C: appended flag is medium/open (feeds #107 breaker)', flag?.severity === 'medium' && flag?.status === 'open', JSON.stringify(flag))
+  ok('PR-6C: appended flag related_order_id = the just-created order', flag?.related_order_id === r._b?.order_id, JSON.stringify(flag))
+}
+cp['direct_pay.aml.velocity_max_orders'] = 0  // reset inert(后续 Part 不受影响)
+db.prepare("DELETE FROM aml_flags WHERE subject_user_id='seller1'").run()  // 清理:seller1 在 Part D/E 仍需可用
 
 // ══════ Part D: GET /orders/:id 响应契约门 —— buyer 在 D1/D2 both-acked 前拿不到 snapshot ══════
 // 生产由 runtime schema bridge(webaz-schema-helpers)给 products 加 return_days;本测试用 schema.ts initDatabase,补上以匹配。
