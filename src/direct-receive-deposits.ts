@@ -20,7 +20,7 @@
  */
 import type Database from 'better-sqlite3'
 import { toUnits, toDecimal, type Units } from './money.js'
-import { getDepositRail } from './deposit-rails.js'
+import { getDepositRail, assertProductionDepositRail, type DepositRailId } from './deposit-rails.js'
 import { recordBaseBondSlash } from './direct-pay-ledger.js'
 
 export type DepositTier = 'T0' | 'T1' | 'T2'
@@ -180,6 +180,58 @@ export function slashBond(db: Database.Database, args: { depositId: string; txnI
       .run(row.user_id, row.tier, args.reason ?? 'base_bond_slashed')
   })()
   return { ok: true, status: 'slashed' }
+}
+
+// ───── PR-4b-3: 生产 receipt 写入(唯一 writer)─────────────────────────────────────────────────
+/** base-bond/合规 policy 版本 —— 【服务端生成】(非客户端入参),legal clearance 落地时随 policy 更新。 */
+export const DIRECT_PAY_BASE_BOND_POLICY_VERSION = 'pre-legal-unset'
+/** 生产 receipt 允许的法域【严格白名单】。默认空 = 任何 jurisdiction 都拒(额外 fail-closed,待法务配置)。 */
+export const DIRECT_PAY_BOND_JURISDICTIONS: string[] = []
+
+/**
+ * 生产保证金 receipt【唯一】writer(PR-4b-3 scaffold)。这是【整个协议中】唯一允许写 production_receipt_confirmed_at
+ *   的函数(#100 guard 机器强制:写赋值必在本函数内 且 本函数必调 assertProductionDepositRail)。
+ *
+ * 当前【永远 fail-closed】:assertProductionDepositRail 对所有现有 rail 抛(manual 非生产;usdc/fiat legalCleared=false)
+ *   → 调用即抛 → 永不写 production receipt → Direct Pay 仍 non-launchable。assert 之后的写路径在 legal-cleared rail
+ *   落地前【不可达】(本 PR 不接真实 USDC/fiat/PSP/on-chain)。不碰 buyer wallet/escrow/order/settlement/refund。
+ *
+ * 硬约束(即便未来 rail 放行也必须守):
+ *  - 拒绝把【非生产 locked】(manual/test lock,无 production receipt)升级成生产 —— 旧/测试行不得冒充生产到位。
+ *  - jurisdiction 必须 ∈ DIRECT_PAY_BOND_JURISDICTIONS(严格白名单);policy_version 由服务端常量盖章,非入参。
+ *  - assert 在任何写之前;原子 confirm+lock(amount + status=locked + production receipt + provenance 快照 + privilege)。
+ */
+export function confirmProductionReceipt(db: Database.Database, args: {
+  depositId: string; railId: string; expectedAmountUnits: Units; receiptRef: string; jurisdiction: string
+}): DepositOpResult {
+  const { depositId, railId, expectedAmountUnits, receiptRef, jurisdiction } = args
+  const row = getRow(db, depositId)
+  if (!row) return { ok: false, reason: 'deposit not found' }
+  // 幂等:已生产确认 → already(不重复写)
+  if (row.status === 'locked' && row.production_receipt_confirmed_at != null) return { ok: true, status: 'locked', already: true }
+  // 拒绝把【非生产 locked】(manual/test lock,无 production receipt)升级成生产
+  if (row.status === 'locked') return { ok: false, reason: 'deposit is locked WITHOUT a production receipt (manual/test) — cannot be upgraded to production' }
+  // ⚠️ 生产/法务硬闸:当前所有 rail 都被拒 → 抛 → fail-closed。#100 guard 要求本 helper body 必含此调用;assert 在所有写之前。
+  assertProductionDepositRail(getDepositRail(railId as DepositRailId))
+  // ───── 以下在 legal-cleared 生产 rail 落地前【不可达】(assert 已抛)─────
+  if (railId !== row.deposit_rail) return { ok: false, reason: 'rail_id does not match the deposit rail' }
+  if (!receiptRef) return { ok: false, reason: 'missing production receipt ref' }
+  if (!DIRECT_PAY_BOND_JURISDICTIONS.includes(jurisdiction)) return { ok: false, reason: `jurisdiction '${jurisdiction}' not in allowlist` }
+  if (!['pending', 'confirmed', 'insufficient'].includes(row.status)) return { ok: false, reason: `cannot production-confirm from status '${row.status}'` }
+  if (!isNonNegUnits(expectedAmountUnits) || expectedAmountUnits <= 0) return { ok: false, reason: 'expectedAmount must be a positive integer base-units' }
+  if (expectedAmountUnits < toUnits(row.required_amount)) return { ok: false, reason: 'insufficient: amount < required' }
+  db.transaction(() => {
+    db.prepare(`UPDATE direct_receive_deposits SET amount = ?, status = 'locked', confirmed_at = COALESCE(confirmed_at, datetime('now')),
+      locked_at = datetime('now'), production_receipt_confirmed_at = datetime('now'),
+      production_receipt_ref = ?, production_rail_id = ?, production_jurisdiction = ?, production_policy_version = ?,
+      external_ref = COALESCE(?, external_ref), updated_at = datetime('now') WHERE id = ?`)
+      .run(toDecimal(expectedAmountUnits), receiptRef, railId, jurisdiction, DIRECT_PAY_BASE_BOND_POLICY_VERSION, receiptRef, depositId)
+    db.prepare(`INSERT INTO direct_receive_privileges (user_id, status, tier, granted_at, updated_at)
+      VALUES (?, 'active', ?, datetime('now'), datetime('now'))
+      ON CONFLICT(user_id) DO UPDATE SET status='active', tier=excluded.tier, suspended_reason=NULL, granted_at=COALESCE(direct_receive_privileges.granted_at, excluded.granted_at), updated_at=datetime('now')`)
+      .run(row.user_id, row.tier)
+  })()
+  return { ok: true, status: 'locked' }
 }
 
 /**

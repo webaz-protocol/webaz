@@ -314,6 +314,7 @@ import { registerOrdersCreateRoutes } from './routes/orders-create.js'
 import { registerDirectPayDisclosureAckRoutes } from './routes/direct-pay-disclosure-acks.js'  // PR-4d: Direct Pay 风险披露 ack 端点(薄 adapter)
 import { registerDirectReceivePaymentInstructionRoutes } from './routes/direct-receive-payment-instructions.js'  // PR-4f-a: 卖家收款说明 CRUD(薄 adapter)
 import { registerDirectPayAvailabilityRoutes } from './routes/direct-pay-availability.js'  // PR-4a: Direct Pay 可用性只读(控制面 SSOT)
+import { registerAdminDirectReceiveDepositsRoutes } from './routes/admin-direct-receive-deposits.js'  // PR-4b-3: ROOT 生产保证金 receipt 确认(fail-closed scaffold)
 // Disputes 读端点 (#1013 Phase 86) — 5 endpoints (list/similar/detail/evidence-list/parties)
 import { registerDisputesReadRoutes } from './routes/disputes-read.js'
 // Disputes 写端点 (#1013 Phase 87) — 5 endpoints (respond/arbitrate/add-evidence/evidence-blob/request-evidence)
@@ -3870,6 +3871,7 @@ registerUsersPublicRoutes(app, { db, auth, noteAuthenticityBadges })
 registerDirectPayDisclosureAckRoutes(app, { db, auth, generateId, consumeGateToken })  // PR-4d
 registerDirectReceivePaymentInstructionRoutes(app, { db, auth, generateId })  // PR-4f-a
 registerDirectPayAvailabilityRoutes(app, { db, auth, getProtocolParam })  // PR-4a
+registerAdminDirectReceiveDepositsRoutes(app, { db, requireRootAdmin: (req, res) => requireRootAdmin(req, res), consumeGateToken, logAdminAction })  // PR-4b-3
 // RFC-004 build_feedback — agent-native "use → build" 反馈管道
 registerBuildFeedbackRoutes(app, {
   db, auth,
@@ -4346,8 +4348,6 @@ registerProfilePrefsRoutes(app, { db, auth })
 // 价格历史 — 帮 buyer/agent 判断卖家是否底价倾销
 // 数据来源：orders WHERE product_id = ? AND status = 'completed'
 // 防 abuse：rate limit + buyer_id 永不返回
-
-
 
 // ─── 话题 / 标签 API ─────────────────────────────────────
 // #1013 Phase 50: 2 tags endpoints 已迁出到 routes/tags.ts
