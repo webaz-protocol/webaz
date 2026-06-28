@@ -27,6 +27,7 @@ export type DirectPayControlReason =
   | 'DIRECT_PAY_SELLER_SUSPENDED'   // 该卖家被熔断/暂停(per-seller breaker)
   | 'DIRECT_PAY_NOT_AVAILABLE'      // 卖家未完成生产级 base-bond
   | 'DIRECT_PAY_KYC_REQUIRED'       // 卖家未通过 KYC/制裁筛查
+  | 'DIRECT_PAY_AML_REVIEW_REQUIRED'// 卖家存在未清除的中/高风险 AML flag(运行期断路器;PR-6B)
 
 /** 治理【可调】控制配置(protocol_params 装配;默认 fail-closed)。
  *  注意:production base-bond 与 KYC/制裁是【不可关闭的硬不变量】(launch blockers),【不】放进可调配置 ——
@@ -49,7 +50,8 @@ export interface DirectPayControlsFacts {
   amountUnits: Units            // 本单金额(整数 base-units)
   sellerBreakerTripped: boolean // 该卖家被熔断/暂停(per-seller breaker;true=拒)。来源由 5b 装配(如 privileges.suspended)。
   productionBaseBondLocked: boolean
-  kycSanctionsPassed: boolean
+  kycSanctionsPassed: boolean       // KYB AND sanctions(PR-6A;两者皆过)
+  amlClear: boolean                 // 运行期 AML 断路器:无未清除的中/高风险 flag(PR-6B);与 kycSanctionsPassed 分离,语义独立
 }
 
 export interface DirectPayControlsDecision {
@@ -63,9 +65,9 @@ const isNonNegUnits = (x: unknown): x is Units => typeof x === 'number' && Numbe
 
 /**
  * 入口控制判定(纯、fail-closed、total)。顺序(便宜/广 → 卖家专属 → 硬不变量):
- *   全局开关 → 运营熔断 → 地区 → 单笔上限 → 卖家熔断 → production base-bond → KYC/制裁。
+ *   全局开关 → 运营熔断 → 地区 → 单笔上限 → 卖家熔断 → production base-bond → KYC/制裁 → AML 断路器。
  *   任一不过即返回该项拒绝码(短路;先全局/政策、后卖家专属,避免提前泄露卖家专属原因);全过返回 { ok:true }。绝不抛错。
- *   production base-bond 与 KYC/制裁是【不可配置硬不变量】(无 cfg 开关、治理不可绕过),恒在最后强制。
+ *   production base-bond、KYC/制裁、AML 断路器都是【不可配置硬不变量】(无 cfg 开关、治理不可绕过),恒在最后强制。
  */
 export function evaluateDirectPayLaunchControls(
   cfg: Partial<DirectPayControlsConfig> | null | undefined,
@@ -85,6 +87,7 @@ export function evaluateDirectPayLaunchControls(
   // 硬不变量(launch blockers):production base-bond 与 KYC/制裁【始终强制】,无 cfg 开关、治理不可绕过。
   if (f.productionBaseBondLocked !== true) return deny('DIRECT_PAY_NOT_AVAILABLE', '直付暂不可用:卖家未完成生产级履约担保(production base-bond)')
   if (f.kycSanctionsPassed !== true) return deny('DIRECT_PAY_KYC_REQUIRED', '直付暂不可用:卖家未通过 KYC/制裁筛查')
+  if (f.amlClear !== true) return deny('DIRECT_PAY_AML_REVIEW_REQUIRED', '直付暂不可用:卖家存在未清除的 AML 风险复核')
   return { ok: true, status: 200 }
 }
 
@@ -147,4 +150,26 @@ export function sellerDirectPaySanctionsClear(db: Database.Database, sellerId: s
  */
 export function sellerDirectPayBreakerTripped(db: Database.Database, sellerId: string): boolean {
   return !!db.prepare("SELECT 1 FROM direct_receive_privileges WHERE user_id = ? AND status = 'suspended' LIMIT 1").get(sellerId)
+}
+
+/**
+ * PR-6B AML 运行期断路器事实(fail-closed)。来源 aml_flags(本仓内部监控 flag;无第三方 vendor、无真实 API)。
+ *   key = subject_user_id。返回 true(清白/不阻断)⟺ 卖家【没有任何阻断性 flag】。
+ *
+ * 单条 flag 的【阻断】判定(任一命中即阻断;precedence 由 SQL OR 短路保证 suspend 优先于 cleared):
+ *   ① malformed enum —— severity/status/disposition 越界(本表 TEXT 无 CHECK,脏值可入)→ fail-closed 阻断;
+ *   ② disposition='suspend' —— 无论 severity/status【一律阻断】(含 status='cleared' 的矛盾数据:suspend 取胜,从严);
+ *   ③ status∈(open|reviewing|escalated|str_filed) 且 severity∈(medium|high) —— 未清除的中/高风险 → 阻断。
+ * 非阻断(放行):无 flag / status='cleared'(且非 suspend) / severity='low'(且非 suspend)。
+ *   纯读;不写;不碰资金/状态机。aml_flags 当前无生产写入方 → 真实卖家天然无阻断(待 AML 检测引擎接入再产生 flag)。
+ */
+export function sellerDirectPayAmlClear(db: Database.Database, sellerId: string): boolean {
+  const blocking = db.prepare(`SELECT 1 FROM aml_flags WHERE subject_user_id = ? AND (
+         severity NOT IN ('low','medium','high')
+      OR status   NOT IN ('open','reviewing','cleared','escalated','str_filed')
+      OR (disposition IS NOT NULL AND disposition NOT IN ('review_queue','downgrade','suspend'))
+      OR disposition = 'suspend'
+      OR (status IN ('open','reviewing','escalated','str_filed') AND severity IN ('medium','high'))
+    ) LIMIT 1`).get(sellerId)
+  return !blocking
 }

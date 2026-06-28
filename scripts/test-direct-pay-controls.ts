@@ -7,7 +7,7 @@
  */
 import Database from 'better-sqlite3'
 
-const { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, DEFAULT_DIRECT_PAY_CONTROLS, DIRECT_PAY_CONTROL_PARAMS } =
+const { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, DEFAULT_DIRECT_PAY_CONTROLS, DIRECT_PAY_CONTROL_PARAMS } =
   await import('../src/direct-pay-controls.js')
 const { toUnits } = await import('../src/money.js')
 
@@ -16,7 +16,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 // all-pass baseline (production base-bond + KYC are hard invariants — no cfg flags for them)
 const CFG = { enabled: true, railBreakerTripped: false, region: 'SG', regionAllowlist: ['SG', 'MY'], perTxCapUnits: toUnits(100) }
-const FACTS = { amountUnits: toUnits(50), sellerBreakerTripped: false, productionBaseBondLocked: true, kycSanctionsPassed: true }
+const FACTS = { amountUnits: toUnits(50), sellerBreakerTripped: false, productionBaseBondLocked: true, kycSanctionsPassed: true, amlClear: true }
 
 // ── 1. defaults fail-closed ──
 ok('DEFAULT config is disabled', DEFAULT_DIRECT_PAY_CONTROLS.enabled === false)
@@ -52,6 +52,16 @@ ok('base-bond enforced even if a stray requireProductionBaseBond:false is passed
 // ── 5. KYC/sanctions (HARD INVARIANT — always enforced, no cfg flag can disable) ──
 ok('no KYC/sanctions → KYC_REQUIRED', evaluateDirectPayLaunchControls(CFG, { ...FACTS, kycSanctionsPassed: false }).error_code === 'DIRECT_PAY_KYC_REQUIRED')
 ok('KYC enforced even if a stray requireKycSanctions:false is passed (no bypass)', evaluateDirectPayLaunchControls({ ...CFG, requireKycSanctions: false } as any, { ...FACTS, kycSanctionsPassed: false }).error_code === 'DIRECT_PAY_KYC_REQUIRED')
+
+// ── 5b. AML runtime breaker (HARD INVARIANT — PR-6B; separate fact from kycSanctionsPassed) ──
+ok('amlClear=false → AML_REVIEW_REQUIRED', evaluateDirectPayLaunchControls(CFG, { ...FACTS, amlClear: false }).error_code === 'DIRECT_PAY_AML_REVIEW_REQUIRED')
+ok('amlClear missing (undefined) → AML_REVIEW_REQUIRED (fail-closed)', evaluateDirectPayLaunchControls(CFG, { ...FACTS, amlClear: undefined as any }).error_code === 'DIRECT_PAY_AML_REVIEW_REQUIRED')
+// AML enforced even if a stray cfg flag is passed (no governance bypass of the invariant)
+ok('AML enforced even with stray requireAmlClear:false cfg (no bypass)', evaluateDirectPayLaunchControls({ ...CFG, requireAmlClear: false } as any, { ...FACTS, amlClear: false }).error_code === 'DIRECT_PAY_AML_REVIEW_REQUIRED')
+// order: KYC checked BEFORE AML (both invariants; KYC fails first when both fail)
+ok('KYC checked BEFORE AML (no KYC + AML blocked → KYC_REQUIRED first)', evaluateDirectPayLaunchControls(CFG, { ...FACTS, kycSanctionsPassed: false, amlClear: false }).error_code === 'DIRECT_PAY_KYC_REQUIRED')
+// order: base-bond checked BEFORE AML
+ok('base-bond checked BEFORE AML (no bond + AML blocked → NOT_AVAILABLE first)', evaluateDirectPayLaunchControls(CFG, { ...FACTS, productionBaseBondLocked: false, amlClear: false }).error_code === 'DIRECT_PAY_NOT_AVAILABLE')
 
 // ── 6. all conditions pass ──
 const okd = evaluateDirectPayLaunchControls(CFG, FACTS)
@@ -99,6 +109,29 @@ db.prepare(`INSERT INTO direct_receive_kyb_reviews (id, user_id, status, expires
 ok('kyb: approved + not-expired → true', sellerDirectPayKybPassed(db, 'k5') === true)
 db.prepare("INSERT INTO direct_receive_kyb_reviews (id, user_id, status) VALUES ('kr6','k5','revoked')").run()
 ok('kyb: approved then REVOKED → false (revocation blocks)', sellerDirectPayKybPassed(db, 'k5') === false)
+
+// ── 8b. PR-6B AML runtime breaker reader (aml_flags; key=subject_user_id; fail-closed) ──
+db.exec("CREATE TABLE aml_flags (id TEXT PRIMARY KEY, subject_user_id TEXT NOT NULL, related_order_id TEXT, rule TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'low', detail TEXT, status TEXT NOT NULL DEFAULT 'open', disposition TEXT, reviewed_by TEXT, reviewed_at TEXT, created_at TEXT)")
+let afn = 0
+const aflag = (sub: string, severity: string, status: string, disposition: string | null = null): void => {
+  db.prepare("INSERT INTO aml_flags (id, subject_user_id, rule, severity, status, disposition) VALUES (?,?,?,?,?,?)").run('af' + (++afn), sub, 'velocity', severity, status, disposition)
+}
+ok('aml: no flag → clear (true)', sellerDirectPayAmlClear(db, 'a_none') === true)
+aflag('a_clearedhigh', 'high', 'cleared'); ok('aml: cleared high → clear (resolved, not blocking)', sellerDirectPayAmlClear(db, 'a_clearedhigh') === true)
+aflag('a_lowopen', 'low', 'open'); ok('aml: low open (non-suspend) → clear', sellerDirectPayAmlClear(db, 'a_lowopen') === true)
+aflag('a_lowdown', 'low', 'open', 'downgrade'); ok('aml: low + downgrade → clear (only suspend blocks via disposition)', sellerDirectPayAmlClear(db, 'a_lowdown') === true)
+aflag('a_openmed', 'medium', 'open'); ok('aml: open medium → block', sellerDirectPayAmlClear(db, 'a_openmed') === false)
+aflag('a_openhigh', 'high', 'open'); ok('aml: open high → block', sellerDirectPayAmlClear(db, 'a_openhigh') === false)
+aflag('a_revmed', 'medium', 'reviewing'); ok('aml: reviewing medium → block', sellerDirectPayAmlClear(db, 'a_revmed') === false)
+aflag('a_revhigh', 'high', 'reviewing'); ok('aml: reviewing high → block', sellerDirectPayAmlClear(db, 'a_revhigh') === false)
+aflag('a_escmed', 'medium', 'escalated'); ok('aml: escalated medium → block', sellerDirectPayAmlClear(db, 'a_escmed') === false)
+aflag('a_strhigh', 'high', 'str_filed'); ok('aml: str_filed high → block', sellerDirectPayAmlClear(db, 'a_strhigh') === false)
+aflag('a_susplow', 'low', 'open', 'suspend'); ok('aml: disposition=suspend (low/open) → block (suspend overrides low severity)', sellerDirectPayAmlClear(db, 'a_susplow') === false)
+aflag('a_clrsusp', 'high', 'cleared', 'suspend'); ok('aml: cleared + suspend → block (suspend wins over cleared, fail-closed)', sellerDirectPayAmlClear(db, 'a_clrsusp') === false)
+aflag('a_badsev', 'critical', 'open'); ok('aml: malformed severity → block (fail-closed)', sellerDirectPayAmlClear(db, 'a_badsev') === false)
+aflag('a_badstat', 'high', 'weird'); ok('aml: malformed status → block (fail-closed)', sellerDirectPayAmlClear(db, 'a_badstat') === false)
+aflag('a_baddisp', 'low', 'open', 'frobnicate'); ok('aml: malformed disposition → block (fail-closed)', sellerDirectPayAmlClear(db, 'a_baddisp') === false)
+aflag('a_multi', 'low', 'cleared'); aflag('a_multi', 'high', 'open'); ok('aml: any blocking flag among several → block', sellerDirectPayAmlClear(db, 'a_multi') === false)
 
 // ── 9. seed list (DIRECT_PAY_CONTROL_PARAMS) — boot 必 seed 这 6 个 key,默认仍全部 fail-closed ──
 // server.ts 把它展开进 DEFAULT_PARAMS(boot seed + admin PATCH 依赖 key 存在);此处守 key 齐全 + 默认全关。

@@ -219,7 +219,26 @@ seedSanctions('seller1'); seedKyb('seller1')  // seller1 过 KYB+制裁(bond 在
 const okRes = mres()
 const oN0 = ordersN()
 createDirectPayResponse(okRes, db, cdeps, baseCtx)
-ok('simple product + controls pass → 200 created', okRes._s === 200 && okRes._b?.status === 'direct_pay_window' && ordersN() === oN0 + 1, JSON.stringify(okRes._b))
+ok('simple product + controls pass (no AML flag) → 200 created (crossed AML gate)', okRes._s === 200 && okRes._b?.status === 'direct_pay_window' && ordersN() === oN0 + 1, JSON.stringify(okRes._b))
+
+// ══════ Part C-AML: PR-6B 运行期 AML 断路器(create 在【任何写入前】fail-closed)══════
+// cleared 的 flag 不阻断:seller1 仍可建单(resolved flag 不算未清除风险)
+db.prepare("INSERT INTO aml_flags (id, subject_user_id, rule, severity, status) VALUES ('af_clr','seller1','velocity','high','cleared')").run()
+{
+  const oN = ordersN(); const r = mres()
+  createDirectPayResponse(r, db, cdeps, baseCtx)
+  ok('AML cleared flag → does NOT block (still 200 created)', r._s === 200 && r._b?.status === 'direct_pay_window' && ordersN() === oN + 1, JSON.stringify(r._b))
+}
+// open/high flag 阻断:create 拒绝且【无】order/stake/stock mutation
+db.prepare("INSERT INTO aml_flags (id, subject_user_id, rule, severity, status) VALUES ('af_open','seller1','velocity','high','open')").run()
+{
+  const oN = ordersN(), sN = stakesN(), st = pstock(); const r = mres()
+  createDirectPayResponse(r, db, cdeps, baseCtx)
+  ok('AML open/high flag → 409 DIRECT_PAY_AML_REVIEW_REQUIRED, no order/stake/stock mutation',
+    r._s === 409 && r._b?.error_code === 'DIRECT_PAY_AML_REVIEW_REQUIRED' && ordersN() === oN && stakesN() === sN && pstock() === st, JSON.stringify(r._b))
+}
+// 清理:移除 open flag,避免影响后续 Part(seller1 在 Part D/E 仍需可用)
+db.prepare("DELETE FROM aml_flags WHERE id='af_open'").run()
 
 // ══════ Part D: GET /orders/:id 响应契约门 —— buyer 在 D1/D2 both-acked 前拿不到 snapshot ══════
 // 生产由 runtime schema bridge(webaz-schema-helpers)给 products 加 return_days;本测试用 schema.ts initDatabase,补上以匹配。
@@ -261,6 +280,12 @@ registerDirectPayAvailabilityRoutes(app, {
 // p2:控制面全开 + seller2 bond+KYC+instr → available:true
 const av1 = await getJson('/api/direct-pay/availability?product_id=p2', 'buyer1')
 ok('availability: eligible product → available:true', av1.json?.available === true, JSON.stringify(av1.json))
+// PR-6B: AML 断路器阻断 → available:false,买家只见脱敏 SELLER_NOT_ELIGIBLE(不泄露 AML/STR/severity/status 细节)
+db.prepare("INSERT INTO aml_flags (id, subject_user_id, rule, severity, status) VALUES ('af_e2','seller2','velocity','high','open')").run()
+const avAml = await getJson('/api/direct-pay/availability?product_id=p2', 'buyer1')
+ok('availability: AML-blocked seller → available:false, coarsened DIRECT_PAY_SELLER_NOT_ELIGIBLE', avAml.json?.available === false && avAml.json?.error_code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE', JSON.stringify(avAml.json))
+ok('availability: AML block leaks NO detail (no aml/str/severity/status/flag in payload)', !/aml|str|severity|status|flag/i.test(JSON.stringify(avAml.json)), JSON.stringify(avAml.json))
+db.prepare("DELETE FROM aml_flags WHERE id='af_e2'").run()
 // P1 fix: 卖家 suspended 但 bond/KYC/instruction 都满足 → availability 必须 available:false(与 create 门一致),脱敏成 SELLER_NOT_ELIGIBLE
 db.prepare("INSERT INTO direct_receive_privileges (user_id, status, tier) VALUES ('seller2','suspended','T0') ON CONFLICT(user_id) DO UPDATE SET status='suspended'").run()
 const avSusp = await getJson('/api/direct-pay/availability?product_id=p2', 'buyer1')
