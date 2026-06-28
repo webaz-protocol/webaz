@@ -49,6 +49,17 @@ const inGrace = getActiveDeferral(db, 'u1', plus(33))   // past expires(30) befo
 ok('4a. active within grace, inGrace=true (day 33)', inGrace?.id === 'd1' && inGrace?.inGrace === true)
 ok('4b. NOT active after grace (day 40) → null', getActiveDeferral(db, 'u1', plus(40)) === null)
 ok('4c. reducedQuotaFactor exposed on active', getActiveDeferral(db, 'u1', plus(10))?.reducedQuotaFactor === 0.4)
+// ── 4d. P1 FAIL-CLOSED: corrupt granted rows (NULL / invalid clock anchors) must NOT read as active ──
+// (read path must agree with expireDeferrals, which treats bad grace_until as expirable — no fail-open.)
+db.prepare("INSERT INTO direct_receive_deferrals (id, user_id, period_days, reduced_quota_factor, status, expires_at, grace_until) VALUES ('bn','u_null',30,0.5,'granted','2026-07-31 00:00:00',NULL)").run()
+ok('4d. granted row with NULL grace_until → getActiveDeferral null (fail-closed, not fail-open)', getActiveDeferral(db, 'u_null', plus(1)) === null)
+db.prepare("INSERT INTO direct_receive_deferrals (id, user_id, period_days, reduced_quota_factor, status, expires_at, grace_until) VALUES ('bi','u_inv',30,0.5,'granted','2026-07-31 00:00:00','nope')").run()
+ok('4e. granted row with invalid grace_until ("nope") → getActiveDeferral null', getActiveDeferral(db, 'u_inv', plus(1)) === null)
+db.prepare("INSERT INTO direct_receive_deferrals (id, user_id, period_days, reduced_quota_factor, status, expires_at, grace_until) VALUES ('be','u_be',30,0.5,'granted',NULL,'2099-01-01 00:00:00')").run()
+ok('4f. granted row with NULL expires_at → getActiveDeferral null (both anchors required)', getActiveDeferral(db, 'u_be', plus(1)) === null)
+// and expireDeferrals agrees: the NULL/invalid-grace rows are expirable (consistent semantics)
+const eBad = expireDeferrals(db, plus(1))
+ok('4g. expireDeferrals expires the NULL/invalid-grace granted rows (read+cleanup agree)', eBad.expired.includes('u_null') && eBad.expired.includes('u_inv') && row('bn').status === 'expired' && row('bi').status === 'expired')
 
 // ── 5. reject (separate user) ──
 requestDeferral(db, { deferralId: 'd2', userId: 'u2', periodDays: 14, nowIso: T0 })

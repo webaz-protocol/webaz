@@ -5,7 +5,8 @@
  *   → 到期 → 宽限 → 停权。本模块只做【状态机 + 时钟锚点】,不动任何真实资金、不碰 wallet/escrow/settlement/refund。
  *
  * 铁律:
- *  - 人工批:approveDeferral 需 adminId(真人);无自动授予路径。
+ *  - 人工批(责任分层):本 helper 仅要求【调用方传入非空 adminId】、无自动授予路径。**ROOT / Passkey / human-presence
+ *    的强制在调用方(admin route)**——helper 不验证身份/凭证,只记录 caller 声明的 adminId(approve/reject 同理)。
  *  - 不零威慑:缓交期配额系数【压低且有下限】(clampReducedQuotaFactor:∈[min,max],min>0、max<1)—— 缓交不是免责。
  *  - 到期→宽限→停权:granted 有 expires_at(缓交到期)+ grace_until(宽限截止);超过 grace_until → expired,
  *    由调用方(cron/PR2)据此停权(本模块只置 expired 状态 + 返回受影响 user,不直接改 privileges,保持隔离)。
@@ -70,7 +71,8 @@ export function requestDeferral(db: Database.Database, args: {
   return { ok: true, status: 'pending' }
 }
 
-/** 真人 admin 审批通过 → granted。设缓交到期 + 宽限截止 + 压低配额。需 adminId(无自动批)。 */
+/** 审批通过 → granted。设缓交到期 + 宽限截止 + 压低配额。仅要求 caller 传非空 adminId(无自动批);
+ *  ROOT/Passkey/human-presence 由【调用方 route】强制,helper 不验证身份。 */
 export function approveDeferral(db: Database.Database, args: {
   deferralId: string; adminId: string; nowIso: string; graceDays?: number; reducedQuotaFactor?: number; config?: DeferralConfig
 }): DeferralOpResult {
@@ -105,16 +107,21 @@ export function rejectDeferral(db: Database.Database, args: { deferralId: string
   return { ok: true, status: 'rejected' }
 }
 
-/** 取某 user 当前【生效中】的缓交(granted 且 now ≤ grace_until)。无 → null。供 PR2 eligibility / 配额读取。 */
+/**
+ * 取某 user 当前【生效中】的缓交(granted 且 now ≤ grace_until)。无 → null。供 PR2 eligibility / 配额读取。
+ * 【FAIL-CLOSED】:grace_until 或 expires_at 为空/不可解析 = 坏 granted 行,**绝不**当作 active(返回 null 跳过)。
+ *   语义与 expireDeferrals 一致(坏行视为可清理/不生效),杜绝"坏 granted 行被误认有效缓交"放进 eligibility。
+ */
 export function getActiveDeferral(db: Database.Database, userId: string, nowIso: string): { id: string; reducedQuotaFactor: number; expiresAt: string | null; graceUntil: string | null; inGrace: boolean } | null {
   const now = Date.parse(nowIso)
   if (!Number.isFinite(now)) return null
   const rows = db.prepare("SELECT id, reduced_quota_factor, expires_at, grace_until FROM direct_receive_deferrals WHERE user_id = ? AND status = 'granted'").all(userId) as Array<{ id: string; reduced_quota_factor: number; expires_at: string | null; grace_until: string | null }>
   for (const r of rows) {
     const grace = r.grace_until ? Date.parse(r.grace_until) : NaN
-    if (!Number.isFinite(grace) || grace > now) {
-      const exp = r.expires_at ? Date.parse(r.expires_at) : NaN
-      return { id: r.id, reducedQuotaFactor: r.reduced_quota_factor, expiresAt: r.expires_at, graceUntil: r.grace_until, inGrace: Number.isFinite(exp) && now > exp }
+    const exp = r.expires_at ? Date.parse(r.expires_at) : NaN
+    // fail-closed:两个时钟锚点都必须是合法时间;grace 必须在未来。任一空/坏 → 跳过(不承认为 active)。
+    if (Number.isFinite(grace) && Number.isFinite(exp) && grace > now) {
+      return { id: r.id, reducedQuotaFactor: r.reduced_quota_factor, expiresAt: r.expires_at, graceUntil: r.grace_until, inGrace: now > exp }
     }
   }
   return null
