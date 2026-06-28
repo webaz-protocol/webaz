@@ -92,6 +92,20 @@ export function readDirectPayControlsConfig(getProtocolParam: <T>(key: string, f
 }
 
 /**
+ * protocol_params 默认 seed(供 server.ts DEFAULT_PARAMS 展开)。默认全 fail-closed —— Direct Pay non-launchable;
+ *   治理经 PATCH /api/admin/protocol-params/<key> 开通(无 seed 则 PATCH 404、boot 不建行 → 控制面打不开)。
+ *   key/默认值必须与 readDirectPayControlsConfig / DEFAULT_DIRECT_PAY_CONTROLS 对齐。
+ */
+export const DIRECT_PAY_CONTROL_PARAMS: Array<{ key: string; value: string; type: string; description: string; category: string; min?: number; max?: number }> = [
+  { key: 'direct_pay.enabled', value: 'false', type: 'boolean', description: 'Direct Pay 全局主开关/熔断;默认 false=关(non-launchable)。', category: 'system' },
+  { key: 'direct_pay.region', value: '', type: 'string', description: 'Direct Pay 本部署/运营所在地区码(与白名单比对);默认空=fail-closed。', category: 'system' },
+  { key: 'direct_pay.region_allowlist', value: '', type: 'string', description: 'Direct Pay 已开放地区白名单(逗号分隔);默认空=无地区开放。', category: 'system' },
+  { key: 'direct_pay.per_tx_cap_units', value: '0', type: 'number', description: 'Direct Pay 单笔金额上限(整数 base-units);默认 0=无放行,治理设正值方可。', category: 'system', min: 0 },
+  { key: 'direct_pay.require_production_base_bond', value: 'true', type: 'boolean', description: 'Direct Pay 是否要求卖家生产级 base-bond;默认 true(必需)。', category: 'system' },
+  { key: 'direct_pay.require_kyc_sanctions', value: 'true', type: 'boolean', description: 'Direct Pay 是否要求卖家 KYC/制裁筛查通过;默认 true(必需)。', category: 'system' },
+]
+
+/**
  * 卖家制裁/KYC 事实(fail-closed)。当前唯一可用信号 = sanctions_screening:必须存在 status='clear' 行,
  *   且【无】flagged/blocked 行。真实 KYC/KYB 与运行期 AML 复筛 = Phase 6(deferred)—— 在它们建好前,
  *   真实卖家天然 fail-closed(该表无生产写入方)。

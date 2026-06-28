@@ -7,7 +7,7 @@
  */
 import Database from 'better-sqlite3'
 
-const { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerKycSanctionsPassed, DEFAULT_DIRECT_PAY_CONTROLS } =
+const { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerKycSanctionsPassed, DEFAULT_DIRECT_PAY_CONTROLS, DIRECT_PAY_CONTROL_PARAMS } =
   await import('../src/direct-pay-controls.js')
 const { toUnits } = await import('../src/money.js')
 
@@ -69,6 +69,32 @@ db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES ('sc2',
 ok('clear + flagged → false (any flag/block fails-closed)', sellerKycSanctionsPassed(db, 's1') === false)
 db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES ('sc3','s2','blocked')").run()
 ok('only blocked → false', sellerKycSanctionsPassed(db, 's2') === false)
+
+// ── 9. seed list (DIRECT_PAY_CONTROL_PARAMS) — boot 必 seed 这 6 个 key,默认仍全部 fail-closed ──
+// server.ts 把它展开进 DEFAULT_PARAMS(boot seed + admin PATCH 依赖 key 存在);此处守 key 齐全 + 默认全关。
+const seedByKey = Object.fromEntries(DIRECT_PAY_CONTROL_PARAMS.map(p => [p.key, p]))
+const EXPECTED: Record<string, string> = {
+  'direct_pay.enabled': 'false',
+  'direct_pay.region': '',
+  'direct_pay.region_allowlist': '',
+  'direct_pay.per_tx_cap_units': '0',
+  'direct_pay.require_production_base_bond': 'true',
+  'direct_pay.require_kyc_sanctions': 'true',
+}
+for (const [k, v] of Object.entries(EXPECTED)) {
+  ok(`seed list has ${k} (fail-closed default '${v}')`, !!seedByKey[k] && seedByKey[k].value === v, JSON.stringify(seedByKey[k]))
+}
+ok('seed list has exactly the 6 control keys', DIRECT_PAY_CONTROL_PARAMS.length === 6)
+// 用 seed 默认构造 getProtocolParam(按 type 强转,模拟 server.getProtocolParam)→ readConfig → evaluate 必须全关
+const seedGet = <T,>(key: string, fb: T): T => {
+  const p = seedByKey[key]; if (!p) return fb
+  if (p.type === 'number') return Number(p.value) as unknown as T
+  if (p.type === 'boolean') return (p.value === 'true' || p.value === '1') as unknown as T
+  return p.value as unknown as T
+}
+const cfgFromSeed = readDirectPayControlsConfig(seedGet)
+ok('seeded defaults → readConfig disabled + cap 0 + empty allowlist', cfgFromSeed.enabled === false && cfgFromSeed.perTxCapUnits === 0 && cfgFromSeed.regionAllowlist.length === 0)
+ok('seeded defaults → evaluate DIRECT_PAY_DISABLED (gate stays closed end-to-end)', evaluateDirectPayLaunchControls(cfgFromSeed, FACTS).error_code === 'DIRECT_PAY_DISABLED')
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-controls tests passed`)
