@@ -12,7 +12,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 process.env.HOME = mkdtempSync(join(tmpdir(), 'dp-readiness-'))
 
-const { readDirectPayLaunchReadiness } = await import('../src/direct-pay-launch-readiness.js')
+const { readDirectPayLaunchReadiness, sellerDirectPayReadinessView } = await import('../src/direct-pay-launch-readiness.js')
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { toUnits } = await import('../src/money.js')
 
@@ -107,6 +107,32 @@ const src = readFileSync(new URL('../src/direct-pay-launch-readiness.ts', import
 ok('7. readiness imports the jurisdiction-aware isBondRailClearedForProduction', /import\s*\{[^}]*\bisBondRailClearedForProduction\b[^}]*\}\s*from\s*'\.\/direct-pay-bond-rail-clearance\.js'/.test(src))
 ok('7a. anyRailLegalCleared derived via isBondRailClearedForProduction(rid, cfg.region)', /isBondRailClearedForProduction\s*\(\s*rid\s*,\s*cfg\.region\s*\)/.test(src))
 ok('7b. cleared decision does NOT use coarse perRailClearance length for anyRailLegalCleared', !/anyRailLegalCleared\s*=\s*[^\n]*perRailClearance\[[^\]]*\]\.length\s*===\s*0/.test(src))
+
+// ══════ 8. sellerDirectPayReadinessView — DE-IDENTIFIED seller self view ══════
+db.exec("CREATE TABLE IF NOT EXISTS webauthn_credentials (id TEXT PRIMARY KEY, user_id TEXT)")
+// seller1 from test 5 has KYB approved + sanctions clear + active instruction (no AML flag) → compliance+instruction ok; bond/platform not.
+const sv = sellerDirectPayReadinessView(db, { getProtocolParam: gp, sellerId: 'seller1' })
+const svJson = JSON.stringify(sv)
+ok('8. seller view shape { directPayReady, items[] }', typeof sv.directPayReady === 'boolean' && Array.isArray(sv.items))
+ok('8a. directPayReady=false on main', sv.directPayReady === false)
+ok('8b. NO raw launch blocker codes leaked', !/DIRECT_PAY_(NOT_ENABLED|RAIL_|REGION_NOT|PER_TX|NO_LEGAL|SELLER_KYB|SELLER_SANCTIONS|SELLER_AML|SELLER_NO_PRODUCTION|SELLER_SUSPENDED|SELLER_PAYMENT)/.test(svJson))
+ok('8c. NO KYB/sanctions/AML/KYC terms leaked to seller', !/KYB|SANCTION|AML|KYC/i.test(svJson))
+ok('8d. only the 6 de-id codes present', sv.items.every((i: any) => ['PLATFORM_OPEN', 'PAYMENT_INSTRUCTION', 'PASSKEY', 'BASE_BOND', 'COMPLIANCE_REVIEW', 'NOT_SUSPENDED'].includes(i.code)))
+ok('8e. compliance collapsed to ONE COMPLIANCE_REVIEW item', sv.items.filter((i: any) => i.code === 'COMPLIANCE_REVIEW').length === 1)
+const item = (c: string): any => sv.items.find((i: any) => i.code === c)
+ok('8f. PAYMENT_INSTRUCTION ok (seeded) + actionable', item('PAYMENT_INSTRUCTION').ok === true && item('PAYMENT_INSTRUCTION').actionable === true)
+ok('8g. COMPLIANCE_REVIEW ok (KYB+sanctions seeded, no AML flag) — collapsed, not actionable', item('COMPLIANCE_REVIEW').ok === true && item('COMPLIANCE_REVIEW').actionable === false)
+ok('8h. BASE_BOND not ok (gated on main)', item('BASE_BOND').ok === false)
+ok('8i. PLATFORM_OPEN not ok (rail clearance gated)', item('PLATFORM_OPEN').ok === false)
+ok('8j. PASSKEY not ok (no credential seeded)', item('PASSKEY').ok === false && item('PASSKEY').actionable === true)
+// a flagged seller: AML flag must NOT surface as AML — only collapses COMPLIANCE_REVIEW to not-ok
+db.prepare("INSERT INTO aml_flags (id, subject_user_id, rule, severity, status) VALUES ('af_sv','seller1','structuring','high','open')").run()
+const sv2 = sellerDirectPayReadinessView(db, { getProtocolParam: gp, sellerId: 'seller1' })
+ok('8k. AML flag → COMPLIANCE_REVIEW not-ok, still NO AML term leaked', sv2.items.find((i: any) => i.code === 'COMPLIANCE_REVIEW').ok === false && !/AML|SANCTION|KYB/i.test(JSON.stringify(sv2)))
+// read-only
+const svBefore = snap()
+for (let i = 0; i < 3; i++) sellerDirectPayReadinessView(db, { getProtocolParam: gp, sellerId: 'seller1' })
+ok('8l. seller view is read-only', JSON.stringify(snap()) === JSON.stringify(svBefore))
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-launch-readiness tests passed`)

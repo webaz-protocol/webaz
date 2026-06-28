@@ -12,6 +12,7 @@ import { dbOne } from '../../layer0-foundation/L0-1-database/db.js'
 import { toUnits } from '../../money.js'
 import { sellerHasProductionBaseBondLocked } from '../../direct-receive-deposits.js'
 import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped } from '../../direct-pay-controls.js'
+import { sellerDirectPayReadinessView } from '../../direct-pay-launch-readiness.js'
 
 export interface DirectPayAvailabilityDeps {
   db: Database.Database
@@ -50,5 +51,12 @@ export function registerDirectPayAvailabilityRoutes(app: Application, deps: Dire
       reason: code === 'DIRECT_PAY_SELLER_NOT_ELIGIBLE' ? '该卖家暂不支持直付' : decision.reason,
       per_tx_cap_units: cfg.perTxCapUnits,
     })
+  })
+
+  // GET /api/direct-receive/readiness — 卖家【自助脱敏】readiness:仅可行动/状态项(收款说明/Passkey/保证金/审核/暂停/平台开放)。
+  //   绝不下发 raw blocker / KYB·制裁·AML 分项(见 sellerDirectPayReadinessView)。只读 self(auth 用户自身 id)。
+  app.get('/api/direct-receive/readiness', (req, res) => {
+    const user = auth(req, res); if (!user) return
+    return void res.json(sellerDirectPayReadinessView(db, { getProtocolParam, sellerId: user.id as string }))
   })
 }

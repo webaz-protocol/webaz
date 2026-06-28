@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (684 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (686 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -57,11 +57,12 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/dashboard` | 🔐 | 👑 |  | src/pwa/routes/admin-analytics.ts:230 |
 | GET | `/api/admin/decline-contests` | 🔐 |  | 仲裁员待办:列出所有被举证的临时判责拒单 | src/pwa/routes/disputes-write.ts:88 |
 | POST | `/api/admin/decline-contests/:orderId/resolve` | 🔐 |  | 仲裁员裁决 | src/pwa/routes/disputes-write.ts:102 |
-| POST | `/api/admin/direct-receive/aml-flags` |  |  |  | src/pwa/routes/admin-direct-receive-deposits.ts:155 |
-| POST | `/api/admin/direct-receive/aml-flags/:id/review` | 🔐 | 👑 | route 只做 auth + gate + 参数校验 + 调 reviewAmlFlag(唯一 review writer,原子改 flag + 写 audi | src/pwa/routes/admin-direct-receive-deposits.ts:79 |
-| POST | `/api/admin/direct-receive/deposits/:id/confirm-production` | 🔐 | 👑 | 当前恒 fail-closed(无 legal-cleared rail → assert 抛 → PRODUCTION_RAIL_NOT_CLEARED)。 | src/pwa/routes/admin-direct-receive-deposits.ts:35 |
-| POST | `/api/admin/direct-receive/kyb-reviews` |  |  | Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B  | src/pwa/routes/admin-direct-receive-deposits.ts:136 |
-| POST | `/api/admin/direct-receive/sanctions-screenings` |  |  | purpose_data 绑定 user_id+status+provider_ref+expires_at。 | src/pwa/routes/admin-direct-receive-deposits.ts:145 |
+| POST | `/api/admin/direct-receive/aml-flags` |  |  |  | src/pwa/routes/admin-direct-receive-deposits.ts:157 |
+| POST | `/api/admin/direct-receive/aml-flags/:id/review` | 🔐 | 👑 | route 只做 auth + gate + 参数校验 + 调 reviewAmlFlag(唯一 review writer,原子改 flag + 写 audi | src/pwa/routes/admin-direct-receive-deposits.ts:81 |
+| POST | `/api/admin/direct-receive/deposits/:id/confirm-production` | 🔐 | 👑 | 当前恒 fail-closed(无 legal-cleared rail → assert 抛 → PRODUCTION_RAIL_NOT_CLEARED)。 | src/pwa/routes/admin-direct-receive-deposits.ts:37 |
+| POST | `/api/admin/direct-receive/kyb-reviews` |  |  | Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B  | src/pwa/routes/admin-direct-receive-deposits.ts:138 |
+| POST | `/api/admin/direct-receive/readiness` | 🔐 | 👑 | 含 KYB/sanctions/AML/base-bond/rail clearance 全细节)。只读诊断(不写库、不 flip launch);ROOT 专 | src/pwa/routes/admin-direct-receive-deposits.ts:166 |
+| POST | `/api/admin/direct-receive/sanctions-screenings` |  |  | purpose_data 绑定 user_id+status+provider_ref+expires_at。 | src/pwa/routes/admin-direct-receive-deposits.ts:147 |
 | GET | `/api/admin/disputes` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:47 |
 | GET | `/api/admin/economic-summary` | 🔐 | 👑 | 隐私第一：运营财务，仅 protocol admin 可见。 | src/pwa/routes/admin-reports.ts:82 |
 | GET | `/api/admin/editor-picks` | 🔐 | 👑 |  | src/pwa/routes/admin-editor-picks.ts:60 |
@@ -280,12 +281,13 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/coupons/mine` | 🔐 |  |  | src/pwa/routes/coupons.ts:156 |
 | GET | `/api/coupons/preview` | 🔐 |  |  | src/pwa/routes/search.ts:40 |
 | GET | `/api/creator/stats` | 🔐 |  | 里程碑 L3：创作者贡献仪表盘 | src/pwa/routes/shareables.ts:216 |
-| GET | `/api/direct-pay/availability` | 🔐 |  | GET /api/direct-pay/availability?product_id=... — 该商品(以 qty=1 计)当前是否可直付 + 不可用原因( | src/pwa/routes/direct-pay-availability.ts:29 |
+| GET | `/api/direct-pay/availability` | 🔐 |  | GET /api/direct-pay/availability?product_id=... — 该商品(以 qty=1 计)当前是否可直付 + 不可用原因( | src/pwa/routes/direct-pay-availability.ts:30 |
 | POST | `/api/direct-pay/disclosure-acks` | 🔐 |  | POST — 记录一次 ack(D1 pre_select / D2 pre_confirm)。需现场真人(Passkey + gate token)。幂等(I | src/pwa/routes/direct-pay-disclosure-acks.ts:49 |
 | GET | `/api/direct-pay/disclosure-acks/:orderId` | 🔐 |  | GET — 查询某单两次 ack 状态 + 买家视角披露文案(无卖家机制)。只读(本人),不需 gate token。 | src/pwa/routes/direct-pay-disclosure-acks.ts:71 |
 | DELETE | `/api/direct-receive/payment-instruction` | 🔐 |  | DELETE — 停用卖家当前 active 收款说明(软停用,留历史为 inactive)。停用后 create route fail-closed。 | src/pwa/routes/direct-receive-payment-instructions.ts:55 |
 | GET | `/api/direct-receive/payment-instruction` | 🔐 |  | GET — 卖家本人当前 active 收款说明;无则 instruction:null(200,显式空状态,便于 UI 渲染“尚未设置”)。 | src/pwa/routes/direct-receive-payment-instructions.ts:37 |
 | PUT | `/api/direct-receive/payment-instruction` | 🔐 |  | PUT — 设置/替换卖家当前 active 收款说明。instruction 必填、trim、长度上限;label 可选、trim、长度上限。 | src/pwa/routes/direct-receive-payment-instructions.ts:43 |
+| GET | `/api/direct-receive/readiness` | 🔐 |  | 绝不下发 raw blocker / KYB·制裁·AML 分项(见 sellerDirectPayReadinessView)。只读 self(auth 用户 | src/pwa/routes/direct-pay-availability.ts:58 |
 | GET | `/api/disputes` | 🔐 |  | 仲裁员：查看所有开放争议 | src/pwa/routes/disputes-read.ts:39 |
 | GET | `/api/disputes/:id` | 🔐 |  | 详情聚合（含 W4 timeline + chain ruling） | src/pwa/routes/disputes-read.ts:112 |
 | POST | `/api/disputes/:id/add-evidence` | 🔐 |  | 参与方主动举证（text）+ SNF 信封分发 | src/pwa/routes/disputes-write.ts:389 |
