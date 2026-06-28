@@ -135,10 +135,12 @@ ok('route happy: buyer wallet UNCHANGED (no principal/escrow)', walletUnits(db, 
 const createdId = rOk.json?.order_id
 ok('route happy: order escrow_amount=0, rail=direct_p2p', ord(createdId)?.escrow_amount === 0 && ord(createdId)?.payment_rail === 'direct_p2p')
 ok('route happy: seller fee-stake locked', stake(createdId)?.status === 'locked')
-// self-fulfill 兼容:无 logistics_id / 未传 logistics_company_id 也能建单(后续走卖家自发货 action path)
-ok('route happy: simple physical, NO logistics required (logistics_id NULL)', (db.prepare('SELECT logistics_id FROM orders WHERE id=?').get(createdId) as { logistics_id: string | null }).logistics_id == null)
+// 边界 = simple product + 现有 shipping/self-fulfill 流程:无 logistics_id / 未传 logistics_company_id 也能建单
+// (后续走卖家自发货 action path;不要求第三方物流,也不按 product_type 判定物理/虚拟)
+ok('route happy: simple product, NO logistics required (logistics_id NULL)', (db.prepare('SELECT logistics_id FROM orders WHERE id=?').get(createdId) as { logistics_id: string | null }).logistics_id == null)
 
-// ══════ Part C: escrow-only / 不支持修饰 → fail-closed(helper 级,绕过 route 预校验)═══════
+// ══════ Part C: escrow-only 修饰 → fail-closed(helper 级,绕过 route 预校验)═══════
+// 注:拒的是 escrow-only 修饰,不是按 product_type 拒 digital/service(schema 无该字段)。
 const { createDirectPayResponse } = await import('../src/direct-pay-create.js')
 function mres(): any { const r: any = { _s: 200, _b: null, status(c: number) { r._s = c; return r }, json(b: any) { r._b = b; return r } }; return r }
 const cdeps = { generateId: (p: string) => `${p}_${Math.random().toString(36).slice(2, 8)}`, transition, appendOrderEvent, getProtocolParam: <T,>(_k: string, fb: T): T => fb }
@@ -159,11 +161,11 @@ rejects('donation', { donationPct: 0.01 }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
 rejects('gift', { isGift: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
 rejects('anonymous', { anonymous: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
 rejects('delivery_window', { deliveryWindow: true }, 'DIRECT_PAY_UNSUPPORTED_OPTION')
-// 正向:无任何修饰(simple physical)→ 不被 Part C 门拦(继续到生产门;seller1 有 production bond+instr → 建单成功,验证 simple 物理单可建)
+// 正向:无任何修饰(simple product)→ 不被 Part C 门拦(继续到生产门;seller1 有 production bond+instr → 建单成功)
 const okRes = mres()
 const oN0 = ordersN()
 createDirectPayResponse(okRes, db, cdeps, baseCtx)
-ok('simple physical (no modifiers) passes the modifier gate → 200 created', okRes._s === 200 && okRes._b?.status === 'direct_pay_window' && ordersN() === oN0 + 1, JSON.stringify(okRes._b))
+ok('simple product (no modifiers) passes the modifier gate → 200 created', okRes._s === 200 && okRes._b?.status === 'direct_pay_window' && ordersN() === oN0 + 1, JSON.stringify(okRes._b))
 
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
