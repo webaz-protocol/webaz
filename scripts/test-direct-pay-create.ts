@@ -63,8 +63,11 @@ ok('prod-bond: locked + receipt → true', sellerHasProductionBaseBondLocked(db,
 
 // createDirectPayOrder atomic helper
 const deps = { generateId: (p: string) => `${p}_${Math.random().toString(36).slice(2, 8)}`, transition, appendOrderEvent }
+// PR-5b frozen-at-create policy 快照(helper 直测用一个代表性快照)。
+const SNAP = { enabled: true, railBreakerTripped: false, region: 'SG', regionAllowlist: ['SG', 'MY'], perTxCapUnits: toUnits(1000), sellerBreakerTripped: false, decisionCode: 'OK' }
+const snapRow = (id: string) => db.prepare('SELECT direct_pay_enabled_snapshot e, direct_pay_rail_breaker_snapshot rb, direct_pay_region_snapshot rg, direct_pay_region_allowlist_snapshot al, direct_pay_per_tx_cap_units_snapshot cap, direct_pay_seller_breaker_snapshot sb, direct_pay_decision_code dc FROM orders WHERE id=?').get(id) as any
 const bBal = walletUnits(db, 'buyer1').balance, sBal = walletUnits(db, 'seller1').balance, st0 = pstock()
-const { orderId: hOid } = createDirectPayOrder(db, deps, { productId: 'p1', sellerId: 'seller1', buyerId: 'buyer1', quantity: 1, unitPrice: 50, totalAmount: 50, feeUnits: toUnits(1), instructionSnapshot: 'snap', windowDeadlineIso: new Date(Date.now() + 3600_000).toISOString(), shippingAddress: 'addr' })
+const { orderId: hOid } = createDirectPayOrder(db, deps, { productId: 'p1', sellerId: 'seller1', buyerId: 'buyer1', quantity: 1, unitPrice: 50, totalAmount: 50, feeUnits: toUnits(1), instructionSnapshot: 'snap', windowDeadlineIso: new Date(Date.now() + 3600_000).toISOString(), shippingAddress: 'addr', snapshot: SNAP })
 ok('helper: order in direct_pay_window', ord(hOid)?.status === 'direct_pay_window')
 ok('helper: escrow_amount = 0 (本金不入协议)', ord(hOid)?.escrow_amount === 0)
 ok('helper: buyer wallet UNCHANGED (不写 buyer wallet/principal)', walletUnits(db, 'buyer1').balance === bBal)
@@ -72,13 +75,17 @@ ok('helper: seller fee-stake locked (= 1)', stake(hOid)?.status === 'locked' && 
 ok('helper: seller balance -1 (fee-stake), fee_staked +1', walletUnits(db, 'seller1').balance === sBal - toUnits(1))
 ok('helper: instruction snapshot stored', ord(hOid)?.direct_pay_instruction_snapshot === 'snap')
 ok('helper: stock decremented by 1', pstock() === st0 - 1)
+// PR-5b: policy 快照随订单 INSERT 一同写入(同一 tx);布尔 0/1、cap 整数、allowlist=JSON.stringify 数组、decision='OK'。
+const hs = snapRow(hOid)
+ok('helper: policy snapshot written (enabled/rail/seller as 0/1, cap int, region, allowlist JSON, decision OK)',
+  hs.e === 1 && hs.rb === 0 && hs.sb === 0 && hs.rg === 'SG' && hs.al === JSON.stringify(['SG', 'MY']) && hs.cap === toUnits(1000) && hs.dc === 'OK', JSON.stringify(hs))
 
 // rollback: seller insufficient WAZ for fee-stake → no order, no stake, no stock change
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('poor','poor','seller','k_poor')").run()
 db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('poor', 0)").run()
 const stBefore = pstock()
 let threw = false
-try { createDirectPayOrder(db, deps, { productId: 'p1', sellerId: 'poor', buyerId: 'buyer1', quantity: 1, unitPrice: 50, totalAmount: 50, feeUnits: toUnits(1), instructionSnapshot: 'x', windowDeadlineIso: new Date().toISOString(), shippingAddress: 'addr' }) } catch { threw = true }
+try { createDirectPayOrder(db, deps, { productId: 'p1', sellerId: 'poor', buyerId: 'buyer1', quantity: 1, unitPrice: 50, totalAmount: 50, feeUnits: toUnits(1), instructionSnapshot: 'x', windowDeadlineIso: new Date().toISOString(), shippingAddress: 'addr', snapshot: SNAP }) } catch { threw = true }
 ok('helper rollback: insufficient fee-stake → throws', threw)
 ok('helper rollback: no order rows for poor seller', !db.prepare("SELECT 1 FROM orders WHERE seller_id='poor'").get())
 ok('helper rollback: no fee-stake rows for poor seller', !db.prepare("SELECT 1 FROM direct_pay_fee_stakes WHERE seller_id='poor'").get())
@@ -125,14 +132,22 @@ ok('unauthenticated → 401', (await dp()).status === 401)
 // Phase 4a 控制面:默认(cp 空)= 全局 disabled → fail-closed
 const rDisabled = await dp('buyer1')
 ok('direct_p2p disabled by default → 409 DIRECT_PAY_DISABLED', rDisabled.status === 409 && rDisabled.json?.error_code === 'DIRECT_PAY_DISABLED', JSON.stringify(rDisabled))
+// 开启全局但运营熔断 → RAIL_BREAKER(在 region/cap 之前)
+Object.assign(cp, { 'direct_pay.enabled': true, 'direct_pay.rail_breaker_tripped': true })
+ok('enabled but rail breaker tripped → 409 DIRECT_PAY_RAIL_BREAKER', (await dp('buyer1')).json?.error_code === 'DIRECT_PAY_RAIL_BREAKER')
+cp['direct_pay.rail_breaker_tripped'] = false
 // 开启全局,但地区不在白名单 → REGION_UNSUPPORTED
 Object.assign(cp, { 'direct_pay.enabled': true, 'direct_pay.region': 'US', 'direct_pay.region_allowlist': 'SG', 'direct_pay.per_tx_cap_units': toUnits(1000) })
 ok('enabled but region not allowed → 409 DIRECT_PAY_REGION_UNSUPPORTED', (await dp('buyer1')).json?.error_code === 'DIRECT_PAY_REGION_UNSUPPORTED')
 // 地区放开,但单笔上限低于金额(p2=50,cap=10)→ CAP_EXCEEDED
 cp['direct_pay.region'] = 'SG'; cp['direct_pay.per_tx_cap_units'] = toUnits(10)
 ok('amount over per-tx cap → 409 DIRECT_PAY_CAP_EXCEEDED', (await dp('buyer1')).json?.error_code === 'DIRECT_PAY_CAP_EXCEEDED')
-// 上限恢复;此后控制面全开,仅卖家事实(bond/KYC/instruction)决定结果
+// 上限恢复;此后控制面全开,仅卖家事实(suspended/bond/KYC/instruction)决定结果
 cp['direct_pay.per_tx_cap_units'] = toUnits(1000)
+// 卖家熔断(direct_receive_privileges.status='suspended')→ SELLER_SUSPENDED(在 base-bond/KYC 之前)
+db.prepare("INSERT INTO direct_receive_privileges (user_id, status, tier) VALUES ('seller2','suspended','T0') ON CONFLICT(user_id) DO UPDATE SET status='suspended'").run()
+ok('seller suspended → 409 DIRECT_PAY_SELLER_SUSPENDED (checked before base-bond/KYC)', (await dp('buyer1')).json?.error_code === 'DIRECT_PAY_SELLER_SUSPENDED')
+db.prepare("UPDATE direct_receive_privileges SET status='none' WHERE user_id='seller2'").run()
 // no production bond → 409 DIRECT_PAY_NOT_AVAILABLE
 const rNoBond = await dp('buyer1')
 ok('direct_p2p no production bond → 409 DIRECT_PAY_NOT_AVAILABLE', rNoBond.status === 409 && rNoBond.json?.error_code === 'DIRECT_PAY_NOT_AVAILABLE', JSON.stringify(rNoBond))
@@ -158,6 +173,14 @@ ok('route happy: seller fee-stake locked', stake(createdId)?.status === 'locked'
 // 边界 = simple product + 现有 shipping/self-fulfill 流程:无 logistics_id / 未传 logistics_company_id 也能建单
 // (后续走卖家自发货 action path;不要求第三方物流,也不按 product_type 判定物理/虚拟)
 ok('route happy: simple product, NO logistics required (logistics_id NULL)', (db.prepare('SELECT logistics_id FROM orders WHERE id=?').get(createdId) as { logistics_id: string | null }).logistics_id == null)
+// PR-5b: 成功建单写入【建单时】policy 快照(cp 当时:enabled true / rail false / region SG / allowlist ['SG'] / cap 1000 / seller not suspended / OK)
+const cs = snapRow(createdId)
+ok('route happy: policy snapshot written frozen-at-create', cs.e === 1 && cs.rb === 0 && cs.rg === 'SG' && cs.al === JSON.stringify(['SG']) && cs.cap === toUnits(1000) && cs.sb === 0 && cs.dc === 'OK', JSON.stringify(cs))
+// frozen-at-create:事后改 protocol params 不影响已建订单快照
+cp['direct_pay.enabled'] = false; cp['direct_pay.per_tx_cap_units'] = toUnits(7)
+const cs2 = snapRow(createdId)
+ok('snapshot frozen-at-create (later param change does NOT mutate the order snapshot)', cs2.e === 1 && cs2.cap === toUnits(1000), JSON.stringify(cs2))
+cp['direct_pay.enabled'] = true; cp['direct_pay.per_tx_cap_units'] = toUnits(1000)  // 恢复供 Part C/E
 
 // ══════ Part C: escrow-only 修饰 → fail-closed(helper 级,绕过 route 预校验)═══════
 // 注:拒的是 escrow-only 修饰,不是按 product_type 拒 digital/service(schema 无该字段)。
