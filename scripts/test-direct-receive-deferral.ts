@@ -7,7 +7,7 @@
  */
 import Database from 'better-sqlite3'
 
-const { requestDeferral, approveDeferral, rejectDeferral, getActiveDeferral, expireDeferrals, clampReducedQuotaFactor, DEFAULT_DEFERRAL_CONFIG } = await import('../src/direct-receive-deferral.js')
+const { requestDeferral, approveDeferral, rejectDeferral, getActiveDeferral, expireDeferrals, clampReducedQuotaFactor, DEFAULT_DEFERRAL_CONFIG, listDeferrals, getLatestDeferral } = await import('../src/direct-receive-deferral.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -78,6 +78,16 @@ ok('6b. after expiry, user may request again (single-active freed)', requestDefe
 
 // ── 7. read-only re: money/state — only direct_receive_deferrals is touched ──
 ok('7. NO wallet/deposit/privilege side effects', sideN() === 0)
+
+// ── 8. listDeferrals (admin view): status filter + newest-first; getLatestDeferral per-user ──
+const allList = listDeferrals(db)
+ok('8. listDeferrals() returns all rows', allList.length >= 3)
+const pendingList = listDeferrals(db, { status: 'pending' })
+ok('8a. listDeferrals({status:pending}) only pending', pendingList.length > 0 && pendingList.every(r => r.status === 'pending'))
+const expiredList = listDeferrals(db, { status: 'expired' })
+ok('8b. listDeferrals({status:expired}) only expired (d3 present)', expiredList.some(r => r.id === 'd3') && expiredList.every(r => r.status === 'expired'))
+ok('8c. getLatestDeferral(u3) = newest row for that user (d3b after re-request)', getLatestDeferral(db, 'u3')?.id === 'd3b')
+ok('8d. getLatestDeferral(unknown user) → null', getLatestDeferral(db, 'nobody') === null)
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-receive-deferral tests passed`)

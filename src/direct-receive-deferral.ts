@@ -127,6 +127,33 @@ export function getActiveDeferral(db: Database.Database, userId: string, nowIso:
   return null
 }
 
+/** 取某 user【最新一条】缓交申请(任意状态)。无 → null。纯读。供卖家自助 status 端点展示当前申请状态。 */
+export function getLatestDeferral(db: Database.Database, userId: string): {
+  id: string; status: string; period_days: number; reduced_quota_factor: number
+  expires_at: string | null; grace_until: string | null; created_at: string | null
+} | null {
+  // created_at 同秒并列时用 rowid(插入序)兜底,保证"最新"=最后插入,确定性。
+  return (db.prepare(`SELECT id, status, period_days, reduced_quota_factor, expires_at, grace_until, created_at
+    FROM direct_receive_deferrals WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(userId) as {
+      id: string; status: string; period_days: number; reduced_quota_factor: number
+      expires_at: string | null; grace_until: string | null; created_at: string | null
+    } | undefined) ?? null
+}
+
+/** 列出缓交申请(admin 视图)。可按 status 过滤;默认全部。最新在前。纯读,不改任何状态。供 admin route 渲染审批队列。 */
+export interface DeferralListRow {
+  id: string; user_id: string; reason: string | null; period_days: number; reduced_quota_factor: number
+  status: string; approved_by: string | null; approved_at: string | null
+  expires_at: string | null; grace_until: string | null; created_at: string | null
+}
+export function listDeferrals(db: Database.Database, opts: { status?: DeferralStatus } = {}): DeferralListRow[] {
+  const cols = 'id, user_id, reason, period_days, reduced_quota_factor, status, approved_by, approved_at, expires_at, grace_until, created_at'
+  if (opts.status) {
+    return db.prepare(`SELECT ${cols} FROM direct_receive_deferrals WHERE status = ? ORDER BY created_at DESC, rowid DESC`).all(opts.status) as DeferralListRow[]
+  }
+  return db.prepare(`SELECT ${cols} FROM direct_receive_deferrals ORDER BY created_at DESC, rowid DESC`).all() as DeferralListRow[]
+}
+
 /** 到期清理(cron):granted 且【超过 grace_until】→ expired。返回受影响的 user_id(调用方据此停权;本模块不改 privileges)。 */
 export function expireDeferrals(db: Database.Database, nowIso: string): { expired: string[] } {
   const now = Date.parse(nowIso)

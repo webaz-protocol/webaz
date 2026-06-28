@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (686 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (691 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -615,6 +615,45 @@
     "/api/admin/direct-receive/aml-flags/:id/review": {
       "post": {
         "summary": "route 只做 auth + gate + 参数校验 + 调 reviewAmlFlag(唯一 review writer,原子改 flag + 写 audit)。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/direct-receive/deferrals": {
+      "get": {
+        "summary": "GET /api/admin/direct-receive/deferrals?status=pending — ROOT 审批队列(默认全部;可按 status 过滤)。纯读。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/direct-receive/deferrals/:id/approve": {
+      "post": {
+        "summary": "Passkey purpose_data 绑定【完整审批条款】(deferral_id + reduced_quota_factor + grace_days):签 A 批 B / 改条款一律拒。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/direct-receive/deferrals/:id/reject": {
+      "post": {
+        "summary": "POST /api/admin/direct-receive/deferrals/:id/reject — ROOT + 真人 Passkey 拒绝缓交。purpose_data 绑 deferral_id。",
         "tags": [
           "admin"
         ],
@@ -3327,6 +3366,26 @@
     "/api/direct-pay/disclosure-acks/:orderId": {
       "get": {
         "summary": "GET — 查询某单两次 ack 状态 + 买家视角披露文案(无卖家机制)。只读(本人),不需 gate token。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/deferral": {
+      "get": {
+        "summary": "GET /api/direct-receive/deferral — 卖家本人缓交状态:最新一条申请(脱敏:不含 admin 身份)+ 是否当前生效(active)。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "POST /api/direct-receive/deferral — 卖家申请缓交。helper 强制:单一活跃、periodDays 正整数、id 唯一。",
         "tags": [],
         "security": [
           {

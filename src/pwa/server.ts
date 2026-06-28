@@ -3870,7 +3870,7 @@ registerAgentReputationRoutes(app, {
 registerUsersPublicRoutes(app, { db, auth, noteAuthenticityBadges })
 registerDirectPayDisclosureAckRoutes(app, { db, auth, generateId, consumeGateToken })  // PR-4d
 registerDirectReceivePaymentInstructionRoutes(app, { db, auth, generateId })  // PR-4f-a
-registerDirectPayAvailabilityRoutes(app, { db, auth, getProtocolParam })  // PR-4a
+registerDirectPayAvailabilityRoutes(app, { db, auth, getProtocolParam, generateId })  // PR-4a + 缓交 apply/status
 registerAdminDirectReceiveDepositsRoutes(app, { db, requireRootAdmin: (req, res) => requireRootAdmin(req, res), consumeGateToken, logAdminAction, getProtocolParam })  // PR-4b-3 + readiness
 // RFC-004 build_feedback — agent-native "use → build" 反馈管道
 registerBuildFeedbackRoutes(app, {

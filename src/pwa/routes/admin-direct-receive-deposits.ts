@@ -19,6 +19,7 @@ import { confirmProductionReceipt } from '../../direct-receive-deposits.js'
 import { reviewAmlFlag } from '../../direct-pay-aml-review.js'
 import { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress, amlDetailHash } from '../../direct-pay-compliance-ingress.js'
 import { readDirectPayLaunchReadiness } from '../../direct-pay-launch-readiness.js'
+import { approveDeferral, rejectDeferral, listDeferrals, type DeferralStatus } from '../../direct-receive-deferral.js'
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'
 
 export interface AdminDirectReceiveDepositsDeps {
@@ -177,5 +178,65 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
     const readiness = readDirectPayLaunchReadiness(db, { getProtocolParam, sellerId })
     logAdminAction(admin.id as string, 'direct_pay.admin_readiness', 'user', sellerId ?? null, { ok: true, ready: readiness.ready, blocker_count: readiness.blockers.length })
     return void res.json(readiness)
+  })
+
+  // ── 缓交(deferred base-bond)审批队列。读 = ROOT;批准/拒绝 = ROOT + 真人 Passkey(铁律,授予绝不自动)。 ──
+  //   approveDeferral/rejectDeferral 是唯一 writer;本文件零 direct_receive_deferrals 直写。审批只改缓交状态机,
+  //   【不】碰 buyer wallet/escrow/order/settlement/refund/privileges,也不 flip launch。
+  const DEFERRAL_STATUSES = new Set<DeferralStatus>(['pending', 'granted', 'rejected', 'expired'])
+
+  // GET /api/admin/direct-receive/deferrals?status=pending — ROOT 审批队列(默认全部;可按 status 过滤)。纯读。
+  app.get('/api/admin/direct-receive/deferrals', (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const status = req.query?.status != null ? String(req.query.status) : ''
+    if (status && !DEFERRAL_STATUSES.has(status as DeferralStatus)) return void res.status(400).json({ error: '非法 status', error_code: 'BAD_STATUS' })
+    return void res.json({ deferrals: listDeferrals(db, status ? { status: status as DeferralStatus } : {}) })
+  })
+
+  // POST /api/admin/direct-receive/deferrals/:id/approve — ROOT + 真人 Passkey 批准缓交。
+  //   Passkey purpose_data 绑定【完整审批条款】(deferral_id + reduced_quota_factor + grace_days):签 A 批 B / 改条款一律拒。
+  app.post('/api/admin/direct-receive/deferrals/:id/approve', (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const deferralId = req.params.id
+    const rqfRaw = req.body?.reduced_quota_factor
+    const graceRaw = req.body?.grace_days
+    const webauthnToken = req.body?.webauthn_token as string | undefined
+    const gate = requireDirectPayHumanPasskey({ db, consumeGateToken }, {
+      userId: admin.id as string, webauthnToken, purpose: 'direct_pay_deferral_approve',
+      validate: (data) => { const d = data as { deferral_id?: string; reduced_quota_factor?: unknown; grace_days?: unknown } | null
+        return !!d && str(d.deferral_id) === deferralId && str(d.reduced_quota_factor) === str(rqfRaw) && str(d.grace_days) === str(graceRaw) },
+    })
+    if (!gate.ok) {
+      logAdminAction(admin.id as string, 'direct_pay.deferral_approve', 'direct_receive_deferral', deferralId,
+        { ok: false, outcome: gate.error_code === 'PASSKEY_REQUIRED_FOR_DIRECT_PAY' ? 'passkey_required' : 'human_presence_required', error_code: gate.error_code })
+      return void res.status(403).json({ error: gate.reason, error_code: gate.error_code })
+    }
+    const r = approveDeferral(db, { deferralId, adminId: admin.id as string, nowIso: new Date().toISOString(),
+      graceDays: graceRaw != null ? Number(graceRaw) : undefined, reducedQuotaFactor: rqfRaw != null ? Number(rqfRaw) : undefined })
+    logAdminAction(admin.id as string, 'direct_pay.deferral_approve', 'direct_receive_deferral', deferralId,
+      { ok: r.ok, outcome: r.ok ? (r.already ? 'already' : 'granted') : r.reason })
+    if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'DEFERRAL_APPROVE_REJECTED' })
+    return void res.json({ ok: true, status: r.status, already: !!r.already })
+  })
+
+  // POST /api/admin/direct-receive/deferrals/:id/reject — ROOT + 真人 Passkey 拒绝缓交。purpose_data 绑 deferral_id。
+  app.post('/api/admin/direct-receive/deferrals/:id/reject', (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const deferralId = req.params.id
+    const webauthnToken = req.body?.webauthn_token as string | undefined
+    const gate = requireDirectPayHumanPasskey({ db, consumeGateToken }, {
+      userId: admin.id as string, webauthnToken, purpose: 'direct_pay_deferral_reject',
+      validate: (data) => { const d = data as { deferral_id?: string } | null; return !!d && str(d.deferral_id) === deferralId },
+    })
+    if (!gate.ok) {
+      logAdminAction(admin.id as string, 'direct_pay.deferral_reject', 'direct_receive_deferral', deferralId,
+        { ok: false, outcome: gate.error_code === 'PASSKEY_REQUIRED_FOR_DIRECT_PAY' ? 'passkey_required' : 'human_presence_required', error_code: gate.error_code })
+      return void res.status(403).json({ error: gate.reason, error_code: gate.error_code })
+    }
+    const r = rejectDeferral(db, { deferralId, adminId: admin.id as string })
+    logAdminAction(admin.id as string, 'direct_pay.deferral_reject', 'direct_receive_deferral', deferralId,
+      { ok: r.ok, outcome: r.ok ? (r.already ? 'already' : 'rejected') : r.reason })
+    if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'DEFERRAL_REJECT_REJECTED' })
+    return void res.json({ ok: true, status: r.status, already: !!r.already })
   })
 }

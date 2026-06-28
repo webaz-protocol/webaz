@@ -119,6 +119,7 @@
     "test:direct-pay-bond-rail-clearance": "tsx scripts/test-direct-pay-bond-rail-clearance.ts",
     "test:direct-pay-launch-readiness": "tsx scripts/test-direct-pay-launch-readiness.ts",
     "test:direct-pay-readiness-routes": "tsx scripts/test-direct-pay-readiness-routes.ts",
+    "test:direct-pay-deferral-routes": "tsx scripts/test-direct-pay-deferral-routes.ts",
     "test:direct-pay-disclosures": "tsx scripts/test-direct-pay-disclosures.ts",
     "test:identity-claim-ui": "tsx scripts/test-identity-claim-ui.ts",
     "test:identity-claim-discovery": "tsx scripts/test-identity-claim-discovery.ts",
