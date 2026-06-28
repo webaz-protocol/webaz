@@ -96,6 +96,15 @@ export function initDatabase(): Database.Database {
       shipping_address  TEXT,   -- 收货地址（JSON）
       notes             TEXT,   -- 买家备注
 
+      -- PR-5b-0: direct_p2p 建单时的【入口控制 policy 快照】(冻结当时的 cfg + 判定码;5b wiring 才写入,本 PR 仅建列)。
+      -- 全部 additive nullable;布尔以 0/1 存,cap 以整数 base-units 存。仅 direct_p2p 单写,其它 rail 恒 NULL。
+      direct_pay_enabled_snapshot           INTEGER,  -- 建单时 direct_pay.enabled 快照(0/1)
+      direct_pay_rail_breaker_snapshot      INTEGER,  -- 建单时 rail_breaker_tripped 快照(0/1)
+      direct_pay_region_snapshot            TEXT,     -- 建单时 region 快照
+      direct_pay_region_allowlist_snapshot  TEXT,     -- 建单时 region_allowlist 快照(CSV/JSON 文本)
+      direct_pay_per_tx_cap_units_snapshot  INTEGER,  -- 建单时单笔上限快照(整数 policy base-units;WebAZ 记录订单总额天花板,非场外实付控制)
+      direct_pay_seller_breaker_snapshot    INTEGER,  -- 建单时 sellerBreakerTripped 快照(0/1)
+      direct_pay_decision_code              TEXT,     -- 建单时控制面判定码快照(成功通常 NULL / 'OK';拒绝码见 DirectPayControlReason)
       created_at  TEXT DEFAULT (datetime('now')),
       updated_at  TEXT DEFAULT (datetime('now'))
     );
@@ -340,6 +349,14 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_window_deadline TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_grace_deadline TEXT`) } catch { /* 已存在 */ } // Rail1 paid-but-timeout 宽限期:系统在此之前绝不关单(买家 →disputed 窗口)
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_instruction_snapshot TEXT`) } catch { /* 已存在 */ } // Rail1 4c:下单时快照卖家收款说明(冻结买家所见;卖家事后改/停用不影响)
+  // PR-5b-0: direct_p2p 入口控制 policy 快照列(既有库补列;additive nullable,本 PR 无写入方,5b wiring 才写)。
+  try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_enabled_snapshot INTEGER`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_rail_breaker_snapshot INTEGER`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_region_snapshot TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_region_allowlist_snapshot TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_per_tx_cap_units_snapshot INTEGER`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_seller_breaker_snapshot INTEGER`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_decision_code TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE wallets ADD COLUMN fee_staked REAL DEFAULT 0`) } catch { /* 已存在 */ }
   // PR-4b-1: direct_receive_deposits 生产收款 provenance 快照列(既有库补列;additive nullable,无写入方,无 flow 启用)。
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_receipt_ref TEXT`) } catch { /* 已存在 */ }
