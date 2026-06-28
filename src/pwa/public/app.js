@@ -12444,7 +12444,7 @@ async function renderOrderDetail(app, orderId) {
 
   // 操作按钮
   const actions = getActions(order, isBuyer, isSeller, isLogistic)
-  window._dpOrderRail = order.payment_rail  // direct_p2p:让 handleAction 把 mark_paid/confirm 路由到 Passkey 门
+  window._dpOrderRail = order.payment_rail; if (order.payment_rail === 'direct_p2p' && window.dpHydrateOrderDisclosure) setTimeout(() => window.dpHydrateOrderDisclosure(order.id), 0)  // direct_p2p:路由 mark_paid/confirm 到 Passkey 门;收款说明快照仅 both-acked 后展示
 
   const STATUS_ZH = {
     created:'待付款', direct_pay_window:'直付待付款', direct_expired_unconfirmed:'直付超时未确认', paid:'待接单', accepted:'待发货', shipped:'已发货',

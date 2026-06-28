@@ -42,6 +42,7 @@ window.dpRailSelectorHtml = () => `
       </label>
       <div id="dp-rail-note" style="display:none;margin-top:8px;font-size:11px;line-height:1.6;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
         ⚠️ ${t('直付风险提醒:WebAZ 不托管本金、不担保、不退款、不代维权,也不验证卖家的付款方式或币种。下单后需用 Passkey 完成两次风险确认,再标记付款。')}
+        <div style="margin-top:6px">${t('需要 Passkey。')}<a href="#me" style="color:#854d0e;font-weight:600;text-decoration:underline">${t('前往「我的 → 安全与存储」注册 →')}</a></div>
       </div>
     </div>
   </details>`
@@ -63,19 +64,20 @@ window.dpAfterCreate = async (res) => {
     return
   }
   const orderId = res.order_id
-  // 买家下单时看到的是【下单快照】收款说明(不是实时读卖家当前 instruction)。
+  // 边界:必须【先】完成 D1/D2 + Passkey,之后【才】展示卖家收款说明(快照)。未完成则不展示,留到订单页继续。
+  const acked = await window.dpEnsureAcks(orderId)
+  if (!acked) {
+    if (typeof toast$ === 'function') toast$(t('需完成 D1/D2 Passkey 风险确认后才显示收款说明 · 可在订单页继续'), 'info')
+    setTimeout(() => navigate(`#order/${orderId}`), 600)
+    return
+  }
+  // 两次披露已 ack —— 现在才显示卖家收款说明(下单快照,WebAZ 不验证)。
   const instr = res.payment_instruction || ''
   const label = res.payment_instruction_label ? `（${res.payment_instruction_label}）` : ''
   await confirmModal(
-    `${t('下单成功 · 这是卖家的收款说明(下单时快照,WebAZ 不验证)')}\n\n${label}${instr}\n\n${t('接下来用 Passkey 完成两次风险确认。')}`,
-    t('开始风险确认'), {})
-  const acked = await window.dpEnsureAcks(orderId)
-  if (acked) {
-    if (typeof toast$ === 'function') toast$(t('风险确认完成 · 请按收款说明付款后在订单页标记"我已付款"'), 'success')
-  } else {
-    if (typeof toast$ === 'function') toast$(t('可稍后在订单页完成风险确认与付款标记'), 'info')
-  }
-  setTimeout(() => navigate(`#order/${orderId}`), 600)
+    `${t('风险确认完成 · 这是卖家的收款说明(下单时快照,WebAZ 不验证)')}\n\n${label}${instr}\n\n${t('请按此付款,然后在订单页标记"我已付款"')}`,
+    t('我知道了'), {})
+  setTimeout(() => navigate(`#order/${orderId}`), 300)
 }
 
 // ── 确保两次披露都已 ack(缺哪个补哪个;每次都需现场真人 Passkey)。返回 both-acked 与否。 ──────────
@@ -98,20 +100,28 @@ window.dpEnsureAcks = async (orderId) => {
   return true
 }
 
+// Passkey 门失败(无 Passkey / 设备不支持 / 用户取消)→ 给出明确的【注册 Passkey 入口】(前往「我的 → 安全与存储」)。
+window.dpPromptRegisterPasskey = async (reason) => {
+  const go = await confirmModal(
+    `${reason ? reason + '\n\n' : ''}${t('直付的风险确认与付款标记需要 Passkey。前往「我的 → 安全与存储」注册一个?')}`,
+    t('前往注册 Passkey'), {})
+  if (go) navigate('#me')
+}
+
 // 单次披露 ack:Passkey ceremony(purpose=direct_pay_disclosure_ack,order+stage 绑 purpose_data)→ POST ack。
 window.dpDoAck = async (orderId, stage) => {
   let token
   try { token = await requestPasskeyGate('direct_pay_disclosure_ack', { order_id: orderId, stage }) }
-  catch (e) { if (typeof toast$ === 'function') toast$(e.message || window.dpErrorText('PASSKEY_REQUIRED_FOR_DIRECT_PAY'), 'error'); return false }
+  catch (e) { await window.dpPromptRegisterPasskey(e && e.message); return false }
   const r = await POST('/direct-pay/disclosure-acks', { order_id: orderId, stage, webauthn_token: token })
   if (r.error) { if (typeof toast$ === 'function') toast$(window.dpErrorText(r.error_code, r.error), 'error'); return false }
   return true
 }
 
-// ── 订单详情:direct_p2p 诚实边界 + 快照收款说明 ───────────────────────────────────────────────
-window.dpOrderDisclosureHtml = (order) => {
-  const snap = order.direct_pay_instruction_snapshot || ''
-  return `
+// ── 订单详情:direct_p2p 诚实边界(始终显示)+ 卖家收款说明(快照,【仅两次披露都 ack 后】才展示)──────
+// 风险警示始终可见;但卖家收款说明的快照【不】内联进 HTML —— 由 dpHydrateOrderDisclosure 在确认 both-acked 后
+//   才另取并渲染(未 ack 时连 DOM 里都没有快照,只有"先完成 D1/D2"的门)。
+window.dpOrderDisclosureHtml = (_order) => `
   <div class="card" style="border:1px solid #fde68a;background:linear-gradient(135deg,#fffbeb,#fef3c7)">
     <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:8px">💸 ${t('直付订单(非托管)')}</div>
     <ul style="margin:0 0 8px;padding-left:18px;font-size:12px;line-height:1.7;color:#374151">
@@ -119,9 +129,31 @@ window.dpOrderDisclosureHtml = (order) => {
       <li>${t('WebAZ 不托管、不担保、不退款、不代维权')}</li>
       <li>${t('卖家收款说明来自卖家自填,WebAZ 不验证付款方式或币种')}</li>
     </ul>
-    ${snap ? `<div style="font-size:12px;color:#374151;background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
-      <div style="font-size:11px;color:#9ca3af;margin-bottom:2px">${t('卖家收款说明(下单时快照)')}</div>${escHtml(snap)}</div>` : ''}
+    <div id="dp-order-instr">${loading$()}</div>
   </div>`
+
+// ack-gated 收款说明:both-acked → 另取订单快照并展示;否则只显示"先完成 D1/D2 Passkey"的门(快照不入 DOM)。
+window.dpHydrateOrderDisclosure = async (orderId) => {
+  const box = document.getElementById('dp-order-instr')
+  if (!box) return
+  const st = await GET(`/direct-pay/disclosure-acks/${orderId}`)
+  if (st.error) { box.innerHTML = `<div style="font-size:12px;color:#dc2626">${window.dpErrorText(st.error_code, st.error)}</div>`; return }
+  if (!st.both) {
+    box.innerHTML = `<div style="font-size:12px;color:#92400e;background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
+      ${t('需先完成 D1/D2 Passkey 风险确认,确认后才显示卖家收款说明。')}
+      <div style="margin-top:6px"><button class="btn btn-outline btn-sm" onclick="dpCompleteAcksThenReveal('${orderId}')">${t('完成风险确认')}</button></div></div>`
+    return
+  }
+  const o = await GET(`/orders/${orderId}`)
+  const snap = o && o.order ? (o.order.direct_pay_instruction_snapshot || '') : ''
+  box.innerHTML = snap ? `<div style="font-size:12px;color:#374151;background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
+    <div style="font-size:11px;color:#9ca3af;margin-bottom:2px">${t('卖家收款说明(下单时快照)')}</div>${escHtml(snap)}</div>`
+    : `<div style="font-size:12px;color:#9ca3af">${t('卖家尚未设置收款说明,暂不可直付')}</div>`
+}
+
+window.dpCompleteAcksThenReveal = async (orderId) => {
+  const ok = await window.dpEnsureAcks(orderId)
+  if (ok) window.dpHydrateOrderDisclosure(orderId)
 }
 
 // ── 订单动作(direct_p2p 的 mark_paid / confirm / confirm_in_person):两次披露 + Passkey 后端硬门 ──────
@@ -134,7 +166,7 @@ window.dpHandleAction = async (orderId, action) => {
   if (!acked) { show('error', window.dpErrorText('DISCLOSURE_NOT_ACKED')); return }
   let token
   try { token = await requestPasskeyGate('direct_pay_order_action', { order_id: orderId, action }) }
-  catch (e) { show('error', e.message || window.dpErrorText('PASSKEY_REQUIRED_FOR_DIRECT_PAY')); return }
+  catch (e) { await window.dpPromptRegisterPasskey(e && e.message); return }
   show('info', `<span class="spinner"></span>${t('处理中...')}`)
   const path = action === 'confirm_in_person' ? `/orders/${orderId}/confirm-in-person` : `/orders/${orderId}/action`
   const body = action === 'confirm_in_person' ? { webauthn_token: token } : { action, webauthn_token: token }

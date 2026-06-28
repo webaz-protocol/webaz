@@ -50,13 +50,27 @@ ok('acks cover pre_select AND pre_confirm', has(DP, 'pre_select') && has(DP, 'pr
 ok('ack uses live Passkey gate (direct_pay_disclosure_ack)', /requestPasskeyGate\('direct_pay_disclosure_ack'/.test(DP))
 ok('dpAfterCreate drives the ack flow', /dpAfterCreate\s*=/.test(DP) && has(DP, 'dpEnsureAcks'))
 
-// ── 5. order detail / actions: disclosures + snapshot + gated actions ──
+// ── 4b. BOUNDARY: instruction is revealed ONLY AFTER D1/D2 acks (not before) ──
+const AFTER = DP.slice(DP.indexOf('dpAfterCreate = async'), DP.indexOf('dpEnsureAcks = async'))
+ok('dpAfterCreate runs dpEnsureAcks BEFORE reading payment_instruction', AFTER.indexOf('dpEnsureAcks') < AFTER.indexOf('payment_instruction') && AFTER.includes('payment_instruction'))
+ok('dpAfterCreate bails (no instruction) when acks not completed', /if \(!acked\)[\s\S]*?return/.test(AFTER) && AFTER.indexOf('if (!acked)') < AFTER.indexOf('payment_instruction'))
+
+// ── 5. order detail / actions: disclosures always shown; SNAPSHOT ack-gated; gated actions ──
 ok('order detail shows direct_p2p disclosures', has(APP, 'dpOrderDisclosureHtml'))
-ok('disclosure block shows the instruction snapshot', /direct_pay_instruction_snapshot/.test(DP))
+ok('disclosure HTML does NOT inline the snapshot (not in DOM pre-ack)', !/direct_pay_instruction_snapshot/.test(DP.slice(DP.indexOf('dpOrderDisclosureHtml = '), DP.indexOf('dpHydrateOrderDisclosure'))))
+ok('order detail hydrates snapshot via ack-gated path', has(APP, 'dpHydrateOrderDisclosure') && /dpHydrateOrderDisclosure\s*=/.test(DP))
+const HYD = DP.slice(DP.indexOf('dpHydrateOrderDisclosure = async'), DP.indexOf('dpCompleteAcksThenReveal = async'))
+ok('snapshot only read AFTER checking both-acked (st.both)', HYD.indexOf('st.both') < HYD.indexOf('direct_pay_instruction_snapshot') && HYD.includes('direct_pay_instruction_snapshot'))
+ok('not-both-acked branch shows a "complete D1/D2" gate, not the snapshot', /!st\.both/.test(HYD) && has(HYD, 'dpCompleteAcksThenReveal') && !HYD.slice(HYD.indexOf('!st.both'), HYD.indexOf('dpCompleteAcksThenReveal') + 60).includes('direct_pay_instruction_snapshot'))
 ok('getActions offers mark_paid in direct_pay_window', /direct_pay_window/.test(APP) && /'mark_paid'/.test(APP))
 ok('handleAction routes direct_p2p gated actions to dpHandleAction', /_dpOrderRail === 'direct_p2p'.*dpHandleAction/.test(APP))
 ok('order action uses Passkey gate (direct_pay_order_action)', /requestPasskeyGate\('direct_pay_order_action'/.test(DP))
 ok('order action hits existing endpoints (action + confirm-in-person)', /\/orders\/\$\{orderId\}\/action/.test(DP) && /confirm-in-person/.test(DP))
+
+// ── 5b. P2: clear register-Passkey entry for buyers without a Passkey ──
+ok('register-Passkey prompt helper exists', /dpPromptRegisterPasskey\s*=/.test(DP))
+ok('Passkey-gate failure offers registration (navigate to #me)', has(DP, 'dpPromptRegisterPasskey') && /navigate\('#me'\)/.test(DP))
+ok('rail note links to Passkey registration (#me)', /href="#me"/.test(DP))
 
 // ── 6. honest non-custodial copy — present in zh (source) AND en (i18n) ──
 for (const zh of ['不托管', '不担保', '不退款', '不代维权', 'WebAZ 不验证付款方式或币种', '本金不经 WebAZ']) {
