@@ -49,21 +49,21 @@ window.dpRailSelectorHtml = (productId) => `
 
 // 选直付先查 /direct-pay/availability(与建单门同源):available=true 才展示风险提醒+允许继续;否则用 dpErrorText 显示明确不可用原因(非系统错误/不裸露 JSON)并退回托管轨,阻止进入直付建单。
 window.dpOnRailChange = async (productId) => {
-  const note = document.getElementById('dp-rail-note')
+  const note = document.getElementById('dp-rail-note'); window._dpDirectAvailable = false  // 进入即 pending:确认前 dpSelectedRail 只输出 escrow(防"选直付后立刻点确认"竞态)
   const un = document.getElementById('dp-rail-unavailable')
   if (note) note.style.display = 'none'
   if (un) un.style.display = 'none'
-  if (window.dpSelectedRail() !== 'direct_p2p') return
+  if (document.querySelector('input[name="dp-rail"]:checked')?.value !== 'direct_p2p') return
   let av = null
   try { av = await GET('/direct-pay/availability?product_id=' + encodeURIComponent(productId || '')) } catch { av = null }
-  if (av && av.available === true) { if (note) note.style.display = ''; return }
-  // 不可用:明确原因 + 退回 escrow(阻止进入直付建单)
-  if (un) { un.textContent = '⚠️ ' + window.dpErrorText(av && av.error_code, av && av.reason) ; un.style.display = '' }
+  if (av && av.available === true) { window._dpDirectAvailable = true; if (note) note.style.display = ''; return }
+  if (un) { un.textContent = '⚠️ ' + window.dpErrorText(av && av.error_code, av && av.reason) ; un.style.display = '' }  // 不可用:明确原因 + 退回 escrow
   const esc = document.querySelector('input[name="dp-rail"][value="escrow"]')
   if (esc) esc.checked = true
 }
 
-window.dpSelectedRail = () => document.querySelector('input[name="dp-rail"]:checked')?.value || 'escrow'
+// 只有 availability 已确认 available:true(window._dpDirectAvailable)才输出 direct_p2p;pending/unavailable → escrow(竞态下确认只会下 escrow 单,绝不发 direct_p2p create)。
+window.dpSelectedRail = () => (document.querySelector('input[name="dp-rail"]:checked')?.value === 'direct_p2p' && window._dpDirectAvailable === true) ? 'direct_p2p' : 'escrow'
 
 // ── 建单成功后(direct_p2p):D1/D2 披露 ack(各一次 Passkey)→ ack 后才展示快照收款说明 → 跳订单页。res=POST /orders 返回;有错则双语提示并停。
 window.dpAfterCreate = async (res) => {

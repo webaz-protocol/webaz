@@ -40,7 +40,7 @@ ok('instruction max length enforced client-side (maxlength 500)', /maxlength="50
 // ── 3. buyer checkout: direct_p2p as an OPTIONAL rail; escrow default ──
 ok('checkout renders rail selector', has(APP, 'dpRailSelectorHtml'))
 ok('rail selector defines escrow + direct_p2p radios', /value="escrow"\s+checked/.test(DP) && /value="direct_p2p"/.test(DP))
-ok('dpSelectedRail defaults to escrow', /dpSelectedRail\s*=.*\|\|\s*'escrow'/.test(DP))
+ok('dpSelectedRail defaults to escrow', /dpSelectedRail = \(\)[\s\S]{0,180}:[\s\S]{0,10}'escrow'/.test(DP))
 ok('order create payload includes payment_rail', /payment_rail/.test(APP) && /window\.dpSelectedRail/.test(APP))
 ok('direct_p2p create routes to dpAfterCreate', /payment_rail === 'direct_p2p'.*dpAfterCreate/.test(APP))
 
@@ -129,6 +129,11 @@ ok('rail selector queries /direct-pay/availability', /\/direct-pay\/availability
 ok('direct_p2p allowed only when av.available === true', /av\.available === true/.test(DP))
 ok('unavailable → shows dpErrorText reason (not raw JSON)', /dp-rail-unavailable/.test(DP) && /dpErrorText\(av/.test(DP))
 ok('unavailable → reverts to escrow (blocks entering direct_p2p create)', /value="escrow"\][\s\S]{0,90}checked = true/.test(DP))
+// 9c-race: dpSelectedRail gates on a confirmed-availability flag — pending/unavailable never yields direct_p2p,
+//   so a fast "confirm" before availability returns posts escrow (never payment_rail:'direct_p2p').
+ok('dpSelectedRail outputs direct_p2p ONLY when window._dpDirectAvailable === true', /dpSelectedRail = \(\)[\s\S]{0,160}_dpDirectAvailable === true[\s\S]{0,40}'direct_p2p'[\s\S]{0,20}:[\s\S]{0,10}'escrow'/.test(DP))
+ok('rail change resets availability flag to false (pending) before the async check', /dpOnRailChange[\s\S]{0,160}_dpDirectAvailable = false/.test(DP))
+ok('flag set true only on av.available === true', /av\.available === true[\s\S]{0,40}_dpDirectAvailable = true/.test(DP))
 // 9d. boundary copy held + no production-ready claim.
 ok('copy: off-platform + WebAZ 不托管/不担保/不退款', /场外/.test(DP) && /不托管/.test(DP) && /不担保/.test(DP) && /不退款/.test(DP))
 ok('no production-ready claim', !/production[- ]?ready|可上线|已上线/i.test(DPCODE))
