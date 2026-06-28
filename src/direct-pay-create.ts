@@ -14,7 +14,7 @@ import type Database from 'better-sqlite3'
 import type { Response } from 'express'
 import { lockFeeStake } from './direct-pay-ledger.js'
 import { mulRate, type Units } from './money.js'
-import { sellerHasProductionBaseBondLocked } from './direct-receive-deposits.js'
+import { sellerBaseBondEntrySatisfied } from './direct-pay-base-bond-entry.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
 import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, type DirectPayControlsConfig } from './direct-pay-controls.js'
 import { safeRunDirectPayAmlMonitor } from './direct-pay-aml-monitor.js'
@@ -98,7 +98,7 @@ export function createDirectPayResponse(
   const ctrl = evaluateDirectPayLaunchControls(cfg, {
     amountUnits: ctx.totalAmountU,
     sellerBreakerTripped,
-    productionBaseBondLocked: sellerHasProductionBaseBondLocked(db, sellerId),
+    baseBondSatisfied: sellerBaseBondEntrySatisfied(db, sellerId, new Date().toISOString()),
     kycSanctionsPassed: sellerDirectPayKybPassed(db, sellerId) && sellerDirectPaySanctionsClear(db, sellerId),
     amlClear: sellerDirectPayAmlClear(db, sellerId),
   })

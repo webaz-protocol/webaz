@@ -690,6 +690,7 @@ jobs:
       - run: npm run test:direct-receive-production-confirm
       - run: npm run test:direct-pay-bond-rail-clearance
       - run: npm run test:direct-receive-deferral
+      - run: npm run test:direct-pay-base-bond-entry
       - run: npm run test:direct-pay-launch-readiness
       - run: npm run test:direct-pay-readiness-routes
       - run: npm run test:direct-pay-order-snapshot-schema

@@ -107,6 +107,7 @@
     "test:direct-receive-instruction": "tsx scripts/test-direct-receive-instruction.ts",
     "test:direct-receive-production-confirm": "tsx scripts/test-direct-receive-production-confirm.ts",
     "test:direct-receive-deferral": "tsx scripts/test-direct-receive-deferral.ts",
+    "test:direct-pay-base-bond-entry": "tsx scripts/test-direct-pay-base-bond-entry.ts",
     "test:direct-pay-order-snapshot-schema": "tsx scripts/test-direct-pay-order-snapshot-schema.ts",
     "test:direct-pay-ui": "tsx scripts/test-direct-pay-ui.ts",
     "test:direct-pay-disclosure-acks": "tsx scripts/test-direct-pay-disclosure-acks.ts",

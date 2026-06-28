@@ -28,7 +28,7 @@ export type DirectPayControlReason =
   | 'DIRECT_PAY_REGION_UNSUPPORTED' // 本部署地区不在已开放白名单
   | 'DIRECT_PAY_CAP_EXCEEDED'       // WebAZ 记录的订单总额超过单笔上限(或上限未配置);不约束场外实付
   | 'DIRECT_PAY_SELLER_SUSPENDED'   // 该卖家被熔断/暂停(per-seller breaker)
-  | 'DIRECT_PAY_NOT_AVAILABLE'      // 卖家未完成生产级 base-bond
+  | 'DIRECT_PAY_NOT_AVAILABLE'      // 卖家未交履约保证金且无有效缓交(base-bond OR active deferral 都不满足)
   | 'DIRECT_PAY_KYC_REQUIRED'       // 卖家未通过 KYC/制裁筛查
   | 'DIRECT_PAY_AML_REVIEW_REQUIRED'// 卖家存在未清除的中/高风险 AML flag(运行期断路器;PR-6B)
 
@@ -52,7 +52,7 @@ export const DEFAULT_DIRECT_PAY_CONTROLS: DirectPayControlsConfig = {
 export interface DirectPayControlsFacts {
   amountUnits: Units            // 本单金额(整数 base-units)
   sellerBreakerTripped: boolean // 该卖家被熔断/暂停(per-seller breaker;true=拒)。来源由 5b 装配(如 privileges.suspended)。
-  productionBaseBondLocked: boolean
+  baseBondSatisfied: boolean    // 保证金门:已交生产级 base-bond 【或】有有效缓交(sellerBaseBondEntrySatisfied);缺一即拒
   kycSanctionsPassed: boolean       // KYB AND sanctions(PR-6A;两者皆过)
   amlClear: boolean                 // 运行期 AML 断路器:无未清除的中/高风险 flag(PR-6B);与 kycSanctionsPassed 分离,语义独立
 }
@@ -88,7 +88,7 @@ export function evaluateDirectPayLaunchControls(
   if (!isNonNegUnits(f.amountUnits) || f.amountUnits <= 0 || f.amountUnits > c.perTxCapUnits) return deny('DIRECT_PAY_CAP_EXCEEDED', '直付订单总额超出单笔上限(WebAZ 记录的订单金额上限;不约束场外实付)')
   if (f.sellerBreakerTripped === true) return deny('DIRECT_PAY_SELLER_SUSPENDED', '该卖家直付已被暂停')
   // 硬不变量(launch blockers):production base-bond 与 KYC/制裁【始终强制】,无 cfg 开关、治理不可绕过。
-  if (f.productionBaseBondLocked !== true) return deny('DIRECT_PAY_NOT_AVAILABLE', '直付暂不可用:卖家未完成生产级履约担保(production base-bond)')
+  if (f.baseBondSatisfied !== true) return deny('DIRECT_PAY_NOT_AVAILABLE', '直付暂不可用:卖家未交履约保证金且无有效缓交')
   if (f.kycSanctionsPassed !== true) return deny('DIRECT_PAY_KYC_REQUIRED', '直付暂不可用:卖家未通过 KYC/制裁筛查')
   if (f.amlClear !== true) return deny('DIRECT_PAY_AML_REVIEW_REQUIRED', '直付暂不可用:卖家存在未清除的 AML 风险复核')
   return { ok: true, status: 200 }

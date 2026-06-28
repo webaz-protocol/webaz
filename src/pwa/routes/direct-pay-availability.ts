@@ -10,7 +10,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne } from '../../layer0-foundation/L0-1-database/db.js'
 import { toUnits } from '../../money.js'
-import { sellerHasProductionBaseBondLocked } from '../../direct-receive-deposits.js'
+import { sellerBaseBondEntrySatisfied } from '../../direct-pay-base-bond-entry.js'
 import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped } from '../../direct-pay-controls.js'
 import { sellerDirectPayReadinessView } from '../../direct-pay-launch-readiness.js'
 
@@ -39,7 +39,7 @@ export function registerDirectPayAvailabilityRoutes(app: Application, deps: Dire
     const decision = evaluateDirectPayLaunchControls(cfg, {
       amountUnits: toUnits(Number(product.price) || 0),
       sellerBreakerTripped: sellerDirectPayBreakerTripped(db, product.seller_id),  // 与 create 路径同源:卖家熔断也判不可用
-      productionBaseBondLocked: sellerHasProductionBaseBondLocked(db, product.seller_id),
+      baseBondSatisfied: sellerBaseBondEntrySatisfied(db, product.seller_id, new Date().toISOString()),
       kycSanctionsPassed: sellerDirectPayKybPassed(db, product.seller_id) && sellerDirectPaySanctionsClear(db, product.seller_id),
       amlClear: sellerDirectPayAmlClear(db, product.seller_id),
     })
