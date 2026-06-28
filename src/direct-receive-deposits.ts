@@ -91,6 +91,13 @@ export function confirmDepositReceipt(db: Database.Database, args: {
   const { depositId, expectedAmountUnits, externalRef } = args
   const row = getRow(db, depositId)
   if (!row) return { ok: false, reason: 'deposit not found' }
+  // 生产 rail(operator_attested / usdc_onchain / fiat_psp)只能走 confirmProductionReceipt(ROOT + Passkey + Lock B)。
+  //   confirmDepositReceipt 是【非生产 / manual 专用】路径 —— 任何生产 rail 在此即抛(fail-closed),杜绝被
+  //   confirmDepositReceipt + lockBond 锁成 active privilege、绕过生产确认门(operator_attested 的 record-only
+  //   confirmReceipt 不会自己抛,故必须在此显式拦)。
+  if (getDepositRail(row.deposit_rail as DepositRailId).isProduction) {
+    throw new Error(`deposit-rail '${row.deposit_rail}' is a production rail — must use confirmProductionReceipt (ROOT + Passkey); confirmDepositReceipt is manual/non-production only`)
+  }
   if (row.status === 'confirmed' || row.status === 'locked') return { ok: true, status: row.status as DepositStatus, already: true } // 幂等
   if (row.status !== 'pending' && row.status !== 'insufficient') return { ok: false, reason: `cannot confirm from status '${row.status}'` }
   if (!isNonNegUnits(expectedAmountUnits) || expectedAmountUnits <= 0) return { ok: false, reason: 'expectedAmount must be a positive integer base-units' }

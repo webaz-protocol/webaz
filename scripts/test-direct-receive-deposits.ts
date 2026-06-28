@@ -53,6 +53,12 @@ ok('usdc_onchain confirm → THROWS (GATED)', throws(() => confirmDepositReceipt
 ok('usdc_onchain deposit stays pending (no state change)', status('dU') === 'pending')
 openDeposit(db, { depositId: 'dF', userId: 'seller1', tier: 'T0', currency: 'fiat', depositRail: 'fiat_psp' })
 ok('fiat_psp confirm → THROWS (GATED)', throws(() => confirmDepositReceipt(db, { depositId: 'dF', expectedAmountUnits: REQ })))
+// Codex P1: operator_attested 是【生产 rail】,不能经非生产 confirmDepositReceipt+lockBond 锁成 active(必须走 confirmProductionReceipt)。
+openDeposit(db, { depositId: 'dOA', userId: 'sellerOA', tier: 'T0', currency: 'usdc', depositRail: 'operator_attested' })
+ok('operator_attested confirmDepositReceipt → THROWS (production rail; use confirmProductionReceipt)', throws(() => confirmDepositReceipt(db, { depositId: 'dOA', expectedAmountUnits: REQ })))
+ok('operator_attested deposit stays pending (no state change)', status('dOA') === 'pending')
+ok('operator_attested lockBond fails (not confirmed)', lockBond(db, { depositId: 'dOA' }).ok === false && status('dOA') === 'pending')
+ok('operator_attested → NO active privilege written (bypass closed; production gate still false)', (() => { const p = db.prepare("SELECT status FROM direct_receive_privileges WHERE user_id='sellerOA'").get() as { status?: string } | undefined; return (!p || p.status !== 'active') && sellerHasProductionBaseBondLocked(db, 'sellerOA') === false })())
 
 // ── 3. lock 前置:without-confirm 失败 ──
 openDeposit(db, { depositId: 'd2', userId: 'seller1', tier: 'T0', currency: 'fiat', depositRail: 'manual' })
