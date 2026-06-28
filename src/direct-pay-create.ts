@@ -90,10 +90,11 @@ export function createDirectPayResponse(
       instructionSnapshot: instr.instruction, windowDeadlineIso: new Date(Date.now() + windowHours * 3600_000).toISOString(),
       shippingAddress: ctx.shippingAddress,
     })
+    // ⚠️ 不在 create 响应里下发卖家收款说明(payment_instruction/label)——D1/D2 both-acked 前不得泄露(响应契约门,
+    //   非仅 UI 软门)。买家先完成披露 ack,再经 GET /orders/:id 读取 redaction-gated 的 direct_pay_instruction_snapshot。
     res.json({
       success: true, order_id: orderId, status: 'direct_pay_window', payment_rail: 'direct_p2p',
-      payment_instruction: instr.instruction, payment_instruction_label: instr.label,
-      note: '本金不经 WebAZ;请按卖家收款说明【场外】付款后点"我已付款"。本档无经济保障、不退款,仅对卖家信誉处罚。',
+      note: '本金不经 WebAZ;完成 D1/D2 风险确认(Passkey)后即可在订单页查看卖家收款说明,请【场外】付款后点"我已付款"。本档无经济保障、不退款,仅对卖家信誉处罚。',
     })
   } catch (e) {
     res.status(409).json({ error: '直付订单创建失败:' + (e as Error).message, error_code: 'DIRECT_PAY_CREATE_FAILED' })

@@ -19,6 +19,7 @@ import type Database from 'better-sqlite3'
 // RFC-011 §⑥ 事件游标流(纯 db 函数,party-gated)
 import { listOrderEventsSince } from '../../layer0-foundation/L0-2-state-machine/order-chain.js'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'  // PR-4f-b: direct_p2p 收款说明响应契约门
 
 export interface OrdersReadDeps {
   db: Database.Database
@@ -198,6 +199,13 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
         order.shipping_address = `🔒 ${code} · ${order.shipping_address}`
         delete order.recipient_code
       }
+    }
+
+    // Direct Pay 响应契约门:direct_p2p 卖家收款说明快照,买家在 D1/D2 both-acked 前【不得】从 API 拿到
+    //   (非仅 UI 软门)。卖家(自填者)/arbitrator/admin 维持现有可见语义,只 redact 未 ack 的 buyer。
+    if (order.payment_rail === 'direct_p2p' && order.direct_pay_instruction_snapshot != null
+        && order.buyer_id === user.id && !requireBothDisclosuresAcked(db, order.id as string).ok) {
+      delete order.direct_pay_instruction_snapshot
     }
 
     res.json({ ...statusInfo, history, product, dispute, trackingInfo })

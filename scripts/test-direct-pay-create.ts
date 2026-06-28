@@ -16,7 +16,7 @@ import { createServer, request as httpRequest, type Server } from 'node:http'
 
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')
-const { initSystemUser, transition } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
+const { initSystemUser, transition, getOrderStatus } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
 const { initOrderChainSchema, appendOrderEvent } = await import('../src/layer0-foundation/L0-2-state-machine/order-chain.js')
 const { registerOrdersCreateRoutes } = await import('../src/pwa/routes/orders-create.js')
 const { createDirectPayOrder } = await import('../src/direct-pay-create.js')
@@ -130,7 +130,8 @@ seedInstr('seller2')
 const bBal2 = walletUnits(db, 'buyer1').balance
 const rOk = await post({ product_id: 'p2', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr' }, 'buyer1')
 ok('direct_p2p bond + instruction → 200 direct_pay_window', rOk.status === 200 && rOk.json?.status === 'direct_pay_window', JSON.stringify(rOk))
-ok('route happy: returns payment_instruction', typeof rOk.json?.payment_instruction === 'string' && rOk.json.payment_instruction.length > 0)
+// 响应契约门:create 成功响应【不】下发卖家收款说明(D1/D2 both-acked 前不得泄露;非仅 UI 软门)
+ok('route happy: create response does NOT leak payment_instruction', rOk.json?.payment_instruction === undefined && rOk.json?.payment_instruction_label === undefined, JSON.stringify(rOk.json))
 ok('route happy: buyer wallet UNCHANGED (no principal/escrow)', walletUnits(db, 'buyer1').balance === bBal2)
 const createdId = rOk.json?.order_id
 ok('route happy: order escrow_amount=0, rail=direct_p2p', ord(createdId)?.escrow_amount === 0 && ord(createdId)?.payment_rail === 'direct_p2p')
@@ -166,6 +167,36 @@ const okRes = mres()
 const oN0 = ordersN()
 createDirectPayResponse(okRes, db, cdeps, baseCtx)
 ok('simple product (no modifiers) passes the modifier gate → 200 created', okRes._s === 200 && okRes._b?.status === 'direct_pay_window' && ordersN() === oN0 + 1, JSON.stringify(okRes._b))
+
+// ══════ Part D: GET /orders/:id 响应契约门 —— buyer 在 D1/D2 both-acked 前拿不到 snapshot ══════
+// 生产由 runtime schema bridge(webaz-schema-helpers)给 products 加 return_days;本测试用 schema.ts initDatabase,补上以匹配。
+db.exec("ALTER TABLE products ADD COLUMN return_days INTEGER DEFAULT 7")
+const { registerOrdersReadRoutes } = await import('../src/pwa/routes/orders-read.js')
+const { recordDisclosureAck, STAGE } = await import('../src/direct-pay-disclosures.js')
+registerOrdersReadRoutes(app, {
+  db,
+  auth: (req: Request, res: Response) => { const uid = req.headers['x-test-uid'] as string | undefined; if (!uid) { res.status(401).json({ error: 'login' }); return null } return { id: uid, role: uid === 'seller2' ? 'seller' : 'buyer' } },
+  getOrderStatus,
+  getOrderChain: () => ({}), verifyOrderChain: () => ({ ok: true }), getOrderDispute: () => null,
+})
+function getJson(path: string, uid: string): Promise<{ status: number; json: any }> {
+  return new Promise((resolve, reject) => {
+    const rq = httpRequest({ host: '127.0.0.1', port, method: 'GET', path, headers: { 'x-test-uid': uid } }, r => { let d = ''; r.on('data', c => d += c); r.on('end', () => { try { resolve({ status: r.statusCode || 0, json: d ? JSON.parse(d) : null }) } catch { resolve({ status: r.statusCode || 0, json: d }) } }) })
+    rq.on('error', reject); rq.end()
+  })
+}
+const snapOf = (j: any) => j?.order?.direct_pay_instruction_snapshot
+// a. buyer 未 both-acked → snapshot 被 redact(响应里没有)
+const gPre = await getJson(`/api/orders/${createdId}`, 'buyer1')
+ok('GET buyer pre-ack: snapshot REDACTED from response', gPre.status === 200 && snapOf(gPre.json) === undefined, JSON.stringify(snapOf(gPre.json)))
+// seller(自填者)始终可见自己的收款说明
+const gSeller = await getJson(`/api/orders/${createdId}`, 'seller2')
+ok('GET seller: own snapshot VISIBLE', typeof snapOf(gSeller.json) === 'string' && snapOf(gSeller.json).length > 0, JSON.stringify(gSeller.json?.order && 'order-present'))
+// b. both-acked 后 buyer 可见
+recordDisclosureAck(db, { orderId: createdId, buyerId: 'buyer1', stage: STAGE.PRE_SELECT, ackId: 'dpa_t1' })
+recordDisclosureAck(db, { orderId: createdId, buyerId: 'buyer1', stage: STAGE.PRE_CONFIRM, ackId: 'dpa_t2' })
+const gPost = await getJson(`/api/orders/${createdId}`, 'buyer1')
+ok('GET buyer post-both-ack: snapshot VISIBLE', typeof snapOf(gPost.json) === 'string' && snapOf(gPost.json).length > 0, JSON.stringify(snapOf(gPost.json)))
 
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }

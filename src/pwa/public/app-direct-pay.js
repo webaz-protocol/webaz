@@ -71,11 +71,11 @@ window.dpAfterCreate = async (res) => {
     setTimeout(() => navigate(`#order/${orderId}`), 600)
     return
   }
-  // 两次披露已 ack —— 现在才显示卖家收款说明(下单快照,WebAZ 不验证)。
-  const instr = res.payment_instruction || ''
-  const label = res.payment_instruction_label ? `（${res.payment_instruction_label}）` : ''
+  // 两次披露已 ack —— 收款说明【不】来自 create 响应(后端在 both-acked 前不下发);现在才 GET 订单读取 redaction-gated 快照。
+  const o = await GET(`/orders/${orderId}`)
+  const instr = o && o.order ? (o.order.direct_pay_instruction_snapshot || '') : ''
   await confirmModal(
-    `${t('风险确认完成 · 这是卖家的收款说明(下单时快照,WebAZ 不验证)')}\n\n${label}${instr}\n\n${t('请按此付款,然后在订单页标记"我已付款"')}`,
+    `${t('风险确认完成 · 这是卖家的收款说明(下单时快照,WebAZ 不验证)')}\n\n${instr}\n\n${t('请按此付款,然后在订单页标记"我已付款"')}`,
     t('我知道了'), {})
   setTimeout(() => navigate(`#order/${orderId}`), 300)
 }

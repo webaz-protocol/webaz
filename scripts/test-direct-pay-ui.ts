@@ -50,10 +50,11 @@ ok('acks cover pre_select AND pre_confirm', has(DP, 'pre_select') && has(DP, 'pr
 ok('ack uses live Passkey gate (direct_pay_disclosure_ack)', /requestPasskeyGate\('direct_pay_disclosure_ack'/.test(DP))
 ok('dpAfterCreate drives the ack flow', /dpAfterCreate\s*=/.test(DP) && has(DP, 'dpEnsureAcks'))
 
-// ── 4b. BOUNDARY: instruction is revealed ONLY AFTER D1/D2 acks (not before) ──
+// ── 4b. BOUNDARY: instruction revealed ONLY AFTER D1/D2 acks, and sourced from the ack-gated order read (NOT the create response) ──
 const AFTER = DP.slice(DP.indexOf('dpAfterCreate = async'), DP.indexOf('dpEnsureAcks = async'))
-ok('dpAfterCreate runs dpEnsureAcks BEFORE reading payment_instruction', AFTER.indexOf('dpEnsureAcks') < AFTER.indexOf('payment_instruction') && AFTER.includes('payment_instruction'))
-ok('dpAfterCreate bails (no instruction) when acks not completed', /if \(!acked\)[\s\S]*?return/.test(AFTER) && AFTER.indexOf('if (!acked)') < AFTER.indexOf('payment_instruction'))
+ok('dpAfterCreate runs dpEnsureAcks BEFORE reading the snapshot', AFTER.indexOf('dpEnsureAcks') < AFTER.indexOf('direct_pay_instruction_snapshot') && AFTER.includes('direct_pay_instruction_snapshot'))
+ok('dpAfterCreate sources snapshot from GET /orders (not the create response)', /GET\(`\/orders\//.test(AFTER) && !/res\.payment_instruction/.test(DP))
+ok('dpAfterCreate bails before reading snapshot when acks not completed', /if \(!acked\)[\s\S]*?return/.test(AFTER) && AFTER.indexOf('if (!acked)') < AFTER.indexOf('direct_pay_instruction_snapshot'))
 
 // ── 5. order detail / actions: disclosures always shown; SNAPSHOT ack-gated; gated actions ──
 ok('order detail shows direct_p2p disclosures', has(APP, 'dpOrderDisclosureHtml'))
