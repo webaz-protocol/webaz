@@ -102,5 +102,36 @@ ok('no escrow endpoint call', !/\/escrow/.test(DPCODE))
 ok('no settlement endpoint call', !/\/settle/.test(DPCODE))
 ok('no refund/returns endpoint call', !/\/refund|\/returns/.test(DPCODE))
 
+// ── 9. PR-5c: availability/control reason codes have bilingual copy + availability-gated rail ──
+const REASON_COPY: Record<string, string> = {
+  DIRECT_PAY_DISABLED: '直付当前未开放',
+  DIRECT_PAY_RAIL_BREAKER: '直付暂停受理(运营维护中),请稍后再试',
+  DIRECT_PAY_REGION_UNSUPPORTED: '直付在你所在地区暂未开放',
+  DIRECT_PAY_CAP_EXCEEDED: '超出直付单笔上限(按 WebAZ 记录的订单金额计;不涉及你与卖家场外实际付款金额)',
+  DIRECT_PAY_SELLER_NOT_ELIGIBLE: '该卖家暂不支持直付',
+  DIRECT_PAY_SELLER_SUSPENDED: '该卖家直付已被暂停',
+  NO_PAYMENT_INSTRUCTION: '卖家尚未设置收款说明,暂不可直付',
+  DIRECT_PAY_SIMPLE_PRODUCT_ONLY: '直付当前仅支持简单商品(无规格)',
+  DIRECT_PAY_UNSUPPORTED_OPTION: '直付当前不支持该下单选项',
+}
+// 9a. dpErrorText maps every reason code; each zh string has an EN i18n entry.
+const DPERR = DP.slice(DP.indexOf('window.dpErrorText'), DP.indexOf('window.dpRailSelectorHtml'))
+for (const code of Object.keys(REASON_COPY)) ok(`dpErrorText maps ${code}`, new RegExp(`\\b${code}\\s*:`).test(DPERR))
+// DIRECT_PAY_NOT_AVAILABLE + DIRECT_PAY_KYC_REQUIRED also mapped (shared/own copy)
+ok('dpErrorText maps DIRECT_PAY_NOT_AVAILABLE', /\bDIRECT_PAY_NOT_AVAILABLE\s*:/.test(DPERR))
+ok('dpErrorText maps DIRECT_PAY_KYC_REQUIRED', /\bDIRECT_PAY_KYC_REQUIRED\s*:/.test(DPERR))
+for (const zh of Object.values(REASON_COPY)) ok(`i18n EN present: ${zh.slice(0, 12)}`, new RegExp(`'${zh.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
+// 9b. cap copy ties to WebAZ-recorded order total, NOT off-platform payment control.
+ok('cap zh copy: WebAZ-recorded order amount + not off-platform', /WebAZ 记录的订单金额/.test(DP) && /不涉及[\s\S]{0,12}场外/.test(DP))
+ok('cap en copy: WebAZ-recorded order total + off-platform disclaimer', /WebAZ-recorded order total/.test(I18N) && /off-platform/.test(I18N))
+// 9c. rail selector availability-gated: direct_p2p queries /direct-pay/availability; only available===true allows it.
+ok('rail selector queries /direct-pay/availability', /\/direct-pay\/availability/.test(DP))
+ok('direct_p2p allowed only when av.available === true', /av\.available === true/.test(DP))
+ok('unavailable → shows dpErrorText reason (not raw JSON)', /dp-rail-unavailable/.test(DP) && /dpErrorText\(av/.test(DP))
+ok('unavailable → reverts to escrow (blocks entering direct_p2p create)', /value="escrow"\][\s\S]{0,90}checked = true/.test(DP))
+// 9d. boundary copy held + no production-ready claim.
+ok('copy: off-platform + WebAZ 不托管/不担保/不退款', /场外/.test(DP) && /不托管/.test(DP) && /不担保/.test(DP) && /不退款/.test(DP))
+ok('no production-ready claim', !/production[- ]?ready|可上线|已上线/i.test(DPCODE))
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)
