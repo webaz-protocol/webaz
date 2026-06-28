@@ -32,7 +32,7 @@ db.pragma('foreign_keys = OFF')
 db.exec("CREATE TABLE IF NOT EXISTS webauthn_credentials (id TEXT PRIMARY KEY, user_id TEXT)")
 db.exec("CREATE TABLE IF NOT EXISTS webauthn_gate_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, purpose TEXT NOT NULL, purpose_data TEXT, expires_at TEXT NOT NULL, consumed_at TEXT)")
 db.exec("CREATE TABLE IF NOT EXISTS admin_audit_log (id TEXT PRIMARY KEY, admin_id TEXT, action TEXT, target_type TEXT, target_id TEXT, detail TEXT, created_at TEXT DEFAULT (datetime('now')))")
-for (const u of ['seller1', 'seller2', 'buyer1', 'root1', 'root_nopk']) db.prepare("INSERT OR IGNORE INTO users (id,name,role,api_key) VALUES (?,?,?,?)").run(u, u, 'seller', 'k_' + u)
+for (const u of ['seller1', 'seller2', 'seller_b', 'seller_c', 'buyer1', 'root1', 'root_nopk']) db.prepare("INSERT OR IGNORE INTO users (id,name,role,api_key) VALUES (?,?,?,?)").run(u, u, 'seller', 'k_' + u)
 db.prepare("INSERT INTO webauthn_credentials (id, user_id) VALUES ('pk_root','root1')").run()   // root1 有 Passkey;root_nopk 无(模拟 agent)
 
 const cp: Record<string, unknown> = {}
@@ -120,6 +120,16 @@ db.prepare("INSERT INTO webauthn_gate_tokens (id, user_id, purpose, purpose_data
 const rej = await req('POST', `/api/admin/direct-receive/deferrals/${dfr2}/reject`, { webauthn_token: 'tk_rej' }, { 'x-root': '1', 'x-uid': 'root1' })
 ok('6. ROOT + valid token reject → 200 rejected', rej.status === 200 && rej.json?.status === 'rejected', JSON.stringify(rej.json))
 ok('6a. reject without token → 403', (await req('POST', `/api/admin/direct-receive/deferrals/${dfr2}/reject`, {}, { 'x-root': '1', 'x-uid': 'root1' })).status === 403)
+
+// ══════ 7. P2-1 boundary: huge period rejected at apply; huge grace → 409 (not 500) at approve ══════
+ok('7. apply huge period_days → 400 (rejected at request, no oversized pending)', (await req('POST', '/api/direct-receive/deferral', { period_days: 100000000000 }, { 'x-uid': 'seller_b' })).json?.error_code === 'DEFERRAL_REQUEST_REJECTED')
+// fresh seller applies normally, admin approve with huge grace_days → 409 DEFERRAL_APPROVE_REJECTED (NOT a 500)
+await req('POST', '/api/direct-receive/deferral', { reason: 'x' }, { 'x-uid': 'seller_c' })
+const lc = await req('GET', '/api/admin/direct-receive/deferrals?status=pending', null, { 'x-root': '1', 'x-uid': 'root1' })
+const dfrC: string = lc.json?.deferrals?.find((d: any) => d.user_id === 'seller_c')?.id
+db.prepare("INSERT INTO webauthn_gate_tokens (id, user_id, purpose, purpose_data, expires_at) VALUES ('tk_hg','root1','direct_pay_deferral_approve',?,datetime('now','+60 seconds'))").run(JSON.stringify({ deferral_id: dfrC, reduced_quota_factor: 0.5, grace_days: 100000000000 }))
+const hg = await req('POST', `/api/admin/direct-receive/deferrals/${dfrC}/approve`, { reduced_quota_factor: 0.5, grace_days: 100000000000, webauthn_token: 'tk_hg' }, { 'x-root': '1', 'x-uid': 'root1' })
+ok('7a. approve huge grace_days → 409 DEFERRAL_APPROVE_REJECTED, not 500', hg.status === 409 && hg.json?.error_code === 'DEFERRAL_APPROVE_REJECTED', `status=${hg.status} ${JSON.stringify(hg.json)}`)
 
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
