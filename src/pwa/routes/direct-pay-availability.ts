@@ -15,7 +15,7 @@ import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDir
 import { checkDeferralQuota, readDeferralQuotaConfig } from '../../direct-pay-deferral-quota.js'
 import { sellerDirectPayReadinessView } from '../../direct-pay-launch-readiness.js'
 import { requestDeferral, getActiveDeferral, getLatestDeferral } from '../../direct-receive-deferral.js'
-import { requestProductVerification, submitProductVerificationLink, listSellerProductVerifications, productStoreVerified } from '../../product-verification.js'
+import { requestProductVerification, submitProductVerificationLink, listSellerProductVerifications, toSellerProductVerificationView, productStoreVerified } from '../../product-verification.js'
 
 export interface DirectPayAvailabilityDeps {
   db: Database.Database
@@ -140,6 +140,7 @@ export function registerDirectPayAvailabilityRoutes(app: Application, deps: Dire
   // GET /api/direct-receive/product-verifications — 卖家本人所有产品的认证状态(逐产品)。
   app.get('/api/direct-receive/product-verifications', (req, res) => {
     const user = requireSeller(req, res); if (!user) return
-    return void res.json({ verifications: listSellerProductVerifications(db, user.id as string) })
+    // 脱敏:DTO 去掉 reviewed_by(admin 身份)+ notes(内部审核备注),与缓交/readiness 卖家侧一致。
+    return void res.json({ verifications: listSellerProductVerifications(db, user.id as string).map(toSellerProductVerificationView) })
   })
 }

@@ -96,6 +96,19 @@ export function listSellerProductVerifications(db: Database.Database, sellerId: 
   return db.prepare('SELECT * FROM product_verifications WHERE seller_id = ? ORDER BY created_at DESC, rowid DESC').all(sellerId) as ProductVerificationRow[]
 }
 
+/** 卖家自助视图 DTO:只暴露【卖家可见】字段。绝不下发 reviewed_by(admin 身份)或 notes(可能含内部审核备注)——
+ *  与缓交/readiness 卖家侧脱敏原则一致。供 seller endpoint 返回。 */
+export interface SellerProductVerificationView {
+  id: string; product_id: string; code: string; platform: string | null; external_url: string | null
+  status: string; reviewed_at: string | null; created_at: string | null; updated_at: string | null
+}
+export function toSellerProductVerificationView(row: ProductVerificationRow): SellerProductVerificationView {
+  return {
+    id: row.id, product_id: row.product_id, code: row.code, platform: row.platform, external_url: row.external_url,
+    status: row.status, reviewed_at: row.reviewed_at, created_at: row.created_at, updated_at: row.updated_at,
+  }   // 故意省略 reviewed_by + notes(admin 身份 / 内部备注)
+}
+
 /** admin 队列:按 status 过滤(默认全部),最新在前。纯读。 */
 export function listProductVerifications(db: Database.Database, opts: { status?: ProductVerificationStatus } = {}): ProductVerificationRow[] {
   if (opts.status) return db.prepare(`SELECT * FROM product_verifications WHERE status = ? ORDER BY created_at DESC, rowid DESC`).all(opts.status) as ProductVerificationRow[]

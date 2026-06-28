@@ -107,6 +107,16 @@ ok('5e. ROOT + valid purpose-bound token → 200 verified', rv.status === 200 &&
 ok('5f. product pA now hard-gate verified', productStoreVerified(db, 'pA') === true)
 ok('5g. token single-use (reuse → 403)', (await req('POST', `/api/admin/direct-receive/product-verifications/${vid}/review`, { decision: 'verified', webauthn_token: 'tk_ok' }, { 'x-root': '1', 'x-uid': 'root1' })).status === 403)
 
+// ══════ 6. de-id: seller GET must NOT leak reviewer/admin id or internal notes (after a reviewed row exists) ══════
+// stamp an internal note + reviewer on pA's row directly, then confirm the seller view omits them.
+db.prepare("UPDATE product_verifications SET reviewed_by = 'root1', notes = 'INTERNAL: cross-checked against registry' WHERE product_id = 'pA'").run()
+const sl2 = await req('GET', '/api/direct-receive/product-verifications', null, { 'x-uid': 'seller1' })
+const paRow = (sl2.json?.verifications || []).find((v: any) => v.product_id === 'pA')
+ok('6. seller view still shows pA (verified) with seller-safe fields', !!paRow && paRow.status === 'verified' && paRow.code && paRow.reviewed_at)
+ok('6a. seller view OMITS reviewed_by (admin identity)', paRow && !('reviewed_by' in paRow))
+ok('6b. seller view OMITS notes (internal review notes)', paRow && !('notes' in paRow))
+ok('6c. raw payload leaks NO admin id / internal note string', !/root1|INTERNAL|reviewed_by|cross-checked/i.test(sl2.raw))
+
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} product-verification-routes tests passed`)
