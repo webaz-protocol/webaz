@@ -5,12 +5,13 @@
  *   是否允许进入既有 direct_p2p 建单流程。默认【全部 fail-closed / disabled】—— 没有任何真实支付能力在此打开。
  *
  * 刻意边界(避免越界/误放行):
- *  - 纯判定 + 一个薄 config 装配器 + 一个 fail-closed 事实读取(sanctions)。【不】实现真实 base-bond deposit,
+ *  - 纯判定 + 一个薄 config 装配器 + fail-closed 事实读取(KYB + sanctions)。【不】实现真实 base-bond deposit,
  *    【不】接 USDC/fiat/PSP/链上,【不】碰 buyer wallet / escrow / settlement / refund,【不】改订单状态机。
  *  - FAIL-CLOSED:全局开关默认关;运营熔断可一键停;地区白名单默认空;单笔上限默认 0(=WebAZ 记录订单总额天花板,
  *    【不】控制场外实付;具体数值由 launch-policy PR 配);卖家熔断;production base-bond + KYC/制裁默认必需(硬不变量)。
  *    任一事实缺失/坏值 → 拒。绝不因数据缺失意外放行。
- *  - 真实 KYC/KYB 与运行期 AML 断路器 = Phase 6(deferred);本模块只消费【已核实布尔事实】+ 治理可调参数。
+ *  - KYB/制裁 = Phase 6A fail-closed scaffold(本模块消费;复核结论由 direct_receive_kyb_reviews/sanctions_screening
+ *    台账提供,无第三方 vendor/真实 API;运行期 AML 断路器扩展仍后续 Phase);本模块只消费【已核实布尔事实】+ 治理可调参数。
  *  - 档位/折扣算 requiredBaseBondUnits = PR-5/4b;入门资格谓词(账龄等)= 4a evaluateDirectReceiveEligibility。
  *    本控制面与它们正交,调用方各自 AND。
  */

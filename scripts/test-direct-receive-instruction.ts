@@ -120,7 +120,8 @@ ok('seller2 GET → null (no cross-seller leak)', (await call('GET', PI, null, s
 
 // ── 7. create route gate is REAL: with active instruction + production bond, instruction gate passes ──
 seedBond('seller1')  // production base-bond fixture
-db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES ('sc_seller1','seller1','clear')").run()  // Phase 4a KYC/制裁门通过 → 只剩 instruction 门
+db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES ('sc_seller1','seller1','clear')").run()  // 制裁筛查 clear
+db.prepare("INSERT INTO direct_receive_kyb_reviews (id, user_id, status) VALUES ('kyb_seller1','seller1','approved')").run()  // Phase 6A:KYB approved → KYB AND sanctions 门通过 → 只剩 instruction 门
 
 const co1 = await call('POST', '/api/orders', { product_id: 'p1', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr' }, { 'x-test-uid': 'buyer1' })
 ok('create route passes instruction gate when active instruction exists', co1.status === 200 && co1.json?.error_code !== 'NO_PAYMENT_INSTRUCTION', JSON.stringify(co1))
