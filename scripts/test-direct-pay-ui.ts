@@ -161,5 +161,27 @@ for (const k of ['直付开通进度(仅你可见)', '履约保证金未完成',
 // readiness UI is read-only too: no money/state endpoint writes
 ok('10j. readiness UI touches no wallet/escrow/settle/refund', !/\/wallet|\/escrow|\/settle|\/refund|\/returns/.test(RDYCODE))
 
+// ── 11. seller 缓交 apply/status panel (new app-direct-pay-deferral.js, PR-②b) ──
+const DFR = P('app-direct-pay-deferral.js')
+const DFRCODE = DFR.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+ok('11. index.html loads app-direct-pay-deferral.js before app.js', has(HTML, '/app-direct-pay-deferral.js') && HTML.indexOf('/app-direct-pay-deferral.js') < HTML.indexOf('/app.js'))
+ok('11a. deferral file in check:pwa-syntax', /node --check src\/pwa\/public\/app-direct-pay-deferral\.js/.test(PKG))
+ok('11b. deferral file has a LOC ceiling (ratchet covered)', /'src\/pwa\/public\/app-direct-pay-deferral\.js'\s*:/.test(RATCHET))
+ok('11c. seller deferral section + hydrate + submit defined', /dpSellerDeferralSection\s*=/.test(DFR) && /dpHydrateSellerDeferral\s*=/.test(DFR) && /dpSubmitDeferral\s*=/.test(DFR))
+ok('11d. reads self deferral status (GET)', /GET\('\/direct-receive\/deferral'\)/.test(DFR))
+ok('11e. applies via POST (not Passkey-gated client-side — apply grants nothing)', /POST\('\/direct-receive\/deferral'/.test(DFR) && !/requestPasskeyGate/.test(DFRCODE))
+ok('11f. app.js settings tab renders + hydrates the deferral panel', has(APP, 'dpSellerDeferralSection') && has(APP, 'dpHydrateSellerDeferral'))
+// de-identified: seller deferral UI must NOT leak KYB/sanctions/AML/KYC or admin identity or raw blocker codes
+ok('11g. deferral UI exposes NO KYB/sanctions/AML/KYC terms', !/KYB|SANCTION|AML|KYC/i.test(DFRCODE))
+ok('11h. deferral UI exposes NO approved_by / admin identity field', !/approved_by/.test(DFRCODE))
+ok('11i. deferral UI exposes NO raw launch blocker codes', !/DIRECT_PAY_(NOT_ENABLED|RAIL_|REGION_NOT|PER_TX|NO_LEGAL|SELLER_)/.test(DFRCODE))
+ok('11j. no production-ready / launched claim in deferral UI', !/production[- ]?ready|已上线|可上线/i.test(DFRCODE))
+// deferral UI must NOT touch money/state endpoints (apply/status only)
+ok('11k. deferral UI touches no wallet/escrow/settle/refund', !/\/wallet|\/escrow|\/settle|\/refund|\/returns/.test(DFRCODE))
+// EN parity for the new deferral copy
+for (const k of ['履约保证金缓交(仅你可见)', '缓交申请审核中,等待管理员人工审批', '缓交已批准', '提交缓交申请', '宽限至', '缓交申请已提交,等待管理员审批']) {
+  ok(`11-i18n EN present: ${k.slice(0, 12)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
+}
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)
