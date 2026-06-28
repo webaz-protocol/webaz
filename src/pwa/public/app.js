@@ -10471,6 +10471,7 @@ window.openBuySheet = function(productId) {
         </div>
       </details>
 
+      ${window.dpRailSelectorHtml ? window.dpRailSelectorHtml() : ''}
       <div id="buy-msg" style="margin-top:10px"></div>
       <div id="tax-preview-slot" style="margin-top:8px"></div>
 
@@ -11315,7 +11316,9 @@ window.doBuy = async (productId, price) => {
   // 数量（默认 1）— 服务端会再校验 stock + MAX_PER_ORDER
   const qtyInp = document.getElementById('inp-qty')
   const quantity = qtyInp ? Math.max(1, Math.min(Number(qtyInp.max) || 1, Math.floor(Number(qtyInp.value) || 1))) : 1
-  const res = await POST('/orders', { product_id: productId, shipping_address: addr, notes, sponsor_hint, coupon_code, delivery_window, variant_id, expected_price, buy_insurance, anonymous_recipient, donation_pct, quantity, ...giftPayload })
+  const payment_rail = window.dpSelectedRail ? window.dpSelectedRail() : 'escrow'
+  const res = await POST('/orders', { product_id: productId, shipping_address: addr, notes, sponsor_hint, coupon_code, delivery_window, variant_id, expected_price, buy_insurance, anonymous_recipient, donation_pct, quantity, payment_rail, ...giftPayload })
+  if (payment_rail === 'direct_p2p') return void (window.dpAfterCreate && window.dpAfterCreate(res))
   if (res.error_code === 'PRICE_CHANGED') {
     document.getElementById('buy-msg').innerHTML = alert$('error', `${t('价格已变动')}：${res.old_price} → ${res.new_price} WAZ · ${t('请刷新页面')}`)
     return
@@ -12441,9 +12444,10 @@ async function renderOrderDetail(app, orderId) {
 
   // 操作按钮
   const actions = getActions(order, isBuyer, isSeller, isLogistic)
+  window._dpOrderRail = order.payment_rail; if (order.payment_rail === 'direct_p2p' && window.dpHydrateOrderDisclosure) setTimeout(() => window.dpHydrateOrderDisclosure(order.id), 0)  // direct_p2p:路由 mark_paid/confirm 到 Passkey 门;收款说明快照仅 both-acked 后展示
 
   const STATUS_ZH = {
-    created:'待付款', paid:'待接单', accepted:'待发货', shipped:'已发货',
+    created:'待付款', direct_pay_window:'直付待付款', direct_expired_unconfirmed:'直付超时未确认', paid:'待接单', accepted:'待发货', shipped:'已发货',
     picked_up:'已揽收', in_transit:'运输中', delivered:'待确认',
     confirmed:'已确认', completed:'已完成', disputed:'争议中',
     cancelled:'已取消', fault_seller:'卖家违约', fault_buyer:'买家违约', fault_logistics:'物流违约',
@@ -12525,6 +12529,7 @@ async function renderOrderDetail(app, orderId) {
       ${order.content_hash_at_order ? `<div class="detail-row"><span class="detail-label">🔒 ${t('P2P 内容哈希')}</span><span class="detail-value" style="font-family:monospace;font-size:11px;word-break:break-all">${escHtml(order.content_hash_at_order)}</span></div>` : ''}
       ${activeDeadline?.deadline ? `<div class="detail-row"><span class="detail-label">${t('截止')}</span><span class="detail-value" style="color:${isOverdue ? '#dc2626' : '#6b7280'};font-size:12px">${fmtTime(activeDeadline.deadline)}</span></div>` : ''}
     </div>
+    ${order.payment_rail === 'direct_p2p' && window.dpOrderDisclosureHtml ? window.dpOrderDisclosureHtml(order) : ''}
 
     ${trackingHtml}
     ${disputeHtml}
@@ -13422,37 +13427,26 @@ function getActions(order, isBuyer, isSeller, isLogistic) {
   const s = order.status
   const isInPerson = order.fulfillment_mode === 'in_person'
   const isSelfFulfillSeller = isSeller && !order.logistics_id
+  // 直付(direct_p2p):买家在 direct_pay_window 标记"我已付款"(Passkey 门) 或取消(不门控);其余阶段沿用通用规则
+  if (order.payment_rail === 'direct_p2p' && isBuyer && s === 'direct_pay_window')
+    return [{ action: 'mark_paid', label: '✅ 我已付款', style: 'success' }, { action: 'cancel', label: '取消订单', style: 'secondary' }]
   // M8 面交订单：买家在 paid / accepted 都可"面交完成"直接结算
-  if (isInPerson && isBuyer && (s === 'paid' || s === 'accepted')) {
+  if (isInPerson && isBuyer && (s === 'paid' || s === 'accepted'))
     return [{ action: 'confirm_in_person', label: '🤝 面交完成 / 确认收货', style: 'success' }]
-  }
   if (isSeller && s === 'paid')
-    return [
-      { action: 'accept', label: '接单', style: 'success' },
-      { action: 'decline', label: '拒绝接单', style: 'danger', custom: 'decline' },
-    ]
+    return [{ action: 'accept', label: '接单', style: 'success' }, { action: 'decline', label: '拒绝接单', style: 'danger', custom: 'decline' }]
   if (isSeller && s === 'accepted' && !isInPerson)
-    return [{ action: 'ship', label: '确认发货', style: 'success', logisticsSelector: true,
-              trackingInput: true,
-              evidencePlaceholder: '包装状态描述 / 货物说明（可选）' }]
+    return [{ action: 'ship', label: '确认发货', style: 'success', logisticsSelector: true, trackingInput: true, evidencePlaceholder: '包装状态描述 / 货物说明（可选）' }]
   if (isSeller && s === 'accepted' && isInPerson)
     return [{ action: 'noop_in_person', label: '🤝 面交中（等待买家确认）', style: 'secondary', disabled: true }]
   if ((isLogistic || isSelfFulfillSeller) && s === 'shipped')
-    return [{ action: 'pickup', label: '✅ 确认揽收', style: 'success', needsEvidence: true,
-              noteLabel: '快递单号 *', evidencePlaceholder: '如：SF1234567890',
-              helperText: isSelfFulfillSeller ? '自履约订单：你负责回传揽收/单号，超时仍按卖家责任处理。' : '' }]
+    return [{ action: 'pickup', label: '✅ 确认揽收', style: 'success', needsEvidence: true, noteLabel: '快递单号 *', evidencePlaceholder: '如：SF1234567890', helperText: isSelfFulfillSeller ? '自履约订单：你负责回传揽收/单号，超时仍按卖家责任处理。' : '' }]
   if ((isLogistic || isSelfFulfillSeller) && s === 'picked_up')
     return [{ action: 'transit', label: '🚛 开始运输', style: 'primary' }]
   if ((isLogistic || isSelfFulfillSeller) && s === 'in_transit')
-    return [{ action: 'deliver', label: '📬 确认投递', style: 'success', needsEvidence: true,
-              noteLabel: '投递凭证', evidencePlaceholder: '门牌照片描述 / 收件人姓名 / 签收时间',
-              helperText: isSelfFulfillSeller ? '自履约投递需留存签收/门牌/交付说明，买家确认后才结算。' : '' }]
+    return [{ action: 'deliver', label: '📬 确认投递', style: 'success', needsEvidence: true, noteLabel: '投递凭证', evidencePlaceholder: '门牌照片描述 / 收件人姓名 / 签收时间', helperText: isSelfFulfillSeller ? '自履约投递需留存签收/门牌/交付说明，买家确认后才结算。' : '' }]
   if (isBuyer && s === 'delivered')
-    return [
-      { action: 'confirm', label: '确认收货', style: 'success' },
-      { action: 'dispute', label: '发起争议', style: 'danger', needsEvidence: true,
-        noteLabel: '争议理由', evidencePlaceholder: '描述问题（货不对版/货损/未收到等）' },
-    ]
+    return [{ action: 'confirm', label: '确认收货', style: 'success' }, { action: 'dispute', label: '发起争议', style: 'danger', needsEvidence: true, noteLabel: '争议理由', evidencePlaceholder: '描述问题（货不对版/货损/未收到等）' }]
   return null
 }
 
@@ -13507,6 +13501,8 @@ function renderActions(orderId, actions, order, logisticsCompanies = []) {
 
 window.handleAction = async (orderId, action, idx, needsEvidence, hasLogisticsSelector) => {
   const msgEl = document.getElementById('action-msg')
+  // 直付:买家 mark_paid/confirm/confirm_in_person 是 RISK 动作 → 走两次披露 + Passkey 门(后端硬强制)
+  if (window._dpOrderRail === 'direct_p2p' && ['mark_paid', 'confirm', 'confirm_in_person'].includes(action)) return void (window.dpHandleAction && window.dpHandleAction(orderId, action))
 
   // M8 面交确认：走专用端点，跳过物流状态机
   if (action === 'confirm_in_person') {
@@ -15516,8 +15512,10 @@ async function renderSeller(app) {
       ${subTabBtn('products', '📦 ' + t('商品'))}
       ${subTabBtn('marketing', '💎 ' + t('营销'))}
       ${subTabBtn('skills', '⚡ ' + t('Skill'))}
+      ${subTabBtn('settings', '⚙️ ' + t('设置'))}
     </div>
   `
+  const settingsSection = sellerSubTab === 'settings' && window.dpSellerInstructionSection ? window.dpSellerInstructionSection() : ''
 
   // 数据中心区块（30 天聚合 — 销售曲线 / Top 商品 / 客户洞察 / 状态分布）
   const insightsBlock = insights ? renderInsightsBlock(insights) : ''
@@ -15600,6 +15598,7 @@ async function renderSeller(app) {
     ${marketingSection}
     ${skillsSection}
     ${productsSection}
+    ${settingsSection}
 
     <!-- 商品分类标签页（仅 products sub-tab 下显示）-->
     ${sellerSubTab === 'products' ? `
@@ -15851,6 +15850,7 @@ async function renderSeller(app) {
       </div>
     </div>
   `, 'seller')
+  if (sellerSubTab === 'settings' && window.dpHydrateInstruction) window.dpHydrateInstruction()
 
   // 智能下单"我也要上架"跳过来时：自动切到商品 tab + 展开手工上架表单 + 预填标题
   // hashchange 可能多次触发 renderSeller — 用 window cache 保证每次重渲都能应用
