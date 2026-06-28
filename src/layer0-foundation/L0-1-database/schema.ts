@@ -254,6 +254,28 @@ export function initDatabase(): Database.Database {
       created_at           TEXT DEFAULT (datetime('now'))
     );
 
+    -- 【按产品】外部平台商品认证(per-product verification)。降低作弊:一次验证【绝不】默认放行该卖家所有产品 ——
+    -- 每个要走直付收款的产品都必须【单独】被真人 admin 手动核验通过(硬门:未验证产品 direct-pay 不可用,退回托管)。
+    -- 诚实边界:WebAZ【绝不】抓取 external_url(无 SSRF、无"WebAZ 已核验该商品/店铺真实性"超claim)。机制 = 卖家为【该产品】
+    -- 申领 code → 展示在其外部平台商品页 → 提交该产品链接 → 真人 admin 手动打开核对 → attest。记录的最弱准确事实 =
+    -- "admin <id> 于 <时间> 手动确认产品 <product_id> 在 <url> 展示了验证码 <code>"。状态:issued→submitted→verified|rejected。
+    CREATE TABLE IF NOT EXISTS product_verifications (
+      id            TEXT PRIMARY KEY,
+      product_id    TEXT NOT NULL REFERENCES products(id),
+      seller_id     TEXT NOT NULL REFERENCES users(id),
+      code          TEXT NOT NULL,                       -- WebAZ 签发、卖家需展示在【该产品】外部页的验证码
+      platform      TEXT,                                -- 卖家自填的平台名(展示用,不校验)
+      external_url  TEXT,                                -- 卖家提交的该产品外部链接(仅存,WebAZ 不抓取)
+      status        TEXT NOT NULL DEFAULT 'issued',      -- issued|submitted|verified|rejected
+      reviewed_by   TEXT REFERENCES users(id),           -- 真人 admin(手动核对者)
+      reviewed_at   TEXT,
+      notes         TEXT,
+      created_at    TEXT DEFAULT (datetime('now')),
+      updated_at    TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_product_verifications_product ON product_verifications(product_id, status);
+    CREATE INDEX IF NOT EXISTS idx_product_verifications_seller ON product_verifications(seller_id, status);
+
     -- 逐单费用质押(fee-stake = 平台应收费用,非买家保障)。锁在现有 WAZ 账本。
     CREATE TABLE IF NOT EXISTS direct_pay_fee_stakes (
       id          TEXT PRIMARY KEY,

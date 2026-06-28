@@ -15,6 +15,7 @@ import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDir
 import { checkDeferralQuota, readDeferralQuotaConfig } from '../../direct-pay-deferral-quota.js'
 import { sellerDirectPayReadinessView } from '../../direct-pay-launch-readiness.js'
 import { requestDeferral, getActiveDeferral, getLatestDeferral } from '../../direct-receive-deferral.js'
+import { requestProductVerification, submitProductVerificationLink, listSellerProductVerifications, productStoreVerified } from '../../product-verification.js'
 
 export interface DirectPayAvailabilityDeps {
   db: Database.Database
@@ -51,6 +52,8 @@ export function registerDirectPayAvailabilityRoutes(app: Application, deps: Dire
       amlClear: sellerDirectPayAmlClear(db, product.seller_id),
     })
     if (decision.ok) {
+      // 硬门(镜像 create):该产品必须【单独】通过验证。未验证 → 不可直付(产品级、非敏感)。
+      if (!productStoreVerified(db, productId)) return void res.json({ available: false, error_code: 'DIRECT_PAY_PRODUCT_NOT_VERIFIED', reason: '该商品暂不支持直付(待平台逐品验证)', per_tx_cap_units: cfg.perTxCapUnits })
       // 镜像 create 的缓交额度门(qty=1 预览;以商品单价为本次拟建单金额)。超额是【缓交卖家私密状态】→ 收敛为通用不可用,
       //   不向买家暴露"该卖家在缓交期/已超额"。create 仍是权威强制点。
       const quota = checkDeferralQuota(db, product.seller_id, toUnits(Number(product.price) || 0), new Date().toISOString(), readDeferralQuotaConfig(getProtocolParam))
@@ -97,5 +100,46 @@ export function registerDirectPayAvailabilityRoutes(app: Application, deps: Dire
       deferral: latest,
       active: active ? { reduced_quota_factor: active.reducedQuotaFactor, expires_at: active.expiresAt, grace_until: active.graceUntil, in_grace: active.inGrace } : null,
     })
+  })
+
+  // ── 按产品认证(per-product verification)卖家自助:申领验证码 → 提交外部商品链接 → 查看逐产品状态 ──
+  //   硬门:每个直付商品都须【单独】被真人 admin 核验;一次验证绝不放行所有产品。这里只建/改记录,verify 在 admin 侧。
+  //   所有权:必须卖家本人拥有该产品(读 products.seller_id 校验),否则 403。
+
+  /** 校验登录卖家拥有该产品;返回 owner user(含 id)或 null(已写错误响应)。productId 由调用方持有。 */
+  async function requireOwnedProduct(req: Request, res: Response, productId: string): Promise<Record<string, unknown> | null> {
+    const user = requireSeller(req, res); if (!user) return null
+    if (!productId) { res.status(400).json({ error: '缺少 product_id', error_code: 'MISSING_PRODUCT_ID' }); return null }
+    const product = await dbOne<{ seller_id: string }>('SELECT seller_id FROM products WHERE id = ?', [productId])
+    if (!product) { res.status(404).json({ error: '商品不存在', error_code: 'PRODUCT_NOT_FOUND' }); return null }
+    if (product.seller_id !== user.id) { res.status(403).json({ error: '只能为自己的商品申请认证', error_code: 'NOT_PRODUCT_OWNER' }); return null }
+    return user
+  }
+
+  // POST /api/direct-receive/product-verification — 卖家为某产品申领验证码(单一活跃 per product)。
+  app.post('/api/direct-receive/product-verification', async (req, res) => {
+    const productId = String(req.body?.product_id || '')
+    const user = await requireOwnedProduct(req, res, productId); if (!user) return
+    const platform = typeof req.body?.platform === 'string' ? req.body.platform.trim().slice(0, 60) : undefined
+    const r = requestProductVerification(db, { id: generateId('pv'), productId, sellerId: user.id as string, code: generateId('wzv'), platform })
+    if (!r.ok) return void res.status(400).json({ error: r.reason, error_code: 'PRODUCT_VERIFICATION_REJECTED' })
+    return void res.json({ ok: true, status: r.status, code: r.code })
+  })
+
+  // PUT /api/direct-receive/product-verification — 卖家为某产品提交外部商品链接(链接仅存储,WebAZ 不抓取)。
+  app.put('/api/direct-receive/product-verification', async (req, res) => {
+    const productId = String(req.body?.product_id || '')
+    const user = await requireOwnedProduct(req, res, productId); if (!user) return
+    const externalUrl = typeof req.body?.external_url === 'string' ? req.body.external_url.trim() : ''
+    const platform = typeof req.body?.platform === 'string' ? req.body.platform.trim().slice(0, 60) : undefined
+    const r = submitProductVerificationLink(db, { productId, externalUrl, platform })
+    if (!r.ok) return void res.status(400).json({ error: r.reason, error_code: 'PRODUCT_VERIFICATION_SUBMIT_REJECTED' })
+    return void res.json({ ok: true, status: r.status })
+  })
+
+  // GET /api/direct-receive/product-verifications — 卖家本人所有产品的认证状态(逐产品)。
+  app.get('/api/direct-receive/product-verifications', (req, res) => {
+    const user = requireSeller(req, res); if (!user) return
+    return void res.json({ verifications: listSellerProductVerifications(db, user.id as string) })
   })
 }

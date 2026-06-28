@@ -20,6 +20,7 @@ import { reviewAmlFlag } from '../../direct-pay-aml-review.js'
 import { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress, amlDetailHash } from '../../direct-pay-compliance-ingress.js'
 import { readDirectPayLaunchReadiness } from '../../direct-pay-launch-readiness.js'
 import { approveDeferral, rejectDeferral, listDeferrals, type DeferralStatus } from '../../direct-receive-deferral.js'
+import { listProductVerifications, reviewProductVerification, type ProductVerificationStatus } from '../../product-verification.js'
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'
 
 export interface AdminDirectReceiveDepositsDeps {
@@ -237,6 +238,42 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
     logAdminAction(admin.id as string, 'direct_pay.deferral_reject', 'direct_receive_deferral', deferralId,
       { ok: r.ok, outcome: r.ok ? (r.already ? 'already' : 'rejected') : r.reason })
     if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'DEFERRAL_REJECT_REJECTED' })
+    return void res.json({ ok: true, status: r.status, already: !!r.already })
+  })
+
+  // ── 按产品认证(per-product verification)审批。读 = ROOT;verify/reject = ROOT + 真人 Passkey(硬门:核验=放行该产品直付,
+  //   capability-granting → 铁律 Passkey)。reviewProductVerification 是唯一 writer;本文件零 product_verifications 直写。 ──
+  const PV_STATUSES = new Set<ProductVerificationStatus>(['issued', 'submitted', 'verified', 'rejected'])
+
+  // GET /api/admin/direct-receive/product-verifications?status=submitted — ROOT 审核队列(默认全部)。纯读。
+  app.get('/api/admin/direct-receive/product-verifications', (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const status = req.query?.status != null ? String(req.query.status) : ''
+    if (status && !PV_STATUSES.has(status as ProductVerificationStatus)) return void res.status(400).json({ error: '非法 status', error_code: 'BAD_STATUS' })
+    return void res.json({ verifications: listProductVerifications(db, status ? { status: status as ProductVerificationStatus } : {}) })
+  })
+
+  // POST /api/admin/direct-receive/product-verifications/:id/review — ROOT + 真人 Passkey 手动核对结论(verified|rejected)。
+  //   Passkey purpose_data 绑 verification_id + decision:签 A 用 B / 改结论一律拒。verify = 放行该产品直付(逐品,绝不放行全部)。
+  app.post('/api/admin/direct-receive/product-verifications/:id/review', (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const verificationId = req.params.id
+    const decision = String(req.body?.decision || '')
+    const notes = req.body?.notes != null ? String(req.body.notes) : undefined
+    const webauthnToken = req.body?.webauthn_token as string | undefined
+    const gate = requireDirectPayHumanPasskey({ db, consumeGateToken }, {
+      userId: admin.id as string, webauthnToken, purpose: 'direct_pay_product_verify',
+      validate: (data) => { const d = data as { verification_id?: string; decision?: string } | null; return !!d && str(d.verification_id) === verificationId && str(d.decision) === decision },
+    })
+    if (!gate.ok) {
+      logAdminAction(admin.id as string, 'direct_pay.product_verify', 'product_verification', verificationId,
+        { decision, ok: false, outcome: gate.error_code === 'PASSKEY_REQUIRED_FOR_DIRECT_PAY' ? 'passkey_required' : 'human_presence_required', error_code: gate.error_code })
+      return void res.status(403).json({ error: gate.reason, error_code: gate.error_code })
+    }
+    const r = reviewProductVerification(db, { id: verificationId, reviewerId: admin.id as string, decision: decision as 'verified' | 'rejected', notes })
+    logAdminAction(admin.id as string, 'direct_pay.product_verify', 'product_verification', verificationId,
+      { decision, ok: r.ok, outcome: r.ok ? (r.already ? 'already' : r.status) : r.reason })
+    if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'PRODUCT_VERIFICATION_REVIEW_REJECTED' })
     return void res.json({ ok: true, status: r.status, already: !!r.already })
   })
 }

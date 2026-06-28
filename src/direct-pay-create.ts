@@ -18,6 +18,7 @@ import { sellerBaseBondEntrySatisfied } from './direct-pay-base-bond-entry.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
 import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, coarsenBuyerFacingDirectPayCode, type DirectPayControlsConfig } from './direct-pay-controls.js'
 import { checkDeferralQuota, readDeferralQuotaConfig } from './direct-pay-deferral-quota.js'
+import { productStoreVerified } from './product-verification.js'
 import { safeRunDirectPayAmlMonitor } from './direct-pay-aml-monitor.js'
 
 export interface DirectPayCreateDeps {
@@ -107,6 +108,9 @@ export function createDirectPayResponse(
   //   买家面脱敏:卖家私密拒因(暂停/保证金/KYC·制裁/AML)收敛为通用 SELLER_NOT_ELIGIBLE,与 availability 同源,
   //   不向买家泄露卖家具体合规状态;全局/运营类(DISABLED/REGION/CAP)原样透出。精确 code 由 controls 单测覆盖。
   if (!ctrl.ok) { const code = coarsenBuyerFacingDirectPayCode(ctrl.error_code); res.status(ctrl.status).json({ error_code: code, error: code === ctrl.error_code ? ctrl.reason : '该卖家暂不支持直付' }); return }
+  // 硬门:该产品必须【单独】通过验证(防"验证一个店再上架一堆假货";一次验证绝不放行所有产品)。
+  //   未验证 → direct-pay 不可用(产品级、非敏感,买家退回托管轨)。fail-closed,在任何 DB write 前。
+  if (!productStoreVerified(db, ctx.product.id as string)) { res.status(409).json({ error_code: 'DIRECT_PAY_PRODUCT_NOT_VERIFIED', error: '该商品暂不支持直付(待平台逐品验证),请使用托管交易' }); return }
   const instr = getActivePaymentInstruction(db, sellerId)
   if (!instr) { res.status(409).json({ error: '卖家未设置收款说明,无法创建直付订单', error_code: 'NO_PAYMENT_INSTRUCTION' }); return }
   // ③ 缓交期额度门(launch blocker):靠 active deferral 入场(无生产 bond)的卖家,缓交期内笔数/累计金额压低。
