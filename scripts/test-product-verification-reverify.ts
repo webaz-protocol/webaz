@@ -31,7 +31,9 @@ for (const col of ['specs TEXT', 'brand TEXT', 'model TEXT', 'handling_hours INT
 const seedVerified = (pid: string) => db.prepare("INSERT INTO product_verifications (id, product_id, seller_id, code, status, reviewed_by, reviewed_at) VALUES (?,?,?,?, 'verified','admin1',datetime('now'))").run('pvf_' + pid, pid, 'seller1', 'wzv_' + pid)
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p1','seller1','Orig','d1',50,10,'active')").run()
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p2','seller1','Orig2','d2',50,10,'active')").run()
-seedVerified('p1'); seedVerified('p2')
+db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p3','seller1','Orig3','d3',50,10,'active')").run()
+db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p4','seller1','Orig4','d4',50,10,'active')").run()
+seedVerified('p1'); seedVerified('p2'); seedVerified('p3'); seedVerified('p4')
 
 const app = express(); app.use(express.json())
 registerProductsUpdateRoutes(app, {
@@ -64,6 +66,17 @@ ok('non-material edit (stock only) → verification stays verified', productStor
 // 改价格 → 作废
 const e3 = await req('PUT', '/api/products/p2', { price: 999 }, { 'x-uid': 'seller1' })
 ok('price edit → verification invalidated', e3.status === 200 && productStoreVerified(db, 'p2') === false)
+// P1 fix: 多语言买家文案变更(只改 en 标题/描述)→ 作废(非中文买家看到的就变了)
+const e4 = await req('PUT', '/api/products/p3', { i18n_titles: { en: 'A totally different product' } }, { 'x-uid': 'seller1' })
+ok('i18n_titles.en edit → verification invalidated (buyer-visible per Accept-Language)', e4.status === 200 && productStoreVerified(db, 'p3') === false)
+ok('p3 status stale', getProductVerification(db, 'p3')?.status === 'stale')
+// 改 i18n_descs.en → 作废
+const e5 = await req('PUT', '/api/products/p4', { i18n_descs: { en: 'changed description' } }, { 'x-uid': 'seller1' })
+ok('i18n_descs.en edit → verification invalidated', e5.status === 200 && productStoreVerified(db, 'p4') === false)
+// 重新 verify p4,再改 brand → 作废(商品身份)
+db.prepare("UPDATE product_verifications SET status='verified' WHERE product_id='p4'").run()
+const e6 = await req('PUT', '/api/products/p4', { brand: 'NewBrand' }, { 'x-uid': 'seller1' })
+ok('brand edit → verification invalidated', e6.status === 200 && productStoreVerified(db, 'p4') === false)
 
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
