@@ -52,10 +52,13 @@ ok('5b. recordKybReview(approved, expired) → reader false (fail-closed)', (() 
 // 6. AML high/open ingress → breaker false
 ok('6. recordAmlFlagIngress(structuring/high/open) → ok + sellerDirectPayAmlClear false', (() => { const r = recordAmlFlagIngress(db, { userId: 'u_a1', reviewerId: 'rv', rule: 'structuring', severity: 'high', status: 'open' }); return r.ok && sellerDirectPayAmlClear(db, 'u_a1') === false })())
 // 6b. P2: AML detail 仅允许聚合数字;PII-like(字符串)detail → INVALID_DETAIL,不写
-ok('6b. isNumericDetail: numbers ok / strings rejected / undefined ok', isNumericDetail({ count: 3, window: 24 }) === true && isNumericDetail({ email: 'a@b.com' }) === false && isNumericDetail(undefined) === true && isNumericDetail([1, 2]) === false)
+ok('6b. isNumericDetail: allowlist-key numbers ok / non-allowlist key / string value / array / undefined', isNumericDetail({ order_count: 3, window_hours: 24 }) === true && isNumericDetail({ foo: 1 }) === false && isNumericDetail({ order_count: 'a@b.com' }) === false && isNumericDetail(undefined) === true && isNumericDetail([1, 2]) === false)
 const amlBeforePII = (db.prepare("SELECT COUNT(*) n FROM aml_flags").get() as any).n
 const rPII = recordAmlFlagIngress(db, { userId: 'u_pii_aml', reviewerId: 'rv', rule: 'crypto', severity: 'high', status: 'open', detail: { wallet: '0xabc', note: 'lives at 5th ave' } as any })
 ok('6c. AML ingress with PII-like (string) detail → INVALID_DETAIL, NOT written', rPII.error === 'INVALID_DETAIL' && (db.prepare("SELECT COUNT(*) n FROM aml_flags").get() as any).n === amlBeforePII)
+// PII hidden in the KEY (allowlisted value) → still INVALID_DETAIL, not written
+const rPIIKey = recordAmlFlagIngress(db, { userId: 'u_pii_key', reviewerId: 'rv', rule: 'crypto', severity: 'high', status: 'open', detail: { 'alice@example.com': 1 } as any })
+ok('6c2. AML ingress with PII in KEY ({"alice@example.com":1}) → INVALID_DETAIL, NOT written', rPIIKey.error === 'INVALID_DETAIL' && (db.prepare("SELECT COUNT(*) n FROM aml_flags WHERE subject_user_id='u_pii_key'").get() as any).n === 0)
 const rNum = recordAmlFlagIngress(db, { userId: 'u_num_aml', reviewerId: 'rv', rule: 'velocity', severity: 'medium', status: 'open', detail: { order_count: 7, window_hours: 24 } })
 ok('6d. AML ingress with numeric detail → ok, stored', rNum.ok === true && JSON.parse((db.prepare("SELECT detail FROM aml_flags WHERE id=?").get(rNum.id) as any).detail).order_count === 7)
 
@@ -146,12 +149,12 @@ mkTok('tb2', 'direct_pay_kyb_ingress', { user_id: 'r_bind', status: 'approved', 
 const rN2 = await call(KYB, { user_id: 'r_bind', status: 'approved', expires_at: '2099-01-01 00:00:00', webauthn_token: 'tb2' }, ROOT)
 ok('P1b. KYB token signs expires_at="", body sets expiry → 403, no row', rN2.status === 403 && kybN() === 0, JSON.stringify(rN2))
 // AML: token signs detail {count:1}, body sends detail {count:2} → detail_hash mismatch → 403, no flag
-mkTok('tb3', 'direct_pay_aml_ingress', { user_id: 'r_bind2', rule: 'velocity', severity: 'high', status: 'open', related_order_id: '', detail_hash: amlDetailHash({ count: 1 }) })
-const rN3 = await call(AML, { user_id: 'r_bind2', rule: 'velocity', severity: 'high', status: 'open', detail: { count: 2 }, webauthn_token: 'tb3' }, ROOT)
+mkTok('tb3', 'direct_pay_aml_ingress', { user_id: 'r_bind2', rule: 'velocity', severity: 'high', status: 'open', related_order_id: '', detail_hash: amlDetailHash({ order_count: 1 }) })
+const rN3 = await call(AML, { user_id: 'r_bind2', rule: 'velocity', severity: 'high', status: 'open', detail: { order_count: 2 }, webauthn_token: 'tb3' }, ROOT)
 ok('P1c. AML token signs detail{count:1}, body writes {count:2} → 403, no flag', rN3.status === 403 && (db.prepare("SELECT COUNT(*) n FROM aml_flags WHERE subject_user_id='r_bind2'").get() as any).n === 0, JSON.stringify(rN3))
 // AML: matching detail_hash → 200 (positive control for the binding)
-mkTok('tb4', 'direct_pay_aml_ingress', { user_id: 'r_bind3', rule: 'velocity', severity: 'high', status: 'open', related_order_id: '', detail_hash: amlDetailHash({ count: 2 }) })
-const rN4 = await call(AML, { user_id: 'r_bind3', rule: 'velocity', severity: 'high', status: 'open', detail: { count: 2 }, webauthn_token: 'tb4' }, ROOT)
+mkTok('tb4', 'direct_pay_aml_ingress', { user_id: 'r_bind3', rule: 'velocity', severity: 'high', status: 'open', related_order_id: '', detail_hash: amlDetailHash({ order_count: 2 }) })
+const rN4 = await call(AML, { user_id: 'r_bind3', rule: 'velocity', severity: 'high', status: 'open', detail: { order_count: 2 }, webauthn_token: 'tb4' }, ROOT)
 ok('P1d. AML token detail_hash matches body detail → 200 (binding positive control)', rN4.status === 200 && (db.prepare("SELECT COUNT(*) n FROM aml_flags WHERE subject_user_id='r_bind3'").get() as any).n === 1, JSON.stringify(rN4))
 
 server!.close()

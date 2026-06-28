@@ -38,13 +38,20 @@ function providerRefHash(providerRef?: string): string | undefined {
 }
 
 /**
- * AML detail = 仅【聚合数字】(与 #108 monitor 纪律一致,防 PII 落库:邮箱/地址/钱包/叙述性笔记一律拒)。
- * 非纯数字 object → 不是合法 detail。 undefined 视为"无 detail"(合法)。
+ * AML detail allowlist key 集 —— 与 #108 monitor 实际写入的聚合字段一致(velocity/concentration)。
+ * key 也走 allowlist(不止 value):杜绝把 PII 藏进 key(如 {"alice@example.com":1} / {"wallet_0x..":1})。
+ */
+export const AML_DETAIL_KEYS = new Set(['window_hours', 'order_count', 'threshold', 'small_order_count', 'small_order_amount'])
+
+/**
+ * AML detail = 仅【allowlist key + 聚合数字 value】(与 #108 monitor 纪律一致,防 PII 落库:
+ *   邮箱/地址/钱包/叙述性笔记无论藏在 value 还是 key 一律拒)。undefined 视为"无 detail"(合法)。
  */
 export function isNumericDetail(detail: unknown): boolean {
   if (detail === undefined || detail === null) return true
   if (typeof detail !== 'object' || Array.isArray(detail)) return false
-  return Object.values(detail as Record<string, unknown>).every(v => typeof v === 'number' && Number.isFinite(v))
+  return Object.entries(detail as Record<string, unknown>).every(
+    ([k, v]) => AML_DETAIL_KEYS.has(k) && typeof v === 'number' && Number.isFinite(v))
 }
 
 /**
