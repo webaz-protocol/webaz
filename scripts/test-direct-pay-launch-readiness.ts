@@ -1,0 +1,92 @@
+#!/usr/bin/env tsx
+/**
+ * Direct Pay (Rail 1) — PHASE 7A launch readiness surface 测试。
+ * 验:默认 main / fresh DB → ready=false;各类 blocker(enabled/cap/region/rail breaker/seller suspended/no
+ *   production base-bond/KYB/sanctions/AML)都能返回;#112 rail-clearance blockers 被并入;readiness 纯只读
+ *   (不写 deposits / production_receipt / 不激活 privileges);即便普通 controls 看似可用,只要 production base-bond /
+ *   rail clearance / KYB-sanctions-AML 不满足仍 ready=false。
+ * Usage: npm run test:direct-pay-launch-readiness
+ */
+import { mkdtempSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
+process.env.HOME = mkdtempSync(join(tmpdir(), 'dp-readiness-'))
+
+const { readDirectPayLaunchReadiness } = await import('../src/direct-pay-launch-readiness.js')
+const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
+const { toUnits } = await import('../src/money.js')
+
+let pass = 0, fail = 0; const fails: string[] = []
+const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
+
+const db = initDatabase()
+db.pragma('foreign_keys = OFF')
+for (const u of ['seller1', 'seller2', 'seller3']) db.prepare("INSERT OR IGNORE INTO users (id,name,role,api_key) VALUES (?,?,?,?)").run(u, u, 'seller', 'k_' + u)
+
+// getProtocolParam over a mutable params object
+let cp: Record<string, unknown> = {}
+const gp = <T,>(k: string, fb: T): T => (k in cp ? cp[k] as T : fb)
+const has = (r: { blockers: string[] }, code: string): boolean => r.blockers.includes(code)
+
+// ══════ 1. default fresh DB / empty config → ready=false with global + rail blockers ══════
+cp = {}
+const r1 = readDirectPayLaunchReadiness(db, { getProtocolParam: gp })
+ok('1. default → ready=false', r1.ready === false)
+ok('1a. NOT_ENABLED', has(r1, 'DIRECT_PAY_NOT_ENABLED'))
+ok('1b. REGION_NOT_ALLOWED', has(r1, 'DIRECT_PAY_REGION_NOT_ALLOWED'))
+ok('1c. PER_TX_CAP_UNSET', has(r1, 'DIRECT_PAY_PER_TX_CAP_UNSET'))
+ok('1d. NO_LEGAL_CLEARED_PRODUCTION_RAIL', has(r1, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
+ok('1e. RAIL_IMPLEMENTATION_GATED (#112)', has(r1, 'DIRECT_PAY_RAIL_IMPLEMENTATION_GATED'))
+ok('1f. RAIL_POLICY_VERSION_UNSET (#112)', has(r1, 'DIRECT_PAY_RAIL_POLICY_VERSION_UNSET'))
+ok('1g. RAIL_JURISDICTION_ALLOWLIST_EMPTY (#112)', has(r1, 'DIRECT_PAY_RAIL_JURISDICTION_ALLOWLIST_EMPTY'))
+ok('1h. anyRailLegalCleared=false', r1.facts.anyRailLegalCleared === false)
+ok('1i. #112 per-rail blockers surfaced in facts', r1.facts.perRailClearance['usdc_onchain'].includes('NO_LEGAL_CLEARED_RAIL') && r1.facts.perRailClearance['fiat_psp'].includes('POLICY_VERSION_UNSET'))
+// no sellerId → seller facts null, no seller blockers
+ok('1j. no sellerId → seller facts null, no seller blockers', r1.facts.sellerEvaluated === false && r1.facts.productionBaseBondLocked === null && !has(r1, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND'))
+
+// ══════ 2. rail breaker tripped surfaces ══════
+cp = { 'direct_pay.rail_breaker_tripped': true }
+ok('2. RAIL_BREAKER_TRIPPED surfaces', has(readDirectPayLaunchReadiness(db, { getProtocolParam: gp }), 'DIRECT_PAY_RAIL_BREAKER_TRIPPED'))
+
+// ══════ 3. seller-specific blockers (no seller data) ══════
+cp = {}
+const r3 = readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller1' })
+ok('3. sellerEvaluated=true', r3.facts.sellerEvaluated === true)
+ok('3a. SELLER_NO_PRODUCTION_BASE_BOND', has(r3, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND'))
+ok('3b. SELLER_KYB_NOT_APPROVED', has(r3, 'DIRECT_PAY_SELLER_KYB_NOT_APPROVED'))
+ok('3c. SELLER_SANCTIONS_NOT_CLEARED', has(r3, 'DIRECT_PAY_SELLER_SANCTIONS_NOT_CLEARED'))
+// no AML flags → AML clear → no AML blocker; not suspended → no suspend blocker
+ok('3d. no AML flags → no AML blocker; not suspended → no suspend blocker', !has(r3, 'DIRECT_PAY_SELLER_AML_REVIEW_REQUIRED') && !has(r3, 'DIRECT_PAY_SELLER_SUSPENDED'))
+
+// ══════ 4. AML breaker + suspension surface when present ══════
+db.prepare("INSERT INTO aml_flags (id, subject_user_id, rule, severity, status) VALUES ('afr','seller2','structuring','high','open')").run()
+ok('4. AML open/high → SELLER_AML_REVIEW_REQUIRED', has(readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller2' }), 'DIRECT_PAY_SELLER_AML_REVIEW_REQUIRED'))
+db.prepare("INSERT INTO direct_receive_privileges (user_id, status, tier) VALUES ('seller3','suspended','T0') ON CONFLICT(user_id) DO UPDATE SET status='suspended'").run()
+ok('4b. suspended privilege → SELLER_SUSPENDED', has(readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller3' }), 'DIRECT_PAY_SELLER_SUSPENDED'))
+
+// ══════ 5. controls fully "open" + KYB/sanctions/AML cleared for seller → STILL ready=false ══════
+// (production base-bond + rail clearance can't be satisfied on main → never ready)
+cp = { 'direct_pay.enabled': true, 'direct_pay.rail_breaker_tripped': false, 'direct_pay.region': 'SG', 'direct_pay.region_allowlist': 'SG', 'direct_pay.per_tx_cap_units': toUnits(1000) }
+db.prepare("INSERT INTO direct_receive_kyb_reviews (id, user_id, status) VALUES ('kyb_s1','seller1','approved')").run()
+db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES ('sc_s1','seller1','clear')").run()
+const r5 = readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller1' })
+ok('5. controls open + KYB/sanctions cleared → global control blockers gone', !has(r5, 'DIRECT_PAY_NOT_ENABLED') && !has(r5, 'DIRECT_PAY_REGION_NOT_ALLOWED') && !has(r5, 'DIRECT_PAY_PER_TX_CAP_UNSET') && !has(r5, 'DIRECT_PAY_SELLER_KYB_NOT_APPROVED') && !has(r5, 'DIRECT_PAY_SELLER_SANCTIONS_NOT_CLEARED'))
+ok('5a. STILL ready=false (production bond + rail clearance unmet)', r5.ready === false)
+ok('5b. remaining blockers include SELLER_NO_PRODUCTION_BASE_BOND + NO_LEGAL_CLEARED_PRODUCTION_RAIL', has(r5, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND') && has(r5, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
+
+// ══════ 6. read-only: readiness writes NOTHING ══════
+const snap = () => ({
+  deposits: (db.prepare("SELECT COUNT(*) n FROM direct_receive_deposits").get() as any).n,
+  prodReceipts: (db.prepare("SELECT COUNT(*) n FROM direct_receive_deposits WHERE production_receipt_confirmed_at IS NOT NULL").get() as any).n,
+  activePrivs: (db.prepare("SELECT COUNT(*) n FROM direct_receive_privileges WHERE status='active'").get() as any).n,
+  amlFlags: (db.prepare("SELECT COUNT(*) n FROM aml_flags").get() as any).n,
+  kyb: (db.prepare("SELECT COUNT(*) n FROM direct_receive_kyb_reviews").get() as any).n,
+})
+const before = snap()
+for (let i = 0; i < 5; i++) { readDirectPayLaunchReadiness(db, { getProtocolParam: gp }); readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller1' }) }
+const after = snap()
+ok('6. readiness is READ-ONLY: deposits/prodReceipts/activePrivs/amlFlags/kyb all unchanged', JSON.stringify(before) === JSON.stringify(after), `${JSON.stringify(before)} vs ${JSON.stringify(after)}`)
+ok('6a. zero production receipts ever (sellerHasProductionBaseBondLocked can never be true on main)', after.prodReceipts === 0)
+
+if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
+console.log(`✅ ${pass} direct-pay-launch-readiness tests passed`)
