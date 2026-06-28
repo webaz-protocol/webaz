@@ -5,8 +5,8 @@
  *   【不】接 USDC/on-chain/PSP/bank、【不】实现 confirmReceipt 真实验证、【不】移动任何资金。
  *
  * 双锁模型(两把【独立】的锁,缺一即拒,confirmProductionReceipt 同时要求):
- *   Lock A — 真实实现锁:deposit-rails.ts 的 DepositRail 必须 isProduction && legalCleared(真实 legal-cleared 生产收款
- *            实现落地才为真;当前 manual=非生产、usdc/fiat=GATED → 全 false)。由 assertProductionDepositRail 守。
+ *   Lock A — 已实现锁:DepositRail 必须 isProduction && implemented(是不是一条建好的生产轨)。
+ *            manual=非生产;usdc/fiat=GATED(implemented=false);operator_attested=已实现 → 过 Lock A。由 assertProductionDepositRail 守。
  *   Lock B — registry 放行锁(本模块):某 rail 的 legal_cleared + production_ready + 非占位 policy_version +
  *            jurisdiction ∈ allowlist。当前【全部默认 fail-closed】→ 全拒。由 assertBondRailCleared 守。
  *

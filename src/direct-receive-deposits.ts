@@ -8,9 +8,10 @@
  *  - **WAZ NOT enabled:** 不锁卖家 WAZ 余额、不把 WAZ 罚没进 penalty balance、**openDeposit 拒绝 currency='waz'**(只允许 usdc|fiat,
  *    生产收款仍 GATED)—— 不把 schema 默认 currency='waz' 固化成合法路径。本 PR【没有任何真实资产移动】——
  *    lockBond 只是状态迁移;slashBond 只记 provenance(复用 recordBaseBondSlash)。
- *  - **生产收款全部 GATED:** manual rail 仅 test/non-production,且【永不】设 production_receipt_confirmed_at;
- *    usdc_onchain / fiat_psp 经 deposit-rail 网关 throw(fail-closed)。本 PR 后【仍无生产 base-bond rail】→ direct-receive
- *    仍不能 production go-live(需后续单独实现 legal-cleared USDC/fiat 生产收款)。不声称 go-live、不声称 legal clearance。
+ *  - **生产放行仍 fail-closed:** manual rail 仅 test/non-production,且【永不】设 production_receipt_confirmed_at;
+ *    operator_attested(运营核实生产轨)过 Lock A,但 Lock B(rail-clearance registry,治理默认关)仍挡 → 写不了 production receipt;
+ *    usdc/fiat 自动收款 GATED throw。故当前【无任何 rail 能写 production receipt】→ direct-receive 仍不能 go-live
+ *    (需治理翻开 operator_attested 的 registry 放行,或落地 legal-cleared USDC/fiat 自动收款)。不声称 go-live。
  *  - penalty 只进不出:slash 只记 provenance(total_base_bond_slash + txn),无 outflow 代码路径(append-only,设计稿 §10.1)。
  *  - 整数 base-units(RFC-014):比较/罚没用 toUnits;落库用 toDecimal。分数/负/越界 → fail-closed。
  *  - refund-on-exit 不在本 PR:仅提供【纯判断占位】refundOnExitBlockedReason(open-dispute/cooling-window 阻止),
@@ -200,7 +201,8 @@ export const DIRECT_PAY_BOND_JURISDICTIONS: string[] = []
  * 生产保证金 receipt【唯一】writer(PR-4b-3 scaffold)。这是【整个协议中】唯一允许写 production_receipt_confirmed_at
  *   的函数(#100 guard 机器强制:写赋值必在本函数内 且 本函数必调 assertProductionDepositRail)。
  *
- * 当前【永远 fail-closed】:assertProductionDepositRail 对所有现有 rail 抛(manual 非生产;usdc/fiat legalCleared=false)
+ * 当前【fail-closed】:Lock A 对 manual(非生产)/usdc/fiat(GATED,implemented=false)抛;operator_attested 过 Lock A,
+ *   但 Lock B(assertBondRailCleared,registry 治理默认关)对所有 rail 抛 → 没有任何 rail 能写 production receipt
  *   → 调用即抛 → 永不写 production receipt → Direct Pay 仍 non-launchable。assert 之后的写路径在 legal-cleared rail
  *   落地前【不可达】(本 PR 不接真实 USDC/fiat/PSP/on-chain)。不碰 buyer wallet/escrow/order/settlement/refund。
  *

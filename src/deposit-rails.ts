@@ -1,7 +1,7 @@
 /**
  * Deposit-rail 抽象 (设计稿 §6 base bond = 履约担保物/外部资产) — 外部资产(USDC/法币)收款的接口边界。
- * 本 PR 只实现【非生产确认】(manual / admin / testnet);生产 USDC-onchain / fiat-PSP 收款【GATED】
- *   (真钱 / 链上边界 + 法务:担保物定性 + USDC DTSP),刻意抛错防误接线上。anti-YAGNI: 无注册框架。
+ * 已实现:manual(非生产/测试)+ operator_attested(运营核实生产轨:过 Lock A;放行仍由 registry/Lock B 治理开关、默认关)。
+ *   生产 USDC-onchain / fiat-PSP【自动】收款仍【GATED】(真钱 / 链上 / PSP 自动集成未接),刻意抛错防误接线上。anti-YAGNI: 无注册框架。
  */
 import type { Units } from './money.js'
 
