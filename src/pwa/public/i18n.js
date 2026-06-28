@@ -4,6 +4,12 @@
 window._lang = localStorage.getItem('webaz_lang') || 'zh'
 
 const _EN = {
+  // ── Direct Pay (Rail 1) — PR-5c availability/control reason copy (off-platform; WebAZ does not custody/guarantee/refund) ──
+  '直付当前未开放': 'Direct Pay is not open yet',
+  '直付暂停受理(运营维护中),请稍后再试': 'Direct Pay is paused (operational maintenance) — please try again later',
+  '直付在你所在地区暂未开放': 'Direct Pay is not available in your region yet',
+  '超出直付单笔上限(按 WebAZ 记录的订单金额计;不涉及你与卖家场外实际付款金额)': 'Over the Direct Pay per-order limit (on the WebAZ-recorded order total; this does not govern the actual amount you pay the seller off-platform)',
+  '该卖家直付已被暂停': "This seller's Direct Pay is currently suspended",
   // ── Direct Pay (Rail 1) — PR-4f-b bilingual UI wiring (non-custodial; WebAZ does not custody/verify/route) ──
   '需完成 D1/D2 Passkey 风险确认后才显示收款说明 · 可在订单页继续': 'The payment instruction is shown only after you complete the D1/D2 Passkey risk confirmations · you can continue on the order page',
   '风险确认完成 · 这是卖家的收款说明(下单时快照,WebAZ 不验证)': 'Risk confirmation complete · This is the seller\'s payment instruction (snapshot at order time; WebAZ does not verify it)',

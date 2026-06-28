@@ -10471,7 +10471,7 @@ window.openBuySheet = function(productId) {
         </div>
       </details>
 
-      ${window.dpRailSelectorHtml ? window.dpRailSelectorHtml() : ''}
+      ${window.dpRailSelectorHtml ? window.dpRailSelectorHtml(prod.id) : ''}
       <div id="buy-msg" style="margin-top:10px"></div>
       <div id="tax-preview-slot" style="margin-top:8px"></div>
 

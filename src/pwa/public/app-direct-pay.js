@@ -1,23 +1,24 @@
-// Direct Pay (Rail 1) — bilingual UI wiring (PR-4f-b).
-//
-// 这是 UI wiring ONLY。Direct Pay 仍 non-launchable / fail-closed:WebAZ【不托管本金】、不担保、不退款、
-//   不代维权,也【不验证 / 不路由】卖家的付款方式或币种。本文件【不】做真实支付 / USDC / fiat / PSP / 链上调用,
-//   不做 crypto-fiat 判断或 allowlist,不碰 wallet / escrow / settlement / refund / 订单钱路 —— 只把已合并的后端
-//   能力(#96 收款说明 CRUD、#94 direct_p2p 建单、#92/#93 披露 ack + Passkey 订单动作门)接到 PWA。
-//
-// 所有真实强制都在后端:披露 ack、mark_paid / confirm / confirm-in-person 都被 #92/#93 的【两次披露 + 现场真人
-//   Passkey】硬门控。前端只负责带必要输入(stage / action + 一次性 webauthn_token),后端仍会拒绝未满足的请求。
-//
-// 所有面向用户的中文文案都走 t();对应英文在 i18n.js 的 _EN 中(双语 parity 由 test-direct-pay-ui.ts 守)。
+// Direct Pay (Rail 1) — bilingual UI wiring (PR-4f-b / 5c)。UI ONLY;Direct Pay 仍 non-launchable / fail-closed。
+//   WebAZ【不托管本金】、不担保、不退款/维权,也不验证/路由卖家付款方式或币种;不做 USDC/fiat/PSP/链上、不碰
+//   wallet/escrow/settlement/refund/订单钱路。真实强制全在后端(#92/#93 两次披露 + 现场真人 Passkey 硬门控;前端只带输入)。
+//   只把已合并后端能力(#96 收款说明、#94 建单、#92/#93 ack+Passkey、#98+ 控制面/可用性)接到 PWA。
+//   面向用户中文文案走 t(),英文在 i18n.js _EN(双语 parity 由 test-direct-pay-ui.ts 守)。
 
 // ── 错误码 → 双语文案(后端返回的 error_code → 清楚的中英文提示)──────────────────────────────
 window.dpErrorText = (code, fallback) => {
   const M = {
+    DIRECT_PAY_DISABLED: t('直付当前未开放'),
+    DIRECT_PAY_RAIL_BREAKER: t('直付暂停受理(运营维护中),请稍后再试'),
+    DIRECT_PAY_REGION_UNSUPPORTED: t('直付在你所在地区暂未开放'),
+    DIRECT_PAY_CAP_EXCEEDED: t('超出直付单笔上限(按 WebAZ 记录的订单金额计;不涉及你与卖家场外实际付款金额)'),
+    DIRECT_PAY_SELLER_NOT_ELIGIBLE: t('该卖家暂不支持直付'),
+    DIRECT_PAY_SELLER_SUSPENDED: t('该卖家直付已被暂停'),
     DISCLOSURE_NOT_ACKED: t('需先完成两次风险披露确认(D1 + D2)'),
     HUMAN_PRESENCE_REQUIRED: t('需现场真人 Passkey 确认'),
     PASSKEY_REQUIRED_FOR_DIRECT_PAY: t('直付需要先注册 Passkey'),
     NO_PAYMENT_INSTRUCTION: t('卖家尚未设置收款说明,暂不可直付'),
     DIRECT_PAY_NOT_AVAILABLE: t('该卖家暂不支持直付'),
+    DIRECT_PAY_KYC_REQUIRED: t('该卖家暂不支持直付'),  // 对买家脱敏:不暴露卖家 KYC/制裁具体状态
     ORDER_NOT_DELIVERED: t('订单尚未送达,暂不可确认收货'),
     DIRECT_PAY_SIMPLE_PRODUCT_ONLY: t('直付当前仅支持简单商品(无规格)'),
     DIRECT_PAY_UNSUPPORTED_OPTION: t('直付当前不支持该下单选项'),
@@ -25,38 +26,46 @@ window.dpErrorText = (code, fallback) => {
   return M[code] || fallback || t('操作失败,请重试')
 }
 
-// ── 买家结算:支付方式(rail)选择 ──────────────────────────────────────────────────────────
-// escrow 为默认;direct_p2p 为可选 rail。选中 direct_p2p 时展示非托管风险提醒(展示用);真正的 D1/D2
-//   披露 ack 在【建单成功之后】用 Passkey 完成(后端要求订单已存在才能 ack)。
-window.dpRailSelectorHtml = () => `
-  <details style="margin-top:10px" id="dp-rail-block">
+// ── 买家结算:支付方式(rail)选择。escrow 默认;direct_p2p 可选,选中先查可用性(见 dpOnRailChange);D1/D2 ack 在建单后用 Passkey 完成。
+window.dpRailSelectorHtml = (productId) => `
+  <details style="margin-top:10px" id="dp-rail-block" data-product="${productId || ''}">
     <summary style="font-size:13px;font-weight:600;color:#374151;cursor:pointer">${t('支付方式')}</summary>
     <div style="padding:8px 2px 2px">
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-bottom:6px;cursor:pointer">
-        <input type="radio" name="dp-rail" value="escrow" checked onchange="dpOnRailChange()">
+        <input type="radio" name="dp-rail" value="escrow" checked onchange="dpOnRailChange('${productId || ''}')">
         <span><b>${t('托管(Escrow,默认)')}</b><br><span style="font-size:11px;color:#6b7280">${t('本金由协议托管,确认收货后释放给卖家')}</span></span>
       </label>
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer">
-        <input type="radio" name="dp-rail" value="direct_p2p" onchange="dpOnRailChange()">
+        <input type="radio" name="dp-rail" value="direct_p2p" onchange="dpOnRailChange('${productId || ''}')">
         <span><b>${t('直付(Direct Pay · 非托管)')}</b><br><span style="font-size:11px;color:#6b7280">${t('你直接付款给卖家(场外),本金不经 WebAZ')}</span></span>
       </label>
       <div id="dp-rail-note" style="display:none;margin-top:8px;font-size:11px;line-height:1.6;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
         ⚠️ ${t('直付风险提醒:WebAZ 不托管本金、不担保、不退款、不代维权,也不验证卖家的付款方式或币种。下单后需用 Passkey 完成两次风险确认,再标记付款。')}
         <div style="margin-top:6px">${t('需要 Passkey。')}<a href="#me" style="color:#854d0e;font-weight:600;text-decoration:underline">${t('前往「我的 → 安全与存储」注册 →')}</a></div>
       </div>
+      <div id="dp-rail-unavailable" style="display:none;margin-top:8px;font-size:11px;line-height:1.6;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px"></div>
     </div>
   </details>`
 
-window.dpOnRailChange = () => {
-  const rail = window.dpSelectedRail()
-  const note = document.getElementById('dp-rail-note')
-  if (note) note.style.display = rail === 'direct_p2p' ? '' : 'none'
+// 选直付先查 /direct-pay/availability(与建单门同源):available=true 才展示风险提醒+允许继续;否则用 dpErrorText 显示明确不可用原因(非系统错误/不裸露 JSON)并退回托管轨,阻止进入直付建单。
+window.dpOnRailChange = async (productId) => {
+  const note = document.getElementById('dp-rail-note'); window._dpDirectAvailable = false  // 进入即 pending:确认前 dpSelectedRail 只输出 escrow(防"选直付后立刻点确认"竞态)
+  const un = document.getElementById('dp-rail-unavailable')
+  if (note) note.style.display = 'none'
+  if (un) un.style.display = 'none'
+  if (document.querySelector('input[name="dp-rail"]:checked')?.value !== 'direct_p2p') return
+  let av = null
+  try { av = await GET('/direct-pay/availability?product_id=' + encodeURIComponent(productId || '')) } catch { av = null }
+  if (av && av.available === true) { window._dpDirectAvailable = true; if (note) note.style.display = ''; return }
+  if (un) { un.textContent = '⚠️ ' + window.dpErrorText(av && av.error_code, av && av.reason) ; un.style.display = '' }  // 不可用:明确原因 + 退回 escrow
+  const esc = document.querySelector('input[name="dp-rail"][value="escrow"]')
+  if (esc) esc.checked = true
 }
 
-window.dpSelectedRail = () => document.querySelector('input[name="dp-rail"]:checked')?.value || 'escrow'
+// 只有 availability 已确认 available:true(window._dpDirectAvailable)才输出 direct_p2p;pending/unavailable → escrow(竞态下确认只会下 escrow 单,绝不发 direct_p2p create)。
+window.dpSelectedRail = () => (document.querySelector('input[name="dp-rail"]:checked')?.value === 'direct_p2p' && window._dpDirectAvailable === true) ? 'direct_p2p' : 'escrow'
 
-// ── 建单成功后(direct_p2p):展示快照收款说明 → D1/D2 披露 ack(各一次 Passkey)→ 跳订单页 ─────────
-// res = POST /orders 的返回。若返回错误 → 双语提示并停。
+// ── 建单成功后(direct_p2p):D1/D2 披露 ack(各一次 Passkey)→ ack 后才展示快照收款说明 → 跳订单页。res=POST /orders 返回;有错则双语提示并停。
 window.dpAfterCreate = async (res) => {
   if (!res || res.error || res.error_code) {
     const m = window.dpErrorText(res?.error_code, res?.error)
@@ -79,7 +88,6 @@ window.dpAfterCreate = async (res) => {
     t('我知道了'), {})
   setTimeout(() => navigate(`#order/${orderId}`), 300)
 }
-
 // ── 确保两次披露都已 ack(缺哪个补哪个;每次都需现场真人 Passkey)。返回 both-acked 与否。 ──────────
 window.dpEnsureAcks = async (orderId) => {
   const st = await GET(`/direct-pay/disclosure-acks/${orderId}`)
@@ -99,7 +107,6 @@ window.dpEnsureAcks = async (orderId) => {
   }
   return true
 }
-
 // Passkey 门失败(无 Passkey / 设备不支持 / 用户取消)→ 给出明确的【注册 Passkey 入口】(前往「我的 → 安全与存储」)。
 window.dpPromptRegisterPasskey = async (reason) => {
   const go = await confirmModal(
@@ -107,7 +114,6 @@ window.dpPromptRegisterPasskey = async (reason) => {
     t('前往注册 Passkey'), {})
   if (go) navigate('#me')
 }
-
 // 单次披露 ack:Passkey ceremony(purpose=direct_pay_disclosure_ack,order+stage 绑 purpose_data)→ POST ack。
 window.dpDoAck = async (orderId, stage) => {
   let token
@@ -117,10 +123,7 @@ window.dpDoAck = async (orderId, stage) => {
   if (r.error) { if (typeof toast$ === 'function') toast$(window.dpErrorText(r.error_code, r.error), 'error'); return false }
   return true
 }
-
-// ── 订单详情:direct_p2p 诚实边界(始终显示)+ 卖家收款说明(快照,【仅两次披露都 ack 后】才展示)──────
-// 风险警示始终可见;但卖家收款说明的快照【不】内联进 HTML —— 由 dpHydrateOrderDisclosure 在确认 both-acked 后
-//   才另取并渲染(未 ack 时连 DOM 里都没有快照,只有"先完成 D1/D2"的门)。
+// ── 订单详情:direct_p2p 诚实边界始终显示;卖家收款说明快照【不】内联进 HTML,由 dpHydrateOrderDisclosure 在 both-acked 后才另取渲染(未 ack 时 DOM 里也没有快照)。
 window.dpOrderDisclosureHtml = (_order) => `
   <div class="card" style="border:1px solid #fde68a;background:linear-gradient(135deg,#fffbeb,#fef3c7)">
     <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:8px">💸 ${t('直付订单(非托管)')}</div>
@@ -131,7 +134,6 @@ window.dpOrderDisclosureHtml = (_order) => `
     </ul>
     <div id="dp-order-instr">${loading$()}</div>
   </div>`
-
 // ack-gated 收款说明:both-acked → 另取订单快照并展示;否则只显示"先完成 D1/D2 Passkey"的门(快照不入 DOM)。
 window.dpHydrateOrderDisclosure = async (orderId) => {
   const box = document.getElementById('dp-order-instr')
@@ -150,14 +152,12 @@ window.dpHydrateOrderDisclosure = async (orderId) => {
     <div style="font-size:11px;color:#9ca3af;margin-bottom:2px">${t('卖家收款说明(下单时快照)')}</div>${escHtml(snap)}</div>`
     : `<div style="font-size:12px;color:#9ca3af">${t('卖家尚未设置收款说明,暂不可直付')}</div>`
 }
-
 window.dpCompleteAcksThenReveal = async (orderId) => {
   const ok = await window.dpEnsureAcks(orderId)
   if (ok) window.dpHydrateOrderDisclosure(orderId)
 }
 
-// ── 订单动作(direct_p2p 的 mark_paid / confirm / confirm_in_person):两次披露 + Passkey 后端硬门 ──────
-// 前端先确保披露已 ack,再为该动作取一次性 Passkey token,带进现有 order-action 端点。后端仍强制校验。
+// ── 订单动作(mark_paid/confirm/confirm_in_person):前端先确保披露 ack,再取一次性 Passkey token 带进 order-action 端点;后端(#93)仍强制两次披露+Passkey。
 window.dpHandleAction = async (orderId, action) => {
   const msgEl = document.getElementById('action-msg')
   const show = (type, m) => { if (msgEl) msgEl.innerHTML = alert$(type, m); else if (typeof toast$ === 'function') toast$(m, type) }
