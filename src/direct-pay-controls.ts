@@ -119,12 +119,23 @@ export const DIRECT_PAY_CONTROL_PARAMS: Array<{ key: string; value: string; type
 ]
 
 /**
- * 卖家制裁/KYC 事实(fail-closed)。当前唯一可用信号 = sanctions_screening:必须存在 status='clear' 行,
- *   且【无】flagged/blocked 行。真实 KYC/KYB 与运行期 AML 复筛 = Phase 6(deferred)—— 在它们建好前,
- *   真实卖家天然 fail-closed(该表无生产写入方)。
+ * PR-6A AML/CFT runtime — KYB(商户尽调)事实(fail-closed)。来源 direct_receive_kyb_reviews(真人/合规复核结论;
+ *   无第三方 vendor、无真实 API 调用)。通过 ⟺ 存在 status='approved' 且未过期的复核 且【无】rejected/revoked 行。
+ *   missing / pending / rejected / revoked / expired 一律不通过。该表无生产写入方 → 真实卖家天然 fail-closed。
  */
-export function sellerKycSanctionsPassed(db: Database.Database, sellerId: string): boolean {
-  const clear = db.prepare("SELECT 1 FROM sanctions_screening WHERE user_id = ? AND status = 'clear' LIMIT 1").get(sellerId)
+export function sellerDirectPayKybPassed(db: Database.Database, sellerId: string): boolean {
+  const approved = db.prepare("SELECT 1 FROM direct_receive_kyb_reviews WHERE user_id = ? AND status = 'approved' AND (expires_at IS NULL OR expires_at > datetime('now')) LIMIT 1").get(sellerId)
+  const blocked = db.prepare("SELECT 1 FROM direct_receive_kyb_reviews WHERE user_id = ? AND status IN ('rejected','revoked') LIMIT 1").get(sellerId)
+  return !!approved && !blocked
+}
+
+/**
+ * PR-6A AML/CFT runtime — 制裁筛查事实(fail-closed)。来源 sanctions_screening:存在 status='clear' 且未过期的结论,
+ *   且【无】flagged/blocked 行。expired(expires_at 已过)视作未通过;NULL expires_at = 无期限。无第三方集成。
+ *   该表无生产写入方 → 真实卖家天然 fail-closed。
+ */
+export function sellerDirectPaySanctionsClear(db: Database.Database, sellerId: string): boolean {
+  const clear = db.prepare("SELECT 1 FROM sanctions_screening WHERE user_id = ? AND status = 'clear' AND (expires_at IS NULL OR expires_at > datetime('now')) LIMIT 1").get(sellerId)
   const bad = db.prepare("SELECT 1 FROM sanctions_screening WHERE user_id = ? AND status IN ('flagged','blocked') LIMIT 1").get(sellerId)
   return !!clear && !bad
 }
