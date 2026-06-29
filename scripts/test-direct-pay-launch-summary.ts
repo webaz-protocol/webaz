@@ -21,6 +21,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 const db = initDatabase()
 db.pragma('foreign_keys = OFF')
 try { db.exec("ALTER TABLE products ADD COLUMN has_variants INTEGER DEFAULT 0") } catch { /* exists */ }
+db.exec("CREATE TABLE IF NOT EXISTS flash_sales (id TEXT PRIMARY KEY, seller_id TEXT, product_id TEXT, variant_id TEXT, sale_price REAL, original_price REAL, max_qty INTEGER DEFAULT 0, sold_count INTEGER DEFAULT 0, starts_at TEXT, ends_at TEXT, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))")
 const cp: Record<string, unknown> = {}
 const gp = <T,>(k: string, fb: T): T => (k in cp ? cp[k] as T : fb)
 
@@ -140,6 +141,22 @@ ok('12. verified active product with stock 0 → 0 eligible, not launchable', oo
 db.prepare("UPDATE products SET stock = 5 WHERE id = 'p_oos'").run()
 const oos2 = summarizeDirectPayLaunchReadiness(db, gp).sellers.find(s => s.sellerId === 's_oos')!
 ok('12a. restock → product now eligible + launchable', oos2.eligibleProductCount === 1 && oos2.launchable === true, JSON.stringify(oos2))
+
+// ── 13. P1: product on an ACTIVE flash sale → not eligible (direct_p2p v1 rejects flash_sale) ──
+seedSeller('s_fl'); seedBond('s_fl'); seedKyb('s_fl'); seedSanctions('s_fl'); seedInstr('s_fl')
+seedProduct('p_fl', 's_fl'); seedProductVerified('p_fl', 's_fl')   // verified, in-stock, price 50 ≤ cap
+db.prepare("INSERT INTO flash_sales (id, seller_id, product_id, variant_id, sale_price, original_price, max_qty, sold_count, starts_at, ends_at, is_active) VALUES ('fl1','s_fl','p_fl',NULL,40,50,0,0, datetime('now','-1 hour'), datetime('now','+1 hour'), 1)").run()
+const s13 = summarizeDirectPayLaunchReadiness(db, gp)
+const fl = s13.sellers.find(s => s.sellerId === 's_fl')!
+ok('13. product on active flash sale → 0 eligible, not launchable', fl.ready === true && fl.eligibleProductCount === 0 && fl.launchable === false, JSON.stringify(fl))
+// end the flash sale (is_active=0) → same product eligible again
+db.prepare("UPDATE flash_sales SET is_active = 0 WHERE id = 'fl1'").run()
+const fl2 = summarizeDirectPayLaunchReadiness(db, gp).sellers.find(s => s.sellerId === 's_fl')!
+ok('13a. flash sale ended → product eligible + launchable', fl2.eligibleProductCount === 1 && fl2.launchable === true, JSON.stringify(fl2))
+// sold-out flash (max_qty reached) also = inactive predicate → eligible
+db.prepare("UPDATE flash_sales SET is_active = 1, max_qty = 5, sold_count = 5 WHERE id = 'fl1'").run()
+const fl3 = summarizeDirectPayLaunchReadiness(db, gp).sellers.find(s => s.sellerId === 's_fl')!
+ok('13b. sold-out flash (sold_count>=max_qty) → product eligible again', fl3.eligibleProductCount === 1 && fl3.launchable === true, JSON.stringify(fl3))
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-launch-summary tests passed`)

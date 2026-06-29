@@ -77,13 +77,17 @@ export function summarizeDirectPayLaunchReadiness(
     //   ① 简单商品(direct_p2p v1 拒规格商品 has_variants=1);② 逐品 verified 或卖家店铺豁免;
     //   ③ 单笔上限:amount>0 且 ≤ perTxCapUnits(且 cap 已配 >0)—— 镜像 DIRECT_PAY_CAP_EXCEEDED;
     //   ④ 有货(stock≥1)—— 镜像 createDirectPayOrder 的 `stock >= qty`(否则 'stock depleted');
-    //   ⑤ 通过缓交额度(checkDeferralQuota qty=1 该单价;非缓交卖家=no-op)。否则报告会误判 go=true 而真实下单被拒。
+    //   ⑤ 无进行中限时促销(direct_p2p v1 拒 flash_sale=DIRECT_PAY_UNSUPPORTED_OPTION;谓词镜像 getActiveFlashSale@flash-sales.ts 的简单商品分支);
+    //   ⑥ 通过缓交额度(checkDeferralQuota qty=1 该单价;非缓交卖家=no-op)。否则报告会误判 go=true 而真实下单被拒。
+    const flashActive = db.prepare(`SELECT 1 FROM flash_sales WHERE product_id = ? AND is_active = 1
+      AND starts_at <= datetime('now') AND ends_at > datetime('now') AND (max_qty = 0 OR sold_count < max_qty) AND variant_id IS NULL LIMIT 1`)
     const eligibleProductCount = products.filter(p => {
       const priceU = toUnits(Number(p.price) || 0)
       return Number(p.has_variants) !== 1
         && (storeExempt || productStoreVerified(db, p.id))
         && controlsCfg.perTxCapUnits > 0 && priceU > 0 && priceU <= controlsCfg.perTxCapUnits
         && Number(p.stock) >= 1
+        && !flashActive.get(p.id)
         && checkDeferralQuota(db, sellerId, priceU, nowIso, quotaCfg).ok
     }).length
     return { sellerId, ready, blockers: sellerBlockers, storeExempt, activeProductCount: products.length, eligibleProductCount, launchable: ready && eligibleProductCount > 0 }
