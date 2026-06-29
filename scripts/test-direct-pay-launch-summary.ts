@@ -129,5 +129,17 @@ const cap2 = summarizeDirectPayLaunchReadiness(db, gp).sellers.find(s => s.selle
 ok('11a. raise cap above price → product now eligible + launchable', cap2.eligibleProductCount === 1 && cap2.launchable === true, JSON.stringify(cap2))
 cp['direct_pay.per_tx_cap_units'] = toUnits(1000)
 
+// ── 12. P1: out-of-stock product → not eligible (mirrors createDirectPayOrder 'stock >= qty') ──
+seedSeller('s_oos'); seedBond('s_oos'); seedKyb('s_oos'); seedSanctions('s_oos'); seedInstr('s_oos')
+db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p_oos','s_oos','O','d',50,0,'active')").run()  // active but stock 0
+seedProductVerified('p_oos', 's_oos')
+const s12 = summarizeDirectPayLaunchReadiness(db, gp)
+const oos = s12.sellers.find(s => s.sellerId === 's_oos')!
+ok('12. verified active product with stock 0 → 0 eligible, not launchable', oos.ready === true && oos.eligibleProductCount === 0 && oos.launchable === false, JSON.stringify(oos))
+// restock → eligible (proves stock was the blocker)
+db.prepare("UPDATE products SET stock = 5 WHERE id = 'p_oos'").run()
+const oos2 = summarizeDirectPayLaunchReadiness(db, gp).sellers.find(s => s.sellerId === 's_oos')!
+ok('12a. restock → product now eligible + launchable', oos2.eligibleProductCount === 1 && oos2.launchable === true, JSON.stringify(oos2))
+
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-launch-summary tests passed`)

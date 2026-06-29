@@ -71,16 +71,18 @@ export function summarizeDirectPayLaunchReadiness(
     const sellerBlockers = rd.blockers.filter(b => !globalSet.has(b))
     const ready = sellerBlockers.length === 0
     const storeExempt = sellerExemptFromPerProduct(db, sellerId)
-    const products = db.prepare("SELECT id, price, has_variants FROM products WHERE seller_id = ? AND status = 'active'").all(sellerId) as Array<{ id: string; price: number; has_variants: number }>
-    // 可直付商品 = 必须能真正走 direct_p2p 建单(镜像 create gate / evaluateDirectPayLaunchControls),全部满足:
+    const products = db.prepare("SELECT id, price, stock, has_variants FROM products WHERE seller_id = ? AND status = 'active'").all(sellerId) as Array<{ id: string; price: number; stock: number; has_variants: number }>
+    // 可直付商品 = 必须能真正走 direct_p2p 建单(镜像 create gate / evaluateDirectPayLaunchControls + 建单库存门),全部满足:
     //   ① 简单商品(direct_p2p v1 拒规格商品 has_variants=1);② 逐品 verified 或卖家店铺豁免;
     //   ③ 单笔上限:amount>0 且 ≤ perTxCapUnits(且 cap 已配 >0)—— 镜像 DIRECT_PAY_CAP_EXCEEDED;
-    //   ④ 通过缓交额度(checkDeferralQuota qty=1 该单价;非缓交卖家=no-op)。否则报告会误判 go=true 而真实下单被拒。
+    //   ④ 有货(stock≥1)—— 镜像 createDirectPayOrder 的 `stock >= qty`(否则 'stock depleted');
+    //   ⑤ 通过缓交额度(checkDeferralQuota qty=1 该单价;非缓交卖家=no-op)。否则报告会误判 go=true 而真实下单被拒。
     const eligibleProductCount = products.filter(p => {
       const priceU = toUnits(Number(p.price) || 0)
       return Number(p.has_variants) !== 1
         && (storeExempt || productStoreVerified(db, p.id))
         && controlsCfg.perTxCapUnits > 0 && priceU > 0 && priceU <= controlsCfg.perTxCapUnits
+        && Number(p.stock) >= 1
         && checkDeferralQuota(db, sellerId, priceU, nowIso, quotaCfg).ok
     }).length
     return { sellerId, ready, blockers: sellerBlockers, storeExempt, activeProductCount: products.length, eligibleProductCount, launchable: ready && eligibleProductCount > 0 }

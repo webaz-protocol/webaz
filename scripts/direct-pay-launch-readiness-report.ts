@@ -36,7 +36,9 @@ const getProtocolParam = <T,>(key: string, fallback: T): T => {
 const summary = summarizeDirectPayLaunchReadiness(db, getProtocolParam)
 const cfg = directPayControlsSnapshot(getProtocolParam)
 
-if (asJson) { console.log(JSON.stringify(summary, null, 2)); process.exit(summary.go ? 0 : 1) }
+// exit code reflects the PRE-FLIGHT verdict (preflipGo) in both modes: 0 = ready-to-flip or already live,
+//   1 = a real gap remains besides the enable switch. (Use the JSON `go` field if you need strict live status.)
+if (asJson) { console.log(JSON.stringify(summary, null, 2)); process.exit(summary.preflipGo ? 0 : 1) }
 
 const yn = (b: boolean) => b ? '✅' : '❌'
 console.log('\n══════ Direct Pay — pre-flip launch readiness ══════')
