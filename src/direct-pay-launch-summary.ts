@@ -4,7 +4,8 @@
  * 把分散的就绪信号汇总成一份 go/no-go:
  *   - global:控制面(enabled / rail-breaker / region / region_allowlist / per_tx_cap)是否就绪。
  *   - 每个【候选卖家】(有收款说明 / 缓交 / 保证金 / 逐品验证 / 店铺认证 任一记录者):readDirectPayLaunchReadiness
- *     的 ready + blockers,以及【可直付商品数】(逐品 verified 的在售品;若店铺豁免则其全部在售品)。
+ *     的 ready + blockers,以及【可直付商品数】= 镜像真实建单门的在售品(简单商品 + 逐品 verified 或店铺豁免 +
+ *     单笔上限内 + 有货 + 缓交额度内;见 eligibleProductCount 处注释)。
  *   - go = 全局就绪 AND 至少一个卖家 ready 且有 ≥1 可直付商品。
  *
  * 只 SELECT,不写库、不 flip、不碰资金。供 operator CLI / ROOT 诊断在翻 enabled 之前核对。
@@ -23,7 +24,7 @@ export interface SellerLaunchSummary {
   blockers: string[]
   storeExempt: boolean
   activeProductCount: number
-  eligibleProductCount: number   // 能真正走 direct_p2p 建单的在售品数:简单商品(非规格)+ 逐品 verified 或店铺豁免 + 通过缓交额度
+  eligibleProductCount: number   // 能真正走 direct_p2p 建单的在售品数:简单商品(非规格)+ 逐品 verified 或店铺豁免 + 单笔上限内 + 有货 + 缓交额度内
   launchable: boolean            // ready && eligibleProductCount > 0
 }
 

@@ -59,7 +59,7 @@ if (!summary.sellers.length) console.log('    (no sellers have any direct-pay se
 for (const s of summary.sellers) {
   console.log(`    ${yn(s.launchable)} ${s.sellerId}  · products ${s.eligibleProductCount}/${s.activeProductCount} eligible${s.storeExempt ? ' (store-exempt)' : ''}`)
   if (!s.ready) console.log(`        blockers: ${s.blockers.join(', ')}`)
-  else if (s.eligibleProductCount === 0) console.log(`        seller ready but 0 eligible products (verify a product or grant store exemption)`)
+  else if (s.eligibleProductCount === 0) console.log(`        seller ready but 0 direct-pay-eligible products (need a simple, verified-or-store-exempt, in-stock product within per-tx cap & deferral quota)`)
 }
 
 // Verdict:
