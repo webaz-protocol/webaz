@@ -37,6 +37,3 @@ window.wazEscrowOrderBanner = (order, isBuyer) => {
     <div style="font-size:12px;line-height:1.6;color:#374151">${t('本单为预发布演示:WAZ 是模拟货币,不代表真实价值,本协议尚未进行真实资金结算。请勿据此向任何人支付真实款项。')}</div>
   </div>`
 }
-
-// 模拟期要求买家形成【有效 rail】:按 dpSelectedRail() 是否为空判断,不能只看"radio 选中"——direct_p2p 选中但 availability 未确认(_dpDirectAvailable!==true)时 dpSelectedRail 返 '',radio 却是选中的,空 payment_rail 会被后端静默落成 escrow。
-window.wazRequireRailChoice = () => !!window._wazSimulated && !(window.dpSelectedRail && window.dpSelectedRail())

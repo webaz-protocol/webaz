@@ -885,6 +885,7 @@ const _EN = {
   '测试托管订单': 'Test escrow order',
   '本单为预发布演示:WAZ 是模拟货币,不代表真实价值,本协议尚未进行真实资金结算。请勿据此向任何人支付真实款项。': 'This is a pre-launch demo order: WAZ is a simulated currency with no real value, and the protocol does not settle real funds yet. Do not pay anyone real money based on this order.',
   '请选择支付方式': 'Please choose a payment method',
+  '直付暂未就绪或不可用,请稍候重试或改选支付方式': 'Direct Pay is not ready or unavailable — please retry shortly or choose another payment method',
   '充值中...': 'Topping up...',
   '已充入': 'Topped up',
   '当前余额': 'Balance',

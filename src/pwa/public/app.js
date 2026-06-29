@@ -10476,7 +10476,7 @@ window.openBuySheet = function(productId) {
       <div id="tax-preview-slot" style="margin-top:8px"></div>
 
       <div style="position:sticky;bottom:0;left:0;right:0;background:#fff;padding-top:12px;margin-top:12px;border-top:1px solid #f3f4f6">
-        <button class="btn btn-primary" id="btn-doBuy" onclick="doBuy('${prod.id}', ${livePrice}); closeSheet()" style="width:100%;padding:14px;font-size:15px;font-weight:700">${t('确认下单')} · ${livePrice} WAZ</button>
+        <button class="btn btn-primary" id="btn-doBuy" onclick="doBuy('${prod.id}', ${livePrice})" style="width:100%;padding:14px;font-size:15px;font-weight:700">${t('确认下单')} · ${livePrice} WAZ</button>
       </div>
     `
     openSheet(html, { title: t('下单') })
@@ -11316,7 +11316,7 @@ window.doBuy = async (productId, price) => {
   // 数量（默认 1）— 服务端会再校验 stock + MAX_PER_ORDER
   const qtyInp = document.getElementById('inp-qty')
   const quantity = qtyInp ? Math.max(1, Math.min(Number(qtyInp.max) || 1, Math.floor(Number(qtyInp.value) || 1))) : 1
-  const payment_rail = window.dpSelectedRail ? window.dpSelectedRail() : 'escrow'; if (window.wazRequireRailChoice && window.wazRequireRailChoice()) { const _m=document.getElementById('buy-msg'); if(_m) _m.innerHTML = alert$('error', t('请选择支付方式')); const _b=document.getElementById('dp-rail-block'); if(_b) _b.open=true; return }  // [PRELAUNCH-WAZ-SIM] 模拟期必须显式选 rail
+  const payment_rail = window.dpSelectedRail ? window.dpSelectedRail() : 'escrow'; if (!payment_rail) { const _dp=document.querySelector('input[name="dp-rail"]:checked')?.value==='direct_p2p'; const _m=document.getElementById('buy-msg'); if(_m) _m.innerHTML = alert$('error', _dp ? t('直付暂未就绪或不可用,请稍候重试或改选支付方式') : t('请选择支付方式')); const _b=document.getElementById('dp-rail-block'); if(_b) _b.open=true; return } if (window.closeSheet) window.closeSheet()  // #28 空 rail 一律拦(永不静默落 escrow);[PRELAUNCH-WAZ-SIM] 未选→空;校验通过才关 sheet(块内 return 不关→提示+展开可见,修 P2)
   const res = await POST('/orders', { product_id: productId, shipping_address: addr, notes, sponsor_hint, coupon_code, delivery_window, variant_id, expected_price, buy_insurance, anonymous_recipient, donation_pct, quantity, payment_rail, ...giftPayload })
   if (payment_rail === 'direct_p2p') return void (window.dpAfterCreate && window.dpAfterCreate(res))
   if (res.error_code === 'PRICE_CHANGED') {

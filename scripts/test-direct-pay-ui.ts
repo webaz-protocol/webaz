@@ -43,11 +43,15 @@ ok('checkout renders rail selector', has(APP, 'dpRailSelectorHtml'))
 ok('rail selector defines escrow + direct_p2p radios', /value="escrow"/.test(DP) && /value="direct_p2p"/.test(DP))
 // [PRELAUNCH-WAZ-SIM] escrow 不再硬预选;模拟期(_wazSimulated)不带 checked,强制买家显式选择(真实启用置 false 后恢复 checked)。
 ok('[PRELAUNCH-WAZ-SIM] escrow pre-select gated on !_wazSimulated', /value="escrow"\s+\$\{window\._wazSimulated \? '' : 'checked'\}/.test(DP) && /window\._wazSimulated \? '' : 'escrow'/.test(DP))
-// [PRELAUNCH-WAZ-SIM] P1 regression: the checkout gate MUST key off dpSelectedRail() (valid rail), NOT just "a radio is checked".
-//   Else direct_p2p selected but availability unconfirmed (dpSelectedRail()==='') slips through and the empty rail is silently created as escrow.
-ok('[PRELAUNCH-WAZ-SIM] wazRequireRailChoice blocks on empty dpSelectedRail (not just radio-checked)', /wazRequireRailChoice\s*=\s*\(\)\s*=>[^\n]*dpSelectedRail\s*\(\s*\)/.test(WAZ) && !/wazRequireRailChoice[\s\S]{0,120}:checked/.test(WAZ))
+// #28 (permanent, not sim-gated): direct_p2p selected but availability unconfirmed → dpSelectedRail() returns '' (never silently falls back to escrow); the checkout gate blocks on any empty rail so the backend never receives an empty payment_rail that it would create as escrow.
+ok('#28 dpSelectedRail returns empty for direct_p2p-not-available (no silent escrow fallback)', /if \(c === 'direct_p2p'\) return window\._dpDirectAvailable === true \? 'direct_p2p' : ''/.test(DP))
+ok('#28 checkout blocks on empty payment_rail (general, not radio-checked)', /if \(!payment_rail\)/.test(APP) && /dp-rail-block[\s\S]{0,40}open\s*=\s*true/.test(APP))
+// P2 (review): the buy button must NOT closeSheet() inline — that would immediately hide the block prompt + the auto-expanded selector. doBuy closes the sheet itself, only after rail validation passes.
+ok('P2 buy button onclick does not closeSheet inline', /onclick="doBuy\([^"]*\)"/.test(APP) && !/doBuy\([^"]*\);\s*closeSheet\(\)/.test(APP))
+ok('P2 doBuy closes sheet only after rail validation passes (block branch returns first)', /return \}\s*if \(window\.closeSheet\) window\.closeSheet\(\)/.test(APP))
 ok('[PRELAUNCH-WAZ-SIM] app-prelaunch-waz.js loaded before app.js', HTML.indexOf('/app-prelaunch-waz.js') > 0 && HTML.indexOf('/app-prelaunch-waz.js') < HTML.indexOf('/app.js'))
-ok('dpSelectedRail defaults to escrow', /dpSelectedRail = \(\)[\s\S]{0,180}:[\s\S]{0,10}'escrow'/.test(DP))
+ok('[PRELAUNCH-WAZ-SIM] app-prelaunch-waz.js defines _wazSimulated flag + escrow notice helpers', /window\._wazSimulated\s*=\s*true/.test(WAZ) && /wazEscrowOrderBanner/.test(WAZ) && /wazEscrowRailNote/.test(WAZ))
+ok('dpSelectedRail defaults to escrow (escrow selected, or non-simulated fallback)', /c === 'escrow' \? 'escrow' : \(window\._wazSimulated \? '' : 'escrow'\)/.test(DP))
 ok('order create payload includes payment_rail', /payment_rail/.test(APP) && /window\.dpSelectedRail/.test(APP))
 ok('direct_p2p create routes to dpAfterCreate', /payment_rail === 'direct_p2p'.*dpAfterCreate/.test(APP))
 
@@ -138,7 +142,7 @@ ok('unavailable → shows dpErrorText reason (not raw JSON)', /dp-rail-unavailab
 ok('unavailable → reverts to escrow (blocks entering direct_p2p create)', /value="escrow"\][\s\S]{0,90}checked = true/.test(DP))
 // 9c-race: dpSelectedRail gates on a confirmed-availability flag — pending/unavailable never yields direct_p2p,
 //   so a fast "confirm" before availability returns posts escrow (never payment_rail:'direct_p2p').
-ok('dpSelectedRail outputs direct_p2p ONLY when window._dpDirectAvailable === true', /dpSelectedRail = \(\)[\s\S]{0,160}_dpDirectAvailable === true[\s\S]{0,40}'direct_p2p'[\s\S]{0,20}:[\s\S]{0,10}'escrow'/.test(DP))
+ok('dpSelectedRail outputs direct_p2p ONLY when window._dpDirectAvailable === true (else empty, never escrow)', /_dpDirectAvailable === true \? 'direct_p2p' : ''/.test(DP))
 ok('rail change resets availability flag to false (pending) before the async check', /dpOnRailChange[\s\S]{0,160}_dpDirectAvailable = false/.test(DP))
 ok('flag set true only on av.available === true', /av\.available === true[\s\S]{0,40}_dpDirectAvailable = true/.test(DP))
 // 9d. boundary copy held + no production-ready claim.
