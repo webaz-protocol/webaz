@@ -275,12 +275,12 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/contribution-identity/github/me` | 🔐 |  | metering/display surface can never read as a payout promise — facts + attributio | src/pwa/routes/contribution-identity.ts:193 |
 | GET | `/api/contribution-score/evidence/me` | 🔐 |  | always the session user. Output is component evidence wrapped in the uncommitted | src/pwa/routes/contribution-score.ts:30 |
 | GET | `/api/conversations` | 🔐 |  | 我的会话列表 | src/pwa/routes/chat.ts:121 |
-| GET | `/api/conversations/:id` | 🔐 |  | 会话详情 + 消息分页 | src/pwa/routes/chat.ts:138 |
-| POST | `/api/conversations/:id/archive` | 🔐 |  | 归档（仅自己侧） | src/pwa/routes/chat.ts:266 |
-| POST | `/api/conversations/:id/block` | 🔐 |  | 拉黑（双向屏蔽） | src/pwa/routes/chat.ts:276 |
-| POST | `/api/conversations/:id/messages` | 🔐 |  | 发消息 | src/pwa/routes/chat.ts:181 |
-| POST | `/api/conversations/:id/read` | 🔐 |  | 标记已读 | src/pwa/routes/chat.ts:251 |
-| POST | `/api/conversations/:id/report` | 🔐 |  | 举报（人工审核） | src/pwa/routes/chat.ts:286 |
+| GET | `/api/conversations/:id` | 🔐 |  | 会话详情 + 消息分页 | src/pwa/routes/chat.ts:143 |
+| POST | `/api/conversations/:id/archive` | 🔐 |  | 归档（仅自己侧） | src/pwa/routes/chat.ts:271 |
+| POST | `/api/conversations/:id/block` | 🔐 |  | 拉黑（双向屏蔽） | src/pwa/routes/chat.ts:281 |
+| POST | `/api/conversations/:id/messages` | 🔐 |  | 发消息 | src/pwa/routes/chat.ts:186 |
+| POST | `/api/conversations/:id/read` | 🔐 |  | 标记已读 | src/pwa/routes/chat.ts:256 |
+| POST | `/api/conversations/:id/report` | 🔐 |  | 举报（人工审核） | src/pwa/routes/chat.ts:291 |
 | POST | `/api/conversations/start` | 🔐 |  | 开会话（idempotent — 已存在则返回 id） | src/pwa/routes/chat.ts:107 |
 | POST | `/api/coupons` | 🔐 |  |  | src/pwa/routes/coupons.ts:77 |
 | PATCH | `/api/coupons/:id` | 🔐 |  |  | src/pwa/routes/coupons.ts:164 |
