@@ -18,6 +18,7 @@ const DPCODE = DP.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replac
 const APP = P('app.js')                // hooks live here
 const I18N = P('i18n.js')
 const HTML = P('index.html')
+const WAZ = P('app-prelaunch-waz.js')  // [PRELAUNCH-WAZ-SIM] 模拟币提醒 + 强制显式选 rail
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -42,6 +43,10 @@ ok('checkout renders rail selector', has(APP, 'dpRailSelectorHtml'))
 ok('rail selector defines escrow + direct_p2p radios', /value="escrow"/.test(DP) && /value="direct_p2p"/.test(DP))
 // [PRELAUNCH-WAZ-SIM] escrow 不再硬预选;模拟期(_wazSimulated)不带 checked,强制买家显式选择(真实启用置 false 后恢复 checked)。
 ok('[PRELAUNCH-WAZ-SIM] escrow pre-select gated on !_wazSimulated', /value="escrow"\s+\$\{window\._wazSimulated \? '' : 'checked'\}/.test(DP) && /window\._wazSimulated \? '' : 'escrow'/.test(DP))
+// [PRELAUNCH-WAZ-SIM] P1 regression: the checkout gate MUST key off dpSelectedRail() (valid rail), NOT just "a radio is checked".
+//   Else direct_p2p selected but availability unconfirmed (dpSelectedRail()==='') slips through and the empty rail is silently created as escrow.
+ok('[PRELAUNCH-WAZ-SIM] wazRequireRailChoice blocks on empty dpSelectedRail (not just radio-checked)', /wazRequireRailChoice\s*=\s*\(\)\s*=>[^\n]*dpSelectedRail\s*\(\s*\)/.test(WAZ) && !/wazRequireRailChoice[\s\S]{0,120}:checked/.test(WAZ))
+ok('[PRELAUNCH-WAZ-SIM] app-prelaunch-waz.js loaded before app.js', HTML.indexOf('/app-prelaunch-waz.js') > 0 && HTML.indexOf('/app-prelaunch-waz.js') < HTML.indexOf('/app.js'))
 ok('dpSelectedRail defaults to escrow', /dpSelectedRail = \(\)[\s\S]{0,180}:[\s\S]{0,10}'escrow'/.test(DP))
 ok('order create payload includes payment_rail', /payment_rail/.test(APP) && /window\.dpSelectedRail/.test(APP))
 ok('direct_p2p create routes to dpAfterCreate', /payment_rail === 'direct_p2p'.*dpAfterCreate/.test(APP))

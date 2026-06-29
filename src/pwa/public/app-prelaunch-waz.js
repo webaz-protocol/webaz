@@ -38,5 +38,5 @@ window.wazEscrowOrderBanner = (order, isBuyer) => {
   </div>`
 }
 
-// 模拟期要求买家显式选择支付方式:未选任何 rail → true(调用方阻止下单并提示"请选择支付方式")。
-window.wazRequireRailChoice = () => !!window._wazSimulated && !document.querySelector('input[name="dp-rail"]:checked')
+// 模拟期要求买家形成【有效 rail】:按 dpSelectedRail() 是否为空判断,不能只看"radio 选中"——direct_p2p 选中但 availability 未确认(_dpDirectAvailable!==true)时 dpSelectedRail 返 '',radio 却是选中的,空 payment_rail 会被后端静默落成 escrow。
+window.wazRequireRailChoice = () => !!window._wazSimulated && !(window.dpSelectedRail && window.dpSelectedRail())
