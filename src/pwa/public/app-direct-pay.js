@@ -32,7 +32,7 @@ window.dpRailSelectorHtml = (productId) => `
     <summary style="font-size:13px;font-weight:600;color:#374151;cursor:pointer">${t('支付方式')}</summary>
     <div style="padding:8px 2px 2px">
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-bottom:6px;cursor:pointer">
-        <input type="radio" name="dp-rail" value="escrow" checked onchange="dpOnRailChange('${productId || ''}')">
+        <input type="radio" name="dp-rail" value="escrow" ${window._wazSimulated ? '' : 'checked'} onchange="dpOnRailChange('${productId || ''}')">
         <span><b>${t('托管(Escrow,默认)')}</b><br><span style="font-size:11px;color:#6b7280">${t('本金由协议托管,确认收货后释放给卖家')}</span></span>
       </label>
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer">
@@ -53,17 +53,17 @@ window.dpOnRailChange = async (productId) => {
   const un = document.getElementById('dp-rail-unavailable')
   if (note) note.style.display = 'none'
   if (un) un.style.display = 'none'
-  if (document.querySelector('input[name="dp-rail"]:checked')?.value !== 'direct_p2p') return
+  const _sel = document.querySelector('input[name="dp-rail"]:checked')?.value; if (window.wazEscrowRailNote) window.wazEscrowRailNote(_sel); if (_sel !== 'direct_p2p') return  // [PRELAUNCH-WAZ-SIM] 选 escrow→测试币提醒
   let av = null
   try { av = await GET('/direct-pay/availability?product_id=' + encodeURIComponent(productId || '')) } catch { av = null }
   if (av && av.available === true) { window._dpDirectAvailable = true; if (note) note.style.display = ''; return }
   if (un) { un.textContent = '⚠️ ' + window.dpErrorText(av && av.error_code, av && av.reason) ; un.style.display = '' }  // 不可用:明确原因 + 退回 escrow
   const esc = document.querySelector('input[name="dp-rail"][value="escrow"]')
-  if (esc) esc.checked = true
+  if (esc) { esc.checked = true; if (window.wazEscrowRailNote) window.wazEscrowRailNote('escrow') }  // [PRELAUNCH-WAZ-SIM] 直付不可用退回 escrow 时也提醒测试币
 }
 
 // 只有 availability 已确认 available:true(window._dpDirectAvailable)才输出 direct_p2p;pending/unavailable → escrow(竞态下确认只会下 escrow 单,绝不发 direct_p2p create)。
-window.dpSelectedRail = () => (document.querySelector('input[name="dp-rail"]:checked')?.value === 'direct_p2p' && window._dpDirectAvailable === true) ? 'direct_p2p' : 'escrow'
+window.dpSelectedRail = () => { const c = document.querySelector('input[name="dp-rail"]:checked')?.value; if (c === 'direct_p2p') return window._dpDirectAvailable === true ? 'direct_p2p' : ''; return c === 'escrow' ? 'escrow' : (window._wazSimulated ? '' : 'escrow') }  // #28 直付选中但未确认→''(永不静默回退 escrow,不分模拟);[PRELAUNCH-WAZ-SIM] 模拟期未选→''
 
 // ── 建单成功后(direct_p2p):D1/D2 披露 ack(各一次 Passkey)→ ack 后才展示快照收款说明 → 跳订单页。res=POST /orders 返回;有错则双语提示并停。
 window.dpAfterCreate = async (res) => {
