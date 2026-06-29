@@ -21694,7 +21694,7 @@ async function renderChatDetail(app, id) {
 
   // 自动滚到底
   const msgsEl = document.getElementById('chat-msgs')
-  if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight
+  if (msgsEl) { msgsEl.scrollTop = msgsEl.scrollHeight; if (window.startChatPoll) window.startChatPoll(id, messages.length) }  // #30 进入会话后开实时轮询(自清理,离开即停)
 }
 
 function renderChatBubble(m, myId) {
