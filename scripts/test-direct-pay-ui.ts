@@ -39,7 +39,9 @@ ok('instruction max length enforced client-side (maxlength 500)', /maxlength="50
 
 // ── 3. buyer checkout: direct_p2p as an OPTIONAL rail; escrow default ──
 ok('checkout renders rail selector', has(APP, 'dpRailSelectorHtml'))
-ok('rail selector defines escrow + direct_p2p radios', /value="escrow"\s+checked/.test(DP) && /value="direct_p2p"/.test(DP))
+ok('rail selector defines escrow + direct_p2p radios', /value="escrow"/.test(DP) && /value="direct_p2p"/.test(DP))
+// [PRELAUNCH-WAZ-SIM] escrow 不再硬预选;模拟期(_wazSimulated)不带 checked,强制买家显式选择(真实启用置 false 后恢复 checked)。
+ok('[PRELAUNCH-WAZ-SIM] escrow pre-select gated on !_wazSimulated', /value="escrow"\s+\$\{window\._wazSimulated \? '' : 'checked'\}/.test(DP) && /window\._wazSimulated \? '' : 'escrow'/.test(DP))
 ok('dpSelectedRail defaults to escrow', /dpSelectedRail = \(\)[\s\S]{0,180}:[\s\S]{0,10}'escrow'/.test(DP))
 ok('order create payload includes payment_rail', /payment_rail/.test(APP) && /window\.dpSelectedRail/.test(APP))
 ok('direct_p2p create routes to dpAfterCreate', /payment_rail === 'direct_p2p'.*dpAfterCreate/.test(APP))

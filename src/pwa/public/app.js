@@ -11316,7 +11316,7 @@ window.doBuy = async (productId, price) => {
   // 数量（默认 1）— 服务端会再校验 stock + MAX_PER_ORDER
   const qtyInp = document.getElementById('inp-qty')
   const quantity = qtyInp ? Math.max(1, Math.min(Number(qtyInp.max) || 1, Math.floor(Number(qtyInp.value) || 1))) : 1
-  const payment_rail = window.dpSelectedRail ? window.dpSelectedRail() : 'escrow'
+  const payment_rail = window.dpSelectedRail ? window.dpSelectedRail() : 'escrow'; if (window.wazRequireRailChoice && window.wazRequireRailChoice()) { const _m=document.getElementById('buy-msg'); if(_m) _m.innerHTML = alert$('error', t('请选择支付方式')); const _b=document.getElementById('dp-rail-block'); if(_b) _b.open=true; return }  // [PRELAUNCH-WAZ-SIM] 模拟期必须显式选 rail
   const res = await POST('/orders', { product_id: productId, shipping_address: addr, notes, sponsor_hint, coupon_code, delivery_window, variant_id, expected_price, buy_insurance, anonymous_recipient, donation_pct, quantity, payment_rail, ...giftPayload })
   if (payment_rail === 'direct_p2p') return void (window.dpAfterCreate && window.dpAfterCreate(res))
   if (res.error_code === 'PRICE_CHANGED') {
@@ -12505,7 +12505,7 @@ async function renderOrderDetail(app, orderId) {
       </div>
     </div>
 
-    ${orderStageTimeline(order, history)}
+    ${window.wazEscrowOrderBanner ? window.wazEscrowOrderBanner(order, isBuyer) : ''}${orderStageTimeline(order, history)}
     ${nextActionCard(order, isBuyer, isSeller, activeDeadline, isOverdue)}
 
     <div class="card">
