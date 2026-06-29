@@ -76,7 +76,9 @@ ok('5a. seller blockers exclude global ones', !bad.blockers.includes('DIRECT_PAY
 // ── 6. global gate closed again → go=false even with launchable sellers ──
 cp['direct_pay.enabled'] = false
 const s6 = summarizeDirectPayLaunchReadiness(db, gp)
-ok('6. global disabled → go=false despite launchable sellers', s6.go === false && s6.global.ready === false && s6.launchableSellerCount >= 1)
+ok('6. global disabled → live go=false despite launchable sellers', s6.go === false && s6.global.ready === false && s6.launchableSellerCount >= 1)
+// P2 (semantics): pre-flip view ignores ONLY the enable switch → preflipGo=true, pendingEnable=true ⇒ "ready to flip".
+ok('6a. pre-flip: preflipGo=true + pendingEnable=true (only the switch is missing)', s6.preflipGo === true && s6.pendingEnable === true)
 
 // ── 7. candidate set = union across direct-pay tables (all seeded sellers present) ──
 cp['direct_pay.enabled'] = true
@@ -112,6 +114,20 @@ cp['direct_pay.deferral_base_order_count'] = 50
 const q2 = summarizeDirectPayLaunchReadiness(db, gp).sellers.find(s => s.sellerId === 's_q')!
 ok('10a. raise quota → 缓交 seller product now eligible + launchable', q2.eligibleProductCount === 1 && q2.launchable === true, JSON.stringify(q2))
 delete cp['direct_pay.deferral_base_order_count']
+
+// ── 11. P1: product priced OVER per-tx cap → not eligible (mirrors DIRECT_PAY_CAP_EXCEEDED) ──
+cp['direct_pay.enabled'] = true
+seedSeller('s_cap'); seedBond('s_cap'); seedKyb('s_cap'); seedSanctions('s_cap'); seedInstr('s_cap')
+db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p_cap','s_cap','C','d',2000,10,'active')").run()  // cap is toUnits(1000); 2000 > cap
+seedProductVerified('p_cap', 's_cap')
+const s11 = summarizeDirectPayLaunchReadiness(db, gp)
+const cap = s11.sellers.find(s => s.sellerId === 's_cap')!
+ok('11. verified product priced over per-tx cap → 0 eligible, not launchable', cap.ready === true && cap.eligibleProductCount === 0 && cap.launchable === false, JSON.stringify(cap))
+// raise the cap above the price → same product becomes eligible (proves cap was the blocker)
+cp['direct_pay.per_tx_cap_units'] = toUnits(5000)
+const cap2 = summarizeDirectPayLaunchReadiness(db, gp).sellers.find(s => s.sellerId === 's_cap')!
+ok('11a. raise cap above price → product now eligible + launchable', cap2.eligibleProductCount === 1 && cap2.launchable === true, JSON.stringify(cap2))
+cp['direct_pay.per_tx_cap_units'] = toUnits(1000)
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-launch-summary tests passed`)

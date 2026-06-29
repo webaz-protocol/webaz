@@ -46,7 +46,10 @@ console.log(`    rail_breaker_trip  : ${cfg.railBreakerTripped}`)
 console.log(`    region             : ${cfg.region || '(unset)'}`)
 console.log(`    region_allowlist   : ${(cfg.regionAllowlist || []).join(',') || '(empty)'}`)
 console.log(`    per_tx_cap_units   : ${cfg.perTxCapUnits}${cfg.perTxCapUnits ? `  (~${fmtMoney(cfg.perTxCapUnits)} WAZ)` : '  (unset → no orders)'}`)
-if (summary.global.blockers.length) console.log(`    blockers           : ${summary.global.blockers.join(', ')}`)
+// 区分"只差翻 enabled"与"其它真缺口":NOT_ENABLED 在 pre-flip 下是预期项,单独标注。
+const otherGlobalBlockers = summary.global.blockers.filter(b => b !== 'DIRECT_PAY_NOT_ENABLED')
+if (summary.pendingEnable) console.log(`    (direct_pay.enabled is OFF — expected pre-flip; flip it last)`)
+if (otherGlobalBlockers.length) console.log(`    blockers (besides enable): ${otherGlobalBlockers.join(', ')}`)
 console.log(`    rail cleared (diag): ${summary.global.facts.anyRailLegalCleared}  (not a launch blocker)`)
 
 console.log(`\n  SELLERS (${summary.sellers.length} candidate${summary.sellers.length === 1 ? '' : 's'}; ${summary.launchableSellerCount} launchable)`)
@@ -57,7 +60,14 @@ for (const s of summary.sellers) {
   else if (s.eligibleProductCount === 0) console.log(`        seller ready but 0 eligible products (verify a product or grant store exemption)`)
 }
 
-console.log(`\n  ${summary.go ? '✅ GO' : '❌ NO-GO'} — ${summary.go
-  ? 'global ready + at least one launchable seller. Safe to flip direct_pay.enabled=true.'
-  : 'resolve the ❌ above before flipping direct_pay.enabled=true.'}\n`)
-process.exit(summary.go ? 0 : 1)
+// Verdict:
+//   LIVE GO        — enabled=true and fully ready (live + serving).
+//   READY TO FLIP  — everything except the enable switch is ready (the useful pre-flip state).
+//   NO-GO          — a real gap remains besides the enable switch.
+let verdict: string
+if (summary.go) verdict = '✅ LIVE GO — direct_pay is enabled and ready (≥1 launchable seller).'
+else if (summary.preflipGo && summary.pendingEnable) verdict = '✅ READY TO FLIP — everything except the switch is configured. Set direct_pay.enabled=true, then re-run to confirm LIVE GO.'
+else verdict = '❌ NO-GO — resolve the ❌ above (besides the enable switch) before flipping direct_pay.enabled=true.'
+console.log(`\n  ${verdict}\n`)
+// exit 0 when ready-to-flip OR already live (i.e., preflipGo); 1 when a real gap remains.
+process.exit(summary.preflipGo ? 0 : 1)

@@ -28,9 +28,11 @@ export interface SellerLaunchSummary {
 }
 
 export interface DirectPayLaunchSummary {
-  go: boolean
+  go: boolean                    // LIVE go:全局就绪(【含】enabled=true)+ ≥1 launchable seller。enabled 已开时用。
+  preflipGo: boolean             // PRE-FLIP go:除"未开启总开关"外全部就绪 —— 即"只差翻 enabled"。翻闸前的真正自检值。
+  pendingEnable: boolean         // enabled 尚未开启(facts.enabled !== true)。preflipGo=true && pendingEnable=true ⇒ 可翻闸。
   global: {
-    ready: boolean
+    ready: boolean               // 含 enabled 的严格就绪
     blockers: string[]           // 全局控制面 blockers(NOT_ENABLED / RAIL_BREAKER / REGION / CAP)
     facts: DirectPayLaunchReadiness['facts']
   }
@@ -61,6 +63,7 @@ export function summarizeDirectPayLaunchReadiness(
   const globalSet = new Set(global.blockers)
   const nowIso = new Date().toISOString()
   const quotaCfg = readDeferralQuotaConfig(getProtocolParam)
+  const controlsCfg = readDirectPayControlsConfig(getProtocolParam)
 
   const sellers: SellerLaunchSummary[] = candidateSellers(db).map(sellerId => {
     const rd = readDirectPayLaunchReadiness(db, { getProtocolParam, sellerId })
@@ -69,19 +72,30 @@ export function summarizeDirectPayLaunchReadiness(
     const ready = sellerBlockers.length === 0
     const storeExempt = sellerExemptFromPerProduct(db, sellerId)
     const products = db.prepare("SELECT id, price, has_variants FROM products WHERE seller_id = ? AND status = 'active'").all(sellerId) as Array<{ id: string; price: number; has_variants: number }>
-    // 可直付商品 = 必须能真正走 direct_p2p 建单(镜像 create gate),三条同时满足:
+    // 可直付商品 = 必须能真正走 direct_p2p 建单(镜像 create gate / evaluateDirectPayLaunchControls),全部满足:
     //   ① 简单商品(direct_p2p v1 拒规格商品 has_variants=1);② 逐品 verified 或卖家店铺豁免;
-    //   ③ 通过缓交额度(checkDeferralQuota qty=1 该单价;非缓交卖家=no-op)。否则报告会误判 go=true 而真实下单被拒。
-    const eligibleProductCount = products.filter(p =>
-      Number(p.has_variants) !== 1
-      && (storeExempt || productStoreVerified(db, p.id))
-      && checkDeferralQuota(db, sellerId, toUnits(Number(p.price) || 0), nowIso, quotaCfg).ok,
-    ).length
+    //   ③ 单笔上限:amount>0 且 ≤ perTxCapUnits(且 cap 已配 >0)—— 镜像 DIRECT_PAY_CAP_EXCEEDED;
+    //   ④ 通过缓交额度(checkDeferralQuota qty=1 该单价;非缓交卖家=no-op)。否则报告会误判 go=true 而真实下单被拒。
+    const eligibleProductCount = products.filter(p => {
+      const priceU = toUnits(Number(p.price) || 0)
+      return Number(p.has_variants) !== 1
+        && (storeExempt || productStoreVerified(db, p.id))
+        && controlsCfg.perTxCapUnits > 0 && priceU > 0 && priceU <= controlsCfg.perTxCapUnits
+        && checkDeferralQuota(db, sellerId, priceU, nowIso, quotaCfg).ok
+    }).length
     return { sellerId, ready, blockers: sellerBlockers, storeExempt, activeProductCount: products.length, eligibleProductCount, launchable: ready && eligibleProductCount > 0 }
   })
 
   const launchableSellerCount = sellers.filter(s => s.launchable).length
-  return { go: global.ready && launchableSellerCount > 0, global, sellers, launchableSellerCount }
+  // PRE-FLIP 自检:忽略【且仅忽略】"总开关未开"这一项,回答"除了翻 enabled,还差什么"。其余(region/cap/卖家/商品)照常要求。
+  const preflipReady = global.blockers.filter(b => b !== 'DIRECT_PAY_NOT_ENABLED').length === 0
+  const pendingEnable = global.facts.enabled !== true
+  return {
+    go: global.ready && launchableSellerCount > 0,                 // LIVE(含 enabled)
+    preflipGo: preflipReady && launchableSellerCount > 0,          // 只差翻 enabled 即就绪
+    pendingEnable,
+    global, sellers, launchableSellerCount,
+  }
 }
 
 /** 便捷:从控制面配置取关键运营数值(供 CLI 打印)。 */
