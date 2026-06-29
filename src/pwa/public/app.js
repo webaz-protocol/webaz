@@ -12444,7 +12444,7 @@ async function renderOrderDetail(app, orderId) {
 
   // 操作按钮
   const actions = getActions(order, isBuyer, isSeller, isLogistic)
-  window._dpOrderRail = order.payment_rail; if (order.payment_rail === 'direct_p2p' && window.dpHydrateOrderDisclosure) setTimeout(() => window.dpHydrateOrderDisclosure(order.id), 0)  // direct_p2p:路由 mark_paid/confirm 到 Passkey 门;收款说明快照仅 both-acked 后展示
+  window._dpOrderRail = order.payment_rail  // direct_p2p:路由 mark_paid/confirm 到 Passkey 门(动作在渲染后触发,早设即可);hydrate 移到最终 app.innerHTML 之后(见下)——在此调度会撞 claim-task 的 await 间隙、#dp-order-instr 尚未渲染而 if(!box) 静默 bail → 框永久"加载中"
 
   const STATUS_ZH = {
     created:'待付款', direct_pay_window:'直付待付款', direct_expired_unconfirmed:'直付超时未确认', paid:'待接单', accepted:'待发货', shipped:'已发货',
@@ -12596,7 +12596,7 @@ async function renderOrderDetail(app, orderId) {
       <div class="action-title">${t('完整状态历史')}</div>
       <div class="timeline">${historyHtml || `<div style="color:#6b7280;font-size:13px">${t('暂无记录')}</div>`}</div>
     </div>
-  `, 'orders')
+  `, 'orders'); if (order.payment_rail === 'direct_p2p' && window.dpHydrateOrderDisclosure) window.dpHydrateOrderDisclosure(order.id)  // direct_p2p:最终 DOM 已就位,#dp-order-instr 必命中(both-acked→收款说明快照;否则 D1/D2 门;非买家→错误提示)。退货/评价 widget 注入各自子容器,不动此框
 
   // Wave B-3: 退货 widget — 异步加载（仅 completed 订单可退）
   // 买家:有退货窗口可申请/查看;卖家:有退货申请时内联查看+处理(accept/reject/received),无申请则隐藏卡
