@@ -23,6 +23,7 @@ const _EN = {
   '前往「我的 → 安全与存储」注册 →': 'Register in My → Security & Storage →',
   '支付方式': 'Payment method',
   '托管(Escrow,默认)': 'Escrow (default)',
+  '托管(Escrow,模拟测试币)': 'Escrow (simulated test currency)',
   '本金由协议托管,确认收货后释放给卖家': 'Principal held by the protocol, released to the seller after you confirm receipt',
   '直付(Direct Pay · 非托管)': 'Direct Pay (non-custodial)',
   '你直接付款给卖家(场外),本金不经 WebAZ': 'You pay the seller directly (off-platform); the principal never passes through WebAZ',

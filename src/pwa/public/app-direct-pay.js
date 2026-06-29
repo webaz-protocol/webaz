@@ -33,7 +33,7 @@ window.dpRailSelectorHtml = (productId) => `
     <div style="padding:8px 2px 2px">
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-bottom:6px;cursor:pointer">
         <input type="radio" name="dp-rail" value="escrow" ${window._wazSimulated ? '' : 'checked'} onchange="dpOnRailChange('${productId || ''}')">
-        <span><b>${t('托管(Escrow,默认)')}</b><br><span style="font-size:11px;color:#6b7280">${t('本金由协议托管,确认收货后释放给卖家')}</span></span>
+        <span><b>${window._wazSimulated ? t('托管(Escrow,模拟测试币)') : t('托管(Escrow,默认)')}</b><br><span style="font-size:11px;color:#6b7280">${t('本金由协议托管,确认收货后释放给卖家')}</span></span>
       </label>
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer">
         <input type="radio" name="dp-rail" value="direct_p2p" onchange="dpOnRailChange('${productId || ''}')">
