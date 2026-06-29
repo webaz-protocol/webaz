@@ -276,6 +276,12 @@ ok('15f. both ingest purposes are in the WebAuthn allowed set (token mintable)',
 ok('15g. purpose_data bound to posted body (same body to gate + POST)', /requestPasskeyGate\(purpose,\s*body\)/.test(CMP) && /\.\.\.body,\s*webauthn_token/.test(CMP))
 ok('15h. discoverability: admin hub exposes #admin/compliance card', has(APP, "'#admin/compliance')"))
 ok('15i. compliance UI touches no wallet/escrow/settle/refund', !/\/wallet|\/escrow|\/settle|\/refund|\/returns/.test(CMPCODE))
+// P1: provider_ref must NOT be labeled as a credential/ID number (it's stored plaintext) + must warn against PII
+ok('15j. no PII-inviting label (凭证号/证件号) for provider_ref', !/凭证号|证件号/.test(CMP) && /vendor case id/.test(CMP))
+ok('15k. warns provider_ref is plaintext / no ID/passport/doc links', /明文入库/.test(CMP) && /身份证\/护照/.test(CMP))
+// P2: status options must match the backend allowlists exactly (else Passkey-then-INVALID_STATUS)
+ok('15l. sanctions options = clear/flagged/blocked (no pending; backend allowlist)', /'clear'/.test(CMP) && /'flagged'/.test(CMP) && /'blocked'/.test(CMP) && !/cmp-sanc-status[\s\S]{0,200}'pending'/.test(CMP))
+ok('15m. KYB options include revoked (full backend allowlist)', /'approved'/.test(CMP) && /'rejected'/.test(CMP) && /'revoked'/.test(CMP))
 for (const k of ['商户合规录入', 'KYB 复核结论', '制裁筛查结论', '记录 KYB(真人 Passkey)', 'KYB 结论已记录']) {
   ok(`15-i18n EN present: ${k.slice(0, 8)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
 }

@@ -13,7 +13,8 @@ window.renderAdminDirectReceiveCompliance = async function (app) {
   app.innerHTML = shell(`
     <h1 class="page-title">🧾 ${t('商户合规录入')}</h1>
     <div style="margin-bottom:12px"><button class="btn btn-outline btn-sm" style="width:auto" onclick="navigate('#admin')">${t('返回概览')}</button></div>
-    <div style="font-size:12px;color:#6b7280;line-height:1.6;margin-bottom:10px">${t('录入卖家的 KYB / 制裁筛查结论(直付入场硬门)。仅记录你【已实际完成】的尽调结论,不代替真实筛查;均需真人 Passkey。')}</div>
+    <div style="font-size:12px;color:#6b7280;line-height:1.6;margin-bottom:6px">${t('录入卖家的 KYB / 制裁筛查结论(直付入场硬门)。仅记录你【已实际完成】的尽调结论,不代替真实筛查;均需真人 Passkey。')}</div>
+    <div style="font-size:12px;color:#b45309;line-height:1.6;margin-bottom:10px">${t('⚠️ 外部审核编号只填外部审核系统的 case id;切勿填写身份证/护照/住址/证件文件链接 —— 该字段会【明文入库】。')}</div>
     <div class="card" style="margin-bottom:12px;border:1px solid #e5e7eb">
       <div style="font-size:13px;font-weight:700;margin-bottom:8px">${t('卖家用户 ID')}</div>
       ${inp('cmp-user', t('卖家用户 ID(seller user id)'))}
@@ -21,8 +22,8 @@ window.renderAdminDirectReceiveCompliance = async function (app) {
     <div class="card" style="margin-bottom:12px;border:1px solid #e5e7eb">
       <div style="font-size:13px;font-weight:700;margin-bottom:8px">🪪 ${t('KYB 复核结论')}</div>
       <div style="display:flex;flex-direction:column;gap:6px">
-        ${sel('cmp-kyb-status', [['approved', t('通过 approved')], ['pending', t('待定 pending')], ['rejected', t('拒绝 rejected')]])}
-        ${inp('cmp-kyb-ref', t('凭证号 / provider_ref(选填)'))}
+        ${sel('cmp-kyb-status', [['approved', t('通过 approved')], ['pending', t('待定 pending')], ['rejected', t('拒绝 rejected')], ['revoked', t('撤销 revoked')]])}
+        ${inp('cmp-kyb-ref', t('外部审核编号 / vendor case id(选填)'))}
         ${inp('cmp-kyb-exp', t('有效期 expires_at(选填,如 2027-01-01)'))}
         <button class="btn btn-primary btn-sm" style="align-self:flex-start;font-size:12px" onclick="window.doIngestKyb()">${t('记录 KYB(真人 Passkey)')}</button>
       </div>
@@ -30,8 +31,8 @@ window.renderAdminDirectReceiveCompliance = async function (app) {
     <div class="card" style="margin-bottom:12px;border:1px solid #e5e7eb">
       <div style="font-size:13px;font-weight:700;margin-bottom:8px">🛡️ ${t('制裁筛查结论')}</div>
       <div style="display:flex;flex-direction:column;gap:6px">
-        ${sel('cmp-sanc-status', [['clear', t('通过 clear')], ['pending', t('待定 pending')], ['flagged', t('命中 flagged')]])}
-        ${inp('cmp-sanc-ref', t('凭证号 / provider_ref(选填)'))}
+        ${sel('cmp-sanc-status', [['clear', t('通过 clear')], ['flagged', t('命中 flagged')], ['blocked', t('阻断 blocked')]])}
+        ${inp('cmp-sanc-ref', t('外部审核编号 / vendor case id(选填)'))}
         ${inp('cmp-sanc-exp', t('有效期 expires_at(选填)'))}
         <button class="btn btn-primary btn-sm" style="align-self:flex-start;font-size:12px" onclick="window.doIngestSanctions()">${t('记录制裁筛查(真人 Passkey)')}</button>
       </div>
