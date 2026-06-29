@@ -13,12 +13,14 @@ process.env.HOME = mkdtempSync(join(tmpdir(), 'dp-summary-'))
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { summarizeDirectPayLaunchReadiness } = await import('../src/direct-pay-launch-summary.js')
 const { toUnits } = await import('../src/money.js')
+const { requestDeferral, approveDeferral } = await import('../src/direct-receive-deferral.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
 const db = initDatabase()
 db.pragma('foreign_keys = OFF')
+try { db.exec("ALTER TABLE products ADD COLUMN has_variants INTEGER DEFAULT 0") } catch { /* exists */ }
 const cp: Record<string, unknown> = {}
 const gp = <T,>(k: string, fb: T): T => (k in cp ? cp[k] as T : fb)
 
@@ -85,6 +87,31 @@ ok('7. candidates include all seeded direct-pay sellers', ['s_ok', 's_noprod', '
 const before = (db.prepare("SELECT COUNT(*) n FROM product_verifications").get() as any).n
 summarizeDirectPayLaunchReadiness(db, gp); summarizeDirectPayLaunchReadiness(db, gp)
 ok('8. summarize is read-only', (db.prepare("SELECT COUNT(*) n FROM product_verifications").get() as any).n === before)
+
+// ── 9. P2: variant (规格) product is NOT eligible (direct_p2p v1 rejects it) ──
+seedSeller('s_var'); seedBond('s_var'); seedKyb('s_var'); seedSanctions('s_var'); seedInstr('s_var')
+db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status, has_variants) VALUES ('p_var','s_var','V','d',50,10,'active',1)").run()
+seedProductVerified('p_var', 's_var')   // even verified, a variant product can't go direct_p2p v1
+const s9 = summarizeDirectPayLaunchReadiness(db, gp)
+const vr = s9.sellers.find(s => s.sellerId === 's_var')!
+ok('9. ready seller with ONLY a variant product → 0 eligible, not launchable', vr.ready === true && vr.eligibleProductCount === 0 && vr.launchable === false, JSON.stringify(vr))
+
+// ── 10. P1: 缓交 seller with quota exhausted → eligible product does NOT count → not launchable ──
+seedSeller('s_q'); seedKyb('s_q'); seedSanctions('s_q'); seedInstr('s_q')   // NO production bond → enters via deferral
+requestDeferral(db, { deferralId: 'dq_s', userId: 's_q', periodDays: 30, nowIso: new Date().toISOString() })
+approveDeferral(db, { deferralId: 'dq_s', adminId: 'admin1', nowIso: new Date().toISOString() })   // factor clamps → 0.5
+seedProduct('p_q', 's_q'); seedProductVerified('p_q', 's_q')
+cp['direct_pay.deferral_base_order_count'] = 1   // countLimit = max(1, floor(1×0.5)) = 1
+// exhaust: one existing non-cancelled direct_p2p order in window → existing 1 + new 1 = 2 > 1
+db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail, created_at) VALUES ('o_q','p_q','buyer1','s_q',1,50,50,0,'direct_pay_window','direct_p2p', datetime('now'))").run()
+const s10 = summarizeDirectPayLaunchReadiness(db, gp)
+const q = s10.sellers.find(s => s.sellerId === 's_q')!
+ok('10. 缓交 seller ready + verified product but quota exhausted → 0 eligible, not launchable', q.ready === true && q.eligibleProductCount === 0 && q.launchable === false, JSON.stringify(q))
+// sanity: lift the quota → same product becomes eligible (proves quota was the blocker, not verification)
+cp['direct_pay.deferral_base_order_count'] = 50
+const q2 = summarizeDirectPayLaunchReadiness(db, gp).sellers.find(s => s.sellerId === 's_q')!
+ok('10a. raise quota → 缓交 seller product now eligible + launchable', q2.eligibleProductCount === 1 && q2.launchable === true, JSON.stringify(q2))
+delete cp['direct_pay.deferral_base_order_count']
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-launch-summary tests passed`)

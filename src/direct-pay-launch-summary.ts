@@ -12,8 +12,10 @@
 import type Database from 'better-sqlite3'
 import { readDirectPayLaunchReadiness, type DirectPayLaunchReadiness } from './direct-pay-launch-readiness.js'
 import { readDirectPayControlsConfig } from './direct-pay-controls.js'
+import { checkDeferralQuota, readDeferralQuotaConfig } from './direct-pay-deferral-quota.js'
 import { productStoreVerified } from './product-verification.js'
 import { sellerExemptFromPerProduct } from './store-verification.js'
+import { toUnits } from './money.js'
 
 export interface SellerLaunchSummary {
   sellerId: string
@@ -21,7 +23,7 @@ export interface SellerLaunchSummary {
   blockers: string[]
   storeExempt: boolean
   activeProductCount: number
-  eligibleProductCount: number   // 逐品 verified 的在售品数;店铺豁免则 = activeProductCount
+  eligibleProductCount: number   // 能真正走 direct_p2p 建单的在售品数:简单商品(非规格)+ 逐品 verified 或店铺豁免 + 通过缓交额度
   launchable: boolean            // ready && eligibleProductCount > 0
 }
 
@@ -56,16 +58,25 @@ export function summarizeDirectPayLaunchReadiness(
 ): DirectPayLaunchSummary {
   const globalRd = readDirectPayLaunchReadiness(db, { getProtocolParam })   // 无 sellerId → 仅全局 blockers
   const global = { ready: globalRd.blockers.length === 0, blockers: globalRd.blockers, facts: globalRd.facts }
+  const globalSet = new Set(global.blockers)
+  const nowIso = new Date().toISOString()
+  const quotaCfg = readDeferralQuotaConfig(getProtocolParam)
 
   const sellers: SellerLaunchSummary[] = candidateSellers(db).map(sellerId => {
     const rd = readDirectPayLaunchReadiness(db, { getProtocolParam, sellerId })
     // 仅 seller-specific blockers(去掉全局 blockers,避免每个卖家都重复挂全局问题)。
-    const globalSet = new Set(global.blockers)
     const sellerBlockers = rd.blockers.filter(b => !globalSet.has(b))
     const ready = sellerBlockers.length === 0
     const storeExempt = sellerExemptFromPerProduct(db, sellerId)
-    const products = db.prepare("SELECT id FROM products WHERE seller_id = ? AND status = 'active'").all(sellerId) as Array<{ id: string }>
-    const eligibleProductCount = storeExempt ? products.length : products.filter(p => productStoreVerified(db, p.id)).length
+    const products = db.prepare("SELECT id, price, has_variants FROM products WHERE seller_id = ? AND status = 'active'").all(sellerId) as Array<{ id: string; price: number; has_variants: number }>
+    // 可直付商品 = 必须能真正走 direct_p2p 建单(镜像 create gate),三条同时满足:
+    //   ① 简单商品(direct_p2p v1 拒规格商品 has_variants=1);② 逐品 verified 或卖家店铺豁免;
+    //   ③ 通过缓交额度(checkDeferralQuota qty=1 该单价;非缓交卖家=no-op)。否则报告会误判 go=true 而真实下单被拒。
+    const eligibleProductCount = products.filter(p =>
+      Number(p.has_variants) !== 1
+      && (storeExempt || productStoreVerified(db, p.id))
+      && checkDeferralQuota(db, sellerId, toUnits(Number(p.price) || 0), nowIso, quotaCfg).ok,
+    ).length
     return { sellerId, ready, blockers: sellerBlockers, storeExempt, activeProductCount: products.length, eligibleProductCount, launchable: ready && eligibleProductCount > 0 }
   })
 
