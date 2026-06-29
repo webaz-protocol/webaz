@@ -125,7 +125,12 @@ export function registerChatRoutes(app: Application, deps: ChatDeps): void {
         CASE WHEN c.user_a = ? THEN c.unread_a ELSE c.unread_b END as my_unread,
         CASE WHEN c.user_a = ? THEN c.user_b ELSE c.user_a END as other_id,
         (SELECT handle FROM users WHERE id = CASE WHEN c.user_a = ? THEN c.user_b ELSE c.user_a END) as other_handle,
-        (SELECT name   FROM users WHERE id = CASE WHEN c.user_a = ? THEN c.user_b ELSE c.user_a END) as other_name
+        (SELECT name   FROM users WHERE id = CASE WHEN c.user_a = ? THEN c.user_b ELSE c.user_a END) as other_name,
+        -- 友好标签:订单/问商品 → 商品名,让收件箱里同一对方的多个会话可区分(不只显示 kind)。无新 bind 参数(仅用 c.kind/c.context_id)。
+        (CASE c.kind
+           WHEN 'order'      THEN (SELECT p.title FROM orders o JOIN products p ON p.id = o.product_id WHERE o.id = c.context_id)
+           WHEN 'listing_qa' THEN (SELECT title FROM products WHERE id = c.context_id)
+           ELSE NULL END) as context_title
       FROM conversations c
       WHERE (c.user_a = ? OR c.user_b = ?) AND c.status NOT IN ('blocked','archived')
       ORDER BY COALESCE(c.last_message_at, c.created_at) DESC

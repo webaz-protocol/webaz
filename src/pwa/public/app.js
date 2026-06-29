@@ -21492,7 +21492,7 @@ async function renderMessages(app, deepSub) {
     body = conversations.length === 0
       ? `<div style="text-align:center;color:#9ca3af;padding:40px 0;font-size:13px">${t('暂无会话 — 在订单 / RFQ / 跟卖详情页发起聊天')}</div>`
       : conversations.map(it => {
-          const kindLabel = it.kind === 'order' ? '📦 ' + t('订单') : it.kind === 'rfq' ? '📩 ' + t('求购') : '🏷 ' + t('问商品')
+          const kindLabel = (it.kind === 'order' ? '📦 ' + t('订单') : it.kind === 'rfq' ? '📩 ' + t('求购') : '🏷 ' + t('问商品')) + (it.context_title ? ' · ' + escHtml(it.context_title) : '') + ((it.kind === 'order' || it.kind === 'rfq') && it.context_id ? ' #' + String(it.context_id).slice(0, 10) : '')  // 订单/问商品显商品名 + 订单/求购显短号 → 同一对方多会话可区分
           return `
             <div class="card" style="padding:12px;margin-bottom:8px;cursor:pointer;${it.my_unread > 0 ? 'border-left:3px solid #4f46e5' : ''}" onclick="location.hash='#chat/${it.id}'">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
