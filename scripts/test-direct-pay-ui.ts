@@ -263,5 +263,22 @@ for (const k of ['店铺认证(可申请免逐品验证)', '申请店铺认证',
   ok(`14-i18n EN present: ${k.slice(0, 10)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
 }
 
+// ── 15. admin compliance ingest UI (new app-direct-pay-compliance.js, PR-⑧) — KYB + sanctions ──
+const CMP = P('app-direct-pay-compliance.js')
+const CMPCODE = CMP.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+ok('15. index.html loads app-direct-pay-compliance.js before app.js', has(HTML, '/app-direct-pay-compliance.js') && HTML.indexOf('/app-direct-pay-compliance.js') < HTML.indexOf('/app.js'))
+ok('15a. file in check:pwa-syntax + ratchet', /node --check src\/pwa\/public\/app-direct-pay-compliance\.js/.test(PKG) && /'src\/pwa\/public\/app-direct-pay-compliance\.js'\s*:/.test(RATCHET))
+ok('15b. render + KYB + sanctions handlers defined', /renderAdminDirectReceiveCompliance\s*=/.test(CMP) && /doIngestKyb\s*=/.test(CMP) && /doIngestSanctions\s*=/.test(CMP))
+ok('15c. app.js router dispatches #admin/compliance', /params\[0\] === 'compliance'[\s\S]{0,60}renderAdminDirectReceiveCompliance/.test(APP))
+ok('15d. posts to the ROOT KYB + sanctions ingest endpoints (via shared helper)', has(CMP, "'/admin/direct-receive/kyb-reviews'") && has(CMP, "'/admin/direct-receive/sanctions-screenings'") && /POST\(path,/.test(CMP))
+ok('15e. both live Passkey purposes referenced (kyb_ingress + sanctions_ingress)', has(CMP, "'direct_pay_kyb_ingress'") && has(CMP, "'direct_pay_sanctions_ingress'"))
+ok('15f. both ingest purposes are in the WebAuthn allowed set (token mintable)', allowedDecl.includes("'direct_pay_kyb_ingress'") && allowedDecl.includes("'direct_pay_sanctions_ingress'"))
+ok('15g. purpose_data bound to posted body (same body to gate + POST)', /requestPasskeyGate\(purpose,\s*body\)/.test(CMP) && /\.\.\.body,\s*webauthn_token/.test(CMP))
+ok('15h. discoverability: admin hub exposes #admin/compliance card', has(APP, "'#admin/compliance')"))
+ok('15i. compliance UI touches no wallet/escrow/settle/refund', !/\/wallet|\/escrow|\/settle|\/refund|\/returns/.test(CMPCODE))
+for (const k of ['商户合规录入', 'KYB 复核结论', '制裁筛查结论', '记录 KYB(真人 Passkey)', 'KYB 结论已记录']) {
+  ok(`15-i18n EN present: ${k.slice(0, 8)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
+}
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)
