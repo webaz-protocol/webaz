@@ -171,8 +171,10 @@ export function recordFeePrepayAdjustment(
 
 /**
  * 余额【退款】(真实退还已预付未消耗的平台服务费;链下退款,记 evidence_ref)。append-only + admin_audit_log 同事务。
- * 校验:seller 非空、amount>0 整数 base-units、method ∈ {usdc,fiat}、**amount ≤ 当前 available**(不可退已被费用消耗的部分)。
- * available 校验与写入同事务读取(防 TOCTOU)。退的是商家平台服务费预付款,非买家货款/escrow/保证金。
+ * 校验:seller 非空、amount>0 整数 base-units、method ∈ {usdc,fiat}、**amount ≤ 可退自由余额 = available − 在途预估费**。
+ *   ⚠️ 退款必须【预留在途单将计提的平台费】(openEst):否则把"已被在途单占用"的预充值退掉,在途单完成计提后卖家会倒欠。
+ * 可退额校验 + openEst + 写入【同一 db.transaction】读取(better-sqlite3 同步事务串行 → 无 TOCTOU / 无并发双退)。
+ * 退的是商家平台服务费预付款,非买家货款/escrow/保证金。
  */
 export function recordFeePrepayRefund(
   db: Database.Database,
@@ -184,7 +186,8 @@ export function recordFeePrepayRefund(
   const id = 'dpref_' + randomUUID()
   let outcome: RecordFeePrepayResult = { ok: true, id }
   db.transaction(() => {
-    if (args.amountUnits > readAvailableFeePrepayUnits(db, args.sellerId)) { outcome = { ok: false, error: 'REFUND_EXCEEDS_AVAILABLE' }; return }
+    const refundable = readAvailableFeePrepayUnits(db, args.sellerId) - estimateOpenDirectPayFeeUnits(db, args.sellerId)
+    if (args.amountUnits > refundable) { outcome = { ok: false, error: 'REFUND_EXCEEDS_AVAILABLE' }; return }
     db.prepare(
       `INSERT INTO direct_pay_fee_prepay_refunds (id, seller_id, amount, currency, method, evidence_ref, reason, recorded_by, created_at)
        VALUES (?,?,?, '${FEE_AR_CURRENCY}', ?, ?, ?, ?, datetime('now'))`,

@@ -123,6 +123,12 @@ ok('account: topup 100 / adjust +5 / refund 30 / accrued 0', acct.topupUnits ===
 ok('account: graceEligible true (sA 无 direct_p2p 单)', acct.graceEligible === true)
 ok('refund row append-only (UPDATE rejected)', (() => { db.exec("CREATE TRIGGER IF NOT EXISTS t_ref_nu BEFORE UPDATE ON direct_pay_fee_prepay_refunds BEGIN SELECT RAISE(ABORT,'ao'); END"); return threw(() => db.prepare("UPDATE direct_pay_fee_prepay_refunds SET amount=1 WHERE seller_id='sA'").run()) })())
 
+// refund 预留在途预估费(openEst):sR topup 100 + 1 笔在途 shop 单 total 1000 → openEst=20 → 可退自由余额=80
+recordFeePrepayTopup(db, { sellerId: 'sR', amountUnits: U(100), method: 'usdc', recordedBy: 'admin1' })
+db.prepare("INSERT INTO orders VALUES ('roR','sR','direct_p2p','direct_pay_window',1000,'shop')").run()
+ok('refund: reserves openEst — refund 81 > available100-openEst20=80 → blocked', recordFeePrepayRefund(db, { sellerId: 'sR', amountUnits: U(81), method: 'usdc', recordedBy: 'admin1' }).error === 'REFUND_EXCEEDS_AVAILABLE' && readAvailableFeePrepayUnits(db, 'sR') === U(100))
+ok('refund: refund 80 == refundable → ok', recordFeePrepayRefund(db, { sellerId: 'sR', amountUnits: U(80), method: 'usdc', recordedBy: 'admin1' }).ok === true && readAvailableFeePrepayUnits(db, 'sR') === U(20))
+
 // ── 9. 币种常量 ──
 ok('currency stable', FEE_AR_CURRENCY === 'usdc')
 
