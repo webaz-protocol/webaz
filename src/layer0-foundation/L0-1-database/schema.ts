@@ -380,7 +380,10 @@ export function initDatabase(): Database.Database {
     );
     CREATE INDEX IF NOT EXISTS idx_dp_fee_invoice_events_invoice ON direct_pay_fee_invoice_events(invoice_id);
 
-    -- 人工记录的已收款(append-only 事实行,IMMUTABLE;记错走 adjustments.correction)。
+    -- 商家平台服务费【收款/预付款】事实行(append-only,IMMUTABLE)。当前模型 = 首单宽限 + 预充值续用:
+    --   每行 = admin 记录的一笔商家平台服务费预付款(USDC/法币);invoice_id IS NULL = 【未分配预充值】=
+    --   计入 available_prepay。(invoice_id 非空属早先月结模型预留,本模型不生成发票,故恒 NULL。)
+    --   ⚠️ 是【商家平台服务费预付款】,非买家 escrow / 非保证金 / 非 penalty。本轮无"余额退款"实功能。
     CREATE TABLE IF NOT EXISTS direct_pay_fee_payments (
       id          TEXT PRIMARY KEY,
       seller_id   TEXT NOT NULL REFERENCES users(id),
@@ -395,9 +398,8 @@ export function initDatabase(): Database.Database {
     );
     CREATE INDEX IF NOT EXISTS idx_dp_fee_payments_seller ON direct_pay_fee_payments(seller_id);
 
-    -- 每商家信用上限 override(可选;无行=用全局 protocol_params 默认)。admin 设(低信任调低/高信任调高)。
-    -- ⚠️ 上限值【绝不硬编码】:全局默认走 direct_pay.fee_ar_credit_ceiling_units(protocol_params,运行时可调),
-    --   本表仅存逐商家覆写;生效 = override ?? global(读 helper 单一真相源)。
+    -- ⏸ DORMANT(早先"AR 信用上限"模型预留;当前 = 首单宽限 + 预充值续用,额度即商家实际预付余额,无固定上限)。
+    --   本表与 ceiling_requests/invoices/invoice_items/invoice_events 当前【不写不读】;保留待将来需要时复用或清理。
     CREATE TABLE IF NOT EXISTS direct_pay_fee_ar_seller_overrides (
       seller_id     TEXT PRIMARY KEY REFERENCES users(id),
       ceiling_units INTEGER NOT NULL CHECK (ceiling_units >= 0),  -- 该商家未付 AR 上限(整数 base-units;0=封锁)

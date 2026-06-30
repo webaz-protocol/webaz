@@ -14,7 +14,7 @@
 import type Database from 'better-sqlite3'
 import type { Response } from 'express'
 import { type Units } from './money.js'
-import { feeUnitsForOrder, getSellerOutstandingFeeArUnits, estimateOpenDirectPayFeeUnits, readEffectiveFeeArCeilingUnits, withinFeeArCreditCeiling } from './direct-pay-fee-ar.js'
+import { feeUnitsForOrder, estimateOpenDirectPayFeeUnits, readAvailableFeePrepayUnits, sellerDirectPayGraceEligible, feePrepayGateOk } from './direct-pay-fee-ar.js'
 import { sellerBaseBondEntrySatisfied } from './direct-pay-base-bond-entry.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
 import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, coarsenBuyerFacingDirectPayCode, type DirectPayControlsConfig } from './direct-pay-controls.js'
@@ -127,15 +127,17 @@ export function createDirectPayResponse(
   const expGate = enforceCollateralExposureGate(db, sellerId, ctx.totalAmountU, deps.getProtocolParam)
   if (!expGate.ok) { res.status(409).json({ error_code: coarsenBuyerFacingDirectPayCode(expGate.error_code), error: '该卖家暂不支持直付' }); return }
   const feeU = feeUnitsForOrder(ctx.totalAmountU, ctx.product.source as string)
-  // 平台费链下应收【信用上限门】(替代旧 fee-stake 预付):unpaid_AR + 在途单预估费 + 本单预估费 ≤ 生效上限。
-  //   fail-closed:上限缺失/≤0 → 拒(withinFeeArCreditCeiling 内硬判)。生效上限 = 商家 override ?? 全局默认(运行时可调)。
-  //   纯只读门(无任何资金写),在任何 DB write 前。买家面脱敏(AR_CREDIT_EXCEEDED → SELLER_NOT_ELIGIBLE)。
-  const arCeiling = readEffectiveFeeArCeilingUnits(db, sellerId, deps.getProtocolParam)
-  if (!withinFeeArCreditCeiling({
-    outstandingUnits: getSellerOutstandingFeeArUnits(db, sellerId),
+  // 平台服务费【首单宽限 + 预充值续用门】(替代旧 fee-stake 预付,非赊账):
+  //   ① 首单宽限:商家从无 direct_p2p 成交且无在途单 → 放行第一笔(降低首次使用摩擦;其余资格门照旧已判)。
+  //   ② 非首单:available_prepay(Σ预充值 + Σ调整 − Σ已计提费)≥ 在途单预估费 + 本单预估费,否则拒。
+  //   纯只读门(无任何资金写),在任何 DB write 前。买家面脱敏(FEE_PREPAY_INSUFFICIENT → SELLER_NOT_ELIGIBLE);
+  //   fail-closed:grace 查询异常→不给宽限;available 读不到→0→拒非首单。预付款=商家平台服务费,非买家货款/escrow/保证金。
+  if (!feePrepayGateOk({
+    graceEligible: sellerDirectPayGraceEligible(db, sellerId),
+    availablePrepayUnits: readAvailableFeePrepayUnits(db, sellerId),
     openOrdersEstFeeUnits: estimateOpenDirectPayFeeUnits(db, sellerId),
-    newOrderFeeUnits: feeU, ceilingUnits: arCeiling,
-  })) { res.status(409).json({ error_code: coarsenBuyerFacingDirectPayCode('AR_CREDIT_EXCEEDED'), error: '该卖家暂不支持直付' }); return }
+    newOrderFeeUnits: feeU,
+  })) { res.status(409).json({ error_code: coarsenBuyerFacingDirectPayCode('FEE_PREPAY_INSUFFICIENT'), error: '该卖家暂不支持直付' }); return }
   const windowHours = deps.getProtocolParam<number>('direct_pay.payment_window_hours', 4)
   try {
     const { orderId } = createDirectPayOrder(db, deps, {

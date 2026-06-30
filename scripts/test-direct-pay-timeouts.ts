@@ -17,7 +17,7 @@ process.env.HOME = mkdtempSync(join(tmpdir(), 'dp-timeout-'))
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { initSystemUser, transition } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
 const { lockFeeStake } = await import('../src/direct-pay-ledger.js')
-const { settleDirectPayFeeAtCompletion, getSellerOutstandingFeeArUnits, feeUnitsForOrder } = await import('../src/direct-pay-fee-ar.js')
+const { settleDirectPayFeeAtCompletion, getSellerAccruedFeeUnits, feeUnitsForOrder } = await import('../src/direct-pay-fee-ar.js')
 const { runDirectPayTimeoutSweep } = await import('../src/pwa/routes/direct-pay-timeouts.js')
 const { toUnits } = await import('../src/money.js')
 const { walletUnits } = await import('../src/ledger.js')
@@ -85,7 +85,7 @@ const buyerEscrowBefore = walletUnits(db, 'buyer4').escrowed
 settleDirectPayFeeAtCompletion(db, { id: 'o4', seller_id: 'seller1', total_amount: 50, source: 'shop' }, 'dpfr_o4')  // = settleOrder 的 direct_p2p 分支
 ok('direct_p2p settle: buyer.escrowed UNTOUCHED (no escrow path)', walletUnits(db, 'buyer4').escrowed === buyerEscrowBefore && buyerEscrowBefore === toUnits(100))
 ok('direct_p2p settle: 遗留模拟 stake 释放(不取、退卖家;非 fee_taken)', stakeStatus('o4') === 'released')
-ok('direct_p2p settle: 记一笔链下应收(2% of 50 = 1 USDC)', getSellerOutstandingFeeArUnits(db, 'seller1') === feeUnitsForOrder(toUnits(50), 'shop'))
+ok('direct_p2p settle: 记一笔平台费应收(2% of 50 = 1 USDC)', getSellerAccruedFeeUnits(db, 'seller1') === feeUnitsForOrder(toUnits(50), 'shop'))
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-timeouts tests passed`)

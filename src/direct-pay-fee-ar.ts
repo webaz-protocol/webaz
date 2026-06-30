@@ -16,7 +16,6 @@ import type Database from 'better-sqlite3'
 import { toUnits, toDecimal, mulRate, type Units } from './money.js'
 import { releaseFeeStake } from './direct-pay-ledger.js'
 
-export const FEE_AR_CEILING_PARAM = 'direct_pay.fee_ar_credit_ceiling_units'
 export const FEE_AR_CURRENCY = 'usdc' // v1 单一计价币
 
 /** 平台费率单一真相源:二手 1% / 其它 2%(与 settleOrder escrow 分支同口径)。create / 完成 accrue / 在途预估 全走这里防漂移。 */
@@ -38,60 +37,54 @@ function sumUnits(db: Database.Database, sql: string, sellerId: string): Units {
   return toUnits(v)
 }
 
+/** 商家已计提平台费合计(units)= Σ receivables.amount。表缺失→0(休眠安全)。 */
+export function getSellerAccruedFeeUnits(db: Database.Database, sellerId: string): Units {
+  try { return sumUnits(db, 'SELECT SUM(amount) AS s FROM direct_pay_fee_receivables WHERE seller_id = ?', sellerId) } catch { return 0 }
+}
+
 /**
- * 商家当前未付应收(units,可为负=结转抵减/预收形成的贷方)。
- *   outstanding = Σ receivables.amount + Σ adjustments.delta_amount − Σ payments.amount
- * append-only 派生:不读任何 status 列;冲销/核销/收款都是独立行。
+ * 商家平台服务费【可用预充值余额】(units)。模型 = 预付款续用(非赊账):
+ *   available = Σ top-ups(direct_pay_fee_payments, invoice_id IS NULL = 未分配预充值)
+ *             + Σ adjustments.delta_amount(签名;正=预充值贷记,负=借记;本轮无写入)
+ *             − Σ receivables.amount(已计提平台费 = 对预充值的借记)
+ * 余额可为负 = 首单宽限完成后未充值形成的欠款(见 §grace)。表缺失→0(休眠安全,配合 gate fail-closed)。
+ * ⚠️ 这是【商家平台服务费预付款】事实派生,非买家 escrow / 非保证金 / 非 penalty。
  */
-export function getSellerOutstandingFeeArUnits(db: Database.Database, sellerId: string): Units {
-  // 表缺失(旧库)→ 视作无应收(0),休眠安全。
-  let accrued = 0, adjusted = 0, paid = 0
-  try { accrued = sumUnits(db, 'SELECT SUM(amount) AS s FROM direct_pay_fee_receivables WHERE seller_id = ?', sellerId) } catch { return 0 }
+export function readAvailableFeePrepayUnits(db: Database.Database, sellerId: string): Units {
+  let topups = 0, adjusted = 0, accrued = 0
+  try { topups = sumUnits(db, 'SELECT SUM(amount) AS s FROM direct_pay_fee_payments WHERE seller_id = ? AND invoice_id IS NULL', sellerId) } catch { return 0 }
   try { adjusted = sumUnits(db, 'SELECT SUM(delta_amount) AS s FROM direct_pay_fee_adjustments WHERE seller_id = ?', sellerId) } catch { adjusted = 0 }
-  try { paid = sumUnits(db, 'SELECT SUM(amount) AS s FROM direct_pay_fee_payments WHERE seller_id = ?', sellerId) } catch { paid = 0 }
-  return accrued + adjusted - paid
+  try { accrued = sumUnits(db, 'SELECT SUM(amount) AS s FROM direct_pay_fee_receivables WHERE seller_id = ?', sellerId) } catch { accrued = 0 }
+  return topups + adjusted - accrued
 }
 
 /**
- * 全局默认上限(units)。fail-closed:缺失/非数/<0 → 0(=拒所有新单)。绝不回落代码常量。
- * 注:0 是合法值(=封锁);仅【非法】输入归零。
+ * 首单宽限资格:商家此前【从无】direct_p2p 成交且【无】在途单 —— 即这是其第一笔 direct_p2p。
+ *   grace = (completed direct_p2p 数 == 0) AND (open/in-flight direct_p2p 数 == 0)。
+ * 杜绝"多笔并发首单都拿宽限":有任何在途单即不再宽限。已完成单不计入(cancelled/expired 等终态不阻 grace,
+ *   因其从未计提费、无欠款)。fail-closed:查询异常 → 返回 false(= 不给宽限,要求预充值,安全侧)。
  */
-export function readGlobalFeeArCeilingUnits(getProtocolParam: <T>(k: string, fb: T) => T): Units {
-  const raw = getProtocolParam<unknown>(FEE_AR_CEILING_PARAM, undefined as unknown)
-  const n = Number(raw)
-  if (raw === undefined || raw === null || raw === '' || !Number.isFinite(n) || !Number.isInteger(n) || n < 0) return 0
-  return n
+export function sellerDirectPayGraceEligible(db: Database.Database, sellerId: string): boolean {
+  const ph = OPEN_FEE_ACCRUING_STATUSES.map(() => '?').join(',')
+  try {
+    const row = db.prepare(
+      `SELECT COUNT(*) AS n FROM orders WHERE seller_id = ? AND payment_rail = 'direct_p2p' AND status IN (${ph}, 'completed')`,
+    ).get(sellerId, ...OPEN_FEE_ACCRUING_STATUSES) as { n: number } | undefined
+    return (row?.n ?? 1) === 0
+  } catch { return false }
 }
 
 /**
- * 某商家生效上限(units)= override(若有该行)?? 全局默认。
- *   - override 行存在即采用其值(含 0=admin 主动封锁该商家);无行 → 全局默认。
- *   - override 行值非法(负/非整)→ fail-closed 归 0。
+ * 纯函数:建单【预充值门】判定。
+ *   - 首单宽限(graceEligible)→ 直接放行(降低首次使用摩擦;其余资格门照旧另判)。
+ *   - 非首单 → 要求 available_prepay ≥ 在途单预估费 + 本单预估费(预付款须覆盖在途+本单平台费)。
+ * 余额不足/为负 → 拒(fail-closed:available 读不到=0=拒非首单)。
  */
-export function readEffectiveFeeArCeilingUnits(
-  db: Database.Database, sellerId: string, getProtocolParam: <T>(k: string, fb: T) => T,
-): Units {
-  let ov: { ceiling_units: number } | undefined
-  try { ov = db.prepare('SELECT ceiling_units FROM direct_pay_fee_ar_seller_overrides WHERE seller_id = ?').get(sellerId) as { ceiling_units: number } | undefined } catch { ov = undefined }
-  if (ov && ov.ceiling_units !== null && ov.ceiling_units !== undefined) {
-    const n = Number(ov.ceiling_units)
-    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) return 0 // fail-closed
-    return n
-  }
-  return readGlobalFeeArCeilingUnits(getProtocolParam)
-}
-
-/**
- * 纯函数:建单信用门判定(PR-2 装配,PR-1 不接线)。
- *   unpaid_AR + 在途单预估费 + 本单预估费 ≤ ceiling → ok。
- * 【fail-closed 硬门】ceiling ≤ 0(缺失/非法/admin 封锁)→ 一律拒:
- *   即便卖家有贷方(负 outstanding)也【不得】绕过封锁开新单。贷方抵扣只在 ceiling > 0 时生效。
- */
-export function withinFeeArCreditCeiling(args: {
-  outstandingUnits: Units; openOrdersEstFeeUnits: Units; newOrderFeeUnits: Units; ceilingUnits: Units
+export function feePrepayGateOk(args: {
+  graceEligible: boolean; availablePrepayUnits: Units; openOrdersEstFeeUnits: Units; newOrderFeeUnits: Units
 }): boolean {
-  if (args.ceilingUnits <= 0) return false
-  return args.outstandingUnits + args.openOrdersEstFeeUnits + args.newOrderFeeUnits <= args.ceilingUnits
+  if (args.graceEligible) return true
+  return args.availablePrepayUnits >= args.openOrdersEstFeeUnits + args.newOrderFeeUnits
 }
 
 /**

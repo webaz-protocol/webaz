@@ -94,7 +94,6 @@ ok('helper rollback: stock UNCHANGED after failed create', pstock() === stBefore
 // ══════ Part B: route integration (POST /api/orders payment_rail=direct_p2p) ══════
 // Phase 4a 控制面参数:可变,便于在同一 app 上分别测 disabled/region/cap/enabled。默认空 = fail-closed(disabled)。
 const cp: Record<string, unknown> = {}
-cp['direct_pay.fee_ar_credit_ceiling_units'] = toUnits(50)   // 平台费应收信用上限(AR cutover):给足额度让 happy-path 过门(fail-closed 缺失=0=拒)
 const seedSanctions = (sellerId: string) => db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES (?,?,'clear')").run('sc_' + sellerId, sellerId)
 const seedKyb = (sellerId: string, status = 'approved') => db.prepare("INSERT INTO direct_receive_kyb_reviews (id, user_id, status) VALUES (?,?,?)").run('kyb_' + sellerId, sellerId, status)
 let oc = 0
@@ -201,6 +200,8 @@ function mres(): any { const r: any = { _s: 200, _b: null, status(c: number) { r
 // 复用 Part B 的 cp(此时已 enabled + SG 白名单 + cap 1000),让 okRes 能过控制面到达建单。
 const cdeps = { generateId: (p: string) => `${p}_${Math.random().toString(36).slice(2, 8)}`, transition, appendOrderEvent, getProtocolParam: <T,>(k: string, fb: T): T => (k in cp ? cp[k] as T : fb) }
 const baseCtx = { product: { id: 'p1', seller_uid: 'seller1', source: null }, buyerId: 'buyer1', reqQty: 1, basePrice: 50, totalAmount: 50, totalAmountU: toUnits(50), shippingAddress: 'addr' }
+// seller1 在 Part A 已有 direct_p2p 在途单 → 非首单宽限 → Part C 多次建单需预充值覆盖。seed 充足平台费预付款(invoice_id NULL)。
+db.prepare("INSERT INTO direct_pay_fee_payments (id,seller_id,invoice_id,amount,currency,method) VALUES ('topup_s1','seller1',NULL,1000,'usdc','usdc')").run()
 const ordersN = () => (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n
 const stakesN = () => (db.prepare('SELECT COUNT(*) n FROM direct_pay_fee_stakes').get() as { n: number }).n
 function rejects(name: string, opts: Record<string, unknown>, code: string): void {
