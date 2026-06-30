@@ -52,11 +52,38 @@ export function getSellerAccruedFeeUnits(db: Database.Database, sellerId: string
  * ⚠️ 这是【商家平台服务费预付款】事实派生,非买家 escrow / 非保证金 / 非 penalty。
  */
 export function readAvailableFeePrepayUnits(db: Database.Database, sellerId: string): Units {
-  let topups = 0, adjusted = 0, accrued = 0
+  let topups = 0, adjusted = 0, accrued = 0, refunded = 0
   try { topups = sumUnits(db, 'SELECT SUM(amount) AS s FROM direct_pay_fee_payments WHERE seller_id = ? AND invoice_id IS NULL', sellerId) } catch { return 0 }
   try { adjusted = sumUnits(db, 'SELECT SUM(delta_amount) AS s FROM direct_pay_fee_adjustments WHERE seller_id = ?', sellerId) } catch { adjusted = 0 }
   try { accrued = sumUnits(db, 'SELECT SUM(amount) AS s FROM direct_pay_fee_receivables WHERE seller_id = ?', sellerId) } catch { accrued = 0 }
-  return topups + adjusted - accrued
+  try { refunded = sumUnits(db, 'SELECT SUM(amount) AS s FROM direct_pay_fee_prepay_refunds WHERE seller_id = ?', sellerId) } catch { refunded = 0 }
+  return topups + adjusted - accrued - refunded
+}
+
+export interface DirectPayFeeAccount {
+  sellerId: string
+  availableUnits: Units      // = topups + adjustments − accrued − refunds(可负=首单宽限欠款)
+  topupUnits: Units          // Σ 预充值(invoice_id NULL)
+  accruedUnits: Units        // Σ 已计提平台费(receivables)
+  adjustmentUnits: Units     // Σ 账务更正(signed)
+  refundUnits: Units         // Σ 余额退款
+  openEstFeeUnits: Units     // 在途单预估费(下一单门会再要求)
+  graceEligible: boolean     // 是否仍享首单宽限
+}
+
+/** 单一真相源:某商家平台服务费账户汇总(admin 视图 / seller fee center 都读它,口径一致)。 */
+export function getDirectPayFeeAccount(db: Database.Database, sellerId: string): DirectPayFeeAccount {
+  const topupUnits = (() => { try { return sumUnits(db, 'SELECT SUM(amount) AS s FROM direct_pay_fee_payments WHERE seller_id = ? AND invoice_id IS NULL', sellerId) } catch { return 0 } })()
+  const accruedUnits = getSellerAccruedFeeUnits(db, sellerId)
+  const adjustmentUnits = (() => { try { return sumUnits(db, 'SELECT SUM(delta_amount) AS s FROM direct_pay_fee_adjustments WHERE seller_id = ?', sellerId) } catch { return 0 } })()
+  const refundUnits = (() => { try { return sumUnits(db, 'SELECT SUM(amount) AS s FROM direct_pay_fee_prepay_refunds WHERE seller_id = ?', sellerId) } catch { return 0 } })()
+  return {
+    sellerId,
+    availableUnits: topupUnits + adjustmentUnits - accruedUnits - refundUnits,
+    topupUnits, accruedUnits, adjustmentUnits, refundUnits,
+    openEstFeeUnits: estimateOpenDirectPayFeeUnits(db, sellerId),
+    graceEligible: sellerDirectPayGraceEligible(db, sellerId),
+  }
 }
 
 /**
@@ -116,6 +143,60 @@ export function recordFeePrepayTopup(
         JSON.stringify({ payment_id: id, amount_units: args.amountUnits, method: args.method, evidence_ref_present: !!args.evidenceRef }))
   })()
   return { ok: true, id }
+}
+
+/**
+ * 账务【更正】(adjustments.kind='correction',带符号 delta)。≠ 退款:更正只调记账(不一定动真钱),
+ * 退款(recordFeePrepayRefund)是真实退钱。delta 正=增 available / 负=减。append-only + admin_audit_log 同事务。
+ */
+export function recordFeePrepayAdjustment(
+  db: Database.Database,
+  args: { sellerId: string; deltaUnits: Units; reason: string; recordedBy: string },
+): RecordFeePrepayResult {
+  if (!args.sellerId) return { ok: false, error: 'MISSING_SELLER' }
+  if (!Number.isFinite(args.deltaUnits) || !Number.isInteger(args.deltaUnits) || args.deltaUnits === 0) return { ok: false, error: 'DELTA_MUST_BE_NONZERO_INT' }
+  if (!args.reason) return { ok: false, error: 'MISSING_REASON' }
+  const id = 'dpadj_' + randomUUID()
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO direct_pay_fee_adjustments (id, receivable_id, seller_id, delta_amount, currency, kind, reason, created_at, created_by)
+       VALUES (?,NULL,?,?, '${FEE_AR_CURRENCY}', 'correction', ?, datetime('now'), ?)`,
+    ).run(id, args.sellerId, toDecimal(args.deltaUnits), args.reason, args.recordedBy)
+    db.prepare(`INSERT INTO admin_audit_log (id, admin_id, action, target_type, target_id, detail) VALUES (?,?,?,?,?,?)`)
+      .run('dpadjaud_' + randomUUID(), args.recordedBy, 'direct_pay.fee_adjust', 'user', args.sellerId,
+        JSON.stringify({ adjustment_id: id, delta_units: args.deltaUnits, reason_present: !!args.reason }))
+  })()
+  return { ok: true, id }
+}
+
+/**
+ * 余额【退款】(真实退还已预付未消耗的平台服务费;链下退款,记 evidence_ref)。append-only + admin_audit_log 同事务。
+ * 校验:seller 非空、amount>0 整数 base-units、method ∈ {usdc,fiat}、**amount ≤ 可退自由余额 = available − 在途预估费**。
+ *   ⚠️ 退款必须【预留在途单将计提的平台费】(openEst):否则把"已被在途单占用"的预充值退掉,在途单完成计提后卖家会倒欠。
+ * 可退额校验 + openEst + 写入【同一 db.transaction】读取(better-sqlite3 同步事务串行 → 无 TOCTOU / 无并发双退)。
+ * 退的是商家平台服务费预付款,非买家货款/escrow/保证金。
+ */
+export function recordFeePrepayRefund(
+  db: Database.Database,
+  args: { sellerId: string; amountUnits: Units; method: string; recordedBy: string; evidenceRef?: string; reason?: string },
+): RecordFeePrepayResult {
+  if (!args.sellerId) return { ok: false, error: 'MISSING_SELLER' }
+  if (!Number.isFinite(args.amountUnits) || !Number.isInteger(args.amountUnits) || args.amountUnits <= 0) return { ok: false, error: 'AMOUNT_MUST_BE_POSITIVE' }
+  if (args.method !== 'usdc' && args.method !== 'fiat') return { ok: false, error: 'BAD_METHOD' }
+  const id = 'dpref_' + randomUUID()
+  let outcome: RecordFeePrepayResult = { ok: true, id }
+  db.transaction(() => {
+    const refundable = readAvailableFeePrepayUnits(db, args.sellerId) - estimateOpenDirectPayFeeUnits(db, args.sellerId)
+    if (args.amountUnits > refundable) { outcome = { ok: false, error: 'REFUND_EXCEEDS_AVAILABLE' }; return }
+    db.prepare(
+      `INSERT INTO direct_pay_fee_prepay_refunds (id, seller_id, amount, currency, method, evidence_ref, reason, recorded_by, created_at)
+       VALUES (?,?,?, '${FEE_AR_CURRENCY}', ?, ?, ?, ?, datetime('now'))`,
+    ).run(id, args.sellerId, toDecimal(args.amountUnits), args.method, args.evidenceRef ?? null, args.reason ?? null, args.recordedBy)
+    db.prepare(`INSERT INTO admin_audit_log (id, admin_id, action, target_type, target_id, detail) VALUES (?,?,?,?,?,?)`)
+      .run('dprefaud_' + randomUUID(), args.recordedBy, 'direct_pay.fee_refund', 'user', args.sellerId,
+        JSON.stringify({ refund_id: id, amount_units: args.amountUnits, method: args.method, evidence_ref_present: !!args.evidenceRef }))
+  })()
+  return outcome
 }
 
 /**

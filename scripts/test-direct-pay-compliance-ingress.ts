@@ -30,6 +30,9 @@ db.exec("CREATE TABLE wallets (user_id TEXT PRIMARY KEY, balance REAL)")
 db.exec("CREATE TABLE orders (id TEXT PRIMARY KEY, seller_id TEXT)")
 db.exec("CREATE TABLE direct_pay_fee_stakes (id TEXT PRIMARY KEY, order_id TEXT)")
 db.exec("CREATE TABLE direct_pay_fee_payments (id TEXT PRIMARY KEY, seller_id TEXT NOT NULL, invoice_id TEXT, amount REAL NOT NULL CHECK (amount >= 0), currency TEXT, method TEXT, received_at TEXT, recorded_by TEXT, evidence_ref TEXT, note TEXT)")
+db.exec("CREATE TABLE direct_pay_fee_receivables (id TEXT PRIMARY KEY, order_id TEXT, seller_id TEXT, amount REAL, currency TEXT, accrued_at TEXT)")
+db.exec("CREATE TABLE direct_pay_fee_adjustments (id TEXT PRIMARY KEY, receivable_id TEXT, seller_id TEXT, delta_amount REAL, currency TEXT, kind TEXT, reason TEXT, created_at TEXT, created_by TEXT)")
+db.exec("CREATE TABLE direct_pay_fee_prepay_refunds (id TEXT PRIMARY KEY, seller_id TEXT, amount REAL NOT NULL CHECK (amount >= 0), currency TEXT, method TEXT, evidence_ref TEXT, reason TEXT, recorded_by TEXT, created_at TEXT)")
 
 const auditN = (): number => (db.prepare("SELECT COUNT(*) n FROM admin_audit_log").get() as { n: number }).n
 const sideEffectN = (): number => ['wallets', 'orders', 'direct_pay_fee_stakes'].reduce((s, t) => s + (db.prepare(`SELECT COUNT(*) n FROM ${t}`).get() as { n: number }).n, 0)
@@ -215,6 +218,33 @@ ok('11e. amount 0 via route → 400 AMOUNT_MUST_BE_POSITIVE, no payment', r11e.s
 mkTok('tfp4', 'direct_pay_fee_prepay_record', { seller_id: 'fp6', amount_units: 1000, method: 'paypal', evidence_ref: '' })
 const r11f = await call(FEEP, { seller_id: 'fp6', amount_units: 1000, method: 'paypal', webauthn_token: 'tfp4' }, ROOT)
 ok('11f. bad method via route → 400 BAD_METHOD, no payment', r11f.status === 400 && payN('fp6') === 0, JSON.stringify(r11f))
+
+// ══════ Part D: fee-adjust / fee-refund / fee-account(ROOT + Passkey 写;ROOT 只读账户)══════
+const ADJ = '/api/admin/direct-receive/fee-adjust', REF = '/api/admin/direct-receive/fee-refund'
+const adjN = (sid: string): number => (db.prepare("SELECT COUNT(*) n FROM direct_pay_fee_adjustments WHERE seller_id=?").get(sid) as any).n
+const refN = (sid: string): number => (db.prepare("SELECT COUNT(*) n FROM direct_pay_fee_prepay_refunds WHERE seller_id=?").get(sid) as any).n
+// 12a. adjust root+token → 200 + adjustment row + audit
+mkTok('tadj', 'direct_pay_fee_adjust', { seller_id: 'fa1', delta_units: 5_000_000, reason: 'goodwill' })
+const r12a = await call(ADJ, { seller_id: 'fa1', delta_units: 5_000_000, reason: 'goodwill', webauthn_token: 'tadj' }, ROOT)
+ok('12a. fee-adjust root+token → 200 + adj row + audit', r12a.status === 200 && adjN('fa1') === 1 && (db.prepare("SELECT COUNT(*) n FROM admin_audit_log WHERE action='direct_pay.fee_adjust' AND target_id='fa1'").get() as any).n === 1, JSON.stringify(r12a))
+// 12b. adjust purpose_data mismatch → 403 no row
+mkTok('tadj2', 'direct_pay_fee_adjust', { seller_id: 'fa2', delta_units: 5_000_000, reason: 'x' })
+ok('12b. fee-adjust delta mismatch → 403 no row', (await call(ADJ, { seller_id: 'fa2', delta_units: 9_000_000, reason: 'x', webauthn_token: 'tadj2' }, ROOT)).status === 403 && adjN('fa2') === 0)
+// 12c. refund > available → 400 REFUND_EXCEEDS_AVAILABLE, no row(fa3 无预充值 → available 0)
+mkTok('tref0', 'direct_pay_fee_refund', { seller_id: 'fa3', amount_units: 1_000_000, method: 'usdc', evidence_ref: '' })
+const r12c = await call(REF, { seller_id: 'fa3', amount_units: 1_000_000, method: 'usdc', webauthn_token: 'tref0' }, ROOT)
+const failAudit12c = (db.prepare("SELECT detail FROM admin_audit_log WHERE action='direct_pay_fee_refund' AND target_id='fa3'").get() as any)
+ok('12c. refund > available → 400 REFUND_EXCEEDS_AVAILABLE, no row, BUT failure audit written', r12c.status === 400 && r12c.json?.error_code === 'REFUND_EXCEEDS_AVAILABLE' && refN('fa3') === 0 && !!failAudit12c && JSON.parse(failAudit12c.detail).ok === false && JSON.parse(failAudit12c.detail).error_code === 'REFUND_EXCEEDS_AVAILABLE', JSON.stringify(r12c))
+// 12d. seed 预充值 50 → refund 30 ≤ available → 200 + refund row + audit
+db.prepare("INSERT INTO direct_pay_fee_payments (id,seller_id,invoice_id,amount,currency,method) VALUES ('pp_fa4','fa4',NULL,50,'usdc','usdc')").run()
+mkTok('tref', 'direct_pay_fee_refund', { seller_id: 'fa4', amount_units: 30_000_000, method: 'usdc', evidence_ref: 'rr#1' })
+const r12d = await call(REF, { seller_id: 'fa4', amount_units: 30_000_000, method: 'usdc', evidence_ref: 'rr#1', webauthn_token: 'tref' }, ROOT)
+ok('12d. refund ≤ available → 200 + refund row + audit', r12d.status === 200 && refN('fa4') === 1 && (db.prepare("SELECT COUNT(*) n FROM admin_audit_log WHERE action='direct_pay.fee_refund' AND target_id='fa4'").get() as any).n === 1, JSON.stringify(r12d))
+// 12e. fee-account GET:non-root 403 / root 200 + account(fa4 available = 50-30 = 20 USDC)
+const getReq = (headers: Record<string, string>): Promise<{ status: number; json: any }> => new Promise((resolve, reject) => { const rq = httpRequest({ host: '127.0.0.1', port, method: 'GET', path: '/api/admin/direct-receive/fee-account/fa4', headers }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve({ status: res.statusCode || 0, json: d ? JSON.parse(d) : null }) } catch { resolve({ status: res.statusCode || 0, json: d }) } }) }); rq.on('error', reject); rq.end() })
+ok('12e. fee-account non-root → 403', (await getReq({})).status === 403)
+const r12f = await getReq(ROOT)
+ok('12f. fee-account root → 200 + available 20 USDC', r12f.status === 200 && r12f.json?.account?.availableUnits === 20_000_000, JSON.stringify(r12f.json))
 
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }

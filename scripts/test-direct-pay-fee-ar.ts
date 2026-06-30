@@ -8,7 +8,8 @@ import Database from 'better-sqlite3'
 import { toDecimal } from '../src/money.js'
 import {
   getSellerAccruedFeeUnits, readAvailableFeePrepayUnits, sellerDirectPayGraceEligible,
-  feePrepayGateOk, feeUnitsForOrder, estimateOpenDirectPayFeeUnits, accrueFeeReceivable, recordFeePrepayTopup, FEE_AR_CURRENCY,
+  feePrepayGateOk, feeUnitsForOrder, estimateOpenDirectPayFeeUnits, accrueFeeReceivable, recordFeePrepayTopup,
+  recordFeePrepayAdjustment, recordFeePrepayRefund, getDirectPayFeeAccount, FEE_AR_CURRENCY,
 } from '../src/direct-pay-fee-ar.js'
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -31,6 +32,7 @@ db.exec(`
   CREATE TABLE direct_pay_fee_payments (id TEXT, seller_id TEXT, invoice_id TEXT, amount REAL NOT NULL CHECK (amount >= 0), currency TEXT, method TEXT, received_at TEXT, recorded_by TEXT, evidence_ref TEXT, note TEXT);
   CREATE TABLE orders (id TEXT, seller_id TEXT, payment_rail TEXT, status TEXT, total_amount REAL, source TEXT);
   CREATE TABLE admin_audit_log (id TEXT PRIMARY KEY, admin_id TEXT, action TEXT, target_type TEXT, target_id TEXT, detail TEXT, created_at TEXT DEFAULT (datetime('now')));
+  CREATE TABLE direct_pay_fee_prepay_refunds (id TEXT PRIMARY KEY, seller_id TEXT, amount REAL NOT NULL CHECK (amount >= 0), currency TEXT, method TEXT, evidence_ref TEXT, reason TEXT, recorded_by TEXT, created_at TEXT);
   CREATE TRIGGER trg_dp_fee_receivables_no_update BEFORE UPDATE ON direct_pay_fee_receivables BEGIN SELECT RAISE(ABORT, 'append-only'); END;
   CREATE TRIGGER trg_dp_fee_receivables_no_delete BEFORE DELETE ON direct_pay_fee_receivables BEGIN SELECT RAISE(ABORT, 'append-only'); END;
   CREATE TRIGGER trg_dp_fee_payments_no_update BEFORE UPDATE ON direct_pay_fee_payments BEGIN SELECT RAISE(ABORT, 'append-only'); END;
@@ -103,7 +105,31 @@ ok('topup: happy → ok + id', (() => { const r = recordFeePrepayTopup(db, { sel
 ok('topup: counts into available (invoice_id NULL)', readAvailableFeePrepayUnits(db, 'sP') === U(40))
 ok('topup: fiat method accepted', recordFeePrepayTopup(db, { sellerId: 'sP', amountUnits: U(10), method: 'fiat', recordedBy: 'admin1' }).ok === true && readAvailableFeePrepayUnits(db, 'sP') === U(50))
 
-// ── 8. 币种常量 ──
+// ── 8. adjust / refund / account(PR-A 钱路)──
+// 用独立 seller 'sA' 干净算账
+recordFeePrepayTopup(db, { sellerId: 'sA', amountUnits: U(100), method: 'usdc', recordedBy: 'admin1' })
+ok('adjust: +10 correction → available 110', recordFeePrepayAdjustment(db, { sellerId: 'sA', deltaUnits: U(10), reason: 'goodwill', recordedBy: 'admin1' }).ok && readAvailableFeePrepayUnits(db, 'sA') === U(110))
+ok('adjust: -5 correction → available 105', recordFeePrepayAdjustment(db, { sellerId: 'sA', deltaUnits: -U(5), reason: 'fix', recordedBy: 'admin1' }).ok && readAvailableFeePrepayUnits(db, 'sA') === U(105))
+ok('adjust: delta 0 → error', recordFeePrepayAdjustment(db, { sellerId: 'sA', deltaUnits: 0, reason: 'x', recordedBy: 'admin1' }).error === 'DELTA_MUST_BE_NONZERO_INT')
+ok('adjust: missing reason → error', recordFeePrepayAdjustment(db, { sellerId: 'sA', deltaUnits: U(1), reason: '', recordedBy: 'admin1' }).error === 'MISSING_REASON')
+ok('refund: amount<=0 → error', recordFeePrepayRefund(db, { sellerId: 'sA', amountUnits: 0, method: 'usdc', recordedBy: 'admin1' }).error === 'AMOUNT_MUST_BE_POSITIVE')
+ok('refund: bad method → error', recordFeePrepayRefund(db, { sellerId: 'sA', amountUnits: U(5), method: 'paypal', recordedBy: 'admin1' }).error === 'BAD_METHOD')
+ok('refund: > available → REFUND_EXCEEDS_AVAILABLE (no write)', recordFeePrepayRefund(db, { sellerId: 'sA', amountUnits: U(106), method: 'usdc', recordedBy: 'admin1' }).error === 'REFUND_EXCEEDS_AVAILABLE' && readAvailableFeePrepayUnits(db, 'sA') === U(105))
+ok('refund: <= available → ok + available 105-30=75', recordFeePrepayRefund(db, { sellerId: 'sA', amountUnits: U(30), method: 'usdc', recordedBy: 'admin1', evidenceRef: 'r#1' }).ok && readAvailableFeePrepayUnits(db, 'sA') === U(75))
+// account summary 口径
+const acct = getDirectPayFeeAccount(db, 'sA')
+ok('account: available 75', acct.availableUnits === U(75))
+ok('account: topup 100 / adjust +5 / refund 30 / accrued 0', acct.topupUnits === U(100) && acct.adjustmentUnits === U(5) && acct.refundUnits === U(30) && acct.accruedUnits === 0)
+ok('account: graceEligible true (sA 无 direct_p2p 单)', acct.graceEligible === true)
+ok('refund row append-only (UPDATE rejected)', (() => { db.exec("CREATE TRIGGER IF NOT EXISTS t_ref_nu BEFORE UPDATE ON direct_pay_fee_prepay_refunds BEGIN SELECT RAISE(ABORT,'ao'); END"); return threw(() => db.prepare("UPDATE direct_pay_fee_prepay_refunds SET amount=1 WHERE seller_id='sA'").run()) })())
+
+// refund 预留在途预估费(openEst):sR topup 100 + 1 笔在途 shop 单 total 1000 → openEst=20 → 可退自由余额=80
+recordFeePrepayTopup(db, { sellerId: 'sR', amountUnits: U(100), method: 'usdc', recordedBy: 'admin1' })
+db.prepare("INSERT INTO orders VALUES ('roR','sR','direct_p2p','direct_pay_window',1000,'shop')").run()
+ok('refund: reserves openEst — refund 81 > available100-openEst20=80 → blocked', recordFeePrepayRefund(db, { sellerId: 'sR', amountUnits: U(81), method: 'usdc', recordedBy: 'admin1' }).error === 'REFUND_EXCEEDS_AVAILABLE' && readAvailableFeePrepayUnits(db, 'sR') === U(100))
+ok('refund: refund 80 == refundable → ok', recordFeePrepayRefund(db, { sellerId: 'sR', amountUnits: U(80), method: 'usdc', recordedBy: 'admin1' }).ok === true && readAvailableFeePrepayUnits(db, 'sR') === U(20))
+
+// ── 9. 币种常量 ──
 ok('currency stable', FEE_AR_CURRENCY === 'usdc')
 
 if (fail) { console.error(`\nFAIL ${fail}/${pass + fail}\n${fails.join('\n')}`); process.exit(1) }
