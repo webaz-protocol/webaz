@@ -19,6 +19,7 @@ const P = (f: string) => readFileSync(`src/pwa/public/${f}`, 'utf8')
 const DISCOVER = P('app-discover.js')
 const APP = P('app.js')
 const PROFILE = P('app-profile.js')
+const AI = P('app-ai.js')
 const I18N = P('i18n.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -113,6 +114,15 @@ ok('7d. 申请 = Apply (button); admin label → 角色 (Role), quota → 申请
 // ── 8. public-surface stray raw strings → t()-wrapped + EN (discover/profile) ──
 ok('8a. discover external-platform fallback t()-wrapped', has(DISCOVER, ": t('外部平台')") && /'外部平台':\s+'External platform',/.test(I18N))
 ok('8b. profile 同城共鸣 t()-wrapped', has(PROFILE, "${t('同城共鸣')}</div>") && /'同城共鸣':\s+'Local buzz',/.test(I18N))
+
+// ── 9. app-ai.js provider catalog — UI fields translated; model-facing prompts left untouched ──
+ok('9a. provider desc EN present (data-through-t)', has(I18N, "'一个 key 用所有模型 · 聚合付费':") && has(I18N, "'本机跑开源模型 · 完全离线 · 零费用 · 隐私最强':"))
+ok('9b. provider keyHint EN present', has(I18N, "'console.groq.com → API Keys (有免费层)':"))
+ok('9c. model-label render sites t()-wrapped', has(AI, "escHtml(t(m.label))") && has(AI, "escHtml(t(curModel?.label || modelId))"))
+ok('9d. model-label EN present', has(I18N, "'Claude Opus 4.7 (最强)':") && has(I18N, "'GLM-4-Flash (完全免费，推荐)':"))
+// GUARD: AI_TOOLS descriptions and AI_SYSTEM_PROMPT are model-facing prompts — must stay raw (NOT t()-wrapped)
+ok('9e. GUARD: system prompt NOT translated (still raw)', has(AI, '你是 WebAZ 用户的私人购物助手') && !has(AI, "t('你是 WebAZ"))
+ok('9f. GUARD: AI_TOOLS description NOT translated (still raw)', has(AI, "description: '在 WebAZ 平台搜索商品") && has(AI, '[任务规划阶段]') && !has(AI, "t('[任务规划阶段]"))
 
 if (fail > 0) { console.error(`\n❌ i18n discover/dispute labels FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ i18n discover/dispute labels: discover chips + RULING_LABELS/EVIDENCE_TYPE_LABELS render sites t()-wrapped (no shadowed t), EN parity present\n  ✅ pass ${pass}`)
