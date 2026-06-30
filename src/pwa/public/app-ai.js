@@ -1096,7 +1096,7 @@ function renderAIStatusBar() {
       ${visionChip}
       <span style="font-weight:600;font-size:13px;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(provider.name)}</span>
       <span style="color:#d1d5db;font-size:11px;flex-shrink:0">·</span>
-      <span style="color:#6b7280;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(curModel?.label || modelId)}</span>
+      <span style="color:#6b7280;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(t(curModel?.label || modelId))}</span>
     </div>
     ${aiTTS.supported() ? `
     <button onclick="aiToggleTTS()" title="${aiTTS.isEnabled() ? t('点击关闭朗读') : t('点击开启朗读 AI 回话')}"
@@ -1968,7 +1968,7 @@ window.aiOpenProviderConfig = (pid) => {
       <div class="form-group">
         <label class="form-label">${t('默认模型')}</label>
         <select id="ai-pcfg-model" class="form-control" style="font-size:13px">
-          ${p.models.map(m => `<option value="${m.id}" ${m.id === (localStorage.getItem('webaz_ai_model_' + p.id) || p.defaultModel) ? 'selected' : ''}>${escHtml(m.label)}</option>`).join('')}
+          ${p.models.map(m => `<option value="${m.id}" ${m.id === (localStorage.getItem('webaz_ai_model_' + p.id) || p.defaultModel) ? 'selected' : ''}>${escHtml(t(m.label))}</option>`).join('')}
         </select>
       </div>
     `}
