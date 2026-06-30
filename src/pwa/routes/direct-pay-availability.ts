@@ -17,6 +17,7 @@ import { sellerDirectPayReadinessView } from '../../direct-pay-launch-readiness.
 import { requestDeferral, getActiveDeferral, getLatestDeferral } from '../../direct-receive-deferral.js'
 import { requestProductVerification, submitProductVerificationLink, listSellerProductVerifications, toSellerProductVerificationView, productStoreVerified } from '../../product-verification.js'
 import { requestStoreVerification, submitStoreVerificationLink, getStoreVerification, toSellerStoreVerificationView, sellerExemptFromPerProduct } from '../../store-verification.js'
+import { getDirectPayFeeAccount } from '../../direct-pay-fee-ar.js'
 
 export interface DirectPayAvailabilityDeps {
   db: Database.Database
@@ -101,6 +102,13 @@ export function registerDirectPayAvailabilityRoutes(app: Application, deps: Dire
       deferral: latest,
       active: active ? { reduced_quota_factor: active.reducedQuotaFactor, expires_at: active.expiresAt, grace_until: active.graceUntil, in_grace: active.inGrace } : null,
     })
+  })
+
+  // GET /api/direct-receive/my-fee-account — 卖家【本人】平台服务费账户(余额/已计提/退款/在途预估/首单宽限)。
+  //   仅本人(requireSeller),买家拿不到;只读、不碰任何资金动作。供 seller fee center 展示。
+  app.get('/api/direct-receive/my-fee-account', (req, res) => {
+    const user = requireSeller(req, res); if (!user) return
+    return void res.json({ account: getDirectPayFeeAccount(db, user.id as string) })
   })
 
   // ── 按产品认证(per-product verification)卖家自助:申领验证码 → 提交外部商品链接 → 查看逐产品状态 ──

@@ -318,5 +318,16 @@ for (const k of ['Direct Pay 商户运营', '平台服务费预充值与账户',
 // non-custodial copy: prepayment is platform service fee, not buyer funds/escrow/collateral
 ok('17l. fee-ops states prepayment is NOT buyer funds/escrow/collateral', has(FEEOPS, '非买家货款') && has(FEEOPS, 'escrow') && has(FEEOPS, '保证金'))
 
+// ── 18. PR-C: seller fee center section ──
+const FEECTR = P('app-direct-pay-fee-center.js')
+ok('18a. fee-center loaded before app.js', has(HTML, '/app-direct-pay-fee-center.js') && HTML.indexOf('/app-direct-pay-fee-center.js') < HTML.indexOf('/app.js'))
+ok('18b. fee-center in check:pwa-syntax', /node --check src\/pwa\/public\/app-direct-pay-fee-center\.js/.test(PKG))
+ok('18c. fee-center has a LOC ceiling', /'src\/pwa\/public\/app-direct-pay-fee-center\.js'\s*:/.test(RATCHET))
+ok('18d. seller settings sub-tab composes dpSellerFeeSection', has(APP, 'dpSellerFeeSection'))
+ok('18e. seller settings hydrates dpHydrateSellerFee', has(APP, 'dpHydrateSellerFee'))
+ok('18f. fee-center reads own account via GET /direct-receive/my-fee-account', has(FEECTR, '/direct-receive/my-fee-account'))
+ok('18g. seller-only + non-custodial copy (not buyer funds/escrow/collateral)', has(FEECTR, '仅你可见') && has(FEECTR, '非买家货款') && has(FEECTR, 'escrow') && has(FEECTR, '保证金'))
+for (const k of ['平台服务费账户(仅你可见)', '待补平台服务费', '首单宽限可用:你的第一笔直付无需预充值。']) ok(`18h. i18n EN for ${k}`, has(I18N, `'${k}':`))
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)

@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (705 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (706 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -3508,6 +3508,17 @@
       },
       "post": {
         "summary": "POST /api/direct-receive/deferral — 卖家申请缓交。helper 强制:单一活跃、periodDays 正整数、id 唯一。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/my-fee-account": {
+      "get": {
+        "summary": "仅本人(requireSeller),买家拿不到;只读、不碰任何资金动作。供 seller fee center 展示。",
         "tags": [],
         "security": [
           {
