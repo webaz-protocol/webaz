@@ -50,5 +50,18 @@ const EN_KEYS = [
 for (const k of EN_KEYS) ok(`4. i18n EN entry exists: ${k}`, has(I18N, `'${k}':`))
 ok("4z. 随机 maps to 'Random'", /'随机':\s*'Random'/.test(I18N))
 
+// ── 5. order/dispute evidence-request card: raw template strings now t()-wrapped + EN parity ──
+ok('5a. evidence card "提交所需证据" t()-wrapped', has(APP, ">${t('提交所需证据')}<"))
+ok('5b. evidence type select placeholder t()-wrapped', has(APP, "${t('— 选择证据类型 —')}"))
+ok('5c. evidence hash input placeholder t()-wrapped', has(APP, "placeholder=\"${t('（可选）文件哈希 / IPFS CID / 链上 TX ID')}\""))
+ok('5d. evidence submit button t()-wrapped', has(APP, ">${t('提交证据')}<"))
+ok('5e. evidence requester line t()-wrapped (👤/请求/对方, no raw)', has(APP, "${isMe ? t('👤 需要你提供') : `${t('请求')} → ${req.requested_from_name || t('对方')}") && !has(APP, "? '👤 需要你提供' :"))
+ok('5f. evidence 类型/截止 labels t()-wrapped', has(APP, ">${t('类型：')}${typeLabels}<") && has(APP, ">${t('截止：')}${fmtTime(req.deadline)}<"))
+const ORDER_DISPUTE_EN = [
+  '✅ 我已付款', '包装状态描述 / 货物说明（可选）', '提交所需证据', '— 选择证据类型 —',
+  '（可选）文件哈希 / IPFS CID / 链上 TX ID', '提交证据', '👤 需要你提供', '请求', '对方', '类型：', '截止：',
+]
+for (const k of ORDER_DISPUTE_EN) ok(`5g. i18n EN entry exists: ${k}`, has(I18N, `'${k}':`))
+
 if (fail > 0) { console.error(`\n❌ i18n discover/dispute labels FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ i18n discover/dispute labels: discover chips + RULING_LABELS/EVIDENCE_TYPE_LABELS render sites t()-wrapped (no shadowed t), EN parity present\n  ✅ pass ${pass}`)

@@ -13767,26 +13767,26 @@ function evidenceRequestCard(req, currentUserId) {
 
   const submitForm = isMe && req.status === 'pending' ? `
     <div id="er-form-${req.id}" style="margin-top:10px;background:#fffbeb;border-radius:8px;padding:10px">
-      <div style="font-size:12px;font-weight:600;color:#92400e;margin-bottom:6px">提交所需证据</div>
+      <div style="font-size:12px;font-weight:600;color:#92400e;margin-bottom:6px">${t('提交所需证据')}</div>
       <div id="er-msg-${req.id}"></div>
       <select class="form-control" id="er-type-${req.id}" style="margin-bottom:6px;font-size:13px">
-        <option value="">— 选择证据类型 —</option>
+        <option value="">${t('— 选择证据类型 —')}</option>
         ${types.map(et => `<option value="${et}">${EVIDENCE_TYPE_ICONS[et]} ${t(EVIDENCE_TYPE_LABELS[et] || et)}</option>`).join('')}
       </select>
       <textarea class="form-control" id="er-desc-${req.id}" placeholder="${t('详细描述内容（如图片描述、文字陈述、链上 TX hash 等）')}" style="margin-bottom:6px;font-size:13px"></textarea>
-      <input class="form-control" id="er-hash-${req.id}" placeholder="（可选）文件哈希 / IPFS CID / 链上 TX ID" style="margin-bottom:6px;font-size:12px;font-family:monospace">
-      <button class="btn btn-primary btn-sm" style="width:auto" onclick="handleSubmitEvidence('${req.id}','${req.dispute_id}')">提交证据</button>
+      <input class="form-control" id="er-hash-${req.id}" placeholder="${t('（可选）文件哈希 / IPFS CID / 链上 TX ID')}" style="margin-bottom:6px;font-size:12px;font-family:monospace">
+      <button class="btn btn-primary btn-sm" style="width:auto" onclick="handleSubmitEvidence('${req.id}','${req.dispute_id}')">${t('提交证据')}</button>
     </div>` : ''
 
   return `
     <div style="border:1px solid ${isMe && req.status === 'pending' ? '#f59e0b' : '#e5e7eb'};border-radius:8px;padding:10px;margin-top:8px;background:${isMe && req.status === 'pending' ? '#fffdf0' : '#fff'}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
-        <div style="font-size:13px;font-weight:600">${isMe ? '👤 需要你提供' : `请求 → ${req.requested_from_name || '对方'}（${req.requested_from_role || ''}）`}</div>
+        <div style="font-size:13px;font-weight:600">${isMe ? t('👤 需要你提供') : `${t('请求')} → ${req.requested_from_name || t('对方')}（${req.requested_from_role || ''}）`}</div>
         ${erStatusBadge(req.status)}
       </div>
-      <div style="font-size:12px;color:#6b7280;margin-bottom:4px">类型：${typeLabels}</div>
+      <div style="font-size:12px;color:#6b7280;margin-bottom:4px">${t('类型：')}${typeLabels}</div>
       ${req.description ? `<div style="font-size:13px;margin-bottom:4px">${req.description}</div>` : ''}
-      <div style="font-size:11px;color:#9ca3af">截止：${fmtTime(req.deadline)}</div>
+      <div style="font-size:11px;color:#9ca3af">${t('截止：')}${fmtTime(req.deadline)}</div>
       ${submittedHtml}
       ${submitForm}
     </div>`
