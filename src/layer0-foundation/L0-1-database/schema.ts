@@ -393,6 +393,28 @@ export function initDatabase(): Database.Database {
       UNIQUE(order_id, stage)         -- 每单每阶段一次;两阶段=两行
     );
 
+    -- ── Merchant Base-Bond (v1 collateral-only) — PR1 testnet/dev scaffold。链上为真相,这两张表只是【DB 镜像/缓存】(见 docs/modules/MERCHANT-BASE-BOND-DESIGN.INTERNAL.md §4.1)。
+    -- v1 默认关闭、不接 mainnet、不收真钱、live 路径不读写 → 对现有 Direct Pay 零影响。
+    CREATE TABLE IF NOT EXISTS merchant_bond_wallets (
+      seller_id     TEXT PRIMARY KEY REFERENCES users(id),
+      wallet        TEXT NOT NULL,                 -- registeredBondWallet(链上地址);seller_id ↔ wallet 唯一
+      chain_id      INTEGER NOT NULL,              -- v1 = Base
+      rotated_at    TEXT,
+      created_at    TEXT DEFAULT (datetime('now')),
+      UNIQUE(wallet)
+    );
+    CREATE TABLE IF NOT EXISTS merchant_bond_deposits (
+      id               TEXT PRIMARY KEY,
+      seller_id        TEXT NOT NULL REFERENCES users(id),
+      wallet           TEXT NOT NULL,
+      tx_hash          TEXT,
+      collateral_units TEXT NOT NULL DEFAULT '0',  -- USDC integer units(字符串,big-int 安全)
+      status           TEXT NOT NULL DEFAULT 'pending_confirmations', -- none|pending_confirmations|active|cooling|withdrawable|withdrawn|slashed_below_min(§4 状态机)
+      confirmations    INTEGER NOT NULL DEFAULT 0,
+      created_at       TEXT DEFAULT (datetime('now')),
+      updated_at       TEXT DEFAULT (datetime('now'))
+    );
+
   `)
 
   // 迁移：为已有数据库添加 roles 列
