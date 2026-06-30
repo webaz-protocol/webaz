@@ -32,6 +32,12 @@ db.exec(`
   CREATE TABLE direct_pay_fee_adjustments (id TEXT, receivable_id TEXT, seller_id TEXT, delta_amount REAL, currency TEXT, kind TEXT, reason TEXT, created_at TEXT, created_by TEXT);
   CREATE TABLE direct_pay_fee_payments (id TEXT, seller_id TEXT, invoice_id TEXT, amount REAL NOT NULL CHECK (amount >= 0), currency TEXT, method TEXT, received_at TEXT, recorded_by TEXT, evidence_ref TEXT, note TEXT);
   CREATE TABLE direct_pay_fee_ar_seller_overrides (seller_id TEXT PRIMARY KEY, ceiling_units INTEGER NOT NULL CHECK (ceiling_units >= 0), updated_by TEXT, updated_at TEXT);
+  -- append-only 硬强制(镜像 schema.ts 触发器)
+  CREATE TRIGGER trg_dp_fee_receivables_no_update BEFORE UPDATE ON direct_pay_fee_receivables BEGIN SELECT RAISE(ABORT, 'append-only'); END;
+  CREATE TRIGGER trg_dp_fee_receivables_no_delete BEFORE DELETE ON direct_pay_fee_receivables BEGIN SELECT RAISE(ABORT, 'append-only'); END;
+  CREATE TRIGGER trg_dp_fee_payments_no_update BEFORE UPDATE ON direct_pay_fee_payments BEGIN SELECT RAISE(ABORT, 'append-only'); END;
+  CREATE TRIGGER trg_dp_fee_payments_no_delete BEFORE DELETE ON direct_pay_fee_payments BEGIN SELECT RAISE(ABORT, 'append-only'); END;
+  CREATE TRIGGER trg_dp_fee_adjustments_no_delete BEFORE DELETE ON direct_pay_fee_adjustments BEGIN SELECT RAISE(ABORT, 'append-only'); END;
 `)
 const threw = (fn: () => unknown): boolean => { try { fn(); return false } catch { return true } }
 
@@ -68,7 +74,16 @@ ok('effective: override 0 → 0 (admin block)', readEffectiveFeeArCeilingUnits(d
 ok('DB CHECK rejects negative override (P3)', threw(() => db.prepare("INSERT INTO direct_pay_fee_ar_seller_overrides (seller_id, ceiling_units) VALUES ('s4', -5)").run()))
 ok('effective: other seller no override → global', readEffectiveFeeArCeilingUnits(db, 's2', P) === U(50))
 
-// ── 5. 参数键常量 ──
+// ── 5. append-only DB 硬强制(P2 round 2)──
+ok('receivable UPDATE rejected', threw(() => db.prepare("UPDATE direct_pay_fee_receivables SET amount = ? WHERE id = 'r1'").run(toDecimal(U(99)))))
+ok('receivable DELETE rejected', threw(() => db.prepare("DELETE FROM direct_pay_fee_receivables WHERE id = 'r1'").run()))
+ok('payment UPDATE rejected', threw(() => db.prepare("UPDATE direct_pay_fee_payments SET amount = ? WHERE id = 'p1'").run(toDecimal(U(99)))))
+ok('payment DELETE rejected', threw(() => db.prepare("DELETE FROM direct_pay_fee_payments WHERE id = 'p1'").run()))
+ok('adjustment DELETE rejected', threw(() => db.prepare("DELETE FROM direct_pay_fee_adjustments WHERE id = 'a1'").run()))
+// outstanding 未被失败的变更影响(仍 10 USDC)
+ok('outstanding unchanged after rejected mutations', getSellerOutstandingFeeArUnits(db, 's1') === U(10))
+
+// ── 6. 参数键常量 ──
 ok('param key stable', FEE_AR_CEILING_PARAM === 'direct_pay.fee_ar_credit_ceiling_units')
 
 if (fail) { console.error(`\nFAIL ${fail}/${pass + fail}\n${fails.join('\n')}`); process.exit(1) }

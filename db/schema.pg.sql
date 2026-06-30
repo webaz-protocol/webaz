@@ -3035,6 +3035,26 @@ DROP TRIGGER IF EXISTS trg_admin_operator_claim_marking_corrections_no_update ON
 CREATE TRIGGER trg_admin_operator_claim_marking_corrections_no_update BEFORE UPDATE ON admin_operator_claim_marking_corrections FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
 DROP TRIGGER IF EXISTS trg_admin_operator_claim_marking_corrections_no_delete ON admin_operator_claim_marking_corrections;
 CREATE TRIGGER trg_admin_operator_claim_marking_corrections_no_delete BEFORE DELETE ON admin_operator_claim_marking_corrections FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
+DROP TRIGGER IF EXISTS trg_direct_pay_fee_receivables_no_update ON direct_pay_fee_receivables;
+CREATE TRIGGER trg_direct_pay_fee_receivables_no_update BEFORE UPDATE ON direct_pay_fee_receivables FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
+DROP TRIGGER IF EXISTS trg_direct_pay_fee_receivables_no_delete ON direct_pay_fee_receivables;
+CREATE TRIGGER trg_direct_pay_fee_receivables_no_delete BEFORE DELETE ON direct_pay_fee_receivables FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
+DROP TRIGGER IF EXISTS trg_direct_pay_fee_invoice_items_no_update ON direct_pay_fee_invoice_items;
+CREATE TRIGGER trg_direct_pay_fee_invoice_items_no_update BEFORE UPDATE ON direct_pay_fee_invoice_items FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
+DROP TRIGGER IF EXISTS trg_direct_pay_fee_invoice_items_no_delete ON direct_pay_fee_invoice_items;
+CREATE TRIGGER trg_direct_pay_fee_invoice_items_no_delete BEFORE DELETE ON direct_pay_fee_invoice_items FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
+DROP TRIGGER IF EXISTS trg_direct_pay_fee_adjustments_no_update ON direct_pay_fee_adjustments;
+CREATE TRIGGER trg_direct_pay_fee_adjustments_no_update BEFORE UPDATE ON direct_pay_fee_adjustments FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
+DROP TRIGGER IF EXISTS trg_direct_pay_fee_adjustments_no_delete ON direct_pay_fee_adjustments;
+CREATE TRIGGER trg_direct_pay_fee_adjustments_no_delete BEFORE DELETE ON direct_pay_fee_adjustments FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
+DROP TRIGGER IF EXISTS trg_direct_pay_fee_invoice_events_no_update ON direct_pay_fee_invoice_events;
+CREATE TRIGGER trg_direct_pay_fee_invoice_events_no_update BEFORE UPDATE ON direct_pay_fee_invoice_events FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
+DROP TRIGGER IF EXISTS trg_direct_pay_fee_invoice_events_no_delete ON direct_pay_fee_invoice_events;
+CREATE TRIGGER trg_direct_pay_fee_invoice_events_no_delete BEFORE DELETE ON direct_pay_fee_invoice_events FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
+DROP TRIGGER IF EXISTS trg_direct_pay_fee_payments_no_update ON direct_pay_fee_payments;
+CREATE TRIGGER trg_direct_pay_fee_payments_no_update BEFORE UPDATE ON direct_pay_fee_payments FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
+DROP TRIGGER IF EXISTS trg_direct_pay_fee_payments_no_delete ON direct_pay_fee_payments;
+CREATE TRIGGER trg_direct_pay_fee_payments_no_delete BEFORE DELETE ON direct_pay_fee_payments FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
 
 -- ════════════ INSERT-STATUS GUARDS ════════════
 CREATE OR REPLACE FUNCTION webaz_identity_claim_challenges_insert_issued() RETURNS trigger AS $$

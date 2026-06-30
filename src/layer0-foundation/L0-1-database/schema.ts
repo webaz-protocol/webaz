@@ -421,6 +421,20 @@ export function initDatabase(): Database.Database {
     );
     CREATE INDEX IF NOT EXISTS idx_dp_fee_ceiling_requests_seller ON direct_pay_fee_ceiling_requests(seller_id, status);
 
+    -- ── APPEND-ONLY 硬强制(DB 级,非仅注释)── money-adjacent fee 账本的事实/事件行不可改/删。
+    -- 5 张:receivables(immutable accrual)/ invoice_items(写一次)/ adjustments / invoice_events / payments(immutable)。
+    -- invoices/overrides/ceiling_requests 刻意【不】锁(有合法状态/值变更)。PG 等价 plpgsql guard 由 gen-pg-schema 的 APPEND_ONLY_TABLES 生成。
+    CREATE TRIGGER IF NOT EXISTS trg_dp_fee_receivables_no_update BEFORE UPDATE ON direct_pay_fee_receivables BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_receivables is append-only (UPDATE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_dp_fee_receivables_no_delete BEFORE DELETE ON direct_pay_fee_receivables BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_receivables is append-only (DELETE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_dp_fee_invoice_items_no_update BEFORE UPDATE ON direct_pay_fee_invoice_items BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_invoice_items is append-only (UPDATE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_dp_fee_invoice_items_no_delete BEFORE DELETE ON direct_pay_fee_invoice_items BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_invoice_items is append-only (DELETE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_dp_fee_adjustments_no_update BEFORE UPDATE ON direct_pay_fee_adjustments BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_adjustments is append-only (UPDATE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_dp_fee_adjustments_no_delete BEFORE DELETE ON direct_pay_fee_adjustments BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_adjustments is append-only (DELETE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_dp_fee_invoice_events_no_update BEFORE UPDATE ON direct_pay_fee_invoice_events BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_invoice_events is append-only (UPDATE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_dp_fee_invoice_events_no_delete BEFORE DELETE ON direct_pay_fee_invoice_events BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_invoice_events is append-only (DELETE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_dp_fee_payments_no_update BEFORE UPDATE ON direct_pay_fee_payments BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_payments is append-only (UPDATE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_dp_fee_payments_no_delete BEFORE DELETE ON direct_pay_fee_payments BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_payments is append-only (DELETE forbidden)'); END;
+
     -- penalty 科目(独立、物理隔离、只进不出)。出账【无代码路径】= append-only 硬保证。
     -- 三条出账红线(永不可破):①不退买家 ②不计 WebAZ 利润 ③不按个案裁决结果流向裁决者。
     CREATE TABLE IF NOT EXISTS penalty_fund (
