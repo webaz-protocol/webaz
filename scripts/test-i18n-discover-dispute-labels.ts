@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs'
 const P = (f: string) => readFileSync(`src/pwa/public/${f}`, 'utf8')
 const DISCOVER = P('app-discover.js')
 const APP = P('app.js')
+const PROFILE = P('app-profile.js')
 const I18N = P('i18n.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -77,6 +78,22 @@ const ONCE_KEYS = [
   '提交所需证据', '— 选择证据类型 —', '（可选）文件哈希 / IPFS CID / 链上 TX ID', '提交证据', '证据提交',
 ]
 for (const k of ONCE_KEYS) ok(`5h. no duplicate i18n key: ${k} (found ${cnt(k)})`, cnt(k) === 1)
+
+// ── 6. translation-correctness pass: keep-last (from the #146 dedup) had locked in a value that was
+//       WRONG for the actual usage context. These value-fixes correct it (verified against usages). ──
+// 确认 was multi-context: 2 admin confirm() dialogs (used as a prefix) + a "type X to confirm" input.
+// Bare `t('确认') + word` produced spaceless EN ("ConfirmSuspend"/"ConfirmReject?"). Resolved into
+// complete-phrase keys (zh byte-identical, EN reads correctly) + a distinct 以确认 for the resign input.
+ok('6a. bulk-suspend confirm uses 确认暂停/确认恢复 (not bare `t(\'确认\') + label`)', has(APP, "(action === 'suspend' ? t('确认暂停') : t('确认恢复'))"))
+ok('6a-1. wish-report confirm uses 确认驳回？/确认下架？', has(APP, "action === 'dismiss' ? t('确认驳回？') : t('确认下架？')"))
+ok('6a-2. complete-phrase EN entries present', /'确认恢复':\s+'Confirm resume',/.test(I18N) && /'确认驳回？':\s+'Confirm reject\?',/.test(I18N) && /'确认下架？':\s+'Confirm delist\?',/.test(I18N))
+ok('6a-3. resign input uses 以确认 = to confirm', /'以确认':\s+'to confirm',/.test(I18N) && has(APP, "</code> ${t('以确认')}:</div>"))
+ok('6a-4. no spaceless 确认-prefix concatenation remains', !has(APP, "t('确认') + "))
+ok('6b. 待处理 = Pending (not "New"; 10 pending-status usages)', /'待处理':\s+'Pending',/.test(I18N))
+ok('6c. 确认上架 = Confirm & List (not "Confirm re-list"; publish-imported button)', /'确认上架':\s+'Confirm & List',/.test(I18N))
+ok('6d. 信誉 = Reputation (not "Rating")', /'信誉':\s+'Reputation',/.test(I18N))
+ok('6e. 收藏 = Save (action button; not "Saved")', /'收藏':\s+'Save',/.test(I18N))
+ok('6f. profile saved-items tab uses 已收藏 (Bookmarked), not the 收藏 action key', has(PROFILE, "'bookmarked', label: '★ ' + t('已收藏')") && !has(PROFILE, "'bookmarked', label: '★ ' + t('收藏')"))
 
 if (fail > 0) { console.error(`\n❌ i18n discover/dispute labels FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ i18n discover/dispute labels: discover chips + RULING_LABELS/EVIDENCE_TYPE_LABELS render sites t()-wrapped (no shadowed t), EN parity present\n  ✅ pass ${pass}`)

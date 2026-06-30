@@ -2045,7 +2045,7 @@ window.adminUserBatch = async (action) => {
     reason = prompt(t('暂停原因（必填，会写入审计）')) || ''
     if (!reason.trim()) return alert(t('需填写原因'))
   }
-  if (!confirm(t('确认') + label + ' ' + ids.length + ' ' + t('个用户？'))) return
+  if (!confirm((action === 'suspend' ? t('确认暂停') : t('确认恢复')) + ' ' + ids.length + ' ' + t('个用户？'))) return
   let ok = 0, fail = 0
   for (const uid of ids) {
     const path = action === 'suspend' ? `/admin/users/${uid}/suspend` : `/admin/users/${uid}/resume`
@@ -3378,7 +3378,7 @@ window.openResignModal = (role) => {
             <li>${t('已 assigned 但未完成的 case 必须先完成 / 转交,否则无法卸任')}</li>
           </ul>
         </div>
-        <div style="font-size:13px;color:#374151;margin-bottom:8px">${t('输入')} <code style="background:#fee2e2;padding:2px 6px;border-radius:4px;color:#991b1b">${expected}</code> ${t('确认')}:</div>
+        <div style="font-size:13px;color:#374151;margin-bottom:8px">${t('输入')} <code style="background:#fee2e2;padding:2px 6px;border-radius:4px;color:#991b1b">${expected}</code> ${t('以确认')}:</div>
         <input id="resign-confirm-input" type="text" placeholder="${expected}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;font-family:monospace" oninput="document.getElementById('resign-submit-btn').disabled = this.value !== '${expected}'">
         <div id="resign-msg" style="margin-top:12px"></div>
         <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
@@ -22971,7 +22971,7 @@ async function renderAdminWishReports(app) {
 }
 window.setWrStatus = (s) => { state._wrStatus = s; renderAdminWishReports(document.getElementById('app')) }
 window.adminWrAction = async (id, action) => {
-  if (!confirm(t('确认') + (action === 'dismiss' ? t('驳回') : t('下架')) + t('？'))) return
+  if (!confirm(action === 'dismiss' ? t('确认驳回？') : t('确认下架？'))) return
   const r = await PATCH('/admin/wish-reports/' + id, { action })
   if (r?.error) return alert(r.error)
   renderAdminWishReports(document.getElementById('app'))
