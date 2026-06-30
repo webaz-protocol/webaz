@@ -145,11 +145,12 @@ const EXPECTED: Record<string, string> = {
   'direct_pay.region': '',
   'direct_pay.region_allowlist': '',
   'direct_pay.per_tx_cap_units': '0',
+  'direct_pay.exposure_factor_bps': '8000',   // §6.5 抵押背书敞口上限系数(默认 80%;治理可调;create-gate fail-closed)
 }
 for (const [k, v] of Object.entries(EXPECTED)) {
   ok(`seed list has ${k} (default '${v}')`, !!seedByKey[k] && seedByKey[k].value === v, JSON.stringify(seedByKey[k]))
 }
-ok('seed list has exactly the 5 operational control keys', DIRECT_PAY_CONTROL_PARAMS.length === 5)
+ok('seed list has exactly the 6 operational control keys', DIRECT_PAY_CONTROL_PARAMS.length === 6)
 // hard invariants must NOT be governance params (no operator soft-bypass of launch blockers)
 ok('require_production_base_bond NOT a param (hard invariant)', !seedByKey['direct_pay.require_production_base_bond'])
 ok('require_kyc_sanctions NOT a param (hard invariant)', !seedByKey['direct_pay.require_kyc_sanctions'])
