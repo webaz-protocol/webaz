@@ -214,6 +214,93 @@ CREATE TABLE IF NOT EXISTS direct_pay_fee_stakes (
       UNIQUE(order_id)
     );
 
+-- Direct Pay 平台费链下应收(AR) — DIRECT-PAY-FEE-RECEIVABLE-DESIGN.INTERNAL.md(PR-1 纯建表)。
+CREATE TABLE IF NOT EXISTS direct_pay_fee_invoices (
+      id            TEXT PRIMARY KEY,
+      seller_id     TEXT NOT NULL REFERENCES users(id),
+      period_start  TEXT NOT NULL,
+      period_end    TEXT NOT NULL,
+      total_amount  DOUBLE PRECISION NOT NULL,
+      currency      TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
+      due_date      TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','paid','overdue','void')),
+      created_at    TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
+      created_by    TEXT,
+      paid_at       TEXT
+    );
+CREATE INDEX IF NOT EXISTS idx_dp_fee_invoices_seller ON direct_pay_fee_invoices(seller_id, status);
+
+CREATE TABLE IF NOT EXISTS direct_pay_fee_receivables (
+      id          TEXT PRIMARY KEY,
+      order_id    TEXT NOT NULL REFERENCES orders(id),
+      seller_id   TEXT NOT NULL REFERENCES users(id),
+      amount      DOUBLE PRECISION NOT NULL,
+      currency    TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
+      accrued_at  TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
+      invoice_id  TEXT REFERENCES direct_pay_fee_invoices(id),
+      UNIQUE(order_id)
+    );
+CREATE INDEX IF NOT EXISTS idx_dp_fee_receivables_seller ON direct_pay_fee_receivables(seller_id);
+
+CREATE TABLE IF NOT EXISTS direct_pay_fee_adjustments (
+      id            TEXT PRIMARY KEY,
+      receivable_id TEXT REFERENCES direct_pay_fee_receivables(id),
+      seller_id     TEXT NOT NULL REFERENCES users(id),
+      delta_amount  DOUBLE PRECISION NOT NULL,
+      currency      TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
+      kind          TEXT NOT NULL CHECK (kind IN ('reversal','write_off','correction')),
+      reason        TEXT,
+      created_at    TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
+      created_by    TEXT REFERENCES users(id)
+    );
+CREATE INDEX IF NOT EXISTS idx_dp_fee_adjustments_seller ON direct_pay_fee_adjustments(seller_id);
+
+CREATE TABLE IF NOT EXISTS direct_pay_fee_invoice_events (
+      id          TEXT PRIMARY KEY,
+      invoice_id  TEXT NOT NULL REFERENCES direct_pay_fee_invoices(id),
+      from_status TEXT,
+      to_status   TEXT NOT NULL,
+      actor       TEXT,
+      reason      TEXT,
+      created_at  TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
+    );
+CREATE INDEX IF NOT EXISTS idx_dp_fee_invoice_events_invoice ON direct_pay_fee_invoice_events(invoice_id);
+
+CREATE TABLE IF NOT EXISTS direct_pay_fee_payments (
+      id          TEXT PRIMARY KEY,
+      seller_id   TEXT NOT NULL REFERENCES users(id),
+      invoice_id  TEXT REFERENCES direct_pay_fee_invoices(id),
+      amount      DOUBLE PRECISION NOT NULL,
+      currency    TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
+      method      TEXT NOT NULL CHECK (method IN ('usdc','fiat')),
+      received_at TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
+      recorded_by TEXT REFERENCES users(id),
+      evidence_ref TEXT,
+      note        TEXT
+    );
+CREATE INDEX IF NOT EXISTS idx_dp_fee_payments_seller ON direct_pay_fee_payments(seller_id);
+
+CREATE TABLE IF NOT EXISTS direct_pay_fee_ar_seller_overrides (
+      seller_id     TEXT PRIMARY KEY REFERENCES users(id),
+      ceiling_units BIGINT NOT NULL,
+      updated_by    TEXT REFERENCES users(id),
+      updated_at    TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
+    );
+
+CREATE TABLE IF NOT EXISTS direct_pay_fee_ceiling_requests (
+      id              TEXT PRIMARY KEY,
+      seller_id       TEXT NOT NULL REFERENCES users(id),
+      requested_units BIGINT NOT NULL,
+      effective_units_at_request BIGINT,
+      reason          TEXT,
+      status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+      created_at      TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
+      reviewed_by     TEXT REFERENCES users(id),
+      reviewed_at     TEXT,
+      decision_note   TEXT
+    );
+CREATE INDEX IF NOT EXISTS idx_dp_fee_ceiling_requests_seller ON direct_pay_fee_ceiling_requests(seller_id, status);
+
 CREATE TABLE IF NOT EXISTS penalty_fund (
       id                    TEXT PRIMARY KEY,
       balance               DOUBLE PRECISION DEFAULT 0,

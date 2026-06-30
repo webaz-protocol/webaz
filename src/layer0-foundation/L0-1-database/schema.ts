@@ -307,6 +307,109 @@ export function initDatabase(): Database.Database {
       UNIQUE(order_id)
     );
 
+    -- ─────────────────────────────────────────────────────────────────────────
+    -- Direct Pay 平台费【链下应收(AR)】(设计稿 DIRECT-PAY-FEE-RECEIVABLE-DESIGN.INTERNAL.md)
+    -- 替代逐单 WAZ 质押:完成时记真实 USDC 应收,月结开票/人工收/欠费暂停资格。
+    -- v1 单一计价币 = USDC。append-only:原始事实行不改,变更走 adjustments / events。
+    -- PR-1 = 纯建表 + 读 helper,零行为接线(建单门/accrue/cron/UI 在 PR-2+)。
+    -- ─────────────────────────────────────────────────────────────────────────
+
+    -- 月结发票(有 status;每次状态变更必写 invoice_events)。【先于 receivables 建:后者 invoice_id 引用它】。
+    CREATE TABLE IF NOT EXISTS direct_pay_fee_invoices (
+      id            TEXT PRIMARY KEY,
+      seller_id     TEXT NOT NULL REFERENCES users(id),
+      period_start  TEXT NOT NULL,
+      period_end    TEXT NOT NULL,
+      total_amount  REAL NOT NULL,
+      currency      TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
+      due_date      TEXT NOT NULL,                 -- = period_end + net 15d(D9)
+      status        TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','paid','overdue','void')),
+      created_at    TEXT DEFAULT (datetime('now')),
+      created_by    TEXT,                          -- 'cron' 或 admin user_id
+      paid_at       TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_dp_fee_invoices_seller ON direct_pay_fee_invoices(seller_id, status);
+
+    -- 逐单应收 = 完成时赚的一笔平台费(原始 accrual 事实行,IMMUTABLE:金额永不改)。
+    CREATE TABLE IF NOT EXISTS direct_pay_fee_receivables (
+      id          TEXT PRIMARY KEY,
+      order_id    TEXT NOT NULL REFERENCES orders(id),
+      seller_id   TEXT NOT NULL REFERENCES users(id),
+      amount      REAL NOT NULL,                   -- 该单平台费(USDC 计价小数;units 经 money.ts 边界)
+      currency    TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),  -- v1 单币;v2 放开
+      accrued_at  TEXT DEFAULT (datetime('now')),
+      invoice_id  TEXT REFERENCES direct_pay_fee_invoices(id),  -- 分摊事件回填(月结时)
+      UNIQUE(order_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_dp_fee_receivables_seller ON direct_pay_fee_receivables(seller_id);
+
+    -- 冲销 / 坏账核销 / 手工冲正(独立 append-only 行;原始 accrual 行不动)。
+    CREATE TABLE IF NOT EXISTS direct_pay_fee_adjustments (
+      id            TEXT PRIMARY KEY,
+      receivable_id TEXT REFERENCES direct_pay_fee_receivables(id),  -- nullable(整体冲正可不挂单)
+      seller_id     TEXT NOT NULL REFERENCES users(id),
+      delta_amount  REAL NOT NULL,                 -- 带符号(退货冲销=负)
+      currency      TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
+      kind          TEXT NOT NULL CHECK (kind IN ('reversal','write_off','correction')),
+      reason        TEXT,
+      created_at    TEXT DEFAULT (datetime('now')),
+      created_by    TEXT REFERENCES users(id)      -- admin(人工铁律)
+    );
+    CREATE INDEX IF NOT EXISTS idx_dp_fee_adjustments_seller ON direct_pay_fee_adjustments(seller_id);
+
+    -- 发票状态变更审计(append-only)。
+    CREATE TABLE IF NOT EXISTS direct_pay_fee_invoice_events (
+      id          TEXT PRIMARY KEY,
+      invoice_id  TEXT NOT NULL REFERENCES direct_pay_fee_invoices(id),
+      from_status TEXT,
+      to_status   TEXT NOT NULL,
+      actor       TEXT,                            -- 'cron' 或 admin user_id
+      reason      TEXT,
+      created_at  TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_dp_fee_invoice_events_invoice ON direct_pay_fee_invoice_events(invoice_id);
+
+    -- 人工记录的已收款(append-only 事实行,IMMUTABLE;记错走 adjustments.correction)。
+    CREATE TABLE IF NOT EXISTS direct_pay_fee_payments (
+      id          TEXT PRIMARY KEY,
+      seller_id   TEXT NOT NULL REFERENCES users(id),
+      invoice_id  TEXT REFERENCES direct_pay_fee_invoices(id),
+      amount      REAL NOT NULL,
+      currency    TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
+      method      TEXT NOT NULL CHECK (method IN ('usdc','fiat')),
+      received_at TEXT DEFAULT (datetime('now')),
+      recorded_by TEXT REFERENCES users(id),       -- admin(Passkey + purpose-bound)
+      evidence_ref TEXT,
+      note        TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_dp_fee_payments_seller ON direct_pay_fee_payments(seller_id);
+
+    -- 每商家信用上限 override(可选;无行=用全局 protocol_params 默认)。admin 设(低信任调低/高信任调高)。
+    -- ⚠️ 上限值【绝不硬编码】:全局默认走 direct_pay.fee_ar_credit_ceiling_units(protocol_params,运行时可调),
+    --   本表仅存逐商家覆写;生效 = override ?? global(读 helper 单一真相源)。
+    CREATE TABLE IF NOT EXISTS direct_pay_fee_ar_seller_overrides (
+      seller_id     TEXT PRIMARY KEY REFERENCES users(id),
+      ceiling_units INTEGER NOT NULL,              -- 该商家未付 AR 上限(整数 base-units)
+      updated_by    TEXT REFERENCES users(id),     -- admin
+      updated_at    TEXT DEFAULT (datetime('now'))
+    );
+
+    -- 商家【申请】调高未付 AR 上限 → ROOT/admin 真人 Passkey 审批(approve 即写 override)。
+    -- 商家不能自调,只能申请;append-only 审计。模式同仓内 build-task 配额申请。
+    CREATE TABLE IF NOT EXISTS direct_pay_fee_ceiling_requests (
+      id              TEXT PRIMARY KEY,
+      seller_id       TEXT NOT NULL REFERENCES users(id),
+      requested_units INTEGER NOT NULL,            -- 申请目标上限(整数 base-units)
+      effective_units_at_request INTEGER,          -- 申请时生效上限快照(审计用)
+      reason          TEXT,
+      status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+      created_at      TEXT DEFAULT (datetime('now')),
+      reviewed_by     TEXT REFERENCES users(id),   -- admin
+      reviewed_at     TEXT,
+      decision_note   TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_dp_fee_ceiling_requests_seller ON direct_pay_fee_ceiling_requests(seller_id, status);
+
     -- penalty 科目(独立、物理隔离、只进不出)。出账【无代码路径】= append-only 硬保证。
     -- 三条出账红线(永不可破):①不退买家 ②不计 WebAZ 利润 ③不按个案裁决结果流向裁决者。
     CREATE TABLE IF NOT EXISTS penalty_fund (
