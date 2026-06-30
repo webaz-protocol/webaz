@@ -81,7 +81,9 @@ for (const k of ONCE_KEYS) ok(`5h. no duplicate i18n key: ${k} (found ${cnt(k)})
 
 // ── 6. translation-correctness pass: keep-last (from the #146 dedup) had locked in a value that was
 //       WRONG for the actual usage context. These value-fixes correct it (verified against usages). ──
-ok('6a. 确认 = Confirm (not "to confirm"; 3 confirm-dialog prefixes)', /'确认':\s+'Confirm',/.test(I18N) && !has(I18N, "'确认': 'to confirm'"))
+ok('6a. 确认 = Confirm (confirm-dialog prefix; not "to confirm")', /'确认':\s+'Confirm',/.test(I18N) && !has(I18N, "'确认': 'to confirm'"))
+ok('6a-1. 以确认 = to confirm (split out for the "type X to confirm" resign input)', /'以确认':\s+'to confirm',/.test(I18N))
+ok('6a-2. resign confirm-input uses 以确认, not the 确认 dialog key', has(APP, "</code> ${t('以确认')}:</div>"))
 ok('6b. 待处理 = Pending (not "New"; 10 pending-status usages)', /'待处理':\s+'Pending',/.test(I18N))
 ok('6c. 确认上架 = Confirm & List (not "Confirm re-list"; publish-imported button)', /'确认上架':\s+'Confirm & List',/.test(I18N))
 ok('6d. 信誉 = Reputation (not "Rating")', /'信誉':\s+'Reputation',/.test(I18N))

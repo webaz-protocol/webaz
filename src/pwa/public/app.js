@@ -3378,7 +3378,7 @@ window.openResignModal = (role) => {
             <li>${t('已 assigned 但未完成的 case 必须先完成 / 转交,否则无法卸任')}</li>
           </ul>
         </div>
-        <div style="font-size:13px;color:#374151;margin-bottom:8px">${t('输入')} <code style="background:#fee2e2;padding:2px 6px;border-radius:4px;color:#991b1b">${expected}</code> ${t('确认')}:</div>
+        <div style="font-size:13px;color:#374151;margin-bottom:8px">${t('输入')} <code style="background:#fee2e2;padding:2px 6px;border-radius:4px;color:#991b1b">${expected}</code> ${t('以确认')}:</div>
         <input id="resign-confirm-input" type="text" placeholder="${expected}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;font-family:monospace" oninput="document.getElementById('resign-submit-btn').disabled = this.value !== '${expected}'">
         <div id="resign-msg" style="margin-top:12px"></div>
         <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">

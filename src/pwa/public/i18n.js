@@ -6127,6 +6127,7 @@ const _EN = {
     'Assigned but unresolved cases must be completed / transferred before resigning',
   '输入':                              'Type',
   '确认':                              'Confirm',
+  '以确认': 'to confirm',
   '取消':                              'Cancel',
   'Passkey 签发卸任':                  'Sign resignation with Passkey',
   '请求 Passkey...':                   'Requesting Passkey...',
