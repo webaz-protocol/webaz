@@ -131,5 +131,11 @@ ok('10c. tool-limit error t()-wrapped', has(AI, "text: t('⚠️ 达到工具调
 ok('10d. provider-format options t()-wrapped', has(AI, "${t('OpenAI 兼容 (chat/completions)')}") && has(AI, "${t('Anthropic 兼容 (messages)')}"))
 ok('10e. custom-agent default name t()-wrapped', has(AI, "|| t('我的 Agent')") && has(I18N, "'我的 Agent':"))
 
+// ── 11. app-ai.js demo showcase (part 2b): example cards — steps / pseudo-tools / prompts ──
+ok('11a. step desc EN present', has(I18N, "'叠加 trusted 卖家筛选':") && has(I18N, "'读我的默认配送地址（上海）':"))
+ok('11b. pseudo-tool render t()-wrapped + EN', has(AI, "${escHtml(t(s.tool))}") && /'推理':\s+'Reasoning',/.test(I18N) && /'过滤':\s+'Filter',/.test(I18N))
+ok('11c. demo prompt t()-wrapped (data-prompt + preview)', has(AI, 'data-prompt="${escAttr(t(d.prompt))}"') && has(AI, "escHtml(t(d.prompt).slice(0, 80))"))
+ok('11d. demo prompt EN present', has(I18N, "'我在上海，找耳机预算 300 WAZ 以内，希望能 24h 内收到，备货时间短的优先。':"))
+
 if (fail > 0) { console.error(`\n❌ i18n discover/dispute labels FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ i18n discover/dispute labels: discover chips + RULING_LABELS/EVIDENCE_TYPE_LABELS render sites t()-wrapped (no shadowed t), EN parity present\n  ✅ pass ${pass}`)

@@ -1326,16 +1326,16 @@ async function renderAIDemo(app) {
           ${d.expectedSteps.map((s, j) => `
             <div style="display:flex;gap:8px;padding:4px 0;font-size:11px;color:#374151">
               <span style="color:#9ca3af;flex-shrink:0">${j+1}.</span>
-              <code style="background:#eef2ff;color:#3730a3;padding:1px 6px;border-radius:4px;font-size:10px;font-family:ui-monospace,Consolas,monospace;flex-shrink:0">${escHtml(s.tool)}</code>
+              <code style="background:#eef2ff;color:#3730a3;padding:1px 6px;border-radius:4px;font-size:10px;font-family:ui-monospace,Consolas,monospace;flex-shrink:0">${escHtml(t(s.tool))}</code>
               <span style="color:#6b7280">${t(s.desc)}</span>
             </div>`).join('')}
         </div>
       </details>
       <div style="display:flex;gap:8px">
-        <button data-prompt="${escAttr(d.prompt)}" onclick="runAIDemo(this.dataset.prompt)" style="flex:1;padding:11px;background:#007aff;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">${t('一键运行')} →</button>
+        <button data-prompt="${escAttr(t(d.prompt))}" onclick="runAIDemo(this.dataset.prompt)" style="flex:1;padding:11px;background:#007aff;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">${t('一键运行')} →</button>
       </div>
       <div style="margin-top:8px;font-size:10px;color:#9ca3af;padding:6px 8px;background:#f9fafb;border-radius:6px;line-height:1.5">
-        💬 ${t('提示原文')}：${escHtml(d.prompt.slice(0, 80))}${d.prompt.length > 80 ? '…' : ''}
+        💬 ${t('提示原文')}：${escHtml(t(d.prompt).slice(0, 80))}${t(d.prompt).length > 80 ? '…' : ''}
       </div>
     </div>
   `).join('')
