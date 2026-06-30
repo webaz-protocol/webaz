@@ -423,8 +423,25 @@ export function initDatabase(): Database.Database {
     );
     CREATE INDEX IF NOT EXISTS idx_dp_fee_ceiling_requests_seller ON direct_pay_fee_ceiling_requests(seller_id, status);
 
+    -- 商家平台服务费【预充值余额退款】事实行(append-only,IMMUTABLE)。= WebAZ 把已预付未消耗的平台服务费余额
+    --   退还给商家(链下真实退款,记 evidence_ref)。available_prepay 减去 Σ refunds。amount>0(退款额,正)。
+    --   ⚠️ 退的是【商家平台服务费预付款】,非买家货款/escrow/保证金/penalty。与 adjustments.correction(账务更正)区分:
+    --   refund = 真实退钱;correction = 记账更正(不一定动真钱)。退款额 ≤ 当前 available(不可退已被费用消耗的部分,由 helper 校验)。
+    CREATE TABLE IF NOT EXISTS direct_pay_fee_prepay_refunds (
+      id           TEXT PRIMARY KEY,
+      seller_id    TEXT NOT NULL REFERENCES users(id),
+      amount       REAL NOT NULL CHECK (amount >= 0),
+      currency     TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
+      method       TEXT NOT NULL CHECK (method IN ('usdc','fiat')),
+      evidence_ref TEXT,
+      reason       TEXT,
+      recorded_by  TEXT REFERENCES users(id),      -- admin(Passkey + purpose-bound)
+      created_at   TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_dp_fee_prepay_refunds_seller ON direct_pay_fee_prepay_refunds(seller_id);
+
     -- ── APPEND-ONLY 硬强制(DB 级,非仅注释)── money-adjacent fee 账本的事实/事件行不可改/删。
-    -- 5 张:receivables(immutable accrual)/ invoice_items(写一次)/ adjustments / invoice_events / payments(immutable)。
+    -- 6 张:receivables(immutable accrual)/ invoice_items(写一次)/ adjustments / invoice_events / payments(immutable)/ prepay_refunds(immutable)。
     -- invoices/overrides/ceiling_requests 刻意【不】锁(有合法状态/值变更)。PG 等价 plpgsql guard 由 gen-pg-schema 的 APPEND_ONLY_TABLES 生成。
     CREATE TRIGGER IF NOT EXISTS trg_dp_fee_receivables_no_update BEFORE UPDATE ON direct_pay_fee_receivables BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_receivables is append-only (UPDATE forbidden)'); END;
     CREATE TRIGGER IF NOT EXISTS trg_dp_fee_receivables_no_delete BEFORE DELETE ON direct_pay_fee_receivables BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_receivables is append-only (DELETE forbidden)'); END;
@@ -436,6 +453,8 @@ export function initDatabase(): Database.Database {
     CREATE TRIGGER IF NOT EXISTS trg_dp_fee_invoice_events_no_delete BEFORE DELETE ON direct_pay_fee_invoice_events BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_invoice_events is append-only (DELETE forbidden)'); END;
     CREATE TRIGGER IF NOT EXISTS trg_dp_fee_payments_no_update BEFORE UPDATE ON direct_pay_fee_payments BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_payments is append-only (UPDATE forbidden)'); END;
     CREATE TRIGGER IF NOT EXISTS trg_dp_fee_payments_no_delete BEFORE DELETE ON direct_pay_fee_payments BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_payments is append-only (DELETE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_dp_fee_prepay_refunds_no_update BEFORE UPDATE ON direct_pay_fee_prepay_refunds BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_prepay_refunds is append-only (UPDATE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_dp_fee_prepay_refunds_no_delete BEFORE DELETE ON direct_pay_fee_prepay_refunds BEGIN SELECT RAISE(ABORT, 'direct_pay_fee_prepay_refunds is append-only (DELETE forbidden)'); END;
 
     -- penalty 科目(独立、物理隔离、只进不出)。出账【无代码路径】= append-only 硬保证。
     -- 三条出账红线(永不可破):①不退买家 ②不计 WebAZ 利润 ③不按个案裁决结果流向裁决者。

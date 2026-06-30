@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (702 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (705 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -677,9 +677,36 @@
         ]
       }
     },
+    "/api/admin/direct-receive/fee-account/:seller_id": {
+      "get": {
+        "summary": "只读诊断,不写、无 Passkey(读不授权能力);卖家私密财务,买家/卖家拿不到此 admin 视图。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/direct-receive/fee-adjust": {
+      "post": {
+        "summary": "≠ 退款(不动真钱,只调记账)。purpose_data 绑 seller_id+delta_units+reason。",
+        "tags": [],
+        "security": []
+      }
+    },
     "/api/admin/direct-receive/fee-prepay": {
       "post": {
         "summary": "不碰 buyer wallet/escrow/order/settlement/refund;非买家 escrow/保证金/penalty。本轮无\"余额退款\"(仅正向预付款登记)。",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/admin/direct-receive/fee-refund": {
+      "post": {
+        "summary": "amount ≤ 当前 available(helper 同事务校验)。append-only + audit。purpose_data 绑 seller_id+amount_units+method+evidence_ref。",
         "tags": [],
         "security": []
       }

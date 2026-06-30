@@ -23,7 +23,7 @@ import { approveDeferral, rejectDeferral, listDeferrals, type DeferralStatus } f
 import { listProductVerifications, reviewProductVerification, type ProductVerificationStatus } from '../../product-verification.js'
 import { listStoreVerifications, reviewStoreVerification, type StoreVerificationStatus } from '../../store-verification.js'
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'
-import { recordFeePrepayTopup } from '../../direct-pay-fee-ar.js'
+import { recordFeePrepayTopup, recordFeePrepayAdjustment, recordFeePrepayRefund, getDirectPayFeeAccount } from '../../direct-pay-fee-ar.js'
 
 export interface AdminDirectReceiveDepositsDeps {
   db: Database.Database
@@ -174,6 +174,30 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
         && str(d.method) === str(req.body?.method) && str(d.evidence_ref) === str(req.body?.evidence_ref) },
     (req, adminId) => recordFeePrepayTopup(db, { sellerId: str(req.body?.seller_id), amountUnits: Number(req.body?.amount_units), method: str(req.body?.method), recordedBy: adminId, evidenceRef: opt(req.body?.evidence_ref), note: opt(req.body?.note) }),
     (req) => ({ targetId: str(req.body?.seller_id), detail: { amount_units: Number(req.body?.amount_units), method: str(req.body?.method) } })))
+
+  // POST /api/admin/direct-receive/fee-adjust — 平台服务费账务【更正】(ROOT + 真人 Passkey)。带符号 delta;append-only + audit。
+  //   ≠ 退款(不动真钱,只调记账)。purpose_data 绑 seller_id+delta_units+reason。
+  app.post('/api/admin/direct-receive/fee-adjust', gatedIngress('direct_pay_fee_adjust',
+    (req) => (data) => { const d = data as { seller_id?: string; delta_units?: number; reason?: string } | null
+      return !!d && str(d.seller_id) === str(req.body?.seller_id) && Number(d.delta_units) === Number(req.body?.delta_units) && str(d.reason) === str(req.body?.reason) },
+    (req, adminId) => recordFeePrepayAdjustment(db, { sellerId: str(req.body?.seller_id), deltaUnits: Number(req.body?.delta_units), reason: str(req.body?.reason), recordedBy: adminId }),
+    (req) => ({ targetId: str(req.body?.seller_id), detail: { delta_units: Number(req.body?.delta_units) } })))
+
+  // POST /api/admin/direct-receive/fee-refund — 平台服务费余额【退款】(ROOT + 真人 Passkey)。真实退还未消耗预付款;
+  //   amount ≤ 当前 available(helper 同事务校验)。append-only + audit。purpose_data 绑 seller_id+amount_units+method+evidence_ref。
+  app.post('/api/admin/direct-receive/fee-refund', gatedIngress('direct_pay_fee_refund',
+    (req) => (data) => { const d = data as { seller_id?: string; amount_units?: number; method?: string; evidence_ref?: string } | null
+      return !!d && str(d.seller_id) === str(req.body?.seller_id) && Number(d.amount_units) === Number(req.body?.amount_units)
+        && str(d.method) === str(req.body?.method) && str(d.evidence_ref) === str(req.body?.evidence_ref) },
+    (req, adminId) => recordFeePrepayRefund(db, { sellerId: str(req.body?.seller_id), amountUnits: Number(req.body?.amount_units), method: str(req.body?.method), recordedBy: adminId, evidenceRef: opt(req.body?.evidence_ref), reason: opt(req.body?.reason) }),
+    (req) => ({ targetId: str(req.body?.seller_id), detail: { amount_units: Number(req.body?.amount_units), method: str(req.body?.method) } })))
+
+  // GET /api/admin/direct-receive/fee-account/:seller_id — ROOT 只读:某商家平台服务费账户汇总(余额/预充值/应收/调整/退款/在途预估/宽限)。
+  //   只读诊断,不写、无 Passkey(读不授权能力);卖家私密财务,买家/卖家拿不到此 admin 视图。
+  app.get('/api/admin/direct-receive/fee-account/:seller_id', (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    return void res.json({ ok: true, account: getDirectPayFeeAccount(db, str(req.params.seller_id)) })
+  })
 
   // POST /api/admin/direct-receive/readiness — ROOT + 真人 Passkey:返回【完整】Direct Pay launch readiness(blockers + facts,
   //   含 KYB/sanctions/AML/base-bond/rail clearance 全细节)。只读诊断(不写库、不 flip launch);ROOT 专用,买家/卖家拿不到。

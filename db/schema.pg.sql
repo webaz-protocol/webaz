@@ -310,6 +310,19 @@ CREATE TABLE IF NOT EXISTS direct_pay_fee_ceiling_requests (
     );
 CREATE INDEX IF NOT EXISTS idx_dp_fee_ceiling_requests_seller ON direct_pay_fee_ceiling_requests(seller_id, status);
 
+CREATE TABLE IF NOT EXISTS direct_pay_fee_prepay_refunds (
+      id           TEXT PRIMARY KEY,
+      seller_id    TEXT NOT NULL REFERENCES users(id),
+      amount       DOUBLE PRECISION NOT NULL CHECK (amount >= 0),
+      currency     TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
+      method       TEXT NOT NULL CHECK (method IN ('usdc','fiat')),
+      evidence_ref TEXT,
+      reason       TEXT,
+      recorded_by  TEXT REFERENCES users(id),
+      created_at   TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
+    );
+CREATE INDEX IF NOT EXISTS idx_dp_fee_prepay_refunds_seller ON direct_pay_fee_prepay_refunds(seller_id);
+
 CREATE TABLE IF NOT EXISTS penalty_fund (
       id                    TEXT PRIMARY KEY,
       balance               DOUBLE PRECISION DEFAULT 0,
@@ -3055,6 +3068,10 @@ DROP TRIGGER IF EXISTS trg_direct_pay_fee_payments_no_update ON direct_pay_fee_p
 CREATE TRIGGER trg_direct_pay_fee_payments_no_update BEFORE UPDATE ON direct_pay_fee_payments FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
 DROP TRIGGER IF EXISTS trg_direct_pay_fee_payments_no_delete ON direct_pay_fee_payments;
 CREATE TRIGGER trg_direct_pay_fee_payments_no_delete BEFORE DELETE ON direct_pay_fee_payments FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
+DROP TRIGGER IF EXISTS trg_direct_pay_fee_prepay_refunds_no_update ON direct_pay_fee_prepay_refunds;
+CREATE TRIGGER trg_direct_pay_fee_prepay_refunds_no_update BEFORE UPDATE ON direct_pay_fee_prepay_refunds FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
+DROP TRIGGER IF EXISTS trg_direct_pay_fee_prepay_refunds_no_delete ON direct_pay_fee_prepay_refunds;
+CREATE TRIGGER trg_direct_pay_fee_prepay_refunds_no_delete BEFORE DELETE ON direct_pay_fee_prepay_refunds FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();
 
 -- ════════════ INSERT-STATUS GUARDS ════════════
 CREATE OR REPLACE FUNCTION webaz_identity_claim_challenges_insert_issued() RETURNS trigger AS $$
