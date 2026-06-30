@@ -16,7 +16,8 @@ process.env.HOME = mkdtempSync(join(tmpdir(), 'dp-timeout-'))
 
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { initSystemUser, transition } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
-const { lockFeeStake, takeFeeAtCompletion } = await import('../src/direct-pay-ledger.js')
+const { lockFeeStake } = await import('../src/direct-pay-ledger.js')
+const { settleDirectPayFeeAtCompletion, getSellerAccruedFeeUnits, feeUnitsForOrder } = await import('../src/direct-pay-fee-ar.js')
 const { runDirectPayTimeoutSweep } = await import('../src/pwa/routes/direct-pay-timeouts.js')
 const { toUnits } = await import('../src/money.js')
 const { walletUnits } = await import('../src/ledger.js')
@@ -74,18 +75,17 @@ mkOrder('o3', 'direct_expired_unconfirmed', { graceFuture: true })
 runDirectPayTimeoutSweep({ db })
 ok('control: future-grace order NOT cancelled', status('o3') === 'direct_expired_unconfirmed')
 
-// ── req #2: direct_p2p 结算只取 fee-stake,绝不碰 escrow ──
+// ── req #2: direct_p2p 完成结算 = 释放任何遗留模拟 stake + 记链下应收(AR),绝不碰 escrow ──
 db.prepare("INSERT INTO users (id, name, role, api_key) VALUES ('buyer4','买家4','buyer','k_b4')").run()
 db.prepare("INSERT INTO wallets (user_id, balance, escrowed) VALUES ('buyer4', 0, 100)").run()  // 模拟买家有 escrow 余额
 mkOrder('o4', 'confirmed')
 db.prepare("UPDATE orders SET buyer_id='buyer4' WHERE id='o4'").run()
-lockFeeStake(db, { orderId: 'o4', sellerId: 'seller1', feeUnits: FEE, stakeId: 's4' })
+lockFeeStake(db, { orderId: 'o4', sellerId: 'seller1', feeUnits: FEE, stakeId: 's4' })  // 遗留模拟 stake(cutover 前建单)
 const buyerEscrowBefore = walletUnits(db, 'buyer4').escrowed
-takeFeeAtCompletion(db, { orderId: 'o4' })  // = settleOrder 的 direct_p2p 分支所路由到的同一函数
+settleDirectPayFeeAtCompletion(db, { id: 'o4', seller_id: 'seller1', total_amount: 50, source: 'shop' }, 'dpfr_o4')  // = settleOrder 的 direct_p2p 分支
 ok('direct_p2p settle: buyer.escrowed UNTOUCHED (no escrow path)', walletUnits(db, 'buyer4').escrowed === buyerEscrowBefore && buyerEscrowBefore === toUnits(100))
-ok('direct_p2p settle: fee-stake → fee_taken', stakeStatus('o4') === 'fee_taken')
-const reservePlusOps = toUnits((db.prepare('SELECT balance FROM protocol_reserve_pool WHERE id=1').get() as { balance: number }).balance) + walletUnits(db, 'sys_protocol').balance
-ok('direct_p2p settle: protocol got the fee (reserve+ops == fee)', reservePlusOps === FEE, `got ${reservePlusOps} fee ${FEE}`)
+ok('direct_p2p settle: 遗留模拟 stake 释放(不取、退卖家;非 fee_taken)', stakeStatus('o4') === 'released')
+ok('direct_p2p settle: 记一笔平台费应收(2% of 50 = 1 USDC)', getSellerAccruedFeeUnits(db, 'seller1') === feeUnitsForOrder(toUnits(50), 'shop'))
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-timeouts tests passed`)

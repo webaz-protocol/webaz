@@ -29,6 +29,7 @@ db.exec("CREATE TABLE webauthn_gate_tokens (id TEXT PRIMARY KEY, user_id TEXT NO
 db.exec("CREATE TABLE wallets (user_id TEXT PRIMARY KEY, balance REAL)")
 db.exec("CREATE TABLE orders (id TEXT PRIMARY KEY, seller_id TEXT)")
 db.exec("CREATE TABLE direct_pay_fee_stakes (id TEXT PRIMARY KEY, order_id TEXT)")
+db.exec("CREATE TABLE direct_pay_fee_payments (id TEXT PRIMARY KEY, seller_id TEXT NOT NULL, invoice_id TEXT, amount REAL NOT NULL CHECK (amount >= 0), currency TEXT, method TEXT, received_at TEXT, recorded_by TEXT, evidence_ref TEXT, note TEXT)")
 
 const auditN = (): number => (db.prepare("SELECT COUNT(*) n FROM admin_audit_log").get() as { n: number }).n
 const sideEffectN = (): number => ['wallets', 'orders', 'direct_pay_fee_stakes'].reduce((s, t) => s + (db.prepare(`SELECT COUNT(*) n FROM ${t}`).get() as { n: number }).n, 0)
@@ -187,6 +188,33 @@ ok('P1c. AML token signs detail{count:1}, body writes {count:2} → 403, no flag
 mkTok('tb4', 'direct_pay_aml_ingress', { user_id: 'r_bind3', rule: 'velocity', severity: 'high', status: 'open', related_order_id: '', detail_hash: amlDetailHash({ order_count: 2 }) })
 const rN4 = await call(AML, { user_id: 'r_bind3', rule: 'velocity', severity: 'high', status: 'open', detail: { order_count: 2 }, webauthn_token: 'tb4' }, ROOT)
 ok('P1d. AML token detail_hash matches body detail → 200 (binding positive control)', rN4.status === 200 && (db.prepare("SELECT COUNT(*) n FROM aml_flags WHERE subject_user_id='r_bind3'").get() as any).n === 1, JSON.stringify(rN4))
+
+// ══════ Part C: fee-prepay top-up route(ROOT + 真人 Passkey;append-only payment + admin audit)══════
+const FEEP = '/api/admin/direct-receive/fee-prepay'
+const payN = (sid: string): number => (db.prepare("SELECT COUNT(*) n FROM direct_pay_fee_payments WHERE seller_id=?").get(sid) as any).n
+const auditFor = (sid: string): number => (db.prepare("SELECT COUNT(*) n FROM admin_audit_log WHERE target_id=? AND action='direct_pay.fee_prepay_record'").get(sid) as any).n
+// 11a. 非 ROOT → 403,无 payment
+ok('11a. fee-prepay non-root → 403, no payment', (await call(FEEP, { seller_id: 'fp1', amount_units: 1000, method: 'usdc' })).status === 403 && payN('fp1') === 0)
+// 11b. ROOT 无 token → 403 HUMAN_PRESENCE_REQUIRED,无 payment
+const r11b = await call(FEEP, { seller_id: 'fp2', amount_units: 1000, method: 'usdc' }, ROOT)
+ok('11b. root no token → 403, no payment', r11b.status === 403 && r11b.json?.error_code === 'HUMAN_PRESENCE_REQUIRED' && payN('fp2') === 0)
+// 11c. ROOT + 有效 purpose-bound token → 200 + payment 写入 + admin_audit_log(direct_pay.fee_prepay_record)
+mkTok('tfp', 'direct_pay_fee_prepay_record', { seller_id: 'fp3', amount_units: 50_000_000, method: 'usdc', evidence_ref: 'tx#9' })
+const r11c = await call(FEEP, { seller_id: 'fp3', amount_units: 50_000_000, method: 'usdc', evidence_ref: 'tx#9', webauthn_token: 'tfp' }, ROOT)
+ok('11c. root+token → 200 + payment row + audit row', r11c.status === 200 && r11c.json?.ok === true && payN('fp3') === 1 && auditFor('fp3') === 1, JSON.stringify(r11c))
+ok('11c-2. payment is unallocated prepayment (invoice_id NULL)', (db.prepare("SELECT invoice_id FROM direct_pay_fee_payments WHERE seller_id='fp3'").get() as any).invoice_id === null)
+// 11d. purpose_data 不匹配(token 绑 fp4/1000,body 写 fp4/2000)→ 403,无 payment
+mkTok('tfp2', 'direct_pay_fee_prepay_record', { seller_id: 'fp4', amount_units: 1000, method: 'usdc', evidence_ref: '' })
+const r11d = await call(FEEP, { seller_id: 'fp4', amount_units: 2000, method: 'usdc', webauthn_token: 'tfp2' }, ROOT)
+ok('11d. token signs amount=1000, body=2000 → 403, no payment', r11d.status === 403 && payN('fp4') === 0, JSON.stringify(r11d))
+// 11e. 非法 amount(0)经 route(token 绑同值,gate 过)→ 400,无 payment
+mkTok('tfp3', 'direct_pay_fee_prepay_record', { seller_id: 'fp5', amount_units: 0, method: 'usdc', evidence_ref: '' })
+const r11e = await call(FEEP, { seller_id: 'fp5', amount_units: 0, method: 'usdc', webauthn_token: 'tfp3' }, ROOT)
+ok('11e. amount 0 via route → 400 AMOUNT_MUST_BE_POSITIVE, no payment', r11e.status === 400 && payN('fp5') === 0, JSON.stringify(r11e))
+// 11f. 非法 method 经 route → 400,无 payment
+mkTok('tfp4', 'direct_pay_fee_prepay_record', { seller_id: 'fp6', amount_units: 1000, method: 'paypal', evidence_ref: '' })
+const r11f = await call(FEEP, { seller_id: 'fp6', amount_units: 1000, method: 'paypal', webauthn_token: 'tfp4' }, ROOT)
+ok('11f. bad method via route → 400 BAD_METHOD, no payment', r11f.status === 400 && payN('fp6') === 0, JSON.stringify(r11f))
 
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }

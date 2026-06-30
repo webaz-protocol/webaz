@@ -43,6 +43,7 @@ export const BUYER_FACING_SELLER_PRIVATE_CODES: ReadonlySet<string> = new Set([
   'DIRECT_PAY_SELLER_SUSPENDED', 'DIRECT_PAY_NOT_AVAILABLE', 'DIRECT_PAY_KYC_REQUIRED', 'DIRECT_PAY_AML_REVIEW_REQUIRED',
   'DIRECT_PAY_DEFERRAL_QUOTA_EXCEEDED', 'DIRECT_PAY_DEFERRAL_AMOUNT_EXCEEDED',
   'EXPOSURE_CAP_EXCEEDED', 'EXPOSURE_CAP_CONFIG',   // §6.5 抵押背书敞口上限:卖家私密风险态,不向买家泄露
+  'FEE_PREPAY_INSUFFICIENT',   // 平台服务费预充值余额不足(非首单):卖家私密风险态,不向买家泄露
 ])
 /** 买家面脱敏:私密拒因 → 通用 SELLER_NOT_ELIGIBLE;全局/运营类原样;undefined → 通用(fail-safe,绝不泄露)。 */
 export function coarsenBuyerFacingDirectPayCode(code: string | undefined): string {
@@ -141,10 +142,8 @@ export const DIRECT_PAY_CONTROL_PARAMS: Array<{ key: string; value: string; type
   //   具体数值(如 SG v1 的 policy units)由独立的 launch-policy PR 配置,本 PR 只提供 cap 能力、默认仍 fail-closed。
   { key: 'direct_pay.per_tx_cap_units', value: '0', type: 'number', description: 'Direct Pay 单笔上限:WebAZ 记录的订单总额天花板(整数 policy base-units);默认 0=无放行,治理设正值方可。仅约束协议侧建单金额,不控制/不担保场外真实付款。', category: 'system', min: 0 },
   { key: 'direct_pay.exposure_factor_bps', value: '8000', type: 'number', description: '§6.5 抵押背书的开放敞口上限系数(bps):open_exposure + new_order ≤ active_collateral × bps/10000。仅对有真实链上抵押(collateral>0)的卖家生效;缓交卖家不受此门。默认 8000(=80%)。风险控制,非买家赔付。', category: 'system', min: 1, max: 10000 },
-  // 平台费链下应收(AR)每商家未付上限(整数 base-units;1 USDC = 1e6 units)。seed 默认 50 USDC = 50_000_000。
-  //   【运行时可调,绝不硬编码】:治理/admin 改本参数即生效(全局默认);另支持逐商家 override + 商家申请审批(direct_pay_fee_* 表)。
-  //   fail-closed:读 helper 读到缺失/非数/≤0 → 视为 0 = 拒所有新直付单(不回落任何常量)。生效 = 商家 override ?? 本全局默认。
-  { key: 'direct_pay.fee_ar_credit_ceiling_units', value: '50000000', type: 'number', description: 'Direct Pay 平台费链下应收(AR)每商家未付上限(整数 base-units,1 USDC=1e6;默认 50 USDC)。建单门:unpaid_AR + 在途单预估费 + 本单预估费 ≤ 上限。运行时可调(治理/admin),可逐商家 override 或商家申请审批;fail-closed 缺失/≤0 即拒新单。', category: 'system', min: 0 },
+  // 注:平台服务费门 = 首单宽限 + 预充值续用(数据驱动:available_prepay = Σ预充值 − Σ已计提费),【无 protocol_param 旋钮】
+  //   (额度即商家实际预付余额,宽限自动判定);故此处不再有 fee_ar_credit_ceiling_units 参数。
 ]
 
 /**

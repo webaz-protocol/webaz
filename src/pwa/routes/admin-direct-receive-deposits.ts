@@ -23,6 +23,7 @@ import { approveDeferral, rejectDeferral, listDeferrals, type DeferralStatus } f
 import { listProductVerifications, reviewProductVerification, type ProductVerificationStatus } from '../../product-verification.js'
 import { listStoreVerifications, reviewStoreVerification, type StoreVerificationStatus } from '../../store-verification.js'
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'
+import { recordFeePrepayTopup } from '../../direct-pay-fee-ar.js'
 
 export interface AdminDirectReceiveDepositsDeps {
   db: Database.Database
@@ -163,6 +164,16 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
         && str(d.status) === str(req.body?.status) && str(d.related_order_id) === str(req.body?.related_order_id) && str(d.detail_hash) === amlDetailHash(amlDetail(req)) },
     (req, adminId) => recordAmlFlagIngress(db, { userId: str(req.body?.user_id), reviewerId: adminId, rule: str(req.body?.rule), severity: str(req.body?.severity), status: str(req.body?.status), relatedOrderId: opt(req.body?.related_order_id), detail: amlDetail(req) }),
     (req) => ({ targetId: str(req.body?.user_id), detail: { rule: str(req.body?.rule), severity: str(req.body?.severity), aml_status: str(req.body?.status) } })))
+
+  // POST /api/admin/direct-receive/fee-prepay — 记录商家【平台服务费预付款】(ROOT + 真人 Passkey)。append-only;
+  //   invoice_id NULL = 未分配预充值 → 计入 available_prepay(首单后续建单门)。purpose_data 绑定 seller_id+amount_units+method+evidence_ref。
+  //   不碰 buyer wallet/escrow/order/settlement/refund;非买家 escrow/保证金/penalty。本轮无"余额退款"(仅正向预付款登记)。
+  app.post('/api/admin/direct-receive/fee-prepay', gatedIngress('direct_pay_fee_prepay_record',
+    (req) => (data) => { const d = data as { seller_id?: string; amount_units?: number; method?: string; evidence_ref?: string } | null
+      return !!d && str(d.seller_id) === str(req.body?.seller_id) && Number(d.amount_units) === Number(req.body?.amount_units)
+        && str(d.method) === str(req.body?.method) && str(d.evidence_ref) === str(req.body?.evidence_ref) },
+    (req, adminId) => recordFeePrepayTopup(db, { sellerId: str(req.body?.seller_id), amountUnits: Number(req.body?.amount_units), method: str(req.body?.method), recordedBy: adminId, evidenceRef: opt(req.body?.evidence_ref), note: opt(req.body?.note) }),
+    (req) => ({ targetId: str(req.body?.seller_id), detail: { amount_units: Number(req.body?.amount_units), method: str(req.body?.method) } })))
 
   // POST /api/admin/direct-receive/readiness — ROOT + 真人 Passkey:返回【完整】Direct Pay launch readiness(blockers + facts,
   //   含 KYB/sanctions/AML/base-bond/rail clearance 全细节)。只读诊断(不写库、不 flip launch);ROOT 专用,买家/卖家拿不到。

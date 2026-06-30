@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (701 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (702 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -57,19 +57,20 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/dashboard` | 🔐 | 👑 |  | src/pwa/routes/admin-analytics.ts:230 |
 | GET | `/api/admin/decline-contests` | 🔐 |  | 仲裁员待办:列出所有被举证的临时判责拒单 | src/pwa/routes/disputes-write.ts:88 |
 | POST | `/api/admin/decline-contests/:orderId/resolve` | 🔐 |  | 仲裁员裁决 | src/pwa/routes/disputes-write.ts:102 |
-| POST | `/api/admin/direct-receive/aml-flags` |  |  |  | src/pwa/routes/admin-direct-receive-deposits.ts:160 |
-| POST | `/api/admin/direct-receive/aml-flags/:id/review` | 🔐 | 👑 | route 只做 auth + gate + 参数校验 + 调 reviewAmlFlag(唯一 review writer,原子改 flag + 写 audi | src/pwa/routes/admin-direct-receive-deposits.ts:84 |
-| GET | `/api/admin/direct-receive/deferrals` | 🔐 | 👑 | GET /api/admin/direct-receive/deferrals?status=pending — ROOT 审批队列(默认全部;可按 statu | src/pwa/routes/admin-direct-receive-deposits.ts:191 |
-| POST | `/api/admin/direct-receive/deferrals/:id/approve` | 🔐 | 👑 | Passkey purpose_data 绑定【完整审批条款】(deferral_id + reduced_quota_factor + grace_days) | src/pwa/routes/admin-direct-receive-deposits.ts:200 |
-| POST | `/api/admin/direct-receive/deferrals/:id/reject` | 🔐 | 👑 | POST /api/admin/direct-receive/deferrals/:id/reject — ROOT + 真人 Passkey 拒绝缓交。pur | src/pwa/routes/admin-direct-receive-deposits.ts:225 |
-| POST | `/api/admin/direct-receive/deposits/:id/confirm-production` | 🔐 | 👑 | 当前恒 fail-closed(无 legal-cleared rail → assert 抛 → PRODUCTION_RAIL_NOT_CLEARED)。 | src/pwa/routes/admin-direct-receive-deposits.ts:40 |
-| POST | `/api/admin/direct-receive/kyb-reviews` |  |  | Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B  | src/pwa/routes/admin-direct-receive-deposits.ts:141 |
-| GET | `/api/admin/direct-receive/product-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/product-verifications?status=submitted — ROOT 审核队列 | src/pwa/routes/admin-direct-receive-deposits.ts:250 |
-| POST | `/api/admin/direct-receive/product-verifications/:id/review` | 🔐 | 👑 | Passkey purpose_data 绑 verification_id + decision:签 A 用 B / 改结论一律拒。verify = 放行该产 | src/pwa/routes/admin-direct-receive-deposits.ts:259 |
-| POST | `/api/admin/direct-receive/readiness` | 🔐 | 👑 | 含 KYB/sanctions/AML/base-bond/rail clearance 全细节)。只读诊断(不写库、不 flip launch);ROOT 专 | src/pwa/routes/admin-direct-receive-deposits.ts:169 |
-| POST | `/api/admin/direct-receive/sanctions-screenings` |  |  | purpose_data 绑定 user_id+status+provider_ref+expires_at。 | src/pwa/routes/admin-direct-receive-deposits.ts:150 |
-| GET | `/api/admin/direct-receive/store-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/store-verifications?status=submitted — ROOT 审核队列(默 | src/pwa/routes/admin-direct-receive-deposits.ts:287 |
-| POST | `/api/admin/direct-receive/store-verifications/:id/review` | 🔐 | 👑 | POST /api/admin/direct-receive/store-verifications/:id/review — ROOT + 真人 Passke | src/pwa/routes/admin-direct-receive-deposits.ts:295 |
+| POST | `/api/admin/direct-receive/aml-flags` |  |  |  | src/pwa/routes/admin-direct-receive-deposits.ts:161 |
+| POST | `/api/admin/direct-receive/aml-flags/:id/review` | 🔐 | 👑 | route 只做 auth + gate + 参数校验 + 调 reviewAmlFlag(唯一 review writer,原子改 flag + 写 audi | src/pwa/routes/admin-direct-receive-deposits.ts:85 |
+| GET | `/api/admin/direct-receive/deferrals` | 🔐 | 👑 | GET /api/admin/direct-receive/deferrals?status=pending — ROOT 审批队列(默认全部;可按 statu | src/pwa/routes/admin-direct-receive-deposits.ts:202 |
+| POST | `/api/admin/direct-receive/deferrals/:id/approve` | 🔐 | 👑 | Passkey purpose_data 绑定【完整审批条款】(deferral_id + reduced_quota_factor + grace_days) | src/pwa/routes/admin-direct-receive-deposits.ts:211 |
+| POST | `/api/admin/direct-receive/deferrals/:id/reject` | 🔐 | 👑 | POST /api/admin/direct-receive/deferrals/:id/reject — ROOT + 真人 Passkey 拒绝缓交。pur | src/pwa/routes/admin-direct-receive-deposits.ts:236 |
+| POST | `/api/admin/direct-receive/deposits/:id/confirm-production` | 🔐 | 👑 | 当前恒 fail-closed(无 legal-cleared rail → assert 抛 → PRODUCTION_RAIL_NOT_CLEARED)。 | src/pwa/routes/admin-direct-receive-deposits.ts:41 |
+| POST | `/api/admin/direct-receive/fee-prepay` |  |  | 不碰 buyer wallet/escrow/order/settlement/refund;非买家 escrow/保证金/penalty。本轮无"余额退款"( | src/pwa/routes/admin-direct-receive-deposits.ts:171 |
+| POST | `/api/admin/direct-receive/kyb-reviews` |  |  | Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B  | src/pwa/routes/admin-direct-receive-deposits.ts:142 |
+| GET | `/api/admin/direct-receive/product-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/product-verifications?status=submitted — ROOT 审核队列 | src/pwa/routes/admin-direct-receive-deposits.ts:261 |
+| POST | `/api/admin/direct-receive/product-verifications/:id/review` | 🔐 | 👑 | Passkey purpose_data 绑 verification_id + decision:签 A 用 B / 改结论一律拒。verify = 放行该产 | src/pwa/routes/admin-direct-receive-deposits.ts:270 |
+| POST | `/api/admin/direct-receive/readiness` | 🔐 | 👑 | 含 KYB/sanctions/AML/base-bond/rail clearance 全细节)。只读诊断(不写库、不 flip launch);ROOT 专 | src/pwa/routes/admin-direct-receive-deposits.ts:180 |
+| POST | `/api/admin/direct-receive/sanctions-screenings` |  |  | purpose_data 绑定 user_id+status+provider_ref+expires_at。 | src/pwa/routes/admin-direct-receive-deposits.ts:151 |
+| GET | `/api/admin/direct-receive/store-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/store-verifications?status=submitted — ROOT 审核队列(默 | src/pwa/routes/admin-direct-receive-deposits.ts:298 |
+| POST | `/api/admin/direct-receive/store-verifications/:id/review` | 🔐 | 👑 | POST /api/admin/direct-receive/store-verifications/:id/review — ROOT + 真人 Passke | src/pwa/routes/admin-direct-receive-deposits.ts:306 |
 | GET | `/api/admin/disputes` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:47 |
 | GET | `/api/admin/economic-summary` | 🔐 | 👑 | 隐私第一：运营财务，仅 protocol admin 可见。 | src/pwa/routes/admin-reports.ts:82 |
 | GET | `/api/admin/editor-picks` | 🔐 | 👑 |  | src/pwa/routes/admin-editor-picks.ts:60 |
@@ -389,7 +390,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/logistics/companies` |  |  |  | src/pwa/routes/logistics.ts:25 |
 | GET | `/api/logistics/me/performance` | 🔐 |  | 物流绩效卡 (Wave B-4) | src/pwa/routes/analytics.ts:36 |
 | GET | `/api/logistics/orders` | 🔐 |  |  | src/pwa/routes/logistics.ts:32 |
-| GET | `/api/logistics/return-pickups` | 🔐 |  |  | src/pwa/routes/returns.ts:413 |
+| GET | `/api/logistics/return-pickups` | 🔐 |  |  | src/pwa/routes/returns.ts:418 |
 | GET | `/api/manifest` |  |  |  | src/pwa/routes/public-utils.ts:463 |
 | POST | `/api/manifests` | 🔐 |  |  | src/pwa/routes/manifests.ts:49 |
 | GET | `/api/manifests/:hash` | 🔐 |  |  | src/pwa/routes/manifests.ts:97 |
@@ -437,19 +438,19 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-read.ts:36 |
 | POST | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-create.ts:119 |
 | GET | `/api/orders/:id` | 🔐 |  |  | src/pwa/routes/orders-read.ts:149 |
-| POST | `/api/orders/:id/action` | 🔐 |  | 通用状态机 action — accept/ship/pickup/transit/deliver/confirm/dispute | src/pwa/routes/orders-action.ts:167 |
+| POST | `/api/orders/:id/action` | 🔐 |  | 通用状态机 action — accept/ship/pickup/transit/deliver/confirm/dispute | src/pwa/routes/orders-action.ts:165 |
 | GET | `/api/orders/:id/chain` | 🔐 |  | 订单签名链 — 当事人 + arbitrator + admin 可查 | src/pwa/routes/orders-read.ts:122 |
 | GET | `/api/orders/:id/claim-task` | 🔐 |  | 通过 order_id 查关联 task | src/pwa/routes/claim-verify.ts:409 |
 | POST | `/api/orders/:id/claim-verification` | 🔐 |  | 买家发起 claim 验证任务（绑定 paid 及之后的订单） | src/pwa/routes/claim-verify.ts:331 |
 | POST | `/api/orders/:id/confirm-in-person` | 🔐 |  | 买家确认面交完成 → 直接 completed + settleOrder | src/pwa/routes/orders-action.ts:133 |
-| POST | `/api/orders/:id/force-timeout-check` | 🔐 |  | 手动触发超时判责（当事人） | src/pwa/routes/orders-action.ts:491 |
+| POST | `/api/orders/:id/force-timeout-check` | 🔐 |  | 手动触发超时判责（当事人） | src/pwa/routes/orders-action.ts:492 |
 | GET | `/api/orders/:order_id/buyer-rating` | 🔐 |  | 查 seller → buyer 评价（双盲遮蔽：buyer 看不到，除非自己也评过 OR 窗口到期） | src/pwa/routes/ratings.ts:113 |
 | POST | `/api/orders/:order_id/buyer-rating` | 🔐 |  | seller → buyer 反向评价 | src/pwa/routes/ratings.ts:83 |
 | GET | `/api/orders/:order_id/rating` | 🔐 |  | 查 buyer → seller 评价（双盲遮蔽：seller 视角同样） | src/pwa/routes/ratings.ts:132 |
 | POST | `/api/orders/:order_id/rating` | 🔐 |  | buyer → seller 评价（一单一评，仅 completed 订单可评） | src/pwa/routes/ratings.ts:50 |
 | POST | `/api/orders/:order_id/rating/followup` | 🔐 |  | W3 买家追问 — 在卖家 reply 后可追问一次 | src/pwa/routes/ratings.ts:169 |
 | POST | `/api/orders/:order_id/rating/reply` | 🔐 |  |  | src/pwa/routes/ratings.ts:150 |
-| GET | `/api/orders/:order_id/return-request` | 🔐 |  | P1-5: 订单级直查 | src/pwa/routes/returns.ts:182 |
+| GET | `/api/orders/:order_id/return-request` | 🔐 |  | P1-5: 订单级直查 | src/pwa/routes/returns.ts:187 |
 | POST | `/api/orders/:order_id/return-request` | 🔐 |  | buyer 发起退货 | src/pwa/routes/returns.ts:121 |
 | POST | `/api/orders/batch-ship` | 🔐 |  | C-4: 卖家批量发货 | src/pwa/routes/orders-action.ts:82 |
 | GET | `/api/orders/export` | 🔐 |  | Wave D-2: 订单导出 CSV | src/pwa/routes/orders-read.ts:61 |
@@ -544,14 +545,14 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/register/send-code` |  |  | 注册场景需明确告知"邮箱已占用"(无法防枚举,标准取舍),但限流 + captcha 兜底。 | src/pwa/routes/auth-register.ts:71 |
 | GET | `/api/reputation` | 🔐 |  |  | src/pwa/routes/reputation.ts:29 |
 | GET | `/api/reputation/:userId` |  |  |  | src/pwa/routes/reputation.ts:44 |
-| GET | `/api/return-requests` | 🔐 |  |  | src/pwa/routes/returns.ts:199 |
-| DELETE | `/api/return-requests/:id` | 🔐 |  |  | src/pwa/routes/returns.ts:272 |
-| GET | `/api/return-requests/:id` | 🔐 |  | ─── W2 售后协商时间线 ─────────────────────────────── | src/pwa/routes/returns.ts:283 |
-| POST | `/api/return-requests/:id/decide` | 🔐 |  |  | src/pwa/routes/returns.ts:225 |
-| POST | `/api/return-requests/:id/escalate` | 🔐 |  | buyer 升级到争议（仅 rejected 后或 pending ≥ 7 天） | src/pwa/routes/returns.ts:460 |
-| POST | `/api/return-requests/:id/messages` | 🔐 |  |  | src/pwa/routes/returns.ts:430 |
-| POST | `/api/return-requests/:id/picked-up` | 🔐 |  | L3 Phase 2: 物流揽收 | src/pwa/routes/returns.ts:372 |
-| POST | `/api/return-requests/:id/received` | 🔐 |  | L3 Phase 2: 卖家确认收到 → refunded | src/pwa/routes/returns.ts:395 |
+| GET | `/api/return-requests` | 🔐 |  |  | src/pwa/routes/returns.ts:204 |
+| DELETE | `/api/return-requests/:id` | 🔐 |  |  | src/pwa/routes/returns.ts:277 |
+| GET | `/api/return-requests/:id` | 🔐 |  | ─── W2 售后协商时间线 ─────────────────────────────── | src/pwa/routes/returns.ts:288 |
+| POST | `/api/return-requests/:id/decide` | 🔐 |  |  | src/pwa/routes/returns.ts:230 |
+| POST | `/api/return-requests/:id/escalate` | 🔐 |  | buyer 升级到争议（仅 rejected 后或 pending ≥ 7 天） | src/pwa/routes/returns.ts:465 |
+| POST | `/api/return-requests/:id/messages` | 🔐 |  |  | src/pwa/routes/returns.ts:435 |
+| POST | `/api/return-requests/:id/picked-up` | 🔐 |  | L3 Phase 2: 物流揽收 | src/pwa/routes/returns.ts:377 |
+| POST | `/api/return-requests/:id/received` | 🔐 |  | L3 Phase 2: 卖家确认收到 → refunded | src/pwa/routes/returns.ts:400 |
 | POST | `/api/reviews/:type/:id/claim` | 🔐 |  |  | src/pwa/routes/reviews.ts:54 |
 | GET | `/api/reviews/:type/:id/claims` |  |  |  | src/pwa/routes/reviews.ts:113 |
 | GET | `/api/reviews/recent` |  |  |  | src/pwa/routes/reviews.ts:38 |
