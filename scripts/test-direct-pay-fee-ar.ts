@@ -20,16 +20,20 @@ const U = (usdc: number) => usdc * 1_000_000 // USDC → base-units
 ok('gate: sum == ceiling → ok', withinFeeArCreditCeiling({ outstandingUnits: U(30), openOrdersEstFeeUnits: U(10), newOrderFeeUnits: U(10), ceilingUnits: U(50) }) === true)
 ok('gate: sum > ceiling → false', withinFeeArCreditCeiling({ outstandingUnits: U(30), openOrdersEstFeeUnits: U(10), newOrderFeeUnits: U(11), ceilingUnits: U(50) }) === false)
 ok('gate: ceiling 0 → false (block)', withinFeeArCreditCeiling({ outstandingUnits: 0, openOrdersEstFeeUnits: 0, newOrderFeeUnits: U(1), ceilingUnits: 0 }) === false)
-ok('gate: negative outstanding (credit) allows', withinFeeArCreditCeiling({ outstandingUnits: -U(5), openOrdersEstFeeUnits: 0, newOrderFeeUnits: U(3), ceilingUnits: 0 }) === true)
+ok('gate: ceiling 0 + negative outstanding still BLOCKED (fail-closed not bypassed)', withinFeeArCreditCeiling({ outstandingUnits: -U(5), openOrdersEstFeeUnits: 0, newOrderFeeUnits: U(3), ceilingUnits: 0 }) === false)
+ok('gate: ceiling <0 → false', withinFeeArCreditCeiling({ outstandingUnits: 0, openOrdersEstFeeUnits: 0, newOrderFeeUnits: 0, ceilingUnits: -1 }) === false)
+ok('gate: negative outstanding (credit) offsets only when ceiling>0', withinFeeArCreditCeiling({ outstandingUnits: -U(5), openOrdersEstFeeUnits: 0, newOrderFeeUnits: U(3), ceilingUnits: U(1) }) === true)
 
 // ── DB setup (建子集表;镜像 schema.ts) ──
 const db = new Database(':memory:')
+// 镜像 schema.ts 关键约束(append-only fact 行无 invoice_id;金额/上限 CHECK ≥ 0)。
 db.exec(`
-  CREATE TABLE direct_pay_fee_receivables (id TEXT, order_id TEXT, seller_id TEXT, amount REAL, currency TEXT, accrued_at TEXT, invoice_id TEXT);
+  CREATE TABLE direct_pay_fee_receivables (id TEXT, order_id TEXT, seller_id TEXT, amount REAL NOT NULL CHECK (amount >= 0), currency TEXT, accrued_at TEXT);
   CREATE TABLE direct_pay_fee_adjustments (id TEXT, receivable_id TEXT, seller_id TEXT, delta_amount REAL, currency TEXT, kind TEXT, reason TEXT, created_at TEXT, created_by TEXT);
-  CREATE TABLE direct_pay_fee_payments (id TEXT, seller_id TEXT, invoice_id TEXT, amount REAL, currency TEXT, method TEXT, received_at TEXT, recorded_by TEXT, evidence_ref TEXT, note TEXT);
-  CREATE TABLE direct_pay_fee_ar_seller_overrides (seller_id TEXT PRIMARY KEY, ceiling_units INTEGER, updated_by TEXT, updated_at TEXT);
+  CREATE TABLE direct_pay_fee_payments (id TEXT, seller_id TEXT, invoice_id TEXT, amount REAL NOT NULL CHECK (amount >= 0), currency TEXT, method TEXT, received_at TEXT, recorded_by TEXT, evidence_ref TEXT, note TEXT);
+  CREATE TABLE direct_pay_fee_ar_seller_overrides (seller_id TEXT PRIMARY KEY, ceiling_units INTEGER NOT NULL CHECK (ceiling_units >= 0), updated_by TEXT, updated_at TEXT);
 `)
+const threw = (fn: () => unknown): boolean => { try { fn(); return false } catch { return true } }
 
 // ── 2. outstanding 派生 ──
 ok('outstanding empty → 0', getSellerOutstandingFeeArUnits(db, 's1') === 0)
@@ -42,6 +46,7 @@ db.prepare("INSERT INTO direct_pay_fee_payments (id,seller_id,amount,currency,me
 ok('outstanding − payment', getSellerOutstandingFeeArUnits(db, 's1') === U(10))
 ok('outstanding isolates per seller', getSellerOutstandingFeeArUnits(db, 's2') === 0)
 ok('outstanding missing-table → 0 (defensive)', getSellerOutstandingFeeArUnits(new Database(':memory:'), 's1') === 0)
+ok('DB CHECK rejects negative receivable amount (P3)', threw(() => db.prepare("INSERT INTO direct_pay_fee_receivables (id,order_id,seller_id,amount,currency) VALUES ('rn','on','s1',-1,'usdc')").run()))
 
 // ── 3. 全局上限 fail-closed ──
 ok('global missing → 0', readGlobalFeeArCeilingUnits(mkParam(undefined)) === 0)
@@ -60,8 +65,7 @@ db.prepare("INSERT INTO direct_pay_fee_ar_seller_overrides (seller_id, ceiling_u
 ok('effective: override present → override', readEffectiveFeeArCeilingUnits(db, 's1', P) === U(70))
 db.prepare("INSERT INTO direct_pay_fee_ar_seller_overrides (seller_id, ceiling_units) VALUES ('s3', 0)").run()
 ok('effective: override 0 → 0 (admin block)', readEffectiveFeeArCeilingUnits(db, 's3', P) === 0)
-db.prepare("INSERT INTO direct_pay_fee_ar_seller_overrides (seller_id, ceiling_units) VALUES ('s4', -5)").run()
-ok('effective: override negative → 0 (fail-closed)', readEffectiveFeeArCeilingUnits(db, 's4', P) === 0)
+ok('DB CHECK rejects negative override (P3)', threw(() => db.prepare("INSERT INTO direct_pay_fee_ar_seller_overrides (seller_id, ceiling_units) VALUES ('s4', -5)").run()))
 ok('effective: other seller no override → global', readEffectiveFeeArCeilingUnits(db, 's2', P) === U(50))
 
 // ── 5. 参数键常量 ──

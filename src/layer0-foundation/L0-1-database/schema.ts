@@ -320,7 +320,7 @@ export function initDatabase(): Database.Database {
       seller_id     TEXT NOT NULL REFERENCES users(id),
       period_start  TEXT NOT NULL,
       period_end    TEXT NOT NULL,
-      total_amount  REAL NOT NULL,
+      total_amount  REAL NOT NULL CHECK (total_amount >= 0),
       currency      TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
       due_date      TEXT NOT NULL,                 -- = period_end + net 15d(D9)
       status        TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','paid','overdue','void')),
@@ -330,18 +330,29 @@ export function initDatabase(): Database.Database {
     );
     CREATE INDEX IF NOT EXISTS idx_dp_fee_invoices_seller ON direct_pay_fee_invoices(seller_id, status);
 
-    -- 逐单应收 = 完成时赚的一笔平台费(原始 accrual 事实行,IMMUTABLE:金额永不改)。
+    -- 逐单应收 = 完成时赚的一笔平台费(原始 accrual 事实行,IMMUTABLE:行一旦写入永不改)。
+    -- ⚠️ 不含 invoice_id:入票关联走独立 append-only 表 direct_pay_fee_invoice_items(避免回填 UPDATE 破坏不可变)。
     CREATE TABLE IF NOT EXISTS direct_pay_fee_receivables (
       id          TEXT PRIMARY KEY,
       order_id    TEXT NOT NULL REFERENCES orders(id),
       seller_id   TEXT NOT NULL REFERENCES users(id),
-      amount      REAL NOT NULL,                   -- 该单平台费(USDC 计价小数;units 经 money.ts 边界)
+      amount      REAL NOT NULL CHECK (amount >= 0),  -- 该单平台费(USDC 计价小数;units 经 money.ts 边界)
       currency    TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),  -- v1 单币;v2 放开
       accrued_at  TEXT DEFAULT (datetime('now')),
-      invoice_id  TEXT REFERENCES direct_pay_fee_invoices(id),  -- 分摊事件回填(月结时)
       UNIQUE(order_id)
     );
     CREATE INDEX IF NOT EXISTS idx_dp_fee_receivables_seller ON direct_pay_fee_receivables(seller_id);
+
+    -- 应收 ↔ 发票分摊(append-only 关联行;月结开票时写,不回填/不改 receivables)。UNIQUE(receivable_id) 防重复入票。
+    CREATE TABLE IF NOT EXISTS direct_pay_fee_invoice_items (
+      id            TEXT PRIMARY KEY,
+      invoice_id    TEXT NOT NULL REFERENCES direct_pay_fee_invoices(id),
+      receivable_id TEXT NOT NULL REFERENCES direct_pay_fee_receivables(id),
+      amount        REAL NOT NULL CHECK (amount >= 0),  -- 入票金额(= 该 receivable 计入本发票的额)
+      created_at    TEXT DEFAULT (datetime('now')),
+      UNIQUE(receivable_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_dp_fee_invoice_items_invoice ON direct_pay_fee_invoice_items(invoice_id);
 
     -- 冲销 / 坏账核销 / 手工冲正(独立 append-only 行;原始 accrual 行不动)。
     CREATE TABLE IF NOT EXISTS direct_pay_fee_adjustments (
@@ -374,7 +385,7 @@ export function initDatabase(): Database.Database {
       id          TEXT PRIMARY KEY,
       seller_id   TEXT NOT NULL REFERENCES users(id),
       invoice_id  TEXT REFERENCES direct_pay_fee_invoices(id),
-      amount      REAL NOT NULL,
+      amount      REAL NOT NULL CHECK (amount >= 0),
       currency    TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
       method      TEXT NOT NULL CHECK (method IN ('usdc','fiat')),
       received_at TEXT DEFAULT (datetime('now')),
@@ -389,7 +400,7 @@ export function initDatabase(): Database.Database {
     --   本表仅存逐商家覆写;生效 = override ?? global(读 helper 单一真相源)。
     CREATE TABLE IF NOT EXISTS direct_pay_fee_ar_seller_overrides (
       seller_id     TEXT PRIMARY KEY REFERENCES users(id),
-      ceiling_units INTEGER NOT NULL,              -- 该商家未付 AR 上限(整数 base-units)
+      ceiling_units INTEGER NOT NULL CHECK (ceiling_units >= 0),  -- 该商家未付 AR 上限(整数 base-units;0=封锁)
       updated_by    TEXT REFERENCES users(id),     -- admin
       updated_at    TEXT DEFAULT (datetime('now'))
     );
@@ -399,8 +410,8 @@ export function initDatabase(): Database.Database {
     CREATE TABLE IF NOT EXISTS direct_pay_fee_ceiling_requests (
       id              TEXT PRIMARY KEY,
       seller_id       TEXT NOT NULL REFERENCES users(id),
-      requested_units INTEGER NOT NULL,            -- 申请目标上限(整数 base-units)
-      effective_units_at_request INTEGER,          -- 申请时生效上限快照(审计用)
+      requested_units INTEGER NOT NULL CHECK (requested_units >= 0),  -- 申请目标上限(整数 base-units)
+      effective_units_at_request INTEGER CHECK (effective_units_at_request >= 0),  -- 申请时生效上限快照(审计用)
       reason          TEXT,
       status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
       created_at      TEXT DEFAULT (datetime('now')),

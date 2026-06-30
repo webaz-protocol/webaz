@@ -220,7 +220,7 @@ CREATE TABLE IF NOT EXISTS direct_pay_fee_invoices (
       seller_id     TEXT NOT NULL REFERENCES users(id),
       period_start  TEXT NOT NULL,
       period_end    TEXT NOT NULL,
-      total_amount  DOUBLE PRECISION NOT NULL,
+      total_amount  DOUBLE PRECISION NOT NULL CHECK (total_amount >= 0),
       currency      TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
       due_date      TEXT NOT NULL,
       status        TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','paid','overdue','void')),
@@ -234,13 +234,22 @@ CREATE TABLE IF NOT EXISTS direct_pay_fee_receivables (
       id          TEXT PRIMARY KEY,
       order_id    TEXT NOT NULL REFERENCES orders(id),
       seller_id   TEXT NOT NULL REFERENCES users(id),
-      amount      DOUBLE PRECISION NOT NULL,
+      amount      DOUBLE PRECISION NOT NULL CHECK (amount >= 0),
       currency    TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
       accrued_at  TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
-      invoice_id  TEXT REFERENCES direct_pay_fee_invoices(id),
       UNIQUE(order_id)
     );
 CREATE INDEX IF NOT EXISTS idx_dp_fee_receivables_seller ON direct_pay_fee_receivables(seller_id);
+
+CREATE TABLE IF NOT EXISTS direct_pay_fee_invoice_items (
+      id            TEXT PRIMARY KEY,
+      invoice_id    TEXT NOT NULL REFERENCES direct_pay_fee_invoices(id),
+      receivable_id TEXT NOT NULL REFERENCES direct_pay_fee_receivables(id),
+      amount        DOUBLE PRECISION NOT NULL CHECK (amount >= 0),
+      created_at    TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
+      UNIQUE(receivable_id)
+    );
+CREATE INDEX IF NOT EXISTS idx_dp_fee_invoice_items_invoice ON direct_pay_fee_invoice_items(invoice_id);
 
 CREATE TABLE IF NOT EXISTS direct_pay_fee_adjustments (
       id            TEXT PRIMARY KEY,
@@ -270,7 +279,7 @@ CREATE TABLE IF NOT EXISTS direct_pay_fee_payments (
       id          TEXT PRIMARY KEY,
       seller_id   TEXT NOT NULL REFERENCES users(id),
       invoice_id  TEXT REFERENCES direct_pay_fee_invoices(id),
-      amount      DOUBLE PRECISION NOT NULL,
+      amount      DOUBLE PRECISION NOT NULL CHECK (amount >= 0),
       currency    TEXT NOT NULL DEFAULT 'usdc' CHECK (currency = 'usdc'),
       method      TEXT NOT NULL CHECK (method IN ('usdc','fiat')),
       received_at TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
@@ -282,7 +291,7 @@ CREATE INDEX IF NOT EXISTS idx_dp_fee_payments_seller ON direct_pay_fee_payments
 
 CREATE TABLE IF NOT EXISTS direct_pay_fee_ar_seller_overrides (
       seller_id     TEXT PRIMARY KEY REFERENCES users(id),
-      ceiling_units BIGINT NOT NULL,
+      ceiling_units BIGINT NOT NULL CHECK (ceiling_units >= 0),
       updated_by    TEXT REFERENCES users(id),
       updated_at    TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
     );
@@ -290,8 +299,8 @@ CREATE TABLE IF NOT EXISTS direct_pay_fee_ar_seller_overrides (
 CREATE TABLE IF NOT EXISTS direct_pay_fee_ceiling_requests (
       id              TEXT PRIMARY KEY,
       seller_id       TEXT NOT NULL REFERENCES users(id),
-      requested_units BIGINT NOT NULL,
-      effective_units_at_request BIGINT,
+      requested_units BIGINT NOT NULL CHECK (requested_units >= 0),
+      effective_units_at_request BIGINT CHECK (effective_units_at_request >= 0),
       reason          TEXT,
       status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
       created_at      TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),

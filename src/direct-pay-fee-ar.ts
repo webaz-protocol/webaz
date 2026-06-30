@@ -72,10 +72,12 @@ export function readEffectiveFeeArCeilingUnits(
 /**
  * 纯函数:建单信用门判定(PR-2 装配,PR-1 不接线)。
  *   unpaid_AR + 在途单预估费 + 本单预估费 ≤ ceiling → ok。
- * 负的 outstanding(贷方)按实际值参与(更宽松,但守恒正确)。
+ * 【fail-closed 硬门】ceiling ≤ 0(缺失/非法/admin 封锁)→ 一律拒:
+ *   即便卖家有贷方(负 outstanding)也【不得】绕过封锁开新单。贷方抵扣只在 ceiling > 0 时生效。
  */
 export function withinFeeArCreditCeiling(args: {
   outstandingUnits: Units; openOrdersEstFeeUnits: Units; newOrderFeeUnits: Units; ceilingUnits: Units
 }): boolean {
+  if (args.ceilingUnits <= 0) return false
   return args.outstandingUnits + args.openOrdersEstFeeUnits + args.newOrderFeeUnits <= args.ceilingUnits
 }
