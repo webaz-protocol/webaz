@@ -70,12 +70,12 @@ const deps = { generateId: (p: string) => `${p}_${Math.random().toString(36).sli
 const SNAP = { enabled: true, railBreakerTripped: false, region: 'SG', regionAllowlist: ['SG', 'MY'], perTxCapUnits: toUnits(1000), sellerBreakerTripped: false, decisionCode: 'OK' }
 const snapRow = (id: string) => db.prepare('SELECT direct_pay_enabled_snapshot e, direct_pay_rail_breaker_snapshot rb, direct_pay_region_snapshot rg, direct_pay_region_allowlist_snapshot al, direct_pay_per_tx_cap_units_snapshot cap, direct_pay_seller_breaker_snapshot sb, direct_pay_decision_code dc FROM orders WHERE id=?').get(id) as any
 const bBal = walletUnits(db, 'buyer1').balance, sBal = walletUnits(db, 'seller1').balance, st0 = pstock()
-const { orderId: hOid } = createDirectPayOrder(db, deps, { productId: 'p1', sellerId: 'seller1', buyerId: 'buyer1', quantity: 1, unitPrice: 50, totalAmount: 50, feeUnits: toUnits(1), instructionSnapshot: 'snap', windowDeadlineIso: new Date(Date.now() + 3600_000).toISOString(), shippingAddress: 'addr', snapshot: SNAP })
+const { orderId: hOid } = createDirectPayOrder(db, deps, { productId: 'p1', sellerId: 'seller1', buyerId: 'buyer1', quantity: 1, unitPrice: 50, totalAmount: 50, instructionSnapshot: 'snap', windowDeadlineIso: new Date(Date.now() + 3600_000).toISOString(), shippingAddress: 'addr', snapshot: SNAP })
 ok('helper: order in direct_pay_window', ord(hOid)?.status === 'direct_pay_window')
 ok('helper: escrow_amount = 0 (本金不入协议)', ord(hOid)?.escrow_amount === 0)
 ok('helper: buyer wallet UNCHANGED (不写 buyer wallet/principal)', walletUnits(db, 'buyer1').balance === bBal)
-ok('helper: seller fee-stake locked (= 1)', stake(hOid)?.status === 'locked' && toUnits(stake(hOid)?.amount) === toUnits(1))
-ok('helper: seller balance -1 (fee-stake), fee_staked +1', walletUnits(db, 'seller1').balance === sBal - toUnits(1))
+ok('helper: NO fee-stake at create (AR model:费用完成时记应收,建单不锁)', stake(hOid) === undefined)
+ok('helper: seller wallet UNCHANGED at create (建单无资金写)', walletUnits(db, 'seller1').balance === sBal)
 ok('helper: instruction snapshot stored', ord(hOid)?.direct_pay_instruction_snapshot === 'snap')
 ok('helper: stock decremented by 1', pstock() === st0 - 1)
 // PR-5b: policy 快照随订单 INSERT 一同写入(同一 tx);布尔 0/1、cap 整数、allowlist=JSON.stringify 数组、decision='OK'。
@@ -83,20 +83,18 @@ const hs = snapRow(hOid)
 ok('helper: policy snapshot written (enabled/rail/seller as 0/1, cap int, region, allowlist JSON, decision OK)',
   hs.e === 1 && hs.rb === 0 && hs.sb === 0 && hs.rg === 'SG' && hs.al === JSON.stringify(['SG', 'MY']) && hs.cap === toUnits(1000) && hs.dc === 'OK', JSON.stringify(hs))
 
-// rollback: seller insufficient WAZ for fee-stake → no order, no stake, no stock change
+// rollback: stock depleted → 整体回滚(no order, no stock change)。AR 模型下建单无资金写,唯一可回滚的写=扣库存。
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('poor','poor','seller','k_poor')").run()
-db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('poor', 0)").run()
 const stBefore = pstock()
 let threw = false
-try { createDirectPayOrder(db, deps, { productId: 'p1', sellerId: 'poor', buyerId: 'buyer1', quantity: 1, unitPrice: 50, totalAmount: 50, feeUnits: toUnits(1), instructionSnapshot: 'x', windowDeadlineIso: new Date().toISOString(), shippingAddress: 'addr', snapshot: SNAP }) } catch { threw = true }
-ok('helper rollback: insufficient fee-stake → throws', threw)
-ok('helper rollback: no order rows for poor seller', !db.prepare("SELECT 1 FROM orders WHERE seller_id='poor'").get())
-ok('helper rollback: no fee-stake rows for poor seller', !db.prepare("SELECT 1 FROM direct_pay_fee_stakes WHERE seller_id='poor'").get())
-ok('helper rollback: stock UNCHANGED', pstock() === stBefore)
+try { createDirectPayOrder(db, deps, { productId: 'p1', sellerId: 'seller1', buyerId: 'buyer1', quantity: stBefore + 999, unitPrice: 50, totalAmount: 50, instructionSnapshot: 'x', windowDeadlineIso: new Date().toISOString(), shippingAddress: 'addr', snapshot: SNAP }) } catch { threw = true }
+ok('helper rollback: stock depleted → throws', threw)
+ok('helper rollback: stock UNCHANGED after failed create', pstock() === stBefore)
 
 // ══════ Part B: route integration (POST /api/orders payment_rail=direct_p2p) ══════
 // Phase 4a 控制面参数:可变,便于在同一 app 上分别测 disabled/region/cap/enabled。默认空 = fail-closed(disabled)。
 const cp: Record<string, unknown> = {}
+cp['direct_pay.fee_ar_credit_ceiling_units'] = toUnits(50)   // 平台费应收信用上限(AR cutover):给足额度让 happy-path 过门(fail-closed 缺失=0=拒)
 const seedSanctions = (sellerId: string) => db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES (?,?,'clear')").run('sc_' + sellerId, sellerId)
 const seedKyb = (sellerId: string, status = 'approved') => db.prepare("INSERT INTO direct_receive_kyb_reviews (id, user_id, status) VALUES (?,?,?)").run('kyb_' + sellerId, sellerId, status)
 let oc = 0
@@ -183,7 +181,7 @@ ok('route happy: create response does NOT leak payment_instruction', rOk.json?.p
 ok('route happy: buyer wallet UNCHANGED (no principal/escrow)', walletUnits(db, 'buyer1').balance === bBal2)
 const createdId = rOk.json?.order_id
 ok('route happy: order escrow_amount=0, rail=direct_p2p', ord(createdId)?.escrow_amount === 0 && ord(createdId)?.payment_rail === 'direct_p2p')
-ok('route happy: seller fee-stake locked', stake(createdId)?.status === 'locked')
+ok('route happy: NO fee-stake at create (AR model:费用完成时记应收)', stake(createdId) === undefined)
 // 边界 = simple product + 现有 shipping/self-fulfill 流程:无 logistics_id / 未传 logistics_company_id 也能建单
 // (后续走卖家自发货 action path;不要求第三方物流,也不按 product_type 判定物理/虚拟)
 ok('route happy: simple product, NO logistics required (logistics_id NULL)', (db.prepare('SELECT logistics_id FROM orders WHERE id=?').get(createdId) as { logistics_id: string | null }).logistics_id == null)

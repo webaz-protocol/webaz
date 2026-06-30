@@ -9,6 +9,7 @@ import { toDecimal } from '../src/money.js'
 import {
   getSellerOutstandingFeeArUnits, readGlobalFeeArCeilingUnits,
   readEffectiveFeeArCeilingUnits, withinFeeArCreditCeiling, FEE_AR_CEILING_PARAM,
+  feeUnitsForOrder, estimateOpenDirectPayFeeUnits, accrueFeeReceivable,
 } from '../src/direct-pay-fee-ar.js'
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -83,7 +84,30 @@ ok('adjustment DELETE rejected', threw(() => db.prepare("DELETE FROM direct_pay_
 // outstanding 未被失败的变更影响(仍 10 USDC)
 ok('outstanding unchanged after rejected mutations', getSellerOutstandingFeeArUnits(db, 's1') === U(10))
 
-// ── 6. 参数键常量 ──
+// ── 6. 费率 SSOT + 在途预估 + accrue(PR-2 cutover)──
+ok('feeUnitsForOrder: shop 2%', feeUnitsForOrder(U(100), 'shop') === U(2))
+ok('feeUnitsForOrder: secondhand 1%', feeUnitsForOrder(U(100), 'secondhand') === U(1))
+ok('feeUnitsForOrder: null source → 2%', feeUnitsForOrder(U(100), null) === U(2))
+db.exec(`CREATE TABLE orders (id TEXT, seller_id TEXT, payment_rail TEXT, status TEXT, total_amount REAL, source TEXT)`)
+ok('estimate: no open orders → 0', estimateOpenDirectPayFeeUnits(db, 's1') === 0)
+db.prepare("INSERT INTO orders VALUES ('eo1','s1','direct_p2p','delivered',100,'shop')").run()   // 在途 → 2% = 2
+db.prepare("INSERT INTO orders VALUES ('eo2','s1','direct_p2p','direct_pay_window',100,'secondhand')").run()  // 在途 → 1% = 1
+db.prepare("INSERT INTO orders VALUES ('eo3','s1','direct_p2p','completed',100,'shop')").run()    // 完成 → 不计(已在 receivables)
+db.prepare("INSERT INTO orders VALUES ('eo4','s1','direct_p2p','cancelled',100,'shop')").run()    // 终态 → 不计
+db.prepare("INSERT INTO orders VALUES ('eo5','s1','escrow','delivered',100,'shop')").run()        // 非 direct_p2p → 不计
+db.prepare("INSERT INTO orders VALUES ('eo6','s2','direct_p2p','delivered',100,'shop')").run()    // 别的卖家 → 不计
+ok('estimate: only open direct_p2p of this seller (2+1=3)', estimateOpenDirectPayFeeUnits(db, 's1') === U(3))
+ok('estimate: missing orders table → 0 (defensive)', estimateOpenDirectPayFeeUnits(new Database(':memory:'), 's1') === 0)
+
+// accrue:幂等 + fail-closed(此处用一个干净库,带 receivables 表)
+const adb = new Database(':memory:')
+adb.exec(`CREATE TABLE direct_pay_fee_receivables (id TEXT PRIMARY KEY, order_id TEXT UNIQUE, seller_id TEXT, amount REAL, currency TEXT, accrued_at TEXT)`)
+ok('accrue: first → accrued', accrueFeeReceivable(adb, { orderId: 'o1', sellerId: 's1', feeUnits: U(2), receivableId: 'r1' }).outcome === 'accrued')
+ok('accrue: writes receivable amount', getSellerOutstandingFeeArUnits(adb, 's1') === U(2))
+ok('accrue: idempotent (same order → already, no double)', accrueFeeReceivable(adb, { orderId: 'o1', sellerId: 's1', feeUnits: U(2), receivableId: 'r2' }).outcome === 'already' && getSellerOutstandingFeeArUnits(adb, 's1') === U(2))
+ok('accrue: fee<=0 → throw (fail-closed)', threw(() => accrueFeeReceivable(adb, { orderId: 'o2', sellerId: 's1', feeUnits: 0, receivableId: 'r3' })))
+
+// ── 7. 参数键常量 ──
 ok('param key stable', FEE_AR_CEILING_PARAM === 'direct_pay.fee_ar_credit_ceiling_units')
 
 if (fail) { console.error(`\nFAIL ${fail}/${pass + fail}\n${fails.join('\n')}`); process.exit(1) }

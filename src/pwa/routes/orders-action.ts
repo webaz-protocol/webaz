@@ -24,7 +24,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import type { OrderStatus } from '../../layer0-foundation/L0-2-state-machine/transitions.js'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'
-import { releaseFeeStake, hasLockedFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:取消释放质押 / 完成前预检 locked 质押
+import { releaseFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:取消/超时释放任何遗留模拟质押(AR 订单无 stake → no-op)
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'   // PR-4e: D1/D2 披露契约门
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'          // PR-4e: 现场真人 Passkey/gate-token 门
 
@@ -139,12 +139,10 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     if (order.buyer_id !== user.id) return void res.status(403).json({ error: '仅买家可确认面交完成' })
     if (!['paid', 'accepted'].includes(order.status as string)) return void res.status(400).json({ error: `订单状态 ${order.status} 不可确认面交` })
     if (order.has_pending_claim) return void res.status(400).json({ error: '存在进行中的验证任务，不可确认' })
-    // Rail1 fail-closed(审计 P1):direct_p2p 面交完成同样必须有 locked fee-stake,且取费与 completed 同一原子边界。
+    // Rail1:平台费已切换为链下应收(accrue 在完成结算时,与 completed 同一原子边界,fail-closed)。
+    //   建单不再锁 fee-stake,故【不再】前置要求 locked stake(AR 订单本就无 stake)。
     const isDirectP2p = order.payment_rail === 'direct_p2p'
-    if (isDirectP2p && !hasLockedFeeStake(db, req.params.id)) {
-      return void res.status(409).json({ error: '直付订单缺少锁定的平台费质押,无法确认完成', error_code: 'DIRECT_PAY_NO_FEE_STAKE' })
-    }
-    // PR-4e:direct_p2p 面交完成 = RISK 动作 → 两次披露门 + 现场真人 Passkey 门(已过 in_person/status/fee-stake 只读预检,token 不被错误状态浪费)。
+    // PR-4e:direct_p2p 面交完成 = RISK 动作 → 两次披露门 + 现场真人 Passkey 门。
     if (isDirectP2p) {
       const g = directPayActionGate(req.params.id, 'confirm_in_person', user.id as string, req.body?.webauthn_token as string | undefined)
       if (!g.ok) return void res.status(g.status).json({ error: g.error, error_code: g.error_code })
@@ -201,11 +199,8 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       const g = directPayActionGate(req.params.id, 'mark_paid', uid, req.body?.webauthn_token as string | undefined)
       if (!g.ok) return void res.status(g.status).json({ error: g.error, error_code: g.error_code })
     }
-    // Rail1 fail-closed(审计 P1):direct_p2p 完成前必须有 locked fee-stake。缺则【拒绝确认】——
-    //   绝不让订单进入 terminal completed 而平台费落空。完成时取费与状态转移另在下方放进同一原子边界。
-    if (action === 'confirm' && order.payment_rail === 'direct_p2p' && !hasLockedFeeStake(db, req.params.id)) {
-      return void res.status(409).json({ error: '直付订单缺少锁定的平台费质押,无法确认完成', error_code: 'DIRECT_PAY_NO_FEE_STAKE' })
-    }
+    // Rail1:平台费链下应收,accrue 在完成结算时(settleOrder direct_p2p 分支)与 completed 同一原子边界、fail-closed
+    //   (accrueFeeReceivable 缺费即抛 → 回滚 completed)。故【不再】前置要求 locked fee-stake。
     // PR-4e:direct_p2p confirm = RISK 动作。先【只读状态预检】(仅 delivered 可确认收货,杜绝错误状态消耗 token),再两次披露门 + 现场真人 Passkey 门。
     if (action === 'confirm' && order.payment_rail === 'direct_p2p') {
       if (order.status !== 'delivered') return void res.status(409).json({ error: `订单状态 ${order.status} 不可确认收货(仅 delivered)`, error_code: 'ORDER_NOT_DELIVERED' })

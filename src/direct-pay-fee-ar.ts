@@ -13,10 +13,21 @@
  *  - 整数 base-units(RFC-014 money.ts);金额列存 REAL 小数,经 toUnits 进 units 域比较。
  */
 import type Database from 'better-sqlite3'
-import { toUnits, type Units } from './money.js'
+import { toUnits, toDecimal, mulRate, type Units } from './money.js'
 
 export const FEE_AR_CEILING_PARAM = 'direct_pay.fee_ar_credit_ceiling_units'
 export const FEE_AR_CURRENCY = 'usdc' // v1 单一计价币
+
+/** 平台费率单一真相源:二手 1% / 其它 2%(与 settleOrder escrow 分支同口径)。create / 完成 accrue / 在途预估 全走这里防漂移。 */
+export function feeUnitsForOrder(totalAmountU: Units, source: string | null | undefined): Units {
+  return mulRate(totalAmountU, source === 'secondhand' ? 0.01 : 0.02)
+}
+
+/** 开放(未完全关闭、仍会 accrue 费)的 direct_p2p 单状态。完成单已在 receivables(计入 outstanding),故【不含】completed/终态。 */
+export const OPEN_FEE_ACCRUING_STATUSES = [
+  'created', 'direct_pay_window', 'direct_expired_unconfirmed',
+  'accepted', 'shipped', 'picked_up', 'in_transit', 'delivered', 'confirmed', 'disputed',
+] as const
 
 /** 某 SUM 查询结果 → units(空表/NULL → 0)。SUM 的是整数 units 值存成的 REAL,toUnits 精确还原。 */
 function sumUnits(db: Database.Database, sql: string, sellerId: string): Units {
@@ -80,4 +91,40 @@ export function withinFeeArCreditCeiling(args: {
 }): boolean {
   if (args.ceilingUnits <= 0) return false
   return args.outstandingUnits + args.openOrdersEstFeeUnits + args.newOrderFeeUnits <= args.ceilingUnits
+}
+
+/**
+ * 卖家【在途】direct_p2p 单的预估费合计(units)。建单信用门用:防止短时开大量在途单完成后一次性超限。
+ * 与 outstanding 不重叠:在途单尚未 accrue(不在 receivables);完成即转入 receivables、离开本集合。
+ * 表/列缺失(旧库)→ 0(休眠安全)。
+ */
+export function estimateOpenDirectPayFeeUnits(db: Database.Database, sellerId: string): Units {
+  const ph = OPEN_FEE_ACCRUING_STATUSES.map(() => '?').join(',')
+  let rows: Array<{ total_amount: number; source: string | null }> = []
+  try {
+    rows = db.prepare(
+      `SELECT total_amount, source FROM orders WHERE seller_id = ? AND payment_rail = 'direct_p2p' AND status IN (${ph})`,
+    ).all(sellerId, ...OPEN_FEE_ACCRUING_STATUSES) as Array<{ total_amount: number; source: string | null }>
+  } catch { return 0 }
+  let sum = 0
+  for (const r of rows) sum += feeUnitsForOrder(toUnits(Number(r.total_amount) || 0), r.source)
+  return sum
+}
+
+/**
+ * 完成时记一笔平台费应收(原始 immutable accrual 行)。fail-closed + 幂等:
+ *  - feeUnits ≤ 0 → 抛(拒绝完成而费用为零;调用方在 settle 同一 db.transaction 内 → 回滚 completed)。
+ *  - 该单已有 receivable(UNIQUE order_id)→ 返回 'already'(支持重结算,不重复计费)。
+ *  必须在调用方的 db.transaction 内调用(与 completed 转移同原子边界)。
+ */
+export function accrueFeeReceivable(
+  db: Database.Database, opts: { orderId: string; sellerId: string; feeUnits: Units; receivableId: string },
+): { outcome: 'accrued' | 'already' } {
+  if (opts.feeUnits <= 0) throw new Error(`accrueFeeReceivable: fee must be > 0 for order ${opts.orderId} (fail-closed)`)
+  const existing = db.prepare('SELECT id FROM direct_pay_fee_receivables WHERE order_id = ?').get(opts.orderId)
+  if (existing) return { outcome: 'already' } // 幂等:重结算不重复计费
+  db.prepare(
+    `INSERT INTO direct_pay_fee_receivables (id, order_id, seller_id, amount, currency, accrued_at) VALUES (?,?,?,?, '${FEE_AR_CURRENCY}', datetime('now'))`,
+  ).run(opts.receivableId, opts.orderId, opts.sellerId, toDecimal(opts.feeUnits))
+  return { outcome: 'accrued' }
 }

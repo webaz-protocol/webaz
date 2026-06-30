@@ -43,6 +43,7 @@ export const BUYER_FACING_SELLER_PRIVATE_CODES: ReadonlySet<string> = new Set([
   'DIRECT_PAY_SELLER_SUSPENDED', 'DIRECT_PAY_NOT_AVAILABLE', 'DIRECT_PAY_KYC_REQUIRED', 'DIRECT_PAY_AML_REVIEW_REQUIRED',
   'DIRECT_PAY_DEFERRAL_QUOTA_EXCEEDED', 'DIRECT_PAY_DEFERRAL_AMOUNT_EXCEEDED',
   'EXPOSURE_CAP_EXCEEDED', 'EXPOSURE_CAP_CONFIG',   // §6.5 抵押背书敞口上限:卖家私密风险态,不向买家泄露
+  'AR_CREDIT_EXCEEDED',   // 平台费应收信用上限:卖家私密风险态(未付费 + 在途敞口),不向买家泄露
 ])
 /** 买家面脱敏:私密拒因 → 通用 SELLER_NOT_ELIGIBLE;全局/运营类原样;undefined → 通用(fail-safe,绝不泄露)。 */
 export function coarsenBuyerFacingDirectPayCode(code: string | undefined): string {

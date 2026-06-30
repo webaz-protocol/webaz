@@ -28,7 +28,13 @@ export interface PaymentRail {
   slashOnFault(db: Database.Database, orderId: string, txnId: string, reason?: string): void
 }
 
-/** Rail 1 = 非托管场外直付 + 信誉(buyer protection = reputation-only, refund = none)。 */
+/**
+ * Rail 1 = 非托管场外直付 + 信誉(buyer protection = reputation-only, refund = none)。
+ * ⚠️ 本 seam 当前【未接线】(getPaymentRail 无调用方)。Rail1 平台费【实时路径】已切换为链下应收(AR):
+ *   建单走信用上限门(direct-pay-create.ts),完成时 accrue(server.ts settleOrder direct_p2p 分支)。
+ *   下方 collectFeeAtCompletion/release/slash 仍指向旧 WAZ fee-stake helper = 遗留/forward-compat 占位;
+ *   若将来真接线本 seam,须改为 AR 语义(accrue / adjustment)。
+ */
 export const RAIL_DIRECT_P2P: PaymentRail = {
   contract: {
     id: 'direct_p2p',

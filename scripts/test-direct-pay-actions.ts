@@ -21,7 +21,8 @@ const { initOrderChainSchema } = await import('../src/layer0-foundation/L0-2-sta
 const { registerOrdersActionRoutes } = await import('../src/pwa/routes/orders-action.js')
 const { createHumanPresence } = await import('../src/pwa/human-presence.js')
 const { recordDisclosureAck, STAGE } = await import('../src/direct-pay-disclosures.js')
-const { lockFeeStake, takeFeeAtCompletion } = await import('../src/direct-pay-ledger.js')
+const { lockFeeStake, releaseFeeStake } = await import('../src/direct-pay-ledger.js')
+const { accrueFeeReceivable, feeUnitsForOrder } = await import('../src/direct-pay-fee-ar.js')
 const { walletUnits } = await import('../src/ledger.js')
 const { toUnits } = await import('../src/money.js')
 
@@ -33,6 +34,7 @@ db.pragma('foreign_keys = OFF')
 setSeamDb(db)
 initOrderChainSchema(db)
 try { db.exec("ALTER TABLE orders ADD COLUMN fulfillment_mode TEXT DEFAULT 'shipped'") } catch {}  // server-boot ALTER(schema.ts 不含)
+try { db.exec("ALTER TABLE orders ADD COLUMN source TEXT DEFAULT 'shop'") } catch {}  // server-boot ALTER(settleOrder 读 order.source 算费率)
 db.exec('CREATE TABLE IF NOT EXISTS webauthn_credentials (id TEXT PRIMARY KEY, user_id TEXT)')
 db.exec('CREATE TABLE IF NOT EXISTS webauthn_gate_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, purpose TEXT NOT NULL, purpose_data TEXT, expires_at TEXT NOT NULL, consumed_at TEXT)')
 initSystemUser(db)
@@ -50,6 +52,8 @@ const { consumeGateToken } = createHumanPresence(db, <T,>(_k: string, fb: T): T 
 const FEE = toUnits(5)
 const status = (id: string) => (db.prepare('SELECT status FROM orders WHERE id=?').get(id) as { status: string } | undefined)?.status
 const stakeStatus = (id: string) => (db.prepare('SELECT status FROM direct_pay_fee_stakes WHERE order_id=?').get(id) as { status?: string } | undefined)?.status
+const receivable = (id: string) => db.prepare('SELECT id, amount FROM direct_pay_fee_receivables WHERE order_id=?').get(id) as { id: string; amount: number } | undefined
+let rk = 0
 const tokConsumed = (id: string) => (db.prepare('SELECT consumed_at FROM webauthn_gate_tokens WHERE id=?').get(id) as { consumed_at: string | null } | undefined)?.consumed_at
 
 let sk = 0, tk = 0, ak = 0
@@ -80,8 +84,13 @@ registerOrdersActionRoutes(app, {
   transition,
   notifyTransition: () => {},
   settleOrder: (orderId: string) => db.transaction(() => {
-    const o = db.prepare('SELECT payment_rail FROM orders WHERE id=?').get(orderId) as { payment_rail?: string } | undefined
-    if (o?.payment_rail === 'direct_p2p') { takeFeeAtCompletion(db, { orderId }); return }
+    // 镜像 server.ts settleOrder direct_p2p 分支:释放任何遗留模拟 stake + accrue 链下应收(fail-closed)。
+    const o = db.prepare('SELECT payment_rail, total_amount, source, seller_id FROM orders WHERE id=?').get(orderId) as { payment_rail?: string; total_amount?: number; source?: string | null; seller_id?: string } | undefined
+    if (o?.payment_rail === 'direct_p2p') {
+      releaseFeeStake(db, { orderId })
+      accrueFeeReceivable(db, { orderId, sellerId: o.seller_id as string, feeUnits: feeUnitsForOrder(toUnits(Number(o.total_amount) || 0), o.source ?? null), receivableId: `dpfr_${++rk}` })
+      return
+    }
   })(),
   settleFault: () => {}, detectFraud: () => [], createDispute: () => {}, checkTimeouts: () => ({ details: [] }),
   recordViolationReputation: () => {}, broadcastSystemEvent: () => {},
@@ -151,11 +160,12 @@ mkOrder('o6', 'direct_pay_window', 'direct_p2p')
 ok('unauthenticated → 401', (await call('o6', { action: 'mark_paid' })).status === 401)
 
 // ═══ confirm ═══
-// 9. 缺 fee-stake → 409 DIRECT_PAY_NO_FEE_STAKE(在 gate 前,无需 acks/token)
-mkOrder('o7c', 'delivered', 'direct_p2p')
-const r9 = await call('o7c', { action: 'confirm' }, 'buyer1')
-ok('confirm 缺 fee-stake → 409 DIRECT_PAY_NO_FEE_STAKE', r9.status === 409 && r9.json?.error_code === 'DIRECT_PAY_NO_FEE_STAKE')
-ok('confirm 缺 fee-stake → 仍 delivered', status('o7c') === 'delivered')
+// 9. AR 订单(无 stake)confirm → 200 completed + accrue 应收(不再有"缺 fee-stake"前置门;fail-closed 移到 accrue)。
+mkOrder('o7c', 'delivered', 'direct_p2p'); seedAcks('o7c')   // 无 lock:AR 订单本就无 stake
+const r9 = await call('o7c', { action: 'confirm', webauthn_token: seedToken('buyer1', 'o7c', 'confirm') }, 'buyer1')
+ok('confirm AR(无 stake)→ 200 completed(无前置 stake 门)', r9.status === 200 && status('o7c') === 'completed', JSON.stringify(r9))
+ok('confirm → 记一笔应收(>0)', !!receivable('o7c') && toUnits(receivable('o7c')!.amount) > 0)
+ok('confirm → 不创建 fee-stake', stakeStatus('o7c') === undefined)
 
 // 10. 缺 acks → 409 DISCLOSURE_NOT_ACKED,无写入
 mkOrder('oCnoack', 'delivered', 'direct_p2p'); lock('oCnoack')
@@ -174,24 +184,27 @@ db.prepare("UPDATE orders SET status='delivered' WHERE id='oWS'").run()
 const r11b = await call('oWS', { action: 'confirm', webauthn_token: tWS }, 'buyer1')
 ok('delivered 后同 token → 200 completed(token 之前未被消耗)', r11b.status === 200 && status('oWS') === 'completed', JSON.stringify(r11b))
 
-// 12. happy:acks + valid token → completed + 取费
+// 12. legacy(cutover 前遗留 locked stake)confirm → completed:释放遗留模拟 stake(不取)+ accrue 应收。
 mkOrder('o8c', 'delivered', 'direct_p2p'); lock('o8c'); seedAcks('o8c')
 const r12 = await call('o8c', { action: 'confirm', webauthn_token: seedToken('buyer1', 'o8c', 'confirm') }, 'buyer1')
 ok('confirm acks+token → 200 completed', r12.status === 200 && status('o8c') === 'completed', JSON.stringify(r12))
-ok('confirm → fee taken', stakeStatus('o8c') === 'fee_taken')
+ok('confirm → 遗留 stake 释放(非 fee_taken)', stakeStatus('o8c') === 'released')
+ok('confirm → 记一笔应收', !!receivable('o8c'))
 
 // 13. escrow confirm 不受 4e 门控:无 acks/token 也【不会被 direct_p2p gate 拦】(走原 state-machine 路径)。
 //    用非 delivered 状态触发 state-machine 拒绝,避免 escrow 完成时的 commission breakdown 依赖完整 schema(与本片无关)。
 mkOrder('oEscC', 'accepted', 'escrow')
 const r13 = await call('oEscC', { action: 'confirm' }, 'buyer1')
-const GATE_CODES = ['DISCLOSURE_NOT_ACKED', 'HUMAN_PRESENCE_REQUIRED', 'PASSKEY_REQUIRED_FOR_DIRECT_PAY', 'ORDER_NOT_DELIVERED', 'DIRECT_PAY_NO_FEE_STAKE']
+const GATE_CODES = ['DISCLOSURE_NOT_ACKED', 'HUMAN_PRESENCE_REQUIRED', 'PASSKEY_REQUIRED_FOR_DIRECT_PAY', 'ORDER_NOT_DELIVERED']
 ok('escrow confirm 不返回任何 direct_p2p gate code(未被 4e 门控)', !GATE_CODES.includes(r13.json?.error_code), JSON.stringify(r13))
 ok('escrow confirm(非 delivered)被 state-machine 拒、未完成', status('oEscC') === 'accepted')
 
 // ═══ confirm-in-person ═══
-// 14. 缺 fee-stake → 409(gate 前)
-mkOrder('o9p', 'accepted', 'direct_p2p', 'in_person')
-ok('in-person 缺 fee-stake → 409 DIRECT_PAY_NO_FEE_STAKE', (await callPath('/api/orders/o9p/confirm-in-person', {}, 'buyer1')).json?.error_code === 'DIRECT_PAY_NO_FEE_STAKE')
+// 14. AR 订单(无 stake)面交完成 → 200 completed + accrue 应收(不再有"缺 fee-stake"前置门)。
+mkOrder('o9p', 'accepted', 'direct_p2p', 'in_person'); seedAcks('o9p')   // 无 lock
+const r14 = await callPath('/api/orders/o9p/confirm-in-person', { webauthn_token: seedToken('buyer1', 'o9p', 'confirm_in_person') }, 'buyer1')
+ok('in-person AR(无 stake)→ 200 completed', r14.status === 200 && status('o9p') === 'completed', JSON.stringify(r14))
+ok('in-person → 记一笔应收', !!receivable('o9p'))
 
 // 15. 缺 acks → 409 DISCLOSURE_NOT_ACKED,无写入
 mkOrder('oIPna', 'accepted', 'direct_p2p', 'in_person'); lock('oIPna')
@@ -199,11 +212,12 @@ const r15 = await callPath('/api/orders/oIPna/confirm-in-person', { webauthn_tok
 ok('in-person 缺 acks → 409 DISCLOSURE_NOT_ACKED', r15.status === 409 && r15.json?.error_code === 'DISCLOSURE_NOT_ACKED', JSON.stringify(r15))
 ok('in-person 缺 acks → 仍 accepted,stake 仍 locked', status('oIPna') === 'accepted' && stakeStatus('oIPna') === 'locked')
 
-// 16. happy:acks + valid token → completed + 取费
+// 16. legacy(遗留 locked stake)面交完成 → 释放遗留 stake + accrue 应收。
 mkOrder('o10p', 'accepted', 'direct_p2p', 'in_person'); lock('o10p'); seedAcks('o10p')
 const r16 = await callPath('/api/orders/o10p/confirm-in-person', { webauthn_token: seedToken('buyer1', 'o10p', 'confirm_in_person') }, 'buyer1')
 ok('in-person acks+token → 200 completed', r16.status === 200 && status('o10p') === 'completed', JSON.stringify(r16))
-ok('in-person → fee taken', stakeStatus('o10p') === 'fee_taken')
+ok('in-person → 遗留 stake 释放(非 fee_taken)', stakeStatus('o10p') === 'released')
+ok('in-person → 记一笔应收', !!receivable('o10p'))
 
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }

@@ -124,15 +124,20 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
     const order = await dbOne<{
       id: string; buyer_id: string; seller_id: string; product_id: string;
       status: string; total_amount: number; created_at: string; updated_at: string;
-      return_days: number; product_title: string;
+      return_days: number; product_title: string; payment_rail: string | null;
     }>(`
       SELECT o.id, o.buyer_id, o.seller_id, o.product_id, o.status, o.total_amount, o.created_at, o.updated_at,
-             p.return_days, p.title as product_title
+             o.payment_rail, p.return_days, p.title as product_title
       FROM orders o JOIN products p ON p.id = o.product_id
       WHERE o.id = ?
     `, [req.params.order_id])
     if (!order) return void res.status(404).json({ error: '订单不存在' })
     if (order.buyer_id !== user.id) return void res.status(403).json({ error: '仅买家可申请退货' })
+    // 直付(Rail1)= 非托管、refund:none —— WebAZ 不持货款,退款经现有 escrow 钱包路径会错误移动无关 WAZ。
+    //   故 direct_p2p 不走退货/退款流程(买家不满走争议=信誉处理);平台费应收的冲销由治理/admin 调整处理(非此路径)。
+    if (order.payment_rail === 'direct_p2p') {
+      return void res.status(400).json({ error: '直付(非托管)订单不支持退款流程;如有问题请发起争议', error_code: 'DIRECT_PAY_NO_REFUND' })
+    }
     // P0-1: 只允许 completed 退货 — escrow 已结算
     if (order.status !== 'completed') {
       return void res.status(400).json({ error: '仅订单完成后可申请退货（确认收货后）' })

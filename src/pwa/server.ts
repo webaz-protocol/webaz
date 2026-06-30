@@ -23,7 +23,7 @@ import crypto from 'crypto'
 
 import { initDatabase, generateId } from '../layer0-foundation/L0-1-database/schema.js'
 import { setSeamDb } from '../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
-import { initSystemUser, transition, getOrderStatus, checkTimeouts, settleFault } from '../layer0-foundation/L0-2-state-machine/engine.js'; import { genuineSalePredicate } from '../layer0-foundation/L0-2-state-machine/genuine-sale.js'; import { takeFeeAtCompletion } from '../direct-pay-ledger.js'  // RFC-018 PR4 genuine-sale SSOT + Direct Pay Rail 1 fee-at-completion
+import { initSystemUser, transition, getOrderStatus, checkTimeouts, settleFault } from '../layer0-foundation/L0-2-state-machine/engine.js'; import { genuineSalePredicate } from '../layer0-foundation/L0-2-state-machine/genuine-sale.js'; import { releaseFeeStake } from '../direct-pay-ledger.js'; import { accrueFeeReceivable, feeUnitsForOrder } from '../direct-pay-fee-ar.js'  // RFC-018 PR4 genuine-sale SSOT + Direct Pay Rail 1 平台费链下应收(完成时 accrue;释放遗留模拟 stake)
 import { endpointToAction, endpointToReadAction } from './endpoint-actions.js'
 import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYPES, MASS_ACTION_DAILY_CAPS } from './limits.js'
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
@@ -6899,7 +6899,16 @@ function settleOrder(orderId: string) {
   // Bug-C fix：所有资金/PV/状态写入包在单一事务内，避免迁 PG / 多 worker 后出现部分提交
   // 内部 try/catch 用于非关键 hook（settlePinRewards / metrics 更新）失败不回滚资金主流程
   db.transaction(() => {
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<string, unknown>; if (order && order.payment_rail === 'direct_p2p') { takeFeeAtCompletion(db, { orderId }); return }  // Rail1 直付:跳过 escrow 结算,仅从 fee-stake 取平台费(无 escrow 释放 / commission / PV / 信誉)
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<string, unknown>
+    if (order && order.payment_rail === 'direct_p2p') {
+      // Rail1 直付:跳过 escrow 结算(无 escrow 释放 / commission / PV / 信誉)。平台费 = 链下应收:
+      //   ① 释放任何遗留模拟 WAZ 质押(cutover 前建单;模拟无真实价值,不取、退回卖家;无则 no-op);
+      //   ② accrue 一笔应收(fail-closed:fee≤0 抛 / 幂等;在 settleOrder 的 db.transaction 内 → 缺则回滚 completed)。
+      releaseFeeStake(db, { orderId })
+      const feeU = feeUnitsForOrder(toUnits(Number(order.total_amount) || 0), order.source as string | null)
+      accrueFeeReceivable(db, { orderId, sellerId: order.seller_id as string, feeUnits: feeU, receivableId: generateId('dpfr') })
+      return
+    }
     const total = order.total_amount as number
     const isSecondhand = order.source === 'secondhand'
     const isInPerson = order.fulfillment_mode === 'in_person'

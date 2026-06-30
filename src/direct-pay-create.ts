@@ -3,17 +3,18 @@
  *
  * 边界(铁律):
  *  - 本金(货款)【不入协议】:escrow_amount=0,【不写 buyer wallet / 不写 escrow / 不动 principal】。
- *  - 唯一资金写 = 卖家逐单 fee-stake(平台费),且【只走既有 lockFeeStake helper】。无其它 wallet/ledger 写入。
- *  - 原子:INSERT order → genesis 事件 → created→direct_pay_window → lockFeeStake → 扣库存,全在一个 db.transaction;
- *    任一步失败【整体回滚】—— 绝不出现「有订单无 stake」或「有 stake 无订单」。
+ *  - 平台费【不在建单时收/锁】(已切换为链下应收 AR,设计稿 DIRECT-PAY-FEE-RECEIVABLE-DESIGN.INTERNAL.md):
+ *    建单只过【信用上限只读门】(unpaid_AR + 在途单预估费 + 本单预估费 ≤ ceiling,fail-closed),【无任何建单资金写】。
+ *    平台费在【完成结算时】记一笔应收(accrueFeeReceivable,见 settleOrder direct_p2p 分支)。
+ *  - 原子:INSERT order → genesis 事件 → created→direct_pay_window → 扣库存,全在一个 db.transaction;任一步失败【整体回滚】。
  *  - 不碰 refund/settlement/commission/fund/tokenomics;direct_p2p 排除佣金/PV(l1/l2/l3 留空)。
  *  - 收款指令是【调用方已读取并快照】的卖家自填文本(WebAZ 不验证/不路由/不托管/不判断币种)。
  *  - direct_p2p v1:不支持 variant/flash/coupon/donation(escrow-only);仅简单商品库存。
  */
 import type Database from 'better-sqlite3'
 import type { Response } from 'express'
-import { lockFeeStake } from './direct-pay-ledger.js'
-import { mulRate, type Units } from './money.js'
+import { type Units } from './money.js'
+import { feeUnitsForOrder, getSellerOutstandingFeeArUnits, estimateOpenDirectPayFeeUnits, readEffectiveFeeArCeilingUnits, withinFeeArCreditCeiling } from './direct-pay-fee-ar.js'
 import { sellerBaseBondEntrySatisfied } from './direct-pay-base-bond-entry.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
 import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, coarsenBuyerFacingDirectPayCode, type DirectPayControlsConfig } from './direct-pay-controls.js'
@@ -35,7 +36,7 @@ export interface DirectPayPolicySnapshot {
 }
 export interface DirectPayCreateArgs {
   productId: string; sellerId: string; buyerId: string; quantity: number
-  unitPrice: number; totalAmount: number; feeUnits: Units
+  unitPrice: number; totalAmount: number
   instructionSnapshot: string; windowDeadlineIso: string; shippingAddress: string
   snapshot: DirectPayPolicySnapshot
 }
@@ -61,11 +62,9 @@ export function createDirectPayOrder(db: Database.Database, deps: DirectPayCreat
       extra: { product_id: args.productId, seller_id: args.sellerId, quantity: args.quantity, total_amount: args.totalAmount, payment_rail: 'direct_p2p' },
     })
     // created → direct_pay_window(system-only edge);失败回滚。
-    const rc = transition(db, orderId, 'direct_pay_window', 'sys_protocol', [], 'Rail1 直付:卖家费用质押锁定,进入付款窗口')
+    const rc = transition(db, orderId, 'direct_pay_window', 'sys_protocol', [], 'Rail1 直付:进入付款窗口(平台费完成时记应收,建单不收费)')
     if (!rc.success) throw new Error(rc.error || 'transition→direct_pay_window failed')
-    // 唯一资金写:卖家逐单 fee-stake(= 平台费),只走 lockFeeStake;余额不足/重复即抛 → 回滚整单。
-    const fs = lockFeeStake(db, { orderId, sellerId: args.sellerId, feeUnits: args.feeUnits, stakeId: generateId('dpfs') })
-    if (!fs.ok) throw new Error(fs.reason || 'lockFeeStake failed')
+    // 【无建单资金写】平台费改链下应收,完成时 accrue;建单门是信用上限只读门(在 createDirectPayResponse 内,建单前)。
     // 扣库存(原子;售罄即抛回滚)。变体/flash 直付 v1 不支持。
     const upd = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?').run(args.quantity, args.productId, args.quantity)
     if (upd.changes !== 1) throw new Error('stock depleted')
@@ -127,12 +126,21 @@ export function createDirectPayResponse(
   //   当前 merchant_bond 关闭、无 active 存款 → 对缓交卖家零影响(返回 ok)。买家面脱敏。
   const expGate = enforceCollateralExposureGate(db, sellerId, ctx.totalAmountU, deps.getProtocolParam)
   if (!expGate.ok) { res.status(409).json({ error_code: coarsenBuyerFacingDirectPayCode(expGate.error_code), error: '该卖家暂不支持直付' }); return }
-  const feeU = mulRate(ctx.totalAmountU, (ctx.product.source as string) === 'secondhand' ? 0.01 : 0.02)
+  const feeU = feeUnitsForOrder(ctx.totalAmountU, ctx.product.source as string)
+  // 平台费链下应收【信用上限门】(替代旧 fee-stake 预付):unpaid_AR + 在途单预估费 + 本单预估费 ≤ 生效上限。
+  //   fail-closed:上限缺失/≤0 → 拒(withinFeeArCreditCeiling 内硬判)。生效上限 = 商家 override ?? 全局默认(运行时可调)。
+  //   纯只读门(无任何资金写),在任何 DB write 前。买家面脱敏(AR_CREDIT_EXCEEDED → SELLER_NOT_ELIGIBLE)。
+  const arCeiling = readEffectiveFeeArCeilingUnits(db, sellerId, deps.getProtocolParam)
+  if (!withinFeeArCreditCeiling({
+    outstandingUnits: getSellerOutstandingFeeArUnits(db, sellerId),
+    openOrdersEstFeeUnits: estimateOpenDirectPayFeeUnits(db, sellerId),
+    newOrderFeeUnits: feeU, ceilingUnits: arCeiling,
+  })) { res.status(409).json({ error_code: coarsenBuyerFacingDirectPayCode('AR_CREDIT_EXCEEDED'), error: '该卖家暂不支持直付' }); return }
   const windowHours = deps.getProtocolParam<number>('direct_pay.payment_window_hours', 4)
   try {
     const { orderId } = createDirectPayOrder(db, deps, {
       productId: ctx.product.id as string, sellerId, buyerId: ctx.buyerId, quantity: ctx.reqQty,
-      unitPrice: ctx.basePrice, totalAmount: ctx.totalAmount, feeUnits: feeU,
+      unitPrice: ctx.basePrice, totalAmount: ctx.totalAmount,
       instructionSnapshot: instr.instruction, windowDeadlineIso: new Date(Date.now() + windowHours * 3600_000).toISOString(),
       shippingAddress: ctx.shippingAddress,
       // frozen-at-create policy 快照:control 全过(ctrl.ok)才到此,decisionCode='OK'。
