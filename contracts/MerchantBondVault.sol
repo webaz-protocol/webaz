@@ -141,6 +141,7 @@ contract MerchantBondVault is EIP712, ReentrancyGuard {
     error InsufficientCollateral();
     error MinRemainingViolated();
     error SlashAlreadyPending();
+    error SlashPending();
     error NoPendingSlash();
     error NoPendingReserveChange();
     error CoolDownNotElapsed();
@@ -302,6 +303,9 @@ contract MerchantBondVault is EIP712, ReentrancyGuard {
         address wallet = registeredBondWalletOf[sellerId];
         if (wallet == address(0)) revert SellerNotRegistered();
         if (destination != wallet) revert WrongDestination();
+        // A pending slash is on-chain-knowable state: block withdraw so a pre-signed (still-valid)
+        // WithdrawAuthorization issued BEFORE the slash cannot drain collateral out from under it (§5).
+        if (pendingSlashOf[sellerId].exists) revert SlashPending();
         if (block.timestamp < coolDownEnd) revert CoolDownNotElapsed();
 
         uint256 current = collateralOf[sellerId];
@@ -371,7 +375,8 @@ contract MerchantBondVault is EIP712, ReentrancyGuard {
         if (!p.exists) revert NoPendingSlash();
         if (block.timestamp < p.executeAfter) revert CoolDownNotElapsed();
         uint256 current = collateralOf[sellerId];
-        // clamp to current balance (collateral may have decreased via withdraw since proposal).
+        // Defensive clamp: withdraw is blocked while a slash is pending, so collateral cannot drop
+        // below the proposed amount via the normal flow; this is a conservation backstop only.
         uint256 amount = p.amount > current ? current : p.amount;
         if (amount == 0) revert InsufficientCollateral();
 

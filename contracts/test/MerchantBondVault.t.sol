@@ -410,22 +410,27 @@ contract MerchantBondVaultTest is Test {
         vault.proposeSlash(sellerId, 50e6, bytes32(0));
     }
 
-    function test_slash_executeClampsToCurrentCollateral() public {
+    /// @dev A pre-signed, still-valid WithdrawAuthorization issued BEFORE a slash must NOT be usable to
+    ///      drain collateral once a slash is pending — the contract blocks it (not just the backend).
+    function test_withdraw_revert_whenSlashPending() public {
         _setupFunded();
-        vault.proposeSlash(sellerId, 700e6, bytes32(0));
-        // seller withdraws down to 500 in the meantime
-        uint256 exp = block.timestamp + 30 days;
-        bytes32 sh = _withdrawHash(sellerId, wallet, 300e6, 0, 0, 9, 1, exp);
-        bytes memory webaz = _sign(signerPk, sh);
+        vm.warp(1_000_000);
+        uint256 amount = 100e6;
+        uint256 coolDownEnd = 500_000; // already elapsed — would otherwise succeed
+        uint256 exp = 2_000_000;
+        bytes32 sh = _withdrawHash(sellerId, wallet, amount, 0, coolDownEnd, 1, 1, exp);
+        bytes memory webaz = _sign(signerPk, sh); // signed while no slash pending
         bytes memory sellerSig = _sign(sellerPk, sh);
-        vault.sellerWithdrawCollateral(sellerId, wallet, 300e6, 0, 0, 9, 1, exp, webaz, sellerSig);
-        assertEq(vault.collateralOf(sellerId), 500e6);
 
-        vm.warp(block.timestamp + COOLDOWN + 1);
-        vault.executeSlash(sellerId); // clamps 700 → 500
-        assertEq(vault.collateralOf(sellerId), 0);
-        assertEq(vault.totalCollateral(), 0);
-        assertEq(usdc.balanceOf(penaltyReserve), 500e6);
+        vault.proposeSlash(sellerId, 200e6, keccak256("arbitration-final"));
+        vm.expectRevert(MerchantBondVault.SlashPending.selector);
+        vault.sellerWithdrawCollateral(sellerId, wallet, amount, 0, coolDownEnd, 1, 1, exp, webaz, sellerSig);
+        assertEq(vault.collateralOf(sellerId), 800e6); // collateral preserved for the slash
+
+        // once the slash is cancelled, the same authorization works again.
+        vault.cancelSlash(sellerId);
+        vault.sellerWithdrawCollateral(sellerId, wallet, amount, 0, coolDownEnd, 1, 1, exp, webaz, sellerSig);
+        assertEq(vault.collateralOf(sellerId), 700e6);
     }
 
     // ───────────────────────── signer rotation ─────────────────────────
