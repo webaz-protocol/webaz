@@ -363,12 +363,11 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     //   否则 delivered→confirmed 先单独提交、随后 accrue 失败 → 订单卡在 confirmed(retry 被 ORDER_NOT_DELIVERED 拒)。
     //   任一步失败 → 整体回滚到 delivered(可重试);成功后再发通知。confirm-in-person 是另一端点、已单事务原子。
     if (action === 'confirm' && order.payment_rail === 'direct_p2p') {
-      const sysUser = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string }
       try {
         db.transaction(() => {
           const r1 = transition(db, req.params.id, 'confirmed', user.id as string, evidenceIds, notes)
           if (!r1.success) throw new Error(r1.error || 'confirmed transition failed')
-          const r2 = transition(db, req.params.id, 'completed', sysUser.id, [], '系统自动结算')
+          const r2 = transition(db, req.params.id, 'completed', 'sys_protocol', [], '系统自动结算')
           if (!r2.success) throw new Error(r2.error || 'completed transition failed')
           settleOrder(req.params.id)   // direct_p2p 分支:释放遗留模拟 stake + accrueFeeReceivable(fail-closed)
         })()
