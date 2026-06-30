@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs'
 const P = (f: string) => readFileSync(`src/pwa/public/${f}`, 'utf8')
 const DISCOVER = P('app-discover.js')
 const APP = P('app.js')
+const PROFILE = P('app-profile.js')
 const I18N = P('i18n.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -77,6 +78,15 @@ const ONCE_KEYS = [
   '提交所需证据', '— 选择证据类型 —', '（可选）文件哈希 / IPFS CID / 链上 TX ID', '提交证据', '证据提交',
 ]
 for (const k of ONCE_KEYS) ok(`5h. no duplicate i18n key: ${k} (found ${cnt(k)})`, cnt(k) === 1)
+
+// ── 6. translation-correctness pass: keep-last (from the #146 dedup) had locked in a value that was
+//       WRONG for the actual usage context. These value-fixes correct it (verified against usages). ──
+ok('6a. 确认 = Confirm (not "to confirm"; 3 confirm-dialog prefixes)', /'确认':\s+'Confirm',/.test(I18N) && !has(I18N, "'确认': 'to confirm'"))
+ok('6b. 待处理 = Pending (not "New"; 10 pending-status usages)', /'待处理':\s+'Pending',/.test(I18N))
+ok('6c. 确认上架 = Confirm & List (not "Confirm re-list"; publish-imported button)', /'确认上架':\s+'Confirm & List',/.test(I18N))
+ok('6d. 信誉 = Reputation (not "Rating")', /'信誉':\s+'Reputation',/.test(I18N))
+ok('6e. 收藏 = Save (action button; not "Saved")', /'收藏':\s+'Save',/.test(I18N))
+ok('6f. profile saved-items tab uses 已收藏 (Bookmarked), not the 收藏 action key', has(PROFILE, "'bookmarked', label: '★ ' + t('已收藏')") && !has(PROFILE, "'bookmarked', label: '★ ' + t('收藏')"))
 
 if (fail > 0) { console.error(`\n❌ i18n discover/dispute labels FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ i18n discover/dispute labels: discover chips + RULING_LABELS/EVIDENCE_TYPE_LABELS render sites t()-wrapped (no shadowed t), EN parity present\n  ✅ pass ${pass}`)

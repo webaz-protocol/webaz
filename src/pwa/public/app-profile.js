@@ -261,7 +261,7 @@ function profileContentTabs(isOwner, role, active) {
     ...(isOwner ? [
       { k: 'reposted', label: '🔁 ' + t('转发') },
       { k: 'liked', label: '❤ ' + t('赞') },
-      { k: 'bookmarked', label: '★ ' + t('收藏') },
+      { k: 'bookmarked', label: '★ ' + t('已收藏') },
     ] : []),
   ]
   return `<div style="display:flex;gap:18px;border-bottom:1px solid #f3f4f6;margin-bottom:12px;overflow-x:auto;-webkit-overflow-scrolling:touch">
