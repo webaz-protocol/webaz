@@ -133,7 +133,12 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
       return void res.status(403).json({ error: gate.reason, error_code: gate.error_code })
     }
     const r = run(req, admin.id as string)
-    if (!r.ok) return void res.status(400).json({ error: '合规 ingress 失败', error_code: r.error })
+    if (!r.ok) {
+      // 业务校验失败(Passkey 已过)也留痕:money-adjacent admin 尝试(如退款余额不足被拒)必须可审计。
+      const fa = failAudit(req)
+      logAdminAction(admin.id as string, purpose, 'user', fa.targetId, { ...fa.detail, ok: false, error_code: r.error })
+      return void res.status(400).json({ error: '合规 ingress 失败', error_code: r.error })
+    }
     return void res.json({ ok: true, id: r.id })
   }
 

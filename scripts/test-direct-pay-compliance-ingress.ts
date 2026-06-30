@@ -233,7 +233,8 @@ ok('12b. fee-adjust delta mismatch → 403 no row', (await call(ADJ, { seller_id
 // 12c. refund > available → 400 REFUND_EXCEEDS_AVAILABLE, no row(fa3 无预充值 → available 0)
 mkTok('tref0', 'direct_pay_fee_refund', { seller_id: 'fa3', amount_units: 1_000_000, method: 'usdc', evidence_ref: '' })
 const r12c = await call(REF, { seller_id: 'fa3', amount_units: 1_000_000, method: 'usdc', webauthn_token: 'tref0' }, ROOT)
-ok('12c. refund > available → 400 REFUND_EXCEEDS_AVAILABLE, no row', r12c.status === 400 && r12c.json?.error_code === 'REFUND_EXCEEDS_AVAILABLE' && refN('fa3') === 0, JSON.stringify(r12c))
+const failAudit12c = (db.prepare("SELECT detail FROM admin_audit_log WHERE action='direct_pay_fee_refund' AND target_id='fa3'").get() as any)
+ok('12c. refund > available → 400 REFUND_EXCEEDS_AVAILABLE, no row, BUT failure audit written', r12c.status === 400 && r12c.json?.error_code === 'REFUND_EXCEEDS_AVAILABLE' && refN('fa3') === 0 && !!failAudit12c && JSON.parse(failAudit12c.detail).ok === false && JSON.parse(failAudit12c.detail).error_code === 'REFUND_EXCEEDS_AVAILABLE', JSON.stringify(r12c))
 // 12d. seed 预充值 50 → refund 30 ≤ available → 200 + refund row + audit
 db.prepare("INSERT INTO direct_pay_fee_payments (id,seller_id,invoice_id,amount,currency,method) VALUES ('pp_fa4','fa4',NULL,50,'usdc','usdc')").run()
 mkTok('tref', 'direct_pay_fee_refund', { seller_id: 'fa4', amount_units: 30_000_000, method: 'usdc', evidence_ref: 'rr#1' })
