@@ -4864,7 +4864,8 @@ const _EN = {
 
   // G-2: AI 价格建议
   'AI 建议':                           'AI tip',
-  '建议':                              'Suggested',
+  '建议':                              'Suggestions',
+  '建议价': 'Suggested price',
   '区间':                              'Range',
 
   // G-1: AI 文案
@@ -5808,7 +5809,8 @@ const _EN = {
   '去授权':                            'Grant location',
   '最近发起的拍卖与二手 · 按时间倒序':   'Recent auctions & second-hand · by time',
   '上架了':                            'listed',
-  '发起拍卖':                          'opened auction',
+  '发起拍卖':                          'Start Auction',
+  '发起了拍卖': 'opened an auction',
   '发布二手':                          'posted second-hand',
   '次出价':                            'bids',
   '暂无出价 · 先到先得':               'No bids yet · first-come-first-served',
@@ -5820,7 +5822,8 @@ const _EN = {
   '最近的买家求购单 · 商家可点击进入报价': "Recent buyer RFQs · sellers tap to bid",
   '我来发一条':                        'Post one',
   '暂无求购动态':                      'No RFQ activity',
-  '求购':                              'requested',
+  '求购':                              'Buy request',
+  '想买': 'wants to buy',
   '个报价':                            'bids',
   '等待商家报价':                      'Awaiting seller bids',
   '急':                                'urgent',
@@ -6069,7 +6072,8 @@ const _EN = {
   '所有 governance application 均已 active 或未达 onboarding 完成':
     'All governance applications are either active or onboarding not complete',
   '返回 admin':                        'Back to admin',
-  '申请':                              'Application',
+  '申请':                              'Apply',
+  '申请配额': 'Requested',
   'Region':                            'Region',
   'Email':                             'Email',
   '题目':                              'Quiz',

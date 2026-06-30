@@ -3505,7 +3505,7 @@ async function renderAdminGovernance(app) {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
           <div style="flex:1">
             <div style="font-weight:600;font-size:14px">${a.role === 'arbitrator' ? '⚖' : '🛡'} ${escHtml(a.user_name || '')} <span style="color:#6b7280;font-size:12px">(${a.handle ? '@' + escHtml(a.handle) : a.user_id})</span></div>
-            <div style="font-size:12px;color:#6b7280;margin-top:4px">${t('申请')}: ${roleLabel} · ${t('Region')}: ${escHtml(a.region || '—')} · ${t('Email')}: ${a.email ? '✓' : '✗'}</div>
+            <div style="font-size:12px;color:#6b7280;margin-top:4px">${t('角色')}: ${roleLabel} · ${t('Region')}: ${escHtml(a.region || '—')} · ${t('Email')}: ${a.email ? '✓' : '✗'}</div>
             <div style="font-size:12px;margin-top:6px;display:flex;gap:12px">
               <span style="color:${quizOk ? '#16a34a' : '#dc2626'}">${quizOk ? '✓' : '✗'} ${t('题目')} ${a.quiz_score != null ? a.quiz_score + '%' : '—'}</span>
               <span style="color:${caseOk ? '#16a34a' : '#dc2626'}">${caseOk ? '✓' : '✗'} ${t('案例 review')}</span>
@@ -3970,7 +3970,7 @@ async function renderAdminQuotaApps(app) {
       <div style="font-weight:600">${escHtml(a.user_name)} <span style="font-size:11px;color:#6b7280">${a.email || ''}</span></div>
       <div style="font-size:11px;color:#9ca3af;margin-top:2px">${a.user_id} · ${fmtTime(a.applied_at)}</div>
       <div style="font-size:13px;margin-top:8px">
-        ${t('当前配额')}: <strong>${a.current_quota}</strong> → ${t('申请')}: <strong>${a.requested_quota}</strong>
+        ${t('当前配额')}: <strong>${a.current_quota}</strong> → ${t('申请配额')}: <strong>${a.requested_quota}</strong>
       </div>
       ${a.reason ? `<div style="font-size:12px;color:#6b7280;margin-top:6px;padding:6px;background:#f9fafb;border-radius:4px">${escHtml(a.reason)}</div>` : ''}
       <div style="display:flex;gap:6px;margin-top:10px">
@@ -6810,7 +6810,7 @@ window.aiSuggestPrice = async () => {
   if (res.error) { if (hint) hint.innerHTML = '<span style="color:#dc2626">' + escHtml(res.error) + '</span>'; return }
   const priceInp = document.getElementById('ep-price')
   if (hint) {
-    hint.innerHTML = `💡 ${t('建议')} <strong style="color:#16a34a;cursor:pointer;text-decoration:underline" onclick="document.getElementById('ep-price').value=${res.suggested_price}">${res.suggested_price}</strong> WAZ · ${t('区间')} ${res.low_price}-${res.high_price} · ${escHtml(res.reasoning || '')}`
+    hint.innerHTML = `💡 ${t('建议价')} <strong style="color:#16a34a;cursor:pointer;text-decoration:underline" onclick="document.getElementById('ep-price').value=${res.suggested_price}">${res.suggested_price}</strong> WAZ · ${t('区间')} ${res.low_price}-${res.high_price} · ${escHtml(res.reasoning || '')}`
   }
 }
 
@@ -21153,7 +21153,7 @@ async function renderRfqFeed(app) {
         const bidsLabel = it.bid_count > 0 ? `💎 ${it.bid_count} ${t('个报价')}` : t('等待商家报价')
         return `<div class="card" style="margin-bottom:8px;padding:12px;cursor:pointer" onclick="navigate('#rfq/${it.id}')">
           <div style="font-size:13px;line-height:1.5">
-            ✍️ ${feedActor(it.buyer_id, it.buyer_name, it.buyer_handle)} ${t('求购')} <strong>${escHtml(it.title || it.category)}</strong>
+            ✍️ ${feedActor(it.buyer_id, it.buyer_name, it.buyer_handle)} ${t('想买')} <strong>${escHtml(it.title || it.category)}</strong>
             ${it.qty ? ` × ${it.qty}` : ''}
             ${it.budget ? ` · ${t('预算')} ${it.budget} WAZ` : ''}
           </div>
@@ -22105,7 +22105,7 @@ async function renderAuctionsFeed(app) {
           const tag = bidCount > 0 ? `🔥 ${bidCount} ${t('次出价')}` : t('暂无出价 · 先到先得')
           return `<div class="card" style="margin-bottom:8px;padding:12px;cursor:pointer" onclick="navigate('#auction/${d.id}')">
             <div style="font-size:13px;line-height:1.5">
-              💎 ${feedActor(d.seller_id, d.seller_name, d.seller_handle)} ${t('发起拍卖')} <strong>${escHtml(d.title)}</strong>
+              💎 ${feedActor(d.seller_id, d.seller_name, d.seller_handle)} ${t('发起了拍卖')} <strong>${escHtml(d.title)}</strong>
             </div>
             <div style="font-size:11px;color:#6b7280;margin-top:4px">${t('当前')} <span style="color:#dc2626;font-weight:600">${d.current_price} WAZ</span> · ${tag} · ${ts}</div>
           </div>`
