@@ -8,7 +8,7 @@ import Database from 'better-sqlite3'
 import { toDecimal } from '../src/money.js'
 import {
   getSellerAccruedFeeUnits, readAvailableFeePrepayUnits, sellerDirectPayGraceEligible,
-  feePrepayGateOk, feeUnitsForOrder, estimateOpenDirectPayFeeUnits, accrueFeeReceivable, FEE_AR_CURRENCY,
+  feePrepayGateOk, feeUnitsForOrder, estimateOpenDirectPayFeeUnits, accrueFeeReceivable, recordFeePrepayTopup, FEE_AR_CURRENCY,
 } from '../src/direct-pay-fee-ar.js'
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -93,7 +93,16 @@ ok('payment UPDATE rejected', threw(() => db.prepare("UPDATE direct_pay_fee_paym
 ok('payment DELETE rejected', threw(() => db.prepare("DELETE FROM direct_pay_fee_payments WHERE id='p1'").run()))
 ok('available unchanged after rejected mutations', readAvailableFeePrepayUnits(db, 's1') === U(13))
 
-// ── 7. 币种常量 ──
+// ── 7. recordFeePrepayTopup(预付款录入 helper)──
+ok('topup: missing seller → error', recordFeePrepayTopup(db, { sellerId: '', amountUnits: U(10), method: 'usdc', recordedBy: 'admin1' }).ok === false)
+ok('topup: amount<=0 → error', recordFeePrepayTopup(db, { sellerId: 'sP', amountUnits: 0, method: 'usdc', recordedBy: 'admin1' }).error === 'AMOUNT_MUST_BE_POSITIVE')
+ok('topup: non-integer → error', recordFeePrepayTopup(db, { sellerId: 'sP', amountUnits: 1.5, method: 'usdc', recordedBy: 'admin1' }).error === 'AMOUNT_MUST_BE_POSITIVE')
+ok('topup: bad method → error', recordFeePrepayTopup(db, { sellerId: 'sP', amountUnits: U(10), method: 'paypal', recordedBy: 'admin1' }).error === 'BAD_METHOD')
+ok('topup: happy → ok + id', (() => { const r = recordFeePrepayTopup(db, { sellerId: 'sP', amountUnits: U(40), method: 'usdc', recordedBy: 'admin1', evidenceRef: 'tx#1' }); return r.ok && !!r.id })())
+ok('topup: counts into available (invoice_id NULL)', readAvailableFeePrepayUnits(db, 'sP') === U(40))
+ok('topup: fiat method accepted', recordFeePrepayTopup(db, { sellerId: 'sP', amountUnits: U(10), method: 'fiat', recordedBy: 'admin1' }).ok === true && readAvailableFeePrepayUnits(db, 'sP') === U(50))
+
+// ── 8. 币种常量 ──
 ok('currency stable', FEE_AR_CURRENCY === 'usdc')
 
 if (fail) { console.error(`\nFAIL ${fail}/${pass + fail}\n${fails.join('\n')}`); process.exit(1) }

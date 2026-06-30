@@ -13,6 +13,7 @@
  *  - 整数 base-units(RFC-014 money.ts);金额列存 REAL 小数,经 toUnits 进 units 域比较。
  */
 import type Database from 'better-sqlite3'
+import { randomUUID } from 'crypto'
 import { toUnits, toDecimal, mulRate, type Units } from './money.js'
 import { releaseFeeStake } from './direct-pay-ledger.js'
 
@@ -85,6 +86,29 @@ export function feePrepayGateOk(args: {
 }): boolean {
   if (args.graceEligible) return true
   return args.availablePrepayUnits >= args.openOrdersEstFeeUnits + args.newOrderFeeUnits
+}
+
+export interface RecordFeePrepayResult { ok: boolean; error?: string; id?: string }
+
+/**
+ * 记录一笔【商家平台服务费预付款】(append-only 事实行,invoice_id NULL = 未分配预充值 → 计入 available)。
+ * 唯一 prepay top-up 写入口;由 ROOT + 真人 Passkey 的 admin 端点调用(身份/Passkey 由调用方 route 强制,本 helper 不验证)。
+ * ⚠️ 商家平台服务费预付款,非买家 escrow / 非保证金 / 非 penalty。不碰 buyer wallet/escrow/order/settlement。
+ * 校验:seller 非空、amount > 0(整数 base-units)、method ∈ {usdc,fiat}。本轮【不做】余额退款(无负额/无 refund kind)。
+ */
+export function recordFeePrepayTopup(
+  db: Database.Database,
+  args: { sellerId: string; amountUnits: Units; method: string; recordedBy: string; evidenceRef?: string; note?: string },
+): RecordFeePrepayResult {
+  if (!args.sellerId) return { ok: false, error: 'MISSING_SELLER' }
+  if (!Number.isFinite(args.amountUnits) || !Number.isInteger(args.amountUnits) || args.amountUnits <= 0) return { ok: false, error: 'AMOUNT_MUST_BE_POSITIVE' }
+  if (args.method !== 'usdc' && args.method !== 'fiat') return { ok: false, error: 'BAD_METHOD' }
+  const id = 'dpfp_' + randomUUID()
+  db.prepare(
+    `INSERT INTO direct_pay_fee_payments (id, seller_id, invoice_id, amount, currency, method, received_at, recorded_by, evidence_ref, note)
+     VALUES (?,?,NULL,?, '${FEE_AR_CURRENCY}', ?, datetime('now'), ?, ?, ?)`,
+  ).run(id, args.sellerId, toDecimal(args.amountUnits), args.method, args.recordedBy, args.evidenceRef ?? null, args.note ?? null)
+  return { ok: true, id }
 }
 
 /**
