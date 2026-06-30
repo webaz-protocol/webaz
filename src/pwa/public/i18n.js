@@ -5549,6 +5549,15 @@ const _EN = {
   '收藏':                              'Save',
   '收藏功能即将上线':                  'Bookmarks coming soon',
   '即将上线':                          'Coming soon',
+  // ── AI agent chat UI (app-ai.js): task-state hints / quick templates / config ──
+  '帮我找一个适合 [对象/年龄] 的礼物，预算 [金额] WAZ，要 [风格/品类] 类型': 'Find me a gift for [recipient/age], budget [amount] WAZ, [style/category] type',
+  '帮我比较 [商品名/链接]，找 WebAZ 上的最优价': 'Compare [product/link] and find the best price on WebAZ',
+  '推荐 3 个 [品类] 商品，优先 trusted+ 卖家 + 高完成率': 'Recommend 3 [category] products, prioritizing trusted+ sellers with high completion rates',
+  '我在 [地区]，哪些 [品类] 商品能 24h 内发货？': 'I am in [region] — which [category] products can ship within 24h?',
+  '帮我看下最近 7 天的订单状态，有没有需要确认收货的？': 'Check my order status for the last 7 days — anything to confirm as received?',
+  '我想为 [场景] 配齐一套商品，预算 [金额] WAZ — 帮我规划': 'Assemble a set of products for [scenario], budget [amount] WAZ — help me plan',
+  'OpenAI 兼容 (chat/completions)': 'OpenAI-compatible (chat/completions)',
+  'Anthropic 兼容 (messages)': 'Anthropic-compatible (messages)',
   // ── AI provider catalog (app-ai.js): provider desc / keyHint / model labels ──
   '平台原生模型 · 注册即用 · 无需 API key': 'Platform-native model · ready on sign-up · no API key',
   '业内最强代理模型 · 工具调用一流 · 付费': 'Best-in-class agent model · top-tier tool use · paid',

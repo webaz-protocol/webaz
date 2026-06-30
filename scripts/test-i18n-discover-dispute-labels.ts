@@ -124,5 +124,12 @@ ok('9d. model-label EN present', has(I18N, "'Claude Opus 4.7 (最强)':") && has
 ok('9e. GUARD: system prompt NOT translated (still raw)', has(AI, '你是 WebAZ 用户的私人购物助手') && !has(AI, "t('你是 WebAZ"))
 ok('9f. GUARD: AI_TOOLS description NOT translated (still raw)', has(AI, "description: '在 WebAZ 平台搜索商品") && has(AI, '[任务规划阶段]') && !has(AI, "t('[任务规划阶段]"))
 
+// ── 10. app-ai.js agent chat UI (part 2a): task-state hints / quick templates / config ──
+ok('10a. task-state hint EN present', has(I18N, "'告诉 Agent 你想做什么':") && has(I18N, "'任务已取消':"))
+ok('10b. quick-template prompt filled via t()', has(AI, "aiFillTemplate('${t(t2.prompt).replace"))
+ok('10c. tool-limit error t()-wrapped', has(AI, "text: t('⚠️ 达到工具调用上限，请重新提问或细化问题。')"))
+ok('10d. provider-format options t()-wrapped', has(AI, "${t('OpenAI 兼容 (chat/completions)')}") && has(AI, "${t('Anthropic 兼容 (messages)')}"))
+ok('10e. custom-agent default name t()-wrapped', has(AI, "|| t('我的 Agent')") && has(I18N, "'我的 Agent':"))
+
 if (fail > 0) { console.error(`\n❌ i18n discover/dispute labels FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ i18n discover/dispute labels: discover chips + RULING_LABELS/EVIDENCE_TYPE_LABELS render sites t()-wrapped (no shadowed t), EN parity present\n  ✅ pass ${pass}`)
