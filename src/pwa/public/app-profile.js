@@ -822,7 +822,7 @@ async function renderNearbyFeed(app) {
         ${topProducts.slice(0,5).map(p => `
           <div class="card" style="padding:10px 12px;margin-bottom:6px;cursor:pointer" onclick="navigate('#order-product/${p.id}')">
             <div style="font-size:13px;font-weight:600">${escHtml(p.title)} <span style="color:#dc2626;font-weight:700">${p.price} WAZ</span></div>
-            <div style="font-size:11px;color:#6b7280;margin-top:2px">🛒 ${p.buy_count} ${t('单')} · 同城共鸣</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:2px">🛒 ${p.buy_count} ${t('单')} · ${t('同城共鸣')}</div>
           </div>`).join('')}` : ''}
     `
   }

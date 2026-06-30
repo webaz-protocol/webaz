@@ -110,5 +110,9 @@ ok('7d. 申请 = Apply (button); admin label → 角色 (Role), quota → 申请
   /'申请':\s+'Apply',/.test(I18N) && /'申请配额':\s+'Requested',/.test(I18N) &&
   has(APP, "${t('角色')}: ${roleLabel}") && has(APP, "→ ${t('申请配额')}: <strong>${a.requested_quota}"))
 
+// ── 8. public-surface stray raw strings → t()-wrapped + EN (discover/profile) ──
+ok('8a. discover external-platform fallback t()-wrapped', has(DISCOVER, ": t('外部平台')") && /'外部平台':\s+'External platform',/.test(I18N))
+ok('8b. profile 同城共鸣 t()-wrapped', has(PROFILE, "${t('同城共鸣')}</div>") && /'同城共鸣':\s+'Local buzz',/.test(I18N))
+
 if (fail > 0) { console.error(`\n❌ i18n discover/dispute labels FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ i18n discover/dispute labels: discover chips + RULING_LABELS/EVIDENCE_TYPE_LABELS render sites t()-wrapped (no shadowed t), EN parity present\n  ✅ pass ${pass}`)

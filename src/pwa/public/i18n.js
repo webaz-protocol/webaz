@@ -2984,6 +2984,8 @@ const _EN = {
   '银行卡':                            'Bank card',
   'Telegram':                          'Telegram',
   '外部链接':                          'External URL',
+  '外部平台': 'External platform',
+  '同城共鸣': 'Local buzz',
 
   // ── P3c 收尾 ──────────────────────────────────────────────
   '提前结算（自动选最低价）':            'Settle early (auto-pick lowest)',

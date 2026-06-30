@@ -1267,7 +1267,7 @@ window.doSearch = async () => {
   const products = resp.products || []
   const m   = resp.matched_by
   const ext = resp.extracted || {}
-  const plat = ext.platform ? `${ext.platform}` : '外部平台'
+  const plat = ext.platform ? `${ext.platform}` : t('外部平台')
   let banner = ''
   if (m === 'external_id')               banner = `<div class="alert alert-success" style="margin-bottom:12px">✓ ${t('通过')} ${plat} ${t('商品 ID 精确匹配到')} ${products.length} ${t('件')}</div>`
   else if (m === 'external_title_exact') banner = `<div class="alert alert-success" style="margin-bottom:12px">✓ ${t('通过外链标题完全匹配到')} ${products.length} ${t('件')}</div>`
