@@ -912,7 +912,7 @@ async function aiChatTurn(conversation, userText, attachments, onProgress) {
     conversation.messages.push({ role: 'user', content: toolResults })
   }
   await aiSaveConversation(conversation)
-  return { content: [{ type: 'text', text: '⚠️ 达到工具调用上限，请重新提问或细化问题。' }] }
+  return { content: [{ type: 'text', text: t('⚠️ 达到工具调用上限，请重新提问或细化问题。') }] }
 }
 
 function aiCreateConversation() {
@@ -1488,7 +1488,7 @@ async function renderAIRecommend(app) {
       <!-- 快速模板（intent 空对话才显示）-->
       <div style="margin-top:8px;display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none">
         ${AI_QUICK_TEMPLATES.map(t2 => `
-          <button onclick="aiFillTemplate('${t2.prompt.replace(/'/g, "\\'")}')"
+          <button onclick="aiFillTemplate('${t(t2.prompt).replace(/'/g, "\\'")}')"
             style="background:#fff;border:1px dashed #c7d2fe;border-radius:8px;padding:6px 10px;font-size:11px;color:#4338ca;cursor:pointer;white-space:nowrap;flex-shrink:0;font-weight:500">
             ${t2.icon} ${t(t2.label)}
           </button>`).join('')}
@@ -1959,8 +1959,8 @@ window.aiOpenProviderConfig = (pid) => {
       <div class="form-group">
         <label class="form-label">${t('协议格式')}</label>
         <select id="ai-pcfg-cformat" class="form-control" style="font-size:13px">
-          <option value="openai" ${cFormat==='openai'?'selected':''}>OpenAI 兼容 (chat/completions)</option>
-          <option value="anthropic" ${cFormat==='anthropic'?'selected':''}>Anthropic 兼容 (messages)</option>
+          <option value="openai" ${cFormat==='openai'?'selected':''}>${t('OpenAI 兼容 (chat/completions)')}</option>
+          <option value="anthropic" ${cFormat==='anthropic'?'selected':''}>${t('Anthropic 兼容 (messages)')}</option>
         </select>
         <div style="font-size:11px;color:#9ca3af;margin-top:4px">${t('多数自建 agent / 代理用 OpenAI 协议')}</div>
       </div>
@@ -1991,7 +1991,7 @@ window.aiSaveProviderConfig = (pid, mode) => {
 
   if (isCustom) {
     // custom: name + model + format 都来自用户填的字段
-    const cname  = document.getElementById('ai-pcfg-cname')?.value?.trim() || '我的 Agent'
+    const cname  = document.getElementById('ai-pcfg-cname')?.value?.trim() || t('我的 Agent')
     const cmodel = document.getElementById('ai-pcfg-cmodel')?.value?.trim()
     const clabel = document.getElementById('ai-pcfg-clabel')?.value?.trim()
     const cformat = document.getElementById('ai-pcfg-cformat')?.value || 'openai'
