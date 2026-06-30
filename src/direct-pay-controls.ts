@@ -42,6 +42,7 @@ export const DIRECT_PAY_SELLER_NOT_ELIGIBLE = 'DIRECT_PAY_SELLER_NOT_ELIGIBLE'
 export const BUYER_FACING_SELLER_PRIVATE_CODES: ReadonlySet<string> = new Set([
   'DIRECT_PAY_SELLER_SUSPENDED', 'DIRECT_PAY_NOT_AVAILABLE', 'DIRECT_PAY_KYC_REQUIRED', 'DIRECT_PAY_AML_REVIEW_REQUIRED',
   'DIRECT_PAY_DEFERRAL_QUOTA_EXCEEDED', 'DIRECT_PAY_DEFERRAL_AMOUNT_EXCEEDED',
+  'EXPOSURE_CAP_EXCEEDED', 'EXPOSURE_CAP_CONFIG',   // §6.5 抵押背书敞口上限:卖家私密风险态,不向买家泄露
 ])
 /** 买家面脱敏:私密拒因 → 通用 SELLER_NOT_ELIGIBLE;全局/运营类原样;undefined → 通用(fail-safe,绝不泄露)。 */
 export function coarsenBuyerFacingDirectPayCode(code: string | undefined): string {
@@ -139,6 +140,7 @@ export const DIRECT_PAY_CONTROL_PARAMS: Array<{ key: string; value: string; type
   //   治理设正值方生效。【不是】对买卖双方场外真实付款金额的担保或控制——WebAZ 控不了场外金额,此处也不声称能控。
   //   具体数值(如 SG v1 的 policy units)由独立的 launch-policy PR 配置,本 PR 只提供 cap 能力、默认仍 fail-closed。
   { key: 'direct_pay.per_tx_cap_units', value: '0', type: 'number', description: 'Direct Pay 单笔上限:WebAZ 记录的订单总额天花板(整数 policy base-units);默认 0=无放行,治理设正值方可。仅约束协议侧建单金额,不控制/不担保场外真实付款。', category: 'system', min: 0 },
+  { key: 'direct_pay.exposure_factor_bps', value: '8000', type: 'number', description: '§6.5 抵押背书的开放敞口上限系数(bps):open_exposure + new_order ≤ active_collateral × bps/10000。仅对有真实链上抵押(collateral>0)的卖家生效;缓交卖家不受此门。默认 8000(=80%)。风险控制,非买家赔付。', category: 'system', min: 1, max: 10000 },
 ]
 
 /**
