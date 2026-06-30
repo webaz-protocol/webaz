@@ -49,7 +49,8 @@ db.prepare("INSERT INTO orders VALUES ('o1','s1','direct_p2p','accepted',100)").
 db.prepare("INSERT INTO orders VALUES ('o2','s1','direct_p2p','completed',50)").run()       // 关闭→不计
 db.prepare("INSERT INTO orders VALUES ('o3','s1','direct_p2p','cancelled',50)").run()       // 关闭→不计
 db.prepare("INSERT INTO orders VALUES ('o4','s1','escrow','accepted',999)").run()           // 非直付→不计
-ok('open exposure sums only open direct_p2p', computeDirectPayOpenExposureUnits(db, 's1') === BigInt(toUnits(100)))
+db.prepare("INSERT INTO orders VALUES ('o5','s1','direct_p2p','direct_expired_unconfirmed',50)").run() // ⚠️ 非终态→必须计入
+ok('open exposure includes direct_expired_unconfirmed (non-terminal, P1 regress)', computeDirectPayOpenExposureUnits(db, 's1') === BigInt(toUnits(150)))
 
 // ── 5. enforceCollateralExposureGate ──
 // 5a 休眠:collateral=0 → ok,且【即便参数缺失也不报错】(证明现有直付/缓交卖家零影响)

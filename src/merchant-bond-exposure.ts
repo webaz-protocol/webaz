@@ -39,9 +39,15 @@ export function getActiveCollateralUnits(db: Database.Database, sellerId: string
   return sum
 }
 
-/** 开放敞口状态(未完全关闭的 direct_p2p 单):完成/取消/各类 fault 终态【不】计入(释放敞口)。 */
+/**
+ * 开放敞口状态(未完全关闭的 direct_p2p 单)。终态【不】计入(释放敞口):
+ *   completed / cancelled / fault_* / resolved_for_seller / refunded_partial / refunded_full / dispute_dismissed / expired。
+ * ⚠️ direct_expired_unconfirmed 是【非终态】(超时不静默关单,仍可转 disputed / cancelled,见 transitions.ts)→ 必须计入,
+ *    漏算会低估敞口(对风险闸是危险方向)。created 为建单原子前态(direct_p2p 一般即转 window),防御性纳入(过度计入只会更严、无害)。
+ */
 export const OPEN_EXPOSURE_STATUSES = [
-  'direct_pay_window', 'accepted', 'shipped', 'picked_up', 'in_transit', 'delivered', 'confirmed', 'disputed',
+  'created', 'direct_pay_window', 'direct_expired_unconfirmed',
+  'accepted', 'shipped', 'picked_up', 'in_transit', 'delivered', 'confirmed', 'disputed',
 ] as const
 
 /** 卖家当前 Direct Pay 开放敞口(units):未完全关闭的 direct_p2p 单 total_amount 之和。 */
