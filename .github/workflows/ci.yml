@@ -710,6 +710,8 @@ jobs:
       - run: npm run test:direct-pay-compliance-ingress
       - run: npm run test:direct-pay-ui
       - run: npm run test:i18n-labels
+      - run: npm run check:i18n-dup
+      - run: npm run test:i18n-dup-gate
       - run: npm run test:merchant-bond
       - run: npm run test:merchant-bond-exposure
       - run: npm run test:direct-pay-fee-ar
