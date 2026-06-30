@@ -28,7 +28,7 @@ export type OrderStatus =
   | 'dispute_dismissed'     // 争议被驳回（无效）
   | 'expired'               // 订单超时自动失败（通用兜底）
   // ── Direct Pay (Rail 1) 直付专属状态 ───────────────────────────
-  | 'direct_pay_window'          // Rail1: 进入直付付款窗口(平台费完成时记链下应收,非建单质押),展示收款方式,等买家场外付款
+  | 'direct_pay_window'          // Rail1: 卖家已质押平台费,展示收款方式,等买家付款(直付/场外)
   | 'direct_expired_unconfirmed' // Rail1: 付款窗口超时未标记 —— 不静默关单,留买家争议/确认窗口
 
 export type UserRole =
@@ -70,7 +70,7 @@ export const VALID_TRANSITIONS: Record<string, Transition> = {
   'created→direct_pay_window': {
     allowedRoles: ['system'],   // 直付下单路由锁定卖家费用质押后,以 system 显式推进(非超时驱动)
     requiresEvidence: false,
-    description: 'Rail1 直付:进入付款窗口、展示收款方式(平台费完成时记链下应收,非建单质押)'
+    description: 'Rail1 直付:卖家已质押平台费、展示收款方式,进入付款窗口'
   },
   'direct_pay_window→accepted': {
     allowedRoles: ['buyer'],
@@ -376,7 +376,7 @@ export const ORDER_STATE_MEANINGS: Record<OrderStatus, { zh: string; en: string 
   refunded_full:       { zh: '仲裁裁全额退款,订单作废(终态)', en: 'arbitration full refund, order voided (terminal)' },
   dispute_dismissed:   { zh: '争议被驳回(无效,终态)', en: 'dispute dismissed (terminal)' },
   expired:             { zh: '订单超时自动失败(通用兜底,终态)', en: 'order expired (generic timeout, terminal)' },
-  direct_pay_window:           { zh: 'Rail1 直付:等买家场外付款(协议不持货款;平台费完成后记应收)', en: 'Rail1 direct-pay: awaiting buyer off-protocol payment (protocol holds no funds; platform fee accrued on completion)' },
+  direct_pay_window:           { zh: 'Rail1 直付:已质押平台费,等买家付款(协议不持货款)', en: 'Rail1 direct-pay: fee-staked, awaiting buyer off-protocol payment (protocol holds no funds)' },
   direct_expired_unconfirmed:  { zh: 'Rail1 直付:付款窗口超时未标记(不静默关单,留争议/确认窗口)', en: 'Rail1 direct-pay: payment window expired unmarked (not silently closed; dispute/confirm window open)' },
 }
 
