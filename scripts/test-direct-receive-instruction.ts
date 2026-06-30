@@ -59,7 +59,7 @@ registerOrdersCreateRoutes(app, {
   addHours: (d: Date, h: number) => new Date(d.getTime() + h * 3600_000).toISOString(),
   getActiveFlashSale: () => null, applyCouponToOrder: () => ({ ok: false }),
   // Phase 4a 控制面:开启全局/地区/上限,让 create 走到收款指令门(本测试聚焦 instruction gate,不测控制面拒绝矩阵)。
-  getProtocolParam: <T,>(k: string, fb: T): T => { const m: Record<string, unknown> = { 'direct_pay.enabled': true, 'direct_pay.region': 'SG', 'direct_pay.region_allowlist': 'SG', 'direct_pay.per_tx_cap_units': 1_000_000_000 }; return k in m ? m[k] as T : fb },
+  getProtocolParam: <T,>(k: string, fb: T): T => { const m: Record<string, unknown> = { 'direct_pay.enabled': true, 'direct_pay.region': 'SG', 'direct_pay.region_allowlist': 'SG', 'direct_pay.per_tx_cap_units': 1_000_000_000, 'direct_pay.fee_ar_credit_ceiling_units': 1_000_000_000 }; return k in m ? m[k] as T : fb },
   getProductShareChain: () => [], isAllowedSponsor: () => false, resolveInviteCodeRef: () => null,
   checkStockAndMaybeDelist: () => {}, auditSponsorChainCross: () => {},
   appendOrderEvent, transition, notifyTransition: () => {}, shouldAutoAccept: () => false,

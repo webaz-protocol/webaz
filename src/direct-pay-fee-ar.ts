@@ -14,6 +14,7 @@
  */
 import type Database from 'better-sqlite3'
 import { toUnits, toDecimal, mulRate, type Units } from './money.js'
+import { releaseFeeStake } from './direct-pay-ledger.js'
 
 export const FEE_AR_CEILING_PARAM = 'direct_pay.fee_ar_credit_ceiling_units'
 export const FEE_AR_CURRENCY = 'usdc' // v1 单一计价币
@@ -127,4 +128,21 @@ export function accrueFeeReceivable(
     `INSERT INTO direct_pay_fee_receivables (id, order_id, seller_id, amount, currency, accrued_at) VALUES (?,?,?,?, '${FEE_AR_CURRENCY}', datetime('now'))`,
   ).run(opts.receivableId, opts.orderId, opts.sellerId, toDecimal(opts.feeUnits))
   return { outcome: 'accrued' }
+}
+
+/**
+ * 完成结算时的 direct_p2p 平台费收口(供 settleOrder 单行调用,保持 server.ts 净零)。
+ * ① 释放任何遗留模拟 WAZ fee-stake(cutover 前建单;模拟无价值,不取,退回卖家;无则 no-op);
+ * ② accrue 一笔链下应收(fail-closed + 幂等)。必须在调用方 settleOrder 的 db.transaction 内调用。
+ */
+export function settleDirectPayFeeAtCompletion(
+  db: Database.Database,
+  order: { id: string; seller_id: string; total_amount: number; source: string | null },
+  receivableId: string,
+): void {
+  releaseFeeStake(db, { orderId: order.id })
+  accrueFeeReceivable(db, {
+    orderId: order.id, sellerId: order.seller_id,
+    feeUnits: feeUnitsForOrder(toUnits(Number(order.total_amount) || 0), order.source), receivableId,
+  })
 }

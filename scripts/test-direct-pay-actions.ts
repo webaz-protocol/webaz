@@ -219,6 +219,15 @@ ok('in-person acks+token → 200 completed', r16.status === 200 && status('o10p'
 ok('in-person → 遗留 stake 释放(非 fee_taken)', stakeStatus('o10p') === 'released')
 ok('in-person → 记一笔应收', !!receivable('o10p'))
 
+// 17. Codex P1:confirm 全原子 —— accrue 失败(fee=0)→ 409 且订单【仍停在 delivered】(回滚,不卡 confirmed,可重试)。
+db.prepare(`INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail, fulfillment_mode, source)
+   VALUES ('oZero','p1','buyer1','seller1',1,0,0,0,'delivered','direct_p2p','shipped','shop')`).run()
+seedAcks('oZero')
+const r17 = await call('oZero', { action: 'confirm', webauthn_token: seedToken('buyer1', 'oZero', 'confirm') }, 'buyer1')
+ok('accrue 失败(fee=0)→ 409 DIRECT_PAY_SETTLE_FAILED', r17.status === 409 && r17.json?.error_code === 'DIRECT_PAY_SETTLE_FAILED', JSON.stringify(r17))
+ok('accrue 失败 → 订单仍 delivered(全原子回滚,不卡 confirmed)', status('oZero') === 'delivered')
+ok('accrue 失败 → 无应收落库', !receivable('oZero'))
+
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-actions route tests passed`)

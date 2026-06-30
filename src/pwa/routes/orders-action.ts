@@ -359,6 +359,28 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       evidenceIds.push(eid)
     }
 
+    // Rail1 全原子(Codex P1):direct_p2p confirm 必须把 delivered→confirmed→completed→settle/accrue 包进【同一 db.transaction】。
+    //   否则 delivered→confirmed 先单独提交、随后 accrue 失败 → 订单卡在 confirmed(retry 被 ORDER_NOT_DELIVERED 拒)。
+    //   任一步失败 → 整体回滚到 delivered(可重试);成功后再发通知。confirm-in-person 是另一端点、已单事务原子。
+    if (action === 'confirm' && order.payment_rail === 'direct_p2p') {
+      const sysUser = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string }
+      try {
+        db.transaction(() => {
+          const r1 = transition(db, req.params.id, 'confirmed', user.id as string, evidenceIds, notes)
+          if (!r1.success) throw new Error(r1.error || 'confirmed transition failed')
+          const r2 = transition(db, req.params.id, 'completed', sysUser.id, [], '系统自动结算')
+          if (!r2.success) throw new Error(r2.error || 'completed transition failed')
+          settleOrder(req.params.id)   // direct_p2p 分支:释放遗留模拟 stake + accrueFeeReceivable(fail-closed)
+        })()
+      } catch (e) {
+        return void res.status(409).json({ error: `直付完成结算失败,订单未完成(仍停在 delivered,可重试):${(e as Error).message}`, error_code: 'DIRECT_PAY_SETTLE_FAILED' })
+      }
+      notifyTransition(db, req.params.id, 'delivered', 'confirmed')
+      notifyTransition(db, req.params.id, 'confirmed', 'completed')
+      try { broadcastSystemEvent('order_completed', '✓', `订单完成 ${req.params.id}`, req.params.id) } catch {}
+      return void res.json({ success: true, status: 'completed', settlement: { rail: 'direct_p2p', fee_taken: true } })
+    }
+
     const fromStatus = order.status as string
     const result = transition(db, req.params.id, toStatus, user.id as string, evidenceIds, notes)
     if (!result.success) return void res.json({ error: result.error })
@@ -377,22 +399,7 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     let settlementBreakdown: Record<string, unknown> | null = null
     if (toStatus === 'confirmed') {
       const sysUser = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string }
-      // Rail1 fail-closed(审计 P1):direct_p2p 的 completed 与取平台费必须【同一原子边界】——
-      //   settleOrder→takeFeeAtCompletion 缺 locked stake 即抛 → 回滚 completed 转移,订单【绝不】terminal-completed 而费用落空。
-      if (order.payment_rail === 'direct_p2p') {
-        try {
-          db.transaction(() => {
-            const rc = transition(db, req.params.id, 'completed', sysUser.id, [], '系统自动结算')
-            if (!rc.success) throw new Error(rc.error || 'completed transition failed')
-            settleOrder(req.params.id)   // direct_p2p 分支 = takeFeeAtCompletion(缺 locked stake → 抛 → 整体回滚)
-          })()
-        } catch (e) {
-          return void res.status(409).json({ error: `直付平台费收取失败,订单未完成:${(e as Error).message}`, error_code: 'DIRECT_PAY_SETTLE_FAILED' })
-        }
-        notifyTransition(db, req.params.id, 'confirmed', 'completed')
-        try { broadcastSystemEvent('order_completed', '✓', `订单完成 ${req.params.id}`, req.params.id) } catch {}
-        return void res.json({ success: true, status: 'completed', settlement: { rail: 'direct_p2p', fee_taken: true } })
-      }
+      // direct_p2p confirm 已在上方【全原子早返回块】处理(delivered→confirmed→completed→settle 同一 tx);此处仅 escrow。
       transition(db, req.params.id, 'completed', sysUser.id, [], '系统自动结算')
       notifyTransition(db, req.params.id, 'confirmed', 'completed')
       settleOrder(req.params.id)
