@@ -377,7 +377,7 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       notifyTransition(db, req.params.id, 'delivered', 'confirmed')
       notifyTransition(db, req.params.id, 'confirmed', 'completed')
       try { broadcastSystemEvent('order_completed', '✓', `订单完成 ${req.params.id}`, req.params.id) } catch {}
-      return void res.json({ success: true, status: 'completed', settlement: { rail: 'direct_p2p', fee_taken: true } })
+      return void res.json({ success: true, status: 'completed', settlement: { rail: 'direct_p2p', fee_accrued: true } })
     }
 
     const fromStatus = order.status as string
