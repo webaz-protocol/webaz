@@ -30,6 +30,7 @@ db.exec(`
   CREATE TABLE direct_pay_fee_adjustments (id TEXT, receivable_id TEXT, seller_id TEXT, delta_amount REAL, currency TEXT, kind TEXT, reason TEXT, created_at TEXT, created_by TEXT);
   CREATE TABLE direct_pay_fee_payments (id TEXT, seller_id TEXT, invoice_id TEXT, amount REAL NOT NULL CHECK (amount >= 0), currency TEXT, method TEXT, received_at TEXT, recorded_by TEXT, evidence_ref TEXT, note TEXT);
   CREATE TABLE orders (id TEXT, seller_id TEXT, payment_rail TEXT, status TEXT, total_amount REAL, source TEXT);
+  CREATE TABLE admin_audit_log (id TEXT PRIMARY KEY, admin_id TEXT, action TEXT, target_type TEXT, target_id TEXT, detail TEXT, created_at TEXT DEFAULT (datetime('now')));
   CREATE TRIGGER trg_dp_fee_receivables_no_update BEFORE UPDATE ON direct_pay_fee_receivables BEGIN SELECT RAISE(ABORT, 'append-only'); END;
   CREATE TRIGGER trg_dp_fee_receivables_no_delete BEFORE DELETE ON direct_pay_fee_receivables BEGIN SELECT RAISE(ABORT, 'append-only'); END;
   CREATE TRIGGER trg_dp_fee_payments_no_update BEFORE UPDATE ON direct_pay_fee_payments BEGIN SELECT RAISE(ABORT, 'append-only'); END;

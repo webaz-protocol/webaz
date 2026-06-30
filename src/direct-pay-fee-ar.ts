@@ -104,10 +104,17 @@ export function recordFeePrepayTopup(
   if (!Number.isFinite(args.amountUnits) || !Number.isInteger(args.amountUnits) || args.amountUnits <= 0) return { ok: false, error: 'AMOUNT_MUST_BE_POSITIVE' }
   if (args.method !== 'usdc' && args.method !== 'fiat') return { ok: false, error: 'BAD_METHOD' }
   const id = 'dpfp_' + randomUUID()
-  db.prepare(
-    `INSERT INTO direct_pay_fee_payments (id, seller_id, invoice_id, amount, currency, method, received_at, recorded_by, evidence_ref, note)
-     VALUES (?,?,NULL,?, '${FEE_AR_CURRENCY}', ?, datetime('now'), ?, ?, ?)`,
-  ).run(id, args.sellerId, toDecimal(args.amountUnits), args.method, args.recordedBy, args.evidenceRef ?? null, args.note ?? null)
+  // 台账行 + 统一 admin_audit_log 同事务写(与 KYB/sanctions/AML ingress 一致;money-adjacent admin 动作必留痕)。
+  // 审计 detail PII-free:不存 raw evidence_ref / note,仅记 presence。
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO direct_pay_fee_payments (id, seller_id, invoice_id, amount, currency, method, received_at, recorded_by, evidence_ref, note)
+       VALUES (?,?,NULL,?, '${FEE_AR_CURRENCY}', ?, datetime('now'), ?, ?, ?)`,
+    ).run(id, args.sellerId, toDecimal(args.amountUnits), args.method, args.recordedBy, args.evidenceRef ?? null, args.note ?? null)
+    db.prepare(`INSERT INTO admin_audit_log (id, admin_id, action, target_type, target_id, detail) VALUES (?,?,?,?,?,?)`)
+      .run('dpfpaud_' + randomUUID(), args.recordedBy, 'direct_pay.fee_prepay_record', 'user', args.sellerId,
+        JSON.stringify({ payment_id: id, amount_units: args.amountUnits, method: args.method, evidence_ref_present: !!args.evidenceRef }))
+  })()
   return { ok: true, id }
 }
 
