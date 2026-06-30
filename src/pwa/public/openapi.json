@@ -608,8 +608,14 @@
     "/api/admin/direct-receive/aml-flags": {
       "post": {
         "summary": "POST /api/admin/direct-receive/aml-flags",
-        "tags": [],
-        "security": []
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/admin/direct-receive/aml-flags/:id/review": {
@@ -693,29 +699,53 @@
     "/api/admin/direct-receive/fee-adjust": {
       "post": {
         "summary": "≠ 退款(不动真钱,只调记账)。purpose_data 绑 seller_id+delta_units+reason。",
-        "tags": [],
-        "security": []
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/admin/direct-receive/fee-prepay": {
       "post": {
         "summary": "不碰 buyer wallet/escrow/order/settlement/refund;非买家 escrow/保证金/penalty。本轮无\"余额退款\"(仅正向预付款登记)。",
-        "tags": [],
-        "security": []
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/admin/direct-receive/fee-refund": {
       "post": {
         "summary": "amount ≤ 当前 available(helper 同事务校验)。append-only + audit。purpose_data 绑 seller_id+amount_units+method+evidence_ref。",
-        "tags": [],
-        "security": []
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/admin/direct-receive/kyb-reviews": {
       "post": {
         "summary": "Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B 一律拒。",
-        "tags": [],
-        "security": []
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/admin/direct-receive/product-verifications": {
@@ -760,8 +790,14 @@
     "/api/admin/direct-receive/sanctions-screenings": {
       "post": {
         "summary": "purpose_data 绑定 user_id+status+provider_ref+expires_at。",
-        "tags": [],
-        "security": []
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/admin/direct-receive/store-verifications": {

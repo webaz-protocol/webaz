@@ -79,6 +79,9 @@ for (const file of SCAN_FILES) {
       //   误标为 public(handler 经 wrapper 鉴权,而非在 8 行内直接 auth(req)。注:仓库内所有 require*(req) 均为此类守卫。
       if (/\brequire[A-Z][A-Za-z]*\(\s*req\b/.test(lines[j])) needsAuth = true
       if (/\brequire[A-Za-z]*Admin\(req\b/.test(lines[j]) || /hasAdminPermission|requireAdminPermission|isRootAdmin/.test(lines[j])) { isAdmin = true; needsAuth = true }
+      // admin ingress wrapper:`gatedIngress('purpose', ...)` 内部恒 requireRootAdmin + 真人 Passkey
+      //   (见 admin-direct-receive-deposits.ts)。注册行用 wrapper、8 行窗口内看不到 require*,故显式识别 → 标 ROOT+auth。
+      if (/\bgatedIngress\(\s*['"]/.test(lines[j])) { isAdmin = true; needsAuth = true }
       const gm = lines[j].match(/requireAgentGrantScope\(\s*['"]([^'"]+)['"]/)   // RFC-020 delegation-grant gate
       if (gm) { needsGrant = true; grantScope = gm[1] }
     }
