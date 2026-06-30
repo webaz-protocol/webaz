@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (705 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (706 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -292,21 +292,22 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/coupons/mine` | 🔐 |  |  | src/pwa/routes/coupons.ts:156 |
 | GET | `/api/coupons/preview` | 🔐 |  |  | src/pwa/routes/search.ts:40 |
 | GET | `/api/creator/stats` | 🔐 |  | 里程碑 L3：创作者贡献仪表盘 | src/pwa/routes/shareables.ts:216 |
-| GET | `/api/direct-pay/availability` | 🔐 |  | GET /api/direct-pay/availability?product_id=... — 该商品(以 qty=1 计)当前是否可直付 + 不可用原因( | src/pwa/routes/direct-pay-availability.ts:39 |
+| GET | `/api/direct-pay/availability` | 🔐 |  | GET /api/direct-pay/availability?product_id=... — 该商品(以 qty=1 计)当前是否可直付 + 不可用原因( | src/pwa/routes/direct-pay-availability.ts:40 |
 | POST | `/api/direct-pay/disclosure-acks` | 🔐 |  | POST — 记录一次 ack(D1 pre_select / D2 pre_confirm)。需现场真人(Passkey + gate token)。幂等(I | src/pwa/routes/direct-pay-disclosure-acks.ts:49 |
 | GET | `/api/direct-pay/disclosure-acks/:orderId` | 🔐 |  | GET — 查询某单两次 ack 状态 + 买家视角披露文案(无卖家机制)。只读(本人),不需 gate token。 | src/pwa/routes/direct-pay-disclosure-acks.ts:71 |
-| GET | `/api/direct-receive/deferral` | 🔐 |  | GET /api/direct-receive/deferral — 卖家本人缓交状态:最新一条申请(脱敏:不含 admin 身份)+ 是否当前生效(activ | src/pwa/routes/direct-pay-availability.ts:95 |
-| POST | `/api/direct-receive/deferral` | 🔐 |  | POST /api/direct-receive/deferral — 卖家申请缓交。helper 强制:单一活跃、periodDays 正整数、id 唯一。 | src/pwa/routes/direct-pay-availability.ts:85 |
+| GET | `/api/direct-receive/deferral` | 🔐 |  | GET /api/direct-receive/deferral — 卖家本人缓交状态:最新一条申请(脱敏:不含 admin 身份)+ 是否当前生效(activ | src/pwa/routes/direct-pay-availability.ts:96 |
+| POST | `/api/direct-receive/deferral` | 🔐 |  | POST /api/direct-receive/deferral — 卖家申请缓交。helper 强制:单一活跃、periodDays 正整数、id 唯一。 | src/pwa/routes/direct-pay-availability.ts:86 |
+| GET | `/api/direct-receive/my-fee-account` | 🔐 |  | 仅本人(requireSeller),买家拿不到;只读、不碰任何资金动作。供 seller fee center 展示。 | src/pwa/routes/direct-pay-availability.ts:109 |
 | DELETE | `/api/direct-receive/payment-instruction` | 🔐 |  | DELETE — 停用卖家当前 active 收款说明(软停用,留历史为 inactive)。停用后 create route fail-closed。 | src/pwa/routes/direct-receive-payment-instructions.ts:55 |
 | GET | `/api/direct-receive/payment-instruction` | 🔐 |  | GET — 卖家本人当前 active 收款说明;无则 instruction:null(200,显式空状态,便于 UI 渲染“尚未设置”)。 | src/pwa/routes/direct-receive-payment-instructions.ts:37 |
 | PUT | `/api/direct-receive/payment-instruction` | 🔐 |  | PUT — 设置/替换卖家当前 active 收款说明。instruction 必填、trim、长度上限;label 可选、trim、长度上限。 | src/pwa/routes/direct-receive-payment-instructions.ts:43 |
-| POST | `/api/direct-receive/product-verification` | 🔐 |  | POST /api/direct-receive/product-verification — 卖家为某产品申领验证码(单一活跃 per product)。 | src/pwa/routes/direct-pay-availability.ts:121 |
-| PUT | `/api/direct-receive/product-verification` | 🔐 |  | PUT /api/direct-receive/product-verification — 卖家为某产品提交外部商品链接(链接仅存储,WebAZ 不抓取)。 | src/pwa/routes/direct-pay-availability.ts:131 |
-| GET | `/api/direct-receive/product-verifications` | 🔐 |  | GET /api/direct-receive/product-verifications — 卖家本人所有产品的认证状态(逐产品)。 | src/pwa/routes/direct-pay-availability.ts:142 |
-| GET | `/api/direct-receive/readiness` | 🔐 |  | 绝不下发 raw blocker / KYB·制裁·AML 分项(见 sellerDirectPayReadinessView)。只读 self(auth 用户 | src/pwa/routes/direct-pay-availability.ts:75 |
-| GET | `/api/direct-receive/store-verification` | 🔐 |  | GET /api/direct-receive/store-verification — 卖家本人店铺认证状态(脱敏 DTO,含豁免位)。 | src/pwa/routes/direct-pay-availability.ts:170 |
-| POST | `/api/direct-receive/store-verification` | 🔐 |  | POST /api/direct-receive/store-verification — 卖家申领店铺验证码(单一活跃 per seller)。 | src/pwa/routes/direct-pay-availability.ts:151 |
-| PUT | `/api/direct-receive/store-verification` | 🔐 |  | PUT /api/direct-receive/store-verification — 卖家提交店铺外链(仅存储,不抓取)。 | src/pwa/routes/direct-pay-availability.ts:160 |
+| POST | `/api/direct-receive/product-verification` | 🔐 |  | POST /api/direct-receive/product-verification — 卖家为某产品申领验证码(单一活跃 per product)。 | src/pwa/routes/direct-pay-availability.ts:129 |
+| PUT | `/api/direct-receive/product-verification` | 🔐 |  | PUT /api/direct-receive/product-verification — 卖家为某产品提交外部商品链接(链接仅存储,WebAZ 不抓取)。 | src/pwa/routes/direct-pay-availability.ts:139 |
+| GET | `/api/direct-receive/product-verifications` | 🔐 |  | GET /api/direct-receive/product-verifications — 卖家本人所有产品的认证状态(逐产品)。 | src/pwa/routes/direct-pay-availability.ts:150 |
+| GET | `/api/direct-receive/readiness` | 🔐 |  | 绝不下发 raw blocker / KYB·制裁·AML 分项(见 sellerDirectPayReadinessView)。只读 self(auth 用户 | src/pwa/routes/direct-pay-availability.ts:76 |
+| GET | `/api/direct-receive/store-verification` | 🔐 |  | GET /api/direct-receive/store-verification — 卖家本人店铺认证状态(脱敏 DTO,含豁免位)。 | src/pwa/routes/direct-pay-availability.ts:178 |
+| POST | `/api/direct-receive/store-verification` | 🔐 |  | POST /api/direct-receive/store-verification — 卖家申领店铺验证码(单一活跃 per seller)。 | src/pwa/routes/direct-pay-availability.ts:159 |
+| PUT | `/api/direct-receive/store-verification` | 🔐 |  | PUT /api/direct-receive/store-verification — 卖家提交店铺外链(仅存储,不抓取)。 | src/pwa/routes/direct-pay-availability.ts:168 |
 | GET | `/api/disputes` | 🔐 |  | 仲裁员：查看所有开放争议 | src/pwa/routes/disputes-read.ts:39 |
 | GET | `/api/disputes/:id` | 🔐 |  | 详情聚合（含 W4 timeline + chain ruling） | src/pwa/routes/disputes-read.ts:112 |
 | POST | `/api/disputes/:id/add-evidence` | 🔐 |  | 参与方主动举证（text）+ SNF 信封分发 | src/pwa/routes/disputes-write.ts:389 |

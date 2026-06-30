@@ -131,6 +131,19 @@ db.prepare("INSERT INTO webauthn_gate_tokens (id, user_id, purpose, purpose_data
 const hg = await req('POST', `/api/admin/direct-receive/deferrals/${dfrC}/approve`, { reduced_quota_factor: 0.5, grace_days: 100000000000, webauthn_token: 'tk_hg' }, { 'x-root': '1', 'x-uid': 'root1' })
 ok('7a. approve huge grace_days → 409 DEFERRAL_APPROVE_REJECTED, not 500', hg.status === 409 && hg.json?.error_code === 'DEFERRAL_APPROVE_REJECTED', `status=${hg.status} ${JSON.stringify(hg.json)}`)
 
+// ══════ N. seller my-fee-account (PR-C) ══════
+ok('N1. my-fee-account requires auth → 401', (await req('GET', '/api/direct-receive/my-fee-account', null)).status === 401)
+ok('N2. non-seller (buyer) → 403 SELLER_ONLY', (await req('GET', '/api/direct-receive/my-fee-account', null, { 'x-uid': 'buyer1', 'x-role': 'buyer' })).json?.error_code === 'SELLER_ONLY')
+const mfa0 = await req('GET', '/api/direct-receive/my-fee-account', null, { 'x-uid': 'seller_c' })
+ok('N3. seller reads own account → 200 + available 0 (no activity)', mfa0.status === 200 && mfa0.json?.account?.availableUnits === 0, JSON.stringify(mfa0.json))
+// admin records a 50 USDC prepay for seller_c (Passkey), then seller sees it (end-to-end PR-A→PR-C)
+db.prepare("INSERT INTO webauthn_gate_tokens (id,user_id,purpose,purpose_data,expires_at) VALUES ('tkc','root1','direct_pay_fee_prepay_record',?,datetime('now','+60 seconds'))").run(JSON.stringify({ seller_id: 'seller_c', amount_units: 50000000, method: 'usdc', evidence_ref: '' }))
+const tp = await req('POST', '/api/admin/direct-receive/fee-prepay', { seller_id: 'seller_c', amount_units: 50000000, method: 'usdc', webauthn_token: 'tkc' }, { 'x-root': '1', 'x-uid': 'root1' })
+ok('N4. admin prepay 50 USDC → 200', tp.status === 200, JSON.stringify(tp.json))
+const mfa1 = await req('GET', '/api/direct-receive/my-fee-account', null, { 'x-uid': 'seller_c' })
+ok('N5. seller_c now sees available 50 USDC', mfa1.json?.account?.availableUnits === 50000000, JSON.stringify(mfa1.json))
+ok('N6. isolation: seller_b (no activity) still sees 0', (await req('GET', '/api/direct-receive/my-fee-account', null, { 'x-uid': 'seller_b' })).json?.account?.availableUnits === 0)
+
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-deferral-routes tests passed`)

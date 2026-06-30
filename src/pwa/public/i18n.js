@@ -154,6 +154,12 @@ const _EN = {
   '已退款合计': 'Total refunds',
   '在途单预估费': 'In-flight orders est. fee',
   '可退款余额': 'Refundable balance',
+  // PR-C seller fee center
+  '平台服务费账户(仅你可见)': 'Platform-fee account (only you can see)',
+  '直付平台服务费的预充值余额与已计提明细;预充值由平台核实收款后登记,如需充值请联系平台。': 'Your Direct Pay platform-service-fee prepayment balance and accrued detail; prepayments are recorded by the platform after it verifies receipt — contact the platform to top up.',
+  '待补平台服务费': 'Platform fee owed',
+  '余额不足时新直付订单会被暂停,请联系平台补充平台服务费预充值。': 'When the balance is insufficient, new direct-pay orders are suspended; contact the platform to top up the platform-service-fee prepayment.',
+  '首单宽限可用:你的第一笔直付无需预充值。': 'First-order grace available: your first direct-pay order needs no prepayment.',
   '首单宽限': 'First-order grace',
   '是(尚未成交)': 'Yes (no completed sale yet)',
   '否(已用/有在途)': 'No (used / has in-flight)',
