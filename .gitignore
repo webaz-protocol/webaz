@@ -45,3 +45,9 @@ docs/modules/tokenomics-pv-commission.md
 
 # internal-only compliance / reward-engine working docs (moved out of public 2026-06-16 for risk control)
 docs/modules/*.INTERNAL.md
+
+# Foundry (Solidity contracts) — build artifacts only; lib/ submodules are tracked via .gitmodules.
+/out/
+/cache/
+/broadcast/
+foundry.lock
