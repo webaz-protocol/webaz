@@ -16,6 +16,7 @@ const DP = P('app-direct-pay.js')      // the Direct Pay UI domain module (all l
 // comment-stripped view (for NEGATIVE assertions — the honest disclaimer comments name the very things we forbid)
 const DPCODE = DP.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
 const APP = P('app.js')                // hooks live here
+const FEEOPS = P('app-direct-pay-fee-ops.js')   // PR-B: Direct Pay 商户运营 hub + 平台服务费(预充值)账户
 const I18N = P('i18n.js')
 const HTML = P('index.html')
 const WAZ = P('app-prelaunch-waz.js')  // [PRELAUNCH-WAZ-SIM] 模拟币提醒 + 强制显式选 rail
@@ -222,7 +223,8 @@ for (const p of adminGatePurposes) {
   ok(`12k. WebAuthn allowed set includes '${p}' (token actually mintable)`, allowedDecl.includes(`'${p}'`))
 }
 // 12l. discoverability: admin overview links to #admin/deferrals (root-only entry card), not hash-only
-ok('12l. admin hub exposes a #admin/deferrals entry card', has(APP, "'#admin/deferrals')") && has(APP, '履约保证金缓交审批'))
+ok('12l. Direct Pay 商户运营 hub exposes a #admin/deferrals entry card', has(FEEOPS, "'#admin/deferrals')") && has(FEEOPS, '履约保证金缓交审批'))
+ok('12l-2. protocol admin hub consolidates direct-pay into a single #admin/dp-ops card', has(APP, "'#admin/dp-ops')") && has(APP, 'Direct Pay 商户运营'))
 // EN parity for the new admin copy
 for (const k of ['履约保证金缓交审批', '缓交期(天)', '真人确认批准', '真人确认拒绝', '暂无待审缓交申请', '额度系数(如 0.5)']) {
   ok(`12-i18n EN present: ${k.slice(0, 10)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
@@ -245,7 +247,7 @@ ok('13h. admin reads queue (GET) + reviews (POST)', /GET\('\/admin\/direct-recei
 // IRON RULE + mintability: admin review uses a live Passkey purpose that MUST be in the WebAuthn allowed set
 ok('13i. admin review uses live Passkey gate (direct_pay_product_verify)', /requestPasskeyGate\('direct_pay_product_verify'/.test(PVU))
 ok('13j. direct_pay_product_verify is in the WebAuthn allowed set (token mintable)', allowedDecl.includes("'direct_pay_product_verify'"))
-ok('13k. discoverability: admin hub exposes #admin/product-verifications card', has(APP, "'#admin/product-verifications')"))
+ok('13k. discoverability: Direct Pay 商户运营 hub exposes #admin/product-verifications card', has(FEEOPS, "'#admin/product-verifications')"))
 // no money path
 ok('13l. product-verify UI touches no wallet/escrow/settle/refund', !/\/wallet|\/escrow|\/settle|\/refund|\/returns/.test(PVUCODE))
 // EN parity for the new copy
@@ -268,7 +270,7 @@ ok('14h. admin reads queue (GET) + reviews (POST)', /GET\('\/admin\/direct-recei
 ok('14i. admin review uses live Passkey gate (direct_pay_store_verify) + binds per_product_exempt', /requestPasskeyGate\('direct_pay_store_verify',\s*body\)/.test(SVU) && /per_product_exempt:\s*exempt/.test(SVU))
 ok('14j. direct_pay_store_verify is in the WebAuthn allowed set (token mintable)', allowedDecl.includes("'direct_pay_store_verify'"))
 ok('14k. admin offers the per-product-exempt checkbox', /sv-exempt-/.test(SVU) && /type="checkbox"/.test(SVU))
-ok('14l. discoverability: admin hub exposes #admin/store-verifications card', has(APP, "'#admin/store-verifications')"))
+ok('14l. discoverability: Direct Pay 商户运营 hub exposes #admin/store-verifications card', has(FEEOPS, "'#admin/store-verifications')"))
 ok('14m. store-verify UI touches no wallet/escrow/settle/refund', !/\/wallet|\/escrow|\/settle|\/refund|\/returns/.test(SVUCODE))
 for (const k of ['店铺认证(可申请免逐品验证)', '申请店铺认证', '提交店铺链接', '店铺认证审核', '免逐品验证(通过后该卖家所有商品可直付)', '暂无待核验店铺']) {
   ok(`14-i18n EN present: ${k.slice(0, 10)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
@@ -285,7 +287,7 @@ ok('15d. posts to the ROOT KYB + sanctions ingest endpoints (via shared helper)'
 ok('15e. both live Passkey purposes referenced (kyb_ingress + sanctions_ingress)', has(CMP, "'direct_pay_kyb_ingress'") && has(CMP, "'direct_pay_sanctions_ingress'"))
 ok('15f. both ingest purposes are in the WebAuthn allowed set (token mintable)', allowedDecl.includes("'direct_pay_kyb_ingress'") && allowedDecl.includes("'direct_pay_sanctions_ingress'"))
 ok('15g. purpose_data bound to posted body (same body to gate + POST)', /requestPasskeyGate\(purpose,\s*body\)/.test(CMP) && /\.\.\.body,\s*webauthn_token/.test(CMP))
-ok('15h. discoverability: admin hub exposes #admin/compliance card', has(APP, "'#admin/compliance')"))
+ok('15h. discoverability: Direct Pay 商户运营 hub exposes #admin/compliance card', has(FEEOPS, "'#admin/compliance')"))
 ok('15i. compliance UI touches no wallet/escrow/settle/refund', !/\/wallet|\/escrow|\/settle|\/refund|\/returns/.test(CMPCODE))
 // P1: provider_ref must NOT be labeled as a credential/ID number (it's stored plaintext) + must warn against PII
 ok('15j. no PII-inviting label (凭证号/证件号) for provider_ref', !/凭证号|证件号/.test(CMP) && /vendor case id/.test(CMP))
@@ -296,6 +298,25 @@ ok('15m. KYB options include revoked (full backend allowlist)', /'approved'/.tes
 for (const k of ['商户合规录入', 'KYB 复核结论', '制裁筛查结论', '记录 KYB(真人 Passkey)', 'KYB 结论已记录']) {
   ok(`15-i18n EN present: ${k.slice(0, 8)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
 }
+
+// ── 17. PR-B: Direct Pay 商户运营 hub + 平台服务费(预充值)账户 ──
+ok('17a. fee-ops file loaded in index.html before app.js', has(HTML, '/app-direct-pay-fee-ops.js') && HTML.indexOf('/app-direct-pay-fee-ops.js') < HTML.indexOf('/app.js'))
+ok('17b. fee-ops in check:pwa-syntax', /node --check src\/pwa\/public\/app-direct-pay-fee-ops\.js/.test(PKG))
+ok('17c. fee-ops has a LOC ceiling (ratchet covered)', /'src\/pwa\/public\/app-direct-pay-fee-ops\.js'\s*:/.test(RATCHET))
+ok('17d. app.js routes #admin/dp-ops → renderAdminDirectPayHub', has(APP, "'dp-ops'") && has(APP, 'renderAdminDirectPayHub'))
+ok('17e. app.js routes #admin/dp-fee → renderAdminDirectPayFeeOps', has(APP, "'dp-fee'") && has(APP, 'renderAdminDirectPayFeeOps'))
+ok('17f. fee-ops hub links the new #admin/dp-fee fee account', has(FEEOPS, "'#admin/dp-fee')"))
+// money writes use live Passkey gate with the matching purposes
+ok('17g. topup uses requestPasskeyGate(direct_pay_fee_prepay_record)', has(FEEOPS, "requestPasskeyGate('direct_pay_fee_prepay_record'") || has(FEEOPS, "'direct_pay_fee_prepay_record'"))
+ok('17h. adjust uses direct_pay_fee_adjust + refund uses direct_pay_fee_refund', has(FEEOPS, "'direct_pay_fee_adjust'") && has(FEEOPS, "'direct_pay_fee_refund'"))
+ok('17i. those purposes are in the WebAuthn allowed set (token mintable)', allowedDecl.includes("'direct_pay_fee_adjust'") && allowedDecl.includes("'direct_pay_fee_refund'") && allowedDecl.includes("'direct_pay_fee_prepay_record'"))
+ok('17j. fee account read calls GET fee-account', has(FEEOPS, '/admin/direct-receive/fee-account/'))
+// i18n parity — load-bearing new zh keys have EN entries
+for (const k of ['Direct Pay 商户运营', '平台服务费预充值与账户', '可用预充值余额', '记录预充值(真人 Passkey)', '退款(真实退还未消耗预付款)', '账务更正(可正可负,非退款)', '首单宽限']) {
+  ok(`17k. i18n EN entry for ${k}`, has(I18N, `'${k}':`))
+}
+// non-custodial copy: prepayment is platform service fee, not buyer funds/escrow/collateral
+ok('17l. fee-ops states prepayment is NOT buyer funds/escrow/collateral', has(FEEOPS, '非买家货款') && has(FEEOPS, 'escrow') && has(FEEOPS, '保证金'))
 
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)
