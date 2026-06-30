@@ -54,14 +54,29 @@ ok("4z. 随机 maps to 'Random'", /'随机':\s*'Random'/.test(I18N))
 ok('5a. evidence card "提交所需证据" t()-wrapped', has(APP, ">${t('提交所需证据')}<"))
 ok('5b. evidence type select placeholder t()-wrapped', has(APP, "${t('— 选择证据类型 —')}"))
 ok('5c. evidence hash input placeholder t()-wrapped', has(APP, "placeholder=\"${t('（可选）文件哈希 / IPFS CID / 链上 TX ID')}\""))
-ok('5d. evidence submit button t()-wrapped', has(APP, ">${t('提交证据')}<"))
+ok('5d. evidence submit button t()-wrapped', has(APP, ">${t('提交证据')}</button>"))
+// 提交证据 was a key collision: 4 evidence-submit BUTTONS (Submit evidence) vs the arbitration
+// TIMELINE label (Evidence Submitted). Root fix: 提交证据 = canonical "Submit evidence"; timeline
+// title disambiguated to 证据提交 = "Evidence Submitted".
+ok('5d-1. 提交证据 = Submit evidence (canonical button)', /'提交证据':\s*'Submit evidence'/.test(I18N))
+ok('5d-2. timeline title disambiguated to 证据提交', /title: '证据提交'/.test(APP) && !/title: '提交证据'/.test(APP))
+ok('5d-3. 证据提交 = Evidence Submitted', /'证据提交':\s*'Evidence Submitted'/.test(I18N))
 ok('5e. evidence requester line t()-wrapped (👤/请求/对方, no raw)', has(APP, "${isMe ? t('👤 需要你提供') : `${t('请求')} → ${req.requested_from_name || t('对方')}") && !has(APP, "? '👤 需要你提供' :"))
 ok('5f. evidence 类型/截止 labels t()-wrapped', has(APP, ">${t('类型：')}${typeLabels}<") && has(APP, ">${t('截止：')}${fmtTime(req.deadline)}<"))
 const ORDER_DISPUTE_EN = [
   '✅ 我已付款', '包装状态描述 / 货物说明（可选）', '提交所需证据', '— 选择证据类型 —',
-  '（可选）文件哈希 / IPFS CID / 链上 TX ID', '提交证据', '👤 需要你提供', '请求', '对方', '类型：', '截止：',
+  '（可选）文件哈希 / IPFS CID / 链上 TX ID', '提交证据', '证据提交', '👤 需要你提供', '请求', '对方', '类型：', '截止：',
 ]
 for (const k of ORDER_DISPUTE_EN) ok(`5g. i18n EN entry exists: ${k}`, has(I18N, `'${k}':`))
+// 5h. dictionary hygiene — chunk-1 keys we own must each appear EXACTLY ONCE (catches the dup-add regression
+//     where a later existing entry silently overrides the new one). NOTE: i18n.js has ~170 pre-existing
+//     duplicate keys file-wide; a global zero-dup gate is a separate cleanup, out of scope here.
+const cnt = (k: string) => I18N.split(`'${k}':`).length - 1
+const ONCE_KEYS = [
+  '✅ 我已付款', '包装状态描述 / 货物说明（可选）', '👤 需要你提供', '请求', '对方', '类型：', '截止：',
+  '提交所需证据', '— 选择证据类型 —', '（可选）文件哈希 / IPFS CID / 链上 TX ID', '提交证据', '证据提交',
+]
+for (const k of ONCE_KEYS) ok(`5h. no duplicate i18n key: ${k} (found ${cnt(k)})`, cnt(k) === 1)
 
 if (fail > 0) { console.error(`\n❌ i18n discover/dispute labels FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ i18n discover/dispute labels: discover chips + RULING_LABELS/EVIDENCE_TYPE_LABELS render sites t()-wrapped (no shadowed t), EN parity present\n  ✅ pass ${pass}`)

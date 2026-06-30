@@ -13807,7 +13807,7 @@ const TL_ROLE_META = {
 }
 const TL_TYPE_META = {
   open:             { icon: '🚩', title: '发起争议',     border: '#dc2626' },
-  evidence:         { icon: '📎', title: '提交证据',     border: '#3b82f6' },
+  evidence:         { icon: '📎', title: '证据提交',     border: '#3b82f6' },
   response:         { icon: '📝', title: '被告反驳',     border: '#f59e0b' },
   evidence_request: { icon: '📋', title: '仲裁员索证',   border: '#a855f7' },
   ruling:           { icon: '🏛️', title: '仲裁裁决',     border: '#6b21a8' },
