@@ -111,6 +111,7 @@
     "test:direct-pay-base-bond-entry": "tsx scripts/test-direct-pay-base-bond-entry.ts",
     "test:direct-pay-order-snapshot-schema": "tsx scripts/test-direct-pay-order-snapshot-schema.ts",
     "test:direct-pay-ui": "tsx scripts/test-direct-pay-ui.ts",
+    "test:merchant-bond": "tsx scripts/test-merchant-bond-domain.ts",
     "test:direct-pay-disclosure-acks": "tsx scripts/test-direct-pay-disclosure-acks.ts",
     "test:direct-pay-create": "tsx scripts/test-direct-pay-create.ts",
     "test:direct-pay-deferral-quota": "tsx scripts/test-direct-pay-deferral-quota.ts",
