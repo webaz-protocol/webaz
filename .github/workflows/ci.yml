@@ -710,6 +710,7 @@ jobs:
       - run: npm run test:direct-pay-compliance-ingress
       - run: npm run test:direct-pay-ui
       - run: npm run test:merchant-bond
+      - run: npm run test:merchant-bond-exposure
       - run: npm run test:direct-pay-disclosures
       - run: npm run test:seller-order-actions
       - run: npm run test:decline-action

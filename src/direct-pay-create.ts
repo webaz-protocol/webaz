@@ -18,6 +18,7 @@ import { sellerBaseBondEntrySatisfied } from './direct-pay-base-bond-entry.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
 import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, coarsenBuyerFacingDirectPayCode, type DirectPayControlsConfig } from './direct-pay-controls.js'
 import { checkDeferralQuota, readDeferralQuotaConfig } from './direct-pay-deferral-quota.js'
+import { enforceCollateralExposureGate } from './merchant-bond-exposure.js'  // §6.5 抵押背书开放敞口上限(休眠安全:collateral=0 时 N/A)
 import { productStoreVerified } from './product-verification.js'
 import { sellerExemptFromPerProduct } from './store-verification.js'
 import { safeRunDirectPayAmlMonitor } from './direct-pay-aml-monitor.js'
@@ -121,6 +122,11 @@ export function createDirectPayResponse(
   // 买家面脱敏:缓交额度拒因(笔数/金额)也收敛为通用 SELLER_NOT_ELIGIBLE,不向买家泄露卖家处于缓交/超额。
   //   精确 code(quota.code)留在 checkDeferralQuota 返回值 + 其单测,供运营/调试。
   if (!quota.ok) { res.status(409).json({ error_code: coarsenBuyerFacingDirectPayCode(quota.code), error: '该卖家暂不支持直付' }); return }
+  // §6.5 抵押背书开放敞口上限(backend create-gate)。休眠安全:无真实链上抵押(collateral=0)→ N/A;
+  //   有抵押才读 exposure_factor_bps(fail-closed)+ 比较 open_exposure+new ≤ collateral×bps/10000。
+  //   当前 merchant_bond 关闭、无 active 存款 → 对缓交卖家零影响(返回 ok)。买家面脱敏。
+  const expGate = enforceCollateralExposureGate(db, sellerId, ctx.totalAmountU, deps.getProtocolParam)
+  if (!expGate.ok) { res.status(409).json({ error_code: coarsenBuyerFacingDirectPayCode(expGate.error_code), error: '该卖家暂不支持直付' }); return }
   const feeU = mulRate(ctx.totalAmountU, (ctx.product.source as string) === 'secondhand' ? 0.01 : 0.02)
   const windowHours = deps.getProtocolParam<number>('direct_pay.payment_window_hours', 4)
   try {
