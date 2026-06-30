@@ -532,6 +532,64 @@ contract MerchantBondVaultTest is Test {
         vault.setPaused(globalFlag, true);
     }
 
+    // ───────────────────────── constructor fail-closed ─────────────────────────
+
+    function test_constructor_revert_zeroBaseBondMin() public {
+        vm.expectRevert(MerchantBondVault.ZeroAmount.selector);
+        new MerchantBondVault(address(this), signer, address(usdc), penaltyReserve, 0, COOLDOWN);
+    }
+
+    function test_constructor_revert_zeroCoolDown() public {
+        vm.expectRevert(MerchantBondVault.ZeroAmount.selector);
+        new MerchantBondVault(address(this), signer, address(usdc), penaltyReserve, MIN_BOND, 0);
+    }
+
+    // ───────────────────────── penaltyReserve change (timelocked 2-step) ─────────────────────────
+
+    function test_penaltyReserve_twoStepDelayedChange() public {
+        address newReserve = makeAddr("newReserve");
+        vault.proposePenaltyReserve(newReserve);
+        assertEq(vault.penaltyReserve(), penaltyReserve); // unchanged before delay
+        vm.expectRevert(MerchantBondVault.CoolDownNotElapsed.selector);
+        vault.executePenaltyReserveChange();
+        vm.warp(block.timestamp + COOLDOWN + 1);
+        vault.executePenaltyReserveChange();
+        assertEq(vault.penaltyReserve(), newReserve);
+    }
+
+    function test_penaltyReserve_revert_proposeNotGovernance() public {
+        vm.prank(attacker);
+        vm.expectRevert(MerchantBondVault.NotGovernance.selector);
+        vault.proposePenaltyReserve(makeAddr("x"));
+    }
+
+    function test_penaltyReserve_cancel() public {
+        address newReserve = makeAddr("newReserve");
+        vault.proposePenaltyReserve(newReserve);
+        vault.cancelPenaltyReserveChange();
+        vm.warp(block.timestamp + COOLDOWN + 1);
+        vm.expectRevert(MerchantBondVault.NoPendingReserveChange.selector);
+        vault.executePenaltyReserveChange();
+        assertEq(vault.penaltyReserve(), penaltyReserve);
+    }
+
+    /// @dev An in-flight slash must pay the sink snapshotted at propose time, even if the reserve changes.
+    function test_slash_inFlightUsesSnapshotSink() public {
+        _setupFunded(); // 800
+        vault.proposeSlash(sellerId, 200e6, bytes32(0)); // snapshot sink = original penaltyReserve (A)
+        address newReserve = makeAddr("newReserve2");
+        vault.proposePenaltyReserve(newReserve);
+        vm.warp(block.timestamp + COOLDOWN + 1);
+        vault.executePenaltyReserveChange(); // reserve is now B
+        assertEq(vault.penaltyReserve(), newReserve);
+
+        uint256 aBefore = usdc.balanceOf(penaltyReserve);
+        uint256 bBefore = usdc.balanceOf(newReserve);
+        vault.executeSlash(sellerId);
+        assertEq(usdc.balanceOf(penaltyReserve), aBefore + 200e6); // A (snapshot) received
+        assertEq(usdc.balanceOf(newReserve), bBefore); // B did NOT
+    }
+
     // ───────────────────────── conservation (fuzz) ─────────────────────────
 
     function testFuzz_conservation_depositWithdraw(uint96 dep, uint96 wd) public {

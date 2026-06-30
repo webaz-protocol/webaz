@@ -22,7 +22,9 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
  *  - IMMUTABLE: no upgrade, no proxy, no delegatecall, no selfdestruct, no admin-drain.
  *  - slash is GOVERNANCE-ONLY (multisig+timelock) in v1 — no automatic/small-order slash —
  *    AND is two-step with an on-chain cooling window + cancel (appeal) path (§5 backstop).
- *  - slash proceeds can ONLY go to the fixed `penaltyReserve` (no arbitrary recipient).
+ *  - slash proceeds can ONLY go to the `penaltyReserve` (no arbitrary recipient); the reserve is
+ *    changeable solely via a timelocked 2-step flow, and each slash snapshots its sink at propose time
+ *    so an in-flight slash can never be redirected.
  *  - withdraw needs WebAZ EIP-712 authorization + seller signature; only to registeredBondWallet.
  *  - authorizationSigner is SEPARATE from any hot relayer; relayer has NO fund power; signer
  *    rotation only by governance.
@@ -38,8 +40,9 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
  *  - added registerBondWallet (first sellerId↔wallet binding; skeleton only had the event + rotate).
  *  - slashCollateral split into proposeSlash/executeSlash/cancelSlash to bake the §5 cooling/appeal
  *    window into the immutable contract itself (backstop, not relying solely on an external timelock).
- *  - added returnUnattributedInflow (the "退回" half of §4's unattributed handling) and
- *    setPenaltyReserve / 2-step governance transfer (operational safety; all governance-gated).
+ *  - added returnUnattributedInflow (the "退回" half of §4's unattributed handling), a timelocked
+ *    2-step penaltyReserve change (§5 notice delay), and a 2-step governance transfer
+ *    (operational safety; all governance-gated).
  */
 contract MerchantBondVault is EIP712, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -72,6 +75,7 @@ contract MerchantBondVault is EIP712, ReentrancyGuard {
         uint256 amount;
         uint256 executeAfter;
         bytes32 evidenceRef;
+        address sink; // penaltyReserve snapshotted at propose time — an in-flight slash cannot be redirected
         bool exists;
     }
 
@@ -84,7 +88,11 @@ contract MerchantBondVault is EIP712, ReentrancyGuard {
     address public governance; // multisig + timelock
     address public pendingGovernance; // 2-step transfer target
     address public authorizationSigner; // WebAZ EIP-712 signer (KMS/HSM); != hot relayer
-    address public penaltyReserve; // fixed slash sink (3-redline reserve, §5/§10)
+    // Slash sink (3-redline reserve, §5/§10). Changeable ONLY via a timelocked 2-step flow below;
+    // an in-flight slash snapshots its sink at propose time, so a later change can't redirect it.
+    address public penaltyReserve;
+    address public pendingPenaltyReserve; // staged new reserve (2-step)
+    uint256 public penaltyReserveChangeEffectiveAfter; // earliest time the staged change may be applied
 
     // ── state ──
     mapping(bytes32 => address) public registeredBondWalletOf; // sellerId → wallet (unique 1:1)
@@ -108,6 +116,9 @@ contract MerchantBondVault is EIP712, ReentrancyGuard {
     event NonWhitelistedTokenRescued(address indexed token, address indexed to, uint256 amount);
     event PausedSet(bytes4 indexed flag, bool value);
     event SignerRotated(address indexed oldSigner, address indexed newSigner);
+    event PenaltyReserveChangeProposed(
+        address indexed currentReserve, address indexed pendingReserve, uint256 effectiveAfter
+    );
     event PenaltyReserveSet(address indexed oldReserve, address indexed newReserve);
     event GovernanceTransferStarted(address indexed currentGovernance, address indexed pendingGovernance);
     event GovernanceTransferred(address indexed oldGovernance, address indexed newGovernance);
@@ -131,6 +142,7 @@ contract MerchantBondVault is EIP712, ReentrancyGuard {
     error MinRemainingViolated();
     error SlashAlreadyPending();
     error NoPendingSlash();
+    error NoPendingReserveChange();
     error CoolDownNotElapsed();
     error CannotRescueCollateralToken();
     error InsufficientUnattributed();
@@ -160,6 +172,9 @@ contract MerchantBondVault is EIP712, ReentrancyGuard {
                 || penaltyReserve_ == address(0)
         ) revert ZeroAddress();
         if (penaltyReserve_ == usdcToken_) revert ZeroAddress(); // reserve must not be the token contract
+        // fail-closed: a zero threshold makes any registered wallet "locked" with no collateral;
+        // a zero cooling window makes the §5 slash appeal/notice window non-existent. Neither is a valid v1 deploy.
+        if (baseBondMinUnits_ == 0 || slashCoolDownSeconds_ == 0) revert ZeroAmount();
         governance = governance_;
         authorizationSigner = authorizationSigner_;
         usdcToken = IERC20(usdcToken_);
@@ -331,8 +346,13 @@ contract MerchantBondVault is EIP712, ReentrancyGuard {
         if (amount > collateralOf[sellerId]) revert InsufficientCollateral();
         if (pendingSlashOf[sellerId].exists) revert SlashAlreadyPending();
         uint256 executeAfter = block.timestamp + slashCoolDownSeconds;
-        pendingSlashOf[sellerId] =
-            PendingSlash({amount: amount, executeAfter: executeAfter, evidenceRef: evidenceRef, exists: true});
+        pendingSlashOf[sellerId] = PendingSlash({
+            amount: amount,
+            executeAfter: executeAfter,
+            evidenceRef: evidenceRef,
+            sink: penaltyReserve, // snapshot — a later setPenaltyReserve cannot redirect this slash
+            exists: true
+        });
         emit SlashProposed(sellerId, amount, executeAfter, evidenceRef);
     }
 
@@ -344,7 +364,8 @@ contract MerchantBondVault is EIP712, ReentrancyGuard {
         emit SlashCancelled(sellerId, p.amount);
     }
 
-    /// @notice Execute a staged slash after the cooling window. Funds can ONLY go to penaltyReserve.
+    /// @notice Execute a staged slash after the cooling window. Funds can ONLY go to the sink that was
+    ///         snapshotted at propose time (no mid-flight redirection).
     function executeSlash(bytes32 sellerId) external onlyGovernance nonReentrant whenActionAllowed(SLASH_PAUSED) {
         PendingSlash memory p = pendingSlashOf[sellerId];
         if (!p.exists) revert NoPendingSlash();
@@ -358,8 +379,8 @@ contract MerchantBondVault is EIP712, ReentrancyGuard {
         uint256 remaining = current - amount;
         collateralOf[sellerId] = remaining;
         totalCollateral -= amount;
-        usdcToken.safeTransfer(penaltyReserve, amount);
-        emit CollateralSlashed(sellerId, amount, penaltyReserve, remaining);
+        usdcToken.safeTransfer(p.sink, amount);
+        emit CollateralSlashed(sellerId, amount, p.sink, remaining);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -418,10 +439,31 @@ contract MerchantBondVault is EIP712, ReentrancyGuard {
         authorizationSigner = newSigner;
     }
 
-    function setPenaltyReserve(address newReserve) external onlyGovernance {
+    /// @notice Stage a penaltyReserve change. Takes effect only after the same on-chain notice delay as
+    ///         slash (§5 "公示延迟"), so the change is observable on-chain before it can apply — even if
+    ///         governance is not itself an external timelock. In-flight slashes keep their snapshotted sink.
+    function proposePenaltyReserve(address newReserve) external onlyGovernance {
         if (newReserve == address(0) || newReserve == address(usdcToken)) revert ZeroAddress();
-        emit PenaltyReserveSet(penaltyReserve, newReserve);
-        penaltyReserve = newReserve;
+        pendingPenaltyReserve = newReserve;
+        penaltyReserveChangeEffectiveAfter = block.timestamp + slashCoolDownSeconds;
+        emit PenaltyReserveChangeProposed(penaltyReserve, newReserve, penaltyReserveChangeEffectiveAfter);
+    }
+
+    /// @notice Apply a staged penaltyReserve change after the notice delay.
+    function executePenaltyReserveChange() external onlyGovernance {
+        if (pendingPenaltyReserve == address(0)) revert NoPendingReserveChange();
+        if (block.timestamp < penaltyReserveChangeEffectiveAfter) revert CoolDownNotElapsed();
+        emit PenaltyReserveSet(penaltyReserve, pendingPenaltyReserve);
+        penaltyReserve = pendingPenaltyReserve;
+        pendingPenaltyReserve = address(0);
+        penaltyReserveChangeEffectiveAfter = 0;
+    }
+
+    /// @notice Cancel a staged penaltyReserve change.
+    function cancelPenaltyReserveChange() external onlyGovernance {
+        if (pendingPenaltyReserve == address(0)) revert NoPendingReserveChange();
+        pendingPenaltyReserve = address(0);
+        penaltyReserveChangeEffectiveAfter = 0;
     }
 
     /// @notice Begin a 2-step governance handover (safer than a 1-step set; no upgrade of logic).
