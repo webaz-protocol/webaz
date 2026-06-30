@@ -95,5 +95,20 @@ ok('6d. 信誉 = Reputation (not "Rating")', /'信誉':\s+'Reputation',/.test(I1
 ok('6e. 收藏 = Save (action button; not "Saved")', /'收藏':\s+'Save',/.test(I18N))
 ok('6f. profile saved-items tab uses 已收藏 (Bookmarked), not the 收藏 action key', has(PROFILE, "'bookmarked', label: '★ ' + t('已收藏')") && !has(PROFILE, "'bookmarked', label: '★ ' + t('收藏')"))
 
+// ── 7. multi-context splits: same Chinese used in genuinely different contexts → minority context
+//       moved to a distinct key (with natural zh); base key = majority context. ──
+ok('7a. 发起拍卖 = Start Auction (button/heading); feed → 发起了拍卖 (opened an auction)',
+  /'发起拍卖':\s+'Start Auction',/.test(I18N) && /'发起了拍卖':\s+'opened an auction',/.test(I18N) &&
+  has(APP, "${t('发起了拍卖')} <strong>") && !has(APP, "${t('发起拍卖')} <strong>"))
+ok('7b. 求购 = Buy request (label); feed → 想买 (wants to buy)',
+  /'求购':\s+'Buy request',/.test(I18N) && /'想买':\s+'wants to buy',/.test(I18N) &&
+  has(APP, "${t('想买')} <strong>") && !has(APP, "${t('求购')} <strong>"))
+ok('7c. 建议 = Suggestions (nav/badge); price hint → 建议价 (Suggested price)',
+  /'建议':\s+'Suggestions',/.test(I18N) && /'建议价':\s+'Suggested price',/.test(I18N) &&
+  has(APP, "💡 ${t('建议价')} <strong") && !has(APP, "💡 ${t('建议')} <strong"))
+ok('7d. 申请 = Apply (button); admin label → 角色 (Role), quota → 申请配额 (Requested)',
+  /'申请':\s+'Apply',/.test(I18N) && /'申请配额':\s+'Requested',/.test(I18N) &&
+  has(APP, "${t('角色')}: ${roleLabel}") && has(APP, "→ ${t('申请配额')}: <strong>${a.requested_quota}"))
+
 if (fail > 0) { console.error(`\n❌ i18n discover/dispute labels FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ i18n discover/dispute labels: discover chips + RULING_LABELS/EVIDENCE_TYPE_LABELS render sites t()-wrapped (no shadowed t), EN parity present\n  ✅ pass ${pass}`)
