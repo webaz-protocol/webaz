@@ -2045,7 +2045,7 @@ window.adminUserBatch = async (action) => {
     reason = prompt(t('暂停原因（必填，会写入审计）')) || ''
     if (!reason.trim()) return alert(t('需填写原因'))
   }
-  if (!confirm(t('确认') + label + ' ' + ids.length + ' ' + t('个用户？'))) return
+  if (!confirm((action === 'suspend' ? t('确认暂停') : t('确认恢复')) + ' ' + ids.length + ' ' + t('个用户？'))) return
   let ok = 0, fail = 0
   for (const uid of ids) {
     const path = action === 'suspend' ? `/admin/users/${uid}/suspend` : `/admin/users/${uid}/resume`
@@ -22971,7 +22971,7 @@ async function renderAdminWishReports(app) {
 }
 window.setWrStatus = (s) => { state._wrStatus = s; renderAdminWishReports(document.getElementById('app')) }
 window.adminWrAction = async (id, action) => {
-  if (!confirm(t('确认') + (action === 'dismiss' ? t('驳回') : t('下架')) + t('？'))) return
+  if (!confirm(action === 'dismiss' ? t('确认驳回？') : t('确认下架？'))) return
   const r = await PATCH('/admin/wish-reports/' + id, { action })
   if (r?.error) return alert(r.error)
   renderAdminWishReports(document.getElementById('app'))

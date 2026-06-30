@@ -81,9 +81,14 @@ for (const k of ONCE_KEYS) ok(`5h. no duplicate i18n key: ${k} (found ${cnt(k)})
 
 // ── 6. translation-correctness pass: keep-last (from the #146 dedup) had locked in a value that was
 //       WRONG for the actual usage context. These value-fixes correct it (verified against usages). ──
-ok('6a. 确认 = Confirm (confirm-dialog prefix; not "to confirm")', /'确认':\s+'Confirm',/.test(I18N) && !has(I18N, "'确认': 'to confirm'"))
-ok('6a-1. 以确认 = to confirm (split out for the "type X to confirm" resign input)', /'以确认':\s+'to confirm',/.test(I18N))
-ok('6a-2. resign confirm-input uses 以确认, not the 确认 dialog key', has(APP, "</code> ${t('以确认')}:</div>"))
+// 确认 was multi-context: 2 admin confirm() dialogs (used as a prefix) + a "type X to confirm" input.
+// Bare `t('确认') + word` produced spaceless EN ("ConfirmSuspend"/"ConfirmReject?"). Resolved into
+// complete-phrase keys (zh byte-identical, EN reads correctly) + a distinct 以确认 for the resign input.
+ok('6a. bulk-suspend confirm uses 确认暂停/确认恢复 (not bare `t(\'确认\') + label`)', has(APP, "(action === 'suspend' ? t('确认暂停') : t('确认恢复'))"))
+ok('6a-1. wish-report confirm uses 确认驳回？/确认下架？', has(APP, "action === 'dismiss' ? t('确认驳回？') : t('确认下架？')"))
+ok('6a-2. complete-phrase EN entries present', /'确认恢复':\s+'Confirm resume',/.test(I18N) && /'确认驳回？':\s+'Confirm reject\?',/.test(I18N) && /'确认下架？':\s+'Confirm delist\?',/.test(I18N))
+ok('6a-3. resign input uses 以确认 = to confirm', /'以确认':\s+'to confirm',/.test(I18N) && has(APP, "</code> ${t('以确认')}:</div>"))
+ok('6a-4. no spaceless 确认-prefix concatenation remains', !has(APP, "t('确认') + "))
 ok('6b. 待处理 = Pending (not "New"; 10 pending-status usages)', /'待处理':\s+'Pending',/.test(I18N))
 ok('6c. 确认上架 = Confirm & List (not "Confirm re-list"; publish-imported button)', /'确认上架':\s+'Confirm & List',/.test(I18N))
 ok('6d. 信誉 = Reputation (not "Rating")', /'信誉':\s+'Reputation',/.test(I18N))
