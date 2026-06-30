@@ -1,15 +1,15 @@
 /**
- * Direct Pay 平台费【链下应收(AR)】读 helper — 设计稿 DIRECT-PAY-FEE-RECEIVABLE-DESIGN.INTERNAL.md。
+ * Direct Pay 平台服务费 —— 首单宽限 + 预充值续用 helper。设计稿 DIRECT-PAY-FEE-RECEIVABLE-DESIGN.INTERNAL.md。
  *
- * PR-1 = 纯读 + 信用上限解析,【零行为接线】:本模块不被建单/完成/cron 调用,只提供单一真相源函数,
- *   供 PR-2(建单信用门)、PR-3(月结)、PR-4b(seller fee center)消费。
+ * 模型:建单不收费;首单宽限(从无 direct_p2p 成交且无在途单 → 放行第一笔);首单后须有足够【预充值余额】
+ *   覆盖在途+本单平台费;完成时记一笔平台费应收(receivable)。供建单门(direct-pay-create.ts)、
+ *   完成结算(server.ts settleOrder)、后续 admin/ops 视图消费。
  *
  * 边界(铁律):
- *  - 平台费 = 卖家 ↔ WebAZ 私有;买家侧任何接口不得返回(DTO 脱敏)。
+ *  - 平台服务费/预充值 = 卖家 ↔ WebAZ 私有;买家侧任何接口不得返回(DTO 脱敏)。【商家平台服务费预付款】,非买家 escrow / 非保证金 / 非 penalty。
  *  - 不碰买家本金 / escrow / base-bond collateral / penalty 科目。
- *  - 上限值【绝不硬编码】:全局默认走 protocol_params(运行时可调);本 helper 读不到合法值即 fail-closed(返 0=拒),
- *    【绝不回落任何代码常量】。生效上限 = 商家 override(若有)?? 全局默认。
- *  - append-only:outstanding 由【原始 receivables + adjustments − payments】派生,不依赖任何可变 status 列。
+ *  - 额度【非硬编码、非固定参数】= 商家实际预充值余额(数据驱动);首单宽限自动判定;读不到即 fail-closed(返 0 / 不给宽限)。
+ *  - available_prepay 由【Σ payments(invoice_id NULL) + Σ adjustments − Σ receivables】派生,不依赖任何可变 status 列(append-only)。
  *  - 整数 base-units(RFC-014 money.ts);金额列存 REAL 小数,经 toUnits 进 units 域比较。
  */
 import type Database from 'better-sqlite3'
@@ -23,7 +23,7 @@ export function feeUnitsForOrder(totalAmountU: Units, source: string | null | un
   return mulRate(totalAmountU, source === 'secondhand' ? 0.01 : 0.02)
 }
 
-/** 开放(未完全关闭、仍会 accrue 费)的 direct_p2p 单状态。完成单已在 receivables(计入 outstanding),故【不含】completed/终态。 */
+/** 开放(未完全关闭、仍会 accrue 费)的 direct_p2p 单状态。完成单已在 receivables(借记预充值),故【不含】completed/终态。 */
 export const OPEN_FEE_ACCRUING_STATUSES = [
   'created', 'direct_pay_window', 'direct_expired_unconfirmed',
   'accepted', 'shipped', 'picked_up', 'in_transit', 'delivered', 'confirmed', 'disputed',
@@ -89,7 +89,7 @@ export function feePrepayGateOk(args: {
 
 /**
  * 卖家【在途】direct_p2p 单的预估费合计(units)。建单信用门用:防止短时开大量在途单完成后一次性超限。
- * 与 outstanding 不重叠:在途单尚未 accrue(不在 receivables);完成即转入 receivables、离开本集合。
+ * 与已计提 receivables 不重叠:在途单尚未 accrue(不在 receivables);完成即转入 receivables、离开本集合。
  * 表/列缺失(旧库)→ 0(休眠安全)。
  */
 export function estimateOpenDirectPayFeeUnits(db: Database.Database, sellerId: string): Units {

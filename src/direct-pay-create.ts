@@ -3,8 +3,8 @@
  *
  * 边界(铁律):
  *  - 本金(货款)【不入协议】:escrow_amount=0,【不写 buyer wallet / 不写 escrow / 不动 principal】。
- *  - 平台费【不在建单时收/锁】(已切换为链下应收 AR,设计稿 DIRECT-PAY-FEE-RECEIVABLE-DESIGN.INTERNAL.md):
- *    建单只过【信用上限只读门】(unpaid_AR + 在途单预估费 + 本单预估费 ≤ ceiling,fail-closed),【无任何建单资金写】。
+ *  - 平台费【不在建单时收/锁】(设计稿 DIRECT-PAY-FEE-RECEIVABLE-DESIGN.INTERNAL.md):
+ *    建单只过【首单宽限 + 预充值续用门】(首单宽限放行;否则 available_prepay ≥ 在途预估费 + 本单费,fail-closed),【无任何建单资金写】。
  *    平台费在【完成结算时】记一笔应收(accrueFeeReceivable,见 settleOrder direct_p2p 分支)。
  *  - 原子:INSERT order → genesis 事件 → created→direct_pay_window → 扣库存,全在一个 db.transaction;任一步失败【整体回滚】。
  *  - 不碰 refund/settlement/commission/fund/tokenomics;direct_p2p 排除佣金/PV(l1/l2/l3 留空)。
@@ -64,7 +64,7 @@ export function createDirectPayOrder(db: Database.Database, deps: DirectPayCreat
     // created → direct_pay_window(system-only edge);失败回滚。
     const rc = transition(db, orderId, 'direct_pay_window', 'sys_protocol', [], 'Rail1 直付:进入付款窗口(平台费完成时记应收,建单不收费)')
     if (!rc.success) throw new Error(rc.error || 'transition→direct_pay_window failed')
-    // 【无建单资金写】平台费改链下应收,完成时 accrue;建单门是信用上限只读门(在 createDirectPayResponse 内,建单前)。
+    // 【无建单资金写】平台费完成时 accrue;建单门是【首单宽限 + 预充值续用】只读门(在 createDirectPayResponse 内,建单前)。
     // 扣库存(原子;售罄即抛回滚)。变体/flash 直付 v1 不支持。
     const upd = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?').run(args.quantity, args.productId, args.quantity)
     if (upd.changes !== 1) throw new Error('stock depleted')
