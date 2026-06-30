@@ -2610,6 +2610,15 @@ CREATE TABLE IF NOT EXISTS direct_receive_kyb_reviews (
       updated_at  TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
     );
 
+CREATE TABLE IF NOT EXISTS merchant_bond_wallets (
+  seller_id TEXT PRIMARY KEY REFERENCES users(id), wallet TEXT NOT NULL, chain_id BIGINT NOT NULL,
+  rotated_at TEXT, created_at TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')), UNIQUE(wallet) );
+
+CREATE TABLE IF NOT EXISTS merchant_bond_deposits (
+  id TEXT PRIMARY KEY, seller_id TEXT NOT NULL REFERENCES users(id), wallet TEXT NOT NULL, tx_hash TEXT,
+  collateral_units TEXT NOT NULL DEFAULT '0', status TEXT NOT NULL DEFAULT 'pending_confirmations',
+  confirmations BIGINT NOT NULL DEFAULT 0, created_at TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')), updated_at TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')) );
+
 -- ════════════ INDEXES ════════════
 CREATE INDEX IF NOT EXISTS idx_skills_type   ON skills(skill_type, active);
 CREATE INDEX IF NOT EXISTS idx_skills_seller ON skills(seller_id);
