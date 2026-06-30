@@ -793,7 +793,6 @@ const _EN = {
   '提交所需证据': 'Submit required evidence',
   '— 选择证据类型 —': '— Select type —',
   '（可选）文件哈希 / IPFS CID / 链上 TX ID': '(Optional) File hash / IPFS CID / TX ID',
-  '详细描述内容（如图片描述、文字陈述、链上 TX hash 等）': 'Detailed description (image, statement, TX hash, etc.)',
   '已发送证据请求！': 'Evidence request sent!',
 
   // ── Arbitrator ruling ────────────────────────────────────────
@@ -819,7 +818,6 @@ const _EN = {
   '的赔付金额': "'s compensation amount",
 
   // ── Defendant response ───────────────────────────────────────
-  '请描述你的反驳理由、证据（如物流记录、商品照片说明等）': 'Describe your defense (logistics records, product photos, etc.)',
   '提交反驳证据': 'Submit defense',
 
   // ── Evidence requests (arbitrator) ───────────────────────────
@@ -4785,9 +4783,7 @@ const _EN = {
   '必需':                              'required',
   '可选':                              'optional',
   '同意文本':                          'Consent text',
-  '请先完成上述未达标指标,完成后再来申请': 'Please complete the missing items above first, then come back to apply',
   '我已阅读全部条款,理解 commission 与 PV 树结构的合规边界': 'I have read all terms and understand the compliance boundaries of commission + PV tree structure',
-  '我自愿申请,无人收买 / 诱导':        'I apply voluntarily — no one is bribing or inducing me',
   '✅ 分享分润开通成功':               '✅ Revenue sharing activated',
   '已从 escrow 拨回:':                 'Restored from escrow:',
   '笔':                                'entries',

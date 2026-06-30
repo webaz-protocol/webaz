@@ -113,6 +113,7 @@
     "test:direct-pay-ui": "tsx scripts/test-direct-pay-ui.ts",
     "test:i18n-labels": "tsx scripts/test-i18n-discover-dispute-labels.ts",
     "check:i18n-dup": "tsx scripts/check-i18n-no-dup-keys.ts",
+    "test:i18n-dup-gate": "tsx scripts/test-i18n-dup-gate.ts",
     "test:merchant-bond": "tsx scripts/test-merchant-bond-domain.ts",
     "test:merchant-bond-exposure": "tsx scripts/test-merchant-bond-exposure.ts",
     "test:direct-pay-fee-ar": "tsx scripts/test-direct-pay-fee-ar.ts",
