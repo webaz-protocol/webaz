@@ -13753,13 +13753,13 @@ function evidenceRequestCard(req, currentUserId) {
   // evidence_types 存为 JSON 数组字符串
   let types = []
   try { types = typeof req.evidence_types === 'string' ? JSON.parse(req.evidence_types) : (req.evidence_types || []) } catch(e) {}
-  const typeLabels = types.map(t => `${EVIDENCE_TYPE_ICONS[t] || ''}${EVIDENCE_TYPE_LABELS[t] || t}`).join('　')
+  const typeLabels = types.map(et => `${EVIDENCE_TYPE_ICONS[et] || ''}${t(EVIDENCE_TYPE_LABELS[et] || et)}`).join('　')
 
   const submittedHtml = (req.submitted_items || []).length > 0 ? `
     <div style="margin-top:8px">
       ${req.submitted_items.map(it => `
         <div style="background:#f0fdf4;border-radius:6px;padding:6px 8px;margin-top:4px;font-size:12px">
-          <span style="color:#6b7280">${EVIDENCE_TYPE_ICONS[it.type] || ''} ${EVIDENCE_TYPE_LABELS[it.type] || escHtml(it.type)}</span>
+          <span style="color:#6b7280">${EVIDENCE_TYPE_ICONS[it.type] || ''} ${EVIDENCE_TYPE_LABELS[it.type] ? t(EVIDENCE_TYPE_LABELS[it.type]) : escHtml(it.type)}</span>
           <div style="margin-top:2px">${escHtml(it.description)}</div>
           ${it.file_hash ? `<div style="margin-top:3px;font-family:monospace;font-size:10px;color:#9ca3af" title="Phase 0 模拟锚点，Phase 2 替换为 IPFS CID / 链上 TX">🔒 ${escHtml(it.file_hash)}</div>` : ''}
         </div>`).join('')}
@@ -13771,7 +13771,7 @@ function evidenceRequestCard(req, currentUserId) {
       <div id="er-msg-${req.id}"></div>
       <select class="form-control" id="er-type-${req.id}" style="margin-bottom:6px;font-size:13px">
         <option value="">— 选择证据类型 —</option>
-        ${types.map(t => `<option value="${t}">${EVIDENCE_TYPE_ICONS[t]} ${EVIDENCE_TYPE_LABELS[t] || t}</option>`).join('')}
+        ${types.map(et => `<option value="${et}">${EVIDENCE_TYPE_ICONS[et]} ${t(EVIDENCE_TYPE_LABELS[et] || et)}</option>`).join('')}
       </select>
       <textarea class="form-control" id="er-desc-${req.id}" placeholder="${t('详细描述内容（如图片描述、文字陈述、链上 TX hash 等）')}" style="margin-bottom:6px;font-size:13px"></textarea>
       <input class="form-control" id="er-hash-${req.id}" placeholder="（可选）文件哈希 / IPFS CID / 链上 TX ID" style="margin-bottom:6px;font-size:12px;font-family:monospace">
@@ -13845,7 +13845,7 @@ function buildTimelineEvent(ev, dispute, user, actors) {
   } else if (ev.type === 'evidence') {
     const meta = ev.meta || {}
     const typeIcon = EVIDENCE_TYPE_ICONS[meta.evidence_type] || '📎'
-    const typeLabel = EVIDENCE_TYPE_LABELS[meta.evidence_type] || meta.evidence_type
+    const typeLabel = t(EVIDENCE_TYPE_LABELS[meta.evidence_type] || meta.evidence_type)
     const sizeKb = meta.size ? `${(Number(meta.size)/1024).toFixed(1)} KB` : ''
     const blobChip = meta.has_blob ? `<a href="/api/evidence/${escHtml(meta.evidence_id)}/blob" target="_blank" style="display:inline-block;background:#eff6ff;color:#1d4ed8;padding:2px 8px;border-radius:99px;font-size:11px;text-decoration:none;margin-right:4px">📥 ${t('打开附件')}${sizeKb ? ' · '+sizeKb : ''}</a>` : ''
     const hashChip = meta.file_hash ? `<span style="font-family:monospace;font-size:10px;color:#9ca3af;background:#f3f4f6;padding:1px 6px;border-radius:4px" title="${escHtml(meta.file_hash)}">🔒 ${escHtml(String(meta.file_hash).slice(0,12))}…</span>` : ''
@@ -13882,7 +13882,7 @@ function buildTimelineEvent(ev, dispute, user, actors) {
   } else if (ev.type === 'ruling' || ev.type === 'resolved') {
     const meta = ev.meta || {}
     const rulingLabel = meta.ruling || meta.ruling_type
-    const rulingText = rulingLabel ? (RULING_LABELS[rulingLabel] || rulingLabel) : ''
+    const rulingText = rulingLabel ? t(RULING_LABELS[rulingLabel] || rulingLabel) : ''
     let liability = []
     try { liability = typeof meta.liability_parties === 'string' ? JSON.parse(meta.liability_parties) : (meta.liability_parties || []) } catch {}
     bodyHtml = `

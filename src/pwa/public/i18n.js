@@ -574,6 +574,7 @@ const _EN = {
   '活跃买家': 'Active buyers',
   '成交订单': 'Orders',
   '热门类目': 'Top categories',
+  '随机': 'Random',
   '放大到': 'Zoom out to ',
   '扫描结果': 'Scan result',
   '人气不足': 'low activity',

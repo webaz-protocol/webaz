@@ -111,6 +111,7 @@
     "test:direct-pay-base-bond-entry": "tsx scripts/test-direct-pay-base-bond-entry.ts",
     "test:direct-pay-order-snapshot-schema": "tsx scripts/test-direct-pay-order-snapshot-schema.ts",
     "test:direct-pay-ui": "tsx scripts/test-direct-pay-ui.ts",
+    "test:i18n-labels": "tsx scripts/test-i18n-discover-dispute-labels.ts",
     "test:merchant-bond": "tsx scripts/test-merchant-bond-domain.ts",
     "test:merchant-bond-exposure": "tsx scripts/test-merchant-bond-exposure.ts",
     "test:direct-pay-fee-ar": "tsx scripts/test-direct-pay-fee-ar.ts",

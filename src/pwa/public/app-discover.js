@@ -768,8 +768,8 @@ async function renderDiscover(app) {
   const sectionStrip = ''
 
   // sort + type 合并为可折叠 filter（默认折叠，sort 名 + type 名作摘要）
-  const sortLabel = ({trending:'🔥 热门', recommended:'📣 推荐多', seller_win_rate:'⚖️ 胜诉率', newest:'🆕 最新', rating:'⭐ 信誉', price_asc:'💰 价格 ↑', random:'🎲 随机'}[sort]) || sort
-  const typeLabel = ({retail:'🛍️ 零售', wholesale:'📦 批发', service:'🛠️ 服务', digital:'💾 数字'}[ptype]) || ptype
+  const sortLabel = ({trending:'🔥 '+t('热门'), recommended:'📣 '+t('推荐多'), seller_win_rate:'⚖️ '+t('胜诉率'), newest:'🆕 '+t('最新'), rating:'⭐ '+t('信誉'), price_asc:'💰 '+t('价格 ↑'), random:'🎲 '+t('随机')}[sort]) || sort
+  const typeLabel = ({retail:'🛍️ '+t('零售'), wholesale:'📦 '+t('批发'), service:'🛠️ '+t('服务'), digital:'💾 '+t('数字')}[ptype]) || ptype
   const filterPanel = `
     <details style="margin-bottom:10px;background:#fff;border:1px solid #e5e7eb;border-radius:8px">
       <summary style="padding:8px 12px;cursor:pointer;font-size:12px;color:#374151;display:flex;justify-content:space-between;align-items:center">
