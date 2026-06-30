@@ -153,6 +153,7 @@ const _EN = {
   '账务更正合计': 'Total corrections',
   '已退款合计': 'Total refunds',
   '在途单预估费': 'In-flight orders est. fee',
+  '可退款余额': 'Refundable balance',
   '首单宽限': 'First-order grace',
   '是(尚未成交)': 'Yes (no completed sale yet)',
   '否(已用/有在途)': 'No (used / has in-flight)',

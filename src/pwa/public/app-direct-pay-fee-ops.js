@@ -32,8 +32,15 @@ window.renderAdminDirectPayHub = function (app) {
 
 // USDC 显示(units → 去尾零)
 function _dpFeeFmt(u) { return (Number(u || 0) / 1e6).toFixed(6).replace(/\.?0+$/, '') + ' USDC' }
-// 金额输入(USDC 小数)→ 整数 base-units;非法 → NaN
-function _dpFeeUnits(id) { const e = document.getElementById(id); const v = e ? parseFloat(e.value) : NaN; return Number.isFinite(v) ? Math.round(v * 1e6) : NaN }
+// 金额输入(USDC,最多 6 位小数)→ 整数 base-units(纯整数运算,无浮点四舍五入);松散/超精度输入 → NaN。
+function _dpFeeUnits(id) {
+  const e = document.getElementById(id); const raw = e ? e.value.trim() : ''
+  if (!/^-?\d+(\.\d{1,6})?$/.test(raw)) return NaN   // 拒 '1abc' / 超 6 位小数 / 空
+  const neg = raw[0] === '-', s = neg ? raw.slice(1) : raw
+  const [intp, frac = ''] = s.split('.')
+  const units = Number(intp) * 1e6 + Number((frac + '000000').slice(0, 6))
+  return neg ? -units : units
+}
 function _dpFeeStr(id) { const e = document.getElementById(id); return e ? e.value.trim() : '' }
 
 window.renderAdminDirectPayFeeOps = function (app) {
@@ -69,6 +76,7 @@ window.dpFeeLoad = async function () {
     ${row(t('账务更正合计'), _dpFeeFmt(a.adjustmentUnits))}
     ${row(t('已退款合计'), _dpFeeFmt(a.refundUnits))}
     ${row(t('在途单预估费'), _dpFeeFmt(a.openEstFeeUnits))}
+    ${row(t('可退款余额'), _dpFeeFmt(Math.max(0, Number(a.availableUnits) - Number(a.openEstFeeUnits))))}
     ${row(t('首单宽限'), a.graceEligible ? t('是(尚未成交)') : t('否(已用/有在途)'))}
   </div>`
 }
