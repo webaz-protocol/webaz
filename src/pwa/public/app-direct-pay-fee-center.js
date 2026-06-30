@@ -26,6 +26,7 @@ window.dpHydrateSellerFee = async () => {
     ${owed ? `<div style="font-size:12px;color:#b45309;line-height:1.6;margin-bottom:6px">${t('余额不足时新直付订单会被暂停,请联系平台补充平台服务费预充值。')}</div>` : ''}
     ${row(t('累计预充值'), _dpFeeFmt2(a.topupUnits))}
     ${row(t('已计提平台费'), _dpFeeFmt2(a.accruedUnits))}
+    ${Number(a.adjustmentUnits) !== 0 ? row(t('账务更正合计'), _dpFeeFmt2(a.adjustmentUnits)) : ''}
     ${row(t('已退款合计'), _dpFeeFmt2(a.refundUnits))}
     ${row(t('在途单预估费'), _dpFeeFmt2(a.openEstFeeUnits))}
     ${a.graceEligible ? `<div style="font-size:12px;color:#059669;margin-top:6px">${t('首单宽限可用:你的第一笔直付无需预充值。')}</div>` : ''}`
