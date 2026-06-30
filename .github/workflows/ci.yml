@@ -958,3 +958,29 @@ jobs:
           echo "  - a CHECK/FK/visibility-default constraint stopped being enforced by the DB"
           echo "  - bind/revoke/rebind state machine mis-decided, or PG backend not fail-closed"
           echo "See docs/IDENTITY-CLAIM-DESIGN.md (§4/§5/§6)."
+
+  contracts:
+    name: contracts (Foundry — MerchantBondVault)
+    runs-on: ubuntu-latest
+    steps:
+      # Solidity deps (OpenZeppelin, forge-std) live as git submodules under lib/.
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+      # MerchantBondVault is a money-path, immutable, audit-bound contract: green TS CI does NOT
+      # imply green contract. Build + run the full Foundry suite (incl. conservation fuzz) here.
+      - run: forge --version
+      - run: forge build
+      - run: forge test -vvv
+      - name: On failure — MerchantBondVault contract suite
+        if: failure()
+        run: |
+          echo "::error title=MerchantBondVault contract suite regressed::"
+          echo "v1 collateral-only merchant base-bond (testnet/dev). Likely regressions:"
+          echo "  - conservation broken (totalCollateral != Σ collateralOf, or balanceOf < totalCollateral)"
+          echo "  - role separation (relayer/signer gained fund power; slash not governance-only)"
+          echo "  - EIP-712 / nonce replay protection weakened; slash sink not snapshotted / redirectable"
+          echo "  - constructor no longer fail-closed (zero base-bond-min or zero slash cooldown accepted)"
+          echo "See docs/modules/MERCHANT-BASE-BOND-DESIGN.INTERNAL.md (§2/§4/§5)."
