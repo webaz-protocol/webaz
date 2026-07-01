@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (709 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (715 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -295,6 +295,12 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/direct-pay/availability` | 🔐 |  | GET /api/direct-pay/availability?product_id=... — 该商品(以 qty=1 计)当前是否可直付 + 不可用原因( | src/pwa/routes/direct-pay-availability.ts:40 |
 | POST | `/api/direct-pay/disclosure-acks` | 🔐 |  | POST — 记录一次 ack(D1 pre_select / D2 pre_confirm)。需现场真人(Passkey + gate token)。幂等(I | src/pwa/routes/direct-pay-disclosure-acks.ts:49 |
 | GET | `/api/direct-pay/disclosure-acks/:orderId` | 🔐 |  | GET — 查询某单两次 ack 状态 + 买家视角披露文案(无卖家机制)。只读(本人),不需 gate token。 | src/pwa/routes/direct-pay-disclosure-acks.ts:71 |
+| GET | `/api/direct-receive/accounts` | 🔐 |  | ── list（本人;不返回 raw QR,只含 qr_image_ref)── | src/pwa/routes/direct-receive-accounts.ts:58 |
+| POST | `/api/direct-receive/accounts` | 🔐 |  | ── add(Passkey)── | src/pwa/routes/direct-receive-accounts.ts:64 |
+| DELETE | `/api/direct-receive/accounts/:id` | 🔐 |  | ── deactivate(Passkey + owner)── | src/pwa/routes/direct-receive-accounts.ts:94 |
+| PUT | `/api/direct-receive/accounts/:id` | 🔐 |  | ── update(Passkey + owner)── | src/pwa/routes/direct-receive-accounts.ts:78 |
+| GET | `/api/direct-receive/accounts/:id/qr` | 🔐 |  | ── QR preview(owner-only read;硬化转发;不存在/非本人 → 404)── | src/pwa/routes/direct-receive-accounts.ts:119 |
+| PUT | `/api/direct-receive/accounts/:id/qr` | 🔐 |  | ── upload / replace QR(Passkey + owner;immutable content-addressed store)── | src/pwa/routes/direct-receive-accounts.ts:108 |
 | GET | `/api/direct-receive/deferral` | 🔐 |  | GET /api/direct-receive/deferral — 卖家本人缓交状态:最新一条申请(脱敏:不含 admin 身份)+ 是否当前生效(activ | src/pwa/routes/direct-pay-availability.ts:96 |
 | POST | `/api/direct-receive/deferral` | 🔐 |  | POST /api/direct-receive/deferral — 卖家申请缓交。helper 强制:单一活跃、periodDays 正整数、id 唯一。 | src/pwa/routes/direct-pay-availability.ts:86 |
 | GET | `/api/direct-receive/my-fee-account` | 🔐 |  | 仅本人(requireSeller),买家拿不到;只读、不碰任何资金动作。供 seller fee center 展示。 | src/pwa/routes/direct-pay-availability.ts:109 |

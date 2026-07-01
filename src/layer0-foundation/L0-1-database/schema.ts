@@ -256,6 +256,36 @@ export function initDatabase(): Database.Database {
       updated_at    TEXT DEFAULT (datetime('now'))
     );
 
+    -- 直付收款二维码图(Phase C):卖家收款码原始字节。【不可变、按内容寻址】—— ref = sha256(bytes),replace = 插新行,
+    -- 旧行永不改/删(触发器强制),这样订单可在建单时快照某个 ref 并在 D1/D2 ack 后取回【当时那一版】QR。
+    -- WebAZ 只存字节、经硬化端点转发,绝不解析二维码含义 / 不验证收款方 / 不路由资金。仅 png|webp、解码 ≤64KB。
+    CREATE TABLE IF NOT EXISTS direct_receive_account_qr_images (
+      ref          TEXT PRIMARY KEY,               -- = sha256(decoded bytes),内容寻址、不可变
+      account_id   TEXT NOT NULL REFERENCES direct_receive_accounts(id),
+      seller_id    TEXT NOT NULL REFERENCES users(id),
+      mime         TEXT NOT NULL,                  -- 'image/png' | 'image/webp'(仅此二者)
+      data_b64     TEXT NOT NULL,                  -- base64 原始字节(硬化端点 forced content-type + nosniff + no-store 转发)
+      byte_len     INTEGER NOT NULL,               -- 解码后字节数(≤ 65536)
+      sha256       TEXT NOT NULL,                  -- = ref(冗余留证)
+      created_at   TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_dr_qr_account ON direct_receive_account_qr_images(account_id);
+    CREATE TRIGGER IF NOT EXISTS trg_dr_qr_no_update BEFORE UPDATE ON direct_receive_account_qr_images BEGIN SELECT RAISE(ABORT, 'direct_receive_account_qr_images is content-addressed & immutable (UPDATE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_dr_qr_no_delete BEFORE DELETE ON direct_receive_account_qr_images BEGIN SELECT RAISE(ABORT, 'direct_receive_account_qr_images is immutable (DELETE forbidden — keep for order snapshots)'); END;
+
+    -- 直付收款账号审计(Phase C):append-only,记事件+account/qr ref,【绝不】写 raw instruction / raw QR。
+    CREATE TABLE IF NOT EXISTS direct_receive_account_events (
+      id           TEXT PRIMARY KEY,
+      account_id   TEXT NOT NULL,
+      seller_id    TEXT NOT NULL,
+      event_type   TEXT NOT NULL,                  -- account_added | account_updated | account_deactivated | qr_uploaded
+      qr_ref       TEXT,                           -- qr 事件时的 ref(= sha256);非 qr 事件为 NULL。绝无 raw 内容
+      created_at   TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_dr_acct_events_account ON direct_receive_account_events(account_id);
+    CREATE TRIGGER IF NOT EXISTS trg_dr_acct_events_no_update BEFORE UPDATE ON direct_receive_account_events BEGIN SELECT RAISE(ABORT, 'direct_receive_account_events is append-only (UPDATE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_dr_acct_events_no_delete BEFORE DELETE ON direct_receive_account_events BEGIN SELECT RAISE(ABORT, 'direct_receive_account_events is append-only (DELETE forbidden)'); END;
+
     -- 缓交(deferred-deposit)申请;审批=真人(RISK),绝不自动;缓交期配额压低,绝不零威慑。
     CREATE TABLE IF NOT EXISTS direct_receive_deferrals (
       id                   TEXT PRIMARY KEY,

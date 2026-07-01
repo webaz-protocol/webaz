@@ -202,6 +202,28 @@ CREATE TABLE IF NOT EXISTS direct_receive_accounts (
       updated_at    TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
     );
 
+CREATE TABLE IF NOT EXISTS direct_receive_account_qr_images (
+      ref          TEXT PRIMARY KEY,
+      account_id   TEXT NOT NULL REFERENCES direct_receive_accounts(id),
+      seller_id    TEXT NOT NULL REFERENCES users(id),
+      mime         TEXT NOT NULL,
+      data_b64     TEXT NOT NULL,
+      byte_len     BIGINT NOT NULL,
+      sha256       TEXT NOT NULL,
+      created_at   TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
+    );
+CREATE INDEX IF NOT EXISTS idx_dr_qr_account ON direct_receive_account_qr_images(account_id);
+
+CREATE TABLE IF NOT EXISTS direct_receive_account_events (
+      id           TEXT PRIMARY KEY,
+      account_id   TEXT NOT NULL,
+      seller_id    TEXT NOT NULL,
+      event_type   TEXT NOT NULL,
+      qr_ref       TEXT,
+      created_at   TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
+    );
+CREATE INDEX IF NOT EXISTS idx_dr_acct_events_account ON direct_receive_account_events(account_id);
+
 CREATE TABLE IF NOT EXISTS direct_receive_deferrals (
       id                   TEXT PRIMARY KEY,
       user_id              TEXT NOT NULL REFERENCES users(id),
