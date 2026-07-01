@@ -2985,6 +2985,7 @@ const _EN = {
   'Telegram':                          'Telegram',
   '外部链接':                          'External URL',
   '外部平台': 'External platform',
+  '前往源平台查看详情': 'View details on the source platform',
   '同城共鸣': 'Local buzz',
 
   // ── P3c 收尾 ──────────────────────────────────────────────

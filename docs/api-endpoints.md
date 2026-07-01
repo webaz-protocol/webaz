@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (706 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (707 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -482,10 +482,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/products/:id/can-share` | 🔐 |  | 分享许可：是否真实收货完成该商品(经过 confirmed,排除退款/违约/争议终态) | src/pwa/routes/products-meta.ts:174 |
 | POST | `/api/products/:id/claim` | 🔐 |  |  | src/pwa/routes/products-claims.ts:39 |
 | GET | `/api/products/:id/claims` |  |  | 公开：列出某商品的全部声明（含已结算） | src/pwa/routes/products-claims.ts:95 |
+| GET | `/api/products/:id/external-links` | 🔐 |  | array the seller workbench consumes; that stays untouched). Only public-safe col | src/pwa/routes/products-links.ts:51 |
 | POST | `/api/products/:id/get-or-create-share` | 🔐 |  | 获取或创建商品 shareable（被 sharePromoLink 用，走 /s/<id> 短链） | src/pwa/routes/products-meta.ts:185 |
 | GET | `/api/products/:id/links` | 🔐 |  |  | src/pwa/routes/products-links.ts:39 |
-| POST | `/api/products/:id/links` | 🔐 |  | 新链接（无人认领）直接 verified=1；已被他人认领则发起众包验证任务 | src/pwa/routes/products-links.ts:49 |
-| DELETE | `/api/products/:id/links/:linkId` | 🔐 |  |  | src/pwa/routes/products-links.ts:181 |
+| POST | `/api/products/:id/links` | 🔐 |  | 新链接（无人认领）直接 verified=1；已被他人认领则发起众包验证任务 | src/pwa/routes/products-links.ts:62 |
+| DELETE | `/api/products/:id/links/:linkId` | 🔐 |  |  | src/pwa/routes/products-links.ts:194 |
 | GET | `/api/products/:id/preview` |  |  | 公开预览：未登录可调，返回最小公开信息（分享 banner 用） | src/pwa/routes/products-meta.ts:162 |
 | GET | `/api/products/:id/price-history` |  |  |  | src/pwa/routes/products-meta.ts:58 |
 | PATCH | `/api/products/:id/status` | 🔐 |  | 状态切换（active / warehouse / deleted） | src/pwa/routes/products-crud.ts:49 |

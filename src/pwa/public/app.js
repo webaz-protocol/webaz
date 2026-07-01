@@ -10151,7 +10151,7 @@ async function renderBuyPage(app, productId) {
     ${originBadge}
     <div class="card">
       ${productImageGallery(p)}
-      <h2 style="font-size:18px;font-weight:700;margin-bottom:6px">${escHtml(p.title)}</h2>
+      <h2 style="font-size:18px;font-weight:700;margin-bottom:6px">${escHtml(p.title)}</h2>${window.extLinksBarHtml ? window.extLinksBarHtml(productId) : ''}
       ${state._flashSale ? `
       <div style="background:linear-gradient(135deg,#dc2626,#f59e0b);color:#fff;border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
         <div>
