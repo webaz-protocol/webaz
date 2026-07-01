@@ -42,6 +42,11 @@ const rfc = R('docs/rfcs/RFC-003-mcp-network-client.md')
 const rfcIndex = R('docs/rfcs/README.md')
 ok('RFC-003: corrected to three-mode / no-key read-only (network_readonly)', /network_readonly|NETWORK 只读/.test(rfc))
 ok('RFC-003: no stale "未配 api_key → sandbox fallback" trigger', !/未配 api_key[^\n]{0,15}fallback/.test(rfc))
+// §3.2 config table drift: no-key must NOT be described as falling back to SANDBOX anywhere
+ok('RFC-003: no "fallback SANDBOX" anywhere (incl. §3.2 config table)', !/fallback\s*SANDBOX/i.test(rfc))
+ok('RFC-003: no "无=...SANDBOX" no-key→sandbox claim', !/无\s*=\s*[^\n]{0,10}SANDBOX/.test(rfc))
+ok('RFC-003: WEBAZ_MODE lists network_readonly (three modes, not network|sandbox only)', /WEBAZ_MODE[^\n]*network_readonly/.test(rfc))
+ok('RFC-003: _mode field doc includes network_readonly', /_mode[\s\S]{0,60}network_readonly/.test(rfc))
 ok('RFC index: RFC-003 not labeled "dual-mode thin client"', !/dual-mode thin client/.test(rfcIndex))
 
 // network_state:不硬编码 real_users_on_canonical 数字(真值来自 network_live)
