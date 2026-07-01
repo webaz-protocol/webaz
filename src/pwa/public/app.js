@@ -20300,6 +20300,7 @@ async function renderSecondhandPublish(app) {
       <div class="card" style="margin-bottom:12px">
         <div class="card-body">
           <div style="font-size:12px;color:#374151;font-weight:600;margin-bottom:8px">${t('图片（首张为封面，最多 9 张）')}</div>
+          <div style="font-size:11px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 8px;margin-bottom:8px;line-height:1.5">📸 ${t('请上传真实实物照，勿用网图/广告图；如经举报核实为虚假图片，商品可能被下架')}</div>
           <input type="file" accept="image/*" multiple id="sh-imgs-input" style="display:none" onchange="shHandleImagesChange(this)">
           <div id="sh-imgs-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px"></div>
           <button class="btn btn-outline btn-sm" style="margin-top:8px;font-size:12px" onclick="document.getElementById('sh-imgs-input').click()">+ ${t('选择图片')}</button>
