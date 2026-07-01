@@ -15725,7 +15725,7 @@ async function renderSeller(app) {
 
         <div class="form-group"><label class="form-label">${t('规格参数')}<span style="font-size:11px;color:#9ca3af;font-weight:400;margin-left:6px">${t('每行一个，格式：材质: 陶瓷')}</span></label>
           <textarea class="form-control" id="prd-specs" rows="3" placeholder="${t('材质: 陶瓷&#10;容量: 350ml&#10;颜色: 白色')}"></textarea></div>
-
+        <div class="form-group"><label class="form-label">${t('商品类型')}</label><select class="form-control" id="prd-type"><option value="retail">${t('零售')}</option><option value="wholesale">${t('批发')}</option><option value="service">${t('服务')}</option><option value="digital">${t('数字')}</option></select></div>
         <div style="display:flex;gap:12px">
           <div class="form-group" style="flex:1"><label class="form-label">${t('分类')}</label>
             <select class="form-control" id="prd-cat">
@@ -16124,7 +16124,7 @@ window.doAddProduct = async () => {
   const desc     = document.getElementById('prd-desc').value.trim()
   const price    = Number(document.getElementById('prd-price').value)
   const stock    = Number(document.getElementById('prd-stock').value) || 1
-  const category = document.getElementById('prd-cat').value
+  const category = document.getElementById('prd-cat').value; const productType = document.getElementById('prd-type')?.value || 'retail'
   const msgEl    = document.getElementById('add-msg')
 
   if (!title || !desc || !price) { msgEl.innerHTML = alert$('error', t('请填写商品名、描述、价格')); return }
@@ -16138,7 +16138,7 @@ window.doAddProduct = async () => {
   const checkedAliases = Array.from(document.querySelectorAll('#prd-alias-candidates input[type="checkbox"]:checked'))
     .map(cb => ({ type: cb.dataset.type, value: cb.dataset.value }))
   const payload = {
-    title, description: desc, price, stock, category,
+    title, description: desc, price, stock, category, product_type: productType,
     specs: parseSpecs(document.getElementById('prd-specs').value),
     handling_hours: Number(document.getElementById('prd-handling').value) || 24,
     ship_regions: document.getElementById('prd-ship-regions').value.trim() || '全国',
