@@ -38,7 +38,7 @@ db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('buyer1', 100)").run(
 db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('seller1', 100)").run()
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p1','seller1','T','d',50,10,'active')").run()
 
-const ord = (id: string) => db.prepare('SELECT status, payment_rail, escrow_amount, direct_pay_instruction_snapshot FROM orders WHERE id=?').get(id) as any
+const ord = (id: string) => db.prepare('SELECT status, payment_rail, escrow_amount, direct_pay_instruction_snapshot, direct_pay_account_snapshot FROM orders WHERE id=?').get(id) as any
 const stake = (oid: string) => db.prepare('SELECT status, amount FROM direct_pay_fee_stakes WHERE order_id=?').get(oid) as any
 const pstock = () => (db.prepare("SELECT stock FROM products WHERE id='p1'").get() as { stock: number }).stock
 const seedBond = (sellerId: string, production: boolean) => db.prepare(`INSERT INTO direct_receive_deposits (id,user_id,tier,required_amount,amount,currency,deposit_rail,status,production_receipt_confirmed_at) VALUES (?,?,?,?,?,?,?,?,?)`)
@@ -192,6 +192,31 @@ cp['direct_pay.enabled'] = false; cp['direct_pay.per_tx_cap_units'] = toUnits(7)
 const cs2 = snapRow(createdId)
 ok('snapshot frozen-at-create (later param change does NOT mutate the order snapshot)', cs2.e === 1 && cs2.cap === toUnits(1000), JSON.stringify(cs2))
 cp['direct_pay.enabled'] = true; cp['direct_pay.per_tx_cap_units'] = toUnits(1000)  // 恢复供 Part C/E
+
+// ══════ Part D2: buyer account selection (dual-read) ══════
+// seller2 已全资格(bond/KYB/sanctions/instruction/verified);seed 一条平台费预付款(过非首单 prepay 门)+ 两个多收款账号。
+db.prepare("INSERT INTO direct_pay_fee_payments (id,seller_id,invoice_id,amount,currency,method) VALUES ('topup_s2','seller2',NULL,1000,'usdc','usdc')").run()
+db.prepare("INSERT INTO direct_receive_accounts (id, seller_id, method, currency, instruction, label, qr_image_ref, status) VALUES ('acc_s2_a','seller2','PayNow','SGD','ACC-A-INSTR','A','qrref_a','active')").run()
+db.prepare("INSERT INTO direct_receive_accounts (id, seller_id, method, currency, instruction, label, status) VALUES ('acc_s2_off','seller2','GCash','PHP','OFF-INSTR','off','inactive')").run()
+db.prepare("INSERT INTO direct_receive_accounts (id, seller_id, method, currency, instruction, status) VALUES ('acc_s1_x','seller1','Bank','THB','S1-INSTR','active')").run()
+const dpAcc = (accId: string | undefined, uid = 'buyer1') => post({ product_id: 'p2', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr', ...(accId ? { direct_receive_account_id: accId } : {}) }, uid)
+// chosen valid account → snapshots THAT account's instruction + non-sensitive account snapshot
+const rSel = await dpAcc('acc_s2_a')
+ok('D2: valid account selection → 200', rSel.status === 200 && rSel.json?.status === 'direct_pay_window', JSON.stringify(rSel))
+const selOrd = ord(rSel.json?.order_id)
+ok('D2: instruction snapshot = chosen account instruction (not legacy)', selOrd?.direct_pay_instruction_snapshot === 'ACC-A-INSTR')
+const accSnap = selOrd?.direct_pay_account_snapshot ? JSON.parse(selOrd.direct_pay_account_snapshot) : null
+ok('D2: account snapshot = {account_id,method,currency,label,qr_ref} (non-sensitive)', accSnap && accSnap.account_id === 'acc_s2_a' && accSnap.method === 'PayNow' && accSnap.currency === 'SGD' && accSnap.label === 'A' && accSnap.qr_ref === 'qrref_a', JSON.stringify(accSnap))
+ok('D2: account snapshot carries NO raw instruction', accSnap && !('instruction' in accSnap))
+// fail-closed: bogus / inactive / wrong-seller account → 409, never silent legacy fallback, no order
+const ordsBeforeInvalid = (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n
+ok('D2: bogus account_id → 409 DIRECT_RECEIVE_ACCOUNT_INVALID', (await dpAcc('nope')).json?.error_code === 'DIRECT_RECEIVE_ACCOUNT_INVALID')
+ok('D2: inactive account → 409 (fail-closed)', (await dpAcc('acc_s2_off')).json?.error_code === 'DIRECT_RECEIVE_ACCOUNT_INVALID')
+ok('D2: other-seller account → 409 (fail-closed, no cross-seller)', (await dpAcc('acc_s1_x')).json?.error_code === 'DIRECT_RECEIVE_ACCOUNT_INVALID')
+ok('D2: no order created on invalid account', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === ordsBeforeInvalid)
+// no account_id → legacy dual-read fallback (seller2 has an active legacy instruction from Part B)
+const rLegacy = await dpAcc(undefined)
+ok('D2: omitted account_id → legacy instruction fallback (unchanged behaviour)', rLegacy.status === 200 && ord(rLegacy.json?.order_id)?.direct_pay_instruction_snapshot === 'PayNow +65 9xxx (off-protocol)' && ord(rLegacy.json?.order_id)?.direct_pay_account_snapshot == null, JSON.stringify(rLegacy))
 
 // ══════ Part C: escrow-only 修饰 → fail-closed(helper 级,绕过 route 预校验)═══════
 // 注:拒的是 escrow-only 修饰,不是按 product_type 拒 digital/service(schema 无该字段)。

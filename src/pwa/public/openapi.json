@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (716 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (717 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -5322,6 +5322,19 @@
     "/api/orders/:id/confirm-in-person": {
       "post": {
         "summary": "买家确认面交完成 → 直接 completed + settleOrder",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/direct-pay-qr": {
+      "get": {
+        "summary": "取【当时那一版】图字节。未 ack / 非买家 / 无 QR / 非 direct_p2p → 统一 404(不枚举,不泄露)。图字节不入 order JSON。",
         "tags": [
           "order"
         ],

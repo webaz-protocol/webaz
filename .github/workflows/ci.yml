@@ -688,6 +688,7 @@ jobs:
       - run: npm run test:direct-receive-deposits
       - run: npm run test:direct-receive-accounts
       - run: npm run test:direct-receive-account-endpoints
+      - run: npm run test:direct-pay-order-qr
       - run: npm run test:direct-receive-instruction
       - run: npm run test:direct-receive-production-confirm
       - run: npm run test:direct-pay-bond-rail-clearance
