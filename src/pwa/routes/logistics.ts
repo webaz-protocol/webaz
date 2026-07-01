@@ -12,6 +12,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { stripDirectPayPaymentTarget } from '../direct-pay-order-redaction.js'  // 披露门:物流第三方绝不该见收款目标
 
 export interface LogisticsDeps {
   db: Database.Database
@@ -55,6 +56,8 @@ export function registerLogisticsRoutes(app: Application, deps: LogisticsDeps): 
       ORDER BY o.created_at ASC LIMIT 20
     `, [user.id])
 
+    // 披露门:物流是非买家第三方,无条件删除 direct_p2p 收款目标(instruction 快照 + 账号快照);物流只需商品/状态/地址。
+    for (const o of [...(available as Array<Record<string, unknown>>), ...(mine as Array<Record<string, unknown>>)]) stripDirectPayPaymentTarget(o)
     res.json({ available, mine })
   })
 }

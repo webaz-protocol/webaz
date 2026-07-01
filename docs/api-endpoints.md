@@ -202,7 +202,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/agent/changes` |  |  | 指纹由 tests/test-contract-fingerprint.ts + docs/CONTRACT-LOCK.json 守住(静默改契约不可 merg | src/pwa/routes/public-utils.ts:334 |
 | GET | `/api/agent/economic-participation` |  |  |  | src/pwa/routes/public-utils.ts:379 |
 | GET | `/api/agent/entities` |  |  |  | src/pwa/routes/public-utils.ts:300 |
-| GET | `/api/agent/events` | 🔐 |  | 结构性事件 + 哈希链字段(验链防篡改),完整 payload 仍走 party-gated /chain。 | src/pwa/routes/orders-read.ts:153 |
+| GET | `/api/agent/events` | 🔐 |  | 结构性事件 + 哈希链字段(验链防篡改),完整 payload 仍走 party-gated /chain。 | src/pwa/routes/orders-read.ts:140 |
 | GET | `/api/agent/goals` |  |  |  | src/pwa/routes/public-utils.ts:326 |
 | GET | `/api/agent/integration` |  |  |  | src/pwa/routes/public-utils.ts:344 |
 | GET | `/api/agent/negative-space` |  |  |  | src/pwa/routes/public-utils.ts:387 |
@@ -399,9 +399,9 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/listings/:id/offers` | 🔐 |  | 跟卖：为已有 listing 创建本卖家的 product（即一个 offer） | src/pwa/routes/listings.ts:261 |
 | GET | `/api/listings/mine` | 🔐 |  | 我的跟卖 | src/pwa/routes/listings.ts:110 |
 | POST | `/api/login` |  |  |  | src/pwa/routes/auth-login.ts:31 |
-| GET | `/api/logistics/companies` |  |  |  | src/pwa/routes/logistics.ts:25 |
+| GET | `/api/logistics/companies` |  |  |  | src/pwa/routes/logistics.ts:26 |
 | GET | `/api/logistics/me/performance` | 🔐 |  | 物流绩效卡 (Wave B-4) | src/pwa/routes/analytics.ts:36 |
-| GET | `/api/logistics/orders` | 🔐 |  |  | src/pwa/routes/logistics.ts:32 |
+| GET | `/api/logistics/orders` | 🔐 |  |  | src/pwa/routes/logistics.ts:33 |
 | GET | `/api/logistics/return-pickups` | 🔐 |  |  | src/pwa/routes/returns.ts:418 |
 | GET | `/api/manifest` |  |  |  | src/pwa/routes/public-utils.ts:463 |
 | POST | `/api/manifests` | 🔐 |  |  | src/pwa/routes/manifests.ts:52 |
@@ -424,8 +424,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/me/delete-cancel` | 🔐 |  |  | src/pwa/routes/account-deletion.ts:58 |
 | POST | `/api/me/delete-request` | 🔐 |  |  | src/pwa/routes/account-deletion.ts:33 |
 | GET | `/api/me/delete-status` | 🔐 |  |  | src/pwa/routes/account-deletion.ts:70 |
-| GET | `/api/me/export` | 🔐 |  | COP P0-1: 数据导出（用户主权） | src/pwa/routes/me-data.ts:68 |
-| GET | `/api/me/note-prompts` | 🔐 |  | COP 飞轮: 完成订单 7d 引导发笔记 | src/pwa/routes/me-data.ts:29 |
+| GET | `/api/me/export` | 🔐 |  | COP P0-1: 数据导出（用户主权） | src/pwa/routes/me-data.ts:69 |
+| GET | `/api/me/note-prompts` | 🔐 |  | COP 飞轮: 完成订单 7d 引导发笔记 | src/pwa/routes/me-data.ts:30 |
 | GET | `/api/me/notify-claim-tasks` | 🔐 |  |  | src/pwa/routes/claim-verify.ts:534 |
 | POST | `/api/me/notify-claim-tasks` | 🔐 |  | 通知偏好 | src/pwa/routes/claim-verify.ts:528 |
 | GET | `/api/me/operator-claim-confirmations` | 🔐 |  | ── contributor: claims pointing at ME awaiting my confirmation ── | src/pwa/routes/admin-operator-claims.ts:99 |
@@ -448,15 +448,15 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | DELETE | `/api/offers/:id` | 🔐 |  | 撤回 offer（status=warehouse + 释放 stake；不真删 product） | src/pwa/routes/offers.ts:70 |
 | PATCH | `/api/offers/:id` | 🔐 |  |  | src/pwa/routes/offers.ts:33 |
 | POST | `/api/offers/:id/refresh` | 🔐 |  | 刷新 freshness（卖家点 "现货确认"） | src/pwa/routes/offers.ts:105 |
-| GET | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-read.ts:51 |
+| GET | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-read.ts:38 |
 | POST | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-create.ts:119 |
-| GET | `/api/orders/:id` | 🔐 |  |  | src/pwa/routes/orders-read.ts:165 |
+| GET | `/api/orders/:id` | 🔐 |  |  | src/pwa/routes/orders-read.ts:152 |
 | POST | `/api/orders/:id/action` | 🔐 |  | 通用状态机 action — accept/ship/pickup/transit/deliver/confirm/dispute | src/pwa/routes/orders-action.ts:165 |
-| GET | `/api/orders/:id/chain` | 🔐 |  | 订单签名链 — 当事人 + arbitrator + admin 可查 | src/pwa/routes/orders-read.ts:138 |
+| GET | `/api/orders/:id/chain` | 🔐 |  | 订单签名链 — 当事人 + arbitrator + admin 可查 | src/pwa/routes/orders-read.ts:125 |
 | GET | `/api/orders/:id/claim-task` | 🔐 |  | 通过 order_id 查关联 task | src/pwa/routes/claim-verify.ts:409 |
 | POST | `/api/orders/:id/claim-verification` | 🔐 |  | 买家发起 claim 验证任务（绑定 paid 及之后的订单） | src/pwa/routes/claim-verify.ts:331 |
 | POST | `/api/orders/:id/confirm-in-person` | 🔐 |  | 买家确认面交完成 → 直接 completed + settleOrder | src/pwa/routes/orders-action.ts:133 |
-| GET | `/api/orders/:id/direct-pay-qr` | 🔐 |  | 取【当时那一版】图字节。未 ack / 非买家 / 无 QR / 非 direct_p2p → 统一 404(不枚举,不泄露)。图字节不入 order JSON | src/pwa/routes/orders-read.ts:229 |
+| GET | `/api/orders/:id/direct-pay-qr` | 🔐 |  | 取【当时那一版】图字节。未 ack / 非买家 / 无 QR / 非 direct_p2p → 统一 404(不枚举,不泄露)。图字节不入 order JSON | src/pwa/routes/orders-read.ts:216 |
 | POST | `/api/orders/:id/force-timeout-check` | 🔐 |  | 手动触发超时判责（当事人） | src/pwa/routes/orders-action.ts:492 |
 | GET | `/api/orders/:order_id/buyer-rating` | 🔐 |  | 查 seller → buyer 评价（双盲遮蔽：buyer 看不到，除非自己也评过 OR 窗口到期） | src/pwa/routes/ratings.ts:113 |
 | POST | `/api/orders/:order_id/buyer-rating` | 🔐 |  | seller → buyer 反向评价 | src/pwa/routes/ratings.ts:83 |
@@ -467,7 +467,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/orders/:order_id/return-request` | 🔐 |  | P1-5: 订单级直查 | src/pwa/routes/returns.ts:187 |
 | POST | `/api/orders/:order_id/return-request` | 🔐 |  | buyer 发起退货 | src/pwa/routes/returns.ts:121 |
 | POST | `/api/orders/batch-ship` | 🔐 |  | C-4: 卖家批量发货 | src/pwa/routes/orders-action.ts:82 |
-| GET | `/api/orders/export` | 🔐 |  | Wave D-2: 订单导出 CSV | src/pwa/routes/orders-read.ts:77 |
+| GET | `/api/orders/export` | 🔐 |  | Wave D-2: 订单导出 CSV | src/pwa/routes/orders-read.ts:64 |
 | GET | `/api/p2p-products` |  |  | 公开：列表 | src/pwa/routes/p2p-products.ts:177 |
 | POST | `/api/p2p-products` | 🔐 |  | 发布 / 重发 P2P 商品 | src/pwa/routes/p2p-products.ts:48 |
 | DELETE | `/api/p2p-products/:id` | 🔐 |  | 下架（保留行 + status='warehouse'，在途订单 hash 仍可证） | src/pwa/routes/p2p-products.ts:165 |
