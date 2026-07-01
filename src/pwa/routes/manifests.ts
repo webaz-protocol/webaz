@@ -29,6 +29,9 @@ import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js
 
 const MANIFEST_DAILY_LIMIT = 20
 const THUMB_MAX_BYTES = 12000   // ~12KB base64 ≈ 9KB 原始图
+// Whitelist for stored/served thumbnails: raster data-URI only. Blocks svg/text/html data URIs so a malicious
+// seller can't smuggle scriptable content that the public /thumb endpoint would serve (stored-XSS guard).
+const THUMB_DATA_URI_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/
 
 function verifyManifestSig(hash: string, ownerId: string, contentType: string, byteSize: number, signedAt: string, apiKey: string, signature: string): boolean {
   const payload = `${hash}|${ownerId}|${contentType}|${byteSize}|${signedAt}`
@@ -54,6 +57,7 @@ export function registerManifestsRoutes(app: Application, deps: ManifestsDeps): 
     if (typeof byte_size !== 'number' || byte_size <= 0 || byte_size > 500 * 1024 * 1024) return void res.json({ error: 'byte_size 不合法（最大 500MB）' })
     if (!related_product_id && !related_anchor) return void res.json({ error: '请关联商品或流量口令' })
     if (thumbnail_data_uri && thumbnail_data_uri.length > THUMB_MAX_BYTES) return void res.json({ error: '缩略图过大（≤ 9KB 原始）' })
+    if (thumbnail_data_uri && !THUMB_DATA_URI_RE.test(thumbnail_data_uri)) return void res.json({ error: '缩略图必须是 data:image/(jpeg|png|webp);base64 格式' })
 
     // 验签
     const apiKey = me.api_key as string
@@ -105,6 +109,30 @@ export function registerManifestsRoutes(app: Application, deps: ManifestsDeps): 
       ORDER BY is_owner DESC, last_heartbeat DESC LIMIT 30
     `, [req.params.hash])
     res.json({ manifest: m, peers })
+  })
+
+  // PUBLIC thumbnail bytes for <img src> (product cards can't send an auth header). Hardened:
+  //   - :hash must be 64-hex (format guard)
+  //   - only status='active' manifests
+  //   - the stored data-URI must match the raster whitelist (jpeg/png/webp) — else 404 (no svg/text/html)
+  //   - Content-Type is FORCED from the whitelisted subtype (never echoed from the stored value) + nosniff
+  //   - size guard; hash-addressed ⇒ immutable long cache (CDN/browser serve; origin rarely hit)
+  //   Only the low-res thumbnail is exposed (never full-res / metadata / other columns).
+  app.get('/api/manifests/:hash/thumb', async (req, res) => {
+    const hash = String(req.params.hash || '')
+    if (!/^[0-9a-f]{64}$/i.test(hash)) return void res.status(400).end()
+    const m = await dbOne<{ thumbnail_data_uri: string | null; status: string }>(
+      `SELECT thumbnail_data_uri, status FROM manifest_registry WHERE hash = ?`, [hash])
+    if (!m || m.status !== 'active' || !m.thumbnail_data_uri) return void res.status(404).end()
+    const parsed = THUMB_DATA_URI_RE.exec(m.thumbnail_data_uri)
+    if (!parsed) return void res.status(404).end()
+    let buf: Buffer
+    try { buf = Buffer.from(m.thumbnail_data_uri.slice(m.thumbnail_data_uri.indexOf(',') + 1), 'base64') } catch { return void res.status(404).end() }
+    if (buf.length === 0 || buf.length > 64 * 1024) return void res.status(404).end()
+    res.setHeader('Content-Type', `image/${parsed[1]}`)
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+    res.send(buf)
   })
 
   app.get('/api/manifests/by-product/:pid', async (req, res) => {

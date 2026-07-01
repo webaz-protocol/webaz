@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (707 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (708 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -396,12 +396,13 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/logistics/orders` | 🔐 |  |  | src/pwa/routes/logistics.ts:32 |
 | GET | `/api/logistics/return-pickups` | 🔐 |  |  | src/pwa/routes/returns.ts:418 |
 | GET | `/api/manifest` |  |  |  | src/pwa/routes/public-utils.ts:463 |
-| POST | `/api/manifests` | 🔐 |  |  | src/pwa/routes/manifests.ts:49 |
-| GET | `/api/manifests/:hash` | 🔐 |  |  | src/pwa/routes/manifests.ts:97 |
-| PATCH | `/api/manifests/:hash/takedown` | 🔐 |  |  | src/pwa/routes/manifests.ts:132 |
-| GET | `/api/manifests/by-anchor/:anchor` | 🔐 |  |  | src/pwa/routes/manifests.ts:121 |
-| GET | `/api/manifests/by-product/:pid` | 🔐 |  |  | src/pwa/routes/manifests.ts:110 |
-| GET | `/api/manifests/me` | 🔐 |  |  | src/pwa/routes/manifests.ts:86 |
+| POST | `/api/manifests` | 🔐 |  |  | src/pwa/routes/manifests.ts:52 |
+| GET | `/api/manifests/:hash` | 🔐 |  |  | src/pwa/routes/manifests.ts:101 |
+| PATCH | `/api/manifests/:hash/takedown` | 🔐 |  |  | src/pwa/routes/manifests.ts:160 |
+| GET | `/api/manifests/:hash/thumb` |  |  | Only the low-res thumbnail is exposed (never full-res / metadata / other columns | src/pwa/routes/manifests.ts:121 |
+| GET | `/api/manifests/by-anchor/:anchor` | 🔐 |  |  | src/pwa/routes/manifests.ts:149 |
+| GET | `/api/manifests/by-product/:pid` | 🔐 |  |  | src/pwa/routes/manifests.ts:138 |
+| GET | `/api/manifests/me` | 🔐 |  |  | src/pwa/routes/manifests.ts:90 |
 | POST | `/api/mcp-telemetry` |  |  |  | src/pwa/routes/public-utils.ts:73 |
 | GET | `/api/me` | 🔐 |  |  | src/pwa/routes/auth-read.ts:29 |
 | GET | `/api/me/agents` | 🔐 |  | /api/me/agents — 列出本账号所有 agent + declaration / strikes | src/pwa/routes/agent-governance.ts:61 |
