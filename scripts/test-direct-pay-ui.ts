@@ -356,5 +356,31 @@ for (const k of ['直付收款账号', '新增收款账号', '尚未添加收款
   ok(`19-i18n EN present: ${k.slice(0, 12)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
 }
 
+// ── 20. Phase D3: buyer account selection + per-account FX + post-ack QR (new app-direct-pay-buyer.js) ──
+const BUY = P('app-direct-pay-buyer.js')
+const BUYCODE = BUY.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+ok('20. index.html loads app-direct-pay-buyer.js before app.js', has(HTML, '/app-direct-pay-buyer.js') && HTML.indexOf('/app-direct-pay-buyer.js') < HTML.indexOf('/app.js'))
+ok('20a. buyer file in check:pwa-syntax + ratchet', /node --check src\/pwa\/public\/app-direct-pay-buyer\.js/.test(PKG) && /'src\/pwa\/public\/app-direct-pay-buyer\.js'\s*:/.test(RATCHET))
+ok('20b. loader/selector/QR handlers + FX helper defined', /dpLoadBuyerAccounts\s*=/.test(BUY) && /dpSelectedAccountId\s*=/.test(BUY) && /dpLoadOrderQr\s*=/.test(BUY) && /dpFxInCurrency\s*=/.test(BUY))
+ok('20c. reads selectable-accounts (metadata-only D1 endpoint)', /GET\('\/direct-receive\/selectable-accounts/.test(BUY))
+ok('20d. order QR fetched with Authorization header (owner+ack endpoint; not <img src>)', /direct-pay-qr[\s\S]{0,120}Authorization/.test(BUY.replace(/\n/g, ' ')))
+// app-direct-pay.js net-zero hooks that make the new module reachable
+ok('20e. rail selector renders the account-picker container + carries price data attr', has(DP, 'id="dp-account-picker"') && has(DP, 'data-amt='))
+ok('20f. dpOnRailChange loads buyer accounts when available; clears on switch', has(DP, 'dpLoadBuyerAccounts') && has(DP, "getElementById('dp-account-picker')"))
+ok('20g. order disclosure hydrate reveals QR post-ack (container + call)', has(DP, 'id="dp-order-qr"') && has(DP, 'dpLoadOrderQr'))
+// app.js wiring: price passed to rail selector + account id threaded into POST /orders
+ok('20h. app.js passes price to rail selector', /dpRailSelectorHtml\(prod\.id,\s*prod\.price\)/.test(APP))
+ok('20i. app.js threads direct_receive_account_id into POST /orders (direct_p2p only)', /direct_receive_account_id:\s*\(payment_rail === 'direct_p2p'[\s\S]{0,80}dpSelectedAccountId/.test(APP))
+// non-custodial: buyer module touches no money/state endpoint (reads accounts + order QR only)
+ok('20j. buyer UI touches no wallet/escrow/settle/refund', !/\/wallet|\/escrow|\/settle|\/refund|\/returns/.test(BUYCODE))
+// P1 (multi-qty): per-account FX must reflect ORDER TOTAL (unit × quantity), not unit price
+ok('20k. FX amount uses order total = unit(data-amt) × quantity(#inp-qty), not unit price', /dpAccountTotalUsdc\s*=/.test(BUY) && /getElementById\('inp-qty'\)/.test(BUY) && /unit\s*\*\s*qty/.test(BUY))
+ok('20l. per-account FX renders from the total (dpRenderAccountFx over data-dp-fx-cur)', /dpRenderAccountFx\s*=/.test(BUY) && /data-dp-fx-cur/.test(BUY) && /dpAccountTotalUsdc\(\)/.test(BUY))
+ok('20m. quantity change refreshes the account FX (qtyStep + qtyClamp call dpRenderAccountFx)', (APP.match(/dpRenderAccountFx/g) || []).length >= 2)
+// EN parity for the new copy
+for (const k of ['选择卖家收款方式', '卖家按此收款', '收款明细与二维码将在完成风险确认后显示']) {
+  ok(`20-i18n EN present: ${k.slice(0, 12)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
+}
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)
