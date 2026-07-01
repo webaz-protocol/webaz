@@ -1,0 +1,35 @@
+#!/usr/bin/env tsx
+/**
+ * MCP 模式/统计 诚实化守卫 —— 防"无 key = sandbox"与"硬编码真实用户数"这类描述随代码漂移复发。
+ * 事实源(代码权威):无 WEBAZ_API_KEY → NETWORK 只读(公共读走 webaz.xyz);仅 WEBAZ_MODE=sandbox 才本机沙盒。
+ *   真实用户/规模只由 network_live(实时 /api/protocol-status)反映,不在 MCP 描述里硬编码。
+ * Usage: npm run test:mcp-mode-honesty
+ */
+import { readFileSync } from 'fs'
+
+let pass = 0, fail = 0; const fails: string[] = []
+const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}`) } }
+const R = (p: string): string => readFileSync(p, 'utf8')
+
+const readme = R('README.md')
+const mcp = R('src/mcp.ts')
+const server = R('src/layer1-agent/L1-1-mcp-server/server.ts')
+
+// README:无 key 是 Network 只读默认,不是 sandbox 默认
+ok('README: no-key = Network read-only (default)', /Network read-only \(default/i.test(readme))
+ok('README: does NOT claim "Sandbox (default"', !/Sandbox \(default/i.test(readme))
+ok('README: sandbox is explicit via WEBAZ_MODE=sandbox', /WEBAZ_MODE=sandbox/.test(readme))
+
+// bootstrap 注释:不再说"否则 SANDBOX"
+ok('src/mcp.ts: no "否则 SANDBOX" (no-key is network read-only)', !/否则\s*SANDBOX/i.test(mcp))
+ok('src/mcp.ts: mentions read-only / 只读 for no-key', /只读|read-only/i.test(mcp))
+
+// server 启动 banner:无 key 说的是 NETWORK read-only(权威行为)
+ok('server: no-key banner says NETWORK (read-only)', /NETWORK\s*\(read-only\)|NETWORK(?:.*)?只读/i.test(server))
+
+// network_state:不硬编码 real_users_on_canonical 数字(真值来自 network_live)
+ok('server: no hardcoded real_users_on_canonical in network_state', !/real_users_on_canonical:\s*\d/.test(server))
+ok('server: disclaimer points to network_live (not an absolute prod≈0 claim)', /network_live/.test(server) && !/真实用户≈0|real users?\s*≈\s*0/i.test(server))
+
+if (fail > 0) { console.error(`\n❌ MCP mode/stats honesty FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
+console.log(`✅ MCP mode/stats honesty: no-key = Network read-only (not sandbox) across README + bootstrap + banner · sandbox is explicit · real user count from live network_live, not hardcoded\n  ✅ pass ${pass}`)
