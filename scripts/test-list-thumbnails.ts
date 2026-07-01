@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs'
 const MEDIA = readFileSync('src/pwa/public/app-product-media.js', 'utf8')
 const SHOP = readFileSync('src/pwa/public/app-shop.js', 'utf8')
 const DISCOVER = readFileSync('src/pwa/public/app-discover.js', 'utf8')
+const APPJS = readFileSync('src/pwa/public/app.js', 'utf8')
 const HTML = readFileSync('src/pwa/public/index.html', 'utf8')
 const PKG = readFileSync('package.json', 'utf8')
 const RATCHET = readFileSync('scripts/complexity-ratchet-guard.ts', 'utf8')
@@ -40,6 +41,15 @@ ok('2b. app-shop no longer renders a raw imgs[0] hash', !has(SHOP, 'if (Array.is
 ok('2c. app-shop img has onerror fallback', has(SHOP, `onerror="this.outerHTML='📦'"`))
 ok('2d. app-discover feed card uses window.productThumbSrc', has(DISCOVER, 'window.productThumbSrc(p.images)'))
 ok('2e. app-discover feed img has onerror fallback', has(DISCOVER, `onerror="this.outerHTML='📦'"`))
+
+// 2b (pt.3). app.js personal-list / feed cards routed through the resolver
+ok('2f. buildProductImg delegates to productThumbSrc', has(APPJS, 'const buildProductImg = (images) => window.productThumbSrc'))
+ok('2g. app.js inline cards use the resolver (it.images / prod.images)', has(APPJS, 'window.productThumbSrc(it.images)') && has(APPJS, 'window.productThumbSrc(prod.images)'))
+ok('2h. app.js no longer renders a raw ${img} without escHtml', !has(APPJS, '<img src="${img}"'))
+ok('2i. app.js no leftover inline hash-first resolution (imageUrl = imgs[0])', !has(APPJS, 'imageUrl = imgs[0]'))
+ok('2j. app.js card imgs have onerror → 📦 fallback', has(APPJS, `onerror="this.outerHTML='📦'"`))
+ok('2k. app.js P2P cards route thumbnail_json (aliased p.images) through resolver', has(APPJS, 'window.productThumbSrc(it.thumbnail_json)') && has(APPJS, 'window.productThumbSrc(p.thumbnail_json)'))
+ok('2l. no leftover raw thumb/img = imgs[0] hash render in app.js', !has(APPJS, 'thumb = imgs[0]') && !has(APPJS, 'img = String(imgs[0])'))
 // JSON-LD image (structured data / SEO) is intentionally left on the absolute-URL-only filter — a relative
 // /thumb URL is not appropriate for schema.org image; the visible card fix is the resolver above.
 ok('2f. discover JSON-LD image keeps the absolute-url-only filter (not the relative /thumb)', has(DISCOVER, "filter(s => /^(https?:|\\/|data:)/.test(s))"))

@@ -5558,9 +5558,7 @@ async function renderPromoter(app) {
   const ratioPct = cs.clicks.raw > 0 ? Math.round((cs.clicks.unique / cs.clicks.raw) * 100) : null
   // 我买过的（合并进"我的产品分享"作为商品来源子列表）
   const bought = shareHub.bought_products || []
-  const buildProductImg = (images) => {
-    try { const arr = typeof images === 'string' ? JSON.parse(images) : (images || []); return arr[0] || '' } catch { return '' }
-  }
+  const buildProductImg = (images) => window.productThumbSrc ? window.productThumbSrc(images) : ''
   const renderBoughtRow = (p) => {
     const img = buildProductImg(p.images)
     const rate = Number(p.commission_rate || 0)
@@ -5586,7 +5584,7 @@ async function renderPromoter(app) {
 
     return `
       <div id="bought-${orderId || p.id}" style="display:flex;gap:8px;align-items:center;padding:8px 10px;border:${isHighlight ? '2px solid #4f46e5' : '1px solid #f3f4f6'};border-radius:8px;margin-bottom:6px;background:${isHighlight ? '#eef2ff' : '#fff'}">
-        ${img ? `<img src="${escHtml(img)}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;flex-shrink:0">` : `<div style="width:36px;height:36px;background:#f3f4f6;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">📦</div>`}
+        ${img ? `<img src="${escHtml(img)}" onerror="this.outerHTML='📦'" style="width:36px;height:36px;border-radius:6px;object-fit:cover;flex-shrink:0">` : `<div style="width:36px;height:36px;background:#f3f4f6;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">📦</div>`}
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;font-weight:600;color:#1f2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.title)}</div>
           <div style="font-size:10px;color:#9ca3af;margin-top:1px">
@@ -6448,17 +6446,13 @@ window.lookupAnchorAction = async () => {
   // 商品区块
   const productBlock = (r.product) ? (() => {
     const p = r.product
-    let img = ''
-    try {
-      const imgs = typeof p.images === 'string' ? JSON.parse(p.images) : p.images
-      if (Array.isArray(imgs) && imgs[0]) img = String(imgs[0])
-    } catch {}
+    let img = window.productThumbSrc(p.images)
     const idx = calcIndex(p)
     const idxColor = idx == null ? '#9ca3af' : idx >= 8 ? '#dc2626' : idx >= 6 ? '#f59e0b' : '#6b7280'
     return `
       <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:10px">
         <div style="display:flex;gap:10px;margin-bottom:10px">
-          ${img ? `<img src="${img}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;flex-shrink:0">` : `<div style="width:64px;height:64px;background:#f3f4f6;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;color:#9ca3af;flex-shrink:0">📦</div>`}
+          ${img ? `<img src="${escHtml(img)}" onerror="this.outerHTML='📦'" style="width:64px;height:64px;object-fit:cover;border-radius:6px;flex-shrink:0">` : `<div style="width:64px;height:64px;background:#f3f4f6;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;color:#9ca3af;flex-shrink:0">📦</div>`}
           <div style="flex:1;min-width:0">
             <div style="font-size:14px;font-weight:600;color:#1f2937;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(p.title)}</div>
             <div style="font-size:17px;font-weight:800;color:#dc2626;margin-top:4px">${Number(p.price).toFixed(2)} <span style="font-size:11px;color:#9ca3af;font-weight:500">WAZ</span></div>
@@ -6514,14 +6508,14 @@ async function renderGroupBuysLive(app) {
     ? `<div style="text-align:center;padding:40px;color:#9ca3af"><div style="font-size:48px">👥</div><div style="font-size:13px;margin-top:8px">${t('暂无进行中的团购')}</div></div>`
     : items.map(it => {
         let imageUrl = ''
-        try { const imgs = typeof it.images === 'string' ? JSON.parse(it.images) : it.images; if (Array.isArray(imgs) && imgs[0]) imageUrl = imgs[0] } catch {}
+        imageUrl = window.productThumbSrc(it.images) || imageUrl
         const pct = (Number(it.discount_pct) * 100).toFixed(0)
         const final = (Number(it.original_price) * (1 - Number(it.discount_pct))).toFixed(2)
         const progress = Math.min(100, (Number(it.joined_count) / Number(it.target_count)) * 100)
         return `
           <div class="card" style="padding:12px;margin-bottom:8px;cursor:pointer;border-left:3px solid #16a34a" onclick="location.hash='#group-buy/${it.id}'">
             <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
-              <div style="font-size:32px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(it.category) || '📦'}</div>
+              <div style="font-size:32px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" onerror="this.outerHTML='📦'" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(it.category) || '📦'}</div>
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.product_title)}</div>
                 <div style="font-size:12px;margin-top:2px"><span style="color:#16a34a;font-weight:700">${final}</span> WAZ <span style="font-size:10px;color:#9ca3af;text-decoration:line-through margin-left:4px">${it.original_price}</span> <span style="font-size:10px;color:#16a34a;background:#dcfce7;padding:1px 5px;border-radius:99px;margin-left:4px;font-weight:600">-${pct}%</span></div>
@@ -8065,7 +8059,7 @@ async function renderFollowFeed(app) {
     : items.map(it => {
         const meta = TYPE_META[it.type] || { icon: '·', label: it.type, color: '#6b7280' }
         let imageUrl = ''
-        try { const imgs = typeof it.images === 'string' ? JSON.parse(it.images) : it.images; if (Array.isArray(imgs) && imgs[0]) imageUrl = imgs[0] } catch {}
+        imageUrl = window.productThumbSrc(it.images) || imageUrl
         return `
           <div class="card" style="padding:10px 12px;margin-bottom:8px;cursor:pointer" onclick="location.hash='#order-product/${it.product_id}'">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
@@ -8076,7 +8070,7 @@ async function renderFollowFeed(app) {
               <span style="font-size:10px;color:#9ca3af">${fmtTime(it.ts)}</span>
             </div>
             <div style="display:flex;gap:10px;align-items:center">
-              <div style="font-size:28px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(it.category) || '📦'}</div>
+              <div style="font-size:28px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" onerror="this.outerHTML='📦'" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(it.category) || '📦'}</div>
               <div style="flex:1;min-width:0">
                 <div style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.title)}</div>
                 <div style="font-size:13px;color:#4f46e5;margin-top:2px;font-weight:600">${it.price} WAZ <span style="font-size:11px;color:#9ca3af;font-weight:400">· ${stockBadgeHtml(it)}</span></div>
@@ -10366,11 +10360,11 @@ window.openBuySheet = function(productId) {
     const summary = hasDefault ? buildAddrString(defaultAddr) : ''
     const max = buyMaxFor(prod)
     const variants = state._variants || []
-    const firstImg = (() => { try { const arr = typeof prod.images === 'string' ? JSON.parse(prod.images) : (prod.images || []); return arr[0] || '' } catch { return '' } })()
+    const firstImg = window.productThumbSrc(prod.images)
 
     const html = `
       <div style="display:flex;gap:10px;align-items:center;padding-bottom:12px;border-bottom:1px solid #f3f4f6">
-        ${firstImg ? `<img src="${escHtml(firstImg)}" style="width:64px;height:64px;border-radius:8px;object-fit:cover;flex-shrink:0">` : `<div style="width:64px;height:64px;background:#f3f4f6;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">📦</div>`}
+        ${firstImg ? `<img src="${escHtml(firstImg)}" onerror="this.outerHTML='📦'" style="width:64px;height:64px;border-radius:8px;object-fit:cover;flex-shrink:0">` : `<div style="width:64px;height:64px;background:#f3f4f6;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">📦</div>`}
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(prod.title)}</div>
           <div style="font-size:18px;font-weight:800;color:#dc2626;margin-top:2px">${livePrice} <span style="font-size:11px;font-weight:600">WAZ</span></div>
@@ -22608,10 +22602,10 @@ async function renderP2pBoard(app) {
     <div style="font-size:11px;color:#6b7280;margin-bottom:14px;line-height:1.5">${t('详情存卖家节点 · WebAZ 只锚定哈希 · 客户端验证防作弊')}</div>
     ${items.length === 0 ? `<div style="text-align:center;color:#9ca3af;padding:40px 0">${t('暂无 P2P 商品')}</div>` : items.map(it => {
       let thumb = ''
-      try { const imgs = JSON.parse(it.thumbnail_json || '[]'); thumb = imgs[0] || '' } catch {}
+      thumb = window.productThumbSrc(it.thumbnail_json) || thumb
       return `
       <div class="card" style="padding:12px;margin-bottom:10px;cursor:pointer;display:flex;gap:10px" onclick="location.hash='#p2p-shop/${it.id}'">
-        ${thumb ? `<img src="${escHtml(thumb)}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;flex-shrink:0">` : `<div style="width:80px;height:80px;background:#f3f4f6;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:32px;flex-shrink:0">🌐</div>`}
+        ${thumb ? `<img src="${escHtml(thumb)}" onerror="this.outerHTML='🌐'" style="width:80px;height:80px;object-fit:cover;border-radius:6px;flex-shrink:0">` : `<div style="width:80px;height:80px;background:#f3f4f6;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:32px;flex-shrink:0">🌐</div>`}
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:14px;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.title)}</div>
           <div style="font-size:11px;color:#6b7280;margin-bottom:3px">@${escHtml(it.seller_handle || it.seller_id.slice(0,8))} · ${it.region}</div>
@@ -22712,7 +22706,7 @@ async function renderP2pDetail(app, id) {
   if (r?.error) { document.getElementById('p2p-detail').innerHTML = alert$('error', r.error); return }
   const p = r.product
   let thumb = ''
-  try { const imgs = JSON.parse(p.thumbnail_json || '[]'); thumb = imgs[0] || '' } catch {}
+  thumb = window.productThumbSrc(p.thumbnail_json) || thumb
 
   // 客户端尝试从 peer_endpoint 拉详情并验签
   let verifyStatus = `<span style="color:#9ca3af">${t('未尝试拉取')}</span>`
@@ -22746,7 +22740,7 @@ async function renderP2pDetail(app, id) {
   document.getElementById('p2p-detail').innerHTML = `
     <button class="btn btn-sm" onclick="history.back()" style="background:#f3f4f6;margin-bottom:14px">←</button>
     <div style="display:flex;gap:14px;margin-bottom:14px">
-      ${thumb ? `<img src="${escHtml(thumb)}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;flex-shrink:0">` : ''}
+      ${thumb ? `<img src="${escHtml(thumb)}" onerror="this.outerHTML='🌐'" style="width:120px;height:120px;object-fit:cover;border-radius:8px;flex-shrink:0">` : ''}
       <div style="flex:1">
         <h2 style="font-size:18px;font-weight:700;margin:0 0 4px">${escHtml(p.title)}</h2>
         <div style="font-size:12px;color:#6b7280;margin-bottom:6px">@${escHtml(p.seller_handle || p.seller_id.slice(0,8))} · ${p.region}</div>
