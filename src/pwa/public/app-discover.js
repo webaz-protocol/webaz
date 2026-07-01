@@ -32,7 +32,7 @@ async function renderShop(app, opts = {}) {
             <div class="product-img">${getCategoryIcon(p.category)}</div>
             <div class="product-body">
               <div class="product-name">${escHtml(p.title)}</div>
-              <div class="product-price">${p.price} <span style="font-size:11px;font-weight:400">WAZ</span></div>
+              <div class="product-price">${window.fmtPrice(p.price)}</div>
               <div class="product-seller">${repBadge(p.rep_level)}@${escHtml(p.seller_name)}</div>
             </div>
           </div>`).join('')}
@@ -553,7 +553,7 @@ function renderAgentBuyResultInto(container, res) {
   const bestCard = res.best_product ? `
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px;margin:12px 0">
       <div style="font-weight:600;font-size:14px;margin-bottom:4px">${escHtml(res.best_product.title)}</div>
-      <div style="font-size:18px;font-weight:700;color:#16a34a;margin-bottom:4px">${res.best_product.price} WAZ</div>
+      <div style="font-size:18px;font-weight:700;color:#16a34a;margin-bottom:4px">${window.fmtPrice(res.best_product.price)}</div>
       <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${escHtml(res.best_product.agent_summary || '')}</div>
       ${!res.auto_bought ? `<button class="btn btn-primary btn-sm" style="width:auto" onclick="navigate('#order-product/${res.best_product.id}')">${t('查看并下单')}</button>` : ''}
     </div>` : ''
@@ -571,7 +571,7 @@ function renderAgentBuyResultInto(container, res) {
             <div style="font-size:13px;font-weight:500">${p.url_match ? '🎯 ' : ''}${escHtml(p.title)}</div>
             <div style="font-size:11px;color:#6b7280">${escHtml(p.agent_summary || '')}${p.url_match ? ` · <span style="color:#16a34a">${t('同款商品')}</span>` : ''}</div>
           </div>
-          <div style="font-weight:700;color:#1d4ed8;white-space:nowrap;margin-left:8px">${p.price} WAZ</div>
+          <div style="font-weight:700;color:#1d4ed8;white-space:nowrap;margin-left:8px">${window.fmtPrice(p.price)}</div>
         </div>`).join('')}
     </div>` : ''
   container.innerHTML = `
@@ -675,7 +675,7 @@ function buyResultCardHtml(p) {
           <div style="font-size:14px;font-weight:600;color:#111827;line-height:1.4;margin-bottom:4px">${escHtml(p.title)}${typeBadge}${valueBadgeChip}${lowStockChip}</div>
           <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:4px">
             <span style="font-size:20px;font-weight:700;color:#4f46e5">${p.price}</span>
-            <span style="font-size:11px;color:#6b7280">WAZ</span>
+            <span style="font-size:11px;color:#6b7280" data-usdc-local="${p.price}">USDC${window._fxLocal(p.price) ? ' ≈ ' + window._fxLocal(p.price) : ''}</span>
           </div>
           <div style="font-size:11px;color:#6b7280">
             ${repBadge(p.rep_level)} @${escHtml(p.seller_name)} · ${p.sales_count || 0} ${t('单完成')}
@@ -824,7 +824,7 @@ async function renderDiscover(app) {
             name: nameField,
             url: location.origin + '/#order-product/' + pp.id,
             ...(img ? { image: img } : {}),
-            offers: { '@type': 'Offer', price: pp.price, priceCurrency: pp.currency || 'WAZ' },
+            offers: { '@type': 'Offer', price: pp.price, priceCurrency: 'USDC' },  // machine-readable price matches the USDC display (no human/agent drift); WAZ was simulated
           },
         }
       }),
@@ -945,7 +945,7 @@ function productCardHtml(p, showSales) {
     <div class="product-img">${getCategoryIcon(p.category)}</div>
     <div class="product-body">
       <div class="product-name">${escHtml(p.title)}${typeBadge}</div>
-      <div class="product-price">${p.price} <span style="font-size:11px;font-weight:400">WAZ</span></div>
+      <div class="product-price">${window.fmtPrice(p.price)}</div>
       <div class="product-seller">${t('卖家')}：@${escHtml(p.seller_name)}</div>
       ${p.seller_created_at ? `<div style="font-size:10px;color:#9ca3af;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t('入驻时长')}：${joinDuration(p.seller_created_at)}</div>` : ''}
       ${trust ? `<div style="font-size:10px;color:#6b7280;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${trust}</div>` : ''}
@@ -1062,7 +1062,7 @@ async function renderFeedView() {
     const actor = `<button onclick="toggleFollow('${e.actor_id}', this)" class="feed-actor" style="background:none;border:none;color:#4f46e5;font-weight:600;cursor:pointer;padding:0">${escHtml(e.actor_name || '—')}</button>`
     let body = ''
     if (e.kind === 'purchase') {
-      body = `${actor} ${t('购买了')} <a href="#order-product/${e.product_id}" style="color:#111">${escHtml(e.product_title)}</a> · ${e.price} WAZ`
+      body = `${actor} ${t('购买了')} <a href="#order-product/${e.product_id}" style="color:#111">${escHtml(e.product_title)}</a> · ${window.fmtPrice(e.price)}`
     } else if (e.kind === 'commission') {
       const amount = Number(extra.amount || 0).toFixed(2)
       body = `${actor} ${t('因推广')} <a href="#order-product/${e.product_id}" style="color:#111">${escHtml(e.product_title)}</a> ${t('获得 L')}${extra.level} ${t('佣金')} <strong style="color:#059669">+${amount} WAZ</strong>`
@@ -1111,7 +1111,7 @@ async function renderFeedRanks() {
 
   body.innerHTML = ''
     + miniCard('🔥', t('热门商品'), 'products', products.items || [], (it, r) =>
-        rankLine(r, it.title, `${Number(it.completion_count||0)} ${t('单')} · ${Number(it.recommend_count||0)} ${t('人推荐')} · ${it.price} WAZ`, `#order-product/${it.id}`))
+        rankLine(r, it.title, `${Number(it.completion_count||0)} ${t('单')} · ${Number(it.recommend_count||0)} ${t('人推荐')} · ${window.fmtPrice(it.price)}`, `#order-product/${it.id}`))
     + miniCard('🏪', t('卖家榜'), 'sellers', sellers.items || [], (it, r) =>
         rankLine(r, '@' + (it.handle || it.name || ''), `${it.rating_count > 0 ? '⭐ ' + Number(it.avg_rating).toFixed(1) + ' (' + it.rating_count + ')' : t('暂无评价')} · ${Number(it.orders_count||0)} ${t('单')}`, it.handle ? `#shop/${it.handle}` : ''))
     + miniCard('📣', t('创作者榜'), 'creators', creators.items || [], (it, r) =>
@@ -1176,7 +1176,7 @@ async function renderNewArrivals(app) {
             <div class="product-img">${getCategoryIcon(p.category)}</div>
             <div class="product-body">
               <div class="product-name">${escHtml(p.title)}</div>
-              <div class="product-price">${p.price} <span style="font-size:11px;font-weight:400">WAZ</span></div>
+              <div class="product-price">${window.fmtPrice(p.price)}</div>
               <div class="product-seller">${repBadge(p.rep_level)}@${escHtml(p.seller_name)}</div>
               ${p.trial_quota_remaining > 0
                 ? `<div style="font-size:11px;color:#9333ea;margin-top:4px;font-weight:600">🎁 ${t('测评免单 剩')} ${p.trial_quota_remaining} ${t('名额')}</div>`
@@ -1212,7 +1212,7 @@ async function renderNewArrivalsFeed(app) {
             <div style="font-size:13px;line-height:1.5">
               ${feedActor(p.seller_id, p.seller_name, p.seller_handle)} ${t('上架了')} <strong>${escHtml(p.title)}</strong>
             </div>
-            <div style="font-size:11px;color:#9ca3af;margin-top:4px">${p.price} WAZ · ${ts}</div>
+            <div style="font-size:11px;color:#9ca3af;margin-top:4px">${window.fmtPrice(p.price)} · ${ts}</div>
           </div>
         </div>`
       }).join('')
@@ -1249,7 +1249,7 @@ function renderSearchResults(products, banner, q) {
             <div class="product-img">${getCategoryIcon(p.category)}</div>
             <div class="product-body">
               <div class="product-name">${escHtml(p.title)}</div>
-              <div class="product-price">${p.price} WAZ</div>
+              <div class="product-price">${window.fmtPrice(p.price)}</div>
               <div class="product-seller">${repBadge(p.rep_level)}@${escHtml(p.seller_name)}</div>
             </div>
           </div>`).join('')}
