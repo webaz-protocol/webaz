@@ -96,7 +96,9 @@ export function addAccount(
   return { ok: true, account: { id, seller_id: sellerId, status: 'active', ...v } }
 }
 
-/** owner-scoped 更新(仅该 seller 拥有的行)。返回是否有行被改。 */
+/** owner-scoped 文本字段更新(仅该 seller 拥有的行)。返回是否有行被改。
+ *  ⚠️ 【绝不】碰 qr_image_ref —— 收款码生命周期【只】由 storeQrImage(/qr 端点)管理。
+ *  否则卖家改一次收款说明/标签/币种就会把已上传的 QR 解绑(qr_image_ref→null),核心功能掉链子。 */
 export function updateAccount(
   db: Database.Database, id: string, sellerId: string, input: AccountInput,
 ): { ok: true; changed: boolean } | { ok: false; reason: string } {
@@ -104,8 +106,8 @@ export function updateAccount(
   if (!norm.ok) return norm
   const v = norm.value
   const info = db.prepare(
-    `UPDATE direct_receive_accounts SET method = ?, currency = ?, instruction = ?, label = ?, qr_image_ref = ?, updated_at = datetime('now') WHERE id = ? AND seller_id = ?`,
-  ).run(v.method, v.currency, v.instruction, v.label, v.qr_image_ref, id, sellerId)
+    `UPDATE direct_receive_accounts SET method = ?, currency = ?, instruction = ?, label = ?, updated_at = datetime('now') WHERE id = ? AND seller_id = ?`,
+  ).run(v.method, v.currency, v.instruction, v.label, id, sellerId)
   return { ok: true, changed: info.changes > 0 }
 }
 

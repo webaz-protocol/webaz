@@ -104,8 +104,25 @@ try {
   ok('7d. non-owner qr read → 404', (await call('GET', `/api/direct-receive/accounts/${acc1}/qr`, 's2')).status === 404)
   ok('7e. nonexistent account → 404', (await call('GET', '/api/direct-receive/accounts/nope/qr', 's1')).status === 404)
 
+  // P2-1 regression: a text-field update must NOT clobber an uploaded qr_image_ref (QR lifecycle owned only by /qr)
+  const refBefore = (db.prepare('SELECT qr_image_ref FROM direct_receive_accounts WHERE id = ?').get(acc1) as { qr_image_ref: string | null }).qr_image_ref
+  ok('P2-1a. QR ref is set before text update', !!refBefore)
+  const upd = await call('PUT', `/api/direct-receive/accounts/${acc1}`, 's1', { instruction: 'Kasikorn 555 (edited)', label: 'main', webauthn_token: tok({ action: 'update', account_id: acc1 }) })
+  const refAfter = (db.prepare('SELECT qr_image_ref FROM direct_receive_accounts WHERE id = ?').get(acc1) as { qr_image_ref: string | null }).qr_image_ref
+  ok('P2-1b. text update ok', upd.json?.ok === true)
+  ok('P2-1c. text update PRESERVES qr_image_ref (not clobbered to null)', refAfter === refBefore && refAfter != null)
+  ok('P2-1d. QR still served after text update', (await call('GET', `/api/direct-receive/accounts/${acc1}/qr`, 's1')).status === 200)
+
+  // P2-2 regression: two sellers upload identical bytes → each reads their OWN QR (no "upload ok but preview 404")
+  const acc2 = (await call('POST', '/api/direct-receive/accounts', 's2', { instruction: 'GCash 000', webauthn_token: tok({ action: 'add' }) })).json.account.id
+  const shared = pngDataUri('SHARED-QR-BYTES')
+  const s1up = await call('PUT', `/api/direct-receive/accounts/${acc1}/qr`, 's1', { qr_data_uri: shared, webauthn_token: tok({ action: 'qr', account_id: acc1 }) })
+  const s2up = await call('PUT', `/api/direct-receive/accounts/${acc2}/qr`, 's2', { qr_data_uri: shared, webauthn_token: tok({ action: 'qr', account_id: acc2 }) })
+  ok('P2-2a. identical bytes → identical content ref (per-seller rows)', s1up.json?.qr_image_ref && s1up.json.qr_image_ref === s2up.json?.qr_image_ref)
+  ok('P2-2b. seller1 reads own shared-bytes QR → 200', (await call('GET', `/api/direct-receive/accounts/${acc1}/qr`, 's1')).status === 200)
+  ok('P2-2c. seller2 reads own shared-bytes QR → 200 (not 404)', (await call('GET', `/api/direct-receive/accounts/${acc2}/qr`, 's2')).status === 200)
+
   // 8. update + deactivate (owner, Passkey)
-  ok('8a. owner update ok', (await call('PUT', `/api/direct-receive/accounts/${acc1}`, 's1', { instruction: 'Kasikorn 999', webauthn_token: tok({ action: 'update', account_id: acc1 }) })).json?.ok === true)
   ok('8b. owner deactivate ok + list active shrinks', (await call('DELETE', `/api/direct-receive/accounts/${acc1}`, 's1', { webauthn_token: tok({ action: 'deactivate', account_id: acc1 }) })).json?.changed === true)
 
   // 9. audit append-only, NO raw instruction / raw QR stored
