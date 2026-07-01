@@ -239,6 +239,23 @@ export function initDatabase(): Database.Database {
       updated_at   TEXT DEFAULT (datetime('now'))
     );
 
+    -- 直付多收款账号(direct_receive_accounts,Phase B):卖家可维护【多个】收款方式,每个自带币种 + 可选二维码图。
+    -- ⚠️ 与单条 payment_instruction 同性质:WebAZ 只【存储 + 展示】卖家自填内容,【绝不】验证/路由/托管/判断币种,
+    --   也不解析二维码。currency 仅供买家侧换算展示(FX 支持才显 ≈本地);qr_image_ref 指向硬化图片端点(Phase C)。
+    --   多行模型:一个 seller 可有【多个】active(买家下单自选其一),与单 instruction 的"至多一条 active"不同。
+    CREATE TABLE IF NOT EXISTS direct_receive_accounts (
+      id            TEXT PRIMARY KEY,
+      seller_id     TEXT NOT NULL REFERENCES users(id),
+      method        TEXT,                          -- 收款方式名(卖家自填,如 PayNow / GCash / PromptPay / Bank)
+      currency      TEXT,                          -- 该账号结算币种(卖家声明;买家侧按此换算,FX 支持则显 ≈本地)
+      instruction   TEXT NOT NULL,                 -- 展示给买家的收款明细(账号 / 钱包 ID / 链接;WebAZ 不解析)
+      label         TEXT,                          -- 可选短标签
+      qr_image_ref  TEXT,                          -- 可选收款二维码图片引用(Phase C 填;硬化端点服务,绝不解析)
+      status        TEXT NOT NULL DEFAULT 'active',-- active | inactive
+      created_at    TEXT DEFAULT (datetime('now')),
+      updated_at    TEXT DEFAULT (datetime('now'))
+    );
+
     -- 缓交(deferred-deposit)申请;审批=真人(RISK),绝不自动;缓交期配额压低,绝不零威慑。
     CREATE TABLE IF NOT EXISTS direct_receive_deferrals (
       id                   TEXT PRIMARY KEY,
