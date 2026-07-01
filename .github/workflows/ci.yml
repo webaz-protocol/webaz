@@ -717,6 +717,7 @@ jobs:
       - run: npm run test:create-kinds
       - run: npm run test:secondhand-photo-authenticity
       - run: npm run test:secondhand-detail-alignment
+      - run: npm run test:order-status-timeline-i18n
       - run: npm run check:i18n-dup
       - run: npm run test:i18n-dup-gate
       - run: npm run test:merchant-bond

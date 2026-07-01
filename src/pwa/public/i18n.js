@@ -3702,6 +3702,8 @@ const _EN = {
   'Agent 工具':                        'Agent tools',
   '搜索 / 下单':                       'Search / order',
   '待付款':                            'To pay',
+  '直付待付款':                        'Direct pay · to pay',
+  '直付超时未确认':                    'Direct pay · timed out',
   '待收货':                            'To receive',
   '全部完成':                          'All done',
   '个争议待处理':                      'disputes pending',
