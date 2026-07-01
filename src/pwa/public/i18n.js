@@ -6029,6 +6029,7 @@ const _EN = {
   '商品图片(至少 1 张)':               'Product image (at least 1)',
   '商品图片':                          'Product image',
   '分类':                              'Category',
+  '商品类型': 'Product type',
   '退货天数(>0)':                      'Return days (>0)',
   '备货时效':                          'Handling time',
   '配送范围':                          'Ship regions',
