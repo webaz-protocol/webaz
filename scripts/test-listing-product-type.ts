@@ -37,5 +37,19 @@ ok('4a. products-create validates product_type against VALID_PRODUCT_TYPES', /VA
 const setDef = /VALID_PRODUCT_TYPES = new Set\(\[([^\]]*)\]\)/.exec(SERVER)?.[1] || ''
 for (const v of ['retail', 'wholesale', 'service', 'digital']) ok(`4b. VALID_PRODUCT_TYPES set has ${v}`, setDef.includes(`'${v}'`))
 
-if (fail > 0) { console.error(`\n❌ listing product-type selector FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-console.log(`✅ listing product-type selector: UI select → doAddProduct → payload → backend enum, bilingual\n  ✅ pass ${pass}`)
+// 5. brand / model in create form (backend already inserted them; this wires the UI)
+ok('5a. brand/model inputs present', has(APP, 'id="prd-brand"') && has(APP, 'id="prd-model"'))
+ok('5b. doAddProduct reads brand/model', has(APP, "document.getElementById('prd-brand')?.value") && has(APP, "document.getElementById('prd-model')?.value"))
+ok('5c. payload includes brand, model', has(APP, 'product_type: productType, brand, model,'))
+for (const k of ['品牌', '型号']) ok(`5d. i18n EN entry: ${k}`, has(I18N, `'${k}':`))
+
+// 6. low-stock threshold + auto-delist in create form (UI + backend create-route insert)
+ok('6a. low-stock inputs present', has(APP, 'id="prd-low-stock"') && has(APP, 'id="prd-auto-delist"'))
+ok('6b. doAddProduct reads low-stock/auto-delist (default 3 / checked)', has(APP, "Number(document.getElementById('prd-low-stock')?.value) || 3") && has(APP, "document.getElementById('prd-auto-delist')?.checked ? 1 : 0"))
+ok('6c. payload includes low_stock_threshold + auto_delist_on_zero', has(APP, 'low_stock_threshold: lowStock, auto_delist_on_zero: autoDelist,'))
+ok('6d. create route destructures low_stock_threshold/auto_delist_on_zero', /low_stock_threshold = 3, auto_delist_on_zero = 1,/.test(CREATE))
+ok('6e. create INSERT columns include low_stock_threshold + auto_delist_on_zero', /low_stock_threshold, auto_delist_on_zero,/.test(CREATE))
+for (const k of ['低库存阈值', '售罄自动下架']) ok(`6f. i18n EN entry: ${k}`, has(I18N, `'${k}':`))
+
+if (fail > 0) { console.error(`\n❌ listing create-form contract FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
+console.log(`✅ listing create form: product-type selector + brand/model + low-stock/auto-delist wired UI→payload→backend, bilingual\n  ✅ pass ${pass}`)

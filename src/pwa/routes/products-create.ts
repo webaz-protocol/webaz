@@ -71,6 +71,7 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
       weight_kg, ship_regions = '全国', handling_hours = 24,
       estimated_days, fragile = 0,
       return_days = 7, return_condition = '', warranty_days = 0,
+      low_stock_threshold = 3, auto_delist_on_zero = 1,
       commission_rate,
       product_type = 'retail',   // 里程碑 6
       aliases = [],              // 里程碑 7.2：上架时同步声明的 alias 集合
@@ -134,14 +135,16 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
       specs, brand, model, source_url, source_price, source_price_at,
       weight_kg, ship_regions, handling_hours, estimated_days, fragile,
       return_days, return_condition, warranty_days,
+      low_stock_threshold, auto_delist_on_zero,
       commitment_hash, description_hash, price_hash, hashed_at,
       commission_rate, product_type, images
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
       id, user.id, title, description, priceNum, Number(stock), category, stakeAmount,
       specsJson, brand ?? null, model ?? null,
       source_url ?? null, source_price ? Number(source_price) : null, source_price ? now : null,
       weight_kg ? Number(weight_kg) : null, ship_regions, Number(handling_hours), estJson, fragile ? 1 : 0,
       Number(return_days), return_condition, Number(warranty_days),
+      Number(low_stock_threshold), auto_delist_on_zero ? 1 : 0,
       makeCommitmentHash(pFields), makeDescriptionHash({ title, description, specs: specsJson }),
       makePriceHash(priceNum, now), now,
       commissionRateNum, product_type, imagesJsonForInsert
