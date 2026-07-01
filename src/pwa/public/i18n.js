@@ -6053,8 +6053,8 @@ const _EN = {
   '英文标题(跨境)':                    'English title (cross-border)',
 
   // ── #1047 pre-launch 横幅 ────────────────────────────────────
-  '协议尚未公开上线 · 数据为测试 / demo · 请勿据此投资或承诺第三方':
-    'Pre-launch protocol · data is test / demo only · do not use for investment or third-party commitments',
+  '预发布测试阶段(邀请制)· 托管为模拟测试资金、非真实结算 · 价格按 USDC 计价仅供展示 · 请勿据此投资或向第三方承诺':
+    'Pre-launch test phase (invite-only) · escrow uses simulated test funds, not real settlement · USDC prices are display units only · do not invest or make third-party commitments based on this',
   '详情': 'Details',
 
   // ── Agent 护照 Phase 4 签名导出 ──────────────────────────────
