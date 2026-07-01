@@ -99,6 +99,7 @@
     "test:secondhand-photo-authenticity": "tsx scripts/test-secondhand-photo-authenticity.ts",
     "test:secondhand-detail-alignment": "tsx scripts/test-secondhand-detail-alignment.ts",
     "test:order-status-timeline-i18n": "tsx scripts/test-order-status-timeline-i18n.ts",
+    "test:leaderboard-nav-handle": "tsx scripts/test-leaderboard-nav-handle.ts",
     "test:rewards-vs-contribution-copy": "tsx scripts/test-rewards-vs-contribution-copy.ts",
     "test:invite-code-narrowing": "tsx scripts/test-invite-code-narrowing.ts",
     "test:shop-referral-attribution": "tsx scripts/test-shop-referral-attribution.ts",

@@ -22547,7 +22547,7 @@ async function renderLeaderboard(app) {
         <div style="text-align:right;font-size:12px;font-weight:700;color:#4f46e5">${Number(p.rank_score).toFixed(1)}</div>
       </div>
     `).join('') : items.map((c, i) => `
-      <div class="card" style="padding:12px;margin-bottom:8px;display:flex;gap:10px;align-items:center;cursor:pointer" onclick="location.hash='#u/${c.id}'">
+      <div class="card" style="padding:12px;margin-bottom:8px;display:flex;gap:10px;align-items:center;${c.handle ? 'cursor:pointer' : ''}" ${c.handle ? `onclick="location.hash='#u/${c.handle}'"` : ''}>
         <div style="font-size:24px;font-weight:800;color:${i<3?'#dc2626':'#9ca3af'};min-width:32px;text-align:center">${i+1}</div>
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:14px">@${escHtml(c.handle || c.name?.slice(0,8) || '?')}${c.region ? ' · ' + regionLabel(c.region) : ''}</div>

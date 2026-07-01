@@ -35,15 +35,15 @@ export interface LeaderboardDeps {
 // cap rate-limits; emitting them here would be a free enumeration seed-list), account-structure
 // metadata (keys_count), or behavior-fingerprint integers (calls_30d). ALLOWLIST, not denylist,
 // so a future SELECT column can't silently ride to the public surface. Canonical user id (usr_xxx)
-// is the keyed input the #1043 cross-user-read cap rate-limits, so it is DROPPED from boards that
-// don't need it for the UI (agents/buyers/sellers/arbitrators/verifiers — the seller card links via
-// handle, which #shop/:identifier accepts). It is KEPT on `creators` ONLY because that card navigates
-// #u/${id} and #u/ handle-routing isn't in place yet (dropping it there = deferred follow-up that
-// first adds handle resolution to #u/). Product boards keep `id` — a public PRODUCT id, not a user id.
+// is the keyed input the #1043 cross-user-read cap rate-limits, so it is DROPPED from every user
+// board (agents/buyers/sellers/arbitrators/verifiers/creators). All user cards navigate via the
+// public handle — #shop/:identifier and #u/:user_id both resolve a handle (users-public.ts
+// resolveUserId: usr_xxx / permanent_code / @handle). Product boards keep `id` — a public PRODUCT
+// id, not a user id.
 export const BOARD_ALLOWLIST: Record<string, string[]> = {
   products:       ['id', 'title', 'price', 'total_likes', 'completion_count', 'seller_handle', 'seller_name', 'recommend_count', 'rank_score'],
   value_products: ['id', 'title', 'price', 'category', 'value_badge_rank', 'value_badge_pct', 'value_badge_at', 'completion_count', 'total_likes', 'seller_handle', 'seller_name'],
-  creators:       ['id', 'handle', 'name', 'region', 'products_shared', 'shareable_count', 'total_likes', 'total_clicks'],  // id kept: card navs #u/${id} (handle-routing for #u/ = follow-up)
+  creators:       ['handle', 'name', 'region', 'products_shared', 'shareable_count', 'total_likes', 'total_clicks'],  // no id — card navs #u/${handle} (#u/ resolves handle)
   buyers:         ['handle', 'name', 'region', 'orders_count'],
   sellers:        ['handle', 'name', 'region', 'orders_count', 'avg_rating', 'rating_count'],   // no id — card navs via handle (#shop accepts it)
   agents:         ['handle', 'name', 'trust_score', 'level', 'activity'],   // NO id / keys_count / calls_30d
