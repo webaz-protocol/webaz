@@ -114,6 +114,7 @@
     "test:i18n-labels": "tsx scripts/test-i18n-discover-dispute-labels.ts",
     "test:listing-product-type": "tsx scripts/test-listing-product-type.ts",
     "test:external-links": "tsx scripts/test-product-external-links.ts",
+    "test:thumb-endpoint": "tsx scripts/test-product-thumb-endpoint.ts",
     "check:i18n-dup": "tsx scripts/check-i18n-no-dup-keys.ts",
     "test:i18n-dup-gate": "tsx scripts/test-i18n-dup-gate.ts",
     "test:merchant-bond": "tsx scripts/test-merchant-bond-domain.ts",
