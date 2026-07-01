@@ -398,10 +398,10 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/manifest` |  |  |  | src/pwa/routes/public-utils.ts:463 |
 | POST | `/api/manifests` | 🔐 |  |  | src/pwa/routes/manifests.ts:52 |
 | GET | `/api/manifests/:hash` | 🔐 |  |  | src/pwa/routes/manifests.ts:101 |
-| PATCH | `/api/manifests/:hash/takedown` | 🔐 |  |  | src/pwa/routes/manifests.ts:160 |
-| GET | `/api/manifests/:hash/thumb` |  |  | Only the low-res thumbnail is exposed (never full-res / metadata / other columns | src/pwa/routes/manifests.ts:121 |
-| GET | `/api/manifests/by-anchor/:anchor` | 🔐 |  |  | src/pwa/routes/manifests.ts:149 |
-| GET | `/api/manifests/by-product/:pid` | 🔐 |  |  | src/pwa/routes/manifests.ts:138 |
+| PATCH | `/api/manifests/:hash/takedown` | 🔐 |  |  | src/pwa/routes/manifests.ts:162 |
+| GET | `/api/manifests/:hash/thumb` |  |  | Only the low-res thumbnail is exposed (never full-res / metadata / other columns | src/pwa/routes/manifests.ts:123 |
+| GET | `/api/manifests/by-anchor/:anchor` | 🔐 |  |  | src/pwa/routes/manifests.ts:151 |
+| GET | `/api/manifests/by-product/:pid` | 🔐 |  |  | src/pwa/routes/manifests.ts:140 |
 | GET | `/api/manifests/me` | 🔐 |  |  | src/pwa/routes/manifests.ts:90 |
 | POST | `/api/mcp-telemetry` |  |  |  | src/pwa/routes/public-utils.ts:73 |
 | GET | `/api/me` | 🔐 |  |  | src/pwa/routes/auth-read.ts:29 |

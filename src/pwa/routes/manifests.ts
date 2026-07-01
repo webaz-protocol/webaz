@@ -116,7 +116,9 @@ export function registerManifestsRoutes(app: Application, deps: ManifestsDeps): 
   //   - only status='active' manifests
   //   - the stored data-URI must match the raster whitelist (jpeg/png/webp) — else 404 (no svg/text/html)
   //   - Content-Type is FORCED from the whitelisted subtype (never echoed from the stored value) + nosniff
-  //   - size guard; hash-addressed ⇒ immutable long cache (CDN/browser serve; origin rarely hit)
+  //   - size guard; SHORT revalidatable cache (max-age=300, must-revalidate) — NOT immutable: the content is
+  //     hash-fixed but its serve-ability is not (owner/admin takedown flips status), so a long cache would
+  //     keep serving a taken-down thumbnail. 5-min TTL absorbs list bursts while honoring takedown promptly.
   //   Only the low-res thumbnail is exposed (never full-res / metadata / other columns).
   app.get('/api/manifests/:hash/thumb', async (req, res) => {
     const hash = String(req.params.hash || '')
@@ -131,7 +133,7 @@ export function registerManifestsRoutes(app: Application, deps: ManifestsDeps): 
     if (buf.length === 0 || buf.length > 64 * 1024) return void res.status(404).end()
     res.setHeader('Content-Type', `image/${parsed[1]}`)
     res.setHeader('X-Content-Type-Options', 'nosniff')
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+    res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate')
     res.send(buf)
   })
 

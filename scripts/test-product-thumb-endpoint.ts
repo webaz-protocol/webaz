@@ -38,7 +38,7 @@ ok('2c. active-only', blk.includes("status !== 'active'"))
 ok('2d. whitelist applied to stored value', blk.includes('THUMB_DATA_URI_RE.exec(m.thumbnail_data_uri)'))
 ok('2e. Content-Type FORCED from parsed subtype (not echoed)', blk.includes('`image/${parsed[1]}`'))
 ok('2f. X-Content-Type-Options: nosniff', blk.includes("'X-Content-Type-Options', 'nosniff'"))
-ok('2g. immutable long cache', blk.includes('max-age=31536000, immutable'))
+ok('2g. short revalidatable cache — NOT long/immutable (honors takedown)', blk.includes('max-age=300') && blk.includes('must-revalidate') && !blk.includes('immutable') && !blk.includes('31536000'))
 ok('2h. size guard', /buf\.length > 64 \* 1024/.test(blk))
 ok('2i. only thumbnail column selected (no full-res/metadata leak)', blk.includes('SELECT thumbnail_data_uri, status FROM manifest_registry'))
 
@@ -46,4 +46,4 @@ ok('2i. only thumbnail column selected (no full-res/metadata leak)', blk.include
 ok('3. publish rejects non-whitelisted thumbnail_data_uri', /!THUMB_DATA_URI_RE\.test\(thumbnail_data_uri\)/.test(M))
 
 if (fail > 0) { console.error(`\n❌ product thumb endpoint FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-console.log(`✅ product thumb endpoint: public raster-only, forced content-type + nosniff, active-only, size/format/hash guards, immutable cache\n  ✅ pass ${pass}`)
+console.log(`✅ product thumb endpoint: public raster-only, forced content-type + nosniff, active-only, size/format/hash guards, short revalidatable cache\n  ✅ pass ${pass}`)
