@@ -12,6 +12,7 @@ import type Database from 'better-sqlite3'
 import { listSellerAccounts, getAccount, addAccount, updateAccount, deactivateAccount, listSellerAccountOptions } from '../../direct-receive-accounts.js'
 import { storeQrImage, getQrImageForOwner, appendAccountEvent } from '../../direct-receive-account-qr.js'
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'
+import { dbOne } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam(route 层读走 async 口)
 
 export interface DirectReceiveAccountsDeps {
   db: Database.Database
@@ -62,11 +63,11 @@ export function registerDirectReceiveAccountsRoutes(app: Application, deps: Dire
 
   // ── buyer-facing:某商品卖家的【可选收款账号】(结算前选"怎么付")。任意登录用户可读;字面路径,不与 /accounts/:id 冲突。
   //   ⚠️ 只下发元数据 method/currency/label —— instruction 原文与 QR 受披露门保护,D1/D2 ack 后才随订单快照给买家。
-  app.get('/api/direct-receive/selectable-accounts', (req, res) => {
+  app.get('/api/direct-receive/selectable-accounts', async (req, res) => {
     const user = auth(req, res); if (!user) return
     const productId = String(req.query.product_id || '')
     if (!productId) return void res.status(400).json({ error: '缺少 product_id', error_code: 'PRODUCT_ID_REQUIRED' })
-    const product = db.prepare('SELECT seller_id, status FROM products WHERE id = ?').get(productId) as { seller_id: string; status: string } | undefined
+    const product = await dbOne<{ seller_id: string; status: string }>('SELECT seller_id, status FROM products WHERE id = ?', [productId])
     if (!product || product.status === 'deleted') return void res.status(404).json({ error: '商品不存在', error_code: 'PRODUCT_NOT_FOUND' })
     res.json({ options: listSellerAccountOptions(db, product.seller_id) })
   })

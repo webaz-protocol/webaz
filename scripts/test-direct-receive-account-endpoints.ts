@@ -15,6 +15,7 @@ import express, { type Request, type Response } from 'express'
 import type { AddressInfo } from 'node:net'
 
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
+const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')  // RFC-016 seam: point dbOne at the test handle
 const { registerDirectReceiveAccountsRoutes } = await import('../src/pwa/routes/direct-receive-accounts.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -22,6 +23,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 let _n = 0; const generateId = (p: string): string => `${p}_${++_n}`
 
 const db = initDatabase()
+setSeamDb(db)
 db.pragma('foreign_keys = OFF')
 for (const [u, role] of [['s1', 'seller'], ['s2', 'seller'], ['b1', 'buyer']] as const) db.prepare('INSERT INTO users (id,name,role,api_key) VALUES (?,?,?,?)').run(u, u, role, 'k_' + u)
 // s1 + s2 have a Passkey; the guard hard-rejects users without one. (webauthn_credentials is a runtime-helper table, not in initDatabase — create it here.)
