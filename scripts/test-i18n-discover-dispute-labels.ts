@@ -137,5 +137,10 @@ ok('11b. pseudo-tool render t()-wrapped + EN', has(AI, "${escHtml(t(s.tool))}") 
 ok('11c. demo prompt t()-wrapped (data-prompt + preview)', has(AI, 'data-prompt="${escAttr(t(d.prompt))}"') && has(AI, "escHtml(t(d.prompt).slice(0, 80))"))
 ok('11d. demo prompt EN present', has(I18N, "'我在上海，找耳机预算 300 WAZ 以内，希望能 24h 内收到，备货时间短的优先。':"))
 
+// ── 12. direct-pay readiness copy: after direct_pay.enabled flip, drop the stale "仍未上线" but KEEP the
+//       still-true caveat (base-bond rail fail-closed → completing items ≠ immediately usable). ──
+ok('12. readiness subtitle phased-open, no stale "仍未上线", keeps "不代表立即可用"',
+  has(I18N, "'以上为你的直付开通进度;直付按轨道分阶段开放,完成可行动项不代表立即可用。':") && !has(I18N, '直付当前仍未上线'))
+
 if (fail > 0) { console.error(`\n❌ i18n discover/dispute labels FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ i18n discover/dispute labels: discover chips + RULING_LABELS/EVIDENCE_TYPE_LABELS render sites t()-wrapped (no shadowed t), EN parity present\n  ✅ pass ${pass}`)
