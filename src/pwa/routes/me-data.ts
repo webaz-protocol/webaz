@@ -15,6 +15,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { redactUnackedDirectPayTarget } from '../direct-pay-order-redaction.js'  // 披露门:自导出的 orders 也不得旁路
 
 export interface MeDataDeps {
   db: Database.Database
@@ -22,8 +23,8 @@ export interface MeDataDeps {
 }
 
 export function registerMeDataRoutes(app: Application, deps: MeDataDeps): void {
-  // db 已全量走 RFC-016 异步 seam(dbOne/dbAll),不再直接用 deps.db
-  const { auth } = deps
+  // db 走 RFC-016 异步 seam(dbOne/dbAll);deps.db 仅供披露门(requireBothDisclosuresAcked 是同步 gate)
+  const { auth, db } = deps
 
   // COP 飞轮: 完成订单 7d 引导发笔记
   app.get('/api/me/note-prompts', async (req, res) => {
@@ -77,6 +78,7 @@ export function registerMeDataRoutes(app: Application, deps: MeDataDeps): void {
       data.profile = await dbOne(`SELECT id, name, handle, role, region, bio, search_anchor, email, phone, permanent_code, created_at, reputation FROM users WHERE id = ?`, [uid])
       data.wallet = await dbOne(`SELECT balance, staked, escrowed, earned FROM wallets WHERE user_id = ?`, [uid])
       data.orders = await dbAll(`SELECT * FROM orders WHERE buyer_id = ? OR seller_id = ? ORDER BY created_at DESC LIMIT 1000`, [uid, uid])
+      for (const o of data.orders as Array<Record<string, unknown>>) redactUnackedDirectPayTarget(db, o, uid)  // 披露门:自导出也不得在 D1/D2 ack 前泄露 direct_p2p 收款目标(JSON + CSV 同源)
       data.shareables = await dbAll(`SELECT * FROM shareables WHERE owner_id = ? AND status != 'removed'`, [uid])
       data.bookmarks = await dbAll(`SELECT b.*, s.title FROM shareable_bookmarks b LEFT JOIN shareables s ON s.id = b.shareable_id WHERE b.user_id = ?`, [uid])
       data.likes = await dbAll(`SELECT l.*, s.title FROM shareable_likes l LEFT JOIN shareables s ON s.id = l.shareable_id WHERE l.user_id = ?`, [uid])
