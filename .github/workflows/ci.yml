@@ -714,6 +714,7 @@ jobs:
       - run: npm run test:external-links
       - run: npm run test:thumb-endpoint
       - run: npm run test:list-thumbnails
+      - run: npm run test:create-kinds
       - run: npm run check:i18n-dup
       - run: npm run test:i18n-dup-gate
       - run: npm run test:merchant-bond
