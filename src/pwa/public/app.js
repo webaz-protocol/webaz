@@ -15738,7 +15738,7 @@ async function renderSeller(app) {
           <div class="form-group" style="flex:1"><label class="form-label">${t('备货时间（小时）')}</label>
             <input class="form-control" id="prd-handling" type="number" value="24" min="1"></div>
         </div>
-
+        <div style="display:flex;gap:12px"><div class="form-group" style="flex:1"><label class="form-label">${t('品牌')}</label><input class="form-control" id="prd-brand"></div><div class="form-group" style="flex:1"><label class="form-label">${t('型号')}</label><input class="form-control" id="prd-model"></div></div>
         <details style="margin-bottom:16px">
           <summary style="font-size:13px;color:#6b7280;cursor:pointer;padding:4px 0">${t('售后与物流（填写越完整，Agent 越优先选择你）')}</summary>
           <div style="margin-top:12px;display:flex;gap:12px">
@@ -15758,7 +15758,7 @@ async function renderSeller(app) {
             <label for="prd-fragile" style="font-size:13px">${t('易碎品，需特殊包装')}</label>
           </div>
         </details>
-
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px"><label class="form-label" style="margin:0;font-size:13px">${t('低库存阈值')}</label><input class="form-control" id="prd-low-stock" type="number" value="3" min="0" style="width:90px"><input type="checkbox" id="prd-auto-delist" checked style="width:16px;height:16px"><label for="prd-auto-delist" style="font-size:13px">${t('售罄自动下架')}</label></div>
         <!-- 2026-05-24 #981：测评免单 (Trial Review Refund) -->
         <details style="margin-bottom:16px" id="prd-trial-section">
           <summary style="font-size:13px;color:#9333ea;cursor:pointer;padding:6px 0;font-weight:600">🎁 ${t('测评免单（新品冷启动）')} <span style="font-size:11px;color:#9ca3af;font-weight:400">${t('（买家原价下单 → 笔记达 reach 阈值后系统自动退款）')}</span></summary>
@@ -16129,8 +16129,8 @@ window.doAddProduct = async () => {
 
   if (!title || !desc || !price) { msgEl.innerHTML = alert$('error', t('请填写商品名、描述、价格')); return }
 
-  const extTitle = (document.getElementById('prd-ext-title')?.value || '').trim()
-  const commissionPct = Number(document.getElementById('prd-commission')?.value || 10)
+  const extTitle = (document.getElementById('prd-ext-title')?.value || '').trim(); const brand = (document.getElementById('prd-brand')?.value || '').trim(); const model = (document.getElementById('prd-model')?.value || '').trim()
+  const commissionPct = Number(document.getElementById('prd-commission')?.value || 10); const lowStock = document.getElementById('prd-low-stock')?.value; const autoDelist = document.getElementById('prd-auto-delist')?.checked ? 1 : 0
   if (!(commissionPct >= 1 && commissionPct <= 50)) {
     msgEl.innerHTML = alert$('error', t('佣金比例需在 1%-50% 之间')); return
   }
@@ -16138,7 +16138,7 @@ window.doAddProduct = async () => {
   const checkedAliases = Array.from(document.querySelectorAll('#prd-alias-candidates input[type="checkbox"]:checked'))
     .map(cb => ({ type: cb.dataset.type, value: cb.dataset.value }))
   const payload = {
-    title, description: desc, price, stock, category, product_type: productType,
+    title, description: desc, price, stock, category, product_type: productType, brand, model,
     specs: parseSpecs(document.getElementById('prd-specs').value),
     handling_hours: Number(document.getElementById('prd-handling').value) || 24,
     ship_regions: document.getElementById('prd-ship-regions').value.trim() || '全国',
@@ -16146,7 +16146,7 @@ window.doAddProduct = async () => {
     return_days: Number(document.getElementById('prd-return').value) ?? 7,
     return_condition: document.getElementById('prd-return-cond').value.trim(),
     warranty_days: Number(document.getElementById('prd-warranty').value) ?? 0,
-    fragile: document.getElementById('prd-fragile').checked ? 1 : 0,
+    fragile: document.getElementById('prd-fragile').checked ? 1 : 0, low_stock_threshold: lowStock === '' || lowStock == null ? undefined : Number(lowStock), auto_delist_on_zero: autoDelist,
     commission_rate: commissionPct / 100,
     ...(extTitle ? { external_title: extTitle } : {}),
     ...(checkedAliases.length ? { aliases: checkedAliases } : {}),
