@@ -10129,7 +10129,7 @@ async function renderBuyPage(app, productId) {
   const bottomBar = canBuy ? `
     <div style="display:flex;gap:8px;align-items:center">
       <div style="flex:0 0 auto">
-        <div style="font-size:18px;font-weight:800;color:#dc2626;line-height:1">${livePrice} <span style="font-size:11px;font-weight:600">WAZ</span></div>
+        <div style="font-size:18px;font-weight:800;color:#dc2626;line-height:1">${window.fmtPrice(livePrice)}</div>
         ${state._flashSale ? `<div style="font-size:10px;color:#9ca3af;text-decoration:line-through">${p.price}</div>` : ''}
       </div>
       <button class="btn btn-outline" onclick="addToCart('${p.id}')" style="width:auto;padding:11px 14px;font-size:13px" title="${t('加入购物车')}">🛒+</button>
@@ -10148,13 +10148,13 @@ async function renderBuyPage(app, productId) {
       <div style="background:linear-gradient(135deg,#dc2626,#f59e0b);color:#fff;border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
         <div>
           <div style="font-size:10px;font-weight:600;opacity:0.9">⚡ ${t('限时')}</div>
-          <div style="font-size:18px;font-weight:800">${state._flashSale.sale_price} WAZ <span style="font-size:11px;font-weight:400;text-decoration:line-through;opacity:0.7">${p.price}</span></div>
+          <div style="font-size:18px;font-weight:800">${window.fmtPrice(state._flashSale.sale_price)} <span style="font-size:11px;font-weight:400;text-decoration:line-through;opacity:0.7">${p.price} USDC</span></div>
         </div>
         <div style="text-align:right;font-size:10px;opacity:0.9">${t('截止')}<br><span style="font-size:11px;font-weight:600">${fmtTime(state._flashSale.ends_at)}</span></div>
       </div>` : `
       <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">
         <span style="font-size:22px;font-weight:800;color:#dc2626">${p.price}</span>
-        <span style="font-size:12px;color:#6b7280">WAZ${usdHint(p.price)}</span>
+        <span style="font-size:12px;color:#6b7280" data-usdc-local="${p.price}">USDC${window._fxLocal(p.price) ? ' ≈ ' + window._fxLocal(p.price) : ''}</span>
       </div>`}
       ${Number(p.trial_quota_remaining) > 0 ? `
       <div style="background:linear-gradient(135deg,#faf5ff,#f3e8ff);border:1px solid #e9d5ff;border-radius:8px;padding:10px 12px;margin-bottom:10px">
@@ -10314,7 +10314,7 @@ async function renderBuyPage(app, productId) {
       offers: {
         '@type': 'Offer',
         price: p.price,
-        priceCurrency: p.currency || 'WAZ',                 // 不再硬编码,读表里的 currency
+        priceCurrency: 'USDC',                 // display/pricing unit (USDC≈USD); matches the human USDC display (PR-1c)
         availability: (Number(p.stock) || 0) > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
         url: location.origin + '/#order-product/' + p.id,
         seller: { '@type': 'Organization', '@id': location.origin + '/#u/' + p.seller_id, name: p.seller_name || p.seller_handle || p.seller_id },
@@ -10365,7 +10365,7 @@ window.openBuySheet = function(productId) {
         ${firstImg ? `<img src="${escHtml(firstImg)}" onerror="this.outerHTML='📦'" style="width:64px;height:64px;border-radius:8px;object-fit:cover;flex-shrink:0">` : `<div style="width:64px;height:64px;background:#f3f4f6;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">📦</div>`}
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(prod.title)}</div>
-          <div style="font-size:18px;font-weight:800;color:#dc2626;margin-top:2px">${livePrice} <span style="font-size:11px;font-weight:600">WAZ</span></div>
+          <div style="font-size:18px;font-weight:800;color:#dc2626;margin-top:2px">${window.fmtPrice(livePrice)}</div>
         </div>
         ${variants.length === 0 && max > 0 ? `
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
