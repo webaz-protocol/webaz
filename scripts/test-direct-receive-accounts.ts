@@ -34,6 +34,11 @@ const norm = normalizeAccountInput({ instruction: '  PayNow 91234567 ', label: '
 ok('2c. valid input normalizes (trim + currency uppercased)', norm.ok === true && norm.ok && norm.value.instruction === 'PayNow 91234567' && norm.value.currency === 'THB' && norm.value.method === 'PayNow' && norm.value.label === '主账户' && norm.value.qr_image_ref === 'abc')
 ok('2d. bad currency format rejected', normalizeAccountInput({ instruction: 'x', currency: 'not a code!' }).ok === false)
 ok('2e. currency optional (omitted → null)', (() => { const r = normalizeAccountInput({ instruction: 'x' }); return r.ok && r.value.currency === null })())
+// P3: over-length label/method/qr = REJECT, not silent slice/truncation
+ok('2f. over-length label rejected (not truncated)', normalizeAccountInput({ instruction: 'x', label: 'L'.repeat(41) }).ok === false)
+ok('2g. over-length method rejected (not truncated)', normalizeAccountInput({ instruction: 'x', method: 'M'.repeat(41) }).ok === false)
+ok('2h. over-length qr ref rejected (not truncated)', normalizeAccountInput({ instruction: 'x', qrImageRef: 'q'.repeat(201) }).ok === false)
+ok('2i. at-limit label accepted (boundary)', (() => { const r = normalizeAccountInput({ instruction: 'x', label: 'L'.repeat(40) }); return r.ok && r.value.label === 'L'.repeat(40) })())
 
 // 3. addAccount — MULTIPLE active allowed (the whole point vs single-instruction)
 const a1 = addAccount(db, 'seller1', { instruction: 'Kasikorn 123-4-56789', method: 'Bank', currency: 'THB', label: 'K-Bank' }, genId)
