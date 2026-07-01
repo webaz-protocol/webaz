@@ -737,6 +737,7 @@ jobs:
       - run: npm run test:connected-agents-ui
       - run: npm run test:leaderboard-anon-projection
       - run: npm run test:leaderboard-nav-handle
+      - run: npm run test:fx-rates
       - run: npm run test:reputation-handle-resolution
       - run: npm run test:clearing-escrow-schema
       - run: npm run test:clearing-commission
