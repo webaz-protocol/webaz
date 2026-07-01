@@ -27,6 +27,7 @@ export interface DirectReceiveAccount {
 export const MAX_INSTRUCTION_LEN = 500
 export const MAX_LABEL_LEN = 40
 export const MAX_METHOD_LEN = 40
+export const MAX_QR_REF_LEN = 200
 // currency:卖家声明的币种码(自由文本,2-8 位大写字母数字)。WebAZ 不限制卖家怎么收钱;买家侧只在 FX 支持时才显换算。
 export const CURRENCY_RE = /^[A-Z0-9]{2,8}$/
 
@@ -45,25 +46,28 @@ export interface NormalizedAccount {
   qr_image_ref: string | null
 }
 
-/** PURE: 校验 + 规范化卖家入参(trim / 长度 / 币种格式 / 大写)。不碰 DB。 */
+/** PURE: 校验 + 规范化卖家入参(trim / 长度 / 币种格式 / 大写)。不碰 DB。
+ *  长度超限 = 【显式拒绝】(非静默截断)—— 卖家看到的收款标签 / 方式 / 二维码引用不能被悄悄改短。 */
 export function normalizeAccountInput(input: AccountInput): { ok: true; value: NormalizedAccount } | { ok: false; reason: string } {
   const instruction = String(input?.instruction ?? '').trim()
   if (!instruction) return { ok: false, reason: 'instruction required' }
   if (instruction.length > MAX_INSTRUCTION_LEN) return { ok: false, reason: `instruction must be ≤ ${MAX_INSTRUCTION_LEN} chars` }
-  const trimOrNull = (v: unknown, max: number): string | null => {
-    if (v == null) return null
-    const s = String(v).trim().slice(0, max)
-    return s || null
+  // trim + reject-if-over-limit (no silent slice). null/absent → null.
+  const field = (v: unknown, max: number, name: string): { ok: true; v: string | null } | { ok: false; reason: string } => {
+    if (v == null) return { ok: true, v: null }
+    const s = String(v).trim()
+    if (s.length > max) return { ok: false, reason: `${name} must be ≤ ${max} chars` }
+    return { ok: true, v: s || null }
   }
-  const label = trimOrNull(input.label, MAX_LABEL_LEN)
-  const method = trimOrNull(input.method, MAX_METHOD_LEN)
+  const L = field(input.label, MAX_LABEL_LEN, 'label'); if (!L.ok) return L
+  const M = field(input.method, MAX_METHOD_LEN, 'method'); if (!M.ok) return M
+  const Q = field(input.qrImageRef, MAX_QR_REF_LEN, 'qr image ref'); if (!Q.ok) return Q
   let currency: string | null = null
   if (input.currency != null && String(input.currency).trim()) {
     currency = String(input.currency).trim().toUpperCase()
     if (!CURRENCY_RE.test(currency)) return { ok: false, reason: 'currency must be a 2-8 char code (e.g. THB, IDR, USDC)' }
   }
-  const qr_image_ref = trimOrNull(input.qrImageRef, 200)
-  return { ok: true, value: { instruction, label, method, currency, qr_image_ref } }
+  return { ok: true, value: { instruction, label: L.v, method: M.v, currency, qr_image_ref: Q.v } }
 }
 
 const COLS = 'id, seller_id, method, currency, instruction, label, qr_image_ref, status'
