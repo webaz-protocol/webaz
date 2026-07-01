@@ -10463,7 +10463,7 @@ window.openBuySheet = function(productId) {
         </div>
       </details>
 
-      ${window.dpRailSelectorHtml ? window.dpRailSelectorHtml(prod.id) : ''}
+      ${window.dpRailSelectorHtml ? window.dpRailSelectorHtml(prod.id, prod.price) : ''}
       <div id="buy-msg" style="margin-top:10px"></div>
       <div id="tax-preview-slot" style="margin-top:8px"></div>
 
@@ -11239,6 +11239,7 @@ window.qtyStep = (delta, max) => {
   const cur = Math.floor(Number(inp.value) || 1)
   const next = Math.max(1, Math.min(max, cur + delta))
   inp.value = next
+  if (window.dpRenderAccountFx) window.dpRenderAccountFx()  // D3:数量变→刷新分账号 FX(按订单总额,非单价)
 }
 
 // B5 捐赠 chip 选择 — 高亮当前选中 + 更新提示文案
@@ -11268,6 +11269,7 @@ window.qtyClamp = (max) => {
   if (!Number.isFinite(v) || v < 1) v = 1
   if (v > max) v = max
   inp.value = v
+  if (window.dpRenderAccountFx) window.dpRenderAccountFx()  // D3:数量变→刷新分账号 FX(按订单总额,非单价)
 }
 
 window.doBuy = async (productId, price) => {
@@ -11309,7 +11311,7 @@ window.doBuy = async (productId, price) => {
   const qtyInp = document.getElementById('inp-qty')
   const quantity = qtyInp ? Math.max(1, Math.min(Number(qtyInp.max) || 1, Math.floor(Number(qtyInp.value) || 1))) : 1
   const payment_rail = window.dpSelectedRail ? window.dpSelectedRail() : 'escrow'; if (!payment_rail) { const _dp=document.querySelector('input[name="dp-rail"]:checked')?.value==='direct_p2p'; const _m=document.getElementById('buy-msg'); if(_m) _m.innerHTML = alert$('error', _dp ? t('直付暂未就绪或不可用,请稍候重试或改选支付方式') : t('请选择支付方式')); const _b=document.getElementById('dp-rail-block'); if(_b) _b.open=true; return } if (window.closeSheet) window.closeSheet()  // #28 空 rail 一律拦(永不静默落 escrow);[PRELAUNCH-WAZ-SIM] 未选→空;校验通过才关 sheet(块内 return 不关→提示+展开可见,修 P2)
-  const res = await POST('/orders', { product_id: productId, shipping_address: addr, notes, sponsor_hint, coupon_code, delivery_window, variant_id, expected_price, buy_insurance, anonymous_recipient, donation_pct, quantity, payment_rail, ...giftPayload })
+  const res = await POST('/orders', { product_id: productId, shipping_address: addr, notes, sponsor_hint, coupon_code, delivery_window, variant_id, expected_price, buy_insurance, anonymous_recipient, donation_pct, quantity, payment_rail, direct_receive_account_id: (payment_rail === 'direct_p2p' && window.dpSelectedAccountId) ? (window.dpSelectedAccountId() || undefined) : undefined, ...giftPayload })
   if (payment_rail === 'direct_p2p') return void (window.dpAfterCreate && window.dpAfterCreate(res))
   if (res.error_code === 'PRICE_CHANGED') {
     document.getElementById('buy-msg').innerHTML = alert$('error', `${t('价格已变动')}：${window.fmtPrice(res.old_price)} → ${window.fmtPrice(res.new_price)} · ${t('请刷新页面')}`)
