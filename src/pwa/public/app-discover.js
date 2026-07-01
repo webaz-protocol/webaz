@@ -808,7 +808,7 @@ async function renderDiscover(app) {
       name: 'WebAZ Discover — verified-sales products',
       numberOfItems: products.length,
       itemListElement: products.slice(0, 20).map((pp, idx) => {
-        const img = window.productThumbSrc(pp.images)
+        const img = (pp.images || '').split(',').map(s => s.trim()).filter(s => /^(https?:|\/|data:)/.test(s))[0]
         const lang = pp._lang || 'zh'
         const titles = pp.i18n_titles && typeof pp.i18n_titles === 'object' ? pp.i18n_titles : {}
         const altCount = Object.entries(titles).filter(([k, v]) => k !== lang && v).length

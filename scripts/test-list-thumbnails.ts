@@ -38,8 +38,11 @@ ok('1g. non-hash non-url token → "" (not rendered as a bare hash-looking src)'
 ok('2a. app-shop uses window.productThumbSrc', has(SHOP, 'window.productThumbSrc(p.images)') && has(SHOP, 'window.productThumbSrc(it.images)'))
 ok('2b. app-shop no longer renders a raw imgs[0] hash', !has(SHOP, 'if (Array.isArray(imgs) && imgs[0]) imageUrl = imgs[0]'))
 ok('2c. app-shop img has onerror fallback', has(SHOP, `onerror="this.outerHTML='📦'"`))
-ok('2d. app-discover uses window.productThumbSrc', has(DISCOVER, 'window.productThumbSrc(pp.images)') && has(DISCOVER, 'window.productThumbSrc(p.images)'))
+ok('2d. app-discover feed card uses window.productThumbSrc', has(DISCOVER, 'window.productThumbSrc(p.images)'))
 ok('2e. app-discover feed img has onerror fallback', has(DISCOVER, `onerror="this.outerHTML='📦'"`))
+// JSON-LD image (structured data / SEO) is intentionally left on the absolute-URL-only filter — a relative
+// /thumb URL is not appropriate for schema.org image; the visible card fix is the resolver above.
+ok('2f. discover JSON-LD image keeps the absolute-url-only filter (not the relative /thumb)', has(DISCOVER, "filter(s => /^(https?:|\\/|data:)/.test(s))"))
 
 // 3. helper wired: load order + Guard B (check:pwa-syntax + LOC_CEILINGS)
 ok('3a. index.html loads app-product-media.js before app.js', HTML.indexOf('/app-product-media.js') > 0 && HTML.indexOf('/app-product-media.js') < HTML.indexOf('/app.js'))
