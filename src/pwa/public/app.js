@@ -20533,12 +20533,11 @@ async function renderSecondhandDetail(app, id) {
       </div>
       <div style="padding:14px">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px">
-          <div style="font-size:24px;font-weight:700;color:#dc2626">${Number(it.price).toFixed(2)} WAZ</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-size:24px;font-weight:700;color:#dc2626">${Number(it.price).toFixed(2)} WAZ</div><span style="background:${cond.color}1a;color:${cond.color};font-size:11px;padding:3px 9px;border-radius:99px;font-weight:600;white-space:nowrap">${t(cond.label)}</span></div>
           ${Number(it.negotiable) === 1 ? `<span style="background:#fef3c7;color:#92400e;font-size:10px;padding:3px 8px;border-radius:99px;font-weight:600;white-space:nowrap">${t('可议价')}</span>` : ''}
         </div>
         <h2 style="font-size:16px;color:#111827;line-height:1.4;margin:0 0 10px">${escHtml(it.title)}</h2>
         <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:10px;margin-bottom:12px">
-          <span style="background:${cond.color}1a;color:${cond.color};padding:3px 8px;border-radius:4px;font-weight:600">${t(cond.label)}</span>
           <span style="background:#f3f4f6;color:#6b7280;padding:3px 8px;border-radius:4px">${shCatIcon(it.category)} ${t(shCatLabel(it.category))}</span>
           <span style="background:#f3f4f6;color:#6b7280;padding:3px 8px;border-radius:4px">📦 ${t(ffLabel)}</span>
           ${it.region ? `<span style="background:#f3f4f6;color:#6b7280;padding:3px 8px;border-radius:4px">📍 ${escHtml(it.region)}</span>` : ''}
@@ -20552,8 +20551,9 @@ async function renderSecondhandDetail(app, id) {
             <div style="color:#9ca3af;font-size:10px">@${escHtml(it.seller_handle || '')} · ${t('已浏览')} ${it.view_count}</div>
           </div>
         </div>
-        <div style="background:#eef2ff;border-radius:8px;padding:10px;margin-bottom:14px;font-size:11px;color:#3730a3;line-height:1.5">
-          🔒 ${t('WebAZ escrow 保障：付款后资金锁仓，确认收货才放给卖家；面交也可托管。协议费 1%。')}
+        <div style="background:#eef2ff;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:10.5px;color:#4338ca;line-height:1.7">
+          <div style="font-weight:600;color:#3730a3;margin-bottom:4px">🛡️ ${t('WebAZ 交易保障')}<span style="font-weight:400;color:#6366f1;margin-left:6px">${t('协议费 1%')}</span></div>
+          🔒 ${t('资金托管·确认收货才放款')} · 🤝 ${t('面交也可托管')} · 🔎 ${t('成色声明可社区验证')}
         </div>
         ${isOwn ? `
           <button class="btn btn-outline" style="width:100%;font-size:13px;color:#6b7280;border-color:#d1d5db" onclick="doShToggleClose('${it.id}', '${it.status}')">${it.status === 'closed' ? t('重新上架') : (it.status === 'available' ? t('下架') : '')}</button>
