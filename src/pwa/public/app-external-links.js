@@ -18,17 +18,14 @@ window.extLinksBarHtml = (productId) => {
 window.hydrateExtLinks = async (productId) => {
   const box = document.getElementById('ext-links-' + productId)
   if (!box) return
-  const r = await GET(`/products/${productId}/links`).catch(() => null)
-  const links = ((r && r.links) || []).filter(l => l && !l.revoked)
-  if (!links.length) return
+  // Buyer-facing endpoint returns { links } = VERIFIED + non-revoked only (server-enforced, public-safe subset).
+  const r = await GET(`/products/${productId}/external-links`).catch(() => null)
+  const links = (r && r.links) || []
   const rows = links.map(l => {
     const url = window.safeExternalUrl(l.url)
     if (!url) return ''                                  // non-http(s) → never render as a link
     const host = escHtml(url.hostname)
-    if (l.verified) {
-      return `<a href="${escHtml(url.href)}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#2563eb;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:6px 10px;text-decoration:none">🔗 ${t('前往源平台查看详情')} · ${host}</a>`
-    }
-    return `<span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#9ca3af;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px">🔗 ${host} · ${t('验证中，暂不可跳转')}</span>`
+    return `<a href="${escHtml(url.href)}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#2563eb;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:6px 10px;text-decoration:none">🔗 ${t('前往源平台查看详情')} · ${host}</a>`
   }).filter(Boolean)
   if (rows.length) box.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">${rows.join('')}</div>`
 }
