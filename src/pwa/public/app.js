@@ -10468,7 +10468,7 @@ window.openBuySheet = function(productId) {
       <div id="tax-preview-slot" style="margin-top:8px"></div>
 
       <div style="position:sticky;bottom:0;left:0;right:0;background:#fff;padding-top:12px;margin-top:12px;border-top:1px solid #f3f4f6">
-        <button class="btn btn-primary" id="btn-doBuy" onclick="doBuy('${prod.id}', ${livePrice})" style="width:100%;padding:14px;font-size:15px;font-weight:700">${t('确认下单')} · ${livePrice} WAZ</button>
+        <button class="btn btn-primary" id="btn-doBuy" onclick="doBuy('${prod.id}', ${livePrice})" style="width:100%;padding:14px;font-size:15px;font-weight:700">${t('确认下单')} · ${window.fmtPrice(livePrice)}</button>
       </div>
     `
     openSheet(html, { title: t('下单') })
