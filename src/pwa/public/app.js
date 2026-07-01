@@ -15679,7 +15679,7 @@ async function renderSeller(app) {
     <div id="add-product-form" style="display:none">
       <div class="divider"></div>
       <div class="card">
-        <div style="font-weight:700;margin-bottom:16px">${t('上架新商品')}</div>
+        ${window.createKindChooserHtml ? window.createKindChooserHtml('new') : ''}<div style="font-weight:700;margin-bottom:16px">${t('上架新商品')}</div>
         <div id="add-msg"></div>
         <div id="seo-score-bar-prd"></div>  <!-- #1052 SEO 友好度评分,setupSeoScoreBar('prd') 启用 -->
 
@@ -20295,6 +20295,7 @@ async function renderSecondhandPublish(app) {
         <button onclick="history.back()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#6b7280">←</button>
         <h1 style="font-size:18px;font-weight:600;margin:0">${t('发布闲置')}</h1>
       </div>
+      ${window.createKindChooserHtml ? window.createKindChooserHtml('secondhand') : ''}
 
       <div class="card" style="margin-bottom:12px">
         <div class="card-body">

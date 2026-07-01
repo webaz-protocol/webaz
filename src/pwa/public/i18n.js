@@ -1476,6 +1476,8 @@ const _EN = {
   '立即绑定 Passkey（强烈推荐）': 'Bind a Passkey now (strongly recommended)',
   '测评': 'Review',
   '全新': 'Brand new',
+  '全新商品': 'New goods',
+  '二手闲置': 'Secondhand',
   'Cmd/Ctrl + ↵': 'Cmd/Ctrl + ↵',
   'k-anonymity ≥': 'k-anonymity ≥',
   '位邻居 24h 活跃': ' neighbors active in 24h',
