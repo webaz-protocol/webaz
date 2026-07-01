@@ -675,7 +675,7 @@ function buyResultCardHtml(p) {
           <div style="font-size:14px;font-weight:600;color:#111827;line-height:1.4;margin-bottom:4px">${escHtml(p.title)}${typeBadge}${valueBadgeChip}${lowStockChip}</div>
           <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:4px">
             <span style="font-size:20px;font-weight:700;color:#4f46e5">${p.price}</span>
-            <span style="font-size:11px;color:#6b7280">USDC${window._fxLocal(p.price) ? ' ≈ ' + window._fxLocal(p.price) : ''}</span>
+            <span style="font-size:11px;color:#6b7280" data-usdc-local="${p.price}">USDC${window._fxLocal(p.price) ? ' ≈ ' + window._fxLocal(p.price) : ''}</span>
           </div>
           <div style="font-size:11px;color:#6b7280">
             ${repBadge(p.rep_level)} @${escHtml(p.seller_name)} · ${p.sales_count || 0} ${t('单完成')}
@@ -824,7 +824,7 @@ async function renderDiscover(app) {
             name: nameField,
             url: location.origin + '/#order-product/' + pp.id,
             ...(img ? { image: img } : {}),
-            offers: { '@type': 'Offer', price: pp.price, priceCurrency: pp.currency || 'WAZ' },
+            offers: { '@type': 'Offer', price: pp.price, priceCurrency: 'USDC' },  // machine-readable price matches the USDC display (no human/agent drift); WAZ was simulated
           },
         }
       }),
