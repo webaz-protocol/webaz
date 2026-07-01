@@ -43,6 +43,13 @@ ok('7. no saved + languages=[fr-FR] → en', R(null, { languages: ['fr-FR'] }) =
 // 8. no navigator → en
 ok('8. no saved + no navigator → en', R(null, null) === 'en')
 ok('8b. no saved + empty navigator {} → en', R(null, {}) === 'en')
+// P1 — navigator.languages is an ORDERED preference list: pick the first SUPPORTED language, not "any zh → zh"
+ok('P1a. [en-US, zh-CN] → en (English-first user, Chinese only as fallback)', R(null, { languages: ['en-US', 'zh-CN'] }) === 'en', R(null, { languages: ['en-US', 'zh-CN'] }))
+ok('P1b. [zh-CN, en-US] → zh (Chinese-first user)', R(null, { languages: ['zh-CN', 'en-US'] }) === 'zh')
+ok('P1c. [fr-FR, zh-CN, en] → zh (first supported in order is zh)', R(null, { languages: ['fr-FR', 'zh-CN', 'en'] }) === 'zh')
+ok('P1d. [fr-FR, en-US, zh-CN] → en (first supported in order is en)', R(null, { languages: ['fr-FR', 'en-US', 'zh-CN'] }) === 'en')
+ok('P1e. saved="en" still wins over [zh-CN] browser', R('en', { languages: ['zh-CN'] }) === 'en')
+
 // extra edge cases (robustness)
 ok('E1. zh-Hant (case/subtag) → zh', R(null, { languages: ['ZH-HANT'] }) === 'zh')
 ok('E2. bare "zh" → zh', R(null, { language: 'zh' }) === 'zh')
@@ -61,4 +68,4 @@ ok('init. no saved + en navigator → window._lang en', loadI18n({ navigator: { 
 ok('init. saved zh + en navigator → window._lang zh (manual wins)', loadI18n({ saved: 'zh', navigator: { languages: ['en-US'] } }).win._lang === 'zh')
 
 if (fail > 0) { console.error(`\n❌ i18n default language FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-console.log(`✅ i18n default language: saved 'zh'/'en' wins · else navigator zh* → zh / else → en · setLang persists webaz_lang · manual choice never overridden\n  ✅ pass ${pass}`)
+console.log(`✅ i18n default language: saved 'zh'/'en' wins · else first SUPPORTED language in navigator preference order (zh*→zh / en*→en) / else en · setLang persists webaz_lang · manual choice never overridden\n  ✅ pass ${pass}`)
