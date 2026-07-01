@@ -1,4 +1,4 @@
-// Direct Pay (Rail 1) — bilingual UI wiring (PR-4f-b / 5c)。UI ONLY;Direct Pay 仍 non-launchable / fail-closed。
+// Direct Pay (Rail 1) — bilingual UI wiring (PR-4f-b / 5c)。UI ONLY;直付(direct_p2p)可用性 per-seller/product 实时数据驱动(见 GET /api/direct-pay/availability);注:escrow 轨仍模拟 WAZ(独立开关 _wazSimulated,非直付)。
 //   WebAZ【不托管本金】、不担保、不退款/维权,也不验证/路由卖家付款方式或币种;不做 USDC/fiat/PSP/链上、不碰
 //   wallet/escrow/settlement/refund/订单钱路。真实强制全在后端(#92/#93 两次披露 + 现场真人 Passkey 硬门控;前端只带输入)。
 //   只把已合并后端能力(#96 收款说明、#94 建单、#92/#93 ack+Passkey、#98+ 控制面/可用性)接到 PWA。
