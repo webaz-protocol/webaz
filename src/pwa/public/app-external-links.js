@@ -1,8 +1,9 @@
 // External source-platform links on the product detail page (renderBuyPage in app.js). UI ONLY.
-//   Shows a "前往源平台查看详情" jump button for VERIFIED external links; unverified are shown non-clickable.
+//   Shows a "前往源平台查看详情" jump button. Verified links only; unverified links are hidden until verified.
 //   SECURITY: only http/https URLs are ever made clickable (blocks javascript:/data:/relative); the target
 //   domain is shown so the buyer sees where they go; links open with target=_blank rel="noopener noreferrer".
-//   Data: GET /api/products/:id/links (backend returns verified/revoked). Read-only, buyer-facing; no writes.
+//   Data: GET /api/products/:id/external-links (buyer-facing; NOT owner-gated; returns { links } already
+//   filtered to verified + non-revoked). Read-only; no writes.
 
 // Return a URL object only for http/https, else null (blocks javascript:/data:/mailto:/relative).
 window.safeExternalUrl = (u) => {
