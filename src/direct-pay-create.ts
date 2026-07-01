@@ -17,6 +17,7 @@ import { type Units } from './money.js'
 import { feeUnitsForOrder, estimateOpenDirectPayFeeUnits, readAvailableFeePrepayUnits, sellerDirectPayGraceEligible, feePrepayGateOk } from './direct-pay-fee-ar.js'
 import { sellerBaseBondEntrySatisfied } from './direct-pay-base-bond-entry.js'
 import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
+import { getAccount } from './direct-receive-accounts.js'  // Rail1 D2:买家所选多收款账号(dual-read;缺省回落 legacy 单条 instruction)
 import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, coarsenBuyerFacingDirectPayCode, type DirectPayControlsConfig } from './direct-pay-controls.js'
 import { checkDeferralQuota, readDeferralQuotaConfig } from './direct-pay-deferral-quota.js'
 import { enforceCollateralExposureGate } from './merchant-bond-exposure.js'  // §6.5 抵押背书开放敞口上限(休眠安全:collateral=0 时 N/A)
@@ -34,10 +35,13 @@ export interface DirectPayPolicySnapshot {
   enabled: boolean; railBreakerTripped: boolean; region: string; regionAllowlist: string[]
   perTxCapUnits: Units; sellerBreakerTripped: boolean; decisionCode: string
 }
+/** 买家所选收款账号快照(非敏感元数据 + qr_ref)。legacy 单条 instruction 路径 = null。 */
+export interface DirectPayAccountSnapshot { account_id: string; method: string | null; currency: string | null; label: string | null; qr_ref: string | null }
 export interface DirectPayCreateArgs {
   productId: string; sellerId: string; buyerId: string; quantity: number
   unitPrice: number; totalAmount: number
   instructionSnapshot: string; windowDeadlineIso: string; shippingAddress: string
+  accountSnapshot: DirectPayAccountSnapshot | null
   snapshot: DirectPayPolicySnapshot
 }
 
@@ -49,12 +53,12 @@ export function createDirectPayOrder(db: Database.Database, deps: DirectPayCreat
     // 本金不入协议:escrow_amount=0,不写 buyer wallet。同一 INSERT 写入【入口控制 policy 快照】(frozen-at-create)。
     const s = args.snapshot
     db.prepare(`INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount,
-      status, payment_rail, shipping_address, direct_pay_instruction_snapshot, direct_pay_window_deadline,
+      status, payment_rail, shipping_address, direct_pay_instruction_snapshot, direct_pay_account_snapshot, direct_pay_window_deadline,
       direct_pay_enabled_snapshot, direct_pay_rail_breaker_snapshot, direct_pay_region_snapshot,
       direct_pay_region_allowlist_snapshot, direct_pay_per_tx_cap_units_snapshot, direct_pay_seller_breaker_snapshot, direct_pay_decision_code)
-      VALUES (?,?,?,?,?,?,?,0,'created','direct_p2p',?,?,?, ?,?,?,?,?,?,?)`)
+      VALUES (?,?,?,?,?,?,?,0,'created','direct_p2p',?,?,?,?, ?,?,?,?,?,?,?)`)
       .run(orderId, args.productId, args.buyerId, args.sellerId, args.quantity, args.unitPrice, args.totalAmount,
-        args.shippingAddress, args.instructionSnapshot, args.windowDeadlineIso,
+        args.shippingAddress, args.instructionSnapshot, args.accountSnapshot ? JSON.stringify(args.accountSnapshot) : null, args.windowDeadlineIso,
         s.enabled ? 1 : 0, s.railBreakerTripped ? 1 : 0, s.region,
         JSON.stringify(s.regionAllowlist), s.perTxCapUnits, s.sellerBreakerTripped ? 1 : 0, s.decisionCode)
     appendOrderEvent(db, {
@@ -86,7 +90,7 @@ export interface DirectPayUnsupportedOpts {
  */
 export function createDirectPayResponse(
   res: Response, db: Database.Database, deps: DirectPayCreateDeps & { getProtocolParam: <T>(k: string, fb: T) => T },
-  ctx: { product: Record<string, unknown>; buyerId: string; reqQty: number; basePrice: number; totalAmount: number; totalAmountU: Units; shippingAddress: string; opts?: DirectPayUnsupportedOpts },
+  ctx: { product: Record<string, unknown>; buyerId: string; reqQty: number; basePrice: number; totalAmount: number; totalAmountU: Units; shippingAddress: string; directReceiveAccountId?: string; opts?: DirectPayUnsupportedOpts },
 ): void {
   // ① direct_p2p v1 = simple product only。escrow-only 修饰一律 fail-closed(本片不支持,不半支持)。
   const o = ctx.opts ?? {}
@@ -113,8 +117,21 @@ export function createDirectPayResponse(
   //   per_product_exempt(申请一次店铺即可),则其所有商品免逐品。combiner = productVerified OR sellerExempt。
   //   都不满足 → direct-pay 不可用(产品级、非敏感,买家退回托管轨)。fail-closed,在任何 DB write 前。
   if (!(productStoreVerified(db, ctx.product.id as string) || sellerExemptFromPerProduct(db, sellerId))) { res.status(409).json({ error_code: 'DIRECT_PAY_PRODUCT_NOT_VERIFIED', error: '该商品暂不支持直付(待平台验证),请使用托管交易' }); return }
-  const instr = getActivePaymentInstruction(db, sellerId)
-  if (!instr) { res.status(409).json({ error: '卖家未设置收款说明,无法创建直付订单', error_code: 'NO_PAYMENT_INSTRUCTION' }); return }
+  // 收款目标解析(dual-read):买家选了具体收款账号 → 用该账号(须属本卖家且 active,否则 fail-closed,【绝不】静默回落);
+  //   没选 → 回落 legacy 单条 instruction(向后兼容:只有旧单条说明的卖家照旧可下单)。快照冻结买家所见,卖家事后改/停用不影响。
+  let instructionSnapshot: string
+  let accountSnapshot: DirectPayAccountSnapshot | null = null
+  const chosenAccountId = ctx.directReceiveAccountId
+  if (chosenAccountId) {
+    const acc = getAccount(db, chosenAccountId)
+    if (!acc || acc.seller_id !== sellerId || acc.status !== 'active') { res.status(409).json({ error: '所选收款账号无效或已停用', error_code: 'DIRECT_RECEIVE_ACCOUNT_INVALID' }); return }
+    instructionSnapshot = acc.instruction
+    accountSnapshot = { account_id: acc.id, method: acc.method, currency: acc.currency, label: acc.label, qr_ref: acc.qr_image_ref }
+  } else {
+    const instr = getActivePaymentInstruction(db, sellerId)
+    if (!instr) { res.status(409).json({ error: '卖家未设置收款说明,无法创建直付订单', error_code: 'NO_PAYMENT_INSTRUCTION' }); return }
+    instructionSnapshot = instr.instruction
+  }
   // ③ 缓交期额度门(launch blocker):靠 active deferral 入场(无生产 bond)的卖家,缓交期内笔数/累计金额压低。
   //   控制面全过后、任何 DB write 之前判(fail-closed);非缓交卖家 = no-op。超额 → 409,绝不建单。
   const quota = checkDeferralQuota(db, sellerId, ctx.totalAmountU, new Date().toISOString(), readDeferralQuotaConfig(deps.getProtocolParam))
@@ -143,7 +160,7 @@ export function createDirectPayResponse(
     const { orderId } = createDirectPayOrder(db, deps, {
       productId: ctx.product.id as string, sellerId, buyerId: ctx.buyerId, quantity: ctx.reqQty,
       unitPrice: ctx.basePrice, totalAmount: ctx.totalAmount,
-      instructionSnapshot: instr.instruction, windowDeadlineIso: new Date(Date.now() + windowHours * 3600_000).toISOString(),
+      instructionSnapshot, accountSnapshot, windowDeadlineIso: new Date(Date.now() + windowHours * 3600_000).toISOString(),
       shippingAddress: ctx.shippingAddress,
       // frozen-at-create policy 快照:control 全过(ctrl.ok)才到此,decisionCode='OK'。
       snapshot: { enabled: cfg.enabled, railBreakerTripped: cfg.railBreakerTripped, region: cfg.region, regionAllowlist: cfg.regionAllowlist, perTxCapUnits: cfg.perTxCapUnits, sellerBreakerTripped, decisionCode: 'OK' },

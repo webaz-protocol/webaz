@@ -627,6 +627,7 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_window_deadline TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_grace_deadline TEXT`) } catch { /* 已存在 */ } // Rail1 paid-but-timeout 宽限期:系统在此之前绝不关单(买家 →disputed 窗口)
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_instruction_snapshot TEXT`) } catch { /* 已存在 */ } // Rail1 4c:下单时快照卖家收款说明(冻结买家所见;卖家事后改/停用不影响)
+  try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_account_snapshot TEXT`) } catch { /* 已存在 */ } // Rail1 D2:买家所选收款账号快照 JSON {account_id,method,currency,label,qr_ref}(非敏感元数据;instruction 原文仍在 direct_pay_instruction_snapshot 受披露门;qr_ref 的图字节走 ack 门端点)
   // PR-5b-0: direct_p2p 入口控制 policy 快照列(既有库补列;additive nullable,本 PR 无写入方,5b wiring 才写)。
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_enabled_snapshot INTEGER`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_rail_breaker_snapshot INTEGER`) } catch { /* 已存在 */ }

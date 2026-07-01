@@ -118,6 +118,7 @@
     "test:direct-receive-deposits": "tsx scripts/test-direct-receive-deposits.ts",
     "test:direct-receive-accounts": "tsx scripts/test-direct-receive-accounts.ts",
     "test:direct-receive-account-endpoints": "tsx scripts/test-direct-receive-account-endpoints.ts",
+    "test:direct-pay-order-qr": "tsx scripts/test-direct-pay-order-qr.ts",
     "test:direct-receive-instruction": "tsx scripts/test-direct-receive-instruction.ts",
     "test:direct-receive-production-confirm": "tsx scripts/test-direct-receive-production-confirm.ts",
     "test:direct-receive-deferral": "tsx scripts/test-direct-receive-deferral.ts",

@@ -20,6 +20,7 @@ import type Database from 'better-sqlite3'
 import { listOrderEventsSince } from '../../layer0-foundation/L0-2-state-machine/order-chain.js'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'  // PR-4f-b: direct_p2p 收款说明响应契约门
+import { getQrImageForOwner } from '../../direct-receive-account-qr.js'  // Rail1 D2:ack 门后按订单快照 qr_ref 取收款码字节((ref,seller_id) 域内)
 
 export interface OrdersReadDeps {
   db: Database.Database
@@ -209,5 +210,25 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     }
 
     res.json({ ...statusInfo, history, product, dispute, trackingInfo })
+  })
+
+  // Rail1 D2:直付订单收款二维码(硬化转发)。仅【订单买家】+ 两次披露 both-acked 后可取;按建单时快照的 (qr_ref, seller_id)
+  //   取【当时那一版】图字节。未 ack / 非买家 / 无 QR / 非 direct_p2p → 统一 404(不枚举,不泄露)。图字节不入 order JSON。
+  app.get('/api/orders/:id/direct-pay-qr', async (req, res) => {
+    const user = auth(req, res); if (!user) return
+    const orderId = String(req.params.id)
+    const order = await dbOne<{ buyer_id: string; seller_id: string; payment_rail: string; direct_pay_account_snapshot: string | null }>(
+      'SELECT buyer_id, seller_id, payment_rail, direct_pay_account_snapshot FROM orders WHERE id = ?', [orderId])
+    if (!order || order.payment_rail !== 'direct_p2p' || order.buyer_id !== user.id) return void res.status(404).end()
+    if (!requireBothDisclosuresAcked(db, orderId).ok) return void res.status(404).end()   // 未 ack:与"无 QR"同样 404,不泄露存在性
+    let snap: { qr_ref?: string | null } = {}
+    try { snap = order.direct_pay_account_snapshot ? JSON.parse(order.direct_pay_account_snapshot) : {} } catch { snap = {} }
+    if (!snap.qr_ref) return void res.status(404).end()
+    const img = getQrImageForOwner(db, snap.qr_ref, order.seller_id)   // (ref, seller_id) 域内取字节;seller_id 取自订单,非用户输入
+    if (!img) return void res.status(404).end()
+    res.setHeader('Content-Type', img.mime)
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('Cache-Control', 'private, no-store')
+    res.send(img.buf)
   })
 }
