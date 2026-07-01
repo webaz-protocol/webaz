@@ -37,6 +37,13 @@ ok('server: no-key banner says NETWORK (read-only)', /NETWORK\s*\(read-only\)|NE
 // webaz_register 运行时提示:进沙盒只能 WEBAZ_MODE=sandbox,不能说"或清空 WEBAZ_API_KEY"(清空仍是 network_readonly)
 ok('server: register hint does NOT say clearing the key enters sandbox', !/或清空 WEBAZ_API_KEY/.test(server))
 
+// RFC-003(被 src/mcp.ts 当作现行模式说明引用)+ RFC 索引:必须反映三态,不能停留在"双模 / 未配 key = sandbox fallback"
+const rfc = R('docs/rfcs/RFC-003-mcp-network-client.md')
+const rfcIndex = R('docs/rfcs/README.md')
+ok('RFC-003: corrected to three-mode / no-key read-only (network_readonly)', /network_readonly|NETWORK 只读/.test(rfc))
+ok('RFC-003: no stale "未配 api_key → sandbox fallback" trigger', !/未配 api_key[^\n]{0,15}fallback/.test(rfc))
+ok('RFC index: RFC-003 not labeled "dual-mode thin client"', !/dual-mode thin client/.test(rfcIndex))
+
 // network_state:不硬编码 real_users_on_canonical 数字(真值来自 network_live)
 ok('server: no hardcoded real_users_on_canonical in network_state', !/real_users_on_canonical:\s*\d/.test(server))
 ok('server: disclaimer points to network_live (not an absolute prod≈0 claim)', /network_live/.test(server) && !/真实用户≈0|real users?\s*≈\s*0/i.test(server))

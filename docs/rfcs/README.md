@@ -58,7 +58,7 @@ RFC-NNN-short-slug.md
 |---|---|---|---|
 | [RFC-001](RFC-001-license-decision.md) | License Decision — BSL 1.1 with 2030-05-18 → MIT Auto-Transition | ratified (retroactive — phase A) | meta-rule (constitutional) |
 | [RFC-002](RFC-002-rewards-opt-in.md) | Rewards Opt-in — co-build identity (application-based) | live | normal |
-| [RFC-003](RFC-003-mcp-network-client.md) | MCP Network Client — dual-mode thin client (NETWORK/SANDBOX) | implemented | normal |
+| [RFC-003](RFC-003-mcp-network-client.md) | MCP Network Client — thin client, three modes (network_readonly default / network / sandbox) | implemented | normal |
 | [RFC-004](RFC-004-build-feedback.md) | Build Feedback — agent-native use↔build distance to zero | implemented | normal |
 | [RFC-005](RFC-005-ai-triage-pipeline.md) | AI Triage Pipeline — dual-AI advisory (PR + feedback), never merges | implemented | normal |
 | [RFC-006](RFC-006-contribution-layer.md) | Contribution Layer — trade-side trust primitives applied to building | implemented | normal |
