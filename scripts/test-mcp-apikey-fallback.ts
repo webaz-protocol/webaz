@@ -51,6 +51,18 @@ async function main(): Promise<void> {
   ok('no args.api_key CODE references remain outside the helper (all → resolveMcpApiKey)', hStart > 0 && hEnd > hStart && !/args\??\.api_key\b/.test(remainder))
   ok('helper is exported (testable + single resolution point)', /export function resolveMcpApiKey\(args: Record<string, unknown>, envKey: string = WEBAZ_API_KEY\)/.test(src))
 
+  // ── explicit per-tool guard (reviewer-flagged): the network-branch skill handlers must resolve via
+  //    resolveMcpApiKey, so a WEBAZ_API_KEY-only MCP config works for webaz_skill / webaz_skill_market
+  //    publish/subscribe/my_skills/my_subs (not only when args.api_key is passed). Subsumed by the global
+  //    check above, but pinned by name so a future special-case for these tools can't silently regress.
+  for (const fn of ['handleSkill', 'handleSkillMarket']) {
+    const b = src.slice(src.indexOf(`async function ${fn}(`))
+    const nextFn = b.indexOf('\nasync function ', 1)
+    const body = b.slice(0, nextFn > 0 ? nextFn : 3500)
+    ok(`${fn}: resolves api_key via resolveMcpApiKey (env WEBAZ_API_KEY fallback)`, /const apiKey = resolveMcpApiKey\(args\)/.test(body))
+    ok(`${fn}: never reads args.api_key directly (no String(args.api_key) / as-string)`, !/String\(args\.api_key/.test(body) && !/args\.api_key as string/.test(body))
+  }
+
   // ── keyless boundary unchanged: env presence must not gate public reads ────────────────────────────
   // within handleContribute, list_open / detail / suggest return BEFORE the `if (!apiKey)` guard.
   const hc = src.slice(src.indexOf('export async function handleContribute'))
