@@ -312,7 +312,7 @@ import { registerOrdersActionRoutes } from './routes/orders-action.js'
 // Orders 下单端点 (#1013 Phase 85) — 1 endpoint (338-line POST /api/orders)
 import { registerOrdersCreateRoutes } from './routes/orders-create.js'
 import { registerDirectPayDisclosureAckRoutes } from './routes/direct-pay-disclosure-acks.js'  // PR-4d: Direct Pay 风险披露 ack 端点(薄 adapter)
-import { registerDirectReceivePaymentInstructionRoutes } from './routes/direct-receive-payment-instructions.js'  // PR-4f-a: 卖家收款说明 CRUD(薄 adapter)
+import { registerDirectReceivePaymentInstructionRoutes } from './routes/direct-receive-payment-instructions.js'; import { registerDirectReceiveAccountsRoutes } from './routes/direct-receive-accounts.js'  // PR-4f-a instruction CRUD + Phase C1 multi-account+QR
 import { registerDirectPayAvailabilityRoutes } from './routes/direct-pay-availability.js'  // PR-4a: Direct Pay 可用性只读(控制面 SSOT)
 import { registerAdminDirectReceiveDepositsRoutes } from './routes/admin-direct-receive-deposits.js'  // PR-4b-3: ROOT 生产保证金 receipt 确认(fail-closed scaffold)
 // Disputes 读端点 (#1013 Phase 86) — 5 endpoints (list/similar/detail/evidence-list/parties)
@@ -3869,7 +3869,7 @@ registerAgentReputationRoutes(app, {
 // #1013 Phase 47: 6 公开用户主页 endpoints 已迁出到 routes/users-public.ts
 registerUsersPublicRoutes(app, { db, auth, noteAuthenticityBadges })
 registerDirectPayDisclosureAckRoutes(app, { db, auth, generateId, consumeGateToken })  // PR-4d
-registerDirectReceivePaymentInstructionRoutes(app, { db, auth, generateId })  // PR-4f-a
+registerDirectReceivePaymentInstructionRoutes(app, { db, auth, generateId }); registerDirectReceiveAccountsRoutes(app, { db, auth, generateId, consumeGateToken })  // PR-4f-a + Phase C1
 registerDirectPayAvailabilityRoutes(app, { db, auth, getProtocolParam, generateId })  // PR-4a + 缓交 apply/status
 registerAdminDirectReceiveDepositsRoutes(app, { db, requireRootAdmin: (req, res) => requireRootAdmin(req, res), consumeGateToken, logAdminAction, getProtocolParam })  // PR-4b-3 + readiness
 // RFC-004 build_feedback — agent-native "use → build" 反馈管道

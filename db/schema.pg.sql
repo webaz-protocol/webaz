@@ -202,6 +202,50 @@ CREATE TABLE IF NOT EXISTS direct_receive_accounts (
       updated_at    TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
     );
 
+CREATE TABLE IF NOT EXISTS direct_receive_account_qr_images (
+      ref          TEXT NOT NULL,
+      account_id   TEXT NOT NULL REFERENCES direct_receive_accounts(id),
+      seller_id    TEXT NOT NULL REFERENCES users(id),
+      mime         TEXT NOT NULL,
+      data_b64     TEXT NOT NULL,
+      byte_len     BIGINT NOT NULL,
+      sha256       TEXT NOT NULL,
+      created_at   TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
+      PRIMARY KEY (ref, seller_id)
+    );
+CREATE INDEX IF NOT EXISTS idx_dr_qr_account ON direct_receive_account_qr_images(account_id);
+-- cross-DB invariant: content-addressed & immutable (mirror of SQLite RAISE(ABORT) triggers).
+-- NOTE: gen-pg-schema.ts does not introspect triggers — these are hand-maintained; keep in sync with schema.ts.
+CREATE OR REPLACE FUNCTION dr_qr_images_immutable() RETURNS trigger AS $dr_qr$
+BEGIN
+  RAISE EXCEPTION 'direct_receive_account_qr_images is content-addressed and immutable (no UPDATE/DELETE)';
+END;
+$dr_qr$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_dr_qr_no_update ON direct_receive_account_qr_images;
+CREATE TRIGGER trg_dr_qr_no_update BEFORE UPDATE ON direct_receive_account_qr_images FOR EACH ROW EXECUTE FUNCTION dr_qr_images_immutable();
+DROP TRIGGER IF EXISTS trg_dr_qr_no_delete ON direct_receive_account_qr_images;
+CREATE TRIGGER trg_dr_qr_no_delete BEFORE DELETE ON direct_receive_account_qr_images FOR EACH ROW EXECUTE FUNCTION dr_qr_images_immutable();
+
+CREATE TABLE IF NOT EXISTS direct_receive_account_events (
+      id           TEXT PRIMARY KEY,
+      account_id   TEXT NOT NULL,
+      seller_id    TEXT NOT NULL,
+      event_type   TEXT NOT NULL,
+      qr_ref       TEXT,
+      created_at   TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
+    );
+CREATE INDEX IF NOT EXISTS idx_dr_acct_events_account ON direct_receive_account_events(account_id);
+-- cross-DB invariant: append-only (mirror of SQLite RAISE(ABORT) triggers). Hand-maintained (see NOTE above).
+CREATE OR REPLACE FUNCTION dr_acct_events_append_only() RETURNS trigger AS $dr_ev$
+BEGIN
+  RAISE EXCEPTION 'direct_receive_account_events is append-only (no UPDATE/DELETE)';
+END;
+$dr_ev$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_dr_acct_events_no_update ON direct_receive_account_events;
+CREATE TRIGGER trg_dr_acct_events_no_update BEFORE UPDATE ON direct_receive_account_events FOR EACH ROW EXECUTE FUNCTION dr_acct_events_append_only();
+DROP TRIGGER IF EXISTS trg_dr_acct_events_no_delete ON direct_receive_account_events;
+CREATE TRIGGER trg_dr_acct_events_no_delete BEFORE DELETE ON direct_receive_account_events FOR EACH ROW EXECUTE FUNCTION dr_acct_events_append_only();
+
 CREATE TABLE IF NOT EXISTS direct_receive_deferrals (
       id                   TEXT PRIMARY KEY,
       user_id              TEXT NOT NULL REFERENCES users(id),

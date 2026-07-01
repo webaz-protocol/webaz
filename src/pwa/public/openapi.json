@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (709 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (715 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -3488,6 +3488,66 @@
     "/api/direct-pay/disclosure-acks/:orderId": {
       "get": {
         "summary": "GET — 查询某单两次 ack 状态 + 买家视角披露文案(无卖家机制)。只读(本人),不需 gate token。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/accounts": {
+      "get": {
+        "summary": "── list（本人;不返回 raw QR,只含 qr_image_ref)──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "── add(Passkey)──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/accounts/:id": {
+      "delete": {
+        "summary": "── deactivate(Passkey + owner)──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "summary": "── update(Passkey + owner)──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/accounts/:id/qr": {
+      "get": {
+        "summary": "── QR preview(owner-only read;硬化转发;不存在/非本人 → 404)──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "summary": "── upload / replace QR(Passkey + owner;immutable content-addressed store)──",
         "tags": [],
         "security": [
           {
