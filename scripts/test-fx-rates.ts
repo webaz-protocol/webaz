@@ -19,7 +19,7 @@ import { registerFxRoutes } from '../src/pwa/routes/fx.js'
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}`) } }
 
-const okRates = { rates: { USD: 1, CNY: 7.2, EUR: 0.92, INR: 83, SGD: 1.35, JPY: 150 } }
+const okRates = { rates: { USD: 1, CNY: 7.2, EUR: 0.92, INR: 83, SGD: 1.35, IDR: 16000, MYR: 4.5, PHP: 58, VND: 25000, THB: 34, JPY: 150 } }
 const fakeFetch = (payload: unknown, okFlag = true): typeof fetch =>
   (async () => ({ ok: okFlag, status: okFlag ? 200 : 500, json: async () => payload })) as unknown as typeof fetch
 const throwFetch: typeof fetch = (async () => { throw new Error('network down') }) as unknown as typeof fetch
@@ -36,7 +36,8 @@ ok('2b. USD is identity', convertUsdcToLocal(49.99, 'USD', okRates.rates as neve
 ok('2c. bad rate/amount → NaN', Number.isNaN(convertUsdcToLocal(30, 'CNY', { CNY: 0 } as never)) && Number.isNaN(convertUsdcToLocal(NaN, 'USD', okRates.rates as never)))
 
 // 3. parse — subset only, strict
-ok('3a. parses supported subset', JSON.stringify(parseUsdRates(okRates)) === JSON.stringify({ USD: 1, CNY: 7.2, EUR: 0.92, INR: 83, SGD: 1.35 }))
+ok('3a. parses supported subset (incl. SEA currencies)', JSON.stringify(parseUsdRates(okRates)) === JSON.stringify({ USD: 1, CNY: 7.2, EUR: 0.92, INR: 83, SGD: 1.35, IDR: 16000, MYR: 4.5, PHP: 58, VND: 25000, THB: 34 }))
+ok('3a2. SEA currencies (IDR/MYR/PHP/VND/THB) are supported + convert', ['IDR', 'MYR', 'PHP', 'VND', 'THB'].every(c => (SUPPORTED_CURRENCIES as readonly string[]).includes(c)) && convertUsdcToLocal(2, 'THB', okRates.rates as never) === 68)
 ok('3b. conversion_rates alt key works', parseUsdRates({ conversion_rates: okRates.rates }).SGD === 1.35)
 ok('3c. missing a supported rate → throws', (() => { try { parseUsdRates({ rates: { USD: 1 } }); return false } catch { return true } })())
 ok('3d. non-object → throws', (() => { try { parseUsdRates(null); return false } catch { return true } })())

@@ -28,7 +28,7 @@ window._fxLocal = (usdc) => {
   const n = Number(usdc)
   if (!(rate > 0) || !Number.isFinite(n)) return ''
   const local = n * rate
-  const sym = { CNY: '¥', EUR: '€', INR: '₹', SGD: 'S$', USD: '$' }[cur] || (cur + ' ')
+  const sym = { CNY: '¥', EUR: '€', INR: '₹', SGD: 'S$', USD: '$', IDR: 'Rp', MYR: 'RM', PHP: '₱', VND: '₫', THB: '฿' }[cur] || (cur + ' ')
   return sym + (local >= 100 ? String(Math.round(local)) : local.toFixed(2))
 }
 // visible price content (no wrapper): "<amount> USDC" + optional muted "≈ local".

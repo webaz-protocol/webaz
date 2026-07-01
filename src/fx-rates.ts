@@ -15,7 +15,7 @@ export const REGION_CURRENCY: Record<string, string> = {
   china: 'CNY', us: 'USD', eu: 'EUR', india: 'INR', singapore: 'SGD',
   global_north: 'USD', global: 'USD',
 }
-export const SUPPORTED_CURRENCIES = ['USD', 'CNY', 'EUR', 'INR', 'SGD'] as const
+export const SUPPORTED_CURRENCIES = ['USD', 'CNY', 'EUR', 'INR', 'SGD', 'IDR', 'MYR', 'PHP', 'VND', 'THB'] as const
 export type Currency = typeof SUPPORTED_CURRENCIES[number]
 const isSupported = (c: string): c is Currency => (SUPPORTED_CURRENCIES as readonly string[]).includes(c)
 
@@ -26,7 +26,7 @@ export function regionToCurrency(region: string | null | undefined): Currency {
 
 // Fallback (per 1 USD) — used ONLY when the live fetch fails AND no prior snapshot exists. Always served
 // with stale:true so the UI can show it as approximate. Kept coarse on purpose (a safety net, not a source).
-export const FALLBACK_USD_RATES: Record<Currency, number> = { USD: 1, CNY: 7.2, EUR: 0.92, INR: 83, SGD: 1.35 }
+export const FALLBACK_USD_RATES: Record<Currency, number> = { USD: 1, CNY: 7.2, EUR: 0.92, INR: 83, SGD: 1.35, IDR: 16000, MYR: 4.5, PHP: 58, VND: 25000, THB: 34 }
 
 const TTL_MS = 15 * 60 * 1000   // 15-min cache: fiat FX barely moves intraday → "real-time" enough for a display hint, no API hammering
 const FX_URL = process.env.FX_RATES_URL || 'https://open.er-api.com/v6/latest/USD'
