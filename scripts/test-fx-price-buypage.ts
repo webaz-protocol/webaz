@@ -37,9 +37,18 @@ ok('2d. no ${livePrice} WAZ anywhere on the buy page (covers the CTA)', !buyPage
 ok('3a. buy-page JSON-LD Offer.priceCurrency is USDC', buyPage.includes("priceCurrency: 'USDC'"))
 ok('3b. buy-page JSON-LD no longer defaults to WAZ', !buyPage.includes("priceCurrency: p.currency || 'WAZ'"))
 
-// 4. PRESERVED — non-product-price WAZ untouched (usdHint stays for order detail = PR-1d; wallet stays WAZ)
-ok('4a. order-detail still uses usdHint (deferred to PR-1d, not ripped out)', APP.includes('usdHint(order.total_amount)'))
-ok('4b. usdHint/wazToUsd helpers still defined', APP.includes('function usdHint(') && APP.includes('function wazToUsd('))
+// 4. DYNAMIC buy path — coupon + variant handlers (outside the renderBuyPage slice) also render USDC,
+//    so the CTA/summary can't revert to WAZ after the buyer applies a coupon or picks a variant.
+ok('4a. coupon invalid-reset button → fmtPrice(basePrice)', APP.includes("${t('立即下单')} · ${window.fmtPrice(basePrice)}"))
+ok('4b. coupon success → fmtPrice(discount) + fmtPrice(final_price)', APP.includes('${window.fmtPrice(r.discount)}') && APP.includes('${window.fmtPrice(r.final_price)}'))
+ok('4c. variant summary + button → fmtPrice(price)', APP.includes('✓ ${window.fmtPrice(price)} · ${stockTag}') && APP.includes("${t('立即下单')} · ${window.fmtPrice(price)}"))
+ok('4d. no raw ${basePrice}/${r.final_price}/${r.discount} WAZ left', !APP.includes('${basePrice} WAZ') && !APP.includes('${r.final_price} WAZ') && !APP.includes('${r.discount} WAZ'))
+ok('4e. no raw "✓ ${price} WAZ" variant summary left', !APP.includes('✓ ${price} WAZ'))
+
+// 5. PRESERVED — non-price WAZ untouched (order detail total = PR-1d; escrow "已托管" is simulated, NOT USDC custody)
+ok('5a. order-detail still uses usdHint (deferred to PR-1d, not ripped out)', APP.includes('usdHint(order.total_amount)'))
+ok('5b. usdHint/wazToUsd helpers still defined', APP.includes('function usdHint(') && APP.includes('function wazToUsd('))
+ok('5c. escrow "下单成功…已托管" stays WAZ (honesty: simulated escrow, not real USDC custody)', /已托管/.test(APP) && APP.includes('WAZ'))
 
 if (fail > 0) { console.error(`\n❌ fx price buypage FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ fx price buypage: order/detail price → USDC (fmtPrice / data-usdc-local) + JSON-LD USDC; non-price WAZ untouched\n  ✅ pass ${pass}`)

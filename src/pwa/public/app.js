@@ -11334,11 +11334,11 @@ window.checkCoupon = async (productId, basePrice) => {
   const r = await GET(`/coupons/preview?code=${encodeURIComponent(code)}&product_id=${productId}`)
   if (!r.ok) {
     resultEl.innerHTML = `<span style="color:#dc2626">✗ ${escHtml(r.error || t('优惠码无效'))}</span>`
-    if (btnEl) btnEl.innerHTML = `${t('立即下单')} · ${basePrice} WAZ`
+    if (btnEl) btnEl.innerHTML = `${t('立即下单')} · ${window.fmtPrice(basePrice)}`
     return
   }
-  resultEl.innerHTML = `<span style="color:#16a34a">✓ ${t('已优惠')} ${r.discount} WAZ · ${t('最终')} ${r.final_price} WAZ</span>`
-  if (btnEl) btnEl.innerHTML = `${t('立即下单')} · ${r.final_price} WAZ <span style="font-size:10px;text-decoration:line-through;opacity:0.7">${basePrice}</span>`
+  resultEl.innerHTML = `<span style="color:#16a34a">✓ ${t('已优惠')} ${window.fmtPrice(r.discount)} · ${t('最终')} ${window.fmtPrice(r.final_price)}</span>`
+  if (btnEl) btnEl.innerHTML = `${t('立即下单')} · ${window.fmtPrice(r.final_price)} <span style="font-size:10px;text-decoration:line-through;opacity:0.7">${basePrice} USDC</span>`
 }
 
 // ─── P13: 购物车页 ────────────────────────────────────────────
@@ -13211,10 +13211,10 @@ window.selectVariantOption = (dim, val, basePrice) => {
   const stockTag = Number(match.stock) > 0
     ? `<span style="color:#16a34a">● ${t('有货')}</span>`
     : `<span style="color:#dc2626">${t('缺货')}</span>`
-  summary.innerHTML = `✓ ${price} WAZ · ${stockTag}`
+  summary.innerHTML = `✓ ${window.fmtPrice(price)} · ${stockTag}`
   if (buyBtn) {
     buyBtn.disabled = Number(match.stock) <= 0
-    buyBtn.innerHTML = `${t('立即下单')} · ${price} WAZ`
+    buyBtn.innerHTML = `${t('立即下单')} · ${window.fmtPrice(price)}`
   }
 }
 
