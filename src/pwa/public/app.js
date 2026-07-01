@@ -6323,8 +6323,6 @@ async function renderReviewsFeed(app) {
   const rows = items.length === 0
     ? `<div style="text-align:center;padding:40px;color:#9ca3af"><div style="font-size:48px">📺</div><div style="font-size:13px;margin-top:8px">${t('暂无评测内容')}</div></div>`
     : items.map(s => {
-        let prodImg = ''
-        try { const imgs = typeof s.product_images === 'string' ? JSON.parse(s.product_images) : s.product_images; if (Array.isArray(imgs) && imgs[0]) prodImg = imgs[0] } catch {}
         return `
           <div class="card" style="padding:10px 12px;margin-bottom:8px;cursor:pointer" onclick="openExternalReview('${s.id}', '${escHtml(s.external_url || '').replace(/'/g, "\\'")}')">
             <div style="display:flex;gap:10px;align-items:center">
