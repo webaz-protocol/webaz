@@ -741,6 +741,7 @@ jobs:
       - run: npm run test:connected-agents-read
       - run: npm run test:connected-agents-ui
       - run: npm run test:leaderboard-anon-projection
+      - run: npm run test:i18n-default-language
       - run: npm run test:leaderboard-nav-handle
       - run: npm run test:fx-rates
       - run: npm run test:fx-price-display
