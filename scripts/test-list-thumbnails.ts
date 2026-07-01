@@ -52,7 +52,7 @@ ok('2k. app.js P2P cards route thumbnail_json (aliased p.images) through resolve
 ok('2l. no leftover raw thumb/img = imgs[0] hash render in app.js', !has(APPJS, 'thumb = imgs[0]') && !has(APPJS, 'img = String(imgs[0])'))
 // JSON-LD image (structured data / SEO) is intentionally left on the absolute-URL-only filter — a relative
 // /thumb URL is not appropriate for schema.org image; the visible card fix is the resolver above.
-ok('2f. discover JSON-LD image keeps the absolute-url-only filter (not the relative /thumb)', has(DISCOVER, "filter(s => /^(https?:|\\/|data:)/.test(s))"))
+ok('2m. discover JSON-LD image keeps the absolute-url-only filter (not the relative /thumb)', has(DISCOVER, "filter(s => /^(https?:|\\/|data:)/.test(s))"))
 
 // 3. helper wired: load order + Guard B (check:pwa-syntax + LOC_CEILINGS)
 ok('3a. index.html loads app-product-media.js before app.js', HTML.indexOf('/app-product-media.js') > 0 && HTML.indexOf('/app-product-media.js') < HTML.indexOf('/app.js'))
