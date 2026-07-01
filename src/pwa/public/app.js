@@ -1017,7 +1017,7 @@ function roleHome(role) {
 function preLaunchBannerHTML() {
   if (window._protocolPhase && window._protocolPhase !== 'pre_launch') return ''
   return `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;font-size:12px;color:#92400e;text-align:center;line-height:1.5;margin:8px 12px 12px">
-    ⚠️ <strong>${t('预发布测试阶段(邀请制)· 托管为模拟测试资金、非真实结算 · 价格按 USDC 计价仅供展示 · 请勿据此投资或向第三方承诺')}</strong>
+    ⚠️ <strong>${t('直付(direct pay)已上线,是你与卖家的真实场外付款;WebAZ 非托管——不代持、不担保、不退款 · 平台托管(escrow)尚未上线(模拟测试币)· 价格按 USDC 计价仅供展示 · 邀请制预发布,勿据此投资或向第三方承诺')}</strong>
     <a href="#welcome" style="margin-left:8px;color:#7c2d12;text-decoration:underline;font-weight:600">${t('详情')}</a>
   </div>`
 }

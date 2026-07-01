@@ -6053,8 +6053,8 @@ const _EN = {
   '英文标题(跨境)':                    'English title (cross-border)',
 
   // ── #1047 pre-launch 横幅 ────────────────────────────────────
-  '预发布测试阶段(邀请制)· 托管为模拟测试资金、非真实结算 · 价格按 USDC 计价仅供展示 · 请勿据此投资或向第三方承诺':
-    'Pre-launch test phase (invite-only) · escrow uses simulated test funds, not real settlement · USDC prices are display units only · do not invest or make third-party commitments based on this',
+  '直付(direct pay)已上线,是你与卖家的真实场外付款;WebAZ 非托管——不代持、不担保、不退款 · 平台托管(escrow)尚未上线(模拟测试币)· 价格按 USDC 计价仅供展示 · 邀请制预发布,勿据此投资或向第三方承诺':
+    'Direct pay is live — a real off-platform payment between you and the seller; WebAZ is non-custodial: it does not hold, guarantee, or refund it · platform escrow is not yet live (simulated test tokens) · USDC prices are display units only · invite-only pre-launch — do not invest or make third-party commitments based on this',
   '详情': 'Details',
 
   // ── Agent 护照 Phase 4 签名导出 ──────────────────────────────
