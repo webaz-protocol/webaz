@@ -1205,9 +1205,9 @@ async function renderNewArrivalsFeed(app) {
     ? feedEmpty('🆕', t('暂无新品动态'), t('看看 推荐好物'), '#discover')
     : products.map(p => {
         const ts = fmtTime(p.created_at)
-        const img = (() => { try { const i = typeof p.images === 'string' ? JSON.parse(p.images) : p.images; return Array.isArray(i) && i[0] ? i[0] : '' } catch { return '' } })()
+        const img = window.productThumbSrc(p.images)
         return `<div class="card" style="margin-bottom:8px;padding:12px;display:flex;gap:10px;align-items:flex-start;cursor:pointer" onclick="navigate('#order-product/${p.id}')">
-          ${img ? `<img src="${escAttr(img)}" style="width:56px;height:56px;border-radius:6px;object-fit:cover;flex-shrink:0">` : `<div style="width:56px;height:56px;border-radius:6px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">${getCategoryIcon(p.category)}</div>`}
+          ${img ? `<img src="${escAttr(img)}" onerror="this.outerHTML='📦'" style="width:56px;height:56px;border-radius:6px;object-fit:cover;flex-shrink:0">` : `<div style="width:56px;height:56px;border-radius:6px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">${getCategoryIcon(p.category)}</div>`}
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;line-height:1.5">
               ${feedActor(p.seller_id, p.seller_name, p.seller_handle)} ${t('上架了')} <strong>${escHtml(p.title)}</strong>

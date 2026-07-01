@@ -607,11 +607,11 @@ async function renderForYou(app) {
     const meta = labels[b]
     const cards = grouped[b].map(p => {
       let imageUrl = ''
-      try { const imgs = typeof p.images === 'string' ? JSON.parse(p.images) : p.images; if (Array.isArray(imgs) && imgs[0]) imageUrl = imgs[0] } catch {}
+      imageUrl = window.productThumbSrc(p.images) || imageUrl
       return `
         <div class="card" style="padding:8px 10px;margin-bottom:6px;cursor:pointer" onclick="location.hash='#order-product/${p.id}'">
           <div style="display:flex;gap:10px;align-items:center">
-            <div style="font-size:24px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" style="width:42px;height:42px;border-radius:6px;object-fit:cover">` : getCategoryIcon(p.category) || '📦'}</div>
+            <div style="font-size:24px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" onerror="this.outerHTML='📦'" style="width:42px;height:42px;border-radius:6px;object-fit:cover">` : getCategoryIcon(p.category) || '📦'}</div>
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.title)}</div>
               <div style="font-size:12px;color:#4f46e5;font-weight:600">${p.price} WAZ <span style="font-size:10px;color:#9ca3af;font-weight:400">· @${escHtml(p.seller_handle || '')}${p.sales_count > 0 ? ' · 🛒 ' + p.sales_count : ''}</span></div>
@@ -787,11 +787,11 @@ async function renderShopPage(app, identifier) {
     ? `<div style="text-align:center;padding:30px;color:#9ca3af;font-size:13px">${t('该卖家暂无商品')}</div>`
     : products.map(p => {
         let imageUrl = ''
-        try { const imgs = typeof p.images === 'string' ? JSON.parse(p.images) : p.images; if (Array.isArray(imgs) && imgs[0]) imageUrl = imgs[0] } catch {}
+        imageUrl = window.productThumbSrc(p.images) || imageUrl
         return `
           <div class="card" style="padding:10px 12px;cursor:pointer" onclick="location.hash='#order-product/${p.id}'">
             <div style="display:flex;gap:10px;align-items:center">
-              <div style="font-size:28px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" style="width:42px;height:42px;border-radius:6px;object-fit:cover">` : getCategoryIcon(p.category) || '📦'}</div>
+              <div style="font-size:28px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" onerror="this.outerHTML='📦'" style="width:42px;height:42px;border-radius:6px;object-fit:cover">` : getCategoryIcon(p.category) || '📦'}</div>
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.title)}</div>
                 <div style="font-size:12px;color:#4f46e5;font-weight:600">${p.price} WAZ <span style="font-size:10px;color:#9ca3af;font-weight:400">· ${stockBadgeHtml(p)}${p.sales_count > 0 ? ' · 🛒 ' + p.sales_count : ''}</span></div>
@@ -930,12 +930,12 @@ async function renderEditorPicks(app) {
   const sellers = r?.sellers || []
   const productCards = products.map(p => {
     let imageUrl = ''
-    try { const imgs = typeof p.images === 'string' ? JSON.parse(p.images) : p.images; if (Array.isArray(imgs) && imgs[0]) imageUrl = imgs[0] } catch {}
+    imageUrl = window.productThumbSrc(p.images) || imageUrl
     return `
       <div class="card" style="padding:12px;margin-bottom:8px;cursor:pointer;border-left:3px solid #d97706" onclick="location.hash='#order-product/${p.target_id}'">
         ${p.title ? `<div style="font-size:11px;color:#d97706;font-weight:600;margin-bottom:4px">📌 ${escHtml(p.title)}</div>` : ''}
         <div style="display:flex;gap:10px;align-items:center">
-          <div style="font-size:32px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(p.category) || '📦'}</div>
+          <div style="font-size:32px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" onerror="this.outerHTML='📦'" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(p.category) || '📦'}</div>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.product_title)}</div>
             <div style="font-size:12px;color:#4f46e5;font-weight:600">${p.price} WAZ · @${escHtml(p.seller_handle || '')}</div>
@@ -1118,13 +1118,13 @@ async function renderFlashSalesLive(app) {
     ? `<div style="text-align:center;padding:40px;color:#9ca3af"><div style="font-size:48px">⚡</div><div style="font-size:13px;margin-top:8px">${t('暂无进行中的限时促销')}</div></div>`
     : items.map(it => {
         let imageUrl = ''
-        try { const imgs = typeof it.images === 'string' ? JSON.parse(it.images) : it.images; if (Array.isArray(imgs) && imgs[0]) imageUrl = imgs[0] } catch {}
+        imageUrl = window.productThumbSrc(it.images) || imageUrl
         const save = (Number(it.original_price) - Number(it.sale_price)).toFixed(2)
         const pct = ((1 - Number(it.sale_price) / Number(it.original_price)) * 100).toFixed(0)
         return `
           <div class="card" style="padding:10px 12px;margin-bottom:8px;cursor:pointer;border-left:3px solid #dc2626" onclick="location.hash='#order-product/${it.product_id}'">
             <div style="display:flex;gap:10px;align-items:center">
-              <div style="font-size:32px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(it.category) || '📦'}</div>
+              <div style="font-size:32px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" onerror="this.outerHTML='📦'" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(it.category) || '📦'}</div>
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.title)}</div>
                 <div style="font-size:12px;margin-top:2px">
