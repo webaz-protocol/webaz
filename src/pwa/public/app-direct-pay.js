@@ -27,8 +27,8 @@ window.dpErrorText = (code, fallback) => {
 }
 
 // ── 买家结算:支付方式(rail)选择。escrow 默认;direct_p2p 可选,选中先查可用性(见 dpOnRailChange);D1/D2 ack 在建单后用 Passkey 完成。
-window.dpRailSelectorHtml = (productId) => `
-  <details style="margin-top:10px" id="dp-rail-block" data-product="${productId || ''}">
+window.dpRailSelectorHtml = (productId, priceUsdc) => `
+  <details style="margin-top:10px" id="dp-rail-block" data-product="${productId || ''}" data-amt="${priceUsdc != null && isFinite(Number(priceUsdc)) ? Number(priceUsdc) : ''}">
     <summary style="font-size:13px;font-weight:600;color:#374151;cursor:pointer">${t('支付方式')}</summary>
     <div style="padding:8px 2px 2px">
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-bottom:6px;cursor:pointer">
@@ -43,7 +43,7 @@ window.dpRailSelectorHtml = (productId) => `
         ⚠️ ${t('直付风险提醒:WebAZ 不托管本金、不担保、不退款、不代维权,也不验证卖家的付款方式或币种。下单后需用 Passkey 完成两次风险确认,再标记付款。')}
         <div style="margin-top:6px">${t('需要 Passkey。')}<a href="#me" style="color:#854d0e;font-weight:600;text-decoration:underline">${t('前往「我的 → 安全与存储」注册 →')}</a></div>
       </div>
-      <div id="dp-rail-unavailable" style="display:none;margin-top:8px;font-size:11px;line-height:1.6;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px"></div>
+      <div id="dp-rail-unavailable" style="display:none;margin-top:8px;font-size:11px;line-height:1.6;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px"></div><div id="dp-account-picker"></div>
     </div>
   </details>`
 
@@ -52,11 +52,11 @@ window.dpOnRailChange = async (productId) => {
   const note = document.getElementById('dp-rail-note'); window._dpDirectAvailable = false  // 进入即 pending:确认前 dpSelectedRail 只输出 escrow(防"选直付后立刻点确认"竞态)
   const un = document.getElementById('dp-rail-unavailable')
   if (note) note.style.display = 'none'
-  if (un) un.style.display = 'none'
+  if (un) un.style.display = 'none'; { const _pk = document.getElementById('dp-account-picker'); if (_pk) _pk.innerHTML = '' }  // D3:切轨/不可用即清空账号选择器
   const _sel = document.querySelector('input[name="dp-rail"]:checked')?.value; if (window.wazEscrowRailNote) window.wazEscrowRailNote(_sel); if (_sel !== 'direct_p2p') return  // [PRELAUNCH-WAZ-SIM] 选 escrow→测试币提醒
   let av = null
   try { av = await GET('/direct-pay/availability?product_id=' + encodeURIComponent(productId || '')) } catch { av = null }
-  if (av && av.available === true) { window._dpDirectAvailable = true; if (note) note.style.display = ''; return }
+  if (av && av.available === true) { window._dpDirectAvailable = true; if (note) note.style.display = ''; if (window.dpLoadBuyerAccounts) window.dpLoadBuyerAccounts(productId); return }  // D3:可用时加载卖家可选收款账号
   if (un) { un.textContent = '⚠️ ' + window.dpErrorText(av && av.error_code, av && av.reason) ; un.style.display = '' }  // 不可用:明确原因 + 退回 escrow
   const esc = document.querySelector('input[name="dp-rail"][value="escrow"]')
   if (esc) { esc.checked = true; if (window.wazEscrowRailNote) window.wazEscrowRailNote('escrow') }  // [PRELAUNCH-WAZ-SIM] 直付不可用退回 escrow 时也提醒测试币
@@ -149,8 +149,8 @@ window.dpHydrateOrderDisclosure = async (orderId) => {
   const o = await GET(`/orders/${orderId}`)
   const snap = o && o.order ? (o.order.direct_pay_instruction_snapshot || '') : ''
   box.innerHTML = snap ? `<div style="font-size:12px;color:#374151;background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
-    <div style="font-size:11px;color:#9ca3af;margin-bottom:2px">${t('卖家收款说明(下单时快照)')}</div>${escHtml(snap)}</div>`
-    : `<div style="font-size:12px;color:#9ca3af">${t('卖家尚未设置收款说明,暂不可直付')}</div>`
+    <div style="font-size:11px;color:#9ca3af;margin-bottom:2px">${t('卖家收款说明(下单时快照)')}</div>${escHtml(snap)}<div id="dp-order-qr"></div></div>`
+    : `<div style="font-size:12px;color:#9ca3af">${t('卖家尚未设置收款说明,暂不可直付')}</div>`; if (snap && window.dpLoadOrderQr) window.dpLoadOrderQr(orderId)  // D3:ack 门后取所选账号的收款二维码(若有)
 }
 window.dpCompleteAcksThenReveal = async (orderId) => {
   const ok = await window.dpEnsureAcks(orderId)
