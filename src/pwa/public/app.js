@@ -20201,7 +20201,7 @@ async function renderSecondhandMarket(app) {
         <button class="btn btn-outline btn-sm" style="font-size:12px;padding:0 10px;white-space:nowrap" onclick="document.getElementById('sh-adv').style.display=document.getElementById('sh-adv').style.display==='none'?'block':'none'">⚙ ${t('筛选')}</button>
       </div>
       <div id="sh-adv" style="display:${(_shFilters.minP || _shFilters.maxP || _shFilters.conds.size>0) ? 'block':'none'};background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px;margin-bottom:10px">
-        <div style="font-size:11px;color:#6b7280;margin-bottom:6px">${t('价格区间 (WAZ)')}</div>
+        <div style="font-size:11px;color:#6b7280;margin-bottom:6px">${t('价格区间 (USDC)')}</div>
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">
           <input id="sh-minP" class="form-control" type="number" placeholder="${t('最低')}" style="font-size:12px;flex:1" value="${escAttr(_shFilters.minP)}" oninput="_shFilters.minP=this.value">
           <span style="color:#9ca3af">—</span>

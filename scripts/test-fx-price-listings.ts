@@ -87,6 +87,7 @@ ok('10c. buy "价格已变动" toast → fmtPrice (old + new)', APP.includes('${
 ok('10d. buyer trials product_price → fmtPrice', APP.includes('${window.fmtPrice(c.product_price)} · ${fmtTime(c.claimed_at)}') && APP.includes("${window.fmtPrice(c.product_price)} · ${t('阈值')}"))
 ok('10e. price-history widget unit relabeled USDC (not WAZ)', APP.includes('${fmtPrice(data.volume)} USDC') && APP.includes('${fmtPrice(r.category_avg_30d)} USDC'))
 ok('10f. NEG: those round-5 raw WAZ patterns gone', !APP.includes('${s.product_price} WAZ') && !APP.includes('margin-bottom:14px">${price.toFixed(2)} WAZ') && !APP.includes('${c.product_price} WAZ') && !APP.includes('${fmtPrice(r.category_avg_30d)} WAZ'))
+ok('10g. secondhand-market filter label is USDC, not WAZ', APP.includes("${t('价格区间 (USDC)')}") && !APP.includes("${t('价格区间 (WAZ)')}"))
 
 // 5. PRESERVED — order totals / escrow / wallet stay WAZ (pending decision / honesty)
 ok('5a. order-detail total still WAZ (usdHint, PR-1e pending)', APP.includes('usdHint(order.total_amount)'))
