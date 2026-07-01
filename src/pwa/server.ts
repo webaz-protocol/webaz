@@ -149,7 +149,7 @@ import {
 // /api/follows/feed 留 server.ts（依赖 products 跨域，待商品域拆分时一并处理）
 import { registerFollowsRoutes } from './routes/follows.js'
 // Leaderboard (#1013 Phase 11) — 单 endpoint 8 kinds（products/creators/buyers/sellers/value/agents/arbitrators/verifiers）
-import { registerLeaderboardRoutes } from './routes/leaderboard.js'
+import { registerLeaderboardRoutes } from './routes/leaderboard.js'; import { registerFxRoutes } from './routes/fx.js'  // FX = display-only USDC→local rates
 // Shareables 互动 (#1013 Phase 12) — click/like/comments/bookmark 8 endpoints
 import { registerShareablesInteractionsRoutes } from './routes/shareables-interactions.js'
 // Shareables CRUD (#1013 Phase 13) — 11 endpoints (notes-photo + create + me + creator-stats + by-* + feed + detail + PATCH + DELETE)
@@ -6379,7 +6379,7 @@ registerShareablesInteractionsRoutes(app, {
   parseMentions, notifyMentions,
 })
 
-registerLeaderboardRoutes(app, { db, internalAuditorId: INTERNAL_AUDITOR_ID, rateLimitOk })
+registerLeaderboardRoutes(app, { db, internalAuditorId: INTERNAL_AUDITOR_ID, rateLimitOk }); registerFxRoutes(app, { rateLimitOk })
 
 
 // like-status / bookmark-status / bookmarked-shareables 已迁出 (#1013 Phase 12)

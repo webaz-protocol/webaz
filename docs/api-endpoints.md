@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (708 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (709 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -357,6 +357,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/follows/:user_id/status` | 🔐 |  |  | src/pwa/routes/follows.ts:27 |
 | GET | `/api/follows/feed` | 🔐 |  | Wave D-1: 关注卖家动态 feed — new_product + restock 合并 + 去重 | src/pwa/routes/follows.ts:75 |
 | GET | `/api/follows/me` | 🔐 |  |  | src/pwa/routes/follows.ts:59 |
+| GET | `/api/fx/rates` |  |  |  | src/pwa/routes/fx.ts:19 |
 | GET | `/api/governance/onboarding-stats` |  |  | 无 auth — agent / 用户 / 第三方都可读;不暴露 PII | src/pwa/routes/public-utils.ts:469 |
 | POST | `/api/governance/onboarding/appeal` | 🔐 |  | 必须:source 行 action='auto_deactivate' + window 内 + 未已 appeal + reason 长度 | src/pwa/routes/governance-onboarding.ts:654 |
 | POST | `/api/governance/onboarding/apply` | 🔐 |  |  | src/pwa/routes/governance-onboarding.ts:76 |
