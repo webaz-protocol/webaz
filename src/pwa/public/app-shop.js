@@ -101,10 +101,10 @@ async function renderWishlist(app) {
     : items.map(it => {
         const cur = Number(it.current_price), delta = Number(it.price_delta || 0), pct = Number(it.price_delta_pct || 0)
         const priceTag = delta < 0
-          ? `<span style="color:#dc2626;font-weight:700">${cur} WAZ <span style="font-size:11px;background:#fef2f2;color:#991b1b;padding:1px 6px;border-radius:99px;font-weight:600;margin-left:4px">↓${Math.abs(pct).toFixed(0)}%</span></span>`
+          ? `<span style="color:#dc2626;font-weight:700">${window.fmtPrice(cur)} <span style="font-size:11px;background:#fef2f2;color:#991b1b;padding:1px 6px;border-radius:99px;font-weight:600;margin-left:4px">↓${Math.abs(pct).toFixed(0)}%</span></span>`
           : delta > 0
-            ? `<span style="color:#374151;font-weight:600">${cur} WAZ <span style="font-size:11px;color:#9ca3af">(${t('已涨')} ${pct.toFixed(0)}%)</span></span>`
-            : `<span style="color:#374151;font-weight:600">${cur} WAZ</span>`
+            ? `<span style="color:#374151;font-weight:600">${window.fmtPrice(cur)} <span style="font-size:11px;color:#9ca3af">(${t('已涨')} ${pct.toFixed(0)}%)</span></span>`
+            : `<span style="color:#374151;font-weight:600">${window.fmtPrice(cur)}</span>`
         const stockTag = Number(it.stock) === 0
           ? `<span style="background:#f3f4f6;color:#6b7280;font-size:10px;padding:1px 6px;border-radius:4px">${t('缺货')}</span>`
           : ''
@@ -178,7 +178,7 @@ async function renderWaitlist(app) {
             <div style="flex:1;min-width:0">
               <div style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.title)}</div>
               <div style="display:flex;gap:6px;align-items:center;margin-top:4px;font-size:12px">
-                <span style="color:#374151;font-weight:600">${it.price} WAZ</span>
+                <span style="color:#374151;font-weight:600">${window.fmtPrice(it.price)}</span>
                 ${stockTag}
                 ${notifiedTag}
               </div>
@@ -614,7 +614,7 @@ async function renderForYou(app) {
             <div style="font-size:24px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" onerror="this.outerHTML='📦'" style="width:42px;height:42px;border-radius:6px;object-fit:cover">` : getCategoryIcon(p.category) || '📦'}</div>
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.title)}</div>
-              <div style="font-size:12px;color:#4f46e5;font-weight:600">${p.price} WAZ <span style="font-size:10px;color:#9ca3af;font-weight:400">· @${escHtml(p.seller_handle || '')}${p.sales_count > 0 ? ' · 🛒 ' + p.sales_count : ''}</span></div>
+              <div style="font-size:12px;color:#4f46e5;font-weight:600">${window.fmtPrice(p.price)} <span style="font-size:10px;color:#9ca3af;font-weight:400">· @${escHtml(p.seller_handle || '')}${p.sales_count > 0 ? ' · 🛒 ' + p.sales_count : ''}</span></div>
             </div>
           </div>
         </div>`
@@ -694,8 +694,8 @@ async function renderCompare(app, ids) {
     { label: t('商品'), render: (p) => `<a href="#order-product/${p.id}" style="font-size:13px;font-weight:600;color:#374151;display:block;overflow:hidden;text-overflow:ellipsis">${escHtml(p.title)}</a>` },
     { label: t('价格'), render: (p, i) => {
         const sale = flashes[i]?.sale
-        if (sale) return `<span style="color:#dc2626;font-weight:700">${sale.sale_price}</span> WAZ<br><span style="font-size:10px;color:#9ca3af;text-decoration:line-through">${p.price}</span>`
-        return `<span style="color:#4f46e5;font-weight:700">${p.price}</span> WAZ`
+        if (sale) return `<span style="color:#dc2626;font-weight:700">${window.fmtPrice(sale.sale_price)}</span><br><span style="font-size:10px;color:#9ca3af;text-decoration:line-through">${p.price} USDC</span>`
+        return `<span style="color:#4f46e5;font-weight:700">${window.fmtPrice(p.price)}</span>`
       } },
     { label: t('库存'), render: (p) => `<span style="color:${Number(p.stock) === 0 ? '#dc2626' : Number(p.stock) <= 3 ? '#d97706' : '#374151'}">${p.stock}</span>` },
     { label: t('卖家'), render: (p) => `<a href="#shop/${p.seller_id}" style="font-size:11px;color:#6366f1">@${escHtml(p.seller_name || '')}</a>` },
@@ -794,7 +794,7 @@ async function renderShopPage(app, identifier) {
               <div style="font-size:28px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" onerror="this.outerHTML='📦'" style="width:42px;height:42px;border-radius:6px;object-fit:cover">` : getCategoryIcon(p.category) || '📦'}</div>
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.title)}</div>
-                <div style="font-size:12px;color:#4f46e5;font-weight:600">${p.price} WAZ <span style="font-size:10px;color:#9ca3af;font-weight:400">· ${stockBadgeHtml(p)}${p.sales_count > 0 ? ' · 🛒 ' + p.sales_count : ''}</span></div>
+                <div style="font-size:12px;color:#4f46e5;font-weight:600">${window.fmtPrice(p.price)} <span style="font-size:10px;color:#9ca3af;font-weight:400">· ${stockBadgeHtml(p)}${p.sales_count > 0 ? ' · 🛒 ' + p.sales_count : ''}</span></div>
               </div>
             </div>
           </div>`
@@ -938,7 +938,7 @@ async function renderEditorPicks(app) {
           <div style="font-size:32px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" onerror="this.outerHTML='📦'" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(p.category) || '📦'}</div>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.product_title)}</div>
-            <div style="font-size:12px;color:#4f46e5;font-weight:600">${p.price} WAZ · @${escHtml(p.seller_handle || '')}</div>
+            <div style="font-size:12px;color:#4f46e5;font-weight:600">${window.fmtPrice(p.price)} · @${escHtml(p.seller_handle || '')}</div>
           </div>
         </div>
         ${p.note ? `<div style="font-size:11px;color:#374151;margin-top:6px;padding:6px 8px;background:#fef3c7;border-radius:6px">${escHtml(p.note)}</div>` : ''}
@@ -1128,8 +1128,8 @@ async function renderFlashSalesLive(app) {
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.title)}</div>
                 <div style="font-size:12px;margin-top:2px">
-                  <span style="color:#dc2626;font-weight:700">${it.sale_price} WAZ</span>
-                  <span style="font-size:11px;color:#9ca3af;text-decoration:line-through;margin-left:4px">${it.original_price}</span>
+                  <span style="color:#dc2626;font-weight:700">${window.fmtPrice(it.sale_price)}</span>
+                  <span style="font-size:11px;color:#9ca3af;text-decoration:line-through;margin-left:4px">${it.original_price} USDC</span>
                   <span style="font-size:10px;color:#dc2626;background:#fee2e2;padding:1px 5px;border-radius:99px;margin-left:4px;font-weight:600">-${pct}%</span>
                 </div>
                 <div style="font-size:10px;color:#9ca3af;margin-top:2px">@${escHtml(it.seller_handle || '')} · ${t('截止')} ${fmtTime(it.ends_at)}${it.max_qty > 0 ? ' · ' + t('限') + ' ' + it.max_qty + ' / ' + t('已售') + ' ' + it.sold_count : ''}</div>
