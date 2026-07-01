@@ -34,6 +34,20 @@ export interface OrdersReadDeps {
 export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps): void {
   const { db, auth, getOrderStatus, getOrderChain, verifyOrderChain, getOrderDispute } = deps
 
+  // Direct Pay 披露门(list + detail 共用,防列表旁路详情门 —— #179 审计 P1):
+  //   买家【自己的】direct_p2p 订单在 D1/D2 both-acked 前,收款目标不得下发 —— 删 instruction 原文快照,
+  //   并从账号快照剥离 qr_ref(收款码指针);method/currency/label 按 pre-ack 决定可留(买家自选,已在 selectable 见过)。
+  //   卖家(自填者)/arbitrator/admin 维持现有可见语义(仅当 buyer_id === 本人 时 redact)。
+  function redactUnackedDirectPayTarget(o: Record<string, unknown>, userId: string): void {
+    if (o.payment_rail !== 'direct_p2p' || o.buyer_id !== userId) return
+    if (requireBothDisclosuresAcked(db, o.id as string).ok) return
+    delete o.direct_pay_instruction_snapshot
+    if (o.direct_pay_account_snapshot != null) {
+      try { const s = JSON.parse(o.direct_pay_account_snapshot as string); delete s.qr_ref; o.direct_pay_account_snapshot = JSON.stringify(s) }
+      catch { delete o.direct_pay_account_snapshot }
+    }
+  }
+
   app.get('/api/orders', async (req: Request, res: Response) => {
     const user = auth(req, res); if (!user) return
     const orders = await dbAll<Record<string, unknown>>(`
@@ -54,6 +68,7 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
         delete o.recipient_code
         o.buyer_name = '🔒 ' + (typeof code === 'string' ? code : 'PR-?????')
       }
+      redactUnackedDirectPayTarget(o, user.id as string)   // #179 审计 P1:列表也过披露门,不得旁路
     }
     res.json(orders)
   })
@@ -202,12 +217,9 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
       }
     }
 
-    // Direct Pay 响应契约门:direct_p2p 卖家收款说明快照,买家在 D1/D2 both-acked 前【不得】从 API 拿到
-    //   (非仅 UI 软门)。卖家(自填者)/arbitrator/admin 维持现有可见语义,只 redact 未 ack 的 buyer。
-    if (order.payment_rail === 'direct_p2p' && order.direct_pay_instruction_snapshot != null
-        && order.buyer_id === user.id && !requireBothDisclosuresAcked(db, order.id as string).ok) {
-      delete order.direct_pay_instruction_snapshot
-    }
+    // Direct Pay 响应契约门:direct_p2p 收款目标(instruction 快照 + 账号快照 qr_ref),买家在 D1/D2 both-acked 前
+    //   【不得】从 API 拿到(非仅 UI 软门)。与 /api/orders 列表共用同一 redact,防旁路(#179 审计 P1)。
+    redactUnackedDirectPayTarget(order as Record<string, unknown>, user.id as string)
 
     res.json({ ...statusInfo, history, product, dispute, trackingInfo })
   })

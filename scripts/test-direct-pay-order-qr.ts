@@ -32,9 +32,10 @@ const b64 = pngBuf.toString('base64')
 db.prepare('INSERT INTO direct_receive_account_qr_images (ref, account_id, seller_id, mime, data_b64, byte_len, sha256) VALUES (?,?,?,?,?,?,?)')
   .run('qref1', 'acc1', 'seller1', 'image/png', b64, pngBuf.length, 'qref1')
 
+db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p1','seller1','T','d',10,10,'active')").run()  // list JOIN needs the product row
 const insOrder = (id: string, opts: { buyer?: string; rail?: string; qrRef?: string | null }) =>
-  db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail, direct_pay_account_snapshot) VALUES (?,?,?,?,?,?,?,0,?,?,?)")
-    .run(id, 'p1', opts.buyer ?? 'buyer1', 'seller1', 1, 10, 10, 'direct_pay_window', opts.rail ?? 'direct_p2p',
+  db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail, direct_pay_instruction_snapshot, direct_pay_account_snapshot) VALUES (?,?,?,?,?,?,?,0,?,?,?,?)")
+    .run(id, 'p1', opts.buyer ?? 'buyer1', 'seller1', 1, 10, 10, 'direct_pay_window', opts.rail ?? 'direct_p2p', 'SECRET-PAYNOW',
       opts.qrRef === null ? null : JSON.stringify({ account_id: 'acc1', method: 'PayNow', currency: 'SGD', label: 'A', qr_ref: opts.qrRef ?? 'qref1' }))
 insOrder('ord_ok', {})                                  // buyer1, direct_p2p, qr_ref=qref1
 insOrder('ord_noqr', { qrRef: null })                   // no account snapshot → no qr
@@ -53,9 +54,21 @@ const getQr = async (orderId: string, user?: string): Promise<{ status: number; 
   const ab = Buffer.from(await r.arrayBuffer())
   return { status: r.status, ct: r.headers.get('content-type'), cc: r.headers.get('cache-control'), nosniff: r.headers.get('x-content-type-options'), len: ab.length }
 }
+const listOrder = async (orderId: string, user: string): Promise<any> => {
+  const r = await fetch(`${base}/api/orders`, { headers: { 'x-user': user } })
+  return ((await r.json()) as any[]).find(o => o.id === orderId)
+}
+const acctSnap = (o: any): any => { try { return o?.direct_pay_account_snapshot ? JSON.parse(o.direct_pay_account_snapshot) : null } catch { return null } }
 
 try {
   ok('1. unauth → 401', (await getQr('ord_ok')).status === 401)
+
+  // ── #179 audit P1: GET /api/orders (list) must NOT bypass the disclosure gate ──
+  const preList = await listOrder('ord_ok', 'buyer1')
+  ok('P1a. list PRE-ack: instruction snapshot withheld from buyer', preList && preList.direct_pay_instruction_snapshot === undefined, JSON.stringify(preList?.direct_pay_instruction_snapshot))
+  ok('P1b. list PRE-ack: account snapshot qr_ref stripped', acctSnap(preList) && acctSnap(preList).qr_ref === undefined)
+  ok('P1c. list PRE-ack: non-sensitive method/currency/label still present', acctSnap(preList) && acctSnap(preList).method === 'PayNow' && acctSnap(preList).currency === 'SGD' && acctSnap(preList).label === 'A')
+
   ok('2. buyer, NOT acked → 404 (disclosure gate; non-enumerating)', (await getQr('ord_ok', 'buyer1')).status === 404)
   // ack only D1 → still gated
   recordDisclosureAck(db, { orderId: 'ord_ok', buyerId: 'buyer1', stage: 'pre_select', ackId: 'ack1' })
@@ -65,6 +78,13 @@ try {
   const served = await getQr('ord_ok', 'buyer1')
   ok('4. both acked → 200 image/png bytes', served.status === 200 && served.ct === 'image/png' && served.len === pngBuf.length, JSON.stringify(served))
   ok('5. hardened headers: nosniff + private no-store', served.nosniff === 'nosniff' && /private/.test(served.cc || '') && /no-store/.test(served.cc || ''))
+  // P1 post-ack: list now reveals instruction snapshot + account qr_ref (both-acked)
+  const postList = await listOrder('ord_ok', 'buyer1')
+  ok('P1d. list POST-ack: instruction snapshot now visible', postList && postList.direct_pay_instruction_snapshot === 'SECRET-PAYNOW')
+  ok('P1e. list POST-ack: account snapshot qr_ref restored', acctSnap(postList) && acctSnap(postList).qr_ref === 'qref1')
+  // seller viewing their own order via list is never redacted (authored the instruction)
+  const sellerList = await listOrder('ord_noqr', 'seller1')
+  ok('P1f. seller sees own order instruction in list (not redacted)', sellerList && sellerList.direct_pay_instruction_snapshot === 'SECRET-PAYNOW')
   // non-buyer (even seller) → 404
   ok('6. non-buyer (buyer2) → 404', (await getQr('ord_ok', 'buyer2')).status === 404)
   ok('6b. seller of the order → 404 (endpoint is buyer-only)', (await getQr('ord_ok', 'seller1')).status === 404)
@@ -78,7 +98,7 @@ try {
   ok('9. nonexistent order → 404', (await getQr('nope', 'buyer1')).status === 404)
 
   if (fail > 0) { console.error(`\n❌ direct-pay order QR endpoint FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exitCode = 1 }
-  else console.log(`✅ direct-pay order QR endpoint (D2): buyer-only + both-disclosures-acked · serves snapshotted (ref,seller) bytes · hardened headers · non-enumerating 404 for not-acked/non-buyer/no-qr/escrow\n  ✅ pass ${pass}`)
+  else console.log(`✅ direct-pay order QR endpoint + list/detail disclosure gate (D2 + #179 P1): buyer-only+both-acked QR bytes (hardened, non-enumerating) · GET /api/orders list withholds instruction snapshot + strips account qr_ref pre-ack, reveals post-ack · seller sees own\n  ✅ pass ${pass}`)
 } finally {
   server.close()
 }
