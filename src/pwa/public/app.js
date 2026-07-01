@@ -6453,7 +6453,7 @@ window.lookupAnchorAction = async () => {
           ${img ? `<img src="${escHtml(img)}" onerror="this.outerHTML='📦'" style="width:64px;height:64px;object-fit:cover;border-radius:6px;flex-shrink:0">` : `<div style="width:64px;height:64px;background:#f3f4f6;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;color:#9ca3af;flex-shrink:0">📦</div>`}
           <div style="flex:1;min-width:0">
             <div style="font-size:14px;font-weight:600;color:#1f2937;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(p.title)}</div>
-            <div style="font-size:17px;font-weight:800;color:#dc2626;margin-top:4px">${Number(p.price).toFixed(2)} <span style="font-size:11px;color:#9ca3af;font-weight:500">WAZ</span></div>
+            <div style="font-size:17px;font-weight:800;color:#dc2626;margin-top:4px">${window.fmtPrice(p.price)}</div>
             <div style="font-size:11px;color:#6b7280;margin-top:2px">@${escHtml(p.seller_handle || p.seller_name?.slice(0,8) || '?')}</div>
           </div>
         </div>
@@ -6639,7 +6639,7 @@ async function renderSellerFlashSales(app) {
               <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${escHtml(it.product_title)}</div>
               <span style="font-size:10px;font-weight:600;color:#fff;background:${phaseColor};padding:2px 8px;border-radius:99px">${phaseLabel}</span>
             </div>
-            <div style="font-size:12px;color:#374151">${it.sale_price} WAZ <span style="font-size:11px;color:#9ca3af;text-decoration:line-through;margin-left:4px">${it.original_price}</span></div>
+            <div style="font-size:12px;color:#374151">${window.fmtPrice(it.sale_price)} <span style="font-size:11px;color:#9ca3af;text-decoration:line-through;margin-left:4px">${it.original_price} USDC</span></div>
             <div style="font-size:11px;color:#9ca3af;margin-top:2px">${fmtTime(it.starts_at)} → ${fmtTime(it.ends_at)}${it.max_qty > 0 ? ' · ' + t('已售') + ' ' + it.sold_count + '/' + it.max_qty : ''}</div>
             ${phase === 'scheduled' ? `<button class="btn btn-outline btn-sm" style="margin-top:6px;font-size:10px;padding:3px 8px;color:#dc2626;border-color:#fca5a5" onclick="deleteFlashSale('${it.id}')">${t('取消')}</button>` : ''}
           </div>`
@@ -8071,7 +8071,7 @@ async function renderFollowFeed(app) {
               <div style="font-size:28px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" onerror="this.outerHTML='📦'" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(it.category) || '📦'}</div>
               <div style="flex:1;min-width:0">
                 <div style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.title)}</div>
-                <div style="font-size:13px;color:#4f46e5;margin-top:2px;font-weight:600">${it.price} WAZ <span style="font-size:11px;color:#9ca3af;font-weight:400">· ${stockBadgeHtml(it)}</span></div>
+                <div style="font-size:13px;color:#4f46e5;margin-top:2px;font-weight:600">${window.fmtPrice(it.price)} <span style="font-size:11px;color:#9ca3af;font-weight:400">· ${stockBadgeHtml(it)}</span></div>
               </div>
             </div>
           </div>`
@@ -19840,7 +19840,7 @@ async function shInjectStrip(containerId, opts = {}) {
               ${it.cover ? `<img src="${escAttr(it.cover)}" style="width:100%;height:100%;object-fit:cover">` : `<div style="font-size:28px">${shCatIcon(it.category)}</div>`}
             </div>
             <div style="padding:6px">
-              <div style="font-size:13px;font-weight:700;color:#dc2626">${Number(it.price).toFixed(0)} WAZ</div>
+              <div style="font-size:13px;font-weight:700;color:#dc2626">${window.fmtPrice(it.price)}</div>
               <div style="font-size:10px;color:#6b7280;line-height:1.3;margin-top:2px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden">${escHtml(it.title)}</div>
               <div style="font-size:9px;color:${cond.color};margin-top:3px;font-weight:600">${t(cond.label)}</div>
             </div>
@@ -19866,8 +19866,8 @@ const SKM_KINDS = [
 function skmKindMeta(k) { return SKM_KINDS.find(x => x.id === k) || { icon: '⚙️', label: k } }
 function skmBillingLabel(mode, price) {
   if (mode === 'free') return `🆓 ${t('免费')}`
-  if (mode === 'per_use') return `🔁 ${Number(price).toFixed(0)} WAZ/${t('次')}`
-  return `💰 ${Number(price).toFixed(0)} WAZ`
+  if (mode === 'per_use') return `🔁 ${window.fmtPrice(price)}/${t('次')}`
+  return `💰 ${window.fmtPrice(price)}`
 }
 const SKM_STATUS = {
   submitted: { label: '审核中', color: '#f59e0b' },
@@ -20275,7 +20275,7 @@ function shItemCard(it) {
       ${Number(it.negotiable) === 1 ? `<span style="position:absolute;top:6px;left:6px;background:rgba(0,0,0,0.7);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px">${t('可议价')}</span>` : ''}
     </div>
     <div style="padding:8px">
-      <div style="font-size:14px;font-weight:700;color:#dc2626">${Number(it.price).toFixed(0)} WAZ</div>
+      <div style="font-size:14px;font-weight:700;color:#dc2626">${window.fmtPrice(it.price)}</div>
       <div style="font-size:11px;color:#374151;line-height:1.3;margin:2px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(it.title)}</div>
       <div style="display:flex;align-items:center;gap:4px;font-size:9px;margin-top:4px">
         <span style="background:${cond.color}1a;color:${cond.color};padding:1px 5px;border-radius:3px;font-weight:600">${t(cond.label)}</span>
@@ -20490,7 +20490,7 @@ function shMineRenderItems(allItems) {
         <span style="position:absolute;top:6px;right:6px;background:${statusColor[it.status] || '#9ca3af'};color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:600">${t(statusLabel[it.status] || it.status)}</span>
       </div>
       <div style="padding:8px">
-        <div style="font-size:14px;font-weight:700;color:#dc2626">${Number(it.price).toFixed(0)} WAZ</div>
+        <div style="font-size:14px;font-weight:700;color:#dc2626">${window.fmtPrice(it.price)}</div>
         <div style="font-size:11px;color:#374151;line-height:1.3;margin:2px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(it.title)}</div>
         <div style="display:flex;justify-content:space-between;font-size:9px;color:#9ca3af;margin-top:4px">
           <span>👁 ${it.view_count || 0}</span>
@@ -20533,7 +20533,7 @@ async function renderSecondhandDetail(app, id) {
       </div>
       <div style="padding:14px">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-size:24px;font-weight:700;color:#dc2626">${Number(it.price).toFixed(2)} WAZ</div><span style="background:${cond.color}1a;color:${cond.color};font-size:11px;padding:3px 9px;border-radius:99px;font-weight:600;white-space:nowrap">${t(cond.label)}</span></div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-size:24px;font-weight:700;color:#dc2626">${window.fmtPrice(it.price)}</div><span style="background:${cond.color}1a;color:${cond.color};font-size:11px;padding:3px 9px;border-radius:99px;font-weight:600;white-space:nowrap">${t(cond.label)}</span></div>
           ${Number(it.negotiable) === 1 ? `<span style="background:#fef3c7;color:#92400e;font-size:10px;padding:3px 8px;border-radius:99px;font-weight:600;white-space:nowrap">${t('可议价')}</span>` : ''}
         </div>
         <h2 style="font-size:16px;color:#111827;line-height:1.4;margin:0 0 10px">${escHtml(it.title)}</h2>
@@ -22529,7 +22529,7 @@ async function renderLeaderboard(app) {
             </div>
           </div>
           <div style="text-align:right">
-            <div style="font-size:14px;font-weight:800;color:#dc2626">${p.price} <span style="font-size:10px;color:#9ca3af">WAZ</span></div>
+            <div style="font-size:14px;font-weight:800;color:#dc2626">${window.fmtPrice(p.price)}</div>
             <div style="font-size:10px;color:#854d0e;margin-top:1px">${pctLabel}</div>
           </div>
         </div>`
