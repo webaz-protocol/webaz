@@ -329,5 +329,32 @@ ok('18f. fee-center reads own account via GET /direct-receive/my-fee-account', h
 ok('18g. seller-only + non-custodial copy (not buyer funds/escrow/collateral)', has(FEECTR, '仅你可见') && has(FEECTR, '非买家货款') && has(FEECTR, 'escrow') && has(FEECTR, '保证金'))
 for (const k of ['平台服务费账户(仅你可见)', '待补平台服务费', '首单宽限可用:你的第一笔直付无需预充值。']) ok(`18h. i18n EN for ${k}`, has(I18N, `'${k}':`))
 
+// ── 19. Phase C2: seller multi receive-account + QR management (new app-direct-pay-accounts.js) ──
+const ACC = P('app-direct-pay-accounts.js')
+const ACCCODE = ACC.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+ok('19. index.html loads app-direct-pay-accounts.js before app.js', has(HTML, '/app-direct-pay-accounts.js') && HTML.indexOf('/app-direct-pay-accounts.js') < HTML.indexOf('/app.js'))
+ok('19a. accounts file in check:pwa-syntax', /node --check src\/pwa\/public\/app-direct-pay-accounts\.js/.test(PKG))
+ok('19b. accounts file has a LOC ceiling (ratchet covered)', /'src\/pwa\/public\/app-direct-pay-accounts\.js'\s*:/.test(RATCHET))
+ok('19c. section + hydrate + add/update/deactivate/qr handlers defined', /draAccountsSection\s*=/.test(ACC) && /draHydrateAccounts\s*=/.test(ACC) && /draAddAccount\s*=/.test(ACC) && /draUpdateAccount\s*=/.test(ACC) && /draDeactivateAccount\s*=/.test(ACC) && /draUploadQr\s*=/.test(ACC))
+ok('19d. reads the seller accounts list (GET)', /GET\('\/direct-receive\/accounts'\)/.test(ACC))
+ok('19e. writes hit the CRUD + QR endpoints', /POST\('\/direct-receive\/accounts'/.test(ACC) && /PUT\('\/direct-receive\/accounts\/'/.test(ACC) && /api\('DELETE', '\/direct-receive\/accounts\/'/.test(ACC) && /\/qr'/.test(ACC))
+ok('19f. app.js settings tab renders + hydrates the accounts panel', has(APP, 'draAccountsSection') && has(APP, 'draHydrateAccounts'))
+// IRON RULE: every write (add/update/deactivate/qr) goes through a live Passkey ceremony, purpose-bound
+ok('19g. all writes use live Passkey gate (direct_receive_account_manage)', has(ACC, "requestPasskeyGate('direct_receive_account_manage'"))
+const accGatePurposes = [...ACC.matchAll(/requestPasskeyGate\('([^']+)'/g)].map(m => m[1])
+for (const p of accGatePurposes) ok(`19g. WebAuthn allowed set includes '${p}' (token mintable)`, allowedDecl.includes(`'${p}'`))
+// QR preview must fetch with Authorization header (owner-only endpoint; <img src> can't carry it)
+ok('19h. QR thumbnail fetched with Authorization header (not <img src> to the API)', /fetch\('\/api\/direct-receive\/accounts\/'[^)]*Authorization/.test(ACC.replace(/\n/g, ' ')))
+// client-side QR guard mirrors backend: png|webp only, ≤ 64KB
+ok('19i. client pre-validates QR type (png|webp) + size (64KB)', /image\/png/.test(ACC) && /image\/webp/.test(ACC) && /64\s*\*\s*1024/.test(ACC))
+// non-custodial: the accounts UI must NOT touch any money/state endpoint
+ok('19j. accounts UI touches no wallet/escrow/settle/refund', !/\/wallet|\/escrow|\/settle|\/refund|\/returns/.test(ACCCODE))
+// non-custodial copy present (store/display only, no verify/route/custody, no QR parsing)
+ok('19k. accounts UI states store-only / non-custodial boundary', has(ACC, '只存储与展示') && has(ACC, '不路由/托管资金') && has(ACC, '不解析二维码'))
+// EN parity for the new copy
+for (const k of ['直付收款账号', '新增收款账号', '尚未添加收款账号', '收款方式', '币种', '上传二维码', '更换二维码', '无二维码', '二维码已上传', '停用后买家将无法选择该收款账号,确定停用?']) {
+  ok(`19-i18n EN present: ${k.slice(0, 12)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
+}
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)
