@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (715 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (716 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -3650,6 +3650,17 @@
     "/api/direct-receive/readiness": {
       "get": {
         "summary": "绝不下发 raw blocker / KYB·制裁·AML 分项(见 sellerDirectPayReadinessView)。只读 self(auth 用户自身 id)。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/selectable-accounts": {
+      "get": {
+        "summary": "⚠️ 只下发元数据 method/currency/label —— instruction 原文与 QR 受披露门保护,D1/D2 ack 后才随订单快照给买家。",
         "tags": [],
         "security": [
           {

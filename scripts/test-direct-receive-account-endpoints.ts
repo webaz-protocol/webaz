@@ -15,6 +15,7 @@ import express, { type Request, type Response } from 'express'
 import type { AddressInfo } from 'node:net'
 
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
+const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')  // RFC-016 seam: point dbOne at the test handle
 const { registerDirectReceiveAccountsRoutes } = await import('../src/pwa/routes/direct-receive-accounts.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -22,11 +23,13 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 let _n = 0; const generateId = (p: string): string => `${p}_${++_n}`
 
 const db = initDatabase()
+setSeamDb(db)
 db.pragma('foreign_keys = OFF')
 for (const [u, role] of [['s1', 'seller'], ['s2', 'seller'], ['b1', 'buyer']] as const) db.prepare('INSERT INTO users (id,name,role,api_key) VALUES (?,?,?,?)').run(u, u, role, 'k_' + u)
 // s1 + s2 have a Passkey; the guard hard-rejects users without one. (webauthn_credentials is a runtime-helper table, not in initDatabase — create it here.)
 db.exec('CREATE TABLE IF NOT EXISTS webauthn_credentials (credential_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, public_key TEXT, counter INTEGER DEFAULT 0)')
 for (const s of ['s1', 's2']) db.prepare('INSERT INTO webauthn_credentials (credential_id, user_id, public_key, counter) VALUES (?,?,?,0)').run('cred_' + s, s, 'pk')
+db.prepare("INSERT INTO products (id, seller_id, title, description, price, status) VALUES ('prd_s1','s1','P','D',10,'active')").run()  // for buyer selectable-accounts
 
 // fake auth (x-user header) + fake gate: token IS the purpose_data JSON (real gate binds it server-side; here validate() enforces the binding)
 const auth = (req: Request, res: Response): Record<string, unknown> | null => {
@@ -104,6 +107,15 @@ try {
   ok('7d. non-owner qr read → 404', (await call('GET', `/api/direct-receive/accounts/${acc1}/qr`, 's2')).status === 404)
   ok('7e. nonexistent account → 404', (await call('GET', '/api/direct-receive/accounts/nope/qr', 's1')).status === 404)
 
+  // D1. buyer-facing selectable-accounts: metadata only (method/currency/label), NO instruction/qr; any logged-in user (checked here while acc1 still holds its original Bank/THB metadata)
+  ok('D1a. unauth → 401', (await call('GET', '/api/direct-receive/selectable-accounts?product_id=prd_s1')).status === 401)
+  ok('D1b. missing product_id → 400', (await call('GET', '/api/direct-receive/selectable-accounts', 'b1')).status === 400)
+  ok('D1c. unknown product → 404', (await call('GET', '/api/direct-receive/selectable-accounts?product_id=nope', 'b1')).status === 404)
+  const sel = await call('GET', '/api/direct-receive/selectable-accounts?product_id=prd_s1', 'b1')
+  const opt = (sel.json?.options || []).find((o: any) => o.account_id === acc1)
+  ok('D1d. buyer sees seller active account option (method/currency/label)', sel.status === 200 && !!opt && opt.method === 'Bank' && opt.currency === 'THB')
+  ok('D1e. option carries NO instruction / raw QR (disclosure-gated fields withheld)', opt && !('instruction' in opt) && !('qr_image_ref' in opt) && !('data_b64' in opt))
+
   // P2-1 regression: a text-field update must NOT clobber an uploaded qr_image_ref (QR lifecycle owned only by /qr)
   const refBefore = (db.prepare('SELECT qr_image_ref FROM direct_receive_accounts WHERE id = ?').get(acc1) as { qr_image_ref: string | null }).qr_image_ref
   ok('P2-1a. QR ref is set before text update', !!refBefore)
@@ -124,6 +136,7 @@ try {
 
   // 8. update + deactivate (owner, Passkey)
   ok('8b. owner deactivate ok + list active shrinks', (await call('DELETE', `/api/direct-receive/accounts/${acc1}`, 's1', { webauthn_token: tok({ action: 'deactivate', account_id: acc1 }) })).json?.changed === true)
+  ok('D1f. deactivated account no longer selectable by buyer', !((await call('GET', '/api/direct-receive/selectable-accounts?product_id=prd_s1', 'b1')).json?.options || []).some((o: any) => o.account_id === acc1))
 
   // 9. audit append-only, NO raw instruction / raw QR stored
   const events = db.prepare('SELECT event_type, qr_ref FROM direct_receive_account_events WHERE account_id = ? ORDER BY created_at').all(acc1) as { event_type: string; qr_ref: string | null }[]

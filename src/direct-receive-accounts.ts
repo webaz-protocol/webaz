@@ -83,6 +83,13 @@ export function getAccount(db: Database.Database, id: string): DirectReceiveAcco
   return (db.prepare(`SELECT ${COLS} FROM direct_receive_accounts WHERE id = ?`).get(id) as DirectReceiveAccount | undefined) ?? null
 }
 
+export interface AccountOption { account_id: string; method: string | null; currency: string | null; label: string | null }
+/** 买家侧【可选收款账号】(仅 active)—— 只投影元数据 method/currency/label 供结算前选"怎么付"+FX 换算展示。
+ *  ⚠️【绝不】含 instruction 原文 / qr_image_ref —— 收款目标受披露门保护(D1/D2 ack 后才随订单快照下发)。 */
+export function listSellerAccountOptions(db: Database.Database, sellerId: string): AccountOption[] {
+  return db.prepare("SELECT id AS account_id, method, currency, label FROM direct_receive_accounts WHERE seller_id = ? AND status = 'active' ORDER BY created_at ASC, id ASC").all(sellerId) as AccountOption[]
+}
+
 /** 新增一个 active 收款账号。入参经 normalizeAccountInput 校验;只写本表。 */
 export function addAccount(
   db: Database.Database, sellerId: string, input: AccountInput, generateId: (prefix: string) => string,
