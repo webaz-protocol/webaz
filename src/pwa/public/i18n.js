@@ -1,7 +1,20 @@
-// WebAZ i18n — Chinese (default) / English
+// WebAZ i18n — Chinese / English
 // Usage: t('中文') → returns English when lang='en', or Chinese as-is
+// Default language: a saved manual choice always wins; otherwise infer from the browser/OS
+//   language (zh* → Chinese, everything else → English). Manual switches persist via setLang.
 
-window._lang = localStorage.getItem('webaz_lang') || 'zh'
+// 默认语言解析(纯函数,便于测试)。savedLang 只认 'zh'/'en'(异常值忽略,走浏览器检测);
+//   否则按 navigator.languages(有序偏好列表)、其次 language,取【第一个受支持的语言】——
+//   首个 zh*(zh/zh-CN/zh-Hant/zh-TW…)→ zh,首个 en*→ en;无受支持项(含无 navigator)→ en。
+//   ⚠️ 必须按顺序取首个受支持项,不能"只要含中文就中文":['en-US','zh-CN'] 是英文优先用户,应默认 en。
+window.resolveInitialLang = (savedLang, navigatorLike) => {
+  if (savedLang === 'zh' || savedLang === 'en') return savedLang   // 用户手动选择,永远优先,之后不被浏览器语言覆盖
+  const nav = navigatorLike || {}
+  const langs = (nav.languages && nav.languages.length) ? nav.languages : (nav.language ? [nav.language] : [])
+  for (const l of langs) { const s = String(l || '').toLowerCase(); if (s.startsWith('zh')) return 'zh'; if (s.startsWith('en')) return 'en' }
+  return 'en'
+}
+window._lang = window.resolveInitialLang(localStorage.getItem('webaz_lang'), typeof navigator !== 'undefined' ? navigator : null)
 
 const _EN = {
   // ── Direct Pay (Rail 1) — PR-5c availability/control reason copy (off-platform; WebAZ does not custody/guarantee/refund) ──

@@ -87,6 +87,7 @@
     "test:connected-agents-read": "tsx scripts/test-connected-agents-read.ts",
     "test:connected-agents-ui": "tsx scripts/test-connected-agents-ui.ts",
     "test:leaderboard-anon-projection": "tsx scripts/test-leaderboard-anon-projection.ts",
+    "test:i18n-default-language": "tsx scripts/test-i18n-default-language.ts",
     "test:reputation-handle-resolution": "tsx scripts/test-reputation-handle-resolution.ts",
     "test:clearing-escrow-schema": "tsx scripts/test-clearing-escrow-schema.ts",
     "test:clearing-commission": "tsx scripts/test-clearing-commission.ts",
