@@ -17,7 +17,7 @@ window.dpSellerReadinessCopy = () => ({
 window.dpSellerReadinessSection = () => `
   <div class="card" style="margin-bottom:12px;border:1px solid #e5e7eb">
     <div style="font-size:14px;font-weight:700;margin-bottom:4px">🧭 ${t('直付开通进度(仅你可见)')}</div>
-    <div style="font-size:12px;color:#6b7280;line-height:1.6;margin-bottom:10px">${t('以上为你的直付开通进度;直付当前仍未上线,完成可行动项不代表立即可用。')}</div>
+    <div style="font-size:12px;color:#6b7280;line-height:1.6;margin-bottom:10px">${t('以上为你的直付开通进度;直付按轨道分阶段开放,完成可行动项不代表立即可用。')}</div>
     <div id="dp-seller-readiness">${loading$()}</div>
   </div>`
 

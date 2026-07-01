@@ -199,7 +199,7 @@ const _EN = {
   '店铺已通过': 'Store verified',
   '店铺申请已拒绝': 'Store application rejected',
   '核验店铺外链;可勾选免逐品验证 + 真人 Passkey(仅 root)': 'Verify store links; optionally grant per-product exemption + live Passkey (root only)',
-  '以上为你的直付开通进度;直付当前仍未上线,完成可行动项不代表立即可用。': 'This is your Direct Pay onboarding progress. Direct Pay is not yet live — completing the action items does not mean it becomes immediately available.',
+  '以上为你的直付开通进度;直付按轨道分阶段开放,完成可行动项不代表立即可用。': 'This is your Direct Pay onboarding progress. Direct Pay opens by rail in phases — completing the action items does not mean it is immediately available.',
   '平台侧直付已开放': 'Direct Pay is open on the platform side',
   '直付平台侧暂未开放(无需你操作)': 'Direct Pay is not yet open on the platform side (no action needed from you)',
   '已设置收款说明': 'Payment instruction is set',
