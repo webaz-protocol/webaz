@@ -1017,7 +1017,7 @@ function roleHome(role) {
 function preLaunchBannerHTML() {
   if (window._protocolPhase && window._protocolPhase !== 'pre_launch') return ''
   return `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;font-size:12px;color:#92400e;text-align:center;line-height:1.5;margin:8px 12px 12px">
-    ⚠️ <strong>${t('协议尚未公开上线 · 数据为测试 / demo · 请勿据此投资或承诺第三方')}</strong>
+    ⚠️ <strong>${t('直付(direct pay)已上线,是你与卖家的真实场外付款;WebAZ 非托管——不代持、不担保、不退款 · 平台托管(escrow)尚未上线(模拟测试币)· 价格按 USDC 计价仅供展示 · 邀请制预发布,勿据此投资或向第三方承诺')}</strong>
     <a href="#welcome" style="margin-left:8px;color:#7c2d12;text-decoration:underline;font-weight:600">${t('详情')}</a>
   </div>`
 }
@@ -4392,7 +4392,7 @@ function renderWelcome(app) {
     <div style="min-height:100vh;background:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','PingFang SC',sans-serif;-webkit-font-smoothing:antialiased;position:relative">
       <!-- Top nav — frosted glass，左返回，右语言切换（当前语言高亮） -->
       <div style="position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:rgba(255,255,255,0.85);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid #E4E4E7">
-        <button class="w-nav-back" onclick="navigate('#login')" style="background:none;border:none;cursor:pointer;font-size:14px;color:#3F3F46;padding:6px 10px;font-weight:500;transition:color 0.15s;font-family:inherit">← ${T('返回首页', 'Back to Home')}</button>
+        <button class="w-nav-back" onclick="navigate('#buy')" style="background:none;border:none;cursor:pointer;font-size:14px;color:#3F3F46;padding:6px 10px;font-weight:500;transition:color 0.15s;font-family:inherit">← ${T('返回首页', 'Back to Home')}</button>
         <span class="w-lang" style="font-size:13px;font-weight:500">
           <span class="${en ? 'w-lang-inactive' : 'w-lang-active'}" ${en ? `onclick="toggleLang();renderWelcome(document.getElementById('app'))"` : ''}>中文</span>
           <span class="w-lang-sep">/</span>
