@@ -12447,7 +12447,7 @@ async function renderOrderDetail(app, orderId) {
 
   const historyHtml = (history || []).map(h => `
     <div class="timeline-item">
-      <div><span class="timeline-status">${STATUS_ZH[h.from_status] || h.from_status} → ${STATUS_ZH[h.to_status] || h.to_status}</span></div>
+      <div><span class="timeline-status">${t(STATUS_ZH[h.from_status] || h.from_status)} → ${t(STATUS_ZH[h.to_status] || h.to_status)}</span></div>
       <div class="timeline-actor">${h.actor_name}（${h.actor_role_name || h.actor_role}）</div>
       <div class="timeline-time">${fmtTime(h.created_at)}</div>
       ${h.notes ? `<div class="timeline-evidence" style="color:#6b7280">💬 ${h.notes}</div>` : ''}
