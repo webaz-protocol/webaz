@@ -189,6 +189,19 @@ CREATE TABLE IF NOT EXISTS direct_receive_payment_instructions (
       updated_at   TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
     );
 
+CREATE TABLE IF NOT EXISTS direct_receive_accounts (
+      id            TEXT PRIMARY KEY,
+      seller_id     TEXT NOT NULL REFERENCES users(id),
+      method        TEXT,
+      currency      TEXT,
+      instruction   TEXT NOT NULL,
+      label         TEXT,
+      qr_image_ref  TEXT,
+      status        TEXT NOT NULL DEFAULT 'active',
+      created_at    TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
+      updated_at    TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
+    );
+
 CREATE TABLE IF NOT EXISTS direct_receive_deferrals (
       id                   TEXT PRIMARY KEY,
       user_id              TEXT NOT NULL REFERENCES users(id),
