@@ -11239,6 +11239,7 @@ window.qtyStep = (delta, max) => {
   const cur = Math.floor(Number(inp.value) || 1)
   const next = Math.max(1, Math.min(max, cur + delta))
   inp.value = next
+  if (window.dpRenderAccountFx) window.dpRenderAccountFx()  // D3:数量变→刷新分账号 FX(按订单总额,非单价)
 }
 
 // B5 捐赠 chip 选择 — 高亮当前选中 + 更新提示文案
@@ -11268,6 +11269,7 @@ window.qtyClamp = (max) => {
   if (!Number.isFinite(v) || v < 1) v = 1
   if (v > max) v = max
   inp.value = v
+  if (window.dpRenderAccountFx) window.dpRenderAccountFx()  // D3:数量变→刷新分账号 FX(按订单总额,非单价)
 }
 
 window.doBuy = async (productId, price) => {
