@@ -49,6 +49,23 @@ ok('6e. app-listings min_price → fmtPrice', LIST.includes('${window.fmtPrice(i
 ok('6f. app-listings offer price → fmtPrice', LIST.includes('font-size:16px">${window.fmtPrice(o.price)}</div>'))
 ok('6g. NEG: no round-2 raw WAZ left', !APP.includes("${Number(l.price).toFixed(0)} WAZ") && !APP.includes('${Number(o.price).toFixed(0)} WAZ') && !LIST.includes('${Number(it.min_price).toFixed(2)} <span') && !LIST.includes('${Number(o.price).toFixed(2)} <span'))
 
+// 7. review round-3 sites (P2P DETAIL page price + buy button; regular products leaderboard branch)
+ok('7a. p2p detail main price → fmtPrice', APP.includes('font-size:22px;margin-bottom:6px">${window.fmtPrice(p.price)}</div>'))
+ok('7b. p2p detail buy button → fmtPrice', APP.includes("${t('购买')} ${window.fmtPrice(p.price)}</button>"))
+ok('7c. leaderboard regular products branch → fmtPrice', APP.includes("|| '?')} · ${window.fmtPrice(p.price)} ·"))
+ok('7d. NEG: no p2p "${p.price} WAZ" / products "${p.price} WAZ ·" left', !APP.includes('font-size:22px;margin-bottom:6px">${p.price} <span') && !APP.includes("${t('购买')} ${p.price} WAZ") && !APP.includes('|| \'?\')} · ${p.price} WAZ ·'))
+
+// 8. proactive sweep — remaining buyer-facing PRODUCT prices (agent-buy/智能下单 results, share-gift, group-buy final)
+ok('8a. agent-buy 最佳替代 → fmtPrice', APP.includes('· <strong>${window.fmtPrice(res.best_product.price)}</strong></span>'))
+ok('8b. agent-buy best product → fmtPrice', APP.includes('margin-bottom:4px">${window.fmtPrice(res.best_product.price)}</div>'))
+ok('8c. agent-buy alt product → fmtPrice', APP.includes('margin-left:8px">${window.fmtPrice(p.price)}</div>'))
+ok('8d. share-gift target price → fmtPrice', APP.includes('· ${window.fmtPrice(tgt.price)} <span'))
+ok('8e. group-buy final price → fmtPrice', APP.includes('color:#16a34a">${window.fmtPrice(final)}</div>'))
+ok('8f. NEG: those agent-buy/share/group-buy raw WAZ gone', !APP.includes('${res.best_product.price} WAZ') && !APP.includes('${tgt.price} WAZ') && !APP.includes('color:#16a34a">${final} WAZ'))
+ok('8g. group-buy split-span final price → fmtPrice', APP.includes('<span style="color:#16a34a;font-weight:700">${window.fmtPrice(final)}</span>') && !APP.includes('font-weight:700">${final}</span> WAZ'))
+// NOTE (explicitly still WAZ — separate buckets, not buyer product prices): cart line + totals (pending
+// order-totals decision), seller-dashboard product mgmt, admin views, auction bids, escrow/wallet.
+
 // 5. PRESERVED — order totals / escrow / wallet stay WAZ (pending decision / honesty)
 ok('5a. order-detail total still WAZ (usdHint, PR-1e pending)', APP.includes('usdHint(order.total_amount)'))
 ok('5b. escrow "已托管" still WAZ (simulated, not USDC custody)', /已托管/.test(APP))

@@ -6516,7 +6516,7 @@ async function renderGroupBuysLive(app) {
               <div style="font-size:32px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" onerror="this.outerHTML='📦'" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(it.category) || '📦'}</div>
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.product_title)}</div>
-                <div style="font-size:12px;margin-top:2px"><span style="color:#16a34a;font-weight:700">${final}</span> WAZ <span style="font-size:10px;color:#9ca3af;text-decoration:line-through margin-left:4px">${it.original_price}</span> <span style="font-size:10px;color:#16a34a;background:#dcfce7;padding:1px 5px;border-radius:99px;margin-left:4px;font-weight:600">-${pct}%</span></div>
+                <div style="font-size:12px;margin-top:2px"><span style="color:#16a34a;font-weight:700">${window.fmtPrice(final)}</span> <span style="font-size:10px;color:#9ca3af;text-decoration:line-through margin-left:4px">${it.original_price} USDC</span> <span style="font-size:10px;color:#16a34a;background:#dcfce7;padding:1px 5px;border-radius:99px;margin-left:4px;font-weight:600">-${pct}%</span></div>
                 <div style="font-size:10px;color:#9ca3af;margin-top:2px">@${escHtml(it.seller_handle || '')} · ${t('截止')} ${fmtTime(it.ends_at)}</div>
               </div>
             </div>
@@ -6554,7 +6554,7 @@ async function renderGroupBuyDetail(app, id) {
     <h1 class="page-title">👥 ${escHtml(r.product_title)}</h1>
     <div class="card" style="background:linear-gradient(135deg,#ecfdf5,#fff);padding:14px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div><div style="font-size:24px;font-weight:800;color:#16a34a">${final} WAZ</div><div style="font-size:11px;color:#9ca3af;text-decoration:line-through">${r.original_price} WAZ</div></div>
+        <div><div style="font-size:24px;font-weight:800;color:#16a34a">${window.fmtPrice(final)}</div><div style="font-size:11px;color:#9ca3af;text-decoration:line-through">${r.original_price} WAZ</div></div>
         <div style="font-size:18px;font-weight:700;color:#16a34a;background:#dcfce7;padding:6px 12px;border-radius:8px">-${pct}%</div>
       </div>
       <div style="font-size:12px;color:#374151;margin-bottom:4px">${t('已成团')} <strong>${joined}/${r.target_count}</strong> · ${t('剩余时间')} ${remainingStr}</div>
@@ -9168,7 +9168,7 @@ function renderShareBanner(variant) {
   const tgtKind = ctx.target_kind
   const tgtLine = tgt
     ? (tgtKind === 'product'
-        ? `🎁 <strong>${escHtml(tgt.title)}</strong> · ${tgt.price} WAZ <span style="color:#9ca3af">@ ${escHtml(tgt.seller_name)}</span>`
+        ? `🎁 <strong>${escHtml(tgt.title)}</strong> · ${window.fmtPrice(tgt.price)} <span style="color:#9ca3af">@ ${escHtml(tgt.seller_name)}</span>`
         : tgtKind === 'user'
           ? `👤 <strong>${escHtml(tgt.name)}</strong>${tgt.bio ? ` · ${escHtml(tgt.bio).slice(0, 40)}` : ''}`
           : '')
@@ -17425,7 +17425,7 @@ async function doBatchBuy(urls, addr, auto) {
         <span style="font-size:12px;font-weight:700;color:${recColor};white-space:nowrap">${recLabel}</span>
       </div>
       ${res.best_product ? `<div style="margin-top:6px;font-size:12px;color:#16a34a;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        <span>${t('最佳替代')}：${escHtml(res.best_product.title)} · <strong>${res.best_product.price} WAZ</strong></span>
+        <span>${t('最佳替代')}：${escHtml(res.best_product.title)} · <strong>${window.fmtPrice(res.best_product.price)}</strong></span>
         <button class="btn btn-primary btn-sm" style="width:auto;padding:3px 10px;font-size:11px" onclick="navigate('#order-product/${res.best_product.id}')">${t('下单')}</button>
       </div>` : ''}
       ${res.auto_bought ? `<div style="margin-top:6px;font-size:12px;color:#16a34a">✅ ${t('已自动下单')} <a href="#order/${res.order_id}" style="color:#16a34a;font-weight:600">${res.order_id}</a></div>` : ''}`
@@ -17640,7 +17640,7 @@ window.doAgentBuy = async () => {
   const bestCard = res.best_product ? `
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px;margin:12px 0">
       <div style="font-weight:600;font-size:14px;margin-bottom:4px">${res.best_product.title}</div>
-      <div style="font-size:18px;font-weight:700;color:#16a34a;margin-bottom:4px">${res.best_product.price} WAZ</div>
+      <div style="font-size:18px;font-weight:700;color:#16a34a;margin-bottom:4px">${window.fmtPrice(res.best_product.price)}</div>
       <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${res.best_product.agent_summary || ''}</div>
       ${!res.auto_bought ? `<button class="btn btn-primary btn-sm" style="width:auto" onclick="navigate('#order-product/${res.best_product.id}')">${t('查看并下单')}</button>` : ''}
     </div>` : ''
@@ -17660,7 +17660,7 @@ window.doAgentBuy = async () => {
             <div style="font-size:13px;font-weight:500">${p.url_match ? '🎯 ' : ''}${p.title}</div>
             <div style="font-size:11px;color:#6b7280">${p.agent_summary || ''}${p.url_match ? ` · <span style="color:#16a34a">${t('同款商品')}</span>` : ''}</div>
           </div>
-          <div style="font-weight:700;color:#1d4ed8;white-space:nowrap;margin-left:8px">${p.price} WAZ</div>
+          <div style="font-weight:700;color:#1d4ed8;white-space:nowrap;margin-left:8px">${window.fmtPrice(p.price)}</div>
         </div>`).join('')}
     </div>` : ''
 
@@ -22540,7 +22540,7 @@ async function renderLeaderboard(app) {
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.title)}</div>
           <div style="font-size:11px;color:#6b7280;margin-top:2px">
-            @${escHtml(p.seller_handle || p.seller_name?.slice(0,8) || '?')} · ${p.price} WAZ ·
+            @${escHtml(p.seller_handle || p.seller_name?.slice(0,8) || '?')} · ${window.fmtPrice(p.price)} ·
             🛒 ${p.completion_count || 0} · 🤝 ${p.unique_sharer_count || 0} · ❤️ ${p.total_likes || 0}
           </div>
         </div>
@@ -22744,7 +22744,7 @@ async function renderP2pDetail(app, id) {
       <div style="flex:1">
         <h2 style="font-size:18px;font-weight:700;margin:0 0 4px">${escHtml(p.title)}</h2>
         <div style="font-size:12px;color:#6b7280;margin-bottom:6px">@${escHtml(p.seller_handle || p.seller_id.slice(0,8))} · ${p.region}</div>
-        <div style="color:#dc2626;font-weight:700;font-size:22px;margin-bottom:6px">${p.price} <span style="font-size:11px;color:#9ca3af;font-weight:500">WAZ</span></div>
+        <div style="color:#dc2626;font-weight:700;font-size:22px;margin-bottom:6px">${window.fmtPrice(p.price)}</div>
         <div style="font-size:11px;color:#6b7280">${t('库存')} ${p.stock}</div>
       </div>
     </div>
@@ -22763,7 +22763,7 @@ async function renderP2pDetail(app, id) {
     </div>` : `
     <div class="card" style="padding:14px;margin-bottom:12px;background:#fafafa;color:#9ca3af;text-align:center">${t('完整详情未能从节点获取 — 仅展示 WebAZ 上的最小信息')}</div>`}
 
-    ${state.user?.role === 'buyer' && p.stock > 0 ? `<button class="btn btn-primary" style="width:100%" onclick="location.hash='#order-product/${p.id}'">${t('购买')} ${p.price} WAZ</button>` : ''}
+    ${state.user?.role === 'buyer' && p.stock > 0 ? `<button class="btn btn-primary" style="width:100%" onclick="location.hash='#order-product/${p.id}'">${t('购买')} ${window.fmtPrice(p.price)}</button>` : ''}
   `
 }
 
