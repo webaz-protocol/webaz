@@ -6330,7 +6330,7 @@ async function renderReviewsFeed(app) {
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${escHtml(s.title || s.external_url || '(无标题)')}</div>
                 <div style="font-size:11px;color:#9ca3af;margin-top:2px">@${escHtml(s.owner_handle || s.owner_name || '?')} · ${s.click_count} 👁 · ❤ ${s.like_count || 0} · ${fmtTime(s.created_at)}</div>
-                ${s.product_title ? `<div style="font-size:11px;color:#6366f1;margin-top:2px">📦 ${escHtml(s.product_title)} · ${s.product_price} WAZ</div>` : ''}
+                ${s.product_title ? `<div style="font-size:11px;color:#6366f1;margin-top:2px">📦 ${escHtml(s.product_title)} · ${window.fmtPrice(s.product_price)}</div>` : ''}
               </div>
             </div>
           </div>`
@@ -11312,7 +11312,7 @@ window.doBuy = async (productId, price) => {
   const res = await POST('/orders', { product_id: productId, shipping_address: addr, notes, sponsor_hint, coupon_code, delivery_window, variant_id, expected_price, buy_insurance, anonymous_recipient, donation_pct, quantity, payment_rail, ...giftPayload })
   if (payment_rail === 'direct_p2p') return void (window.dpAfterCreate && window.dpAfterCreate(res))
   if (res.error_code === 'PRICE_CHANGED') {
-    document.getElementById('buy-msg').innerHTML = alert$('error', `${t('价格已变动')}：${res.old_price} → ${res.new_price} WAZ · ${t('请刷新页面')}`)
+    document.getElementById('buy-msg').innerHTML = alert$('error', `${t('价格已变动')}：${window.fmtPrice(res.old_price)} → ${window.fmtPrice(res.new_price)} · ${t('请刷新页面')}`)
     return
   }
   if (res.error) { document.getElementById('buy-msg').innerHTML = alert$('error', res.error); return }
@@ -20616,7 +20616,7 @@ window.openShBuyModal = (id, price, ff) => {
   const canMeet = ff === 'in_person' || ff === 'both'
   _openModal(`
     <h2 style="font-size:16px;font-weight:600;margin-bottom:6px">${t('购买二手物品')}</h2>
-    <div style="font-size:18px;color:#dc2626;font-weight:700;margin-bottom:14px">${price.toFixed(2)} WAZ</div>
+    <div style="font-size:18px;color:#dc2626;font-weight:700;margin-bottom:14px">${window.fmtPrice(price)}</div>
     <div style="font-size:12px;color:#374151;font-weight:600;margin-bottom:6px">${t('履约方式')}</div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       ${canShip ? `<label style="flex:1;border:1px solid #e5e7eb;border-radius:6px;padding:8px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:6px"><input type="radio" name="sh-ff" value="shipping" ${canShip && !canMeet ? 'checked' : ''}>🚚 ${t('快递')}</label>` : ''}
@@ -22824,7 +22824,7 @@ function renderPriceHistoryHtml(r) {
     <div style="flex:1;background:#fafafa;padding:8px;border-radius:6px;text-align:center">
       <div style="font-size:10px;color:#6b7280;margin-bottom:2px">${label}</div>
       <div style="font-size:13px;font-weight:600">${fmtPrice(data.avg)} <span style="font-size:9px;color:#9ca3af">${t('均价')}</span></div>
-      <div style="font-size:10px;color:#6b7280;margin-top:2px">${data.sales}${t('单')} · ${fmtPrice(data.volume)} WAZ</div>
+      <div style="font-size:10px;color:#6b7280;margin-top:2px">${data.sales}${t('单')} · ${fmtPrice(data.volume)} USDC</div>
     </div>`
 
   return `
@@ -22834,7 +22834,7 @@ function renderPriceHistoryHtml(r) {
       ${windowCard(t('近 90 天'), w.d90)}
       ${windowCard(t('全部'), w.lifetime)}
     </div>
-    ${r.category_avg_30d != null ? `<div style="font-size:11px;color:#6b7280;margin-bottom:10px">${t('同类目 30 天均价')}：<strong style="color:#374151">${fmtPrice(r.category_avg_30d)} WAZ</strong>${r.current_price && r.category_avg_30d ? ` · ${t('当前')}${r.current_price > r.category_avg_30d ? '↑' : '↓'}${(Math.abs((r.current_price - r.category_avg_30d) / r.category_avg_30d) * 100).toFixed(0)}%` : ''}</div>` :
+    ${r.category_avg_30d != null ? `<div style="font-size:11px;color:#6b7280;margin-bottom:10px">${t('同类目 30 天均价')}：<strong style="color:#374151">${fmtPrice(r.category_avg_30d)} USDC</strong>${r.current_price && r.category_avg_30d ? ` · ${t('当前')}${r.current_price > r.category_avg_30d ? '↑' : '↓'}${(Math.abs((r.current_price - r.category_avg_30d) / r.category_avg_30d) * 100).toFixed(0)}%` : ''}</div>` :
       `<div style="font-size:11px;color:#9ca3af;margin-bottom:10px;font-style:italic">${t('未设置具体类目 — 无同类对比（卖家可在商品编辑页选择类目）')}</div>`}
     <div style="font-size:11px;color:#374151;margin-bottom:6px;font-weight:600">${t('价位分布')}（${t('90 天，按成交单数')}）</div>
     ${bucketsHtml}
@@ -25677,7 +25677,7 @@ async function renderBuyerTrials(app) {
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px">
             <div style="flex:1;min-width:0">
               <div style="font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(c.product_title || '商品')}</div>
-              <div style="font-size:11px;color:#6b7280;margin-top:2px">${c.product_price} WAZ · ${fmtTime(c.claimed_at)}</div>
+              <div style="font-size:11px;color:#6b7280;margin-top:2px">${window.fmtPrice(c.product_price)} · ${fmtTime(c.claimed_at)}</div>
             </div>
             <span style="flex-shrink:0;font-size:10px;background:${st.bg};color:${st.color};padding:2px 8px;border-radius:99px;font-weight:600">${st.label}</span>
           </div>
@@ -25718,7 +25718,7 @@ async function renderSellerTrials(app) {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:14px">${escHtml(c.product_title || '商品')}</div>
-            <div style="font-size:11px;color:#6b7280;margin-top:2px">${c.product_price} WAZ · ${t('阈值')} ${c.reach_threshold} · ${t('启动')} ${fmtTime(c.created_at)}</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:2px">${window.fmtPrice(c.product_price)} · ${t('阈值')} ${c.reach_threshold} · ${t('启动')} ${fmtTime(c.created_at)}</div>
           </div>
           <span style="flex-shrink:0;font-size:10px;background:${c.status==='active'?'#dcfce7':'#f3f4f6'};color:${c.status==='active'?'#166534':'#6b7280'};padding:2px 8px;border-radius:99px;font-weight:600">${c.status==='active' ? t('进行中') : t('已关闭')}</span>
         </div>

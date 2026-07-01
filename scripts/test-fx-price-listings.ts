@@ -80,6 +80,14 @@ ok('9h. follow-sell offers (我的报价 / 全网最低) → fmtPrice', LIST.inc
 // app-seller), admin, auction bids/current, RFQ budgets/bids, wallet/stake/commission/reward/refund/GMV/
 // withdraw/deposit/charity/escrow ("已托管" — USDC there would imply real custody).
 
+// 10. round-5 exhaustive sweep — reviews feed, secondhand buy modal, buy price-changed toast, buyer trials, price-history
+ok('10a. reviews feed product (s.product_price) → fmtPrice', APP.includes('· ${window.fmtPrice(s.product_price)}</div>'))
+ok('10b. secondhand buy modal price → fmtPrice', APP.includes('margin-bottom:14px">${window.fmtPrice(price)}</div>'))
+ok('10c. buy "价格已变动" toast → fmtPrice (old + new)', APP.includes('${window.fmtPrice(res.old_price)} → ${window.fmtPrice(res.new_price)}'))
+ok('10d. buyer trials product_price → fmtPrice', APP.includes('${window.fmtPrice(c.product_price)} · ${fmtTime(c.claimed_at)}') && APP.includes("${window.fmtPrice(c.product_price)} · ${t('阈值')}"))
+ok('10e. price-history widget unit relabeled USDC (not WAZ)', APP.includes('${fmtPrice(data.volume)} USDC') && APP.includes('${fmtPrice(r.category_avg_30d)} USDC'))
+ok('10f. NEG: those round-5 raw WAZ patterns gone', !APP.includes('${s.product_price} WAZ') && !APP.includes('margin-bottom:14px">${price.toFixed(2)} WAZ') && !APP.includes('${c.product_price} WAZ') && !APP.includes('${fmtPrice(r.category_avg_30d)} WAZ'))
+
 // 5. PRESERVED — order totals / escrow / wallet stay WAZ (pending decision / honesty)
 ok('5a. order-detail total still WAZ (usdHint, PR-1e pending)', APP.includes('usdHint(order.total_amount)'))
 ok('5b. escrow "已托管" still WAZ (simulated, not USDC custody)', /已托管/.test(APP))
