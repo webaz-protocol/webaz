@@ -1478,6 +1478,7 @@ const _EN = {
   '全新': 'Brand new',
   '全新商品': 'New goods',
   '二手闲置': 'Secondhand',
+  '请上传真实实物照，勿用网图/广告图；如经举报核实为虚假图片，商品可能被下架': 'Upload real photos of the actual item — no stock/ad images. Listings with fake photos may be removed if reported.',
   'Cmd/Ctrl + ↵': 'Cmd/Ctrl + ↵',
   'k-anonymity ≥': 'k-anonymity ≥',
   '位邻居 24h 活跃': ' neighbors active in 24h',
