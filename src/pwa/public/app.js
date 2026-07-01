@@ -6330,7 +6330,7 @@ async function renderReviewsFeed(app) {
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${escHtml(s.title || s.external_url || '(无标题)')}</div>
                 <div style="font-size:11px;color:#9ca3af;margin-top:2px">@${escHtml(s.owner_handle || s.owner_name || '?')} · ${s.click_count} 👁 · ❤ ${s.like_count || 0} · ${fmtTime(s.created_at)}</div>
-                ${s.product_title ? `<div style="font-size:11px;color:#6366f1;margin-top:2px">📦 ${escHtml(s.product_title)} · ${s.product_price} WAZ</div>` : ''}
+                ${s.product_title ? `<div style="font-size:11px;color:#6366f1;margin-top:2px">📦 ${escHtml(s.product_title)} · ${window.fmtPrice(s.product_price)}</div>` : ''}
               </div>
             </div>
           </div>`
@@ -6453,7 +6453,7 @@ window.lookupAnchorAction = async () => {
           ${img ? `<img src="${escHtml(img)}" onerror="this.outerHTML='📦'" style="width:64px;height:64px;object-fit:cover;border-radius:6px;flex-shrink:0">` : `<div style="width:64px;height:64px;background:#f3f4f6;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;color:#9ca3af;flex-shrink:0">📦</div>`}
           <div style="flex:1;min-width:0">
             <div style="font-size:14px;font-weight:600;color:#1f2937;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(p.title)}</div>
-            <div style="font-size:17px;font-weight:800;color:#dc2626;margin-top:4px">${Number(p.price).toFixed(2)} <span style="font-size:11px;color:#9ca3af;font-weight:500">WAZ</span></div>
+            <div style="font-size:17px;font-weight:800;color:#dc2626;margin-top:4px">${window.fmtPrice(p.price)}</div>
             <div style="font-size:11px;color:#6b7280;margin-top:2px">@${escHtml(p.seller_handle || p.seller_name?.slice(0,8) || '?')}</div>
           </div>
         </div>
@@ -6516,7 +6516,7 @@ async function renderGroupBuysLive(app) {
               <div style="font-size:32px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" onerror="this.outerHTML='📦'" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(it.category) || '📦'}</div>
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.product_title)}</div>
-                <div style="font-size:12px;margin-top:2px"><span style="color:#16a34a;font-weight:700">${final}</span> WAZ <span style="font-size:10px;color:#9ca3af;text-decoration:line-through margin-left:4px">${it.original_price}</span> <span style="font-size:10px;color:#16a34a;background:#dcfce7;padding:1px 5px;border-radius:99px;margin-left:4px;font-weight:600">-${pct}%</span></div>
+                <div style="font-size:12px;margin-top:2px"><span style="color:#16a34a;font-weight:700">${window.fmtPrice(final)}</span> <span style="font-size:10px;color:#9ca3af;text-decoration:line-through margin-left:4px">${it.original_price} USDC</span> <span style="font-size:10px;color:#16a34a;background:#dcfce7;padding:1px 5px;border-radius:99px;margin-left:4px;font-weight:600">-${pct}%</span></div>
                 <div style="font-size:10px;color:#9ca3af;margin-top:2px">@${escHtml(it.seller_handle || '')} · ${t('截止')} ${fmtTime(it.ends_at)}</div>
               </div>
             </div>
@@ -6554,7 +6554,7 @@ async function renderGroupBuyDetail(app, id) {
     <h1 class="page-title">👥 ${escHtml(r.product_title)}</h1>
     <div class="card" style="background:linear-gradient(135deg,#ecfdf5,#fff);padding:14px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div><div style="font-size:24px;font-weight:800;color:#16a34a">${final} WAZ</div><div style="font-size:11px;color:#9ca3af;text-decoration:line-through">${r.original_price} WAZ</div></div>
+        <div><div style="font-size:24px;font-weight:800;color:#16a34a">${window.fmtPrice(final)}</div><div style="font-size:11px;color:#9ca3af;text-decoration:line-through">${r.original_price} USDC</div></div>
         <div style="font-size:18px;font-weight:700;color:#16a34a;background:#dcfce7;padding:6px 12px;border-radius:8px">-${pct}%</div>
       </div>
       <div style="font-size:12px;color:#374151;margin-bottom:4px">${t('已成团')} <strong>${joined}/${r.target_count}</strong> · ${t('剩余时间')} ${remainingStr}</div>
@@ -6564,7 +6564,7 @@ async function renderGroupBuyDetail(app, id) {
         : expired ? `<div style="color:#9ca3af">${t('已结束，等待结算')}</div>`
         : isOwn ? `<div style="color:#9ca3af">${t('自己开的团，等待成团')}</div>`
         : isParticipant ? `<button class="btn btn-outline btn-sm" style="width:100%;color:#dc2626;border-color:#fca5a5" onclick="leaveGroupBuy('${r.id}')">${t('退出团购')}</button>`
-        : state.user?.role === 'buyer' ? `<button class="btn btn-primary" style="width:100%" onclick="openJoinGroupBuy('${r.id}')">+ ${t('加入团购')} (${r.original_price} WAZ ${t('预付')})</button>`
+        : state.user?.role === 'buyer' ? `<button class="btn btn-primary" style="width:100%" onclick="openJoinGroupBuy('${r.id}')">+ ${t('加入团购')} (${window.fmtPrice(r.original_price)} ${t('预付')})</button>`
         : `<div style="color:#9ca3af">${t('仅买家可加入')}</div>`}
     </div>
     <div style="font-size:13px;font-weight:600;margin:14px 0 8px">${t('已加入')} (${joined})</div>
@@ -6639,7 +6639,7 @@ async function renderSellerFlashSales(app) {
               <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${escHtml(it.product_title)}</div>
               <span style="font-size:10px;font-weight:600;color:#fff;background:${phaseColor};padding:2px 8px;border-radius:99px">${phaseLabel}</span>
             </div>
-            <div style="font-size:12px;color:#374151">${it.sale_price} WAZ <span style="font-size:11px;color:#9ca3af;text-decoration:line-through;margin-left:4px">${it.original_price}</span></div>
+            <div style="font-size:12px;color:#374151">${window.fmtPrice(it.sale_price)} <span style="font-size:11px;color:#9ca3af;text-decoration:line-through;margin-left:4px">${it.original_price} USDC</span></div>
             <div style="font-size:11px;color:#9ca3af;margin-top:2px">${fmtTime(it.starts_at)} → ${fmtTime(it.ends_at)}${it.max_qty > 0 ? ' · ' + t('已售') + ' ' + it.sold_count + '/' + it.max_qty : ''}</div>
             ${phase === 'scheduled' ? `<button class="btn btn-outline btn-sm" style="margin-top:6px;font-size:10px;padding:3px 8px;color:#dc2626;border-color:#fca5a5" onclick="deleteFlashSale('${it.id}')">${t('取消')}</button>` : ''}
           </div>`
@@ -8071,7 +8071,7 @@ async function renderFollowFeed(app) {
               <div style="font-size:28px;flex-shrink:0">${imageUrl ? `<img src="${escHtml(imageUrl)}" onerror="this.outerHTML='📦'" style="width:48px;height:48px;border-radius:6px;object-fit:cover">` : getCategoryIcon(it.category) || '📦'}</div>
               <div style="flex:1;min-width:0">
                 <div style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.title)}</div>
-                <div style="font-size:13px;color:#4f46e5;margin-top:2px;font-weight:600">${it.price} WAZ <span style="font-size:11px;color:#9ca3af;font-weight:400">· ${stockBadgeHtml(it)}</span></div>
+                <div style="font-size:13px;color:#4f46e5;margin-top:2px;font-weight:600">${window.fmtPrice(it.price)} <span style="font-size:11px;color:#9ca3af;font-weight:400">· ${stockBadgeHtml(it)}</span></div>
               </div>
             </div>
           </div>`
@@ -9168,7 +9168,7 @@ function renderShareBanner(variant) {
   const tgtKind = ctx.target_kind
   const tgtLine = tgt
     ? (tgtKind === 'product'
-        ? `🎁 <strong>${escHtml(tgt.title)}</strong> · ${tgt.price} WAZ <span style="color:#9ca3af">@ ${escHtml(tgt.seller_name)}</span>`
+        ? `🎁 <strong>${escHtml(tgt.title)}</strong> · ${window.fmtPrice(tgt.price)} <span style="color:#9ca3af">@ ${escHtml(tgt.seller_name)}</span>`
         : tgtKind === 'user'
           ? `👤 <strong>${escHtml(tgt.name)}</strong>${tgt.bio ? ` · ${escHtml(tgt.bio).slice(0, 40)}` : ''}`
           : '')
@@ -11312,7 +11312,7 @@ window.doBuy = async (productId, price) => {
   const res = await POST('/orders', { product_id: productId, shipping_address: addr, notes, sponsor_hint, coupon_code, delivery_window, variant_id, expected_price, buy_insurance, anonymous_recipient, donation_pct, quantity, payment_rail, ...giftPayload })
   if (payment_rail === 'direct_p2p') return void (window.dpAfterCreate && window.dpAfterCreate(res))
   if (res.error_code === 'PRICE_CHANGED') {
-    document.getElementById('buy-msg').innerHTML = alert$('error', `${t('价格已变动')}：${res.old_price} → ${res.new_price} WAZ · ${t('请刷新页面')}`)
+    document.getElementById('buy-msg').innerHTML = alert$('error', `${t('价格已变动')}：${window.fmtPrice(res.old_price)} → ${window.fmtPrice(res.new_price)} · ${t('请刷新页面')}`)
     return
   }
   if (res.error) { document.getElementById('buy-msg').innerHTML = alert$('error', res.error); return }
@@ -17425,7 +17425,7 @@ async function doBatchBuy(urls, addr, auto) {
         <span style="font-size:12px;font-weight:700;color:${recColor};white-space:nowrap">${recLabel}</span>
       </div>
       ${res.best_product ? `<div style="margin-top:6px;font-size:12px;color:#16a34a;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        <span>${t('最佳替代')}：${escHtml(res.best_product.title)} · <strong>${res.best_product.price} WAZ</strong></span>
+        <span>${t('最佳替代')}：${escHtml(res.best_product.title)} · <strong>${window.fmtPrice(res.best_product.price)}</strong></span>
         <button class="btn btn-primary btn-sm" style="width:auto;padding:3px 10px;font-size:11px" onclick="navigate('#order-product/${res.best_product.id}')">${t('下单')}</button>
       </div>` : ''}
       ${res.auto_bought ? `<div style="margin-top:6px;font-size:12px;color:#16a34a">✅ ${t('已自动下单')} <a href="#order/${res.order_id}" style="color:#16a34a;font-weight:600">${res.order_id}</a></div>` : ''}`
@@ -17640,7 +17640,7 @@ window.doAgentBuy = async () => {
   const bestCard = res.best_product ? `
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px;margin:12px 0">
       <div style="font-weight:600;font-size:14px;margin-bottom:4px">${res.best_product.title}</div>
-      <div style="font-size:18px;font-weight:700;color:#16a34a;margin-bottom:4px">${res.best_product.price} WAZ</div>
+      <div style="font-size:18px;font-weight:700;color:#16a34a;margin-bottom:4px">${window.fmtPrice(res.best_product.price)}</div>
       <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${res.best_product.agent_summary || ''}</div>
       ${!res.auto_bought ? `<button class="btn btn-primary btn-sm" style="width:auto" onclick="navigate('#order-product/${res.best_product.id}')">${t('查看并下单')}</button>` : ''}
     </div>` : ''
@@ -17660,7 +17660,7 @@ window.doAgentBuy = async () => {
             <div style="font-size:13px;font-weight:500">${p.url_match ? '🎯 ' : ''}${p.title}</div>
             <div style="font-size:11px;color:#6b7280">${p.agent_summary || ''}${p.url_match ? ` · <span style="color:#16a34a">${t('同款商品')}</span>` : ''}</div>
           </div>
-          <div style="font-weight:700;color:#1d4ed8;white-space:nowrap;margin-left:8px">${p.price} WAZ</div>
+          <div style="font-weight:700;color:#1d4ed8;white-space:nowrap;margin-left:8px">${window.fmtPrice(p.price)}</div>
         </div>`).join('')}
     </div>` : ''
 
@@ -19840,7 +19840,7 @@ async function shInjectStrip(containerId, opts = {}) {
               ${it.cover ? `<img src="${escAttr(it.cover)}" style="width:100%;height:100%;object-fit:cover">` : `<div style="font-size:28px">${shCatIcon(it.category)}</div>`}
             </div>
             <div style="padding:6px">
-              <div style="font-size:13px;font-weight:700;color:#dc2626">${Number(it.price).toFixed(0)} WAZ</div>
+              <div style="font-size:13px;font-weight:700;color:#dc2626">${window.fmtPrice(it.price)}</div>
               <div style="font-size:10px;color:#6b7280;line-height:1.3;margin-top:2px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden">${escHtml(it.title)}</div>
               <div style="font-size:9px;color:${cond.color};margin-top:3px;font-weight:600">${t(cond.label)}</div>
             </div>
@@ -19866,8 +19866,8 @@ const SKM_KINDS = [
 function skmKindMeta(k) { return SKM_KINDS.find(x => x.id === k) || { icon: '⚙️', label: k } }
 function skmBillingLabel(mode, price) {
   if (mode === 'free') return `🆓 ${t('免费')}`
-  if (mode === 'per_use') return `🔁 ${Number(price).toFixed(0)} WAZ/${t('次')}`
-  return `💰 ${Number(price).toFixed(0)} WAZ`
+  if (mode === 'per_use') return `🔁 ${window.fmtPrice(price)}/${t('次')}`
+  return `💰 ${window.fmtPrice(price)}`
 }
 const SKM_STATUS = {
   submitted: { label: '审核中', color: '#f59e0b' },
@@ -19956,9 +19956,9 @@ async function renderSkillDetail(app, id) {
   } else if (l.billing_mode === 'one_time') {
     actionBtn = owned
       ? `<button class="btn btn-primary" style="width:100%;font-size:14px;padding:10px" onclick="skmReadContent('${l.id}','one_time')">${t('查看正文')}</button>`
-      : `<button class="btn btn-primary" style="width:100%;font-size:14px;padding:10px" onclick="skmPurchase('${l.id}')">${t('购买')} · ${Number(l.price).toFixed(0)} WAZ</button>`
+      : `<button class="btn btn-primary" style="width:100%;font-size:14px;padding:10px" onclick="skmPurchase('${l.id}')">${t('购买')} · ${window.fmtPrice(l.price)}</button>`
   } else {
-    actionBtn = `<button class="btn btn-primary" style="width:100%;font-size:14px;padding:10px" onclick="skmReadContent('${l.id}','per_use')">${t('使用')} · ${Number(l.price).toFixed(0)} WAZ/${t('次')}</button>
+    actionBtn = `<button class="btn btn-primary" style="width:100%;font-size:14px;padding:10px" onclick="skmReadContent('${l.id}','per_use')">${t('使用')} · ${window.fmtPrice(l.price)}/${t('次')}</button>
       <div style="font-size:10px;color:#9ca3af;text-align:center;margin-top:6px">${t('按次付费：每次查看正文都会扣费')}</div>`
   }
   app.innerHTML = shell(`
@@ -20201,7 +20201,7 @@ async function renderSecondhandMarket(app) {
         <button class="btn btn-outline btn-sm" style="font-size:12px;padding:0 10px;white-space:nowrap" onclick="document.getElementById('sh-adv').style.display=document.getElementById('sh-adv').style.display==='none'?'block':'none'">⚙ ${t('筛选')}</button>
       </div>
       <div id="sh-adv" style="display:${(_shFilters.minP || _shFilters.maxP || _shFilters.conds.size>0) ? 'block':'none'};background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px;margin-bottom:10px">
-        <div style="font-size:11px;color:#6b7280;margin-bottom:6px">${t('价格区间 (WAZ)')}</div>
+        <div style="font-size:11px;color:#6b7280;margin-bottom:6px">${t('价格区间 (USDC)')}</div>
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">
           <input id="sh-minP" class="form-control" type="number" placeholder="${t('最低')}" style="font-size:12px;flex:1" value="${escAttr(_shFilters.minP)}" oninput="_shFilters.minP=this.value">
           <span style="color:#9ca3af">—</span>
@@ -20275,7 +20275,7 @@ function shItemCard(it) {
       ${Number(it.negotiable) === 1 ? `<span style="position:absolute;top:6px;left:6px;background:rgba(0,0,0,0.7);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px">${t('可议价')}</span>` : ''}
     </div>
     <div style="padding:8px">
-      <div style="font-size:14px;font-weight:700;color:#dc2626">${Number(it.price).toFixed(0)} WAZ</div>
+      <div style="font-size:14px;font-weight:700;color:#dc2626">${window.fmtPrice(it.price)}</div>
       <div style="font-size:11px;color:#374151;line-height:1.3;margin:2px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(it.title)}</div>
       <div style="display:flex;align-items:center;gap:4px;font-size:9px;margin-top:4px">
         <span style="background:${cond.color}1a;color:${cond.color};padding:1px 5px;border-radius:3px;font-weight:600">${t(cond.label)}</span>
@@ -20490,7 +20490,7 @@ function shMineRenderItems(allItems) {
         <span style="position:absolute;top:6px;right:6px;background:${statusColor[it.status] || '#9ca3af'};color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:600">${t(statusLabel[it.status] || it.status)}</span>
       </div>
       <div style="padding:8px">
-        <div style="font-size:14px;font-weight:700;color:#dc2626">${Number(it.price).toFixed(0)} WAZ</div>
+        <div style="font-size:14px;font-weight:700;color:#dc2626">${window.fmtPrice(it.price)}</div>
         <div style="font-size:11px;color:#374151;line-height:1.3;margin:2px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(it.title)}</div>
         <div style="display:flex;justify-content:space-between;font-size:9px;color:#9ca3af;margin-top:4px">
           <span>👁 ${it.view_count || 0}</span>
@@ -20533,7 +20533,7 @@ async function renderSecondhandDetail(app, id) {
       </div>
       <div style="padding:14px">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-size:24px;font-weight:700;color:#dc2626">${Number(it.price).toFixed(2)} WAZ</div><span style="background:${cond.color}1a;color:${cond.color};font-size:11px;padding:3px 9px;border-radius:99px;font-weight:600;white-space:nowrap">${t(cond.label)}</span></div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-size:24px;font-weight:700;color:#dc2626">${window.fmtPrice(it.price)}</div><span style="background:${cond.color}1a;color:${cond.color};font-size:11px;padding:3px 9px;border-radius:99px;font-weight:600;white-space:nowrap">${t(cond.label)}</span></div>
           ${Number(it.negotiable) === 1 ? `<span style="background:#fef3c7;color:#92400e;font-size:10px;padding:3px 8px;border-radius:99px;font-weight:600;white-space:nowrap">${t('可议价')}</span>` : ''}
         </div>
         <h2 style="font-size:16px;color:#111827;line-height:1.4;margin:0 0 10px">${escHtml(it.title)}</h2>
@@ -20578,7 +20578,7 @@ async function renderSecondhandDetail(app, id) {
                   ${o.cover ? `<img src="${escAttr(o.cover)}" style="width:100%;height:100%;object-fit:cover">` : `<div style="font-size:30px">${shCatIcon(o.category)}</div>`}
                 </div>
                 <div style="padding:6px">
-                  <div style="font-size:13px;font-weight:700;color:#dc2626">${Number(o.price).toFixed(0)} WAZ</div>
+                  <div style="font-size:13px;font-weight:700;color:#dc2626">${window.fmtPrice(o.price)}</div>
                   <div style="font-size:10px;color:#6b7280;line-height:1.3;margin-top:2px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden">${escHtml(o.title)}</div>
                   <div style="font-size:9px;color:${ocond.color};margin-top:3px;font-weight:600">${t(ocond.label)}</div>
                 </div>
@@ -20616,7 +20616,7 @@ window.openShBuyModal = (id, price, ff) => {
   const canMeet = ff === 'in_person' || ff === 'both'
   _openModal(`
     <h2 style="font-size:16px;font-weight:600;margin-bottom:6px">${t('购买二手物品')}</h2>
-    <div style="font-size:18px;color:#dc2626;font-weight:700;margin-bottom:14px">${price.toFixed(2)} WAZ</div>
+    <div style="font-size:18px;color:#dc2626;font-weight:700;margin-bottom:14px">${window.fmtPrice(price)}</div>
     <div style="font-size:12px;color:#374151;font-weight:600;margin-bottom:6px">${t('履约方式')}</div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       ${canShip ? `<label style="flex:1;border:1px solid #e5e7eb;border-radius:6px;padding:8px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:6px"><input type="radio" name="sh-ff" value="shipping" ${canShip && !canMeet ? 'checked' : ''}>🚚 ${t('快递')}</label>` : ''}
@@ -22108,7 +22108,7 @@ async function renderAuctionsFeed(app) {
             <div style="font-size:13px;line-height:1.5">
               ♻️ ${feedActor(d.seller_id, d.seller_name, d.seller_handle)} ${t('发布二手')} <strong>${escHtml(d.title)}</strong>
             </div>
-            <div style="font-size:11px;color:#6b7280;margin-top:4px">${d.price} WAZ · ${d.condition_grade || ''} · ${ts}</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:4px">${window.fmtPrice(d.price)} · ${d.condition_grade || ''} · ${ts}</div>
           </div>`
         }
       }).join('')
@@ -22529,7 +22529,7 @@ async function renderLeaderboard(app) {
             </div>
           </div>
           <div style="text-align:right">
-            <div style="font-size:14px;font-weight:800;color:#dc2626">${p.price} <span style="font-size:10px;color:#9ca3af">WAZ</span></div>
+            <div style="font-size:14px;font-weight:800;color:#dc2626">${window.fmtPrice(p.price)}</div>
             <div style="font-size:10px;color:#854d0e;margin-top:1px">${pctLabel}</div>
           </div>
         </div>`
@@ -22540,7 +22540,7 @@ async function renderLeaderboard(app) {
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.title)}</div>
           <div style="font-size:11px;color:#6b7280;margin-top:2px">
-            @${escHtml(p.seller_handle || p.seller_name?.slice(0,8) || '?')} · ${p.price} WAZ ·
+            @${escHtml(p.seller_handle || p.seller_name?.slice(0,8) || '?')} · ${window.fmtPrice(p.price)} ·
             🛒 ${p.completion_count || 0} · 🤝 ${p.unique_sharer_count || 0} · ❤️ ${p.total_likes || 0}
           </div>
         </div>
@@ -22611,7 +22611,7 @@ async function renderP2pBoard(app) {
           <div style="font-size:11px;color:#6b7280;margin-bottom:3px">@${escHtml(it.seller_handle || it.seller_id.slice(0,8))} · ${it.region}</div>
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:10px;font-family:monospace;color:#9ca3af">🔒 ${it.content_hash.slice(0,12)}…</span>
-            <span style="color:#dc2626;font-weight:700;font-size:14px">${it.price} <span style="font-size:10px;color:#9ca3af;font-weight:500">WAZ</span></span>
+            <span style="color:#dc2626;font-weight:700;font-size:14px">${window.fmtPrice(it.price)}</span>
           </div>
         </div>
       </div>`
@@ -22744,7 +22744,7 @@ async function renderP2pDetail(app, id) {
       <div style="flex:1">
         <h2 style="font-size:18px;font-weight:700;margin:0 0 4px">${escHtml(p.title)}</h2>
         <div style="font-size:12px;color:#6b7280;margin-bottom:6px">@${escHtml(p.seller_handle || p.seller_id.slice(0,8))} · ${p.region}</div>
-        <div style="color:#dc2626;font-weight:700;font-size:22px;margin-bottom:6px">${p.price} <span style="font-size:11px;color:#9ca3af;font-weight:500">WAZ</span></div>
+        <div style="color:#dc2626;font-weight:700;font-size:22px;margin-bottom:6px">${window.fmtPrice(p.price)}</div>
         <div style="font-size:11px;color:#6b7280">${t('库存')} ${p.stock}</div>
       </div>
     </div>
@@ -22763,7 +22763,7 @@ async function renderP2pDetail(app, id) {
     </div>` : `
     <div class="card" style="padding:14px;margin-bottom:12px;background:#fafafa;color:#9ca3af;text-align:center">${t('完整详情未能从节点获取 — 仅展示 WebAZ 上的最小信息')}</div>`}
 
-    ${state.user?.role === 'buyer' && p.stock > 0 ? `<button class="btn btn-primary" style="width:100%" onclick="location.hash='#order-product/${p.id}'">${t('购买')} ${p.price} WAZ</button>` : ''}
+    ${state.user?.role === 'buyer' && p.stock > 0 ? `<button class="btn btn-primary" style="width:100%" onclick="location.hash='#order-product/${p.id}'">${t('购买')} ${window.fmtPrice(p.price)}</button>` : ''}
   `
 }
 
@@ -22824,7 +22824,7 @@ function renderPriceHistoryHtml(r) {
     <div style="flex:1;background:#fafafa;padding:8px;border-radius:6px;text-align:center">
       <div style="font-size:10px;color:#6b7280;margin-bottom:2px">${label}</div>
       <div style="font-size:13px;font-weight:600">${fmtPrice(data.avg)} <span style="font-size:9px;color:#9ca3af">${t('均价')}</span></div>
-      <div style="font-size:10px;color:#6b7280;margin-top:2px">${data.sales}${t('单')} · ${fmtPrice(data.volume)} WAZ</div>
+      <div style="font-size:10px;color:#6b7280;margin-top:2px">${data.sales}${t('单')} · ${fmtPrice(data.volume)} USDC</div>
     </div>`
 
   return `
@@ -22834,7 +22834,7 @@ function renderPriceHistoryHtml(r) {
       ${windowCard(t('近 90 天'), w.d90)}
       ${windowCard(t('全部'), w.lifetime)}
     </div>
-    ${r.category_avg_30d != null ? `<div style="font-size:11px;color:#6b7280;margin-bottom:10px">${t('同类目 30 天均价')}：<strong style="color:#374151">${fmtPrice(r.category_avg_30d)} WAZ</strong>${r.current_price && r.category_avg_30d ? ` · ${t('当前')}${r.current_price > r.category_avg_30d ? '↑' : '↓'}${(Math.abs((r.current_price - r.category_avg_30d) / r.category_avg_30d) * 100).toFixed(0)}%` : ''}</div>` :
+    ${r.category_avg_30d != null ? `<div style="font-size:11px;color:#6b7280;margin-bottom:10px">${t('同类目 30 天均价')}：<strong style="color:#374151">${fmtPrice(r.category_avg_30d)} USDC</strong>${r.current_price && r.category_avg_30d ? ` · ${t('当前')}${r.current_price > r.category_avg_30d ? '↑' : '↓'}${(Math.abs((r.current_price - r.category_avg_30d) / r.category_avg_30d) * 100).toFixed(0)}%` : ''}</div>` :
       `<div style="font-size:11px;color:#9ca3af;margin-bottom:10px;font-style:italic">${t('未设置具体类目 — 无同类对比（卖家可在商品编辑页选择类目）')}</div>`}
     <div style="font-size:11px;color:#374151;margin-bottom:6px;font-weight:600">${t('价位分布')}（${t('90 天，按成交单数')}）</div>
     ${bucketsHtml}
@@ -24487,7 +24487,7 @@ async function renderNoteLanding(app, noteId) {
       <div style="flex:1;min-width:0">
         <div style="font-size:10px;color:#9a3412;font-weight:600;margin-bottom:2px">📦 ${t('笔记关联商品')}</div>
         <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(product.title || '')}</div>
-        <div style="font-size:15px;font-weight:800;color:#dc2626;margin-top:2px">${Number(product.price || 0).toFixed(2)} WAZ</div>
+        <div style="font-size:15px;font-weight:800;color:#dc2626;margin-top:2px">${window.fmtPrice(product.price || 0)}</div>
       </div>
       <button class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="event.stopPropagation();navigate('#order-product/${product.id}')">${t('去购买')}</button>
     </div>` : ''
@@ -25176,7 +25176,7 @@ async function renderSharesFeed(app, sort) {
               <span>❤️ ${n.stats.likes || 0} · 🔗 ${n.stats.clicks || 0}</span>
             </div>
             ${noteAuthBadges(n.badges, 'sm') ? `<div style="margin-top:4px">${noteAuthBadges(n.badges, 'sm')}</div>` : ''}
-            ${n.product ? `<div style="font-size:11px;color:#92400e;margin-top:4px;background:#fef3c7;padding:3px 8px;border-radius:4px;display:inline-block">📦 ${escHtml((n.product.title || '').slice(0, 20))} · ${Number(n.product.price).toFixed(0)} WAZ</div>` : ''}
+            ${n.product ? `<div style="font-size:11px;color:#92400e;margin-top:4px;background:#fef3c7;padding:3px 8px;border-radius:4px;display:inline-block">📦 ${escHtml((n.product.title || '').slice(0, 20))} · ${window.fmtPrice(n.product.price)}</div>` : ''}
           </div>
         </div>
       </div>
@@ -25677,7 +25677,7 @@ async function renderBuyerTrials(app) {
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px">
             <div style="flex:1;min-width:0">
               <div style="font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(c.product_title || '商品')}</div>
-              <div style="font-size:11px;color:#6b7280;margin-top:2px">${c.product_price} WAZ · ${fmtTime(c.claimed_at)}</div>
+              <div style="font-size:11px;color:#6b7280;margin-top:2px">${window.fmtPrice(c.product_price)} · ${fmtTime(c.claimed_at)}</div>
             </div>
             <span style="flex-shrink:0;font-size:10px;background:${st.bg};color:${st.color};padding:2px 8px;border-radius:99px;font-weight:600">${st.label}</span>
           </div>
@@ -25718,7 +25718,7 @@ async function renderSellerTrials(app) {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:14px">${escHtml(c.product_title || '商品')}</div>
-            <div style="font-size:11px;color:#6b7280;margin-top:2px">${c.product_price} WAZ · ${t('阈值')} ${c.reach_threshold} · ${t('启动')} ${fmtTime(c.created_at)}</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:2px">${window.fmtPrice(c.product_price)} · ${t('阈值')} ${c.reach_threshold} · ${t('启动')} ${fmtTime(c.created_at)}</div>
           </div>
           <span style="flex-shrink:0;font-size:10px;background:${c.status==='active'?'#dcfce7':'#f3f4f6'};color:${c.status==='active'?'#166534':'#6b7280'};padding:2px 8px;border-radius:99px;font-weight:600">${c.status==='active' ? t('进行中') : t('已关闭')}</span>
         </div>

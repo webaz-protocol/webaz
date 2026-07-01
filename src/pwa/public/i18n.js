@@ -2847,7 +2847,7 @@ const _EN = {
   // ── M8 UX 优化 ────────────────────────────────────────────
   '价↑':                               'Price ↑',
   '价↓':                               'Price ↓',
-  '价格区间 (WAZ)':                     'Price range (WAZ)',
+  '价格区间 (USDC)':                    'Price range (USDC)',
   '应用':                              'Apply',
   '成色 (可多选)':                      'Condition (multi)',
   'TA 还在卖':                         'Also from this seller',

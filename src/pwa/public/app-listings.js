@@ -53,7 +53,7 @@ async function renderListingsHome(app) {
             </div>
           </div>
           <div style="text-align:right">
-            ${it.min_price != null ? `<div style="color:#dc2626;font-weight:700;font-size:15px">${Number(it.min_price).toFixed(2)} <span style="font-size:11px;color:#9ca3af">WAZ</span></div><div style="font-size:10px;color:#9ca3af">${t('起')}</div>` : `<div style="font-size:11px;color:#9ca3af">${t('暂无报价')}</div>`}
+            ${it.min_price != null ? `<div style="color:#dc2626;font-weight:700;font-size:15px">${window.fmtPrice(it.min_price)}</div><div style="font-size:10px;color:#9ca3af">${t('起')}</div>` : `<div style="font-size:11px;color:#9ca3af">${t('暂无报价')}</div>`}
           </div>
         </div>
       </div>
@@ -114,11 +114,11 @@ async function renderListingsMine(app) {
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding-top:8px;border-top:1px solid #f3f4f6">
           <div style="font-size:11px;color:#6b7280">
-            ${t('我的报价')} <strong style="color:#374151">${myMin.toFixed(2)} WAZ</strong>
+            ${t('我的报价')} <strong style="color:#374151">${window.fmtPrice(myMin)}</strong>
             <span style="color:#9ca3af">· ${it.my_offer_count} ${t('个规格')}</span>
           </div>
           <div style="font-size:11px;color:#6b7280">
-            ${t('全网最低')} <strong style="color:#dc2626">${globalMin.toFixed(2)} WAZ</strong>
+            ${t('全网最低')} <strong style="color:#dc2626">${window.fmtPrice(globalMin)}</strong>
           </div>
         </div>
       </div>
@@ -212,7 +212,7 @@ async function renderListingDetail(app, id) {
             ${isMine ? `<div style="margin-top:6px"><button class="btn btn-outline btn-sm" style="padding:3px 8px;font-size:10px;color:#4f46e5;border-color:#c7d2fe" onclick="refreshOfferFreshness('${o.id}','${id}')">🔄 ${t('现货确认')}</button></div>` : ''}
           </div>
           <div style="text-align:right">
-            <div style="color:#dc2626;font-weight:700;font-size:16px">${Number(o.price).toFixed(2)} <span style="font-size:11px;color:#9ca3af">WAZ</span></div>
+            <div style="color:#dc2626;font-weight:700;font-size:16px">${window.fmtPrice(o.price)}</div>
             <div style="font-size:10px;color:#9ca3af">${t('库存')} ${o.stock}</div>
             ${state.user?.role === 'buyer' && o.stock > 0 ? `<button class="btn btn-primary btn-sm" style="margin-top:6px;padding:4px 12px;font-size:11px" onclick="location.hash='#order-product/${o.id}'">${t('购买')}</button>` : ''}
           </div>

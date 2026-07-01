@@ -315,7 +315,7 @@ async function loadUserContentFeed(userId, tab) {
         ${img ? `<img src="${escHtml(img)}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block" onerror="this.style.display='none'">` : `<div style="aspect-ratio:1;background:#f9fafb;display:flex;align-items:center;justify-content:center;font-size:32px">♻️</div>`}
         <div style="padding:8px">
           <div style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(s.title)}</div>
-          <div style="font-size:13px;font-weight:700;color:#dc2626;margin-top:2px">${s.price} WAZ</div>
+          <div style="font-size:13px;font-weight:700;color:#dc2626;margin-top:2px">${window.fmtPrice(s.price)}</div>
           <div style="font-size:10px;color:#9ca3af;margin-top:2px">${CG[s.condition_grade] || s.condition_grade}${s.status === 'reserved' ? ' · ' + t('已预订') : ''}</div>
         </div>
       </div>`
@@ -336,7 +336,7 @@ async function loadUserContentFeed(userId, tab) {
         ${img ? `<img src="${escHtml(img)}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block" onerror="this.style.display='none'">` : `<div style="aspect-ratio:1;background:#f9fafb;display:flex;align-items:center;justify-content:center;font-size:32px">${getCategoryIcon(p.category)}</div>`}
         <div style="padding:8px">
           <div style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.title)}</div>
-          <div style="font-size:13px;font-weight:700;color:#1f2937;margin-top:2px">${p.price} WAZ</div>
+          <div style="font-size:13px;font-weight:700;color:#1f2937;margin-top:2px">${window.fmtPrice(p.price)}</div>
           <div style="font-size:10px;color:#9ca3af;margin-top:2px">✅ ${p.completion_count || 0} · ❤ ${p.total_likes || 0}</div>
         </div>
       </div>`
@@ -631,7 +631,7 @@ async function renderNearby(app) {
             <div style="width:38px;height:38px;border-radius:8px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${getCategoryIcon(p.category)}</div>
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.title)}</div>
-              <div style="font-size:11px;color:#6b7280">${p.price} WAZ · 🔥 ${p.buyers} ${t('人买')}</div>
+              <div style="font-size:11px;color:#6b7280">${window.fmtPrice(p.price)} · 🔥 ${p.buyers} ${t('人买')}</div>
             </div>
           </div>
           <span style="font-size:13px;color:#9ca3af">›</span>
@@ -821,7 +821,7 @@ async function renderNearbyFeed(app) {
         <h3 style="font-size:13px;font-weight:700;margin:14px 0 8px">🔥 ${t('近 24h 同城热销商品')}</h3>
         ${topProducts.slice(0,5).map(p => `
           <div class="card" style="padding:10px 12px;margin-bottom:6px;cursor:pointer" onclick="navigate('#order-product/${p.id}')">
-            <div style="font-size:13px;font-weight:600">${escHtml(p.title)} <span style="color:#dc2626;font-weight:700">${p.price} WAZ</span></div>
+            <div style="font-size:13px;font-weight:600">${escHtml(p.title)} <span style="color:#dc2626;font-weight:700">${window.fmtPrice(p.price)}</span></div>
             <div style="font-size:11px;color:#6b7280;margin-top:2px">🛒 ${p.buy_count} ${t('单')} · ${t('同城共鸣')}</div>
           </div>`).join('')}` : ''}
     `
