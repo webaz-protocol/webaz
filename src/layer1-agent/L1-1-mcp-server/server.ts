@@ -1993,7 +1993,7 @@ function handleRegister(args: Record<string, unknown>) {
       ],
       register_url: WEBAZ_API_URL,
       why_not_agent_self_register: 'agent 自助注册会绕过邀请 / captcha / 真人 Passkey 责任制，破坏协议的可问责性（#6 不滥用 / CHARTER §4 I-5）。',
-      want_to_try_offline_first: '只想离线试玩、暂不连网络？设环境变量 WEBAZ_MODE=sandbox（或清空 WEBAZ_API_KEY），webaz_register 会在本机沙盒建一个测试账号（仅本机有效）。',
+      want_to_try_offline_first: '只想离线试玩、暂不连网络？设环境变量 WEBAZ_MODE=sandbox（本机沙盒需显式开启；无 key 仍是 NETWORK 只读，不会进沙盒），webaz_register 会在本机沙盒建一个测试账号（仅本机有效）。',
     }
   }
 

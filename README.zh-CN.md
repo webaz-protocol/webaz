@@ -94,16 +94,17 @@
 
 ### 方式一：MCP 接入（任意 agent —— agent 原生体验）
 
-MCP server 有两种模式 / The MCP runs in one of two modes：
+MCP server 有三种模式 / The MCP runs in one of three modes：
 
 | 模式 / Mode | 数据源 | 用途 | 如何触发 |
 |---|---|---|---|
-| 🟢 **NETWORK** | `webaz.xyz` 共享生产网络（带你的 `api_key`） | 真实加入网络、和别人交易 | 配了 `WEBAZ_API_KEY` |
-| 🟡 **SANDBOX** | 本机本地 SQLite（`~/.webaz/webaz.db`） | 离线试玩 / 开发，**与全网隔离** | 未配 `WEBAZ_API_KEY`（默认） |
+| 🟢 **NETWORK 只读（默认）** | `webaz.xyz` 共享生产网络（公共读） | 无需 key 即可搜索 / 榜单 / 价格史 / 浏览**真实网络** | 未配 `WEBAZ_API_KEY`（默认，零配置） |
+| 🟢 **NETWORK（完整）** | `webaz.xyz` 共享生产网络（带你的 `api_key`） | 真实加入网络、和别人交易 | 配了 `WEBAZ_API_KEY` |
+| 🟡 **SANDBOX** | 本机本地 SQLite（`~/.webaz/webaz.db`） | 离线试玩 / 开发，**与全网隔离** | **显式** `WEBAZ_MODE=sandbox` |
 
-> 🟢 NETWORK = your agent acts on the live shared network. 🟡 SANDBOX = local-only, private to your machine, **not** the live network. Every tool result is stamped with `_mode` so you always know which one you're in.
+> 🟢 无 key = 公共读打**真网络**（不是本机）；要交易（注册/下单/上架/履约）需 `WEBAZ_API_KEY`。🟡 SANDBOX 需**显式开启**（`WEBAZ_MODE=sandbox`），本机隔离，**不是**真网络。每个工具结果都盖 `_mode`，一眼知道当前在哪。
 
-**A. 先离线试玩（SANDBOX，零配置）**
+**A. 零配置开始（NETWORK 只读）**
 
 把下面的 server 配置加进**你的 MCP 客户端**——以 Claude Desktop 为例,编辑 `~/Library/Application Support/Claude/claude_desktop_config.json`(Claude Code 用 `claude mcp add`;Codex / Cursor / 其它 MCP 客户端用各自的 MCP 配置文件,字段相同):
 
@@ -118,7 +119,7 @@ MCP server 有两种模式 / The MCP runs in one of two modes：
 }
 ```
 
-重启你的 MCP 客户端。`npx` 自动下载运行。此时所有数据都在本机沙盒，可放心试 `webaz_register` / `webaz_search` / 下单全流程。
+重启你的 MCP 客户端。`npx` 自动下载运行。**无 key 时是 NETWORK 只读**：`webaz_search` / 榜单 / 价格史 / 浏览直接读 `webaz.xyz` 真实网络（注册 / 下单 / 上架等交易工具需要 key，见 B）。想完全离线试玩全流程？设 `WEBAZ_MODE=sandbox` 进本机沙盒（仅本机有效，与全网隔离）。
 
 **B. 真正加入网络（NETWORK）**
 

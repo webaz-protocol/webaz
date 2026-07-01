@@ -12,13 +12,20 @@ const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fail
 const R = (p: string): string => readFileSync(p, 'utf8')
 
 const readme = R('README.md')
+const readmeZh = R('README.zh-CN.md')
 const mcp = R('src/mcp.ts')
 const server = R('src/layer1-agent/L1-1-mcp-server/server.ts')
 
-// README:无 key 是 Network 只读默认,不是 sandbox 默认
+// README(EN):无 key 是 Network 只读默认,不是 sandbox 默认
 ok('README: no-key = Network read-only (default)', /Network read-only \(default/i.test(readme))
 ok('README: does NOT claim "Sandbox (default"', !/Sandbox \(default/i.test(readme))
 ok('README: sandbox is explicit via WEBAZ_MODE=sandbox', /WEBAZ_MODE=sandbox/.test(readme))
+
+// README(zh-CN):同样口径 —— 无 key = NETWORK 只读默认;sandbox 显式;不再说"零配置=本机沙盒"
+ok('README.zh-CN: no-key = NETWORK 只读(默认)', /NETWORK 只读（默认/.test(readmeZh))
+ok('README.zh-CN: sandbox explicit via WEBAZ_MODE=sandbox', /WEBAZ_MODE=sandbox/.test(readmeZh))
+ok('README.zh-CN: no stale "先离线试玩（SANDBOX，零配置)" section title', !/先离线试玩（SANDBOX/.test(readmeZh))
+ok('README.zh-CN: no stale "此时所有数据都在本机沙盒" zero-config claim', !/此时所有数据都在本机沙盒/.test(readmeZh))
 
 // bootstrap 注释:不再说"否则 SANDBOX"
 ok('src/mcp.ts: no "否则 SANDBOX" (no-key is network read-only)', !/否则\s*SANDBOX/i.test(mcp))
@@ -26,6 +33,9 @@ ok('src/mcp.ts: mentions read-only / 只读 for no-key', /只读|read-only/i.tes
 
 // server 启动 banner:无 key 说的是 NETWORK read-only(权威行为)
 ok('server: no-key banner says NETWORK (read-only)', /NETWORK\s*\(read-only\)|NETWORK(?:.*)?只读/i.test(server))
+
+// webaz_register 运行时提示:进沙盒只能 WEBAZ_MODE=sandbox,不能说"或清空 WEBAZ_API_KEY"(清空仍是 network_readonly)
+ok('server: register hint does NOT say clearing the key enters sandbox', !/或清空 WEBAZ_API_KEY/.test(server))
 
 // network_state:不硬编码 real_users_on_canonical 数字(真值来自 network_live)
 ok('server: no hardcoded real_users_on_canonical in network_state', !/real_users_on_canonical:\s*\d/.test(server))
