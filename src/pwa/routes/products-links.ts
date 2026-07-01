@@ -50,6 +50,10 @@ export function registerProductsLinksRoutes(app: Application, deps: ProductsLink
   // array the seller workbench consumes; that stays untouched). Only public-safe columns are returned.
   app.get('/api/products/:id/external-links', async (req, res) => {
     const user = auth(req, res); if (!user) return
+    // Mirror product-detail visibility (products-crud GET /:id): others see active only; the seller sees own
+    // non-active. Otherwise 404 — never leak source URLs of a warehouse/deleted product to non-owners.
+    const product = await dbOne<{ id: string }>("SELECT id FROM products WHERE id = ? AND (status = 'active' OR seller_id = ?)", [req.params.id, user.id])
+    if (!product) return void res.status(404).json({ error: 'not_found' })
     const links = await dbAll(`SELECT url, platform, external_title FROM product_external_links WHERE product_id = ? AND verified = 1 AND revoked = 0 ORDER BY added_at ASC`, [req.params.id])
     res.json({ links })
   })

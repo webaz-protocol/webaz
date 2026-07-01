@@ -45,9 +45,11 @@ ok('3a. frontend calls the buyer endpoint /:id/external-links', has(SRC, '/produ
 ok('3b. frontend reads { links } shape', has(SRC, '(r && r.links) || []'))
 // scope backend asserts to the buyer endpoint's own block (avoids matching the neighboring POST)
 const extBlock = (/app\.get\('\/api\/products\/:id\/external-links'[\s\S]*?\n {2}\}\)/.exec(LINKS) || [''])[0]
-ok('3c-backend. buyer endpoint returns { links }, NOT owner-gated (no seller_id/403 in its block)',
-  extBlock.includes('res.json({ links })') && !extBlock.includes('seller_id') && !extBlock.includes('403'))
+ok('3c-backend. buyer endpoint returns { links }, not owner-only (no "seller_id !== user.id" gate / 403)',
+  extBlock.includes('res.json({ links })') && !extBlock.includes('!== user.id') && !extBlock.includes('403'))
 ok('3d-backend. buyer endpoint filters verified=1 AND revoked=0', extBlock.includes('verified = 1 AND revoked = 0'))
+ok('3f-backend. mirrors product-detail visibility (active OR seller), else 404 (no warehouse leak)',
+  extBlock.includes("status = 'active' OR seller_id = ?") && extBlock.includes("error: 'not_found'"))
 ok('3e. existing owner-only /links (bare array) left intact for the seller workbench', /app\.get\('\/api\/products\/:id\/links'[\s\S]*?res\.json\(links\)/.test(LINKS))
 
 // 4. wiring: detail page hook + load order + i18n + Guard B (check:pwa-syntax + LOC_CEILINGS)
