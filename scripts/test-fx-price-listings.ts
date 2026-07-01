@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs'
 
 const APP = readFileSync('src/pwa/public/app.js', 'utf8')
 const LIST = readFileSync('src/pwa/public/app-listings.js', 'utf8')
+const PROF = readFileSync('src/pwa/public/app-profile.js', 'utf8')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}`) } }
@@ -65,6 +66,19 @@ ok('8f. NEG: those agent-buy/share/group-buy raw WAZ gone', !APP.includes('${res
 ok('8g. group-buy split-span final price → fmtPrice', APP.includes('<span style="color:#16a34a;font-weight:700">${window.fmtPrice(final)}</span>') && !APP.includes('font-weight:700">${final}</span> WAZ'))
 // NOTE (explicitly still WAZ — separate buckets, not buyer product prices): cart line + totals (pending
 // order-totals decision), seller-dashboard product mgmt, admin views, auction bids, escrow/wallet.
+
+// 9. round-4 sweep — public profile / note / notification / group-buy detail / follow-sell offers
+ok('9a. profile secondhand + products + hot + nearby → fmtPrice (≥4)', (PROF.match(/window\.fmtPrice\(/g) || []).length >= 4)
+ok('9b. profile no ${s.price}/${p.price} WAZ left in those cards', !PROF.includes('color:#dc2626;margin-top:2px">${s.price} WAZ') && !PROF.includes('color:#1f2937;margin-top:2px">${p.price} WAZ') && !PROF.includes('${p.price} WAZ · 🔥'))
+ok('9c. note-linked product CTA → fmtPrice', APP.includes('${window.fmtPrice(product.price || 0)}</div>'))
+ok('9d. notification product → fmtPrice', APP.includes('· ${window.fmtPrice(n.product.price)}</div>'))
+ok('9e. group-buy detail: final=fmtPrice, strikethrough original=USDC (no WAZ)', APP.includes('text-decoration:line-through">${r.original_price} USDC</div>') && !APP.includes('text-decoration:line-through">${r.original_price} WAZ'))
+ok('9f. group-buy join button prepay → fmtPrice', APP.includes("${t('加入团购')} (${window.fmtPrice(r.original_price)} ${t('预付')})"))
+ok('9g. auctions-feed secondhand (d.price + condition) → fmtPrice', APP.includes('${window.fmtPrice(d.price)} · ${d.condition_grade'))
+ok('9h. follow-sell offers (我的报价 / 全网最低) → fmtPrice', LIST.includes('${window.fmtPrice(myMin)}') && LIST.includes('${window.fmtPrice(globalMin)}'))
+// NOTE still WAZ (documented buckets): cart+order totals (pending), seller-dashboard (warehouse/deleted/
+// app-seller), admin, auction bids/current, RFQ budgets/bids, wallet/stake/commission/reward/refund/GMV/
+// withdraw/deposit/charity/escrow ("已托管" — USDC there would imply real custody).
 
 // 5. PRESERVED — order totals / escrow / wallet stay WAZ (pending decision / honesty)
 ok('5a. order-detail total still WAZ (usdHint, PR-1e pending)', APP.includes('usdHint(order.total_amount)'))

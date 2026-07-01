@@ -6554,7 +6554,7 @@ async function renderGroupBuyDetail(app, id) {
     <h1 class="page-title">👥 ${escHtml(r.product_title)}</h1>
     <div class="card" style="background:linear-gradient(135deg,#ecfdf5,#fff);padding:14px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div><div style="font-size:24px;font-weight:800;color:#16a34a">${window.fmtPrice(final)}</div><div style="font-size:11px;color:#9ca3af;text-decoration:line-through">${r.original_price} WAZ</div></div>
+        <div><div style="font-size:24px;font-weight:800;color:#16a34a">${window.fmtPrice(final)}</div><div style="font-size:11px;color:#9ca3af;text-decoration:line-through">${r.original_price} USDC</div></div>
         <div style="font-size:18px;font-weight:700;color:#16a34a;background:#dcfce7;padding:6px 12px;border-radius:8px">-${pct}%</div>
       </div>
       <div style="font-size:12px;color:#374151;margin-bottom:4px">${t('已成团')} <strong>${joined}/${r.target_count}</strong> · ${t('剩余时间')} ${remainingStr}</div>
@@ -6564,7 +6564,7 @@ async function renderGroupBuyDetail(app, id) {
         : expired ? `<div style="color:#9ca3af">${t('已结束，等待结算')}</div>`
         : isOwn ? `<div style="color:#9ca3af">${t('自己开的团，等待成团')}</div>`
         : isParticipant ? `<button class="btn btn-outline btn-sm" style="width:100%;color:#dc2626;border-color:#fca5a5" onclick="leaveGroupBuy('${r.id}')">${t('退出团购')}</button>`
-        : state.user?.role === 'buyer' ? `<button class="btn btn-primary" style="width:100%" onclick="openJoinGroupBuy('${r.id}')">+ ${t('加入团购')} (${r.original_price} WAZ ${t('预付')})</button>`
+        : state.user?.role === 'buyer' ? `<button class="btn btn-primary" style="width:100%" onclick="openJoinGroupBuy('${r.id}')">+ ${t('加入团购')} (${window.fmtPrice(r.original_price)} ${t('预付')})</button>`
         : `<div style="color:#9ca3af">${t('仅买家可加入')}</div>`}
     </div>
     <div style="font-size:13px;font-weight:600;margin:14px 0 8px">${t('已加入')} (${joined})</div>
@@ -22108,7 +22108,7 @@ async function renderAuctionsFeed(app) {
             <div style="font-size:13px;line-height:1.5">
               ♻️ ${feedActor(d.seller_id, d.seller_name, d.seller_handle)} ${t('发布二手')} <strong>${escHtml(d.title)}</strong>
             </div>
-            <div style="font-size:11px;color:#6b7280;margin-top:4px">${d.price} WAZ · ${d.condition_grade || ''} · ${ts}</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:4px">${window.fmtPrice(d.price)} · ${d.condition_grade || ''} · ${ts}</div>
           </div>`
         }
       }).join('')
@@ -24487,7 +24487,7 @@ async function renderNoteLanding(app, noteId) {
       <div style="flex:1;min-width:0">
         <div style="font-size:10px;color:#9a3412;font-weight:600;margin-bottom:2px">📦 ${t('笔记关联商品')}</div>
         <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(product.title || '')}</div>
-        <div style="font-size:15px;font-weight:800;color:#dc2626;margin-top:2px">${Number(product.price || 0).toFixed(2)} WAZ</div>
+        <div style="font-size:15px;font-weight:800;color:#dc2626;margin-top:2px">${window.fmtPrice(product.price || 0)}</div>
       </div>
       <button class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="event.stopPropagation();navigate('#order-product/${product.id}')">${t('去购买')}</button>
     </div>` : ''
@@ -25176,7 +25176,7 @@ async function renderSharesFeed(app, sort) {
               <span>❤️ ${n.stats.likes || 0} · 🔗 ${n.stats.clicks || 0}</span>
             </div>
             ${noteAuthBadges(n.badges, 'sm') ? `<div style="margin-top:4px">${noteAuthBadges(n.badges, 'sm')}</div>` : ''}
-            ${n.product ? `<div style="font-size:11px;color:#92400e;margin-top:4px;background:#fef3c7;padding:3px 8px;border-radius:4px;display:inline-block">📦 ${escHtml((n.product.title || '').slice(0, 20))} · ${Number(n.product.price).toFixed(0)} WAZ</div>` : ''}
+            ${n.product ? `<div style="font-size:11px;color:#92400e;margin-top:4px;background:#fef3c7;padding:3px 8px;border-radius:4px;display:inline-block">📦 ${escHtml((n.product.title || '').slice(0, 20))} · ${window.fmtPrice(n.product.price)}</div>` : ''}
           </div>
         </div>
       </div>

@@ -114,11 +114,11 @@ async function renderListingsMine(app) {
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding-top:8px;border-top:1px solid #f3f4f6">
           <div style="font-size:11px;color:#6b7280">
-            ${t('我的报价')} <strong style="color:#374151">${myMin.toFixed(2)} WAZ</strong>
+            ${t('我的报价')} <strong style="color:#374151">${window.fmtPrice(myMin)}</strong>
             <span style="color:#9ca3af">· ${it.my_offer_count} ${t('个规格')}</span>
           </div>
           <div style="font-size:11px;color:#6b7280">
-            ${t('全网最低')} <strong style="color:#dc2626">${globalMin.toFixed(2)} WAZ</strong>
+            ${t('全网最低')} <strong style="color:#dc2626">${window.fmtPrice(globalMin)}</strong>
           </div>
         </div>
       </div>
