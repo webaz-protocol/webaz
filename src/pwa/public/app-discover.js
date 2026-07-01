@@ -1093,7 +1093,7 @@ async function renderFeedRanks() {
     GET('/leaderboard?kind=buyers&limit=5').catch(() => ({ items: [] })),
   ])
   const rankLine = (rank, label, sub, hash) => `
-    <div onclick="location.hash='${hash}'" style="display:flex;gap:8px;align-items:center;padding:6px 0;cursor:pointer;border-bottom:1px solid #f3f4f6">
+    <div ${hash ? `onclick="location.hash='${hash}'"` : ''} style="display:flex;gap:8px;align-items:center;padding:6px 0;${hash ? 'cursor:pointer;' : ''}border-bottom:1px solid #f3f4f6">
       <div style="font-size:11px;font-weight:700;color:${rank <= 3 ? '#dc2626' : '#9ca3af'};width:18px;text-align:center;flex-shrink:0">${rank}</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:12px;font-weight:600;color:#1f2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(label)}</div>
@@ -1113,11 +1113,11 @@ async function renderFeedRanks() {
     + miniCard('🔥', t('热门商品'), 'products', products.items || [], (it, r) =>
         rankLine(r, it.title, `${Number(it.completion_count||0)} ${t('单')} · ${Number(it.recommend_count||0)} ${t('人推荐')} · ${it.price} WAZ`, `#order-product/${it.id}`))
     + miniCard('🏪', t('卖家榜'), 'sellers', sellers.items || [], (it, r) =>
-        rankLine(r, '@' + (it.handle || it.name || ''), `${it.rating_count > 0 ? '⭐ ' + Number(it.avg_rating).toFixed(1) + ' (' + it.rating_count + ')' : t('暂无评价')} · ${Number(it.orders_count||0)} ${t('单')}`, `#shop/${it.id}`))
+        rankLine(r, '@' + (it.handle || it.name || ''), `${it.rating_count > 0 ? '⭐ ' + Number(it.avg_rating).toFixed(1) + ' (' + it.rating_count + ')' : t('暂无评价')} · ${Number(it.orders_count||0)} ${t('单')}`, it.handle ? `#shop/${it.handle}` : ''))
     + miniCard('📣', t('创作者榜'), 'creators', creators.items || [], (it, r) =>
-        rankLine(r, '@' + (it.handle || it.name || ''), `${Number(it.products_shared||0)} ${t('个商品')} · ${Number(it.total_likes||0)} ${t('赞')}`, `#u/${it.id}`))
+        rankLine(r, '@' + (it.handle || it.name || ''), `${Number(it.products_shared||0)} ${t('个商品')} · ${Number(it.total_likes||0)} ${t('赞')}`, it.handle ? `#u/${it.handle}` : ''))
     + miniCard('🛍', t('买家榜'), 'buyers', buyers.items || [], (it, r) =>
-        rankLine(r, '@' + (it.handle || it.name || ''), `${Number(it.orders_count||0)} ${t('单')}`, `#u/${it.id}`))
+        rankLine(r, '@' + (it.handle || it.name || ''), `${Number(it.orders_count||0)} ${t('单')}`, it.handle ? `#u/${it.handle}` : ''))
 }
 
 window.setFeedScope = (k) => {
