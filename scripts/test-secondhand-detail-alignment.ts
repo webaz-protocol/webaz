@@ -21,7 +21,8 @@ const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fail
 const has = (n: string) => APP.includes(n)
 
 // 1. condition grade is INLINE with the price (same rendered line as the price)
-const priceLine = lines.find(l => l.includes('Number(it.price).toFixed(2)} WAZ')) || ''
+// (price now renders via window.fmtPrice(it.price) — USDC + local — since PR-1d; still on the same line as the badge)
+const priceLine = lines.find(l => l.includes('window.fmtPrice(it.price)') && l.includes('display:flex;align-items:center')) || ''
 ok('1a. condition badge (t(cond.label)) is on the price line', priceLine.includes('${t(cond.label)}'))
 ok('1b. price line wraps price + condition in a flex group', priceLine.includes('display:flex;align-items:center'))
 // 1c. condition is no longer ALSO in the meta chip-row (no duplicate 4px-radius cond chip)

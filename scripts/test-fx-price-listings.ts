@@ -14,6 +14,7 @@
 import { readFileSync } from 'node:fs'
 
 const APP = readFileSync('src/pwa/public/app.js', 'utf8')
+const LIST = readFileSync('src/pwa/public/app-listings.js', 'utf8')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}`) } }
@@ -38,6 +39,15 @@ ok('4a. no ${Number(it.price).toFixed(0)} WAZ (sh/skill cards)', !APP.includes('
 ok('4b. no ${Number(it.price).toFixed(2)} WAZ (sh detail)', !APP.includes('${Number(it.price).toFixed(2)} WAZ'))
 ok('4c. no ${Number(price).toFixed(0)} WAZ (skill billing)', !APP.includes('${Number(price).toFixed(0)} WAZ'))
 ok('4d. no group-buy "${it.sale_price} WAZ" left', !APP.includes('${it.sale_price} WAZ'))
+
+// 6. review round-2 sites (skill buy/use buttons, secondhand "TA 还在卖", p2p main list, listing identity/offer)
+ok('6a. skill buy button → fmtPrice', APP.includes("${t('购买')} · ${window.fmtPrice(l.price)}"))
+ok('6b. skill use (per_use) button → fmtPrice', APP.includes("${t('使用')} · ${window.fmtPrice(l.price)}/${t('次')}"))
+ok('6c. secondhand "TA 还在卖" card → fmtPrice', APP.includes('<div style="font-size:13px;font-weight:700;color:#dc2626">${window.fmtPrice(o.price)}</div>'))
+ok('6d. p2p main list → fmtPrice', APP.includes('<span style="color:#dc2626;font-weight:700;font-size:14px">${window.fmtPrice(it.price)}</span>'))
+ok('6e. app-listings min_price → fmtPrice', LIST.includes('${window.fmtPrice(it.min_price)}'))
+ok('6f. app-listings offer price → fmtPrice', LIST.includes('font-size:16px">${window.fmtPrice(o.price)}</div>'))
+ok('6g. NEG: no round-2 raw WAZ left', !APP.includes("${Number(l.price).toFixed(0)} WAZ") && !APP.includes('${Number(o.price).toFixed(0)} WAZ') && !LIST.includes('${Number(it.min_price).toFixed(2)} <span') && !LIST.includes('${Number(o.price).toFixed(2)} <span'))
 
 // 5. PRESERVED — order totals / escrow / wallet stay WAZ (pending decision / honesty)
 ok('5a. order-detail total still WAZ (usdHint, PR-1e pending)', APP.includes('usdHint(order.total_amount)'))

@@ -19956,9 +19956,9 @@ async function renderSkillDetail(app, id) {
   } else if (l.billing_mode === 'one_time') {
     actionBtn = owned
       ? `<button class="btn btn-primary" style="width:100%;font-size:14px;padding:10px" onclick="skmReadContent('${l.id}','one_time')">${t('查看正文')}</button>`
-      : `<button class="btn btn-primary" style="width:100%;font-size:14px;padding:10px" onclick="skmPurchase('${l.id}')">${t('购买')} · ${Number(l.price).toFixed(0)} WAZ</button>`
+      : `<button class="btn btn-primary" style="width:100%;font-size:14px;padding:10px" onclick="skmPurchase('${l.id}')">${t('购买')} · ${window.fmtPrice(l.price)}</button>`
   } else {
-    actionBtn = `<button class="btn btn-primary" style="width:100%;font-size:14px;padding:10px" onclick="skmReadContent('${l.id}','per_use')">${t('使用')} · ${Number(l.price).toFixed(0)} WAZ/${t('次')}</button>
+    actionBtn = `<button class="btn btn-primary" style="width:100%;font-size:14px;padding:10px" onclick="skmReadContent('${l.id}','per_use')">${t('使用')} · ${window.fmtPrice(l.price)}/${t('次')}</button>
       <div style="font-size:10px;color:#9ca3af;text-align:center;margin-top:6px">${t('按次付费：每次查看正文都会扣费')}</div>`
   }
   app.innerHTML = shell(`
@@ -20578,7 +20578,7 @@ async function renderSecondhandDetail(app, id) {
                   ${o.cover ? `<img src="${escAttr(o.cover)}" style="width:100%;height:100%;object-fit:cover">` : `<div style="font-size:30px">${shCatIcon(o.category)}</div>`}
                 </div>
                 <div style="padding:6px">
-                  <div style="font-size:13px;font-weight:700;color:#dc2626">${Number(o.price).toFixed(0)} WAZ</div>
+                  <div style="font-size:13px;font-weight:700;color:#dc2626">${window.fmtPrice(o.price)}</div>
                   <div style="font-size:10px;color:#6b7280;line-height:1.3;margin-top:2px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden">${escHtml(o.title)}</div>
                   <div style="font-size:9px;color:${ocond.color};margin-top:3px;font-weight:600">${t(ocond.label)}</div>
                 </div>
@@ -22611,7 +22611,7 @@ async function renderP2pBoard(app) {
           <div style="font-size:11px;color:#6b7280;margin-bottom:3px">@${escHtml(it.seller_handle || it.seller_id.slice(0,8))} · ${it.region}</div>
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-size:10px;font-family:monospace;color:#9ca3af">🔒 ${it.content_hash.slice(0,12)}…</span>
-            <span style="color:#dc2626;font-weight:700;font-size:14px">${it.price} <span style="font-size:10px;color:#9ca3af;font-weight:500">WAZ</span></span>
+            <span style="color:#dc2626;font-weight:700;font-size:14px">${window.fmtPrice(it.price)}</span>
           </div>
         </div>
       </div>`
