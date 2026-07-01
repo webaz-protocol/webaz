@@ -33,5 +33,10 @@ ok('2b. rankLine gates cursor on hash', DISC.includes("${hash ? 'cursor:pointer;
 ok('3a. full-board creators card navs #u/${c.handle} guarded', APP.includes("c.handle ? `onclick=\"location.hash='#u/${c.handle}'\"` : ''"))
 ok('3b. NO full-board card navs #u/${c.id}', !APP.includes("location.hash='#u/${c.id}'"))
 
+// 4. full leaderboard page sellers card is ALSO handle-gated (handle is nullable — a handle-less
+//    seller must be non-clickable, not #shop/undefined). Was unconditional; caught in PR review.
+ok('4a. full-board sellers card navs #shop/${u.handle} guarded', APP.includes("u.handle ? `onclick=\"location.hash='#shop/${u.handle}'\"` : ''"))
+ok('4b. NO unconditional full-board sellers onclick (#shop/${u.handle} without a handle gate)', !APP.includes("align-items:center;cursor:pointer\" onclick=\"location.hash='#shop/${u.handle}'\""))
+
 if (fail > 0) { console.error(`\n❌ leaderboard nav-by-handle FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ leaderboard nav-by-handle: discover + full-board cards nav via public handle (guarded), no usr_id in any nav\n  ✅ pass ${pass}`)
