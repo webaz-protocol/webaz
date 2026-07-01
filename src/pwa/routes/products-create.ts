@@ -144,7 +144,7 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
       source_url ?? null, source_price ? Number(source_price) : null, source_price ? now : null,
       weight_kg ? Number(weight_kg) : null, ship_regions, Number(handling_hours), estJson, fragile ? 1 : 0,
       Number(return_days), return_condition, Number(warranty_days),
-      Number(low_stock_threshold), auto_delist_on_zero ? 1 : 0,
+      Math.max(0, Math.floor(Number(low_stock_threshold) || 0)), auto_delist_on_zero ? 1 : 0,
       makeCommitmentHash(pFields), makeDescriptionHash({ title, description, specs: specsJson }),
       makePriceHash(priceNum, now), now,
       commissionRateNum, product_type, imagesJsonForInsert

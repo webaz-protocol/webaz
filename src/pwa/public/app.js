@@ -16130,7 +16130,7 @@ window.doAddProduct = async () => {
   if (!title || !desc || !price) { msgEl.innerHTML = alert$('error', t('请填写商品名、描述、价格')); return }
 
   const extTitle = (document.getElementById('prd-ext-title')?.value || '').trim(); const brand = (document.getElementById('prd-brand')?.value || '').trim(); const model = (document.getElementById('prd-model')?.value || '').trim()
-  const commissionPct = Number(document.getElementById('prd-commission')?.value || 10); const lowStock = Number(document.getElementById('prd-low-stock')?.value) || 3; const autoDelist = document.getElementById('prd-auto-delist')?.checked ? 1 : 0
+  const commissionPct = Number(document.getElementById('prd-commission')?.value || 10); const lowStock = document.getElementById('prd-low-stock')?.value; const autoDelist = document.getElementById('prd-auto-delist')?.checked ? 1 : 0
   if (!(commissionPct >= 1 && commissionPct <= 50)) {
     msgEl.innerHTML = alert$('error', t('佣金比例需在 1%-50% 之间')); return
   }
@@ -16146,7 +16146,7 @@ window.doAddProduct = async () => {
     return_days: Number(document.getElementById('prd-return').value) ?? 7,
     return_condition: document.getElementById('prd-return-cond').value.trim(),
     warranty_days: Number(document.getElementById('prd-warranty').value) ?? 0,
-    fragile: document.getElementById('prd-fragile').checked ? 1 : 0, low_stock_threshold: lowStock, auto_delist_on_zero: autoDelist,
+    fragile: document.getElementById('prd-fragile').checked ? 1 : 0, low_stock_threshold: lowStock === '' || lowStock == null ? undefined : Number(lowStock), auto_delist_on_zero: autoDelist,
     commission_rate: commissionPct / 100,
     ...(extTitle ? { external_title: extTitle } : {}),
     ...(checkedAliases.length ? { aliases: checkedAliases } : {}),

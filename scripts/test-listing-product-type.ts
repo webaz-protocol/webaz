@@ -45,10 +45,20 @@ for (const k of ['品牌', '型号']) ok(`5d. i18n EN entry: ${k}`, has(I18N, `'
 
 // 6. low-stock threshold + auto-delist in create form (UI + backend create-route insert)
 ok('6a. low-stock inputs present', has(APP, 'id="prd-low-stock"') && has(APP, 'id="prd-auto-delist"'))
-ok('6b. doAddProduct reads low-stock/auto-delist (default 3 / checked)', has(APP, "Number(document.getElementById('prd-low-stock')?.value) || 3") && has(APP, "document.getElementById('prd-auto-delist')?.checked ? 1 : 0"))
-ok('6c. payload includes low_stock_threshold + auto_delist_on_zero', has(APP, 'low_stock_threshold: lowStock, auto_delist_on_zero: autoDelist,'))
-ok('6d. create route destructures low_stock_threshold/auto_delist_on_zero', /low_stock_threshold = 3, auto_delist_on_zero = 1,/.test(CREATE))
+ok('6b. doAddProduct reads low-stock/auto-delist', has(APP, "const lowStock = document.getElementById('prd-low-stock')?.value") && has(APP, "document.getElementById('prd-auto-delist')?.checked ? 1 : 0"))
+// P2-1: 0 is a valid value ("0 = no alert"). Frontend must NOT coerce 0→3 (no `|| 3`); empty → undefined so
+// the backend default (3) applies, but an explicit 0 is preserved end-to-end (aligns with update route).
+ok('6b-1. low-stock read does NOT force 0→3 (no "|| 3")', !has(APP, "prd-low-stock')?.value) || 3"))
+ok('6b-2. payload preserves 0, sends undefined only when empty', has(APP, "low_stock_threshold: lowStock === '' || lowStock == null ? undefined : Number(lowStock),"))
+ok('6c. payload includes auto_delist_on_zero', has(APP, ' auto_delist_on_zero: autoDelist,'))
+ok('6d. create route destructures low_stock_threshold/auto_delist_on_zero (default 3/1)', /low_stock_threshold = 3, auto_delist_on_zero = 1,/.test(CREATE))
 ok('6e. create INSERT columns include low_stock_threshold + auto_delist_on_zero', /low_stock_threshold, auto_delist_on_zero,/.test(CREATE))
+ok('6e-1. create normalizes low_stock like update route (Math.max(0, floor), preserves 0)', has(CREATE, 'Math.max(0, Math.floor(Number(low_stock_threshold) || 0))'))
+// behavioral: the two transforms preserve an explicit 0 (and only default when empty/missing)
+const payloadLS = (v: string | null) => v === '' || v == null ? undefined : Number(v)   // mirrors app.js payload
+const createNorm = (v: number) => Math.max(0, Math.floor(Number(v) || 0))               // mirrors products-create.ts
+ok('6e-2. payload keeps 0, sends undefined only when empty', payloadLS('0') === 0 && payloadLS('') === undefined && payloadLS('5') === 5)
+ok('6e-3. create normalize keeps 0 (0→0, 3→3, negative→0)', createNorm(0) === 0 && createNorm(3) === 3 && createNorm(-5) === 0)
 for (const k of ['低库存阈值', '售罄自动下架']) ok(`6f. i18n EN entry: ${k}`, has(I18N, `'${k}':`))
 
 if (fail > 0) { console.error(`\n❌ listing create-form contract FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
