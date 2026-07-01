@@ -15379,7 +15379,7 @@ async function renderSeller(app) {
         <div style="flex:1;min-width:0;cursor:pointer" onclick="navigate('#edit-product/${p.id}')">
           <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.title)}</div>
           <div style="font-size:11px;color:#6b7280;margin-top:2px;display:flex;gap:8px;flex-wrap:wrap">
-            <span><strong style="color:#374151">${p.price}</strong> WAZ</span>
+            <span><strong style="color:#374151">${window.fmtPrice(p.price)}</strong></span>
             <span style="color:${outOfStock?'#dc2626':lowStock?'#d97706':'#6b7280'}${outOfStock||lowStock?';font-weight:600':''}">${t('库存')} ${p.stock}${outOfStock?' ⛔':lowStock?' ⚠':''}</span>
             ${p.completion_count > 0 ? `<span>🛒 ${p.completion_count}</span>` : ''}
           </div>
@@ -15412,7 +15412,7 @@ async function renderSeller(app) {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600">${escHtml(p.title)}</div>
-          <div style="font-size:13px;color:#6b7280;margin-top:2px">${p.price} WAZ · ${t('库存')} ${p.stock}</div>
+          <div style="font-size:13px;color:#6b7280;margin-top:2px">${window.fmtPrice(p.price)} · ${t('库存')} ${p.stock}</div>
           ${autoDelistedRecently ? `<div style="font-size:11px;color:#92400e;margin-top:2px;padding:4px 8px;background:#fef3c7;border-radius:6px;display:inline-block">📦 ${t('售罄自动下架')} · ${new Date(p.auto_delisted_at).toLocaleDateString()}</div>` : ''}
           ${p.has_pending_task ? `<div style="font-size:11px;color:#d97706;margin-top:2px">⏳ ${t('链接核验中，请等待验证结果')}</div>` : ''}
           ${p.all_links_revoked ? `<div style="font-size:11px;color:#ef4444;margin-top:2px">❌ ${t('所有链接已失效，请先添加新链接')}</div>` : ''}
@@ -15433,7 +15433,7 @@ async function renderSeller(app) {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;text-decoration:line-through;color:#9ca3af">${escHtml(p.title)}</div>
-          <div style="font-size:13px;color:#d1d5db;margin-top:2px">${p.price} WAZ</div>
+          <div style="font-size:13px;color:#d1d5db;margin-top:2px">${window.fmtPrice(p.price)}</div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
           <span class="badge badge-red">${t('回收箱')}</span>
@@ -15648,7 +15648,7 @@ async function renderSeller(app) {
           <div class="form-group"><label class="form-label">${t('规格参数')}<span style="font-size:11px;color:#9ca3af;font-weight:400;margin-left:6px">${t('每行：材质: 陶瓷')}</span></label>
             <textarea class="form-control" id="imp-specs" rows="3"></textarea></div>
           <div style="display:flex;gap:12px">
-            <div class="form-group" style="flex:1"><label class="form-label">${t('价格（WAZ）')}</label><input class="form-control" id="imp-price" type="number"></div>
+            <div class="form-group" style="flex:1"><label class="form-label">${t('价格（USDC）')}</label><input class="form-control" id="imp-price" type="number"></div>
             <div class="form-group" style="flex:1"><label class="form-label">${t('库存')}</label><input class="form-control" id="imp-stock" type="number" value="1"></div>
           </div>
           <div id="imp-price-hint" style="font-size:12px;color:#059669;margin:-8px 0 12px;padding:8px 12px;background:#f0fdf4;border-radius:6px;display:none"></div>
@@ -15702,7 +15702,7 @@ async function renderSeller(app) {
         <div class="form-group"><label class="form-label">${t('商品描述')} *<span style="font-size:11px;color:#9ca3af;font-weight:400;margin-left:6px">${t('面向 Agent 检索，写核心参数而非营销语言')}</span></label>
           <textarea class="form-control" id="prd-desc" rows="3" placeholder="${t('材质、尺寸、颜色、适用场景...')}"></textarea></div>
         <div style="display:flex;gap:12px">
-          <div class="form-group" style="flex:1"><label class="form-label">${t('价格（WAZ）')} *</label><input class="form-control" id="prd-price" type="number" placeholder="199" oninput="updateTrialCost()"></div>
+          <div class="form-group" style="flex:1"><label class="form-label">${t('价格（USDC）')} *</label><input class="form-control" id="prd-price" type="number" placeholder="199" oninput="updateTrialCost()"></div>
           <div class="form-group" style="flex:1"><label class="form-label">${t('库存')}</label><input class="form-control" id="prd-stock" type="number" value="1"></div>
         </div>
 
@@ -16596,7 +16596,7 @@ async function renderEditProduct(app, productId) {
       <div style="display:flex;gap:12px">
         <div class="form-group" style="flex:1">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <label class="form-label" style="margin:0">${t('价格（WAZ）')}</label>
+            <label class="form-label" style="margin:0">${t('价格（USDC）')}</label>
             <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px;color:#16a34a;border-color:#86efac" onclick="aiSuggestPrice()">💰 ${t('AI 建议')}</button>
           </div>
           <input class="form-control" id="ep-price" type="number" value="${p.price || ''}">

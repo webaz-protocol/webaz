@@ -860,7 +860,7 @@ const _EN = {
   '上架新商品': 'List new product',
   '例：手工竹编收纳篮': 'E.g.: Handwoven bamboo basket',
   '材质、尺寸、特点...': 'Material, size, features...',
-  '价格（WAZ）': 'Price (WAZ)',
+  '价格（USDC）': 'Price (USDC)',
   '库存数量': 'Stock',
   '分类（可选）': 'Category (optional)',
   '不分类': 'No category',

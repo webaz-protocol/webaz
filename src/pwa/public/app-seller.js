@@ -44,7 +44,7 @@ async function renderSellerAnalytics(app) {
     : `<div style="display:flex;gap:3px;align-items:flex-end;height:80px">
         ${trend.map(d => {
           const h = Math.max(3, (Number(d.gmv) / maxGmv) * 70)
-          return `<div title="${d.date}: ${Number(d.gmv).toFixed(0)} WAZ · ${d.orders} ${t('单')}" style="flex:1;background:linear-gradient(180deg,#6366f1,#a5b4fc);height:${h}px;border-radius:2px 2px 0 0;cursor:help"></div>`
+          return `<div title="${d.date}: ${Number(d.gmv).toFixed(0)} USDC · ${d.orders} ${t('单')}" style="flex:1;background:linear-gradient(180deg,#6366f1,#a5b4fc);height:${h}px;border-radius:2px 2px 0 0;cursor:help"></div>`
         }).join('')}
       </div>
       <div style="display:flex;justify-content:space-between;font-size:9px;color:#9ca3af;margin-top:4px">
@@ -59,11 +59,11 @@ async function renderSellerAnalytics(app) {
           <div style="font-size:13px;font-weight:700;color:${i === 0 ? '#f59e0b' : i < 3 ? '#6366f1' : '#9ca3af'};width:22px;text-align:center">${i + 1}</div>
           <div style="flex:1;min-width:0">
             <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.title)}</div>
-            <div style="font-size:10px;color:#9ca3af">${p.price} WAZ</div>
+            <div style="font-size:10px;color:#9ca3af">${window.fmtPrice(p.price)}</div>
           </div>
           <div style="text-align:right">
             <div style="font-size:13px;font-weight:600;color:#16a34a">${p.sales} ${t('单')}</div>
-            <div style="font-size:10px;color:#9ca3af">${fmt2(p.revenue)} WAZ</div>
+            <div style="font-size:10px;color:#9ca3af">${fmt2(p.revenue)} USDC</div>
           </div>
         </div>`).join('')
 
@@ -80,7 +80,7 @@ async function renderSellerAnalytics(app) {
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">
         <div>
           <div style="font-size:18px;font-weight:700;color:#4f46e5">${fmt2(r.orders.gmv)}${delta(Number(r.orders.gmv), Number(r.prev_window?.gmv))}</div>
-          <div style="font-size:10px;color:#6b7280">GMV (WAZ)</div>
+          <div style="font-size:10px;color:#6b7280">GMV (USDC)</div>
         </div>
         <div>
           <div style="font-size:18px;font-weight:700;color:#16a34a">${fmt(r.orders.completed_orders)}${delta(Number(r.orders.completed_orders), Number(r.prev_window?.completed_orders))}</div>
@@ -88,7 +88,7 @@ async function renderSellerAnalytics(app) {
         </div>
         <div>
           <div style="font-size:18px;font-weight:700;color:#f59e0b">${fmt2(r.orders.aov)}</div>
-          <div style="font-size:10px;color:#6b7280">${t('客单价')} (WAZ)</div>
+          <div style="font-size:10px;color:#6b7280">${t('客单价')} (USDC)</div>
         </div>
       </div>
     </div>

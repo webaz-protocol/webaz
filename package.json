@@ -104,6 +104,7 @@
     "test:fx-price-display": "tsx scripts/test-fx-price-display.ts",
     "test:fx-price-buypage": "tsx scripts/test-fx-price-buypage.ts",
     "test:fx-price-listings": "tsx scripts/test-fx-price-listings.ts",
+    "test:fx-price-seller-ui": "tsx scripts/test-fx-price-seller-ui.ts",
     "test:rewards-vs-contribution-copy": "tsx scripts/test-rewards-vs-contribution-copy.ts",
     "test:invite-code-narrowing": "tsx scripts/test-invite-code-narrowing.ts",
     "test:shop-referral-attribution": "tsx scripts/test-shop-referral-attribution.ts",
