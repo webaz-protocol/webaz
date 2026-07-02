@@ -363,7 +363,7 @@ CREATE TABLE IF NOT EXISTS direct_pay_fee_prepay_requests (
       seller_id            TEXT NOT NULL REFERENCES users(id),
       amount_units         BIGINT NOT NULL,
       currency             TEXT,
-      platform_account_id  TEXT,
+      platform_account_id  TEXT NOT NULL REFERENCES platform_receive_accounts(id),
       evidence_ref         TEXT NOT NULL,
       evidence_note        TEXT,
       status               TEXT NOT NULL DEFAULT 'pending',

@@ -39,15 +39,19 @@ window.dpHydrateFeeRequest = async () => {
       </div>
       <div style="color:#9ca3af;margin-top:2px">${t('凭证')}: ${escHtml(r.evidence_ref)}${r.review_note ? ` · ${escHtml(r.review_note)}` : ''}</div>
     </div>`).join('') : `<div style="font-size:12px;color:#9ca3af">${t('暂无申请记录')}</div>`
+  // 无 active 平台收款方式 → 不给表单(没有对准的 WebAZ 收款账户就无法可追踪充值),只提示联系平台。
+  const formHtml = accounts.length ? `
+    <div id="dp-feereq-msg" style="margin-top:8px"></div>
+    <div class="form-group" style="margin-top:8px"><label class="form-label">${t('充值金额 USDC')}</label><input class="form-control" id="dp-feereq-amt" type="number" step="any" min="0" placeholder="${t('如 50')}"></div>
+    <div class="form-group"><label class="form-label">${t('付给哪个平台收款方式')} <span style="color:#dc2626">*</span></label><select class="form-control" id="dp-feereq-acct">${opts}</select></div>
+    <div class="form-group"><label class="form-label">${t('付款凭证号 evidence_ref')} <span style="color:#dc2626">*</span> <span style="font-size:11px;color:#9ca3af">${t('(转账流水号 / 交易 ID,必填)')}</span></label><input class="form-control" id="dp-feereq-ev" maxlength="200" placeholder="${t('如银行流水号 / 链上 txid')}"></div>
+    <div class="form-group"><label class="form-label">${t('备注(可选)')}</label><input class="form-control" id="dp-feereq-note" maxlength="500"></div>
+    <button class="btn btn-primary btn-sm" onclick="dpSubmitFeeRequest()">${t('提交申请')}</button>`
+    : `<div style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-top:8px">${t('平台暂未配置收款方式,请联系平台')}</div>`
   box.innerHTML = `
     <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px">${t('平台收款方式(据此付款)')}</div>
     ${acctList}
-    <div id="dp-feereq-msg" style="margin-top:8px"></div>
-    <div class="form-group" style="margin-top:8px"><label class="form-label">${t('充值金额 USDC')}</label><input class="form-control" id="dp-feereq-amt" type="number" step="any" min="0" placeholder="${t('如 50')}"></div>
-    ${accounts.length ? `<div class="form-group"><label class="form-label">${t('付给哪个平台收款方式')}</label><select class="form-control" id="dp-feereq-acct">${opts}</select></div>` : ''}
-    <div class="form-group"><label class="form-label">${t('付款凭证号 evidence_ref')} <span style="color:#dc2626">*</span> <span style="font-size:11px;color:#9ca3af">${t('(转账流水号 / 交易 ID,必填)')}</span></label><input class="form-control" id="dp-feereq-ev" maxlength="200" placeholder="${t('如银行流水号 / 链上 txid')}"></div>
-    <div class="form-group"><label class="form-label">${t('备注(可选)')}</label><input class="form-control" id="dp-feereq-note" maxlength="500"></div>
-    <button class="btn btn-primary btn-sm" onclick="dpSubmitFeeRequest()">${t('提交申请')}</button>
+    ${formHtml}
     <div style="font-size:12px;font-weight:600;color:#374151;margin:14px 0 4px">${t('我的申请')}</div>
     ${reqRows}`
 }
@@ -59,7 +63,8 @@ window.dpSubmitFeeRequest = async () => {
   if (!(amount_units > 0)) { show('error', t('请填写正数充值金额')); return }
   const evidence_ref = document.getElementById('dp-feereq-ev')?.value?.trim() || ''
   if (!evidence_ref) { show('error', t('付款凭证号必填(不能无据)')); return }
-  const platform_account_id = document.getElementById('dp-feereq-acct')?.value || null
+  const platform_account_id = document.getElementById('dp-feereq-acct')?.value || ''
+  if (!platform_account_id) { show('error', t('请选择平台收款方式')); return }
   const evidence_note = document.getElementById('dp-feereq-note')?.value?.trim() || null
   const r = await POST('/direct-receive/fee-prepay-request', { amount_units, platform_account_id, evidence_ref, evidence_note })
   if (r.error) { show('error', r.error || t('提交失败,请重试')); return }

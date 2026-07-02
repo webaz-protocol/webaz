@@ -66,6 +66,7 @@ const _EN = {
   '充值金额 USDC': 'Top-up amount USDC',
   '如 50': 'e.g. 50',
   '付给哪个平台收款方式': 'Which platform receive method you paid',
+  '请选择平台收款方式': 'Please select a platform receive method',
   '付款凭证号 evidence_ref': 'Payment reference (evidence_ref)',
   '(转账流水号 / 交易 ID,必填)': '(transfer reference / transaction ID, required)',
   '如银行流水号 / 链上 txid': 'e.g. bank reference / on-chain txid',

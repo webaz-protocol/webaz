@@ -53,8 +53,10 @@ try {
 
   // 3. submit request — evidence required, amount>0, platform account active
   ok('3a. no evidence → 400 (不能无据)', (await call('POST', '/api/direct-receive/fee-prepay-request', 's1', { amount_units: 50000000, platform_account_id: 'pra_ok' })).status === 400)
-  ok('3b. amount 0 → 400', (await call('POST', '/api/direct-receive/fee-prepay-request', 's1', { amount_units: 0, evidence_ref: 'tx1' })).status === 400)
+  ok('3b. amount 0 → 400', (await call('POST', '/api/direct-receive/fee-prepay-request', 's1', { amount_units: 0, platform_account_id: 'pra_ok', evidence_ref: 'tx1' })).status === 400)
   ok('3c. inactive platform account → 400', (await call('POST', '/api/direct-receive/fee-prepay-request', 's1', { amount_units: 50000000, platform_account_id: 'pra_off', evidence_ref: 'tx1' })).status === 400)
+  ok('3c2. MISSING platform_account_id → 400 (must target a WebAZ account)', (await call('POST', '/api/direct-receive/fee-prepay-request', 's1', { amount_units: 50000000, evidence_ref: 'tx1' })).status === 400)
+  ok('3c3. non-integer amount_units → 400 (strict, no silent truncation)', (await call('POST', '/api/direct-receive/fee-prepay-request', 's1', { amount_units: 50000000.7, platform_account_id: 'pra_ok', evidence_ref: 'tx1' })).status === 400)
   const sub = await call('POST', '/api/direct-receive/fee-prepay-request', 's1', { amount_units: 50000000, currency: 'sgd', platform_account_id: 'pra_ok', evidence_ref: 'BANK-REF-9', evidence_note: 'paid via app' })
   ok('3d. valid submit → pending request', sub.status === 200 && sub.json?.request?.status === 'pending' && sub.json?.request?.amount_units === 50000000)
   const reqId = sub.json.request.id
@@ -71,7 +73,7 @@ try {
   ok('5c. cancel again → no change (not pending)', (await call('POST', `/api/direct-receive/fee-prepay-request/${reqId}/cancel`, 's1')).json?.changed === false)
   // other seller cannot cancel s1's request
   db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('s2','s2','seller','k_s2')").run()
-  const sub2 = await call('POST', '/api/direct-receive/fee-prepay-request', 's1', { amount_units: 10000000, evidence_ref: 'tx2' })
+  const sub2 = await call('POST', '/api/direct-receive/fee-prepay-request', 's1', { amount_units: 10000000, platform_account_id: 'pra_ok', evidence_ref: 'tx2' })
   ok('5d. non-owner cancel → no change', (await call('POST', `/api/direct-receive/fee-prepay-request/${sub2.json.request.id}/cancel`, 's2')).json?.changed === false)
 
   if (fail > 0) { console.error(`\n❌ fee prepay request FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exitCode = 1 }

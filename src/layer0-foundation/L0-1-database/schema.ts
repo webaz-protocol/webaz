@@ -471,7 +471,7 @@ export function initDatabase(): Database.Database {
       seller_id            TEXT NOT NULL REFERENCES users(id),
       amount_units         INTEGER NOT NULL,          -- 申请充值额(base units)
       currency             TEXT,                      -- 卖家声明的付款币种(展示;以实际到账为准)
-      platform_account_id  TEXT,                      -- 付给哪个平台收款方式(id 快照)
+      platform_account_id  TEXT NOT NULL REFERENCES platform_receive_accounts(id),  -- 付给哪个平台收款方式(必选;admin 据此核对到账来源)
       evidence_ref         TEXT NOT NULL,             -- 付款凭证号/流水(必填 —— 不能无据)
       evidence_note        TEXT,
       status               TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected | cancelled
