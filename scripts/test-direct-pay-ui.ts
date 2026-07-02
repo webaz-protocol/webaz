@@ -466,7 +466,7 @@ ok('26a. new file registered (index.html + pwa-syntax + ratchet)', has(HTML, '/a
 ok('26b. 30-minute window constant', /DP_REVEAL_MS = 30 \* 60 \* 1000/.test(RVL))
 ok('26b2. order-scoped box guard (dpInstrBox checks data-order-id === orderId); container binds data-order-id', /dpInstrBox = \(orderId\) =>[\s\S]{0,140}data-order-id'\) === String\(orderId\)/.test(RVL) && /id="dp-order-instr" data-order-id=/.test(DP))
 ok('26b3. show/hide acquire the box ONLY via dpInstrBox (getElementById only inside the guard, once)', /const box = window\.dpInstrBox\(orderId\)/.test(RVL) && (RVL.match(/document\.getElementById\('dp-order-instr'\)/g) || []).length === 1)
-ok('26b4. render clears ALL stale timers (cross-order timer cannot survive navigation)', /dpRenderPaymentInfo = \(box, order, orderId\) => \{\s*window\.dpClearAllRevealTimers\(\)/.test(RVL))
+ok('26b4. render GUARDS current order BEFORE clearing timers (stale hydrate cannot wipe current timer)', /dpRenderPaymentInfo = \([^)]*\) => \{[\s\S]{0,140}dpInstrBox\(orderId\)[\s\S]{0,80}dpClearAllRevealTimers/.test(RVL))
 ok('26c. pending (direct_pay_window) → auto-reveal window, lightweight re-reveal', /status === 'direct_pay_window'.*dpShowPaymentInfo\(order, orderId, true\)/.test(RVLCODE.replace(/\n/g, ' ')) && /dpReShowPaymentInfo/.test(RVL))
 ok('26d. re-show re-dispatches by FRESH status (dpRenderPaymentInfo), no inline lightweight bypass / Passkey', /dpReShowPaymentInfo = async[\s\S]{0,300}dpRenderPaymentInfo\(box, ord, orderId\)/.test(RVL) && !/dpReShowPaymentInfo[\s\S]{0,300}dpShowPaymentInfo\(ord, orderId, true\)/.test(RVL) && !/dpReShowPaymentInfo[\s\S]{0,300}requestPasskeyGate/.test(RVL))
 ok('26e. non-pending → hidden by default (dpHidePaymentInfo, gated button)', /else window\.dpHidePaymentInfo\(order, orderId, false\)/.test(RVL) && /dpGatedRevealPaymentInfo/.test(RVL))
@@ -521,6 +521,14 @@ for (const k of ['自动隐藏倒计时', '重新显示', '查看收款信息(�
   ok('27f. re-show on a now-cancelled order does NOT lightweight-reveal the account', !/ACCOUNT-A/.test(cur.el.innerHTML))
   ok('27g. instead it drops to the Passkey-gated re-view entry', /查看收款信息/.test(cur.el.innerHTML) && /dpGatedRevealPaymentInfo/.test(cur.el.innerHTML))
   ordersFix.A.status = 'direct_pay_window'                                // restore fixture
+
+  // P1: order B shown with a live auto-hide timer; order A's stale hydrate returns late and must NOT clear B's timer.
+  cur.el = mkEl('B'); win.dpShowPaymentInfo(ordersFix.B, 'B', true)
+  const bTimer = win._dpRevealTimers['B']
+  ok('27h-pre. B revealed with a live auto-hide timer', !!bTimer && /ACCOUNT-B/.test(cur.el.innerHTML))
+  win.dpRenderPaymentInfo(mkEl('A'), ordersFix.A, 'A')                    // stale hydrate for A while page is B
+  ok('27h. stale A render does NOT clear B auto-hide timer (info still auto-hides)', win._dpRevealTimers['B'] === bTimer)
+  ok('27i. stale A render does NOT overwrite B panel', /ACCOUNT-B/.test(cur.el.innerHTML))
 }
 
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }

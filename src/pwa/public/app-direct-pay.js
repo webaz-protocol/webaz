@@ -136,9 +136,9 @@ window.dpOrderDisclosureHtml = (order) => `
   </div>`
 // ack-gated 收款说明:both-acked → 另取订单快照并展示;否则只显示"先完成 D1/D2 Passkey"的门(快照不入 DOM)。
 window.dpHydrateOrderDisclosure = async (orderId) => {
-  const box = document.getElementById('dp-order-instr')
-  if (!box) return
+  if (!window.dpInstrBox(orderId)) return
   const st = await GET(`/direct-pay/disclosure-acks/${orderId}`)
+  const box = window.dpInstrBox(orderId); if (!box) return   // async 回包后再确认当前页仍是该订单(切页后旧回包不得写 DOM)
   if (st.error) { box.innerHTML = `<div style="font-size:12px;color:#dc2626">${window.dpErrorText(st.error_code, st.error)}</div>`; return }
   if (!st.both) {
     box.innerHTML = `<div style="font-size:12px;color:#92400e;background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">

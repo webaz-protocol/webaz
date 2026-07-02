@@ -72,11 +72,11 @@ window.dpGatedRevealPaymentInfo = async (orderId) => {
   window.dpShowPaymentInfo(ord, orderId, false)
 }
 
-// 订单详情:按状态渲染收款信息可见性。先清掉所有旧订单 timer(防切页后旧 timer 改写当前面板),再渲染当前订单。
-//   both-acked 由调用方(dpHydrateOrderDisclosure)先保证。
-window.dpRenderPaymentInfo = (box, order, orderId) => {
+// 订单详情:按状态渲染收款信息可见性。【先确认当前容器仍属于该 orderId,再清 timer】——否则旧订单 stale hydrate 回包
+//   会把当前订单的自动隐藏 timer 一并清掉(敏感收款信息永不隐藏)。both-acked 由调用方(dpHydrateOrderDisclosure)先保证。
+window.dpRenderPaymentInfo = (_box, order, orderId) => {
+  if (!order || !window.dpInstrBox(orderId)) return   // 当前页已不是该订单 → 不动任何 timer/DOM
   window.dpClearAllRevealTimers()
-  if (!box || !order) return
   if (order.payment_rail === 'direct_p2p' && order.status === 'direct_pay_window') window.dpShowPaymentInfo(order, orderId, true)
   else window.dpHidePaymentInfo(order, orderId, false)
 }
