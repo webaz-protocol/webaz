@@ -451,8 +451,9 @@ ok('24h. legacy WAZ→$ usdHint helper fully removed', !has(APP, 'function usdHi
 // ── 25. payment-moment UX (PR-1): 待支付 timeline stage + concrete 应付 amount at the decision touchpoints. ──
 const PAY = P('app-direct-pay-pay.js')
 ok('25a. new file registered (index.html + pwa-syntax + ratchet)', has(HTML, '/app-direct-pay-pay.js') && /node --check src\/pwa\/public\/app-direct-pay-pay\.js/.test(PKG) && /'src\/pwa\/public\/app-direct-pay-pay\.js'\s*:/.test(RATCHET))
-ok('25b. dpPayAmountText uses seller-account currency (dpFxInCurrency), NOT region _fxLocal', /window\.dpPayAmountText\s*=/.test(PAY) && /direct_pay_account_snapshot/.test(PAY) && /dpFxInCurrency/.test(PAY) && !/_fxLocal/.test(PAY))
-ok('25c. no-rate currency → currency code, never fabricated', /fx !== cur/.test(PAY))
+ok('25b. fiat seller account → binding amount via dpFxInCurrency (from account snapshot)', /window\.dpPayAmountText\s*=/.test(PAY) && /direct_pay_account_snapshot/.test(PAY) && /dpFxInCurrency/.test(PAY))
+ok('25b2. USDC seller account → shows USDC + buyer local-fiat reference (_fxLocal), not USDC-only', /=== 'USD'\) \{ const loc = window\._fxLocal/.test(PAY) && /USDC\$\{loc \? ' ≈ ' \+ loc/.test(PAY))
+ok('25c. no-rate seller currency → currency code, never fabricated', /fx !== cur/.test(PAY))
 ok("25d. amount uses '应付' (bilingual EN present)", /t\('应付'\)/.test(PAY) && /'应付'\s*:/.test(I18N))
 ok('25e. D2 (pre_confirm) ack dialog injects the confirmed amount', /pre_confirm' && _pay/.test(DP))
 ok('25f. "风险确认完成" reveal modal shows the amount', /_pay \? '💸 ' \+ _pay/.test(DP))
