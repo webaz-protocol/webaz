@@ -12450,10 +12450,10 @@ async function renderOrderDetail(app, orderId) {
   const historyHtml = (history || []).map(h => `
     <div class="timeline-item">
       <div><span class="timeline-status">${t(STATUS_ZH[h.from_status] || h.from_status)} → ${t(STATUS_ZH[h.to_status] || h.to_status)}</span></div>
-      <div class="timeline-actor">${h.actor_name}（${h.actor_role_name || h.actor_role}）</div>
+      <div class="timeline-actor">${escHtml(h.actor_name)}（${escHtml(h.actor_role_name || h.actor_role)}）</div>
       <div class="timeline-time">${fmtTime(h.created_at)}</div>
-      ${h.notes ? `<div class="timeline-evidence" style="color:#6b7280">💬 ${h.notes}</div>` : ''}
-      ${(h.evidence_items || []).map(e => `<div class="timeline-evidence">📎 ${e.description}</div>`).join('')}
+      ${h.notes ? `<div class="timeline-evidence" style="color:#6b7280">💬 ${escHtml(h.notes)}</div>` : ''}
+      ${(h.evidence_items || []).map(e => `<div class="timeline-evidence">📎 ${escHtml(e.description)}</div>`).join('')}
     </div>`).join('')
 
   // 物流追踪完整时间轴 — 含订单全流转 + 未到达节点的截止提示
@@ -12510,10 +12510,10 @@ async function renderOrderDetail(app, orderId) {
           ${orderStatusBadges(order)}
         </div>
       </div>
-      <div class="detail-row"><span class="detail-label">${t('商品')}</span><span class="detail-value">${product?.title || ''}</span></div>
+      <div class="detail-row"><span class="detail-label">${t('商品')}</span><span class="detail-value">${escHtml(product?.title || '')}</span></div>
       <div class="detail-row"><span class="detail-label">${t('金额')}</span><span class="detail-value" style="color:#4f46e5">${window.orderAmountHtml(order)}${Number(order.insurance_premium) > 0 ? ` <span style="font-size:10px;color:#6366f1;background:#eef2ff;padding:1px 6px;border-radius:99px;margin-left:4px">🛡 ${t('已购保险')} +${order.insurance_premium}</span>` : ''}</span></div>
       <div class="detail-row"><span class="detail-label">${t('下单时间')}</span><span class="detail-value">${fmtTime(order.created_at)}</span></div>
-      ${order.shipping_address ? `<div class="detail-row"><span class="detail-label">${t('收货地址')}</span><span class="detail-value">${order.shipping_address}</span></div>` : ''}
+      ${order.shipping_address ? `<div class="detail-row"><span class="detail-label">${t('收货地址')}</span><span class="detail-value">${escHtml(order.shipping_address)}</span></div>` : ''}
       ${order.anonymous_recipient && order.recipient_code ? `<div class="detail-row"><span class="detail-label">🔒 ${t('取件代号')}</span><span class="detail-value" style="font-family:monospace;font-size:14px;font-weight:700;color:#166534;background:#dcfce7;padding:2px 10px;border-radius:6px;letter-spacing:1px">${escHtml(order.recipient_code)}</span></div><div style="font-size:11px;color:#15803d;padding:0 14px 8px">${t('凭此代号到自提点取件 · 卖家和物流不知道你的真实姓名')}</div>` : ''}
       ${order.anonymous_recipient && !order.recipient_code ? `<div class="detail-row"><span class="detail-label">🔒 ${t('匿名订单')}</span><span class="detail-value" style="font-size:11px;color:#6b7280">${t('买家选择了匿名收货')}</span></div>` : ''}
       ${Number(order.donation_amount) > 0 ? `<div class="detail-row"><span class="detail-label">❤️ ${t('随单捐赠')}</span><span class="detail-value" style="color:#dc2626;font-weight:600">${order.donation_amount} WAZ</span></div>` : ''}

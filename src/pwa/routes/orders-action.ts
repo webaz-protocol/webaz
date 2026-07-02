@@ -167,7 +167,8 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     // P0 fix: 受信角色禁交易
     if (isTrustedRole(user as Record<string, unknown>)) return void res.status(403).json({ error: '受信角色不可参与订单流转', error_code: 'TRUSTED_ROLE_NO_TRADE' })
 
-    const { action, notes = '', evidence_description = '', logistics_company_id = '' } = req.body
+    const { action, evidence_description = '', logistics_company_id = '' } = req.body
+    const notes = String(req.body?.notes ?? '').slice(0, 500)   // 服务端硬界:附言/备注(含直付付款参考)最长 500 字符,防历史行膨胀(前端另限 60)
 
     // RFC-016: 顶层校验读 → 异步 seam;state-machine / settle / decline 写序列仍同步(Phase 3 迁 pg 行锁+事务)
     const order = await dbOne<Record<string, unknown>>('SELECT * FROM orders WHERE id = ?', [req.params.id])
