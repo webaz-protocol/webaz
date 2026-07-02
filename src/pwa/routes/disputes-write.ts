@@ -245,8 +245,10 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
     // 争议结案 → 给证据 blob 打过期戳
     try { markEvidenceExpiry(db, req.params.id) } catch (e) { console.warn('[evidence] mark expiry:', (e as Error).message) }
 
+    // 非托管(直付)争议:协议不持货款、不做托管结算 → 【跳过】所有佣金/PV/基金分润钩子(否则会从卖家余额扣不存在的佣金)。
+    const nonCustodial = !!result.non_custodial
     // release_seller 等同正常完成 → 触发推土机分润 + 原子能
-    if (ruling === 'release_seller') {
+    if (ruling === 'release_seller' && !nonCustodial) {
       try {
         db.transaction(() => {
           const order = db.prepare("SELECT * FROM orders WHERE id = ?").get(dispute.order_id) as Record<string, unknown> | undefined
@@ -283,8 +285,8 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
       } catch (e) { console.error('[dispute commission/pv hook]', e) }
     }
 
-    // Bug-A fix：partial_refund / liability_split 也按 effectiveBase 发 commission/PV/基金池
-    if (ruling === 'partial_refund' || ruling === 'liability_split') {
+    // Bug-A fix：partial_refund / liability_split 也按 effectiveBase 发 commission/PV/基金池(非托管跳过)
+    if ((ruling === 'partial_refund' || ruling === 'liability_split') && !nonCustodial) {
       try {
         db.transaction(() => {
           const order = db.prepare("SELECT * FROM orders WHERE id = ?").get(dispute.order_id) as Record<string, unknown> | undefined

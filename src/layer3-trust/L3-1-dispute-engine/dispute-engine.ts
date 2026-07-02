@@ -232,6 +232,26 @@ export interface LiabilityEntry {
   insurance_cap?: number  // 保险兜底上限（物流方可用），超额由协议垫付
 }
 
+/**
+ * 非托管订单(direct_p2p / escrow_amount=0)的争议裁定 —— 【只做状态终结,绝不动任何资金】。
+ * 协议从未持有买家货款(买家场外直付卖家),故 executeSettlement 那套"退托管/扣质押/入协议费"会【凭空】给买家记
+ * balance、把不存在的托管退款、腐蚀账本(P0)。此路径只把订单推进到与 ruling 对应的既有争议终态,金额一律 0;
+ * reputation/strike 由路由层照常施加(那才是本轨"证据制信誉裁决,不涉资金赔付"的裁决效力)。
+ * 返回 non_custodial 标记 → 路由据此跳过 release_seller / partial_refund / liability_split 的佣金/PV/基金分润钩子。
+ */
+export function executeNonCustodialSettlement(
+  db: Database.Database, orderId: string, ruling: string
+): { success: boolean; error?: string; detail?: Record<string, unknown> } {
+  const sysUser = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string } | undefined
+  if (!sysUser) return { success: false, error: 'sys_protocol 用户不存在' }
+  const terminal = ruling === 'refund_buyer' ? 'refunded_full'
+    : ruling === 'release_seller' ? 'resolved_for_seller' : 'refunded_partial'
+  const r = transition(db, orderId, terminal, sysUser.id, [], `非托管(直付)争议裁定:协议不持货款,仅信誉裁决、不动任何资金 — ${ruling}`)
+  if (!r.success) return { success: false, error: r.error }
+  // 金额全 0(供路由分润钩子据此算出 0),并打 non_custodial 标记。
+  return { success: true, detail: { non_custodial: true, ruling, buyer_refund: 0, buyer_compensation: 0, seller_received: 0, seller_escrow_share: 0, actual_refund: 0, note: '非托管订单:仅信誉裁决,不动用任何托管/钱包/质押/佣金资金' } }
+}
+
 export function arbitrateDispute(
   db: Database.Database,
   disputeId: string,
@@ -241,7 +261,7 @@ export function arbitrateDispute(
   refundAmount?: number,
   liabilityParties?: LiabilityEntry[],
   liablePartyId?: string   // 指定责任方 user_id（用于 partial_refund 第三方责任场景）
-): { success: boolean; error?: string; message?: string; settlement?: Record<string, unknown> } {
+): { success: boolean; error?: string; message?: string; non_custodial?: boolean; settlement?: Record<string, unknown> } {
 
   const dispute = db.prepare('SELECT * FROM disputes WHERE id = ?').get(disputeId) as DisputeRecord | undefined
   if (!dispute) return { success: false, error: `争议不存在：${disputeId}` }
@@ -255,10 +275,16 @@ export function arbitrateDispute(
     return { success: false, error: `只有仲裁员才能做出裁定，你的角色是：${arbitrator.role}` }
   }
 
-  // 执行资金处置
-  const settlement = ruling === 'liability_split' && liabilityParties
-    ? executeLiabilitySplit(db, dispute.order_id, liabilityParties, refundAmount)
-    : executeSettlement(db, dispute.order_id, ruling, refundAmount, liablePartyId)
+  // 非托管(直付)订单:协议不持货款 → 走【只信誉、不动资金】路径,绝不跑 executeSettlement/executeLiabilitySplit 的托管资金链。
+  const ord0 = db.prepare('SELECT payment_rail FROM orders WHERE id = ?').get(dispute.order_id) as { payment_rail: string | null } | undefined
+  const nonCustodial = !!ord0 && ord0.payment_rail === 'direct_p2p'
+
+  // 执行资金处置(非托管 → 零资金终结)
+  const settlement = nonCustodial
+    ? executeNonCustodialSettlement(db, dispute.order_id, ruling)
+    : ruling === 'liability_split' && liabilityParties
+      ? executeLiabilitySplit(db, dispute.order_id, liabilityParties, refundAmount)
+      : executeSettlement(db, dispute.order_id, ruling, refundAmount, liablePartyId)
   if (!settlement.success) return { success: false, error: settlement.error }
 
   // 收取仲裁费（败诉/责任方付 1%，最低 1 WAZ）
@@ -267,7 +293,7 @@ export function arbitrateDispute(
   const sysUser = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string }
   const arbFees: Record<string, number> = {}
 
-  if (order) {
+  if (order && !nonCustodial) {   // 非托管:不收仲裁费(不动任何钱包资金)
     const amt = order.total_amount
     if (ruling === 'refund_buyer') {
       const f = chargeArbitrationFee(db, order.seller_id, amt, arbitratorId, sysUser.id)
@@ -318,6 +344,7 @@ export function arbitrateDispute(
 
   return {
     success: true,
+    non_custodial: nonCustodial,   // 路由据此跳过佣金/PV/基金分润钩子(非托管无托管结算)
     message: `裁定已执行：${getRulingDescription(ruling, refundAmount)}`,
     settlement: {
       ...settlement.detail,

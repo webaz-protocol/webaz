@@ -328,14 +328,14 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | PUT | `/api/direct-receive/store-verification` | 🔐 |  | PUT /api/direct-receive/store-verification — 卖家提交店铺外链(仅存储,不抓取)。 | src/pwa/routes/direct-pay-availability.ts:168 |
 | GET | `/api/disputes` | 🔐 |  | 仲裁员：查看所有开放争议 | src/pwa/routes/disputes-read.ts:39 |
 | GET | `/api/disputes/:id` | 🔐 |  | 详情聚合（含 W4 timeline + chain ruling） | src/pwa/routes/disputes-read.ts:112 |
-| POST | `/api/disputes/:id/add-evidence` | 🔐 |  | 参与方主动举证（text）+ SNF 信封分发 | src/pwa/routes/disputes-write.ts:389 |
+| POST | `/api/disputes/:id/add-evidence` | 🔐 |  | 参与方主动举证（text）+ SNF 信封分发 | src/pwa/routes/disputes-write.ts:391 |
 | POST | `/api/disputes/:id/arbitrate` | 🔐 |  | 仲裁员裁定 | src/pwa/routes/disputes-write.ts:166 |
-| POST | `/api/disputes/:id/arbitrator-pause-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:594 |
-| POST | `/api/disputes/:id/arbitrator-resume-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:691 |
-| POST | `/api/disputes/:id/evidence-blob` | 🔐 |  | N: limit 精确 = EVIDENCE_MAX_BYTES | src/pwa/routes/disputes-write.ts:450 |
+| POST | `/api/disputes/:id/arbitrator-pause-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:596 |
+| POST | `/api/disputes/:id/arbitrator-resume-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:693 |
+| POST | `/api/disputes/:id/evidence-blob` | 🔐 |  | N: limit 精确 = EVIDENCE_MAX_BYTES | src/pwa/routes/disputes-write.ts:452 |
 | GET | `/api/disputes/:id/evidence-list` | 🔐 |  | 当事人 + 仲裁员可查（meta only，blob 单独拉） | src/pwa/routes/disputes-read.ts:362 |
 | GET | `/api/disputes/:id/parties` | 🔐 |  | 涉案三方（仲裁员选择发证据请求的对象） | src/pwa/routes/disputes-read.ts:374 |
-| POST | `/api/disputes/:id/request-evidence` | 🔐 |  | 仲裁员：请求某方补证 | src/pwa/routes/disputes-write.ts:535 |
+| POST | `/api/disputes/:id/request-evidence` | 🔐 |  | 仲裁员：请求某方补证 | src/pwa/routes/disputes-write.ts:537 |
 | POST | `/api/disputes/:id/respond` | 🔐 |  | 被诉方反驳 | src/pwa/routes/disputes-write.ts:142 |
 | GET | `/api/disputes/:id/similar-cases` | 🔐 |  | A2 同类判例推荐 | src/pwa/routes/disputes-read.ts:47 |
 | GET | `/api/disputes/cases` |  |  | 公开列表（全网）— 判例库总览 | src/pwa/routes/dispute-cases.ts:53 |
