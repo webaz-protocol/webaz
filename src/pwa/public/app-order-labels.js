@@ -4,6 +4,8 @@
 //   面向用户中文走 t(),英文在 i18n.js _EN(双语 parity 由 test-direct-pay-ui.ts 守)。
 window.dpTerminalBadge = (status) => ({ refunded_full: ['blue', t('买家胜诉(信誉裁决)')], refunded_partial: ['blue', t('部分责任(信誉裁决)')], resolved_for_seller: ['green', t('卖家胜诉(信誉裁决)')] })[status] || null
 window.dpTerminalLabel = (status) => ({ refunded_full: t('买家胜诉(信誉裁决)'), refunded_partial: t('部分责任(信誉裁决)') })[status] || null
+// 争议裁定(ruling)→ 展示标题的 rail-aware 映射。direct_p2p 用胜负/责任(信誉裁决),不走全局 RULING_LABELS(退款/资金释放)。
+window.dpRulingLabel = (ruling) => ({ refund_buyer: t('买家胜诉(信誉裁决)'), release_seller: t('卖家胜诉(信誉裁决)'), partial_refund: t('部分责任(信誉裁决)'), liability_split: t('责任分配(信誉裁决)') })[ruling] || null
 
 // 仲裁面板顶部提示:非托管 → "仅信誉裁决,不涉资金";托管 → 原仲裁费提示。
 window.dpArbFeeNote = (rail) => rail === 'direct_p2p'

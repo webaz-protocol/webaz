@@ -12558,13 +12558,13 @@ async function renderOrderDetail(app, orderId) {
       <div id="trial-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${(isBuyer && order.status === 'completed' && Number(product?.return_days || 0) > 0) ? `
+    ${(isBuyer && order.status === 'completed' && Number(product?.return_days || 0) > 0 && order.payment_rail !== 'direct_p2p') ? `
     <div class="card" id="ret-card-${order.id}">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">↩ ${t('退货')}</div>
       <div id="ret-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${(isSeller && order.status === 'completed') ? `
+    ${(isSeller && order.status === 'completed' && order.payment_rail !== 'direct_p2p') ? `
     <div class="card" id="ret-card-${order.id}">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">↩ ${t('退货处理')}</div>
       <div id="ret-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
@@ -13880,7 +13880,7 @@ function buildTimelineEvent(ev, dispute, user, actors) {
   } else if (ev.type === 'ruling' || ev.type === 'resolved') {
     const meta = ev.meta || {}
     const rulingLabel = meta.ruling || meta.ruling_type
-    const rulingText = rulingLabel ? t(RULING_LABELS[rulingLabel] || rulingLabel) : ''
+    const rulingText = rulingLabel ? ((dispute.payment_rail === 'direct_p2p' && window.dpRulingLabel && window.dpRulingLabel(rulingLabel)) || t(RULING_LABELS[rulingLabel] || rulingLabel)) : ''
     let liability = []
     try { liability = typeof meta.liability_parties === 'string' ? JSON.parse(meta.liability_parties) : (meta.liability_parties || []) } catch {}
     bodyHtml = `
