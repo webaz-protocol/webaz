@@ -200,6 +200,7 @@
     "test:pv-settlement-engine": "tsx scripts/test-pv-settlement-engine.ts",
     "test:settlement-breakdown": "tsx scripts/test-settlement-breakdown.ts",
     "test:dispute-noncustodial": "tsx scripts/test-dispute-noncustodial.ts",
+    "test:payment-query-transitions": "tsx scripts/test-payment-query-transitions.ts",
     "lint:secrets": "gitleaks detect --no-banner --redact --config .gitleaks.toml --exit-code 1",
     "test:wallet-signer": "tsx scripts/test-wallet-signer.ts",
     "test:cf-origin-guard": "tsx scripts/test-cf-origin-guard.ts"

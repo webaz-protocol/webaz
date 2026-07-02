@@ -17,8 +17,8 @@ for (const key of Object.keys(VALID_TRANSITIONS)) {
   const missing = [...statesInTransitions].filter(s => !meaningKeys.has(s))
   expect('每个转移涉及的状态都有含义(coverage)', missing.length === 0, missing)
 }
-// 含义表覆盖 22 个 OrderStatus(防遗漏;2026-06-27 +2 = Direct Pay Rail 1: direct_pay_window / direct_expired_unconfirmed)
-expect('ORDER_STATE_MEANINGS 含 22 状态', meaningKeys.size === 22, meaningKeys.size)
+// 含义表覆盖 23 个 OrderStatus(防遗漏;2026-06-27 +2 Direct Pay: direct_pay_window / direct_expired_unconfirmed;2026-07-03 +1 payment_query 货款协商)
+expect('ORDER_STATE_MEANINGS 含 23 状态', meaningKeys.size === 23, meaningKeys.size)
 
 // ── 锁定:契约转移数 == VALID_TRANSITIONS(doc=code,生成不漏)──
 expect('契约转移数 == VALID_TRANSITIONS', contract.transitions.length === Object.keys(VALID_TRANSITIONS).length, { c: contract.transitions.length, v: Object.keys(VALID_TRANSITIONS).length })
