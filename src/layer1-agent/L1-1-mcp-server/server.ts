@@ -34,7 +34,7 @@ import { initDatabase, generateId } from '../../layer0-foundation/L0-1-database/
 import { setSeamDb } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam(本进程注入)
 import { applyWebazRuntimeSchema } from '../../runtime/apply-webaz-runtime-schema.js'  // 与 PWA 同源的纯 schema 桥(防 MCP fresh DB 漂移)
 import { generateCodeVerifier, pkceChallengeS256 } from '../../runtime/agent-pairing.js'  // RFC-020 PR-C1 — PKCE 配对
-import { NETWORK_TOOLS, NETWORK_SELF_AWARE, toolAllowedInNetworkMode } from './network-mode.js'  // RFC-003 网络门(可单测)
+import { NETWORK_TOOLS, NETWORK_SELF_AWARE, toolAllowedInNetworkMode, resolveMode } from './network-mode.js'  // RFC-003 网络门(可单测)+ 模式解析(单一真相源)
 import { homedir } from 'node:os'
 import { join as pathJoin } from 'node:path'
 import { existsSync as fsExists, mkdirSync, writeFileSync, readFileSync, unlinkSync, chmodSync } from 'node:fs'
@@ -112,16 +112,12 @@ export function resolveMcpApiKey(args: Record<string, unknown>, envKey: string =
   return explicit || envKey
 }
 
-const WEBAZ_MODE_ENV = (process.env.WEBAZ_MODE ?? '').toLowerCase()
 // 模式:显式 WEBAZ_MODE 优先;否则有 api_key → network,无 key → network_readonly(装完即见真网络)。
 // network_readonly(L1 onboarding,2026-06-08):无 key 默认。公共读匿名打 webaz.xyz(真 catalog/协议),
 //   需身份的写/读返回"设 WEBAZ_API_KEY(到 #welcome 申请邀请)"。离线本地 playground 改为【显式】 WEBAZ_MODE=sandbox。
 //   —— 治"装完=空沙盒劝退"的死首体验;route/guard 与 network 同路(见 isNetworkMode),只是无 Bearer + 文案不同。
-const MODE: 'network' | 'network_readonly' | 'sandbox' =
-  WEBAZ_MODE_ENV === 'network' ? 'network'
-  : WEBAZ_MODE_ENV === 'sandbox' ? 'sandbox'
-  : WEBAZ_MODE_ENV === 'network_readonly' ? 'network_readonly'
-  : (WEBAZ_API_KEY ? 'network' : 'network_readonly')
+// 单一真相源:resolveMode(见 network-mode.ts),CLI 的 --mode/--doctor 用同一函数,杜绝漂移。
+const MODE: 'network' | 'network_readonly' | 'sandbox' = resolveMode(process.env)
 // network 或 network_readonly 都"走真网络"(后者无 Bearer)。sandbox 才是本地。
 const isNetworkMode = (): boolean => MODE === 'network' || MODE === 'network_readonly'
 // NETWORK_TOOLS / NETWORK_SELF_AWARE / toolAllowedInNetworkMode moved to

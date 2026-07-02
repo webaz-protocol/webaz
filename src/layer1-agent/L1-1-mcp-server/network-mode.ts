@@ -8,6 +8,19 @@
  * server. (Extracted from server.ts; behavior unchanged except adding webaz_pair.)
  */
 
+export type WebazMode = 'network' | 'network_readonly' | 'sandbox'
+
+/**
+ * 解析运行模式(纯函数,单一真相源 —— server.ts 的 MODE + CLI 的 --mode/--doctor 都用它,杜绝漂移)。
+ * 显式 WEBAZ_MODE(network|network_readonly|sandbox)优先;否则有 api_key → network,无 key → network_readonly。
+ * sandbox 只能显式设置(无 key 【不】回落 sandbox)。key 的真伪判定与 server.ts 一致(WEBAZ_API_KEY ?? '' 的真值性)。
+ */
+export function resolveMode(env: { WEBAZ_MODE?: string; WEBAZ_API_KEY?: string }): WebazMode {
+  const m = (env.WEBAZ_MODE ?? '').toLowerCase()
+  if (m === 'network' || m === 'sandbox' || m === 'network_readonly') return m
+  return (env.WEBAZ_API_KEY ?? '') ? 'network' : 'network_readonly'
+}
+
 // Tools that talk to the live webaz.xyz network (Bearer api_key where needed).
 // Un-listed tools run sandbox (local). `_mode` annotation = network for these.
 export const NETWORK_TOOLS = new Set<string>([
