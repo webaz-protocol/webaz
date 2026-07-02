@@ -64,7 +64,7 @@ window.dpLoadOrderQr = async (orderId) => {
   const box = document.getElementById('dp-order-qr')
   if (!box) return
   try {
-    const resp = await fetch('/api/orders/' + encodeURIComponent(orderId) + '/direct-pay-qr', { headers: { Authorization: 'Bearer ' + (window.state && window.state.apiKey) } })
+    const resp = await fetch('/api/orders/' + encodeURIComponent(orderId) + '/direct-pay-qr', { headers: { Authorization: 'Bearer ' + (window.state && window.state.apiKey) } }); if (!box.isConnected) return   // 切走了(box 离屏)→ 绝不把本单 QR 写进别单面板(纵深防御:box 在 await 前捕获,离屏写入本不可见,此处显式封边)
     if (!resp.ok) { box.innerHTML = ''; return }   // 无 QR / 未 ack:静默不显(instruction 文本已单独展示)
     const url = URL.createObjectURL(await resp.blob())
     box.innerHTML = `<div style="font-size:11px;color:#9ca3af;margin:6px 0 2px">${t('收款二维码')}</div><img src="${url}" alt="${t('收款二维码')}" style="width:150px;height:150px;object-fit:contain;border:1px solid #e5e7eb;border-radius:8px">`
