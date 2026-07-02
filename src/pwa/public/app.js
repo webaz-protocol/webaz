@@ -12383,14 +12383,18 @@ function nextActionCard(order, isBuyer, isSeller, activeDeadline, isOverdue) {
   // 我自己是违约方时只看到警告，不显示按钮（不能自己触发对自己的判责）
   const meAtFault = hint.overdueFault && hint.overdueFault === ('fault_' + (isBuyer ? 'buyer' : isSeller ? 'seller' : ''))
   const canForceTrigger = isOverdue && hint.overdueFault && !meAtFault && (isBuyer || isSeller)
+  // 直付(非托管):WebAZ 不退款/不放款 → 超时后果只写信誉责任,绝不写"退款/资金释放"
+  const overdueConsequence = order.payment_rail === 'direct_p2p'
+    ? ({ paid: '卖家信誉扣分;直付非托管,WebAZ 不退款/不放款', accepted: '卖家信誉扣分;直付非托管,WebAZ 不退款/不放款', in_transit: '物流/履约信誉扣分;直付非托管,WebAZ 不退款', delivered: '系统自动确认直付订单完成;不涉及平台放款' }[order.status] || hint.overdueConsequence)
+    : hint.overdueConsequence
   return `<div style="background:${bg};border:0.5px solid ${isOverdue ? '#fecaca' : '#e5e7eb'};border-radius:12px;padding:14px 16px;margin-bottom:10px">
     <div style="display:flex;align-items:center;gap:10px">
       <div style="font-size:22px;line-height:1">${icon}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:600;color:${tone}">${t(myHint)}</div>
         ${activeDeadline?.deadline ? `<div style="font-size:11px;color:#8e8e93;margin-top:2px">${isOverdue ? t('已超时，协议将自动判责') : fmtCountdown(activeDeadline.deadline)}</div>` : ''}
-        ${isOverdue && hint.overdueConsequence ? `<div style="margin-top:8px;padding:8px 10px;background:#fff;border-radius:6px;font-size:12px;color:#7c2d12;border:1px dashed #fecaca">
-          ⚖️ ${t('协议处置')}：${t(hint.overdueConsequence)}
+        ${isOverdue && overdueConsequence ? `<div style="margin-top:8px;padding:8px 10px;background:#fff;border-radius:6px;font-size:12px;color:#7c2d12;border:1px dashed #fecaca">
+          ⚖️ ${t('协议处置')}：${t(overdueConsequence)}
         </div>` : ''}
         ${canForceTrigger ? `<button onclick="forceTimeoutCheck('${order.id}')" style="margin-top:10px;background:#dc2626;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">⚡ ${t('立即触发判责')}</button>
         <div style="font-size:10px;color:#9ca3af;margin-top:6px">${t('协议巡检每 5 分钟一次；你也可立即触发，无需等待。')}</div>` : ''}
