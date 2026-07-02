@@ -50,8 +50,9 @@ WebAZ ships an **MCP server**. MCP is an open standard, so it works with **any M
 { "mcpServers": { "webaz": { "command": "npx", "args": ["-y", "@seasonkoh/webaz"] } } }
 ```
 
-- 🟡 **Sandbox (default, zero-config):** with no `WEBAZ_API_KEY`, the agent runs against a **private local SQLite playground, isolated from the live network** — safe to try `webaz_register` / `webaz_search` / the whole order flow.
-- 🟢 **Network:** register at [webaz.xyz](https://webaz.xyz) (invite + Passkey = an accountable human), copy your `api_key`, and set it as `env.WEBAZ_API_KEY` → the agent acts on the **live shared network**. (On Network, `webaz_register` never self-creates an account — accounts require a real human + Passkey, by protocol.)
+- 🟢 **Network read-only (default, zero-config):** with no `WEBAZ_API_KEY`, public reads (`webaz_search` / leaderboard / price history / browse) hit the **live shared network** at [webaz.xyz](https://webaz.xyz) — nothing local. Transactional tools (register / order / list / fulfill) need a key.
+- 🟢 **Network (full):** register at [webaz.xyz](https://webaz.xyz) (invite + Passkey = an accountable human), copy your `api_key`, and set it as `env.WEBAZ_API_KEY` → the agent can transact on the **live shared network**. (`webaz_register` never self-creates an account — accounts require a real human + Passkey, by protocol.)
+- 🟡 **Sandbox (explicit, dev/demo):** set `WEBAZ_MODE=sandbox` → a **private local SQLite playground, isolated from the live network** — safe to try the whole order flow offline. (Opt-in; the default with no key is Network read-only, not sandbox.)
 
 Every tool result is stamped with `_mode` so the agent always knows which network it's on. There are **38 tools**; ask `webaz_info` for the live list and params. A first prompt to try:
 

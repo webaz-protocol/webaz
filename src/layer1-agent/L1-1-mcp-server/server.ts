@@ -13,8 +13,8 @@
  *   webaz_wallet        查看钱包余额
  *   …（39 工具,完整定义见下方 TOOLS 数组;数量以 TOOLS.length 为准）
  *
- * 双模(RFC-003):NETWORK(WEBAZ_API_KEY → 调 webaz.xyz)/ SANDBOX(本机库);见 NETWORK_TOOLS / apiCall / toolBackend。
- * 关联 / Related: AGENTS.md · RFC-003(双模) · RFC-004(webaz_feedback) · 元规则 #4 不撒谎(_mode 戳) /
+ * 三态(RFC-003):NETWORK(WEBAZ_API_KEY → 调 webaz.xyz)/ NETWORK 只读(无 key,公共读走 webaz.xyz)/ SANDBOX(仅 WEBAZ_MODE=sandbox,本机库);见 NETWORK_TOOLS / apiCall / toolBackend。
+ * 关联 / Related: AGENTS.md · RFC-003(三态:network / network_readonly / sandbox) · RFC-004(webaz_feedback) · 元规则 #4 不撒谎(_mode 戳) /
  *   #6 不滥用(agent 责任制 + Iron-Rule 真人动作)· 生产端点在 src/pwa(NETWORK 共用)
  */
 
@@ -96,7 +96,7 @@ const TELEMETRY_URL = process.env.WEBAZ_TELEMETRY_URL ?? 'https://webaz.xyz/api/
 // Phase A pre-launch: telemetry default OFF (opt-in). Flip to default ON at W8 launch + add README disclosure section.
 const TELEMETRY_ENABLED = (process.env.WEBAZ_TELEMETRY ?? 'off').toLowerCase() === 'on'
 
-// ─── RFC-003 P0: 双模(NETWORK / SANDBOX)骨架 ─────────────────────
+// ─── RFC-003 P0: 三态(network_readonly / network / sandbox)骨架 ─────────────────────
 // NETWORK = 带 api_key 调 webaz.xyz/api(加入共享生产网络);SANDBOX = 本地 SQLite(离线试玩,与全网隔离)。
 // P0 不迁移任何工具(NETWORK_TOOLS 为空)→ 一切仍走本地 = 零行为变化;P1/P2 逐个把工具名加入集合切到网络。
 const WEBAZ_API_URL = (process.env.WEBAZ_API_URL ?? 'https://webaz.xyz').replace(/\/+$/, '')
@@ -1895,10 +1895,10 @@ async function handleInfo() {
         ? '🟢 NETWORK（只读）：无 api_key。公共读（搜索/榜单/价格史/浏览）打 webaz.xyz 真网络（见 network_live）。要交易（注册/下单/上架等）请设 WEBAZ_API_KEY —— 到 ' + WEBAZ_API_URL + '/#welcome 申请邀请。'
         : '🟡 SANDBOX：所有工具都在本机本地 SQLite 运行，与 webaz.xyz 全网隔离（显式 dev/demo 模式）。任何计数 / 账号 / 订单仅本机有效。不设 WEBAZ_MODE 则默认走真网络只读。',
       phase: 'pre_launch',
-      real_users_on_canonical: 0,
+      // 真实用户/规模【不在此硬编码】—— 网络模式下 network_live(上方,实时拉 /api/protocol-status)带有 real_users_on_canonical 真值。
       canonical_endpoint: 'https://webaz.xyz',
       economic_flow: 'simulated WAZ (test currency, 1 WAZ ≈ 1 USDC peg is a模拟基准, not a real exchange rate). No fiat/crypto settles yet.',
-      disclaimer: '本协议尚未公开上线,prod 真实用户≈0,无真实经济流转。下方 live_stats / 工具示例所有计数均来自**本机 MCP 服务器的本地 SQLite**(~/.webaz/webaz.db),仅供 dev / demo,不代表协议全网真实状态。请勿据此评估市场规模、做投资决策、或替终端用户承诺任何经济关系。',
+      disclaimer: '本协议尚未公开上线(pre-launch),无真实经济流转。真实用户/规模请以 network_live(本次从 webaz.xyz 实时拉取的 /api/protocol-status,含 real_users_on_canonical)为准;下方 live_stats / 工具示例的所有计数均来自**本机 MCP 服务器的本地 SQLite**(~/.webaz/webaz.db),仅供 dev / demo,不代表协议全网真实状态。请勿据此评估市场规模、做投资决策、或替终端用户承诺任何经济关系。',
     },
     description: 'WebAZ is a decentralized commerce protocol. Every transaction flows through a state machine; each state transition needs proof-of-action from the responsible party. Any timeout-without-action: protocol auto-rules default + executes remedy. / WebAZ 是去中心化商业协议;每笔交易通过状态机流转,每次状态转移需对应责任方的操作证明;超时未操作则协议自动判违约并执行处置。',
     // 给【终端用户/买家】的价值主张 —— 陌生 agent / 普通买家先要知道"对我有什么用",而非只读抽象 tagline + 技术 description。
@@ -1993,7 +1993,7 @@ function handleRegister(args: Record<string, unknown>) {
       ],
       register_url: WEBAZ_API_URL,
       why_not_agent_self_register: 'agent 自助注册会绕过邀请 / captcha / 真人 Passkey 责任制，破坏协议的可问责性（#6 不滥用 / CHARTER §4 I-5）。',
-      want_to_try_offline_first: '只想离线试玩、暂不连网络？设环境变量 WEBAZ_MODE=sandbox（或清空 WEBAZ_API_KEY），webaz_register 会在本机沙盒建一个测试账号（仅本机有效）。',
+      want_to_try_offline_first: '只想离线试玩、暂不连网络？设环境变量 WEBAZ_MODE=sandbox（本机沙盒需显式开启；无 key 仍是 NETWORK 只读，不会进沙盒），webaz_register 会在本机沙盒建一个测试账号（仅本机有效）。',
     }
   }
 

@@ -10,6 +10,9 @@
 
 ---
 
+> **Amendment — current state (2026-07):** 实现已从本 RFC 原始「双模」细化为**三态**。**无 `api_key` 不再 fallback 到 SANDBOX**,而是 **NETWORK 只读**(`network_readonly`:公共读打 `webaz.xyz`,交易工具需 key)。**SANDBOX 仅由显式 `WEBAZ_MODE=sandbox` 触发**(本机隔离)。本文下方「双模 / 未配 key = sandbox」表述请按此修正理解;权威口径以 README + `server.ts` 的 MODE 解析 + `test-mcp-mode-honesty` 守卫为准。
+> Implementation was refined from the original two-mode design into **three modes**: no key = **NETWORK read-only** (`network_readonly`), NOT a sandbox fallback; SANDBOX is **explicit** via `WEBAZ_MODE=sandbox`.
+
 ## Summary / 摘要
 
 当前发布的 MCP server（`@seasonkoh/webaz`，`npx` 本地运行）所有**写操作**（注册 / 下单 / 上架 / 改单）都 `db.prepare` 写入本地 SQLite `~/.webaz/webaz.db`。每个安装 MCP 的用户因此是一个**私有单机沙盒**，彼此之间、以及与生产 `webaz.xyz` **完全隔离**。后果：**"装 MCP" ≠ "加入网络"** —— 网络效应（已被认定为本协议唯一护城河）无法形成。
@@ -41,17 +44,18 @@ The published MCP writes all mutations to a local SQLite, making every install a
 
 ## Design / 设计
 
-### 3.1 双模 + 模式可见性（核心）
-两种模式，**默认 NETWORK**：
+### 3.1 三态 + 模式可见性（核心）
+三种模式（原设计为双模；已按 no-key = read-only 修正，见文首 Amendment）。**无 key = NETWORK 只读，不再回落本机沙盒**：
 
 | 模式 | DB / 数据源 | 用途 | 触发 |
 |---|---|---|---|
-| **NETWORK**（默认）| `fetch(WEBAZ_API_URL=https://webaz.xyz/api/*)` + Bearer `api_key`，**生产共享库** | 真实加入网络、真实交易 | 配了 `WEBAZ_API_KEY` |
-| **SANDBOX**（显式）| 本地 `~/.webaz/webaz.db` | 离线试玩 / 开发 / demo | `WEBAZ_MODE=sandbox` 或**未配 api_key**（fallback，带警告） |
+| **NETWORK 只读**（默认）| `fetch(WEBAZ_API_URL=https://webaz.xyz/api/*)` **公共读**（无 Bearer） | 无需 key 搜索 / 榜单 / 价格史 / 浏览**真实网络** | **未配** `WEBAZ_API_KEY`（默认） |
+| **NETWORK**（完整）| 同上 + Bearer `api_key`，**生产共享库** | 真实加入网络、真实交易 | 配了 `WEBAZ_API_KEY` |
+| **SANDBOX**（显式）| 本地 `~/.webaz/webaz.db` | 离线试玩 / 开发 / demo | **仅** `WEBAZ_MODE=sandbox`（本机隔离） |
 
 **显著区分（决策 ②的硬要求，防混淆）—— 三层强制标注**：
 1. **启动 banner**（stderr）：`🟢 NETWORK mode — connected to webaz.xyz (live shared network)` 或 `🟡 SANDBOX mode — local-only, NOT the live network. Data is private to this machine.`
-2. **每个工具返回**附 `_mode` 字段（`"network" | "sandbox"`）+ sandbox 时附 `_sandbox_warning`。
+2. **每个工具返回**附 `_mode` 字段（`"network" | "network_readonly" | "sandbox"`）+ sandbox 时附 `_sandbox_warning`。
 3. **`webaz_get_status` / `webaz_info`** 顶部显式声明当前模式 + 含义；sandbox 的所有计数明确标"仅本机，非全网"。
 4. 工具 description 里凡涉及"全网/真实"语义的，按模式动态措辞（避免 agent 把 sandbox 当 live 汇报给用户）。
 
@@ -60,8 +64,8 @@ The published MCP writes all mutations to a local SQLite, making every install a
 ### 3.2 配置 / Config
 ```
 WEBAZ_API_URL   默认 https://webaz.xyz      （NETWORK 端点；dev 可指 http://localhost:3000）
-WEBAZ_API_KEY   用户的 api_key              （有=NETWORK；无=fallback SANDBOX + 警告）
-WEBAZ_MODE      network | sandbox           （显式覆盖；默认按是否有 api_key 自动判）
+WEBAZ_API_KEY   用户的 api_key              （有=NETWORK 完整；无=NETWORK 只读 public reads，**不**回落本机沙盒）
+WEBAZ_MODE      network | network_readonly | sandbox （sandbox 仅显式设置；默认无 key=network_readonly、有 key=network）
 ```
 - 移除 `~/.webaz/webaz.db` 硬编码的隐式依赖（NETWORK 模式不开本地库）。
 
