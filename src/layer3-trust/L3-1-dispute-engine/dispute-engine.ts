@@ -345,7 +345,7 @@ export function arbitrateDispute(
   return {
     success: true,
     non_custodial: nonCustodial,   // 路由据此跳过佣金/PV/基金分润钩子(非托管无托管结算)
-    message: `裁定已执行：${getRulingDescription(ruling, refundAmount)}`,
+    message: nonCustodial ? getNonCustodialRulingDescription(ruling) : `裁定已执行：${getRulingDescription(ruling, refundAmount)}`,
     settlement: {
       ...settlement.detail,
       arbitration_fees: arbFees,
@@ -885,10 +885,12 @@ export async function getDisputeDetails(
   return (await dbOne<DisputeRecord & Record<string, unknown>>(`
     SELECT d.*,
       u1.name as initiator_name, u1.role as initiator_role,
-      u2.name as defendant_name, u2.role as defendant_role
+      u2.name as defendant_name, u2.role as defendant_role,
+      o.payment_rail as payment_rail
     FROM disputes d
     LEFT JOIN users u1 ON d.initiator_id = u1.id
     LEFT JOIN users u2 ON d.defendant_id = u2.id
+    LEFT JOIN orders o ON d.order_id = o.id
     WHERE d.id = ?
   `, [disputeId])) ?? null
 }
@@ -900,10 +902,12 @@ export async function getOrderDispute(
   return (await dbOne<DisputeRecord & Record<string, unknown>>(`
     SELECT d.*,
       u1.name as initiator_name, u1.role as initiator_role,
-      u2.name as defendant_name, u2.role as defendant_role
+      u2.name as defendant_name, u2.role as defendant_role,
+      o.payment_rail as payment_rail
     FROM disputes d
     LEFT JOIN users u1 ON d.initiator_id = u1.id
     LEFT JOIN users u2 ON d.defendant_id = u2.id
+    LEFT JOIN orders o ON d.order_id = o.id
     WHERE d.order_id = ? AND d.status NOT IN ('resolved', 'dismissed')
     ORDER BY d.created_at DESC LIMIT 1
   `, [orderId])) ?? null
@@ -936,5 +940,16 @@ function getRulingDescription(ruling: string, refundAmount?: number): string {
     case 'release_seller':  return '资金释放给卖家，交易完成'
     case 'partial_refund':  return `部分退款 ${refundAmount} WAZ 给买家，余款归卖家`
     default: return ruling
+  }
+}
+
+// 非托管(直付)裁定文案:协议不持货款 → 只表达胜负/责任(信誉裁决),【绝不】写退款/资金释放/仲裁费(那些都不发生)。
+function getNonCustodialRulingDescription(ruling: string): string {
+  switch (ruling) {
+    case 'refund_buyer':    return '裁定已执行：买家胜诉(非托管信誉裁决 —— 协议不持货款,不发生退款/资金释放/仲裁费)'
+    case 'release_seller':  return '裁定已执行：卖家胜诉(非托管信誉裁决 —— 不发生退款/资金释放/仲裁费)'
+    case 'partial_refund':  return '裁定已执行：部分责任(非托管信誉裁决 —— 不发生退款/资金释放/仲裁费)'
+    case 'liability_split': return '裁定已执行：责任分配(非托管信誉裁决 —— 不发生退款/赔付/仲裁费)'
+    default: return '裁定已执行：非托管信誉裁决(不动任何资金)'
   }
 }

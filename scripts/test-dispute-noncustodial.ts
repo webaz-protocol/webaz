@@ -67,6 +67,7 @@ try {
     ok(`1.${ruling} → order terminal ${terminal}`, ostatus(orderId) === terminal, ostatus(orderId))
     ok(`1.${ruling} → ZERO wallet movement (no mint)`, JSON.stringify(wsnap()) === JSON.stringify(before))
     ok(`1.${ruling} → no arbitration fee charged`, Object.keys((r.settlement as any)?.arbitration_fees || {}).length === 0)
+    ok(`1.${ruling} → message is reputation-only + explicitly disclaims funds`, /信誉裁决/.test(String(r.message)) && /不发生/.test(String(r.message)) && /(胜诉|责任)/.test(String(r.message)))
   }
 
   // ── 2. escrow regression: refund_buyer still moves funds (buyer escrowed→balance) ──
