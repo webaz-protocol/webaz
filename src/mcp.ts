@@ -10,8 +10,20 @@
  * 关联 / Related: AGENTS.md(项目地图) · RFC-003(三态:network / network_readonly / sandbox) · RFC-004(webaz_feedback)
  */
 import { startMCPServer } from './layer1-agent/L1-1-mcp-server/server.js'
+import { cliQuickResponse, runDoctor } from './layer1-agent/L1-1-mcp-server/cli.js'
 
-startMCPServer().catch((err) => {
-  console.error('MCP Server 启动失败：', err)
-  process.exit(1)
-})
+// CLI 标志(--version/--help/--mode/--doctor)在【启动 server 前】处理并退出;无标志 → 照常启动 stdio server。
+// 既有 MCP 客户端从不传 argv,故 no-arg 行为完全不变。
+const argv = process.argv.slice(2)
+const quick = cliQuickResponse(argv, process.env)
+if (quick !== null) {
+  console.log(quick)
+  process.exit(0)
+} else if (argv.includes('--doctor')) {
+  runDoctor(process.env).then((out) => { console.log(out); process.exit(0) }).catch((err) => { console.error(err); process.exit(1) })
+} else {
+  startMCPServer().catch((err) => {
+    console.error('MCP Server 启动失败：', err)
+    process.exit(1)
+  })
+}
