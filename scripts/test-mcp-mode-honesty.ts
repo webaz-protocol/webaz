@@ -37,6 +37,10 @@ ok('server: no-key banner says NETWORK (read-only)', /NETWORK\s*\(read-only\)|NE
 // webaz_register 运行时提示:进沙盒只能 WEBAZ_MODE=sandbox,不能说"或清空 WEBAZ_API_KEY"(清空仍是 network_readonly)
 ok('server: register hint does NOT say clearing the key enters sandbox', !/或清空 WEBAZ_API_KEY/.test(server))
 
+// 文件头注释口径:不再把 RFC-003 描述成"双模"(现实三态)
+ok('server.ts header: no "双模⇄RFC-003" residual', !/双模[^\n]{0,6}RFC-003|RFC-003[^\n]{0,6}双模/.test(server))
+ok('src/mcp.ts header: no "双模⇄RFC-003" residual', !/双模[^\n]{0,6}RFC-003|RFC-003[^\n]{0,6}双模/.test(mcp))
+
 // RFC-003(被 src/mcp.ts 当作现行模式说明引用)+ RFC 索引:必须反映三态,不能停留在"双模 / 未配 key = sandbox fallback"
 const rfc = R('docs/rfcs/RFC-003-mcp-network-client.md')
 const rfcIndex = R('docs/rfcs/README.md')

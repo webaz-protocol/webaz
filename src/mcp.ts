@@ -7,7 +7,7 @@
  * 模式:配 WEBAZ_API_KEY → NETWORK(可交易,调 webaz.xyz 共享网络);无 key → NETWORK 只读(公共读走 webaz.xyz);
  *   仅 WEBAZ_MODE=sandbox 才用本机库(与全网隔离,dev/demo)。默认【不是】sandbox。详见 RFC-003。
  *
- * 关联 / Related: AGENTS.md(项目地图) · RFC-003(双模) · RFC-004(webaz_feedback)
+ * 关联 / Related: AGENTS.md(项目地图) · RFC-003(三态:network / network_readonly / sandbox) · RFC-004(webaz_feedback)
  */
 import { startMCPServer } from './layer1-agent/L1-1-mcp-server/server.js'
 

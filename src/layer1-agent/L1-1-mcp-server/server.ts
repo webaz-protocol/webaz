@@ -13,8 +13,8 @@
  *   webaz_wallet        查看钱包余额
  *   …（39 工具,完整定义见下方 TOOLS 数组;数量以 TOOLS.length 为准）
  *
- * 双模(RFC-003):NETWORK(WEBAZ_API_KEY → 调 webaz.xyz)/ SANDBOX(本机库);见 NETWORK_TOOLS / apiCall / toolBackend。
- * 关联 / Related: AGENTS.md · RFC-003(双模) · RFC-004(webaz_feedback) · 元规则 #4 不撒谎(_mode 戳) /
+ * 三态(RFC-003):NETWORK(WEBAZ_API_KEY → 调 webaz.xyz)/ NETWORK 只读(无 key,公共读走 webaz.xyz)/ SANDBOX(仅 WEBAZ_MODE=sandbox,本机库);见 NETWORK_TOOLS / apiCall / toolBackend。
+ * 关联 / Related: AGENTS.md · RFC-003(三态:network / network_readonly / sandbox) · RFC-004(webaz_feedback) · 元规则 #4 不撒谎(_mode 戳) /
  *   #6 不滥用(agent 责任制 + Iron-Rule 真人动作)· 生产端点在 src/pwa(NETWORK 共用)
  */
 
@@ -96,7 +96,7 @@ const TELEMETRY_URL = process.env.WEBAZ_TELEMETRY_URL ?? 'https://webaz.xyz/api/
 // Phase A pre-launch: telemetry default OFF (opt-in). Flip to default ON at W8 launch + add README disclosure section.
 const TELEMETRY_ENABLED = (process.env.WEBAZ_TELEMETRY ?? 'off').toLowerCase() === 'on'
 
-// ─── RFC-003 P0: 双模(NETWORK / SANDBOX)骨架 ─────────────────────
+// ─── RFC-003 P0: 三态(network_readonly / network / sandbox)骨架 ─────────────────────
 // NETWORK = 带 api_key 调 webaz.xyz/api(加入共享生产网络);SANDBOX = 本地 SQLite(离线试玩,与全网隔离)。
 // P0 不迁移任何工具(NETWORK_TOOLS 为空)→ 一切仍走本地 = 零行为变化;P1/P2 逐个把工具名加入集合切到网络。
 const WEBAZ_API_URL = (process.env.WEBAZ_API_URL ?? 'https://webaz.xyz').replace(/\/+$/, '')
