@@ -13,6 +13,7 @@ process.env.HOME = mkdtempSync(join(tmpdir(), 'cur-disp-'))
 const { displayCurrency, PROTOCOL_CURRENCY } = await import('../src/currency.js')
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { buildAcpProductFeed } = await import('../src/pwa/acp-feed.js')
+const { SKILL_TYPE_META } = await import('../src/layer4-economics/L4-4-skill-market/skill-engine.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? ` (${d})` : ''}`) } }
@@ -46,6 +47,13 @@ ok('10. USDC product → feed currency USDC (passthrough)', byId['p_usdc']?.pric
 ok('11. no feed item emits currency "DCP"', (feed.products || []).every(p => p.price?.currency !== 'DCP'))
 // whole-feed guard: the serialized feed (items + disclosures) must contain no "DCP" token at all
 ok('12. entire feed JSON contains no "DCP"', !/DCP/.test(JSON.stringify(feed)))
+
+// 3. MCP skill-types agent-facing surface (webaz_skill list → SKILL_TYPE_META.description) must not leak DCP
+const skillMetaStr = JSON.stringify(SKILL_TYPE_META)
+ok('13. SKILL_TYPE_META (webaz_skill list) contains no "DCP" token', !/DCP/.test(skillMetaStr))
+for (const [k, m] of Object.entries(SKILL_TYPE_META as Record<string, { description: string; description_en: string }>)) {
+  ok(`13.${k}: zh+en descriptions DCP-free`, !/DCP/.test(m.description) && !/DCP/.test(m.description_en))
+}
 
 if (fail > 0) { console.error(`\n❌ currency display normalization FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ currency display: agent-facing币种统一 WAZ · 遗留 'DCP'/空 读时归一化 · USDC 等原样 · ACP feed 即便 DCP 行也只输出 WAZ,整份 feed 无 DCP\n  ✅ pass ${pass}`)
