@@ -52,7 +52,7 @@ export function setPushCallback(cb: (userId: string, notif: Notification) => voi
 
 interface NotifRule {
   recipients: Array<'buyer' | 'seller' | 'logistics' | 'arbitrators'>
-  title: string
+  title: string | ((ctx: OrderCtx) => string)
   body: (ctx: OrderCtx) => string
 }
 
@@ -63,6 +63,7 @@ interface OrderCtx {
   totalAmount: number
   orderId: string
   logisticsName?: string
+  paymentRail?: string   // direct_p2p(非托管)→ 结算/完成通知不得写 WAZ/资金到账/钱包
 }
 
 const RULES: Record<string, NotifRule> = {
@@ -106,13 +107,17 @@ const RULES: Record<string, NotifRule> = {
   },
   'delivered→confirmed': {
     recipients: ['seller'],
-    title: '💰 买家确认收货',
-    body: ctx => `${ctx.buyerName} 已确认收货，${ctx.totalAmount} WAZ 结算中。`,
+    title: ctx => ctx.paymentRail === 'direct_p2p' ? '✅ 买家确认收货' : '💰 买家确认收货',
+    body: ctx => ctx.paymentRail === 'direct_p2p'
+      ? `${ctx.buyerName} 已确认收货，订单完成。直付为非托管:货款由你与买家场外结算,协议不代收、无平台资金入账。`
+      : `${ctx.buyerName} 已确认收货，${ctx.totalAmount} WAZ 结算中。`,
   },
   'confirmed→completed': {
     recipients: ['seller'],
-    title: '✅ 交易完成，资金到账',
-    body: ctx => `订单「${ctx.productTitle}」交易完成，收益已入账，查看钱包确认。`,
+    title: ctx => ctx.paymentRail === 'direct_p2p' ? '✅ 交易完成' : '✅ 交易完成，资金到账',
+    body: ctx => ctx.paymentRail === 'direct_p2p'
+      ? `订单「${ctx.productTitle}」交易完成。直付为非托管:无平台资金结算,货款以你与买家场外结算为准。`
+      : `订单「${ctx.productTitle}」交易完成，收益已入账，查看钱包确认。`,
   },
   'paid→disputed': {
     recipients: ['seller'],
@@ -181,7 +186,7 @@ export function notifyTransition(
   const ctx = getOrderCtx(db, orderId)
   if (!ctx) return
 
-  const title = rule.title
+  const title = typeof rule.title === 'function' ? rule.title(ctx) : rule.title
   const body  = rule.body(ctx)
   const type  = `${fromStatus}→${toStatus}`
 
@@ -197,7 +202,7 @@ export function notifyTransition(
 
 function getOrderCtx(db: Database.Database, orderId: string): OrderCtx | null {
   const row = db.prepare(`
-    SELECT o.buyer_id, o.seller_id, o.logistics_id, o.total_amount,
+    SELECT o.buyer_id, o.seller_id, o.logistics_id, o.total_amount, o.payment_rail,
            ub.name as buyer_name, us.name as seller_name,
            ul.name as logistics_name, p.title as product_title
     FROM orders o
@@ -215,6 +220,7 @@ function getOrderCtx(db: Database.Database, orderId: string): OrderCtx | null {
     logisticsName: row.logistics_name as string | undefined,
     productTitle:  row.product_title as string,
     totalAmount:   row.total_amount as number,
+    paymentRail:   row.payment_rail as string | undefined,
   }
 }
 

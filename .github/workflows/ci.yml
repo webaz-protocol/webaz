@@ -671,6 +671,7 @@ jobs:
       - run: npm run test:pv-kill-switch
       - run: npm run test:pv-settlement-engine
       - run: npm run test:settlement-breakdown
+      - run: npm run test:dispute-noncustodial
       - run: npm run test:wallet-signer
       - run: npm run test:cf-origin-guard
       - run: npm run test:public-contribution-pages

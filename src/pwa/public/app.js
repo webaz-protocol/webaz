@@ -845,14 +845,14 @@ async function render(page, params) {
 // M7.4：order 含 has_pending_claim=1 时附加一枚"验证中"chip
 function orderStatusBadges(order) {
   if (!order) return ''
-  const main = statusBadge(order.status)
+  const main = statusBadge(order.status, order.payment_rail)
   if (Number(order.has_pending_claim) === 1) {
     return `${main} <span style="display:inline-block;font-size:10px;background:#eef2ff;color:#3730a3;padding:2px 8px;border-radius:99px;font-weight:600;margin-left:4px">🔎 ${t('验证中')}</span>`
   }
   return main
 }
 
-function statusBadge(status) {
+function statusBadge(status, rail) {
   const map = {
     created:          ['gray',   t('待付款')],
     paid:             ['blue',   t('待接单')],
@@ -875,7 +875,8 @@ function statusBadge(status) {
     dispute_dismissed:   ['gray',   t('争议驳回')],
     expired:             ['gray',   t('已过期')],
   }
-  const [color, label] = map[status] || ['gray', status]
+  // 直付(非托管)争议终态:不发生退款/资金释放 → 用信誉裁决语义(dpTerminalBadge,见 app-order-labels.js)
+  const [color, label] = (rail === 'direct_p2p' && window.dpTerminalBadge && window.dpTerminalBadge(status)) || map[status] || ['gray', status]
   return `<span class="badge badge-${color}">${label}</span>`
 }
 
@@ -12198,7 +12199,7 @@ function orderStageTimeline(order, history) {
     return `<div style="background:#fff;border:0.5px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:10px">
       <div style="width:8px;height:8px;border-radius:50%;background:${c};flex-shrink:0"></div>
       <div style="flex:1">
-        <div style="font-size:14px;font-weight:600;color:#1f2937">${labelMap[order.status] || order.status}</div>
+        <div style="font-size:14px;font-weight:600;color:#1f2937">${(order.payment_rail === 'direct_p2p' && window.dpTerminalLabel && window.dpTerminalLabel(order.status)) || labelMap[order.status] || order.status}</div>
         <div style="font-size:11px;color:#8e8e93;margin-top:2px">${t('查看下方时间线了解流转详情')}</div>
       </div>
     </div>`
@@ -12382,14 +12383,18 @@ function nextActionCard(order, isBuyer, isSeller, activeDeadline, isOverdue) {
   // 我自己是违约方时只看到警告，不显示按钮（不能自己触发对自己的判责）
   const meAtFault = hint.overdueFault && hint.overdueFault === ('fault_' + (isBuyer ? 'buyer' : isSeller ? 'seller' : ''))
   const canForceTrigger = isOverdue && hint.overdueFault && !meAtFault && (isBuyer || isSeller)
+  // 直付(非托管):WebAZ 不退款/不放款 → 超时后果只写信誉责任,绝不写"退款/资金释放"
+  const overdueConsequence = order.payment_rail === 'direct_p2p'
+    ? ({ paid: '卖家信誉扣分;直付非托管,WebAZ 不退款/不放款', accepted: '卖家信誉扣分;直付非托管,WebAZ 不退款/不放款', in_transit: '物流/履约信誉扣分;直付非托管,WebAZ 不退款', delivered: '系统自动确认直付订单完成;不涉及平台放款' }[order.status] || hint.overdueConsequence)
+    : hint.overdueConsequence
   return `<div style="background:${bg};border:0.5px solid ${isOverdue ? '#fecaca' : '#e5e7eb'};border-radius:12px;padding:14px 16px;margin-bottom:10px">
     <div style="display:flex;align-items:center;gap:10px">
       <div style="font-size:22px;line-height:1">${icon}</div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:600;color:${tone}">${t(myHint)}</div>
         ${activeDeadline?.deadline ? `<div style="font-size:11px;color:#8e8e93;margin-top:2px">${isOverdue ? t('已超时，协议将自动判责') : fmtCountdown(activeDeadline.deadline)}</div>` : ''}
-        ${isOverdue && hint.overdueConsequence ? `<div style="margin-top:8px;padding:8px 10px;background:#fff;border-radius:6px;font-size:12px;color:#7c2d12;border:1px dashed #fecaca">
-          ⚖️ ${t('协议处置')}：${t(hint.overdueConsequence)}
+        ${isOverdue && overdueConsequence ? `<div style="margin-top:8px;padding:8px 10px;background:#fff;border-radius:6px;font-size:12px;color:#7c2d12;border:1px dashed #fecaca">
+          ⚖️ ${t('协议处置')}：${t(overdueConsequence)}
         </div>` : ''}
         ${canForceTrigger ? `<button onclick="forceTimeoutCheck('${order.id}')" style="margin-top:10px;background:#dc2626;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">⚡ ${t('立即触发判责')}</button>
         <div style="font-size:10px;color:#9ca3af;margin-top:6px">${t('协议巡检每 5 分钟一次；你也可立即触发，无需等待。')}</div>` : ''}
@@ -12557,13 +12562,13 @@ async function renderOrderDetail(app, orderId) {
       <div id="trial-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${(isBuyer && order.status === 'completed' && Number(product?.return_days || 0) > 0) ? `
+    ${(isBuyer && order.status === 'completed' && Number(product?.return_days || 0) > 0 && order.payment_rail !== 'direct_p2p') ? `
     <div class="card" id="ret-card-${order.id}">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">↩ ${t('退货')}</div>
       <div id="ret-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${(isSeller && order.status === 'completed') ? `
+    ${(isSeller && order.status === 'completed' && order.payment_rail !== 'direct_p2p') ? `
     <div class="card" id="ret-card-${order.id}">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">↩ ${t('退货处理')}</div>
       <div id="ret-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
@@ -13879,14 +13884,14 @@ function buildTimelineEvent(ev, dispute, user, actors) {
   } else if (ev.type === 'ruling' || ev.type === 'resolved') {
     const meta = ev.meta || {}
     const rulingLabel = meta.ruling || meta.ruling_type
-    const rulingText = rulingLabel ? t(RULING_LABELS[rulingLabel] || rulingLabel) : ''
+    const rulingText = rulingLabel ? ((dispute.payment_rail === 'direct_p2p' && window.dpRulingLabel && window.dpRulingLabel(rulingLabel)) || t(RULING_LABELS[rulingLabel] || rulingLabel)) : ''
     let liability = []
     try { liability = typeof meta.liability_parties === 'string' ? JSON.parse(meta.liability_parties) : (meta.liability_parties || []) } catch {}
     bodyHtml = `
       ${rulingText ? `<div style="font-weight:700;font-size:14px;color:${typeMeta.border};margin-bottom:4px">${t(rulingText)}</div>` : ''}
       ${ev.body ? `<div style="font-size:13px;line-height:1.5;white-space:pre-wrap;color:#374151">${escHtml(ev.body)}</div>` : ''}
-      ${meta.refund_amount != null ? `<div style="font-size:12px;margin-top:6px">💸 ${t('退款金额')}：<strong>${meta.refund_amount} WAZ</strong></div>` : ''}
-      ${liability.length > 0 ? `<div style="margin-top:6px">
+      ${dispute.payment_rail !== 'direct_p2p' && meta.refund_amount != null ? `<div style="font-size:12px;margin-top:6px">💸 ${t('退款金额')}：<strong>${meta.refund_amount} WAZ</strong></div>` : ''}
+      ${dispute.payment_rail !== 'direct_p2p' && liability.length > 0 ? `<div style="margin-top:6px">
         <div style="font-size:11px;color:#6b7280;margin-bottom:2px">${t('责任分配')}：</div>
         ${liability.map(lp => `<div style="font-size:12px;margin-top:2px">${(TL_ROLE_META[lp.role]||TL_ROLE_META.unknown).icon} ${t(lp.role)} ${t('承担')} ${lp.amount} WAZ${lp.insurance_cap!=null?` (${t('保险上限')} ${lp.insurance_cap})`:''}</div>`).join('')}
       </div>` : ''}`
@@ -14075,20 +14080,13 @@ function buildDisputeHtml(dispute, user) {
   const arbitrateSection = isArbitrator && (dispute.status === 'open' || dispute.status === 'in_review') ? `
     <div style="margin-top:12px;border-top:1px solid #fecaca;padding-top:12px">
       <div style="font-weight:600;font-size:13px;margin-bottom:8px">⚖️ 仲裁员裁定（截止 ${fmtTime(dispute.arbitrate_deadline)}）</div>
-      <div style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:6px 10px;margin-bottom:8px">
-        💰 败诉方须缴纳仲裁费：订单金额 × 1%（最低 1 WAZ）。部分退款时双方各付 0.5%。仲裁费 50% 归仲裁员，50% 归协议。
-      </div>
-      <div id="arbitrate-msg"></div>
+      ${window.dpArbFeeNote ? window.dpArbFeeNote(dispute.payment_rail) : ''}
+      <input type="hidden" id="arb-rail" value="${dispute.payment_rail || ''}"><div id="arbitrate-msg"></div>
 
       <div class="form-group" style="margin-bottom:10px">
         <label style="font-size:12px;color:#6b7280;display:block;margin-bottom:4px">裁定方式</label>
         <div style="display:flex;flex-direction:column;gap:6px">
-          ${[
-            ['refund_buyer',    '🔵 全额退款买家（买家胜诉，卖家承担）'],
-            ['release_seller',  '🟢 资金释放给卖家（卖家胜诉）'],
-            ['partial_refund',  '🟡 部分退款（折中，需填金额）'],
-            ['liability_split', '⚖️ 责任分配（指定各方赔付额）'],
-          ].map(([val, label]) => `
+          ${(window.dpArbRulingOptions ? window.dpArbRulingOptions(dispute.payment_rail) : []).map(([val, label]) => `
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;background:#f9fafb;border-radius:6px">
               <input type="radio" name="arb-ruling-radio" value="${val}" onclick="onArbRulingChange('${val}')"> ${label}
             </label>`).join('')}
@@ -14337,14 +14335,15 @@ window.handleArbitrate = async (disputeId) => {
   if (!reason) { msgEl.innerHTML = alert$('error', t('请填写裁定理由')); return }
 
   let body = { ruling, reason }
+  const nc = document.getElementById('arb-rail')?.value === 'direct_p2p'   // 直付:仅信誉裁决 → 不读/不发任何退款/赔付金额
 
-  if (ruling === 'partial_refund') {
+  if (!nc && ruling === 'partial_refund') {
     const amount = document.getElementById('arb-amount')?.value
     if (!amount) { msgEl.innerHTML = alert$('error', t('部分退款需填写退款金额')); return }
     body = { ...body, refund_amount: Number(amount) }
   }
 
-  if (ruling === 'liability_split') {
+  if (!nc && ruling === 'liability_split') {
     const liabilityParties = []
     let totalCalc = 0
     for (const chk of document.querySelectorAll('.arb-liable-chk:checked')) {
@@ -14384,10 +14383,11 @@ window.handleArbitrate = async (disputeId) => {
 
 // 裁定方式切换 → 控制相关输入框显隐
 window.onArbRulingChange = (ruling) => {
+  const nc = document.getElementById('arb-rail')?.value === 'direct_p2p'   // 直付:无金额/无赔付 → 两个金额区块永不出现
   const partialRow = document.getElementById('arb-partial-row')
   const liabilityBlock = document.getElementById('arb-liability-block')
-  if (partialRow) partialRow.style.display = ruling === 'partial_refund' ? '' : 'none'
-  if (liabilityBlock) liabilityBlock.style.display = ruling === 'liability_split' ? '' : 'none'
+  if (partialRow) partialRow.style.display = (!nc && ruling === 'partial_refund') ? '' : 'none'
+  if (liabilityBlock) liabilityBlock.style.display = (!nc && ruling === 'liability_split') ? '' : 'none'
 }
 
 // 责任分配：勾选责任方时启用金额输入框，并实时计算合计

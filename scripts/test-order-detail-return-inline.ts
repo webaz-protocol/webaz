@@ -16,9 +16,11 @@ let pass = 0, fail = 0
 const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
-// 1) 订单详情对卖家也渲染退货卡 + 走 widget 水合
-ok('order detail renders a seller return card (isSeller && completed)',
-  /\$\{\(isSeller && order\.status === 'completed'\) \? `[\s\S]{0,160}ret-card-\$\{order\.id\}/.test(app))
+// 1) 订单详情对卖家也渲染退货卡 + 走 widget 水合(direct_p2p 非托管无退款 → 该卡对 direct_p2p 不渲染)
+ok('order detail renders a seller return card (isSeller && completed, escrow only)',
+  /\$\{\(isSeller && order\.status === 'completed' && order\.payment_rail !== 'direct_p2p'\) \? `[\s\S]{0,160}ret-card-\$\{order\.id\}/.test(app))
+ok('return card is rail-guarded: direct_p2p (non-custodial, no refund) excluded for buyer + seller',
+  (app.match(/order\.status === 'completed'[^`]*order\.payment_rail !== 'direct_p2p'/g) || []).length >= 2)
 ok('hydration calls renderReturnWidgetForOrder for seller too',
   /\(\(isBuyer && Number\(product\?\.return_days \|\| 0\) > 0\) \|\| isSeller\) && order\.status === 'completed'[\s\S]{0,120}renderReturnWidgetForOrder\(order, product\)/.test(app))
 

@@ -214,7 +214,9 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
       return void res.status(403).json({ error: '此争议未分配给你 — 仅指派的仲裁员可裁定', error_code: 'NOT_ASSIGNED_ARBITRATOR' })
     }
 
-    // 协议层：仲裁员签名的 ruling 入订单链
+    // 协议层：仲裁员签名的 ruling 入订单链。direct_p2p 非托管=仅信誉裁决,绝不把请求里的退款/赔付金额写进【签名链/timeline】
+    //   (即便资金层不动钱,签名链会永久留假语义)→ 强制 non_custodial + 金额/责任方全清。
+    const ncRail = dispute.payment_rail === 'direct_p2p'
     try {
       appendOrderEvent(db, {
         orderId: dispute.order_id as string,
@@ -227,9 +229,10 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
           action: 'arbitration_ruling',
           dispute_id: req.params.id,
           ruling, reason,
-          refund_amount: refund_amount ? Number(refund_amount) : null,
-          liable_party_id: liable_party_id || null,
-          liability_parties: liability_parties || null,
+          non_custodial: ncRail || undefined,
+          refund_amount: ncRail ? null : (refund_amount ? Number(refund_amount) : null),
+          liable_party_id: ncRail ? null : (liable_party_id || null),
+          liability_parties: ncRail ? null : (liability_parties || null),
         },
       })
     } catch (e) { console.warn('[order-chain] arbitration ruling event failed:', (e as Error).message) }
@@ -245,8 +248,10 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
     // 争议结案 → 给证据 blob 打过期戳
     try { markEvidenceExpiry(db, req.params.id) } catch (e) { console.warn('[evidence] mark expiry:', (e as Error).message) }
 
+    // 非托管(直付)争议:协议不持货款、不做托管结算 → 【跳过】所有佣金/PV/基金分润钩子(否则会从卖家余额扣不存在的佣金)。
+    const nonCustodial = !!result.non_custodial
     // release_seller 等同正常完成 → 触发推土机分润 + 原子能
-    if (ruling === 'release_seller') {
+    if (ruling === 'release_seller' && !nonCustodial) {
       try {
         db.transaction(() => {
           const order = db.prepare("SELECT * FROM orders WHERE id = ?").get(dispute.order_id) as Record<string, unknown> | undefined
@@ -283,8 +288,8 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
       } catch (e) { console.error('[dispute commission/pv hook]', e) }
     }
 
-    // Bug-A fix：partial_refund / liability_split 也按 effectiveBase 发 commission/PV/基金池
-    if (ruling === 'partial_refund' || ruling === 'liability_split') {
+    // Bug-A fix：partial_refund / liability_split 也按 effectiveBase 发 commission/PV/基金池(非托管跳过)
+    if ((ruling === 'partial_refund' || ruling === 'liability_split') && !nonCustodial) {
       try {
         db.transaction(() => {
           const order = db.prepare("SELECT * FROM orders WHERE id = ?").get(dispute.order_id) as Record<string, unknown> | undefined
