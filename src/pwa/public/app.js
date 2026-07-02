@@ -13433,7 +13433,7 @@ function getActions(order, isBuyer, isSeller, isLogistic) {
   if (isSeller && s === 'paid')
     return [{ action: 'accept', label: '接单', style: 'success' }, { action: 'decline', label: '拒绝接单', style: 'danger', custom: 'decline' }]
   if (isSeller && s === 'accepted' && !isInPerson)
-    return [{ action: 'ship', label: '确认发货', style: 'success', logisticsSelector: true, trackingInput: true, evidencePlaceholder: '包装状态描述 / 货物说明（可选）' }]
+    return [{ action: 'ship', label: '确认发货', style: 'success', logisticsSelector: true, trackingInput: true, evidencePlaceholder: '包装状态描述 / 货物说明（可选）' }, ...(order.payment_rail === 'direct_p2p' ? [{ action: 'dispute', label: '未收到货款', style: 'danger', needsEvidence: true, noteLabel: '未收到货款说明', evidencePlaceholder: '说明未在收款账户看到该笔款项 / 金额或附言不符等（协议不持货款,证据制信誉裁决,不涉资金赔付）' }] : [])]
   if (isSeller && s === 'accepted' && isInPerson)
     return [{ action: 'noop_in_person', label: '🤝 面交中（等待买家确认）', style: 'secondary', disabled: true }]
   if ((isLogistic || isSelfFulfillSeller) && s === 'shipped')
