@@ -401,5 +401,20 @@ for (const k of ['平台收款方式', '新增平台收款方式', '平台收款
   ok(`21-i18n EN present: ${k.slice(0, 12)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
 }
 
+// ── 22. seller fee-prepay request UI (new app-direct-pay-fee-request.js) ──
+const FRQ = P('app-direct-pay-fee-request.js')
+const FRQCODE = FRQ.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+ok('22. index.html loads app-direct-pay-fee-request.js before app.js', has(HTML, '/app-direct-pay-fee-request.js') && HTML.indexOf('/app-direct-pay-fee-request.js') < HTML.indexOf('/app.js'))
+ok('22a. file in check:pwa-syntax + ratchet', /node --check src\/pwa\/public\/app-direct-pay-fee-request\.js/.test(PKG) && /'src\/pwa\/public\/app-direct-pay-fee-request\.js'\s*:/.test(RATCHET))
+ok('22b. section + hydrate + submit + cancel defined', /dpFeeRequestSection\s*=/.test(FRQ) && /dpHydrateFeeRequest\s*=/.test(FRQ) && /dpSubmitFeeRequest\s*=/.test(FRQ) && /dpCancelFeeRequest\s*=/.test(FRQ))
+ok('22c. reads platform accounts + own requests (GET)', /GET\('\/direct-receive\/platform-receive-accounts'\)/.test(FRQ) && /GET\('\/direct-receive\/fee-prepay-requests'\)/.test(FRQ))
+ok('22d. submits via POST (NOT Passkey — request grants nothing)', /POST\('\/direct-receive\/fee-prepay-request'/.test(FRQ) && !/requestPasskeyGate/.test(FRQCODE))
+ok('22e. evidence_ref required client-side (不能无据)', has(FRQ, 'evidence_ref') && /付款凭证号必填/.test(FRQ))
+ok('22f. app.js settings tab composes + hydrates the section', has(APP, 'dpFeeRequestSection') && has(APP, 'dpHydrateFeeRequest'))
+ok('22g. UI touches no wallet/escrow/settle/refund/admin fee write', !/\/wallet|\/escrow|\/settle|\/refund|\/admin\/direct-receive\/fee/.test(FRQCODE))
+for (const k of ['申请平台服务费预充值', '平台收款方式(据此付款)', '付款凭证号 evidence_ref', '我的申请', '申请已提交,等待平台核实入账']) {
+  ok(`22-i18n EN present: ${k.slice(0, 12)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
+}
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)

@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (721 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (725 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -307,10 +307,14 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | PUT | `/api/direct-receive/accounts/:id/qr` | 🔐 |  | ── upload / replace QR(Passkey + owner;immutable content-addressed store)── | src/pwa/routes/direct-receive-accounts.ts:120 |
 | GET | `/api/direct-receive/deferral` | 🔐 |  | GET /api/direct-receive/deferral — 卖家本人缓交状态:最新一条申请(脱敏:不含 admin 身份)+ 是否当前生效(activ | src/pwa/routes/direct-pay-availability.ts:96 |
 | POST | `/api/direct-receive/deferral` | 🔐 |  | POST /api/direct-receive/deferral — 卖家申请缓交。helper 强制:单一活跃、periodDays 正整数、id 唯一。 | src/pwa/routes/direct-pay-availability.ts:86 |
+| POST | `/api/direct-receive/fee-prepay-request` | 🔐 |  | ── 提交预充值申请(不 Passkey;凭据必填)── | src/pwa/routes/fee-prepay-requests.ts:36 |
+| POST | `/api/direct-receive/fee-prepay-request/:id/cancel` | 🔐 |  | ── 卖家撤销自己的 pending 申请 ── | src/pwa/routes/fee-prepay-requests.ts:54 |
+| GET | `/api/direct-receive/fee-prepay-requests` | 🔐 |  | ── 卖家看自己的申请(全状态)── | src/pwa/routes/fee-prepay-requests.ts:48 |
 | GET | `/api/direct-receive/my-fee-account` | 🔐 |  | 仅本人(requireSeller),买家拿不到;只读、不碰任何资金动作。供 seller fee center 展示。 | src/pwa/routes/direct-pay-availability.ts:109 |
 | DELETE | `/api/direct-receive/payment-instruction` | 🔐 |  | DELETE — 停用卖家当前 active 收款说明(软停用,留历史为 inactive)。停用后 create route fail-closed。 | src/pwa/routes/direct-receive-payment-instructions.ts:55 |
 | GET | `/api/direct-receive/payment-instruction` | 🔐 |  | GET — 卖家本人当前 active 收款说明;无则 instruction:null(200,显式空状态,便于 UI 渲染“尚未设置”)。 | src/pwa/routes/direct-receive-payment-instructions.ts:37 |
 | PUT | `/api/direct-receive/payment-instruction` | 🔐 |  | PUT — 设置/替换卖家当前 active 收款说明。instruction 必填、trim、长度上限;label 可选、trim、长度上限。 | src/pwa/routes/direct-receive-payment-instructions.ts:43 |
+| GET | `/api/direct-receive/platform-receive-accounts` | 🔐 |  | ── 卖家看平台收款方式(active;含 instruction + qr_data_uri —— 平台公开收款明细,据此付款)── | src/pwa/routes/fee-prepay-requests.ts:30 |
 | POST | `/api/direct-receive/product-verification` | 🔐 |  | POST /api/direct-receive/product-verification — 卖家为某产品申领验证码(单一活跃 per product)。 | src/pwa/routes/direct-pay-availability.ts:129 |
 | PUT | `/api/direct-receive/product-verification` | 🔐 |  | PUT /api/direct-receive/product-verification — 卖家为某产品提交外部商品链接(链接仅存储,WebAZ 不抓取)。 | src/pwa/routes/direct-pay-availability.ts:139 |
 | GET | `/api/direct-receive/product-verifications` | 🔐 |  | GET /api/direct-receive/product-verifications — 卖家本人所有产品的认证状态(逐产品)。 | src/pwa/routes/direct-pay-availability.ts:150 |

@@ -358,6 +358,23 @@ CREATE TABLE IF NOT EXISTS direct_pay_fee_payments (
     );
 CREATE INDEX IF NOT EXISTS idx_dp_fee_payments_seller ON direct_pay_fee_payments(seller_id);
 
+CREATE TABLE IF NOT EXISTS direct_pay_fee_prepay_requests (
+      id                   TEXT PRIMARY KEY,
+      seller_id            TEXT NOT NULL REFERENCES users(id),
+      amount_units         BIGINT NOT NULL,
+      currency             TEXT,
+      platform_account_id  TEXT,
+      evidence_ref         TEXT NOT NULL,
+      evidence_note        TEXT,
+      status               TEXT NOT NULL DEFAULT 'pending',
+      created_at           TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
+      reviewed_by          TEXT REFERENCES users(id),
+      reviewed_at          TEXT,
+      review_note          TEXT,
+      resulting_payment_id TEXT REFERENCES direct_pay_fee_payments(id)
+    );
+CREATE INDEX IF NOT EXISTS idx_dp_fee_prepay_req_seller ON direct_pay_fee_prepay_requests(seller_id, status);
+
 CREATE TABLE IF NOT EXISTS direct_pay_fee_ar_seller_overrides (
       seller_id     TEXT PRIMARY KEY REFERENCES users(id),
       ceiling_units BIGINT NOT NULL CHECK (ceiling_units >= 0),
