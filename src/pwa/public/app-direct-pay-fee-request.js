@@ -37,7 +37,7 @@ window.dpHydrateFeeRequest = async () => {
         <span><b>${(r.amount_units / 1e6).toFixed(2)}</b> ${escHtml(r.currency || 'USDC')} · <span style="color:#6b7280">${window.dpFeeReqStatus(r.status)}</span></span>
         ${r.status === 'pending' ? `<button class="btn btn-outline btn-sm" style="font-size:11px;padding:2px 8px" onclick="dpCancelFeeRequest('${r.id}')">${t('撤销')}</button>` : ''}
       </div>
-      <div style="color:#9ca3af;margin-top:2px">${t('凭证')}: ${escHtml(r.evidence_ref)}${r.review_note ? ` · ${escHtml(r.review_note)}` : ''}</div>
+      <div style="color:#9ca3af;margin-top:2px">${t('申请 id')}: <code>${escHtml(r.id)}</code> · ${t('凭证')}: ${escHtml(r.evidence_ref)}${r.review_note ? ` · ${escHtml(r.review_note)}` : ''}</div>
     </div>`).join('') : `<div style="font-size:12px;color:#9ca3af">${t('暂无申请记录')}</div>`
   // 无 active 平台收款方式 → 不给表单(没有对准的 WebAZ 收款账户就无法可追踪充值),只提示联系平台。
   const formHtml = accounts.length ? `

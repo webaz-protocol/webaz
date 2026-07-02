@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (725 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (728 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -57,23 +57,26 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/dashboard` | 🔐 | 👑 |  | src/pwa/routes/admin-analytics.ts:230 |
 | GET | `/api/admin/decline-contests` | 🔐 |  | 仲裁员待办:列出所有被举证的临时判责拒单 | src/pwa/routes/disputes-write.ts:88 |
 | POST | `/api/admin/decline-contests/:orderId/resolve` | 🔐 |  | 仲裁员裁决 | src/pwa/routes/disputes-write.ts:102 |
-| POST | `/api/admin/direct-receive/aml-flags` | 🔐 | 👑 |  | src/pwa/routes/admin-direct-receive-deposits.ts:166 |
-| POST | `/api/admin/direct-receive/aml-flags/:id/review` | 🔐 | 👑 | route 只做 auth + gate + 参数校验 + 调 reviewAmlFlag(唯一 review writer,原子改 flag + 写 audi | src/pwa/routes/admin-direct-receive-deposits.ts:85 |
-| GET | `/api/admin/direct-receive/deferrals` | 🔐 | 👑 | GET /api/admin/direct-receive/deferrals?status=pending — ROOT 审批队列(默认全部;可按 statu | src/pwa/routes/admin-direct-receive-deposits.ts:231 |
-| POST | `/api/admin/direct-receive/deferrals/:id/approve` | 🔐 | 👑 | Passkey purpose_data 绑定【完整审批条款】(deferral_id + reduced_quota_factor + grace_days) | src/pwa/routes/admin-direct-receive-deposits.ts:240 |
-| POST | `/api/admin/direct-receive/deferrals/:id/reject` | 🔐 | 👑 | POST /api/admin/direct-receive/deferrals/:id/reject — ROOT + 真人 Passkey 拒绝缓交。pur | src/pwa/routes/admin-direct-receive-deposits.ts:265 |
-| POST | `/api/admin/direct-receive/deposits/:id/confirm-production` | 🔐 | 👑 | 当前恒 fail-closed(无 legal-cleared rail → assert 抛 → PRODUCTION_RAIL_NOT_CLEARED)。 | src/pwa/routes/admin-direct-receive-deposits.ts:41 |
-| GET | `/api/admin/direct-receive/fee-account/:seller_id` | 🔐 | 👑 | 只读诊断,不写、无 Passkey(读不授权能力);卖家私密财务,买家/卖家拿不到此 admin 视图。 | src/pwa/routes/admin-direct-receive-deposits.ts:202 |
-| POST | `/api/admin/direct-receive/fee-adjust` | 🔐 | 👑 | ≠ 退款(不动真钱,只调记账)。purpose_data 绑 seller_id+delta_units+reason。 | src/pwa/routes/admin-direct-receive-deposits.ts:185 |
-| POST | `/api/admin/direct-receive/fee-prepay` | 🔐 | 👑 | 不碰 buyer wallet/escrow/order/settlement/refund;非买家 escrow/保证金/penalty。本轮无"余额退款"( | src/pwa/routes/admin-direct-receive-deposits.ts:176 |
-| POST | `/api/admin/direct-receive/fee-refund` | 🔐 | 👑 | amount ≤ 当前 available(helper 同事务校验)。append-only + audit。purpose_data 绑 seller_id | src/pwa/routes/admin-direct-receive-deposits.ts:193 |
-| POST | `/api/admin/direct-receive/kyb-reviews` | 🔐 | 👑 | Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B  | src/pwa/routes/admin-direct-receive-deposits.ts:147 |
-| GET | `/api/admin/direct-receive/product-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/product-verifications?status=submitted — ROOT 审核队列 | src/pwa/routes/admin-direct-receive-deposits.ts:290 |
-| POST | `/api/admin/direct-receive/product-verifications/:id/review` | 🔐 | 👑 | Passkey purpose_data 绑 verification_id + decision:签 A 用 B / 改结论一律拒。verify = 放行该产 | src/pwa/routes/admin-direct-receive-deposits.ts:299 |
-| POST | `/api/admin/direct-receive/readiness` | 🔐 | 👑 | 含 KYB/sanctions/AML/base-bond/rail clearance 全细节)。只读诊断(不写库、不 flip launch);ROOT 专 | src/pwa/routes/admin-direct-receive-deposits.ts:209 |
-| POST | `/api/admin/direct-receive/sanctions-screenings` | 🔐 | 👑 | purpose_data 绑定 user_id+status+provider_ref+expires_at。 | src/pwa/routes/admin-direct-receive-deposits.ts:156 |
-| GET | `/api/admin/direct-receive/store-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/store-verifications?status=submitted — ROOT 审核队列(默 | src/pwa/routes/admin-direct-receive-deposits.ts:327 |
-| POST | `/api/admin/direct-receive/store-verifications/:id/review` | 🔐 | 👑 | POST /api/admin/direct-receive/store-verifications/:id/review — ROOT + 真人 Passke | src/pwa/routes/admin-direct-receive-deposits.ts:335 |
+| POST | `/api/admin/direct-receive/aml-flags` | 🔐 | 👑 |  | src/pwa/routes/admin-direct-receive-deposits.ts:167 |
+| POST | `/api/admin/direct-receive/aml-flags/:id/review` | 🔐 | 👑 | route 只做 auth + gate + 参数校验 + 调 reviewAmlFlag(唯一 review writer,原子改 flag + 写 audi | src/pwa/routes/admin-direct-receive-deposits.ts:86 |
+| GET | `/api/admin/direct-receive/deferrals` | 🔐 | 👑 | GET /api/admin/direct-receive/deferrals?status=pending — ROOT 审批队列(默认全部;可按 statu | src/pwa/routes/admin-direct-receive-deposits.ts:255 |
+| POST | `/api/admin/direct-receive/deferrals/:id/approve` | 🔐 | 👑 | Passkey purpose_data 绑定【完整审批条款】(deferral_id + reduced_quota_factor + grace_days) | src/pwa/routes/admin-direct-receive-deposits.ts:264 |
+| POST | `/api/admin/direct-receive/deferrals/:id/reject` | 🔐 | 👑 | POST /api/admin/direct-receive/deferrals/:id/reject — ROOT + 真人 Passkey 拒绝缓交。pur | src/pwa/routes/admin-direct-receive-deposits.ts:289 |
+| POST | `/api/admin/direct-receive/deposits/:id/confirm-production` | 🔐 | 👑 | 当前恒 fail-closed(无 legal-cleared rail → assert 抛 → PRODUCTION_RAIL_NOT_CLEARED)。 | src/pwa/routes/admin-direct-receive-deposits.ts:42 |
+| GET | `/api/admin/direct-receive/fee-account/:seller_id` | 🔐 | 👑 | 只读诊断,不写、无 Passkey(读不授权能力);卖家私密财务,买家/卖家拿不到此 admin 视图。 | src/pwa/routes/admin-direct-receive-deposits.ts:203 |
+| POST | `/api/admin/direct-receive/fee-adjust` | 🔐 | 👑 | ≠ 退款(不动真钱,只调记账)。purpose_data 绑 seller_id+delta_units+reason。 | src/pwa/routes/admin-direct-receive-deposits.ts:186 |
+| POST | `/api/admin/direct-receive/fee-prepay` | 🔐 | 👑 | 不碰 buyer wallet/escrow/order/settlement/refund;非买家 escrow/保证金/penalty。本轮无"余额退款"( | src/pwa/routes/admin-direct-receive-deposits.ts:177 |
+| GET | `/api/admin/direct-receive/fee-prepay-requests` | 🔐 | 👑 | GET /api/admin/direct-receive/fee-prepay-requests?status=pending — ROOT 只读:预充值申请 | src/pwa/routes/admin-direct-receive-deposits.ts:209 |
+| POST | `/api/admin/direct-receive/fee-prepay-requests/:id/approve` | 🔐 | 👑 | purpose_data 绑 request_id + seller_id + amount_units + method(把入账金额/对象钉进 Passkey | src/pwa/routes/admin-direct-receive-deposits.ts:218 |
+| POST | `/api/admin/direct-receive/fee-prepay-requests/:id/reject` | 🔐 | 👑 | POST /api/admin/direct-receive/fee-prepay-requests/:id/reject — ROOT + Passkey(不 | src/pwa/routes/admin-direct-receive-deposits.ts:226 |
+| POST | `/api/admin/direct-receive/fee-refund` | 🔐 | 👑 | amount ≤ 当前 available(helper 同事务校验)。append-only + audit。purpose_data 绑 seller_id | src/pwa/routes/admin-direct-receive-deposits.ts:194 |
+| POST | `/api/admin/direct-receive/kyb-reviews` | 🔐 | 👑 | Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B  | src/pwa/routes/admin-direct-receive-deposits.ts:148 |
+| GET | `/api/admin/direct-receive/product-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/product-verifications?status=submitted — ROOT 审核队列 | src/pwa/routes/admin-direct-receive-deposits.ts:314 |
+| POST | `/api/admin/direct-receive/product-verifications/:id/review` | 🔐 | 👑 | Passkey purpose_data 绑 verification_id + decision:签 A 用 B / 改结论一律拒。verify = 放行该产 | src/pwa/routes/admin-direct-receive-deposits.ts:323 |
+| POST | `/api/admin/direct-receive/readiness` | 🔐 | 👑 | 含 KYB/sanctions/AML/base-bond/rail clearance 全细节)。只读诊断(不写库、不 flip launch);ROOT 专 | src/pwa/routes/admin-direct-receive-deposits.ts:233 |
+| POST | `/api/admin/direct-receive/sanctions-screenings` | 🔐 | 👑 | purpose_data 绑定 user_id+status+provider_ref+expires_at。 | src/pwa/routes/admin-direct-receive-deposits.ts:157 |
+| GET | `/api/admin/direct-receive/store-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/store-verifications?status=submitted — ROOT 审核队列(默 | src/pwa/routes/admin-direct-receive-deposits.ts:351 |
+| POST | `/api/admin/direct-receive/store-verifications/:id/review` | 🔐 | 👑 | POST /api/admin/direct-receive/store-verifications/:id/review — ROOT + 真人 Passke | src/pwa/routes/admin-direct-receive-deposits.ts:359 |
 | GET | `/api/admin/disputes` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:47 |
 | GET | `/api/admin/economic-summary` | 🔐 | 👑 | 隐私第一：运营财务，仅 protocol admin 可见。 | src/pwa/routes/admin-reports.ts:82 |
 | GET | `/api/admin/editor-picks` | 🔐 | 👑 |  | src/pwa/routes/admin-editor-picks.ts:60 |

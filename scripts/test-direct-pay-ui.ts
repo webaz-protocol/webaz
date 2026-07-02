@@ -416,5 +416,25 @@ for (const k of ['申请平台服务费预充值', '平台收款方式(据此付
   ok(`22-i18n EN present: ${k.slice(0, 12)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
 }
 
+// ── 23. admin fee-prepay-request review UI (new app-direct-pay-fee-requests-admin.js) ──
+const AFPR = P('app-direct-pay-fee-requests-admin.js')
+const AFPRCODE = AFPR.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+ok('23. index.html loads app-direct-pay-fee-requests-admin.js before app.js', has(HTML, '/app-direct-pay-fee-requests-admin.js') && HTML.indexOf('/app-direct-pay-fee-requests-admin.js') < HTML.indexOf('/app.js'))
+ok('23a. file in check:pwa-syntax + ratchet', /node --check src\/pwa\/public\/app-direct-pay-fee-requests-admin\.js/.test(PKG) && /'src\/pwa\/public\/app-direct-pay-fee-requests-admin\.js'\s*:/.test(RATCHET))
+ok('23b. render + hydrate + approve + reject defined', /renderAdminFeePrepayRequests\s*=/.test(AFPR) && /afprHydrate\s*=/.test(AFPR) && /afprApprove\s*=/.test(AFPR) && /afprReject\s*=/.test(AFPR))
+ok('23c. root-only gated', /admin_type[\s\S]{0,40}root/.test(AFPR) && /仅限根管理员/.test(AFPR))
+ok('23d. reads queue + approve/reject endpoints', /GET\('\/admin\/direct-receive\/fee-prepay-requests/.test(AFPR) && /\/approve'/.test(AFPR) && /\/reject'/.test(AFPR))
+ok('23e. approve Passkey uses its OWN purpose, bound to {request,seller,amount,method}', /requestPasskeyGate\('direct_pay_fee_prepay_request_approve',\s*\{[^}]*request_id[^}]*seller_id[^}]*amount_units[^}]*method/.test(AFPR.replace(/\n/g, ' ')) && !/requestPasskeyGate\('direct_pay_fee_prepay_record'/.test(AFPR))
+ok('23f. reject uses its own Passkey purpose', /requestPasskeyGate\('direct_pay_fee_prepay_reject'/.test(AFPR))
+const afprPurposes = [...AFPR.matchAll(/requestPasskeyGate\('([^']+)'/g)].map(m => m[1])
+for (const p of afprPurposes) ok(`23f. WebAuthn allowed set includes '${p}'`, allowedDecl.includes(`'${p}'`))
+ok('23g. shows request id (fpr_…) for management', has(AFPR, "t('申请 id')"))
+ok('23h. app.js routes #admin/fee-prepay-requests', /'fee-prepay-requests'[\s\S]{0,60}renderAdminFeePrepayRequests/.test(APP))
+ok('23i. dp-ops hub links #admin/fee-prepay-requests', has(FEEOPS, "'#admin/fee-prepay-requests')"))
+ok('23j. seller list also shows request id', has(FRQ, "t('申请 id')"))
+for (const k of ['平台服务费预充值申请', '确认到账并入账(真人 Passkey)', '暂无待审核申请', '申请 id']) {
+  ok(`23-i18n EN present: ${k.slice(0, 12)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
+}
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)
