@@ -124,7 +124,7 @@ window.dpDoAck = async (orderId, stage) => {
   return true
 }
 // ── 订单详情:direct_p2p 诚实边界始终显示;卖家收款说明快照【不】内联进 HTML,由 dpHydrateOrderDisclosure 在 both-acked 后才另取渲染(未 ack 时 DOM 里也没有快照)。
-window.dpOrderDisclosureHtml = (_order) => `
+window.dpOrderDisclosureHtml = (order) => `
   <div class="card" style="border:1px solid #fde68a;background:linear-gradient(135deg,#fffbeb,#fef3c7)">
     <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:8px">💸 ${t('直付订单(非托管)')}</div>
     <ul style="margin:0 0 8px;padding-left:18px;font-size:12px;line-height:1.7;color:#374151">
@@ -132,13 +132,13 @@ window.dpOrderDisclosureHtml = (_order) => `
       <li>${t('WebAZ 不托管、不担保、不退款、不代维权')}</li>
       <li>${t('卖家收款说明来自卖家自填,WebAZ 不验证付款方式或币种')}</li>
     </ul>
-    <div id="dp-order-instr">${loading$()}</div>
+    <div id="dp-order-instr" data-order-id="${escHtml(String(order && order.id || ''))}">${loading$()}</div>
   </div>`
 // ack-gated 收款说明:both-acked → 另取订单快照并展示;否则只显示"先完成 D1/D2 Passkey"的门(快照不入 DOM)。
 window.dpHydrateOrderDisclosure = async (orderId) => {
-  const box = document.getElementById('dp-order-instr')
-  if (!box) return
+  if (!window.dpInstrBox(orderId)) return
   const st = await GET(`/direct-pay/disclosure-acks/${orderId}`)
+  const box = window.dpInstrBox(orderId); if (!box) return   // async 回包后再确认当前页仍是该订单(切页后旧回包不得写 DOM)
   if (st.error) { box.innerHTML = `<div style="font-size:12px;color:#dc2626">${window.dpErrorText(st.error_code, st.error)}</div>`; return }
   if (!st.both) {
     box.innerHTML = `<div style="font-size:12px;color:#92400e;background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
@@ -147,10 +147,7 @@ window.dpHydrateOrderDisclosure = async (orderId) => {
     return
   }
   const o = await GET(`/orders/${orderId}`)
-  const snap = o && o.order ? (o.order.direct_pay_instruction_snapshot || '') : ''; const _pay = o && o.order ? window.dpPayAmountText(o.order) : ''
-  box.innerHTML = snap ? `<div style="font-size:12px;color:#374151;background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
-    ${_pay ? `<div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:4px">💸 ${escHtml(_pay)}</div>` : ''}<div style="font-size:11px;color:#9ca3af;margin-bottom:2px">${t('卖家收款说明(下单时快照)')}</div>${escHtml(snap)}<div id="dp-order-qr"></div></div>`
-    : `<div style="font-size:12px;color:#9ca3af">${t('卖家尚未设置收款说明,暂不可直付')}</div>`; if (snap && window.dpLoadOrderQr) window.dpLoadOrderQr(orderId)  // D3:ack 门后取所选账号的收款二维码(若有)
+  if (window.dpRenderPaymentInfo) window.dpRenderPaymentInfo(box, o && o.order ? o.order : null, orderId)  // PR-2:按订单状态渲染收款信息可见性(待支付=5min 自动窗口 / 其它状态=默认隐藏,需 Passkey 二次验证+风险提示)
 }
 window.dpCompleteAcksThenReveal = async (orderId) => {
   const ok = await window.dpEnsureAcks(orderId)

@@ -73,7 +73,7 @@ ok('order detail shows direct_p2p disclosures', has(APP, 'dpOrderDisclosureHtml'
 ok('disclosure HTML does NOT inline the snapshot (not in DOM pre-ack)', !/direct_pay_instruction_snapshot/.test(DP.slice(DP.indexOf('dpOrderDisclosureHtml = '), DP.indexOf('dpHydrateOrderDisclosure'))))
 ok('order detail hydrates snapshot via ack-gated path', has(APP, 'dpHydrateOrderDisclosure') && /dpHydrateOrderDisclosure\s*=/.test(DP))
 const HYD = DP.slice(DP.indexOf('dpHydrateOrderDisclosure = async'), DP.indexOf('dpCompleteAcksThenReveal = async'))
-ok('snapshot only read AFTER checking both-acked (st.both)', HYD.indexOf('st.both') < HYD.indexOf('direct_pay_instruction_snapshot') && HYD.includes('direct_pay_instruction_snapshot'))
+ok('snapshot revealed only AFTER both-acked (st.both gates the delegate call)', HYD.indexOf('st.both') < HYD.indexOf('dpRenderPaymentInfo') && HYD.includes('dpRenderPaymentInfo') && /!st\.both[\s\S]*return/.test(HYD) && /direct_pay_instruction_snapshot/.test(P('app-direct-pay-reveal.js')))
 ok('not-both-acked branch shows a "complete D1/D2" gate, not the snapshot', /!st\.both/.test(HYD) && has(HYD, 'dpCompleteAcksThenReveal') && !HYD.slice(HYD.indexOf('!st.both'), HYD.indexOf('dpCompleteAcksThenReveal') + 60).includes('direct_pay_instruction_snapshot'))
 ok('getActions offers mark_paid in direct_pay_window', /direct_pay_window/.test(APP) && /'mark_paid'/.test(APP))
 ok('handleAction routes direct_p2p gated actions to dpHandleAction', /_dpOrderRail === 'direct_p2p'.*dpHandleAction/.test(APP))
@@ -367,7 +367,7 @@ ok('20d. order QR fetched with Authorization header (owner+ack endpoint; not <im
 // app-direct-pay.js net-zero hooks that make the new module reachable
 ok('20e. rail selector renders the account-picker container + carries price data attr', has(DP, 'id="dp-account-picker"') && has(DP, 'data-amt='))
 ok('20f. dpOnRailChange loads buyer accounts when available; clears on switch', has(DP, 'dpLoadBuyerAccounts') && has(DP, "getElementById('dp-account-picker')"))
-ok('20g. order disclosure hydrate reveals QR post-ack (container + call)', has(DP, 'id="dp-order-qr"') && has(DP, 'dpLoadOrderQr'))
+ok('20g. order disclosure hydrate reveals QR post-ack (container + call in reveal module)', has(P('app-direct-pay-reveal.js'), 'id="dp-order-qr"') && has(P('app-direct-pay-reveal.js'), 'dpLoadOrderQr'))
 // app.js wiring: price passed to rail selector + account id threaded into POST /orders
 ok('20h. app.js passes price to rail selector', /dpRailSelectorHtml\(prod\.id,\s*prod\.price\)/.test(APP))
 ok('20i. app.js threads direct_receive_account_id into POST /orders (direct_p2p only)', /direct_receive_account_id:\s*\(payment_rail === 'direct_p2p'[\s\S]{0,80}dpSelectedAccountId/.test(APP))
@@ -456,8 +456,80 @@ ok('25c. no-rate currency → currency code, never fabricated', /fx !== cur/.tes
 ok("25d. amount uses '应付' (bilingual EN present)", /t\('应付'\)/.test(PAY) && /'应付'\s*:/.test(I18N))
 ok('25e. D2 (pre_confirm) ack dialog injects the confirmed amount', /pre_confirm' && _pay/.test(DP))
 ok('25f. "风险确认完成" reveal modal shows the amount', /_pay \? '💸 ' \+ _pay/.test(DP))
-ok('25g. order-detail instruction box shows persistent 应付 line', /dpPayAmountText\(o\.order\)/.test(DP) && /💸 \$\{escHtml\(_pay\)\}/.test(DP))
+ok('25g. order-detail box delegates to the visibility renderer (dpRenderPaymentInfo)', /window\.dpRenderPaymentInfo\(box,/.test(DP))
 ok('25h. timeline maps direct_pay_window → 待支付 step (not idx 0)', /direct_pay_window: 1/.test(APP) && /direct_expired_unconfirmed: 1/.test(APP))
+
+// ── 26. payment-info visibility lifecycle (PR-2): pending=5-min window+lightweight re-reveal; other states=hidden+Passkey二次验证+risk. ──
+const RVL = P('app-direct-pay-reveal.js')
+const RVLCODE = RVL.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+ok('26a. new file registered (index.html + pwa-syntax + ratchet)', has(HTML, '/app-direct-pay-reveal.js') && /node --check src\/pwa\/public\/app-direct-pay-reveal\.js/.test(PKG) && /'src\/pwa\/public\/app-direct-pay-reveal\.js'\s*:/.test(RATCHET))
+ok('26b. 30-minute window constant', /DP_REVEAL_MS = 30 \* 60 \* 1000/.test(RVL))
+ok('26b2. order-scoped box guard (dpInstrBox checks data-order-id === orderId); container binds data-order-id', /dpInstrBox = \(orderId\) =>[\s\S]{0,140}data-order-id'\) === String\(orderId\)/.test(RVL) && /id="dp-order-instr" data-order-id=/.test(DP))
+ok('26b3. show/hide acquire the box ONLY via dpInstrBox (getElementById only inside the guard, once)', /const box = window\.dpInstrBox\(orderId\)/.test(RVL) && (RVL.match(/document\.getElementById\('dp-order-instr'\)/g) || []).length === 1)
+ok('26b4. render GUARDS current order BEFORE clearing timers (stale hydrate cannot wipe current timer)', /dpRenderPaymentInfo = \([^)]*\) => \{[\s\S]{0,140}dpInstrBox\(orderId\)[\s\S]{0,80}dpClearAllRevealTimers/.test(RVL))
+ok('26c. pending (direct_pay_window) → auto-reveal window, lightweight re-reveal', /status === 'direct_pay_window'.*dpShowPaymentInfo\(order, orderId, true\)/.test(RVLCODE.replace(/\n/g, ' ')) && /dpReShowPaymentInfo/.test(RVL))
+ok('26d. re-show re-dispatches by FRESH status (dpRenderPaymentInfo), no inline lightweight bypass / Passkey', /dpReShowPaymentInfo = async[\s\S]{0,300}dpRenderPaymentInfo\(box, ord, orderId\)/.test(RVL) && !/dpReShowPaymentInfo[\s\S]{0,300}dpShowPaymentInfo\(ord, orderId, true\)/.test(RVL) && !/dpReShowPaymentInfo[\s\S]{0,300}requestPasskeyGate/.test(RVL))
+ok('26e. non-pending → hidden by default (dpHidePaymentInfo, gated button)', /else window\.dpHidePaymentInfo\(order, orderId, false\)/.test(RVL) && /dpGatedRevealPaymentInfo/.test(RVL))
+ok('26f. gated re-view requires Passkey 二次验证 (direct_pay_payment_info_reveal purpose)', /requestPasskeyGate\('direct_pay_payment_info_reveal'/.test(RVL))
+ok('26g. purpose whitelisted in webauthn allow-set', /'direct_pay_payment_info_reveal'/.test(readFileSync('src/pwa/routes/webauthn.ts', 'utf8')))
+ok('26h. state-aware risk warning: void order → do-not-pay', /dpIsVoidOrder/.test(RVL) && /请【勿再付款】/.test(RVL))
+ok('26i. void-state list covers cancelled + expired + disputed + refunded', /'cancelled'/.test(RVL) && /'expired'/.test(RVL) && /'disputed'/.test(RVL) && /'refunded_full'/.test(RVL))
+ok('26j. timer cleanup on hide/re-render (no leaked intervals)', /dpClearRevealTimer/.test(RVL) && /clearInterval/.test(RVL) && /clearTimeout/.test(RVL))
+ok('26k. honesty: comment states this is client-side display/consent, not a new server boundary', /并非】新的服务器机密边界/.test(RVL))
+for (const k of ['自动隐藏倒计时', '重新显示', '查看收款信息(需 Passkey 验证)', '继续(需 Passkey)']) {
+  ok(`26-i18n EN present: ${k.slice(0, 10)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
+}
+
+// ── 27. BEHAVIORAL (P1 order-isolation): a stale reveal timer / re-show must NOT write another order's panel. ──
+//    Execute the reveal module against a fake DOM + captured timers; simulate A→B navigation and fire A's stale timers.
+{
+  const src = readFileSync('src/pwa/public/app-direct-pay-reveal.js', 'utf8')
+  const mkEl = (oid: string) => { let h = ''; return { getAttribute: (k: string) => (k === 'data-order-id' ? oid : null), get innerHTML() { return h }, set innerHTML(v: string) { h = v }, querySelector: () => ({ textContent: '' }) } }
+  const cur: { el: ReturnType<typeof mkEl> | null } = { el: null }
+  const doc = { getElementById: (id: string) => (id === 'dp-order-instr' ? cur.el : null) }
+  const win: any = { dpPayAmountText: (o: any) => 'PAY ' + (o ? o.id : ''), dpLoadOrderQr: () => {} }
+  const timers: Record<string, () => void> = {}; let seq = 0
+  const sT = (fn: () => void) => { const id = 'to' + (++seq); timers[id] = fn; return id }
+  const sI = (fn: () => void) => { const id = 'iv' + (++seq); timers[id] = fn; return id }
+  const cX = (id: string) => { delete timers[id] }
+  const ordersFix: Record<string, any> = {
+    A: { id: 'A', payment_rail: 'direct_p2p', status: 'direct_pay_window', direct_pay_instruction_snapshot: 'ACCOUNT-A', total_amount: 30 },
+    B: { id: 'B', payment_rail: 'direct_p2p', status: 'direct_pay_window', direct_pay_instruction_snapshot: 'ACCOUNT-B', total_amount: 50 },
+  }
+  const GETfix = async (p: string) => ({ order: ordersFix[(p.match(/orders\/(\w+)/) || [])[1] || ''] })
+  new Function('window', 'document', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'GET', 'escHtml', 't', 'confirmModal', 'requestPasskeyGate', src)(
+    win, doc, sT, sI, cX, cX, GETfix, (x: string) => x, (x: string) => x, async () => true, async () => 'tok')
+
+  cur.el = mkEl('A'); win.dpShowPaymentInfo(ordersFix.A, 'A', true)
+  ok('27a. correct order account shown on its own page', /ACCOUNT-A/.test(cur.el.innerHTML))
+  const aTimer = win._dpRevealTimers['A']
+  cur.el = mkEl('B'); cur.el.innerHTML = 'B-PANEL'                         // navigate to order B (fresh #dp-order-instr bound to B)
+  timers[aTimer.to]()                                                     // A's stale hide-timer fires
+  ok('27b. stale A hide-timer does NOT overwrite B panel', cur.el.innerHTML === 'B-PANEL')
+  if (timers[aTimer.iv]) timers[aTimer.iv]()                              // A's stale countdown interval fires
+  ok('27c. stale A countdown interval does NOT touch B panel', cur.el.innerHTML === 'B-PANEL')
+  win.dpReShowPaymentInfo('A')                                           // A re-show while on page B → guard bails before GET
+  ok('27d. A re-show does NOT render A account into B page', cur.el.innerHTML === 'B-PANEL' && !/ACCOUNT-A/.test(cur.el.innerHTML))
+  win.dpRenderPaymentInfo(cur.el, ordersFix.B, 'B')                       // rendering B clears stale timers + shows B
+  ok('27e. new-order render clears stale timers + shows B account', !win._dpRevealTimers['A'] && /ACCOUNT-B/.test(cur.el.innerHTML))
+
+  // P1: order A goes cancelled while its lightweight "重新显示" button is still on the (unrefreshed) page.
+  cur.el = mkEl('A'); win.dpHidePaymentInfo(ordersFix.A, 'A', true)       // A hidden with the lightweight re-show button (was pending)
+  ok('27f-pre. lightweight re-show button present while pending', /重新显示/.test(cur.el.innerHTML))
+  ordersFix.A.status = 'cancelled'                                        // server-side state change, page not refreshed
+  await win.dpReShowPaymentInfo('A')                                      // clicking the stale button re-fetches + re-dispatches by fresh status
+  ok('27f. re-show on a now-cancelled order does NOT lightweight-reveal the account', !/ACCOUNT-A/.test(cur.el.innerHTML))
+  ok('27g. instead it drops to the Passkey-gated re-view entry', /查看收款信息/.test(cur.el.innerHTML) && /dpGatedRevealPaymentInfo/.test(cur.el.innerHTML))
+  ordersFix.A.status = 'direct_pay_window'                                // restore fixture
+
+  // P1: order B shown with a live auto-hide timer; order A's stale hydrate returns late and must NOT clear B's timer.
+  cur.el = mkEl('B'); win.dpShowPaymentInfo(ordersFix.B, 'B', true)
+  const bTimer = win._dpRevealTimers['B']
+  ok('27h-pre. B revealed with a live auto-hide timer', !!bTimer && /ACCOUNT-B/.test(cur.el.innerHTML))
+  win.dpRenderPaymentInfo(mkEl('A'), ordersFix.A, 'A')                    // stale hydrate for A while page is B
+  ok('27h. stale A render does NOT clear B auto-hide timer (info still auto-hides)', win._dpRevealTimers['B'] === bTimer)
+  ok('27i. stale A render does NOT overwrite B panel', /ACCOUNT-B/.test(cur.el.innerHTML))
+}
 
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)
