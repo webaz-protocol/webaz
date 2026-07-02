@@ -26,7 +26,7 @@ window.dpShowPaymentInfo = (order, orderId, lightweight) => {
   if (!snap) { box.innerHTML = `<div style="font-size:12px;color:#9ca3af">${t('卖家尚未设置收款说明,暂不可直付')}</div>`; return }
   box.innerHTML = `<div style="font-size:12px;color:#374151;background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
     ${pay ? `<div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:4px">💸 ${escHtml(pay)}</div>` : ''}
-    <div style="font-size:11px;color:#9ca3af;margin-bottom:2px">${t('卖家收款说明(下单时快照)')}</div>${escHtml(snap)}<div id="dp-order-qr"></div>
+    <div style="font-size:11px;color:#9ca3af;margin-bottom:2px">${t('卖家收款说明(下单时快照)')}</div>${escHtml(snap)}<div id="dp-order-qr"></div>${lightweight && window.dpMemoInputHtml ? window.dpMemoInputHtml(orderId) : ''}
     <div style="font-size:10px;color:#9ca3af;margin-top:6px">${t('自动隐藏倒计时')}: <span id="dp-reveal-countdown">30:00</span></div></div>`
   if (window.dpLoadOrderQr) window.dpLoadOrderQr(orderId)
   const end = Date.now() + window.DP_REVEAL_MS

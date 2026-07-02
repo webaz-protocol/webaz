@@ -166,7 +166,7 @@ window.dpHandleAction = async (orderId, action) => {
   catch (e) { await window.dpPromptRegisterPasskey(e && e.message); return }
   show('info', `<span class="spinner"></span>${t('处理中...')}`)
   const path = action === 'confirm_in_person' ? `/orders/${orderId}/confirm-in-person` : `/orders/${orderId}/action`
-  const body = action === 'confirm_in_person' ? { webauthn_token: token } : { action, webauthn_token: token }
+  const body = action === 'confirm_in_person' ? { webauthn_token: token } : { action, webauthn_token: token, ...(action === 'mark_paid' && window.dpReadMemo ? { notes: window.dpReadMemo(orderId) } : {}) }
   const r = await POST(path, body)
   if (r.error) { show('error', window.dpErrorText(r.error_code, r.error)); return }
   show('success', t('操作成功'))
