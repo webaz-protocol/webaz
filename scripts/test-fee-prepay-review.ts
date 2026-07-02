@@ -39,9 +39,12 @@ const requireRootAdmin = (req: Request, res: Response): Record<string, unknown> 
   if (req.headers['x-role'] !== 'root') { res.status(403).json({ error: 'root only' }); return null }
   return { id: 'root1', admin_type: 'root' }
 }
-const consumeGateToken = (_u: string, token: string | undefined, _p: string, validate: (d: unknown) => boolean): { ok: boolean; reason?: string } => {
+// purpose-aware fake gate: the token carries the purpose it was minted for; consume rejects a purpose mismatch
+// (models the real WebAuthn token binding — a token for one purpose can't be replayed on an endpoint gating another).
+const consumeGateToken = (_u: string, token: string | undefined, purpose: string, validate: (d: unknown) => boolean): { ok: boolean; reason?: string } => {
   if (!token) return { ok: false, reason: 'missing gate token' }
-  let d: unknown; try { d = JSON.parse(token) } catch { return { ok: false, reason: 'bad token' } }
+  let d: { _purpose?: string } | null; try { d = JSON.parse(token) } catch { return { ok: false, reason: 'bad token' } }
+  if (!d || d._purpose !== purpose) return { ok: false, reason: 'purpose mismatch' }
   return validate(d) ? { ok: true } : { ok: false, reason: 'purpose_data mismatch' }
 }
 const app = express(); app.use(express.json())
@@ -52,7 +55,8 @@ const call = async (method: string, path: string, root: boolean, body?: unknown)
   let j: any = null; try { j = await r.json() } catch {}
   return { status: r.status, json: j }
 }
-const tok = (o: object): string => JSON.stringify(o)
+const tok = (purpose: string, o: object): string => JSON.stringify({ _purpose: purpose, ...o })
+const APPROVE_P = 'direct_pay_fee_prepay_request_approve', REJECT_P = 'direct_pay_fee_prepay_reject', MANUAL_P = 'direct_pay_fee_prepay_record'
 const feeRows = (): number => (db.prepare('SELECT COUNT(*) n FROM direct_pay_fee_payments').get() as { n: number }).n
 const avail = (): number => Number(getDirectPayFeeAccount(db, 's1').availableUnits)
 const APPROVE = `/api/admin/direct-receive/fee-prepay-requests/${reqId}/approve`
@@ -66,12 +70,16 @@ try {
 
   // 2. approve Passkey binding
   ok('2a. approve without token → 403', (await call('POST', APPROVE, true, { method: 'usdc' })).status === 403)
-  ok('2b. token bound to WRONG amount → 403', (await call('POST', APPROVE, true, { method: 'usdc', webauthn_token: tok({ request_id: reqId, seller_id: 's1', amount_units: 999, method: 'usdc' }) })).status === 403)
-  ok('2c. token method != body method → 403', (await call('POST', APPROVE, true, { method: 'usdc', webauthn_token: tok({ request_id: reqId, seller_id: 's1', amount_units: 50_000_000, method: 'fiat' }) })).status === 403)
+  ok('2b. token bound to WRONG amount → 403', (await call('POST', APPROVE, true, { method: 'usdc', webauthn_token: tok(APPROVE_P, { request_id: reqId, seller_id: 's1', amount_units: 999, method: 'usdc' }) })).status === 403)
+  ok('2c. token method != body method → 403', (await call('POST', APPROVE, true, { method: 'usdc', webauthn_token: tok(APPROVE_P, { request_id: reqId, seller_id: 's1', amount_units: 50_000_000, method: 'fiat' }) })).status === 403)
+  // cross-endpoint isolation: an approve-purpose token cannot be replayed on the manual /fee-prepay endpoint (different purpose)
+  ok('2e. approve token CANNOT hit manual /fee-prepay (purpose isolated) → 403', (await call('POST', '/api/admin/direct-receive/fee-prepay', true, { seller_id: 's1', amount_units: 50_000_000, method: 'usdc', evidence_ref: '', webauthn_token: tok(APPROVE_P, { request_id: reqId, seller_id: 's1', amount_units: 50_000_000, method: 'usdc' }) })).status === 403)
+  // and a manual-record token cannot approve an fpr request
+  ok('2f. manual token CANNOT approve fpr → 403', (await call('POST', APPROVE, true, { method: 'usdc', webauthn_token: tok(MANUAL_P, { request_id: reqId, seller_id: 's1', amount_units: 50_000_000, method: 'usdc' }) })).status === 403)
   ok('2d. approve still moved NO money after failed gates', feeRows() === 0 && avail() === 0)
 
   // 3. correct approve → atomic credit
-  const goodTok = tok({ request_id: reqId, seller_id: 's1', amount_units: 50_000_000, method: 'usdc' })
+  const goodTok = tok(APPROVE_P, { request_id: reqId, seller_id: 's1', amount_units: 50_000_000, method: 'usdc' })
   const appr = await call('POST', APPROVE, true, { method: 'usdc', webauthn_token: goodTok })
   ok('3a. approve → 200 + payment id', appr.status === 200 && appr.json?.ok === true && !!appr.json?.id)
   ok('3b. request status=approved + resulting_payment_id linked', (() => { const r = db.prepare('SELECT status, resulting_payment_id p FROM direct_pay_fee_prepay_requests WHERE id=?').get(reqId) as any; return r.status === 'approved' && r.p === appr.json.id })())
@@ -88,9 +96,9 @@ try {
   const rid2 = (req2 as any).request.id
   const REJECT = `/api/admin/direct-receive/fee-prepay-requests/${rid2}/reject`
   ok('5a. reject without token → 403', (await call('POST', REJECT, true, {})).status === 403)
-  ok('5b. reject with token → 200', (await call('POST', REJECT, true, { webauthn_token: tok({ request_id: rid2 }) })).status === 200)
+  ok('5b. reject with token → 200', (await call('POST', REJECT, true, { webauthn_token: tok(REJECT_P, { request_id: rid2 }) })).status === 200)
   ok('5c. status=rejected, no money moved by reject', (db.prepare('SELECT status FROM direct_pay_fee_prepay_requests WHERE id=?').get(rid2) as any).status === 'rejected' && feeRows() === 1)
-  ok('5d. reject non-pending → 400', (await call('POST', REJECT, true, { webauthn_token: tok({ request_id: rid2 }) })).status === 400)
+  ok('5d. reject non-pending → 400', (await call('POST', REJECT, true, { webauthn_token: tok(REJECT_P, { request_id: rid2 }) })).status === 400)
 
   if (fail > 0) { console.error(`\n❌ fee prepay review FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exitCode = 1 }
   else console.log(`✅ fee prepay review (admin): ROOT + Passkey bound to {request,seller,amount,method} (wrong amount/method → 403) · approve atomic-credits once (payment + balance + linked) · double-approve no-op · reject pending only · no money before approve\n  ✅ pass ${pass}`)

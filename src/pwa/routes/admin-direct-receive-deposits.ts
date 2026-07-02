@@ -212,8 +212,10 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
   })
 
   // POST /api/admin/direct-receive/fee-prepay-requests/:id/approve — ROOT + Passkey【确认真实到账 → 入账】(唯一动钱)。
-  //   purpose_data 绑 request_id + seller_id + amount_units + method(把入账金额/对象钉进 Passkey,防替换)。原子:approved + recordFeePrepay + 关联 payment。
-  app.post('/api/admin/direct-receive/fee-prepay-requests/:id/approve', gatedIngress('direct_pay_fee_prepay_record',
+  //   ⚠️ 独立 purpose 'direct_pay_fee_prepay_request_approve'(≠ 手动入账的 'direct_pay_fee_prepay_record')——
+  //   否则"批准申请"的 token 能被拿去打手动 /fee-prepay 记一笔【未关联 fpr】的预充值,原申请仍 pending → 双入账/断链。
+  //   purpose_data 绑 request_id + seller_id + amount_units + method(把入账金额/对象钉进 Passkey)。原子:approved + recordFeePrepay + 关联 payment。
+  app.post('/api/admin/direct-receive/fee-prepay-requests/:id/approve', gatedIngress('direct_pay_fee_prepay_request_approve',
     (req) => (data) => { const d = data as { request_id?: string; seller_id?: string; amount_units?: number; method?: string } | null
       const fr = getFeePrepayRequest(db, str(req.params.id))
       return !!d && !!fr && d.request_id === str(req.params.id) && d.seller_id === fr.seller_id && Number(d.amount_units) === Number(fr.amount_units) && str(d.method) === str(req.body?.method) },

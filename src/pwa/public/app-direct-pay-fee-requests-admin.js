@@ -51,7 +51,7 @@ window.afprApprove = async (id) => {
   if (!req) { if (typeof toast$ === 'function') toast$(t('该申请已不在待审核队列'), 'error'); window.afprHydrate(); return }
   const method = document.getElementById('afpr-method-' + id)?.value || 'usdc'
   let token
-  try { token = await requestPasskeyGate('direct_pay_fee_prepay_record', { request_id: id, seller_id: req.seller_id, amount_units: req.amount_units, method }) }
+  try { token = await requestPasskeyGate('direct_pay_fee_prepay_request_approve', { request_id: id, seller_id: req.seller_id, amount_units: req.amount_units, method }) }
   catch (e) { if (typeof toast$ === 'function') toast$((e && e.message ? e.message + ' — ' : '') + t('需先注册 Passkey'), 'error'); return }
   const res = await POST('/admin/direct-receive/fee-prepay-requests/' + id + '/approve', { method, note: null, webauthn_token: token })
   if (res.error) { if (typeof toast$ === 'function') toast$(res.error || t('入账失败'), 'error'); return }

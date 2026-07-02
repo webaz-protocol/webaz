@@ -424,7 +424,7 @@ ok('23a. file in check:pwa-syntax + ratchet', /node --check src\/pwa\/public\/ap
 ok('23b. render + hydrate + approve + reject defined', /renderAdminFeePrepayRequests\s*=/.test(AFPR) && /afprHydrate\s*=/.test(AFPR) && /afprApprove\s*=/.test(AFPR) && /afprReject\s*=/.test(AFPR))
 ok('23c. root-only gated', /admin_type[\s\S]{0,40}root/.test(AFPR) && /仅限根管理员/.test(AFPR))
 ok('23d. reads queue + approve/reject endpoints', /GET\('\/admin\/direct-receive\/fee-prepay-requests/.test(AFPR) && /\/approve'/.test(AFPR) && /\/reject'/.test(AFPR))
-ok('23e. approve Passkey bound to {request,seller,amount,method}', /requestPasskeyGate\('direct_pay_fee_prepay_record',\s*\{[^}]*request_id[^}]*seller_id[^}]*amount_units[^}]*method/.test(AFPR.replace(/\n/g, ' ')))
+ok('23e. approve Passkey uses its OWN purpose, bound to {request,seller,amount,method}', /requestPasskeyGate\('direct_pay_fee_prepay_request_approve',\s*\{[^}]*request_id[^}]*seller_id[^}]*amount_units[^}]*method/.test(AFPR.replace(/\n/g, ' ')) && !/requestPasskeyGate\('direct_pay_fee_prepay_record'/.test(AFPR))
 ok('23f. reject uses its own Passkey purpose', /requestPasskeyGate\('direct_pay_fee_prepay_reject'/.test(AFPR))
 const afprPurposes = [...AFPR.matchAll(/requestPasskeyGate\('([^']+)'/g)].map(m => m[1])
 for (const p of afprPurposes) ok(`23f. WebAuthn allowed set includes '${p}'`, allowedDecl.includes(`'${p}'`))

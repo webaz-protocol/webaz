@@ -737,7 +737,7 @@
     },
     "/api/admin/direct-receive/fee-prepay-requests/:id/approve": {
       "post": {
-        "summary": "purpose_data 绑 request_id + seller_id + amount_units + method(把入账金额/对象钉进 Passkey,防替换)。原子:approved + recordFeePrepay + 关联 payment。",
+        "summary": "purpose_data 绑 request_id + seller_id + amount_units + method(把入账金额/对象钉进 Passkey)。原子:approved + recordFeePrepay + 关联 payment。",
         "tags": [
           "admin"
         ],
