@@ -448,5 +448,16 @@ ok('24f. order detail 金额 + buyer/seller lists route through orderAmountHtml'
 ok("24g. '应付' has EN entry (bilingual)", /'应付'\s*:/.test(I18N))
 ok('24h. legacy WAZ→$ usdHint helper fully removed', !has(APP, 'function usdHint(') && !has(APP, 'function wazToUsd('))
 
+// ── 25. payment-moment UX (PR-1): 待支付 timeline stage + concrete 应付 amount at the decision touchpoints. ──
+const PAY = P('app-direct-pay-pay.js')
+ok('25a. new file registered (index.html + pwa-syntax + ratchet)', has(HTML, '/app-direct-pay-pay.js') && /node --check src\/pwa\/public\/app-direct-pay-pay\.js/.test(PKG) && /'src\/pwa\/public\/app-direct-pay-pay\.js'\s*:/.test(RATCHET))
+ok('25b. dpPayAmountText uses seller-account currency (dpFxInCurrency), NOT region _fxLocal', /window\.dpPayAmountText\s*=/.test(PAY) && /direct_pay_account_snapshot/.test(PAY) && /dpFxInCurrency/.test(PAY) && !/_fxLocal/.test(PAY))
+ok('25c. no-rate currency → currency code, never fabricated', /fx !== cur/.test(PAY))
+ok("25d. amount uses '应付' (bilingual EN present)", /t\('应付'\)/.test(PAY) && /'应付'\s*:/.test(I18N))
+ok('25e. D2 (pre_confirm) ack dialog injects the confirmed amount', /pre_confirm' && _pay/.test(DP))
+ok('25f. "风险确认完成" reveal modal shows the amount', /_pay \? '💸 ' \+ _pay/.test(DP))
+ok('25g. order-detail instruction box shows persistent 应付 line', /dpPayAmountText\(o\.order\)/.test(DP) && /💸 \$\{escHtml\(_pay\)\}/.test(DP))
+ok('25h. timeline maps direct_pay_window → 待支付 step (not idx 0)', /direct_pay_window: 1/.test(APP) && /direct_expired_unconfirmed: 1/.test(APP))
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)

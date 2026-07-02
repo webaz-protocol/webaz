@@ -12218,7 +12218,7 @@ function orderStageTimeline(order, history) {
   // "当前" = 正在等待的下一阶段（不是已完成的最后阶段）
   // created → 等付款；paid → 等接单；accepted → 等发货；shipped/in_transit → 等送达；
   // delivered → 等买家确认；confirmed/completed → 全部完成
-  const statusToIdx = { created: 1, paid: 2, accepted: 3, shipped: 4, picked_up: 4, in_transit: 4, delivered: 5, confirmed: 6, completed: 6 }
+  const statusToIdx = { created: 1, direct_pay_window: 1, direct_expired_unconfirmed: 1, paid: 2, accepted: 3, shipped: 4, picked_up: 4, in_transit: 4, delivered: 5, confirmed: 6, completed: 6 }
   let currentIdx = statusToIdx[order.status] ?? 0
 
   const dot = (s, i) => {

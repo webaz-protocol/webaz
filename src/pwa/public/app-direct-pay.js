@@ -82,9 +82,9 @@ window.dpAfterCreate = async (res) => {
   }
   // 两次披露已 ack —— 收款说明【不】来自 create 响应(后端在 both-acked 前不下发);现在才 GET 订单读取 redaction-gated 快照。
   const o = await GET(`/orders/${orderId}`)
-  const instr = o && o.order ? (o.order.direct_pay_instruction_snapshot || '') : ''
+  const instr = o && o.order ? (o.order.direct_pay_instruction_snapshot || '') : ''; const _pay = o && o.order ? window.dpPayAmountText(o.order) : ''
   await confirmModal(
-    `${t('风险确认完成 · 这是卖家的收款说明(下单时快照,WebAZ 不验证)')}\n\n${instr}\n\n${t('请按此付款,然后在订单页标记"我已付款"')}`,
+    `${t('风险确认完成 · 这是卖家的收款说明(下单时快照,WebAZ 不验证)')}\n\n${_pay ? '💸 ' + _pay + '\n\n' : ''}${instr}\n\n${t('请按此付款,然后在订单页标记"我已付款"')}`,
     t('我知道了'), {})
   setTimeout(() => navigate(`#order/${orderId}`), 300)
 }
@@ -92,14 +92,14 @@ window.dpAfterCreate = async (res) => {
 window.dpEnsureAcks = async (orderId) => {
   const st = await GET(`/direct-pay/disclosure-acks/${orderId}`)
   if (st.error) { if (typeof toast$ === 'function') toast$(window.dpErrorText(st.error_code, st.error), 'error'); return false }
-  const disc = st.disclosures || {}
+  const disc = st.disclosures || {}; let _pay = ''; try { const _od = await GET(`/orders/${orderId}`); if (_od && _od.order) _pay = window.dpPayAmountText(_od.order) } catch {}
   const stages = [
     { key: 'pre_select', acked: st.acked?.pre_select, text: disc.pre_select },
     { key: 'pre_confirm', acked: st.acked?.pre_confirm, text: disc.pre_confirm },
   ]
   for (const s of stages) {
     if (s.acked) continue
-    const body = s.text ? (window._lang === 'en' ? s.text.en : s.text.zh) : t('风险披露')
+    const body = (s.text ? (window._lang === 'en' ? s.text.en : s.text.zh) : t('风险披露')) + (s.key === 'pre_confirm' && _pay ? `\n\n💸 ${_pay}` : '')
     const go = await confirmModal(`${body}\n\n${t('我已阅读并理解上述风险')}`, t('确认(需 Passkey)'), { danger: true })
     if (!go) return false
     const ok = await window.dpDoAck(orderId, s.key)
@@ -147,9 +147,9 @@ window.dpHydrateOrderDisclosure = async (orderId) => {
     return
   }
   const o = await GET(`/orders/${orderId}`)
-  const snap = o && o.order ? (o.order.direct_pay_instruction_snapshot || '') : ''
+  const snap = o && o.order ? (o.order.direct_pay_instruction_snapshot || '') : ''; const _pay = o && o.order ? window.dpPayAmountText(o.order) : ''
   box.innerHTML = snap ? `<div style="font-size:12px;color:#374151;background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
-    <div style="font-size:11px;color:#9ca3af;margin-bottom:2px">${t('卖家收款说明(下单时快照)')}</div>${escHtml(snap)}<div id="dp-order-qr"></div></div>`
+    ${_pay ? `<div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:4px">💸 ${escHtml(_pay)}</div>` : ''}<div style="font-size:11px;color:#9ca3af;margin-bottom:2px">${t('卖家收款说明(下单时快照)')}</div>${escHtml(snap)}<div id="dp-order-qr"></div></div>`
     : `<div style="font-size:12px;color:#9ca3af">${t('卖家尚未设置收款说明,暂不可直付')}</div>`; if (snap && window.dpLoadOrderQr) window.dpLoadOrderQr(orderId)  // D3:ack 门后取所选账号的收款二维码(若有)
 }
 window.dpCompleteAcksThenReveal = async (orderId) => {
