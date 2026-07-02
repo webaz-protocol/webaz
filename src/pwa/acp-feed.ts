@@ -22,6 +22,7 @@
  * 接线:src/pwa/routes/public-utils.ts → GET /.well-known/webaz-acp-feed.json (+ /api/agent/acp-feed)。
  */
 import type Database from 'better-sqlite3'
+import { displayCurrency } from '../currency.js'  // agent-facing 币种统一 WAZ,遗留 'DCP' 读时归一化(绝不外泄 DCP)
 
 const BASE = 'https://webaz.xyz'
 
@@ -81,7 +82,7 @@ export function buildAcpProductFeed(db: Database.Database, opts: { limit?: numbe
       description: plainText(p.description, 5000),              // spec: plain text, max 5000
       url: `${BASE}/#order-product/${p.id}`,                    // 商品详情页(SPA hash,200)
       // price: spec = Number + ISO 4217 code。WAZ 非 ISO 4217 → 见 feed 级 _disclosures.currency
-      price: { amount: Number(p.price), currency: p.currency || 'WAZ' },
+      price: { amount: Number(p.price), currency: displayCurrency(p.currency) },
       availability: availability(p.stock),
       is_digital: p.product_type === 'digital',
       seller_name: (p.seller_name || p.seller_id).slice(0, 70),
@@ -123,7 +124,7 @@ export function buildAcpProductFeed(db: Database.Database, opts: { limit?: numbe
     },
     _disclosures: {
       phase: 'pre-launch',
-      currency: "Each item's price.currency is the protocol's SIMULATED pre-launch internal unit (WAZ, or legacy 'DCP'), NOT an ISO 4217 fiat currency. No real money is involved.",
+      currency: "Each item's price.currency is the protocol's SIMULATED pre-launch internal unit, always emitted as WAZ (legacy internal-code rows are normalized to WAZ on read), NOT an ISO 4217 fiat currency. No real money is involved.",
       checkout: 'is_eligible_checkout is false for every item: ACP checkout is not yet wired. Products are DISCOVERABLE via ACP, not yet PURCHASABLE via ACP. Native WebAZ checkout + escrow + state machine govern real purchases (see RFC-015).',
     },
     product_count: products.length,
