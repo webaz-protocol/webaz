@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (717 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (721 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -118,6 +118,10 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/payment-methods` | 🔐 | 👑 |  | src/pwa/routes/payments-governance.ts:142 |
 | DELETE | `/api/admin/payment-methods/:id` | 🔐 | 👑 |  | src/pwa/routes/payments-governance.ts:213 |
 | PUT | `/api/admin/payment-methods/:id` | 🔐 | 👑 |  | src/pwa/routes/payments-governance.ts:173 |
+| GET | `/api/admin/platform-receive-accounts` | 🔐 | 👑 | ── list(ROOT 读;含 inactive + qr_data_uri)── | src/pwa/routes/platform-receive-accounts.ts:77 |
+| POST | `/api/admin/platform-receive-accounts` | 🔐 | 👑 | ── add(ROOT + Passkey)── | src/pwa/routes/platform-receive-accounts.ts:83 |
+| DELETE | `/api/admin/platform-receive-accounts/:id` | 🔐 | 👑 | ── deactivate(ROOT + Passkey + 存在性)── | src/pwa/routes/platform-receive-accounts.ts:106 |
+| PUT | `/api/admin/platform-receive-accounts/:id` | 🔐 | 👑 | ── update(ROOT + Passkey + 存在性)── | src/pwa/routes/platform-receive-accounts.ts:93 |
 | GET | `/api/admin/products` | 🔐 | 👑 | ─── 商品 列表 + 强制下架 ─────────────────────────────── | src/pwa/routes/admin-catalog.ts:53 |
 | POST | `/api/admin/products/:id/force-delist` | 🔐 | 👑 |  | src/pwa/routes/admin-catalog.ts:65 |
 | GET | `/api/admin/protocol-kpi` | 🔐 | 👑 |  | src/pwa/routes/admin-analytics.ts:142 |

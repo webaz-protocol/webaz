@@ -256,6 +256,21 @@ export function initDatabase(): Database.Database {
       updated_at    TEXT DEFAULT (datetime('now'))
     );
 
+    -- 平台(WebAZ)收款方式(admin 管理,可多个 active):卖家申请充值【平台服务费】时看到、据此线下付款。
+    -- ⚠️ 这是【平台侧】收款配置,不是卖家账号。改它 = 改平台收款流向 → 端点 root + Passkey 门。
+    --   instruction 是平台公开收款明细,给卖家看(非披露门)。qr 内联存(admin 精选、少量;写时 validateQrDataUri 校验 png/webp≤64KB)。
+    CREATE TABLE IF NOT EXISTS platform_receive_accounts (
+      id            TEXT PRIMARY KEY,
+      label         TEXT,                          -- 短标签(如 "PayNow-主" / "USDC-Base")
+      method        TEXT,                          -- 收款方式(PayNow / Bank / USDC…)
+      currency      TEXT,                          -- 币种(卖家据此付)
+      instruction   TEXT NOT NULL,                 -- 平台收款明细(账号 / 钱包地址 / 链接),展示给卖家
+      qr_data_uri   TEXT,                          -- 可选收款码,内联 data:image/(png|webp);base64(写时校验;≤64KB)
+      status        TEXT NOT NULL DEFAULT 'active',-- active | inactive
+      created_at    TEXT DEFAULT (datetime('now')),
+      updated_at    TEXT DEFAULT (datetime('now'))
+    );
+
     -- 直付收款二维码图(Phase C):卖家收款码原始字节。【不可变、按内容寻址(per-seller)】—— ref = sha256(bytes),
     -- replace = 插新行,旧行永不改/删(触发器强制),这样订单可在建单时快照 (ref, seller_id) 并在 D1/D2 ack 后取回【当时那一版】QR。
     -- ⚠️ 主键 = (ref, seller_id):内容寻址【按卖家隔离】。两个卖家上传【相同】字节时各得一行(否则 INSERT OR IGNORE

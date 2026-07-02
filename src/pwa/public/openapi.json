@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (717 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (721 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -1366,6 +1366,54 @@
       },
       "put": {
         "summary": "PUT /api/admin/payment-methods/:id",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/platform-receive-accounts": {
+      "get": {
+        "summary": "── list(ROOT 读;含 inactive + qr_data_uri)──",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "── add(ROOT + Passkey)──",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/platform-receive-accounts/:id": {
+      "delete": {
+        "summary": "── deactivate(ROOT + Passkey + 存在性)──",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "summary": "── update(ROOT + Passkey + 存在性)──",
         "tags": [
           "admin"
         ],

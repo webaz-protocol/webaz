@@ -382,5 +382,24 @@ for (const k of ['选择卖家收款方式', '卖家按此收款', '收款明细
   ok(`20-i18n EN present: ${k.slice(0, 12)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
 }
 
+// ── 21. platform receive accounts admin UI (new app-platform-receive-accounts.js) ──
+const PRA = P('app-platform-receive-accounts.js')
+const PRACODE = PRA.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+ok('21. index.html loads app-platform-receive-accounts.js before app.js', has(HTML, '/app-platform-receive-accounts.js') && HTML.indexOf('/app-platform-receive-accounts.js') < HTML.indexOf('/app.js'))
+ok('21a. file in check:pwa-syntax + ratchet', /node --check src\/pwa\/public\/app-platform-receive-accounts\.js/.test(PKG) && /'src\/pwa\/public\/app-platform-receive-accounts\.js'\s*:/.test(RATCHET))
+ok('21b. render + hydrate + CRUD handlers defined', /renderAdminPlatformReceiveAccounts\s*=/.test(PRA) && /praHydrate\s*=/.test(PRA) && /praAdd\s*=/.test(PRA) && /praUpdate\s*=/.test(PRA) && /praDeactivate\s*=/.test(PRA))
+ok('21c. root-only gated render', /admin_type[\s\S]{0,40}root/.test(PRA) && /仅限根管理员/.test(PRA))
+ok('21d. hits admin platform-receive endpoints (GET/POST/PUT/DELETE)', /GET\('\/admin\/platform-receive-accounts'\)/.test(PRA) && /POST\('\/admin\/platform-receive-accounts'/.test(PRA) && /PUT\('\/admin\/platform-receive-accounts\/'/.test(PRA) && /api\('DELETE', '\/admin\/platform-receive-accounts\/'/.test(PRA))
+ok('21e. all writes use live Passkey (platform_receive_account_manage)', has(PRA, "requestPasskeyGate('platform_receive_account_manage'"))
+const praPurposes = [...PRA.matchAll(/requestPasskeyGate\('([^']+)'/g)].map(m => m[1])
+for (const p of praPurposes) ok(`21e. WebAuthn allowed set includes '${p}'`, allowedDecl.includes(`'${p}'`))
+ok('21f. client QR pre-validate png|webp + 64KB', /image\/png/.test(PRA) && /image\/webp/.test(PRA) && /64 \* 1024/.test(PRA))
+ok('21g. app.js routes #admin/platform-receive → renderAdminPlatformReceiveAccounts', /'platform-receive'[\s\S]{0,60}renderAdminPlatformReceiveAccounts/.test(APP))
+ok('21h. dp-ops hub links #admin/platform-receive', has(FEEOPS, "'#admin/platform-receive')"))
+ok('21i. UI touches no wallet/escrow/settle/refund/fee balance write', !/\/wallet|\/escrow|\/settle|\/refund|fee-prepay/.test(PRACODE))
+for (const k of ['平台收款方式', '新增平台收款方式', '平台收款明细', '收款二维码(可选,PNG/WebP ≤64KB)', '移除现有二维码']) {
+  ok(`21-i18n EN present: ${k.slice(0, 12)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
+}
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)
