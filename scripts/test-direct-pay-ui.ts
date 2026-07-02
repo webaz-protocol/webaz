@@ -73,7 +73,7 @@ ok('order detail shows direct_p2p disclosures', has(APP, 'dpOrderDisclosureHtml'
 ok('disclosure HTML does NOT inline the snapshot (not in DOM pre-ack)', !/direct_pay_instruction_snapshot/.test(DP.slice(DP.indexOf('dpOrderDisclosureHtml = '), DP.indexOf('dpHydrateOrderDisclosure'))))
 ok('order detail hydrates snapshot via ack-gated path', has(APP, 'dpHydrateOrderDisclosure') && /dpHydrateOrderDisclosure\s*=/.test(DP))
 const HYD = DP.slice(DP.indexOf('dpHydrateOrderDisclosure = async'), DP.indexOf('dpCompleteAcksThenReveal = async'))
-ok('snapshot only read AFTER checking both-acked (st.both)', HYD.indexOf('st.both') < HYD.indexOf('direct_pay_instruction_snapshot') && HYD.includes('direct_pay_instruction_snapshot'))
+ok('snapshot revealed only AFTER both-acked (st.both gates the delegate call)', HYD.indexOf('st.both') < HYD.indexOf('dpRenderPaymentInfo') && HYD.includes('dpRenderPaymentInfo') && /!st\.both[\s\S]*return/.test(HYD) && /direct_pay_instruction_snapshot/.test(P('app-direct-pay-reveal.js')))
 ok('not-both-acked branch shows a "complete D1/D2" gate, not the snapshot', /!st\.both/.test(HYD) && has(HYD, 'dpCompleteAcksThenReveal') && !HYD.slice(HYD.indexOf('!st.both'), HYD.indexOf('dpCompleteAcksThenReveal') + 60).includes('direct_pay_instruction_snapshot'))
 ok('getActions offers mark_paid in direct_pay_window', /direct_pay_window/.test(APP) && /'mark_paid'/.test(APP))
 ok('handleAction routes direct_p2p gated actions to dpHandleAction', /_dpOrderRail === 'direct_p2p'.*dpHandleAction/.test(APP))
@@ -367,7 +367,7 @@ ok('20d. order QR fetched with Authorization header (owner+ack endpoint; not <im
 // app-direct-pay.js net-zero hooks that make the new module reachable
 ok('20e. rail selector renders the account-picker container + carries price data attr', has(DP, 'id="dp-account-picker"') && has(DP, 'data-amt='))
 ok('20f. dpOnRailChange loads buyer accounts when available; clears on switch', has(DP, 'dpLoadBuyerAccounts') && has(DP, "getElementById('dp-account-picker')"))
-ok('20g. order disclosure hydrate reveals QR post-ack (container + call)', has(DP, 'id="dp-order-qr"') && has(DP, 'dpLoadOrderQr'))
+ok('20g. order disclosure hydrate reveals QR post-ack (container + call in reveal module)', has(P('app-direct-pay-reveal.js'), 'id="dp-order-qr"') && has(P('app-direct-pay-reveal.js'), 'dpLoadOrderQr'))
 // app.js wiring: price passed to rail selector + account id threaded into POST /orders
 ok('20h. app.js passes price to rail selector', /dpRailSelectorHtml\(prod\.id,\s*prod\.price\)/.test(APP))
 ok('20i. app.js threads direct_receive_account_id into POST /orders (direct_p2p only)', /direct_receive_account_id:\s*\(payment_rail === 'direct_p2p'[\s\S]{0,80}dpSelectedAccountId/.test(APP))
@@ -456,8 +456,26 @@ ok('25c. no-rate currency → currency code, never fabricated', /fx !== cur/.tes
 ok("25d. amount uses '应付' (bilingual EN present)", /t\('应付'\)/.test(PAY) && /'应付'\s*:/.test(I18N))
 ok('25e. D2 (pre_confirm) ack dialog injects the confirmed amount', /pre_confirm' && _pay/.test(DP))
 ok('25f. "风险确认完成" reveal modal shows the amount', /_pay \? '💸 ' \+ _pay/.test(DP))
-ok('25g. order-detail instruction box shows persistent 应付 line', /dpPayAmountText\(o\.order\)/.test(DP) && /💸 \$\{escHtml\(_pay\)\}/.test(DP))
+ok('25g. order-detail box delegates to the visibility renderer (dpRenderPaymentInfo)', /window\.dpRenderPaymentInfo\(box,/.test(DP))
 ok('25h. timeline maps direct_pay_window → 待支付 step (not idx 0)', /direct_pay_window: 1/.test(APP) && /direct_expired_unconfirmed: 1/.test(APP))
+
+// ── 26. payment-info visibility lifecycle (PR-2): pending=5-min window+lightweight re-reveal; other states=hidden+Passkey二次验证+risk. ──
+const RVL = P('app-direct-pay-reveal.js')
+const RVLCODE = RVL.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+ok('26a. new file registered (index.html + pwa-syntax + ratchet)', has(HTML, '/app-direct-pay-reveal.js') && /node --check src\/pwa\/public\/app-direct-pay-reveal\.js/.test(PKG) && /'src\/pwa\/public\/app-direct-pay-reveal\.js'\s*:/.test(RATCHET))
+ok('26b. 5-minute window constant', /DP_REVEAL_MS = 5 \* 60 \* 1000/.test(RVL))
+ok('26c. pending (direct_pay_window) → auto-reveal window, lightweight re-reveal', /status === 'direct_pay_window'.*dpShowPaymentInfo\(order, orderId, true\)/.test(RVLCODE.replace(/\n/g, ' ')) && /dpReShowPaymentInfo/.test(RVL))
+ok('26d. lightweight re-reveal takes NO Passkey', /dpReShowPaymentInfo = async[\s\S]{0,220}dpShowPaymentInfo\(ord, orderId, true\)/.test(RVL) && !/dpReShowPaymentInfo[\s\S]{0,220}requestPasskeyGate/.test(RVL))
+ok('26e. non-pending → hidden by default (dpHidePaymentInfo, gated button)', /else window\.dpHidePaymentInfo\(order, orderId, false\)/.test(RVL) && /dpGatedRevealPaymentInfo/.test(RVL))
+ok('26f. gated re-view requires Passkey 二次验证 (direct_pay_payment_info_reveal purpose)', /requestPasskeyGate\('direct_pay_payment_info_reveal'/.test(RVL))
+ok('26g. purpose whitelisted in webauthn allow-set', /'direct_pay_payment_info_reveal'/.test(readFileSync('src/pwa/routes/webauthn.ts', 'utf8')))
+ok('26h. state-aware risk warning: void order → do-not-pay', /dpIsVoidOrder/.test(RVL) && /请【勿再付款】/.test(RVL))
+ok('26i. void-state list covers cancelled + expired + disputed + refunded', /'cancelled'/.test(RVL) && /'expired'/.test(RVL) && /'disputed'/.test(RVL) && /'refunded_full'/.test(RVL))
+ok('26j. timer cleanup on hide/re-render (no leaked intervals)', /dpClearRevealTimer/.test(RVL) && /clearInterval/.test(RVL) && /clearTimeout/.test(RVL))
+ok('26k. honesty: comment states this is client-side display/consent, not a new server boundary', /并非】新的服务器机密边界/.test(RVL))
+for (const k of ['自动隐藏倒计时', '重新显示', '查看收款信息(需 Passkey 验证)', '继续(需 Passkey)']) {
+  ok(`26-i18n EN present: ${k.slice(0, 10)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
+}
 
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)

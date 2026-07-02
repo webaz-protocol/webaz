@@ -147,10 +147,7 @@ window.dpHydrateOrderDisclosure = async (orderId) => {
     return
   }
   const o = await GET(`/orders/${orderId}`)
-  const snap = o && o.order ? (o.order.direct_pay_instruction_snapshot || '') : ''; const _pay = o && o.order ? window.dpPayAmountText(o.order) : ''
-  box.innerHTML = snap ? `<div style="font-size:12px;color:#374151;background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
-    ${_pay ? `<div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:4px">💸 ${escHtml(_pay)}</div>` : ''}<div style="font-size:11px;color:#9ca3af;margin-bottom:2px">${t('卖家收款说明(下单时快照)')}</div>${escHtml(snap)}<div id="dp-order-qr"></div></div>`
-    : `<div style="font-size:12px;color:#9ca3af">${t('卖家尚未设置收款说明,暂不可直付')}</div>`; if (snap && window.dpLoadOrderQr) window.dpLoadOrderQr(orderId)  // D3:ack 门后取所选账号的收款二维码(若有)
+  if (window.dpRenderPaymentInfo) window.dpRenderPaymentInfo(box, o && o.order ? o.order : null, orderId)  // PR-2:按订单状态渲染收款信息可见性(待支付=5min 自动窗口 / 其它状态=默认隐藏,需 Passkey 二次验证+风险提示)
 }
 window.dpCompleteAcksThenReveal = async (orderId) => {
   const ok = await window.dpEnsureAcks(orderId)
