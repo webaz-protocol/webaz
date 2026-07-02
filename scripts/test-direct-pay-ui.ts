@@ -556,5 +556,15 @@ ok('29f. mark_paid sends the memo as its note (back-fill timeline)', /action ===
 ok('29g. order timeline renders transition notes (seller sees the memo)', /h\.notes \?/.test(APP))
 for (const k of ['付款参考', '付款时请在附言/备注填入(便于卖家核对)']) ok(`29-i18n EN present: ${k.slice(0, 8)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
 
+// ── 30. SECURITY (stored XSS): order timeline must ESCAPE user-controlled fields. The buyer-editable payment
+//    memo flows notes → order_state_history → timeline; that + evidence descriptions + actor names must be escHtml'd. ──
+{
+  const tl = APP.slice(APP.indexOf('const historyHtml ='), APP.indexOf('const historyHtml =') + 700)
+  ok('30a. timeline notes escaped (memo stored-XSS closed)', /💬 \$\{escHtml\(h\.notes\)\}/.test(tl) && !/💬 \$\{h\.notes\}/.test(tl))
+  ok('30b. timeline evidence description escaped', /📎 \$\{escHtml\(e\.description\)\}/.test(tl) && !/📎 \$\{e\.description\}/.test(tl))
+  ok('30c. timeline actor name/role escaped', /\$\{escHtml\(h\.actor_name\)\}/.test(tl) && !/>\$\{h\.actor_name\}/.test(tl))
+  ok('30d. tracking-timeline actor name/notes already escaped', /actor\?\.name \? ' · ' \+ escHtml\(actor\.name\)/.test(APP) && /💬 \$\{escHtml\(actor\.notes\)\}/.test(APP))
+}
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)

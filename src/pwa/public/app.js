@@ -12450,10 +12450,10 @@ async function renderOrderDetail(app, orderId) {
   const historyHtml = (history || []).map(h => `
     <div class="timeline-item">
       <div><span class="timeline-status">${t(STATUS_ZH[h.from_status] || h.from_status)} → ${t(STATUS_ZH[h.to_status] || h.to_status)}</span></div>
-      <div class="timeline-actor">${h.actor_name}（${h.actor_role_name || h.actor_role}）</div>
+      <div class="timeline-actor">${escHtml(h.actor_name)}（${escHtml(h.actor_role_name || h.actor_role)}）</div>
       <div class="timeline-time">${fmtTime(h.created_at)}</div>
-      ${h.notes ? `<div class="timeline-evidence" style="color:#6b7280">💬 ${h.notes}</div>` : ''}
-      ${(h.evidence_items || []).map(e => `<div class="timeline-evidence">📎 ${e.description}</div>`).join('')}
+      ${h.notes ? `<div class="timeline-evidence" style="color:#6b7280">💬 ${escHtml(h.notes)}</div>` : ''}
+      ${(h.evidence_items || []).map(e => `<div class="timeline-evidence">📎 ${escHtml(e.description)}</div>`).join('')}
     </div>`).join('')
 
   // 物流追踪完整时间轴 — 含订单全流转 + 未到达节点的截止提示
