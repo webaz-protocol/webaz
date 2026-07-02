@@ -124,7 +124,7 @@ window.dpDoAck = async (orderId, stage) => {
   return true
 }
 // ── 订单详情:direct_p2p 诚实边界始终显示;卖家收款说明快照【不】内联进 HTML,由 dpHydrateOrderDisclosure 在 both-acked 后才另取渲染(未 ack 时 DOM 里也没有快照)。
-window.dpOrderDisclosureHtml = (_order) => `
+window.dpOrderDisclosureHtml = (order) => `
   <div class="card" style="border:1px solid #fde68a;background:linear-gradient(135deg,#fffbeb,#fef3c7)">
     <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:8px">💸 ${t('直付订单(非托管)')}</div>
     <ul style="margin:0 0 8px;padding-left:18px;font-size:12px;line-height:1.7;color:#374151">
@@ -132,7 +132,7 @@ window.dpOrderDisclosureHtml = (_order) => `
       <li>${t('WebAZ 不托管、不担保、不退款、不代维权')}</li>
       <li>${t('卖家收款说明来自卖家自填,WebAZ 不验证付款方式或币种')}</li>
     </ul>
-    <div id="dp-order-instr">${loading$()}</div>
+    <div id="dp-order-instr" data-order-id="${escHtml(String(order && order.id || ''))}">${loading$()}</div>
   </div>`
 // ack-gated 收款说明:both-acked → 另取订单快照并展示;否则只显示"先完成 D1/D2 Passkey"的门(快照不入 DOM)。
 window.dpHydrateOrderDisclosure = async (orderId) => {

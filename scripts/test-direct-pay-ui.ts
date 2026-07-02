@@ -463,7 +463,10 @@ ok('25h. timeline maps direct_pay_window → 待支付 step (not idx 0)', /direc
 const RVL = P('app-direct-pay-reveal.js')
 const RVLCODE = RVL.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
 ok('26a. new file registered (index.html + pwa-syntax + ratchet)', has(HTML, '/app-direct-pay-reveal.js') && /node --check src\/pwa\/public\/app-direct-pay-reveal\.js/.test(PKG) && /'src\/pwa\/public\/app-direct-pay-reveal\.js'\s*:/.test(RATCHET))
-ok('26b. 5-minute window constant', /DP_REVEAL_MS = 5 \* 60 \* 1000/.test(RVL))
+ok('26b. 30-minute window constant', /DP_REVEAL_MS = 30 \* 60 \* 1000/.test(RVL))
+ok('26b2. order-scoped box guard (dpInstrBox checks data-order-id === orderId); container binds data-order-id', /dpInstrBox = \(orderId\) =>[\s\S]{0,140}data-order-id'\) === String\(orderId\)/.test(RVL) && /id="dp-order-instr" data-order-id=/.test(DP))
+ok('26b3. show/hide acquire the box ONLY via dpInstrBox (getElementById only inside the guard, once)', /const box = window\.dpInstrBox\(orderId\)/.test(RVL) && (RVL.match(/document\.getElementById\('dp-order-instr'\)/g) || []).length === 1)
+ok('26b4. render clears ALL stale timers (cross-order timer cannot survive navigation)', /dpRenderPaymentInfo = \(box, order, orderId\) => \{\s*window\.dpClearAllRevealTimers\(\)/.test(RVL))
 ok('26c. pending (direct_pay_window) → auto-reveal window, lightweight re-reveal', /status === 'direct_pay_window'.*dpShowPaymentInfo\(order, orderId, true\)/.test(RVLCODE.replace(/\n/g, ' ')) && /dpReShowPaymentInfo/.test(RVL))
 ok('26d. lightweight re-reveal takes NO Passkey', /dpReShowPaymentInfo = async[\s\S]{0,220}dpShowPaymentInfo\(ord, orderId, true\)/.test(RVL) && !/dpReShowPaymentInfo[\s\S]{0,220}requestPasskeyGate/.test(RVL))
 ok('26e. non-pending → hidden by default (dpHidePaymentInfo, gated button)', /else window\.dpHidePaymentInfo\(order, orderId, false\)/.test(RVL) && /dpGatedRevealPaymentInfo/.test(RVL))
@@ -475,6 +478,40 @@ ok('26j. timer cleanup on hide/re-render (no leaked intervals)', /dpClearRevealT
 ok('26k. honesty: comment states this is client-side display/consent, not a new server boundary', /并非】新的服务器机密边界/.test(RVL))
 for (const k of ['自动隐藏倒计时', '重新显示', '查看收款信息(需 Passkey 验证)', '继续(需 Passkey)']) {
   ok(`26-i18n EN present: ${k.slice(0, 10)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
+}
+
+// ── 27. BEHAVIORAL (P1 order-isolation): a stale reveal timer / re-show must NOT write another order's panel. ──
+//    Execute the reveal module against a fake DOM + captured timers; simulate A→B navigation and fire A's stale timers.
+{
+  const src = readFileSync('src/pwa/public/app-direct-pay-reveal.js', 'utf8')
+  const mkEl = (oid: string) => { let h = ''; return { getAttribute: (k: string) => (k === 'data-order-id' ? oid : null), get innerHTML() { return h }, set innerHTML(v: string) { h = v }, querySelector: () => ({ textContent: '' }) } }
+  const cur: { el: ReturnType<typeof mkEl> | null } = { el: null }
+  const doc = { getElementById: (id: string) => (id === 'dp-order-instr' ? cur.el : null) }
+  const win: any = { dpPayAmountText: (o: any) => 'PAY ' + (o ? o.id : ''), dpLoadOrderQr: () => {} }
+  const timers: Record<string, () => void> = {}; let seq = 0
+  const sT = (fn: () => void) => { const id = 'to' + (++seq); timers[id] = fn; return id }
+  const sI = (fn: () => void) => { const id = 'iv' + (++seq); timers[id] = fn; return id }
+  const cX = (id: string) => { delete timers[id] }
+  const ordersFix: Record<string, any> = {
+    A: { id: 'A', payment_rail: 'direct_p2p', status: 'direct_pay_window', direct_pay_instruction_snapshot: 'ACCOUNT-A', total_amount: 30 },
+    B: { id: 'B', payment_rail: 'direct_p2p', status: 'direct_pay_window', direct_pay_instruction_snapshot: 'ACCOUNT-B', total_amount: 50 },
+  }
+  const GETfix = async (p: string) => ({ order: ordersFix[(p.match(/orders\/(\w+)/) || [])[1] || ''] })
+  new Function('window', 'document', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'GET', 'escHtml', 't', 'confirmModal', 'requestPasskeyGate', src)(
+    win, doc, sT, sI, cX, cX, GETfix, (x: string) => x, (x: string) => x, async () => true, async () => 'tok')
+
+  cur.el = mkEl('A'); win.dpShowPaymentInfo(ordersFix.A, 'A', true)
+  ok('27a. correct order account shown on its own page', /ACCOUNT-A/.test(cur.el.innerHTML))
+  const aTimer = win._dpRevealTimers['A']
+  cur.el = mkEl('B'); cur.el.innerHTML = 'B-PANEL'                         // navigate to order B (fresh #dp-order-instr bound to B)
+  timers[aTimer.to]()                                                     // A's stale hide-timer fires
+  ok('27b. stale A hide-timer does NOT overwrite B panel', cur.el.innerHTML === 'B-PANEL')
+  if (timers[aTimer.iv]) timers[aTimer.iv]()                              // A's stale countdown interval fires
+  ok('27c. stale A countdown interval does NOT touch B panel', cur.el.innerHTML === 'B-PANEL')
+  win.dpReShowPaymentInfo('A')                                           // A re-show while on page B → guard bails before GET
+  ok('27d. A re-show does NOT render A account into B page', cur.el.innerHTML === 'B-PANEL' && !/ACCOUNT-A/.test(cur.el.innerHTML))
+  win.dpRenderPaymentInfo(cur.el, ordersFix.B, 'B')                       // rendering B clears stale timers + shows B
+  ok('27e. new-order render clears stale timers + shows B account', !win._dpRevealTimers['A'] && /ACCOUNT-B/.test(cur.el.innerHTML))
 }
 
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
