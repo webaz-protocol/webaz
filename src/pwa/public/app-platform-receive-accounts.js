@@ -86,8 +86,25 @@ window.praReadQr = async (p) => {
   return 'keep'
 }
 
-window.praGate = async (action, accountId) => {
-  try { return await requestPasskeyGate('platform_receive_account_manage', accountId ? { action, account_id: accountId } : { action }) }
+// sha256 hex(浏览器,secure context)—— 绑 QR 内容进 purpose_data(不塞 64KB 原文)。
+window.praSha256 = async (s) => {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+// 构造与后端 gateContentPayload 逐字一致的 purpose_data:绑定 action[+account_id]+ 收款内容(instruction/method/currency/label)+ qr_mode(+qr_sha256)。
+window.praContentPayload = async (action, accountId, f, qr) => {
+  const p = { action }
+  if (accountId) p.account_id = accountId
+  if (action === 'add' || action === 'update') {
+    p.instruction = f.instruction; p.method = f.method; p.currency = f.currency; p.label = f.label
+    if (qr === 'keep') p.qr_mode = 'keep'
+    else if (qr === '') p.qr_mode = 'clear'
+    else { p.qr_mode = 'set'; p.qr_sha256 = await window.praSha256(qr) }
+  }
+  return p
+}
+window.praGate = async (purposeData) => {
+  try { return await requestPasskeyGate('platform_receive_account_manage', purposeData) }
   catch (e) { if (typeof toast$ === 'function') toast$((e && e.message ? e.message + ' — ' : '') + t('需先注册 Passkey'), 'error'); return null }
 }
 
@@ -95,7 +112,7 @@ window.praAdd = async () => {
   const f = window.praReadText('new')
   if (!f.instruction) { if (typeof toast$ === 'function') toast$(t('平台收款明细不能为空'), 'error'); return }
   let qr; try { qr = await window.praReadQr('new') } catch (e) { if (typeof toast$ === 'function') toast$(e.message, 'error'); return }
-  const token = await window.praGate('add'); if (!token) return
+  const token = await window.praGate(await window.praContentPayload('add', null, f, qr)); if (!token) return
   const body = { ...f, webauthn_token: token }; if (qr !== 'keep') body.qr_data_uri = qr
   const r = await POST('/admin/platform-receive-accounts', body)
   if (r.error) { if (typeof toast$ === 'function') toast$(window.praErrText(r.error_code, r.error), 'error'); return }
@@ -106,7 +123,7 @@ window.praUpdate = async (id) => {
   const f = window.praReadText(id)
   if (!f.instruction) { if (typeof toast$ === 'function') toast$(t('平台收款明细不能为空'), 'error'); return }
   let qr; try { qr = await window.praReadQr(id) } catch (e) { if (typeof toast$ === 'function') toast$(e.message, 'error'); return }
-  const token = await window.praGate('update', id); if (!token) return
+  const token = await window.praGate(await window.praContentPayload('update', id, f, qr)); if (!token) return
   const body = { ...f, webauthn_token: token }; if (qr !== 'keep') body.qr_data_uri = qr
   const r = await PUT('/admin/platform-receive-accounts/' + id, body)
   if (r.error) { if (typeof toast$ === 'function') toast$(window.praErrText(r.error_code, r.error), 'error'); return }
@@ -116,7 +133,7 @@ window.praUpdate = async (id) => {
 window.praDeactivate = async (id) => {
   const go = await confirmModal(t('停用后卖家将不再看到此平台收款方式,确定停用?'), t('停用'), { danger: true })
   if (!go) return
-  const token = await window.praGate('deactivate', id); if (!token) return
+  const token = await window.praGate(await window.praContentPayload('deactivate', id)); if (!token) return
   const r = await api('DELETE', '/admin/platform-receive-accounts/' + id, { webauthn_token: token })
   if (r.error) { if (typeof toast$ === 'function') toast$(window.praErrText(r.error_code, r.error), 'error'); return }
   if (typeof toast$ === 'function') toast$(t('已停用'), 'success'); window.praHydrate()
