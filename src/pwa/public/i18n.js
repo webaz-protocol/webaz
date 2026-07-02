@@ -5130,6 +5130,7 @@ const _EN = {
   // C-3: 订单保险
   '买保险（+1% · 卖家无力赔付时平台先行赔付）': 'Buy insurance (+1% · platform pays if seller can\'t)',
   '已购保险':                          'Insured',
+  '应付':                              'Due',
 
   // C-2: 礼物订单
   '设为礼物（收件人 ≠ 我）':            'Gift order (recipient ≠ me)',

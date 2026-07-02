@@ -45,9 +45,9 @@ ok('4c. variant summary + button → fmtPrice(price)', APP.includes('✓ ${windo
 ok('4d. no raw ${basePrice}/${r.final_price}/${r.discount} WAZ left', !APP.includes('${basePrice} WAZ') && !APP.includes('${r.final_price} WAZ') && !APP.includes('${r.discount} WAZ'))
 ok('4e. no raw "✓ ${price} WAZ" variant summary left', !APP.includes('✓ ${price} WAZ'))
 
-// 5. PRESERVED — non-price WAZ untouched (order detail total = PR-1d; escrow "已托管" is simulated, NOT USDC custody)
-ok('5a. order-detail still uses usdHint (deferred to PR-1d, not ripped out)', APP.includes('usdHint(order.total_amount)'))
-ok('5b. usdHint/wazToUsd helpers still defined', APP.includes('function usdHint(') && APP.includes('function wazToUsd('))
+// 5. PR-1d DONE — order-total display migrated to USDC via orderAmountHtml; usdHint/wazToUsd removed as dead code.
+ok('5a. order-detail total now uses orderAmountHtml (not usdHint)', APP.includes('${window.orderAmountHtml(order)}') && !APP.includes('usdHint(order.total_amount)'))
+ok('5b. dead usdHint/wazToUsd helpers removed', !APP.includes('function usdHint(') && !APP.includes('function wazToUsd('))
 ok('5c. escrow "下单成功…已托管" stays WAZ (honesty: simulated escrow, not real USDC custody)', /已托管/.test(APP) && APP.includes('WAZ'))
 
 if (fail > 0) { console.error(`\n❌ fx price buypage FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

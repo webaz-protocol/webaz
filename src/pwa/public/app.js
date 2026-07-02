@@ -11781,7 +11781,7 @@ async function renderOrders(app) {
             <div class="order-meta">${fmtTime(o.created_at)} · ${o.buyer_id === state.user.id ? t('我买的') : t('我卖的')}</div>
             <div style="margin-top:6px">${orderStatusBadges(o)}</div>
           </div>
-          <div class="order-amount">${o.total_amount}</div>
+          <div class="order-amount">${window.orderAmountHtml(o)}</div>
         </div>
         ${canRebuy ? `<div style="border-top:1px solid #f3f4f6;padding:8px 14px;display:flex;justify-content:flex-end"><button onclick="event.stopPropagation();navigate('#order-product/${o.product_id}')" style="background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;padding:4px 12px;border-radius:99px;font-size:11px;font-weight:600;cursor:pointer">🔁 ${t('再次购买')}</button></div>` : ''}
       </div>`
@@ -11821,9 +11821,9 @@ window.printOrderReceipt = async (orderId) => {
     <div class="row"><span>${t('商品')}</span><strong>${escHtml(product?.title || '—')}</strong></div>
     ${variantStr ? `<div class="row"><span>${t('规格')}</span><span>${escHtml(variantStr)}</span></div>` : ''}
     <div class="row"><span>${t('数量')}</span><span>${order.quantity}</span></div>
-    <div class="row"><span>${t('单价')}</span><span>${order.unit_price} WAZ</span></div>
-    ${Number(order.coupon_discount) > 0 ? `<div class="row"><span>${t('优惠')}</span><span style="color:#dc2626">-${order.coupon_discount} WAZ</span></div>` : ''}
-    <div class="total">${t('总计')}: ${order.total_amount} WAZ</div>
+    <div class="row"><span>${t('单价')}</span><span>${order.unit_price} USDC</span></div>
+    ${Number(order.coupon_discount) > 0 ? `<div class="row"><span>${t('优惠')}</span><span style="color:#dc2626">-${order.coupon_discount} USDC</span></div>` : ''}
+    <div class="total">${t('总计')}: ${order.total_amount} USDC</div>
     <hr style="margin:14px 0;border:none;border-top:1px solid #ddd">
     <div class="muted">${t('收货地址')}: ${escHtml(order.shipping_address || '—')}</div>
     <div class="muted">${t('订单状态')}: ${order.status}</div>
@@ -11937,7 +11937,7 @@ async function renderOrdersShare(app, mainTabsHtml) {
           <div style="font-size:28px;flex-shrink:0">${getCategoryIcon(o.category)}</div>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(o.product_title)}</div>
-            <div style="font-size:11px;color:#6b7280;margin-top:2px"><a href="#order/${o.id}" style="color:#6b7280;text-decoration:none">${t('订单')} ${orderShort}</a> · ${fmtTime(o.updated_at || o.created_at)}${typeof o.total_amount !== 'undefined' ? ` · ${o.total_amount} WAZ` : ''}</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:2px"><a href="#order/${o.id}" style="color:#6b7280;text-decoration:none">${t('订单')} ${orderShort}</a> · ${fmtTime(o.updated_at || o.created_at)}${typeof o.total_amount !== 'undefined' ? ` · ${window.orderAmountHtml(o)}` : ''}</div>
           </div>
           <div style="display:flex;gap:4px;flex-shrink:0">
             <button class="btn btn-outline btn-sm" style="width:auto;padding:5px 8px;font-size:10px;white-space:nowrap" onclick="shareCompletedOrder('${o.product_id}', '${escHtml(o.product_title || '').replace(/'/g, "\\'")}')">🔗 ${t('添加口令')}</button>
@@ -12511,7 +12511,7 @@ async function renderOrderDetail(app, orderId) {
         </div>
       </div>
       <div class="detail-row"><span class="detail-label">${t('商品')}</span><span class="detail-value">${product?.title || ''}</span></div>
-      <div class="detail-row"><span class="detail-label">${t('金额')}</span><span class="detail-value" style="color:#4f46e5">${order.total_amount} WAZ${usdHint(order.total_amount)}${Number(order.insurance_premium) > 0 ? ` <span style="font-size:10px;color:#6366f1;background:#eef2ff;padding:1px 6px;border-radius:99px;margin-left:4px">🛡 ${t('已购保险')} +${order.insurance_premium}</span>` : ''}</span></div>
+      <div class="detail-row"><span class="detail-label">${t('金额')}</span><span class="detail-value" style="color:#4f46e5">${window.orderAmountHtml(order)}${Number(order.insurance_premium) > 0 ? ` <span style="font-size:10px;color:#6366f1;background:#eef2ff;padding:1px 6px;border-radius:99px;margin-left:4px">🛡 ${t('已购保险')} +${order.insurance_premium}</span>` : ''}</span></div>
       <div class="detail-row"><span class="detail-label">${t('下单时间')}</span><span class="detail-value">${fmtTime(order.created_at)}</span></div>
       ${order.shipping_address ? `<div class="detail-row"><span class="detail-label">${t('收货地址')}</span><span class="detail-value">${order.shipping_address}</span></div>` : ''}
       ${order.anonymous_recipient && order.recipient_code ? `<div class="detail-row"><span class="detail-label">🔒 ${t('取件代号')}</span><span class="detail-value" style="font-family:monospace;font-size:14px;font-weight:700;color:#166534;background:#dcfce7;padding:2px 10px;border-radius:6px;letter-spacing:1px">${escHtml(order.recipient_code)}</span></div><div style="font-size:11px;color:#15803d;padding:0 14px 8px">${t('凭此代号到自提点取件 · 卖家和物流不知道你的真实姓名')}</div>` : ''}
@@ -13286,18 +13286,21 @@ window.toggleOrderAddrEdit = (expand) => {
   }
 }
 
-// Wave G-5: WAZ → USD 近似（用 USDC peg）显示
-function wazToUsd(waz) {
-  const rate = Number(state._wazUsdcRate || 1)
-  if (rate <= 0) return null
-  return Number(waz) / rate  // 1 USDC ≈ 1 USD
-}
-// 渲染 ≈ $X.XX 小字（默认 buyer / 全局，可选 hidePrefix）
-function usdHint(waz, opts = {}) {
-  const usd = wazToUsd(waz)
-  if (usd == null || !Number.isFinite(usd)) return ''
-  const txt = `≈ $${usd.toFixed(2)}`
-  return `<span style="font-size:10px;color:#9ca3af;margin-left:4px;font-weight:400">${txt}</span>`
+// 订单金额显示(RFC-014 USDC 计价):escrow → USDC + 买家本地币参考(fmtPrice,纯展示,无真实托管);
+//   direct_p2p → USDC + 【买家下单时所选卖家收款账户币种】的应付额(dpFxInCurrency,不是本地币——买家只能按卖家
+//   支持的币种付款)。币种取自账号快照(currency 属非敏感元数据,pre-ack 也可见;仅 instruction/qr 受披露门)。
+//   该币种无汇率 → dpFxInCurrency 回落币种码,绝不臆造换算。
+window.orderAmountHtml = (o) => {
+  const usdc = Number(o && o.total_amount)
+  if (o && o.payment_rail === 'direct_p2p') {
+    let cur = ''
+    try { cur = String(JSON.parse(o.direct_pay_account_snapshot || '{}').currency || '').toUpperCase() } catch {}
+    const base = `${Number.isFinite(usdc) ? (Number.isInteger(usdc) ? usdc : usdc.toFixed(2)) : '—'} USDC`
+    if (!cur || cur === 'USDC' || cur === 'USD') return base
+    const pay = window.dpFxInCurrency ? window.dpFxInCurrency(usdc, cur) : cur
+    return `${base} <span style="font-size:10px;color:#9ca3af;margin-left:4px;font-weight:400">${t('应付')} ≈ ${pay}</span>`
+  }
+  return window.fmtPrice(usdc)
 }
 
 // Wave C-1: 规格格式化（订单详情 / 列表用）
@@ -14757,7 +14760,7 @@ async function renderLogistics(app) {
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(o.product_title)}${windowChip}</div>
           ${o.shipping_address ? `<div style="font-size:11px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">📍 ${escHtml(o.shipping_address)}</div>` : ''}
-          <div style="font-size:10px;color:${urgent ? '#dc2626' : '#9ca3af'};margin-top:2px${urgent ? ';font-weight:600' : ''}">${o.total_amount} WAZ · ${o.ship_deadline ? `${urgent ? '⚠ ' : ''}${t('截止')} ${fmtTime(o.ship_deadline)}` : fmtTime(o.created_at)}</div>
+          <div style="font-size:10px;color:${urgent ? '#dc2626' : '#9ca3af'};margin-top:2px${urgent ? ';font-weight:600' : ''}">${window.orderAmountHtml(o)} · ${o.ship_deadline ? `${urgent ? '⚠ ' : ''}${t('截止')} ${fmtTime(o.ship_deadline)}` : fmtTime(o.created_at)}</div>
         </div>
         ${act ? `<div style="font-size:11px;color:#065f46;font-weight:600;flex-shrink:0;white-space:nowrap">${act.short} →</div>` : ''}
       </div>
@@ -15300,7 +15303,7 @@ async function renderSeller(app) {
             <div class="order-meta">${fmtTime(o.created_at)}</div>
             <div style="margin-top:6px">${orderStatusBadges(o)}</div>
           </div>
-          <div class="order-amount">${o.total_amount} WAZ</div>
+          <div class="order-amount">${window.orderAmountHtml(o)}</div>
         </div>
       </div>`).join('')
   const acceptHtml = paidOrders.length === 0
