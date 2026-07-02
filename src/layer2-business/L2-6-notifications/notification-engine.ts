@@ -169,6 +169,32 @@ const RULES: Record<string, NotifRule> = {
     title: '⏰ 物流超时',
     body: ctx => `物流方超时未完成投递，已自动记录违约。`,
   },
+  // ── Direct Pay 货款协商(争议≠仲裁,非托管:全程无退款/资金语义)──────────────────
+  'accepted→payment_query': {
+    recipients: ['buyer'],
+    title: '🔎 卖家未收到货款',
+    body: ctx => `卖家报告尚未收到「${ctx.productTitle}」的货款,请核实:若确已付款请提供付款参考,若未付款可取消订单。直付非托管,协议不代收/不退款。`,
+  },
+  'payment_query→accepted': {
+    recipients: ['buyer'],
+    title: '✅ 卖家已确认收款',
+    body: ctx => `卖家已确认收到「${ctx.productTitle}」的货款,订单恢复,等待发货。`,
+  },
+  'payment_query→disputed': {
+    recipients: ['buyer', 'seller'],
+    title: '⚖️ 货款协商升级举证仲裁',
+    body: ctx => `「${ctx.productTitle}」货款协商未果,已进入举证仲裁(证据制信誉裁决,非托管:不涉退款/放款)。请提交证据。`,
+  },
+  'disputed→payment_query': {
+    recipients: ['buyer', 'seller'],
+    title: '↩️ 仲裁已撤回,回到协商',
+    body: ctx => `「${ctx.productTitle}」的仲裁申请已撤回,回到买卖双方协商。`,
+  },
+  'payment_query→cancelled': {
+    recipients: ['seller'],
+    title: '🚫 买家已取消(协商)',
+    body: ctx => `买家取消了「${ctx.productTitle}」订单。直付非托管,无平台退款。`,
+  },
 }
 
 // ─── 主入口：状态变更后调用 ───────────────────────────────────
