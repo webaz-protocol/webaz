@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS products (
       title         TEXT NOT NULL,
       description   TEXT NOT NULL,
       price         DOUBLE PRECISION NOT NULL,
-      currency      TEXT DEFAULT 'DCP',
+      currency      TEXT DEFAULT 'WAZ',
       stock         BIGINT DEFAULT 1,
       category      TEXT,
       images        TEXT DEFAULT '[]',

@@ -302,8 +302,8 @@ export function registerListingsRoutes(app: Application, deps: ListingsDeps): vo
           id, seller_id, title, description, price, stock, status, images,
           ship_regions, handling_hours, commission_rate, category_id, stake_amount,
           listing_id, fulfillment_type, eta_hours, freshness_ts,
-          is_clearance, clearance_until, cold_start_remaining, listing_stake_locked
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),?,?,?,?)
+          is_clearance, clearance_until, cold_start_remaining, listing_stake_locked, currency
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),?,?,?,?,'WAZ')
       `).run(
         id, user.id,
         listing.title as string,

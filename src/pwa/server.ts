@@ -5616,8 +5616,8 @@ function awardBidAndCreateOrder(rfq: Record<string, unknown>, winner: Record<str
       db.prepare(`
         INSERT INTO products (id, seller_id, title, description, price, stock, status, images,
           ship_regions, handling_hours, commission_rate, category_id, stake_amount,
-          listing_id, fulfillment_type, eta_hours, freshness_ts, cold_start_remaining)
-        VALUES (?,?,?,?,?,?,'active','[]',?,?,?,?,0,?,?,?,datetime('now'),?)
+          listing_id, fulfillment_type, eta_hours, freshness_ts, cold_start_remaining, currency)
+        VALUES (?,?,?,?,?,?,'active','[]',?,?,?,?,0,?,?,?,datetime('now'),?,'WAZ')
       `).run(
         productId, sellerId,
         String(rfq.title),
@@ -6048,8 +6048,8 @@ function settleAuctionInner(aucId: string): { ok: boolean; order_id?: string; re
     productId = generateId('p')
     db.prepare(`
       INSERT INTO products (id, seller_id, title, description, price, stock, status, images,
-        ship_regions, handling_hours, commission_rate, category_id, stake_amount, listing_id, freshness_ts, cold_start_remaining)
-      VALUES (?,?,?,?,?,?,'active','[]',?,?,?,?,0,?,datetime('now'),?)
+        ship_regions, handling_hours, commission_rate, category_id, stake_amount, listing_id, freshness_ts, cold_start_remaining, currency)
+      VALUES (?,?,?,?,?,?,'active','[]',?,?,?,?,0,?,datetime('now'),?,'WAZ')
     `).run(
       productId, sellerId,
       String(auc.title),

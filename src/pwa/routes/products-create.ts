@@ -137,8 +137,8 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
       return_days, return_condition, warranty_days,
       low_stock_threshold, auto_delist_on_zero,
       commitment_hash, description_hash, price_hash, hashed_at,
-      commission_rate, product_type, images
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
+      commission_rate, product_type, images, currency
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WAZ')`, [
       id, user.id, title, description, priceNum, Number(stock), category, stakeAmount,
       specsJson, brand ?? null, model ?? null,
       source_url ?? null, source_price ? Number(source_price) : null, source_price ? now : null,

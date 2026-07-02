@@ -85,8 +85,8 @@ export function registerP2pProductsRoutes(app: Application, deps: P2pProductsDep
     await dbRun(`
       INSERT INTO products (id, seller_id, title, description, price, stock, status, images, ship_regions,
         handling_hours, commission_rate, category_id, stake_amount, p2p_mode, content_hash, peer_endpoint,
-        content_signature, content_signed_at)
-      VALUES (?,?,?,?,?,?,'active',?,?,24,0.10,'cat_default',0,1,?,?,?,?)
+        content_signature, content_signed_at, currency)
+      VALUES (?,?,?,?,?,?,'active',?,?,24,0.10,'cat_default',0,1,?,?,?,?,'WAZ')
     `, [
       id, user.id, title,
       `[P2P] ${title}（完整详情见卖家节点）`,

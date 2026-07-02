@@ -2476,8 +2476,8 @@ async function handleListProduct(args: Record<string, unknown>): Promise<Record<
       id, seller_id, title, description, price, stock, category, stake_amount,
       specs, brand, model, source_price,
       ship_regions, handling_hours, estimated_days, fragile,
-      return_days, return_condition, warranty_days
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?)
+      return_days, return_condition, warranty_days, currency
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?, ?,  ?, ?, ?, 'WAZ')
   `).run(
     id,
     user.id,

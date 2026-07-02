@@ -44,7 +44,7 @@ export function initDatabase(): Database.Database {
       title         TEXT NOT NULL,
       description   TEXT NOT NULL,
       price         REAL NOT NULL,
-      currency      TEXT DEFAULT 'DCP',       -- 协议内部模拟货币
+      currency      TEXT DEFAULT 'WAZ',       -- 协议内部模拟单位(WAZ);旧默认 'DCP' 已翻转 + 存量回填(见迁移段),existing-DB 建单路径亦显式写 WAZ
       stock         INTEGER DEFAULT 1,
       category      TEXT,
       images        TEXT DEFAULT '[]',        -- JSON 数组，存图片路径
@@ -647,6 +647,10 @@ export function initDatabase(): Database.Database {
   // PR-6D: 支撑 #108 AML 监控的窗口查询(seller_id + payment_rail='direct_p2p' + created_at 范围)。
   //   纯只读索引;不改行为、不打开任何规则。命名随既有 idx_orders_* 风格。
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_direct_pay_seller_window ON orders(seller_id, payment_rail, created_at)`) } catch { /* 已存在 */ }
+  // 币种回填(Claim 5 gated):把存量遗留内部代号 'DCP' 一次性刷成 'WAZ'。幂等、可重跑(每次 init 都跑,已是 WAZ 则 0 行);
+  //   DCP 与 WAZ 是【同一模拟单位纯改名】,金额不变、无汇率换算;且全仓无 `currency='DCP'` 的筛选逻辑,不破坏任何查询。
+  //   fresh-DB 默认已是 WAZ;existing-DB 新建单路径亦显式写 WAZ(见 products-create / MCP list_product / RFQ·auction fulfillment)。
+  try { db.exec(`UPDATE products SET currency = 'WAZ' WHERE currency = 'DCP'`) } catch { /* products 表尚未建则跳过 */ }
   // penalty 科目单行种子(只进不出;无出账代码路径)
   db.exec(`INSERT OR IGNORE INTO penalty_fund (id, balance, total_fee_stake_slash, total_base_bond_slash, updated_at) VALUES ('main', 0, 0, 0, datetime('now'))`)
 
