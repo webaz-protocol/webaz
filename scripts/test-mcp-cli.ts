@@ -5,7 +5,10 @@
  *   + mcp.ts 接线(无标志才启动 server)。
  * Usage: npm run test:mcp-cli
  */
-import { readFileSync } from 'fs'
+import { readFileSync, existsSync, mkdtempSync, rmSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
+import { spawnSync } from 'child_process'
 
 const { cliQuickResponse, runDoctor } = await import('../src/layer1-agent/L1-1-mcp-server/cli.js')
 const { resolveMode } = await import('../src/layer1-agent/L1-1-mcp-server/network-mode.js')
@@ -56,9 +59,30 @@ ok('doctor custom WEBAZ_API_URL honored', /api_url:\s+http:\/\/localhost:3000/.t
 
 // ── mcp.ts wiring: flags handled before server start; no-flag path starts server ──
 const mcp = readFileSync('src/mcp.ts', 'utf8')
-ok('mcp.ts calls cliQuickResponse before startMCPServer', mcp.indexOf('cliQuickResponse') < mcp.indexOf('startMCPServer('))
+ok('mcp.ts calls cliQuickResponse before loading server', mcp.indexOf('cliQuickResponse') < mcp.indexOf('startMCPServer('))
 ok('mcp.ts handles --doctor', /runDoctor\(/.test(mcp) && /--doctor/.test(mcp))
-ok('mcp.ts still starts server on no-flag (else branch)', /else\s*{[\s\S]*startMCPServer\(/.test(mcp))
+ok('mcp.ts does NOT statically import server.js (no DB side-effect on flags)', !/^\s*import\s+[^\n]*from\s+['"][^'"]*server\.js['"]/m.test(mcp))
+ok('mcp.ts dynamically imports server.js only to start', /await import\(['"][^'"]*server\.js['"]\)/.test(mcp) && /startMCPServer\(/.test(mcp))
+
+// ── real-bin spawn: flags must NOT load server.js / init a DB / pollute stdout (ESM import side-effect; #186 audit P1) ──
+const TSX = join('node_modules', '.bin', 'tsx')
+function runBin(flag: string): { code: number; stdout: string; stderr: string; dbCreated: boolean } {
+  const home = mkdtempSync(join(tmpdir(), 'mcp-cli-'))
+  try {
+    const r = spawnSync(TSX, ['src/mcp.ts', flag], { encoding: 'utf8', env: { ...process.env, HOME: home, WEBAZ_MODE: '', WEBAZ_API_KEY: '' }, timeout: 60000 })
+    return { code: r.status ?? -1, stdout: (r.stdout || '').trim(), stderr: r.stderr || '', dbCreated: existsSync(join(home, '.webaz', 'webaz.db')) }
+  } finally { rmSync(home, { recursive: true, force: true }) }
+}
+const rv = runBin('--version')
+ok('spawn --version: exit 0', rv.code === 0)
+ok('spawn --version: stdout is ONLY the version (clean, no init log)', rv.stdout === SOFTWARE_VERSION, JSON.stringify(rv.stdout))
+ok('spawn --version: did NOT load server (no L0-1 init log on stderr)', !/L0-1|数据库初始化/.test(rv.stderr))
+ok('spawn --version: did NOT create a local .webaz DB (no side effect)', rv.dbCreated === false)
+const rm = runBin('--mode')
+ok('spawn --mode: exit 0, clean stdout network_readonly', rm.code === 0 && rm.stdout === 'network_readonly')
+ok('spawn --mode: no DB side effect', rm.dbCreated === false)
+const rh = runBin('--help')
+ok('spawn --help: exit 0, usage on stdout, no DB', rh.code === 0 && /Usage:/.test(rh.stdout) && rh.dbCreated === false)
 
 if (fail > 0) { console.error(`\n❌ MCP CLI FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ MCP CLI: --version/--help/--mode/--doctor (no server boot) · resolveMode single-source · doctor reachable/degraded/unreachable/sandbox · no-flag still starts server\n  ✅ pass ${pass}`)

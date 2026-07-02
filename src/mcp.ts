@@ -9,21 +9,22 @@
  *
  * 关联 / Related: AGENTS.md(项目地图) · RFC-003(三态:network / network_readonly / sandbox) · RFC-004(webaz_feedback)
  */
-import { startMCPServer } from './layer1-agent/L1-1-mcp-server/server.js'
+// ⚠️ 只【静态】import cli.js(纯:version + network-mode,无副作用)。【不】静态 import server.js ——
+//   server.js 顶层会 initDatabase()/建 schema,静态 import 会让 --version/--help/--mode 也触发 DB 副作用
+//   (写 ~/.webaz/*.db)+ 加载整个 server(#186 审计 P1)。故 server.js 只在真正启动时【动态】import。
 import { cliQuickResponse, runDoctor } from './layer1-agent/L1-1-mcp-server/cli.js'
 
-// CLI 标志(--version/--help/--mode/--doctor)在【启动 server 前】处理并退出;无标志 → 照常启动 stdio server。
-// 既有 MCP 客户端从不传 argv,故 no-arg 行为完全不变。
-const argv = process.argv.slice(2)
-const quick = cliQuickResponse(argv, process.env)
-if (quick !== null) {
-  console.log(quick)
-  process.exit(0)
-} else if (argv.includes('--doctor')) {
-  runDoctor(process.env).then((out) => { console.log(out); process.exit(0) }).catch((err) => { console.error(err); process.exit(1) })
-} else {
-  startMCPServer().catch((err) => {
-    console.error('MCP Server 启动失败：', err)
-    process.exit(1)
-  })
+async function main(): Promise<void> {
+  const argv = process.argv.slice(2)
+  const quick = cliQuickResponse(argv, process.env)   // --version / --help / --mode(纯,不碰 DB/server)
+  if (quick !== null) { console.log(quick); process.exit(0) }
+  if (argv.includes('--doctor')) { console.log(await runDoctor(process.env)); process.exit(0) }
+  // 只有真正启动 stdio server 时才动态加载 server.js(此时才允许 DB 初始化等副作用)。
+  const { startMCPServer } = await import('./layer1-agent/L1-1-mcp-server/server.js')
+  await startMCPServer()
 }
+
+main().catch((err) => {
+  console.error('MCP Server 启动失败：', err)
+  process.exit(1)
+})
