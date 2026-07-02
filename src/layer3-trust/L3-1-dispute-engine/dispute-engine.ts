@@ -337,8 +337,8 @@ export function arbitrateDispute(
       resolved_at = datetime('now')
     WHERE id = ?
   `).run(
-    ruling, reason, ruling, refundAmount ?? null,
-    JSON.stringify(liabilityParties ?? []),
+    ruling, reason, ruling, nonCustodial ? null : (refundAmount ?? null),   // 非托管:不落任何退款/赔付金额(不退款、不赔付)
+    JSON.stringify(nonCustodial ? [] : (liabilityParties ?? [])),
     disputeId
   )
 

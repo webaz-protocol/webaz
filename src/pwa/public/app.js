@@ -13886,8 +13886,8 @@ function buildTimelineEvent(ev, dispute, user, actors) {
     bodyHtml = `
       ${rulingText ? `<div style="font-weight:700;font-size:14px;color:${typeMeta.border};margin-bottom:4px">${t(rulingText)}</div>` : ''}
       ${ev.body ? `<div style="font-size:13px;line-height:1.5;white-space:pre-wrap;color:#374151">${escHtml(ev.body)}</div>` : ''}
-      ${meta.refund_amount != null ? `<div style="font-size:12px;margin-top:6px">💸 ${t('退款金额')}：<strong>${meta.refund_amount} WAZ</strong></div>` : ''}
-      ${liability.length > 0 ? `<div style="margin-top:6px">
+      ${dispute.payment_rail !== 'direct_p2p' && meta.refund_amount != null ? `<div style="font-size:12px;margin-top:6px">💸 ${t('退款金额')}：<strong>${meta.refund_amount} WAZ</strong></div>` : ''}
+      ${dispute.payment_rail !== 'direct_p2p' && liability.length > 0 ? `<div style="margin-top:6px">
         <div style="font-size:11px;color:#6b7280;margin-bottom:2px">${t('责任分配')}：</div>
         ${liability.map(lp => `<div style="font-size:12px;margin-top:2px">${(TL_ROLE_META[lp.role]||TL_ROLE_META.unknown).icon} ${t(lp.role)} ${t('承担')} ${lp.amount} WAZ${lp.insurance_cap!=null?` (${t('保险上限')} ${lp.insurance_cap})`:''}</div>`).join('')}
       </div>` : ''}`
@@ -14077,7 +14077,7 @@ function buildDisputeHtml(dispute, user) {
     <div style="margin-top:12px;border-top:1px solid #fecaca;padding-top:12px">
       <div style="font-weight:600;font-size:13px;margin-bottom:8px">⚖️ 仲裁员裁定（截止 ${fmtTime(dispute.arbitrate_deadline)}）</div>
       ${window.dpArbFeeNote ? window.dpArbFeeNote(dispute.payment_rail) : ''}
-      <div id="arbitrate-msg"></div>
+      <input type="hidden" id="arb-rail" value="${dispute.payment_rail || ''}"><div id="arbitrate-msg"></div>
 
       <div class="form-group" style="margin-bottom:10px">
         <label style="font-size:12px;color:#6b7280;display:block;margin-bottom:4px">裁定方式</label>
@@ -14331,14 +14331,15 @@ window.handleArbitrate = async (disputeId) => {
   if (!reason) { msgEl.innerHTML = alert$('error', t('请填写裁定理由')); return }
 
   let body = { ruling, reason }
+  const nc = document.getElementById('arb-rail')?.value === 'direct_p2p'   // 直付:仅信誉裁决 → 不读/不发任何退款/赔付金额
 
-  if (ruling === 'partial_refund') {
+  if (!nc && ruling === 'partial_refund') {
     const amount = document.getElementById('arb-amount')?.value
     if (!amount) { msgEl.innerHTML = alert$('error', t('部分退款需填写退款金额')); return }
     body = { ...body, refund_amount: Number(amount) }
   }
 
-  if (ruling === 'liability_split') {
+  if (!nc && ruling === 'liability_split') {
     const liabilityParties = []
     let totalCalc = 0
     for (const chk of document.querySelectorAll('.arb-liable-chk:checked')) {
@@ -14378,10 +14379,11 @@ window.handleArbitrate = async (disputeId) => {
 
 // 裁定方式切换 → 控制相关输入框显隐
 window.onArbRulingChange = (ruling) => {
+  const nc = document.getElementById('arb-rail')?.value === 'direct_p2p'   // 直付:无金额/无赔付 → 两个金额区块永不出现
   const partialRow = document.getElementById('arb-partial-row')
   const liabilityBlock = document.getElementById('arb-liability-block')
-  if (partialRow) partialRow.style.display = ruling === 'partial_refund' ? '' : 'none'
-  if (liabilityBlock) liabilityBlock.style.display = ruling === 'liability_split' ? '' : 'none'
+  if (partialRow) partialRow.style.display = (!nc && ruling === 'partial_refund') ? '' : 'none'
+  if (liabilityBlock) liabilityBlock.style.display = (!nc && ruling === 'liability_split') ? '' : 'none'
 }
 
 // 责任分配：勾选责任方时启用金额输入框，并实时计算合计

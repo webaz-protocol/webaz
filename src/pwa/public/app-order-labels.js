@@ -11,6 +11,7 @@ window.dpArbFeeNote = (rail) => rail === 'direct_p2p'
   : `<div style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:6px 10px;margin-bottom:8px">💰 败诉方须缴纳仲裁费：订单金额 × 1%（最低 1 WAZ）。部分退款时双方各付 0.5%。仲裁费 50% 归仲裁员，50% 归协议。</div>`
 
 // 仲裁裁定选项:非托管用胜负/责任(信誉裁决)语义;托管保留原退款/释放语义。返回 [value,label][]。
+// direct_p2p 无金额/无赔付,故【不含】liability_split(多方赔付分配是托管/物流概念);只保留胜负/部分责任的信誉裁决。
 window.dpArbRulingOptions = (rail) => rail === 'direct_p2p'
-  ? [['refund_buyer', '🔵 ' + t('判买家胜诉(信誉裁决)')], ['release_seller', '🟢 ' + t('判卖家胜诉(信誉裁决)')], ['partial_refund', '🟡 ' + t('判部分责任(信誉裁决)')], ['liability_split', '⚖️ ' + t('责任分配(信誉裁决)')]]
+  ? [['refund_buyer', '🔵 ' + t('判买家胜诉(信誉裁决)')], ['release_seller', '🟢 ' + t('判卖家胜诉(信誉裁决)')], ['partial_refund', '🟡 ' + t('判部分责任(信誉裁决)')]]
   : [['refund_buyer', '🔵 全额退款买家（买家胜诉，卖家承担）'], ['release_seller', '🟢 资金释放给卖家（卖家胜诉）'], ['partial_refund', '🟡 部分退款（折中，需填金额）'], ['liability_split', '⚖️ 责任分配（指定各方赔付额）']]
