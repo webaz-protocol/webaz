@@ -24,6 +24,7 @@ import { listProductVerifications, reviewProductVerification, type ProductVerifi
 import { listStoreVerifications, reviewStoreVerification, type StoreVerificationStatus } from '../../store-verification.js'
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'
 import { recordFeePrepayTopup, recordFeePrepayAdjustment, recordFeePrepayRefund, getDirectPayFeeAccount } from '../../direct-pay-fee-ar.js'
+import { listAllRequests, getRequest as getFeePrepayRequest, approveFeePrepayRequest, rejectFeePrepayRequest } from '../../direct-pay-fee-prepay-request.js'
 
 export interface AdminDirectReceiveDepositsDeps {
   db: Database.Database
@@ -203,6 +204,27 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
     const admin = requireRootAdmin(req, res); if (!admin) return
     return void res.json({ ok: true, account: getDirectPayFeeAccount(db, str(req.params.seller_id)) })
   })
+
+  // GET /api/admin/direct-receive/fee-prepay-requests?status=pending — ROOT 只读:预充值申请队列(核对到账用)。
+  app.get('/api/admin/direct-receive/fee-prepay-requests', (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    return void res.json({ ok: true, requests: listAllRequests(db, req.query.status ? str(req.query.status) : undefined) })
+  })
+
+  // POST /api/admin/direct-receive/fee-prepay-requests/:id/approve — ROOT + Passkey【确认真实到账 → 入账】(唯一动钱)。
+  //   purpose_data 绑 request_id + seller_id + amount_units + method(把入账金额/对象钉进 Passkey,防替换)。原子:approved + recordFeePrepay + 关联 payment。
+  app.post('/api/admin/direct-receive/fee-prepay-requests/:id/approve', gatedIngress('direct_pay_fee_prepay_record',
+    (req) => (data) => { const d = data as { request_id?: string; seller_id?: string; amount_units?: number; method?: string } | null
+      const fr = getFeePrepayRequest(db, str(req.params.id))
+      return !!d && !!fr && d.request_id === str(req.params.id) && d.seller_id === fr.seller_id && Number(d.amount_units) === Number(fr.amount_units) && str(d.method) === str(req.body?.method) },
+    (req, adminId) => { const r = approveFeePrepayRequest(db, { requestId: str(req.params.id), adminId, method: str(req.body?.method), reviewNote: opt(req.body?.note) }); return r.ok ? { ok: true, id: r.paymentId } : { ok: false, error: r.error } },
+    (req) => { const fr = getFeePrepayRequest(db, str(req.params.id)); return { targetId: fr?.seller_id ?? str(req.params.id), detail: { request_id: str(req.params.id), amount_units: fr?.amount_units, method: str(req.body?.method) } } }))
+
+  // POST /api/admin/direct-receive/fee-prepay-requests/:id/reject — ROOT + Passkey(不动钱)。purpose_data 绑 request_id。
+  app.post('/api/admin/direct-receive/fee-prepay-requests/:id/reject', gatedIngress('direct_pay_fee_prepay_reject',
+    (req) => (data) => { const d = data as { request_id?: string } | null; return !!d && d.request_id === str(req.params.id) },
+    (req, adminId) => rejectFeePrepayRequest(db, { requestId: str(req.params.id), adminId, reviewNote: opt(req.body?.note) }),
+    (req) => ({ targetId: str(req.params.id), detail: { request_id: str(req.params.id) } })))
 
   // POST /api/admin/direct-receive/readiness — ROOT + 真人 Passkey:返回【完整】Direct Pay launch readiness(blockers + facts,
   //   含 KYB/sanctions/AML/base-bond/rail clearance 全细节)。只读诊断(不写库、不 flip launch);ROOT 专用,买家/卖家拿不到。
