@@ -202,6 +202,18 @@ CREATE TABLE IF NOT EXISTS direct_receive_accounts (
       updated_at    TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
     );
 
+CREATE TABLE IF NOT EXISTS platform_receive_accounts (
+      id            TEXT PRIMARY KEY,
+      label         TEXT,
+      method        TEXT,
+      currency      TEXT,
+      instruction   TEXT NOT NULL,
+      qr_data_uri   TEXT,
+      status        TEXT NOT NULL DEFAULT 'active',
+      created_at    TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
+      updated_at    TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS'))
+    );
+
 CREATE TABLE IF NOT EXISTS direct_receive_account_qr_images (
       ref          TEXT NOT NULL,
       account_id   TEXT NOT NULL REFERENCES direct_receive_accounts(id),
