@@ -49,11 +49,12 @@ window.dpHidePaymentInfo = (order, orderId, lightweight) => {
     <div style="font-size:11px;color:#9ca3af;margin-bottom:6px">${escHtml(hint)}</div>${btn}</div>`
 }
 
-// 待支付轨:轻量重新显示(无 Passkey,重置窗口)。GET 期间可能已切订单 → dpShowPaymentInfo 内部守卫会 bail。
+// 轻量重新显示:GET【最新】订单后按【当前状态】重新分派 —— 仍待支付才轻量重显;若期间已取消/过期/争议等,
+//   dpRenderPaymentInfo 会走隐藏+Passkey 二次验证路径(绝不用旧按钮 lightweight 展示一个已失效订单的收款信息)。
 window.dpReShowPaymentInfo = async (orderId) => {
   if (!window.dpInstrBox(orderId)) return
   const o = await GET(`/orders/${orderId}`); const ord = o && o.order ? o.order : null
-  if (ord) window.dpShowPaymentInfo(ord, orderId, true)
+  const box = window.dpInstrBox(orderId); if (ord && box) window.dpRenderPaymentInfo(box, ord, orderId)
 }
 
 // 非待支付:二次验证(风险提示 + 现场 Passkey)后临时展示一个 30 分钟窗口。

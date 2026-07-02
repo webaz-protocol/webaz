@@ -468,7 +468,7 @@ ok('26b2. order-scoped box guard (dpInstrBox checks data-order-id === orderId); 
 ok('26b3. show/hide acquire the box ONLY via dpInstrBox (getElementById only inside the guard, once)', /const box = window\.dpInstrBox\(orderId\)/.test(RVL) && (RVL.match(/document\.getElementById\('dp-order-instr'\)/g) || []).length === 1)
 ok('26b4. render clears ALL stale timers (cross-order timer cannot survive navigation)', /dpRenderPaymentInfo = \(box, order, orderId\) => \{\s*window\.dpClearAllRevealTimers\(\)/.test(RVL))
 ok('26c. pending (direct_pay_window) → auto-reveal window, lightweight re-reveal', /status === 'direct_pay_window'.*dpShowPaymentInfo\(order, orderId, true\)/.test(RVLCODE.replace(/\n/g, ' ')) && /dpReShowPaymentInfo/.test(RVL))
-ok('26d. lightweight re-reveal takes NO Passkey', /dpReShowPaymentInfo = async[\s\S]{0,220}dpShowPaymentInfo\(ord, orderId, true\)/.test(RVL) && !/dpReShowPaymentInfo[\s\S]{0,220}requestPasskeyGate/.test(RVL))
+ok('26d. re-show re-dispatches by FRESH status (dpRenderPaymentInfo), no inline lightweight bypass / Passkey', /dpReShowPaymentInfo = async[\s\S]{0,300}dpRenderPaymentInfo\(box, ord, orderId\)/.test(RVL) && !/dpReShowPaymentInfo[\s\S]{0,300}dpShowPaymentInfo\(ord, orderId, true\)/.test(RVL) && !/dpReShowPaymentInfo[\s\S]{0,300}requestPasskeyGate/.test(RVL))
 ok('26e. non-pending → hidden by default (dpHidePaymentInfo, gated button)', /else window\.dpHidePaymentInfo\(order, orderId, false\)/.test(RVL) && /dpGatedRevealPaymentInfo/.test(RVL))
 ok('26f. gated re-view requires Passkey 二次验证 (direct_pay_payment_info_reveal purpose)', /requestPasskeyGate\('direct_pay_payment_info_reveal'/.test(RVL))
 ok('26g. purpose whitelisted in webauthn allow-set', /'direct_pay_payment_info_reveal'/.test(readFileSync('src/pwa/routes/webauthn.ts', 'utf8')))
@@ -512,6 +512,15 @@ for (const k of ['自动隐藏倒计时', '重新显示', '查看收款信息(�
   ok('27d. A re-show does NOT render A account into B page', cur.el.innerHTML === 'B-PANEL' && !/ACCOUNT-A/.test(cur.el.innerHTML))
   win.dpRenderPaymentInfo(cur.el, ordersFix.B, 'B')                       // rendering B clears stale timers + shows B
   ok('27e. new-order render clears stale timers + shows B account', !win._dpRevealTimers['A'] && /ACCOUNT-B/.test(cur.el.innerHTML))
+
+  // P1: order A goes cancelled while its lightweight "重新显示" button is still on the (unrefreshed) page.
+  cur.el = mkEl('A'); win.dpHidePaymentInfo(ordersFix.A, 'A', true)       // A hidden with the lightweight re-show button (was pending)
+  ok('27f-pre. lightweight re-show button present while pending', /重新显示/.test(cur.el.innerHTML))
+  ordersFix.A.status = 'cancelled'                                        // server-side state change, page not refreshed
+  await win.dpReShowPaymentInfo('A')                                      // clicking the stale button re-fetches + re-dispatches by fresh status
+  ok('27f. re-show on a now-cancelled order does NOT lightweight-reveal the account', !/ACCOUNT-A/.test(cur.el.innerHTML))
+  ok('27g. instead it drops to the Passkey-gated re-view entry', /查看收款信息/.test(cur.el.innerHTML) && /dpGatedRevealPaymentInfo/.test(cur.el.innerHTML))
+  ordersFix.A.status = 'direct_pay_window'                                // restore fixture
 }
 
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
