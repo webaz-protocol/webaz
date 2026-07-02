@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (721 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (725 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -3624,6 +3624,39 @@
         ]
       }
     },
+    "/api/direct-receive/fee-prepay-request": {
+      "post": {
+        "summary": "── 提交预充值申请(不 Passkey;凭据必填)──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/fee-prepay-request/:id/cancel": {
+      "post": {
+        "summary": "── 卖家撤销自己的 pending 申请 ──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/fee-prepay-requests": {
+      "get": {
+        "summary": "── 卖家看自己的申请(全状态)──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/direct-receive/my-fee-account": {
       "get": {
         "summary": "仅本人(requireSeller),买家拿不到;只读、不碰任何资金动作。供 seller fee center 展示。",
@@ -3656,6 +3689,17 @@
       },
       "put": {
         "summary": "PUT — 设置/替换卖家当前 active 收款说明。instruction 必填、trim、长度上限;label 可选、trim、长度上限。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/platform-receive-accounts": {
+      "get": {
+        "summary": "── 卖家看平台收款方式(active;含 instruction + qr_data_uri —— 平台公开收款明细,据此付款)──",
         "tags": [],
         "security": [
           {

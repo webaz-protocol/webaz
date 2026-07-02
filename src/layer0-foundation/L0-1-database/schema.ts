@@ -463,6 +463,26 @@ export function initDatabase(): Database.Database {
     );
     CREATE INDEX IF NOT EXISTS idx_dp_fee_payments_seller ON direct_pay_fee_payments(seller_id);
 
+    -- 平台服务费【预充值申请】(卖家发起 → admin 核实真实到账后确认入账)。留痕:凭据必填、状态流转、关联入账 payment。
+    --   ⚠️ 申请【不动钱】—— 只有 admin 确认(PR3)才调 recordFeePrepay 记入余额。amount_units = base units(1 WAZ=1e6)。
+    --   platform_account_id = 付给哪个平台收款方式(见 platform_receive_accounts)。杜绝"场外直接付、无据可查"。
+    CREATE TABLE IF NOT EXISTS direct_pay_fee_prepay_requests (
+      id                   TEXT PRIMARY KEY,
+      seller_id            TEXT NOT NULL REFERENCES users(id),
+      amount_units         INTEGER NOT NULL,          -- 申请充值额(base units)
+      currency             TEXT,                      -- 卖家声明的付款币种(展示;以实际到账为准)
+      platform_account_id  TEXT NOT NULL REFERENCES platform_receive_accounts(id),  -- 付给哪个平台收款方式(必选;admin 据此核对到账来源)
+      evidence_ref         TEXT NOT NULL,             -- 付款凭证号/流水(必填 —— 不能无据)
+      evidence_note        TEXT,
+      status               TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected | cancelled
+      created_at           TEXT DEFAULT (datetime('now')),
+      reviewed_by          TEXT REFERENCES users(id), -- admin(PR3 approve/reject 时填,Passkey)
+      reviewed_at          TEXT,
+      review_note          TEXT,
+      resulting_payment_id TEXT REFERENCES direct_pay_fee_payments(id)   -- approve 时关联的入账记录
+    );
+    CREATE INDEX IF NOT EXISTS idx_dp_fee_prepay_req_seller ON direct_pay_fee_prepay_requests(seller_id, status);
+
     -- ⏸ DORMANT(早先"AR 信用上限"模型预留;当前 = 首单宽限 + 预充值续用,额度即商家实际预付余额,无固定上限)。
     --   本表与 ceiling_requests/invoices/invoice_items/invoice_events 当前【不写不读】;保留待将来需要时复用或清理。
     CREATE TABLE IF NOT EXISTS direct_pay_fee_ar_seller_overrides (
