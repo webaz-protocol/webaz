@@ -6,7 +6,7 @@
  * 注:DCP↔WAZ 同一模拟单位纯改名,金额不变;全仓无 currency='DCP' 筛选逻辑(已核),回填不破坏任何查询。
  * Usage: npm run test:currency-schema-flip
  */
-import { mkdtempSync } from 'fs'
+import { mkdtempSync, readFileSync, readdirSync, statSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 const HOME = mkdtempSync(join(tmpdir(), 'cur-flip-'))
@@ -41,6 +41,33 @@ db2.close()
 const db3 = initDatabase()
 ok('4. re-init idempotent (still WAZ, no throw)', (db3.prepare("SELECT COUNT(*) n FROM products WHERE currency='WAZ'").get() as { n: number }).n >= 2 && (db3.prepare("SELECT COUNT(*) n FROM products WHERE currency='DCP'").get() as { n: number }).n === 0)
 db3.close()
+
+// ── ⑤ class guard: every PRODUCTION `INSERT INTO products` must declare currency ──
+//   (existing-DB frozen default is still 'DCP', so any insert relying on the default would keep birthing DCP rows).
+//   Dev/test/demo harness inserts are exempt (not agent-facing, not run in prod).
+const SKIP = /(^|\/)(test-[^/]+\.ts|demo-agent\.ts|index\.ts)$/
+function walkTs(dir: string, out: string[] = []): string[] {
+  for (const e of readdirSync(dir)) {
+    const p = join(dir, e)
+    if (statSync(p).isDirectory()) walkTs(p, out)
+    else if (e.endsWith('.ts')) out.push(p)
+  }
+  return out
+}
+const prodFiles = walkTs('src').filter(f => !SKIP.test(f))
+const insertRe = /INSERT(?:\s+OR\s+\w+)?\s+INTO\s+products\s*\(/gi
+let scanned = 0
+for (const f of prodFiles) {
+  const src = readFileSync(f, 'utf8')
+  let m: RegExpExecArray | null
+  while ((m = insertRe.exec(src)) !== null) {
+    scanned++
+    const window = src.slice(m.index, m.index + 1000)
+    const cols = window.slice(0, window.search(/VALUES/i))   // column list = between "(" and VALUES
+    ok(`5. prod INSERT INTO products in ${f.replace('src/', '')} declares currency`, /\bcurrency\b/.test(cols))
+  }
+}
+ok('5z. class guard actually scanned production inserts (>=6)', scanned >= 6, `scanned=${scanned}`)
 
 if (fail > 0) { console.error(`\n❌ currency schema flip FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ currency schema flip: fresh default WAZ · default-insert → WAZ · legacy DCP rows backfilled on init · idempotent re-run\n  ✅ pass ${pass}`)

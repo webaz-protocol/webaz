@@ -149,8 +149,8 @@ export function registerUrlClaimRoutes(app: Application, deps: UrlClaimDeps): vo
         db.prepare(`INSERT INTO products (
           id, seller_id, title, description, price, stock, category, stake_amount,
           specs, source_url, handling_hours, return_days, warranty_days,
-          commitment_hash, description_hash, price_hash, hashed_at, status, stake_locked_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'warehouse',datetime('now'))`)
+          commitment_hash, description_hash, price_hash, hashed_at, status, stake_locked_at, currency
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'warehouse',datetime('now'),'WAZ')`)
           .run(productId, user.id, title, description, priceNum, Number(stock), category, stakeAmount,
             specsJson, url, Number(handling_hours), Number(return_days), Number(warranty_days),
             makeCommitmentHash(pFields), makeDescriptionHash({ title, description, specs: specsJson }),
