@@ -13296,7 +13296,7 @@ window.orderAmountHtml = (o) => {
     let cur = ''
     try { cur = String(JSON.parse(o.direct_pay_account_snapshot || '{}').currency || '').toUpperCase() } catch {}
     const base = `${Number.isFinite(usdc) ? (Number.isInteger(usdc) ? usdc : usdc.toFixed(2)) : '—'} USDC`
-    if (!cur || cur === 'USDC' || cur === 'USD') return base
+    if (!cur || cur === 'USDC' || cur === 'USD') return window.fmtPrice(usdc)  // USDC 账户:USDC + 买家本地法币参考(fmtPrice)
     const pay = window.dpFxInCurrency ? window.dpFxInCurrency(usdc, cur) : cur
     return `${base} <span style="font-size:10px;color:#9ca3af;margin-left:4px;font-weight:400">${t('应付')} ≈ ${pay}</span>`
   }
