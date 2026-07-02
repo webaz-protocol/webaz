@@ -436,5 +436,17 @@ for (const k of ['平台服务费预充值申请', '确认到账并入账(真人
   ok(`23-i18n EN present: ${k.slice(0, 12)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
 }
 
+// ── 24. order-amount display (PR-1d): order totals → USDC; direct_p2p shows the CHOSEN seller-account currency,
+//    NOT the buyer's region local FX (buyer can only pay in a currency the seller supports). ─────────────────
+const OAH = APP.slice(APP.indexOf('window.orderAmountHtml ='), APP.indexOf('window.orderAmountHtml =') + 1000)
+ok('24a. orderAmountHtml helper defined', has(APP, 'window.orderAmountHtml ='))
+ok('24b. direct_p2p branch reads account-snapshot currency + uses dpFxInCurrency (seller currency)', /payment_rail === 'direct_p2p'/.test(OAH) && /direct_pay_account_snapshot/.test(OAH) && /dpFxInCurrency/.test(OAH))
+ok('24c. direct_p2p does NOT use region _fxLocal (seller-supported currency only)', !/_fxLocal/.test(OAH))
+ok('24d. escrow branch falls back to fmtPrice (USDC + region local)', /return window\.fmtPrice\(usdc\)/.test(OAH))
+ok('24e. no-rate currency → currency code, never fabricated (dpFxInCurrency contract)', /return cur\b/.test(P('app-direct-pay-buyer.js')))
+ok('24f. order detail 金额 + buyer/seller lists route through orderAmountHtml', (APP.match(/window\.orderAmountHtml\(/g) || []).length >= 4)
+ok("24g. '应付' has EN entry (bilingual)", /'应付'\s*:/.test(I18N))
+ok('24h. legacy WAZ→$ usdHint helper fully removed', !has(APP, 'function usdHint(') && !has(APP, 'function wazToUsd('))
+
 if (fail > 0) { console.error(`\n❌ direct-pay UI (PR-4f-b) FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ direct-pay UI (PR-4f-b): seller instruction CRUD + buyer rail/disclosure/ack + order-detail disclosures + Passkey-gated actions; bilingual copy + i18n parity; non-custodial, no payment-capability surface\n  ✅ pass ${pass}`)
