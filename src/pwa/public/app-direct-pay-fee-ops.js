@@ -23,7 +23,7 @@ window.renderAdminDirectPayHub = function (app) {
       adminLinkCard('🔖', t('逐产品直付验证'), t('核验商品外链验证码'), '#admin/product-verifications') +
       adminLinkCard('🏬', t('店铺认证审核'), t('核验店铺外链 + 免逐品'), '#admin/store-verifications')) : ''}
     ${root ? grp(t('平台服务费(预充值)'),
-      adminLinkCard('💰', t('预充值与账户'), t('充值 / 调整 / 退款 / 余额 / 应收'), '#admin/dp-fee') + adminLinkCard('🏦', t('平台收款方式'), t('WebAZ 收款账号(卖家充值平台服务费用),可多个'), '#admin/platform-receive')) : ''}
+      adminLinkCard('💰', t('预充值与账户'), t('充值 / 调整 / 退款 / 余额 / 应收'), '#admin/dp-fee') + adminLinkCard('🏦', t('平台收款方式'), t('WebAZ 收款账号(卖家充值平台服务费用),可多个'), '#admin/platform-receive') + adminLinkCard('🧾', t('平台服务费预充值申请'), t('核对到账 → 确认入账 / 驳回(卖家发起)'), '#admin/fee-prepay-requests')) : ''}
     ${grp(t('上线控制'),
       adminLinkCard('⚙️', t('直付参数'), t('开关 / 地区 / 单笔上限'), '#admin/params'))}
     <div style="font-size:12px;color:#6b7280;margin-top:12px">${t('就绪报告(CLI):')} <code>npm run direct-pay:readiness</code></div>

@@ -690,6 +690,7 @@ jobs:
       - run: npm run test:direct-receive-account-endpoints
       - run: npm run test:platform-receive-accounts
       - run: npm run test:fee-prepay-request
+      - run: npm run test:fee-prepay-review
       - run: npm run test:direct-pay-order-qr
       - run: npm run test:direct-pay-order-redaction
       - run: npm run guard:direct-pay-order-reader
