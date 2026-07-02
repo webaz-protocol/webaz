@@ -918,7 +918,7 @@ export async function getOpenDisputes(_db: Database.Database): Promise<(DisputeR
     SELECT d.*,
       u1.name as initiator_name, u1.role as initiator_role,
       u2.name as defendant_name, u2.role as defendant_role,
-      o.total_amount, o.status as order_status
+      o.total_amount, o.status as order_status, o.payment_rail
     FROM disputes d
     LEFT JOIN users u1 ON d.initiator_id = u1.id
     LEFT JOIN users u2 ON d.defendant_id = u2.id

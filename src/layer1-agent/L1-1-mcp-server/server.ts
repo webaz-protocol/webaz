@@ -825,9 +825,9 @@ Actions:
 - list_open     pending disputes (arbitrators only)
 - respond       respondent rebuttal (before 48h deadline)
 - add_evidence  any participant supplements
-- arbitrate     ruling + fund disposition (assigned arbitrator only)
+- arbitrate     ruling (assigned arbitrator only). ESCROW: fund disposition. DIRECT PAY (payment_rail=direct_p2p, non-custodial): reputation-only ruling — NO refund/release/arbitration-fee, NO amounts.
 
-Ruling options: refund_buyer | release_seller | partial_refund (needs refund_amount; optional liable_party → 3rd-party fault, seller settled full + deducted from liable) | liability_split (needs liability_parties[]={user_id,amount}).
+Ruling options — ESCROW: refund_buyer | release_seller | partial_refund (needs refund_amount; optional liable_party → 3rd-party fault, seller settled full + deducted from liable) | liability_split (needs liability_parties[]={user_id,amount}). DIRECT PAY: refund_buyer=买家胜诉 | release_seller=卖家胜诉 | partial_refund=部分责任 — reputation verdict only, do NOT pass refund_amount/liability_parties (protocol holds no funds). Check \`view\`→payment_rail/ruling_options first.
 
 Protocol auto-judges (no human): respondent silent 48h → favor initiator; arbitrator silent 120h → refund_buyer. Executed rulings are instant + irreversible.
 
@@ -3115,10 +3115,13 @@ async function handleDispute(args: Record<string, unknown>): Promise<Record<stri
         ORDER BY e.created_at ASC
       `).all(orderId, uploaderRole) as Record<string, unknown>[]
 
+    const dpNonCustodial = dispute.payment_rail === 'direct_p2p'   // 直付=非托管:仅信誉裁决,无退款/放款/仲裁费/金额
     return {
       dispute_id: dispute.id,
       order_id: dispute.order_id,
       status: dispute.status,
+      payment_rail: dispute.payment_rail || 'escrow',
+      non_custodial: dpNonCustodial,
       initiator: `${dispute.initiator_name}（${dispute.initiator_role}）`,
       defendant: `${dispute.defendant_name}（${dispute.defendant_role}）`,
       reason: dispute.reason,
@@ -3128,15 +3131,21 @@ async function handleDispute(args: Record<string, unknown>): Promise<Record<stri
       defendant_notes: dispute.defendant_notes ?? '（被诉方尚未提交回应）',
       defendant_evidence: JSON.parse((dispute.defendant_evidence_ids as string) || '[]'),
       ruling: dispute.ruling_type
-        ? { type: dispute.ruling_type, refund_amount: dispute.refund_amount, reason: dispute.verdict_reason }
+        ? (dpNonCustodial
+            ? { type: dispute.ruling_type, reason: dispute.verdict_reason, note: '非托管信誉裁决:无退款/放款金额' }
+            : { type: dispute.ruling_type, refund_amount: dispute.refund_amount, reason: dispute.verdict_reason })
         : null,
-      // QA 轮 15 P1：未裁定时暴露可选 ruling 列表（与 PWA disputes-write.ts validRulings 对齐）
-      ruling_options: dispute.ruling_type ? undefined : [
+      // 未裁定时暴露可选 ruling 列表。direct_p2p:仅信誉裁决(胜负/责任,无金额);escrow:含金额/责任分配。
+      ruling_options: dispute.ruling_type ? undefined : (dpNonCustodial ? [
+        { type: 'refund_buyer',    desc: '判买家胜诉（信誉裁决;非托管:无退款/放款/仲裁费）' },
+        { type: 'release_seller',  desc: '判卖家胜诉（信誉裁决;无退款/放款）' },
+        { type: 'partial_refund',  desc: '判部分责任（信誉裁决;无金额）' },
+      ] : [
         { type: 'refund_buyer',    desc: '全额退款给买家（卖家败诉）' },
         { type: 'release_seller',  desc: '放款给卖家（买家败诉）' },
         { type: 'partial_refund',  desc: '部分退款（需传 refund_amount）' },
         { type: 'liability_split', desc: '按责任分配（需传 liability_parties 数组）' },
-      ],
+      ]),
       resolved_at: dispute.resolved_at,
     }
   }
@@ -3156,7 +3165,7 @@ async function handleDispute(args: Record<string, unknown>): Promise<Record<stri
         initiator: `${d.initiator_name}（${d.initiator_role}）`,
         defendant: `${d.defendant_name}（${d.defendant_role}）`,
         reason: d.reason,
-        amount: `${d.total_amount} WAZ`,
+        amount: d.payment_rail === 'direct_p2p' ? `${d.total_amount} USDC（非托管·信誉裁决）` : `${d.total_amount} WAZ`,
         respond_deadline: d.respond_deadline,
         arbitrate_deadline: d.arbitrate_deadline,
         created_at: d.created_at,

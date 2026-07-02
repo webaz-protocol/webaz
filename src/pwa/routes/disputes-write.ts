@@ -214,7 +214,9 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
       return void res.status(403).json({ error: '此争议未分配给你 — 仅指派的仲裁员可裁定', error_code: 'NOT_ASSIGNED_ARBITRATOR' })
     }
 
-    // 协议层：仲裁员签名的 ruling 入订单链
+    // 协议层：仲裁员签名的 ruling 入订单链。direct_p2p 非托管=仅信誉裁决,绝不把请求里的退款/赔付金额写进【签名链/timeline】
+    //   (即便资金层不动钱,签名链会永久留假语义)→ 强制 non_custodial + 金额/责任方全清。
+    const ncRail = dispute.payment_rail === 'direct_p2p'
     try {
       appendOrderEvent(db, {
         orderId: dispute.order_id as string,
@@ -227,9 +229,10 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
           action: 'arbitration_ruling',
           dispute_id: req.params.id,
           ruling, reason,
-          refund_amount: refund_amount ? Number(refund_amount) : null,
-          liable_party_id: liable_party_id || null,
-          liability_parties: liability_parties || null,
+          non_custodial: ncRail || undefined,
+          refund_amount: ncRail ? null : (refund_amount ? Number(refund_amount) : null),
+          liable_party_id: ncRail ? null : (liable_party_id || null),
+          liability_parties: ncRail ? null : (liability_parties || null),
         },
       })
     } catch (e) { console.warn('[order-chain] arbitration ruling event failed:', (e as Error).message) }
