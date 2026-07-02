@@ -30,6 +30,7 @@ export type OrderStatus =
   // ── Direct Pay (Rail 1) 直付专属状态 ───────────────────────────
   | 'direct_pay_window'          // Rail1: 卖家已质押平台费,展示收款方式,等买家付款(直付/场外)
   | 'direct_expired_unconfirmed' // Rail1: 付款窗口超时未标记 —— 不静默关单,留买家争议/确认窗口
+  | 'payment_query'              // Rail1: 卖家报告未收到货款 → 买卖双方【协商】(非仲裁),暂停履约;协商未果才升举证仲裁
 
 export type UserRole =
   | 'buyer' | 'seller' | 'logistics' | 'reviewer'
@@ -100,6 +101,36 @@ export const VALID_TRANSITIONS: Record<string, Transition> = {
     allowedRoles: ['buyer', 'system'],
     requiresEvidence: false,
     description: 'Rail1 直付:买家确认未付 / 宽限期后系统关单(终态)'
+  },
+
+  // ── Direct Pay (Rail 1) 货款协商(争议≠仲裁):卖家报未收款 → 双方先协商,谈不拢才升举证仲裁 ──────────
+  'accepted→payment_query': {
+    allowedRoles: ['seller'],
+    requiresEvidence: false,
+    description: 'Rail1 直付:卖家报告未收到货款 → 进入协商(非仲裁),暂停履约。买家可取消/主张已付,卖家可确认已收/(宽限后)取消'
+  },
+  'payment_query→accepted': {
+    allowedRoles: ['seller'],
+    requiresEvidence: false,
+    description: 'Rail1 直付:卖家确认已收到货款 → 恢复原订单继续履约'
+  },
+  'payment_query→cancelled': {
+    // buyer=主动取消(承认未付);seller=买家静默宽限后请求取消;system=cron 在 7 天买家申诉窗口后终结。时序/窗口由路由+cron 守。
+    allowedRoles: ['buyer', 'seller', 'system'],
+    requiresEvidence: false,
+    description: 'Rail1 直付:协商关单(买家承认未付 / 卖家宽限后取消 / 系统申诉窗口后终结)'
+  },
+  'payment_query→disputed': {
+    allowedRoles: ['buyer', 'seller'],
+    requiresEvidence: true,
+    evidenceHint: '上传付款/未收款凭证(链上 tx / 银行回执 / 截图)',
+    description: 'Rail1 直付:协商未果(买家主张已付 + 卖家否认)→ 升级举证仲裁(证据制信誉裁决,不涉资金)'
+  },
+  'disputed→payment_query': {
+    // 仲裁裁定前可【撤回仲裁申请】回到协商(自行解决)。仅裁定前有效(裁定后 disputed 已终结),时序由路由守。
+    allowedRoles: ['buyer', 'seller'],
+    requiresEvidence: false,
+    description: 'Rail1 直付:撤回仲裁申请 → 回到协商(裁定前;双方继续自行解决)'
   },
 
   // ── 卖家接单 ──────────────────────────────────────────────
@@ -342,6 +373,7 @@ export const CURRENT_RESPONSIBLE: Record<string, UserRole> = {
   disputed:   'arbitrator',  // 等仲裁处理
   direct_pay_window:          'buyer',   // Rail1: 等买家付款并标记
   direct_expired_unconfirmed: 'buyer',   // Rail1: 等买家确认未付 或 升级争议
+  payment_query:              'buyer',   // Rail1: 卖家报未收款,等买家协商响应(取消/主张已付)
 }
 
 /** Phase 1 self-fulfill 覆盖表：seller 一人承担 shipped/picked_up/in_transit 全程 */
@@ -378,6 +410,7 @@ export const ORDER_STATE_MEANINGS: Record<OrderStatus, { zh: string; en: string 
   expired:             { zh: '订单超时自动失败(通用兜底,终态)', en: 'order expired (generic timeout, terminal)' },
   direct_pay_window:           { zh: 'Rail1 直付:已质押平台费,等买家付款(协议不持货款)', en: 'Rail1 direct-pay: fee-staked, awaiting buyer off-protocol payment (protocol holds no funds)' },
   direct_expired_unconfirmed:  { zh: 'Rail1 直付:付款窗口超时未标记(不静默关单,留争议/确认窗口)', en: 'Rail1 direct-pay: payment window expired unmarked (not silently closed; dispute/confirm window open)' },
+  payment_query:               { zh: 'Rail1 直付:卖家报未收货款,双方协商中(非仲裁;暂停履约)', en: 'Rail1 direct-pay: seller reported non-receipt, buyer↔seller negotiating (not arbitration; fulfillment paused)' },
 }
 
 /** 订单/争议生命周期契约 —— 集成方 agent 读它即懂"订单怎么流转 + 每步谁驱动 + 何时 + 含义"。 */
