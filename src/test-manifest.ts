@@ -55,7 +55,7 @@ if (m.live_stats) {
   console.log(`  历史订单: ${m.live_stats.total_orders} 笔`)
   console.log(`  完成成交: ${m.live_stats.completed_orders} 笔`)
   console.log(`  活跃 Skill: ${m.live_stats.active_skills} 个`)
-  console.log(`  协议总成交量: ${m.live_stats.total_volume_dcp} DCP`)
+  console.log(`  协议总成交量: ${m.live_stats.total_volume_waz} WAZ`)
   console.log(`  ✅ 实时统计正常`)
 } else {
   console.log('  （无数据库数据）')

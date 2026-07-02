@@ -340,7 +340,7 @@ async function getLiveStats() {
     const disputes    = await n('SELECT COUNT(*) as n FROM disputes')
     const skills      = await n("SELECT COUNT(*) as n FROM skills WHERE active = 1")
     const totalVolume = ((await dbOne<{ v: number }>("SELECT COALESCE(SUM(total_amount),0) as v FROM orders WHERE status = 'completed'"))?.v ?? 0)
-    return { users, active_products: products, total_orders: orders, completed_orders: completed, total_disputes: disputes, active_skills: skills, total_volume_dcp: totalVolume }
+    return { users, active_products: products, total_orders: orders, completed_orders: completed, total_disputes: disputes, active_skills: skills, total_volume_waz: totalVolume }
   } catch {
     return null
   }

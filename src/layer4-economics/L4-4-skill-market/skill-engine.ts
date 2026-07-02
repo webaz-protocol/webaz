@@ -5,7 +5,7 @@
  * 核心思路：解决冷启动——现有 Amazon/Shopify 卖家零成本接入新渠道。
  *
  * Skill 类型：
- *   catalog_sync      - 目录同步（把外部店铺接入 DCP 搜索）
+ *   catalog_sync      - 目录同步（把外部店铺接入 WebAZ 搜索）
  *   auto_accept       - 自动接单（买家下单后立即接受，无需等待）
  *   price_negotiation - 价格协商（允许 Agent 在限定范围内议价）
  *   quality_guarantee - 质量承诺（额外质押，增强买家信心）
@@ -110,8 +110,8 @@ export const SKILL_TYPE_META: Record<SkillType, { label: string; label_en: strin
     label: '目录同步',
     label_en: 'Catalog sync',
     icon: '🔄',
-    description: '将卖家的外部商品目录（Amazon/Shopify/自定义）同步到 DCP，买家 Agent 订阅后可优先发现这些商品。',
-    description_en: 'Sync seller external catalogs (Amazon/Shopify/custom) to DCP — subscribed buyer agents discover these first.',
+    description: '将卖家的外部商品目录（Amazon/Shopify/自定义）同步到 WebAZ，买家 Agent 订阅后可优先发现这些商品。',
+    description_en: 'Sync seller external catalogs (Amazon/Shopify/custom) to WebAZ — subscribed buyer agents discover these first.',
   },
   auto_accept: {
     label: '自动接单',
@@ -138,7 +138,7 @@ export const SKILL_TYPE_META: Record<SkillType, { label: string; label_en: strin
     label: '质量承诺',
     label_en: 'Quality guarantee',
     icon: '🛡️',
-    description: '卖家额外质押 DCP 作为质量保证金，问题订单买家可获得额外赔偿。',
+    description: '卖家额外质押 WAZ 作为质量保证金，问题订单买家可获得额外赔偿。',
     description_en: 'Seller stakes extra WAZ as quality bond — buyer gets additional compensation on disputes.',
   },
   instant_ship: {

@@ -735,6 +735,7 @@ jobs:
       - run: npm run test:mcp-apikey-fallback
       - run: npm run test:mcp-fresh-db-schema
       - run: npm run test:mcp-mode-honesty
+      - run: npm run test:currency-display
       - run: npm run test:agent-delegation-grants
       - run: npm run test:agent-pairing
       - run: npm run test:agent-grant-verify
