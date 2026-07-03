@@ -12,7 +12,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
-import { stripDirectPayPaymentTarget } from '../direct-pay-order-redaction.js'  // 披露门:物流第三方绝不该见收款目标
+import { projectDirectPayTargetForViewer } from '../direct-pay-order-redaction.js'  // 披露门:按查看者投影(物流=第三方 → 剥离收款目标)
 
 export interface LogisticsDeps {
   db: Database.Database
@@ -20,8 +20,8 @@ export interface LogisticsDeps {
 }
 
 export function registerLogisticsRoutes(app: Application, deps: LogisticsDeps): void {
-  // db 已走 RFC-016 异步 seam(dbAll),不再直接用 deps.db
-  const { auth } = deps
+  // 查询走 RFC-016 异步 seam(dbAll);db 仅传给共享投影器(其买家分支查 ack,本路由查看者恒第三方)
+  const { auth, db } = deps
 
   app.get('/api/logistics/companies', async (_req, res) => {
     const companies = await dbAll(
@@ -57,7 +57,7 @@ export function registerLogisticsRoutes(app: Application, deps: LogisticsDeps): 
     `, [user.id])
 
     // 披露门:物流是非买家第三方,无条件删除 direct_p2p 收款目标(instruction 快照 + 账号快照);物流只需商品/状态/地址。
-    for (const o of [...(available as Array<Record<string, unknown>>), ...(mine as Array<Record<string, unknown>>)]) stripDirectPayPaymentTarget(o)
+    for (const o of [...(available as Array<Record<string, unknown>>), ...(mine as Array<Record<string, unknown>>)]) projectDirectPayTargetForViewer(db, o, user.id as string)
     res.json({ available, mine })
   })
 }

@@ -12,7 +12,7 @@ process.env.HOME = mkdtempSync(join(tmpdir(), 'dp-redact-'))
 
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { recordDisclosureAck } = await import('../src/direct-pay-disclosures.js')
-const { redactUnackedDirectPayTarget, stripDirectPayPaymentTarget } = await import('../src/pwa/direct-pay-order-redaction.js')
+const { redactUnackedDirectPayTarget, stripDirectPayPaymentTarget, projectDirectPayTargetForViewer } = await import('../src/pwa/direct-pay-order-redaction.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}`) } }
@@ -57,5 +57,20 @@ const o6 = mkOrder({ id: 'ord6', direct_pay_account_snapshot: '{not json' })
 redactUnackedDirectPayTarget(db, o6, 'b1')
 ok('6. malformed account snapshot → dropped, no throw', !('direct_pay_account_snapshot' in o6) && !('direct_pay_instruction_snapshot' in o6))
 
+// ── 7. projectDirectPayTargetForViewer:唯一入口的按查看者矩阵(#218 审计发现 6)──
+const p1 = mkOrder({ id: 'ord7', seller_id: 's1' })
+projectDirectPayTargetForViewer(db, p1, 'b1')
+ok('7a. projector/buyer un-acked: ack-gate applied', !('direct_pay_instruction_snapshot' in p1) && JSON.parse((p1.direct_pay_account_snapshot as string) || '{}').qr_ref === undefined)
+ackBoth('ord8')
+const p2 = mkOrder({ id: 'ord8', seller_id: 's1' })
+projectDirectPayTargetForViewer(db, p2, 'b1')
+ok('7b. projector/buyer acked: target kept', p2.direct_pay_instruction_snapshot === 'SECRET' && JSON.parse(p2.direct_pay_account_snapshot as string).qr_ref === 'qref1')
+const p3 = mkOrder({ id: 'ord9', seller_id: 's1' })
+projectDirectPayTargetForViewer(db, p3, 's1')
+ok('7c. projector/seller (payee): untouched', p3.direct_pay_instruction_snapshot === 'SECRET' && JSON.parse(p3.direct_pay_account_snapshot as string).qr_ref === 'qref1')
+const p4 = mkOrder({ id: 'ord10', seller_id: 's1' })
+projectDirectPayTargetForViewer(db, p4, 'third_party')
+ok('7d. projector/third-party (logistics/仲裁员/任何非当事方): BOTH snapshots removed', !('direct_pay_instruction_snapshot' in p4) && !('direct_pay_account_snapshot' in p4))
+
 if (fail > 0) { console.error(`\n❌ direct-pay order redaction FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exitCode = 1 }
-else console.log(`✅ direct-pay order redaction: buyer un-acked strips target (keeps method/currency/label) · acked keeps · non-buyer & escrow untouched · third-party strip removes both · malformed = fail-safe\n  ✅ pass ${pass}`)
+else console.log(`✅ direct-pay order redaction: primitives (redact/strip) + viewer-projector matrix (buyer-unacked/buyer-acked/seller/third-party)\n  ✅ pass ${pass}`)
