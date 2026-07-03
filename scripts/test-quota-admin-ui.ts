@@ -23,7 +23,9 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 // are all in scope. app-contribution.js is concatenated LAST so the quota BLOCK
 // (PR #18 → end of that file) slices cleanly off the tail.
 const P = (f: string): string => readFileSync(join(HERE, '..', 'src', 'pwa', 'public', f), 'utf8')
-const app = P('app.js') + '\n' + P('app-admin.js') + '\n' + P('app-contribution.js')
+// app-contribution-hub.js hosts the 共建运营 admin hub (quota-requests card moved there from the main panel);
+// include it BEFORE app-contribution.js so the PR #18 quota BLOCK still slices off the app-contribution.js tail.
+const app = P('app.js') + '\n' + P('app-admin.js') + '\n' + P('app-contribution-hub.js') + '\n' + P('app-contribution.js')
 const i18n = P('i18n.js')
 
 const startIdx = app.indexOf('PR #18 build-task quota-increase requests')
@@ -38,7 +40,7 @@ function main(): void {
   // router wiring
   ok('route() dispatches #me/quota-requests → renderMyQuotaRequests', /params\[0\] === 'quota-requests'\)\s*return renderMyQuotaRequests\(app\)/.test(app))
   ok('route() dispatches #admin/quota-requests → renderAdminBuildTaskQuota', /params\[0\] === 'quota-requests'\)\s*return renderAdminBuildTaskQuota\(app\)/.test(app))
-  ok('admin hub links to #admin/quota-requests (root-gated)', /admin_type[^\n]*'#admin\/quota-requests'/.test(app))
+  ok('共建运营 hub links to #admin/quota-requests (root-gated) + panel routes to hub', /root \? grp\(t\('建任务治理'\)[\s\S]{0,200}'#admin\/quota-requests'/.test(app) && /'#admin\/contribution-ops'/.test(app))
 
   // RATE_LIMITED affordance is wired into the capped create path
   ok('createTaskDraft handles RATE_LIMITED → showRateLimitAffordance', /error_code === 'RATE_LIMITED'\)\s*\{?\s*showRateLimitAffordance/.test(app))
