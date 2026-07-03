@@ -22,6 +22,8 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 initSystemUser(db); initOrderChainSchema(db); D.initDisputeSchema(db); D.initEvidenceRequestSchema(db); MC.initMutualCancelSchema(db)
+try { db.exec('ALTER TABLE orders ADD COLUMN bid_stake_held REAL DEFAULT 0') } catch { /* server.ts ALTER,真实库已有 */ }
+try { db.exec('ALTER TABLE orders ADD COLUMN stake_backing REAL DEFAULT 0') } catch { /* server.ts ALTER,真实库已有 */ }
 for (const [id, role] of [['buyer', 'buyer'], ['seller', 'seller'], ['outsider', 'buyer']] as const)
   db.prepare('INSERT INTO users (id,name,role,api_key) VALUES (?,?,?,?)').run(id, id, role, 'k_' + id)
 

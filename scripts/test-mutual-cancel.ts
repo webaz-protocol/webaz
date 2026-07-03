@@ -28,15 +28,19 @@ const mkUser = (id: string, role = 'buyer'): void => {
 }
 mkUser('buyer', 'buyer'); mkUser('seller', 'seller'); mkUser('outsider', 'buyer')
 try { db.exec('ALTER TABLE products ADD COLUMN stake_amount REAL DEFAULT 0') } catch { /* 真实库已有 */ }
-db.prepare("INSERT INTO products (id,seller_id,title,description,price,stake_amount) VALUES ('p1','seller','P','d',50,10)").run()
+try { db.exec('ALTER TABLE orders ADD COLUMN bid_stake_held REAL DEFAULT 0') } catch { /* server.ts ALTER,真实库已有 */ }
+try { db.exec('ALTER TABLE orders ADD COLUMN stake_backing REAL DEFAULT 0') } catch { /* server.ts ALTER,真实库已有 */ }
+db.prepare("INSERT INTO products (id,seller_id,title,description,price,stake_amount) VALUES ('p1','seller','P','d',50,10)").run()  // 商品名义 stake_amount=10(当前 escrow 不据此锁 stake → 结算不得读它)
 
 let oc = 0
-function mkOrder(rail: 'direct_p2p' | 'escrow'): { orderId: string; disputeId: string } {
+// bidStakeHeld = 本订单【真实锁定】的卖家质押(中标单模型:award 时 balance→staked);同步把它记进 seller.staked。
+function mkOrder(rail: 'direct_p2p' | 'escrow', bidStakeHeld = 0): { orderId: string; disputeId: string } {
   const orderId = `o_${++oc}`
   const escrow = rail === 'escrow' ? 50 : 0
-  db.prepare("INSERT INTO orders (id,product_id,buyer_id,seller_id,quantity,unit_price,total_amount,escrow_amount,status,payment_rail) VALUES (?,?,?,?,?,?,?,?,?,?)")
-    .run(orderId, 'p1', 'buyer', 'seller', 1, 50, 50, escrow, 'disputed', rail)
-  if (rail === 'escrow') { db.prepare("UPDATE wallets SET escrowed=50 WHERE user_id='buyer'").run(); db.prepare("UPDATE wallets SET staked=10 WHERE user_id='seller'").run() }
+  db.prepare("INSERT INTO orders (id,product_id,buyer_id,seller_id,quantity,unit_price,total_amount,escrow_amount,status,payment_rail,bid_stake_held) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+    .run(orderId, 'p1', 'buyer', 'seller', 1, 50, 50, escrow, 'disputed', rail, bidStakeHeld)
+  if (rail === 'escrow') db.prepare("UPDATE wallets SET escrowed=50 WHERE user_id='buyer'").run()   // 建单只锁买家托管(orders-create 现实:stake_backing 恒 0,不锁卖家 stake)
+  if (bidStakeHeld > 0) db.prepare("UPDATE wallets SET staked=staked+? WHERE user_id='seller'").run(bidStakeHeld)  // 中标质押真实进 seller.staked
   const r = D.createDispute(db, orderId, 'buyer', '双方想直接取消', [])
   if (!r.success) throw new Error('createDispute failed: ' + r.error)
   return { orderId, disputeId: r.disputeId as string }
@@ -83,18 +87,41 @@ const nid = () => `mcp_${++pc}`
   ok('4e. zero reputation impact (dispute_loss_count unchanged)', lossCount() === lc0)
   ok('4f. second accept → ORDER_NOT_DISPUTED (idempotent/terminal)', MC.acceptMutualCancel(db, orderId, 'seller').error_code === 'ORDER_NOT_DISPUTED') }
 
-// ⑤ 托管 accept:买家全额退款(escrowed→balance),卖家质押返还(staked→balance),资金守恒,order=cancelled
+// ⑤ 托管 accept —— 真实当前模型:product.stake_amount>0 但 order.stake_backing=0 且 seller.staked=0。
+//    买家全额退款,卖家【钱包不变】(不得据商品名义 stake_amount 释放不存在的质押 → 防负 staked / 凭空印钱)。
 { db.prepare("UPDATE wallets SET balance=0,staked=0,escrowed=0,earned=0 WHERE user_id IN ('buyer','seller')").run()
-  const { orderId, disputeId } = mkOrder('escrow')
+  const { orderId, disputeId } = mkOrder('escrow')   // bid_stake_held=0 → seller.staked 保持 0
   const before = totalMoney()
-  MC.proposeMutualCancel(db, orderId, 'seller', '协商取消', nid())   // 卖家提议这次
+  MC.proposeMutualCancel(db, orderId, 'seller', '协商取消', nid())
   const a = MC.acceptMutualCancel(db, orderId, 'buyer')
-  ok('5a. escrow accept ok, buyer_refund=50, stake_returned=10', a.ok === true && (a.settlement as any)?.buyer_refund === 50 && (a.settlement as any)?.seller_stake_returned === 10)
+  ok('5a. escrow accept ok, buyer_refund=50, stake_returned=0 (无锁定 stake)', a.ok === true && (a.settlement as any)?.buyer_refund === 50 && (a.settlement as any)?.seller_stake_returned === 0)
   const wb = wallet('buyer'); const ws = wallet('seller')
   ok('5b. buyer escrow→balance (balance=50, escrowed=0)', wb.balance === 50 && wb.escrowed === 0)
-  ok('5c. seller stake→balance (balance=10, staked=0)', ws.balance === 10 && ws.staked === 0)
-  ok('5d. money conserved (no creation/destruction)', totalMoney() === before)
+  ok('5c. seller wallet UNCHANGED (staked=0, balance=0 —— 未印钱/未打负)', ws.staked === 0 && ws.balance === 0)
+  ok('5d. money conserved', totalMoney() === before)
   ok('5e. order cancelled + dispute resolved', oStatus(orderId) === 'cancelled' && dStatus(disputeId) === 'resolved') }
+
+// ⑤bis 托管 + 【真实锁定】的中标质押(order.bid_stake_held=10, seller.staked=10)→ 无责返还恰好 10,守恒
+{ db.prepare("UPDATE wallets SET balance=0,staked=0,escrowed=0,earned=0 WHERE user_id IN ('buyer','seller')").run()
+  const { orderId } = mkOrder('escrow', 10)   // 中标质押 10 真实进 seller.staked
+  const before = totalMoney()
+  MC.proposeMutualCancel(db, orderId, 'buyer', null, nid())
+  const a = MC.acceptMutualCancel(db, orderId, 'seller')
+  const ws = wallet('seller')
+  ok('5bis-a. locked bid stake returned exactly 10', (a.settlement as any)?.seller_stake_returned === 10 && ws.staked === 0 && ws.balance === 10)
+  ok('5bis-b. buyer refunded 50 + money conserved', wallet('buyer').balance === 50 && totalMoney() === before) }
+
+// ⑤ter 防负护栏:订单声称 bid_stake_held=10,但 seller.staked 实际只有 0(错配/边界)→ cap 到实际 staked=0,不返还、不打负
+{ db.prepare("UPDATE wallets SET balance=0,staked=0,escrowed=0,earned=0 WHERE user_id IN ('buyer','seller')").run()
+  const orderId = `o_${++oc}`
+  db.prepare("INSERT INTO orders (id,product_id,buyer_id,seller_id,quantity,unit_price,total_amount,escrow_amount,status,payment_rail,bid_stake_held) VALUES (?,?,'buyer','seller',1,50,50,50,'disputed','escrow',10)").run(orderId, 'p1')
+  db.prepare("UPDATE wallets SET escrowed=50 WHERE user_id='buyer'").run()   // 只锁买家托管;seller.staked 故意保持 0(声称有 10 但实际没锁)
+  const r = D.createDispute(db, orderId, 'buyer', 'x', []); if (!r.success) throw new Error(r.error)
+  MC.proposeMutualCancel(db, orderId, 'seller', null, nid())
+  const a = MC.acceptMutualCancel(db, orderId, 'buyer')
+  const ws = wallet('seller')
+  ok('5ter. cap to real staked: stake_returned=0, seller.staked NOT negative (=0), no phantom balance', a.ok === true && (a.settlement as any)?.seller_stake_returned === 0 && ws.staked === 0 && ws.balance === 0)
+  ok('5ter-b. buyer still refunded 50', wallet('buyer').balance === 50 && oStatus(orderId) === 'cancelled') }
 
 // ⑥ 竞态:争议被自动裁决(resolved)后 accept 失败,且 checkDisputeTimeouts 不再动已协商取消的订单
 { const { orderId, disputeId } = mkOrder('direct_p2p')

@@ -18,7 +18,7 @@
 import Database from 'better-sqlite3'
 import { transition } from '../../layer0-foundation/L0-2-state-machine/engine.js'
 import { toUnits, toDecimal } from '../../money.js'
-import { applyWalletDelta } from '../../ledger.js'
+import { applyWalletDelta, walletUnits } from '../../ledger.js'
 
 export interface MutualCancelResult {
   ok: boolean
@@ -34,7 +34,7 @@ export interface MutualCancelResult {
   can_withdraw?: boolean
 }
 
-interface OrderRow { id: string; buyer_id: string; seller_id: string; status: string; payment_rail: string | null; total_amount: number; product_id: string }
+interface OrderRow { id: string; buyer_id: string; seller_id: string; status: string; payment_rail: string | null; total_amount: number; stake_backing: number; bid_stake_held: number }
 interface DisputeRow { id: string; status: string }
 interface ProposalRow { id: string; proposed_by: string; counterparty: string; status: string; reason: string | null; created_at: string }
 
@@ -57,7 +57,7 @@ export function initMutualCancelSchema(db: Database.Database): void {
 /** 载入订单+活跃争议,并判定 caller 是否当事方 + 订单是否处于可协商取消的状态。fail-closed。 */
 function loadCancellable(db: Database.Database, orderId: string, userId: string):
   { ok: true; order: OrderRow; dispute: DisputeRow; role: 'buyer' | 'seller' } | { ok: false; error: string; error_code: string } {
-  const order = db.prepare('SELECT id, buyer_id, seller_id, status, payment_rail, total_amount, product_id FROM orders WHERE id = ?').get(orderId) as OrderRow | undefined
+  const order = db.prepare('SELECT id, buyer_id, seller_id, status, payment_rail, total_amount, stake_backing, bid_stake_held FROM orders WHERE id = ?').get(orderId) as OrderRow | undefined
   if (!order) return { ok: false, error: '订单不存在', error_code: 'ORDER_NOT_FOUND' }
   const role = userId === order.buyer_id ? 'buyer' : userId === order.seller_id ? 'seller' : null
   if (!role) return { ok: false, error: '仅买卖双方可协商取消该订单', error_code: 'NOT_A_PARTY' }
@@ -110,7 +110,10 @@ export function declineMutualCancel(db: Database.Database, orderId: string, user
 /**
  * 资金+状态结算(tx-free core)——【必须由路由用 db.transaction 包裹】。
  *  · 直付(非托管):零资金,仅 transition→cancelled。
- *  · 托管:买家全额退款(escrowed→balance),卖家质押原样返还(staked→balance);无罚没/无手续费/无信誉。
+ *  · 托管:买家托管货款退回(escrowed→balance);卖家【本订单实际锁定】的质押返还(staked→balance)。无罚没/手续费/信誉。
+ *  · 【money-path 铁律】只动【真实锁定】的额度:买家退款 cap 到其实际 escrowed;卖家质押取订单快照
+ *    stake_backing + bid_stake_held(不是商品名义 stake_amount —— 当前 escrow 模型 stake_backing 恒 0、
+ *    不锁卖家 stake,bid_stake_held 仅中标单有),再 cap 到卖家真实 staked。绝不打负 / 凭空印钱。
  *  · 争议行同事务置 resolved(verdict='mutual_cancel'),防自动裁决二次结算。
  */
 function settleMutualCancel(db: Database.Database, order: OrderRow, disputeId: string): MutualCancelResult {
@@ -121,12 +124,14 @@ function settleMutualCancel(db: Database.Database, order: OrderRow, disputeId: s
   if (nonCustodial) {
     detail = { non_custodial: true, buyer_refund: 0, seller_stake_returned: 0, note: '非托管(直付)单:协议不持货款 → 零资金,仅关单' }
   } else {
-    const totalU = toUnits(order.total_amount)
-    applyWalletDelta(db, order.buyer_id, { escrowed: -totalU, balance: totalU })          // 买家托管货款原路退回(镜像 refund_buyer,守恒)
-    const product = db.prepare('SELECT stake_amount FROM products WHERE id = ?').get(order.product_id) as { stake_amount: number } | undefined
-    const stakeU = product?.stake_amount ? toUnits(product.stake_amount) : 0
-    if (stakeU > 0) applyWalletDelta(db, order.seller_id, { staked: -stakeU, balance: stakeU })  // 卖家质押无责返还
-    detail = { non_custodial: false, buyer_refund: toDecimal(totalU), seller_stake_returned: toDecimal(stakeU), note: '托管单:买家全额退款,卖家质押返还,无罚没/无手续费/无信誉影响' }
+    // 买家托管货款原路退回 —— cap 到买家【实际】escrowed(守恒;绝不退超过锁定额 / 防重复退)。
+    const refundU = Math.max(0, Math.min(toUnits(order.total_amount), walletUnits(db, order.buyer_id).escrowed))
+    if (refundU > 0) applyWalletDelta(db, order.buyer_id, { escrowed: -refundU, balance: refundU })
+    // 卖家质押无责返还 —— 只退【本订单实际锁定】的质押(订单快照,非商品名义值),再 cap 到卖家真实 staked → 绝不打负/印钱。
+    const lockedU = toUnits(Number(order.stake_backing || 0)) + toUnits(Number(order.bid_stake_held || 0))
+    const stakeReturnU = Math.max(0, Math.min(lockedU, walletUnits(db, order.seller_id).staked))
+    if (stakeReturnU > 0) applyWalletDelta(db, order.seller_id, { staked: -stakeReturnU, balance: stakeReturnU })
+    detail = { non_custodial: false, buyer_refund: toDecimal(refundU), seller_stake_returned: toDecimal(stakeReturnU), note: '托管单:买家托管退回(cap 实际 escrowed)+ 卖家本单锁定质押返还(stake_backing+bid_stake_held,cap 实际 staked);无罚没/手续费/信誉' }
   }
   const tr = transition(db, order.id, 'cancelled', sys.id, [], '双方协商取消(无责裁定:买家退款,双方信誉不受影响)')
   if (!tr.success) return { ok: false, error: tr.error, error_code: 'TRANSITION_FAILED' }
