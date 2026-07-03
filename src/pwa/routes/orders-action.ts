@@ -23,7 +23,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import type { OrderStatus } from '../../layer0-foundation/L0-2-state-machine/transitions.js'
-import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'
+import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 import { releaseFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:取消/超时释放任何遗留模拟质押(AR 订单无 stake → no-op)
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'   // PR-4e: D1/D2 披露契约门
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'          // PR-4e: 现场真人 Passkey/gate-token 门
@@ -191,8 +191,25 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       if (uid !== buyerId) {
         return void res.status(403).json({ error: '你不是本订单的买家', error_code: 'NOT_ORDER_BUYER' })
       }
-      if (order.payment_rail !== 'direct_p2p' || order.status !== 'direct_pay_window') {
-        return void res.status(409).json({ error: '该操作仅适用于直付订单的付款窗口', error_code: 'NOT_DIRECT_PAY_WINDOW' })
+      // 买家取消:付款窗口内(未付/后悔)或货款协商阶段(承认未付)。mark_paid 仍仅付款窗口。
+      const cancelInQuery = action === 'cancel' && order.status === 'payment_query'
+      if (order.payment_rail !== 'direct_p2p' || (order.status !== 'direct_pay_window' && !cancelInQuery)) {
+        return void res.status(409).json({ error: '该操作仅适用于直付订单的付款窗口/协商阶段', error_code: 'NOT_DIRECT_PAY_WINDOW' })
+      }
+    }
+    // ── Rail1 直付货款协商(争议≠仲裁)动作。均仅 direct_p2p + 角色/状态门。PR-B1(人驱动协商;定时机制见 PR-B2)。 ──
+    const PQ_ACTIONS = ['report_nonpayment', 'confirm_received', 'pq_escalate', 'pq_withdraw']
+    if (PQ_ACTIONS.includes(action)) {
+      if (order.payment_rail !== 'direct_p2p') return void res.status(409).json({ error: '该操作仅适用于直付订单', error_code: 'NOT_DIRECT_PAY' })
+      if ((action === 'report_nonpayment' || action === 'confirm_received') && uid !== sellerId) return void res.status(403).json({ error: '你不是本订单的卖家', error_code: 'NOT_ORDER_SELLER' })
+      if ((action === 'pq_escalate' || action === 'pq_withdraw') && uid !== buyerId && uid !== sellerId) return void res.status(403).json({ error: '只有买卖双方可操作', error_code: 'NOT_ORDER_PARTY' })
+      if (action === 'report_nonpayment' && order.status !== 'accepted') return void res.status(409).json({ error: `仅可在【待发货(accepted)】阶段报告未收款,当前 ${order.status}`, error_code: 'NOT_ACCEPTED' })
+      if ((action === 'confirm_received' || action === 'pq_escalate') && order.status !== 'payment_query') return void res.status(409).json({ error: `仅可在【货款协商(payment_query)】阶段操作,当前 ${order.status}`, error_code: 'NOT_PAYMENT_QUERY' })
+      if (action === 'pq_withdraw') {
+        if (order.status !== 'disputed') return void res.status(409).json({ error: `仅可在【争议(disputed)】阶段撤回,当前 ${order.status}`, error_code: 'NOT_DISPUTED' })
+        // 已裁定的争议不可撤回(disputed 已终结成 resolved/dismissed 前,dispute.status 仍 open/in_review)
+        const d = await dbOne<{ status: string }>("SELECT status FROM disputes WHERE order_id = ? ORDER BY created_at DESC LIMIT 1", [req.params.id])
+        if (d && (d.status === 'resolved' || d.status === 'dismissed')) return void res.status(409).json({ error: '争议已裁定,不可撤回', error_code: 'DISPUTE_ALREADY_RULED' })
       }
     }
     // PR-4e:mark_paid = direct_p2p RISK 动作(已过 direct_pay_window 只读预检)→ 两次披露门 + 现场真人 Passkey 门。cancel 不门控。
@@ -345,6 +362,8 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       accept: 'accepted', ship: 'shipped', pickup: 'picked_up',
       transit: 'in_transit', deliver: 'delivered', confirm: 'confirmed', dispute: 'disputed',
       mark_paid: 'accepted',   // Rail1 直付:买家声明"我已付款" → accepted(汇入既有卖家发货流程;协议不验真实付款)
+      // Rail1 货款协商:卖家报未收款→协商;卖家确认已收→恢复;升级→举证仲裁;撤回→回协商(pq_withdraw 由上方原子块 early-return 处理,列此仅为通过 !toStatus 校验)。
+      report_nonpayment: 'payment_query', confirm_received: 'accepted', pq_escalate: 'disputed', pq_withdraw: 'payment_query',
     }
     const toStatus = actionMap[action]
     if (!toStatus) return void res.json({ error: `未知操作：${action}` })
@@ -381,11 +400,36 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       return void res.json({ success: true, status: 'completed', settlement: { rail: 'direct_p2p', fee_accrued: true } })
     }
 
+    // Rail1 撤回仲裁:disputed→payment_query + 【同一事务】关闭活跃 dispute(否则订单回协商但仲裁视图仍见活跃争议 → 脏状态,
+    //   仲裁员可能对已回协商的单裁定)。原子后重建买家响应宽限,让 PR-B2 的宽限/超时 cron 有截止时间可依赖。
+    if (action === 'pq_withdraw') {
+      try {
+        db.transaction(() => {
+          const r = transition(db, req.params.id, 'payment_query', user.id as string, [], notes)
+          if (!r.success) throw new Error(r.error || 'withdraw transition failed')
+          db.prepare("UPDATE disputes SET status = 'dismissed', verdict_reason = COALESCE(verdict_reason, '撤回仲裁,回到协商'), resolved_at = datetime('now') WHERE order_id = ? AND status IN ('open', 'in_review')").run(req.params.id)
+        })()
+      } catch (e) { return void res.status(409).json({ error: `撤回仲裁失败:${(e as Error).message}`, error_code: 'WITHDRAW_FAILED' }) }
+      let gh = 72; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'direct_pay.payment_query_grace_hours'"); if (p) gh = Math.max(1, Number(p.value) || 72) } catch {}
+      await dbRun(`UPDATE orders SET payment_query_deadline = datetime('now', ? ), payment_query_cancel_deadline = NULL WHERE id = ?`, [`+${gh} hours`, req.params.id])
+      notifyTransition(db, req.params.id, 'disputed', 'payment_query')
+      return void res.json({ success: true, status: 'payment_query', dispute_withdrawn: true })
+    }
+
     const fromStatus = order.status as string
     const result = transition(db, req.params.id, toStatus, user.id as string, evidenceIds, notes)
     if (!result.success) return void res.json({ error: result.error })
 
     notifyTransition(db, req.params.id, fromStatus, toStatus)
+
+    // Rail1 货款协商:卖家报未收款 → 设买家响应宽限(PR-B2 卖家据此才可请求取消);确认已收/升级 → 清协商截止。
+    if (action === 'report_nonpayment') {
+      let gh = 72; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'direct_pay.payment_query_grace_hours'"); if (p) gh = Math.max(1, Number(p.value) || 72) } catch {}
+      await dbRun(`UPDATE orders SET payment_query_deadline = datetime('now', ? ) WHERE id = ?`, [`+${gh} hours`, req.params.id])
+    }
+    if (action === 'confirm_received' || action === 'pq_escalate') {
+      await dbRun(`UPDATE orders SET payment_query_deadline = NULL, payment_query_cancel_deadline = NULL WHERE id = ?`, [req.params.id])
+    }
 
     if (toStatus === 'disputed') {
       createDispute(db, req.params.id, user.id as string, notes || evidence_description || '买家发起争议', evidenceIds)
