@@ -3,7 +3,7 @@
 //   目标须真人 + 已注册 Passkey + 非当事人 + 非 agent/system(后端 grantArbitrator 校验,前端只带输入)。中文 t(),英文 i18n.js。
 window.renderAdminArbitrators = async function (app) {
   if (!state.user) { renderLogin(); return }
-  if ((state.user.admin_type || 'root') !== 'root') { app.innerHTML = shell(`<div class="alert alert-info">${t('仅限根管理员')}</div>`, 'admin'); return }
+  if ((typeof isAdmin === 'function' && !isAdmin()) || (state.user.admin_type || 'root') !== 'root') { app.innerHTML = shell(`<div class="alert alert-info">${t('仅限根管理员')}</div>`, 'admin'); return }  // PR-F:先短路判 isAdmin(),否则无 admin_type 用户被 `||'root'` 默认当 root 放行
   app.innerHTML = shell(`
     <h1 class="page-title">⚖ ${t('仲裁员管理')}</h1>
     <div style="margin-bottom:8px"><button class="btn btn-outline btn-sm" style="width:auto" onclick="navigate('#admin')">${t('← 返回')}</button></div>

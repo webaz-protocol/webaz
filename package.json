@@ -145,6 +145,7 @@
     "test:disputes-read-auth": "tsx scripts/test-disputes-read-auth.ts",
     "test:arbitration-entry-frontend": "tsx scripts/test-arbitration-entry-frontend.ts",
     "test:arbitrator-admin-ui": "tsx scripts/test-arbitrator-admin-ui.ts",
+    "test:webauthn-arbitrator-purposes": "tsx scripts/test-webauthn-arbitrator-purposes.ts",
     "test:evidence-active-recheck": "tsx scripts/test-evidence-active-recheck.ts",
     "test:i18n-labels": "tsx scripts/test-i18n-discover-dispute-labels.ts",
     "test:listing-product-type": "tsx scripts/test-listing-product-type.ts",
