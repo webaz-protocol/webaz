@@ -24,6 +24,7 @@
  *  7. 防骚扰:每单累计最多 3 次 request(声明性动作,cap 防拿通知当骚扰杠杆)。
  */
 import type Database from 'better-sqlite3'
+import { restorePreShipDirectPayStock } from './direct-pay-stock.js'   // 库存回补唯一入口(pre-ship 放行;已出库拒绝,走退货验收)
 
 export interface CancelRefundResult {
   ok: boolean
@@ -156,8 +157,8 @@ export function confirmRefundReceived(
   if (cas.changes !== 1) return { ok: false, error: '卖家尚未声明退款,不可确认', error_code: 'REFUND_NOT_MARKED' }
   const t = transition(db, args.orderId, 'cancelled', sys.id, [], '直付取消退款握手:卖家已场外退款,买家确认收到 → 无责取消')
   if (!t.success) throw new Error(t.error || 'TRANSITION_FAILED')   // 抛错让路由 db.transaction 整体回滚(含上面 CAS)
-  // 恢复库存(direct_p2p v1 仅简单商品;transition→cancelled 引擎不恢复库存,此处补齐 —— 未发货取消,货还在)
-  db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(order.quantity, order.product_id)
+  // 库存回补:经唯一守卫入口(accepted=已付未发,A 类放行;已出库来源在入口被拒 —— 见 direct-pay-stock.ts 情形矩阵)
+  restorePreShipDirectPayStock(db, { fromStatus: 'accepted', productId: order.product_id, quantity: Number(order.quantity) || 1 })
   return { ok: true, status: 'cancelled' }
 }
 

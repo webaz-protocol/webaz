@@ -16,6 +16,7 @@
 import type Database from 'better-sqlite3'
 import { transition } from '../../layer0-foundation/L0-2-state-machine/engine.js'
 import { releaseFeeStake } from '../../direct-pay-ledger.js'
+import { restorePreShipDirectPayStock } from '../../direct-pay-stock.js'   // D3 库存回补唯一入口(pre-ship 放行;已出库拒绝)
 import { notifyTransition, createNotification } from '../../layer2-business/L2-6-notifications/notification-engine.js'
 
 const SYS = 'sys_protocol'
@@ -86,8 +87,7 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
     db.transaction(() => {
       const r = transition(db, id, 'cancelled', SYS, [], 'Rail1 直付:宽限期满,买家未付款/未升级争议,系统关单')
       if (!r.success) return
-      // D3 库存恢复:未发货取消(买家从未付款),transition→cancelled 引擎不恢复库存,此前一直漏。
-      db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(quantity, product_id)
+      restorePreShipDirectPayStock(db, { fromStatus: 'direct_expired_unconfirmed', productId: product_id, quantity })   // D3 回补(pre-ship 唯一入口)
       graceCancelled.push(id)
     })()
   }
@@ -133,7 +133,7 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
       const r = transition(db, id, 'cancelled', SYS, [], 'Rail1 直付:货款协商申诉窗满,买家未回应/未升级,系统关单')
       if (!r.success) return
       releaseFeeStake(db, { orderId: id })   // 无完成不收费:退卖家费用质押
-      db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(quantity, product_id)   // D3 库存恢复(pre-ship 取消,此前一直漏)
+      restorePreShipDirectPayStock(db, { fromStatus: 'payment_query', productId: product_id, quantity })   // D3 回补(pre-ship 唯一入口)
       done = true
     })()
     if (done) { pqCancelled.push(id); try { notifyTransition(db, id, 'payment_query', 'cancelled') } catch (e) { console.warn('[direct-pay-timeouts] notify pq-cancel:', (e as Error).message) } }  // 通知买卖双方(cron 系统关单也要发,route 之外)

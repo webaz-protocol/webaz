@@ -26,6 +26,7 @@ import type { OrderStatus } from '../../layer0-foundation/L0-2-state-machine/tra
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 import { createNotification } from '../../layer2-business/L2-6-notifications/notification-engine.js'
 import { releaseFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:取消/超时释放任何遗留模拟质押(AR 订单无 stake → no-op)
+import { restorePreShipDirectPayStock } from '../../direct-pay-stock.js'   // D3 库存回补唯一入口(pre-ship 放行;已出库拒绝)
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'   // PR-4e: D1/D2 披露契约门
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'          // PR-4e: 现场真人 Passkey/gate-token 门
 
@@ -373,9 +374,8 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
           const r = transition(db, req.params.id, 'cancelled', uid, [], notes)
           if (!r.success) throw new Error(r.error || '状态转移失败')
           releaseFeeStake(db, { orderId: req.params.id })
-          // D3 库存恢复:transition→cancelled 引擎【不】恢复库存(只有 fault 态恢复),此前直付取消一直漏库存。
-          //   本分支恒未发货(direct_pay_window / payment_query 均 pre-ship),按 quantity 恢复(direct_p2p v1 仅简单商品)。
-          db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(order.quantity, order.product_id)
+          // D3 库存回补:经唯一守卫入口(仅 pre-ship 来源放行;已出库走退货验收,绝不直接回补 —— 见 direct-pay-stock.ts 情形矩阵)
+          restorePreShipDirectPayStock(db, { fromStatus: fromStatusCancel, productId: order.product_id as string, quantity: Number(order.quantity) || 1 })
         })()
       } catch (e) {
         return void res.status(409).json({ error: (e as Error).message, error_code: 'CANCEL_FAILED' })
