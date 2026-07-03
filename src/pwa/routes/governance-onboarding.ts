@@ -34,6 +34,7 @@ import { getCasesForRole, getCasesForMaintainer, validateCaseReviews, type CaseR
 // RFC-016 Phase 1 — 申请/题目/案例/申诉的校验读 + 列表读 + 单语句写 → async seam;
 //   activate/resign/resolve-appeal 的 3 个角色态 CAS db.transaction 保持同步(Phase 3 迁 pg)。
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
+import { grantArbitrator } from '../arbitrator-lifecycle.js'  // PR-B:激活仲裁角色必须桥接到 active arbitrator_whitelist(唯一 runtime 授权源)
 
 interface EligibilityItem {
   key: string
@@ -466,7 +467,18 @@ export function registerGovernanceOnboardingRoutes(app: Application, deps: Gover
       }
     }
 
-    // 5. 事务:conditional UPDATE 防竞态 + INSERT activate row + 加 users.roles
+    // 4b. PR-B 桥接:激活【仲裁】能力 → 必须进 active arbitrator_whitelist(唯一 runtime 授权源;users.roles 不再作
+    //   eligibility 路径)。走【统一】grantArbitrator(含 revoked-terminal + 拒 system/agent/无 Passkey);失败则不激活。
+    //   verifier 角色走其自身白名单,不在此桥。先于状态翻转 → 保证"governance active ⟹ whitelist active"。
+    if (role === 'arbitrator') {
+      const g = grantArbitrator(db, { userId: app_.user_id, grantedBy: adminId, note: 'governance onboarding 激活' })
+      if (!g.ok) {
+        logAdminAction(adminId, 'governance_activate', 'user', app_.user_id, { ok: false, role, error_code: g.error_code })
+        return void errorRes(res, 409, g.error_code || 'GRANT_FAILED', g.error || '激活失败:无法授予仲裁员资格(见 error_code)')
+      }
+    }
+
+    // 5. 事务:conditional UPDATE 防竞态 + INSERT activate row + 加 users.roles(仅治理记录,非 eligibility 源)
     // PR #25 self-review fix P1-1:status check 进 transaction(防 2 maintainer 同时激活 → 2 activate row)
     // PR #25 self-review fix P1-2:不存 note 到 appeal_resolution(语义错);maintainer note 由 logAdminAction(detail) 记
     const RACE_LOST = 'RACE_LOST_PENDING_TO_ACTIVE'

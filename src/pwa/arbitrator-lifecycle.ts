@@ -36,7 +36,10 @@ function assertGrantableHuman(db: Database.Database, userId: string): ArbMutatio
   const u = db.prepare('SELECT id, role, roles FROM users WHERE id = ?').get(userId) as { id: string; role: string; roles: string | null } | undefined
   if (!u) return { ok: false, error_code: 'USER_NOT_FOUND', error: '用户不存在' }
   let roles: string[] = []; try { roles = JSON.parse(u.roles || '[]') } catch {}
-  if (u.role === 'system' || roles.includes('system')) return { ok: false, error_code: 'NOT_HUMAN', error: 'system 账号不可授权为仲裁员' }
+  // 拒 system 与 agent(即便有 Passkey):agent 是程序化行为体,仲裁是真人铁律节点。
+  if (u.role === 'system' || u.role === 'agent' || roles.includes('system') || roles.includes('agent')) {
+    return { ok: false, error_code: 'NOT_HUMAN', error: 'system/agent 账号不可授权为仲裁员' }
+  }
   const hasPk = (db.prepare('SELECT COUNT(*) AS n FROM webauthn_credentials WHERE user_id = ?').get(userId) as { n: number }).n > 0
   if (!hasPk) return { ok: false, error_code: 'PASSKEY_REQUIRED', error: '目标需先注册 Passkey(仲裁需真人);合成/agent 账号无 Passkey 故被拒' }
   return null

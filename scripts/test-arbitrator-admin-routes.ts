@@ -11,6 +11,7 @@ import express, { type Request, type Response } from 'express'
 import { createServer, request as httpRequest, type Server } from 'node:http'
 
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
+const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')  // approve 端点走异步 seam(dbOne/dbRun)
 const { initSystemUser } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
 const { initArbitratorReviewSchema, initWebauthnSchema } = await import('../src/runtime/webaz-schema-helpers.js')
 const { registerArbitratorRoutes } = await import('../src/pwa/routes/arbitrator.js')
@@ -18,7 +19,7 @@ const { registerArbitratorRoutes } = await import('../src/pwa/routes/arbitrator.
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
-const db = initDatabase(); db.pragma('foreign_keys = OFF')
+const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 initSystemUser(db); initArbitratorReviewSchema(db); initWebauthnSchema(db)
 const mkUser = (id: string, role = 'buyer', passkey = false): void => {
   db.prepare('INSERT INTO users (id,name,role,api_key) VALUES (?,?,?,?)').run(id, id, role, 'k_' + id)
@@ -80,6 +81,27 @@ try {
   ok('revoke arb1 → 200 + revoked', (await call('/api/admin/arbitrators/arb1/revoke', { webauthn_token: 'GOOD' }, 'admin1')).status === 200 && wlStatus('arb1') === 'revoked')
   const reGrant = await call('/api/admin/arbitrators/grant', { user_id: 'arb1', webauthn_token: 'GOOD' }, 'admin1')
   ok('revoked is terminal via route → 409 REVOKED_TERMINAL', reGrant.status === 409 && reGrant.json?.error_code === 'REVOKED_TERMINAL')
+
+  // ── approve 端点 now routes through grantArbitrator (no INSERT OR REPLACE) ──
+  mkUser('arb2', 'buyer', true)
+  db.prepare("INSERT INTO arbitrator_applications (id, user_id, status) VALUES ('app_arb2','arb2','pending')").run()
+  // approve without Passkey → 412 + audited
+  const apNoTok = await call('/api/admin/arbitrator-applications/app_arb2/approve', {}, 'admin1')
+  ok('approve WITHOUT Passkey → 412', apNoTok.status === 412 && apNoTok.json?.error_code === 'HUMAN_PRESENCE_REQUIRED')
+  ok('approve no-Passkey NOT granted', wlStatus('arb2') === undefined)
+  ok('approve failed-gate audited', auditFor('arbitrator.approve', 'arb2').some(a => a.detail?.ok === false))
+  // approve with Passkey → 200 + active whitelist + application approved
+  const apGood = await call('/api/admin/arbitrator-applications/app_arb2/approve', { webauthn_token: 'GOOD' }, 'admin1')
+  ok('approve WITH Passkey → 200', apGood.status === 200 && apGood.json?.success === true)
+  ok('approve → arb2 active whitelist (via grantArbitrator, not INSERT OR REPLACE)', wlStatus('arb2') === 'active')
+  ok('approve → application flipped to approved', (db.prepare("SELECT status FROM arbitrator_applications WHERE id='app_arb2'").get() as { status: string }).status === 'approved')
+  ok('approve success audited', auditFor('arbitrator.approve', 'arb2').some(a => a.detail?.ok === true))
+  // ★ revoked user + pending application + approve → REVOKED_TERMINAL, stays ineligible (no resurrection)
+  db.prepare("INSERT INTO arbitrator_applications (id, user_id, status) VALUES ('app_arb1','arb1','pending')").run()   // arb1 was revoked above
+  const apRevoked = await call('/api/admin/arbitrator-applications/app_arb1/approve', { webauthn_token: 'GOOD' }, 'admin1')
+  ok('★ revoked user + approve → 409 REVOKED_TERMINAL (INSERT OR REPLACE would have revived)', apRevoked.status === 409 && apRevoked.json?.error_code === 'REVOKED_TERMINAL')
+  ok('★ revoked user stays revoked after approve attempt', wlStatus('arb1') === 'revoked')
+  ok('revoked approve failure audited', auditFor('arbitrator.approve', 'arb1').some(a => a.detail?.error_code === 'REVOKED_TERMINAL'))
 
   // GET roster (admin-only, no Passkey)
   const roster = await call('/api/admin/arbitrators', {}, 'admin1', 'GET')

@@ -22,7 +22,7 @@
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
-import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
 import { grantArbitrator, suspendArbitrator, reinstateArbitrator, revokeArbitrator, listArbitrators, type ArbMutation } from '../arbitrator-lifecycle.js'  // PR-B 生产仲裁员生命周期域逻辑
 
 export interface ArbitratorDeps {
@@ -179,25 +179,19 @@ export function registerArbitratorRoutes(app: Application, deps: ArbitratorDeps)
 
   app.post('/api/admin/arbitrator-applications/:id/approve', async (req, res) => {
     const admin = requireArbitrationAdmin(req, res); if (!admin) return
-    const { note } = req.body
+    const note = (req.body?.note ?? null) as string | null
     const appRow = await dbOne<{ id: string; user_id: string; status: string }>("SELECT id, user_id, status FROM arbitrator_applications WHERE id = ?", [req.params.id])
     if (!appRow) return void res.json({ error: '申请不存在' })
     if (appRow.status !== 'pending') return void res.json({ error: '该申请不在待审状态' })
-    // 原子段:CAS 翻转 pending→approved + 入白名单仅在本请求真翻转时(防并发双批准)
-    try {
-      db.transaction(() => {
-        const cas = db.prepare("UPDATE arbitrator_applications SET status='approved', reviewed_at=datetime('now'), reviewed_by=?, decision_note=? WHERE id=? AND status='pending'")
-          .run(admin.id, note || null, appRow.id)
-        if (cas.changes === 0) throw new Error('ARB_RACE')
-        db.prepare(`INSERT OR REPLACE INTO arbitrator_whitelist (user_id, note, is_system, granted_by, stake_amount) VALUES (?,?,0,?,?)`)
-          .run(appRow.user_id, note || '外部仲裁员批准', admin.id, ARB_STAKE_REQUIRED)
-      })()
-    } catch (e) {
-      if ((e as Error).message === 'ARB_RACE') return void res.json({ error: '该申请不在待审状态' })
-      console.error('[arbitrator approve tx]', (e as Error).message)
-      return void res.status(500).json({ error: '批准失败,请重试' })
-    }
-    logAdminAction(admin.id as string, 'approve_arbitrator', 'user', appRow.user_id, { note })
+    // PR-B:批准 = 现场真人 Passkey(purpose 绑目标 user_id)+ 走【统一】grantArbitrator(含 revoked-terminal +
+    //   拒 system/agent/无 Passkey)。绝不 INSERT OR REPLACE 白名单(那会复活被撤销用户)。审计成功与失败。
+    const gate = consumeGateToken(admin.id as string, req.body?.webauthn_token as string | undefined, 'arbitrator_grant', (d) => (d as { user_id?: string } | null)?.user_id === appRow.user_id)
+    if (!gate.ok) { logAdminAction(admin.id as string, 'arbitrator.approve', 'user', appRow.user_id, { ok: false, gate: gate.reason }); return void errorRes(res, 412, 'HUMAN_PRESENCE_REQUIRED', gate.reason || '此操作需现场真人 Passkey 确认') }
+    const g = grantArbitrator(db, { userId: appRow.user_id, grantedBy: admin.id as string, note: note ?? '外部申请批准' })
+    if (!g.ok) { logAdminAction(admin.id as string, 'arbitrator.approve', 'user', appRow.user_id, { ok: false, error_code: g.error_code }); return void errorRes(res, 409, g.error_code || 'GRANT_FAILED', g.error || '批准失败') }
+    // grant 成功(active 白名单)后再翻转申请状态(CAS;竞态下另一请求已批准,grant 幂等,用户仍 active)。
+    await dbRun("UPDATE arbitrator_applications SET status='approved', reviewed_at=datetime('now'), reviewed_by=?, decision_note=? WHERE id=? AND status='pending'", [admin.id, note, appRow.id])
+    logAdminAction(admin.id as string, 'arbitrator.approve', 'user', appRow.user_id, { ok: true })
     res.json({ success: true })
   })
 
