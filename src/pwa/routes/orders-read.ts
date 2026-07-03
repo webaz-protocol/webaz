@@ -22,6 +22,7 @@ import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // R
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'  // PR-4f-b: direct_p2p 收款说明响应契约门
 import { projectDirectPayTargetForViewer } from '../direct-pay-order-redaction.js'  // 收款目标披露门:按查看者一次分派(买家=ack 门/卖家=收款方保留/第三方=剥离),所有 orders reader 必过
 import { getMutualCancelState } from '../../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'  // 协商取消(无责合意)可达性 + 当前提议(仅 disputed 计算,UI 便利字段)
+import { getCancelRefundState } from '../../direct-pay-cancel-refund.js'  // 直付取消退款握手状态(仅 direct_p2p+accepted 计算,UI 便利字段)
 import { isEligibleArbitrator } from '../arbitrator-lifecycle.js'  // 白名单仲裁员可查【争议中】订单(裁定所需);不看 legacy role==='arbitrator'
 import { getQrImageForOwner } from '../../direct-receive-account-qr.js'  // Rail1 D2:ack 门后按订单快照 qr_ref 取收款码字节((ref,seller_id) 域内)
 
@@ -237,6 +238,13 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     if (order.status === 'disputed') {
       const mc = getMutualCancelState(db, req.params.id, user.id as string)
       order.mutual_cancel = mc.ok ? { proposal: mc.proposal ?? null, can_propose: !!mc.can_propose, can_accept: !!mc.can_accept, can_decline: !!mc.can_decline, can_withdraw: !!mc.can_withdraw } : null
+    }
+
+    // 直付取消退款握手状态(审计项 C)—— 仅 direct_p2p + accepted(付款后·发货前)计算,供订单页同步渲染。
+    //   party-gated(域内);非当事方(仲裁员等)拿 null。真正边界在 direct-pay-cancel-refund 路由。
+    if (order.payment_rail === 'direct_p2p' && order.status === 'accepted') {
+      const cr = getCancelRefundState(db, req.params.id, user.id as string)
+      order.cancel_refund = cr.ok ? { request: cr.request ?? null, can_request: !!cr.can_request, can_respond: !!cr.can_respond, can_confirm: !!cr.can_confirm, can_withdraw: !!cr.can_withdraw } : null
     }
 
     res.json({ ...statusInfo, history, product, dispute, trackingInfo })

@@ -103,6 +103,15 @@ export const VALID_TRANSITIONS: Record<string, Transition> = {
     description: 'Rail1 直付:买家确认未付 / 宽限期后系统关单(终态)'
   },
 
+  // ── Direct Pay (Rail 1) 取消退款握手(审计项 C):买家已付款、卖家未发货 → 三步握手无责关单 ──────────
+  //   request(买家)→ mark_refunded(卖家声明已场外退款)→ confirm(买家确认收到,Passkey)→ 本边(system 执行)。
+  //   仅 system:买家不能单方取消已付款订单,必须经握手(域模块 src/direct-pay-cancel-refund.ts 收口,非托管零资金)。
+  'accepted→cancelled': {
+    allowedRoles: ['system'],
+    requiresEvidence: false,
+    description: 'Rail1 直付:取消退款握手完成(卖家已场外退款+买家确认收到)→ 系统无责关单,恢复库存'
+  },
+
   // ── Direct Pay (Rail 1) 货款协商(争议≠仲裁):卖家报未收款 → 双方先协商,谈不拢才升举证仲裁 ──────────
   'accepted→payment_query': {
     allowedRoles: ['seller'],

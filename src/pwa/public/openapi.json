@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (738 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (744 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -5466,6 +5466,84 @@
     "/api/orders/:id/action": {
       "post": {
         "summary": "通用状态机 action — accept/ship/pickup/transit/deliver/confirm/dispute",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/cancel-refund": {
+      "get": {
+        "summary": "GET /api/orders/:id/cancel-refund",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/cancel-refund/confirm": {
+      "post": {
+        "summary": "POST /api/orders/:id/cancel-refund/confirm",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/cancel-refund/decline": {
+      "post": {
+        "summary": "POST /api/orders/:id/cancel-refund/decline",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/cancel-refund/mark-refunded": {
+      "post": {
+        "summary": "POST /api/orders/:id/cancel-refund/mark-refunded",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/cancel-refund/request": {
+      "post": {
+        "summary": "POST /api/orders/:id/cancel-refund/request",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/cancel-refund/withdraw": {
+      "post": {
+        "summary": "POST /api/orders/:id/cancel-refund/withdraw",
         "tags": [
           "order"
         ],
