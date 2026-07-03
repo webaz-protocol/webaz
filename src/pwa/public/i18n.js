@@ -139,6 +139,12 @@ const _EN = {
   '已收到,取消订单': 'Received — cancel order',
   '订单已无责取消': 'Order cancelled, no fault to either party',
   '下单时参考价,以卖家收款说明为准': 'reference rate at order time; the seller\'s payment instruction is authoritative',
+  // 卖家对账卡(审计项 F)
+  '发货前对账(买家已标记付款)': 'Reconcile before shipping (buyer marked as paid)',
+  '银行/收款App流水附言应为': 'The bank / payment-app statement memo should read',
+  '同买家另有': 'Same buyer has',
+  '笔同金额直付订单在途 —— 每笔转账只能核销一个订单,请逐单核对参考号,谨防一笔款冒充多单。': 'other in-flight direct-pay order(s) of the SAME amount — one transfer settles ONE order only; check the reference per order and beware one payment claimed on multiple orders.',
+  '请核实款项【已到账】且附言/金额与本单一致再发货;发货即视为确认收款。未收到请点"未收到货款"。': 'Ship only after the money has ARRIVED and the memo/amount match THIS order; shipping counts as confirming receipt. Not received? Tap "Payment not received".',
   '直付订单:发货前请核实货款已到账 —— 银行流水附言应为': 'Direct-pay order: verify the payment has ARRIVED before shipping — the bank transfer memo should read',
   '(同买家同金额多单务必逐单核对参考号)。发货即视为你确认已收到货款;发货后不可再报告未收款,只能走争议。': ' (multiple in-flight orders of the same amount from the same buyer: check the reference PER ORDER). Shipping counts as your confirmation that the payment arrived; after shipping you can no longer report non-payment — only a dispute.',
   '未收到货款': 'Payment not received',

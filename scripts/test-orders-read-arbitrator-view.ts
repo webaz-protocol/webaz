@@ -23,6 +23,7 @@ const { initArbitratorReviewSchema, initWebauthnSchema } = await import('../src/
 const D = await import('../src/layer3-trust/L3-1-dispute-engine/dispute-engine.js')
 const { grantArbitrator } = await import('../src/pwa/arbitrator-lifecycle.js')
 const { initMutualCancelSchema } = await import('../src/layer3-trust/L3-1-dispute-engine/mutual-cancel.js')
+const { initDirectPayCancelRefundSchema } = await import('../src/direct-pay-cancel-refund.js')
 const { registerOrdersReadRoutes } = await import('../src/pwa/routes/orders-read.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -30,7 +31,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 initSystemUser(db); initArbitratorReviewSchema(db); initWebauthnSchema(db); initOrderChainSchema(db)
-D.initDisputeSchema(db); D.initEvidenceRequestSchema(db); initMutualCancelSchema(db)
+D.initDisputeSchema(db); D.initEvidenceRequestSchema(db); initMutualCancelSchema(db); initDirectPayCancelRefundSchema(db)
 const mkUser = (id: string, role = 'buyer'): void => {
   db.prepare('INSERT INTO users (id,name,role,api_key) VALUES (?,?,?,?)').run(id, id, role, 'k_' + id)
   db.prepare('INSERT INTO webauthn_credentials (id,user_id,public_key,counter) VALUES (?,?,?,0)').run('cred_' + id, id, Buffer.from([1]))
@@ -119,6 +120,13 @@ try {
   const sellerList = await req('/api/orders', 'seller1')
   const sellerRow = Array.isArray(sellerList.json) ? sellerList.json.find((o: any) => o.id === shippedOrder) : null
   ok('11b. list keeps payee (seller) target intact', !!sellerRow && !!sellerRow.direct_pay_instruction_snapshot)
+
+  // 审计项 F:duplicate_amount_alert 仅卖家视角下发(同买家·同金额在途多单对账告警;买家无此字段,少一分敞口)
+  const accA = mkOrder('accepted'); mkOrder('accepted')   // 两笔同买卖家·同金额 accepted 单
+  const sellerDetail = await get(accA, 'seller1')
+  ok('12. seller detail carries duplicate_amount_alert ≥1 on same-amount in-flight orders', sellerDetail.status === 200 && Number(sellerDetail.json?.order?.duplicate_amount_alert) >= 1, JSON.stringify(sellerDetail.json?.order?.duplicate_amount_alert))
+  const buyerDetail = await get(accA, 'buyer1')
+  ok('12b. buyer detail does NOT carry duplicate_amount_alert', buyerDetail.status === 200 && buyerDetail.json?.order?.duplicate_amount_alert === undefined, JSON.stringify({ s: buyerDetail.status, v: buyerDetail.json?.order?.duplicate_amount_alert }))
 } finally { server!.close() }
 
 if (fail > 0) { console.error(`\n❌ orders-read-arbitrator-view FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
