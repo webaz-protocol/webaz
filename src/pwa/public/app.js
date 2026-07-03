@@ -13512,7 +13512,7 @@ window.handleAction = async (orderId, action, idx, needsEvidence, hasLogisticsSe
     if (!confirm(t('确认已收到物品？escrow 将立即释放给卖家，无法撤销。'))) return
     msgEl.innerHTML = `<div class="alert alert-info"><span class="spinner"></span>${t('确认中...')}</div>`
     const res = await POST(`/orders/${orderId}/confirm-in-person`, {})
-    if (res.error) { msgEl.innerHTML = alert$('error', res.error); return }
+    if (res.error) { msgEl.innerHTML = alert$('error', window.orderErrorText ? window.orderErrorText(res.error_code, res.error) : res.error); return }
     msgEl.innerHTML = alert$('success', t('面交完成 — escrow 已释放'))
     maybeThankSponsorAndClear()
     setTimeout(() => renderOrderDetail(document.getElementById('app'), orderId), 1000)
@@ -13569,7 +13569,7 @@ window.handleAction = async (orderId, action, idx, needsEvidence, hasLogisticsSe
 
   const res = await POST(`/orders/${orderId}/action`, body)
   if (res.error) {
-    msgEl.innerHTML = alert$('error', res.error)
+    msgEl.innerHTML = alert$('error', window.orderErrorText ? window.orderErrorText(res.error_code, res.error) : res.error)
   } else {
     msgEl.innerHTML = alert$('success', t('操作成功！'))
     // S8: confirm action 触发 completed → 检查是否首单，若是则致谢 + 清 ctx

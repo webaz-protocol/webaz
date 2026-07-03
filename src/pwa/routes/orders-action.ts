@@ -135,11 +135,11 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     const user = auth(req, res); if (!user) return
     // RFC-016: 校验读 → 异步 seam;下方 completed+history 写仍是同步 db.transaction(Phase 3 迁 pg 事务)
     const order = await dbOne<Record<string, unknown>>('SELECT * FROM orders WHERE id = ?', [req.params.id])
-    if (!order) return void res.status(404).json({ error: '订单不存在' })
-    if (order.fulfillment_mode !== 'in_person') return void res.status(400).json({ error: '该订单非面交' })
-    if (order.buyer_id !== user.id) return void res.status(403).json({ error: '仅买家可确认面交完成' })
-    if (!['paid', 'accepted'].includes(order.status as string)) return void res.status(400).json({ error: `订单状态 ${order.status} 不可确认面交` })
-    if (order.has_pending_claim) return void res.status(400).json({ error: '存在进行中的验证任务，不可确认' })
+    if (!order) return void res.status(404).json({ error: '订单不存在', error_code: 'ORDER_NOT_FOUND' })
+    if (order.fulfillment_mode !== 'in_person') return void res.status(400).json({ error: '该订单非面交', error_code: 'NOT_IN_PERSON' })
+    if (order.buyer_id !== user.id) return void res.status(403).json({ error: '仅买家可确认面交完成', error_code: 'NOT_ORDER_BUYER' })
+    if (!['paid', 'accepted'].includes(order.status as string)) return void res.status(400).json({ error: `订单状态 ${order.status} 不可确认面交`, error_code: 'NOT_CONFIRMABLE_IN_PERSON' })
+    if (order.has_pending_claim) return void res.status(400).json({ error: '存在进行中的验证任务，不可确认', error_code: 'HAS_PENDING_CLAIM' })
     // Rail1:平台费已切换为链下应收(accrue 在完成结算时,与 completed 同一原子边界,fail-closed)。
     //   建单不再锁 fee-stake,故【不再】前置要求 locked stake(AR 订单本就无 stake)。
     const isDirectP2p = order.payment_rail === 'direct_p2p'
