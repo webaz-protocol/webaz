@@ -252,6 +252,17 @@ export function executeNonCustodialSettlement(
   return { success: true, detail: { non_custodial: true, ruling, buyer_refund: 0, buyer_compensation: 0, seller_received: 0, seller_escrow_share: 0, actual_refund: 0, note: '非托管订单:仅信誉裁决,不动用任何托管/钱包/质押/佣金资金' } }
 }
 
+/** 仲裁授权源(PR-B/PR-C):sys_protocol 自动裁决(role='system') 或 active arbitrator_whitelist(唯一 runtime 人类
+ *   授权源;role='arbitrator' 旁路已移除,legacy NULL status 视为 active)。裁定 arbitrateDispute 与补证
+ *   requestEvidence 共用,保证授权一致。system 分支不查白名单表 → 超时自动裁决即便表缺失也不受影响。 */
+function isAuthorizedArbitrator(db: Database.Database, userId: string): boolean {
+  const u = db.prepare('SELECT role FROM users WHERE id = ?').get(userId) as { role: string } | undefined
+  if (!u) return false
+  if (u.role === 'system') return true
+  const wl = db.prepare('SELECT status FROM arbitrator_whitelist WHERE user_id = ?').get(userId) as { status: string | null } | undefined
+  return !!wl && (wl.status ?? 'active') === 'active'
+}
+
 export function arbitrateDispute(
   db: Database.Database,
   disputeId: string,
@@ -269,15 +280,9 @@ export function arbitrateDispute(
     return { success: false, error: '该争议已处理完毕' }
   }
 
-  // 授权源(PR-B):sys_protocol 自动裁决(role='system') 或【active arbitrator_whitelist】—— 唯一 runtime 人类授权源。
-  //   role='arbitrator' 旁路已移除,与路由 isEligibleArbitrator 一致(whitelist 是唯一授权源)。system 分支不查表 →
-  //   即便 whitelist 表缺失,超时自动裁决(sys_protocol)也绝不受影响。
-  const arbitrator = db.prepare('SELECT role FROM users WHERE id = ?').get(arbitratorId) as { role: string } | undefined
-  if (!arbitrator) return { success: false, error: '仲裁员不存在' }
-  if (arbitrator.role !== 'system') {
-    const wl = db.prepare('SELECT status FROM arbitrator_whitelist WHERE user_id = ?').get(arbitratorId) as { status: string | null } | undefined
-    const active = !!wl && (wl.status ?? 'active') === 'active'   // legacy NULL = active
-    if (!active) return { success: false, error: `仅 active 仲裁员(在 arbitrator_whitelist)可裁定;你的资格:${wl ? (wl.status ?? 'active') : '非仲裁员'}` }
+  // 授权源(PR-B/PR-C):sys_protocol(role=system)或 active arbitrator_whitelist。见 isAuthorizedArbitrator。
+  if (!isAuthorizedArbitrator(db, arbitratorId)) {
+    return { success: false, error: '仅 active 仲裁员(arbitrator_whitelist)或系统可裁定' }
   }
 
   // 非托管(直付)订单:协议不持货款 → 走【只信誉、不动资金】路径,绝不跑 executeSettlement/executeLiabilitySplit 的托管资金链。
@@ -780,9 +785,9 @@ export function requestEvidence(
   description: string,
   deadlineHours = 48
 ): { success: boolean; requestId?: string; error?: string } {
-  const arb = db.prepare('SELECT role FROM users WHERE id = ?').get(arbitratorId) as { role: string } | undefined
-  if (!arb || (arb.role !== 'arbitrator' && arb.role !== 'system')) {
-    return { success: false, error: '仅仲裁员可发出证据请求' }
+  // PR-C:授权源同 arbitrateDispute —— system 或 active arbitrator_whitelist(role 旁路已移除)。
+  if (!isAuthorizedArbitrator(db, arbitratorId)) {
+    return { success: false, error: '仅 active 仲裁员可发出证据请求' }
   }
   const dispute = db.prepare('SELECT status FROM disputes WHERE id = ?').get(disputeId) as { status: string } | undefined
   if (!dispute) return { success: false, error: '争议不存在' }

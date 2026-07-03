@@ -81,12 +81,12 @@ const CLAIM = 'require_human_presence_for_identity_claim'
     ok(`no-regression: ${purpose} missing token → refused`, !requireHumanPresence('u1', purpose as any, undefined, param).ok)
   } }
 
-// ── NO REGRESSION: is_system bypass still only for vote/arbitrate (no token needed); not for identity_claim ──
+// ── is_system bypass: vote ONLY (PR-C removed the arbitrate bypass); never identity_claim ──
 { const db = freshDb(); const { requireHumanPresence } = createHumanPresence(db, getParam())
   db.prepare("INSERT INTO verifier_whitelist (user_id, is_system) VALUES ('sysv', 1)").run()
   db.prepare("INSERT INTO arbitrator_whitelist (user_id, is_system) VALUES ('sysa', 1)").run()
   ok('is_system bypass: vote sysv ok without token', requireHumanPresence('sysv', 'vote', undefined, 'require_human_presence_for_vote').ok)
-  ok('is_system bypass: arbitrate sysa ok without token', requireHumanPresence('sysa', 'arbitrate', undefined, 'require_human_presence_for_arbitrate').ok)
+  ok('PR-C: is_system does NOT bypass arbitrate (Passkey required)', !requireHumanPresence('sysa', 'arbitrate', undefined, 'require_human_presence_for_arbitrate').ok)
   ok('is_system does NOT bypass identity_claim', !requireHumanPresence('sysv', 'identity_claim', undefined, CLAIM).ok) }
 
 console.log(`\ntest:human-presence\n───────────────────\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}\n`)
