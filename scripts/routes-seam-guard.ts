@@ -36,7 +36,7 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   'reviews.ts': 3,             // claim stake/escrow tx (dup guard + wallet debit + INSERT task)
   'claim-initiators.ts': 3,    // claim stake/escrow tx (dup guard + wallet debit + INSERT task)
   'products-claims.ts': 3,     // claim stake/escrow tx (dup guard + wallet debit + INSERT task)
-  'arbitrator.ts': 8,          // apply/withdraw/reject stake tx (CAS status flip + wallet);approve 改走 grantArbitrator 域 + 异步 seam(PR-B)
+  'arbitrator.ts': 9,          // apply/withdraw/reject stake tx;approve 的 grant+申请状态 CAS 必须【同一 db.transaction】原子(PR-C.2),故 CAS 保留同步 db.prepare
   'verifier-user.ts': 6,       // apply/withdraw stake tx (CAS + wallet)
   'admin-verifier-flow.ts': 13,// approve/reject/decide tx (CAS flip + refund/reward payout)
   'admin-verifier-whitelist.ts': 5,  // revoke forfeit tx (re-read + forfeit/refund + whitelist rewrite)

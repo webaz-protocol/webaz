@@ -103,5 +103,13 @@ ok('12a. active whitelist arbitrator CAN request evidence', requestEvidence(db, 
 ok('12b. SUSPENDED arbitrator CANNOT request evidence', requestEvidence(db, dEv, 'suspArb', 'sellerX', ['text'], 'x').success === false)
 ok('12c. role-only(no whitelist) CANNOT request evidence', requestEvidence(db, dEv, 'roleArb', 'sellerX', ['text'], 'x').success === false)
 
+// ⑬ PR-C.2 原子性:grantArbitratorTx 无自带事务 → 在外层事务内,外层回滚则 grant 一起回滚(杜绝"申请撤回但已授权")。
+mkUser('atomicU', 'buyer', true)
+try { db.transaction(() => { const r = L.grantArbitratorTx(db, { userId: 'atomicU', grantedBy: 'admin1' }); if (!r.ok) throw new Error('unexpected grant fail'); throw new Error('ROLLBACK') })() } catch { /* rolled back */ }
+ok('13a. grantArbitratorTx rolls back with the outer tx (no orphan active whitelist row)', !L.isEligibleArbitrator(db, 'atomicU').ok)
+db.transaction(() => { L.grantArbitratorTx(db, { userId: 'atomicU', grantedBy: 'admin1' }) })()
+ok('13b. grantArbitratorTx commits when the outer tx commits', L.isEligibleArbitrator(db, 'atomicU').ok)
+ok('13c. standalone grantArbitrator still works (own tx wrapper)', (() => { mkUser('soloU', 'buyer', true); return L.grantArbitrator(db, { userId: 'soloU', grantedBy: 'admin1' }).ok && L.isEligibleArbitrator(db, 'soloU').ok })())
+
 if (fail > 0) { console.error(`\n❌ arbitrator-lifecycle FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ arbitrator-lifecycle: grant/suspend/reinstate/revoke(terminal) + active-only eligibility + COI + sys_protocol auto-judge intact\n  ✅ pass ${pass}`)

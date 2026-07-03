@@ -46,18 +46,24 @@ function assertGrantableHuman(db: Database.Database, userId: string): ArbMutatio
 }
 
 /** 授权为 active 仲裁员。revoked 终态不可复活。 */
-export function grantArbitrator(db: Database.Database, p: { userId: string; grantedBy: string; note?: string | null }): ArbMutation {
+/** 授权核心【无事务包裹】—— 调用方(approve / governance activate)可在自己的 db.transaction 内与状态翻转
+ *   同事务调用,失败时一起回滚(P2-2:grant 与申请/治理状态翻转原子)。只写不开事务;失败不写。 */
+export function grantArbitratorTx(db: Database.Database, p: { userId: string; grantedBy: string; note?: string | null }): ArbMutation {
   const bad = assertGrantableHuman(db, p.userId); if (bad) return bad
+  const st = effectiveStatus(db.prepare('SELECT status FROM arbitrator_whitelist WHERE user_id = ?').get(p.userId) as WLRow)
+  if (st === 'revoked') return { ok: false, error_code: 'REVOKED_TERMINAL', error: '该用户已被永久撤销仲裁员资格,不可重新授权' }
+  if (st === null) {
+    db.prepare("INSERT INTO arbitrator_whitelist (user_id, note, is_system, granted_by, status) VALUES (?,?,0,?, 'active')").run(p.userId, p.note ?? '管理员直接授权', p.grantedBy)
+  } else {
+    db.prepare("UPDATE arbitrator_whitelist SET status='active', granted_by=?, note=?, suspended_at=NULL WHERE user_id=? AND status != 'revoked'").run(p.grantedBy, p.note ?? '管理员直接授权', p.userId)
+  }
+  return { ok: true }
+}
+
+/** 独立授权(direct grant):把核心包进自己的事务。approve/governance 请改用 grantArbitratorTx 与状态翻转同事务。 */
+export function grantArbitrator(db: Database.Database, p: { userId: string; grantedBy: string; note?: string | null }): ArbMutation {
   let out: ArbMutation = { ok: true }
-  db.transaction(() => {
-    const st = effectiveStatus(db.prepare('SELECT status FROM arbitrator_whitelist WHERE user_id = ?').get(p.userId) as WLRow)
-    if (st === 'revoked') { out = { ok: false, error_code: 'REVOKED_TERMINAL', error: '该用户已被永久撤销仲裁员资格,不可重新授权' }; return }
-    if (st === null) {
-      db.prepare("INSERT INTO arbitrator_whitelist (user_id, note, is_system, granted_by, status) VALUES (?,?,0,?, 'active')").run(p.userId, p.note ?? '管理员直接授权', p.grantedBy)
-    } else {
-      db.prepare("UPDATE arbitrator_whitelist SET status='active', granted_by=?, note=?, suspended_at=NULL WHERE user_id=? AND status != 'revoked'").run(p.grantedBy, p.note ?? '管理员直接授权', p.userId)
-    }
-  })()
+  db.transaction(() => { out = grantArbitratorTx(db, p) })()
   return out
 }
 
