@@ -17,6 +17,12 @@ window.resolveInitialLang = (savedLang, navigatorLike) => {
 window._lang = window.resolveInitialLang(localStorage.getItem('webaz_lang'), typeof navigator !== 'undefined' ? navigator : null)
 
 const _EN = {
+  // ── 平台服务费预充值申请历史(app-direct-pay-fee-history.js)──
+  '申请时间': 'Requested at',
+  '审核人': 'Reviewed by',
+  '审核时间': 'Reviewed at',
+  '审核备注': 'Review note',
+  '入账流水': 'Credit record',
   // ── 交易流程错误码双语(app-order-errors.js orderErrorLookup;test-order-errors.ts 守 parity)──
   '只能操作自己的订单': 'You can only act on your own order',
   '你不是本订单的卖家': 'You are not the seller of this order',
