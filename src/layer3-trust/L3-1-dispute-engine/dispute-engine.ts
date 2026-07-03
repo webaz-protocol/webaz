@@ -379,7 +379,7 @@ export function dismissDisputeToNegotiation(
   const order = db.prepare('SELECT payment_rail FROM orders WHERE id = ?').get(dispute.order_id) as { payment_rail: string | null } | undefined
   if (!order || order.payment_rail !== 'direct_p2p') return { success: false, error: '仅直付(direct_p2p)货款协商争议可驳回退回协商', error_code: 'ARBITRATION_DISMISS_NOT_ALLOWED' }
   // ★ 仅可退回【由货款协商升级】的仲裁:最近一次进入 disputed 必须 from payment_query。履约类(delivered→disputed 货损/货不对版)须裁定。fail-closed。
-  const lastDisputed = db.prepare("SELECT from_status FROM order_state_history WHERE order_id = ? AND to_status = 'disputed' ORDER BY created_at DESC LIMIT 1").get(dispute.order_id) as { from_status: string } | undefined
+  const lastDisputed = db.prepare("SELECT from_status FROM order_state_history WHERE order_id = ? AND to_status = 'disputed' ORDER BY created_at DESC, rowid DESC LIMIT 1").get(dispute.order_id) as { from_status: string } | undefined
   if (!lastDisputed || lastDisputed.from_status !== 'payment_query') return { success: false, error: '仅可退回由货款协商升级的仲裁;履约类争议(货损/货不对版)须经仲裁裁定', error_code: 'NOT_PAYMENT_QUERY_DISPUTE' }
   const sys = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string } | undefined
   if (!sys) return { success: false, error: 'sys_protocol 不存在', error_code: 'SYS_MISSING' }
