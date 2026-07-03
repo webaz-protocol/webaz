@@ -264,8 +264,12 @@ function resolveRecipients(
     if (role === 'seller'     && order.seller_id)     ids.add(order.seller_id)
     if (role === 'logistics'  && order.logistics_id)  ids.add(order.logistics_id)
     if (role === 'arbitrators') {
-      const arbs = db.prepare("SELECT id FROM users WHERE role = 'arbitrator'").all() as { id: string }[]
-      arbs.forEach(a => ids.add(a.id))
+      // 收件人=active arbitrator_whitelist(唯一仲裁能力源;legacy role='arbitrator' 会通知到打不开案件的人、漏掉真仲裁员)。
+      //   当前无 NOTIF_RULES 使用 'arbitrators'(仲裁员靠工作台拉取);此分支为未来规则备好正确的授权源。表缺失 → 静默空集。
+      try {
+        const arbs = db.prepare("SELECT user_id FROM arbitrator_whitelist WHERE status IS NULL OR status = 'active'").all() as { user_id: string }[]
+        arbs.forEach(a => ids.add(a.user_id))
+      } catch { /* fresh-DB 无表 → 无收件人 */ }
     }
   }
   return [...ids]

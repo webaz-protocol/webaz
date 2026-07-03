@@ -252,15 +252,23 @@ export function executeNonCustodialSettlement(
   return { success: true, detail: { non_custodial: true, ruling, buyer_refund: 0, buyer_compensation: 0, seller_received: 0, seller_escrow_share: 0, actual_refund: 0, note: '非托管订单:仅信誉裁决,不动用任何托管/钱包/质押/佣金资金' } }
 }
 
+/** active arbitrator_whitelist 谓词(唯一 runtime 人类仲裁授权源;legacy NULL status 视为 active)。导出给
+ *   MCP 等 pwa 之外的消费方(layer1 不 import src/pwa,故从本引擎导出);表缺失 → fail-closed false。 */
+export function isActiveWhitelistArbitrator(db: Database.Database, userId: string): boolean {
+  try {
+    const wl = db.prepare('SELECT status FROM arbitrator_whitelist WHERE user_id = ?').get(userId) as { status: string | null } | undefined
+    return !!wl && (wl.status ?? 'active') === 'active'
+  } catch { return false }
+}
+
 /** 仲裁授权源(PR-B/PR-C):sys_protocol 自动裁决(role='system') 或 active arbitrator_whitelist(唯一 runtime 人类
- *   授权源;role='arbitrator' 旁路已移除,legacy NULL status 视为 active)。裁定 arbitrateDispute 与补证
- *   requestEvidence 共用,保证授权一致。system 分支不查白名单表 → 超时自动裁决即便表缺失也不受影响。 */
+ *   授权源;role='arbitrator' 旁路已移除)。裁定 arbitrateDispute 与补证 requestEvidence 共用,保证授权一致。
+ *   system 分支不查白名单表 → 超时自动裁决即便表缺失也不受影响。 */
 function isAuthorizedArbitrator(db: Database.Database, userId: string): boolean {
   const u = db.prepare('SELECT role FROM users WHERE id = ?').get(userId) as { role: string } | undefined
   if (!u) return false
   if (u.role === 'system') return true
-  const wl = db.prepare('SELECT status FROM arbitrator_whitelist WHERE user_id = ?').get(userId) as { status: string | null } | undefined
-  return !!wl && (wl.status ?? 'active') === 'active'
+  return isActiveWhitelistArbitrator(db, userId)
 }
 
 export function arbitrateDispute(

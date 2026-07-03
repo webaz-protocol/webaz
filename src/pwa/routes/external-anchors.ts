@@ -25,6 +25,7 @@ import {
   submitVerification, getAnchor, listAnchorsByProduct, listAnchorsBySeller,
   distributeAnchorRewards, ANCHOR_VERIFICATION_FEE_RECOMMENDED,
 } from '../../layer1-agent/L1-2-external-anchor/anchor-engine.js'
+import { isEligibleArbitrator } from '../arbitrator-lifecycle.js'  // 仲裁能力唯一源=active 白名单(distribute 是动钱动作,不认 legacy role)
 
 export interface ExternalAnchorsDeps {
   db: Database.Database
@@ -69,10 +70,11 @@ export function registerExternalAnchorsRoutes(app: Application, deps: ExternalAn
     })
   })
 
-  // 手动 distribute（admin/arbitrator 补救：anchor 已 community 但 fee_paid_out=0）
+  // 手动 distribute（admin/白名单仲裁员 补救：anchor 已 community 但 fee_paid_out=0）——动钱动作,仲裁员认 active
+  //   白名单(isEligibleArbitrator),不认 legacy user.role(否则已 suspend/revoke 但 role 未同步的账号仍可触发放款)。
   app.post('/api/external-anchors/:id/distribute-rewards', (req, res) => {
     const user = auth(req, res); if (!user) return
-    if (user.role !== 'admin' && user.role !== 'arbitrator') return void res.status(403).json({ error: '仅管理员/仲裁员可手动分发' })
+    if (user.role !== 'admin' && !isEligibleArbitrator(db, user.id as string).ok) return void res.status(403).json({ error: '仅管理员/仲裁员可手动分发' })
     const paid = distributeAnchorRewards(db, req.params.id)
     res.json({ ok: true, paid })
   })

@@ -51,6 +51,7 @@ import {
   getDisputeDetails,
   getOrderDispute,
   getOpenDisputes,
+  isActiveWhitelistArbitrator,   // 仲裁能力唯一源=active 白名单;legacy user.role==='arbitrator' 旁路已移除
 } from '../../layer3-trust/L3-1-dispute-engine/dispute-engine.js'
 import {
   initNotificationSchema,
@@ -2793,7 +2794,7 @@ async function handleUpdateOrder(args: Record<string, unknown>) {
     order.seller_id === user.id ||
     order.logistics_id === user.id
 
-  if (!isParticipant && user.role !== 'arbitrator') {
+  if (!isParticipant && !isActiveWhitelistArbitrator(db, user.id as string)) {   // 白名单(非 legacy role):role-only/已吊销不可越权;下游 transition 仍按 actor.role 守边
     return { error: '你不是这笔订单的参与方，无法操作' }
   }
 
@@ -3152,7 +3153,7 @@ async function handleDispute(args: Record<string, unknown>): Promise<Record<stri
 
   // ── 仲裁员查看所有待处理争议 ───────────────────────────────
   if (action === 'list_open') {
-    if (user.role !== 'arbitrator') {
+    if (!isActiveWhitelistArbitrator(db, user.id as string)) {   // 白名单(非 legacy role):whitelist-only 真人可用,role-only/已吊销 403
       return { error: '只有仲裁员可以查看所有待处理争议' }
     }
     const disputes = await getOpenDisputes(db)
