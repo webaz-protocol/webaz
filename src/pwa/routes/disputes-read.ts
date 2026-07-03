@@ -48,8 +48,8 @@ export function registerDisputesReadRoutes(app: Application, deps: DisputesReadD
     const user = auth(req, res); if (!user) return
     const dispute = await dbOne<{ id: string; order_id: string; reason: string; initiator_id: string; defendant_id: string | null }>('SELECT id, order_id, reason, initiator_id, defendant_id FROM disputes WHERE id = ?', [req.params.id])
     if (!dispute) return void res.status(404).json({ error: '争议不存在' })
-    const role = (user as Record<string, unknown>).role as string
-    if (dispute.initiator_id !== user.id && dispute.defendant_id !== user.id && role !== 'arbitrator') {
+    // PR-E fix:同详情/parties —— party 或 active whitelist 仲裁员;不再用 role === 'arbitrator'。
+    if (dispute.initiator_id !== user.id && dispute.defendant_id !== user.id && !isEligibleArbitrator(user.id as string).ok) {
       return void res.status(403).json({ error: '无权查看' })
     }
     const order = await dbOne<{ product_id: string }>('SELECT product_id FROM orders WHERE id = ?', [dispute.order_id])

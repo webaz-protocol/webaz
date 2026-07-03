@@ -544,11 +544,16 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
   )
 
   // 仲裁员：请求某方补证
-  app.post('/api/disputes/:id/request-evidence', (req, res) => {
+  app.post('/api/disputes/:id/request-evidence', async (req, res) => {
     const user = auth(req, res); if (!user) return
-    // PR-E:① active whitelist ② 已分配/领取该案(claim-if-empty,防未指派仲裁员越权补证)③ 涉案方目标(engine 校验)。
+    // PR-E:① active whitelist ② COI(当事方不可补证本案,与 arbitrate 同门) ③ 已分配/领取该案(claim-if-empty)④ 涉案方目标(engine)。
     const elig = isEligibleArbitrator(user.id as string)
     if (!elig.ok) return void errorRes(res, 403, 'NOT_ARBITRATOR', elig.reason || '仅限仲裁员')
+    const disp = await getDisputeDetails(db, req.params.id)
+    if (!disp) return void res.status(404).json({ error: '争议不存在' })
+    if (arbitratorHasConflict(db, disp.order_id as string, (disp.initiator_id as string | null) ?? null, (disp.defendant_id as string | null) ?? null, user.id as string)) {
+      return void res.status(403).json({ error: '你是本案当事方,不可补证(利益冲突)', error_code: 'ARBITRATOR_CONFLICT_OF_INTEREST' })
+    }
     const claim = claimOrCheckAssignment(req.params.id, user.id as string)
     if (!claim.ok) return void errorRes(res, 403, claim.error_code || 'NOT_ASSIGNED_ARBITRATOR', '此争议未分配给你 — 仅指派的仲裁员可补证')
 

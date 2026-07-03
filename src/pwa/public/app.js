@@ -14571,7 +14571,7 @@ async function hydrateSimilarCases(disputeId) {
 
 async function renderDisputeList(app) {
   if (!state.user) { renderLogin(); return }
-  if (state.user.role !== 'arbitrator') {
+  if (!state.canArbitrate) {  // PR-E:跟随后端 can_arbitrate(active whitelist),whitelist-only(role=buyer)真人仲裁员也能进
     app.innerHTML = shell(`
       <h1 class="page-title">${t('争议仲裁台')}</h1>
       <div class="alert alert-info">${t('此功能仅限仲裁员使用。')}<br>${t('你的角色')}：${state.user.role}</div>

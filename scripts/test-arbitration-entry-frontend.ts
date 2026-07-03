@@ -18,6 +18,7 @@ const SERVER = readFileSync('src/pwa/server.ts', 'utf8')
 // 前端入口/按钮跟随 can_arbitrate
 ok('1. isArbitrator (ruling / request-evidence UI gate) follows state.canArbitrate, not user.role', /const isArbitrator = !!state\.canArbitrate/.test(APP) && !/const isArbitrator = user && user\.role === 'arbitrator'/.test(APP))
 ok('2. #seller dispute-list entry gated on state.canArbitrate (not role===arbitrator)', /if \(state\.canArbitrate\) return renderDisputeList/.test(APP) && !/role === 'arbitrator'\) return renderDisputeList/.test(APP))
+ok('2b. renderDisputeList INTERNAL guard also follows canArbitrate (not user.role)', /function renderDisputeList[\s\S]{0,120}if \(!state\.canArbitrate\)/.test(APP) && !/function renderDisputeList[\s\S]{0,120}state\.user\.role !== 'arbitrator'/.test(APP))
 ok('3. bootAuth hydrates arbitration capability (arbEntryHydrate)', /arbEntryHydrate\(\)/.test(APP))
 
 // 能力字段来源:后端 /arbitrator/status

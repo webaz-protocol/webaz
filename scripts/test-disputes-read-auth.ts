@@ -68,6 +68,11 @@ try {
   ok('details: revoked arbitrator → 403', (await get(details, 'rev')).status === 403)
   ok('details: role-only → 403 (role bypass removed)', (await get(details, 'roleArb')).status === 403)
   // details positive (party / active arbitrator authorized) is covered by the identical gate on /parties above.
+  // similar-cases (same gate; test the denied set which early-returns 403)
+  const similar = `/api/disputes/${disputeId}/similar-cases`
+  ok('similar-cases: non-party → 403', (await get(similar, 'outsider')).status === 403)
+  ok('similar-cases: suspended → 403', (await get(similar, 'susp')).status === 403)
+  ok('similar-cases: role-only → 403 (role bypass removed)', (await get(similar, 'roleArb')).status === 403)
 
   server!.close()
   if (fail > 0) { console.error(`\n❌ disputes-read-auth FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
