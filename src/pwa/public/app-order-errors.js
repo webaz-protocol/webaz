@@ -35,6 +35,11 @@ window.orderErrorLookup = (code) => ({
   DECLINE_REASON_INVALID: t('拒单理由无效'),
   DECLINE_WRONG_STATUS: t('当前状态不可拒单'),
   DECLINE_SETTLEMENT_FAILED: t('拒单结算失败,请重试'),
+  // 直付 RISK 动作门(mark_paid/confirm/confirm_in_person 缺披露/缺 Passkey)。与 dpErrorText 同文案,
+  //   保证无论走 dpHandleAction(dpErrorText)还是通用 handleAction(orderErrorText)路径都双语一致。
+  DISCLOSURE_NOT_ACKED: t('需先完成两次风险披露确认(D1 + D2)'),
+  HUMAN_PRESENCE_REQUIRED: t('需现场真人 Passkey 确认'),
+  PASSKEY_REQUIRED_FOR_DIRECT_PAY: t('直付需要先注册 Passkey'),
   // 通用
   ORDER_NOT_FOUND: t('订单不存在'),
   MISSING_ORDER_ID: t('缺少订单号'),

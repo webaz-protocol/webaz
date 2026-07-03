@@ -21,14 +21,17 @@ const ACK = readFileSync('src/pwa/routes/direct-pay-disclosure-acks.ts', 'utf8')
 // orderErrorLookup 映射的码
 const lookupBody = OE.slice(OE.indexOf('orderErrorLookup'), OE.indexOf('window.orderErrorText'))
 const mappedCodes = new Set([...lookupBody.matchAll(/\b([A-Z][A-Z_]+):\s*t\(/g)].map(m => m[1]))
-// dpErrorText 的可用性码(部分码由它覆盖)
-const dpBody = DP.slice(DP.indexOf('window.dpErrorText'), DP.indexOf('window.dpRailSelectorHtml'))
-const dpCodes = new Set([...dpBody.matchAll(/\b([A-Z][A-Z_]+):\s*t\(/g)].map(m => m[1]))
 
-// ① 完整性
+// error_code 枚举:同时抓 `error_code: 'X'` 与回退形 `error_code: expr || 'X'`(否则 gate 的
+//   DISCLOSURE_NOT_ACKED / HUMAN_PRESENCE_REQUIRED 这类默认码不会被枚举,测试假绿而真实路径仍漏)。
+const enumCodes = (src: string): Set<string> => new Set([
+  ...[...src.matchAll(/error_code:[^,}\n]*?'([A-Z][A-Z_]{3,})'/g)].map(m => m[1]),
+])
+
+// ① 完整性 —— orders-action 的渲染点走 orderErrorText(不查 dpErrorText),故【必须】orderErrorLookup 覆盖,
+//    不接受 dpErrorText 兜底(那是 disclosure/availability 自己走 dpErrorText 的路径才成立的假设)。
 for (const [src, name] of [[ACTION, 'orders-action.ts'], [ACK, 'disclosure-acks.ts']] as const) {
-  const codes = new Set([...src.matchAll(/error_code: '([A-Z_]+)'/g)].map(m => m[1]))
-  for (const c of codes) ok(`[${name}] error_code ${c} bilingual-mapped`, mappedCodes.has(c) || dpCodes.has(c))
+  for (const c of enumCodes(src)) ok(`[${name}] error_code ${c} in orderErrorLookup`, mappedCodes.has(c))
 }
 
 // ② 双语 parity
