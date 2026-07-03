@@ -22,8 +22,8 @@
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
-import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
-import { grantArbitrator, suspendArbitrator, reinstateArbitrator, revokeArbitrator, listArbitrators, type ArbMutation } from '../arbitrator-lifecycle.js'  // PR-B 生产仲裁员生命周期域逻辑
+import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { grantArbitrator, grantArbitratorTx, suspendArbitrator, reinstateArbitrator, revokeArbitrator, listArbitrators, type ArbMutation } from '../arbitrator-lifecycle.js'  // PR-B/PR-C.2 生产仲裁员生命周期域逻辑
 
 export interface ArbitratorDeps {
   db: Database.Database
@@ -187,10 +187,18 @@ export function registerArbitratorRoutes(app: Application, deps: ArbitratorDeps)
     //   拒 system/agent/无 Passkey)。绝不 INSERT OR REPLACE 白名单(那会复活被撤销用户)。审计成功与失败。
     const gate = consumeGateToken(admin.id as string, req.body?.webauthn_token as string | undefined, 'arbitrator_grant', (d) => (d as { user_id?: string } | null)?.user_id === appRow.user_id)
     if (!gate.ok) { logAdminAction(admin.id as string, 'arbitrator.approve', 'user', appRow.user_id, { ok: false, gate: gate.reason }); return void errorRes(res, 412, 'HUMAN_PRESENCE_REQUIRED', gate.reason || '此操作需现场真人 Passkey 确认') }
-    const g = grantArbitrator(db, { userId: appRow.user_id, grantedBy: admin.id as string, note: note ?? '外部申请批准' })
-    if (!g.ok) { logAdminAction(admin.id as string, 'arbitrator.approve', 'user', appRow.user_id, { ok: false, error_code: g.error_code }); return void errorRes(res, 409, g.error_code || 'GRANT_FAILED', g.error || '批准失败') }
-    // grant 成功(active 白名单)后再翻转申请状态(CAS;竞态下另一请求已批准,grant 幂等,用户仍 active)。
-    await dbRun("UPDATE arbitrator_applications SET status='approved', reviewed_at=datetime('now'), reviewed_by=?, decision_note=? WHERE id=? AND status='pending'", [admin.id, note, appRow.id])
+    // PR-C.2 原子:grant 白名单 + 翻转申请状态在【同一事务】。任一失败一起回滚 —— 杜绝"grant 成功但申请已被并发撤回/拒绝"。
+    let gErr: string | null = null; let raced = false
+    try {
+      db.transaction(() => {
+        const g = grantArbitratorTx(db, { userId: appRow.user_id, grantedBy: admin.id as string, note: note ?? '外部申请批准' })
+        if (!g.ok) { gErr = g.error_code || 'GRANT_FAILED'; throw new Error('ARB_ABORT') }  // 回滚(此时未写 CAS)
+        const cas = db.prepare("UPDATE arbitrator_applications SET status='approved', reviewed_at=datetime('now'), reviewed_by=?, decision_note=? WHERE id=? AND status='pending'").run(admin.id, note, appRow.id)
+        if (cas.changes === 0) { raced = true; throw new Error('ARB_ABORT') }  // 并发已改状态 → 回滚 grant
+      })()
+    } catch (e) { if ((e as Error).message !== 'ARB_ABORT') throw e }
+    if (raced) { logAdminAction(admin.id as string, 'arbitrator.approve', 'user', appRow.user_id, { ok: false, raced: true }); return void res.json({ error: '该申请不在待审状态' }) }
+    if (gErr) { logAdminAction(admin.id as string, 'arbitrator.approve', 'user', appRow.user_id, { ok: false, error_code: gErr }); return void errorRes(res, 409, gErr, '批准失败') }
     logAdminAction(admin.id as string, 'arbitrator.approve', 'user', appRow.user_id, { ok: true })
     res.json({ success: true })
   })
