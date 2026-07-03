@@ -89,6 +89,11 @@ try {
   ok('6a-P2. withdraw REBUILDS the negotiation deadline (payment_query_deadline non-null)', !!pqDeadline(o6))
   const o7 = mkOrder('accepted'); await call(o7, { action: 'report_nonpayment' }, 'seller1', 'seller'); await call(o7, { action: 'pq_escalate', evidence_description: 'x' }, 'buyer1', 'buyer'); mkDisputeRow(o7, 'resolved')
   ok('6b. withdraw a RULED dispute → 409 DISPUTE_ALREADY_RULED', (await call(o7, { action: 'pq_withdraw' }, 'buyer1', 'buyer')).json?.error_code === 'DISPUTE_ALREADY_RULED')
+  // 6c. P1 — pq_withdraw MUST NOT touch a FULFILLMENT dispute (delivered→disputed 货损/货不对版). Only payment_query→disputed is withdrawable.
+  const o7b = mkOrder('delivered'); await call(o7b, { action: 'dispute', evidence_description: 'item damaged' }, 'buyer1', 'buyer'); mkDisputeRow(o7b, 'in_review')
+  ok('6c-setup. fulfillment dispute reached disputed (delivered→disputed)', st(o7b) === 'disputed')
+  ok('6c. pq_withdraw on a fulfillment dispute → 409 NOT_PAYMENT_QUERY_DISPUTE (stays disputed)', (await call(o7b, { action: 'pq_withdraw' }, 'buyer1', 'buyer')).json?.error_code === 'NOT_PAYMENT_QUERY_DISPUTE' && st(o7b) === 'disputed')
+  ok('6c-P1. the fulfillment dispute row is NOT dismissed by the rejected withdraw', (db.prepare("SELECT status FROM disputes WHERE order_id=? ORDER BY created_at DESC LIMIT 1").get(o7b) as { status: string }).status === 'in_review')
 
   // 7. PR-B2 seller request_cancel (opens the 7-day buyer recourse window; only after the buyer-response grace elapsed)
   const cancelDl = (id: string) => (db.prepare('SELECT payment_query_cancel_deadline d FROM orders WHERE id=?').get(id) as { d: string | null }).d

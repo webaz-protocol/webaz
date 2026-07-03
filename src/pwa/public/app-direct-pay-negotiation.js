@@ -19,7 +19,9 @@ window.dpNegotiationActions = (order, isBuyer, isSeller) => {
       { action: 'cancel', label: '我未付款 · 取消订单', style: 'secondary' },
     ]
   }
-  if (s === 'disputed' && (isBuyer || isSeller)) return [
+  // 撤回仲裁【仅限货款协商升级】的仲裁:后端 DTO can_withdraw_payment_query_dispute 判定(最近一次进入 disputed 是
+  //   from payment_query 且未裁定)。履约类争议(货损/货不对版)拿不到此按钮 —— 那类须经仲裁裁定,不可撤回回协商。
+  if (s === 'disputed' && (isBuyer || isSeller) && order.can_withdraw_payment_query_dispute) return [
     { action: 'pq_withdraw', label: '撤回仲裁 · 回到协商', style: 'secondary' },
   ]
   return null
