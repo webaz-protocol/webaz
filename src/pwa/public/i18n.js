@@ -17,6 +17,23 @@ window.resolveInitialLang = (savedLang, navigatorLike) => {
 window._lang = window.resolveInitialLang(localStorage.getItem('webaz_lang'), typeof navigator !== 'undefined' ? navigator : null)
 
 const _EN = {
+  // ── 仲裁员管理 admin UI(app-arbitrator-admin.js,PR-F)──
+  '仲裁员管理': 'Arbitrator management',
+  '授权真人仲裁员(唯一授权源=active 白名单)。目标须已注册 Passkey、非本案当事人、非 agent/系统账号。授权/暂停/撤销均需你现场 Passkey,后端留痕。': 'Grant real human arbitrators (the sole authorization source is the active whitelist). The target must have a registered Passkey, not be a party to the case, and not be an agent/system account. Grant/suspend/revoke each require your live Passkey and are audited server-side.',
+  '授权/暂停/撤销真人仲裁员(唯一授权源=active 白名单,需现场 Passkey)': 'Grant / suspend / revoke real human arbitrators (sole source = active whitelist; live Passkey required)',
+  '授权新仲裁员': 'Grant a new arbitrator',
+  'user_id 或 @handle': 'user_id or @handle',
+  '授权(真人 Passkey)': 'Grant (live Passkey)',
+  '仲裁员名册': 'Arbitrator roster',
+  '暂无仲裁员': 'No arbitrators yet',
+  '内部账号(is_system)': 'Internal account (is_system)',
+  '暂停于': 'Suspended at',
+  '撤销于': 'Revoked at',
+  '撤销（终态）': 'Revoke (terminal)',
+  '已永久撤销,不可再授权': 'Permanently revoked; cannot be re-granted',
+  '请输入 user_id 或 @handle': 'Enter a user_id or @handle',
+  '已授权': 'Granted',
+  '撤销是终态,不可再授权该用户。确定撤销?': 'Revoke is terminal — this user can never be re-granted. Confirm revoke?',
   // ── 补齐缺失的 _EN parity(test-i18n-parity.ts 守;含 admin/PV 标签)──
   '协议运营': 'Protocol operations',
   '参与记录(PV)流水': 'Participation ledger (PV)',
