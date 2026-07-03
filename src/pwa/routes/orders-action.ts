@@ -211,6 +211,10 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
         // 已裁定的争议不可撤回(disputed 已终结成 resolved/dismissed 前,dispute.status 仍 open/in_review)
         const d = await dbOne<{ status: string }>("SELECT status FROM disputes WHERE order_id = ? ORDER BY created_at DESC LIMIT 1", [req.params.id])
         if (d && (d.status === 'resolved' || d.status === 'dismissed')) return void res.status(409).json({ error: '争议已裁定,不可撤回', error_code: 'DISPUTE_ALREADY_RULED' })
+        // ★ 撤回【仅限货款协商升级】的仲裁:最近一次进入 disputed 必须 from payment_query。
+        //   否则履约类争议(delivered→disputed 货损/货不对版)会被错误撤回、dismiss、状态倒退回 payment_query。fail-closed。
+        const lastDisputed = await dbOne<{ from_status: string }>("SELECT from_status FROM order_state_history WHERE order_id = ? AND to_status = 'disputed' ORDER BY created_at DESC LIMIT 1", [req.params.id])
+        if (!lastDisputed || lastDisputed.from_status !== 'payment_query') return void res.status(409).json({ error: '仅可撤回由货款协商升级的仲裁;履约类争议(货损/货不对版)须经仲裁裁定', error_code: 'NOT_PAYMENT_QUERY_DISPUTE' })
       }
     }
     // PR-B2:卖家在【买家响应宽限已过】后请求取消 —— 不立即关单,而是开【N 天买家申诉窗】(payment_query_cancel_deadline)。

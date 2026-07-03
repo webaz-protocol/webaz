@@ -208,6 +208,13 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     //   【不得】从 API 拿到(非仅 UI 软门)。与 /api/orders 列表共用同一 redact,防旁路(#179 审计 P1)。
     redactUnackedDirectPayTarget(db, order as Record<string, unknown>, user.id as string)
 
+    // Rail1 撤回仲裁可达性(与 orders-action pq_withdraw 权威门同谓词):仅当【当前 disputed + 最近一次进入
+    //   disputed 是 from payment_query + 争议未裁定】。前端据此才显示"撤回仲裁"按钮 —— 履约类争议(货损/货不对版
+    //   的 delivered→disputed)不给该按钮。UI 便利字段,真正拦截仍在路由。
+    const disputedFroms = history.filter(h => h.to_status === 'disputed').map(h => h.from_status as string)
+    order.can_withdraw_payment_query_dispute =
+      order.status === 'disputed' && disputedFroms[disputedFroms.length - 1] === 'payment_query' && !!dispute
+
     res.json({ ...statusInfo, history, product, dispute, trackingInfo })
   })
 

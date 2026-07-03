@@ -876,7 +876,7 @@ function statusBadge(status, rail) {
     expired:             ['gray',   t('已过期')],
   }
   // 直付(非托管)争议终态:不发生退款/资金释放 → 用信誉裁决语义(dpTerminalBadge,见 app-order-labels.js)
-  const [color, label] = (rail === 'direct_p2p' && window.dpTerminalBadge && window.dpTerminalBadge(status)) || map[status] || ['gray', status]
+  const [color, label] = (rail === 'direct_p2p' && ((window.dpTerminalBadge && window.dpTerminalBadge(status)) || (window.dpNegotiationBadge && window.dpNegotiationBadge(status)))) || map[status] || ['gray', status]
   return `<span class="badge badge-${color}">${label}</span>`
 }
 
@@ -12182,10 +12182,10 @@ function orderStageTimeline(order, history) {
     { key: 'completed',  label: t('完成'),  icon: '✓' },
   ]
   // 异常状态：单独 banner，不画时间线（防误导）
-  const ANOMALY = ['disputed', 'cancelled', 'fault_seller', 'fault_buyer', 'fault_logistics', 'refunded_partial', 'refunded_full', 'dispute_dismissed', 'expired']
+  const ANOMALY = ['disputed', 'payment_query', 'cancelled', 'fault_seller', 'fault_buyer', 'fault_logistics', 'refunded_partial', 'refunded_full', 'dispute_dismissed', 'expired']
   if (ANOMALY.includes(order.status)) {
     const colorMap = {
-      disputed: '#f59e0b', cancelled: '#6b7280',
+      disputed: '#f59e0b', payment_query: '#f59e0b', cancelled: '#6b7280',
       fault_seller: '#dc2626', fault_buyer: '#dc2626', fault_logistics: '#dc2626',
       refunded_full: '#16a34a', refunded_partial: '#3b82f6', dispute_dismissed: '#6b7280', expired: '#9ca3af',
     }
@@ -12199,7 +12199,7 @@ function orderStageTimeline(order, history) {
     return `<div style="background:#fff;border:0.5px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:10px">
       <div style="width:8px;height:8px;border-radius:50%;background:${c};flex-shrink:0"></div>
       <div style="flex:1">
-        <div style="font-size:14px;font-weight:600;color:#1f2937">${(order.payment_rail === 'direct_p2p' && window.dpTerminalLabel && window.dpTerminalLabel(order.status)) || labelMap[order.status] || order.status}</div>
+        <div style="font-size:14px;font-weight:600;color:#1f2937">${(order.payment_rail === 'direct_p2p' && ((window.dpTerminalLabel && window.dpTerminalLabel(order.status)) || (window.dpNegotiationLabel && window.dpNegotiationLabel(order.status)))) || labelMap[order.status] || order.status}</div>
         <div style="font-size:11px;color:#8e8e93;margin-top:2px">${t('查看下方时间线了解流转详情')}</div>
       </div>
     </div>`
@@ -12253,7 +12253,7 @@ function orderStageTimeline(order, history) {
 // 与顶部紧凑 stepper 互补：stepper 给总览，timeline 给细节
 function orderTrackingTimeline(order, history, trackingInfo, STATUS_ZH) {
   // 异常订单不显示物流时间线（争议/取消等）— 由顶部 stepper 异常 banner 兜底
-  const ANOMALY = ['disputed', 'cancelled', 'fault_seller', 'fault_buyer', 'fault_logistics', 'refunded_partial', 'refunded_full', 'dispute_dismissed', 'expired']
+  const ANOMALY = ['disputed', 'payment_query', 'cancelled', 'fault_seller', 'fault_buyer', 'fault_logistics', 'refunded_partial', 'refunded_full', 'dispute_dismissed', 'expired']
   if (ANOMALY.includes(order.status)) return ''
 
   // 已完成节点 lookup
@@ -12528,7 +12528,7 @@ async function renderOrderDetail(app, orderId) {
       ${order.content_hash_at_order ? `<div class="detail-row"><span class="detail-label">🔒 ${t('P2P 内容哈希')}</span><span class="detail-value" style="font-family:monospace;font-size:11px;word-break:break-all">${escHtml(order.content_hash_at_order)}</span></div>` : ''}
       ${activeDeadline?.deadline ? `<div class="detail-row"><span class="detail-label">${t('截止')}</span><span class="detail-value" style="color:${isOverdue ? '#dc2626' : '#6b7280'};font-size:12px">${fmtTime(activeDeadline.deadline)}</span></div>` : ''}
     </div>
-    ${order.payment_rail === 'direct_p2p' && window.dpOrderDisclosureHtml ? window.dpOrderDisclosureHtml(order) : ''}
+    ${order.payment_rail === 'direct_p2p' && window.dpOrderDisclosureHtml ? window.dpOrderDisclosureHtml(order) : ''}${order.payment_rail === 'direct_p2p' && window.dpNegotiationCard ? window.dpNegotiationCard(order) : ''}
 
     ${trackingHtml}
     ${disputeHtml}
@@ -13432,13 +13432,14 @@ function getActions(order, isBuyer, isSeller, isLogistic) {
   // 直付(direct_p2p):买家在 direct_pay_window 标记"我已付款"(Passkey 门) 或取消(不门控);其余阶段沿用通用规则
   if (order.payment_rail === 'direct_p2p' && isBuyer && s === 'direct_pay_window')
     return [{ action: 'mark_paid', label: '✅ 我已付款', style: 'success' }, { action: 'cancel', label: '取消订单', style: 'secondary' }]
+  if (order.payment_rail === 'direct_p2p' && window.dpNegotiationActions) { const _na = window.dpNegotiationActions(order, isBuyer, isSeller); if (_na) return _na }  // 货款协商(payment_query/disputed)动作
   // M8 面交订单：买家在 paid / accepted 都可"面交完成"直接结算
   if (isInPerson && isBuyer && (s === 'paid' || s === 'accepted'))
     return [{ action: 'confirm_in_person', label: '🤝 面交完成 / 确认收货', style: 'success' }]
   if (isSeller && s === 'paid')
     return [{ action: 'accept', label: '接单', style: 'success' }, { action: 'decline', label: '拒绝接单', style: 'danger', custom: 'decline' }]
   if (isSeller && s === 'accepted' && !isInPerson)
-    return [{ action: 'ship', label: '确认发货', style: 'success', logisticsSelector: true, trackingInput: true, evidencePlaceholder: '包装状态描述 / 货物说明（可选）' }, ...(order.payment_rail === 'direct_p2p' ? [{ action: 'dispute', label: '未收到货款', style: 'danger', needsEvidence: true, noteLabel: '未收到货款说明', evidencePlaceholder: '说明未在收款账户看到该笔款项 / 金额或附言不符等（协议不持货款,证据制信誉裁决,不涉资金赔付）' }] : [])]
+    return [{ action: 'ship', label: '确认发货', style: 'success', logisticsSelector: true, trackingInput: true, evidencePlaceholder: '包装状态描述 / 货物说明（可选）' }, ...(order.payment_rail === 'direct_p2p' ? [{ action: 'report_nonpayment', label: '未收到货款(告知买家核实)', style: 'danger' }] : [])]
   if (isSeller && s === 'accepted' && isInPerson)
     return [{ action: 'noop_in_person', label: '🤝 面交中（等待买家确认）', style: 'secondary', disabled: true }]
   if ((isLogistic || isSelfFulfillSeller) && s === 'shipped')
