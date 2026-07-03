@@ -107,6 +107,42 @@ for (const logistics of [false, true]) {
   expect('liability_split 守恒', Math.abs(after - before) <= 1e-9, { before, after })
 }
 
+// ── liability_split seller 作为责任方:同一笔质押不得被扣两次(B 段责任罚款 + C 段质押 forfeit)→ staked 不打负 ──
+//    修前:stake_backing=10, seller.staked=10, seller 责任 10 → seller.staked=-10, sys=20(质押被记两次)。
+{
+  const db = freshDb(); setupOrder(db, 50, 10, { backing: 10, sellerStaked: 10 })
+  const before = totalMoney(db)
+  const res = executeLiabilitySplit(db, 'ord', [{ user_id: 'seller', role: 'seller', amount: 10 } as any], 30)
+  const after = totalMoney(db)
+  const seller = db.prepare("SELECT balance,staked FROM wallets WHERE user_id='seller'").get() as any
+  expect('seller-liability 成功', res.success)
+  expect('seller-liability:staked 不打负(≥0,质押不被扣两次)', seller.staked >= 0, seller)
+  expect('seller-liability:守恒(无凭空印钱)', Math.abs(after - before) <= 1e-9, { before, after })
+}
+
+// ── liability_split seller + logistics 混合责任:seller 也在责任方,staked 仍不打负,守恒 ──
+{
+  const db = freshDb(); setupOrder(db, 60, 10, { backing: 10, sellerStaked: 10 })
+  db.prepare("UPDATE wallets SET balance = 20 WHERE user_id='liable'").run()
+  const before = totalMoney(db)
+  const res = executeLiabilitySplit(db, 'ord', [{ user_id: 'seller', role: 'seller', amount: 6 }, { user_id: 'liable', role: 'logistics', amount: 9 }] as any, 40)
+  const after = totalMoney(db)
+  const seller = db.prepare("SELECT balance,staked FROM wallets WHERE user_id='seller'").get() as any
+  expect('mixed-liability:seller.staked 不打负(≥0)', seller.staked >= 0, seller)
+  expect('mixed-liability:守恒', Math.abs(after - before) <= 1e-9, { before, after })
+}
+
+// ── liability_split seller 有责且 stake_backing > seller.staked(账目不一致)→ cap 到剩余 staked,不打负,守恒 ──
+{
+  const db = freshDb(); setupOrder(db, 50, 10, { backing: 10, sellerStaked: 3 })
+  const before = totalMoney(db)
+  const res = executeLiabilitySplit(db, 'ord', [{ user_id: 'seller', role: 'seller', amount: 10 } as any], 30)
+  const after = totalMoney(db)
+  const seller = db.prepare("SELECT balance,staked FROM wallets WHERE user_id='seller'").get() as any
+  expect('backing>staked seller-liable:staked 不打负(≥0)', seller.staked >= 0, seller)
+  expect('backing>staked seller-liable:守恒', Math.abs(after - before) <= 1e-9, { before, after })
+}
+
 // ── stage-1 免赔付:未锁质押(order.stake_backing=0, seller.staked=0)→ refund_buyer 卖家零罚没,买家全退,守恒 ──
 //    这是【当前生产模型】:建单 stakeBacking=0、只锁买家 escrow(质押完成时才锁)→ 争议单没有本单质押可没收。
 {

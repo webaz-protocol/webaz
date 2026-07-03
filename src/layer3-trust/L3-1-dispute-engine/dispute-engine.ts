@@ -397,8 +397,6 @@ export function executeLiabilitySplit(
 
   // RFC-014:整数 base-units
   const totalU = toUnits(totalAmount)
-  // 见 executeSettlement:卖家质押处理只动本订单实际锁定的背书(order.stake_backing;stage-1 免赔付 → 0),cap 到真实 staked,不读名义 stake_amount。
-  const stakeAmountU = Math.max(0, Math.min(toUnits(Number(order.stake_backing) || 0), walletUnits(db, sellerId).staked))
   const actualRefundU = Math.min(toUnits(buyerRefund ?? totalAmount), totalU)
   const sellerEscrowShareU = totalU - actualRefundU   // 残值,精确
 
@@ -448,6 +446,10 @@ export function executeLiabilitySplit(
     if (totalToTreasuryU > 0) applyWalletDelta(db, sysUser.id, { balance: totalToTreasuryU })
 
     // ── C. 卖家商品质押处理 ───────────────────────────────────────
+    // 【必须在 B 段责任罚款之后 re-read staked】:若 seller 同为责任方,B 段已从其 staked 扣过一次;此处只动【本单锁定
+    //   背书 order.stake_backing】且 cap 到【剩余】staked → 避免同一笔质押被扣两次 / staked 打负 / 凭空印钱。
+    //   不读名义 products.stake_amount(见 executeSettlement 注释);stage-1 backing=0 → 本段恒 no-op。
+    const stakeAmountU = Math.max(0, Math.min(toUnits(Number(order.stake_backing) || 0), walletUnits(db, sellerId).staked))
     if (stakeAmountU > 0) {
       if (sellerLiability) {
         // 卖家有责：按责任金额扣罚质押(封顶),剩余返还
