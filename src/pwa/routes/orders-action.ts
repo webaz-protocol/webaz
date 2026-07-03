@@ -24,6 +24,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import type { OrderStatus } from '../../layer0-foundation/L0-2-state-machine/transitions.js'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
+import { createNotification } from '../../layer2-business/L2-6-notifications/notification-engine.js'
 import { releaseFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:取消/超时释放任何遗留模拟质押(AR 订单无 stake → no-op)
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'   // PR-4e: D1/D2 披露契约门
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'          // PR-4e: 现场真人 Passkey/gate-token 门
@@ -197,20 +198,31 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
         return void res.status(409).json({ error: '该操作仅适用于直付订单的付款窗口/协商阶段', error_code: 'NOT_DIRECT_PAY_WINDOW' })
       }
     }
-    // ── Rail1 直付货款协商(争议≠仲裁)动作。均仅 direct_p2p + 角色/状态门。PR-B1(人驱动协商;定时机制见 PR-B2)。 ──
-    const PQ_ACTIONS = ['report_nonpayment', 'confirm_received', 'pq_escalate', 'pq_withdraw']
+    // ── Rail1 直付货款协商(争议≠仲裁)动作。均仅 direct_p2p + 角色/状态门。PR-B1 人驱动协商 + PR-B2 卖家宽限后请求取消。 ──
+    const PQ_ACTIONS = ['report_nonpayment', 'confirm_received', 'pq_escalate', 'pq_withdraw', 'request_cancel']
     if (PQ_ACTIONS.includes(action)) {
       if (order.payment_rail !== 'direct_p2p') return void res.status(409).json({ error: '该操作仅适用于直付订单', error_code: 'NOT_DIRECT_PAY' })
-      if ((action === 'report_nonpayment' || action === 'confirm_received') && uid !== sellerId) return void res.status(403).json({ error: '你不是本订单的卖家', error_code: 'NOT_ORDER_SELLER' })
+      if ((action === 'report_nonpayment' || action === 'confirm_received' || action === 'request_cancel') && uid !== sellerId) return void res.status(403).json({ error: '你不是本订单的卖家', error_code: 'NOT_ORDER_SELLER' })
       if ((action === 'pq_escalate' || action === 'pq_withdraw') && uid !== buyerId && uid !== sellerId) return void res.status(403).json({ error: '只有买卖双方可操作', error_code: 'NOT_ORDER_PARTY' })
       if (action === 'report_nonpayment' && order.status !== 'accepted') return void res.status(409).json({ error: `仅可在【待发货(accepted)】阶段报告未收款,当前 ${order.status}`, error_code: 'NOT_ACCEPTED' })
-      if ((action === 'confirm_received' || action === 'pq_escalate') && order.status !== 'payment_query') return void res.status(409).json({ error: `仅可在【货款协商(payment_query)】阶段操作,当前 ${order.status}`, error_code: 'NOT_PAYMENT_QUERY' })
+      if ((action === 'confirm_received' || action === 'pq_escalate' || action === 'request_cancel') && order.status !== 'payment_query') return void res.status(409).json({ error: `仅可在【货款协商(payment_query)】阶段操作,当前 ${order.status}`, error_code: 'NOT_PAYMENT_QUERY' })
       if (action === 'pq_withdraw') {
         if (order.status !== 'disputed') return void res.status(409).json({ error: `仅可在【争议(disputed)】阶段撤回,当前 ${order.status}`, error_code: 'NOT_DISPUTED' })
         // 已裁定的争议不可撤回(disputed 已终结成 resolved/dismissed 前,dispute.status 仍 open/in_review)
         const d = await dbOne<{ status: string }>("SELECT status FROM disputes WHERE order_id = ? ORDER BY created_at DESC LIMIT 1", [req.params.id])
         if (d && (d.status === 'resolved' || d.status === 'dismissed')) return void res.status(409).json({ error: '争议已裁定,不可撤回', error_code: 'DISPUTE_ALREADY_RULED' })
       }
+    }
+    // PR-B2:卖家在【买家响应宽限已过】后请求取消 —— 不立即关单,而是开【N 天买家申诉窗】(payment_query_cancel_deadline)。
+    //   窗内买家仍可 confirm-side/主张已付/升级举证(pq_escalate);窗满由 cron 关单。不动状态,不涉资金。幂等(deadline 已设则不重置)。
+    if (action === 'request_cancel') {
+      const g = await dbOne<{ over: number }>("SELECT (payment_query_deadline IS NOT NULL AND datetime(payment_query_deadline) < datetime('now')) AS over FROM orders WHERE id = ?", [req.params.id])
+      if (!g?.over) return void res.status(409).json({ error: '买家响应宽限未到,暂不可请求取消', error_code: 'GRACE_NOT_ELAPSED' })
+      let rd = 7; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'direct_pay.payment_query_recourse_days'"); if (p) rd = Math.max(1, Number(p.value) || 7) } catch {}
+      await dbRun(`UPDATE orders SET payment_query_cancel_deadline = datetime('now', ? ) WHERE id = ? AND payment_query_cancel_deadline IS NULL`, [`+${rd} days`, req.params.id])
+      const dl = (await dbOne<{ d: string }>("SELECT payment_query_cancel_deadline d FROM orders WHERE id = ?", [req.params.id]))?.d
+      try { createNotification(db, order.buyer_id as string, req.params.id, 'payment_query_cancel_requested', '⏳ 卖家申请取消订单', `卖家称未收到货款且你未回应,已申请取消。你约有 ${rd} 天:若确已付款请提供付款参考或发起举证(pq_escalate),否则订单将于 ${dl} 自动取消。直付非托管,无平台退款。`) } catch {}
+      return void res.json({ success: true, status: 'payment_query', cancel_recourse_deadline: dl })
     }
     // PR-4e:mark_paid = direct_p2p RISK 动作(已过 direct_pay_window 只读预检)→ 两次披露门 + 现场真人 Passkey 门。cancel 不门控。
     if (action === 'mark_paid') {

@@ -40,12 +40,13 @@ const status = (id: string) => (db.prepare('SELECT status FROM orders WHERE id=?
 const graceDeadline = (id: string) => (db.prepare('SELECT direct_grace_deadline d FROM orders WHERE id=?').get(id) as { d: string | null }).d
 const stakeStatus = (id: string) => (db.prepare('SELECT status FROM direct_pay_fee_stakes WHERE order_id=?').get(id) as { status?: string } | undefined)?.status
 
-function mkOrder(id: string, st: string, opts: { windowPast?: boolean; gracePast?: boolean; graceFuture?: boolean } = {}): void {
+function mkOrder(id: string, st: string, opts: { windowPast?: boolean; gracePast?: boolean; graceFuture?: boolean; pqCancelPast?: boolean; pqCancelFuture?: boolean } = {}): void {
   db.prepare(`INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail,
-     direct_pay_window_deadline, direct_grace_deadline)
+     direct_pay_window_deadline, direct_grace_deadline, payment_query_cancel_deadline)
      VALUES (?, 'p1','buyer1','seller1',1,50,50,0,?, 'direct_p2p',
        ${opts.windowPast ? "datetime('now','-1 hour')" : 'NULL'},
-       ${opts.gracePast ? "datetime('now','-1 hour')" : opts.graceFuture ? "datetime('now','+48 hours')" : 'NULL'})`).run(id, st)
+       ${opts.gracePast ? "datetime('now','-1 hour')" : opts.graceFuture ? "datetime('now','+48 hours')" : 'NULL'},
+       ${opts.pqCancelPast ? "datetime('now','-1 hour')" : opts.pqCancelFuture ? "datetime('now','+3 days')" : 'NULL'})`).run(id, st)
 }
 
 // ── Scenario 1: 付款窗口超时 → expired_unconfirmed + 退质押 + 设宽限期 ──
@@ -74,6 +75,15 @@ ok('after grace: o2 → cancelled', status('o2') === 'cancelled')
 mkOrder('o3', 'direct_expired_unconfirmed', { graceFuture: true })
 runDirectPayTimeoutSweep({ db })
 ok('control: future-grace order NOT cancelled', status('o3') === 'direct_expired_unconfirmed')
+
+// ── Scenario 3c (PR-B2): 货款协商申诉窗满 → 系统关单;窗内不关 ──
+mkOrder('oq1', 'payment_query', { pqCancelPast: true })   // 卖家已请求取消,7d 申诉窗已满
+mkOrder('oq2', 'payment_query', { pqCancelFuture: true })  // 申诉窗未满(买家仍可回应/升级)
+mkOrder('oq3', 'payment_query')                            // 未请求取消(deadline NULL)→ 永不被 cron 关
+const rq = runDirectPayTimeoutSweep({ db })
+ok('pq-cancel: expired recourse window → cancelled + in pqCancelled', rq.pqCancelled.includes('oq1') && status('oq1') === 'cancelled')
+ok('★ pq-cancel: window NOT expired → NOT cancelled (buyer recourse intact)', !rq.pqCancelled.includes('oq2') && status('oq2') === 'payment_query')
+ok('pq-cancel: no cancel-deadline set → never cron-cancelled', status('oq3') === 'payment_query')
 
 // ── req #2: direct_p2p 完成结算 = 释放任何遗留模拟 stake + 记链下应收(AR),绝不碰 escrow ──
 db.prepare("INSERT INTO users (id, name, role, api_key) VALUES ('buyer4','买家4','buyer','k_b4')").run()
