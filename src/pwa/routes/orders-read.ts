@@ -20,7 +20,7 @@ import type Database from 'better-sqlite3'
 import { listOrderEventsSince } from '../../layer0-foundation/L0-2-state-machine/order-chain.js'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'  // PR-4f-b: direct_p2p 收款说明响应契约门
-import { redactUnackedDirectPayTarget } from '../direct-pay-order-redaction.js'  // 收款目标披露门(共享;所有 orders reader 必过)
+import { redactUnackedDirectPayTarget, stripDirectPayPaymentTarget } from '../direct-pay-order-redaction.js'  // 收款目标披露门(共享;所有 orders reader 必过)。strip=非买家/卖家第三方无条件剥离
 import { getMutualCancelState } from '../../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'  // 协商取消(无责合意)可达性 + 当前提议(仅 disputed 计算,UI 便利字段)
 import { isEligibleArbitrator } from '../arbitrator-lifecycle.js'  // 白名单仲裁员可查【争议中】订单(裁定所需);不看 legacy role==='arbitrator'
 import { getQrImageForOwner } from '../../direct-receive-account-qr.js'  // Rail1 D2:ack 门后按订单快照 qr_ref 取收款码字节((ref,seller_id) 域内)
@@ -160,9 +160,10 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     const isLogisticsPickup = (user as Record<string,unknown>).role === 'logistics' &&
       !order.logistics_id && order.status === 'shipped'
     // 白名单仲裁员(role 可能是 buyer,非 legacy 'arbitrator')需查看【争议中】订单以裁定。仅 disputed 单放行,非争议单不予枚举。
-    //   与 disputes 详情"party OR isEligibleArbitrator"授权模型一致;能力源=active arbitrator_whitelist,不看 user.role。
+    //   能力源【唯一】= active arbitrator_whitelist(isEligibleArbitrator);【移除】legacy user.role === 'arbitrator' 旁路
+    //   —— 否则 role-only / 已 suspend/revoke 但主 role 未同步的账号仍能读【任意状态】订单,与"active whitelist 是唯一授权源"冲突。
     const isDisputeArbiter = order.status === 'disputed' && isEligibleArbitrator(db, user.id as string).ok
-    if (order.buyer_id !== user.id && order.seller_id !== user.id && order.logistics_id !== user.id && user.role !== 'arbitrator' && !isLogisticsPickup && !isDisputeArbiter) {
+    if (order.buyer_id !== user.id && order.seller_id !== user.id && order.logistics_id !== user.id && !isLogisticsPickup && !isDisputeArbiter) {
       return void res.status(403).json({ error: '无权查看此订单' })
     }
 
@@ -212,6 +213,10 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     // Direct Pay 响应契约门:direct_p2p 收款目标(instruction 快照 + 账号快照 qr_ref),买家在 D1/D2 both-acked 前
     //   【不得】从 API 拿到(非仅 UI 软门)。与 /api/orders 列表共用同一 redact,防旁路(#179 审计 P1)。
     redactUnackedDirectPayTarget(db, order as Record<string, unknown>, user.id as string)
+    // P1-1:非买家【且】非卖家的第三方 reader(disputed-order 仲裁员、logistics-pickup)绝不该看到直付收款目标。
+    //   redactUnackedDirectPayTarget 只管【买家自视角】,非买家时是 no-op → 仲裁员会拿到 instruction/qr_ref。卖家是收款方,看自己单不剥。
+    //   若仲裁确需看收款目标,应另做显式、可审计、受指派/案件/目的约束的 reveal 路径。
+    if (user.id !== order.buyer_id && user.id !== order.seller_id) stripDirectPayPaymentTarget(order as Record<string, unknown>)
 
     // Rail1 撤回仲裁可达性(与 orders-action pq_withdraw 权威门同谓词):仅当【当前 disputed + 最近一次进入
     //   disputed 是 from payment_query + 争议未裁定】。前端据此才显示"撤回仲裁"按钮 —— 履约类争议(货损/货不对版
