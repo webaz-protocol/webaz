@@ -215,6 +215,7 @@
     "test:pv-settlement-engine": "tsx scripts/test-pv-settlement-engine.ts",
     "test:settlement-breakdown": "tsx scripts/test-settlement-breakdown.ts",
     "test:dispute-noncustodial": "tsx scripts/test-dispute-noncustodial.ts",
+    "test:dispute-settlement-conservation": "tsx tests/test-dispute-settlement-conservation.ts",
     "test:payment-query-transitions": "tsx scripts/test-payment-query-transitions.ts",
     "test:payment-query-actions": "tsx scripts/test-payment-query-actions.ts",
     "lint:secrets": "gitleaks detect --no-banner --redact --config .gitleaks.toml --exit-code 1",

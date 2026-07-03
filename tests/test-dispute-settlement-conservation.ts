@@ -16,7 +16,7 @@ function freshDb(): Database.Database {
     CREATE TABLE products (id TEXT PRIMARY KEY, stake_amount REAL DEFAULT 0);
     CREATE TABLE orders (
       id TEXT PRIMARY KEY, status TEXT, buyer_id TEXT, seller_id TEXT, product_id TEXT, logistics_id TEXT,
-      total_amount REAL, source TEXT DEFAULT 'shop', updated_at TEXT
+      total_amount REAL, stake_backing REAL DEFAULT 0, source TEXT DEFAULT 'shop', updated_at TEXT
     );
     CREATE TABLE order_state_history (id TEXT PRIMARY KEY, order_id TEXT, from_status TEXT, to_status TEXT,
       actor_id TEXT, actor_role TEXT, evidence_ids TEXT DEFAULT '[]', notes TEXT, created_at TEXT DEFAULT (datetime('now')));
@@ -37,12 +37,17 @@ const totalMoney = (db: Database.Database): number => {
 const r2 = (n: number) => Math.round(n * 100) / 100
 
 // 用除不尽金额 + 奇数 stake 制造取整压力
-function setupOrder(db: Database.Database, total: number, stake: number, opts: { logistics?: boolean; liableBal?: number } = {}) {
+// backing = 本订单【实际锁定】的赔付背书(order.stake_backing);sellerStaked = 卖家钱包真实 staked。
+//   默认二者都 = stake(代表"已锁质押"的一致订单,Phase-3 模型;既有守恒断言在此下不变)。
+//   显式传 backing:0 / sellerStaked:0 → 代表 stage-1 免赔付(未锁质押)/ 防负边界。
+function setupOrder(db: Database.Database, total: number, stake: number, opts: { logistics?: boolean; liableBal?: number; backing?: number; sellerStaked?: number } = {}) {
+  const backing = opts.backing ?? stake
+  const sellerStaked = opts.sellerStaked ?? stake
   db.prepare("INSERT INTO products VALUES ('prd', ?)").run(stake)
-  db.prepare("INSERT INTO orders (id,status,buyer_id,seller_id,product_id,logistics_id,total_amount) VALUES ('ord','disputed','buyer','seller','prd',?,?)")
-    .run(opts.logistics ? 'liable' : null, total)
+  db.prepare("INSERT INTO orders (id,status,buyer_id,seller_id,product_id,logistics_id,total_amount,stake_backing) VALUES ('ord','disputed','buyer','seller','prd',?,?,?)")
+    .run(opts.logistics ? 'liable' : null, total, backing)
   db.prepare("UPDATE wallets SET escrowed = ? WHERE user_id='buyer'").run(total)
-  db.prepare("UPDATE wallets SET staked = ? WHERE user_id='seller'").run(stake)
+  db.prepare("UPDATE wallets SET staked = ? WHERE user_id='seller'").run(sellerStaked)
   if (opts.liableBal) db.prepare("UPDATE wallets SET balance = ? WHERE user_id='liable'").run(opts.liableBal)
 }
 
@@ -100,6 +105,44 @@ for (const logistics of [false, true]) {
   const res = executeLiabilitySplit(db, 'ord', [{ user_id: 'liable', role: 'logistics', amount: 15 } as any], 30)
   const after = totalMoney(db)
   expect('liability_split 守恒', Math.abs(after - before) <= 1e-9, { before, after })
+}
+
+// ── stage-1 免赔付:未锁质押(order.stake_backing=0, seller.staked=0)→ refund_buyer 卖家零罚没,买家全退,守恒 ──
+//    这是【当前生产模型】:建单 stakeBacking=0、只锁买家 escrow(质押完成时才锁)→ 争议单没有本单质押可没收。
+{
+  const db = freshDb(); setupOrder(db, 33.33, 5.55, { backing: 0, sellerStaked: 0 })
+  const before = totalMoney(db)
+  const res = executeSettlement(db, 'ord', 'refund_buyer')
+  const after = totalMoney(db)
+  const seller = db.prepare("SELECT balance,staked FROM wallets WHERE user_id='seller'").get() as any
+  const buyer = db.prepare("SELECT balance,escrowed FROM wallets WHERE user_id='buyer'").get() as any
+  expect('stage-1 refund_buyer 成功', res.success)
+  expect('stage-1 免赔付:卖家钱包不变(零罚没,staked=0 balance=0)', seller.staked === 0 && seller.balance === 0, seller)
+  expect('stage-1 买家全额退款(escrowed→balance,无惩罚补偿)', r2(buyer.balance) === 33.33 && buyer.escrowed === 0, buyer)
+  expect('stage-1 守恒', Math.abs(after - before) <= 1e-9, { before, after })
+}
+
+// ── 防负护栏:订单声称有背书(stake_backing=5.55)但 seller.staked 实际=0(账目不一致)→ cap 到 0,不没收/不打负/不印钱 ──
+{
+  const db = freshDb(); setupOrder(db, 33.33, 5.55, { backing: 5.55, sellerStaked: 0 })
+  const before = totalMoney(db)
+  const res = executeSettlement(db, 'ord', 'refund_buyer')
+  const after = totalMoney(db)
+  const seller = db.prepare("SELECT balance,staked FROM wallets WHERE user_id='seller'").get() as any
+  expect('防负 refund_buyer 成功', res.success)
+  expect('防负:seller.staked 不变负(=0)、balance 无幻影(=0)', seller.staked === 0 && seller.balance === 0, seller)
+  expect('防负:守恒(无凭空印钱)', Math.abs(after - before) <= 1e-9, { before, after })
+}
+
+// ── release_seller stage-1:未锁质押 → 卖家拿残值,不返还幻影质押,seller.staked 不动,守恒 ──
+{
+  const db = freshDb(); setupOrder(db, 99.99, 10, { backing: 0, sellerStaked: 0 })
+  const before = totalMoney(db)
+  const res = executeSettlement(db, 'ord', 'release_seller')
+  const after = totalMoney(db)
+  const seller = db.prepare("SELECT balance,staked FROM wallets WHERE user_id='seller'").get() as any
+  expect('stage-1 release_seller 守恒', Math.abs(after - before) <= 1e-9, { before, after })
+  expect('stage-1 release_seller:seller.staked 不变负(=0,无幻影返还)', seller.staked === 0, seller)
 }
 
 console.log(`\n${pass} pass · ${fail} fail`)

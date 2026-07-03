@@ -19,7 +19,7 @@ import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // R
 import { transition } from '../../layer0-foundation/L0-2-state-machine/engine.js'
 // RFC-014 PR5 — 争议资金处置走整数 base-units + 绝对值落库 + allocate 精确拆分。
 import { toUnits, toDecimal, mulRate, allocate } from '../../money.js'
-import { applyWalletDelta, debitStakeThenBalance } from '../../ledger.js'
+import { applyWalletDelta, debitStakeThenBalance, walletUnits } from '../../ledger.js'
 
 // ─── 类型定义 ─────────────────────────────────────────────────
 
@@ -395,13 +395,10 @@ export function executeLiabilitySplit(
   const sellerId    = order.seller_id as string
   const sysUser     = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string }
 
-  const product = db.prepare('SELECT stake_amount FROM products WHERE id = ?')
-    .get(order.product_id as string) as { stake_amount: number } | undefined
-  const stakeAmount = product?.stake_amount ?? 0
-
   // RFC-014:整数 base-units
   const totalU = toUnits(totalAmount)
-  const stakeAmountU = toUnits(stakeAmount)
+  // 见 executeSettlement:卖家质押处理只动本订单实际锁定的背书(order.stake_backing;stage-1 免赔付 → 0),cap 到真实 staked,不读名义 stake_amount。
+  const stakeAmountU = Math.max(0, Math.min(toUnits(Number(order.stake_backing) || 0), walletUnits(db, sellerId).staked))
   const actualRefundU = Math.min(toUnits(buyerRefund ?? totalAmount), totalU)
   const sellerEscrowShareU = totalU - actualRefundU   // 残值,精确
 
@@ -537,15 +534,15 @@ export function executeSettlement(
   const buyerId   = order.buyer_id as string
   const sellerId  = order.seller_id as string
 
-  const product = db.prepare('SELECT stake_amount FROM products WHERE id = ?')
-    .get(order.product_id as string) as { stake_amount: number } | undefined
-  const stakeAmount = product?.stake_amount ?? 0
-
   const sysUser = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string }
 
   // RFC-014:整数 base-units
   const totalU = toUnits(totalAmount)
-  const stakeAmountU = toUnits(stakeAmount)
+  // 卖家质押 forfeit/return 只动【本订单实际锁定的赔付背书】order.stake_backing,再 cap 到卖家真实 staked。
+  //   绝不读 products.stake_amount —— 那是名义"预期 stake",完成时才锁(server.ts 结算);争议单 pre-completion 从未锁,
+  //   读它会没收/返还从未锁定的质押 → 打负 staked / 凭空印钱。RFC-008 stage-1 免赔付:stake_backing 恒 0 → 本段恒 no-op,
+  //   与"违约只退款不没收"一致;Phase-3 真正在建单锁 stake 后,同一段自动按真实 backing 处置。
+  const stakeAmountU = Math.max(0, Math.min(toUnits(Number(order.stake_backing) || 0), walletUnits(db, sellerId).staked))
 
   if (ruling === 'refund_buyer') {
     // ── 买家胜诉：退全款 + 卖家损失一半质押（惩罚,allocate 精确二分）──────────────
