@@ -83,8 +83,10 @@ try {
   const o5b = mkOrder('accepted'); await call(o5b, { action: 'report_nonpayment' }, 'seller1', 'seller')
   ok('5c. non-party CANNOT escalate (403)', (await call(o5b, { action: 'pq_escalate', evidence_description: 'x' }, 'other', 'buyer')).status === 403)
   // 6. withdraw: disputed → payment_query (before ruling); ruled → 409
-  const o6 = mkOrder('accepted'); await call(o6, { action: 'report_nonpayment' }, 'seller1', 'seller'); await call(o6, { action: 'pq_escalate', evidence_description: 'x' }, 'buyer1', 'buyer'); mkDisputeRow(o6, 'in_review')
+  const o6 = mkOrder('accepted'); await call(o6, { action: 'report_nonpayment' }, 'seller1', 'seller'); await call(o6, { action: 'pq_escalate', evidence_description: 'x' }, 'buyer1', 'buyer'); const d6 = mkDisputeRow(o6, 'in_review')
   ok('6a. withdraw (disputed→payment_query) before ruling → 200', (await call(o6, { action: 'pq_withdraw' }, 'seller1', 'seller')).status === 200 && st(o6) === 'payment_query')
+  ok('6a-P1. withdraw CLOSES the active dispute (dismissed) — no dirty active dispute left', (db.prepare('SELECT status FROM disputes WHERE id=?').get(d6) as { status: string }).status === 'dismissed')
+  ok('6a-P2. withdraw REBUILDS the negotiation deadline (payment_query_deadline non-null)', !!pqDeadline(o6))
   const o7 = mkOrder('accepted'); await call(o7, { action: 'report_nonpayment' }, 'seller1', 'seller'); await call(o7, { action: 'pq_escalate', evidence_description: 'x' }, 'buyer1', 'buyer'); mkDisputeRow(o7, 'resolved')
   ok('6b. withdraw a RULED dispute → 409 DISPUTE_ALREADY_RULED', (await call(o7, { action: 'pq_withdraw' }, 'buyer1', 'buyer')).json?.error_code === 'DISPUTE_ALREADY_RULED')
 

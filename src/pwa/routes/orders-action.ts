@@ -362,7 +362,7 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       accept: 'accepted', ship: 'shipped', pickup: 'picked_up',
       transit: 'in_transit', deliver: 'delivered', confirm: 'confirmed', dispute: 'disputed',
       mark_paid: 'accepted',   // Rail1 直付:买家声明"我已付款" → accepted(汇入既有卖家发货流程;协议不验真实付款)
-      // Rail1 货款协商:卖家报未收款→协商;卖家确认已收→恢复;升级→举证仲裁;撤回仲裁→回协商。
+      // Rail1 货款协商:卖家报未收款→协商;卖家确认已收→恢复;升级→举证仲裁;撤回→回协商(pq_withdraw 由上方原子块 early-return 处理,列此仅为通过 !toStatus 校验)。
       report_nonpayment: 'payment_query', confirm_received: 'accepted', pq_escalate: 'disputed', pq_withdraw: 'payment_query',
     }
     const toStatus = actionMap[action]
@@ -398,6 +398,22 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       notifyTransition(db, req.params.id, 'confirmed', 'completed')
       try { broadcastSystemEvent('order_completed', '✓', `订单完成 ${req.params.id}`, req.params.id) } catch {}
       return void res.json({ success: true, status: 'completed', settlement: { rail: 'direct_p2p', fee_accrued: true } })
+    }
+
+    // Rail1 撤回仲裁:disputed→payment_query + 【同一事务】关闭活跃 dispute(否则订单回协商但仲裁视图仍见活跃争议 → 脏状态,
+    //   仲裁员可能对已回协商的单裁定)。原子后重建买家响应宽限,让 PR-B2 的宽限/超时 cron 有截止时间可依赖。
+    if (action === 'pq_withdraw') {
+      try {
+        db.transaction(() => {
+          const r = transition(db, req.params.id, 'payment_query', user.id as string, [], notes)
+          if (!r.success) throw new Error(r.error || 'withdraw transition failed')
+          db.prepare("UPDATE disputes SET status = 'dismissed', verdict_reason = COALESCE(verdict_reason, '撤回仲裁,回到协商'), resolved_at = datetime('now') WHERE order_id = ? AND status IN ('open', 'in_review')").run(req.params.id)
+        })()
+      } catch (e) { return void res.status(409).json({ error: `撤回仲裁失败:${(e as Error).message}`, error_code: 'WITHDRAW_FAILED' }) }
+      let gh = 72; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'direct_pay.payment_query_grace_hours'"); if (p) gh = Math.max(1, Number(p.value) || 72) } catch {}
+      await dbRun(`UPDATE orders SET payment_query_deadline = datetime('now', ? ), payment_query_cancel_deadline = NULL WHERE id = ?`, [`+${gh} hours`, req.params.id])
+      notifyTransition(db, req.params.id, 'disputed', 'payment_query')
+      return void res.json({ success: true, status: 'payment_query', dispute_withdrawn: true })
     }
 
     const fromStatus = order.status as string
