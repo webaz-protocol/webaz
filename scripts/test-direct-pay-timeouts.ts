@@ -43,12 +43,13 @@ const status = (id: string) => (db.prepare('SELECT status FROM orders WHERE id=?
 const graceDeadline = (id: string) => (db.prepare('SELECT direct_grace_deadline d FROM orders WHERE id=?').get(id) as { d: string | null }).d
 const stakeStatus = (id: string) => (db.prepare('SELECT status FROM direct_pay_fee_stakes WHERE order_id=?').get(id) as { status?: string } | undefined)?.status
 
-function mkOrder(id: string, st: string, opts: { windowPast?: boolean; gracePast?: boolean; graceFuture?: boolean; pqCancelPast?: boolean; pqCancelFuture?: boolean } = {}): void {
+function mkOrder(id: string, st: string, opts: { windowPast?: boolean; gracePast?: boolean; graceFuture?: boolean; pqDeadlinePast?: boolean; pqCancelPast?: boolean; pqCancelFuture?: boolean } = {}): void {
   db.prepare(`INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail,
-     direct_pay_window_deadline, direct_grace_deadline, payment_query_cancel_deadline)
+     direct_pay_window_deadline, direct_grace_deadline, payment_query_deadline, payment_query_cancel_deadline)
      VALUES (?, 'p1','buyer1','seller1',1,50,50,0,?, 'direct_p2p',
        ${opts.windowPast ? "datetime('now','-1 hour')" : 'NULL'},
        ${opts.gracePast ? "datetime('now','-1 hour')" : opts.graceFuture ? "datetime('now','+48 hours')" : 'NULL'},
+       ${opts.pqDeadlinePast ? "datetime('now','-1 hour')" : 'NULL'},
        ${opts.pqCancelPast ? "datetime('now','-1 hour')" : opts.pqCancelFuture ? "datetime('now','+3 days')" : 'NULL'})`).run(id, st)
 }
 
@@ -91,6 +92,31 @@ ok('pq-cancel: no cancel-deadline set → never cron-cancelled', status('oq3') =
 const notif = (uid: string) => (db.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id=? AND order_id='oq1' AND type='payment_query→cancelled'").get(uid) as { n: number }).n
 ok('pq-cancel: buyer notified of the system cancel', notif('buyer1') >= 1)
 ok('pq-cancel: seller notified of the system cancel', notif('seller1') >= 1)
+
+// ── Scenario 3d (PR-A): 货款协商买家静默(payment_query_deadline 过 + 卖家未 request_cancel) → 系统代发起取消,开申诉窗 ──
+//    修裸卡死:到期不直接关单,而是设 cancel_deadline + 通知买家最后申诉窗;窗内买家可 pq_escalate;窗满才由 Sweep C 关。
+const pqCancelDl = (id: string) => (db.prepare('SELECT payment_query_cancel_deadline d FROM orders WHERE id=?').get(id) as { d: string | null }).d
+const recourseNotif = (id: string) => (db.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id='buyer1' AND order_id=? AND type='payment_query_cancel_requested'").get(id) as { n: number }).n
+mkOrder('op1', 'payment_query', { pqDeadlinePast: true })   // 买家响应宽限已过,卖家未请求取消(cancel_deadline NULL)
+const rp1 = runDirectPayTimeoutSweep({ db })
+ok('PR-A: bare payment_query past deadline → recourse window OPENED (not cancelled)', rp1.pqRecourseOpened.includes('op1') && status('op1') === 'payment_query' && !!pqCancelDl('op1'))
+ok('PR-A: buyer notified the recourse window opened', recourseNotif('op1') >= 1)
+const dlAfter = pqCancelDl('op1')
+const rp2 = runDirectPayTimeoutSweep({ db })
+ok('★ PR-A: repeat cron does NOT re-open / reset the window (idempotent)', !rp2.pqRecourseOpened.includes('op1') && pqCancelDl('op1') === dlAfter)
+
+mkOrder('op2', 'payment_query', { pqDeadlinePast: true })
+runDirectPayTimeoutSweep({ db })                            // opens recourse window for op2
+const escp = transition(db, 'op2', 'disputed', 'buyer1', ['evp2'], '我确实付款了')
+ok('PR-A: buyer pq_escalate during window → leaves payment_query', escp.success === true && status('op2') === 'disputed')
+const rp3 = runDirectPayTimeoutSweep({ db })
+ok('★ PR-A: escalated order is NOT cancelled by cron', !rp3.pqCancelled.includes('op2') && status('op2') === 'disputed')
+
+mkOrder('op3', 'payment_query', { pqDeadlinePast: true })
+runDirectPayTimeoutSweep({ db })                            // opens recourse (cancel_deadline = future)
+db.prepare("UPDATE orders SET payment_query_cancel_deadline = datetime('now','-1 hour') WHERE id='op3'").run()  // fast-forward window to expired
+const rp4 = runDirectPayTimeoutSweep({ db })
+ok('PR-A: recourse window expired → Sweep C cancels (same closure as manual request_cancel)', rp4.pqCancelled.includes('op3') && status('op3') === 'cancelled')
 
 // ── req #2: direct_p2p 完成结算 = 释放任何遗留模拟 stake + 记链下应收(AR),绝不碰 escrow ──
 db.prepare("INSERT INTO users (id, name, role, api_key) VALUES ('buyer4','买家4','buyer','k_b4')").run()

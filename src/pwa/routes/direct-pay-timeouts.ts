@@ -16,7 +16,7 @@
 import type Database from 'better-sqlite3'
 import { transition } from '../../layer0-foundation/L0-2-state-machine/engine.js'
 import { releaseFeeStake } from '../../direct-pay-ledger.js'
-import { notifyTransition } from '../../layer2-business/L2-6-notifications/notification-engine.js'
+import { notifyTransition, createNotification } from '../../layer2-business/L2-6-notifications/notification-engine.js'
 
 const SYS = 'sys_protocol'
 
@@ -24,7 +24,17 @@ export interface DirectPayTimeoutDeps { db: Database.Database }
 export interface DirectPayTimeoutResult {
   windowExpired: string[]    // order ids: direct_pay_window → direct_expired_unconfirmed
   graceCancelled: string[]   // order ids: direct_expired_unconfirmed → cancelled (宽限期满)
-  pqCancelled: string[]      // order ids: payment_query → cancelled (卖家请求取消后 7d 买家申诉窗满)
+  pqRecourseOpened: string[] // order ids: payment_query 买家静默 → 系统代发起取消,开买家申诉窗(不关单)
+  pqCancelled: string[]      // order ids: payment_query → cancelled (申诉窗满)
+}
+
+/** 货款协商买家申诉窗(天),governance 可调,默认 7d。与 request_cancel 同源 param,保证手动/自动一致。 */
+function recourseDays(db: Database.Database): number {
+  try {
+    const row = db.prepare("SELECT value FROM protocol_params WHERE key = 'direct_pay.payment_query_recourse_days'").get() as { value: string } | undefined
+    const n = Number(row?.value ?? 7)
+    return Number.isFinite(n) && n > 0 ? Math.max(1, n) : 7
+  } catch { return 7 }
 }
 
 /** 宽限期(小时),governance 可调,默认 48h(2d)。不硬编码。 */
@@ -41,6 +51,7 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
   const gh = graceHours(db)
   const windowExpired: string[] = []
   const graceCancelled: string[] = []
+  const pqRecourseOpened: string[] = []
   const pqCancelled: string[] = []
 
   // A. 付款窗口超时 → 可争议态(非静默关单)+ 退费用质押 + 设宽限期
@@ -78,6 +89,31 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
     })()
   }
 
+  // D. 货款协商买家静默:payment_query 已过买家响应宽限(payment_query_deadline)且卖家未手动请求取消
+  //    (payment_query_cancel_deadline 仍空)→ 系统【代卖家自动启动取消申请】(等价 request_cancel):
+  //    设 payment_query_cancel_deadline = now + recourse_days + 通知买家最后申诉窗已开。★ 不关单、不动状态、不涉资金;
+  //    买家窗内仍可 pq_escalate 主张已付,订单离开 payment_query 后本 sweep 与 Sweep C 均不再命中。之后由 Sweep C 窗满关单。
+  //    幂等:WHERE payment_query_cancel_deadline IS NULL —— 卖家已手动 request_cancel 的单不被重置,重复 cron 也不刷新窗口。
+  const rd = recourseDays(db)
+  const pqSilentRows = db.prepare(`
+    SELECT id, buyer_id FROM orders
+    WHERE status = 'payment_query'
+      AND payment_rail = 'direct_p2p'
+      AND payment_query_deadline IS NOT NULL
+      AND datetime(payment_query_deadline) < datetime('now')
+      AND payment_query_cancel_deadline IS NULL
+    LIMIT 1000
+  `).all() as Array<{ id: string; buyer_id: string }>
+  for (const { id, buyer_id } of pqSilentRows) {
+    const res = db.prepare(`UPDATE orders SET payment_query_cancel_deadline = datetime('now', ?) WHERE id = ? AND payment_query_cancel_deadline IS NULL`).run(`+${rd} days`, id)
+    if (res.changes === 0) continue   // 竞态:同 tick 已被设(卖家 request_cancel)——不重复处理
+    pqRecourseOpened.push(id)
+    try {
+      const dl = (db.prepare("SELECT payment_query_cancel_deadline d FROM orders WHERE id = ?").get(id) as { d: string }).d
+      createNotification(db, buyer_id, id, 'payment_query_cancel_requested', '⏳ 卖家申请取消订单', `卖家称未收到货款且你未在响应期内回应,系统已代卖家发起取消。你约有 ${rd} 天:若确已付款请提供付款参考或发起举证(pq_escalate),否则订单将于 ${dl} 自动取消。直付非托管,无平台退款。`)
+    } catch (e) { console.warn('[direct-pay-timeouts] notify pq-recourse:', (e as Error).message) }
+  }
+
   // C. 货款协商:卖家已请求取消(payment_query_cancel_deadline 已设)+ 买家申诉窗满 → 系统关单 + 退费用质押。
   //    ★ 窗内(now < deadline)绝不关:买家全程可主张已付/升级举证(pq_escalate 回 disputed)。
   const pqCancelRows = db.prepare(`
@@ -99,7 +135,7 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
     if (done) { pqCancelled.push(id); try { notifyTransition(db, id, 'payment_query', 'cancelled') } catch (e) { console.warn('[direct-pay-timeouts] notify pq-cancel:', (e as Error).message) } }  // 通知买卖双方(cron 系统关单也要发,route 之外)
   }
 
-  return { windowExpired, graceCancelled, pqCancelled }
+  return { windowExpired, graceCancelled, pqRecourseOpened, pqCancelled }
 }
 
 export function startDirectPayTimeoutCron(deps: DirectPayTimeoutDeps): void {
@@ -107,8 +143,8 @@ export function startDirectPayTimeoutCron(deps: DirectPayTimeoutDeps): void {
   setInterval(() => {
     try {
       const r = runDirectPayTimeoutSweep(deps)
-      if (r.windowExpired.length || r.graceCancelled.length || r.pqCancelled.length) {
-        console.log(`[direct-pay-timeouts] window→expired ${r.windowExpired.length}, grace→cancelled ${r.graceCancelled.length}, pq→cancelled ${r.pqCancelled.length}`)
+      if (r.windowExpired.length || r.graceCancelled.length || r.pqRecourseOpened.length || r.pqCancelled.length) {
+        console.log(`[direct-pay-timeouts] window→expired ${r.windowExpired.length}, grace→cancelled ${r.graceCancelled.length}, pq→recourse ${r.pqRecourseOpened.length}, pq→cancelled ${r.pqCancelled.length}`)
       }
     } catch (e) {
       console.error('[direct-pay-timeouts-cron]', e)
