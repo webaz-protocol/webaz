@@ -2672,34 +2672,7 @@ window.doAdminOrderFilter = () => {
   renderAdminOrders(document.getElementById('app'), { status })
 }
 
-async function renderAdminDisputes(app) {
-  if (!state.user) { renderLogin(); return }
-  if (!isAdmin()) { app.innerHTML = shell(`<div class="alert alert-info">${t('仅限管理员')}</div>`, 'admin'); return }
-  app.innerHTML = shell(loading$(), 'admin')
-  const data = await GET('/admin/disputes')
-  if (data.error) { app.innerHTML = shell(alert$('error', data.error), 'admin'); return }
-  const list = data.disputes.map(d => `
-    <div class="card" style="margin-bottom:10px;font-size:13px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:600">${escHtml(d.product_title || '—')}</div>
-          <div style="font-size:12px;color:#6b7280;margin-top:2px">${escHtml((d.reason || '').slice(0, 80))}</div>
-          <div style="font-size:11px;color:#6b7280;margin-top:6px">${t('原告')}: ${escHtml(d.initiator_name || '—')} → ${t('被告')}: ${escHtml(d.defendant_name || '—')}</div>
-          <div style="font-size:11px;color:#9ca3af;margin-top:4px">${d.id} · ${fmtTime(d.created_at)}</div>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
-          <span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:8px;font-size:11px">${d.status}</span>
-          ${d.total_amount ? `<div style="font-size:12px;color:#374151">${d.total_amount} WAZ</div>` : ''}
-        </div>
-      </div>
-    </div>`).join('') || `<div class="empty"><div class="empty-icon">⚖️</div><div class="empty-text">${t('暂无争议')}</div></div>`
-  app.innerHTML = shell(`
-    <h1 class="page-title">⚖️ ${t('争议查看')}</h1>
-    <div style="margin-bottom:16px"><button class="btn btn-outline btn-sm" style="width:auto" onclick="navigate('#admin')">${t('返回概览')}</button></div>
-    <div style="font-size:12px;color:#6b7280;margin-bottom:10px">${t('共')} ${data.disputes.length} ${t('条结果')}（${t('含已结案')}）</div>
-    ${list}
-  `, 'admin')
-}
+// renderAdminDisputes 已抽出到 app-admin-disputes.js(window.renderAdminDisputes;可区分状态/直付-托管/进度/指派/结案 + 可管理:过滤+钻取)。
 
 async function renderAdminTasks(app, opts = {}) {
   if (!state.user) { renderLogin(); return }

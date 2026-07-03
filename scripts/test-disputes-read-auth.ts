@@ -13,6 +13,7 @@ import { createServer, request as httpRequest, type Server } from 'node:http'
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')
 const { initSystemUser } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
+const { initOrderChainSchema } = await import('../src/layer0-foundation/L0-2-state-machine/order-chain.js')
 const { initArbitratorReviewSchema, initWebauthnSchema } = await import('../src/runtime/webaz-schema-helpers.js')
 const D = await import('../src/layer3-trust/L3-1-dispute-engine/dispute-engine.js')
 const { isEligibleArbitrator, grantArbitrator, suspendArbitrator, revokeArbitrator } = await import('../src/pwa/arbitrator-lifecycle.js')
@@ -22,12 +23,13 @@ let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
-initSystemUser(db); initArbitratorReviewSchema(db); initWebauthnSchema(db); D.initDisputeSchema(db)
+initSystemUser(db); initOrderChainSchema(db); initArbitratorReviewSchema(db); initWebauthnSchema(db); D.initDisputeSchema(db)
+try { db.exec('ALTER TABLE users ADD COLUMN handle TEXT') } catch { /* server-boot ALTER;真实库已有 */ }
 const mkUser = (id: string, role = 'buyer', pk = false): void => {
   db.prepare('INSERT INTO users (id,name,role,api_key) VALUES (?,?,?,?)').run(id, id, role, 'k_' + id)
   if (pk) db.prepare('INSERT INTO webauthn_credentials (id,user_id,public_key,counter) VALUES (?,?,?,0)').run('c_' + id, id, Buffer.from([1]))
 }
-mkUser('buyer1'); mkUser('seller1', 'seller'); mkUser('arb', 'buyer', true); mkUser('susp', 'buyer', true); mkUser('rev', 'buyer', true); mkUser('roleArb', 'arbitrator'); mkUser('outsider')
+mkUser('buyer1'); mkUser('seller1', 'seller'); mkUser('arb', 'buyer', true); mkUser('susp', 'buyer', true); mkUser('rev', 'buyer', true); mkUser('roleArb', 'arbitrator'); mkUser('outsider'); mkUser('adminU', 'admin')
 grantArbitrator(db, { userId: 'arb', grantedBy: 'a1' })
 grantArbitrator(db, { userId: 'susp', grantedBy: 'a1' }); suspendArbitrator(db, { userId: 'susp' })
 grantArbitrator(db, { userId: 'rev', grantedBy: 'a1' }); revokeArbitrator(db, { userId: 'rev' })
@@ -38,7 +40,7 @@ const disputeId = disp.disputeId as string
 const app = express(); app.use(express.json())
 registerDisputesReadRoutes(app, {
   db,
-  auth: (req: Request, res: Response) => { const uid = req.headers['x-test-uid'] as string | undefined; if (!uid) { res.status(401).json({ error: 'login' }); return null } return { id: uid, role: 'buyer' } },
+  auth: (req: Request, res: Response) => { const uid = req.headers['x-test-uid'] as string | undefined; if (!uid) { res.status(401).json({ error: 'login' }); return null } const u = db.prepare('SELECT role FROM users WHERE id=?').get(uid) as { role: string } | undefined; return { id: uid, role: u?.role || 'buyer' } },
   errorRes: (res: Response, s: number, c: string, m: string) => { res.status(s).json({ error: m, error_code: c }) },
   getOpenDisputes: () => [], getDisputeDetails: D.getDisputeDetails, getEvidenceRequests: () => [],
   listEvidenceFiles: async () => [], isEligibleArbitrator: (uid: string) => isEligibleArbitrator(db, uid),
@@ -67,6 +69,7 @@ try {
   ok('details: suspended arbitrator → 403', (await get(details, 'susp')).status === 403)
   ok('details: revoked arbitrator → 403', (await get(details, 'rev')).status === 403)
   ok('details: role-only → 403 (role bypass removed)', (await get(details, 'roleArb')).status === 403)
+  ok('details: admin → 200 (read-only 争议查看 oversight; ruling actions still arbitrator-gated in disputes-write)', (await get(details, 'adminU')).status === 200)
   // details positive (party / active arbitrator authorized) is covered by the identical gate on /parties above.
   // similar-cases (same gate; test the denied set which early-returns 403)
   const similar = `/api/disputes/${disputeId}/similar-cases`

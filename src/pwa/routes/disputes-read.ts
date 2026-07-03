@@ -118,8 +118,10 @@ export function registerDisputesReadRoutes(app: Application, deps: DisputesReadD
     //   suspended/revoked/role-only 可越权读、whitelist-only 买家被错误挡)。授权源统一为 isEligibleArbitrator。
     const orderForAuth = await dbOne<{ logistics_id: string | null }>('SELECT logistics_id FROM orders WHERE id = ?', [dispute.order_id])
     const isLogisticsParty = orderForAuth?.logistics_id === user.id
+    // 当事方 / active 白名单仲裁员 / admin(争议查看 —— 只读监督;裁定/驳回等【动作】仍在 disputes-write 由
+    //   isEligibleArbitrator + 指派 + COI 门守,admin 只看不能裁,与 /orders/:id/chain 允许 admin 查一致)。
     if (dispute.initiator_id !== user.id && dispute.defendant_id !== user.id
-        && !isLogisticsParty && !isEligibleArbitrator(user.id as string).ok) {
+        && !isLogisticsParty && !isEligibleArbitrator(user.id as string).ok && user.role !== 'admin') {
       return void res.status(403).json({ error: '无权查看此争议' })
     }
 

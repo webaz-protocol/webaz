@@ -46,20 +46,30 @@ export function registerAdminReportsRoutes(app: Application, deps: AdminReportsD
 
   app.get('/api/admin/disputes', async (req, res) => {
     const admin = requireArbitrationAdmin(req, res); if (!admin) return
+    // 区分:按 status(open/in_review/resolved/dismissed)+ rail(direct_p2p/escrow)过滤;附 verdict/ruling_type/
+    //   assigned_arbitrators/payment_rail 让 admin 分辨类型/进度/是否已指派/如何结案。summary 给全量分状态计数。
+    const status = typeof req.query.status === 'string' ? req.query.status.trim() : ''
+    const rail = typeof req.query.rail === 'string' ? req.query.rail.trim() : ''
+    const where: string[] = []; const params: unknown[] = []
+    if (status) { where.push('d.status = ?'); params.push(status) }
+    if (rail) { where.push('o.payment_rail = ?'); params.push(rail) }
     const rows = await dbAll(`
       SELECT d.id, d.order_id, d.initiator_id, d.defendant_id, d.reason, d.status,
              d.created_at, d.respond_deadline, d.arbitrate_deadline, d.resolved_at,
+             d.verdict, d.ruling_type, d.assigned_arbitrators,
              u1.name as initiator_name, u2.name as defendant_name,
-             o.total_amount, o.status as order_status,
+             o.total_amount, o.status as order_status, o.payment_rail,
              p.title as product_title
       FROM disputes d
       LEFT JOIN users u1 ON d.initiator_id = u1.id
       LEFT JOIN users u2 ON d.defendant_id = u2.id
       LEFT JOIN orders o ON d.order_id = o.id
       LEFT JOIN products p ON o.product_id = p.id
+      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
       ORDER BY d.created_at DESC LIMIT 100
-    `)
-    res.json({ disputes: rows })
+    `, params)
+    const counts = await dbAll<{ status: string; n: number }>('SELECT status, COUNT(*) n FROM disputes GROUP BY status')
+    res.json({ disputes: rows, counts: Object.fromEntries(counts.map(c => [c.status, c.n])), total: counts.reduce((s, c) => s + c.n, 0) })
   })
 
   app.get('/api/admin/verify-tasks', async (req, res) => {
