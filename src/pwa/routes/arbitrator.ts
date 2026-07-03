@@ -22,7 +22,8 @@
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
-import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { grantArbitrator, suspendArbitrator, reinstateArbitrator, revokeArbitrator, listArbitrators, type ArbMutation } from '../arbitrator-lifecycle.js'  // PR-B 生产仲裁员生命周期域逻辑
 
 export interface ArbitratorDeps {
   db: Database.Database
@@ -33,6 +34,7 @@ export interface ArbitratorDeps {
   getArbitratorState: (userId: string) => unknown
   errorRes: (res: Response, status: number, code: string, msg: string) => void
   logAdminAction: (adminId: string, action: string, targetType: string | null, targetId: string | null, detail?: Record<string, unknown>) => void
+  consumeGateToken: (userId: string, token: string | undefined, purpose: string, validate: (data: unknown) => boolean) => { ok: boolean; reason?: string }
   ARB_STAKE_REQUIRED: number
   ARB_APP_REJECT_COOLDOWN_DAYS: number
 }
@@ -42,9 +44,41 @@ export function registerArbitratorRoutes(app: Application, deps: ArbitratorDeps)
   // stake 资金路径,状态翻转 + 钱包扣/退必须原子(db.transaction + CAS),Phase 3 迁 pg 行锁。
   const {
     db, generateId, auth, requireArbitrationAdmin,
-    checkArbitratorEligibility, getArbitratorState, errorRes, logAdminAction,
+    checkArbitratorEligibility, getArbitratorState, errorRes, logAdminAction, consumeGateToken,
     ARB_STAKE_REQUIRED, ARB_APP_REJECT_COOLDOWN_DAYS,
   } = deps
+
+  // ── PR-B:生产仲裁员生命周期(grant/suspend/reinstate/revoke)。门(四端点共用):ROOT/admin auth +
+  //   现场真人 Passkey(purpose 绑动作 + purpose_data.user_id 绑目标,杜绝跨动作/跨目标复用)+ admin_audit_log(含失败留痕)。
+  //   域逻辑(active-only 授权源 / revoked 终态 / 拒非人类)在 arbitrator-lifecycle.ts;此处只做 auth + Passkey + 审计。
+  const arbLifecycle = (action: 'grant' | 'suspend' | 'reinstate' | 'revoke', purpose: string,
+    fn: (userId: string, adminId: string, note?: string | null) => ArbMutation) =>
+    (req: Request, res: Response): void => {
+      const admin = requireArbitrationAdmin(req, res); if (!admin) return
+      const userId = String((action === 'grant' ? req.body?.user_id : req.params.user_id) || '')
+      const note = (req.body?.note ?? null) as string | null
+      if (!userId) return void errorRes(res, 400, 'MISSING_USER_ID', '缺少目标 user_id')
+      const gate = consumeGateToken(admin.id as string, req.body?.webauthn_token as string | undefined, purpose, (d) => (d as { user_id?: string } | null)?.user_id === userId)
+      if (!gate.ok) {
+        logAdminAction(admin.id as string, `arbitrator.${action}`, 'user', userId, { ok: false, gate: gate.reason })  // ROOT 尝试也留痕(purpose 不符/无 token)
+        return void errorRes(res, 412, 'HUMAN_PRESENCE_REQUIRED', gate.reason || '此操作需现场真人 Passkey 确认')
+      }
+      const r = fn(userId, admin.id as string, note)
+      logAdminAction(admin.id as string, `arbitrator.${action}`, 'user', userId, { ok: r.ok, error_code: r.error_code, note })
+      if (!r.ok) return void errorRes(res, 409, r.error_code || 'ARB_MUTATION_FAILED', r.error || '操作失败')
+      res.json({ success: true, user_id: userId, action })
+    }
+
+  app.post('/api/admin/arbitrators/grant', arbLifecycle('grant', 'arbitrator_grant', (userId, adminId, note) => grantArbitrator(db, { userId, grantedBy: adminId, note })))
+  app.post('/api/admin/arbitrators/:user_id/suspend', arbLifecycle('suspend', 'arbitrator_suspend', (userId, _a, note) => suspendArbitrator(db, { userId, note })))
+  app.post('/api/admin/arbitrators/:user_id/reinstate', arbLifecycle('reinstate', 'arbitrator_reinstate', (userId, _a, note) => reinstateArbitrator(db, { userId, note })))
+  app.post('/api/admin/arbitrators/:user_id/revoke', arbLifecycle('revoke', 'arbitrator_revoke', (userId, _a, note) => revokeArbitrator(db, { userId, note })))
+
+  // 名册(admin 只读,无需 Passkey)。含 active/suspended/revoked 全量 + 状态。
+  app.get('/api/admin/arbitrators', (req, res) => {
+    const admin = requireArbitrationAdmin(req, res); if (!admin) return
+    res.json({ arbitrators: listArbitrators(db) })
+  })
 
   app.get('/api/arbitrator/eligibility', (req, res) => {
     const user = auth(req, res); if (!user) return
@@ -145,25 +179,19 @@ export function registerArbitratorRoutes(app: Application, deps: ArbitratorDeps)
 
   app.post('/api/admin/arbitrator-applications/:id/approve', async (req, res) => {
     const admin = requireArbitrationAdmin(req, res); if (!admin) return
-    const { note } = req.body
+    const note = (req.body?.note ?? null) as string | null
     const appRow = await dbOne<{ id: string; user_id: string; status: string }>("SELECT id, user_id, status FROM arbitrator_applications WHERE id = ?", [req.params.id])
     if (!appRow) return void res.json({ error: '申请不存在' })
     if (appRow.status !== 'pending') return void res.json({ error: '该申请不在待审状态' })
-    // 原子段:CAS 翻转 pending→approved + 入白名单仅在本请求真翻转时(防并发双批准)
-    try {
-      db.transaction(() => {
-        const cas = db.prepare("UPDATE arbitrator_applications SET status='approved', reviewed_at=datetime('now'), reviewed_by=?, decision_note=? WHERE id=? AND status='pending'")
-          .run(admin.id, note || null, appRow.id)
-        if (cas.changes === 0) throw new Error('ARB_RACE')
-        db.prepare(`INSERT OR REPLACE INTO arbitrator_whitelist (user_id, note, is_system, granted_by, stake_amount) VALUES (?,?,0,?,?)`)
-          .run(appRow.user_id, note || '外部仲裁员批准', admin.id, ARB_STAKE_REQUIRED)
-      })()
-    } catch (e) {
-      if ((e as Error).message === 'ARB_RACE') return void res.json({ error: '该申请不在待审状态' })
-      console.error('[arbitrator approve tx]', (e as Error).message)
-      return void res.status(500).json({ error: '批准失败,请重试' })
-    }
-    logAdminAction(admin.id as string, 'approve_arbitrator', 'user', appRow.user_id, { note })
+    // PR-B:批准 = 现场真人 Passkey(purpose 绑目标 user_id)+ 走【统一】grantArbitrator(含 revoked-terminal +
+    //   拒 system/agent/无 Passkey)。绝不 INSERT OR REPLACE 白名单(那会复活被撤销用户)。审计成功与失败。
+    const gate = consumeGateToken(admin.id as string, req.body?.webauthn_token as string | undefined, 'arbitrator_grant', (d) => (d as { user_id?: string } | null)?.user_id === appRow.user_id)
+    if (!gate.ok) { logAdminAction(admin.id as string, 'arbitrator.approve', 'user', appRow.user_id, { ok: false, gate: gate.reason }); return void errorRes(res, 412, 'HUMAN_PRESENCE_REQUIRED', gate.reason || '此操作需现场真人 Passkey 确认') }
+    const g = grantArbitrator(db, { userId: appRow.user_id, grantedBy: admin.id as string, note: note ?? '外部申请批准' })
+    if (!g.ok) { logAdminAction(admin.id as string, 'arbitrator.approve', 'user', appRow.user_id, { ok: false, error_code: g.error_code }); return void errorRes(res, 409, g.error_code || 'GRANT_FAILED', g.error || '批准失败') }
+    // grant 成功(active 白名单)后再翻转申请状态(CAS;竞态下另一请求已批准,grant 幂等,用户仍 active)。
+    await dbRun("UPDATE arbitrator_applications SET status='approved', reviewed_at=datetime('now'), reviewed_by=?, decision_note=? WHERE id=? AND status='pending'", [admin.id, note, appRow.id])
+    logAdminAction(admin.id as string, 'arbitrator.approve', 'user', appRow.user_id, { ok: true })
     res.json({ success: true })
   })
 

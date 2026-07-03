@@ -269,10 +269,15 @@ export function arbitrateDispute(
     return { success: false, error: '该争议已处理完毕' }
   }
 
+  // 授权源(PR-B):sys_protocol 自动裁决(role='system') 或【active arbitrator_whitelist】—— 唯一 runtime 人类授权源。
+  //   role='arbitrator' 旁路已移除,与路由 isEligibleArbitrator 一致(whitelist 是唯一授权源)。system 分支不查表 →
+  //   即便 whitelist 表缺失,超时自动裁决(sys_protocol)也绝不受影响。
   const arbitrator = db.prepare('SELECT role FROM users WHERE id = ?').get(arbitratorId) as { role: string } | undefined
   if (!arbitrator) return { success: false, error: '仲裁员不存在' }
-  if (arbitrator.role !== 'arbitrator' && arbitrator.role !== 'system') {
-    return { success: false, error: `只有仲裁员才能做出裁定，你的角色是：${arbitrator.role}` }
+  if (arbitrator.role !== 'system') {
+    const wl = db.prepare('SELECT status FROM arbitrator_whitelist WHERE user_id = ?').get(arbitratorId) as { status: string | null } | undefined
+    const active = !!wl && (wl.status ?? 'active') === 'active'   // legacy NULL = active
+    if (!active) return { success: false, error: `仅 active 仲裁员(在 arbitrator_whitelist)可裁定;你的资格:${wl ? (wl.status ?? 'active') : '非仲裁员'}` }
   }
 
   // 非托管(直付)订单:协议不持货款 → 走【只信誉、不动资金】路径,绝不跑 executeSettlement/executeLiabilitySplit 的托管资金链。

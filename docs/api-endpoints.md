@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (728 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (733 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -34,9 +34,14 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/ai/anomaly-check/:user_id` | 🔐 | 👑 |  | src/pwa/routes/admin-ops.ts:78 |
 | POST | `/api/admin/announcements` | 🔐 | 👑 |  | src/pwa/routes/announcements.ts:37 |
 | PATCH | `/api/admin/announcements/:id` | 🔐 | 👑 |  | src/pwa/routes/announcements.ts:62 |
-| GET | `/api/admin/arbitrator-applications` | 🔐 | 👑 | Admin | src/pwa/routes/arbitrator.ts:133 |
-| POST | `/api/admin/arbitrator-applications/:id/approve` | 🔐 | 👑 |  | src/pwa/routes/arbitrator.ts:146 |
-| POST | `/api/admin/arbitrator-applications/:id/reject` | 🔐 | 👑 |  | src/pwa/routes/arbitrator.ts:170 |
+| GET | `/api/admin/arbitrator-applications` | 🔐 | 👑 | Admin | src/pwa/routes/arbitrator.ts:167 |
+| POST | `/api/admin/arbitrator-applications/:id/approve` | 🔐 | 👑 |  | src/pwa/routes/arbitrator.ts:180 |
+| POST | `/api/admin/arbitrator-applications/:id/reject` | 🔐 | 👑 |  | src/pwa/routes/arbitrator.ts:198 |
+| GET | `/api/admin/arbitrators` | 🔐 | 👑 | 名册(admin 只读,无需 Passkey)。含 active/suspended/revoked 全量 + 状态。 | src/pwa/routes/arbitrator.ts:78 |
+| POST | `/api/admin/arbitrators/:user_id/reinstate` | 🔐 | 👑 |  | src/pwa/routes/arbitrator.ts:74 |
+| POST | `/api/admin/arbitrators/:user_id/revoke` | 🔐 | 👑 |  | src/pwa/routes/arbitrator.ts:75 |
+| POST | `/api/admin/arbitrators/:user_id/suspend` | 🔐 | 👑 |  | src/pwa/routes/arbitrator.ts:73 |
+| POST | `/api/admin/arbitrators/grant` | 🔐 | 👑 |  | src/pwa/routes/arbitrator.ts:72 |
 | POST | `/api/admin/atomic/process-ledger` | 🔐 | 👑 |  | src/pwa/routes/admin-atomic.ts:30 |
 | POST | `/api/admin/auction-reminders/run` | 🔐 | 👑 | Admin 手动跑提醒派发 | src/pwa/routes/auction.ts:486 |
 | GET | `/api/admin/audit-log` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:132 |
@@ -55,8 +60,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/charity/fund` | 🔐 | 👑 |  | src/pwa/routes/charity.ts:829 |
 | POST | `/api/admin/charity/fund/disburse` | 🔐 | 👑 |  | src/pwa/routes/charity.ts:792 |
 | GET | `/api/admin/dashboard` | 🔐 | 👑 |  | src/pwa/routes/admin-analytics.ts:230 |
-| GET | `/api/admin/decline-contests` | 🔐 |  | 仲裁员待办:列出所有被举证的临时判责拒单 | src/pwa/routes/disputes-write.ts:88 |
-| POST | `/api/admin/decline-contests/:orderId/resolve` | 🔐 |  | 仲裁员裁决 | src/pwa/routes/disputes-write.ts:102 |
+| GET | `/api/admin/decline-contests` | 🔐 |  | 仲裁员待办:列出所有被举证的临时判责拒单 | src/pwa/routes/disputes-write.ts:89 |
+| POST | `/api/admin/decline-contests/:orderId/resolve` | 🔐 |  | 仲裁员裁决 | src/pwa/routes/disputes-write.ts:103 |
 | POST | `/api/admin/direct-receive/aml-flags` | 🔐 | 👑 |  | src/pwa/routes/admin-direct-receive-deposits.ts:167 |
 | POST | `/api/admin/direct-receive/aml-flags/:id/review` | 🔐 | 👑 | route 只做 auth + gate + 参数校验 + 调 reviewAmlFlag(唯一 review writer,原子改 flag + 写 audi | src/pwa/routes/admin-direct-receive-deposits.ts:86 |
 | GET | `/api/admin/direct-receive/deferrals` | 🔐 | 👑 | GET /api/admin/direct-receive/deferrals?status=pending — ROOT 审批队列(默认全部;可按 statu | src/pwa/routes/admin-direct-receive-deposits.ts:255 |
@@ -93,13 +98,13 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/feedback` | 🔐 |  | admin 列出工单 | src/pwa/routes/feedback.ts:106 |
 | POST | `/api/admin/feedback/:id/reply` | 🔐 |  | admin 回复 + 切状态 | src/pwa/routes/feedback.ts:131 |
 | GET | `/api/admin/finance/monthly` | 🔐 | 👑 |  | src/pwa/routes/admin-analytics.ts:89 |
-| POST | `/api/admin/governance/activate` | 🔐 | 👑 | body: { application_id, webauthn_token, note? } | src/pwa/routes/governance-onboarding.ts:406 |
-| GET | `/api/admin/governance/appeals` | 🔐 | 👑 | GET /api/admin/governance/appeals — maintainer 看待裁决申诉 | src/pwa/routes/governance-onboarding.ts:732 |
-| GET | `/api/admin/governance/application/:id` | 🔐 | 👑 | GET /api/admin/governance/application/:id — 详情(含 expected_verdict 用于对比 — 仅 maint | src/pwa/routes/governance-onboarding.ts:375 |
-| GET | `/api/admin/governance/applications` | 🔐 | 👑 | GET /api/admin/governance/applications — 列出 pending_onboarding(可筛 quiz_passed +  | src/pwa/routes/governance-onboarding.ts:358 |
-| GET | `/api/admin/governance/auto-deactivations` | 🔐 | 👑 | spec §6.2 公示触发原因(透明 — 元规则 #1) | src/pwa/routes/governance-onboarding.ts:713 |
-| POST | `/api/admin/governance/resolve-appeal` | 🔐 | 👑 | accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由 | src/pwa/routes/governance-onboarding.ts:751 |
-| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:5324 |
+| POST | `/api/admin/governance/activate` | 🔐 | 👑 | body: { application_id, webauthn_token, note? } | src/pwa/routes/governance-onboarding.ts:407 |
+| GET | `/api/admin/governance/appeals` | 🔐 | 👑 | GET /api/admin/governance/appeals — maintainer 看待裁决申诉 | src/pwa/routes/governance-onboarding.ts:744 |
+| GET | `/api/admin/governance/application/:id` | 🔐 | 👑 | GET /api/admin/governance/application/:id — 详情(含 expected_verdict 用于对比 — 仅 maint | src/pwa/routes/governance-onboarding.ts:376 |
+| GET | `/api/admin/governance/applications` | 🔐 | 👑 | GET /api/admin/governance/applications — 列出 pending_onboarding(可筛 quiz_passed +  | src/pwa/routes/governance-onboarding.ts:359 |
+| GET | `/api/admin/governance/auto-deactivations` | 🔐 | 👑 | spec §6.2 公示触发原因(透明 — 元规则 #1) | src/pwa/routes/governance-onboarding.ts:725 |
+| POST | `/api/admin/governance/resolve-appeal` | 🔐 | 👑 | accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由 | src/pwa/routes/governance-onboarding.ts:763 |
+| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:5321 |
 | GET | `/api/admin/health` | 🔐 | 👑 |  | src/pwa/routes/admin-health.ts:33 |
 | GET | `/api/admin/hot-wallet` |  |  | Legacy x-admin-key 入口：仅余额 | src/pwa/routes/admin-wallet-ops.ts:74 |
 | GET | `/api/admin/hot-wallet/status` | 🔐 | 👑 | P2-5: protocol 权限（区域 admin 看不到全局热钱包） | src/pwa/routes/admin-wallet-ops.ts:48 |
@@ -224,11 +229,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/anchor/me` | 🔐 |  |  | src/pwa/routes/anchors.ts:176 |
 | POST | `/api/announcements/:id/read` | 🔐 |  |  | src/pwa/routes/announcements.ts:112 |
 | GET | `/api/announcements/active` | 🔐 |  | 列出对当前用户可见的活跃公告（按角色 + 区域过滤） | src/pwa/routes/announcements.ts:79 |
-| POST | `/api/arbitrator/apply` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:59 |
-| GET | `/api/arbitrator/eligibility` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:49 |
+| POST | `/api/arbitrator/apply` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:93 |
+| GET | `/api/arbitrator/eligibility` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:83 |
 | GET | `/api/arbitrator/me/kpi` | 🔐 |  | Arbitrator KPI（仲裁累计 + 裁决分布 + pending） | src/pwa/routes/trusted-kpi.ts:70 |
-| GET | `/api/arbitrator/status` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:54 |
-| POST | `/api/arbitrator/withdraw-application` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:110 |
+| GET | `/api/arbitrator/status` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:88 |
+| POST | `/api/arbitrator/withdraw-application` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:144 |
 | GET | `/api/auctions` |  |  | 看板：浏览公开拍卖（匿名可访问） | src/pwa/routes/auction.ts:221 |
 | POST | `/api/auctions` | 🔐 |  | 卖家发起拍卖 | src/pwa/routes/auction.ts:110 |
 | DELETE | `/api/auctions/:id` | 🔐 |  | 卖家：取消（仅未出价时） | src/pwa/routes/auction.ts:468 |
@@ -328,15 +333,15 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | PUT | `/api/direct-receive/store-verification` | 🔐 |  | PUT /api/direct-receive/store-verification — 卖家提交店铺外链(仅存储,不抓取)。 | src/pwa/routes/direct-pay-availability.ts:168 |
 | GET | `/api/disputes` | 🔐 |  | 仲裁员：查看所有开放争议 | src/pwa/routes/disputes-read.ts:39 |
 | GET | `/api/disputes/:id` | 🔐 |  | 详情聚合（含 W4 timeline + chain ruling） | src/pwa/routes/disputes-read.ts:112 |
-| POST | `/api/disputes/:id/add-evidence` | 🔐 |  | 参与方主动举证（text）+ SNF 信封分发 | src/pwa/routes/disputes-write.ts:394 |
-| POST | `/api/disputes/:id/arbitrate` | 🔐 |  | 仲裁员裁定 | src/pwa/routes/disputes-write.ts:166 |
-| POST | `/api/disputes/:id/arbitrator-pause-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:599 |
-| POST | `/api/disputes/:id/arbitrator-resume-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:696 |
-| POST | `/api/disputes/:id/evidence-blob` | 🔐 |  | N: limit 精确 = EVIDENCE_MAX_BYTES | src/pwa/routes/disputes-write.ts:455 |
+| POST | `/api/disputes/:id/add-evidence` | 🔐 |  | 参与方主动举证（text）+ SNF 信封分发 | src/pwa/routes/disputes-write.ts:400 |
+| POST | `/api/disputes/:id/arbitrate` | 🔐 |  | 仲裁员裁定 | src/pwa/routes/disputes-write.ts:167 |
+| POST | `/api/disputes/:id/arbitrator-pause-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:605 |
+| POST | `/api/disputes/:id/arbitrator-resume-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:702 |
+| POST | `/api/disputes/:id/evidence-blob` | 🔐 |  | N: limit 精确 = EVIDENCE_MAX_BYTES | src/pwa/routes/disputes-write.ts:461 |
 | GET | `/api/disputes/:id/evidence-list` | 🔐 |  | 当事人 + 仲裁员可查（meta only，blob 单独拉） | src/pwa/routes/disputes-read.ts:362 |
 | GET | `/api/disputes/:id/parties` | 🔐 |  | 涉案三方（仲裁员选择发证据请求的对象） | src/pwa/routes/disputes-read.ts:374 |
-| POST | `/api/disputes/:id/request-evidence` | 🔐 |  | 仲裁员：请求某方补证 | src/pwa/routes/disputes-write.ts:540 |
-| POST | `/api/disputes/:id/respond` | 🔐 |  | 被诉方反驳 | src/pwa/routes/disputes-write.ts:142 |
+| POST | `/api/disputes/:id/request-evidence` | 🔐 |  | 仲裁员：请求某方补证 | src/pwa/routes/disputes-write.ts:546 |
+| POST | `/api/disputes/:id/respond` | 🔐 |  | 被诉方反驳 | src/pwa/routes/disputes-write.ts:143 |
 | GET | `/api/disputes/:id/similar-cases` | 🔐 |  | A2 同类判例推荐 | src/pwa/routes/disputes-read.ts:47 |
 | GET | `/api/disputes/cases` |  |  | 公开列表（全网）— 判例库总览 | src/pwa/routes/dispute-cases.ts:53 |
 | GET | `/api/disputes/cases/:case_id` |  |  | 案件详情（含评论 + 评论者身份标签） | src/pwa/routes/dispute-cases.ts:109 |
@@ -377,15 +382,15 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/follows/me` | 🔐 |  |  | src/pwa/routes/follows.ts:59 |
 | GET | `/api/fx/rates` |  |  |  | src/pwa/routes/fx.ts:19 |
 | GET | `/api/governance/onboarding-stats` |  |  | 无 auth — agent / 用户 / 第三方都可读;不暴露 PII | src/pwa/routes/public-utils.ts:469 |
-| POST | `/api/governance/onboarding/appeal` | 🔐 |  | 必须:source 行 action='auto_deactivate' + window 内 + 未已 appeal + reason 长度 | src/pwa/routes/governance-onboarding.ts:654 |
-| POST | `/api/governance/onboarding/apply` | 🔐 |  |  | src/pwa/routes/governance-onboarding.ts:76 |
-| POST | `/api/governance/onboarding/case-review` | 🔐 |  | 不立即评分 — maintainer 上岗签字前(阶段 3 #1093)对比 expected_verdict | src/pwa/routes/governance-onboarding.ts:298 |
-| GET | `/api/governance/onboarding/cases` | 🔐 |  | 实施 docs/GOVERNANCE-ONBOARDING.md §4.2 案例研读 | src/pwa/routes/governance-onboarding.ts:283 |
-| GET | `/api/governance/onboarding/my` | 🔐 |  |  | src/pwa/routes/governance-onboarding.ts:187 |
-| GET | `/api/governance/onboarding/progress` | 🔐 |  | 返回 onboarding 整体进度(spec §4):申请状态 + 学习包(client localStorage) + 题目分数 + 案例(后续) | src/pwa/routes/governance-onboarding.ts:851 |
-| GET | `/api/governance/onboarding/quiz` | 🔐 |  | 实施 docs/GOVERNANCE-ONBOARDING.md §4.3 题目 | src/pwa/routes/governance-onboarding.ts:205 |
-| POST | `/api/governance/onboarding/quiz-submit` | 🔐 |  | body: { role, answers: [{question_id, answer}] } | src/pwa/routes/governance-onboarding.ts:218 |
-| POST | `/api/governance/onboarding/resign` | 🔐 |  | confirm_text 必须等于 'RESIGN arbitrator' 或 'RESIGN verifier'(type-to-confirm 防误触) | src/pwa/routes/governance-onboarding.ts:535 |
+| POST | `/api/governance/onboarding/appeal` | 🔐 |  | 必须:source 行 action='auto_deactivate' + window 内 + 未已 appeal + reason 长度 | src/pwa/routes/governance-onboarding.ts:666 |
+| POST | `/api/governance/onboarding/apply` | 🔐 |  |  | src/pwa/routes/governance-onboarding.ts:77 |
+| POST | `/api/governance/onboarding/case-review` | 🔐 |  | 不立即评分 — maintainer 上岗签字前(阶段 3 #1093)对比 expected_verdict | src/pwa/routes/governance-onboarding.ts:299 |
+| GET | `/api/governance/onboarding/cases` | 🔐 |  | 实施 docs/GOVERNANCE-ONBOARDING.md §4.2 案例研读 | src/pwa/routes/governance-onboarding.ts:284 |
+| GET | `/api/governance/onboarding/my` | 🔐 |  |  | src/pwa/routes/governance-onboarding.ts:188 |
+| GET | `/api/governance/onboarding/progress` | 🔐 |  | 返回 onboarding 整体进度(spec §4):申请状态 + 学习包(client localStorage) + 题目分数 + 案例(后续) | src/pwa/routes/governance-onboarding.ts:863 |
+| GET | `/api/governance/onboarding/quiz` | 🔐 |  | 实施 docs/GOVERNANCE-ONBOARDING.md §4.3 题目 | src/pwa/routes/governance-onboarding.ts:206 |
+| POST | `/api/governance/onboarding/quiz-submit` | 🔐 |  | body: { role, answers: [{question_id, answer}] } | src/pwa/routes/governance-onboarding.ts:219 |
+| POST | `/api/governance/onboarding/resign` | 🔐 |  | confirm_text 必须等于 'RESIGN arbitrator' 或 'RESIGN verifier'(type-to-confirm 防误触) | src/pwa/routes/governance-onboarding.ts:547 |
 | GET | `/api/governance/params` |  |  | ─── 治理参数 ──────────────────────────────────────────────── | src/pwa/routes/payments-governance.ts:52 |
 | GET | `/api/governance/params/:key/history` |  |  |  | src/pwa/routes/payments-governance.ts:75 |
 | POST | `/api/group-buys` | 🔐 |  | 卖家开团 | src/pwa/routes/group-buys.ts:110 |

@@ -2002,7 +2002,10 @@ CREATE TABLE IF NOT EXISTS arbitrator_whitelist (
     note            TEXT,
     is_system       BIGINT DEFAULT 0,
     granted_by      TEXT,
-    stake_amount    BIGINT DEFAULT 0
+    stake_amount    BIGINT DEFAULT 0,
+    status          TEXT DEFAULT 'active',
+    suspended_at    TEXT,
+    revoked_at      TEXT
   );
 
 CREATE TABLE IF NOT EXISTS verifier_appeals (

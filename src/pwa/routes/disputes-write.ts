@@ -40,6 +40,7 @@ import { applyWalletDelta } from '../../ledger.js'
 // RFC-016 Phase 1 — 纯只读端点/校验读/SNF 分发读/标记写 → async seam;arbitrate 仲裁核心(原子领取 +
 //   2 settlement db.transaction + reputation/strike/publish)与 tx 内 appendAuditLog 保持同步(Phase 3 迁 pg)。
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
+import { arbitratorHasConflict } from '../arbitrator-lifecycle.js'  // PR-B COI 硬门
 
 export interface DisputesWriteDeps {
   db: Database.Database
@@ -194,6 +195,11 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
 
     const dispute = await getDisputeDetails(db, req.params.id)
     if (!dispute) return void res.status(404).json({ error: '争议不存在' })
+
+    // PR-B COI 硬门:当事方(买家/卖家/物流/发起人/被诉人)不得仲裁本案。在领取/裁定前拦截。
+    if (arbitratorHasConflict(db, dispute.order_id as string, (dispute.initiator_id as string | null) ?? null, (dispute.defendant_id as string | null) ?? null, user.id as string)) {
+      return void res.status(403).json({ error: '你是本案当事方,不可仲裁(利益冲突)', error_code: 'ARBITRATOR_CONFLICT_OF_INTEREST' })
+    }
 
     // P0: 防"任意仲裁员裁决任意争议"
     // 若 assigned_arbitrators 为空 → 首位调用者原子领取

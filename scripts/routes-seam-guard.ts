@@ -36,7 +36,7 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   'reviews.ts': 3,             // claim stake/escrow tx (dup guard + wallet debit + INSERT task)
   'claim-initiators.ts': 3,    // claim stake/escrow tx (dup guard + wallet debit + INSERT task)
   'products-claims.ts': 3,     // claim stake/escrow tx (dup guard + wallet debit + INSERT task)
-  'arbitrator.ts': 10,         // apply/withdraw/approve/reject stake tx (CAS status flip + wallet)
+  'arbitrator.ts': 8,          // apply/withdraw/reject stake tx (CAS status flip + wallet);approve 改走 grantArbitrator 域 + 异步 seam(PR-B)
   'verifier-user.ts': 6,       // apply/withdraw stake tx (CAS + wallet)
   'admin-verifier-flow.ts': 13,// approve/reject/decide tx (CAS flip + refund/reward payout)
   'admin-verifier-whitelist.ts': 5,  // revoke forfeit tx (re-read + forfeit/refund + whitelist rewrite)
