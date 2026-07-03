@@ -26,7 +26,7 @@ ok('5. 区分: rail / verdict / assign / urgency badges', /railBadge/.test(UI) &
 ok('6. 管理: drill-through to #dispute/:id', /navigate\('#dispute\/\$\{escHtml\(d\.id\)\}'\)/.test(UI))
 ok('7. backend /admin/disputes returns distinguishing fields', /d\.verdict, d\.ruling_type, d\.assigned_arbitrators/.test(BE) && /o\.payment_rail/.test(BE))
 ok('8. backend supports ?status + ?rail filter + status counts', /req\.query\.status/.test(BE) && /req\.query\.rail/.test(BE) && /GROUP BY status/.test(BE) && /counts:/.test(BE))
-ok('9. dispute detail read allows admin (read-only oversight; actions still arbitrator-gated)', /!isEligibleArbitrator\(user\.id as string\)\.ok && user\.role !== 'admin'/.test(DR))
+ok('9. dispute detail admin gate == list authz (isArbitrationAdmin predicate, NOT user.role===admin)', /!isEligibleArbitrator\(user\.id as string\)\.ok && !isArbitrationAdmin\(user\)/.test(DR) && !/user\.role !== 'admin'/.test(DR))
 
 if (fail > 0) { console.error(`\n❌ admin-dispute-triage FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ admin-dispute-triage: distinguish (status filter + rail/verdict/assign/urgency) + manage (drill-through) + admin read-only detail access\n  ✅ pass ${pass}`)

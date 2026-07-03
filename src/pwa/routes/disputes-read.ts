@@ -30,10 +30,13 @@ export interface DisputesReadDeps {
   getEvidenceRequests: any
   listEvidenceFiles: (db: Database.Database, disputeId: string, userId: string) => Promise<unknown>
   isEligibleArbitrator: (userId: string) => { ok: boolean; reason?: string; via?: string }
+  // 争议详情【只读】admin 门:等价 requireAdminPermission(req,res,'arbitration') 的纯布尔谓词(不发响应)——
+  //   必须是 admin(role==='admin' 或 roles 含 'admin')且具 arbitration/all/root 权限。与后台列表 /admin/disputes 授权一致,防错放/错挡。
+  isArbitrationAdmin: (user: Record<string, unknown>) => boolean
 }
 
 export function registerDisputesReadRoutes(app: Application, deps: DisputesReadDeps): void {
-  const { db, auth, errorRes, getOpenDisputes, getDisputeDetails, getEvidenceRequests, listEvidenceFiles, isEligibleArbitrator } = deps
+  const { db, auth, errorRes, getOpenDisputes, getDisputeDetails, getEvidenceRequests, listEvidenceFiles, isEligibleArbitrator, isArbitrationAdmin } = deps
 
   // 仲裁员：查看所有开放争议
   app.get('/api/disputes', async (req, res) => {
@@ -118,10 +121,12 @@ export function registerDisputesReadRoutes(app: Application, deps: DisputesReadD
     //   suspended/revoked/role-only 可越权读、whitelist-only 买家被错误挡)。授权源统一为 isEligibleArbitrator。
     const orderForAuth = await dbOne<{ logistics_id: string | null }>('SELECT logistics_id FROM orders WHERE id = ?', [dispute.order_id])
     const isLogisticsParty = orderForAuth?.logistics_id === user.id
-    // 当事方 / active 白名单仲裁员 / admin(争议查看 —— 只读监督;裁定/驳回等【动作】仍在 disputes-write 由
-    //   isEligibleArbitrator + 指派 + COI 门守,admin 只看不能裁,与 /orders/:id/chain 允许 admin 查一致)。
+    // 当事方 / active 白名单仲裁员 / arbitration-admin(争议查看 —— 只读监督)。admin 门用 isArbitrationAdmin(user)
+    //   而非 user.role==='admin':与后台列表 /admin/disputes(requireArbitrationAdmin)【同一】授权模型,否则会错放
+    //   (role='admin' 但无 arbitration 权限的 admin 绕过列表边界直读详情)/ 错挡(roles=["buyer","admin"] 的 admin 进不去)。
+    //   裁定/驳回等【动作】仍在 disputes-write 由 isEligibleArbitrator + 指派 + COI 门守,admin 只看不能裁。
     if (dispute.initiator_id !== user.id && dispute.defendant_id !== user.id
-        && !isLogisticsParty && !isEligibleArbitrator(user.id as string).ok && user.role !== 'admin') {
+        && !isLogisticsParty && !isEligibleArbitrator(user.id as string).ok && !isArbitrationAdmin(user)) {
       return void res.status(403).json({ error: '无权查看此争议' })
     }
 
