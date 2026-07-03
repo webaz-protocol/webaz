@@ -22,6 +22,7 @@ import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // R
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'  // PR-4f-b: direct_p2p 收款说明响应契约门
 import { redactUnackedDirectPayTarget } from '../direct-pay-order-redaction.js'  // 收款目标披露门(共享;所有 orders reader 必过)
 import { getMutualCancelState } from '../../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'  // 协商取消(无责合意)可达性 + 当前提议(仅 disputed 计算,UI 便利字段)
+import { isEligibleArbitrator } from '../arbitrator-lifecycle.js'  // 白名单仲裁员可查【争议中】订单(裁定所需);不看 legacy role==='arbitrator'
 import { getQrImageForOwner } from '../../direct-receive-account-qr.js'  // Rail1 D2:ack 门后按订单快照 qr_ref 取收款码字节((ref,seller_id) 域内)
 
 export interface OrdersReadDeps {
@@ -158,7 +159,10 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     const order = statusInfo.order
     const isLogisticsPickup = (user as Record<string,unknown>).role === 'logistics' &&
       !order.logistics_id && order.status === 'shipped'
-    if (order.buyer_id !== user.id && order.seller_id !== user.id && order.logistics_id !== user.id && user.role !== 'arbitrator' && !isLogisticsPickup) {
+    // 白名单仲裁员(role 可能是 buyer,非 legacy 'arbitrator')需查看【争议中】订单以裁定。仅 disputed 单放行,非争议单不予枚举。
+    //   与 disputes 详情"party OR isEligibleArbitrator"授权模型一致;能力源=active arbitrator_whitelist,不看 user.role。
+    const isDisputeArbiter = order.status === 'disputed' && isEligibleArbitrator(db, user.id as string).ok
+    if (order.buyer_id !== user.id && order.seller_id !== user.id && order.logistics_id !== user.id && user.role !== 'arbitrator' && !isLogisticsPickup && !isDisputeArbiter) {
       return void res.status(403).json({ error: '无权查看此订单' })
     }
 

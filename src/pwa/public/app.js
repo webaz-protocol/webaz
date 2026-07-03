@@ -12481,14 +12481,14 @@ async function renderOrderDetail(app, orderId) {
     ${nextActionCard(order, isBuyer, isSeller, activeDeadline, isOverdue)}
 
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <div style="font-size:13px;color:#6b7280;font-family:monospace">${order.id}</div>
-        <div style="display:flex;gap:6px;align-items:center">
-          ${(isBuyer || isSeller) ? `<button class="btn btn-sm" style="background:#eef2ff;color:#4338ca;font-size:11px;padding:4px 10px" onclick="openChatForContext('order','${order.id}')">💬 ${t('联系对方')}</button>` : ''}
+      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px">
+        <div style="font-size:12px;color:#9ca3af;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 120px;min-width:0" title="${escHtml(order.id)}">${order.id}</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex-shrink:0;white-space:nowrap">
+          ${(isBuyer || isSeller) ? `<button class="btn btn-sm" style="background:#eef2ff;color:#4338ca;font-size:11px;padding:4px 10px;white-space:nowrap" onclick="openChatForContext('order','${order.id}')">💬 ${t('联系对方')}</button>` : ''}
           ${orderStatusBadges(order)}
         </div>
       </div>
-      <div class="detail-row"><span class="detail-label">${t('商品')}</span><span class="detail-value">${escHtml(product?.title || '')}</span></div>
+      <div class="detail-row" style="align-items:flex-start"><span class="detail-label" style="flex-shrink:0;margin-right:12px">${t('商品')}</span><span class="detail-value" style="text-align:left;max-width:78%;word-break:break-word;line-height:1.5">${escHtml(product?.title || '')}</span></div>
       <div class="detail-row"><span class="detail-label">${t('金额')}</span><span class="detail-value" style="color:#4f46e5">${window.orderAmountHtml(order)}${Number(order.insurance_premium) > 0 ? ` <span style="font-size:10px;color:#6366f1;background:#eef2ff;padding:1px 6px;border-radius:99px;margin-left:4px">🛡 ${t('已购保险')} +${order.insurance_premium}</span>` : ''}</span></div>
       <div class="detail-row"><span class="detail-label">${t('下单时间')}</span><span class="detail-value">${fmtTime(order.created_at)}</span></div>
       ${order.shipping_address ? `<div class="detail-row"><span class="detail-label">${t('收货地址')}</span><span class="detail-value">${escHtml(order.shipping_address)}</span></div>` : ''}
