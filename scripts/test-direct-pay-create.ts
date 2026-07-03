@@ -208,6 +208,9 @@ ok('D2: instruction snapshot = chosen account instruction (not legacy)', selOrd?
 const accSnap = selOrd?.direct_pay_account_snapshot ? JSON.parse(selOrd.direct_pay_account_snapshot) : null
 ok('D2: account snapshot = {account_id,method,currency,label,qr_ref} (non-sensitive)', accSnap && accSnap.account_id === 'acc_s2_a' && accSnap.method === 'PayNow' && accSnap.currency === 'SGD' && accSnap.label === 'A' && accSnap.qr_ref === 'qrref_a', JSON.stringify(accSnap))
 ok('D2: account snapshot carries NO raw instruction', accSnap && !('instruction' in accSnap))
+// 审计项 E(v13):非 USD 账户 → 快照冻结应付参考换算(payable_*,display-only);换算不可得也只缺 payable_approx,建单不受阻
+ok('E: SGD account snapshot freezes payable_* at create', accSnap && accSnap.payable_usdc === 50 && accSnap.payable_currency === 'SGD' && Number.isFinite(Number(accSnap.payable_approx)) && Number(accSnap.payable_approx) > 0 && Number.isFinite(Number(accSnap.payable_rate)) && typeof accSnap.payable_asof === 'string' && typeof accSnap.payable_stale === 'boolean', JSON.stringify(accSnap))
+ok('E: payable_approx ≈ usdc × rate (2dp)', accSnap && Math.abs(Number(accSnap.payable_approx) - Math.round(accSnap.payable_usdc * accSnap.payable_rate * 100) / 100) < 0.011)
 // fail-closed: bogus / inactive / wrong-seller account → 409, never silent legacy fallback, no order
 const ordsBeforeInvalid = (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n
 ok('D2: bogus account_id → 409 DIRECT_RECEIVE_ACCOUNT_INVALID', (await dpAcc('nope')).json?.error_code === 'DIRECT_RECEIVE_ACCOUNT_INVALID')

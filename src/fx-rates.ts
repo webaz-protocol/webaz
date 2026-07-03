@@ -71,5 +71,12 @@ export function convertUsdcToLocal(usdcAmount: number, currency: Currency, rates
   return usdcAmount * rate
 }
 
+/** SYNC: last-known snapshot(过 TTL 标 stale)或 fallback 表(stale)。给建单时刻的应付参考换算快照用 ——
+ *  display-only,零网络零 await,永不阻塞/永不抛;参考价精度要求低,陈旧可接受且必带 stale 标记。 */
+export function getUsdRatesSync(now: number = Date.now()): RatesSnapshot {
+  if (_cache) return now - _cache.fetchedAt < TTL_MS ? _cache.snap : { ...(_cache.snap), stale: true }
+  return { base: 'USD', rates: { ...FALLBACK_USD_RATES }, as_of: new Date(now).toISOString(), stale: true }
+}
+
 /** test-only: reset the module cache so tests are deterministic. */
 export function __resetFxCacheForTest(): void { _cache = null }

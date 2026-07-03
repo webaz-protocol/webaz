@@ -24,6 +24,7 @@ import { enforceCollateralExposureGate } from './merchant-bond-exposure.js'  // 
 import { productStoreVerified } from './product-verification.js'
 import { sellerExemptFromPerProduct } from './store-verification.js'
 import { safeRunDirectPayAmlMonitor } from './direct-pay-aml-monitor.js'
+import { getUsdRatesSync, convertUsdcToLocal, SUPPORTED_CURRENCIES, type Currency } from './fx-rates.js'  // 审计项 E:建单冻结应付参考换算(display-only,同步缓存)
 
 export interface DirectPayCreateDeps {
   generateId: (prefix: string) => string
@@ -35,8 +36,28 @@ export interface DirectPayPolicySnapshot {
   enabled: boolean; railBreakerTripped: boolean; region: string; regionAllowlist: string[]
   perTxCapUnits: Units; sellerBreakerTripped: boolean; decisionCode: string
 }
-/** 买家所选收款账号快照(非敏感元数据 + qr_ref)。legacy 单条 instruction 路径 = null。 */
-export interface DirectPayAccountSnapshot { account_id: string; method: string | null; currency: string | null; label: string | null; qr_ref: string | null }
+/** 买家所选收款账号快照(非敏感元数据 + qr_ref)。legacy 单条 instruction 路径 = null。
+ *  payable_*(审计项 E,contract v13 additive):下单时刻冻结的【应付参考换算】—— 买家 UI/时间线/卖家对账
+ *  引用同一稳定数字,不再随实时汇率漂移。display-only 参考价(rate 可 stale,以卖家收款说明为准),绝非结算承诺;
+ *  账户币种为 USD/USDC 或不支持换算时只有 payable_usdc,payable_approx 缺省 → 前端回落仅 USDC 展示,零阻断。 */
+export interface DirectPayAccountSnapshot {
+  account_id: string; method: string | null; currency: string | null; label: string | null; qr_ref: string | null
+  payable_usdc?: number; payable_approx?: number; payable_currency?: string; payable_rate?: number; payable_asof?: string; payable_stale?: boolean
+}
+/** 应付参考换算快照(审计项 E):同步缓存 FX(display-only,fallback 亦可,永不抛/永不阻塞建单)。
+ *  USD/USDC/未知币种 → 只记 payable_usdc(前端回落仅 USDC);换算失败同样只记 usdc,建单照常。 */
+export function buildPayableSnapshot(totalUsdc: number, accountCurrency: string | null): Partial<DirectPayAccountSnapshot> {
+  const base: Partial<DirectPayAccountSnapshot> = { payable_usdc: totalUsdc }
+  const cur = String(accountCurrency || '').toUpperCase()
+  if (!cur || cur === 'USD' || cur === 'USDC' || !(SUPPORTED_CURRENCIES as readonly string[]).includes(cur)) return base
+  try {
+    const snap = getUsdRatesSync()
+    const approx = convertUsdcToLocal(totalUsdc, cur as Currency, snap.rates)
+    if (!Number.isFinite(approx)) return base
+    return { ...base, payable_approx: Math.round(approx * 100) / 100, payable_currency: cur, payable_rate: snap.rates[cur as Currency], payable_asof: snap.as_of, payable_stale: snap.stale }
+  } catch { return base }
+}
+
 export interface DirectPayCreateArgs {
   productId: string; sellerId: string; buyerId: string; quantity: number
   unitPrice: number; totalAmount: number
@@ -126,7 +147,7 @@ export function createDirectPayResponse(
     const acc = getAccount(db, chosenAccountId)
     if (!acc || acc.seller_id !== sellerId || acc.status !== 'active') { res.status(409).json({ error: '所选收款账号无效或已停用', error_code: 'DIRECT_RECEIVE_ACCOUNT_INVALID' }); return }
     instructionSnapshot = acc.instruction
-    accountSnapshot = { account_id: acc.id, method: acc.method, currency: acc.currency, label: acc.label, qr_ref: acc.qr_image_ref }
+    accountSnapshot = { account_id: acc.id, method: acc.method, currency: acc.currency, label: acc.label, qr_ref: acc.qr_image_ref, ...buildPayableSnapshot(ctx.totalAmount, acc.currency) }
   } else {
     const instr = getActivePaymentInstruction(db, sellerId)
     if (!instr) { res.status(409).json({ error: '卖家未设置收款说明,无法创建直付订单', error_code: 'NO_PAYMENT_INSTRUCTION' }); return }
