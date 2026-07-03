@@ -12,19 +12,19 @@ window.renderAdminFeePrepayRequests = function (app) {
     <h1 class="page-title">🧾 ${t('平台服务费预充值申请')}</h1>
     <div style="margin-bottom:8px"><button class="btn btn-outline btn-sm" style="width:auto" onclick="navigate('#admin/dp-ops')">${t('返回 Direct Pay 商户运营')}</button></div>
     <div style="font-size:12px;color:#6b7280;line-height:1.6;margin-bottom:10px">${t('卖家发起的平台服务费预充值申请。请【核对凭证号对应的真实到账】后再确认入账;确认即为该商家记一笔预充值(真人 Passkey,唯一动钱步)。')}</div>
-    <div id="afpr-box">${loading$()}</div>
+    ${window.afprTabs ? window.afprTabs() : ''}<div id="afpr-box">${loading$()}</div>
   `, 'admin')
   window.afprHydrate()
 }
 
-window.afprHydrate = async () => {
-  const box = document.getElementById('afpr-box'); if (!box) return
-  const r = await GET('/admin/direct-receive/fee-prepay-requests?status=pending')
+window.afprHydrate = async (status) => {
+  const box = document.getElementById('afpr-box'); if (!box) return; const st = status || window.afprStatusFilter || 'pending'; if (window.afprSetActiveTab) window.afprSetActiveTab(st)
+  const r = await GET('/admin/direct-receive/fee-prepay-requests' + (st === 'all' ? '' : '?status=' + st))
   if (r.error) { box.innerHTML = alert$('error', r.error || t('加载失败')); return }
   const reqs = r.requests || []
   box.innerHTML = `
     <div id="afpr-msg"></div>
-    ${reqs.length ? reqs.map(x => window.afprCard(x)).join('') : `<div style="font-size:12px;color:#9ca3af">${t('暂无待审核申请')}</div>`}`
+    ${reqs.length ? reqs.map(x => x.status === 'pending' ? window.afprCard(x) : (window.afprHistoryCard ? window.afprHistoryCard(x) : window.afprCard(x))).join('') : `<div style="font-size:12px;color:#9ca3af">${t('暂无申请')}</div>`}`
 }
 
 window.afprCard = (r) => `
