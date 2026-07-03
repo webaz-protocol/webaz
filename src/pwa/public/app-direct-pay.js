@@ -23,7 +23,7 @@ window.dpErrorText = (code, fallback) => {
     DIRECT_PAY_SIMPLE_PRODUCT_ONLY: t('直付当前仅支持简单商品(无规格)'),
     DIRECT_PAY_UNSUPPORTED_OPTION: t('直付当前不支持该下单选项'),
   }
-  return M[code] || fallback || t('操作失败,请重试')
+  return M[code] || (window.orderErrorLookup && window.orderErrorLookup(code)) || fallback || t('操作失败,请重试')  // 回退查订单错误码表(NOT_ORDER_BUYER 等披露/动作码)
 }
 
 // ── 买家结算:支付方式(rail)选择。escrow 默认;direct_p2p 可选,选中先查可用性(见 dpOnRailChange);D1/D2 ack 在建单后用 Passkey 完成。

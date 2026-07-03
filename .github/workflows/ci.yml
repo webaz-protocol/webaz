@@ -720,6 +720,7 @@ jobs:
       - run: npm run test:direct-pay-aml-review
       - run: npm run test:direct-pay-compliance-ingress
       - run: npm run test:direct-pay-ui
+      - run: npm run test:order-errors
       - run: npm run test:i18n-labels
       - run: npm run test:listing-product-type
       - run: npm run test:external-links
