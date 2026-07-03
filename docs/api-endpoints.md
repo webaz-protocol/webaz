@@ -357,16 +357,16 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | DELETE | `/api/evidence/:id` | 🔐 |  | 撤回证据（仅上传者，争议未结案时） | src/pwa/routes/evidence.ts:58 |
 | GET | `/api/evidence/:id/blob` | 🔐 |  | 下载证据 blob（仅参与方/仲裁员） | src/pwa/routes/evidence.ts:35 |
 | GET | `/api/evidence/:id/verify` | 🔐 |  | 验签 — 任意参与方 | src/pwa/routes/evidence.ts:73 |
-| POST | `/api/external-anchors` | 🔐 |  |  | src/pwa/routes/external-anchors.ts:37 |
-| GET | `/api/external-anchors/:id` |  |  |  | src/pwa/routes/external-anchors.ts:88 |
-| POST | `/api/external-anchors/:id/distribute-rewards` | 🔐 |  | 手动 distribute（admin/arbitrator 补救：anchor 已 community 但 fee_paid_out=0） | src/pwa/routes/external-anchors.ts:73 |
-| POST | `/api/external-anchors/:id/issue-token` | 🔐 |  |  | src/pwa/routes/external-anchors.ts:105 |
-| POST | `/api/external-anchors/:id/revoke` | 🔐 |  |  | src/pwa/routes/external-anchors.ts:98 |
-| GET | `/api/external-anchors/:id/rewards` |  |  | 透出推荐 fee + anchor 的奖励情况 | src/pwa/routes/external-anchors.ts:55 |
-| POST | `/api/external-anchors/:id/verify` | 🔐 |  | verifier 提交独立验证（任何已登录用户可做） | src/pwa/routes/external-anchors.ts:113 |
-| GET | `/api/external-anchors/:id/verify-sig` | 🔐 |  |  | src/pwa/routes/external-anchors.ts:94 |
-| GET | `/api/external-anchors/by-product/:id` |  |  |  | src/pwa/routes/external-anchors.ts:80 |
-| GET | `/api/external-anchors/by-seller/:id` |  |  |  | src/pwa/routes/external-anchors.ts:84 |
+| POST | `/api/external-anchors` | 🔐 |  |  | src/pwa/routes/external-anchors.ts:38 |
+| GET | `/api/external-anchors/:id` |  |  |  | src/pwa/routes/external-anchors.ts:90 |
+| POST | `/api/external-anchors/:id/distribute-rewards` | 🔐 |  | 白名单(isEligibleArbitrator),不认 legacy user.role(否则已 suspend/revoke 但 role 未同步的账号仍可 | src/pwa/routes/external-anchors.ts:75 |
+| POST | `/api/external-anchors/:id/issue-token` | 🔐 |  |  | src/pwa/routes/external-anchors.ts:107 |
+| POST | `/api/external-anchors/:id/revoke` | 🔐 |  |  | src/pwa/routes/external-anchors.ts:100 |
+| GET | `/api/external-anchors/:id/rewards` |  |  | 透出推荐 fee + anchor 的奖励情况 | src/pwa/routes/external-anchors.ts:56 |
+| POST | `/api/external-anchors/:id/verify` | 🔐 |  | verifier 提交独立验证（任何已登录用户可做） | src/pwa/routes/external-anchors.ts:115 |
+| GET | `/api/external-anchors/:id/verify-sig` | 🔐 |  |  | src/pwa/routes/external-anchors.ts:96 |
+| GET | `/api/external-anchors/by-product/:id` |  |  |  | src/pwa/routes/external-anchors.ts:82 |
+| GET | `/api/external-anchors/by-seller/:id` |  |  |  | src/pwa/routes/external-anchors.ts:86 |
 | GET | `/api/feed` | 🔐 |  |  | src/pwa/routes/buyer-feeds.ts:128 |
 | POST | `/api/feedback` | 🔐 |  |  | src/pwa/routes/feedback.ts:41 |
 | GET | `/api/feedback/:id` | 🔐 |  | 工单详情 + timeline | src/pwa/routes/feedback.ts:160 |
@@ -658,17 +658,17 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/skills/:id/subscribe` | 🔐 |  | 订阅 | src/pwa/routes/skills.ts:176 |
 | GET | `/api/skills/mine` | 🔐 |  |  | src/pwa/routes/skills.ts:68 |
 | GET | `/api/skills/subscriptions` | 🔐 |  |  | src/pwa/routes/skills.ts:73 |
-| GET | `/api/snf/:id/verify` | 🔐 |  | 验签（仅当事人或 arbitrator/admin） | src/pwa/routes/snf.ts:122 |
-| POST | `/api/snf/ack` | 🔐 |  | 显式 ack（无 ids → ack 全部未读） | src/pwa/routes/snf.ts:104 |
-| GET | `/api/snf/dead-letter` | 🔐 |  |  | src/pwa/routes/snf.ts:86 |
-| GET | `/api/snf/designate` | 🔐 |  |  | src/pwa/routes/snf.ts:140 |
-| POST | `/api/snf/designate` | 🔐 |  |  | src/pwa/routes/snf.ts:133 |
-| GET | `/api/snf/inbox` | 🔐 |  | 只读列表（不消费） | src/pwa/routes/snf.ts:60 |
-| GET | `/api/snf/inbox/pull` | 🔐 |  | 协议级 pull — 一次性消费，agent / 内部组件用 | src/pwa/routes/snf.ts:69 |
-| POST | `/api/snf/nack` | 🔐 |  | Agent 处理失败 → nack 回放（超 5 次自动死信化） | src/pwa/routes/snf.ts:77 |
-| GET | `/api/snf/pending` | 🔐 |  |  | src/pwa/routes/snf.ts:116 |
-| POST | `/api/snf/revive/:id` | 🔐 |  |  | src/pwa/routes/snf.ts:93 |
-| POST | `/api/snf/send` | 🔐 |  |  | src/pwa/routes/snf.ts:39 |
+| GET | `/api/snf/:id/verify` | 🔐 |  | 验签（仅当事人或 arbitrator/admin） | src/pwa/routes/snf.ts:123 |
+| POST | `/api/snf/ack` | 🔐 |  | 显式 ack（无 ids → ack 全部未读） | src/pwa/routes/snf.ts:105 |
+| GET | `/api/snf/dead-letter` | 🔐 |  |  | src/pwa/routes/snf.ts:87 |
+| GET | `/api/snf/designate` | 🔐 |  |  | src/pwa/routes/snf.ts:143 |
+| POST | `/api/snf/designate` | 🔐 |  |  | src/pwa/routes/snf.ts:136 |
+| GET | `/api/snf/inbox` | 🔐 |  | 只读列表（不消费） | src/pwa/routes/snf.ts:61 |
+| GET | `/api/snf/inbox/pull` | 🔐 |  | 协议级 pull — 一次性消费，agent / 内部组件用 | src/pwa/routes/snf.ts:70 |
+| POST | `/api/snf/nack` | 🔐 |  | Agent 处理失败 → nack 回放（超 5 次自动死信化） | src/pwa/routes/snf.ts:78 |
+| GET | `/api/snf/pending` | 🔐 |  |  | src/pwa/routes/snf.ts:117 |
+| POST | `/api/snf/revive/:id` | 🔐 |  |  | src/pwa/routes/snf.ts:94 |
+| POST | `/api/snf/send` | 🔐 |  |  | src/pwa/routes/snf.ts:40 |
 | GET | `/api/system-flags` |  |  |  | src/pwa/routes/public-utils.ts:100 |
 | GET | `/api/tags/:tag/notes` |  |  | db 已全量走 RFC-016 异步 seam(dbOne/dbAll),不再用 deps.db | src/pwa/routes/tags.ts:23 |
 | GET | `/api/tags/trending` |  |  | 热门标签：24h + 总数综合排序 | src/pwa/routes/tags.ts:51 |

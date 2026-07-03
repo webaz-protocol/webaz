@@ -4256,7 +4256,7 @@
     },
     "/api/external-anchors/:id/distribute-rewards": {
       "post": {
-        "summary": "手动 distribute（admin/arbitrator 补救：anchor 已 community 但 fee_paid_out=0）",
+        "summary": "白名单(isEligibleArbitrator),不认 legacy user.role(否则已 suspend/revoke 但 role 未同步的账号仍可触发放款)。",
         "tags": [],
         "security": [
           {

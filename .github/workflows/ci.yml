@@ -731,6 +731,7 @@ jobs:
       - run: npm run test:disputes-read-auth
       - run: npm run test:admin-dispute-triage
       - run: npm run test:orders-read-arbitrator-view
+      - run: npm run test:legacy-arbitrator-role-sweep
       - run: npm run test:arbitration-entry-frontend
       - run: npm run test:arbitrator-admin-ui
       - run: npm run test:webauthn-arbitrator-purposes

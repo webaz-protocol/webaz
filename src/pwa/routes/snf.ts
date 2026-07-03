@@ -27,6 +27,7 @@ import {
   snfVerify, snfDesignate, snfGetDesignation,
   snfNack, snfListDeadLetter, snfRevive,
 } from '../../layer2-business/L2-7-snf/snf-engine.js'
+import { isEligibleArbitrator } from '../arbitrator-lifecycle.js'  // 仲裁能力唯一源=active 白名单(verify 是争议证据面,不认 legacy role)
 
 export interface SnfDeps {
   db: Database.Database
@@ -124,7 +125,9 @@ export function registerSnfRoutes(app: Application, deps: SnfDeps): void {
     const r = await dbOne<{ sender_id: string; recipient_id: string }>(`SELECT sender_id, recipient_id FROM snf_messages WHERE id = ?`, [req.params.id])
     if (!r) return void res.status(404).json({ error: '消息不存在' })
     const uid = user.id as string
-    if (uid !== r.sender_id && uid !== r.recipient_id && user.role !== 'arbitrator' && user.role !== 'admin') {
+    // 仲裁员认 active 白名单(争议证据验签是仲裁工作面);legacy role 旁路移除 —— 否则 role-only/已吊销账号可按 id
+    //   探测任意用户间私信的存在性+签名有效性,而真·白名单仲裁员(role=buyer)反被 403。admin 保持原样。
+    if (uid !== r.sender_id && uid !== r.recipient_id && !isEligibleArbitrator(db, uid).ok && user.role !== 'admin') {
       return void res.status(403).json({ error: '无权验证' })
     }
     res.json(await snfVerify(db, req.params.id))
