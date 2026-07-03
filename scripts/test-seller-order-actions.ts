@@ -61,7 +61,9 @@ function main(): void {
     /自履约订单：你负责回传揽收\/单号，超时仍按卖家责任处理。/.test(app) &&
     /自履约投递需留存签收\/门牌\/交付说明，买家确认后才结算。/.test(app))
   ok('dangerous order writes require confirmation prompts',
-    /ship: t\('确认已经发货？/.test(app) &&
+    // D4(#224):ship 文案按 rail 分叉 —— 直付=核款提示(参考号+发货即认款),escrow=原文案;两支都必须在
+    /ship: \(window\._dpOrderRail === 'direct_p2p' && window\.dpPayRef\) \? /.test(app) &&
+    /: t\('确认已经发货？/.test(app) &&
     /pickup: t\('确认已揽收并回传凭证？/.test(app) &&
     /deliver: t\('确认已投递？/.test(app) &&
     /if \(confirmText && !confirm\(confirmText\)\) return/.test(app))
