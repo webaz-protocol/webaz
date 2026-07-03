@@ -260,6 +260,12 @@ ok('accrue 失败 → 无应收落库', !receivable('oZero'))
   const s1 = stockOf()
   const rc2 = await call('oCancPq', { action: 'cancel' }, 'buyer1')
   ok('D3b. 货款协商买家取消 → 库存恢复', rc2.status === 200 && stockOf() === s1 + 1, `before=${s1} after=${stockOf()}`)
+  // 审计项 H:付款窗过期宽限期买家可确认未付即刻关单(此前 guard 与状态机矛盾=死能力)+ 库存恢复
+  mkOrder('oCancExp', 'direct_expired_unconfirmed', 'direct_p2p')
+  const s2 = stockOf()
+  const rc3 = await call('oCancExp', { action: 'cancel' }, 'buyer1')
+  ok('H. expired 宽限期买家取消 → 200 cancelled + 库存恢复', rc3.status === 200 && status('oCancExp') === 'cancelled' && stockOf() === s2 + 1, JSON.stringify(rc3))
+  ok('H2. mark_paid 仍仅付款窗口(expired 不可 mark_paid)', (await call('oCancExp', { action: 'mark_paid', webauthn_token: seedToken('buyer1', 'oCancExp', 'mark_paid') }, 'buyer1')).status === 409)
 }
 
 server!.close()

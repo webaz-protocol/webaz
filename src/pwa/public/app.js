@@ -2646,7 +2646,7 @@ async function renderAdminOrders(app, opts = {}) {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600">${escHtml(o.product_title)}</div>
-          <div style="font-size:12px;color:#6b7280;margin-top:2px">${o.total_amount} WAZ · ${fmtTime(o.created_at)}</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:2px">${o.payment_rail === 'direct_p2p' ? `<span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:1px 8px;font-size:10px;font-weight:600;margin-right:4px">${t('直付')}</span>${o.total_amount} USDC` : `${o.total_amount} WAZ`} · ${fmtTime(o.created_at)}</div>
           <div style="font-size:11px;color:#6b7280;margin-top:4px">${t('买家')}: ${escHtml(o.buyer_name)} · ${t('卖家')}: ${escHtml(o.seller_name)}</div>
           <div style="font-size:11px;color:#9ca3af;margin-top:2px">${o.id}</div>
         </div>

@@ -193,10 +193,11 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       if (uid !== buyerId) {
         return void res.status(403).json({ error: '你不是本订单的买家', error_code: 'NOT_ORDER_BUYER' })
       }
-      // 买家取消:付款窗口内(未付/后悔)或货款协商阶段(承认未付)。mark_paid 仍仅付款窗口。
-      const cancelInQuery = action === 'cancel' && order.status === 'payment_query'
+      // 买家取消:付款窗口内(未付/后悔)/ 货款协商阶段(承认未付)/ 付款窗过期宽限期(确认未付,免等 48h 自动关单 ——
+      //   审计项 H:状态机本就允许 buyer direct_expired_unconfirmed→cancelled,此 guard 曾与状态机矛盾=死能力)。mark_paid 仍仅付款窗口。
+      const cancelInQuery = action === 'cancel' && ['payment_query', 'direct_expired_unconfirmed'].includes(order.status as string)
       if (order.payment_rail !== 'direct_p2p' || (order.status !== 'direct_pay_window' && !cancelInQuery)) {
-        return void res.status(409).json({ error: '该操作仅适用于直付订单的付款窗口/协商阶段', error_code: 'NOT_DIRECT_PAY_WINDOW' })
+        return void res.status(409).json({ error: '该操作仅适用于直付订单的付款窗口/过期宽限/协商阶段', error_code: 'NOT_DIRECT_PAY_WINDOW' })
       }
     }
     // ── Rail1 直付货款协商(争议≠仲裁)动作。均仅 direct_p2p + 角色/状态门。PR-B1 人驱动协商 + PR-B2 卖家宽限后请求取消。 ──
