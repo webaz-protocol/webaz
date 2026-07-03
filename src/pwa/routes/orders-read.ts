@@ -245,6 +245,12 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     if (order.payment_rail === 'direct_p2p' && order.status === 'accepted') {
       const cr = getCancelRefundState(db, req.params.id, user.id as string)
       order.cancel_refund = cr.ok ? { request: cr.request ?? null, can_request: !!cr.can_request, can_respond: !!cr.can_respond, can_confirm: !!cr.can_confirm, can_withdraw: !!cr.can_withdraw } : null
+      // 审计项 F:卖家对账辅助 —— 同买家·同金额其它在途直付单计数(与 mark_paid D2 预警同口径,发货前每次打开订单页都能看到)。
+      //   仅卖家视角计算;买家/第三方不下发(无对账用途,少一分敞口)。
+      if (order.seller_id === user.id) {
+        const dupRow = await dbOne<{ n: number }>(`SELECT COUNT(*) n FROM orders WHERE buyer_id = ? AND seller_id = ? AND payment_rail = 'direct_p2p' AND total_amount = ? AND id != ? AND status IN ('accepted','shipped','picked_up','in_transit','delivered')`, [order.buyer_id, order.seller_id, order.total_amount, req.params.id])
+        order.duplicate_amount_alert = dupRow?.n || 0
+      }
     }
 
     res.json({ ...statusInfo, history, product, dispute, trackingInfo })
