@@ -5285,7 +5285,9 @@ function getArbitratorState(userId: string) {
   if (app?.status === 'pending')  state = 'pending'
   if (app?.status === 'rejected') state = 'rejected'
   if (wl) state = 'approved'
-  return { state, application: app ?? null, whitelist: wl ?? null }
+  // PR-E:真实运行时能力字段。前端必须以 can_arbitrate 为准(state='approved' 不区分 suspended/revoked)。
+  const arbitrator_status = wl ? ((wl.status ?? 'active') as string) : 'none'   // active / suspended / revoked / none
+  return { state, can_arbitrate: isEligibleArbitrator(userId).ok, arbitrator_status, application: app ?? null, whitelist: wl ?? null }
 }
 
 // 仲裁员身份判定 — PR-B:唯一授权源 = active arbitrator_whitelist(role='arbitrator' 旁路已移除)。域逻辑见 arbitrator-lifecycle.ts。

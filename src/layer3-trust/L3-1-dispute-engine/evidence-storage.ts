@@ -55,17 +55,26 @@ function canonicalEvidenceMeta(m: {
   return [m.uploaderId, m.disputeId, m.hash, String(m.size), m.mime, m.description].join('|')
 }
 
+// PR-E:被指派仲裁员读/写证据须【仍是 active whitelist】—— suspended/revoked 立即失去权限。表缺失 → 视为非 active。
+function isActiveArbitratorWL(db: Database.Database, userId: string): boolean {
+  try {
+    const wl = db.prepare('SELECT status FROM arbitrator_whitelist WHERE user_id = ?').get(userId) as { status: string | null } | undefined
+    return !!wl && ((wl.status ?? 'active') === 'active')   // legacy NULL = active
+  } catch { return false }
+}
+
 function isPartyOrArbitrator(db: Database.Database, disputeId: string, userId: string): boolean {
   const dispute = db.prepare('SELECT order_id, initiator_id, defendant_id, assigned_arbitrators FROM disputes WHERE id = ?').get(disputeId) as Record<string, unknown> | undefined
   if (!dispute) return false
   const order = db.prepare('SELECT buyer_id, seller_id, logistics_id FROM orders WHERE id = ?').get(dispute.order_id as string) as Record<string, string | null> | undefined
-  const arbitrators: string[] = JSON.parse((dispute.assigned_arbitrators as string) || '[]')
-  const parties = new Set([
+  const caseParties = new Set([
     order?.buyer_id, order?.seller_id, order?.logistics_id,
     dispute.initiator_id as string, dispute.defendant_id as string,
-    ...arbitrators,
   ].filter(Boolean) as string[])
-  return parties.has(userId)
+  if (caseParties.has(userId)) return true
+  // 仅【指派本案 且 当前 active】的仲裁员可读/写证据。
+  const arbitrators: string[] = JSON.parse((dispute.assigned_arbitrators as string) || '[]')
+  return arbitrators.includes(userId) && isActiveArbitratorWL(db, userId)
 }
 
 export function uploadEvidence(

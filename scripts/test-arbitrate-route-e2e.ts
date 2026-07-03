@@ -32,8 +32,9 @@ const mkUser = (id: string, role = 'buyer'): void => {
   db.prepare('INSERT INTO users (id,name,role,api_key) VALUES (?,?,?,?)').run(id, id, role, 'k_' + id)
   db.prepare('INSERT INTO webauthn_credentials (id,user_id,public_key,counter) VALUES (?,?,?,0)').run('cred_' + id, id, Buffer.from([1]))
 }
-mkUser('buyer1', 'buyer'); mkUser('seller1', 'seller'); mkUser('arb', 'buyer'); mkUser('outsider', 'buyer')
+mkUser('buyer1', 'buyer'); mkUser('seller1', 'seller'); mkUser('arb', 'buyer'); mkUser('arb2', 'buyer'); mkUser('outsider', 'buyer'); mkUser('roleArb', 'arbitrator')
 grantArbitrator(db, { userId: 'arb', grantedBy: 'admin1' })      // active whitelist, non-party
+grantArbitrator(db, { userId: 'arb2', grantedBy: 'admin1' })     // 第二个 active 仲裁员(测已领取案的越权补证)
 grantArbitrator(db, { userId: 'buyer1', grantedBy: 'admin1' })   // 也授权买家 → 用于 COI(当事方)测试
 
 const getParam = ((key: string, fb: unknown) => (String(key).includes('human_presence') ? 1 : fb)) as <T>(k: string, f: T) => T
@@ -80,6 +81,12 @@ const call = (disputeId: string, body: Record<string, unknown>, uid?: string): P
   const rq = httpRequest({ host: '127.0.0.1', port, method: 'POST', path: `/api/disputes/${disputeId}/arbitrate`, headers }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve({ status: res.statusCode || 0, json: d ? JSON.parse(d) : null }) } catch { resolve({ status: res.statusCode || 0, json: d }) } }) })
   rq.on('error', reject); rq.write(payload); rq.end()
 })
+const callReq = (disputeId: string, body: Record<string, unknown>, uid?: string): Promise<{ status: number; json: any }> => new Promise((resolve, reject) => {
+  const payload = JSON.stringify(body); const headers: Record<string, string> = { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(payload)) }
+  if (uid) headers['x-test-uid'] = uid
+  const rq = httpRequest({ host: '127.0.0.1', port, method: 'POST', path: `/api/disputes/${disputeId}/request-evidence`, headers }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve({ status: res.statusCode || 0, json: d ? JSON.parse(d) : null }) } catch { resolve({ status: res.statusCode || 0, json: d }) } }) })
+  rq.on('error', reject); rq.write(payload); rq.end()
+})
 const orderStatus = (id: string) => (db.prepare('SELECT status FROM orders WHERE id=?').get(id) as { status: string }).status
 const dispStatus = (id: string) => (db.prepare('SELECT status FROM disputes WHERE id=?').get(id) as { status: string }).status
 
@@ -110,6 +117,19 @@ try {
   ok('5. suspended arbitrator → 403 NOT_ARBITRATOR', (await call(d5.disputeId, { ruling: 'refund_buyer', reason: 'x', webauthn_token: mkToken('arb', d5.disputeId) }, 'arb')).json?.error_code === 'NOT_ARBITRATOR')
   reinstateArbitrator(db, { userId: 'arb' })
   ok('5b. reinstated arbitrator can rule again via route', (await call(d5.disputeId, { ruling: 'refund_buyer', reason: 'ok', webauthn_token: mkToken('arb', d5.disputeId) }, 'arb')).status === 200 && orderStatus(d5.orderId) === 'refunded_full')
+
+  // ── PR-E request-evidence:active + 已分配/领取该案 + 涉案方目标 ──
+  const re1 = mkDispute()   // fresh, unassigned
+  ok('RE1. active arbitrator + unassigned → atomic claim + request-evidence succeeds (target=party seller)', (await callReq(re1.disputeId, { requested_from_id: 'seller1', evidence_types: ['text'], description: '请提供发货凭证', deadline_hours: 48 }, 'arb')).json?.success === true)
+  ok('RE2. second active arbitrator on the now-claimed case → NOT_ASSIGNED_ARBITRATOR', (await callReq(re1.disputeId, { requested_from_id: 'buyer1', evidence_types: ['text'], description: 'x' }, 'arb2')).json?.error_code === 'NOT_ASSIGNED_ARBITRATOR')
+  ok('RE3. assigned arbitrator requests from NON-party → INVALID_EVIDENCE_TARGET', (await callReq(re1.disputeId, { requested_from_id: 'outsider', evidence_types: ['text'], description: 'x' }, 'arb')).json?.error_code === 'INVALID_EVIDENCE_TARGET')
+  ok('RE-COI. whitelisted PARTY (buyer) cannot request-evidence on own case → ARBITRATOR_CONFLICT_OF_INTEREST', (await callReq(mkDispute().disputeId, { requested_from_id: 'seller1', evidence_types: ['text'], description: 'x' }, 'buyer1')).json?.error_code === 'ARBITRATOR_CONFLICT_OF_INTEREST')
+  ok('RE4. non-whitelisted user → NOT_ARBITRATOR on request-evidence', (await callReq(mkDispute().disputeId, { requested_from_id: 'seller1', evidence_types: ['text'], description: 'x' }, 'outsider')).json?.error_code === 'NOT_ARBITRATOR')
+  ok('RE5. role-only (no whitelist) → NOT_ARBITRATOR on request-evidence', (await callReq(mkDispute().disputeId, { requested_from_id: 'seller1', evidence_types: ['text'], description: 'x' }, 'roleArb')).json?.error_code === 'NOT_ARBITRATOR')
+  { const { suspendArbitrator, reinstateArbitrator } = await import('../src/pwa/arbitrator-lifecycle.js')
+    suspendArbitrator(db, { userId: 'arb' })
+    ok('RE6. suspended arbitrator → NOT_ARBITRATOR on request-evidence', (await callReq(mkDispute().disputeId, { requested_from_id: 'seller1', evidence_types: ['text'], description: 'x' }, 'arb')).json?.error_code === 'NOT_ARBITRATOR')
+    reinstateArbitrator(db, { userId: 'arb' }) }
 
   server!.close()
   if (fail > 0) { console.error(`\n❌ arbitrate-route-e2e FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
