@@ -1,10 +1,13 @@
 #!/usr/bin/env tsx
 /**
- * GET /api/orders/:id 授权:白名单仲裁员(role 可能是 buyer,非 legacy 'arbitrator')必须能查看【争议中】的关联订单以裁定。
- *  ① order 当事方(buyer)→ 200。
- *  ② 白名单仲裁员(active,非当事方)查【disputed】订单 → 200(修复点:不再"无权查看此订单")。
- *  ③ 普通外人(非当事方 + 非仲裁员)→ 403 无权查看。
- *  ④ 白名单仲裁员查【非争议(paid)】订单 → 403(能力仅限争议单,非全量枚举)。
+ * GET /api/orders/:id + /chain + 列表 授权与投影:白名单仲裁员(role 可能是 buyer,非 legacy 'arbitrator')
+ * 可查看【存在争议记录】的订单(含已裁定 —— 裁定后订单离开 disputed,复盘/已结 tab 仍需可见);无争议记录不可枚举。
+ *  1-4 基线:当事方 200 / 仲裁员查争议单 200 / 外人 403 / 无争议记录(paid)403。
+ *  5-6 直付收款目标:第三方(仲裁员)整段剥离(instruction+整个 account_snapshot),卖家(收款方)保留。
+ *  7-8 legacy role-only 旁路已移除(disputed/paid 均 403)。
+ *  9   已裁定(refunded_full,dispute 行仍在)→ 仲裁员 200(审计:只放行 disputed 会让已结 tab"查看订单"全 403)。
+ *  10  /chain 与详情同谓词:白名单仲裁员可验链,role-only 403(审计:chain 曾留 legacy 旁路,双向断裂)。
+ *  11  列表 /api/orders 对 logistics 第三方剥离收款目标(审计:列表曾漏 strip,同 P1-1 类)。
  * Usage: npm run test:orders-read-arbitrator-view
  */
 import { mkdtempSync } from 'fs'; import { join } from 'path'; import { tmpdir } from 'os'
@@ -32,7 +35,7 @@ const mkUser = (id: string, role = 'buyer'): void => {
   db.prepare('INSERT INTO users (id,name,role,api_key) VALUES (?,?,?,?)').run(id, id, role, 'k_' + id)
   db.prepare('INSERT INTO webauthn_credentials (id,user_id,public_key,counter) VALUES (?,?,?,0)').run('cred_' + id, id, Buffer.from([1]))
 }
-mkUser('buyer1'); mkUser('seller1', 'seller'); mkUser('arb'); mkUser('outsider'); mkUser('roleArb', 'arbitrator')  // roleArb = legacy role only, NOT whitelisted
+mkUser('buyer1'); mkUser('seller1', 'seller'); mkUser('arb'); mkUser('outsider'); mkUser('roleArb', 'arbitrator'); mkUser('logi', 'logistics')  // roleArb = legacy role only, NOT whitelisted
 grantArbitrator(db, { userId: 'arb', grantedBy: 'admin1' })   // active whitelist, role stays buyer
 try { db.exec('ALTER TABLE products ADD COLUMN return_days INTEGER') } catch { /* 真实库已有 */ }
 try { db.exec('ALTER TABLE products ADD COLUMN images TEXT') } catch { /* 真实库已有 */ }
@@ -51,6 +54,12 @@ function mkOrder(status: string): string {
 }
 const disputedOrder = mkOrder('disputed')
 const paidOrder = mkOrder('paid')
+// 已裁定订单:曾进 disputed(dispute 行存在),裁定后状态离开 disputed —— 仲裁员复盘必须仍可见
+const ruledOrder = mkOrder('disputed')
+db.prepare("UPDATE orders SET status='refunded_full' WHERE id=?").run(ruledOrder)
+// logistics 被指派的在途直付单(列表投影用例:第三方不得见收款目标)
+const shippedOrder = mkOrder('shipped')
+db.prepare("UPDATE orders SET logistics_id='logi' WHERE id=?").run(shippedOrder)
 
 const noop = () => ({})
 const app = express(); app.use(express.json())
@@ -62,11 +71,12 @@ registerOrdersReadRoutes(app, {
 
 let server: Server
 const port: number = await new Promise(r => { server = createServer(app); server.listen(0, () => r((server.address() as any).port)) })
-const get = (orderId: string, uid?: string): Promise<{ status: number; json: any }> => new Promise((resolve, reject) => {
+const req = (path: string, uid?: string): Promise<{ status: number; json: any }> => new Promise((resolve, reject) => {
   const headers: Record<string, string> = {}; if (uid) headers['x-test-uid'] = uid
-  const rq = httpRequest({ host: '127.0.0.1', port, method: 'GET', path: `/api/orders/${orderId}`, headers }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve({ status: res.statusCode || 0, json: d ? JSON.parse(d) : null }) } catch { resolve({ status: res.statusCode || 0, json: d }) } }) })
+  const rq = httpRequest({ host: '127.0.0.1', port, method: 'GET', path, headers }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve({ status: res.statusCode || 0, json: d ? JSON.parse(d) : null }) } catch { resolve({ status: res.statusCode || 0, json: d }) } }) })
   rq.on('error', reject); rq.end()
 })
+const get = (orderId: string, uid?: string) => req(`/api/orders/${orderId}`, uid)
 
 try {
   const buyerView = await get(disputedOrder, 'buyer1')
@@ -76,12 +86,12 @@ try {
   const outsiderView = await get(disputedOrder, 'outsider')
   ok('3. non-party non-arbitrator → 403 无权查看此订单', outsiderView.status === 403 && /无权查看/.test(outsiderView.json?.error || ''))
   const arbPaid = await get(paidOrder, 'arb')
-  ok('4. whitelist arbitrator views NON-disputed (paid) order → 403 (scoped to disputes)', arbPaid.status === 403 && /无权查看/.test(arbPaid.json?.error || ''))
+  ok('4. whitelist arbitrator views order with NO dispute record (paid) → 403 (no enumeration)', arbPaid.status === 403 && /无权查看/.test(arbPaid.json?.error || ''))
 
-  // P1-1:仲裁员(非买家/卖家第三方)读 disputed direct_p2p 单 → 收款目标必须被剥离(instruction + qr_ref)
+  // P1-1:仲裁员(非买家/卖家第三方)读 disputed direct_p2p 单 → 收款目标必须【整段】剥离(strip 删除整个 account_snapshot,
+  //   断言按 helper 的完整承诺来 —— 只查 qr_ref 会放过"留 method/label 明细"的部分回归)
   const arbOrder = arbView.json?.order || {}
-  let arbAcct: any = null; try { arbAcct = arbOrder.direct_pay_account_snapshot ? JSON.parse(arbOrder.direct_pay_account_snapshot) : null } catch {}
-  ok('5. P1-1 arbitrator view strips direct-pay payment target (no instruction_snapshot, no qr_ref)', !arbOrder.direct_pay_instruction_snapshot && !(arbAcct && arbAcct.qr_ref), JSON.stringify({ instr: arbOrder.direct_pay_instruction_snapshot, acct: arbOrder.direct_pay_account_snapshot }))
+  ok('5. P1-1 arbitrator view strips ENTIRE payment target (no instruction_snapshot, no account_snapshot at all)', !arbOrder.direct_pay_instruction_snapshot && !arbOrder.direct_pay_account_snapshot, JSON.stringify({ instr: arbOrder.direct_pay_instruction_snapshot, acct: arbOrder.direct_pay_account_snapshot }))
   // 卖家=收款方,看【自己的】单不剥离(证明 strip 不越界)
   const sellerView = await get(disputedOrder, 'seller1')
   let selAcct: any = null; try { selAcct = sellerView.json?.order?.direct_pay_account_snapshot ? JSON.parse(sellerView.json.order.direct_pay_account_snapshot) : null } catch {}
@@ -90,6 +100,25 @@ try {
   // P1-2:legacy role='arbitrator'(非 active whitelist)旁路已移除 → disputed 与 paid 均 403(能力源唯一=active whitelist)
   ok('7. P1-2 role-only arbitrator (not whitelisted) → DISPUTED 403 (legacy role bypass removed)', (await get(disputedOrder, 'roleArb')).status === 403)
   ok('8. P1-2 role-only arbitrator → PAID 403 (no read of arbitrary-status orders)', (await get(paidOrder, 'roleArb')).status === 403)
+
+  // 审计发现 2:裁定落地后订单离开 disputed,但 dispute 行仍在 → 仲裁员复盘/已结 tab"查看订单"必须仍 200
+  const ruledView = await get(ruledOrder, 'arb')
+  ok('9. RULED order (refunded_full, dispute record exists) → whitelist arbitrator still 200 (post-ruling review works)', ruledView.status === 200 && ruledView.json?.order?.id === ruledOrder, JSON.stringify(ruledView).slice(0, 160))
+  ok('9b. outsider still 403 on ruled order (widening is arbitrator-only)', (await get(ruledOrder, 'outsider')).status === 403)
+
+  // 审计发现 1:/chain 与详情同谓词 —— 白名单仲裁员可验签名链;role-only 旁路移除
+  ok('10a. /chain: whitelist arbitrator on disputed order → 200 (chain badge/verify works for adjudication)', (await req(`/api/orders/${disputedOrder}/chain`, 'arb')).status === 200)
+  ok('10b. /chain: role-only arbitrator → 403 (legacy bypass removed from chain too)', (await req(`/api/orders/${disputedOrder}/chain`, 'roleArb')).status === 403)
+  ok('10c. /chain: whitelist arbitrator on NO-dispute order → 403', (await req(`/api/orders/${paidOrder}/chain`, 'arb')).status === 403)
+  ok('10d. /chain: party (buyer) still 200', (await req(`/api/orders/${disputedOrder}/chain`, 'buyer1')).status === 200)
+
+  // 审计发现 3:列表 /api/orders 对 logistics 第三方剥离收款目标(与详情同款 strip)
+  const logiList = await req('/api/orders', 'logi')
+  const logiRow = Array.isArray(logiList.json) ? logiList.json.find((o: any) => o.id === shippedOrder) : null
+  ok('11. list strips payment target for assigned logistics third party', logiList.status === 200 && !!logiRow && !logiRow.direct_pay_instruction_snapshot && !logiRow.direct_pay_account_snapshot, JSON.stringify(logiRow || logiList.json).slice(0, 200))
+  const sellerList = await req('/api/orders', 'seller1')
+  const sellerRow = Array.isArray(sellerList.json) ? sellerList.json.find((o: any) => o.id === shippedOrder) : null
+  ok('11b. list keeps payee (seller) target intact', !!sellerRow && !!sellerRow.direct_pay_instruction_snapshot)
 } finally { server!.close() }
 
 if (fail > 0) { console.error(`\n❌ orders-read-arbitrator-view FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

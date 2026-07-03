@@ -37,6 +37,12 @@ export interface OrdersReadDeps {
 export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps): void {
   const { db, auth, getOrderStatus, getOrderChain, verifyOrderChain, getOrderDispute } = deps
 
+  // 仲裁员订单可见性(详情 + 签名链共用同一谓词,防两路漂移):active 白名单(唯一能力源,不看 legacy user.role)
+  //   且【该订单存在争议记录】—— 含已裁定/已驳回:裁定后订单离开 disputed,但仲裁员复盘/申诉处理自己的案件仍需可见,
+  //   与 disputes-read"任意 active 仲裁员可读任意争议(含已结)"同口径。无争议记录的订单一律不可见 → 不可枚举任意订单。
+  const arbitratorCanViewOrder = async (orderId: string, userId: string): Promise<boolean> =>
+    isEligibleArbitrator(db, userId).ok && !!(await dbOne('SELECT 1 FROM disputes WHERE order_id = ? LIMIT 1', [orderId]))
+
   app.get('/api/orders', async (req: Request, res: Response) => {
     const user = auth(req, res); if (!user) return
     const orders = await dbAll<Record<string, unknown>>(`
@@ -58,6 +64,8 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
         o.buyer_name = '🔒 ' + (typeof code === 'string' ? code : 'PR-?????')
       }
       redactUnackedDirectPayTarget(db, o, user.id as string)   // #179 审计 P1:列表也过披露门,不得旁路
+      // 非买家且非卖家的第三方(如被指派的 logistics)绝不该看到直付收款目标 —— redact 只管买家自视角,非买家 no-op(与详情路由同款 strip)。
+      if (o.buyer_id !== user.id && o.seller_id !== user.id) stripDirectPayPaymentTarget(o)
     }
     res.json(orders)
   })
@@ -123,14 +131,18 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     res.send('﻿' + lines.join('\n'))
   })
 
-  // 订单签名链 — 当事人 + arbitrator + admin 可查
+  // 订单签名链 — 当事人 + 白名单仲裁员(涉争议订单) + admin 可查
   app.get('/api/orders/:id/chain', async (req, res) => {
     const user = auth(req, res); if (!user) return
     const order = await dbOne<{ buyer_id: string; seller_id: string; logistics_id: string | null }>('SELECT buyer_id, seller_id, logistics_id FROM orders WHERE id = ?', [req.params.id])
     if (!order) return void res.status(404).json({ error: '订单不存在' })
     const uid = user.id as string
-    const isParty = uid === order.buyer_id || uid === order.seller_id || uid === order.logistics_id || user.role === 'arbitrator' || user.role === 'admin'
-    if (!isParty) return void res.status(403).json({ error: '无权查看此订单链' })
+    // 仲裁员链访问与订单详情同一谓词(arbitratorCanViewOrder):裁定需验签名链;legacy role==='arbitrator' 旁路已移除
+    //   (否则 role-only/已吊销账号可读任意订单链,而真·白名单仲裁员 role=buyer 反被 403,链徽标在裁定页显示"链异常")。
+    const isParty = uid === order.buyer_id || uid === order.seller_id || uid === order.logistics_id
+    if (!isParty && user.role !== 'admin' && !(await arbitratorCanViewOrder(req.params.id, uid))) {
+      return void res.status(403).json({ error: '无权查看此订单链' })
+    }
     const chain = await getOrderChain(db, req.params.id)
     const verification = await verifyOrderChain(db, req.params.id)
     res.json({ chain, verification })
@@ -159,11 +171,12 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     const order = statusInfo.order
     const isLogisticsPickup = (user as Record<string,unknown>).role === 'logistics' &&
       !order.logistics_id && order.status === 'shipped'
-    // 白名单仲裁员(role 可能是 buyer,非 legacy 'arbitrator')需查看【争议中】订单以裁定。仅 disputed 单放行,非争议单不予枚举。
-    //   能力源【唯一】= active arbitrator_whitelist(isEligibleArbitrator);【移除】legacy user.role === 'arbitrator' 旁路
-    //   —— 否则 role-only / 已 suspend/revoke 但主 role 未同步的账号仍能读【任意状态】订单,与"active whitelist 是唯一授权源"冲突。
-    const isDisputeArbiter = order.status === 'disputed' && isEligibleArbitrator(db, user.id as string).ok
-    if (order.buyer_id !== user.id && order.seller_id !== user.id && order.logistics_id !== user.id && !isLogisticsPickup && !isDisputeArbiter) {
+    // 白名单仲裁员(role 可能是 buyer,非 legacy 'arbitrator')需查看涉争议订单以裁定/复盘。能力源【唯一】= active
+    //   arbitrator_whitelist;legacy role 旁路已移除(否则 role-only/已吊销账号可读任意订单)。谓词= arbitratorCanViewOrder:
+    //   订单须【存在争议记录】(含已裁定/已驳回 —— 只放行 disputed 会让仲裁员在裁定落地、订单离开 disputed 的瞬间失去访问,
+    //   已结 tab 的"查看订单"全部 403);无争议记录的订单不可见 → 不可枚举。
+    const isParty = order.buyer_id === user.id || order.seller_id === user.id || order.logistics_id === user.id
+    if (!isParty && !isLogisticsPickup && !(await arbitratorCanViewOrder(req.params.id, user.id as string))) {
       return void res.status(403).json({ error: '无权查看此订单' })
     }
 

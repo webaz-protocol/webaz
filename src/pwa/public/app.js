@@ -12501,7 +12501,7 @@ async function renderOrderDetail(app, orderId) {
       ${order.content_hash_at_order ? `<div class="detail-row"><span class="detail-label">🔒 ${t('P2P 内容哈希')}</span><span class="detail-value" style="font-family:monospace;font-size:11px;word-break:break-all">${escHtml(order.content_hash_at_order)}</span></div>` : ''}
       ${activeDeadline?.deadline ? `<div class="detail-row"><span class="detail-label">${t('截止')}</span><span class="detail-value" style="color:${isOverdue ? '#dc2626' : '#6b7280'};font-size:12px">${fmtTime(activeDeadline.deadline)}</span></div>` : ''}
     </div>
-    ${order.payment_rail === 'direct_p2p' && window.dpOrderDisclosureHtml ? window.dpOrderDisclosureHtml(order) : ''}${order.payment_rail === 'direct_p2p' && window.dpNegotiationCard ? window.dpNegotiationCard(order) : ''}${window.mutualCancelCard ? window.mutualCancelCard(order, isBuyer, isSeller) : ''}
+    ${order.payment_rail === 'direct_p2p' && isBuyer && window.dpOrderDisclosureHtml ? window.dpOrderDisclosureHtml(order) : ''}${order.payment_rail === 'direct_p2p' && window.dpNegotiationCard ? window.dpNegotiationCard(order) : ''}${window.mutualCancelCard ? window.mutualCancelCard(order, isBuyer, isSeller) : ''}
 
     ${trackingHtml}
     ${disputeHtml}
@@ -12568,7 +12568,7 @@ async function renderOrderDetail(app, orderId) {
       <div class="action-title">${t('完整状态历史')}</div>
       <div class="timeline">${historyHtml || `<div style="color:#6b7280;font-size:13px">${t('暂无记录')}</div>`}</div>
     </div>
-  `, 'orders'); if (order.payment_rail === 'direct_p2p' && window.dpHydrateOrderDisclosure) window.dpHydrateOrderDisclosure(order.id)  // direct_p2p:最终 DOM 已就位,#dp-order-instr 必命中(both-acked→收款说明快照;否则 D1/D2 门;非买家→错误提示)。退货/评价 widget 注入各自子容器,不动此框
+  `, 'orders'); if (order.payment_rail === 'direct_p2p' && isBuyer && window.dpHydrateOrderDisclosure) window.dpHydrateOrderDisclosure(order.id)  // direct_p2p 买家:最终 DOM 已就位,#dp-order-instr 必命中(both-acked→收款说明快照;否则 D1/D2 门)。卡片与 hydrate 均 isBuyer 门(端点本就 NOT_ORDER_BUYER,非买家渲染只会得红色报错噪音)。退货/评价 widget 注入各自子容器,不动此框
 
   // Wave B-3: 退货 widget — 异步加载（仅 completed 订单可退）
   // 买家:有退货窗口可申请/查看;卖家:有退货申请时内联查看+处理(accept/reject/received),无申请则隐藏卡
