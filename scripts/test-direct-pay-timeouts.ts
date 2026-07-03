@@ -19,6 +19,7 @@ const { initSystemUser, transition } = await import('../src/layer0-foundation/L0
 const { lockFeeStake } = await import('../src/direct-pay-ledger.js')
 const { settleDirectPayFeeAtCompletion, getSellerAccruedFeeUnits, feeUnitsForOrder } = await import('../src/direct-pay-fee-ar.js')
 const { runDirectPayTimeoutSweep } = await import('../src/pwa/routes/direct-pay-timeouts.js')
+const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
 const { toUnits } = await import('../src/money.js')
 const { walletUnits } = await import('../src/ledger.js')
 
@@ -34,18 +35,21 @@ db.prepare("INSERT OR IGNORE INTO wallets (user_id, balance) VALUES ('sys_protoc
 db.prepare("INSERT INTO users (id, name, role, api_key) VALUES ('buyer1','买家','buyer','k_buyer1')").run()
 db.prepare("INSERT INTO users (id, name, role, api_key) VALUES ('seller1','卖家','seller','k_seller1')").run()
 db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('seller1', 100)").run()
+initNotificationSchema(db)
+db.prepare("INSERT INTO products (id, seller_id, title, description, price) VALUES ('p1','seller1','测试商品','d',50)").run()
 
 const FEE = toUnits(5)
 const status = (id: string) => (db.prepare('SELECT status FROM orders WHERE id=?').get(id) as { status: string }).status
 const graceDeadline = (id: string) => (db.prepare('SELECT direct_grace_deadline d FROM orders WHERE id=?').get(id) as { d: string | null }).d
 const stakeStatus = (id: string) => (db.prepare('SELECT status FROM direct_pay_fee_stakes WHERE order_id=?').get(id) as { status?: string } | undefined)?.status
 
-function mkOrder(id: string, st: string, opts: { windowPast?: boolean; gracePast?: boolean; graceFuture?: boolean } = {}): void {
+function mkOrder(id: string, st: string, opts: { windowPast?: boolean; gracePast?: boolean; graceFuture?: boolean; pqCancelPast?: boolean; pqCancelFuture?: boolean } = {}): void {
   db.prepare(`INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail,
-     direct_pay_window_deadline, direct_grace_deadline)
+     direct_pay_window_deadline, direct_grace_deadline, payment_query_cancel_deadline)
      VALUES (?, 'p1','buyer1','seller1',1,50,50,0,?, 'direct_p2p',
        ${opts.windowPast ? "datetime('now','-1 hour')" : 'NULL'},
-       ${opts.gracePast ? "datetime('now','-1 hour')" : opts.graceFuture ? "datetime('now','+48 hours')" : 'NULL'})`).run(id, st)
+       ${opts.gracePast ? "datetime('now','-1 hour')" : opts.graceFuture ? "datetime('now','+48 hours')" : 'NULL'},
+       ${opts.pqCancelPast ? "datetime('now','-1 hour')" : opts.pqCancelFuture ? "datetime('now','+3 days')" : 'NULL'})`).run(id, st)
 }
 
 // ── Scenario 1: 付款窗口超时 → expired_unconfirmed + 退质押 + 设宽限期 ──
@@ -74,6 +78,19 @@ ok('after grace: o2 → cancelled', status('o2') === 'cancelled')
 mkOrder('o3', 'direct_expired_unconfirmed', { graceFuture: true })
 runDirectPayTimeoutSweep({ db })
 ok('control: future-grace order NOT cancelled', status('o3') === 'direct_expired_unconfirmed')
+
+// ── Scenario 3c (PR-B2): 货款协商申诉窗满 → 系统关单;窗内不关 ──
+mkOrder('oq1', 'payment_query', { pqCancelPast: true })   // 卖家已请求取消,7d 申诉窗已满
+mkOrder('oq2', 'payment_query', { pqCancelFuture: true })  // 申诉窗未满(买家仍可回应/升级)
+mkOrder('oq3', 'payment_query')                            // 未请求取消(deadline NULL)→ 永不被 cron 关
+const rq = runDirectPayTimeoutSweep({ db })
+ok('pq-cancel: expired recourse window → cancelled + in pqCancelled', rq.pqCancelled.includes('oq1') && status('oq1') === 'cancelled')
+ok('★ pq-cancel: window NOT expired → NOT cancelled (buyer recourse intact)', !rq.pqCancelled.includes('oq2') && status('oq2') === 'payment_query')
+ok('pq-cancel: no cancel-deadline set → never cron-cancelled', status('oq3') === 'payment_query')
+// P2 fix: cron system-cancel must notify BOTH parties (not only the buyer-initiated route path)
+const notif = (uid: string) => (db.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id=? AND order_id='oq1' AND type='payment_query→cancelled'").get(uid) as { n: number }).n
+ok('pq-cancel: buyer notified of the system cancel', notif('buyer1') >= 1)
+ok('pq-cancel: seller notified of the system cancel', notif('seller1') >= 1)
 
 // ── req #2: direct_p2p 完成结算 = 释放任何遗留模拟 stake + 记链下应收(AR),绝不碰 escrow ──
 db.prepare("INSERT INTO users (id, name, role, api_key) VALUES ('buyer4','买家4','buyer','k_b4')").run()

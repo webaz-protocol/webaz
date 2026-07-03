@@ -90,6 +90,16 @@ try {
   const o7 = mkOrder('accepted'); await call(o7, { action: 'report_nonpayment' }, 'seller1', 'seller'); await call(o7, { action: 'pq_escalate', evidence_description: 'x' }, 'buyer1', 'buyer'); mkDisputeRow(o7, 'resolved')
   ok('6b. withdraw a RULED dispute → 409 DISPUTE_ALREADY_RULED', (await call(o7, { action: 'pq_withdraw' }, 'buyer1', 'buyer')).json?.error_code === 'DISPUTE_ALREADY_RULED')
 
+  // 7. PR-B2 seller request_cancel (opens the 7-day buyer recourse window; only after the buyer-response grace elapsed)
+  const cancelDl = (id: string) => (db.prepare('SELECT payment_query_cancel_deadline d FROM orders WHERE id=?').get(id) as { d: string | null }).d
+  const o8 = mkOrder('accepted'); await call(o8, { action: 'report_nonpayment' }, 'seller1', 'seller')
+  ok('7a. request_cancel BEFORE buyer grace elapsed → 409 GRACE_NOT_ELAPSED', (await call(o8, { action: 'request_cancel' }, 'seller1', 'seller')).json?.error_code === 'GRACE_NOT_ELAPSED')
+  db.prepare("UPDATE orders SET payment_query_deadline = datetime('now','-1 hour') WHERE id=?").run(o8)   // buyer stayed silent past grace
+  ok('7b. request_cancel AFTER grace → 200 + 7-day recourse deadline set', (await call(o8, { action: 'request_cancel' }, 'seller1', 'seller')).status === 200 && !!cancelDl(o8) && st(o8) === 'payment_query')
+  ok('7c. buyer can still escalate DURING the recourse window (→ disputed)', (await call(o8, { action: 'pq_escalate', evidence_description: 'I did pay' }, 'buyer1', 'buyer')).status === 200 && st(o8) === 'disputed')
+  const o9 = mkOrder('accepted'); await call(o9, { action: 'report_nonpayment' }, 'seller1', 'seller'); db.prepare("UPDATE orders SET payment_query_deadline = datetime('now','-1 hour') WHERE id=?").run(o9)
+  ok('7d. buyer CANNOT request_cancel (403 NOT_ORDER_SELLER)', (await call(o9, { action: 'request_cancel' }, 'buyer1', 'buyer')).json?.error_code === 'NOT_ORDER_SELLER')
+
   server!.close()
   if (fail > 0) { console.error(`\n❌ payment_query actions FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ payment_query actions: seller report→negotiation(+grace) / confirm→resume / buyer cancel / escalate(evidence→dispute) / withdraw(before ruling); direct_p2p + role/status gated; escrow blocked\n  ✅ pass ${pass}`)

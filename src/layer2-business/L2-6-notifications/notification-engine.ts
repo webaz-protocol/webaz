@@ -191,9 +191,9 @@ const RULES: Record<string, NotifRule> = {
     body: ctx => `「${ctx.productTitle}」的仲裁申请已撤回,回到买卖双方协商。`,
   },
   'payment_query→cancelled': {
-    recipients: ['seller'],
-    title: '🚫 买家已取消(协商)',
-    body: ctx => `买家取消了「${ctx.productTitle}」订单。直付非托管,无平台退款。`,
+    recipients: ['buyer', 'seller'],   // 买家取消(卖家知)/ 系统申诉窗满关单(买家知)
+    title: '🚫 直付订单已取消(协商)',
+    body: ctx => `「${ctx.productTitle}」订单已取消(货款协商未达成)。直付非托管,无平台退款。`,
   },
 }
 

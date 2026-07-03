@@ -81,7 +81,7 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   'rewards-auto-downgrade.ts': 4,  // cron consent-sweep:currentMajor + 候选扫描读已迁 seam,逐用户降级 db.transaction 写仍同步(Phase 3)
   'rewards-clearing-mature.ts': 7,  // RFC-018 maturation:matureClearingRow 的同步钱路 db.transaction(order/dispute 重校验读 + CAS pending→settled + region 读 + commission_records 写 + commissionSourceType 的 2 读);sweep 扫描用 async seam(dbAll)。Phase 3 迁 pg
   'rewards-escrow-expire.ts': 2,  // cron money-sweep:扫描读已迁 seam,到期 materialize 的 db.transaction 写仍同步(Phase 3)
-  'direct-pay-timeouts.ts': 4,    // Direct Pay (Rail 1) 超时 cron:扫描读 + 状态转移/释放质押的 db.transaction 写仍同步(money/state path,Phase 3 迁 pg)
+  'direct-pay-timeouts.ts': 5,    // Direct Pay (Rail 1) 超时 cron:扫描读(付款窗口/宽限/货款协商申诉窗 3 扫)+ 状态转移/释放质押的 db.transaction 写仍同步(money/state path,Phase 3 迁 pg)
   'rfqs.ts': 25,        // create/cancel/bid/patch/delete 的 db.transaction 写序列 + award/first_match 选标读(rfq/winner 作为权威 subject 喂 awardBidAndCreateOrder,事务内不 re-read);Codex #236 P1:5 条 stake 路径加 tx 内权威守卫——扣款带 balance>=? 守卫、cancel/delete 用 status CAS、create-bid 重确认 RFQ open、patch tx 内重读 bid/rfq 并从重读 stake 算 delta(+3 tx 内重读:patch 2 + delete 1);端点纯校验读/列表/读回 + 单语句通知写已迁 seam
   'trial.ts': 14,          // eval cron 逐 claim metrics 读 + 退款 db.transaction(12)+ claim 抢名额 tx(2);端点纯读/单写已迁 seam。Codex #233 P1:退款 tx 内先 CAS claim(WHERE status='pending_threshold' + changes===1)再扣款(WHERE balance>=amount + changes===1)防并发 eval 双退;metrics/expired 更新同加 status guard(改现有语句,计数不变)
 }
