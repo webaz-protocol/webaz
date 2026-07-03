@@ -41,6 +41,7 @@ import { applyWalletDelta } from '../../ledger.js'
 //   2 settlement db.transaction + reputation/strike/publish)与 tx 内 appendAuditLog 保持同步(Phase 3 迁 pg)。
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 import { arbitratorHasConflict } from '../arbitrator-lifecycle.js'  // PR-B COI 硬门
+import { dismissDisputeToNegotiation } from '../../layer3-trust/L3-1-dispute-engine/dispute-engine.js'  // 仲裁员驳回仲裁,退回协商(非胜负裁决)
 
 export interface DisputesWriteDeps {
   db: Database.Database
@@ -70,6 +71,7 @@ export interface DisputesWriteDeps {
   logAdminAction: (adminId: string, action: string, targetType: string | null, targetId: string | null, detail?: Record<string, unknown>) => void
   snfSend: any
   getProtocolParam: <T>(key: string, fallback: T) => T
+  notifyTransition: (db: Database.Database, orderId: string, fromStatus: string, toStatus: string) => void  // dismiss_to_negotiation 通知买卖双方(与 pq_withdraw 一致)
 }
 
 export function registerDisputesWriteRoutes(app: Application, deps: DisputesWriteDeps): void {
@@ -78,7 +80,7 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
           markEvidenceExpiry, uploadEvidence, EVIDENCE_MAX_BYTES, EVIDENCE_ALLOWED_MIME,
           appendOrderEvent, FUND_BASE_RATE, settleCommission, depositToFund, calculatePv,
           recordDisputeReputation, issueAgentStrike, publishDisputeCase, logAdminAction, snfSend,
-          getProtocolParam } = deps
+          getProtocolParam, notifyTransition } = deps
 
   // PR-E:案件级仲裁操作(裁定 / 补证)统一的【原子领取或校验指派】。assigned 为空 → CAS 首位领取;
   //   非空且不含 caller → NOT_ASSIGNED_ARBITRATOR。arbitrate 与 request-evidence 共用,防"任意 active 仲裁员操作任意案"。
@@ -192,7 +194,7 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
 
     const { ruling, reason, refund_amount, liable_party_id, liability_parties } = req.body
     if (!ruling || !reason) return void res.json({ error: '请提供裁定结果（ruling）和理由（reason）' })
-    const validRulings = ['refund_buyer', 'release_seller', 'partial_refund', 'liability_split']
+    const validRulings = ['refund_buyer', 'release_seller', 'partial_refund', 'liability_split', 'dismiss_to_negotiation']
     if (!validRulings.includes(ruling)) {
       return void res.json({ error: `ruling 必须是 ${validRulings.join(' / ')} 之一` })
     }
@@ -219,6 +221,22 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
     const claim = claimOrCheckAssignment(req.params.id, user.id as string)
     if (!claim.ok) {
       return void res.status(403).json({ error: '此争议未分配给你 — 仅指派的仲裁员可裁定', error_code: claim.error_code || 'NOT_ASSIGNED_ARBITRATOR' })
+    }
+
+    // 仲裁员【驳回仲裁,退回协商】—— 非胜负裁决:不结算/不退款/不收仲裁费/不扣信誉/不动 escrow。仅 direct_p2p 且由 payment_query 升级来的争议;
+    //   域函数硬校验 rail + payment_query-origin + 未裁定,否则 NOT_PAYMENT_QUERY_DISPUTE / ARBITRATION_DISMISS_NOT_ALLOWED。状态回退 + dispute 关闭同一原子事务。
+    if (ruling === 'dismiss_to_negotiation') {
+      let dm: { success: boolean; error?: string; error_code?: string; order_id?: string }
+      try { dm = db.transaction(() => dismissDisputeToNegotiation(db, req.params.id, reason))() }
+      catch (e) { return void errorRes(res, 500, 'DISMISS_FAILED', (e as Error).message) }
+      if (!dm.success) {
+        const st = dm.error_code === 'DISPUTE_NOT_FOUND' ? 404 : (dm.error_code === 'SYS_MISSING' || dm.error_code === 'TRANSITION_FAILED') ? 500 : 409
+        return void errorRes(res, st, dm.error_code || 'DISMISS_FAILED', dm.error || '驳回仲裁失败')
+      }
+      try { appendOrderEvent(db, { orderId: dm.order_id, eventType: 'transition', fromStatus: 'disputed', toStatus: 'payment_query', actorId: user.id as string, actorRole: 'arbitrator', extra: { action: 'dismiss_to_negotiation', dispute_id: req.params.id, reason, non_custodial: true } }) } catch (e) { console.warn('[order-chain] dismiss event:', (e as Error).message) }
+      try { markEvidenceExpiry(db, req.params.id) } catch (e) { console.warn('[evidence] mark expiry:', (e as Error).message) }
+      try { notifyTransition(db, dm.order_id as string, 'disputed', 'payment_query') } catch (e) { console.warn('[notify] dismiss:', (e as Error).message) }
+      return void res.json({ success: true, status: 'payment_query', dispute_dismissed: true, returned_to_negotiation: true, message: '已驳回仲裁,退回买卖双方协商' })
     }
 
     // 协议层：仲裁员签名的 ruling 入订单链。direct_p2p 非托管=仅信誉裁决,绝不把请求里的退款/赔付金额写进【签名链/timeline】

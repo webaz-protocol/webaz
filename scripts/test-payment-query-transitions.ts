@@ -36,7 +36,7 @@ try {
   ok('1b. payment_query→accepted seller-only (confirm received, resume)', VALID_TRANSITIONS['payment_query→accepted']?.allowedRoles.join() === 'seller')
   ok('1c. payment_query→cancelled buyer/seller/system', VALID_TRANSITIONS['payment_query→cancelled']?.allowedRoles.join() === 'buyer,seller,system')
   ok('1d. payment_query→disputed buyer/seller, REQUIRES evidence', VALID_TRANSITIONS['payment_query→disputed']?.allowedRoles.join() === 'buyer,seller' && VALID_TRANSITIONS['payment_query→disputed']?.requiresEvidence === true)
-  ok('1e. disputed→payment_query (withdraw arbitration) buyer/seller, no evidence', VALID_TRANSITIONS['disputed→payment_query']?.allowedRoles.join() === 'buyer,seller' && !VALID_TRANSITIONS['disputed→payment_query']?.requiresEvidence)
+  ok('1e. disputed→payment_query (party withdraw + arbitrator dismiss via system) buyer/seller/system, no evidence', VALID_TRANSITIONS['disputed→payment_query']?.allowedRoles.join() === 'buyer,seller,system' && !VALID_TRANSITIONS['disputed→payment_query']?.requiresEvidence)
 
   // ── 2. accepted→payment_query: seller yes, buyer no ──
   const o1 = mkAccepted()

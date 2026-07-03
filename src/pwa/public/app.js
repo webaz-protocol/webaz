@@ -14087,7 +14087,7 @@ function buildDisputeHtml(dispute, user) {
       <div class="form-group" style="margin-bottom:10px">
         <label style="font-size:12px;color:#6b7280;display:block;margin-bottom:4px">裁定方式</label>
         <div style="display:flex;flex-direction:column;gap:6px">
-          ${(window.dpArbRulingOptions ? window.dpArbRulingOptions(dispute.payment_rail) : []).map(([val, label]) => `
+          ${(window.dpArbRulingOptions ? window.dpArbRulingOptions(dispute.payment_rail, dispute.can_dismiss_to_negotiation) : []).map(([val, label]) => `
             <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px;background:#f9fafb;border-radius:6px">
               <input type="radio" name="arb-ruling-radio" value="${val}" onclick="onArbRulingChange('${val}')"> ${label}
             </label>`).join('')}
@@ -14370,8 +14370,8 @@ window.handleArbitrate = async (disputeId) => {
     body = { ...body, liability_parties: liabilityParties, refund_amount: totalCalc }
   }
 
-  msgEl.innerHTML = `<div class="alert alert-info"><span class="spinner"></span>${t('裁定中...')}</div>`
-  const res = await POST(`/disputes/${disputeId}/arbitrate`, body)
+  let _arbTk; try { _arbTk = await requestPasskeyGate('arbitrate', { dispute_id: disputeId }) } catch (e) { msgEl.innerHTML = alert$('error', (e && e.message ? e.message + ' — ' : '') + t('仲裁裁定需现场真人 Passkey 验证')); return }; msgEl.innerHTML = `<div class="alert alert-info"><span class="spinner"></span>${t('裁定中...')}</div>`  // 所有 ruling(含驳回)先取 arbitrate gate token
+  const res = await POST(`/disputes/${disputeId}/arbitrate`, { ...body, webauthn_token: _arbTk })
   if (res.error) { msgEl.innerHTML = alert$('error', res.error); return }
 
   // 显示仲裁费明细

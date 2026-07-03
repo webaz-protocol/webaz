@@ -127,10 +127,11 @@ export const VALID_TRANSITIONS: Record<string, Transition> = {
     description: 'Rail1 直付:协商未果(买家主张已付 + 卖家否认)→ 升级举证仲裁(证据制信誉裁决,不涉资金)'
   },
   'disputed→payment_query': {
-    // 仲裁裁定前可【撤回仲裁申请】回到协商(自行解决)。仅裁定前有效(裁定后 disputed 已终结),时序由路由守。
-    allowedRoles: ['buyer', 'seller'],
+    // 裁定前回到协商的两条路径:①买卖任一方【撤回仲裁申请】(pq_withdraw);②仲裁员【驳回仲裁,退回协商】——
+    //   协议(sys_protocol)在仲裁员现场 Passkey 授权后代执行,故加 'system'。均仅裁定前有效(裁定后 disputed 已终结),时序/授权由路由守。
+    allowedRoles: ['buyer', 'seller', 'system'],
     requiresEvidence: false,
-    description: 'Rail1 直付:撤回仲裁申请 → 回到协商(裁定前;双方继续自行解决)'
+    description: 'Rail1 直付:回到协商(裁定前)—— 买卖双方撤回仲裁,或仲裁员驳回仲裁退回协商(system 代执行)'
   },
 
   // ── 卖家接单 ──────────────────────────────────────────────

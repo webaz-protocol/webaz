@@ -124,6 +124,8 @@ const _EN = {
   '链上 tx / 银行回执 / 付款参考号(与下单时附言一致)': 'On-chain tx / bank receipt / payment reference (matching the memo at checkout)',
   '我未付款 · 取消订单': 'I did not pay · cancel order',
   '撤回仲裁 · 回到协商': 'Withdraw arbitration · back to negotiation',
+  '驳回仲裁,退回协商': 'Dismiss arbitration · back to negotiation',
+  '仲裁裁定需现场真人 Passkey 验证': 'Arbitration rulings require live human Passkey verification',
   '协商取消订单(无责)': 'Cancel by mutual agreement (no fault)',
   '不走判罚:双方同意即可取消这笔争议订单,任何一方信誉都不受影响。': 'No ruling needed: if both parties agree, this disputed order is cancelled with neither side\'s reputation affected. ',
   '直付非托管:关闭订单,双方零资金往来': 'Direct pay (non-custodial): the order simply closes, with no funds moving either way',

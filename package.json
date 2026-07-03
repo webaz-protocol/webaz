@@ -142,6 +142,7 @@
     "test:arbitrator-admin-routes": "tsx scripts/test-arbitrator-admin-routes.ts",
     "test:arbitrate-human-presence": "tsx scripts/test-arbitrate-human-presence.ts",
     "test:arbitrate-route-e2e": "tsx scripts/test-arbitrate-route-e2e.ts",
+    "test:dispute-dismiss-negotiation": "tsx scripts/test-dispute-dismiss-negotiation.ts",
     "test:disputes-read-auth": "tsx scripts/test-disputes-read-auth.ts",
     "test:arbitration-entry-frontend": "tsx scripts/test-arbitration-entry-frontend.ts",
     "test:arbitrator-admin-ui": "tsx scripts/test-arbitrator-admin-ui.ts",

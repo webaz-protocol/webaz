@@ -5,7 +5,7 @@
 window.dpTerminalBadge = (status) => ({ refunded_full: ['blue', t('买家胜诉(信誉裁决)')], refunded_partial: ['blue', t('部分责任(信誉裁决)')], resolved_for_seller: ['green', t('卖家胜诉(信誉裁决)')] })[status] || null
 window.dpTerminalLabel = (status) => ({ refunded_full: t('买家胜诉(信誉裁决)'), refunded_partial: t('部分责任(信誉裁决)') })[status] || null
 // 争议裁定(ruling)→ 展示标题的 rail-aware 映射。direct_p2p 用胜负/责任(信誉裁决),不走全局 RULING_LABELS(退款/资金释放)。
-window.dpRulingLabel = (ruling) => ({ refund_buyer: t('买家胜诉(信誉裁决)'), release_seller: t('卖家胜诉(信誉裁决)'), partial_refund: t('部分责任(信誉裁决)'), liability_split: t('责任分配(信誉裁决)') })[ruling] || null
+window.dpRulingLabel = (ruling) => ({ refund_buyer: t('买家胜诉(信誉裁决)'), release_seller: t('卖家胜诉(信誉裁决)'), partial_refund: t('部分责任(信誉裁决)'), liability_split: t('责任分配(信誉裁决)'), dismiss_to_negotiation: t('驳回仲裁,退回协商') })[ruling] || null
 
 // 仲裁面板顶部提示:非托管 → "仅信誉裁决,不涉资金";托管 → 原仲裁费提示。
 window.dpArbFeeNote = (rail) => rail === 'direct_p2p'
@@ -14,6 +14,6 @@ window.dpArbFeeNote = (rail) => rail === 'direct_p2p'
 
 // 仲裁裁定选项:非托管用胜负/责任(信誉裁决)语义;托管保留原退款/释放语义。返回 [value,label][]。
 // direct_p2p 无金额/无赔付,故【不含】liability_split(多方赔付分配是托管/物流概念);只保留胜负/部分责任的信誉裁决。
-window.dpArbRulingOptions = (rail) => rail === 'direct_p2p'
+window.dpArbRulingOptions = (rail, canDismiss) => (rail === 'direct_p2p'   /* canDismiss=direct_p2p+pq-origin → 追加"驳回仲裁,退回协商"非胜负裁决 */
   ? [['refund_buyer', '🔵 ' + t('判买家胜诉(信誉裁决)')], ['release_seller', '🟢 ' + t('判卖家胜诉(信誉裁决)')], ['partial_refund', '🟡 ' + t('判部分责任(信誉裁决)')]]
-  : [['refund_buyer', '🔵 全额退款买家（买家胜诉，卖家承担）'], ['release_seller', '🟢 资金释放给卖家（卖家胜诉）'], ['partial_refund', '🟡 部分退款（折中，需填金额）'], ['liability_split', '⚖️ 责任分配（指定各方赔付额）']]
+  : [['refund_buyer', '🔵 全额退款买家（买家胜诉，卖家承担）'], ['release_seller', '🟢 资金释放给卖家（卖家胜诉）'], ['partial_refund', '🟡 部分退款（折中，需填金额）'], ['liability_split', '⚖️ 责任分配（指定各方赔付额）']]).concat(canDismiss ? [['dismiss_to_negotiation', '↩️ ' + t('驳回仲裁,退回协商')]] : [])

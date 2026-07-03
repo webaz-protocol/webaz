@@ -364,6 +364,36 @@ export function arbitrateDispute(
 }
 
 /**
+ * 仲裁员【驳回仲裁,退回协商】—— 非胜负裁决:不设 refund/liability、不动 escrow/settlement、不收仲裁费、不扣信誉。
+ *   仅对【direct_p2p 且由 payment_query 升级来】的争议有效(履约类争议须裁定,不可退回)。收口与 pq_withdraw 一致:
+ *   order disputed→payment_query(sys_protocol 代执行,授权由路由的 active-arbitrator + 现场 Passkey + COI/指派门守)、
+ *   active dispute→dismissed、重建 payment_query_deadline、清 payment_query_cancel_deadline。
+ *   【必须由路由用 db.transaction 包裹】(状态回退 + dispute 关闭同一原子边界;否则订单回协商但仲裁视图仍见活跃争议)。
+ */
+export function dismissDisputeToNegotiation(
+  db: Database.Database, disputeId: string, reason?: string
+): { success: boolean; error?: string; error_code?: string; order_id?: string } {
+  const dispute = db.prepare('SELECT id, order_id, status FROM disputes WHERE id = ?').get(disputeId) as { id: string; order_id: string; status: string } | undefined
+  if (!dispute) return { success: false, error: '争议不存在', error_code: 'DISPUTE_NOT_FOUND' }
+  if (dispute.status === 'resolved' || dispute.status === 'dismissed') return { success: false, error: '该争议已处理完毕', error_code: 'DISPUTE_ALREADY_RULED' }
+  const order = db.prepare('SELECT payment_rail FROM orders WHERE id = ?').get(dispute.order_id) as { payment_rail: string | null } | undefined
+  if (!order || order.payment_rail !== 'direct_p2p') return { success: false, error: '仅直付(direct_p2p)货款协商争议可驳回退回协商', error_code: 'ARBITRATION_DISMISS_NOT_ALLOWED' }
+  // ★ 仅可退回【由货款协商升级】的仲裁:最近一次进入 disputed 必须 from payment_query。履约类(delivered→disputed 货损/货不对版)须裁定。fail-closed。
+  const lastDisputed = db.prepare("SELECT from_status FROM order_state_history WHERE order_id = ? AND to_status = 'disputed' ORDER BY created_at DESC LIMIT 1").get(dispute.order_id) as { from_status: string } | undefined
+  if (!lastDisputed || lastDisputed.from_status !== 'payment_query') return { success: false, error: '仅可退回由货款协商升级的仲裁;履约类争议(货损/货不对版)须经仲裁裁定', error_code: 'NOT_PAYMENT_QUERY_DISPUTE' }
+  const sys = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string } | undefined
+  if (!sys) return { success: false, error: 'sys_protocol 不存在', error_code: 'SYS_MISSING' }
+  const tr = transition(db, dispute.order_id, 'payment_query', sys.id, [], '仲裁员驳回仲裁,退回买卖双方协商')
+  if (!tr.success) return { success: false, error: tr.error, error_code: 'TRANSITION_FAILED' }
+  db.prepare("UPDATE disputes SET status='dismissed', verdict_reason=?, ruling_type='dismiss_to_negotiation', resolved_at=datetime('now') WHERE id=?")
+    .run(reason ? ('仲裁员驳回仲裁,退回买卖双方协商:' + String(reason).slice(0, 500)) : '仲裁员驳回仲裁,退回买卖双方协商', disputeId)
+  // 重建买家响应宽限 + 清卖家取消申诉窗(与 pq_withdraw 收口一致,让 PR-B2 宽限/超时 cron 有截止可依赖)
+  let gh = 72; try { const p = db.prepare("SELECT value FROM protocol_params WHERE key = 'direct_pay.payment_query_grace_hours'").get() as { value: string } | undefined; if (p) gh = Math.max(1, Number(p.value) || 72) } catch { /* 用默认 72h */ }
+  db.prepare("UPDATE orders SET payment_query_deadline = datetime('now', ?), payment_query_cancel_deadline = NULL WHERE id = ?").run(`+${gh} hours`, dispute.order_id)
+  return { success: true, order_id: dispute.order_id }
+}
+
+/**
  * 执行多方责任分配结算
  *
  * 资金流模型：
