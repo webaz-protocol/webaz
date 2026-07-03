@@ -23,7 +23,9 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 // proposal inbox/draft flow (now app-contribution.js) are both in scope.
 // app-contribution.js is concatenated LAST so the PR9I BLOCK slices off the tail.
 const P = (f: string): string => readFileSync(join(HERE, '..', 'src', 'pwa', 'public', f), 'utf8')
-const app = P('app.js') + '\n' + P('app-admin.js') + '\n' + P('app-contribution.js')
+// app-contribution-hub.js hosts the 共建运营 admin hub (task-proposals card moved there from the main panel);
+// include it BEFORE app-contribution.js so the PR9I BLOCK still slices off the app-contribution.js tail.
+const app = P('app.js') + '\n' + P('app-admin.js') + '\n' + P('app-contribution-hub.js') + '\n' + P('app-contribution.js')
 
 const startIdx = app.indexOf('PR9I — Task Proposal Inbox admin review')
 // The proposal workflow now lives in app-contribution.js; BLOCK runs from the
@@ -37,7 +39,7 @@ function main(): void {
 
   // wiring
   ok('route() dispatches #admin/task-proposals → renderAdminTaskProposals', /params\[0\] === 'task-proposals'\)\s*return renderAdminTaskProposals\(app\)/.test(app))
-  ok('admin hub links to #admin/task-proposals', /adminLinkCard\([^\n]*'#admin\/task-proposals'\)/.test(app))
+  ok('共建运营 hub links to #admin/task-proposals (moved from main panel) + panel routes to hub', /adminLinkCard\([^\n]*'#admin\/task-proposals'\)/.test(app) && /'#admin\/contribution-ops'/.test(app))
   ok('renderAdminTaskProposals defined', /async function renderAdminTaskProposals\(app\)/.test(app))
 
   // maintainer-only gate
