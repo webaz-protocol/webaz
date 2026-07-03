@@ -239,7 +239,10 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       const extra = notes.replace(/付款参考[::]?\s*[^\s·;,。]*/g, '').replace(/WAZ-[A-Z0-9]{8}/g, '').trim().slice(0, 120)
       // 防作弊 D2:同买家·同卖家·同金额的其它在途直付单 → 时间线预警(一笔真实转账冒充两单的重复确认,卖家第一道防线)
       const dup = await dbOne<{ n: number }>(`SELECT COUNT(*) n FROM orders WHERE buyer_id = ? AND seller_id = ? AND payment_rail = 'direct_p2p' AND total_amount = ? AND id != ? AND status IN ('accepted','shipped','picked_up','in_transit','delivered')`, [buyerId, sellerId, order.total_amount, req.params.id])
-      notes = `付款参考: ${canonicalRef}${extra ? ' · ' + extra : ''}${(dup?.n || 0) > 0 ? ` ⚠️ 同买家另有 ${dup!.n} 笔同金额直付订单在途,请逐单核对付款参考再发货` : ''}`
+      // 审计项 E:时间线带上应付金额(下单冻结的参考换算)—— 卖家对账三要素:参考号 + 金额 + 币种,与买家所见同一数字
+      let payable = `应付 ${order.total_amount} USDC`
+      try { const ps = JSON.parse((order.direct_pay_account_snapshot as string) || '{}'); if (Number.isFinite(Number(ps?.payable_approx)) && ps?.payable_currency) payable += `（≈${ps.payable_currency} ${Number(ps.payable_approx).toFixed(2)},下单时参考价）` } catch { /* 快照缺失/坏 → 仅 USDC */ }
+      notes = `付款参考: ${canonicalRef} · ${payable}${extra ? ' · ' + extra : ''}${(dup?.n || 0) > 0 ? ` ⚠️ 同买家另有 ${dup!.n} 笔同金额直付订单在途,请逐单核对付款参考再发货` : ''}`
     }
     // Rail1:平台费链下应收,accrue 在完成结算时(settleOrder direct_p2p 分支)与 completed 同一原子边界、fail-closed
     //   (accrueFeeReceivable 缺费即抛 → 回滚 completed)。故【不再】前置要求 locked fee-stake。

@@ -1,15 +1,15 @@
-// Direct Pay (Rail 1) — 付款时刻 UI 辅助。UI ONLY;不碰 wallet/escrow/settlement/refund/订单钱路。
-//   dpPayAmountText(order):直付订单【应付金额】纯文本,用于两次披露弹窗(D2)/ 风险确认完成弹窗 / 订单收款说明框。
-//   买家只能按【下单时所选卖家收款账户的币种】付款,故金额换算走该账户币种(dpFxInCurrency,取自 direct_pay_account_snapshot),
-//   fiat 账户:绑定币种是卖家账户币种(dpFxInCurrency),无该币种汇率 → 回落币种码,绝不臆造。USDC 账户:结算 USDC,
-//   另附【买家本地法币】参考(_fxLocal),避免只看 USDC 误解实付。金额本身非敏感,始终可展示。中文 t(),英文 i18n.js _EN。
+// Direct Pay (Rail 1) — 付款时刻 UI 辅助。UI ONLY;不碰钱路。dpPayAmountText(order):应付金额纯文本,
+//   用于 D2 弹窗/风险确认弹窗/订单收款说明框。审计项 E:优先【下单时冻结的应付参考换算】(snapshot payable_* —
+//   买家/卖家/时间线同一稳定数字,不随实时汇率漂移;标注"下单时参考,以卖家收款说明为准");旧单无快照 → 回落
+//   实时换算(dpFxInCurrency);再无 → 仅 USDC。USDC/USD 账户:另附买家本地法币参考(_fxLocal)。中英 i18n parity。
 window.dpPayAmountText = (order) => {
   if (!order) return ''
   const usdc = Number(order.total_amount)
   const s = Number.isFinite(usdc) ? (Number.isInteger(usdc) ? String(usdc) : usdc.toFixed(2)) : '—'
-  let cur = ''
-  try { cur = String(JSON.parse(order.direct_pay_account_snapshot || '{}').currency || '').toUpperCase() } catch {}
+  let snap = {}; try { snap = JSON.parse(order.direct_pay_account_snapshot || '{}') || {} } catch {}
+  const cur = String(snap.currency || '').toUpperCase()
   if (!cur || cur === 'USDC' || cur === 'USD') { const loc = window._fxLocal ? window._fxLocal(usdc) : ''; return `${t('应付')} ${s} USDC${loc ? ' ≈ ' + loc : ''}` }
+  if (Number.isFinite(Number(snap.payable_approx))) return `${t('应付')} ≈ ${cur} ${Number(snap.payable_approx).toFixed(2)}（${s} USDC · ${t('下单时参考价,以卖家收款说明为准')}）`
   const fx = window.dpFxInCurrency ? window.dpFxInCurrency(usdc, cur) : ''
   return (fx && fx !== cur) ? `${t('应付')} ≈ ${fx}（${s} USDC）` : `${t('应付')} ${s} USDC · ${cur}`
 }

@@ -138,6 +138,7 @@ const _EN = {
   '确认已收到卖家退款?确认后订单将无责取消,不可撤销。若尚未到账请勿确认。': 'Confirm the seller\'s refund has arrived? The order will then be cancelled (no fault) — irreversible. Do NOT confirm if it has not arrived.',
   '已收到,取消订单': 'Received — cancel order',
   '订单已无责取消': 'Order cancelled, no fault to either party',
+  '下单时参考价,以卖家收款说明为准': 'reference rate at order time; the seller\'s payment instruction is authoritative',
   '直付订单:发货前请核实货款已到账 —— 银行流水附言应为': 'Direct-pay order: verify the payment has ARRIVED before shipping — the bank transfer memo should read',
   '(同买家同金额多单务必逐单核对参考号)。发货即视为你确认已收到货款;发货后不可再报告未收款,只能走争议。': ' (multiple in-flight orders of the same amount from the same buyer: check the reference PER ORDER). Shipping counts as your confirmation that the payment arrived; after shipping you can no longer report non-payment — only a dispute.',
   '未收到货款': 'Payment not received',
