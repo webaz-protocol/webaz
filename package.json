@@ -137,6 +137,7 @@
     "test:direct-pay-ui": "tsx scripts/test-direct-pay-ui.ts",
     "test:order-errors": "tsx scripts/test-order-errors.ts",
     "test:fee-request-history": "tsx scripts/test-fee-request-history.ts",
+    "test:i18n-parity": "tsx scripts/test-i18n-parity.ts",
     "test:i18n-labels": "tsx scripts/test-i18n-discover-dispute-labels.ts",
     "test:listing-product-type": "tsx scripts/test-listing-product-type.ts",
     "test:external-links": "tsx scripts/test-product-external-links.ts",
