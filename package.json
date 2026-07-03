@@ -141,6 +141,7 @@
     "test:arbitrator-lifecycle": "tsx scripts/test-arbitrator-lifecycle.ts",
     "test:arbitrator-admin-routes": "tsx scripts/test-arbitrator-admin-routes.ts",
     "test:arbitrate-human-presence": "tsx scripts/test-arbitrate-human-presence.ts",
+    "test:arbitrate-route-e2e": "tsx scripts/test-arbitrate-route-e2e.ts",
     "test:i18n-labels": "tsx scripts/test-i18n-discover-dispute-labels.ts",
     "test:listing-product-type": "tsx scripts/test-listing-product-type.ts",
     "test:external-links": "tsx scripts/test-product-external-links.ts",
