@@ -100,6 +100,20 @@ const rid = (() => { let n = 0; return () => `dpcr_${++n}` })()
     && (db.prepare('SELECT status FROM orders WHERE id=?').get(o) as { status: string }).status === 'accepted')
 }
 
+// ── 库存回补守卫(电商裁定:已出库绝不直接回补,走退货验收上架)──
+{
+  const { restorePreShipDirectPayStock, PRE_SHIP_RESTOCK_STATUSES } = await import('../src/direct-pay-stock.js')
+  const stockOf = () => (db.prepare("SELECT stock FROM products WHERE id='p'").get() as { stock: number }).stock
+  const s0 = stockOf()
+  for (const bad of ['shipped', 'picked_up', 'in_transit', 'delivered', 'disputed', 'confirmed', 'completed']) {
+    restorePreShipDirectPayStock(db, { fromStatus: bad, productId: 'p', quantity: 1 })
+  }
+  ok('33. restock guard: ALL post-outbound/disputed origins refused (stock unchanged)', stockOf() === s0)
+  ok('34. restock guard: pre-ship whitelist is exactly the never-outbound set', ['direct_pay_window', 'direct_expired_unconfirmed', 'payment_query', 'accepted'].every(st => PRE_SHIP_RESTOCK_STATUSES.has(st)) && PRE_SHIP_RESTOCK_STATUSES.size === 4)
+  ok('35. restock guard: pre-ship origin restores and reports true', restorePreShipDirectPayStock(db, { fromStatus: 'direct_pay_window', productId: 'p', quantity: 2 }) === true && stockOf() === s0 + 2)
+  db.prepare("UPDATE products SET stock = ? WHERE id='p'").run(s0)   // 复原,不影响后续用例
+}
+
 // ── HTTP e2e:路由 + Passkey 门 + 通知 ──
 const app = express(); app.use(express.json())
 let gateOk = true

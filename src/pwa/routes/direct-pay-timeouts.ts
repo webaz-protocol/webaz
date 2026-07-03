@@ -16,6 +16,7 @@
 import type Database from 'better-sqlite3'
 import { transition } from '../../layer0-foundation/L0-2-state-machine/engine.js'
 import { releaseFeeStake } from '../../direct-pay-ledger.js'
+import { restorePreShipDirectPayStock } from '../../direct-pay-stock.js'   // D3 库存回补唯一入口(pre-ship 放行;已出库拒绝)
 import { notifyTransition, createNotification } from '../../layer2-business/L2-6-notifications/notification-engine.js'
 
 const SYS = 'sys_protocol'
@@ -75,17 +76,19 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
 
   // B. 宽限期满 → 系统关单(★ WHERE 保证仅 now>grace 命中;宽限期内绝不关,买家 →disputed 全程可用)
   const graceRows = db.prepare(`
-    SELECT id FROM orders
+    SELECT id, product_id, quantity FROM orders
     WHERE status = 'direct_expired_unconfirmed'
       AND payment_rail = 'direct_p2p'
       AND direct_grace_deadline IS NOT NULL
       AND datetime(direct_grace_deadline) < datetime('now')
     LIMIT 1000
-  `).all() as Array<{ id: string }>
-  for (const { id } of graceRows) {
+  `).all() as Array<{ id: string; product_id: string; quantity: number }>
+  for (const { id, product_id, quantity } of graceRows) {
     db.transaction(() => {
       const r = transition(db, id, 'cancelled', SYS, [], 'Rail1 直付:宽限期满,买家未付款/未升级争议,系统关单')
-      if (r.success) graceCancelled.push(id)
+      if (!r.success) return
+      restorePreShipDirectPayStock(db, { fromStatus: 'direct_expired_unconfirmed', productId: product_id, quantity })   // D3 回补(pre-ship 唯一入口)
+      graceCancelled.push(id)
     })()
   }
 
@@ -117,19 +120,20 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
   // C. 货款协商:卖家已请求取消(payment_query_cancel_deadline 已设)+ 买家申诉窗满 → 系统关单 + 退费用质押。
   //    ★ 窗内(now < deadline)绝不关:买家全程可主张已付/升级举证(pq_escalate 回 disputed)。
   const pqCancelRows = db.prepare(`
-    SELECT id FROM orders
+    SELECT id, product_id, quantity FROM orders
     WHERE status = 'payment_query'
       AND payment_rail = 'direct_p2p'
       AND payment_query_cancel_deadline IS NOT NULL
       AND datetime(payment_query_cancel_deadline) < datetime('now')
     LIMIT 1000
-  `).all() as Array<{ id: string }>
-  for (const { id } of pqCancelRows) {
+  `).all() as Array<{ id: string; product_id: string; quantity: number }>
+  for (const { id, product_id, quantity } of pqCancelRows) {
     let done = false
     db.transaction(() => {
       const r = transition(db, id, 'cancelled', SYS, [], 'Rail1 直付:货款协商申诉窗满,买家未回应/未升级,系统关单')
       if (!r.success) return
       releaseFeeStake(db, { orderId: id })   // 无完成不收费:退卖家费用质押
+      restorePreShipDirectPayStock(db, { fromStatus: 'payment_query', productId: product_id, quantity })   // D3 回补(pre-ship 唯一入口)
       done = true
     })()
     if (done) { pqCancelled.push(id); try { notifyTransition(db, id, 'payment_query', 'cancelled') } catch (e) { console.warn('[direct-pay-timeouts] notify pq-cancel:', (e as Error).message) } }  // 通知买卖双方(cron 系统关单也要发,route 之外)

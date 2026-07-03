@@ -13493,7 +13493,7 @@ window.handleAction = async (orderId, action, idx, needsEvidence, hasLogisticsSe
   }
   if (action === 'noop_in_person') return
   const confirmText = {
-    ship: t('确认已经发货？发货后买家将看到物流信息，超时/虚假发货可能进入争议或判责。'),
+    ship: (window._dpOrderRail === 'direct_p2p' && window.dpPayRef) ? `${t('直付订单:发货前请核实货款已到账 —— 银行流水附言应为')} ${window.dpPayRef(orderId)}${t('(同买家同金额多单务必逐单核对参考号)。发货即视为你确认已收到货款;发货后不可再报告未收款,只能走争议。')}` : t('确认已经发货？发货后买家将看到物流信息，超时/虚假发货可能进入争议或判责。'),
     pickup: t('确认已揽收并回传凭证？请确保单号或揽收说明真实可追踪。'),
     deliver: t('确认已投递？请确保投递凭证真实，买家仍需确认收货后才结算。'),
     confirm: t('确认收货？escrow 将进入结算流程，无法撤销。'),
