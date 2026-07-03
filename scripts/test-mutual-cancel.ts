@@ -141,5 +141,25 @@ const nid = () => `mcp_${++pc}`
   ok('7e. counterparty declines', MC.declineMutualCancel(db, orderId, 'buyer').ok === true)
   ok('7f. after decline no pending → buyer can propose again', MC.getMutualCancelState(db, orderId, 'buyer').can_propose === true) }
 
+// ⑧ 读也 party-gated:非当事人 getMutualCancelState → NOT_A_PARTY,绝不泄露提议/理由/发起方
+{ const { orderId } = mkOrder('direct_p2p')
+  MC.proposeMutualCancel(db, orderId, 'buyer', '敏感理由', nid())
+  const outs = MC.getMutualCancelState(db, orderId, 'outsider')
+  ok('8a. outsider read → NOT_A_PARTY, no proposal leaked', outs.ok === false && outs.error_code === 'NOT_A_PARTY' && outs.proposal === undefined)
+  ok('8b. party read still works (sees proposal)', (MC.getMutualCancelState(db, orderId, 'seller').proposal as any)?.reason === '敏感理由') }
+
+// ⑨ 托管买家 escrowed 不足全额 → FAIL-CLOSED:ESCROW_INSUFFICIENT,不退/不关单/不结案,钱包不动
+{ db.prepare("UPDATE wallets SET balance=0,staked=0,escrowed=0,earned=0 WHERE user_id IN ('buyer','seller')").run()
+  const orderId = `o_${++oc}`
+  db.prepare("INSERT INTO orders (id,product_id,buyer_id,seller_id,quantity,unit_price,total_amount,escrow_amount,status,payment_rail) VALUES (?,?,'buyer','seller',1,50,50,50,'disputed','escrow')").run(orderId, 'p1')
+  db.prepare("UPDATE wallets SET escrowed=30 WHERE user_id='buyer'").run()   // 只有 30,少于订单 50(账目不一致)
+  const r = D.createDispute(db, orderId, 'buyer', 'x', []); if (!r.success) throw new Error(r.error)
+  const before = totalMoney()
+  MC.proposeMutualCancel(db, orderId, 'seller', null, nid())
+  const a = MC.acceptMutualCancel(db, orderId, 'buyer')
+  ok('9a. accept → ESCROW_INSUFFICIENT (fail-closed)', a.ok === false && a.error_code === 'ESCROW_INSUFFICIENT')
+  ok('9b. order NOT closed (still disputed), dispute still active', oStatus(orderId) === 'disputed' && dStatus((db.prepare("SELECT id FROM disputes WHERE order_id=?").get(orderId) as any).id) !== 'resolved')
+  ok('9c. no wallet moved (buyer escrowed 仍 30, no partial refund)', wallet('buyer').escrowed === 30 && wallet('buyer').balance === 0 && totalMoney() === before) }
+
 if (fail > 0) { console.error(`\n❌ mutual-cancel FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ mutual-cancel: handshake + party-boundary + race-safe + escrow-refund conservation + direct_p2p zero-funds + dispute resolved + zero reputation\n  ✅ pass ${pass}`)

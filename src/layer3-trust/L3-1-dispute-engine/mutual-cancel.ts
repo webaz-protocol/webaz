@@ -111,9 +111,10 @@ export function declineMutualCancel(db: Database.Database, orderId: string, user
  * 资金+状态结算(tx-free core)——【必须由路由用 db.transaction 包裹】。
  *  · 直付(非托管):零资金,仅 transition→cancelled。
  *  · 托管:买家托管货款退回(escrowed→balance);卖家【本订单实际锁定】的质押返还(staked→balance)。无罚没/手续费/信誉。
- *  · 【money-path 铁律】只动【真实锁定】的额度:买家退款 cap 到其实际 escrowed;卖家质押取订单快照
- *    stake_backing + bid_stake_held(不是商品名义 stake_amount —— 当前 escrow 模型 stake_backing 恒 0、
- *    不锁卖家 stake,bid_stake_held 仅中标单有),再 cap 到卖家真实 staked。绝不打负 / 凭空印钱。
+ *  · 【money-path 铁律】买家退款 FAIL-CLOSED:实际 escrowed 必须 ≥ 本单全额,否则中止(不退/不关单/不结案),
+ *    绝不部分退款还静默收口。卖家质押返还取订单快照 stake_backing + bid_stake_held(不是商品名义 stake_amount ——
+ *    当前 escrow 模型 stake_backing 恒 0、不锁卖家 stake,bid_stake_held 仅中标单有),cap 到卖家真实 staked
+ *    (best-effort,不 fail-closed,以免卖家侧账目瑕疵卡死买家退款)。两侧都绝不打负 / 凭空印钱。
  *  · 争议行同事务置 resolved(verdict='mutual_cancel'),防自动裁决二次结算。
  */
 function settleMutualCancel(db: Database.Database, order: OrderRow, disputeId: string): MutualCancelResult {
@@ -124,14 +125,17 @@ function settleMutualCancel(db: Database.Database, order: OrderRow, disputeId: s
   if (nonCustodial) {
     detail = { non_custodial: true, buyer_refund: 0, seller_stake_returned: 0, note: '非托管(直付)单:协议不持货款 → 零资金,仅关单' }
   } else {
-    // 买家托管货款原路退回 —— cap 到买家【实际】escrowed(守恒;绝不退超过锁定额 / 防重复退)。
-    const refundU = Math.max(0, Math.min(toUnits(order.total_amount), walletUnits(db, order.buyer_id).escrowed))
-    if (refundU > 0) applyWalletDelta(db, order.buyer_id, { escrowed: -refundU, balance: refundU })
-    // 卖家质押无责返还 —— 只退【本订单实际锁定】的质押(订单快照,非商品名义值),再 cap 到卖家真实 staked → 绝不打负/印钱。
+    // 买家 made-whole 不可妥协 —— FAIL-CLOSED:买家实际 escrowed 必须 ≥ 本单全额,否则【中止】(不退、不关单、
+    //   不结案,留人工核对账目),绝不"部分退款还静默收口"。足额时退【本单全额】(escrowed≥total 保证退后 escrowed≥0,不超退)。
+    const totalU = toUnits(order.total_amount)
+    if (walletUnits(db, order.buyer_id).escrowed < totalU) return { ok: false, error: '买家托管余额不足以全额退款,协商取消已中止(账目待人工核对)', error_code: 'ESCROW_INSUFFICIENT' }
+    applyWalletDelta(db, order.buyer_id, { escrowed: -totalU, balance: totalU })
+    // 卖家质押返还 = 尽力而为的抵押物返还(与买家退款不同、【不】fail-closed,以免卖家侧账目瑕疵卡死买家的无责退款):
+    //   只退【本订单快照锁定】的质押(stake_backing+bid_stake_held,非商品名义值),再 cap 到卖家真实 staked → 绝不打负/印钱。
     const lockedU = toUnits(Number(order.stake_backing || 0)) + toUnits(Number(order.bid_stake_held || 0))
     const stakeReturnU = Math.max(0, Math.min(lockedU, walletUnits(db, order.seller_id).staked))
     if (stakeReturnU > 0) applyWalletDelta(db, order.seller_id, { staked: -stakeReturnU, balance: stakeReturnU })
-    detail = { non_custodial: false, buyer_refund: toDecimal(refundU), seller_stake_returned: toDecimal(stakeReturnU), note: '托管单:买家托管退回(cap 实际 escrowed)+ 卖家本单锁定质押返还(stake_backing+bid_stake_held,cap 实际 staked);无罚没/手续费/信誉' }
+    detail = { non_custodial: false, buyer_refund: toDecimal(totalU), seller_stake_returned: toDecimal(stakeReturnU), note: '托管单:买家全额退款(fail-closed 已验足额)+ 卖家本单锁定质押返还(cap 实际 staked);无罚没/手续费/信誉' }
   }
   const tr = transition(db, order.id, 'cancelled', sys.id, [], '双方协商取消(无责裁定:买家退款,双方信誉不受影响)')
   if (!tr.success) return { ok: false, error: tr.error, error_code: 'TRANSITION_FAILED' }
@@ -156,13 +160,13 @@ export function acceptMutualCancel(db: Database.Database, orderId: string, userI
   return { ok: true, status: 'accepted', settlement: settle.settlement }
 }
 
-/** UI 状态:当前提议 + 该 caller 可执行的动作(纯展示;真正的边界在各写函数)。 */
+/** UI 状态:当前提议 + 该 caller 可执行的动作。【party-gated】:非当事人一律 NOT_A_PARTY,绝不泄露提议/理由/发起方/存在性。 */
 export function getMutualCancelState(db: Database.Database, orderId: string, userId: string): MutualCancelResult {
   const order = db.prepare('SELECT buyer_id, seller_id, status FROM orders WHERE id = ?').get(orderId) as { buyer_id: string; seller_id: string; status: string } | undefined
   if (!order) return { ok: false, error: '订单不存在', error_code: 'ORDER_NOT_FOUND' }
-  const isParty = userId === order.buyer_id || userId === order.seller_id
+  if (userId !== order.buyer_id && userId !== order.seller_id) return { ok: false, error: '仅买卖双方可查看协商取消状态', error_code: 'NOT_A_PARTY' }  // 读也 party-gate:不向非当事人泄露提议/理由/发起方
   const hasActiveDispute = !!db.prepare("SELECT 1 FROM disputes WHERE order_id = ? AND status IN ('open','in_review') LIMIT 1").get(orderId)
-  const eligible = isParty && order.status === 'disputed' && hasActiveDispute
+  const eligible = order.status === 'disputed' && hasActiveDispute
   const prop = pendingProposal(db, orderId)
   const proposal = prop ? { id: prop.id, proposed_by: prop.proposed_by, reason: prop.reason, created_at: prop.created_at, mine: prop.proposed_by === userId } : null
   return {

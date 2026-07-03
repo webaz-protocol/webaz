@@ -65,6 +65,8 @@ try {
   ok('2b. propose 200 + pending', p.status === 200 && p.json?.status === 'pending')
   const st = await call('GET', base, 'seller')
   ok('3. seller GET state → can_accept', st.status === 200 && st.json?.can_accept === true && st.json?.proposal?.mine === false)
+  const outGet = await call('GET', base, 'outsider')
+  ok('3b. outsider GET state → 403 NOT_A_PARTY (no proposal/reason leaked)', outGet.status === 403 && outGet.json?.proposal === undefined)
   ok('4. proposer accept own → 409 CANNOT_ACCEPT_OWN', (await call('POST', base + '/accept', 'buyer')).json?.error_code === 'CANNOT_ACCEPT_OWN')
   ok('5. outsider accept → 403 NOT_A_PARTY', (await call('POST', base + '/accept', 'outsider')).status === 403)
   const a = await call('POST', base + '/accept', 'seller')
