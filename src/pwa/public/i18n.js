@@ -17,6 +17,13 @@ window.resolveInitialLang = (savedLang, navigatorLike) => {
 window._lang = window.resolveInitialLang(localStorage.getItem('webaz_lang'), typeof navigator !== 'undefined' ? navigator : null)
 
 const _EN = {
+  // ── 补齐缺失的 _EN parity(test-i18n-parity.ts 守;含 admin/PV 标签)──
+  '协议运营': 'Protocol operations',
+  '参与记录(PV)流水': 'Participation ledger (PV)',
+  '系统将自动安排积分树位置。一旦加入永久不变。': 'The system assigns your points-tree position automatically; once joined, it is permanent.',
+  '参与记录用户': 'Participation-ledger users',
+  '协议运营 / 注册门控 / 佣金榜': 'Protocol ops / Registration gating / Commission board',
+  'GitHub 关联': 'GitHub link',
   // ── 平台服务费预充值申请历史(app-direct-pay-fee-history.js)──
   '申请时间': 'Requested at',
   '审核人': 'Reviewed by',
