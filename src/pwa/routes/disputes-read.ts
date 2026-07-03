@@ -114,12 +114,12 @@ export function registerDisputesReadRoutes(app: Application, deps: DisputesReadD
     const dispute = await getDisputeDetails(db, req.params.id)
     if (!dispute) return void res.status(404).json({ error: '争议不存在' })
 
-    const role = (user as Record<string, unknown>).role as string
-    // 允许：发起方、被告方、物流方、仲裁员
+    // PR-E:允许 发起方 / 被告方 / 物流方 / active whitelist 仲裁员。不再用 role === 'arbitrator'(旧旁路 →
+    //   suspended/revoked/role-only 可越权读、whitelist-only 买家被错误挡)。授权源统一为 isEligibleArbitrator。
     const orderForAuth = await dbOne<{ logistics_id: string | null }>('SELECT logistics_id FROM orders WHERE id = ?', [dispute.order_id])
     const isLogisticsParty = orderForAuth?.logistics_id === user.id
     if (dispute.initiator_id !== user.id && dispute.defendant_id !== user.id
-        && !isLogisticsParty && role !== 'arbitrator') {
+        && !isLogisticsParty && !isEligibleArbitrator(user.id as string).ok) {
       return void res.status(403).json({ error: '无权查看此争议' })
     }
 
@@ -377,6 +377,12 @@ export function registerDisputesReadRoutes(app: Application, deps: DisputesReadD
     if (!dispute) return void res.status(404).json({ error: '争议不存在' })
 
     const order = await dbOne<Record<string, string | null>>('SELECT buyer_id, seller_id, logistics_id FROM orders WHERE id = ?', [dispute.order_id])
+
+    // PR-E:同详情权限门 —— 仅 涉案方 或 active whitelist 仲裁员可读涉案方名单(此前任意登录用户可读=泄露)。
+    const isParty = [order?.buyer_id, order?.seller_id, order?.logistics_id, dispute.initiator_id, dispute.defendant_id].filter(Boolean).includes(user.id as string)
+    if (!isParty && !isEligibleArbitrator(user.id as string).ok) {
+      return void res.status(403).json({ error: '无权查看涉案方' })
+    }
 
     const partyIds = [dispute.initiator_id, dispute.defendant_id, order?.logistics_id].filter(Boolean) as string[]
     const uniqueIds = [...new Set(partyIds)]

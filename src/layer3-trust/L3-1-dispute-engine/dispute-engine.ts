@@ -784,18 +784,20 @@ export function requestEvidence(
   evidenceTypes: EvidenceType[],
   description: string,
   deadlineHours = 48
-): { success: boolean; requestId?: string; error?: string } {
+): { success: boolean; requestId?: string; error?: string; error_code?: string } {
   // PR-C:授权源同 arbitrateDispute —— system 或 active arbitrator_whitelist(role 旁路已移除)。
   if (!isAuthorizedArbitrator(db, arbitratorId)) {
-    return { success: false, error: '仅 active 仲裁员可发出证据请求' }
+    return { success: false, error: '仅 active 仲裁员可发出证据请求', error_code: 'NOT_ARBITRATOR' }
   }
-  const dispute = db.prepare('SELECT status FROM disputes WHERE id = ?').get(disputeId) as { status: string } | undefined
+  const dispute = db.prepare('SELECT status, order_id, initiator_id, defendant_id FROM disputes WHERE id = ?').get(disputeId) as { status: string; order_id: string; initiator_id: string | null; defendant_id: string | null } | undefined
   if (!dispute) return { success: false, error: '争议不存在' }
   if (dispute.status === 'resolved' || dispute.status === 'dismissed') {
     return { success: false, error: '该争议已结案' }
   }
-  const target = db.prepare('SELECT id FROM users WHERE id = ?').get(requestedFromId)
-  if (!target) return { success: false, error: '指定用户不存在' }
+  // PR-E:补证对象必须是本案涉案方(buyer/seller/logistics/initiator/defendant),不得向无关用户要证据。
+  const order = db.prepare('SELECT buyer_id, seller_id, logistics_id FROM orders WHERE id = ?').get(dispute.order_id) as { buyer_id: string | null; seller_id: string | null; logistics_id: string | null } | undefined
+  const parties = new Set([order?.buyer_id, order?.seller_id, order?.logistics_id, dispute.initiator_id, dispute.defendant_id].filter(Boolean) as string[])
+  if (!parties.has(requestedFromId)) return { success: false, error: '补证对象必须是本案涉案方', error_code: 'INVALID_EVIDENCE_TARGET' }
 
   const requestId = generateId('evr')
   db.prepare(`

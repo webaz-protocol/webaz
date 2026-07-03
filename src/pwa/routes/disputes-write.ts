@@ -80,6 +80,20 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
           recordDisputeReputation, issueAgentStrike, publishDisputeCase, logAdminAction, snfSend,
           getProtocolParam } = deps
 
+  // PR-E:案件级仲裁操作(裁定 / 补证)统一的【原子领取或校验指派】。assigned 为空 → CAS 首位领取;
+  //   非空且不含 caller → NOT_ASSIGNED_ARBITRATOR。arbitrate 与 request-evidence 共用,防"任意 active 仲裁员操作任意案"。
+  const claimOrCheckAssignment = (disputeId: string, userId: string): { ok: boolean; error_code?: string } => {
+    const row = db.prepare('SELECT assigned_arbitrators FROM disputes WHERE id = ?').get(disputeId) as { assigned_arbitrators: string | null } | undefined
+    let assigned: string[] = []
+    try { assigned = JSON.parse(row?.assigned_arbitrators || '[]') } catch {}
+    if (assigned.length === 0) {
+      const claim = db.prepare(`UPDATE disputes SET assigned_arbitrators = ? WHERE id = ? AND (assigned_arbitrators IS NULL OR assigned_arbitrators = '[]')`).run(JSON.stringify([userId]), disputeId)
+      if (claim.changes === 0) { const fresh = db.prepare('SELECT assigned_arbitrators FROM disputes WHERE id = ?').get(disputeId) as { assigned_arbitrators: string | null } | undefined; try { assigned = JSON.parse(fresh?.assigned_arbitrators || '[]') } catch {} }
+      else assigned = [userId]
+    }
+    return assigned.includes(userId) ? { ok: true } : { ok: false, error_code: 'NOT_ASSIGNED_ARBITRATOR' }
+  }
+
   // ── RFC-007 stage 5：客观拒单【临时判责】的仲裁翻案 ─────────────────────────────
   //   卖家 contest_decline 后,订单 = fault_seller + decline_objective_pending=1 + decline_contested=1(未结算)。
   //   仲裁员(真实人工 + WebAuthn)裁决:uphold → declined_nofault(免责全退+退质押);reject → 违约结算。
@@ -201,23 +215,10 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
       return void res.status(403).json({ error: '你是本案当事方,不可仲裁(利益冲突)', error_code: 'ARBITRATOR_CONFLICT_OF_INTEREST' })
     }
 
-    // P0: 防"任意仲裁员裁决任意争议"
-    // 若 assigned_arbitrators 为空 → 首位调用者原子领取
-    const arbRow = db.prepare(`SELECT assigned_arbitrators FROM disputes WHERE id = ?`).get(req.params.id) as { assigned_arbitrators: string | null } | undefined
-    let assignedArbitrators: string[] = []
-    try { assignedArbitrators = JSON.parse(arbRow?.assigned_arbitrators || '[]') } catch {}
-    if (assignedArbitrators.length === 0) {
-      const claimRes = db.prepare(`UPDATE disputes SET assigned_arbitrators = ? WHERE id = ? AND (assigned_arbitrators IS NULL OR assigned_arbitrators = '[]')`)
-        .run(JSON.stringify([user.id]), req.params.id)
-      if (claimRes.changes === 0) {
-        const fresh = db.prepare(`SELECT assigned_arbitrators FROM disputes WHERE id = ?`).get(req.params.id) as { assigned_arbitrators: string | null } | undefined
-        try { assignedArbitrators = JSON.parse(fresh?.assigned_arbitrators || '[]') } catch {}
-      } else {
-        assignedArbitrators = [user.id as string]
-      }
-    }
-    if (!assignedArbitrators.includes(user.id as string)) {
-      return void res.status(403).json({ error: '此争议未分配给你 — 仅指派的仲裁员可裁定', error_code: 'NOT_ASSIGNED_ARBITRATOR' })
+    // P0: 防"任意仲裁员裁决任意争议" —— 原子领取或校验指派(与 request-evidence 共用 helper)。
+    const claim = claimOrCheckAssignment(req.params.id, user.id as string)
+    if (!claim.ok) {
+      return void res.status(403).json({ error: '此争议未分配给你 — 仅指派的仲裁员可裁定', error_code: claim.error_code || 'NOT_ASSIGNED_ARBITRATOR' })
     }
 
     // 协议层：仲裁员签名的 ruling 入订单链。direct_p2p 非托管=仅信誉裁决,绝不把请求里的退款/赔付金额写进【签名链/timeline】
@@ -545,8 +546,11 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
   // 仲裁员：请求某方补证
   app.post('/api/disputes/:id/request-evidence', (req, res) => {
     const user = auth(req, res); if (!user) return
+    // PR-E:① active whitelist ② 已分配/领取该案(claim-if-empty,防未指派仲裁员越权补证)③ 涉案方目标(engine 校验)。
     const elig = isEligibleArbitrator(user.id as string)
     if (!elig.ok) return void errorRes(res, 403, 'NOT_ARBITRATOR', elig.reason || '仅限仲裁员')
+    const claim = claimOrCheckAssignment(req.params.id, user.id as string)
+    if (!claim.ok) return void errorRes(res, 403, claim.error_code || 'NOT_ASSIGNED_ARBITRATOR', '此争议未分配给你 — 仅指派的仲裁员可补证')
 
     const { requested_from_id, evidence_types, description, deadline_hours = 48 } = req.body
     if (!requested_from_id || !description) return void res.json({ error: '请指定被要求方和证据要求说明' })
@@ -563,7 +567,7 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
       requested_from_id, evidence_types,
       description, Number(deadline_hours)
     )
-    if (!result.success) return void res.json({ error: result.error })
+    if (!result.success) return void res.json({ error: result.error, error_code: result.error_code })
     res.json({ success: true, request_id: result.requestId })
   })
 

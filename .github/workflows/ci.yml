@@ -726,6 +726,8 @@ jobs:
       - run: npm run test:arbitrator-admin-routes
       - run: npm run test:arbitrate-human-presence
       - run: npm run test:arbitrate-route-e2e
+      - run: npm run test:disputes-read-auth
+      - run: npm run test:arbitration-entry-frontend
       - run: npm run test:i18n-parity
       - run: npm run test:i18n-labels
       - run: npm run test:listing-product-type

@@ -566,7 +566,7 @@ async function render(page, params) {
     const { status, body } = await apiWithStatus('GET', '/me')
     if (status === 200 && body && !body.error) {
       state.user = body
-      connectSSE(); maybePromptPlacementBind(); refreshCartBadge(); maybeShowInstallBanner(); maybeClaimPendingProductShare(); maybeClaimPendingShopReferral(); setTimeout(refreshCompareBadge, 0); refreshChatsBadge(); refreshFeedbackBadge(); refreshSnfBadge(); setTimeout(ensureSnfPull, 800)
+      connectSSE(); maybePromptPlacementBind(); refreshCartBadge(); maybeShowInstallBanner(); maybeClaimPendingProductShare(); maybeClaimPendingShopReferral(); setTimeout(refreshCompareBadge, 0); refreshChatsBadge(); refreshFeedbackBadge(); refreshSnfBadge(); setTimeout(ensureSnfPull, 800); if (window.arbEntryHydrate) arbEntryHydrate()
       try { p2pStart() } catch (e) { console.warn('[P2P] start err', e) }
     } else if (status === 401 || status === 403) {
       // 真·鉴权失败：清掉两层存储
@@ -644,7 +644,7 @@ async function render(page, params) {
       return renderContributeTasks(app)
     case 'seller':
       if (state.user?.role === 'logistics')  return renderLogistics(app)
-      if (state.user?.role === 'arbitrator') return renderDisputeList(app)
+      if (state.canArbitrate) return renderDisputeList(app)  // PR-E:仲裁入口跟随 can_arbitrate,非 role==='arbitrator'
       return renderSeller(app)
     case 'edit-product':  return renderEditProduct(app, params[0])
     case 'wallet':        return renderWallet(app)
@@ -13937,7 +13937,7 @@ function buildDisputeTimelineSection(dispute, user) {
 
 function buildDisputeHtml(dispute, user) {
   const isDefendant  = user && user.id === dispute.defendant_id
-  const isArbitrator = user && user.role === 'arbitrator'
+  const isArbitrator = !!state.canArbitrate  // PR-E:跟随后端 can_arbitrate(active whitelist),非 user.role;后端 COI/assign 才是边界
   // is_party is set by the server; fallback to local check
   const isParty = dispute.is_party || (user && dispute.parties && dispute.parties.some(p => p.id === user.id))
   const parties = dispute.parties || []
