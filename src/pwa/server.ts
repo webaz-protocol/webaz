@@ -216,6 +216,7 @@ import { registerExternalAnchorsRoutes } from './routes/external-anchors.js'
 import { registerAnchorsRoutes } from './routes/anchors.js'
 // 仲裁员申请 (#1013 Phase 44) — 4 user + 3 admin endpoints
 import { registerArbitratorRoutes } from './routes/arbitrator.js'
+import { isEligibleArbitrator as isEligibleArbitratorImpl } from './arbitrator-lifecycle.js'  // PR-B: active-whitelist-only 授权源
 // Governance onboarding (W3.5-B 实施 #1093 阶段 1) — 2 user endpoints
 import { registerGovernanceOnboardingRoutes } from './routes/governance-onboarding.js'
 import { startAutoDeactivateCron, runAutoDeactivateSweep } from './routes/governance-auto-deactivate.js'
@@ -5287,14 +5288,9 @@ function getArbitratorState(userId: string) {
   return { state, application: app ?? null, whitelist: wl ?? null }
 }
 
-// 仲裁员身份判定（内部 role + 外部 whitelist 双通道）— 用于 /api/disputes/:id/arbitrate 守门
-function isEligibleArbitrator(userId: string): { ok: boolean; reason?: string; via?: 'role' | 'whitelist' } {
-  const u = db.prepare("SELECT role FROM users WHERE id = ?").get(userId) as { role: string } | undefined
-  if (!u) return { ok: false, reason: '用户不存在' }
-  if (u.role === 'arbitrator') return { ok: true, via: 'role' }
-  const wl = db.prepare("SELECT user_id FROM arbitrator_whitelist WHERE user_id = ?").get(userId)
-  if (wl) return { ok: true, via: 'whitelist' }
-  return { ok: false, reason: '非仲裁员 — 需 role=arbitrator（内部）或 arbitrator_whitelist（外部）' }
+// 仲裁员身份判定 — PR-B:唯一授权源 = active arbitrator_whitelist(role='arbitrator' 旁路已移除)。域逻辑见 arbitrator-lifecycle.ts。
+function isEligibleArbitrator(userId: string): { ok: boolean; reason?: string; via?: 'whitelist' } {
+  return isEligibleArbitratorImpl(db, userId)
 }
 
 // #1013 Phase 44: 4 user + 3 admin arbitrator endpoints 已迁出到 routes/arbitrator.ts
@@ -5302,6 +5298,7 @@ registerArbitratorRoutes(app, {
   db, generateId, auth,
   requireArbitrationAdmin: (req, res) => requireAdminPermission(req, res, 'arbitration'),
   checkArbitratorEligibility, getArbitratorState, errorRes, logAdminAction,
+  consumeGateToken,   // PR-B: grant/suspend/reinstate/revoke 的 purpose-bound 真人 Passkey
   ARB_STAKE_REQUIRED, ARB_APP_REJECT_COOLDOWN_DAYS,
 })
 

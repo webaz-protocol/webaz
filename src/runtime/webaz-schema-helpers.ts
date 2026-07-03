@@ -690,6 +690,12 @@ export function initArbitratorReviewSchema(db: Database.Database): void {
     stake_amount    INTEGER DEFAULT 0
   )
 `)
+  // PR-B 生产仲裁员生命周期字段(ADD COLUMN 必在 CREATE 后 —— schema 铁律)。legacy 行 status NULL 视为 active。
+  for (const alter of [
+    `ALTER TABLE arbitrator_whitelist ADD COLUMN status TEXT DEFAULT 'active'`,   // active | suspended | revoked
+    `ALTER TABLE arbitrator_whitelist ADD COLUMN suspended_at TEXT`,
+    `ALTER TABLE arbitrator_whitelist ADD COLUMN revoked_at TEXT`,
+  ]) { try { db.exec(alter) } catch { /* 列已存在 */ } }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_arb_apps_status ON arbitrator_applications(status)') } catch {}
 }
 

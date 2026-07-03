@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (728 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (733 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -339,6 +339,71 @@
     "/api/admin/arbitrator-applications/:id/reject": {
       "post": {
         "summary": "POST /api/admin/arbitrator-applications/:id/reject",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/arbitrators": {
+      "get": {
+        "summary": "名册(admin 只读,无需 Passkey)。含 active/suspended/revoked 全量 + 状态。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/arbitrators/:user_id/reinstate": {
+      "post": {
+        "summary": "POST /api/admin/arbitrators/:user_id/reinstate",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/arbitrators/:user_id/revoke": {
+      "post": {
+        "summary": "POST /api/admin/arbitrators/:user_id/revoke",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/arbitrators/:user_id/suspend": {
+      "post": {
+        "summary": "POST /api/admin/arbitrators/:user_id/suspend",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/arbitrators/grant": {
+      "post": {
+        "summary": "POST /api/admin/arbitrators/grant",
         "tags": [
           "admin"
         ],
