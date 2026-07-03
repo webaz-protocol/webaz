@@ -1264,7 +1264,7 @@ async function renderSellerMyHome(app) {
   ` : ''
 
   // 顺序：工作中心 → 销售扩展 → 效率工具 → 资金/沟通 → 信任与协议（条件显示）→ 社交发现 → 公益折叠
-  app.innerHTML = shell(mySubTabsHTML('dashboard') + header + workGrid + marketGrid + commsGrid + trustGrid + socialGrid + charitySection, 'me')
+  app.innerHTML = shell(mySubTabsHTML('dashboard') + header + workGrid + ((state.canArbitrate && role !== 'arbitrator' && window.arbTaishCard) ? window.arbTaishCard() : '') + marketGrid + commsGrid + trustGrid + socialGrid + charitySection, 'me')
 }
 
 // ─── 买家 #me 专业版（聚焦购物/订单/AI；慈善折叠次要） ────────
