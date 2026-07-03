@@ -19,6 +19,7 @@ const { initSystemUser, transition } = await import('../src/layer0-foundation/L0
 const { lockFeeStake } = await import('../src/direct-pay-ledger.js')
 const { settleDirectPayFeeAtCompletion, getSellerAccruedFeeUnits, feeUnitsForOrder } = await import('../src/direct-pay-fee-ar.js')
 const { runDirectPayTimeoutSweep } = await import('../src/pwa/routes/direct-pay-timeouts.js')
+const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
 const { toUnits } = await import('../src/money.js')
 const { walletUnits } = await import('../src/ledger.js')
 
@@ -34,6 +35,8 @@ db.prepare("INSERT OR IGNORE INTO wallets (user_id, balance) VALUES ('sys_protoc
 db.prepare("INSERT INTO users (id, name, role, api_key) VALUES ('buyer1','买家','buyer','k_buyer1')").run()
 db.prepare("INSERT INTO users (id, name, role, api_key) VALUES ('seller1','卖家','seller','k_seller1')").run()
 db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('seller1', 100)").run()
+initNotificationSchema(db)
+db.prepare("INSERT INTO products (id, seller_id, title, description, price) VALUES ('p1','seller1','测试商品','d',50)").run()
 
 const FEE = toUnits(5)
 const status = (id: string) => (db.prepare('SELECT status FROM orders WHERE id=?').get(id) as { status: string }).status
@@ -84,6 +87,10 @@ const rq = runDirectPayTimeoutSweep({ db })
 ok('pq-cancel: expired recourse window → cancelled + in pqCancelled', rq.pqCancelled.includes('oq1') && status('oq1') === 'cancelled')
 ok('★ pq-cancel: window NOT expired → NOT cancelled (buyer recourse intact)', !rq.pqCancelled.includes('oq2') && status('oq2') === 'payment_query')
 ok('pq-cancel: no cancel-deadline set → never cron-cancelled', status('oq3') === 'payment_query')
+// P2 fix: cron system-cancel must notify BOTH parties (not only the buyer-initiated route path)
+const notif = (uid: string) => (db.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id=? AND order_id='oq1' AND type='payment_query→cancelled'").get(uid) as { n: number }).n
+ok('pq-cancel: buyer notified of the system cancel', notif('buyer1') >= 1)
+ok('pq-cancel: seller notified of the system cancel', notif('seller1') >= 1)
 
 // ── req #2: direct_p2p 完成结算 = 释放任何遗留模拟 stake + 记链下应收(AR),绝不碰 escrow ──
 db.prepare("INSERT INTO users (id, name, role, api_key) VALUES ('buyer4','买家4','buyer','k_b4')").run()

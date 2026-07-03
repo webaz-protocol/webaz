@@ -16,6 +16,7 @@
 import type Database from 'better-sqlite3'
 import { transition } from '../../layer0-foundation/L0-2-state-machine/engine.js'
 import { releaseFeeStake } from '../../direct-pay-ledger.js'
+import { notifyTransition } from '../../layer2-business/L2-6-notifications/notification-engine.js'
 
 const SYS = 'sys_protocol'
 
@@ -88,12 +89,14 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
     LIMIT 1000
   `).all() as Array<{ id: string }>
   for (const { id } of pqCancelRows) {
+    let done = false
     db.transaction(() => {
       const r = transition(db, id, 'cancelled', SYS, [], 'Rail1 直付:货款协商申诉窗满,买家未回应/未升级,系统关单')
       if (!r.success) return
       releaseFeeStake(db, { orderId: id })   // 无完成不收费:退卖家费用质押
-      pqCancelled.push(id)
+      done = true
     })()
+    if (done) { pqCancelled.push(id); try { notifyTransition(db, id, 'payment_query', 'cancelled') } catch (e) { console.warn('[direct-pay-timeouts] notify pq-cancel:', (e as Error).message) } }  // 通知买卖双方(cron 系统关单也要发,route 之外)
   }
 
   return { windowExpired, graceCancelled, pqCancelled }
