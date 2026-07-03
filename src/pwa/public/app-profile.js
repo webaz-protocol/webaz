@@ -1512,7 +1512,7 @@ async function renderBuyerMyHome(app) {
   `
 
   // 顺序：我的购物 → 我的市场记录 → Agent 进阶 → 通信 → 信任与协议（条件显示）→ 公益折叠 → 账户与配置
-  app.innerHTML = shell(mySubTabsHTML('dashboard') + header + notePromptPlaceholder('me') + shopGrid + marketGrid + aiGrid + commsGrid + trustGrid + socialGrid + charitySection + settingsGrid, 'me')
+  app.innerHTML = shell(mySubTabsHTML('dashboard') + header + notePromptPlaceholder('me') + shopGrid + marketGrid + aiGrid + commsGrid + trustGrid + ((state.canArbitrate && window.arbTaishCard) ? window.arbTaishCard() : '') + socialGrid + charitySection + settingsGrid, 'me')
   hydrateNotePrompt('me')
 }
 
@@ -1545,8 +1545,8 @@ async function renderMyHome(app, subTab) {
 
   // dashboard: 按角色分支（现有 renderer 内部会注入 mySubTabsHTML）
   app.innerHTML = shell(loading$(), 'me')
-  const role = state.user.role
-  const TRUSTED_ROLES = ['admin', 'verifier', 'logistics', 'arbitrator']
+  if (!state.canArbitrate) { try { const _as = await GET('/arbitrator/status'); state.canArbitrate = !!(_as && _as.can_arbitrate); state.arbitratorStatus = (_as && _as.arbitrator_status) || 'none' } catch {} }   // 现场重查:刚加白名单的仲裁员无需重登即可在 #me 刷出仲裁台入口
+  const role = state.user.role; const TRUSTED_ROLES = ['admin', 'verifier', 'logistics', 'arbitrator']
   if (TRUSTED_ROLES.includes(role)) {
     return renderTrustedMyHome(app, role)
   }
