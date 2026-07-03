@@ -20,7 +20,7 @@ import type Database from 'better-sqlite3'
 import { listOrderEventsSince } from '../../layer0-foundation/L0-2-state-machine/order-chain.js'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'  // PR-4f-b: direct_p2p 收款说明响应契约门
-import { redactUnackedDirectPayTarget, stripDirectPayPaymentTarget } from '../direct-pay-order-redaction.js'  // 收款目标披露门(共享;所有 orders reader 必过)。strip=非买家/卖家第三方无条件剥离
+import { projectDirectPayTargetForViewer } from '../direct-pay-order-redaction.js'  // 收款目标披露门:按查看者一次分派(买家=ack 门/卖家=收款方保留/第三方=剥离),所有 orders reader 必过
 import { getMutualCancelState } from '../../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'  // 协商取消(无责合意)可达性 + 当前提议(仅 disputed 计算,UI 便利字段)
 import { isEligibleArbitrator } from '../arbitrator-lifecycle.js'  // 白名单仲裁员可查【争议中】订单(裁定所需);不看 legacy role==='arbitrator'
 import { getQrImageForOwner } from '../../direct-receive-account-qr.js'  // Rail1 D2:ack 门后按订单快照 qr_ref 取收款码字节((ref,seller_id) 域内)
@@ -63,9 +63,7 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
         delete o.recipient_code
         o.buyer_name = '🔒 ' + (typeof code === 'string' ? code : 'PR-?????')
       }
-      redactUnackedDirectPayTarget(db, o, user.id as string)   // #179 审计 P1:列表也过披露门,不得旁路
-      // 非买家且非卖家的第三方(如被指派的 logistics)绝不该看到直付收款目标 —— redact 只管买家自视角,非买家 no-op(与详情路由同款 strip)。
-      if (o.buyer_id !== user.id && o.seller_id !== user.id) stripDirectPayPaymentTarget(o)
+      projectDirectPayTargetForViewer(db, o, user.id as string)   // #179/#218 审计:收款目标按查看者投影(买家=ack 门/卖家保留/第三方剥离),列表不得旁路
     }
     res.json(orders)
   })
@@ -223,13 +221,10 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
       }
     }
 
-    // Direct Pay 响应契约门:direct_p2p 收款目标(instruction 快照 + 账号快照 qr_ref),买家在 D1/D2 both-acked 前
-    //   【不得】从 API 拿到(非仅 UI 软门)。与 /api/orders 列表共用同一 redact,防旁路(#179 审计 P1)。
-    redactUnackedDirectPayTarget(db, order as Record<string, unknown>, user.id as string)
-    // P1-1:非买家【且】非卖家的第三方 reader(disputed-order 仲裁员、logistics-pickup)绝不该看到直付收款目标。
-    //   redactUnackedDirectPayTarget 只管【买家自视角】,非买家时是 no-op → 仲裁员会拿到 instruction/qr_ref。卖家是收款方,看自己单不剥。
-    //   若仲裁确需看收款目标,应另做显式、可审计、受指派/案件/目的约束的 reveal 路径。
-    if (user.id !== order.buyer_id && user.id !== order.seller_id) stripDirectPayPaymentTarget(order as Record<string, unknown>)
+    // Direct Pay 响应契约门:收款目标按查看者投影 —— 买家在 D1/D2 both-acked 前不得拿到(非仅 UI 软门);卖家=收款方保留;
+    //   非买卖双方第三方(disputed-order 仲裁员、logistics-pickup)一律剥离(#179/#218 审计;仲裁若确需看收款目标,
+    //   应另做显式、可审计、受指派/案件/目的约束的 reveal 路径)。与 /api/orders 列表共用同一投影器,防旁路。
+    projectDirectPayTargetForViewer(db, order as Record<string, unknown>, user.id as string)
 
     // Rail1 撤回仲裁可达性(与 orders-action pq_withdraw 权威门同谓词):仅当【当前 disputed + 最近一次进入
     //   disputed 是 from payment_query + 争议未裁定】。前端据此才显示"撤回仲裁"按钮 —— 履约类争议(货损/货不对版

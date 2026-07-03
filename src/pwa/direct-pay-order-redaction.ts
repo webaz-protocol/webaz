@@ -36,3 +36,18 @@ export function stripDirectPayPaymentTarget(o: Record<string, unknown>): void {
   delete o.direct_pay_instruction_snapshot
   delete o.direct_pay_account_snapshot
 }
+
+/**
+ * 【唯一入口】按查看者投影收款目标(#218 审计发现 6):三类查看者一次分派,route 不再手工按序组合两个原语 ——
+ * 曾经的组合错法每种都真实发生过:列表只调 redact(→ logistics 第三方拿到收款目标)、详情只调 redact(→ 仲裁员拿到)。
+ *   - 卖家(o.seller_id===viewerId):收款方,instruction 是他自填的 → 不动。
+ *   - 买家:ack 门(redactUnackedDirectPayTarget —— 未 both-acked 删 instruction+剥 qr_ref,留非敏感元数据)。
+ *   - 其他一切查看者(logistics/仲裁员/admin/任何第三方):无条件剥离(stripDirectPayPaymentTarget)。
+ * escrow 单不含收款目标语义,原语各自 no-op/删空,安全。所有返回 orders 整行的 reader 必须调本函数
+ * (reader-guard 的 GATE 认的就是本函数名);两个原语仍导出,仅作本函数的构件,route 层不应直接使用。
+ */
+export function projectDirectPayTargetForViewer(db: Database.Database, o: Record<string, unknown>, viewerId: string): void {
+  if (o.seller_id === viewerId) return
+  if (o.buyer_id === viewerId) return redactUnackedDirectPayTarget(db, o, viewerId)
+  stripDirectPayPaymentTarget(o)
+}
