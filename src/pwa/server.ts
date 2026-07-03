@@ -5530,7 +5530,7 @@ registerDisputesWriteRoutes(app, {
   FUND_BASE_RATE: () => FUND_BASE_RATE(),
   settleCommission, depositToFund, calculatePv,
   recordDisputeReputation, issueAgentStrike, publishDisputeCase, logAdminAction, snfSend,
-  getProtocolParam,
+  getProtocolParam, notifyTransition,
 }); registerMutualCancelRoutes(app, { db, auth, generateId, errorRes })  // 协商取消(无责合意):accept 内部 db.transaction 原子(资金+状态+争议 resolved)
 
 // lightAuthGuard：轻量 Authorization 头守门（在 raw 解析之前挡掉无 auth 请求）

@@ -34,5 +34,12 @@ ok('7. arbTaishCard rendered in BOTH buyer + seller #me homes (≥2 call sites)'
 ok('8. renderBuyerMyHome specifically renders the arbTaishCard entry', /renderBuyerMyHome[\s\S]*?state\.canArbitrate && window\.arbTaishCard/.test(PROFILE))
 ok('9. renderMyHome dispatcher re-checks /arbitrator/status → grant propagates without full re-login', /renderMyHome[\s\S]{0,600}\/arbitrator\/status[\s\S]{0,200}state\.canArbitrate =/.test(PROFILE))
 
+// handleArbitrate 必须先取 purpose='arbitrate' 的 Passkey gate token 再 POST(否则后端 requireHumanPresence → 412,确认裁定永远失败)
+ok('10. handleArbitrate acquires arbitrate Passkey token + sends webauthn_token', /requestPasskeyGate\('arbitrate', \{ dispute_id: disputeId \}\)/.test(APP) && /arbitrate`, \{ \.\.\.body, webauthn_token: _arbTk \}/.test(APP))
+// 驳回仲裁选项:后端 can_dismiss_to_negotiation 传入 dpArbRulingOptions;仅 direct_p2p+pq-origin 追加 dismiss_to_negotiation
+const LABELS = readFileSync('src/pwa/public/app-order-labels.js', 'utf8')
+ok('11. app.js passes can_dismiss_to_negotiation into dpArbRulingOptions', /dpArbRulingOptions\(dispute\.payment_rail, dispute\.can_dismiss_to_negotiation\)/.test(APP))
+ok('12. dpArbRulingOptions appends dismiss_to_negotiation only when canDismiss', /dpArbRulingOptions = \(rail, canDismiss\)/.test(LABELS) && /canDismiss \? \[\['dismiss_to_negotiation'/.test(LABELS) && /dismiss_to_negotiation: t\(/.test(LABELS))
+
 if (fail > 0) { console.error(`\n❌ arbitration-entry-frontend FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ arbitration-entry-frontend: entry/button follow backend can_arbitrate (active whitelist), not user.role\n  ✅ pass ${pass}`)

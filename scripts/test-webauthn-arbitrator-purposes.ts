@@ -48,7 +48,7 @@ const start = (purpose: string, uid = 'root1'): Promise<{ status: number; json: 
 })
 
 try {
-  for (const p of ['arbitrator_grant', 'arbitrator_suspend', 'arbitrator_reinstate', 'arbitrator_revoke']) {
+  for (const p of ['arbitrator_grant', 'arbitrator_suspend', 'arbitrator_reinstate', 'arbitrator_revoke', 'arbitrate']) {
     const r = await start(p)
     ok(`purpose '${p}' accepted by allow-set (403 no-passkey, NOT 400 invalid purpose)`, r.status === 403 && r.json?.error === '尚未注册任何 Passkey', `status=${r.status} json=${JSON.stringify(r.json)}`)
   }

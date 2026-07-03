@@ -344,8 +344,13 @@ export function registerDisputesReadRoutes(app: Application, deps: DisputesReadD
 
     events.sort((a, b) => String(a.ts).localeCompare(String(b.ts)))
 
+    // 仲裁员【驳回仲裁,退回协商】可达性(与 dismissDisputeToNegotiation / pq_withdraw 同谓词):direct_p2p + 最近一次进入
+    //   disputed 是 from payment_query + 未裁定。前端据此才在裁定面板显示"驳回仲裁"选项;真正拦截仍在路由/域函数。
+    const lastDispFrom = await dbOne<{ from_status: string }>("SELECT from_status FROM order_state_history WHERE order_id = ? AND to_status = 'disputed' ORDER BY created_at DESC, rowid DESC LIMIT 1", [dispute.order_id])
+    const canDismissToNegotiation = dispute.payment_rail === 'direct_p2p' && lastDispFrom?.from_status === 'payment_query' && (dispute.status === 'open' || dispute.status === 'in_review')
     res.json({
       ...dispute,
+      can_dismiss_to_negotiation: canDismissToNegotiation,
       plaintiff_evidence:   plaintiffEvidence,
       defendant_evidence:   defendantEvidence,
       party_evidence:       partyEvidence,
