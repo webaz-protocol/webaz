@@ -730,6 +730,8 @@ jobs:
       - run: npm run test:arbitration-entry-frontend
       - run: npm run test:arbitrator-admin-ui
       - run: npm run test:webauthn-arbitrator-purposes
+      - run: npm run test:mutual-cancel
+      - run: npm run test:mutual-cancel-route
       - run: npm run test:evidence-active-recheck
       - run: npm run test:i18n-parity
       - run: npm run test:i18n-labels

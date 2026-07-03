@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (733 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (738 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -5544,6 +5544,71 @@
     "/api/orders/:id/force-timeout-check": {
       "post": {
         "summary": "手动触发超时判责（当事人）",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/mutual-cancel": {
+      "get": {
+        "summary": "GET /api/orders/:id/mutual-cancel",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/mutual-cancel/accept": {
+      "post": {
+        "summary": "POST /api/orders/:id/mutual-cancel/accept",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/mutual-cancel/decline": {
+      "post": {
+        "summary": "POST /api/orders/:id/mutual-cancel/decline",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/mutual-cancel/propose": {
+      "post": {
+        "summary": "POST /api/orders/:id/mutual-cancel/propose",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/mutual-cancel/withdraw": {
+      "post": {
+        "summary": "POST /api/orders/:id/mutual-cancel/withdraw",
         "tags": [
           "order"
         ],

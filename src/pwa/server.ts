@@ -61,6 +61,7 @@ import {
   addPartyEvidence,
   type EvidenceType, type LiabilityEntry,
 } from '../layer3-trust/L3-1-dispute-engine/dispute-engine.js'
+import { initMutualCancelSchema } from '../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'; import { registerMutualCancelRoutes } from './routes/mutual-cancel.js'  // 协商取消(无责合意取消 disputed 单):域 schema + 5 端点
 import {
   initNotificationSchema,
   notifyTransition,
@@ -465,7 +466,7 @@ const activeClaimTaskCountForVerifier = (userId: string) => activeClaimTaskCount
 const settleClaimTask = (taskId: string) => settleClaimTaskRaw(db, generateId, taskId)
 const notifyEligibleVerifiers = (args: Parameters<typeof notifyEligibleVerifiersRaw>[2]) => notifyEligibleVerifiersRaw(db, generateId, args)
 initSystemUser(db)
-initDisputeSchema(db)
+initDisputeSchema(db); initMutualCancelSchema(db)   // + mutual_cancel_proposals 表
 initNotificationSchema(db)
 initSkillSchema(db)
 initSkillMarketSchema(db)
@@ -5530,7 +5531,7 @@ registerDisputesWriteRoutes(app, {
   settleCommission, depositToFund, calculatePv,
   recordDisputeReputation, issueAgentStrike, publishDisputeCase, logAdminAction, snfSend,
   getProtocolParam,
-})
+}); registerMutualCancelRoutes(app, { db, auth, generateId, errorRes })  // 协商取消(无责合意):accept 内部 db.transaction 原子(资金+状态+争议 resolved)
 
 // lightAuthGuard：轻量 Authorization 头守门（在 raw 解析之前挡掉无 auth 请求）
 // 被 Phase 13 shareables（视频上传）+ Phase 87 disputes evidence-blob 共享
