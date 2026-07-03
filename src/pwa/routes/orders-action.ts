@@ -169,7 +169,7 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     if (isTrustedRole(user as Record<string, unknown>)) return void res.status(403).json({ error: '受信角色不可参与订单流转', error_code: 'TRUSTED_ROLE_NO_TRADE' })
 
     const { action, evidence_description = '', logistics_company_id = '' } = req.body
-    const notes = String(req.body?.notes ?? '').slice(0, 500)   // 服务端硬界:附言/备注(含直付付款参考)最长 500 字符,防历史行膨胀(前端另限 60)
+    let notes = String(req.body?.notes ?? '').slice(0, 500)   // 服务端硬界:附言/备注最长 500 字符;mark_paid 时被服务端权威付款参考覆盖(见下)
 
     // RFC-016: 顶层校验读 → 异步 seam;state-machine / settle / decline 写序列仍同步(Phase 3 迁 pg 行锁+事务)
     const order = await dbOne<Record<string, unknown>>('SELECT * FROM orders WHERE id = ?', [req.params.id])
@@ -232,6 +232,13 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     if (action === 'mark_paid') {
       const g = directPayActionGate(req.params.id, 'mark_paid', uid, req.body?.webauthn_token as string | undefined)
       if (!g.ok) return void res.status(g.status).json({ error: g.error, error_code: g.error_code })
+      // 防作弊 D1:付款参考【服务端权威派生】(与前端 dpPayRef 同算法),忽略客户端可伪造的参考文本 —— UI 已锁只读(#222),
+      //   这里把 API 级也收口:直接 POST 伪造 notes 冒充别单参考号 → 无效。客户端附言仅作补充备注,剥掉任何"付款参考"字样。
+      const canonicalRef = 'WAZ-' + req.params.id.replace(/[^a-zA-Z0-9]/g, '').slice(-8).toUpperCase()
+      const extra = notes.replace(/付款参考[::]?\s*[^\s·;,。]*/g, '').replace(/WAZ-[A-Z0-9]{8}/g, '').trim().slice(0, 120)
+      // 防作弊 D2:同买家·同卖家·同金额的其它在途直付单 → 时间线预警(一笔真实转账冒充两单的重复确认,卖家第一道防线)
+      const dup = await dbOne<{ n: number }>(`SELECT COUNT(*) n FROM orders WHERE buyer_id = ? AND seller_id = ? AND payment_rail = 'direct_p2p' AND total_amount = ? AND id != ? AND status IN ('accepted','shipped','picked_up','in_transit','delivered')`, [buyerId, sellerId, order.total_amount, req.params.id])
+      notes = `付款参考: ${canonicalRef}${extra ? ' · ' + extra : ''}${(dup?.n || 0) > 0 ? ` ⚠️ 同买家另有 ${dup!.n} 笔同金额直付订单在途,请逐单核对付款参考再发货` : ''}`
     }
     // Rail1:平台费链下应收,accrue 在完成结算时(settleOrder direct_p2p 分支)与 completed 同一原子边界、fail-closed
     //   (accrueFeeReceivable 缺费即抛 → 回滚 completed)。故【不再】前置要求 locked fee-stake。
@@ -366,6 +373,9 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
           const r = transition(db, req.params.id, 'cancelled', uid, [], notes)
           if (!r.success) throw new Error(r.error || '状态转移失败')
           releaseFeeStake(db, { orderId: req.params.id })
+          // D3 库存恢复:transition→cancelled 引擎【不】恢复库存(只有 fault 态恢复),此前直付取消一直漏库存。
+          //   本分支恒未发货(direct_pay_window / payment_query 均 pre-ship),按 quantity 恢复(direct_p2p v1 仅简单商品)。
+          db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(order.quantity, order.product_id)
         })()
       } catch (e) {
         return void res.status(409).json({ error: (e as Error).message, error_code: 'CANCEL_FAILED' })

@@ -228,6 +228,36 @@ ok('accrue 失败(fee=0)→ 409 DIRECT_PAY_SETTLE_FAILED', r17.status === 409 &&
 ok('accrue 失败 → 订单仍 delivered(全原子回滚,不卡 confirmed)', status('oZero') === 'delivered')
 ok('accrue 失败 → 无应收落库', !receivable('oZero'))
 
+// ═══ 防作弊 D1/D2 + 库存恢复 D3(路由级) ═══
+{
+  try { db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock) VALUES ('p1','seller1','P','d',50,10)").run() } catch { /* 已存在 */ }
+  const stockOf = () => (db.prepare("SELECT stock FROM products WHERE id='p1'").get() as { stock: number }).stock
+  const lastNote = (id: string) => (db.prepare("SELECT notes FROM order_state_history WHERE order_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1").get(id) as { notes: string } | undefined)?.notes || ''
+  // D1:客户端伪造参考号被服务端权威派生覆盖(冒充别单参考 + 夹带 WAZ- 样式一并剥掉,补充备注保留)
+  mkOrder('oSpoof', 'direct_pay_window', 'direct_p2p'); lock('oSpoof'); seedAcks('oSpoof')
+  const rs = await call('oSpoof', { action: 'mark_paid', webauthn_token: seedToken('buyer1', 'oSpoof', 'mark_paid'), notes: '付款参考: WAZ-EVILSPOOF 顺丰到付 WAZ-ABCD1234' }, 'buyer1')
+  const canonical = 'WAZ-' + 'oSpoof'.replace(/[^a-zA-Z0-9]/g, '').slice(-8).toUpperCase()
+  ok('D1a. mark_paid 服务端权威参考号覆盖客户端伪造', rs.status === 200 && lastNote('oSpoof').includes(`付款参考: ${canonical}`), lastNote('oSpoof'))
+  ok('D1b. 伪造的参考号被剥除,补充备注保留', !lastNote('oSpoof').includes('EVILSPOOF') && !lastNote('oSpoof').includes('WAZ-ABCD1234') && lastNote('oSpoof').includes('顺丰到付'))
+  // D2:同买家·同卖家·同金额在途多单 → 时间线预警
+  mkOrder('oDup1', 'accepted', 'direct_p2p')   // 已在途的同金额单
+  mkOrder('oDup2', 'direct_pay_window', 'direct_p2p'); lock('oDup2'); seedAcks('oDup2')
+  await call('oDup2', { action: 'mark_paid', webauthn_token: seedToken('buyer1', 'oDup2', 'mark_paid') }, 'buyer1')
+  ok('D2a. 同金额在途多单 → mark_paid 时间线带 ⚠️ 预警', /⚠️ 同买家另有 \d+ 笔同金额直付订单在途/.test(lastNote('oDup2')), lastNote('oDup2'))
+  mkOrder('oSolo', 'direct_pay_window', 'direct_p2p', 'shipped', 'buyer2'); lock('oSolo'); seedAcks('oSolo', 'buyer2')
+  await call('oSolo', { action: 'mark_paid', webauthn_token: seedToken('buyer2', 'oSolo', 'mark_paid') }, 'buyer2')
+  ok('D2b. 无同金额在途单 → 无预警(不喊狼来了)', !lastNote('oSolo').includes('⚠️'))
+  // D3:付款窗口/货款协商取消恢复库存(transition→cancelled 引擎不恢复,此前漏)
+  mkOrder('oCanc', 'direct_pay_window', 'direct_p2p'); lock('oCanc')
+  const s0 = stockOf()
+  const rc = await call('oCanc', { action: 'cancel' }, 'buyer1')
+  ok('D3a. 付款窗口取消 → 库存恢复 +quantity', rc.status === 200 && stockOf() === s0 + 1, `before=${s0} after=${stockOf()}`)
+  mkOrder('oCancPq', 'payment_query', 'direct_p2p'); lock('oCancPq')
+  const s1 = stockOf()
+  const rc2 = await call('oCancPq', { action: 'cancel' }, 'buyer1')
+  ok('D3b. 货款协商买家取消 → 库存恢复', rc2.status === 200 && stockOf() === s1 + 1, `before=${s1} after=${stockOf()}`)
+}
+
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-actions route tests passed`)

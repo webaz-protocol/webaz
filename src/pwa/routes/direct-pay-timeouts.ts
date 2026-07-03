@@ -75,17 +75,20 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
 
   // B. 宽限期满 → 系统关单(★ WHERE 保证仅 now>grace 命中;宽限期内绝不关,买家 →disputed 全程可用)
   const graceRows = db.prepare(`
-    SELECT id FROM orders
+    SELECT id, product_id, quantity FROM orders
     WHERE status = 'direct_expired_unconfirmed'
       AND payment_rail = 'direct_p2p'
       AND direct_grace_deadline IS NOT NULL
       AND datetime(direct_grace_deadline) < datetime('now')
     LIMIT 1000
-  `).all() as Array<{ id: string }>
-  for (const { id } of graceRows) {
+  `).all() as Array<{ id: string; product_id: string; quantity: number }>
+  for (const { id, product_id, quantity } of graceRows) {
     db.transaction(() => {
       const r = transition(db, id, 'cancelled', SYS, [], 'Rail1 直付:宽限期满,买家未付款/未升级争议,系统关单')
-      if (r.success) graceCancelled.push(id)
+      if (!r.success) return
+      // D3 库存恢复:未发货取消(买家从未付款),transition→cancelled 引擎不恢复库存,此前一直漏。
+      db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(quantity, product_id)
+      graceCancelled.push(id)
     })()
   }
 
@@ -117,19 +120,20 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
   // C. 货款协商:卖家已请求取消(payment_query_cancel_deadline 已设)+ 买家申诉窗满 → 系统关单 + 退费用质押。
   //    ★ 窗内(now < deadline)绝不关:买家全程可主张已付/升级举证(pq_escalate 回 disputed)。
   const pqCancelRows = db.prepare(`
-    SELECT id FROM orders
+    SELECT id, product_id, quantity FROM orders
     WHERE status = 'payment_query'
       AND payment_rail = 'direct_p2p'
       AND payment_query_cancel_deadline IS NOT NULL
       AND datetime(payment_query_cancel_deadline) < datetime('now')
     LIMIT 1000
-  `).all() as Array<{ id: string }>
-  for (const { id } of pqCancelRows) {
+  `).all() as Array<{ id: string; product_id: string; quantity: number }>
+  for (const { id, product_id, quantity } of pqCancelRows) {
     let done = false
     db.transaction(() => {
       const r = transition(db, id, 'cancelled', SYS, [], 'Rail1 直付:货款协商申诉窗满,买家未回应/未升级,系统关单')
       if (!r.success) return
       releaseFeeStake(db, { orderId: id })   // 无完成不收费:退卖家费用质押
+      db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(quantity, product_id)   // D3 库存恢复(pre-ship 取消,此前一直漏)
       done = true
     })()
     if (done) { pqCancelled.push(id); try { notifyTransition(db, id, 'payment_query', 'cancelled') } catch (e) { console.warn('[direct-pay-timeouts] notify pq-cancel:', (e as Error).message) } }  // 通知买卖双方(cron 系统关单也要发,route 之外)

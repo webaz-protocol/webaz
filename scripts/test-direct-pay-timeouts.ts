@@ -69,11 +69,14 @@ ok('★ before grace: system does NOT cancel', !r2.graceCancelled.includes('o1')
 const disp = transition(db, 'o1', 'disputed', 'buyer1', ['ev1'], '我确实付了')
 ok('★ before grace: buyer →disputed IS available', disp.success === true && status('o1') === 'disputed', JSON.stringify(disp))
 
-// ── Scenario 3: 宽限期满 → 系统关单 ──
+// ── Scenario 3: 宽限期满 → 系统关单(+ D3 库存恢复:transition→cancelled 引擎不恢复,此前漏) ──
+const stockOf = () => Number((db.prepare("SELECT stock FROM products WHERE id='p1'").get() as { stock: number | null }).stock || 0)
 mkOrder('o2', 'direct_expired_unconfirmed', { gracePast: true })
+const stockB4Grace = stockOf()
 const r3 = runDirectPayTimeoutSweep({ db })
 ok('after grace: o2 in graceCancelled', r3.graceCancelled.includes('o2'))
 ok('after grace: o2 → cancelled', status('o2') === 'cancelled')
+ok('D3: grace-cancel restores stock (+quantity)', stockOf() === stockB4Grace + 1, `before=${stockB4Grace} after=${stockOf()}`)
 
 // ── Scenario 3b: 控制组 — 宽限期未到的 expired_unconfirmed 不被关 ──
 mkOrder('o3', 'direct_expired_unconfirmed', { graceFuture: true })
@@ -84,8 +87,10 @@ ok('control: future-grace order NOT cancelled', status('o3') === 'direct_expired
 mkOrder('oq1', 'payment_query', { pqCancelPast: true })   // 卖家已请求取消,7d 申诉窗已满
 mkOrder('oq2', 'payment_query', { pqCancelFuture: true })  // 申诉窗未满(买家仍可回应/升级)
 mkOrder('oq3', 'payment_query')                            // 未请求取消(deadline NULL)→ 永不被 cron 关
+const stockB4Pq = stockOf()
 const rq = runDirectPayTimeoutSweep({ db })
 ok('pq-cancel: expired recourse window → cancelled + in pqCancelled', rq.pqCancelled.includes('oq1') && status('oq1') === 'cancelled')
+ok('D3: pq-cancel restores stock (+quantity)', stockOf() === stockB4Pq + 1, `before=${stockB4Pq} after=${stockOf()}`)
 ok('★ pq-cancel: window NOT expired → NOT cancelled (buyer recourse intact)', !rq.pqCancelled.includes('oq2') && status('oq2') === 'payment_query')
 ok('pq-cancel: no cancel-deadline set → never cron-cancelled', status('oq3') === 'payment_query')
 // P2 fix: cron system-cancel must notify BOTH parties (not only the buyer-initiated route path)
