@@ -21,6 +21,7 @@ import { listOrderEventsSince } from '../../layer0-foundation/L0-2-state-machine
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'  // PR-4f-b: direct_p2p 收款说明响应契约门
 import { redactUnackedDirectPayTarget } from '../direct-pay-order-redaction.js'  // 收款目标披露门(共享;所有 orders reader 必过)
+import { getMutualCancelState } from '../../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'  // 协商取消(无责合意)可达性 + 当前提议(仅 disputed 计算,UI 便利字段)
 import { getQrImageForOwner } from '../../direct-receive-account-qr.js'  // Rail1 D2:ack 门后按订单快照 qr_ref 取收款码字节((ref,seller_id) 域内)
 
 export interface OrdersReadDeps {
@@ -214,6 +215,12 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     const disputedFroms = history.filter(h => h.to_status === 'disputed').map(h => h.from_status as string)
     order.can_withdraw_payment_query_dispute =
       order.status === 'disputed' && disputedFroms[disputedFroms.length - 1] === 'payment_query' && !!dispute
+
+    // 协商取消(无责·双方合意)握手状态 —— 仅 disputed 单计算,供订单页同步渲染 propose/accept/decline/withdraw。真正边界在 mutual-cancel 路由。
+    if (order.status === 'disputed') {
+      const mc = getMutualCancelState(db, req.params.id, user.id as string)
+      order.mutual_cancel = mc.ok ? { proposal: mc.proposal ?? null, can_propose: !!mc.can_propose, can_accept: !!mc.can_accept, can_decline: !!mc.can_decline, can_withdraw: !!mc.can_withdraw } : null
+    }
 
     res.json({ ...statusInfo, history, product, dispute, trackingInfo })
   })
