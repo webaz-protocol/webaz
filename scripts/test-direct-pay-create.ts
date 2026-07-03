@@ -415,6 +415,20 @@ ok('availability: 缓交 seller over reduced quota → available:false, coarsene
 delete cp['direct_pay.deferral_base_order_count']
 ok('availability: missing product_id → 400', (await getJson('/api/direct-pay/availability', 'buyer1')).status === 400)
 
+// ═══ 审计项 G:单买家·单卖家在途直付单上限(防锁库存刷单)═══
+{
+  const openN = () => (db.prepare(`SELECT COUNT(*) n FROM orders WHERE buyer_id='buyer1' AND seller_id='seller2' AND payment_rail='direct_p2p' AND status IN ('direct_pay_window','direct_expired_unconfirmed','accepted','payment_query')`).get() as { n: number }).n
+  cp['direct_pay.max_open_per_buyer_seller'] = openN() + 1
+  const rOk = await dpAcc('acc_s2_a')
+  ok('G: 上限内建单 → 200', rOk.status === 200, JSON.stringify(rOk.json))
+  const rCap = await dpAcc('acc_s2_a')
+  ok('G: 达上限 → 429 DIRECT_PAY_TOO_MANY_OPEN(精确 code,买家自身行为不脱敏)', rCap.status === 429 && rCap.json?.error_code === 'DIRECT_PAY_TOO_MANY_OPEN', JSON.stringify(rCap.json))
+  const before = (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n
+  await dpAcc('acc_s2_a')
+  ok('G: 429 时不建单不扣库存', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === before)
+  delete cp['direct_pay.max_open_per_buyer_seller']
+}
+
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-create tests passed`)

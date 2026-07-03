@@ -159,6 +159,12 @@ export function createDirectPayResponse(
   // 买家面脱敏:缓交额度拒因(笔数/金额)也收敛为通用 SELLER_NOT_ELIGIBLE,不向买家泄露卖家处于缓交/超额。
   //   精确 code(quota.code)留在 checkDeferralQuota 返回值 + 其单测,供运营/调试。
   if (!quota.ok) { res.status(409).json({ error_code: coarsenBuyerFacingDirectPayCode(quota.code), error: '该卖家暂不支持直付' }); return }
+  // 审计项 G:单买家·单卖家在途直付单上限(param direct_pay.max_open_per_buyer_seller,默认 5)——
+  //   防单个买家刷单锁库存(建单即扣库存,窗口+宽限可占 ~52h)+ 耗尽卖家缓交额度的 griefing。只读门,任何写之前;
+  //   买家自身行为所致 → 精确 code 直接透出(非卖家隐私,无需脱敏)。
+  const openCap = Math.max(1, Number(deps.getProtocolParam<number>('direct_pay.max_open_per_buyer_seller', 5)) || 5)
+  const openN = (db.prepare(`SELECT COUNT(*) n FROM orders WHERE buyer_id = ? AND seller_id = ? AND payment_rail = 'direct_p2p' AND status IN ('direct_pay_window','direct_expired_unconfirmed','accepted','payment_query')`).get(ctx.buyerId, sellerId) as { n: number }).n
+  if (openN >= openCap) { res.status(429).json({ error_code: 'DIRECT_PAY_TOO_MANY_OPEN', error: `你在该卖家已有 ${openN} 笔进行中的直付订单(上限 ${openCap}),请先完成或取消后再下单` }); return }
   // §6.5 抵押背书开放敞口上限(backend create-gate)。休眠安全:无真实链上抵押(collateral=0)→ N/A;
   //   有抵押才读 exposure_factor_bps(fail-closed)+ 比较 open_exposure+new ≤ collateral×bps/10000。
   //   当前 merchant_bond 关闭、无 active 存款 → 对缓交卖家零影响(返回 ok)。买家面脱敏。

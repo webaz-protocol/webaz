@@ -29,17 +29,21 @@ export function registerAdminReportsRoutes(app: Application, deps: AdminReportsD
 
   app.get('/api/admin/orders', async (req, res) => {
     const admin = requireContentAdmin(req, res); if (!admin) return
+    // 审计项 G:补 payment_rail 列 + ?rail 过滤 —— admin/AML 此前在订单总览里区分不出 direct_p2p(非托管轨监控盲区)
     const status = req.query.status as string | undefined
+    const rail = typeof req.query.rail === 'string' ? req.query.rail.trim() : ''
     let sql = `SELECT o.id, o.product_id, o.buyer_id, o.seller_id, o.logistics_id, o.status,
-                      o.total_amount, o.created_at,
+                      o.total_amount, o.created_at, o.payment_rail,
                       p.title as product_title,
                       ub.name as buyer_name, us.name as seller_name
                FROM orders o
                JOIN products p ON o.product_id = p.id
                JOIN users ub ON o.buyer_id = ub.id
                JOIN users us ON o.seller_id = us.id`
-    const params: unknown[] = []
-    if (status && status.trim()) { sql += ` WHERE o.status = ?`; params.push(status) }
+    const where: string[] = []; const params: unknown[] = []
+    if (status && status.trim()) { where.push('o.status = ?'); params.push(status) }
+    if (rail) { where.push('o.payment_rail = ?'); params.push(rail) }
+    if (where.length) sql += ' WHERE ' + where.join(' AND ')
     sql += ` ORDER BY o.created_at DESC LIMIT 100`
     res.json({ orders: await dbAll(sql, params) })
   })

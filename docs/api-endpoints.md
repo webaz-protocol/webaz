@@ -44,7 +44,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/arbitrators/grant` | 🔐 | 👑 |  | src/pwa/routes/arbitrator.ts:72 |
 | POST | `/api/admin/atomic/process-ledger` | 🔐 | 👑 |  | src/pwa/routes/admin-atomic.ts:30 |
 | POST | `/api/admin/auction-reminders/run` | 🔐 | 👑 | Admin 手动跑提醒派发 | src/pwa/routes/auction.ts:486 |
-| GET | `/api/admin/audit-log` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:142 |
+| GET | `/api/admin/audit-log` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:146 |
 | GET | `/api/admin/auditor` | 🔐 | 👑 |  | src/pwa/routes/admin-analytics.ts:82 |
 | GET | `/api/admin/build-feedback` | 🔐 | 👑 | ── maintainer triage ──────────────────────────────── | src/pwa/routes/build-feedback.ts:74 |
 | POST | `/api/admin/build-feedback/:id` | 🔐 | 👑 |  | src/pwa/routes/build-feedback.ts:94 |
@@ -82,8 +82,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/direct-receive/sanctions-screenings` | 🔐 | 👑 | purpose_data 绑定 user_id+status+provider_ref+expires_at。 | src/pwa/routes/admin-direct-receive-deposits.ts:157 |
 | GET | `/api/admin/direct-receive/store-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/store-verifications?status=submitted — ROOT 审核队列(默 | src/pwa/routes/admin-direct-receive-deposits.ts:351 |
 | POST | `/api/admin/direct-receive/store-verifications/:id/review` | 🔐 | 👑 | POST /api/admin/direct-receive/store-verifications/:id/review — ROOT + 真人 Passke | src/pwa/routes/admin-direct-receive-deposits.ts:359 |
-| GET | `/api/admin/disputes` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:47 |
-| GET | `/api/admin/economic-summary` | 🔐 | 👑 | 隐私第一：运营财务，仅 protocol admin 可见。 | src/pwa/routes/admin-reports.ts:92 |
+| GET | `/api/admin/disputes` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:51 |
+| GET | `/api/admin/economic-summary` | 🔐 | 👑 | 隐私第一：运营财务，仅 protocol admin 可见。 | src/pwa/routes/admin-reports.ts:96 |
 | GET | `/api/admin/editor-picks` | 🔐 | 👑 |  | src/pwa/routes/admin-editor-picks.ts:60 |
 | POST | `/api/admin/editor-picks` | 🔐 | 👑 |  | src/pwa/routes/admin-editor-picks.ts:29 |
 | DELETE | `/api/admin/editor-picks/:id` | 🔐 | 👑 |  | src/pwa/routes/admin-editor-picks.ts:54 |
@@ -194,7 +194,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/verifier-whitelist/:userId/promote` | 🔐 | 👑 |  | src/pwa/routes/admin-verifier-whitelist.ts:77 |
 | POST | `/api/admin/verifier-whitelist/:userId/revoke` | 🔐 | 👑 |  | src/pwa/routes/admin-verifier-whitelist.ts:105 |
 | POST | `/api/admin/verifier-whitelist/:userId/suspend` | 🔐 | 👑 |  | src/pwa/routes/admin-verifier-whitelist.ts:92 |
-| GET | `/api/admin/verify-tasks` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:75 |
+| GET | `/api/admin/verify-tasks` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:79 |
 | GET | `/api/admin/wish-reports` | 🔐 | 👑 | ─── admin 慈善管理 ───────────────────────────────────────── | src/pwa/routes/charity.ts:740 |
 | PATCH | `/api/admin/wish-reports/:id` | 🔐 | 👑 |  | src/pwa/routes/charity.ts:758 |
 | POST | `/api/admin/wishes/:id/takedown` | 🔐 | 👑 |  | src/pwa/routes/charity.ts:771 |
@@ -479,7 +479,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/orders/:id/claim-verification` | 🔐 |  | 买家发起 claim 验证任务（绑定 paid 及之后的订单） | src/pwa/routes/claim-verify.ts:331 |
 | POST | `/api/orders/:id/confirm-in-person` | 🔐 |  | 买家确认面交完成 → 直接 completed + settleOrder | src/pwa/routes/orders-action.ts:135 |
 | GET | `/api/orders/:id/direct-pay-qr` | 🔐 |  | 取【当时那一版】图字节。未 ack / 非买家 / 无 QR / 非 direct_p2p → 统一 404(不枚举,不泄露)。图字节不入 order JSON | src/pwa/routes/orders-read.ts:261 |
-| POST | `/api/orders/:id/force-timeout-check` | 🔐 |  | 手动触发超时判责（当事人） | src/pwa/routes/orders-action.ts:566 |
+| POST | `/api/orders/:id/force-timeout-check` | 🔐 |  | 手动触发超时判责（当事人） | src/pwa/routes/orders-action.ts:567 |
 | GET | `/api/orders/:id/mutual-cancel` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:35 |
 | POST | `/api/orders/:id/mutual-cancel/accept` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:50 |
 | POST | `/api/orders/:id/mutual-cancel/decline` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:61 |
