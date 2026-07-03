@@ -5478,7 +5478,7 @@
     },
     "/api/orders/:id/chain": {
       "get": {
-        "summary": "订单签名链 — 当事人 + arbitrator + admin 可查",
+        "summary": "订单签名链 — 当事人 + 白名单仲裁员(涉争议订单) + admin 可查",
         "tags": [
           "order"
         ],

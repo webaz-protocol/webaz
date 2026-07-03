@@ -145,6 +145,7 @@
     "test:dispute-dismiss-negotiation": "tsx scripts/test-dispute-dismiss-negotiation.ts",
     "test:disputes-read-auth": "tsx scripts/test-disputes-read-auth.ts",
     "test:admin-dispute-triage": "tsx scripts/test-admin-dispute-triage.ts",
+    "test:orders-read-arbitrator-view": "tsx scripts/test-orders-read-arbitrator-view.ts",
     "test:arbitration-entry-frontend": "tsx scripts/test-arbitration-entry-frontend.ts",
     "test:arbitrator-admin-ui": "tsx scripts/test-arbitrator-admin-ui.ts",
     "test:webauthn-arbitrator-purposes": "tsx scripts/test-webauthn-arbitrator-purposes.ts",
