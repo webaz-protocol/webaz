@@ -729,6 +729,7 @@ jobs:
       - run: npm run test:arbitrate-route-e2e
       - run: npm run test:dispute-dismiss-negotiation
       - run: npm run test:disputes-read-auth
+      - run: npm run test:admin-dispute-triage
       - run: npm run test:arbitration-entry-frontend
       - run: npm run test:arbitrator-admin-ui
       - run: npm run test:webauthn-arbitrator-purposes

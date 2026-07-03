@@ -318,7 +318,7 @@ import { registerDirectReceivePaymentInstructionRoutes } from './routes/direct-r
 import { registerDirectPayAvailabilityRoutes } from './routes/direct-pay-availability.js'  // PR-4a: Direct Pay 可用性只读(控制面 SSOT)
 import { registerAdminDirectReceiveDepositsRoutes } from './routes/admin-direct-receive-deposits.js'; import { registerPlatformReceiveAccountsRoutes } from './routes/platform-receive-accounts.js'  // PR-4b-3 ROOT 生产保证金 + 平台多收款方式 admin 管理(fee 预充值申请流前置)
 // Disputes 读端点 (#1013 Phase 86) — 5 endpoints (list/similar/detail/evidence-list/parties)
-import { registerDisputesReadRoutes } from './routes/disputes-read.js'
+import { registerDisputesReadRoutes } from './routes/disputes-read.js'; import { isArbitrationReadAdmin } from './arbitration-read-admin.js'  // 争议详情只读 admin 门(与后台列表授权一致)
 // Disputes 写端点 (#1013 Phase 87) — 5 endpoints (respond/arbitrate/add-evidence/evidence-blob/request-evidence)
 import { registerDisputesWriteRoutes } from './routes/disputes-write.js'
 // Products 声明 (#1013 Phase 88) — 2 endpoints (POST claim + GET claims)
@@ -5516,7 +5516,7 @@ registerSellerQuotaRoutes(app, {
 registerDisputesReadRoutes(app, {
   db, auth, errorRes,
   getOpenDisputes, getDisputeDetails, getEvidenceRequests, listEvidenceFiles,
-  isEligibleArbitrator,
+  isEligibleArbitrator, isArbitrationAdmin: isArbitrationReadAdmin,   // 后者=争议详情只读 admin 门,与后台列表 /admin/disputes 同款授权(单一真相源 arbitration-read-admin.ts)
 })
 
 // #1013 Phase 87: 5 disputes 写端点已迁出（包括 234 行 arbitrate）

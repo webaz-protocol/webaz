@@ -44,7 +44,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/arbitrators/grant` | 🔐 | 👑 |  | src/pwa/routes/arbitrator.ts:72 |
 | POST | `/api/admin/atomic/process-ledger` | 🔐 | 👑 |  | src/pwa/routes/admin-atomic.ts:30 |
 | POST | `/api/admin/auction-reminders/run` | 🔐 | 👑 | Admin 手动跑提醒派发 | src/pwa/routes/auction.ts:486 |
-| GET | `/api/admin/audit-log` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:132 |
+| GET | `/api/admin/audit-log` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:142 |
 | GET | `/api/admin/auditor` | 🔐 | 👑 |  | src/pwa/routes/admin-analytics.ts:82 |
 | GET | `/api/admin/build-feedback` | 🔐 | 👑 | ── maintainer triage ──────────────────────────────── | src/pwa/routes/build-feedback.ts:74 |
 | POST | `/api/admin/build-feedback/:id` | 🔐 | 👑 |  | src/pwa/routes/build-feedback.ts:94 |
@@ -83,7 +83,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/direct-receive/store-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/store-verifications?status=submitted — ROOT 审核队列(默 | src/pwa/routes/admin-direct-receive-deposits.ts:351 |
 | POST | `/api/admin/direct-receive/store-verifications/:id/review` | 🔐 | 👑 | POST /api/admin/direct-receive/store-verifications/:id/review — ROOT + 真人 Passke | src/pwa/routes/admin-direct-receive-deposits.ts:359 |
 | GET | `/api/admin/disputes` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:47 |
-| GET | `/api/admin/economic-summary` | 🔐 | 👑 | 隐私第一：运营财务，仅 protocol admin 可见。 | src/pwa/routes/admin-reports.ts:82 |
+| GET | `/api/admin/economic-summary` | 🔐 | 👑 | 隐私第一：运营财务，仅 protocol admin 可见。 | src/pwa/routes/admin-reports.ts:92 |
 | GET | `/api/admin/editor-picks` | 🔐 | 👑 |  | src/pwa/routes/admin-editor-picks.ts:60 |
 | POST | `/api/admin/editor-picks` | 🔐 | 👑 |  | src/pwa/routes/admin-editor-picks.ts:29 |
 | DELETE | `/api/admin/editor-picks/:id` | 🔐 | 👑 |  | src/pwa/routes/admin-editor-picks.ts:54 |
@@ -194,7 +194,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/verifier-whitelist/:userId/promote` | 🔐 | 👑 |  | src/pwa/routes/admin-verifier-whitelist.ts:77 |
 | POST | `/api/admin/verifier-whitelist/:userId/revoke` | 🔐 | 👑 |  | src/pwa/routes/admin-verifier-whitelist.ts:105 |
 | POST | `/api/admin/verifier-whitelist/:userId/suspend` | 🔐 | 👑 |  | src/pwa/routes/admin-verifier-whitelist.ts:92 |
-| GET | `/api/admin/verify-tasks` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:65 |
+| GET | `/api/admin/verify-tasks` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:75 |
 | GET | `/api/admin/wish-reports` | 🔐 | 👑 | ─── admin 慈善管理 ───────────────────────────────────────── | src/pwa/routes/charity.ts:740 |
 | PATCH | `/api/admin/wish-reports/:id` | 🔐 | 👑 |  | src/pwa/routes/charity.ts:758 |
 | POST | `/api/admin/wishes/:id/takedown` | 🔐 | 👑 |  | src/pwa/routes/charity.ts:771 |
@@ -331,18 +331,18 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/direct-receive/store-verification` | 🔐 |  | GET /api/direct-receive/store-verification — 卖家本人店铺认证状态(脱敏 DTO,含豁免位)。 | src/pwa/routes/direct-pay-availability.ts:178 |
 | POST | `/api/direct-receive/store-verification` | 🔐 |  | POST /api/direct-receive/store-verification — 卖家申领店铺验证码(单一活跃 per seller)。 | src/pwa/routes/direct-pay-availability.ts:159 |
 | PUT | `/api/direct-receive/store-verification` | 🔐 |  | PUT /api/direct-receive/store-verification — 卖家提交店铺外链(仅存储,不抓取)。 | src/pwa/routes/direct-pay-availability.ts:168 |
-| GET | `/api/disputes` | 🔐 |  | 仲裁员：查看所有开放争议 | src/pwa/routes/disputes-read.ts:39 |
-| GET | `/api/disputes/:id` | 🔐 |  | 详情聚合（含 W4 timeline + chain ruling） | src/pwa/routes/disputes-read.ts:112 |
+| GET | `/api/disputes` | 🔐 |  | 仲裁员：查看所有开放争议 | src/pwa/routes/disputes-read.ts:42 |
+| GET | `/api/disputes/:id` | 🔐 |  | 详情聚合（含 W4 timeline + chain ruling） | src/pwa/routes/disputes-read.ts:115 |
 | POST | `/api/disputes/:id/add-evidence` | 🔐 |  | 参与方主动举证（text）+ SNF 信封分发 | src/pwa/routes/disputes-write.ts:419 |
 | POST | `/api/disputes/:id/arbitrate` | 🔐 |  | 仲裁员裁定 | src/pwa/routes/disputes-write.ts:183 |
 | POST | `/api/disputes/:id/arbitrator-pause-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:632 |
 | POST | `/api/disputes/:id/arbitrator-resume-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:729 |
 | POST | `/api/disputes/:id/evidence-blob` | 🔐 |  | N: limit 精确 = EVIDENCE_MAX_BYTES | src/pwa/routes/disputes-write.ts:480 |
-| GET | `/api/disputes/:id/evidence-list` | 🔐 |  | 当事人 + 仲裁员可查（meta only，blob 单独拉） | src/pwa/routes/disputes-read.ts:367 |
-| GET | `/api/disputes/:id/parties` | 🔐 |  | 涉案三方（仲裁员选择发证据请求的对象） | src/pwa/routes/disputes-read.ts:379 |
+| GET | `/api/disputes/:id/evidence-list` | 🔐 |  | 当事人 + 仲裁员可查（meta only，blob 单独拉） | src/pwa/routes/disputes-read.ts:374 |
+| GET | `/api/disputes/:id/parties` | 🔐 |  | 涉案三方（仲裁员选择发证据请求的对象） | src/pwa/routes/disputes-read.ts:386 |
 | POST | `/api/disputes/:id/request-evidence` | 🔐 |  | 仲裁员：请求某方补证 | src/pwa/routes/disputes-write.ts:565 |
 | POST | `/api/disputes/:id/respond` | 🔐 |  | 被诉方反驳 | src/pwa/routes/disputes-write.ts:159 |
-| GET | `/api/disputes/:id/similar-cases` | 🔐 |  | A2 同类判例推荐 | src/pwa/routes/disputes-read.ts:47 |
+| GET | `/api/disputes/:id/similar-cases` | 🔐 |  | A2 同类判例推荐 | src/pwa/routes/disputes-read.ts:50 |
 | GET | `/api/disputes/cases` |  |  | 公开列表（全网）— 判例库总览 | src/pwa/routes/dispute-cases.ts:53 |
 | GET | `/api/disputes/cases/:case_id` |  |  | 案件详情（含评论 + 评论者身份标签） | src/pwa/routes/dispute-cases.ts:109 |
 | POST | `/api/disputes/cases/:case_id/comment` | 🔐 |  | 写评论 — 当事人禁评，一人一案一次 | src/pwa/routes/dispute-cases.ts:175 |
