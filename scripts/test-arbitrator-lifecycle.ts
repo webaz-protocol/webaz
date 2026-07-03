@@ -12,14 +12,14 @@ process.env.HOME = mkdtempSync(join(tmpdir(), 'arb-life-'))
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { initSystemUser } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
 const { initArbitratorReviewSchema, initWebauthnSchema } = await import('../src/runtime/webaz-schema-helpers.js')
-const { initDisputeSchema, createDispute, checkDisputeTimeouts, arbitrateDispute } = await import('../src/layer3-trust/L3-1-dispute-engine/dispute-engine.js')
+const { initDisputeSchema, initEvidenceRequestSchema, createDispute, checkDisputeTimeouts, arbitrateDispute, requestEvidence } = await import('../src/layer3-trust/L3-1-dispute-engine/dispute-engine.js')
 const L = await import('../src/pwa/arbitrator-lifecycle.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
 const db = initDatabase(); db.pragma('foreign_keys = OFF')
-initSystemUser(db); initArbitratorReviewSchema(db); initWebauthnSchema(db); initDisputeSchema(db)
+initSystemUser(db); initArbitratorReviewSchema(db); initWebauthnSchema(db); initDisputeSchema(db); initEvidenceRequestSchema(db)
 
 const mkUser = (id: string, role = 'buyer', passkey = false): void => {
   db.prepare('INSERT INTO users (id,name,role,api_key) VALUES (?,?,?,?)').run(id, id, role, 'k_' + id)
@@ -96,6 +96,12 @@ ok('11b. order reached terminal after human ruling', (db.prepare('SELECT status 
 const rSusp = arbitrateDispute(db, mkDisp('ord_h2'), 'suspArb', 'refund_buyer', '裁定')
 ok('11c. SUSPENDED arbitrator CANNOT rule via engine', rSusp.success === false)
 ok('11d. role=arbitrator WITHOUT whitelist CANNOT rule via engine (bypass removed)', arbitrateDispute(db, mkDisp('ord_h3'), 'roleArb', 'refund_buyer', '裁定').success === false)
+
+// ⑫ requestEvidence(补证)授权源同裁定(P2-1):active whitelist 可,suspended/role-only 不可。
+const dEv = mkDisp('ord_ev')   // fresh open dispute (buyerX initiator → sellerX defendant)
+ok('12a. active whitelist arbitrator CAN request evidence', requestEvidence(db, dEv, 'humanArb', 'sellerX', ['text'], '请补充证据').success === true)
+ok('12b. SUSPENDED arbitrator CANNOT request evidence', requestEvidence(db, dEv, 'suspArb', 'sellerX', ['text'], 'x').success === false)
+ok('12c. role-only(no whitelist) CANNOT request evidence', requestEvidence(db, dEv, 'roleArb', 'sellerX', ['text'], 'x').success === false)
 
 if (fail > 0) { console.error(`\n❌ arbitrator-lifecycle FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ arbitrator-lifecycle: grant/suspend/reinstate/revoke(terminal) + active-only eligibility + COI + sys_protocol auto-judge intact\n  ✅ pass ${pass}`)

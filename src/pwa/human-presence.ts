@@ -52,16 +52,14 @@ export function createHumanPresence(db: Database.Database, getProtocolParam: <T>
   // ─── Agent 治理铁律:人工铁律节点 ───
   // 关键节点(verifier 投票 / arbitrator 仲裁 / agent_revoke / delete_passkey / identity_claim)必须真实
   // 人工参与,agent 代操作被拦截。实现:要求 webauthn_gate_token(一次性 · 60s)+ 协议参数开关。
-  // is_system fixture 旁路只对 vote/arbitrate 生效(有白名单表);其余无豁免。
+  // is_system fixture 旁路【只对 vote 生效】。PR-C:arbitrate 旁路已移除 —— HTTP 人类仲裁路由所有真人仲裁员都必须
+  //   现场 Passkey(consumeGateToken)。sys_protocol 自动裁决走 engine arbitrateDispute(role=system,不经此函数),不受影响。
   function requireHumanPresence(userId: string, purpose: HumanPresencePurpose, token: string | undefined, paramKey: string, validate: (data: unknown) => boolean = () => true): HumanPresenceResult {
     const enabled = Number(getProtocolParam<number>(paramKey, 1)) === 1
     if (!enabled) return { ok: true }  // 协议参数关闭 → 不强制
 
     if (purpose === 'vote') {
       const wl = db.prepare('SELECT is_system FROM verifier_whitelist WHERE user_id = ?').get(userId) as { is_system: number } | undefined
-      if (wl?.is_system === 1) return { ok: true }
-    } else if (purpose === 'arbitrate') {
-      const wl = db.prepare('SELECT is_system FROM arbitrator_whitelist WHERE user_id = ?').get(userId) as { is_system: number } | undefined
       if (wl?.is_system === 1) return { ok: true }
     }
 
