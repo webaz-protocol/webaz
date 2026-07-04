@@ -117,7 +117,7 @@ async function renderMyAdvanced(app) {
 }
 
 async function renderProfile(app) {
-  app.innerHTML = shell(loading$(), 'me')
+  if (state.apiKey && !state.user) { const me = await GET('/me'); if (!me.error) state.user = me } app.innerHTML = shell(loading$(), 'me')   // 自愈(修"切角色/改密后假登出"):switchRole/addRole/set-password 置空 state.user 后绕过 render() 路由直调本函数,shell 曾画成未登录(header 变登录钮/底栏错乱,不自愈) → 先权威重取再画
   const [data, blocklist] = await Promise.all([
     GET('/profile'),
     GET('/blocklist/me').catch(() => ({ blocked: [] })),
