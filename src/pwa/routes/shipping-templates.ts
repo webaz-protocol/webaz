@@ -60,6 +60,19 @@ export function registerShippingTemplateRoutes(app: Application, deps: ShippingT
     return void res.json({ success: true, ...touched })
   })
 
+  // 卖家读自己的店铺级设置(设置 UI 回显):接单模式 + 运费模板 + 询价开关。
+  app.get('/api/seller/shipping-settings', async (req, res) => {
+    const user = auth(req, res); if (!user) return
+    if (user.role !== 'seller') return void errorRes(res, 403, 'SELLER_ONLY', '仅卖家')
+    const row = await dbOne<{ store_accept_mode: string | null; store_shipping_template: string | null; store_shipping_quote_ok: number | null }>(
+      'SELECT store_accept_mode, store_shipping_template, store_shipping_quote_ok FROM users WHERE id = ?', [user.id])
+    return void res.json({
+      store_accept_mode: row?.store_accept_mode ?? null,
+      store_template: loadTemplateJson(row?.store_shipping_template),
+      store_quote_ok: row?.store_shipping_quote_ok == null ? null : Number(row.store_shipping_quote_ok) === 1,
+    })
+  })
+
   // 公开读:买家下单前查配送范围。生效 = 单品覆盖 ?? 店铺默认;template=null → 不按地区计费(下单不要求选地区)。
   app.get('/api/products/:id/shipping-options', async (req, res) => {
     const prod = await dbOne<{ id: string; seller_id: string; shipping_template: string | null; shipping_quote_ok: number | null }>(
