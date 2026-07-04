@@ -742,6 +742,7 @@ jobs:
       - run: npm run test:bond-refund-flow
       - run: npm run test:bond-slash-flow
       - run: npm run test:bond-deferral-closure
+      - run: npm run test:agent-strike-ui
       - run: npm run test:legacy-arbitrator-role-sweep
       - run: npm run test:arbitration-entry-frontend
       - run: npm run test:arbitrator-admin-ui

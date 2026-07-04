@@ -70,7 +70,7 @@ export function registerAgentGovernanceRoutes(app: Application, deps: AgentGover
       }
       const calls30d = (await dbOne<{ n: number }>(`SELECT COUNT(*) as n FROM agent_call_log WHERE api_key = ? AND created_at > datetime('now', '-30 days')`, [k.api_key]))!.n
       const last = await dbOne<Record<string, unknown>>(`SELECT endpoint, method, status_code, created_at FROM agent_call_log WHERE api_key = ? ORDER BY created_at DESC LIMIT 1`, [k.api_key])
-      const strikes = await dbAll(`SELECT severity, reason_code, issued_at, expires_at, appeal_status FROM agent_strikes WHERE api_key = ? ORDER BY issued_at DESC LIMIT 5`, [k.api_key])
+      const strikes = await dbAll(`SELECT id, severity, reason_code, reason_detail, issued_at, expires_at, appeal_status FROM agent_strikes WHERE api_key = ? ORDER BY issued_at DESC LIMIT 5`, [k.api_key])   // +id/detail:被封申诉 UI 需要(此端点封禁豁免)
       let passport = null
       try { passport = computeAgentPassport(db, k.api_key, user.id as string, custodianFingerprint) } catch { /* read-only, never break the list */ }
       return {
