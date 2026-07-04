@@ -57,9 +57,13 @@ export function setPushCallback(cb: (userId: string, notif: Notification) => voi
 // ─── 核心：状态变更 → 通知规则 ───────────────────────────────
 
 interface NotifRule {
-  recipients: Array<'buyer' | 'seller' | 'logistics' | 'arbitrators'>
+  recipients: Array<'buyer' | 'seller' | 'logistics' | 'arbitrators' | 'admins'>
   title: string | ((ctx: OrderCtx) => string)
   body: (ctx: OrderCtx) => string
+  // N1 迁移:客户端 i18n 模板 key(app-notif-templates-orders.js 注册表)。落库时连同 params
+  //   {buyer,seller,product,amount,logistics} 写入;title/body 仍为中文回退(旧客户端/未知 key)。
+  //   函数形式用于 rail fork(direct_p2p 的资金语义与 escrow 不同,key 与回退文案都必须分轨)。
+  key: string | ((ctx: OrderCtx) => string)
 }
 
 interface OrderCtx {
@@ -74,130 +78,136 @@ interface OrderCtx {
 
 const RULES: Record<string, NotifRule> = {
   'created→paid': {
-    recipients: ['seller'],
+    recipients: ['seller'], key: 'ord_created_paid',
     title: '🛍️ 新订单',
     body: ctx => `${ctx.buyerName} 下单了「${ctx.productTitle}」，金额 ${ctx.totalAmount} WAZ。请在 24h 内接单，否则自动退款。`,
   },
   'paid→accepted': {
-    recipients: ['buyer'],
+    recipients: ['buyer'], key: 'ord_paid_accepted',
     title: '✅ 卖家已接单',
     body: ctx => `${ctx.sellerName} 已接受你的订单，预计 5 天内发货。`,
   },
   'paid→cancelled': {
-    recipients: ['buyer'],
+    recipients: ['buyer'], key: 'ord_paid_cancelled',
     title: '❌ 订单已取消',
     body: ctx => `订单「${ctx.productTitle}」已取消，${ctx.totalAmount} WAZ 将原路退回。`,
   },
   'accepted→shipped': {
-    recipients: ['buyer'],
+    recipients: ['buyer'], key: 'ord_accepted_shipped',
     title: '📦 商品已发货',
     body: ctx => `${ctx.sellerName} 已发货，物流 48h 内揽收后你可以追踪包裹。`,
   },
   'shipped→picked_up': {
-    recipients: ['buyer', 'seller'],
+    recipients: ['buyer', 'seller'], key: 'ord_shipped_picked_up',
     title: '🚚 物流已揽收',
     body: ctx => `包裹已由${ctx.logisticsName ?? '物流方'}揽收，正在运输中。`,
   },
   'picked_up→in_transit': {
-    recipients: ['buyer'],
+    recipients: ['buyer'], key: 'ord_picked_up_in_transit',
     title: '🚛 包裹运输中',
     body: ctx => `你的「${ctx.productTitle}」正在运输途中。`,
   },
-  // 注：曾有 'accepted→cancelled' 通知规则 — 但 VALID_TRANSITIONS 不允许 accepted 直接到
-  // cancelled（只能走 disputed 或 fault_seller）。该规则永不触发，已删除。
-  // 若以后开"卖家接单后主动取消"通道，需先在 L0-2 状态机加 transition，再恢复此规则。
+  // 注：曾有 'accepted→cancelled' 通知规则 — 该边现已存在但仅 system actor(直付取消退款握手,v12),
+  // 通知由握手路由自己发(direct_pay_cancel_settled),不走本规则表。
   'in_transit→delivered': {
-    recipients: ['buyer'],
+    recipients: ['buyer'], key: 'ord_in_transit_delivered',
     title: '📬 包裹已投递',
     body: ctx => `你的包裹已送达，请确认收货。72 小时内未确认将自动完成。`,
   },
   'delivered→confirmed': {
-    recipients: ['seller'],
+    recipients: ['seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_delivered_confirmed_dp' : 'ord_delivered_confirmed',
     title: ctx => ctx.paymentRail === 'direct_p2p' ? '✅ 买家确认收货' : '💰 买家确认收货',
     body: ctx => ctx.paymentRail === 'direct_p2p'
       ? `${ctx.buyerName} 已确认收货，订单完成。直付为非托管:货款由你与买家场外结算,协议不代收、无平台资金入账。`
       : `${ctx.buyerName} 已确认收货，${ctx.totalAmount} WAZ 结算中。`,
   },
   'confirmed→completed': {
-    recipients: ['seller'],
+    recipients: ['seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_confirmed_completed_dp' : 'ord_confirmed_completed',
     title: ctx => ctx.paymentRail === 'direct_p2p' ? '✅ 交易完成' : '✅ 交易完成，资金到账',
     body: ctx => ctx.paymentRail === 'direct_p2p'
       ? `订单「${ctx.productTitle}」交易完成。直付为非托管:无平台资金结算,货款以你与买家场外结算为准。`
       : `订单「${ctx.productTitle}」交易完成，收益已入账，查看钱包确认。`,
   },
   'paid→disputed': {
-    recipients: ['seller'],
+    recipients: ['seller'], key: 'ord_paid_disputed',
     title: '⚠️ 买家发起争议',
     body: ctx => `${ctx.buyerName} 对订单「${ctx.productTitle}」发起了争议。请在 48 小时内提交反驳证据，否则协议自动裁定退款。`,
   },
   'accepted→disputed': {
-    recipients: ['seller'],
+    recipients: ['seller'], key: 'ord_accepted_disputed',
     title: '⚠️ 买家发起争议',
     body: ctx => `${ctx.buyerName} 对订单「${ctx.productTitle}」发起了争议，请在 48h 内回应。`,
   },
   'shipped→disputed': {
-    recipients: ['seller', 'logistics'],
+    recipients: ['seller', 'logistics'], key: 'ord_shipped_disputed',
     title: '⚠️ 发生争议',
     body: ctx => `订单「${ctx.productTitle}」出现争议，请提交相关证据。`,
   },
   'in_transit→disputed': {
-    recipients: ['seller', 'logistics'],
+    recipients: ['seller', 'logistics'], key: 'ord_in_transit_disputed',
     title: '⚠️ 运输中发生争议',
     body: ctx => `订单「${ctx.productTitle}」运输过程中发生争议，请及时回应。`,
   },
   'delivered→disputed': {
-    recipients: ['seller'],
+    recipients: ['seller'], key: 'ord_delivered_disputed',
     title: '⚠️ 买家对收货发起争议',
     body: ctx => `${ctx.buyerName} 声称货物有问题，已发起争议。请在 48h 内提交证据。`,
   },
+  // ── 裁定/违约:资金语义 rail-fork —— direct_p2p 非托管,平台不持货款,绝不能写"资金已释放/退回"(那是假话) ──
   'disputed→completed': {
-    recipients: ['buyer', 'seller'],
+    recipients: ['buyer', 'seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_disputed_completed_dp' : 'ord_disputed_completed',
     title: '⚖️ 争议裁定：卖家胜诉',
-    body: ctx => `订单「${ctx.productTitle}」争议已裁定，资金已释放给卖家。`,
+    body: ctx => ctx.paymentRail === 'direct_p2p'
+      ? `订单「${ctx.productTitle}」争议已裁定:卖家胜诉(直付为信誉裁决,不涉资金流转)。`
+      : `订单「${ctx.productTitle}」争议已裁定，资金已释放给卖家。`,
   },
   'disputed→cancelled': {
-    recipients: ['buyer', 'seller'],
-    title: '⚖️ 争议裁定：退款买家',
-    body: ctx => `订单「${ctx.productTitle}」争议已裁定，${ctx.totalAmount} WAZ 已退回买家。`,
+    recipients: ['buyer', 'seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_disputed_cancelled_dp' : 'ord_disputed_cancelled',
+    title: ctx => ctx.paymentRail === 'direct_p2p' ? '⚖️ 争议裁定：支持买家' : '⚖️ 争议裁定：退款买家',
+    body: ctx => ctx.paymentRail === 'direct_p2p'
+      ? `订单「${ctx.productTitle}」争议已裁定支持买家。直付非托管:平台无资金可退,退款由双方场外处理;卖家信誉处罚已记录。`
+      : `订单「${ctx.productTitle}」争议已裁定，${ctx.totalAmount} WAZ 已退回买家。`,
   },
   'paid→fault_seller': {
-    recipients: ['buyer', 'seller'],
+    recipients: ['buyer', 'seller'], key: 'ord_paid_fault_seller',
     title: '⏰ 卖家超时违约',
     body: ctx => `卖家超时未接单，订单已自动取消，${ctx.totalAmount} WAZ 退款处理中。`,
   },
   'accepted→fault_seller': {
-    recipients: ['buyer', 'seller'],
+    recipients: ['buyer', 'seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_accepted_fault_seller_dp' : 'ord_accepted_fault_seller',
     title: '⏰ 卖家超时未发货',
-    body: ctx => `卖家超时未发货，订单已判违约，资金退回。`,
+    body: ctx => ctx.paymentRail === 'direct_p2p'
+      ? `卖家超时未发货，订单已判卖家违约(直付非托管:平台无资金可退,违约已记入卖家信誉;退款请与卖家场外协商,协商未果可发起争议)。`
+      : `卖家超时未发货，订单已判违约，资金退回。`,
   },
   'in_transit→fault_logistics': {
-    recipients: ['buyer', 'seller'],
+    recipients: ['buyer', 'seller'], key: 'ord_in_transit_fault_logistics',
     title: '⏰ 物流超时',
     body: ctx => `物流方超时未完成投递，已自动记录违约。`,
   },
   // ── Direct Pay 货款协商(争议≠仲裁,非托管:全程无退款/资金语义)──────────────────
   'accepted→payment_query': {
-    recipients: ['buyer'],
+    recipients: ['buyer'], key: 'ord_accepted_payment_query',
     title: '🔎 卖家未收到货款',
     body: ctx => `卖家报告尚未收到「${ctx.productTitle}」的货款,请核实:若确已付款请提供付款参考,若未付款可取消订单。直付非托管,协议不代收/不退款。`,
   },
   'payment_query→accepted': {
-    recipients: ['buyer'],
+    recipients: ['buyer'], key: 'ord_payment_query_accepted',
     title: '✅ 卖家已确认收款',
     body: ctx => `卖家已确认收到「${ctx.productTitle}」的货款,订单恢复,等待发货。`,
   },
   'payment_query→disputed': {
-    recipients: ['buyer', 'seller'],
+    recipients: ['buyer', 'seller'], key: 'ord_payment_query_disputed',
     title: '⚖️ 货款协商升级举证仲裁',
     body: ctx => `「${ctx.productTitle}」货款协商未果,已进入举证仲裁(证据制信誉裁决,非托管:不涉退款/放款)。请提交证据。`,
   },
   'disputed→payment_query': {
-    recipients: ['buyer', 'seller'],
+    recipients: ['buyer', 'seller'], key: 'ord_disputed_payment_query',
     title: '↩️ 仲裁已撤回,回到协商',
     body: ctx => `「${ctx.productTitle}」的仲裁申请已撤回,回到买卖双方协商。`,
   },
   'payment_query→cancelled': {
-    recipients: ['buyer', 'seller'],   // 买家取消(卖家知)/ 系统申诉窗满关单(买家知)
+    recipients: ['buyer', 'seller'], key: 'ord_payment_query_cancelled',   // 买家取消(卖家知)/ 系统申诉窗满关单(买家知)
     title: '🚫 直付订单已取消(协商)',
     body: ctx => `「${ctx.productTitle}」订单已取消(货款协商未达成)。直付非托管,无平台退款。`,
   },
@@ -221,12 +231,16 @@ export function notifyTransition(
   const title = typeof rule.title === 'function' ? rule.title(ctx) : rule.title
   const body  = rule.body(ctx)
   const type  = `${fromStatus}→${toStatus}`
+  // N1 迁移:模板 key + 参数落库,客户端按 viewer locale 渲染;title/body 保持中文回退(零迁移)。
+  //   logistics 缺省的兜底词交给客户端模板本地化(服务端不硬编码中文进 params)。
+  const templateKey = typeof rule.key === 'function' ? rule.key(ctx) : rule.key
+  const params = { buyer: ctx.buyerName, seller: ctx.sellerName, product: ctx.productTitle, amount: ctx.totalAmount, ...(ctx.logisticsName ? { logistics: ctx.logisticsName } : {}) }
 
   // 确定收件人 ID 列表
   const recipientIds = resolveRecipients(db, rule.recipients, ctx, orderId)
 
   for (const userId of recipientIds) {
-    createNotification(db, userId, orderId, type, title, body)
+    createNotification(db, userId, orderId, type, title, body, { templateKey, params })
   }
 }
 
@@ -269,6 +283,14 @@ function resolveRecipients(
     if (role === 'buyer'      && order.buyer_id)      ids.add(order.buyer_id)
     if (role === 'seller'     && order.seller_id)     ids.add(order.seller_id)
     if (role === 'logistics'  && order.logistics_id)  ids.add(order.logistics_id)
+    if (role === 'admins') {
+      // 收件人=全体 admin(users.role='admin';root/regional 由具体规则语义决定是否细分 —— 需要仅 root 的
+      //   通知(如 fee-prepay 审批,ROOT 门)不走本规则表,在各自路由直查 admin_type='root')。
+      try {
+        const admins = db.prepare("SELECT id FROM users WHERE role = 'admin'").all() as { id: string }[]
+        admins.forEach(a => ids.add(a.id))
+      } catch { /* fresh-DB → 无收件人 */ }
+    }
     if (role === 'arbitrators') {
       // 收件人=active arbitrator_whitelist(唯一仲裁能力源;legacy role='arbitrator' 会通知到打不开案件的人、漏掉真仲裁员)。
       //   当前无 NOTIF_RULES 使用 'arbitrators'(仲裁员靠工作台拉取);此分支为未来规则备好正确的授权源。表缺失 → 静默空集。

@@ -9,6 +9,9 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { listActivePlatformAccounts } from '../../platform-receive-accounts.js'
 import { createFeePrepayRequest, listSellerRequests, cancelRequest } from '../../direct-pay-fee-prepay-request.js'
+// N3:申请提交 → 通知有审批权的 admin(approve/reject 是 ROOT 门,只通知 root;regional 收到也办不了)。
+import { createNotification } from '../../layer2-business/L2-6-notifications/notification-engine.js'
+import { dbAll } from '../../layer0-foundation/L0-1-database/db.js'
 
 export interface FeePrepayRequestsDeps {
   db: Database.Database
@@ -33,7 +36,7 @@ export function registerFeePrepayRequestRoutes(app: Application, deps: FeePrepay
   })
 
   // ── 提交预充值申请(不 Passkey;凭据必填)──
-  app.post('/api/direct-receive/fee-prepay-request', (req, res) => {
+  app.post('/api/direct-receive/fee-prepay-request', async (req, res) => {
     const user = requireSeller(req, res); if (!user) return
     const b = req.body || {}
     const r = createFeePrepayRequest(db, user.id as string, {
@@ -41,6 +44,16 @@ export function registerFeePrepayRequestRoutes(app: Application, deps: FeePrepay
       evidenceRef: b.evidence_ref, evidenceNote: b.evidence_note,
     }, generateId)
     if (!r.ok) return void res.status(400).json({ error: r.reason, error_code: 'FEE_PREPAY_REQUEST_INVALID' })
+    // N3:通知 root admin 有待审申请(此前提交后无人收到任何未读信号,全靠人肉翻队列)。best-effort 不阻断。
+    try {
+      const roots = await dbAll<{ id: string }>("SELECT id FROM users WHERE role = 'admin' AND (admin_type = 'root' OR admin_type IS NULL)")
+      const amountUsdc = Number(b.amount_units) / 1_000_000
+      for (const a of roots) {
+        createNotification(db, a.id, null, 'dp_fee_prepay_requested', '💳 新预充值申请待审',
+          `卖家 ${String(user.name ?? user.id)} 申请平台服务费预充值 ${amountUsdc} USDC,请到 admin 后台核对到账后处理。`,
+          { templateKey: 'dp_fee_prepay_requested', params: { seller: String(user.name ?? user.id), amount: amountUsdc } })
+      }
+    } catch (e) { console.warn('[fee-prepay-request notify]', (e as Error).message) }
     res.json({ ok: true, request: r.request })
   })
 
