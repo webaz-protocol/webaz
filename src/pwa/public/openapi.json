@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (744 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (746 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -6938,6 +6938,17 @@
         ]
       }
     },
+    "/api/return-requests/:id/confirm-refund": {
+      "post": {
+        "summary": "POST /api/return-requests/:id/confirm-refund",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/return-requests/:id/decide": {
       "post": {
         "summary": "POST /api/return-requests/:id/decide",
@@ -6952,6 +6963,17 @@
     "/api/return-requests/:id/escalate": {
       "post": {
         "summary": "buyer 升级到争议（仅 rejected 后或 pending ≥ 7 天）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/return-requests/:id/mark-refunded": {
+      "post": {
+        "summary": "POST /api/return-requests/:id/mark-refunded",
         "tags": [],
         "security": [
           {

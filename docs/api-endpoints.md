@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (744 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (746 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -418,7 +418,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/logistics/companies` |  |  |  | src/pwa/routes/logistics.ts:26 |
 | GET | `/api/logistics/me/performance` | 🔐 |  | 物流绩效卡 (Wave B-4) | src/pwa/routes/analytics.ts:36 |
 | GET | `/api/logistics/orders` | 🔐 |  |  | src/pwa/routes/logistics.ts:33 |
-| GET | `/api/logistics/return-pickups` | 🔐 |  |  | src/pwa/routes/returns.ts:418 |
+| GET | `/api/logistics/return-pickups` | 🔐 |  |  | src/pwa/routes/returns.ts:446 |
 | GET | `/api/manifest` |  |  |  | src/pwa/routes/public-utils.ts:463 |
 | POST | `/api/manifests` | 🔐 |  |  | src/pwa/routes/manifests.ts:52 |
 | GET | `/api/manifests/:hash` | 🔐 |  |  | src/pwa/routes/manifests.ts:101 |
@@ -491,8 +491,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/orders/:order_id/rating` | 🔐 |  | buyer → seller 评价（一单一评，仅 completed 订单可评） | src/pwa/routes/ratings.ts:50 |
 | POST | `/api/orders/:order_id/rating/followup` | 🔐 |  | W3 买家追问 — 在卖家 reply 后可追问一次 | src/pwa/routes/ratings.ts:169 |
 | POST | `/api/orders/:order_id/rating/reply` | 🔐 |  |  | src/pwa/routes/ratings.ts:150 |
-| GET | `/api/orders/:order_id/return-request` | 🔐 |  | P1-5: 订单级直查 | src/pwa/routes/returns.ts:187 |
-| POST | `/api/orders/:order_id/return-request` | 🔐 |  | buyer 发起退货 | src/pwa/routes/returns.ts:121 |
+| GET | `/api/orders/:order_id/return-request` | 🔐 |  | P1-5: 订单级直查 | src/pwa/routes/returns.ts:190 |
+| POST | `/api/orders/:order_id/return-request` | 🔐 |  | buyer 发起退货 | src/pwa/routes/returns.ts:126 |
 | POST | `/api/orders/batch-ship` | 🔐 |  | C-4: 卖家批量发货 | src/pwa/routes/orders-action.ts:84 |
 | GET | `/api/orders/export` | 🔐 |  | Wave D-2: 订单导出 CSV | src/pwa/routes/orders-read.ts:73 |
 | GET | `/api/p2p-products` |  |  | 公开：列表 | src/pwa/routes/p2p-products.ts:177 |
@@ -587,14 +587,16 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/register/send-code` |  |  | 注册场景需明确告知"邮箱已占用"(无法防枚举,标准取舍),但限流 + captcha 兜底。 | src/pwa/routes/auth-register.ts:71 |
 | GET | `/api/reputation` | 🔐 |  |  | src/pwa/routes/reputation.ts:29 |
 | GET | `/api/reputation/:userId` |  |  |  | src/pwa/routes/reputation.ts:44 |
-| GET | `/api/return-requests` | 🔐 |  |  | src/pwa/routes/returns.ts:204 |
-| DELETE | `/api/return-requests/:id` | 🔐 |  |  | src/pwa/routes/returns.ts:277 |
-| GET | `/api/return-requests/:id` | 🔐 |  | ─── W2 售后协商时间线 ─────────────────────────────── | src/pwa/routes/returns.ts:288 |
-| POST | `/api/return-requests/:id/decide` | 🔐 |  |  | src/pwa/routes/returns.ts:230 |
-| POST | `/api/return-requests/:id/escalate` | 🔐 |  | buyer 升级到争议（仅 rejected 后或 pending ≥ 7 天） | src/pwa/routes/returns.ts:465 |
-| POST | `/api/return-requests/:id/messages` | 🔐 |  |  | src/pwa/routes/returns.ts:435 |
-| POST | `/api/return-requests/:id/picked-up` | 🔐 |  | L3 Phase 2: 物流揽收 | src/pwa/routes/returns.ts:377 |
-| POST | `/api/return-requests/:id/received` | 🔐 |  | L3 Phase 2: 卖家确认收到 → refunded | src/pwa/routes/returns.ts:400 |
+| GET | `/api/return-requests` | 🔐 |  |  | src/pwa/routes/returns.ts:207 |
+| DELETE | `/api/return-requests/:id` | 🔐 |  |  | src/pwa/routes/returns.ts:294 |
+| GET | `/api/return-requests/:id` | 🔐 |  | ─── W2 售后协商时间线 ─────────────────────────────── | src/pwa/routes/returns.ts:305 |
+| POST | `/api/return-requests/:id/confirm-refund` | 🔐 |  |  | src/pwa/routes/direct-pay-returns.ts:50 |
+| POST | `/api/return-requests/:id/decide` | 🔐 |  |  | src/pwa/routes/returns.ts:233 |
+| POST | `/api/return-requests/:id/escalate` | 🔐 |  | buyer 升级到争议（仅 rejected 后或 pending ≥ 7 天） | src/pwa/routes/returns.ts:493 |
+| POST | `/api/return-requests/:id/mark-refunded` | 🔐 |  |  | src/pwa/routes/direct-pay-returns.ts:40 |
+| POST | `/api/return-requests/:id/messages` | 🔐 |  |  | src/pwa/routes/returns.ts:463 |
+| POST | `/api/return-requests/:id/picked-up` | 🔐 |  | L3 Phase 2: 物流揽收 | src/pwa/routes/returns.ts:394 |
+| POST | `/api/return-requests/:id/received` | 🔐 |  | L3 Phase 2: 卖家确认收到 → refunded | src/pwa/routes/returns.ts:417 |
 | POST | `/api/reviews/:type/:id/claim` | 🔐 |  |  | src/pwa/routes/reviews.ts:54 |
 | GET | `/api/reviews/:type/:id/claims` |  |  |  | src/pwa/routes/reviews.ts:113 |
 | GET | `/api/reviews/recent` |  |  |  | src/pwa/routes/reviews.ts:38 |
