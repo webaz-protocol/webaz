@@ -234,6 +234,7 @@
     "test:dispute-settlement-conservation": "tsx tests/test-dispute-settlement-conservation.ts",
     "test:payment-query-transitions": "tsx scripts/test-payment-query-transitions.ts",
     "test:payment-query-actions": "tsx scripts/test-payment-query-actions.ts",
+    "test:dispute-withdraw-confirm": "tsx scripts/test-dispute-withdraw-confirm.ts",
     "lint:secrets": "gitleaks detect --no-banner --redact --config .gitleaks.toml --exit-code 1",
     "test:wallet-signer": "tsx scripts/test-wallet-signer.ts",
     "test:cf-origin-guard": "tsx scripts/test-cf-origin-guard.ts"

@@ -234,6 +234,13 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     order.can_withdraw_payment_query_dispute =
       order.status === 'disputed' && disputedFroms[disputedFroms.length - 1] === 'payment_query' && !!dispute
 
+    // 争议协商收口·买家侧(与 orders-action dispute_withdraw_confirm 权威门同谓词):仅当【当前 disputed +
+    //   最近一次进入 disputed 是 from delivered(履约争议)+ 争议未裁定 + 查看者=买家=争议发起人】。
+    //   前端据此才显示"我已收到货·撤诉并确认收货";UI 便利字段,真正拦截仍在路由。
+    order.can_confirm_receipt_close_dispute =
+      order.status === 'disputed' && disputedFroms[disputedFroms.length - 1] === 'delivered'
+      && !!dispute && (dispute as unknown as Record<string, unknown>).initiator_id === user.id && order.buyer_id === user.id
+
     // 协商取消(无责·双方合意)握手状态 —— 仅 disputed 单计算,供订单页同步渲染 propose/accept/decline/withdraw。真正边界在 mutual-cancel 路由。
     if (order.status === 'disputed') {
       const mc = getMutualCancelState(db, req.params.id, user.id as string)

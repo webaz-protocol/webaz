@@ -14,6 +14,7 @@
  *   - ship 绑定 logistics_company_id；pickup 兜底（孤儿单 logistics 自助领取）
  *   - 证据描述触发 detectFraud → flag_reasons 存入 evidence
  *   - confirm → 系统用户自动 transition 到 completed + settleOrder
+ *   - dispute_withdraw_confirm → 买家撤诉并确认收货(限 delivered 来源履约争议+发起人+裁定前;全原子收口)
  *   - disputed → createDispute + broadcastSystemEvent
  *
  * 跨域注入：auth + isTrustedRole + generateId + transition + notifyTransition
@@ -386,6 +387,46 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       }
       notifyTransition(db, req.params.id, fromStatusCancel, 'cancelled')
       return void res.json({ success: true, status: 'cancelled', fee_stake_released: true })
+    }
+
+    // 争议协商收口(买家侧):买家撤诉并确认收货 —— 限【delivered 来源履约争议 + 争议发起人本人 + 裁定前】。
+    //   为什么存在:买家发起"未收到货"争议后包裹晚到/找到代收点,双方合意收口不该只剩仲裁(卖家侧收口=协商取消)。
+    //   货款争议(payment_query 来源)不走这里 —— 那是 pq_withdraw 的撤回语义(回协商,不确认收货)。
+    //   全原子(Codex P1 模式):争议 dismissed + disputed→confirmed→completed + settleOrder 同一 db.transaction,
+    //   任一步失败整体回滚(订单仍 disputed、争议仍 open,可重试);两轨同块(escrow 释放托管货款,dp 计提平台费)。
+    if (action === 'dispute_withdraw_confirm') {
+      if (uid !== buyerId) return void res.status(403).json({ error: '你不是本订单的买家', error_code: 'NOT_ORDER_BUYER' })
+      if (order.status !== 'disputed') return void res.status(409).json({ error: `订单状态 ${order.status} 不可撤诉确认收货(仅争议中)`, error_code: 'ORDER_NOT_DISPUTED' })
+      // RFC-016:两条纯预检读 → 异步 seam;事务内的 disputes UPDATE + transition + settle 写序列仍同步(原子性)
+      const dsp = await dbOne<{ id: string; initiator_id: string }>("SELECT id, initiator_id FROM disputes WHERE order_id = ? AND status IN ('open','in_review') ORDER BY created_at DESC, rowid DESC LIMIT 1", [req.params.id])
+      if (!dsp) return void res.status(409).json({ error: '争议已裁定或不存在,不可撤诉', error_code: 'DISPUTE_ALREADY_RULED' })
+      if (dsp.initiator_id !== uid) return void res.status(403).json({ error: '仅争议发起人可撤诉', error_code: 'NOT_DISPUTE_INITIATOR' })
+      const lastDisputedFrom = await dbOne<{ from_status: string }>("SELECT from_status FROM order_state_history WHERE order_id = ? AND to_status = 'disputed' ORDER BY created_at DESC, rowid DESC LIMIT 1", [req.params.id])
+      if (lastDisputedFrom?.from_status !== 'delivered') {
+        return void res.status(409).json({ error: '仅"已投递后未收到货/货有问题"类争议可撤诉确认收货;货款争议请用"撤回仲裁·回到协商"', error_code: 'NOT_FULFILMENT_DISPUTE' })
+      }
+      // dp = RISK 动作(确认收货即完成结算、计提平台费):所有只读预检过后才消费 Passkey token(与 confirm 同门)
+      if (order.payment_rail === 'direct_p2p') {
+        const g = directPayActionGate(req.params.id, 'dispute_withdraw_confirm', uid, req.body?.webauthn_token as string | undefined)
+        if (!g.ok) return void res.status(g.status).json({ error: g.error, error_code: g.error_code })
+      }
+      try {
+        db.transaction(() => {
+          db.prepare("UPDATE disputes SET status = 'dismissed', verdict_reason = ?, resolved_at = datetime('now') WHERE id = ? AND status IN ('open','in_review')")
+            .run(notes ? `买家撤诉并确认收货:${notes}` : '买家撤诉并确认收货', dsp.id)
+          const r1 = transition(db, req.params.id, 'confirmed', uid, [], notes)
+          if (!r1.success) throw new Error(r1.error || 'confirmed transition failed')
+          const r2 = transition(db, req.params.id, 'completed', 'sys_protocol', [], '系统自动结算')
+          if (!r2.success) throw new Error(r2.error || 'completed transition failed')
+          settleOrder(req.params.id)
+        })()
+      } catch (e) {
+        return void res.status(409).json({ error: `撤诉确认收货失败,订单未变更(仍在争议中,可重试):${(e as Error).message}`, error_code: 'DISPUTE_CLOSE_SETTLE_FAILED' })
+      }
+      notifyTransition(db, req.params.id, 'confirmed', 'completed')
+      try { createNotification(db, sellerId as string, req.params.id, 'dispute_withdrawn_confirmed', '✅ 买家已撤诉并确认收货', '买家撤回争议并确认收货,订单已完成结算,双方信誉不受影响。', { templateKey: 'dispute_withdrawn_confirmed', params: {} }) } catch { /* 通知失败不阻断 */ }
+      try { broadcastSystemEvent('order_completed', '✓', `订单完成 ${req.params.id}`, req.params.id) } catch {}
+      return void res.json({ success: true, status: 'completed', dispute_dismissed: true })
     }
 
     const actionMap: Record<string, string> = {

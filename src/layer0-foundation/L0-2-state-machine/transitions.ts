@@ -165,6 +165,15 @@ export const VALID_TRANSITIONS: Record<string, Transition> = {
     requiresEvidence: false,
     description: 'Rail1 直付:回到协商(裁定前)—— 买卖双方撤回仲裁,或仲裁员驳回仲裁退回协商(system 代执行)'
   },
+  'disputed→confirmed': {
+    // 争议协商收口(买家侧):买家撤诉并确认收货 —— 包裹晚到/放代收点后来找到等场景,不必只剩仲裁一条收口。
+    //   限定【delivered 来源的履约争议 + 争议发起人本人 + 裁定前】,来源/发起人/时序由路由权威门守
+    //   (orders-action dispute_withdraw_confirm,与 disputed→payment_query 的 pq_withdraw 同模式);
+    //   同一事务内争议 dismissed + confirmed→completed + settleOrder(与既有 confirm 结算完全同链)。
+    allowedRoles: ['buyer'],
+    requiresEvidence: false,
+    description: '买家撤诉并确认收货(裁定前,限履约争议):争议无责关闭,订单正常完成结算'
+  },
 
   // ── 卖家接单 ──────────────────────────────────────────────
   'paid→accepted': {
