@@ -3544,15 +3544,15 @@ app.use((req, res, next) => {
         action, cap: capCheck.cap, used: capCheck.used, level: lvlForCap,
       })
     }
-    // Phase 3c：风险闸 — 高风险 agent 敏感写降速/暂停(只罚高风险,无责零成本)
+    // Phase 3c:风险闸 — 高风险 agent 敏感写降速/暂停。真人豁免(Tina 案二连,同 #241 原则):绑 Passkey=真人,敏感操作已有 Passkey 仪式把守;风险分含结构罚(同 IP 注册簇)+30 天半衰期,"30 秒重试"对真人=死锁
     const agentRisk = riskInfo.risk
-    if (agentRisk >= 100) {
+    if (agentRisk >= 100 && !riskInfo.hasPasskey) {
       return void res.status(403).json({
         error: 'agent 风险分已达上限，敏感操作已暂停 — 请在「我的 Agents」查看并申诉',
         error_code: 'AGENT_RISK_SUSPENDED', action, risk: agentRisk,
       })
     }
-    if (agentRisk >= 70) {
+    if (agentRisk >= 70 && !riskInfo.hasPasskey) {
       res.setHeader('Retry-After', '30')
       return void res.status(429).json({
         error: `agent 风险分偏高(${agentRisk}/100)，敏感操作已降速，请 30 秒后重试`,

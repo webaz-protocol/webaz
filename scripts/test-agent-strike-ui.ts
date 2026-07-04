@@ -38,6 +38,11 @@ ok('9. admin page: pending queue + decide + manual issue', /\/admin\/agent-strik
   && /adminStrikeDecide\(/.test(UI) && /\/admin\/agent-strikes\/issue/.test(UI))
 ok('10. script loaded before app.js', HTML.indexOf('app-agent-appeal.js') < HTML.indexOf('"/app.js"') && HTML.indexOf('app-agent-appeal.js') > 0)
 
+// ── A2. 风险闸真人豁免(Tina 案二连)──
+ok('12. write risk-throttle exempts Passkey humans', /if \(agentRisk >= 70 && !riskInfo\.hasPasskey\)/.test(SRV))
+ok('13. risk-suspend (>=100) exempts Passkey humans too', /if \(agentRisk >= 100 && !riskInfo\.hasPasskey\)/.test(SRV))
+ok('14. read risk-throttle exemption unchanged', /riskInfo\.risk >= 70 && !riskInfo\.hasPasskey/.test(SRV))
+
 // ── i18n parity ──
 const keys = new Set<string>()
 for (const m of UI.matchAll(/(?<![\w$])t\('([^']+)'\)/g)) keys.add(m[1])
