@@ -17,6 +17,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { openDeposit, getSellerLatestDeposit, expireDeposit, requiredBondUnits, cancelPendingDeposit, requestBondRefund, cancelBondRefundRequest } from '../../direct-receive-deposits.js'
 import { enumerateBondRefundBlockers } from '../../bond-refund-blockers.js'   // B2:§5 unlock blockers(fail-closed)
+import { listBondSlashProposals } from '../../bond-slash.js'   // B3:待复核罚没提案(卖家须被告知)
 import { bondRailClearanceBlockers } from '../../direct-pay-bond-rail-clearance.js'
 import { getActiveDeferral } from '../../direct-receive-deferral.js'
 import { listActivePlatformAccounts } from '../../platform-receive-accounts.js'
@@ -69,6 +70,8 @@ export function registerBondSellerRoutes(app: Application, deps: BondSellerDeps)
       // B2:退出退还视图 —— locked 时预览 blockers(能不能申请);refunding 时给冷静期/可执行时间
       refund: latest && latest.status === 'locked' ? { can_request: enumerateBondRefundBlockers(db, sellerId).length === 0, blockers: enumerateBondRefundBlockers(db, sellerId), cooling_days: coolingDays() }
         : latest && latest.status === 'refunding' ? { requested_at: latest.refund_requested_at, cooling_days: coolingDays() } : null,
+      // B3:待复核罚没提案(冷静期=卖家申诉窗,必须让卖家看见)
+      pending_slash: (() => { try { const p = listBondSlashProposals(db, { sellerId, status: 'proposed' })[0]; return p ? { id: p.id, dispute_id: p.dispute_id, cooling_until: p.cooling_until, reason: p.reason } : null } catch { return null } })(),
       rail_cleared: cleared,
       rail_blockers: cleared ? [] : bondRailClearanceBlockers('operator_attested').filter(b => b !== 'NO_PRODUCTION_RECEIPT'),
       payment_accounts: cleared ? listActivePlatformAccounts(db) : [],   // 放行前不展示收款方式(不引导无法生效的转账)

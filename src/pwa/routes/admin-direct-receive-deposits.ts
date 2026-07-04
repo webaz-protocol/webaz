@@ -17,6 +17,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { confirmProductionReceipt, rejectDeposit, executeBondRefund } from '../../direct-receive-deposits.js'
 import { enumerateBondRefundBlockers } from '../../bond-refund-blockers.js'   // B2:执行前复核(冷静期内可能新增退货等责任)
+import { proposeBondSlash, cancelBondSlashProposal, executeBondSlashProposal, listBondSlashProposals } from '../../bond-slash.js'   // B3:罚没提案/冷静期/执行(人工铁律)
 import { dbAll, dbOne } from '../../layer0-foundation/L0-1-database/db.js'   // B1:保证金申报队列/通知收件人只读(async seam)
 import { reviewAmlFlag } from '../../direct-pay-aml-review.js'
 import { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress, amlDetailHash } from '../../direct-pay-compliance-ingress.js'
@@ -65,6 +66,61 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
     try { const dep = await dbOne<{ user_id: string }>('SELECT user_id FROM direct_receive_deposits WHERE id = ?', [req.params.id])
       if (dep) createNotification(db, dep.user_id, null, 'bond_deposit_rejected', '❌ 保证金申报未通过核实', `你的保证金缴纳申报未通过核实${note ? `(${note})` : ''}。请核对付款凭据后重新提交,或联系平台。`, { templateKey: 'bond_deposit_rejected', params: { note: note ? `(${note})` : '' } }) } catch { /* 不阻断 */ }
     return void res.json({ ok: true, status: r.status })
+  })
+
+  // ── B3:保证金罚没(人工铁律:仲裁裁定卖家责的直付争议 → 提案 → 冷静期 → ROOT+Passkey 执行;绝不自动)──
+  app.get('/api/admin/direct-receive/bond-slash', (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const status = req.query?.status != null ? String(req.query.status) : ''
+    return void res.json({ proposals: listBondSlashProposals(db, status ? { status } : {}) })
+  })
+
+  // 提案(ROOT,审计留痕,不 Passkey —— 提案不动任何东西;执行才是终局动作)。通知卖家(冷静期=申诉窗)。
+  app.post('/api/admin/direct-receive/bond-slash/propose', async (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const depositId = String(req.body?.deposit_id || ''); const disputeId = String(req.body?.dispute_id || '')
+    if (!depositId || !disputeId) return void res.status(400).json({ error: '须提供 deposit_id 与依据 dispute_id', error_code: 'MISSING_BASIS' })
+    const coolingDays = Math.max(0, Number(getProtocolParam<number>('direct_pay.bond_slash_cooling_days', 7)) || 7)
+    const proposalId = 'bslash_' + Math.random().toString(36).slice(2, 10)
+    const r = proposeBondSlash(db, { proposalId, depositId, disputeId, reason: req.body?.reason != null ? String(req.body.reason) : null, proposedBy: admin.id as string, coolingDays })
+    logAdminAction(admin.id as string, 'direct_receive.bond_slash_propose', 'direct_receive_deposit', depositId, { ok: r.ok, dispute_id: disputeId, outcome: r.ok ? proposalId : r.reason })
+    if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'SLASH_PROPOSE_REJECTED' })
+    try { const dep = await dbOne<{ user_id: string }>('SELECT user_id FROM direct_receive_deposits WHERE id = ?', [depositId])
+      if (dep) createNotification(db, dep.user_id, null, 'bond_slash_proposed', '⚠️ 保证金罚没提案(待复核)', `因争议 ${disputeId} 裁定卖家责任,平台已发起保证金罚没提案。冷静期 ${coolingDays} 天内如有异议请联系平台并提供依据;冷静期满后将复核执行(全额罚没,进入处罚金专户,平台不获益)。`, { templateKey: 'bond_slash_proposed', params: { dispute: disputeId, days: coolingDays } }) } catch { /* 不阻断 */ }
+    return void res.json({ ok: true, proposal_id: proposalId, cooling_days: coolingDays })
+  })
+
+  app.post('/api/admin/direct-receive/bond-slash/:id/cancel', async (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const r = cancelBondSlashProposal(db, { proposalId: req.params.id, note: req.body?.note != null ? String(req.body.note) : null })
+    logAdminAction(admin.id as string, 'direct_receive.bond_slash_cancel', 'bond_slash_proposal', req.params.id, { ok: r.ok, outcome: r.ok ? 'cancelled' : r.reason })
+    if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'SLASH_CANCEL_REJECTED' })
+    try { const p = await dbOne<{ seller_id: string }>('SELECT seller_id FROM bond_slash_proposals WHERE id = ?', [req.params.id])
+      if (p) createNotification(db, p.seller_id, null, 'bond_slash_cancelled', '✅ 保证金罚没提案已撤销', '此前的罚没提案经复核已撤销,你的保证金不受影响。', { templateKey: 'bond_slash_cancelled', params: {} }) } catch { /* 不阻断 */ }
+    return void res.json({ ok: true, status: r.status, already: !!r.already })
+  })
+
+  // 执行(ROOT + 真人 Passkey,purpose direct_pay_bond_slash 绑 proposal_id;冷静期由域内绝对截止校验)。
+  app.post('/api/admin/direct-receive/bond-slash/:id/execute', async (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const proposalId = req.params.id
+    const gate = requireDirectPayHumanPasskey({ db, consumeGateToken }, {
+      userId: admin.id as string, webauthnToken: req.body?.webauthn_token as string | undefined, purpose: 'direct_pay_bond_slash',
+      validate: (data) => { const d = data as { proposal_id?: string } | null; return !!d && d.proposal_id === proposalId },
+    })
+    if (!gate.ok) {
+      logAdminAction(admin.id as string, 'direct_receive.bond_slash_execute', 'bond_slash_proposal', proposalId, { ok: false, error_code: gate.error_code })
+      return void res.status(403).json({ error: gate.reason, error_code: gate.error_code })
+    }
+    const txnId = 'bslashtxn_' + Math.random().toString(36).slice(2, 10)
+    let r
+    try { r = executeBondSlashProposal(db, { proposalId, txnId, nowIso: new Date().toISOString() }) }
+    catch (e) { r = { ok: false as const, reason: (e as Error).message } }
+    logAdminAction(admin.id as string, 'direct_receive.bond_slash_execute', 'bond_slash_proposal', proposalId, { ok: r.ok, txn_id: txnId, outcome: r.ok ? (r.already ? 'already' : 'executed') : r.reason })
+    if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'SLASH_EXECUTE_REJECTED' })
+    if (!r.already) { try { const p = await dbOne<{ seller_id: string; dispute_id: string }>('SELECT seller_id, dispute_id FROM bond_slash_proposals WHERE id = ?', [proposalId])
+      if (p) createNotification(db, p.seller_id, null, 'bond_slash_executed', '❌ 保证金已罚没', `依据争议 ${p.dispute_id} 的卖家责任裁定,你的履约保证金已全额罚没(进入处罚金专户,平台不获益),直付资格已吊销。重新缴纳保证金并通过审核后可再次申请开通。`, { templateKey: 'bond_slash_executed', params: { dispute: p.dispute_id } }) } catch { /* 不阻断 */ } }
+    return void res.json({ ok: true, status: r.status, already: !!r.already })
   })
 
   // POST /api/admin/direct-receive/deposits/:id/execute-refund — ROOT + 真人 Passkey:记录已完成的【场外】保证金退还(B2)。

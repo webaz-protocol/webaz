@@ -181,7 +181,8 @@ export function slashBond(db: Database.Database, args: { depositId: string; txnI
   const row = getRow(db, args.depositId)
   if (!row) return { ok: false, reason: 'deposit not found' }
   if (row.status === 'slashed') return { ok: true, status: 'slashed', already: true } // 幂等:不重复记 provenance
-  if (row.status !== 'locked') return { ok: false, reason: `can only slash a locked bond (got '${row.status}')` }
+  // B3:refunding(退出冷静期中)也可罚 —— 退出申请不能成为躲避罚没的通道;罚没即终结退还流。
+  if (row.status !== 'locked' && row.status !== 'refunding') return { ok: false, reason: `can only slash a locked/refunding bond (got '${row.status}')` }
   db.transaction(() => {
     recordBaseBondSlash(db, { userId: row.user_id, amountUnits: toUnits(row.amount), txnId: args.txnId, reason: args.reason }) // provenance only
     db.prepare("UPDATE direct_receive_deposits SET status = 'slashed', updated_at = datetime('now') WHERE id = ?").run(args.depositId)

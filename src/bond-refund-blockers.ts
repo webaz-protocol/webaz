@@ -18,6 +18,7 @@
  */
 import type Database from 'better-sqlite3'
 import { OPEN_FEE_ACCRUING_STATUSES, readAvailableFeePrepayUnits } from './direct-pay-fee-ar.js'
+import { sellerHasPendingSlash } from './bond-slash.js'   // B3:待复核罚没提案挡退出
 
 export interface BondRefundBlocker { code: string; count?: number }
 
@@ -47,6 +48,9 @@ export function enumerateBondRefundBlockers(db: Database.Database, sellerId: str
       .get(sellerId) as { n: number }).n
     if (n > 0) out.push({ code: 'OPEN_RETURN_FLOW', count: n })
   } catch { out.push({ code: 'UNVERIFIABLE_RETURNS' }) }
+
+  // ⑤ 待复核罚没提案(B3;sellerHasPendingSlash 内部 fail-closed)
+  if (sellerHasPendingSlash(db, sellerId)) out.push({ code: 'PENDING_SLASH_REVIEW' })
 
   // ④ 平台服务费欠费(available = Σ预充值 + Σ调整 − Σ已计提;负 = 欠)
   try {
