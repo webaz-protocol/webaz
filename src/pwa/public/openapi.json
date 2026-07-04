@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (750 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (752 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -6292,6 +6292,13 @@
         "security": []
       }
     },
+    "/api/products/:id/shipping-options": {
+      "get": {
+        "summary": "公开读:买家下单前查配送范围。生效 = 单品覆盖 ?? 店铺默认;template=null → 不按地区计费(下单不要求选地区)。",
+        "tags": [],
+        "security": []
+      }
+    },
     "/api/products/:id/status": {
       "patch": {
         "summary": "状态切换（active / warehouse / deleted）",
@@ -7291,6 +7298,17 @@
     "/api/seller/quota-status": {
       "get": {
         "summary": "配额状态",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/seller/shipping-template": {
+      "post": {
+        "summary": "POST /api/seller/shipping-template",
         "tags": [],
         "security": [
           {

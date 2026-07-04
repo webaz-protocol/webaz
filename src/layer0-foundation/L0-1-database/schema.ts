@@ -678,6 +678,12 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE users ADD COLUMN store_accept_mode TEXT`) } catch { /* 已存在 */ }            // 店铺级默认 'auto'|'manual'|NULL(=auto)
   try { db.exec(`ALTER TABLE orders ADD COLUMN accept_mode_snapshot TEXT`) } catch { /* 已存在 */ }        // 下单时快照(卖家事后改不影响在途单)
   try { db.exec(`ALTER TABLE orders ADD COLUMN pending_accept_deadline TEXT`) } catch { /* 已存在 */ }     // 接单窗(专属 cron 读;超时无责取消+回补库存)
+  // 运费模板(PR-2):按收货地区预设运费/时效;下单命中 → 运费并入总额并快照(卖家改模板不影响在途单)。
+  try { db.exec(`ALTER TABLE products ADD COLUMN shipping_template TEXT`) } catch { /* 已存在 */ }         // JSON [{region,fee,est_days}];NULL=继承店铺默认
+  try { db.exec(`ALTER TABLE users ADD COLUMN store_shipping_template TEXT`) } catch { /* 已存在 */ }      // 店铺级默认模板
+  try { db.exec(`ALTER TABLE orders ADD COLUMN ship_to_region TEXT`) } catch { /* 已存在 */ }              // 买家下单所选收货地区(结构化,非自由文本地址)
+  try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_fee DECIMAL(18,2)`) } catch { /* 已存在 */ }       // 下单快照运费(已并入 total_amount;NULL=无模板旧单)
+  try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_est_days TEXT`) } catch { /* 已存在 */ }           // 下单快照预计时效(展示;不接判责钟)
   try { db.exec(`ALTER TABLE wallets ADD COLUMN fee_staked REAL DEFAULT 0`) } catch { /* 已存在 */ }
   // PR-4b-1: direct_receive_deposits 生产收款 provenance 快照列(既有库补列;additive nullable,无写入方,无 flow 启用)。
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_receipt_ref TEXT`) } catch { /* 已存在 */ }

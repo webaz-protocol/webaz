@@ -69,6 +69,8 @@ export interface DirectPayCreateArgs {
   acceptMode: 'auto' | 'manual'
   /** manual 时的接单截止(ISO;超时无责取消+回补库存,专属 cron)。 */
   pendingAcceptDeadlineIso?: string
+  /** 运费快照(PR-2):运费已并入 totalAmount,此处只是快照三列(region/fee/est_days;无模板=null)。 */
+  shipping?: { region: string | null; fee: number; estDays: string | null }
 }
 
 /** 原子创建 direct_p2p 订单。成功返回 { orderId };任一步失败抛错(调用方回 409,事务已回滚)。 */
@@ -82,13 +84,14 @@ export function createDirectPayOrder(db: Database.Database, deps: DirectPayCreat
     // manual:不设 window deadline(接单时才起表),记 accept_mode 快照 + 接单截止。
     db.prepare(`INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount,
       status, payment_rail, shipping_address, direct_pay_instruction_snapshot, direct_pay_account_snapshot, direct_pay_window_deadline,
-      accept_mode_snapshot, pending_accept_deadline,
+      accept_mode_snapshot, pending_accept_deadline, ship_to_region, shipping_fee, shipping_est_days,
       direct_pay_enabled_snapshot, direct_pay_rail_breaker_snapshot, direct_pay_region_snapshot,
       direct_pay_region_allowlist_snapshot, direct_pay_per_tx_cap_units_snapshot, direct_pay_seller_breaker_snapshot, direct_pay_decision_code)
-      VALUES (?,?,?,?,?,?,?,0,'created','direct_p2p',?,?,?,?,?,?, ?,?,?,?,?,?,?)`)
+      VALUES (?,?,?,?,?,?,?,0,'created','direct_p2p',?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?)`)
       .run(orderId, args.productId, args.buyerId, args.sellerId, args.quantity, args.unitPrice, args.totalAmount,
         args.shippingAddress, args.instructionSnapshot, args.accountSnapshot ? JSON.stringify(args.accountSnapshot) : null,
         manual ? null : args.windowDeadlineIso, args.acceptMode, manual ? (args.pendingAcceptDeadlineIso ?? null) : null,
+        args.shipping?.region ?? null, (args.shipping && (args.shipping.fee > 0 || args.shipping.region)) ? args.shipping.fee : null, args.shipping?.estDays ?? null,
         s.enabled ? 1 : 0, s.railBreakerTripped ? 1 : 0, s.region,
         JSON.stringify(s.regionAllowlist), s.perTxCapUnits, s.sellerBreakerTripped ? 1 : 0, s.decisionCode)
     appendOrderEvent(db, {
@@ -122,7 +125,7 @@ export interface DirectPayUnsupportedOpts {
  */
 export function createDirectPayResponse(
   res: Response, db: Database.Database, deps: DirectPayCreateDeps & { getProtocolParam: <T>(k: string, fb: T) => T },
-  ctx: { product: Record<string, unknown>; buyerId: string; reqQty: number; basePrice: number; totalAmount: number; totalAmountU: Units; shippingAddress: string; directReceiveAccountId?: string; opts?: DirectPayUnsupportedOpts },
+  ctx: { product: Record<string, unknown>; buyerId: string; reqQty: number; basePrice: number; totalAmount: number; totalAmountU: Units; shippingAddress: string; directReceiveAccountId?: string; opts?: DirectPayUnsupportedOpts; shipping?: { region: string | null; fee: number; estDays: string | null } },
 ): void {
   // ① direct_p2p v1 = simple product only。escrow-only 修饰一律 fail-closed(本片不支持,不半支持)。
   const o = ctx.opts ?? {}
@@ -205,7 +208,7 @@ export function createDirectPayResponse(
       productId: ctx.product.id as string, sellerId, buyerId: ctx.buyerId, quantity: ctx.reqQty,
       unitPrice: ctx.basePrice, totalAmount: ctx.totalAmount,
       instructionSnapshot, accountSnapshot, windowDeadlineIso: new Date(Date.now() + windowHours * 3600_000).toISOString(),
-      shippingAddress: ctx.shippingAddress, acceptMode,
+      shippingAddress: ctx.shippingAddress, acceptMode, shipping: ctx.shipping,
       pendingAcceptDeadlineIso: acceptMode === 'manual' ? new Date(Date.now() + acceptWindowHours * 3600_000).toISOString() : undefined,
       // frozen-at-create policy 快照:control 全过(ctrl.ok)才到此,decisionCode='OK'。
       snapshot: { enabled: cfg.enabled, railBreakerTripped: cfg.railBreakerTripped, region: cfg.region, regionAllowlist: cfg.regionAllowlist, perTxCapUnits: cfg.perTxCapUnits, sellerBreakerTripped, decisionCode: 'OK' },

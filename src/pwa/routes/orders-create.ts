@@ -32,7 +32,7 @@ import { buildCartMandate, buildPaymentMandate, signMandate } from './ap2-mandat
 // RFC-014 PR3 — 金额走整数 base-units;钱包写绝对值(防 REAL 浮点加法 dust)。
 import { toUnits, toDecimal, mulQty, mulRate } from '../../money.js'
 import { createDirectPayResponse } from '../../direct-pay-create.js'                    // PR-4c: direct_p2p 建单分叉(生产门+收款指令门+原子建单;本金不入协议)
-import { applyWalletDelta } from '../../ledger.js'
+import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'  // PR-2 运费模板:建单守门(两轨共用,任何写之前)
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam(仅下单事务外的预检查;事务内 escrow/INSERT 保持同步)
 
 // 店铺推荐 → 商品三级归因的【懒升级】(sync,跑在下单事务内、getProductShareChain 之前)。
@@ -289,17 +289,17 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     const subtotalU = mulQty(basePriceU, reqQty)
     const priceAfterCouponU = Math.max(0, subtotalU - toUnits(couponDiscount))
     const insuranceRate = getProtocolParam<number>('order_insurance_rate', 0.01)
-    const insurancePremiumU = buy_insurance ? mulRate(priceAfterCouponU, insuranceRate) : 0
-    const totalAmountU = Math.max(0, priceAfterCouponU + insurancePremiumU)
+    const insurancePremiumU = buy_insurance ? mulRate(priceAfterCouponU, insuranceRate) : 0; const _ship = gateShippingForCreate(db, res, product as { shipping_template?: string | null }, String(product.seller_uid), req.body?.ship_to_region); if (!_ship) return  // PR-2 运费模板:有模板必选地区且须命中(400/409 已写);无模板=原行为
+    const totalAmountU = Math.max(0, priceAfterCouponU + insurancePremiumU + _ship.feeU)   // 运费并入总额(与保险费同惯例;快照 orders.shipping_fee)
     // B5 主动捐赠 — 按订单总额 × 比例算（额外扣款，进 charity_fund）
     const donationAmountU = donationPctNum > 0 ? mulRate(totalAmountU, donationPctNum) : 0
     // decimal 视图(落库 / 下游 AP2 / 响应,均为 base-unit 干净值)
     const subtotal = toDecimal(subtotalU)
     const insurancePremium = toDecimal(insurancePremiumU)
     const totalAmount = toDecimal(totalAmountU)
-    const donationAmount = toDecimal(donationAmountU)
+    const donationAmount = toDecimal(donationAmountU); const shippingFee = toDecimal(_ship.feeU)
     // PR-4c:direct_p2p 分叉 —— 本金不入协议,跳过下方 escrow 预检/事务,改走直付建单(生产门+收款指令门+原子建单,仅锁卖家 fee-stake)。
-    if (String(req.body?.payment_rail || '') === 'direct_p2p') return void createDirectPayResponse(res, db, { generateId, transition, appendOrderEvent, getProtocolParam }, { product, buyerId: user.id as string, reqQty, basePrice, totalAmount, totalAmountU, shippingAddress: String(shipping_address), directReceiveAccountId: (typeof req.body?.direct_receive_account_id === 'string' && req.body.direct_receive_account_id) ? String(req.body.direct_receive_account_id) : undefined, opts: { variantId: variant_id, hasVariants: Number(product.has_variants) === 1, flashActive: !!flashSale, couponCode: coupon_code, buyInsurance: !!buy_insurance, donationPct: donationPctNum, isGift: !!is_gift, anonymous: anonymousFlag === 1, deliveryWindow: !!delivery_window } })
+    if (String(req.body?.payment_rail || '') === 'direct_p2p') return void createDirectPayResponse(res, db, { generateId, transition, appendOrderEvent, getProtocolParam }, { product, buyerId: user.id as string, reqQty, basePrice, totalAmount, totalAmountU, shippingAddress: String(shipping_address), directReceiveAccountId: (typeof req.body?.direct_receive_account_id === 'string' && req.body.direct_receive_account_id) ? String(req.body.direct_receive_account_id) : undefined, opts: { variantId: variant_id, hasVariants: Number(product.has_variants) === 1, flashActive: !!flashSale, couponCode: coupon_code, buyInsurance: !!buy_insurance, donationPct: donationPctNum, isGift: !!is_gift, anonymous: anonymousFlag === 1, deliveryWindow: !!delivery_window }, shipping: { region: _ship.region, fee: _ship.fee, estDays: _ship.estDays } })
     // 友好预检查(读):真正的守恒在下面的同步事务内(applyWalletDelta 绝对值落库)。
     const wallet = await dbOne<{ balance: number }>('SELECT balance FROM wallets WHERE user_id = ?', [user.id])
     if (!wallet) return void res.status(500).json({ error: '钱包记录缺失', error_code: 'WALLET_MISSING' })
@@ -363,8 +363,8 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
           l1_uid, l2_uid, l3_uid, snapshot_commission_rate, buyer_region, content_hash_at_order,
           delivery_window, variant_id, variant_options_snapshot,
           gift_recipient_name, gift_recipient_phone, gift_message, insurance_premium,
-          anonymous_recipient, recipient_code, donation_amount, stake_backing
-        ) VALUES (?,?,?,?,?,?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+          anonymous_recipient, recipient_code, donation_amount, stake_backing, ship_to_region, shipping_fee, shipping_est_days
+        ) VALUES (?,?,?,?,?,?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
           orderId, product.id, user.id, product.seller_uid, reqQty, basePrice, totalAmount, totalAmount,
           shipping_address, notes || null,
           addHours(now, 24), addHours(now, 48), addHours(now, 120),
@@ -374,7 +374,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
           variant ? variant.id : null,
           variant ? variant.options_json : null,
           giftRecipientName, giftRecipientPhone, giftMessage, insurancePremium,
-          anonymousFlag, recipientCode, donationAmount, stakeBacking,
+          anonymousFlag, recipientCode, donationAmount, stakeBacking, _ship.region, _ship.feeU > 0 || _ship.region ? shippingFee : null, _ship.estDays,
         )
         // 协议层：写 genesis 事件 — order 创建（必然是 buyer 自己）
         try {
