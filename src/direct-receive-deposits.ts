@@ -64,6 +64,8 @@ export function requiredBondUnits(tier: DepositTier, config: BaseBondConfig = DE
 /** 开新存款:创建 pending 行。required = 该档固定 token 数。amount=0(待 confirm)。 */
 export function openDeposit(db: Database.Database, args: {
   depositId: string; userId: string; tier: DepositTier; currency: string; depositRail: string; config?: BaseBondConfig
+  /** 卖家申报的付款凭据(转账单号等,B1;运营核实时对照)。存 external_ref;confirm 时可被 rail 返回值覆盖。 */
+  externalRef?: string
 }): DepositOpResult {
   const { depositId, userId, tier, currency, depositRail, config } = args
   if (!depositId || !userId) return { ok: false, reason: 'missing depositId/userId' }
@@ -74,9 +76,9 @@ export function openDeposit(db: Database.Database, args: {
   if (getRow(db, depositId)) return { ok: false, reason: 'deposit already exists' }
   let required: Units
   try { required = requiredBondUnits(tier, config) } catch (e) { return { ok: false, reason: (e as Error).message } }
-  db.prepare(`INSERT INTO direct_receive_deposits (id, user_id, tier, required_amount, amount, currency, deposit_rail, status, created_at, updated_at)
-    VALUES (?,?,?,?,0,?,?, 'pending', datetime('now'), datetime('now'))`)
-    .run(depositId, userId, tier, toDecimal(required), currency, depositRail)
+  db.prepare(`INSERT INTO direct_receive_deposits (id, user_id, tier, required_amount, amount, currency, deposit_rail, status, external_ref, created_at, updated_at)
+    VALUES (?,?,?,?,0,?,?, 'pending', ?, datetime('now'), datetime('now'))`)
+    .run(depositId, userId, tier, toDecimal(required), currency, depositRail, args.externalRef ?? null)
   return { ok: true, status: 'pending' }
 }
 
@@ -268,6 +270,34 @@ export function sellerHasProductionBaseBondLocked(db: Database.Database, sellerI
   return !!db.prepare(
     "SELECT 1 FROM direct_receive_deposits WHERE user_id = ? AND status = 'locked' AND production_receipt_confirmed_at IS NOT NULL LIMIT 1",
   ).get(sellerId)
+}
+
+/** admin 驳回申报(B1):pending|insufficient|confirmed(未 lock)→ expired + 驳回说明。locked/生产确认后不可驳。幂等。 */
+export function rejectDeposit(db: Database.Database, args: { depositId: string; note?: string }): DepositOpResult {
+  const row = getRow(db, args.depositId)
+  if (!row) return { ok: false, reason: 'deposit not found' }
+  if (row.status === 'expired') return { ok: true, status: 'expired', already: true }
+  if (!['pending', 'insufficient', 'confirmed'].includes(row.status)) return { ok: false, reason: `cannot reject from status '${row.status}'` }
+  db.prepare(`UPDATE direct_receive_deposits SET status = 'expired', reject_note = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(args.note ? String(args.note).slice(0, 300) : null, args.depositId)
+  return { ok: true, status: 'expired' }
+}
+
+/** 卖家自行撤回自己的 pending 申报(B1)。owner-scoped CAS;非 pending 不动。 */
+export function cancelPendingDeposit(db: Database.Database, args: { depositId: string; userId: string }): DepositOpResult {
+  const row = getRow(db, args.depositId)
+  if (!row || row.user_id !== args.userId) return { ok: false, reason: 'deposit not found' }
+  if (row.status !== 'pending') return { ok: false, reason: `cannot cancel from status '${row.status}'` }
+  const r = db.prepare("UPDATE direct_receive_deposits SET status = 'expired', reject_note = '卖家自行撤回', updated_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'pending'")
+    .run(args.depositId, args.userId)
+  return r.changes === 1 ? { ok: true, status: 'expired' } : { ok: false, reason: 'cancel race: already processed' }
+}
+
+/** 卖家最新一笔保证金存款(任意状态;B1 状态卡/去重用)。 */
+export function getSellerLatestDeposit(db: Database.Database, sellerId: string): (DepositRow & { external_ref: string | null; reject_note: string | null; confirmed_at: string | null; locked_at: string | null }) | null {
+  return (db.prepare(`SELECT id, user_id, tier, required_amount, amount, currency, deposit_rail, status, production_receipt_confirmed_at,
+                             external_ref, reject_note, confirmed_at, locked_at, created_at
+                      FROM direct_receive_deposits WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`).get(sellerId) as never) ?? null
 }
 
 /**
