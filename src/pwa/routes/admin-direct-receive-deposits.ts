@@ -15,7 +15,8 @@
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
-import { confirmProductionReceipt, rejectDeposit } from '../../direct-receive-deposits.js'
+import { confirmProductionReceipt, rejectDeposit, executeBondRefund } from '../../direct-receive-deposits.js'
+import { enumerateBondRefundBlockers } from '../../bond-refund-blockers.js'   // B2:执行前复核(冷静期内可能新增退货等责任)
 import { dbAll, dbOne } from '../../layer0-foundation/L0-1-database/db.js'   // B1:保证金申报队列/通知收件人只读(async seam)
 import { reviewAmlFlag } from '../../direct-pay-aml-review.js'
 import { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress, amlDetailHash } from '../../direct-pay-compliance-ingress.js'
@@ -64,6 +65,36 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
     try { const dep = await dbOne<{ user_id: string }>('SELECT user_id FROM direct_receive_deposits WHERE id = ?', [req.params.id])
       if (dep) createNotification(db, dep.user_id, null, 'bond_deposit_rejected', '❌ 保证金申报未通过核实', `你的保证金缴纳申报未通过核实${note ? `(${note})` : ''}。请核对付款凭据后重新提交,或联系平台。`, { templateKey: 'bond_deposit_rejected', params: { note: note ? `(${note})` : '' } }) } catch { /* 不阻断 */ }
     return void res.json({ ok: true, status: r.status })
+  })
+
+  // POST /api/admin/direct-receive/deposits/:id/execute-refund — ROOT + 真人 Passkey:记录已完成的【场外】保证金退还(B2)。
+  //   前置:refunding + 冷静期满(param direct_pay.bond_refund_cooling_days,默认 14d,域内校验)+ 【执行时复核】
+  //   unlock blockers(冷静期内可能新增退货/欠费等责任 —— 有任一即拒)。凭据必填;真实退款发生在协议外,此处只记录。
+  app.post('/api/admin/direct-receive/deposits/:id/execute-refund', async (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const depositId = req.params.id
+    const evidenceRef = String(req.body?.evidence_ref || '').trim()
+    const gate = requireDirectPayHumanPasskey({ db, consumeGateToken }, {
+      userId: admin.id as string, webauthnToken: req.body?.webauthn_token as string | undefined, purpose: 'direct_receive_bond_refund',
+      validate: (data) => { const d = data as { deposit_id?: string; evidence_ref?: string } | null; return !!d && d.deposit_id === depositId && d.evidence_ref === evidenceRef },
+    })
+    if (!gate.ok) {
+      logAdminAction(admin.id as string, 'direct_receive.bond_refund_execute', 'direct_receive_deposit', depositId, { ok: false, error_code: gate.error_code })
+      return void res.status(403).json({ error: gate.reason, error_code: gate.error_code })
+    }
+    const dep = await dbOne<{ user_id: string }>('SELECT user_id FROM direct_receive_deposits WHERE id = ?', [depositId])
+    if (!dep) return void res.status(404).json({ error: '存款不存在', error_code: 'DEPOSIT_NOT_FOUND' })
+    const blockers = enumerateBondRefundBlockers(db, dep.user_id)
+    if (blockers.length > 0) {
+      logAdminAction(admin.id as string, 'direct_receive.bond_refund_execute', 'direct_receive_deposit', depositId, { ok: false, outcome: 'blocked', blockers: blockers.map(b => b.code) })
+      return void res.status(409).json({ error: '卖家仍有未了结直付责任,不可退还', error_code: 'REFUND_BLOCKED', blockers })
+    }
+    const coolingDays = Math.max(0, Number(getProtocolParam<number>('direct_pay.bond_refund_cooling_days', 14)) || 14)
+    const r = executeBondRefund(db, { depositId, nowIso: new Date().toISOString(), coolingDays, evidenceRef })
+    logAdminAction(admin.id as string, 'direct_receive.bond_refund_execute', 'direct_receive_deposit', depositId, { ok: r.ok, evidence_present: !!evidenceRef, outcome: r.ok ? (r.already ? 'already' : 'refunded') : r.reason })
+    if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'REFUND_EXECUTE_REJECTED' })
+    if (!r.already) { try { createNotification(db, dep.user_id, null, 'bond_refund_executed', '✅ 履约保证金已退还', `你的保证金已在协议外退还并记录(凭据:${evidenceRef.slice(0, 60)})。直付资格随保证金退出关闭;重新缴纳后可再次开通。`, { templateKey: 'bond_refund_executed', params: { evidence: evidenceRef.slice(0, 60) } }) } catch { /* 不阻断 */ } }
+    return void res.json({ ok: true, status: r.status, already: !!r.already })
   })
 
   // POST /api/admin/direct-receive/deposits/:id/confirm-production — ROOT + 真人 Passkey 手动确认生产保证金 receipt。

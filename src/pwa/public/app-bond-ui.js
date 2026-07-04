@@ -40,7 +40,7 @@
       : `<div style="margin:8px 0;padding:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;color:#92400e">${escHtml(s.note || '')}</div>`
     box.innerHTML = `
       <div style="margin-bottom:6px">${t('要求额度')}:<strong>${s.required.display} ${s.required.currency}</strong>(${s.required.tier})</div>
-      ${statusLine}${deferralLine}${payBlock}
+      ${statusLine}${deferralLine}${payBlock}${window.bondRefundBlock ? window.bondRefundBlock(s) : ''}
       <div id="bond-msg" style="margin-top:6px;font-size:11px"></div>`
   }
   window.bondSubmitDeposit = async () => {
@@ -82,7 +82,7 @@
           <div><strong>${escHtml(d.seller_name || d.user_id)}</strong> ${d.seller_handle ? '@' + escHtml(d.seller_handle) : ''} · ${d.tier} · ${t('要求')} ${d.required_amount} ${String(d.currency).toUpperCase()}</div>
           <div><strong>${ST()[d.status] || d.status}</strong></div>
         </div>
-        <div style="color:#6b7280;margin-top:4px">${t('申报单')} ${d.id} · ${t('凭据')}:${escHtml(d.external_ref || '-')} · ${fmtTime(d.created_at)}${d.reject_note ? ` · <span style="color:#dc2626">${escHtml(d.reject_note)}</span>` : ''}</div>
+        <div style="color:#6b7280;margin-top:4px">${t('申报单')} ${d.id} · ${t('凭据')}:${escHtml(d.external_ref || '-')} · ${fmtTime(d.created_at)}${d.reject_note ? ` · <span style="color:#dc2626">${escHtml(d.reject_note)}</span>` : ''}</div>${window.bondAdmRefundActions ? window.bondAdmRefundActions(d) : ''}
         ${d.status === 'pending' ? `
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
           <button class="btn btn-primary btn-sm" style="width:auto;font-size:11px" onclick="bondAdmConfirm('${d.id}', ${Math.round(Number(d.required_amount) * 1e6)}, '${escHtml(d.external_ref || '')}')">${t('已核实到账,确认锁定(Passkey)')}</button>

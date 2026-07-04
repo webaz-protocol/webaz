@@ -283,6 +283,59 @@ export function rejectDeposit(db: Database.Database, args: { depositId: string; 
   return { ok: true, status: 'expired' }
 }
 
+// ───── B2:退还(refund-on-exit)状态流。零真实出款 —— 退还动作发生在场外,协议只编排/记录。 ─────
+/** 卖家申请退出退还:locked → refunding(CAS)+ 冷静期锚点 + 暂停直付资格(退出中不得接新直付单)。
+ *  调用方【必须先过 unlock blockers 枚举】(bond-refund-blockers,fail-closed);本函数只做状态手术。 */
+export function requestBondRefund(db: Database.Database, args: { depositId: string; userId: string }): DepositOpResult {
+  const row = getRow(db, args.depositId)
+  if (!row || row.user_id !== args.userId) return { ok: false, reason: 'deposit not found' }
+  if (row.status !== 'locked') return { ok: false, reason: `can only request refund on a locked bond (got '${row.status}')` }
+  db.transaction(() => {
+    const r = db.prepare("UPDATE direct_receive_deposits SET status = 'refunding', refund_requested_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND status = 'locked'").run(args.depositId)
+    if (r.changes !== 1) throw new Error('refund request race: already processed')
+    db.prepare(`INSERT INTO direct_receive_privileges (user_id, status, tier, suspended_reason, updated_at)
+      VALUES (?, 'suspended', ?, 'bond_refund_requested', datetime('now'))
+      ON CONFLICT(user_id) DO UPDATE SET status='suspended', suspended_reason='bond_refund_requested', updated_at=datetime('now')`)
+      .run(row.user_id, row.tier)
+  })()
+  return { ok: true, status: 'refunding' }
+}
+
+/** 卖家撤销退出申请:refunding → locked + 恢复直付资格。仅 admin 尚未执行退还前。 */
+export function cancelBondRefundRequest(db: Database.Database, args: { depositId: string; userId: string }): DepositOpResult {
+  const row = getRow(db, args.depositId)
+  if (!row || row.user_id !== args.userId) return { ok: false, reason: 'deposit not found' }
+  if (row.status !== 'refunding') return { ok: false, reason: `no refund request in progress (got '${row.status}')` }
+  db.transaction(() => {
+    const r = db.prepare("UPDATE direct_receive_deposits SET status = 'locked', refund_requested_at = NULL, updated_at = datetime('now') WHERE id = ? AND status = 'refunding'").run(args.depositId)
+    if (r.changes !== 1) throw new Error('cancel race: already processed')
+    db.prepare(`INSERT INTO direct_receive_privileges (user_id, status, tier, suspended_reason, granted_at, updated_at)
+      VALUES (?, 'active', ?, NULL, datetime('now'), datetime('now'))
+      ON CONFLICT(user_id) DO UPDATE SET status='active', suspended_reason=NULL, updated_at=datetime('now')`)
+      .run(row.user_id, row.tier)
+  })()
+  return { ok: true, status: 'locked' }
+}
+
+/** admin 执行退还(场外退款完成后记录):refunding + 冷静期已满 → refunded + 凭据 + released_at。
+ *  资格保持 suspended(bond 已退,入场门 sellerHasProductionBaseBondLocked 自然为 false)。凭据必填。 */
+export function executeBondRefund(db: Database.Database, args: { depositId: string; nowIso: string; coolingDays: number; evidenceRef: string }): DepositOpResult {
+  const row = getRow(db, args.depositId)
+  if (!row) return { ok: false, reason: 'deposit not found' }
+  if (row.status === 'refunded') return { ok: true, status: 'refunded', already: true }
+  if (row.status !== 'refunding') return { ok: false, reason: `can only execute on a refunding bond (got '${row.status}')` }
+  if (!args.evidenceRef || !args.evidenceRef.trim()) return { ok: false, reason: 'refund evidence ref required(场外退还凭据必填)' }
+  const reqAt = (db.prepare('SELECT refund_requested_at r FROM direct_receive_deposits WHERE id = ?').get(args.depositId) as { r: string | null }).r
+  const reqMs = reqAt ? Date.parse(reqAt.includes('T') ? reqAt : reqAt.replace(' ', 'T') + 'Z') : NaN
+  const nowMs = Date.parse(args.nowIso)
+  const cooling = Math.max(0, args.coolingDays) * 86_400_000
+  if (!Number.isFinite(reqMs) || !Number.isFinite(nowMs)) return { ok: false, reason: 'unparseable refund timestamps' }
+  if (nowMs - reqMs < cooling) return { ok: false, reason: `cooling window not over (need ${args.coolingDays}d from request)` }
+  db.prepare(`UPDATE direct_receive_deposits SET status = 'refunded', released_at = datetime('now'), refund_evidence_ref = ?, updated_at = datetime('now') WHERE id = ? AND status = 'refunding'`)
+    .run(args.evidenceRef.trim().slice(0, 200), args.depositId)
+  return { ok: true, status: 'refunded' }
+}
+
 /** 卖家自行撤回自己的 pending 申报(B1)。owner-scoped CAS;非 pending 不动。 */
 export function cancelPendingDeposit(db: Database.Database, args: { depositId: string; userId: string }): DepositOpResult {
   const row = getRow(db, args.depositId)
@@ -294,9 +347,9 @@ export function cancelPendingDeposit(db: Database.Database, args: { depositId: s
 }
 
 /** 卖家最新一笔保证金存款(任意状态;B1 状态卡/去重用)。 */
-export function getSellerLatestDeposit(db: Database.Database, sellerId: string): (DepositRow & { external_ref: string | null; reject_note: string | null; confirmed_at: string | null; locked_at: string | null }) | null {
+export function getSellerLatestDeposit(db: Database.Database, sellerId: string): (DepositRow & { external_ref: string | null; reject_note: string | null; confirmed_at: string | null; locked_at: string | null; refund_requested_at: string | null; refund_evidence_ref: string | null }) | null {
   return (db.prepare(`SELECT id, user_id, tier, required_amount, amount, currency, deposit_rail, status, production_receipt_confirmed_at,
-                             external_ref, reject_note, confirmed_at, locked_at, created_at
+                             external_ref, reject_note, confirmed_at, locked_at, refund_requested_at, refund_evidence_ref, created_at
                       FROM direct_receive_deposits WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`).get(sellerId) as never) ?? null
 }
 
