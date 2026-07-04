@@ -320,11 +320,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | PUT | `/api/direct-receive/accounts/:id` | 🔐 |  | ── update(Passkey + owner)── | src/pwa/routes/direct-receive-accounts.ts:90 |
 | GET | `/api/direct-receive/accounts/:id/qr` | 🔐 |  | ── QR preview(owner-only read;硬化转发;不存在/非本人 → 404)── | src/pwa/routes/direct-receive-accounts.ts:131 |
 | PUT | `/api/direct-receive/accounts/:id/qr` | 🔐 |  | ── upload / replace QR(Passkey + owner;immutable content-addressed store)── | src/pwa/routes/direct-receive-accounts.ts:120 |
-| POST | `/api/direct-receive/bond-deposit` | 🔐 |  |  | src/pwa/routes/bond-seller.ts:84 |
-| POST | `/api/direct-receive/bond-deposit/:id/cancel` | 🔐 |  |  | src/pwa/routes/bond-seller.ts:137 |
-| POST | `/api/direct-receive/bond-refund-request` | 🔐 |  | ── B2:退出退还 —— 申请(§5 blockers fail-closed)→ 冷静期 → admin 执行;申请期间直付资格暂停,可撤销 ── | src/pwa/routes/bond-seller.ts:112 |
-| POST | `/api/direct-receive/bond-refund-request/cancel` | 🔐 |  |  | src/pwa/routes/bond-seller.ts:128 |
-| GET | `/api/direct-receive/bond-status` | 🔐 |  |  | src/pwa/routes/bond-seller.ts:52 |
+| POST | `/api/direct-receive/bond-deposit` | 🔐 |  |  | src/pwa/routes/bond-seller.ts:87 |
+| POST | `/api/direct-receive/bond-deposit/:id/cancel` | 🔐 |  |  | src/pwa/routes/bond-seller.ts:148 |
+| POST | `/api/direct-receive/bond-refund-request` | 🔐 |  | ── B2:退出退还 —— 申请(§5 blockers fail-closed)→ 冷静期 → admin 执行;申请期间直付资格暂停,可撤销 ── | src/pwa/routes/bond-seller.ts:123 |
+| POST | `/api/direct-receive/bond-refund-request/cancel` | 🔐 |  |  | src/pwa/routes/bond-seller.ts:139 |
+| GET | `/api/direct-receive/bond-status` | 🔐 |  |  | src/pwa/routes/bond-seller.ts:54 |
 | GET | `/api/direct-receive/deferral` | 🔐 |  | GET /api/direct-receive/deferral — 卖家本人缓交状态:最新一条申请(脱敏:不含 admin 身份)+ 是否当前生效(activ | src/pwa/routes/direct-pay-availability.ts:96 |
 | POST | `/api/direct-receive/deferral` | 🔐 |  | POST /api/direct-receive/deferral — 卖家申请缓交。helper 强制:单一活跃、periodDays 正整数、id 唯一。 | src/pwa/routes/direct-pay-availability.ts:86 |
 | POST | `/api/direct-receive/fee-prepay-request` | 🔐 |  | ── 提交预充值申请(不 Passkey;凭据必填)── | src/pwa/routes/fee-prepay-requests.ts:39 |

@@ -701,6 +701,8 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN reject_note TEXT`) } catch { /* 已存在 */ }   // B1:admin 驳回申报说明(卖家可见)
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN refund_requested_at TEXT`) } catch { /* 已存在 */ }   // B2:退出申请时间(冷静期锚点)
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN refund_evidence_ref TEXT`) } catch { /* 已存在 */ }   // B2:场外退还凭据(admin 执行时记录)
+  try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN terms_version TEXT`) } catch { /* 已存在 */ }         // 条款同意版本快照(缴纳前强制同意;罚没/退还的合同依据)
+  try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN platform_account_id TEXT`) } catch { /* 已存在 */ }   // 缴到哪个平台收款账户(多币种;币种由账户推导)
   // B3:保证金罚没提案(人工铁律:仲裁裁定卖家责的直付争议 → admin 提案 → 冷静期 → ROOT+Passkey 执行;绝不自动)。
   db.exec(`
     CREATE TABLE IF NOT EXISTS bond_slash_proposals (

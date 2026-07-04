@@ -18,6 +18,8 @@ import type Database from 'better-sqlite3'
 import { openDeposit, getSellerLatestDeposit, expireDeposit, requiredBondUnits, cancelPendingDeposit, requestBondRefund, cancelBondRefundRequest } from '../../direct-receive-deposits.js'
 import { enumerateBondRefundBlockers } from '../../bond-refund-blockers.js'   // B2:§5 unlock blockers(fail-closed)
 import { listBondSlashProposals } from '../../bond-slash.js'   // B3:待复核罚没提案(卖家须被告知)
+import { BOND_TERMS } from '../../bond-terms.js'   // 条款(缴纳前强制同意;版本快照进 deposit 行)
+import { getPlatformAccount } from '../../platform-receive-accounts.js'
 import { bondRailClearanceBlockers } from '../../direct-pay-bond-rail-clearance.js'
 import { getActiveDeferral } from '../../direct-receive-deferral.js'
 import { listActivePlatformAccounts } from '../../platform-receive-accounts.js'
@@ -74,7 +76,8 @@ export function registerBondSellerRoutes(app: Application, deps: BondSellerDeps)
       pending_slash: (() => { try { const p = listBondSlashProposals(db, { sellerId, status: 'proposed' })[0]; return p ? { id: p.id, dispute_id: p.dispute_id, cooling_until: p.cooling_until, reason: p.reason } : null } catch { return null } })(),
       rail_cleared: cleared,
       rail_blockers: cleared ? [] : bondRailClearanceBlockers('operator_attested').filter(b => b !== 'NO_PRODUCTION_RECEIPT'),
-      payment_accounts: cleared ? listActivePlatformAccounts(db) : [],   // 放行前不展示收款方式(不引导无法生效的转账)
+      payment_accounts: cleared ? listActivePlatformAccounts(db) : [],   // 放行前不展示收款方式(不引导无法生效的转账);多币种账户由 admin 在 #admin/platform-receive 维护
+      terms: { version: BOND_TERMS.version, zh: BOND_TERMS.zh, en: BOND_TERMS.en },   // 缴纳前必须同意(版本快照)
       note: cleared
         ? '按平台收款方式转账后提交申报(凭据必填);运营核实到账并确认后保证金正式锁定、直付入场门即满足。'
         : '保证金缴纳通道待平台放行(合规审查中)。当前可通过【缓交申请】先行入场(额度受限);放行后再补缴转正式。',
@@ -88,13 +91,21 @@ export function registerBondSellerRoutes(app: Application, deps: BondSellerDeps)
     if (!bondRailCleared()) return void errorRes(res, 409, 'BOND_RAIL_NOT_CLEARED', '保证金缴纳通道待平台放行(合规审查中);当前请使用缓交申请入场')
     const evidence = String(req.body?.evidence_ref ?? '').trim()
     if (!evidence || evidence.length > 120) return void errorRes(res, 400, 'EVIDENCE_REQUIRED', '付款凭据号必填(≤120 字;转账单号/链上 tx 等,运营据此核对到账)')
+    // 条款强制同意(合同依据;版本精确匹配,旧版本同意无效)
+    if (String(req.body?.agree_terms_version ?? '') !== BOND_TERMS.version) {
+      return void res.status(428).json({ error: '缴纳前须阅读并同意当前版本保证金条款', error_code: 'TERMS_NOT_AGREED', terms: { version: BOND_TERMS.version, zh: BOND_TERMS.zh, en: BOND_TERMS.en } })
+    }
+    // 多币种:必须选一个 active 平台收款账户;币种由账户推导(USDC/USDT→usdc,其余→fiat)
+    const acc = getPlatformAccount(db, String(req.body?.platform_account_id ?? ''))
+    if (!acc || acc.status !== 'active') return void errorRes(res, 400, 'PLATFORM_ACCOUNT_REQUIRED', '须选择缴纳到的平台收款账户(有效且启用)')
+    const currency = ['USDC', 'USDT'].includes(String(acc.currency ?? '').toUpperCase()) ? 'usdc' : 'fiat'
     const latest0 = getSellerLatestDeposit(db, sellerId)
     if (latest0 && latest0.status === 'pending') expireDeposit(db, { depositId: latest0.id, nowIso: new Date().toISOString() })   // lazy expiry
     const latest = getSellerLatestDeposit(db, sellerId)
     if (latest && ['pending', 'confirmed', 'insufficient'].includes(latest.status)) return void errorRes(res, 409, 'DEPOSIT_IN_FLIGHT', `已有在途申报(${latest.status}),请等待运营核实或先撤回`)
     if (latest && latest.status === 'locked') return void errorRes(res, 409, 'BOND_ALREADY_LOCKED', '保证金已锁定生效,无需重复缴纳')
     const depositId = generateId('bond')
-    const r = openDeposit(db, { depositId, userId: sellerId, tier: 'T0', currency: 'usdc', depositRail: 'operator_attested', externalRef: evidence })
+    const r = openDeposit(db, { depositId, userId: sellerId, tier: 'T0', currency, depositRail: 'operator_attested', externalRef: evidence, termsVersion: BOND_TERMS.version, platformAccountId: acc.id })
     if (!r.ok) return void errorRes(res, 400, 'BOND_OPEN_FAILED', r.reason)
     // N3 同款:通知 root admin 有待核实申报(best-effort)
     try {

@@ -66,6 +66,9 @@ export function openDeposit(db: Database.Database, args: {
   depositId: string; userId: string; tier: DepositTier; currency: string; depositRail: string; config?: BaseBondConfig
   /** 卖家申报的付款凭据(转账单号等,B1;运营核实时对照)。存 external_ref;confirm 时可被 rail 返回值覆盖。 */
   externalRef?: string
+  /** 缴纳前同意的条款版本(合同依据快照)+ 所缴平台收款账户(多币种)。 */
+  termsVersion?: string
+  platformAccountId?: string
 }): DepositOpResult {
   const { depositId, userId, tier, currency, depositRail, config } = args
   if (!depositId || !userId) return { ok: false, reason: 'missing depositId/userId' }
@@ -76,9 +79,9 @@ export function openDeposit(db: Database.Database, args: {
   if (getRow(db, depositId)) return { ok: false, reason: 'deposit already exists' }
   let required: Units
   try { required = requiredBondUnits(tier, config) } catch (e) { return { ok: false, reason: (e as Error).message } }
-  db.prepare(`INSERT INTO direct_receive_deposits (id, user_id, tier, required_amount, amount, currency, deposit_rail, status, external_ref, created_at, updated_at)
-    VALUES (?,?,?,?,0,?,?, 'pending', ?, datetime('now'), datetime('now'))`)
-    .run(depositId, userId, tier, toDecimal(required), currency, depositRail, args.externalRef ?? null)
+  db.prepare(`INSERT INTO direct_receive_deposits (id, user_id, tier, required_amount, amount, currency, deposit_rail, status, external_ref, terms_version, platform_account_id, created_at, updated_at)
+    VALUES (?,?,?,?,0,?,?, 'pending', ?, ?, ?, datetime('now'), datetime('now'))`)
+    .run(depositId, userId, tier, toDecimal(required), currency, depositRail, args.externalRef ?? null, args.termsVersion ?? null, args.platformAccountId ?? null)
   return { ok: true, status: 'pending' }
 }
 
@@ -195,19 +198,19 @@ export function slashBond(db: Database.Database, args: { depositId: string; txnI
 }
 
 // ───── PR-4b-3: 生产 receipt 写入(唯一 writer)─────────────────────────────────────────────────
-/** base-bond/合规 policy 版本 —— 【服务端生成】(非客户端入参),legal clearance 落地时随 policy 更新。 */
-export const DIRECT_PAY_BASE_BOND_POLICY_VERSION = 'pre-legal-unset'
-/** 生产 receipt 允许的法域【严格白名单】。默认空 = 任何 jurisdiction 都拒(额外 fail-closed,待法务配置)。 */
-export const DIRECT_PAY_BOND_JURISDICTIONS: string[] = []
+/** base-bond/合规 policy 版本 —— 【服务端生成】(非客户端入参)。2026-07-05 起 = 条款版本(bond-terms.ts,
+ *  缴纳前强制同意;Holden 决策 B 放行 operator_attested,详见 bond-rail-clearance 文件头)。 */
+export const DIRECT_PAY_BASE_BOND_POLICY_VERSION = 'bond-terms.v1.2026-07-05'
+/** 生产 receipt 允许的法域【严格白名单】。2026-07-05:SG(随 operator_attested 放行)。 */
+export const DIRECT_PAY_BOND_JURISDICTIONS: string[] = ['SG']
 
 /**
  * 生产保证金 receipt【唯一】writer(PR-4b-3 scaffold)。这是【整个协议中】唯一允许写 production_receipt_confirmed_at
  *   的函数(#100 guard 机器强制:写赋值必在本函数内 且 本函数必调 assertProductionDepositRail)。
  *
- * 当前【fail-closed】:Lock A 对 manual(非生产)/usdc/fiat(GATED,implemented=false)抛;operator_attested 过 Lock A,
- *   但 Lock B(assertBondRailCleared,registry 治理默认关)对所有 rail 抛 → 没有任何 rail 能写 production receipt
- *   → 调用即抛 → 永不写 production receipt → Direct Pay 仍 non-launchable。assert 之后的写路径在 legal-cleared rail
- *   落地前【不可达】(本 PR 不接真实 USDC/fiat/PSP/on-chain)。不碰 buyer wallet/escrow/order/settlement/refund。
+ * 2026-07-05 起:operator_attested 轨已放行(SG;Holden 决策 B,详见 bond-rail-clearance 文件头)→ 本函数
+ *   对该轨【真实可写】(仍要求 ROOT+Passkey 路由门 + 双锁 assert + jurisdiction 白名单)。manual(非生产)与
+ *   usdc/fiat 自动收款轨照旧被 Lock A/B 拒。不碰 buyer wallet/escrow/order/settlement/refund。
  *
  * 硬约束(即便未来 rail 放行也必须守):
  *  - 拒绝把【非生产 locked】(manual/test lock,无 production receipt)升级成生产 —— 旧/测试行不得冒充生产到位。
@@ -218,12 +221,12 @@ export function confirmProductionReceipt(db: Database.Database, args: {
   depositId: string; railId: string; expectedAmountUnits: Units; receiptRef: string; jurisdiction: string
 }): DepositOpResult {
   const { depositId, railId, expectedAmountUnits, receiptRef, jurisdiction } = args
-  // ⚠️ 生产/法务硬闸 —— assert【真正第一】:在任何 row 读取 / 幂等 / 拒绝 / 写之前。当前所有 rail 都被拒 → 抛 → 恒 fail-closed。
+  // ⚠️ 生产/法务硬闸 —— assert【真正第一】:在任何 row 读取 / 幂等 / 拒绝 / 写之前。未放行 rail 一律抛。
   //   置于最前的语义意义:即便某 deposit 之前在【已 cleared 的 rail】下确认过,若该 rail 后被【撤回】(legalCleared→false),
   //   重新确认也不再被当"幂等已确认"放过 —— 必须重新通过闸。#100 guard 要求本 helper body 必含此调用。
   assertProductionDepositRail(getDepositRail(railId as DepositRailId))
   // Lock B(Phase 4 scaffold):rail-clearance registry 放行闸 —— legal_cleared + production_ready + 非占位 policy_version +
-  //   jurisdiction ∈ allowlist。与 Lock A【独立】,缺一即拒;当前 registry 全 fail-closed → 恒抛。置于任何 row 读/写之前。
+  //   jurisdiction ∈ allowlist。与 Lock A【独立】,缺一即拒;置于任何 row 读/写之前。
   assertBondRailCleared(railId, jurisdiction)
   // ───── 以下在 legal-cleared 生产 rail 落地前【全部不可达】(两把闸已抛)─────
   const row = getRow(db, depositId)
@@ -264,7 +267,7 @@ export function isProductionBaseBondLocked(db: Database.Database, args: { deposi
 /**
  * 卖家级生产门(PR-4c go-live 充分必要的担保侧条件):该卖家是否有任一【生产级】锁定 base bond
  *   (status='locked' 且 production_receipt_confirmed_at 非 NULL)。**非仅看 direct_receive_privileges.status='active'**。
- * 4b-min 无生产 base-bond rail(WAZ 未启用 / USDC·fiat 生产收款 GATED)→ 恒 false → 直付建单 fail-closed / non-launchable。
+ * 2026-07-05 起 operator_attested 放行 → 经运营确认的保证金使本门为真(直付整体开关 direct_pay.enabled 另判)。
  * 一个生产级 receipt 只会发给已 KYC + 制裁筛查的商户,故该门也承接了 KYC/sanctions(独立 4a 事实门待其系统就绪再接)。
  */
 export function sellerHasProductionBaseBondLocked(db: Database.Database, sellerId: string): boolean {
@@ -348,10 +351,10 @@ export function cancelPendingDeposit(db: Database.Database, args: { depositId: s
 }
 
 /** 卖家最新一笔保证金存款(任意状态;B1 状态卡/去重用)。 */
-export function getSellerLatestDeposit(db: Database.Database, sellerId: string): (DepositRow & { external_ref: string | null; reject_note: string | null; confirmed_at: string | null; locked_at: string | null; refund_requested_at: string | null; refund_evidence_ref: string | null }) | null {
+export function getSellerLatestDeposit(db: Database.Database, sellerId: string): (DepositRow & { external_ref: string | null; reject_note: string | null; confirmed_at: string | null; locked_at: string | null; refund_requested_at: string | null; refund_evidence_ref: string | null; terms_version: string | null; platform_account_id: string | null }) | null {
   return (db.prepare(`SELECT id, user_id, tier, required_amount, amount, currency, deposit_rail, status, production_receipt_confirmed_at,
-                             external_ref, reject_note, confirmed_at, locked_at, refund_requested_at, refund_evidence_ref, created_at
-                      FROM direct_receive_deposits WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`).get(sellerId) as never) ?? null
+                             external_ref, reject_note, confirmed_at, locked_at, refund_requested_at, refund_evidence_ref, terms_version, platform_account_id, created_at
+                      FROM direct_receive_deposits WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(sellerId) as never) ?? null   // rowid=插入序 tiebreak(id 字典序会被混合前缀坑)
 }
 
 /**
