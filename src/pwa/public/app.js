@@ -18765,10 +18765,10 @@ function connectSSE() {
     if (data.type === 'init') {
       updateBadge(data.unread)
     } else {
-      // 实时推送：更新角标 + 显示 toast
+      // 实时推送：更新角标 + 显示 toast(N1:模板通知按 viewer locale 渲染,旧推送回退原文)
       state.unread++
       updateBadge(state.unread)
-      showToast(data.title, data.body)
+      const _tn = window.notifRender ? window.notifRender(data) : data; showToast(_tn.title, _tn.body)
     }
   }
   state.sse.onerror = () => {
@@ -21495,9 +21495,9 @@ async function renderMessages(app, deepSub) {
     }
     body = notifications.length === 0
       ? `<div style="text-align:center;color:#9ca3af;padding:40px 0;font-size:13px">🔔 ${t('暂无通知')}</div>`
-      : notifications.map(n => {
-          let actions = []
-          try { actions = n.actions ? JSON.parse(n.actions) : [] } catch {}
+      : notifications.map(nRaw => {
+          const n = window.notifRender ? window.notifRender(nRaw) : nRaw   // N1:template_key → viewer locale 渲染;旧行回退存量 title/body
+          let actions = []; try { actions = n.actions ? JSON.parse(n.actions) : [] } catch {}
           const route = routeFor(n)
           const hasActions = Array.isArray(actions) && actions.length > 0
           // 卡片 onclick：仅当无 actions 时整卡可点（兼容旧 notif）

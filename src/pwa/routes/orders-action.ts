@@ -452,6 +452,12 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
 
     notifyTransition(db, req.params.id, fromStatus, toStatus)
 
+    // 审计项 B(N2):买家标记付款 → 通知卖家核款发货(direct_pay_window→accepted 不在 notifyTransition RULES,
+    //   此前卖家全程收不到"已付款"信号只能手动刷)。notes 即 D1/D2/E 的权威对账串(参考号+应付+多单预警),直接复用。
+    if (action === 'mark_paid') {
+      try { createNotification(db, sellerId as string, req.params.id, 'direct_pay_marked_paid', '💰 买家已标记付款,请核对后发货', `${notes}。请核对银行/收款App流水后再发货;未收到请点"未收到货款"。`, { templateKey: 'dp_marked_paid', params: { detail: notes } }) } catch { /* 通知失败不阻断 */ }
+    }
+
     // Rail1 货款协商:卖家报未收款 → 设买家响应宽限(PR-B2 卖家据此才可请求取消);确认已收/升级 → 清协商截止。
     if (action === 'report_nonpayment') {
       let gh = 72; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'direct_pay.payment_query_grace_hours'"); if (p) gh = Math.max(1, Number(p.value) || 72) } catch {}

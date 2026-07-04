@@ -57,39 +57,48 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
 
   // A. 付款窗口超时 → 可争议态(非静默关单)+ 退费用质押 + 设宽限期
   const windowRows = db.prepare(`
-    SELECT id FROM orders
+    SELECT id, buyer_id FROM orders
     WHERE status = 'direct_pay_window'
       AND payment_rail = 'direct_p2p'
       AND direct_pay_window_deadline IS NOT NULL
       AND datetime(direct_pay_window_deadline) < datetime('now')
     LIMIT 1000
-  `).all() as Array<{ id: string }>
-  for (const { id } of windowRows) {
+  `).all() as Array<{ id: string; buyer_id: string }>
+  for (const { id, buyer_id } of windowRows) {
+    let done = false
     db.transaction(() => {
       const r = transition(db, id, 'direct_expired_unconfirmed', SYS, [], 'Rail1 直付:付款窗口超时未标记')
       if (!r.success) return
       releaseFeeStake(db, { orderId: id })   // 费用质押退卖家(无完成,不收费)
       db.prepare(`UPDATE orders SET direct_grace_deadline = datetime('now', ?) WHERE id = ?`).run(`+${gh} hours`, id)
-      windowExpired.push(id)
+      windowExpired.push(id); done = true
     })()
+    // 审计项 B(N2):此前窗口静默过期,卡点付款的买家毫不知情直到 48h 后自动取消。tx 外 fail-soft。
+    if (done) { try { createNotification(db, buyer_id, id, 'direct_pay_window_expired', '⏰ 直付付款窗口已过期', `若你已付款:请在 ${gh} 小时宽限期内到订单页提交付款凭证发起争议;未付款可直接关闭订单,否则宽限期满将自动取消。`, { templateKey: 'dp_window_expired', params: { graceHours: gh } }) } catch (e) { console.warn('[direct-pay-timeouts] notify window-expired:', (e as Error).message) } }
   }
 
   // B. 宽限期满 → 系统关单(★ WHERE 保证仅 now>grace 命中;宽限期内绝不关,买家 →disputed 全程可用)
   const graceRows = db.prepare(`
-    SELECT id, product_id, quantity FROM orders
+    SELECT id, product_id, quantity, buyer_id, seller_id FROM orders
     WHERE status = 'direct_expired_unconfirmed'
       AND payment_rail = 'direct_p2p'
       AND direct_grace_deadline IS NOT NULL
       AND datetime(direct_grace_deadline) < datetime('now')
     LIMIT 1000
-  `).all() as Array<{ id: string; product_id: string; quantity: number }>
-  for (const { id, product_id, quantity } of graceRows) {
+  `).all() as Array<{ id: string; product_id: string; quantity: number; buyer_id: string; seller_id: string }>
+  for (const { id, product_id, quantity, buyer_id, seller_id } of graceRows) {
+    let done = false
     db.transaction(() => {
       const r = transition(db, id, 'cancelled', SYS, [], 'Rail1 直付:宽限期满,买家未付款/未升级争议,系统关单')
       if (!r.success) return
       restorePreShipDirectPayStock(db, { fromStatus: 'direct_expired_unconfirmed', productId: product_id, quantity })   // D3 回补(pre-ship 唯一入口)
-      graceCancelled.push(id)
+      graceCancelled.push(id); done = true
     })()
+    // 审计项 B(N2):自动关单也要告知双方(此前静默,买家不知单没了、卖家不知库存已回)。tx 外 fail-soft。
+    if (done) {
+      try { createNotification(db, buyer_id, id, 'direct_pay_grace_cancelled', '🚫 直付订单已自动取消', '付款窗口与宽限期均已过且未收到你的付款标记/凭证,订单已关闭。若你确已付款,请通过订单页联系卖家协商。', { templateKey: 'dp_grace_cancelled_buyer', params: {} }) } catch (e) { console.warn('[direct-pay-timeouts] notify grace-cancel buyer:', (e as Error).message) }
+      try { createNotification(db, seller_id, id, 'direct_pay_grace_cancelled', '🚫 直付订单已自动取消(买家未付款)', '买家未在付款窗口+宽限期内付款,订单已自动关闭,库存已恢复。', { templateKey: 'dp_grace_cancelled_seller', params: {} }) } catch (e) { console.warn('[direct-pay-timeouts] notify grace-cancel seller:', (e as Error).message) }
+    }
   }
 
   // D. 货款协商买家静默:payment_query 已过买家响应宽限(payment_query_deadline)且卖家未手动请求取消

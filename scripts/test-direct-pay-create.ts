@@ -32,6 +32,8 @@ const db = initDatabase()
 db.pragma('foreign_keys = OFF')
 setSeamDb(db)
 initOrderChainSchema(db)
+const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
+initNotificationSchema(db)   // 审计项 B:建单 → 卖家模板通知断言用
 initSystemUser(db)
 for (const [u, role] of [['buyer1', 'buyer'], ['seller1', 'seller']] as const) db.prepare('INSERT INTO users (id,name,role,api_key) VALUES (?,?,?,?)').run(u, u, role, 'k_' + u)
 db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('buyer1', 100)").run()
@@ -211,6 +213,9 @@ ok('D2: account snapshot carries NO raw instruction', accSnap && !('instruction'
 // 审计项 E(v13):非 USD 账户 → 快照冻结应付参考换算(payable_*,display-only);换算不可得也只缺 payable_approx,建单不受阻
 ok('E: SGD account snapshot freezes payable_* at create', accSnap && accSnap.payable_usdc === 50 && accSnap.payable_currency === 'SGD' && Number.isFinite(Number(accSnap.payable_approx)) && Number(accSnap.payable_approx) > 0 && Number.isFinite(Number(accSnap.payable_rate)) && typeof accSnap.payable_asof === 'string' && typeof accSnap.payable_stale === 'boolean', JSON.stringify(accSnap))
 ok('E: payable_approx ≈ usdc × rate (2dp)', accSnap && Math.abs(Number(accSnap.payable_approx) - Math.round(accSnap.payable_usdc * accSnap.payable_rate * 100) / 100) < 0.011)
+// 审计项 B(N2):建单 → 卖家收到 dp_new_order 模板通知(此前卖家不知道有单)
+const noNotif = db.prepare("SELECT template_key, params FROM notifications WHERE user_id='seller2' AND order_id=? AND type='direct_pay_order_created'").get(rSel.json?.order_id) as { template_key: string; params: string } | undefined
+ok('B: create notifies seller with dp_new_order template (product/qty/amount params)', !!noNotif && noNotif.template_key === 'dp_new_order' && JSON.parse(noNotif.params || '{}').amount === 50, JSON.stringify(noNotif))
 // fail-closed: bogus / inactive / wrong-seller account → 409, never silent legacy fallback, no order
 const ordsBeforeInvalid = (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n
 ok('D2: bogus account_id → 409 DIRECT_RECEIVE_ACCOUNT_INVALID', (await dpAcc('nope')).json?.error_code === 'DIRECT_RECEIVE_ACCOUNT_INVALID')

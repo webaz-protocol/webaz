@@ -139,6 +139,17 @@ const _EN = {
   '已收到,取消订单': 'Received — cancel order',
   '订单已无责取消': 'Order cancelled, no fault to either party',
   '下单时参考价,以卖家收款说明为准': 'reference rate at order time; the seller\'s payment instruction is authoritative',
+  // 直付通知模板(N1,审计项 B)
+  '新直付订单,等买家付款': 'New direct-pay order, awaiting buyer payment',
+  '商品「{product}」× {qty},应付 {amount} USDC。买家完成场外付款并标记后你会收到发货提醒。': '"{product}" × {qty}, payable {amount} USDC. You will be reminded to ship once the buyer pays off-protocol and marks it.',
+  '买家已标记付款,请核对后发货': 'Buyer marked as paid — verify before shipping',
+  '{detail}。请核对银行/收款App流水后再发货;未收到请点"未收到货款"。': '{detail}. Verify your bank / payment-app statement before shipping; if not received, tap "Payment not received".',
+  '直付付款窗口已过期': 'Direct-pay payment window expired',
+  '若你已付款:请在 {graceHours} 小时宽限期内到订单页提交付款凭证发起争议;未付款可直接关闭订单,否则宽限期满将自动取消。': 'If you HAVE paid: submit your payment proof on the order page within the {graceHours}-hour grace period to open a dispute. If you have not paid, you can close the order now; otherwise it auto-cancels when the grace period ends.',
+  '直付订单已自动取消': 'Direct-pay order auto-cancelled',
+  '付款窗口与宽限期均已过且未收到你的付款标记/凭证,订单已关闭。若你确已付款,请通过订单页联系卖家协商。': 'The payment window and grace period both passed without your payment mark / proof, so the order was closed. If you did pay, contact the seller via the order page.',
+  '直付订单已自动取消(买家未付款)': 'Direct-pay order auto-cancelled (buyer did not pay)',
+  '买家未在付款窗口+宽限期内付款,订单已自动关闭,库存已恢复。': 'The buyer did not pay within the window + grace period; the order was closed automatically and stock restored.',
   // 卖家对账卡(审计项 F)
   '发货前对账(买家已标记付款)': 'Reconcile before shipping (buyer marked as paid)',
   '银行/收款App流水附言应为': 'The bank / payment-app statement memo should read',
