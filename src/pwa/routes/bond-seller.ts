@@ -15,7 +15,8 @@
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
-import { openDeposit, getSellerLatestDeposit, expireDeposit, requiredBondUnits, cancelPendingDeposit } from '../../direct-receive-deposits.js'
+import { openDeposit, getSellerLatestDeposit, expireDeposit, requiredBondUnits, cancelPendingDeposit, requestBondRefund, cancelBondRefundRequest } from '../../direct-receive-deposits.js'
+import { enumerateBondRefundBlockers } from '../../bond-refund-blockers.js'   // B2:§5 unlock blockers(fail-closed)
 import { bondRailClearanceBlockers } from '../../direct-pay-bond-rail-clearance.js'
 import { getActiveDeferral } from '../../direct-receive-deferral.js'
 import { listActivePlatformAccounts } from '../../platform-receive-accounts.js'
@@ -28,6 +29,7 @@ export interface BondSellerDeps {
   auth: (req: Request, res: Response) => Record<string, unknown> | null
   generateId: (prefix: string) => string
   errorRes: (res: Response, status: number, code: string, msg: string) => void
+  getProtocolParam: <T>(key: string, fallback: T) => T
 }
 
 /** operator_attested 生产轨是否已被法务/治理放行(Lock B;当前恒 false,放行=registry 置真)。 */
@@ -37,7 +39,8 @@ function bondRailCleared(): boolean {
 }
 
 export function registerBondSellerRoutes(app: Application, deps: BondSellerDeps): void {
-  const { db, auth, generateId, errorRes } = deps
+  const { db, auth, generateId, errorRes, getProtocolParam } = deps
+  const coolingDays = (): number => Math.max(0, Number(getProtocolParam<number>('direct_pay.bond_refund_cooling_days', 14)) || 14)
 
   function requireSeller(req: Request, res: Response): Record<string, unknown> | null {
     const user = auth(req, res); if (!user) return null
@@ -59,10 +62,13 @@ export function registerBondSellerRoutes(app: Application, deps: BondSellerDeps)
       deposit: latest ? {
         id: latest.id, status: latest.status, amount: latest.amount, required_amount: latest.required_amount,
         rail: latest.deposit_rail, evidence_ref: latest.external_ref, reject_note: latest.reject_note,
-        production_confirmed: latest.production_receipt_confirmed_at != null,
+        production_confirmed: latest.production_receipt_confirmed_at != null, refund_evidence_ref: latest.refund_evidence_ref,
         created_at: latest.created_at, locked_at: latest.locked_at,
       } : null,
       deferral: deferral ? { id: deferral.id, expires_at: deferral.expiresAt, grace_until: deferral.graceUntil, in_grace: deferral.inGrace, reduced_quota_factor: deferral.reducedQuotaFactor } : null,
+      // B2:退出退还视图 —— locked 时预览 blockers(能不能申请);refunding 时给冷静期/可执行时间
+      refund: latest && latest.status === 'locked' ? { can_request: enumerateBondRefundBlockers(db, sellerId).length === 0, blockers: enumerateBondRefundBlockers(db, sellerId), cooling_days: coolingDays() }
+        : latest && latest.status === 'refunding' ? { requested_at: latest.refund_requested_at, cooling_days: coolingDays() } : null,
       rail_cleared: cleared,
       rail_blockers: cleared ? [] : bondRailClearanceBlockers('operator_attested').filter(b => b !== 'NO_PRODUCTION_RECEIPT'),
       payment_accounts: cleared ? listActivePlatformAccounts(db) : [],   // 放行前不展示收款方式(不引导无法生效的转账)
@@ -97,6 +103,32 @@ export function registerBondSellerRoutes(app: Application, deps: BondSellerDeps)
       }
     } catch (e) { console.warn('[bond-deposit notify]', (e as Error).message) }
     return void res.json({ success: true, deposit_id: depositId, status: 'pending', note: '申报已提交;运营核实真实到账并确认后生效。申报本身不授予任何入场资格。' })
+  })
+
+  // ── B2:退出退还 —— 申请(§5 blockers fail-closed)→ 冷静期 → admin 执行;申请期间直付资格暂停,可撤销 ──
+  app.post('/api/direct-receive/bond-refund-request', async (req, res) => {
+    const user = requireSeller(req, res); if (!user) return
+    const sellerId = user.id as string
+    const latest = getSellerLatestDeposit(db, sellerId)
+    if (!latest || latest.status !== 'locked') return void errorRes(res, 409, 'NO_LOCKED_BOND', '没有已锁定的保证金可退')
+    const blockers = enumerateBondRefundBlockers(db, sellerId)
+    if (blockers.length > 0) return void res.status(409).json({ error: '有未了结的直付责任,暂不能申请退还', error_code: 'REFUND_BLOCKED', blockers })
+    const r = requestBondRefund(db, { depositId: latest.id, userId: sellerId })
+    if (!r.ok) return void errorRes(res, 409, 'REFUND_REQUEST_FAILED', r.reason)
+    try {
+      const roots = await dbAll<{ id: string }>("SELECT id FROM users WHERE role = 'admin' AND (admin_type = 'root' OR admin_type IS NULL)")
+      for (const a of roots) createNotification(db, a.id, null, 'bond_refund_requested', '↩️ 保证金退出申请待处理', `卖家 ${String(user.name ?? sellerId)} 申请退还履约保证金(冷静期 ${coolingDays()} 天,期间其直付资格已暂停)。冷静期满且复核无未了结责任后,场外退还并在 admin 后台记录执行。`, { templateKey: 'bond_refund_requested', params: { seller: String(user.name ?? sellerId), days: coolingDays() } })
+    } catch (e) { console.warn('[bond-refund notify]', (e as Error).message) }
+    return void res.json({ success: true, status: 'refunding', cooling_days: coolingDays(), note: '申请已提交:冷静期内你的直付资格暂停(不可接新直付单);冷静期满、复核无未了结责任后,平台在协议外退还并记录。可随时撤销申请恢复资格。' })
+  })
+
+  app.post('/api/direct-receive/bond-refund-request/cancel', (req, res) => {
+    const user = requireSeller(req, res); if (!user) return
+    const latest = getSellerLatestDeposit(db, user.id as string)
+    if (!latest) return void errorRes(res, 404, 'DEPOSIT_NOT_FOUND', '无保证金记录')
+    const r = cancelBondRefundRequest(db, { depositId: latest.id, userId: user.id as string })
+    if (!r.ok) return void errorRes(res, 409, 'REFUND_CANCEL_FAILED', r.reason)
+    return void res.json({ success: true, status: 'locked', note: '退出申请已撤销,直付资格已恢复。' })
   })
 
   app.post('/api/direct-receive/bond-deposit/:id/cancel', (req, res) => {

@@ -96,8 +96,9 @@ try {
   ok('14. admin route case wired', /params\[0\] === 'bond-deposits'\) return renderAdminBondDeposits\(app\)/.test(APP))
   ok('15. hub link added', /#admin\/bond-deposits/.test(readFileSync('src/pwa/public/app-direct-pay-fee-ops.js', 'utf8')))
   const emitted = [...new Set([...(SEL + ADM).matchAll(/templateKey: '(bond_[a-z_]+)'/g)].map(m => m[1]))]
-  const registered = new Set([...UI.matchAll(/^\s{4}(bond_\w+):/gm)].map(m => m[1]))
-  ok('16. every server bond_* templateKey registered client-side', emitted.length === 3 && emitted.every(k => registered.has(k)), emitted.join(','))
+  const UIR = UI + readFileSync('src/pwa/public/app-bond-refund-ui.js', 'utf8')   // B2:退还模板注册在姊妹文件
+  const registered = new Set([...UIR.matchAll(/^\s{4}(bond_\w+):/gm)].map(m => m[1]))
+  ok('16. every server bond_* templateKey registered client-side', emitted.length === 5 && emitted.every(k => registered.has(k)), emitted.join(','))
   const keys = new Set<string>()
   for (const m of UI.matchAll(/(?<![\w$])t\('([^']+)'\)/g)) keys.add(m[1])
   for (const m of UI.matchAll(/P\('[^']*', '([^']*)', '([^']*)'\)/g)) { keys.add(m[1]); keys.add(m[2]) }

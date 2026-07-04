@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (760 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (763 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -751,6 +751,19 @@
     "/api/admin/direct-receive/deposits/:id/confirm-production": {
       "post": {
         "summary": "当前恒 fail-closed(无 legal-cleared rail → assert 抛 → PRODUCTION_RAIL_NOT_CLEARED)。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/direct-receive/deposits/:id/execute-refund": {
+      "post": {
+        "summary": "unlock blockers(冷静期内可能新增退货/欠费等责任 —— 有任一即拒)。凭据必填;真实退款发生在协议外,此处只记录。",
         "tags": [
           "admin"
         ],
@@ -3748,6 +3761,28 @@
     "/api/direct-receive/bond-deposit/:id/cancel": {
       "post": {
         "summary": "POST /api/direct-receive/bond-deposit/:id/cancel",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/bond-refund-request": {
+      "post": {
+        "summary": "── B2:退出退还 —— 申请(§5 blockers fail-closed)→ 冷静期 → admin 执行;申请期间直付资格暂停,可撤销 ──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/bond-refund-request/cancel": {
+      "post": {
+        "summary": "POST /api/direct-receive/bond-refund-request/cancel",
         "tags": [],
         "security": [
           {

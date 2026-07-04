@@ -5531,7 +5531,7 @@ registerDisputesWriteRoutes(app, {
   settleCommission, depositToFund, calculatePv,
   recordDisputeReputation, issueAgentStrike, publishDisputeCase, logAdminAction, snfSend,
   getProtocolParam, notifyTransition,
-}); registerMutualCancelRoutes(app, { db, auth, generateId, errorRes }); registerDirectPayCancelRefundRoutes(app, { db, auth, generateId, errorRes, consumeGateToken }); registerDirectPayReturnsRoutes(app, { db, auth, generateId, errorRes, consumeGateToken }); registerDirectPayPendingAcceptRoutes(app, { db, auth, errorRes, getProtocolParam }); registerShippingTemplateRoutes(app, { db, auth, errorRes }); registerBondSellerRoutes(app, { db, auth, generateId, errorRes })  // 协商取消(disputed)+ 直付取消退款握手(accepted):关单手术均内部 db.transaction 原子
+}); registerMutualCancelRoutes(app, { db, auth, generateId, errorRes }); registerDirectPayCancelRefundRoutes(app, { db, auth, generateId, errorRes, consumeGateToken }); registerDirectPayReturnsRoutes(app, { db, auth, generateId, errorRes, consumeGateToken }); registerDirectPayPendingAcceptRoutes(app, { db, auth, errorRes, getProtocolParam }); registerShippingTemplateRoutes(app, { db, auth, errorRes }); registerBondSellerRoutes(app, { db, auth, generateId, errorRes, getProtocolParam })  // 协商取消(disputed)+ 直付取消退款握手(accepted):关单手术均内部 db.transaction 原子
 
 // lightAuthGuard：轻量 Authorization 头守门（在 raw 解析之前挡掉无 auth 请求）
 // 被 Phase 13 shareables（视频上传）+ Phase 87 disputes evidence-blob 共享
