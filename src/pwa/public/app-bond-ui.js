@@ -40,7 +40,7 @@
       : `<div style="margin:8px 0;padding:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;color:#92400e">${escHtml(s.note || '')}</div>`
     box.innerHTML = `
       <div style="margin-bottom:6px">${t('要求额度')}:<strong>${s.required.display} ${s.required.currency}</strong>(${s.required.tier})</div>
-      ${statusLine}${deferralLine}${payBlock}${window.bondRefundBlock ? window.bondRefundBlock(s) : ''}
+      ${statusLine}${deferralLine}${payBlock}${window.bondRefundBlock ? window.bondRefundBlock(s) : ''}${window.bondSlashNotice ? window.bondSlashNotice(s) : ''}
       <div id="bond-msg" style="margin-top:6px;font-size:11px"></div>`
   }
   window.bondSubmitDeposit = async () => {

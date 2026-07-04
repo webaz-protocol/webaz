@@ -701,6 +701,25 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN reject_note TEXT`) } catch { /* 已存在 */ }   // B1:admin 驳回申报说明(卖家可见)
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN refund_requested_at TEXT`) } catch { /* 已存在 */ }   // B2:退出申请时间(冷静期锚点)
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN refund_evidence_ref TEXT`) } catch { /* 已存在 */ }   // B2:场外退还凭据(admin 执行时记录)
+  // B3:保证金罚没提案(人工铁律:仲裁裁定卖家责的直付争议 → admin 提案 → 冷静期 → ROOT+Passkey 执行;绝不自动)。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bond_slash_proposals (
+      id            TEXT PRIMARY KEY,
+      deposit_id    TEXT NOT NULL,
+      seller_id     TEXT NOT NULL,
+      dispute_id    TEXT NOT NULL,                -- 依据争议(须 resolved 且 ruling ∈ 卖家责;direct_p2p 单)
+      reason        TEXT,
+      status        TEXT NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed','executed','cancelled')),
+      cooling_until TEXT NOT NULL,                -- 绝对截止(propose 时按 param 计算;执行须晚于此)
+      proposed_by   TEXT NOT NULL,
+      proposed_at   TEXT DEFAULT (datetime('now')),
+      executed_at   TEXT,
+      executed_txn_id TEXT,
+      cancelled_at  TEXT,
+      cancel_note   TEXT
+    );
+  `)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_bond_slash_seller ON bond_slash_proposals(seller_id, status)') } catch { /* 已存在 */ }
   // PR-6A: sanctions 结论有有效期(过期 → fail-closed)。additive nullable;NULL = 无期限(不过期)。
   try { db.exec(`ALTER TABLE sanctions_screening ADD COLUMN expires_at TEXT`) } catch { /* 已存在 */ }
   // PR-6D: 支撑 #108 AML 监控的窗口查询(seller_id + payment_rail='direct_p2p' + created_at 范围)。

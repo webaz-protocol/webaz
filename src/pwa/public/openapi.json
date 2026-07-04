@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (763 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (767 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -686,6 +686,58 @@
     "/api/admin/direct-receive/aml-flags/:id/review": {
       "post": {
         "summary": "route 只做 auth + gate + 参数校验 + 调 reviewAmlFlag(唯一 review writer,原子改 flag + 写 audit)。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/direct-receive/bond-slash": {
+      "get": {
+        "summary": "── B3:保证金罚没(人工铁律:仲裁裁定卖家责的直付争议 → 提案 → 冷静期 → ROOT+Passkey 执行;绝不自动)──",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/direct-receive/bond-slash/:id/cancel": {
+      "post": {
+        "summary": "POST /api/admin/direct-receive/bond-slash/:id/cancel",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/direct-receive/bond-slash/:id/execute": {
+      "post": {
+        "summary": "执行(ROOT + 真人 Passkey,purpose direct_pay_bond_slash 绑 proposal_id;冷静期由域内绝对截止校验)。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/direct-receive/bond-slash/propose": {
+      "post": {
+        "summary": "提案(ROOT,审计留痕,不 Passkey —— 提案不动任何东西;执行才是终局动作)。通知卖家(冷静期=申诉窗)。",
         "tags": [
           "admin"
         ],
