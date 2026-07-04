@@ -720,6 +720,9 @@ export function initDatabase(): Database.Database {
     );
   `)
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_bond_slash_seller ON bond_slash_proposals(seller_id, status)') } catch { /* 已存在 */ }
+  // B4:缓交收口 —— 到期前提醒去重锚点 + 缴清转正式时间戳(ALTER after CREATE 铁律)。
+  try { db.exec(`ALTER TABLE direct_receive_deferrals ADD COLUMN reminder_sent_at TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE direct_receive_deferrals ADD COLUMN satisfied_at TEXT`) } catch { /* 已存在 */ }
   // PR-6A: sanctions 结论有有效期(过期 → fail-closed)。additive nullable;NULL = 无期限(不过期)。
   try { db.exec(`ALTER TABLE sanctions_screening ADD COLUMN expires_at TEXT`) } catch { /* 已存在 */ }
   // PR-6D: 支撑 #108 AML 监控的窗口查询(seller_id + payment_rail='direct_p2p' + created_at 范围)。
