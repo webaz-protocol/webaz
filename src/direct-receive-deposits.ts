@@ -24,6 +24,7 @@ import { toUnits, toDecimal, type Units } from './money.js'
 import { getDepositRail, assertProductionDepositRail, type DepositRailId } from './deposit-rails.js'
 import { assertBondRailCleared } from './direct-pay-bond-rail-clearance.js'
 import { recordBaseBondSlash } from './direct-pay-ledger.js'
+import { getPlatformAccount } from './platform-receive-accounts.js'   // P1:确认时账户快照必须可解析(审计链)
 
 export type DepositTier = 'T0' | 'T1' | 'T2'
 export type DepositStatus = 'pending' | 'confirmed' | 'locked' | 'insufficient' | 'expired' | 'refunding' | 'refunded' | 'slashed'
@@ -48,11 +49,12 @@ export type DepositOpResult =
 interface DepositRow {
   id: string; user_id: string; tier: string; required_amount: number; amount: number
   currency: string; deposit_rail: string; status: string; production_receipt_confirmed_at: string | null; created_at: string
+  terms_version: string | null; platform_account_id: string | null   // P1:生产确认强制校验(合同依据+收款账户审计链)
 }
 
 const isNonNegUnits = (x: unknown): x is Units => typeof x === 'number' && Number.isSafeInteger(x) && x >= 0
 const getRow = (db: Database.Database, id: string): DepositRow | undefined =>
-  db.prepare('SELECT id, user_id, tier, required_amount, amount, currency, deposit_rail, status, production_receipt_confirmed_at, created_at FROM direct_receive_deposits WHERE id = ?').get(id) as DepositRow | undefined
+  db.prepare('SELECT id, user_id, tier, required_amount, amount, currency, deposit_rail, status, production_receipt_confirmed_at, terms_version, platform_account_id, created_at FROM direct_receive_deposits WHERE id = ?').get(id) as DepositRow | undefined
 
 /** 某档要求的【固定 token 数】(整数 base-units)。未配置的档 → 抛(T1/T2 在 PR-5 才支持)。 */
 export function requiredBondUnits(tier: DepositTier, config: BaseBondConfig = DEFAULT_BASE_BOND_CONFIG): Units {
@@ -201,7 +203,9 @@ export function slashBond(db: Database.Database, args: { depositId: string; txnI
 /** base-bond/合规 policy 版本 —— 【服务端生成】(非客户端入参)。2026-07-05 起 = 条款版本(bond-terms.ts,
  *  缴纳前强制同意;Holden 决策 B 放行 operator_attested,详见 bond-rail-clearance 文件头)。 */
 export const DIRECT_PAY_BASE_BOND_POLICY_VERSION = 'bond-terms.v1.2026-07-05'
-/** 生产 receipt 允许的法域【严格白名单】。2026-07-05:SG(随 operator_attested 放行)。 */
+/** 生产 receipt 允许的法域【严格白名单】。语义(P2 澄清):这是【平台收款主体法域】(WebAZ 以哪个法域主体
+ *  接收担保物;决定 registry 放行口径),【不是】卖家法域 —— 卖家侧资格由 KYB/制裁/AML 门独立把守。
+ *  2026-07-05:SG(随 operator_attested 放行)。 */
 export const DIRECT_PAY_BOND_JURISDICTIONS: string[] = ['SG']
 
 /**
@@ -239,6 +243,13 @@ export function confirmProductionReceipt(db: Database.Database, args: {
   if (!receiptRef) return { ok: false, reason: 'missing production receipt ref' }
   if (!DIRECT_PAY_BOND_JURISDICTIONS.includes(jurisdiction)) return { ok: false, reason: `jurisdiction '${jurisdiction}' not in allowlist` }
   if (!['pending', 'confirmed', 'insufficient'].includes(row.status)) return { ok: false, reason: `cannot production-confirm from status '${row.status}'` }
+  // P1(#240 审计):生产确认强制【条款同意 + 平台收款账户】—— 没有当前版本条款同意 = 罚没/退还无合同依据;
+  //   没有账户快照 = 收款审计链断。旧申报/绕过 seller route 的 openDeposit 行在此被拒(须重新申报)。
+  if (row.terms_version !== DIRECT_PAY_BASE_BOND_POLICY_VERSION) {
+    return { ok: false, reason: `deposit lacks CURRENT terms agreement (has '${row.terms_version ?? 'none'}', require '${DIRECT_PAY_BASE_BOND_POLICY_VERSION}') — seller must re-declare with terms consent` }
+  }
+  if (!row.platform_account_id) return { ok: false, reason: 'deposit lacks a platform receiving account snapshot — seller must re-declare selecting an account' }
+  if (!getPlatformAccount(db, row.platform_account_id)) return { ok: false, reason: `platform account '${row.platform_account_id}' not found — audit chain broken, reject` }
   if (!isNonNegUnits(expectedAmountUnits) || expectedAmountUnits <= 0) return { ok: false, reason: 'expectedAmount must be a positive integer base-units' }
   if (expectedAmountUnits < toUnits(row.required_amount)) return { ok: false, reason: 'insufficient: amount < required' }
   db.transaction(() => {

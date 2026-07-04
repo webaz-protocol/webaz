@@ -161,6 +161,8 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
     const railId = String(req.body?.rail_id || '')
     const amountUnits = Number(req.body?.expected_amount_units)
     const receiptRef = String(req.body?.receipt_ref || '')
+    // jurisdiction=【平台收款主体法域】(P2 澄清:非卖家法域;卖家资格由 KYB/制裁/AML 独立把守)。
+    //   自由输入但被域内 DIRECT_PAY_BOND_JURISDICTIONS 严格白名单硬约束(非白名单值必拒),并进 Passkey purpose_data + 审计。
     const jurisdiction = String(req.body?.jurisdiction || '')
     const webauthnToken = req.body?.webauthn_token as string | undefined
 

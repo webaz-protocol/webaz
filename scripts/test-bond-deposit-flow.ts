@@ -41,9 +41,21 @@ let n = 0; const generateId = (p: string): string => `${p}_${++n}`
   db.prepare("UPDATE direct_receive_deposits SET status='expired' WHERE id='d2'").run()
 }
 
-// ── ② 双锁(2026-07-05 放行后):operator_attested/SG 真实可确认;非 SG 与自动收款轨仍 fail-closed ──
+// ── ② 双锁(2026-07-05 放行后):operator_attested/SG 真实可确认;非 SG 与自动收款轨仍 fail-closed;
+//     P1(#240 审计):确认强制【条款同意版本 + 平台账户快照】—— 缺任一必拒(旧申报须重报) ──
 {
-  D.openDeposit(db, { depositId: 'd3', userId: 's1', tier: 'T0', currency: 'usdc', depositRail: 'operator_attested', externalRef: 'TXN-2' })
+  db.prepare("INSERT OR IGNORE INTO platform_receive_accounts (id,method,currency,instruction,status) VALUES ('pacc0','USDC','USDC','base:0x0','active')").run()
+  // 缺条款/缺账户的行:确认必拒(不写 receipt)
+  D.openDeposit(db, { depositId: 'd3bare', userId: 's1', tier: 'T0', currency: 'usdc', depositRail: 'operator_attested', externalRef: 'TXN-0' })
+  const rBare = D.confirmProductionReceipt(db, { depositId: 'd3bare', railId: 'operator_attested', expectedAmountUnits: 500_000_000, receiptRef: 'TXN-0', jurisdiction: 'SG' })
+  ok('P1a. confirm WITHOUT terms agreement → rejected (no receipt written)', rBare.ok === false && /terms/.test((rBare as { reason: string }).reason)
+    && D.getSellerLatestDeposit(db, 's1')?.production_receipt_confirmed_at == null)
+  D.openDeposit(db, { depositId: 'd3noacc', userId: 's1', tier: 'T0', currency: 'usdc', depositRail: 'operator_attested', externalRef: 'TXN-0b', termsVersion: 'bond-terms.v1.2026-07-05' })
+  ok('P1b. confirm WITHOUT platform account → rejected', D.confirmProductionReceipt(db, { depositId: 'd3noacc', railId: 'operator_attested', expectedAmountUnits: 500_000_000, receiptRef: 'x', jurisdiction: 'SG' }).ok === false)
+  D.openDeposit(db, { depositId: 'd3ghost', userId: 's1', tier: 'T0', currency: 'usdc', depositRail: 'operator_attested', externalRef: 'TXN-0c', termsVersion: 'bond-terms.v1.2026-07-05', platformAccountId: 'no_such_acc' })
+  ok('P1c. unknown platform account → rejected (audit chain)', D.confirmProductionReceipt(db, { depositId: 'd3ghost', railId: 'operator_attested', expectedAmountUnits: 500_000_000, receiptRef: 'x', jurisdiction: 'SG' }).ok === false)
+  db.prepare("UPDATE direct_receive_deposits SET status='expired' WHERE id IN ('d3bare','d3noacc','d3ghost')").run()
+  D.openDeposit(db, { depositId: 'd3', userId: 's1', tier: 'T0', currency: 'usdc', depositRail: 'operator_attested', externalRef: 'TXN-2', termsVersion: 'bond-terms.v1.2026-07-05', platformAccountId: 'pacc0' })
   let threwUS = false
   try { D.confirmProductionReceipt(db, { depositId: 'd3', railId: 'operator_attested', expectedAmountUnits: 500_000_000, receiptRef: 'TXN-2', jurisdiction: 'US' }) } catch { threwUS = true }
   ok('6a. non-allowlisted jurisdiction still throws (SG-only)', threwUS && D.getSellerLatestDeposit(db, 's1')?.status === 'pending')
@@ -80,7 +92,7 @@ try {
   const st = await call('GET', '/api/direct-receive/bond-status', 's1')
   ok('9. bond-status(放行后): required 500 + rail cleared + 多币种账户 + 条款载荷', st.status === 200
     && (st.json.required as { display: number }).display === 500 && st.json.rail_cleared === true
-    && (st.json.payment_accounts as unknown[]).length === 2
+    && (st.json.payment_accounts as unknown[]).length >= 2
     && (st.json.terms as { version: string }).version === 'bond-terms.v1.2026-07-05')
   ok('10a. submit without terms agreement → 428 TERMS_NOT_AGREED (terms payload returned)', (await (async () => {
     const r = await call('POST', '/api/direct-receive/bond-deposit', 's1', { evidence_ref: 'TXN-9', platform_account_id: 'pacc_usdc' })

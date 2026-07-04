@@ -7,20 +7,20 @@
  *
  * 硬边界:
  *  - 申报【不动钱、不 Passkey】(与 fee-prepay 申请同范式);真实生效 = admin ROOT+Passkey 走
- *    confirmProductionReceipt(双锁:Lock A 轨道已实现 + Lock B 法务放行 registry —— 当前 Lock B 全关,
- *    生产上无法确认;放行是治理/法务翻转,不在代码)。
+ *    confirmProductionReceipt(双锁:Lock A 轨道已实现 + Lock B 放行 registry —— 2026-07-05 起
+ *    operator_attested/SG 已放行,#240 决策 B;确认还强制校验条款同意版本+平台账户快照,见域模块 P1)。
  *  - rail_cleared=false 时 GET 明示"缴纳通道待平台放行",前端据此隐藏申报表单(fail-closed UI);
  *    POST 也硬拒(不收无法核实生效的申报,防申报单积压误导商家)。
  *  - 保证金=商家履约担保物(security deposit),非买家货款/escrow/订单资金;本文件零资金移动。
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
-import { openDeposit, getSellerLatestDeposit, expireDeposit, requiredBondUnits, cancelPendingDeposit, requestBondRefund, cancelBondRefundRequest } from '../../direct-receive-deposits.js'
+import { openDeposit, getSellerLatestDeposit, expireDeposit, requiredBondUnits, cancelPendingDeposit, requestBondRefund, cancelBondRefundRequest, DIRECT_PAY_BOND_JURISDICTIONS } from '../../direct-receive-deposits.js'
 import { enumerateBondRefundBlockers } from '../../bond-refund-blockers.js'   // B2:§5 unlock blockers(fail-closed)
 import { listBondSlashProposals } from '../../bond-slash.js'   // B3:待复核罚没提案(卖家须被告知)
 import { BOND_TERMS } from '../../bond-terms.js'   // 条款(缴纳前强制同意;版本快照进 deposit 行)
 import { getPlatformAccount } from '../../platform-receive-accounts.js'
-import { bondRailClearanceBlockers } from '../../direct-pay-bond-rail-clearance.js'
+import { bondRailClearanceBlockers, isBondRailClearedForProduction } from '../../direct-pay-bond-rail-clearance.js'
 import { getActiveDeferral } from '../../direct-receive-deferral.js'
 import { listActivePlatformAccounts } from '../../platform-receive-accounts.js'
 import { toDecimal } from '../../money.js'
@@ -35,10 +35,10 @@ export interface BondSellerDeps {
   getProtocolParam: <T>(key: string, fallback: T) => T
 }
 
-/** operator_attested 生产轨是否已被法务/治理放行(Lock B;当前恒 false,放行=registry 置真)。 */
+/** operator_attested 生产轨是否已放行 —— 按【平台收款主体法域】(DIRECT_PAY_BOND_JURISDICTIONS,非卖家法域;
+ *  卖家侧资格由 KYB/制裁/AML 门独立把守)判 Lock A+B 全过。2026-07-05 起 SG 放行(#240 决策 B)。 */
 function bondRailCleared(): boolean {
-  const blockers = bondRailClearanceBlockers('operator_attested')
-  return blockers.filter(b => b !== 'NO_PRODUCTION_RECEIPT').length === 0
+  return DIRECT_PAY_BOND_JURISDICTIONS.some(j => isBondRailClearedForProduction('operator_attested', j))
 }
 
 export function registerBondSellerRoutes(app: Application, deps: BondSellerDeps): void {

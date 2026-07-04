@@ -60,7 +60,7 @@ export function getBondRailClearance(railId: string): BondRailClearance | null {
 
 /**
  * 该 rail 在该 jurisdiction 下是否【可用于生产 base-bond】= Lock A(真实实现)且 Lock B(registry 放行)全过。
- * 当前恒 false。纯读,无副作用。
+ * jurisdiction 语义=【平台收款主体法域】(非卖家法域)。2026-07-05 起 operator_attested/SG 为 true(#240)。纯读,无副作用。
  */
 export function isBondRailClearedForProduction(railId: string, jurisdiction: string): boolean {
   const c = getBondRailClearance(railId)

@@ -48,7 +48,8 @@ ok('confirmProductionReceipt(manual) THROWS (isProduction=false)', throws(() => 
 openDeposit(db, { depositId: 'dFi', userId: 'seller1', tier: 'T0', currency: 'fiat', depositRail: 'fiat_psp' })
 ok('confirmProductionReceipt(fiat_psp) THROWS (GATED)', throws(() => confirmProductionReceipt(db, { depositId: 'dFi', railId: 'fiat_psp', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' })))
 // operator_attested:2026-07-05 起已放行(#240 决策 B,SG)→ 真实可确认;非 SG 法域仍抛(白名单)
-openDeposit(db, { depositId: 'dOA', userId: 'seller1', tier: 'T0', currency: 'usdc', depositRail: 'operator_attested' })
+db.prepare("INSERT OR IGNORE INTO platform_receive_accounts (id,method,currency,instruction,status) VALUES ('pacc0','USDC','USDC','base:0x0','active')").run()
+openDeposit(db, { depositId: 'dOA', userId: 'seller1', tier: 'T0', currency: 'usdc', depositRail: 'operator_attested', termsVersion: 'bond-terms.v1.2026-07-05', platformAccountId: 'pacc0' })   // P1:确认强制条款+账户,golden path 须全字段
 ok('confirmProductionReceipt(operator_attested, non-SG) still THROWS (jurisdiction allowlist)', throws(() => confirmProductionReceipt(db, { depositId: 'dOA', railId: 'operator_attested', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'US' })))
 ok('confirmProductionReceipt(operator_attested, SG) SUCCEEDS → locked + production receipt (#240 放行)', confirmProductionReceipt(db, { depositId: 'dOA', railId: 'operator_attested', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' }).ok === true && prodFlag('dOA') !== null)
 // manual-locked(无 production receipt)旧/测试行 → 拒(不抛,显式 reason),不得冒充生产
