@@ -47,10 +47,11 @@ openDeposit(db, { depositId: 'dM', userId: 'seller1', tier: 'T0', currency: 'fia
 ok('confirmProductionReceipt(manual) THROWS (isProduction=false)', throws(() => confirmProductionReceipt(db, { depositId: 'dM', railId: 'manual', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' })))
 openDeposit(db, { depositId: 'dFi', userId: 'seller1', tier: 'T0', currency: 'fiat', depositRail: 'fiat_psp' })
 ok('confirmProductionReceipt(fiat_psp) THROWS (GATED)', throws(() => confirmProductionReceipt(db, { depositId: 'dFi', railId: 'fiat_psp', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' })))
-// operator_attested: 过 Lock A(已实现),但仍被 Lock B(rail-clearance registry,未登记/治理默认关)挡 → 全程 fail-closed
-openDeposit(db, { depositId: 'dOA', userId: 'seller1', tier: 'T0', currency: 'usdc', depositRail: 'operator_attested' })
-ok('confirmProductionReceipt(operator_attested) THROWS (Lock B: registry not cleared — governance default off)', throws(() => confirmProductionReceipt(db, { depositId: 'dOA', railId: 'operator_attested', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' })))
-ok('dOA production_receipt_confirmed_at STAYS NULL (operator_attested still fail-closed)', prodFlag('dOA') === null)
+// operator_attested:2026-07-05 起已放行(#240 决策 B,SG)→ 真实可确认;非 SG 法域仍抛(白名单)
+db.prepare("INSERT OR IGNORE INTO platform_receive_accounts (id,method,currency,instruction,status) VALUES ('pacc0','USDC','USDC','base:0x0','active')").run()
+openDeposit(db, { depositId: 'dOA', userId: 'seller1', tier: 'T0', currency: 'usdc', depositRail: 'operator_attested', termsVersion: 'bond-terms.v1.2026-07-05', platformAccountId: 'pacc0' })   // P1:确认强制条款+账户,golden path 须全字段
+ok('confirmProductionReceipt(operator_attested, non-SG) still THROWS (jurisdiction allowlist)', throws(() => confirmProductionReceipt(db, { depositId: 'dOA', railId: 'operator_attested', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'US' })))
+ok('confirmProductionReceipt(operator_attested, SG) SUCCEEDS → locked + production receipt (#240 放行)', confirmProductionReceipt(db, { depositId: 'dOA', railId: 'operator_attested', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' }).ok === true && prodFlag('dOA') !== null)
 // manual-locked(无 production receipt)旧/测试行 → 拒(不抛,显式 reason),不得冒充生产
 openDeposit(db, { depositId: 'dL', userId: 'seller1', tier: 'T0', currency: 'fiat', depositRail: 'manual' })
 confirmDepositReceipt(db, { depositId: 'dL', expectedAmountUnits: REQ })
@@ -60,7 +61,7 @@ ok('manual-locked row → THROWS (assert-first, rail not production)', throws(()
 ok('dL production_receipt_confirmed_at STAYS NULL', prodFlag('dL') === null)
 // not-found:assert(usdc_onchain) 在 row 读取之前即抛(assert-first)→ fail-closed。
 ok('not found + gated rail → THROWS (assert-first)', throws(() => confirmProductionReceipt(db, { depositId: 'nope', railId: 'usdc_onchain', expectedAmountUnits: REQ, receiptRef: 'r', jurisdiction: 'SG' })))
-ok('seller-level production gate STILL false (non-launchable)', sellerHasProductionBaseBondLocked(db, 'seller1') === false)
+ok('seller-level production gate TRUE via operator_attested confirm (#240 放行后)', sellerHasProductionBaseBondLocked(db, 'seller1') === true)
 
 // ══════ Part B: admin endpoint(ROOT + Passkey;恒 PRODUCTION_RAIL_NOT_CLEARED;审计;零变更)══════
 const { consumeGateToken } = createHumanPresence(db, <T,>(_k: string, fb: T): T => fb)
@@ -121,7 +122,7 @@ ok('root + Passkey + valid token → 409 PRODUCTION_RAIL_NOT_CLEARED (fail-close
 ok('dU UNCHANGED: production_receipt_confirmed_at NULL', prodFlag('dU') === null)
 ok('dU UNCHANGED: status still pending', dstatus('dU') === 'pending')
 ok('ROOT attempt audited (admin_audit_log row written, outcome rail_not_cleared)', auditN() === a0 + 1 && /rail_not_cleared/.test(lastAudit()?.detail || ''), JSON.stringify(lastAudit()))
-ok('seller-level production gate STILL false after endpoint (non-launchable)', sellerHasProductionBaseBondLocked(db, 'seller1') === false)
+ok('failed usdc_onchain endpoint attempt does NOT change the gate (still true from dOA)', sellerHasProductionBaseBondLocked(db, 'seller1') === true)
 
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }

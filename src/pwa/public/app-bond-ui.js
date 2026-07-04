@@ -31,9 +31,9 @@
     const payBlock = s.rail_cleared
       ? `<div style="margin:8px 0;padding:8px;background:#f9fafb;border-radius:8px">
           <div style="font-weight:600;margin-bottom:4px">${t('缴纳方式')}(${t('转账后提交凭据申报')}):</div>
-          ${(s.payment_accounts || []).map(a => `<div style="margin-bottom:4px">· ${escHtml(a.method || '')} ${escHtml(a.currency || '')}:${escHtml(a.instruction || '')}</div>`).join('') || t('暂无收款方式,请联系平台')}
+          ${window.bondAccountSelector ? window.bondAccountSelector(s) : (s.payment_accounts || []).map(a => `<div style="margin-bottom:4px">· ${escHtml(a.method || '')} ${escHtml(a.currency || '')}:${escHtml(a.instruction || '')}</div>`).join('') || t('暂无收款方式,请联系平台')}
         </div>
-        ${(!d || ['expired', 'refunded'].includes(d.status)) ? `
+        ${(!d || ['expired', 'refunded'].includes(d.status)) ? `${window.bondTermsBlock ? window.bondTermsBlock(s) : ''}
         <input class="form-control" id="bond-evidence" maxlength="120" placeholder="${t('付款凭据号(转账单号/链上 tx,必填)')}" style="margin-bottom:8px;font-size:12px">
         <button class="btn btn-primary btn-sm" style="width:auto" onclick="bondSubmitDeposit()">${t('提交缴纳申报')}</button>` : ''}
         ${d && d.status === 'pending' ? `<button class="btn btn-outline btn-sm" style="width:auto" onclick="bondCancelDeposit('${d.id}')">${t('撤回申报')}</button>` : ''}`
@@ -47,7 +47,7 @@
     const msg = document.getElementById('bond-msg')
     const evidence = (document.getElementById('bond-evidence')?.value || '').trim()
     if (!evidence) { msg.innerHTML = `<span style="color:#dc2626">${t('付款凭据号必填')}</span>`; return }
-    const r = await POST('/direct-receive/bond-deposit', { evidence_ref: evidence })
+    const r = await POST('/direct-receive/bond-deposit', { evidence_ref: evidence, platform_account_id: (document.querySelector('input[name="bond-acc"]:checked')?.value || ''), agree_terms_version: (document.getElementById('bond-terms-agree')?.checked ? (window._bondTermsVersion || '') : '') })
     if (r.error) { msg.innerHTML = `<span style="color:#dc2626">${r.error}</span>`; return }
     toast$(t('申报已提交,等待运营核实'), 'success'); window.bondHydrateSeller()
   }

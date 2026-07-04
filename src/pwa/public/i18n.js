@@ -6760,6 +6760,8 @@ const _EN = {
   '直付退款在协议外完成,金额为参考': 'Direct Pay refunds happen off-protocol; this amount is a reference',
   '同意退货(场外退款)': 'Accept return (off-protocol refund)',
   '直付履约保证金': 'Direct Pay performance bond',
+  '保证金条款': 'Bond terms',
+  '我已阅读并同意当前版本保证金条款(缴纳前必须同意)': 'I have read and agree to the current bond terms (required before depositing)',
   '保证金缓交即将到期': 'Bond deferral expiring soon',
   '你的缓交资格将于 {expires} 到期。请在到期前缴纳履约保证金转正式(设置页-直付履约保证金),否则宽限期后直付资格将关闭。': 'Your deferral expires at {expires}. Deposit the performance bond before then to convert to formal standing (Settings → Direct Pay performance bond); otherwise Direct Pay eligibility closes after the grace period.',
   '保证金缓交已到期': 'Bond deferral expired',

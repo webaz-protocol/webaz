@@ -73,8 +73,10 @@ ok('seller-level production gate STILL false (Direct Pay non-launchable)', selle
 // NOT RAIL_IMPLEMENTATION_GATED. (Locks the legalCleared→implemented audit fix; prevents regression.)
 const oaB = bondRailClearanceBlockers('operator_attested', { hasProductionReceipt: true })
 ok('operator_attested NOT flagged RAIL_IMPLEMENTATION_GATED (it IS implemented)', !oaB.includes('RAIL_IMPLEMENTATION_GATED'))
-ok('operator_attested flagged NO_LEGAL_CLEARED_RAIL (unregistered → Lock B blocks)', oaB.includes('NO_LEGAL_CLEARED_RAIL'))
-ok('operator_attested NOT cleared for production (registry null → false)', isBondRailClearedForProduction('operator_attested', 'SG') === false)
+// 2026-07-05 放行(Holden 决策 B):operator_attested 已注册 SG + 条款版 policy —— 重锚为"已清"断言,
+//   并锁死放行的【精确形状】(仅 SG、policy=条款版本;其余法域仍拒 → 白名单语义未松)。
+ok('operator_attested CLEARED (registry entry: legal_cleared+production_ready+terms policy)', !oaB.includes('NO_LEGAL_CLEARED_RAIL') && !oaB.includes('POLICY_VERSION_UNSET') && !oaB.includes('EMPTY_JURISDICTION_ALLOWLIST'))
+ok('operator_attested cleared for production in SG ONLY (other jurisdictions still rejected)', isBondRailClearedForProduction('operator_attested', 'SG') === true && isBondRailClearedForProduction('operator_attested', 'US') === false && isBondRailClearedForProduction('operator_attested', '') === false)
 // gated usdc/fiat still flagged RAIL_IMPLEMENTATION_GATED (implemented=false)
 ok('usdc_onchain still RAIL_IMPLEMENTATION_GATED (gated, implemented=false)', bondRailClearanceBlockers('usdc_onchain').includes('RAIL_IMPLEMENTATION_GATED'))
 

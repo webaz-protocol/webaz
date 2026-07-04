@@ -10,10 +10,11 @@
  *   Lock B — registry 放行锁(本模块):某 rail 的 legal_cleared + production_ready + 非占位 policy_version +
  *            jurisdiction ∈ allowlist。当前【全部默认 fail-closed】→ 全拒。由 assertBondRailCleared 守。
  *
- * 现状:本模块所有 rail 的 legal_cleared=false / allowlist=[] / policy_version=占位 / production_ready=false,
- *   且 Lock A 也全拒 → isBondRailClearedForProduction 恒 false → confirmProductionReceipt 恒抛 →
- *   sellerHasProductionBaseBondLocked 恒 false → Direct Pay 仍 non-launchable / fail-closed。
- *   置真值(legal_cleared / 真实 allowlist / 真实 policy_version / production_ready)= 法务清门 + 外审 gated 决定,【不在本 PR】。
+ * 现状(2026-07-05 更新):**operator_attested 轨已放行(SG)** —— Holden 决策 B(经营者知情自担风险,
+ *   非律师意见):保证金是商家履约担保物、不涉买家资金/货款;法币收取=常规合同担保物;USDC 收取的 PS Act
+ *   DPT 定性风险已知并接受(security-deposit 豁免待律师确认,确认前敞口=pre-launch 无真实商家)。前置已建:
+ *   条款文本+缴纳前强制同意(src/bond-terms.ts,liquidated-damages 表述;policy_version=条款版本,审计对齐)。
+ *   usdc_onchain / fiat_psp【自动收款轨】仍全 fail-closed(未实现+未清门,与本次放行无关)。
  */
 import { getDepositRail, type DepositRailId } from './deposit-rails.js'
 
@@ -21,7 +22,7 @@ export type BondAssetCategory = 'usdc' | 'fiat'
 
 export interface BondRailClearance {
   railId: DepositRailId
-  assetCategory: BondAssetCategory       // 商家担保物资产类别(merchant security deposit only;与买家货款无关)
+  assetCategory: BondAssetCategory | 'usdc_fiat'   // 商家担保物资产类别(merchant security deposit only;operator_attested 人工核实轨两类都收)
   legalCleared: boolean                  // 法务清门(担保物定性 / DTSP 等);默认 false
   jurisdictionAllowlist: string[]        // 已放行法域;默认空 = 任何 jurisdiction 都拒
   policyVersion: string                  // 生效 policy 版本;占位 = 未设
@@ -44,6 +45,10 @@ export type BondRailBlocker =
  * 全部默认 fail-closed —— 真值由后续【法务清门 + 外审】PR 配置,不在本 scaffold。
  */
 const BOND_RAIL_CLEARANCE: Record<string, BondRailClearance> = {
+  // ✅ 2026-07-05 放行(Holden 决策 B,经营者知情自担;详见文件头)。policy_version = 条款版本(bond-terms.ts,
+  //   缴纳前强制同意)。运营就绪:B1 申报/核实队列 + confirm-production(ROOT+Passkey)+ B2 退还 + B3 罚没全链已建。
+  operator_attested: { railId: 'operator_attested', assetCategory: 'usdc_fiat', legalCleared: true, jurisdictionAllowlist: ['SG'], policyVersion: 'bond-terms.v1.2026-07-05', productionReady: true },
+  // 自动收款轨:未实现(Lock A 也拒),维持全 fail-closed —— 与 operator_attested 放行无关。
   usdc_onchain: { railId: 'usdc_onchain', assetCategory: 'usdc', legalCleared: false, jurisdictionAllowlist: [], policyVersion: BOND_POLICY_VERSION_PLACEHOLDER, productionReady: false },
   fiat_psp: { railId: 'fiat_psp', assetCategory: 'fiat', legalCleared: false, jurisdictionAllowlist: [], policyVersion: BOND_POLICY_VERSION_PLACEHOLDER, productionReady: false },
 }
@@ -55,7 +60,7 @@ export function getBondRailClearance(railId: string): BondRailClearance | null {
 
 /**
  * 该 rail 在该 jurisdiction 下是否【可用于生产 base-bond】= Lock A(真实实现)且 Lock B(registry 放行)全过。
- * 当前恒 false。纯读,无副作用。
+ * jurisdiction 语义=【平台收款主体法域】(非卖家法域)。2026-07-05 起 operator_attested/SG 为 true(#240)。纯读,无副作用。
  */
 export function isBondRailClearedForProduction(railId: string, jurisdiction: string): boolean {
   const c = getBondRailClearance(railId)

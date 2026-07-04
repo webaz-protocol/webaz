@@ -44,7 +44,7 @@ ok('1f. RAIL_POLICY_VERSION_UNSET NOT a blocker', !has(r1, 'DIRECT_PAY_RAIL_POLI
 ok('1g. RAIL_JURISDICTION_ALLOWLIST_EMPTY NOT a blocker', !has(r1, 'DIRECT_PAY_RAIL_JURISDICTION_ALLOWLIST_EMPTY'))
 ok('1h. anyRailLegalCleared=false (diagnostic fact still surfaced)', r1.facts.anyRailLegalCleared === false)
 ok('1i. readiness enumerates operator_attested too (not just usdc/fiat)', !!r1.facts.perRailClearance['operator_attested'] && r1.facts.perRailClearance['usdc_onchain'].includes('NO_LEGAL_CLEARED_RAIL') && r1.facts.perRailClearance['fiat_psp'].includes('POLICY_VERSION_UNSET'))
-ok('1i2. operator_attested perRail: NO_LEGAL_CLEARED_RAIL but NOT RAIL_IMPLEMENTATION_GATED (implemented, just unregistered)', r1.facts.perRailClearance['operator_attested'].includes('NO_LEGAL_CLEARED_RAIL') && !r1.facts.perRailClearance['operator_attested'].includes('RAIL_IMPLEMENTATION_GATED'))
+ok('1i2. operator_attested perRail: CLEARED 2026-07-05(决策 B)—— 无 legal/policy/allowlist blocker,且从未 RAIL_IMPLEMENTATION_GATED', !r1.facts.perRailClearance['operator_attested'].includes('NO_LEGAL_CLEARED_RAIL') && !r1.facts.perRailClearance['operator_attested'].includes('RAIL_IMPLEMENTATION_GATED'))
 // no sellerId → seller facts null, no seller blockers
 ok('1j. no sellerId → seller facts null, no seller blockers', r1.facts.sellerEvaluated === false && r1.facts.productionBaseBondLocked === null && !has(r1, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND'))
 
@@ -87,7 +87,7 @@ const r5b = readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: '
 ok('5d. after seeding active instruction → blocker gone, fact true', !has(r5b, 'DIRECT_PAY_SELLER_PAYMENT_INSTRUCTION_MISSING') && r5b.facts.paymentInstructionPresent === true)
 ok('5e. STILL ready=false (base-bond unmet); rail-clearance NOT a blocker', r5b.ready === false && has(r5b, 'DIRECT_PAY_SELLER_NO_PRODUCTION_BASE_BOND') && !has(r5b, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
 // jurisdiction-aware diagnostic: region=SG configured but no rail legal-cleared FOR THAT region → fact stays false (not a blocker)
-ok('5f. diagnostic fact: region=SG but anyRailLegalCleared=false (still NOT a blocker)', r5b.facts.anyRailLegalCleared === false && !has(r5b, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
+ok('5f. diagnostic fact: anyRailLegalCleared=true(operator_attested 放行)且 rail-clearance 非 blocker', r5b.facts.anyRailLegalCleared === true && !has(r5b, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL'))
 
 // ══════ 6. read-only: readiness writes NOTHING ══════
 const snap = () => ({
@@ -164,7 +164,7 @@ db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES ('sc_fu
 db.prepare("INSERT INTO direct_receive_payment_instructions (id, seller_id, instruction, label, status) VALUES ('pi_full','seller_full','PayNow +65 8xxx (off-protocol)','PayNow','active')").run()
 const rFull = readDirectPayLaunchReadiness(db, { getProtocolParam: gp, sellerId: 'seller_full' })
 ok('10. fully-equipped 缓交 seller → ready=true (no blockers)', rFull.ready === true && rFull.blockers.length === 0, JSON.stringify(rFull.blockers))
-ok('10a. ready=true DESPITE anyRailLegalCleared=false (rail-clearance not required for 缓交 launch)', rFull.facts.anyRailLegalCleared === false)
+ok('10a. anyRailLegalCleared=true(放行后;缓交 launch 本就不依赖它,ready 语义不变)', rFull.facts.anyRailLegalCleared === true)
 ok('10b. no rail-clearance blocker present', !has(rFull, 'DIRECT_PAY_NO_LEGAL_CLEARED_PRODUCTION_RAIL') && !has(rFull, 'DIRECT_PAY_RAIL_POLICY_VERSION_UNSET'))
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
