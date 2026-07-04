@@ -149,6 +149,7 @@
     "test:direct-pay-cancel-refund": "tsx scripts/test-direct-pay-cancel-refund.ts",
     "test:direct-pay-returns": "tsx scripts/test-direct-pay-returns.ts",
     "test:direct-pay-pending-accept": "tsx scripts/test-direct-pay-pending-accept.ts",
+    "test:shipping-templates": "tsx scripts/test-shipping-templates.ts",
     "test:notif-order-templates": "tsx scripts/test-notif-order-templates.ts",
     "test:legacy-arbitrator-role-sweep": "tsx scripts/test-legacy-arbitrator-role-sweep.ts",
     "test:arbitration-entry-frontend": "tsx scripts/test-arbitration-entry-frontend.ts",
