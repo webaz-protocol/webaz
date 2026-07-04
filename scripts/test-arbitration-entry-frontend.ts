@@ -31,7 +31,7 @@ ok('6. entry file registered (index.html + pwa-syntax + ratchet)', HTML.includes
 
 // 入口卡必须在【买家 + 卖家】两个 #me home 都渲染 —— 白名单仲裁员多为 buyer 角色,曾只在 seller home 出卡 → buyer 仲裁员看不到入口(线上 bug)
 ok('7. arbTaishCard rendered in BOTH buyer + seller #me homes (≥2 call sites)', (PROFILE.match(/window\.arbTaishCard\(\)/g) || []).length >= 2)
-ok('8. renderBuyerMyHome specifically renders the arbTaishCard entry', /renderBuyerMyHome[\s\S]*?state\.canArbitrate && window\.arbTaishCard/.test(PROFILE))
+ok('8. renderBuyerMyHome renders arbTaishCard — deduped when external-arb approved section already shows it (走查批次1)', /renderBuyerMyHome[\s\S]*?state\.canArbitrate && !isExternalArb && window\.arbTaishCard/.test(PROFILE))
 ok('9. renderMyHome dispatcher re-checks /arbitrator/status → grant propagates without full re-login', /renderMyHome[\s\S]{0,600}\/arbitrator\/status[\s\S]{0,200}state\.canArbitrate =/.test(PROFILE))
 
 // handleArbitrate 必须先取 purpose='arbitrate' 的 Passkey gate token 再 POST(否则后端 requireHumanPresence → 412,确认裁定永远失败)
