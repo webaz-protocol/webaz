@@ -171,7 +171,7 @@ window.doRegisterPasskey = async (deviceLabel) => {
 window.requestPasskeyGate = async (purpose, purposeData) => {
   if (!isWebAuthnSupported()) throw new Error(t('当前设备不支持 Passkey'))
   const start = await POST('/webauthn/auth/start', { purpose, purpose_data: purposeData })
-  if (start.error) throw new Error(start.error)
+  if (start.error) { const _e = new Error(start.error); _e.code = start.error_code; throw _e }   // code=NO_PASSKEY_REGISTERED → 前端才引导注册;其余(取消/设备)不误导
   const opts = start.options
   const publicKey = {
     ...opts,

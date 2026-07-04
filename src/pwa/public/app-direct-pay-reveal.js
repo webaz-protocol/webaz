@@ -68,7 +68,7 @@ window.dpGatedRevealPaymentInfo = async (orderId) => {
   const go = await confirmModal(`${warn}\n\n${t('继续查看需现场 Passkey 验证。')}`, t('继续(需 Passkey)'), { danger: true })
   if (!go || !window.dpInstrBox(orderId)) return
   try { await requestPasskeyGate('direct_pay_payment_info_reveal', { order_id: orderId }) }
-  catch (e) { if (window.dpPromptRegisterPasskey) await window.dpPromptRegisterPasskey(e && e.message); return }
+  catch (e) { if (window.dpPromptRegisterPasskey) await window.dpPromptRegisterPasskey(e); return }
   window.dpShowPaymentInfo(ord, orderId, false)
 }
 

@@ -82,7 +82,7 @@ window.draReadForm = (p) => ({
 // 现场真人 Passkey token;失败(无 Passkey / 取消 / 不支持)→ 提示注册入口并返回 null。
 window.draGate = async (action, accountId) => {
   try { return await requestPasskeyGate('direct_receive_account_manage', accountId ? { action, account_id: accountId } : { action }) }
-  catch (e) { if (window.dpPromptRegisterPasskey) await window.dpPromptRegisterPasskey(e && e.message); return null }
+  catch (e) { if (window.dpPromptRegisterPasskey) await window.dpPromptRegisterPasskey(e); return null }
 }
 
 window.draAddAccount = async () => {

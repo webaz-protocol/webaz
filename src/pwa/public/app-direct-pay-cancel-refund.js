@@ -65,7 +65,7 @@ window.dpCrConfirm = async (oid) => {
   if (typeof confirmModal === 'function' && !(await confirmModal(t('确认已收到卖家退款?确认后订单将无责取消,不可撤销。若尚未到账请勿确认。'), t('已收到,取消订单'), { danger: true }))) return
   let token
   try { token = await requestPasskeyGate('direct_pay_order_action', { order_id: oid, action: 'cancel_refund_confirm' }) }
-  catch (e) { if (window.dpPromptRegisterPasskey) await window.dpPromptRegisterPasskey(e && e.message); return }
+  catch (e) { if (window.dpPromptRegisterPasskey) await window.dpPromptRegisterPasskey(e); return }
   const r = await POST('/orders/' + oid + '/cancel-refund/confirm', { webauthn_token: token })
   if (r.error) return void dpCrToast(window.dpErrorText ? window.dpErrorText(r.error_code, r.error) : r.error, 'error')
   dpCrToast(t('订单已无责取消'), 'success'); dpCrReload(oid)

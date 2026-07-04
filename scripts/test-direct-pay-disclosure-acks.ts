@@ -131,7 +131,7 @@ ok('duplicate D1 ack idempotent (still 2 rows)', ackRows('o1').length === 2)
 ok('reused (consumed) token → 403', (await POST({ order_id: 'o1', stage: 'pre_select', webauthn_token: 't_d1a' }, 'buyer1')).status === 403)
 
 // ── 13. GET 缺一 → false;齐全 → true(只读,无需 token)──
-mkOrder('o2', 'direct_p2p')
+mkOrder('o2', 'direct_p2p'); mkOrder('o3', 'direct_p2p'); mkOrder('o4', 'direct_p2p')
 await POST({ order_id: 'o2', stage: 'pre_select', webauthn_token: seedToken('t_o2a', 'buyer1', { order_id: 'o2', stage: 'pre_select' }) }, 'buyer1')
 const g13 = await GET('o2', 'buyer1')
 ok('GET after D1 only → both:false', g13.status === 200 && g13.json?.both === false && g13.json?.acked?.pre_select === true && g13.json?.acked?.pre_confirm === false, JSON.stringify(g13))
@@ -152,6 +152,27 @@ ok('penalty provenance unchanged', penProv() === 0)
 // ── 16. missing / not found ──
 ok('missing order_id → 400', (await POST({ stage: 'pre_select', webauthn_token: 'x' }, 'buyer1')).status === 400)
 ok('order not found → 404', (await POST({ order_id: 'nope', stage: 'pre_select', webauthn_token: 'x' }, 'buyer1')).status === 404)
+
+// ── 17. stage:'both'(contract v14):一次 ceremony 记两行 ack ──
+const b1 = await POST({ order_id: 'o3', stage: 'both', webauthn_token: seedToken('t_both', 'buyer1', { order_id: 'o3', stage: 'both' }) }, 'buyer1')
+ok('both: one ceremony → 200 both:true', b1.status === 200 && b1.json?.both === true, JSON.stringify(b1))
+ok('both: records TWO ack rows (evidence model unchanged)', JSON.stringify(ackRows('o3')) === JSON.stringify(['pre_confirm', 'pre_select']))
+ok('both: single-stage token cannot masquerade as both (validate stage)', (await POST({ order_id: 'o4', stage: 'both', webauthn_token: seedToken('t_single', 'buyer1', { order_id: 'o4', stage: 'pre_select' }) }, 'buyer1')).status === 403)
+ok('both: both-token cannot replay a single stage (validate stage)', (await POST({ order_id: 'o4', stage: 'pre_select', webauthn_token: seedToken('t_bmis', 'buyer1', { order_id: 'o4', stage: 'both' }) }, 'buyer1')).status === 403)
+
+// ── 18. 版本升级 re-ack(审计 P0):upsert 让新版本确认真正刷新行,不再静默 no-op ──
+{
+  db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail) VALUES ('oVer','p','buyer1','seller1',1,50,50,0,'direct_pay_window','direct_p2p')").run()
+  // 手动塞一行【旧版本】 ack(模拟 bump 前已 ack)
+  db.prepare("INSERT INTO direct_pay_disclosure_acks (id, order_id, buyer_id, stage, notice_version, acked_at) VALUES ('old1','oVer','buyer1','pre_select','d1.v1.OLD', datetime('now','-1 day'))").run()
+  const gOld = await GET('oVer', 'buyer1')
+  ok('P0: stale-version ack reads as NOT acked (version-scoped)', gOld.json?.acked?.pre_select === false)
+  await POST({ order_id: 'oVer', stage: 'pre_select', webauthn_token: seedToken('t_ver', 'buyer1', { order_id: 'oVer', stage: 'pre_select' }) }, 'buyer1')
+  const gNew = await GET('oVer', 'buyer1')
+  ok('P0: re-ack under current version UPSERTS the row → now acked (not silent no-op)', gNew.json?.acked?.pre_select === true)
+  const ver = (db.prepare("SELECT notice_version FROM direct_pay_disclosure_acks WHERE order_id='oVer' AND stage='pre_select'").get() as { notice_version: string }).notice_version
+  ok('P0: row upgraded to current d1.v2 version (single row, not duplicated)', /d1\.v2/.test(ver) && (db.prepare("SELECT COUNT(*) n FROM direct_pay_disclosure_acks WHERE order_id='oVer' AND stage='pre_select'").get() as { n: number }).n === 1)
+}
 
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }

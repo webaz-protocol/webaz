@@ -47,7 +47,8 @@ const d1 = getBuyerDisclosures().preSelect
 const sellerMechRe = /质押|平台费|保证金|stake|bond|platform fee|fee-stake/i
 ok('D1 zh has NO seller-stake mechanics', !sellerMechRe.test(d1.zh), d1.zh)
 ok('D1 en has NO seller-stake mechanics', !sellerMechRe.test(d1.en), d1.en)
-ok('D1 conveys no-refund / reputation-only', /不退款/.test(d1.zh) && /no refund/i.test(d1.en))
+// 措辞准确化(2026-07-04):强调"不能承诺退款/无退款能力(从不托管本金)"而非"拒绝退款";仍表达仅信誉处罚
+ok('D1 conveys no-refund-capability + reputation-only (accurate framing)', /非担保|不能承诺退款|无退款能力/.test(d1.zh) && /信誉处罚/.test(d1.zh) && /(no|not|cannot).{0,30}(refund|protection)/i.test(d1.en) && /reputation/i.test(d1.en), d1.zh)
 
 // ── RISK scope: endpoint 分类 ──
 ok('POST /api/direct-pay/orders → direct_pay', endpointToAction('POST', '/api/direct-pay/orders') === 'direct_pay')
