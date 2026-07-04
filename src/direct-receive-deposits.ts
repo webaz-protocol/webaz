@@ -283,6 +283,16 @@ export function rejectDeposit(db: Database.Database, args: { depositId: string; 
   return { ok: true, status: 'expired' }
 }
 
+/** 卖家自行撤回自己的 pending 申报(B1)。owner-scoped CAS;非 pending 不动。 */
+export function cancelPendingDeposit(db: Database.Database, args: { depositId: string; userId: string }): DepositOpResult {
+  const row = getRow(db, args.depositId)
+  if (!row || row.user_id !== args.userId) return { ok: false, reason: 'deposit not found' }
+  if (row.status !== 'pending') return { ok: false, reason: `cannot cancel from status '${row.status}'` }
+  const r = db.prepare("UPDATE direct_receive_deposits SET status = 'expired', reject_note = '卖家自行撤回', updated_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'pending'")
+    .run(args.depositId, args.userId)
+  return r.changes === 1 ? { ok: true, status: 'expired' } : { ok: false, reason: 'cancel race: already processed' }
+}
+
 /** 卖家最新一笔保证金存款(任意状态;B1 状态卡/去重用)。 */
 export function getSellerLatestDeposit(db: Database.Database, sellerId: string): (DepositRow & { external_ref: string | null; reject_note: string | null; confirmed_at: string | null; locked_at: string | null }) | null {
   return (db.prepare(`SELECT id, user_id, tier, required_amount, amount, currency, deposit_rail, status, production_receipt_confirmed_at,

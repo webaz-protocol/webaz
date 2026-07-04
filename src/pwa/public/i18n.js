@@ -6760,6 +6760,7 @@ const _EN = {
   '直付退款在协议外完成,金额为参考': 'Direct Pay refunds happen off-protocol; this amount is a reference',
   '同意退货(场外退款)': 'Accept return (off-protocol refund)',
   '直付履约保证金': 'Direct Pay performance bond',
+  '履约保证金:核对到账 → 确认锁定 / 驳回(双锁 fail-closed)': 'Performance bond: verify arrival → confirm & lock / reject (double-locked fail-closed)',
   '要求额度': 'Required amount',
   '当前状态': 'Current status',
   '未缴纳': 'Not deposited',

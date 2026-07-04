@@ -15,13 +15,13 @@
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
-import { openDeposit, getSellerLatestDeposit, expireDeposit, requiredBondUnits } from '../../direct-receive-deposits.js'
+import { openDeposit, getSellerLatestDeposit, expireDeposit, requiredBondUnits, cancelPendingDeposit } from '../../direct-receive-deposits.js'
 import { bondRailClearanceBlockers } from '../../direct-pay-bond-rail-clearance.js'
 import { getActiveDeferral } from '../../direct-receive-deferral.js'
 import { listActivePlatformAccounts } from '../../platform-receive-accounts.js'
 import { toDecimal } from '../../money.js'
 import { createNotification } from '../../layer2-business/L2-6-notifications/notification-engine.js'
-import { dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
+import { dbAll } from '../../layer0-foundation/L0-1-database/db.js'
 
 export interface BondSellerDeps {
   db: Database.Database
@@ -99,12 +99,11 @@ export function registerBondSellerRoutes(app: Application, deps: BondSellerDeps)
     return void res.json({ success: true, deposit_id: depositId, status: 'pending', note: '申报已提交;运营核实真实到账并确认后生效。申报本身不授予任何入场资格。' })
   })
 
-  app.post('/api/direct-receive/bond-deposit/:id/cancel', async (req, res) => {
+  app.post('/api/direct-receive/bond-deposit/:id/cancel', (req, res) => {
     const user = requireSeller(req, res); if (!user) return
-    const latest = getSellerLatestDeposit(db, user.id as string)
-    if (!latest || latest.id !== req.params.id) return void errorRes(res, 404, 'DEPOSIT_NOT_FOUND', '申报不存在')
-    if (latest.status !== 'pending') return void errorRes(res, 409, 'NOT_PENDING', `当前状态 ${latest.status},不可撤回`)
-    await dbRun("UPDATE direct_receive_deposits SET status = 'expired', reject_note = '卖家自行撤回', updated_at = datetime('now') WHERE id = ? AND status = 'pending'", [latest.id])
+    // 单一 writer 边界:deposits 写只经域模块(guard:direct-pay-deposit 机器强制,route 零裸写)
+    const r = cancelPendingDeposit(db, { depositId: req.params.id, userId: user.id as string })
+    if (!r.ok) return void errorRes(res, r.reason === 'deposit not found' ? 404 : 409, 'BOND_CANCEL_FAILED', r.reason)
     return void res.json({ success: true })
   })
 }
