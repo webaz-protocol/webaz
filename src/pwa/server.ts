@@ -61,7 +61,7 @@ import {
   addPartyEvidence,
   type EvidenceType, type LiabilityEntry,
 } from '../layer3-trust/L3-1-dispute-engine/dispute-engine.js'
-import { initMutualCancelSchema } from '../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'; import { registerMutualCancelRoutes } from './routes/mutual-cancel.js'; import { initDirectPayCancelRefundSchema } from '../direct-pay-cancel-refund.js'; import { registerDirectPayCancelRefundRoutes } from './routes/direct-pay-cancel-refund.js'  // 协商取消(disputed) + 直付取消退款握手(accepted):域 schema + 端点
+import { initMutualCancelSchema } from '../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'; import { registerMutualCancelRoutes } from './routes/mutual-cancel.js'; import { initDirectPayCancelRefundSchema } from '../direct-pay-cancel-refund.js'; import { registerDirectPayCancelRefundRoutes } from './routes/direct-pay-cancel-refund.js'; import { registerDirectPayReturnsRoutes } from './routes/direct-pay-returns.js'  // 协商取消(disputed) + 直付取消退款握手(accepted):域 schema + 端点
 import {
   initNotificationSchema,
   notifyTransition,
@@ -5531,7 +5531,7 @@ registerDisputesWriteRoutes(app, {
   settleCommission, depositToFund, calculatePv,
   recordDisputeReputation, issueAgentStrike, publishDisputeCase, logAdminAction, snfSend,
   getProtocolParam, notifyTransition,
-}); registerMutualCancelRoutes(app, { db, auth, generateId, errorRes }); registerDirectPayCancelRefundRoutes(app, { db, auth, generateId, errorRes, consumeGateToken })  // 协商取消(disputed)+ 直付取消退款握手(accepted):关单手术均内部 db.transaction 原子
+}); registerMutualCancelRoutes(app, { db, auth, generateId, errorRes }); registerDirectPayCancelRefundRoutes(app, { db, auth, generateId, errorRes, consumeGateToken }); registerDirectPayReturnsRoutes(app, { db, auth, generateId, errorRes, consumeGateToken })  // 协商取消(disputed)+ 直付取消退款握手(accepted):关单手术均内部 db.transaction 原子
 
 // lightAuthGuard：轻量 Authorization 头守门（在 raw 解析之前挡掉无 auth 请求）
 // 被 Phase 13 shareables（视频上传）+ Phase 87 disputes evidence-blob 共享

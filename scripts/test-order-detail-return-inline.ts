@@ -17,10 +17,11 @@ const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
 // 1) 订单详情对卖家也渲染退货卡 + 走 widget 水合(direct_p2p 非托管无退款 → 该卡对 direct_p2p 不渲染)
-ok('order detail renders a seller return card (isSeller && completed, escrow only)',
-  /\$\{\(isSeller && order\.status === 'completed' && order\.payment_rail !== 'direct_p2p'\) \? `[\s\S]{0,160}ret-card-\$\{order\.id\}/.test(app))
-ok('return card is rail-guarded: direct_p2p (non-custodial, no refund) excluded for buyer + seller',
-  (app.match(/order\.status === 'completed'[^`]*order\.payment_rail !== 'direct_p2p'/g) || []).length >= 2)
+ok('order detail renders a seller return card (isSeller && completed; direct_p2p un-gated since contract v15)',
+  /\$\{\(isSeller && order\.status === 'completed'\) \? `[\s\S]{0,160}ret-card-\$\{order\.id\}/.test(app))
+ok('return cards UN-gated for direct_p2p (v15: off-protocol refund handshake replaces the block)',
+  (app.match(/order\.status === 'completed'[^`]*order\.payment_rail !== 'direct_p2p'/g) || []).length === 0
+  && /window\.dpReturnHandshake \? window\.dpReturnHandshake\(item, isBuyer, isSellerView, order\)/.test(app))
 ok('hydration calls renderReturnWidgetForOrder for seller too',
   /\(\(isBuyer && Number\(product\?\.return_days \|\| 0\) > 0\) \|\| isSeller\) && order\.status === 'completed'[\s\S]{0,120}renderReturnWidgetForOrder\(order, product\)/.test(app))
 
@@ -30,8 +31,9 @@ ok('widget computes seller view', /const isSellerView = state\.user && state\.us
 ok('widget hides the card for a seller when no return exists', /isSellerView && !mine[\s\S]{0,120}card\.style\.display = 'none'[\s\S]{0,20}return/.test(widget))
 
 // 3) widget:卖家内联动作(复用既有 handler),传 order.id 上下文
-ok('seller pending → accept/reject inline (decideReturn with orderId ctx)',
-  /isSellerView && item\.status === 'pending'[\s\S]{0,260}decideReturn\('\$\{item\.id\}','accept','\$\{order\.id\}'\)[\s\S]{0,160}decideReturn\('\$\{item\.id\}','reject','\$\{order\.id\}'\)/.test(widget))
+ok('seller pending → accept/reject inline (decideReturn with orderId ctx; accept label rail-aware)',
+  /isSellerView && item\.status === 'pending'[\s\S]{0,260}decideReturn\('\$\{item\.id\}','accept','\$\{order\.id\}'\)[\s\S]{0,260}decideReturn\('\$\{item\.id\}','reject','\$\{order\.id\}'\)/.test(widget)
+  && /同意退货\(场外退款\)/.test(widget))
 ok('seller picked_up → received inline (confirmReturnReceived with orderId ctx)',
   /isSellerView && item\.status === 'picked_up'/.test(widget) && /confirmReturnReceived\('\$\{item\.id\}','\$\{order\.id\}'\)/.test(widget))
 

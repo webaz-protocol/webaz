@@ -8089,8 +8089,8 @@ async function renderReturnsCenter(app) {
   ])
   const items = list?.items || []
   const reasons = RETURN_REASON_LABEL()
-  const STATUS_COLORS = { pending:'#d97706', refunded:'#16a34a', rejected:'#dc2626', cancelled:'#6b7280', accepted_pickup_pending:'#0891b2', picked_up:'#4f46e5' }
-  const STATUS_LABEL = () => ({ pending: t('待处理'), refunded: t('已退款'), rejected: t('已拒绝'), cancelled: t('已取消'), accepted_pickup_pending: '📦 ' + t('待物流上门取件'), picked_up: '🚛 ' + t('已揽收，待卖家确认收到') })
+  const STATUS_COLORS = { pending:'#d97706', refunded:'#16a34a', rejected:'#dc2626', cancelled:'#6b7280', accepted_pickup_pending:'#0891b2', picked_up:'#4f46e5', ...(window.dpReturnStatusColors ? window.dpReturnStatusColors() : {}) }
+  const STATUS_LABEL = () => ({ pending: t('待处理'), refunded: t('已退款'), rejected: t('已拒绝'), cancelled: t('已取消'), accepted_pickup_pending: '📦 ' + t('待物流上门取件'), picked_up: '🚛 ' + t('已揽收，待卖家确认收到'), ...(window.dpReturnStatusLabels ? window.dpReturnStatusLabels() : {}) })
 
   const statsHtml = stats ? `
     <div class="card" style="background:linear-gradient(135deg,#fff7ed,#fef3c7);margin-bottom:14px">
@@ -12535,13 +12535,13 @@ async function renderOrderDetail(app, orderId) {
       <div id="trial-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${(isBuyer && order.status === 'completed' && Number(product?.return_days || 0) > 0 && order.payment_rail !== 'direct_p2p') ? `
+    ${(isBuyer && order.status === 'completed' && Number(product?.return_days || 0) > 0) ? `
     <div class="card" id="ret-card-${order.id}">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">↩ ${t('退货')}</div>
       <div id="ret-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${(isSeller && order.status === 'completed' && order.payment_rail !== 'direct_p2p') ? `
+    ${(isSeller && order.status === 'completed') ? `
     <div class="card" id="ret-card-${order.id}">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">↩ ${t('退货处理')}</div>
       <div id="ret-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
@@ -13039,14 +13039,14 @@ async function renderReturnWidgetForOrder(order, product) {
     const events = detail?.timeline || []
     const item = detail?.item || mine
     const isBuyer = state.user && state.user.id === item.buyer_id
-    const STATUS_COLORS = { pending:'#d97706', accepted:'#16a34a', refunded:'#16a34a', rejected:'#dc2626', cancelled:'#6b7280', escalated:'#6b21a8' }
-    const STATUS_LABEL = () => ({ pending: t('待卖家处理'), accepted: t('已同意'), refunded: t('已退款'), rejected: t('已拒绝'), cancelled: t('已取消'), escalated: t('已升级仲裁') })
+    const STATUS_COLORS = { pending:'#d97706', accepted:'#16a34a', refunded:'#16a34a', rejected:'#dc2626', cancelled:'#6b7280', escalated:'#6b21a8', ...(window.dpReturnStatusColors ? window.dpReturnStatusColors() : {}) }
+    const STATUS_LABEL = () => ({ pending: t('待卖家处理'), accepted: t('已同意'), refunded: t('已退款'), rejected: t('已拒绝'), cancelled: t('已取消'), escalated: t('已升级仲裁'), ...(window.dpReturnStatusLabels ? window.dpReturnStatusLabels() : {}) })
 
     const isActive = !['refunded', 'cancelled', 'escalated'].includes(item.status)
     const canEscalate = isBuyer && (
       item.status === 'rejected' ||
-      (item.status === 'pending' && (Date.now() - new Date(item.created_at).getTime()) >= 7 * 86400 * 1000)
-    )
+      (item.status === 'pending' && (Date.now() - new Date(item.created_at).getTime()) >= 7 * 86400 * 1000) ||
+      (window.dpReturnCanEscalate ? window.dpReturnCanEscalate(item, order) : false))
 
     area.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -13056,11 +13056,11 @@ async function renderReturnWidgetForOrder(order, product) {
 
       ${isSellerView && item.status === 'pending' ? `
         <div style="display:flex;gap:8px;margin-bottom:8px">
-          <button class="btn btn-success btn-sm" style="flex:1;font-size:12px" onclick="decideReturn('${item.id}','accept','${order.id}')">${t('接受退款')}</button>
+          <button class="btn btn-success btn-sm" style="flex:1;font-size:12px" onclick="decideReturn('${item.id}','accept','${order.id}')">${order.payment_rail === 'direct_p2p' ? t('同意退货(场外退款)') : t('接受退款')}</button>
           <button class="btn btn-outline btn-sm" style="flex:1;font-size:12px;color:#dc2626;border-color:#fecaca" onclick="decideReturn('${item.id}','reject','${order.id}')">${t('拒绝退货')}</button>
         </div>` : ''}
       ${isSellerView && item.status === 'picked_up' ? `
-        <button class="btn btn-success btn-sm" style="width:100%;font-size:12px;margin-bottom:8px" onclick="confirmReturnReceived('${item.id}','${order.id}')">${t('✓ 已收到退货 · 触发退款')}</button>` : ''}
+        <button class="btn btn-success btn-sm" style="width:100%;font-size:12px;margin-bottom:8px" onclick="confirmReturnReceived('${item.id}','${order.id}')">${order.payment_rail === 'direct_p2p' ? '✓ ' + t('已收到退货') : t('✓ 已收到退货 · 触发退款')}</button>` : ''}${window.dpReturnHandshake ? window.dpReturnHandshake(item, isBuyer, isSellerView, order) : ''}
 
       <div style="padding:10px;background:#fafafa;border-radius:8px;margin-bottom:8px">
         <div style="font-size:11px;font-weight:600;color:#6b7280;margin-bottom:8px">🧾 ${t('协商时间线')} · ${events.length} ${t('条')}</div>
@@ -13077,8 +13077,8 @@ async function renderReturnWidgetForOrder(order, product) {
 
       ${canEscalate ? `
         <div style="margin-top:8px;padding:8px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px">
-          <div style="font-size:11px;color:#991b1b;margin-bottom:6px">${item.status === 'rejected' ? t('卖家已拒绝 — 如有异议可升级至平台仲裁') : t('卖家 7 天内未回应 — 可升级至平台仲裁')}</div>
-          <button class="btn btn-sm" style="background:#6b21a8;color:#fff;padding:5px 14px;font-size:11px" onclick="escalateReturn('${item.id}','${order.id}')">⚖️ ${t('升级至仲裁')}</button>
+          <div style="font-size:11px;color:#991b1b;margin-bottom:6px">${(window.dpReturnCanEscalate && window.dpReturnCanEscalate(item, order)) ? window.dpReturnEscalateHint(item) : item.status === 'rejected' ? t('卖家已拒绝 — 如有异议可升级至平台仲裁') : t('卖家 7 天内未回应 — 可升级至平台仲裁')}</div>
+          <button class="btn btn-sm" style="background:#6b21a8;color:#fff;padding:5px 14px;font-size:11px" onclick="escalateReturn('${item.id}','${order.id}','${order.payment_rail || ''}')">⚖️ ${t('升级至仲裁')}</button>
         </div>
       ` : ''}
     `
@@ -13092,7 +13092,7 @@ async function renderReturnWidgetForOrder(order, product) {
 
   area.innerHTML = `
     <div style="margin-bottom:8px">${t('退货窗口')}：${returnDays} ${t('天')} · ${remainText}</div>
-    <button class="btn btn-outline btn-sm" onclick="openReturnRequestModal('${order.id}', ${Number(order.total_amount)})">${t('申请退货')}</button>
+    <button class="btn btn-outline btn-sm" onclick="openReturnRequestModal('${order.id}', ${Number(order.total_amount)}, '${order.payment_rail === 'direct_p2p' ? 'USDC' : 'WAZ'}')">${t('申请退货')}</button>
   `
 }
 
@@ -13112,8 +13112,8 @@ window.sendReturnMessage = async (returnId, orderId) => {
   }
 }
 
-window.escalateReturn = async (returnId, orderId) => {
-  if (!confirm(t('确定升级到仲裁？协议会冻结卖家资产并指派仲裁员审核。'))) return
+window.escalateReturn = async (returnId, orderId, rail) => {
+  if (!confirm(rail === 'direct_p2p' ? t('确定升级到仲裁？直付订单为信誉裁决:仲裁不经手资金,按证据对卖家作信誉处罚。') : t('确定升级到仲裁？协议会冻结卖家资产并指派仲裁员审核。'))) return
   const res = await POST(`/return-requests/${returnId}/escalate`, {})
   if (res.error) return toast$(res.error, 'error')
   toast$(t('已升级仲裁'), 'success')
@@ -13331,7 +13331,7 @@ function RETURN_REASON_LABEL() {
   }
 }
 
-window.openReturnRequestModal = (orderId, total) => {
+window.openReturnRequestModal = (orderId, total, cur = 'WAZ') => {
   const labels = RETURN_REASON_LABEL()
   const html = `
     <div class="js-modal" style="background:rgba(0,0,0,0.6);position:fixed;inset:0;z-index:1000;display:flex;align-items:flex-end;justify-content:center" onclick="this.remove()">
@@ -13348,9 +13348,9 @@ window.openReturnRequestModal = (orderId, total) => {
           <textarea class="form-control" id="ret-text" rows="3" maxlength="500" placeholder="${t('描述问题（可选，便于卖家判断）')}"></textarea>
         </div>
         <div class="form-group">
-          <label class="form-label">${t('退款金额')} (WAZ) *</label>
+          <label class="form-label">${t('退款金额')} (${cur}) *</label>
           <input class="form-control" id="ret-amount" type="number" min="0.01" max="${total}" step="0.01" value="${total}">
-          <div style="font-size:11px;color:#9ca3af;margin-top:2px">${t('订单总额')}: ${total} WAZ · ${t('可申请部分退款')}</div>
+          <div style="font-size:11px;color:#9ca3af;margin-top:2px">${t('订单总额')}: ${total} ${cur} · ${t('可申请部分退款')}${cur === 'USDC' ? ' · ' + t('直付退款在协议外完成,金额为参考') : ''}</div>
         </div>
         <div class="form-group" style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 12px">
           <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#166534;cursor:pointer">

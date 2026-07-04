@@ -17,10 +17,12 @@
  *   POST   /api/return-requests/:id/escalate           升级争议（rejected 后 / pending ≥7 天）
  *
  * 不变量：
- *   - 仅 completed 订单可退（escrow 已结清）
- *   - return_days 窗口校验 + 一笔 pending/accepted 不重复
+ *   - 仅 completed 订单可退（escrow 已结清;直付同口径=确认收货后）
+ *   - return_days 窗口校验 + 一笔在途请求不重复（含直付握手态 await_refund/refund_marked）
  *   - 上门取件需 pickup_address ≥ 4 字
  *   - executeReturnRefund: 校验 seller 余额 + 划账 + 恢复 stock/variant.stock + 通知 + L3 上诉路径 claim_upheld_against rep event
+ *   - 直付(direct_p2p)绝不走 executeReturnRefund：退款环节=场外握手（accept→await_refund→refund_marked→
+ *     买家 Passkey confirm→refunded，src/direct-pay-returns.ts）；零资金、零库存回补（已出库=退货验收上架）
  *
  * 跨域 helpers:
  *   - recordRepEvent (L4-3 reputation-engine) — module 内 import
@@ -32,6 +34,9 @@ import { recordRepEvent } from '../../layer4-economics/L4-3-reputation/reputatio
 // RFC-016 Phase 1 — 端点校验读/列表读 + 状态翻转/消息/通知单写 → async seam;
 //   executeReturnRefund 退款 db.transaction(钱+库存)与 escalate 建争议 tx 保持同步(Phase 3 迁 pg)。
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
+// 直付(direct_p2p)退货:物流/协商骨架共用,退款执行环节换成场外握手(零资金零库存回补)。
+//   mark-refunded / confirm-refund 端点在 routes/direct-pay-returns.ts。
+import { enterAwaitRefund, directPayReturnEscalatable, returnRefundRespondDays } from '../../direct-pay-returns.js'
 
 const VALID_RETURN_REASONS = new Set(['quality', 'wrong_item', 'damaged', 'no_longer_needed', 'other'])
 
@@ -133,12 +138,10 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
     `, [req.params.order_id])
     if (!order) return void res.status(404).json({ error: '订单不存在' })
     if (order.buyer_id !== user.id) return void res.status(403).json({ error: '仅买家可申请退货' })
-    // 直付(Rail1)= 非托管、refund:none —— WebAZ 不持货款,退款经现有 escrow 钱包路径会错误移动无关 WAZ。
-    //   故 direct_p2p 不走退货/退款流程(买家不满走争议=信誉处理);平台费应收的冲销由治理/admin 调整处理(非此路径)。
-    if (order.payment_rail === 'direct_p2p') {
-      return void res.status(400).json({ error: '直付(非托管)订单不支持退款流程;如有问题请发起争议', error_code: 'DIRECT_PAY_NO_REFUND' })
-    }
-    // P0-1: 只允许 completed 退货 — escrow 已结算
+    // 直付(Rail1)= 非托管:退货【物流/协商骨架照用】,但退款执行环节换成场外握手(src/direct-pay-returns.ts,
+    //   accept → await_refund → 卖家 mark_refunded → 买家 Passkey confirm → refunded)。零资金零库存回补
+    //   (已出库=B 类,退货验收上架);平台费应收的冲销仍由治理/admin 调整处理(非此路径)。
+    // P0-1: 只允许 completed 退货 — escrow 已结算(直付同口径:确认收货后)
     if (order.status !== 'completed') {
       return void res.status(400).json({ error: '仅订单完成后可申请退货（确认收货后）' })
     }
@@ -150,7 +153,7 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
       return void res.status(400).json({ error: `已超过 ${returnDays} 天退货窗口` })
     }
     const existing = await dbOne<{ id: string; status: string }>(`
-      SELECT id, status FROM return_requests WHERE order_id = ? AND status IN ('pending', 'accepted') LIMIT 1
+      SELECT id, status FROM return_requests WHERE order_id = ? AND status IN ('pending', 'accepted', 'accepted_pickup_pending', 'picked_up', 'await_refund', 'refund_marked') LIMIT 1
     `, [order.id])
     if (existing) return void res.status(400).json({ error: `已存在退货请求 (${existing.status})` })
     const reason = String(req.body?.reason || '')
@@ -238,6 +241,11 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
     const response = req.body?.response ? String(req.body.response).slice(0, 500) : null
     if (decision === 'reject' && !response) return void res.status(400).json({ error: '拒绝时必须填写说明' })
 
+    // 直付(direct_p2p):同意退货后不走 escrow 钱包退款,进入场外退款握手(await_refund)。取件流照用
+    //   (accepted_pickup_pending → picked_up → received 时再进 await_refund)。
+    const railRow = await dbOne<{ payment_rail: string | null }>('SELECT payment_rail FROM orders WHERE id = ?', [rr.order_id])
+    const isDirectPay = railRow?.payment_rail === 'direct_p2p'
+
     if (decision === 'accept') {
       if (Number(rr.pickup_requested) === 1) {
         await dbRun(`UPDATE return_requests SET status = 'accepted_pickup_pending', seller_response = ? WHERE id = ?`, [response, rr.id])
@@ -250,6 +258,15 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
             [generateId('ntf'), rr.buyer_id, '✓ 退货已接受 · 等待上门取件', `卖家将安排物流到 ${rr.pickup_address || '指定地址'} 上门取件`, rr.order_id])
         } catch {}
         return void res.json({ success: true, status: 'accepted_pickup_pending' })
+      }
+      if (isDirectPay) {
+        const r = enterAwaitRefund(db, { returnId: String(rr.id), fromStatus: 'pending', sellerResponse: response, messageId: generateId('rmsg') })
+        if (!r.ok) return void res.status(409).json({ error: r.error, error_code: r.error_code })
+        try {
+          await dbRun(`INSERT INTO notifications (id, user_id, type, title, body, order_id) VALUES (?,?,?,?,?,?)`,
+            [generateId('ntf'), rr.buyer_id, 'direct_pay_return_await_refund', '✓ 退货已同意 · 等待卖家场外退款', '直付订单非托管:卖家将在协议外向你退款并声明,请核实到账后在订单页确认(需 Passkey)。卖家超期未退款可升级争议。', rr.order_id])
+        } catch {}
+        return void res.json({ success: true, status: 'await_refund' })
       }
       try {
         executeReturnRefund(rr as Record<string, unknown>, response, 'pending')
@@ -404,6 +421,17 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
     if (rr.seller_id !== user.id) return void res.status(403).json({ error: '仅卖家可确认收到' })
     if (rr.status !== 'picked_up') return void res.status(400).json({ error: `当前状态 ${rr.status}，不可确认（应在 picked_up 状态）` })
     const note = req.body?.note ? String(req.body.note).slice(0, 300) : null
+    // 直付:收到退货后进入场外退款握手(不走 escrow 钱包退款)
+    const railRow = await dbOne<{ payment_rail: string | null }>('SELECT payment_rail FROM orders WHERE id = ?', [rr.order_id])
+    if (railRow?.payment_rail === 'direct_p2p') {
+      const r = enterAwaitRefund(db, { returnId: String(rr.id), fromStatus: 'picked_up', sellerResponse: note, messageId: generateId('rmsg') })
+      if (!r.ok) return void res.status(409).json({ error: r.error, error_code: r.error_code })
+      try {
+        await dbRun(`INSERT INTO notifications (id, user_id, type, title, body, order_id) VALUES (?,?,?,?,?,?)`,
+          [generateId('ntf'), rr.buyer_id, 'direct_pay_return_await_refund', '✓ 卖家已收到退货 · 等待场外退款', '直付订单非托管:卖家将在协议外向你退款并声明,请核实到账后在订单页确认(需 Passkey)。卖家超期未退款可升级争议。', rr.order_id])
+      } catch {}
+      return void res.json({ success: true, status: 'await_refund' })
+    }
     try {
       executeReturnRefund(rr, note, 'picked_up')
     } catch (e) {
@@ -467,7 +495,10 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
     const rr = await dbOne<Record<string, unknown>>(`SELECT * FROM return_requests WHERE id = ?`, [req.params.id])
     if (!rr) return void res.status(404).json({ error: '不存在' })
     if (rr.buyer_id !== user.id) return void res.status(403).json({ error: '仅买家可升级' })
-    if (rr.status !== 'rejected' && rr.status !== 'pending') {
+    // 直付握手状态可升级:refund_marked 随时(声明≠到账);await_refund 超 respond 窗(卖家同意却不退款)
+    const isDpEsc = ['await_refund', 'refund_marked'].includes(String(rr.status)) && directPayReturnEscalatable(db, rr)
+    if (rr.status !== 'rejected' && rr.status !== 'pending' && !isDpEsc) {
+      if (rr.status === 'await_refund') return void res.status(400).json({ error: `卖家有 ${returnRefundRespondDays(db)} 天场外退款窗口，超期后可升级` })
       return void res.status(400).json({ error: `当前状态 ${rr.status}，无法升级` })
     }
     if (rr.status === 'pending') {

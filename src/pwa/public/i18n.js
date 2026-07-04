@@ -6742,6 +6742,23 @@ const _EN = {
   '无限制': 'No restrictions',
   '如有异议可申诉': 'Appeal if you disagree',
   '看板仅自己可见,不做公开排行。': 'This dashboard is private to you — no public leaderboard.',
+  '待卖家场外退款': 'Awaiting seller off-protocol refund',
+  '卖家已声明退款 · 待你确认': 'Seller declared refund · awaiting your confirmation',
+  '直付非托管:退款由卖家在协议外完成,平台只记录握手,不经手货款。': 'Direct Pay is non-custodial: the refund happens off-protocol by the seller; the platform only records the handshake and never touches the funds.',
+  '你已同意退货。请在协议外向买家退款,然后声明;买家确认后退货完成。': 'You accepted the return. Refund the buyer off-protocol, then declare it; the return completes once the buyer confirms.',
+  '卖家已同意退货,等待其在协议外向你退款并声明。超期未退款可升级争议。': 'Seller accepted the return and should now refund you off-protocol and declare it. If overdue, you can escalate to a dispute.',
+  '已收到退款,完成退货(需 Passkey)': 'Refund received — complete return (Passkey required)',
+  '你已声明退款,等待买家确认收到。提示:退回货物须验收后手动上架,库存不会自动恢复。': 'You declared the refund; awaiting buyer confirmation. Note: returned goods must be inspected and manually restocked — stock is never restored automatically.',
+  '若卖家声明退款但你并未收到,可升级至平台仲裁(直付为信誉裁决)': 'If the seller declared a refund you never received, escalate to arbitration (Direct Pay rulings are reputation-only)',
+  '卖家同意退货后超期未退款 — 可升级至平台仲裁(直付为信誉裁决)': 'Seller accepted the return but the refund is overdue — escalate to arbitration (Direct Pay rulings are reputation-only)',
+  '确认你已在协议外向买家完成退货退款?声明后买家确认即完成;虚假声明将留痕并可被追责。': 'Confirm you have refunded the buyer off-protocol for this return? Once the buyer confirms, the return completes; false declarations are recorded and accountable.',
+  '确认已收到卖家退款?确认后退货完成,不可撤销。若尚未到账请勿确认。': 'Confirm you received the seller\'s refund? The return completes irreversibly. Do NOT confirm if the money has not arrived.',
+  '已收到,完成退货': 'Received — complete return',
+  '退货已完成': 'Return completed',
+  '已收到退货': 'Return goods received',
+  '确定升级到仲裁？直付订单为信誉裁决:仲裁不经手资金,按证据对卖家作信誉处罚。': 'Escalate to arbitration? Direct Pay rulings are reputation-only: arbitration never touches funds and penalizes the seller\'s reputation based on evidence.',
+  '直付退款在协议外完成,金额为参考': 'Direct Pay refunds happen off-protocol; this amount is a reference',
+  '同意退货(场外退款)': 'Accept return (off-protocol refund)',
 }
 
 window.t = (zh) => window._lang === 'en' ? (_EN[zh] || zh) : zh

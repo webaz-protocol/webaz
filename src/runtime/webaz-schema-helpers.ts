@@ -1104,7 +1104,7 @@ export function initReturnRequestsSchema(db: Database.Database): void {
     reason               TEXT NOT NULL,          -- 'quality' | 'wrong_item' | 'damaged' | 'no_longer_needed' | 'other'
     reason_text          TEXT,
     refund_amount        DECIMAL(18,2),          -- 默认 = order.total_amount
-    status               TEXT NOT NULL DEFAULT 'pending', -- pending | accepted | rejected | refunded | escalated | cancelled
+    status               TEXT NOT NULL DEFAULT 'pending', -- pending | accepted | rejected | refunded | escalated | cancelled | (direct_p2p) await_refund | refund_marked
     seller_response      TEXT,
     escalated_dispute_id TEXT,
     created_at           TEXT DEFAULT (datetime('now')),
@@ -1114,6 +1114,9 @@ export function initReturnRequestsSchema(db: Database.Database): void {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_returns_seller_pending ON return_requests(seller_id, status) WHERE status = \'pending\'') } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_returns_buyer ON return_requests(buyer_id, created_at)') } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_returns_order ON return_requests(order_id)') } catch {}
+  // 直付(direct_p2p)送达后退货·场外退款握手(src/direct-pay-returns.ts)。ALTER 必须在 CREATE 之后(fresh DB silent-fail 铁律)。
+  try { db.exec('ALTER TABLE return_requests ADD COLUMN refund_reference TEXT') } catch { /* 已存在 */ }
+  try { db.exec('ALTER TABLE return_requests ADD COLUMN await_refund_since TEXT') } catch { /* 已存在 */ }
 }
 
 // ─── W2 售后协商时间线（flagged/flag_reasons ALTER 刻意留 server.ts 原位）──
