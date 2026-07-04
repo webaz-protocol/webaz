@@ -26,6 +26,10 @@ export function initNotificationSchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, read, created_at DESC);
   `)
+  // N1 通知 i18n 架构(审计项 B):template_key + params(JSON)—— 客户端按 viewer locale 用 t() 渲染;
+  //   旧行两列为 NULL → 前端回退存量中文 title/body(不 backfill)。ALTER 必须在 CREATE 之后(schema 铁律)。
+  try { db.exec('ALTER TABLE notifications ADD COLUMN template_key TEXT') } catch { /* 已有 */ }
+  try { db.exec('ALTER TABLE notifications ADD COLUMN params TEXT') } catch { /* 已有 */ }
 }
 
 // ─── 类型 ─────────────────────────────────────────────────────
@@ -39,6 +43,8 @@ export interface Notification {
   body: string
   read: number
   created_at: string
+  template_key?: string   // N1:客户端 i18n 模板 key(旧行/无模板 = undefined → 回退 title/body)
+  params?: string         // N1:模板参数 JSON 串
 }
 
 // 实时推送回调（由 PWA server 注入，解耦依赖）
@@ -282,6 +288,9 @@ export function createNotification(
   type: string,
   title: string,
   body: string,
+  // N1(审计项 B):可选 i18n 模板 —— template_key + params 落库,客户端按 viewer locale 用 t() 渲染;
+  //   title/body 仍必填 = 中文回退(旧客户端/未知 key 一律回退,向后兼容,零迁移)。
+  opts?: { templateKey?: string; params?: Record<string, unknown> },
 ): Notification {
   const notif: Notification = {
     id: generateId('ntf'),
@@ -292,13 +301,14 @@ export function createNotification(
     body,
     read: 0,
     created_at: new Date().toISOString(),
+    ...(opts?.templateKey ? { template_key: opts.templateKey, params: JSON.stringify(opts.params ?? {}) } : {}),
   }
   db.prepare(`
-    INSERT INTO notifications (id, user_id, order_id, type, title, body)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(notif.id, userId, orderId, type, title, body)
+    INSERT INTO notifications (id, user_id, order_id, type, title, body, template_key, params)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(notif.id, userId, orderId, type, title, body, opts?.templateKey ?? null, opts?.templateKey ? JSON.stringify(opts.params ?? {}) : null)
 
-  // 实时推送（如果 PWA SSE 连接在线）
+  // 实时推送(如果 PWA SSE 连接在线;payload 含模板字段,前端 toast 同样可本地化渲染)
   pushCallback?.(userId, notif)
 
   return notif

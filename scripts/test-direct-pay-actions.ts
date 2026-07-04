@@ -37,6 +37,8 @@ try { db.exec("ALTER TABLE orders ADD COLUMN fulfillment_mode TEXT DEFAULT 'ship
 try { db.exec("ALTER TABLE orders ADD COLUMN source TEXT DEFAULT 'shop'") } catch {}  // server-boot ALTER(settleOrder 读 order.source 算费率)
 db.exec('CREATE TABLE IF NOT EXISTS webauthn_credentials (id TEXT PRIMARY KEY, user_id TEXT)')
 db.exec('CREATE TABLE IF NOT EXISTS webauthn_gate_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, purpose TEXT NOT NULL, purpose_data TEXT, expires_at TEXT NOT NULL, consumed_at TEXT)')
+const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
+initNotificationSchema(db)   // 审计项 B:mark_paid → 卖家模板通知断言用
 initSystemUser(db)
 db.exec('CREATE TABLE IF NOT EXISTS protocol_reserve_pool (id INTEGER PRIMARY KEY, balance REAL DEFAULT 0)')
 db.prepare('INSERT OR IGNORE INTO protocol_reserve_pool (id, balance) VALUES (1, 0)').run()
@@ -251,6 +253,9 @@ ok('accrue 失败 → 无应收落库', !receivable('oZero'))
   ok('D2b. 无同金额在途单 → mark_paid 成功且无预警(非空 note 上断言,防假绿)', rSolo.status === 200 && lastNote('oSolo').length > 0 && !lastNote('oSolo').includes('⚠️'), lastNote('oSolo'))
   // 审计项 E:时间线带应付金额(对账三要素:参考号+金额+币种)—— 无 payable 快照的旧单回落仅 USDC
   ok('E. mark_paid 时间线记录应付金额(USDC)', /应付 50 USDC/.test(lastNote('oSolo')), lastNote('oSolo'))
+  // 审计项 B(N2):mark_paid → 卖家收到 dp_marked_paid 模板通知(detail=权威对账串;此前卖家全程无"已付款"信号)
+  const mpNotif = db.prepare("SELECT template_key, params, body FROM notifications WHERE user_id='seller1' AND order_id='oSolo' AND type='direct_pay_marked_paid'").get() as { template_key: string; params: string; body: string } | undefined
+  ok('B. mark_paid notifies seller with dp_marked_paid template (detail = canonical ref+payable)', !!mpNotif && mpNotif.template_key === 'dp_marked_paid' && /付款参考: WAZ-/.test(String(JSON.parse(mpNotif.params || '{}').detail || '')), JSON.stringify(mpNotif))
   // D3:付款窗口/货款协商取消恢复库存(transition→cancelled 引擎不恢复,此前漏)
   mkOrder('oCanc', 'direct_pay_window', 'direct_p2p'); lock('oCanc')
   const s0 = stockOf()

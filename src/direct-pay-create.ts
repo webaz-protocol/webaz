@@ -25,6 +25,7 @@ import { productStoreVerified } from './product-verification.js'
 import { sellerExemptFromPerProduct } from './store-verification.js'
 import { safeRunDirectPayAmlMonitor } from './direct-pay-aml-monitor.js'
 import { getUsdRatesSync, convertUsdcToLocal, SUPPORTED_CURRENCIES, type Currency } from './fx-rates.js'  // 审计项 E:建单冻结应付参考换算(display-only,同步缓存)
+import { createNotification } from './layer2-business/L2-6-notifications/notification-engine.js'  // 审计项 B:直付转移此前通知黑洞(卖家不知有单/已付款)
 
 export interface DirectPayCreateDeps {
   generateId: (prefix: string) => string
@@ -195,6 +196,8 @@ export function createDirectPayResponse(
     // PR-6C: 建单事务已提交后,运行【append-only AML 监控】(fail-soft;命中治理阈值即 append aml_flags,仅影响【后续】
     //   create/availability 的 #107 breaker)。safe 包装吞异常 → 监控失败【绝不】回流成建单失败,也不碰当前订单。
     safeRunDirectPayAmlMonitor(db, { sellerId, orderId, nowIso: new Date().toISOString(), getProtocolParam: deps.getProtocolParam })
+    // 审计项 B(N2):通知卖家有新直付订单(此前卖家从下单到 delivered 全程通知黑暗)。fail-soft 不阻断建单响应。
+    try { createNotification(db, sellerId, orderId, 'direct_pay_order_created', '🛒 新直付订单,等买家付款', `商品「${String(ctx.product.title || '').slice(0, 40)}」× ${ctx.reqQty},应付 ${ctx.totalAmount} USDC。买家完成场外付款并标记后你会收到发货提醒。`, { templateKey: 'dp_new_order', params: { product: String(ctx.product.title || '').slice(0, 40), qty: ctx.reqQty, amount: ctx.totalAmount } }) } catch { /* 通知失败不阻断 */ }
     // ⚠️ 不在 create 响应里下发卖家收款说明(payment_instruction/label)——D1/D2 both-acked 前不得泄露(响应契约门,
     //   非仅 UI 软门)。买家先完成披露 ack,再经 GET /orders/:id 读取 redaction-gated 的 direct_pay_instruction_snapshot。
     res.json({

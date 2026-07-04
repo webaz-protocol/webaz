@@ -62,6 +62,9 @@ ok('window-expiry: o1 in windowExpired', r1.windowExpired.includes('o1'))
 ok('window-expiry: o1 → direct_expired_unconfirmed (no silent close)', status('o1') === 'direct_expired_unconfirmed')
 ok('window-expiry: fee-stake released to seller', walletUnits(db, 'seller1').fee_staked === 0 && walletUnits(db, 'seller1').balance === toUnits(100) && stakeStatus('o1') === 'released')
 ok('window-expiry: grace deadline set (future)', !!graceDeadline('o1'))
+// 审计项 B(N2):窗口过期不再静默 —— 买家收到含 template_key 的双语模板通知(N1 架构)
+const expNotif = db.prepare("SELECT template_key, params FROM notifications WHERE user_id='buyer1' AND order_id='o1' AND type='direct_pay_window_expired'").get() as { template_key: string; params: string } | undefined
+ok('B: window-expiry notifies buyer with dp_window_expired template + graceHours param', !!expNotif && expNotif.template_key === 'dp_window_expired' && JSON.parse(expNotif.params || '{}').graceHours > 0, JSON.stringify(expNotif))
 
 // ── Scenario 2: 宽限期内 — 系统绝不关单 + 买家 →disputed 可用 ──
 const r2 = runDirectPayTimeoutSweep({ db })  // o1 grace is +48h (future)
@@ -77,6 +80,9 @@ const r3 = runDirectPayTimeoutSweep({ db })
 ok('after grace: o2 in graceCancelled', r3.graceCancelled.includes('o2'))
 ok('after grace: o2 → cancelled', status('o2') === 'cancelled')
 ok('D3: grace-cancel restores stock (+quantity)', stockOf() === stockB4Grace + 1, `before=${stockB4Grace} after=${stockOf()}`)
+// 审计项 B(N2):自动关单通知双方(买家=去向,卖家=库存已回)
+ok('B: grace-cancel notifies buyer (dp_grace_cancelled_buyer)', !!db.prepare("SELECT 1 FROM notifications WHERE user_id='buyer1' AND order_id='o2' AND template_key='dp_grace_cancelled_buyer'").get())
+ok('B: grace-cancel notifies seller (dp_grace_cancelled_seller)', !!db.prepare("SELECT 1 FROM notifications WHERE user_id='seller1' AND order_id='o2' AND template_key='dp_grace_cancelled_seller'").get())
 
 // ── Scenario 3b: 控制组 — 宽限期未到的 expired_unconfirmed 不被关 ──
 mkOrder('o3', 'direct_expired_unconfirmed', { graceFuture: true })
