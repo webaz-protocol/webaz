@@ -15,7 +15,7 @@
  */
 import type Database from 'better-sqlite3'
 
-export type DeferralStatus = 'pending' | 'granted' | 'rejected' | 'expired'
+export type DeferralStatus = 'pending' | 'granted' | 'rejected' | 'expired' | 'satisfied'   // satisfied(B4)=缓交期间缴清保证金转正式
 
 export interface DeferralConfig {
   defaultPeriodDays: number
@@ -165,7 +165,37 @@ export function listDeferrals(db: Database.Database, opts: { status?: DeferralSt
   return db.prepare(`SELECT ${cols} FROM direct_receive_deferrals ORDER BY created_at DESC, rowid DESC`).all() as DeferralListRow[]
 }
 
-/** 到期清理(cron):granted 且【超过 grace_until】→ expired。返回受影响的 user_id(调用方据此停权;本模块不改 privileges)。 */
+// ───── B4:缓交收口 —— 到期前提醒 / 缴清转正式 / 到期停权 helper ─────────────────────────────
+/** 即将到期且未提醒过的 granted 缓交(expires_at 在 now..now+withinDays 内)。cron 提醒用;提醒后 markDeferralReminded 去重。 */
+export function listExpiringDeferrals(db: Database.Database, nowIso: string, withinDays: number): Array<{ id: string; user_id: string; expires_at: string }> {
+  const now = Date.parse(nowIso)
+  if (!Number.isFinite(now)) return []
+  const rows = db.prepare("SELECT id, user_id, expires_at FROM direct_receive_deferrals WHERE status = 'granted' AND reminder_sent_at IS NULL AND expires_at IS NOT NULL").all() as Array<{ id: string; user_id: string; expires_at: string }>
+  const horizon = now + Math.max(0, withinDays) * 86_400_000
+  return rows.filter(r => { const e = Date.parse(r.expires_at); return Number.isFinite(e) && e > now && e <= horizon })
+}
+export function markDeferralReminded(db: Database.Database, deferralId: string): void {
+  db.prepare("UPDATE direct_receive_deferrals SET reminder_sent_at = datetime('now') WHERE id = ? AND reminder_sent_at IS NULL").run(deferralId)
+}
+
+/** 缴清转正式(B4):生产保证金确认后调用 —— 该 user 的 granted 缓交 → satisfied(解除缓交额度压低;
+ *  入场门此后经 bond 满足)。返回转化条数。 */
+export function satisfyDeferralOnBond(db: Database.Database, userId: string): number {
+  return db.prepare("UPDATE direct_receive_deferrals SET status = 'satisfied', satisfied_at = datetime('now') WHERE user_id = ? AND status = 'granted'").run(userId).changes
+}
+
+/** 到期停权(B4):expireDeferrals 的调用方用 —— 该 user 无生产 bond 时把 privilege 置 suspended(理由 deferral_expired)。
+ *  有生产 bond(缓交期间已缴清但 satisfied 漏转的兜底)→ 不停权。 */
+export function suspendPrivilegeOnDeferralExpiry(db: Database.Database, userId: string): boolean {
+  const hasBond = !!db.prepare("SELECT 1 FROM direct_receive_deposits WHERE user_id = ? AND status = 'locked' AND production_receipt_confirmed_at IS NOT NULL LIMIT 1").get(userId)
+  if (hasBond) return false
+  db.prepare(`INSERT INTO direct_receive_privileges (user_id, status, tier, suspended_reason, updated_at)
+    VALUES (?, 'suspended', 'T0', 'deferral_expired', datetime('now'))
+    ON CONFLICT(user_id) DO UPDATE SET status='suspended', suspended_reason='deferral_expired', updated_at=datetime('now')`).run(userId)
+  return true
+}
+
+/** 到期清理(cron):granted 且【超过 grace_until】→ expired。返回受影响的 user_id(调用方据此停权;本模块不改 privileges —— 停权用 suspendPrivilegeOnDeferralExpiry)。 */
 export function expireDeferrals(db: Database.Database, nowIso: string): { expired: string[] } {
   const now = Date.parse(nowIso)
   if (!Number.isFinite(now)) return { expired: [] }

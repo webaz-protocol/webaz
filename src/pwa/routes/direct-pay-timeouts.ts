@@ -18,6 +18,7 @@ import { transition } from '../../layer0-foundation/L0-2-state-machine/engine.js
 import { releaseFeeStake } from '../../direct-pay-ledger.js'
 import { restorePreShipDirectPayStock } from '../../direct-pay-stock.js'   // D3 库存回补唯一入口(pre-ship 放行;已出库拒绝)
 import { notifyTransition, createNotification } from '../../layer2-business/L2-6-notifications/notification-engine.js'
+import { expireDeferrals, listExpiringDeferrals, markDeferralReminded, suspendPrivilegeOnDeferralExpiry } from '../../direct-receive-deferral.js'   // B4:缓交到期提醒/收口
 
 const SYS = 'sys_protocol'
 
@@ -28,6 +29,8 @@ export interface DirectPayTimeoutResult {
   pqRecourseOpened: string[] // order ids: payment_query 买家静默 → 系统代发起取消,开买家申诉窗(不关单)
   pqCancelled: string[]      // order ids: payment_query → cancelled (申诉窗满)
   acceptExpired: string[]    // order ids: pending_accept → cancelled (接单窗满,v16;无责+回补,没人付过钱)
+  deferralReminded: string[] // deferral ids: 到期前提醒已发(B4;去重 reminder_sent_at)
+  deferralExpired: string[]  // user ids: 缓交过 grace 到期 → expired + 无 bond 停权 + 通知(B4)
 }
 
 /** 货款协商买家申诉窗(天),governance 可调,默认 7d。与 request_cancel 同源 param,保证手动/自动一致。 */
@@ -56,6 +59,24 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
   const pqRecourseOpened: string[] = []
   const pqCancelled: string[] = []
   const acceptExpired: string[] = []
+  const deferralReminded: string[] = []
+  const deferralExpired: string[] = []
+
+  // F. 缓交收口(B4):① 到期前提醒(param direct_pay.deferral_reminder_days,默认 3d;reminder_sent_at 去重)
+  //    ② 过 grace 到期 → expired + 无生产 bond 则停权(有 bond=已缴清兜底不停)+ 通知。均 fail-soft 不断 cron。
+  try {
+    const remindDays = (() => { try { const r = db.prepare("SELECT value FROM protocol_params WHERE key = 'direct_pay.deferral_reminder_days'").get() as { value: string } | undefined; const n = Number(r?.value ?? 3); return Number.isFinite(n) && n > 0 ? n : 3 } catch { return 3 } })()
+    for (const d of listExpiringDeferrals(db, new Date().toISOString(), remindDays)) {
+      markDeferralReminded(db, d.id)
+      deferralReminded.push(d.id)
+      try { createNotification(db, d.user_id, null, 'deferral_expiring_soon', '⏰ 保证金缓交即将到期', `你的缓交资格将于 ${d.expires_at} 到期。请在到期前缴纳履约保证金转正式(设置页-直付履约保证金),否则宽限期后直付资格将关闭。`, { templateKey: 'deferral_expiring_soon', params: { expires: d.expires_at } }) } catch (e) { console.warn('[direct-pay-timeouts] notify deferral-remind:', (e as Error).message) }
+    }
+    for (const uid of expireDeferrals(db, new Date().toISOString()).expired) {
+      const suspended = suspendPrivilegeOnDeferralExpiry(db, uid)
+      deferralExpired.push(uid)
+      try { createNotification(db, uid, null, 'deferral_expired', '🚫 保证金缓交已到期', suspended ? '缓交资格已到期且未缴纳保证金,直付资格已关闭。缴纳履约保证金并经运营确认后可重新开通;在途订单不受影响,请正常履约完成。' : '缓交资格已到期;你已缴纳保证金,直付资格不受影响。', { templateKey: 'deferral_expired', params: { closed: suspended ? 1 : 0 } }) } catch (e) { console.warn('[direct-pay-timeouts] notify deferral-expired:', (e as Error).message) }
+    }
+  } catch (e) { console.error('[direct-pay-timeouts] deferral closure sweep:', e) }
 
   // E. 手动接单窗超时(v16):pending_accept 过 pending_accept_deadline → 无责取消 + 回补库存。
   //    零资金(此阶段没人付过钱 —— 时序门);双方通知。WHERE 硬门:仅 now > deadline 命中。
@@ -174,7 +195,7 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
     if (done) { pqCancelled.push(id); try { notifyTransition(db, id, 'payment_query', 'cancelled') } catch (e) { console.warn('[direct-pay-timeouts] notify pq-cancel:', (e as Error).message) } }  // 通知买卖双方(cron 系统关单也要发,route 之外)
   }
 
-  return { windowExpired, graceCancelled, pqRecourseOpened, pqCancelled, acceptExpired }
+  return { windowExpired, graceCancelled, pqRecourseOpened, pqCancelled, acceptExpired, deferralReminded, deferralExpired }
 }
 
 export function startDirectPayTimeoutCron(deps: DirectPayTimeoutDeps): void {
@@ -182,8 +203,8 @@ export function startDirectPayTimeoutCron(deps: DirectPayTimeoutDeps): void {
   setInterval(() => {
     try {
       const r = runDirectPayTimeoutSweep(deps)
-      if (r.windowExpired.length || r.graceCancelled.length || r.pqRecourseOpened.length || r.pqCancelled.length || r.acceptExpired.length) {
-        console.log(`[direct-pay-timeouts] window→expired ${r.windowExpired.length}, grace→cancelled ${r.graceCancelled.length}, pq→recourse ${r.pqRecourseOpened.length}, pq→cancelled ${r.pqCancelled.length}, accept→expired ${r.acceptExpired.length}`)
+      if (r.windowExpired.length || r.graceCancelled.length || r.pqRecourseOpened.length || r.pqCancelled.length || r.acceptExpired.length || r.deferralReminded.length || r.deferralExpired.length) {
+        console.log(`[direct-pay-timeouts] window→expired ${r.windowExpired.length}, grace→cancelled ${r.graceCancelled.length}, pq→recourse ${r.pqRecourseOpened.length}, pq→cancelled ${r.pqCancelled.length}, accept→expired ${r.acceptExpired.length}, deferral remind/expired ${r.deferralReminded.length}/${r.deferralExpired.length}`)
       }
     } catch (e) {
       console.error('[direct-pay-timeouts-cron]', e)

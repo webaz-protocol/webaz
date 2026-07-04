@@ -22,7 +22,7 @@ import { dbAll, dbOne } from '../../layer0-foundation/L0-1-database/db.js'   // 
 import { reviewAmlFlag } from '../../direct-pay-aml-review.js'
 import { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress, amlDetailHash } from '../../direct-pay-compliance-ingress.js'
 import { readDirectPayLaunchReadiness } from '../../direct-pay-launch-readiness.js'
-import { approveDeferral, rejectDeferral, listDeferrals, type DeferralStatus } from '../../direct-receive-deferral.js'
+import { approveDeferral, rejectDeferral, listDeferrals, satisfyDeferralOnBond, type DeferralStatus } from '../../direct-receive-deferral.js'
 import { listProductVerifications, reviewProductVerification, type ProductVerificationStatus } from '../../product-verification.js'
 import { listStoreVerifications, reviewStoreVerification, type StoreVerificationStatus } from '../../store-verification.js'
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'
@@ -188,8 +188,11 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
       logAdminAction(admin.id as string, 'direct_receive.production_confirm', 'direct_receive_deposit', depositId,
         { rail_id: railId, jurisdiction, ok: r.ok, outcome: r.ok ? (r.already ? 'already' : 'confirmed') : r.reason })
       if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'PRODUCTION_CONFIRM_REJECTED' })
-      // B1:确认成功 → 通知卖家保证金已生效(best-effort,不阻断)
-      if (!r.already) { try { const dep = await dbOne<{ user_id: string }>('SELECT user_id FROM direct_receive_deposits WHERE id = ?', [depositId]); if (dep) createNotification(db, dep.user_id, null, 'bond_deposit_confirmed', '✅ 履约保证金已确认锁定', '你的保证金已核实到账并正式锁定,直付入场的保证金门已满足。退出时可申请退还(须无未了结直付责任)。', { templateKey: 'bond_deposit_confirmed', params: {} }) } catch { /* 通知失败不阻断 */ } }
+      // B1:确认成功 → 通知卖家保证金已生效;B4:缓交期间缴清 → granted 缓交转 satisfied(解除额度压低)+ 告知。best-effort 不阻断。
+      if (!r.already) { try { const dep = await dbOne<{ user_id: string }>('SELECT user_id FROM direct_receive_deposits WHERE id = ?', [depositId]); if (dep) {
+        const converted = satisfyDeferralOnBond(db, dep.user_id)
+        createNotification(db, dep.user_id, null, 'bond_deposit_confirmed', '✅ 履约保证金已确认锁定', `你的保证金已核实到账并正式锁定,直付入场的保证金门已满足。${converted > 0 ? '缓交资格已转正式,额度限制同步解除。' : ''}退出时可申请退还(须无未了结直付责任)。`, { templateKey: 'bond_deposit_confirmed', params: { converted } })
+      } } catch { /* 通知失败不阻断 */ } }
       return void res.json({ ok: true, status: r.status, already: !!r.already })
     } catch (e) {
       // assertProductionDepositRail(及任何写前异常)→ 生产 rail 未 legal-clear → fail-closed。
