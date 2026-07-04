@@ -118,7 +118,7 @@ export function registerWebauthnRoutes(app: Application, deps: WebauthnDeps): vo
     const purpose_data = req.body?.purpose_data ?? null
 
     const creds = await dbAll<{ id: string; transports: string }>('SELECT id, transports FROM webauthn_credentials WHERE user_id = ?', [user.id])
-    if (creds.length === 0) return void res.status(403).json({ error: '尚未注册任何 Passkey' })
+    if (creds.length === 0) return void res.status(403).json({ error: '尚未注册任何 Passkey', error_code: 'NO_PASSKEY_REGISTERED' })  // 前端据此才提示注册;已注册者的取消/设备失败不误导去注册
 
     const opts = await generateAuthenticationOptions({
       rpID: rpId,

@@ -16,19 +16,19 @@ import type Database from 'better-sqlite3'
 export const STAGE = { PRE_SELECT: 'pre_select', PRE_CONFIRM: 'pre_confirm' } as const
 export type DisclosureStage = typeof STAGE[keyof typeof STAGE]
 
-/** D1 = PRE_SELECT 提醒(买家单视角,无任何卖家机制)。 */
+/** D1 = PRE_SELECT 提醒(买家单视角,无任何卖家机制)。措辞准确化:强调"无退款能力(从不托管本金)"而非"拒绝退款"。 */
 export const D1 = {
   stage: STAGE.PRE_SELECT,
-  version: 'd1.v1.2026-06-27',
-  zh: '本单无经济保障,出问题不退款,仅对卖家作信誉处罚。请自行判断风险后付款。',
-  en: 'This order has NO economic protection: no refund if it goes wrong, only reputation penalties on the seller. Decide your own risk before paying.',
+  version: 'd1.v2.2026-07-04',
+  zh: '本次订单为非担保交易:你直接付款给卖家(场外),WebAZ 不托管本金、不能承诺退款或任何经济保障,仅对卖家有信誉处罚权。请自行判断后决定是否付款。',
+  en: 'This is a non-guaranteed transaction: you pay the seller directly (off-platform). WebAZ does not custody the funds and cannot promise refunds or any economic protection — only reputation penalties against the seller. Decide for yourself whether to pay.',
 }
-/** D2 = PRE_CONFIRM 提醒(paid-but-timeout + 最终风险再确认)。 */
+/** D2 = PRE_CONFIRM 提醒(paid-but-timeout + 最终风险再确认)。措辞准确化同 D1。 */
 export const D2 = {
   stage: STAGE.PRE_CONFIRM,
-  version: 'd2.v1.2026-06-27',
-  zh: "付款后请立即点'我已付款';若窗口过期你须发起争议,本档不退款、仅信誉处罚。确认承担风险后再付款。",
-  en: "Mark 'I have paid' immediately after paying; if the window lapses you must raise a dispute — this tier issues no refund, only reputation penalties. Confirm you accept the risk before paying.",
+  version: 'd2.v2.2026-07-04',
+  zh: "付款后请立即回来点'我已付款'。若付款窗口过期,你需自行发起争议(证据裁决,仅影响卖家信誉)。WebAZ 无退款能力(从不托管本金)。确认已了解后再付款。",
+  en: "After paying, come back and tap 'I have paid' right away. If the payment window lapses, you must raise a dispute yourself (evidence-based ruling; affects only the seller's reputation). WebAZ has no refund capability (it never custodies the funds). Confirm you understand before paying.",
 }
 
 const STAGE_VERSION: Record<DisclosureStage, string> = { [STAGE.PRE_SELECT]: D1.version, [STAGE.PRE_CONFIRM]: D2.version }

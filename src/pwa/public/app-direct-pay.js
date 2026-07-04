@@ -40,7 +40,7 @@ window.dpRailSelectorHtml = (productId, priceUsdc) => `
         <span><b>${t('直付(Direct Pay · 非托管)')}</b><br><span style="font-size:11px;color:#6b7280">${t('你直接付款给卖家(场外),本金不经 WebAZ')}</span></span>
       </label>
       <div id="dp-rail-note" style="display:none;margin-top:8px;font-size:11px;line-height:1.6;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
-        ⚠️ ${t('直付风险提醒:WebAZ 不托管本金、不担保、不退款、不代维权,也不验证卖家的付款方式或币种。下单后需用 Passkey 完成两次风险确认,再标记付款。')}
+        ⚠️ ${t('直付风险提醒:非担保交易 —— WebAZ 不托管本金、无退款能力、不代维权,也不验证卖家的付款方式或币种,仅对卖家有信誉处罚权。下单后需用 Passkey 完成两次风险确认,再标记付款。')}
         <div style="margin-top:6px">${t('需要 Passkey。')}<a href="#me" style="color:#854d0e;font-weight:600;text-decoration:underline">${t('前往「我的 → 安全与存储」注册 →')}</a></div>
       </div>
       <div id="dp-rail-unavailable" style="display:none;margin-top:8px;font-size:11px;line-height:1.6;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px"></div><div id="dp-account-picker"></div>
@@ -81,12 +81,10 @@ window.dpAfterCreate = async (res) => {
     return
   }
   // 两次披露已 ack —— 收款说明【不】来自 create 响应(后端在 both-acked 前不下发);现在才 GET 订单读取 redaction-gated 快照。
+  //   融合付款弹窗:收款账号+金额+附言三要素各自一键复制 + 就地"我已付款"(省掉回订单页找按钮;mark_paid 仍单独 Passkey 门)。
   const o = await GET(`/orders/${orderId}`)
-  const instr = o && o.order ? (o.order.direct_pay_instruction_snapshot || '') : ''; const _pay = o && o.order ? window.dpPayAmountText(o.order) : ''
-  await confirmModal(
-    `${t('风险确认完成 · 这是卖家的收款说明(下单时快照,WebAZ 不验证)')}\n\n${_pay ? '💸 ' + _pay + '\n\n' : ''}${instr}\n\n${t('请按此付款,然后在订单页标记"我已付款"')}`,
-    t('我知道了'), {})
-  setTimeout(() => navigate(`#order/${orderId}`), 300)
+  if (o && o.order && window.dpShowPaymentModal) window.dpShowPaymentModal(o.order)
+  else setTimeout(() => navigate(`#order/${orderId}`), 300)   // 读单失败兜底:回订单页(收款信息同样在那展示)
 }
 // ── 确保两次披露都已 ack(缺哪个补哪个;每次都需现场真人 Passkey)。返回 both-acked 与否。 ──────────
 window.dpEnsureAcks = async (orderId) => {
@@ -100,25 +98,28 @@ window.dpEnsureAcks = async (orderId) => {
   for (const s of stages) {
     if (s.acked) continue
     const body = (s.text ? (window._lang === 'en' ? s.text.en : s.text.zh) : t('风险披露')) + (s.key === 'pre_confirm' && _pay ? `\n\n💸 ${_pay}` : '')
-    const go = await confirmModal(`${body}\n\n${t('我已阅读并理解上述风险')}`, t('确认(需 Passkey)'), { danger: true })
+    const go = await confirmModal(`${body}\n\n${t('我已阅读并理解上述风险')}`, t('了解直接付款(需 Passkey)'), { danger: true })
     if (!go) return false
     const ok = await window.dpDoAck(orderId, s.key)
     if (!ok) return false
   }
   return true
 }
-// Passkey 门失败(无 Passkey / 设备不支持 / 用户取消)→ 给出明确的【注册 Passkey 入口】(前往「我的 → 安全与存储」)。
-window.dpPromptRegisterPasskey = async (reason) => {
-  const go = await confirmModal(
-    `${reason ? reason + '\n\n' : ''}${t('直付的风险确认与付款标记需要 Passkey。前往「我的 → 安全与存储」注册一个?')}`,
-    t('前往注册 Passkey'), {})
-  if (go) navigate('#me')
+// Passkey 门失败分两类(修:此前对已注册用户的取消/设备失败也误导去注册):① 确实【未注册】(后端
+//   NO_PASSKEY_REGISTERED 或无 code 的老式无凭证报错)→ 引导注册;② 已注册但取消/设备/超时 → 仅提示可重试。
+//   兼容旧调用点(传 message 串)与新调用点(传 error 对象读 .code)。
+window.dpPromptRegisterPasskey = async (errOrReason) => {
+  const isErr = errOrReason && typeof errOrReason === 'object'
+  const code = isErr ? errOrReason.code : undefined, reason = isErr ? errOrReason.message : errOrReason
+  const notReg = code === 'NO_PASSKEY_REGISTERED' || (!code && /未注册|尚未注册|no passkey|not registered/i.test(String(reason || '')))
+  if (!notReg) { if (typeof toast$ === 'function') toast$(reason || t('验证未完成,请重试'), 'info'); return }   // 已注册:不导去注册
+  if (await confirmModal(t('直付的风险确认与付款标记需要 Passkey。你还没有注册 Passkey,前往「我的 → 安全与存储」注册一个?'), t('前往注册 Passkey'), {})) navigate('#me')
 }
 // 单次披露 ack:Passkey ceremony(purpose=direct_pay_disclosure_ack,order+stage 绑 purpose_data)→ POST ack。
 window.dpDoAck = async (orderId, stage) => {
   let token
   try { token = await requestPasskeyGate('direct_pay_disclosure_ack', { order_id: orderId, stage }) }
-  catch (e) { await window.dpPromptRegisterPasskey(e && e.message); return false }
+  catch (e) { await window.dpPromptRegisterPasskey(e); return false }
   const r = await POST('/direct-pay/disclosure-acks', { order_id: orderId, stage, webauthn_token: token })
   if (r.error) { if (typeof toast$ === 'function') toast$(window.dpErrorText(r.error_code, r.error), 'error'); return false }
   return true
@@ -129,7 +130,7 @@ window.dpOrderDisclosureHtml = (order) => `
     <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:8px">💸 ${t('直付订单(非托管)')}</div>
     <ul style="margin:0 0 8px;padding-left:18px;font-size:12px;line-height:1.7;color:#374151">
       <li>${t('本金不经 WebAZ —— 你直接付款给卖家(场外)')}</li>
-      <li>${t('WebAZ 不托管、不担保、不退款、不代维权')}</li>
+      <li>${t('非担保交易:WebAZ 不托管本金、无退款能力,仅对卖家有信誉处罚权')}</li>
       <li>${t('卖家收款说明来自卖家自填,WebAZ 不验证付款方式或币种')}</li>
     </ul>
     <div id="dp-order-instr" data-order-id="${escHtml(String(order && order.id || ''))}">${loading$()}</div>
@@ -163,7 +164,7 @@ window.dpHandleAction = async (orderId, action) => {
   if (!acked) { show('error', window.dpErrorText('DISCLOSURE_NOT_ACKED')); return }
   let token
   try { token = await requestPasskeyGate('direct_pay_order_action', { order_id: orderId, action }) }
-  catch (e) { await window.dpPromptRegisterPasskey(e && e.message); return }
+  catch (e) { await window.dpPromptRegisterPasskey(e); return }
   show('info', `<span class="spinner"></span>${t('处理中...')}`)
   const path = action === 'confirm_in_person' ? `/orders/${orderId}/confirm-in-person` : `/orders/${orderId}/action`
   const body = action === 'confirm_in_person' ? { webauthn_token: token } : { action, webauthn_token: token, ...(action === 'mark_paid' && window.dpReadMemo ? { notes: window.dpReadMemo(orderId) } : {}) }
