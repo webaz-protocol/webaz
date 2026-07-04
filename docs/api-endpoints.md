@@ -305,8 +305,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/coupons/preview` | 🔐 |  |  | src/pwa/routes/search.ts:40 |
 | GET | `/api/creator/stats` | 🔐 |  | 里程碑 L3：创作者贡献仪表盘 | src/pwa/routes/shareables.ts:216 |
 | GET | `/api/direct-pay/availability` | 🔐 |  | GET /api/direct-pay/availability?product_id=... — 该商品(以 qty=1 计)当前是否可直付 + 不可用原因( | src/pwa/routes/direct-pay-availability.ts:40 |
-| POST | `/api/direct-pay/disclosure-acks` | 🔐 |  | POST — 记录一次 ack(D1 pre_select / D2 pre_confirm)。需现场真人(Passkey + gate token)。幂等(I | src/pwa/routes/direct-pay-disclosure-acks.ts:49 |
-| GET | `/api/direct-pay/disclosure-acks/:orderId` | 🔐 |  | GET — 查询某单两次 ack 状态 + 买家视角披露文案(无卖家机制)。只读(本人),不需 gate token。 | src/pwa/routes/direct-pay-disclosure-acks.ts:71 |
+| POST | `/api/direct-pay/disclosure-acks` | 🔐 |  | stage:'both' —— 单 stage token 冒充不了 both,both token 也重放不了单 stage(一次性消费 + validate | src/pwa/routes/direct-pay-disclosure-acks.ts:53 |
+| GET | `/api/direct-pay/disclosure-acks/:orderId` | 🔐 |  | GET — 查询某单两次 ack 状态 + 买家视角披露文案(无卖家机制)。只读(本人),不需 gate token。 | src/pwa/routes/direct-pay-disclosure-acks.ts:75 |
 | GET | `/api/direct-receive/accounts` | 🔐 |  | ── list（本人;不返回 raw QR,只含 qr_image_ref)── | src/pwa/routes/direct-receive-accounts.ts:59 |
 | POST | `/api/direct-receive/accounts` | 🔐 |  | ── add(Passkey)── | src/pwa/routes/direct-receive-accounts.ts:76 |
 | DELETE | `/api/direct-receive/accounts/:id` | 🔐 |  | ── deactivate(Passkey + owner)── | src/pwa/routes/direct-receive-accounts.ts:106 |

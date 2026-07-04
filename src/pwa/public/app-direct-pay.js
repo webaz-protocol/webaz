@@ -81,38 +81,39 @@ window.dpAfterCreate = async (res) => {
     return
   }
   // 两次披露已 ack —— 收款说明【不】来自 create 响应(后端在 both-acked 前不下发);现在才 GET 订单读取 redaction-gated 快照。
-  //   融合付款弹窗:收款账号+金额+附言三要素各自一键复制 + 就地"我已付款"(省掉回订单页找按钮;mark_paid 仍单独 Passkey 门)。
+  //   【先落订单页,融合付款弹窗叠在其上】:订单页本身有收款信息+对账卡+自动隐藏倒计时,所以无论用户点按钮、点遮罩还是
+  //   按 ESC 关掉弹窗,都留在订单页而非产品页 —— 杜绝"关弹窗后失联→重复下单"(审计:弹窗被 overlay/ESC 关会 strand)。
   const o = await GET(`/orders/${orderId}`)
-  if (o && o.order && window.dpShowPaymentModal) window.dpShowPaymentModal(o.order)
-  else setTimeout(() => navigate(`#order/${orderId}`), 300)   // 读单失败兜底:回订单页(收款信息同样在那展示)
+  navigate(`#order/${orderId}`)
+  if (o && o.order && window.dpShowPaymentModal) setTimeout(() => window.dpShowPaymentModal(o.order), 120)   // 等订单页渲染后叠弹窗
 }
-// ── 确保两次披露都已 ack(缺哪个补哪个;每次都需现场真人 Passkey)。返回 both-acked 与否。 ──────────
+// ── 确保两次披露都已 ack。两屏文本各自展示确认(证据不减);缺两个 → 一次 Passkey ceremony 覆盖(stage:'both',首单
+//    3→2,2026-07-04 决策),缺一个 → 单独 ceremony。会话缓存 _dpAcked:both 过的单热路径(mark_paid/confirm)不再重复 2 GET;
+//    后端 requireBothDisclosuresAcked 仍硬门。懒取金额:仅 D2 将展示才 GET 订单。──
 window.dpEnsureAcks = async (orderId) => {
+  if (window._dpAcked && window._dpAcked[orderId]) return true
   const st = await GET(`/direct-pay/disclosure-acks/${orderId}`)
   if (st.error) { if (typeof toast$ === 'function') toast$(window.dpErrorText(st.error_code, st.error), 'error'); return false }
-  const disc = st.disclosures || {}; let _pay = ''; try { const _od = await GET(`/orders/${orderId}`); if (_od && _od.order) _pay = window.dpPayAmountText(_od.order) } catch {}
-  const stages = [
-    { key: 'pre_select', acked: st.acked?.pre_select, text: disc.pre_select },
-    { key: 'pre_confirm', acked: st.acked?.pre_confirm, text: disc.pre_confirm },
-  ]
-  for (const s of stages) {
-    if (s.acked) continue
-    const body = (s.text ? (window._lang === 'en' ? s.text.en : s.text.zh) : t('风险披露')) + (s.key === 'pre_confirm' && _pay ? `\n\n💸 ${_pay}` : '')
-    const go = await confirmModal(`${body}\n\n${t('我已阅读并理解上述风险')}`, t('了解直接付款(需 Passkey)'), { danger: true })
+  const cache = () => { (window._dpAcked = window._dpAcked || {})[orderId] = true; return true }
+  if (st.both === true) return cache()
+  const disc = st.disclosures || {}
+  const missing = ['pre_select', 'pre_confirm'].filter(k => !(st.acked && st.acked[k]))
+  let _pay = ''
+  if (missing.includes('pre_confirm')) { try { const _od = await GET(`/orders/${orderId}`); if (_od && _od.order) _pay = window.dpPayAmountText(_od.order) } catch {} }
+  for (let i = 0; i < missing.length; i++) {
+    const key = missing[i], tx = key === 'pre_select' ? disc.pre_select : disc.pre_confirm
+    const body = (tx ? (window._lang === 'en' ? tx.en : tx.zh) : t('风险披露')) + (key === 'pre_confirm' && _pay ? `\n\n💸 ${_pay}` : '')
+    const go = await confirmModal(`${body}\n\n${t('我已阅读并理解上述风险')}`, i === missing.length - 1 ? t('了解直接付款(需 Passkey)') : t('下一步'), { danger: true })
     if (!go) return false
-    const ok = await window.dpDoAck(orderId, s.key)
-    if (!ok) return false
   }
-  return true
+  const ok = await window.dpDoAck(orderId, missing.length === 2 ? 'both' : missing[0])
+  return ok ? cache() : false
 }
-// Passkey 门失败分两类(修:此前对已注册用户的取消/设备失败也误导去注册):① 确实【未注册】(后端
-//   NO_PASSKEY_REGISTERED 或无 code 的老式无凭证报错)→ 引导注册;② 已注册但取消/设备/超时 → 仅提示可重试。
-//   兼容旧调用点(传 message 串)与新调用点(传 error 对象读 .code)。
-window.dpPromptRegisterPasskey = async (errOrReason) => {
-  const isErr = errOrReason && typeof errOrReason === 'object'
-  const code = isErr ? errOrReason.code : undefined, reason = isErr ? errOrReason.message : errOrReason
-  const notReg = code === 'NO_PASSKEY_REGISTERED' || (!code && /未注册|尚未注册|no passkey|not registered/i.test(String(reason || '')))
-  if (!notReg) { if (typeof toast$ === 'function') toast$(reason || t('验证未完成,请重试'), 'info'); return }   // 已注册:不导去注册
+// Passkey 门失败:仅【确实未注册】(后端 NO_PASSKEY_REGISTERED,由 requestPasskeyGate 透传到 err.code)才引导注册;
+//   已注册但取消/设备不支持/超时(含 navigator DOMException,其 .code 是 legacy 数字非本值)→ 仅本地化"请重试",
+//   不导注册(修用户反馈:已注册者被重复提醒)、不把英文 DOMException 文案 toast 给中文用户(bilingual)。全部 5 调用点传 err 对象。
+window.dpPromptRegisterPasskey = async (err) => {
+  if (!(err && typeof err === 'object' && err.code === 'NO_PASSKEY_REGISTERED')) { if (typeof toast$ === 'function') toast$(t('验证未完成,请重试'), 'info'); return }
   if (await confirmModal(t('直付的风险确认与付款标记需要 Passkey。你还没有注册 Passkey,前往「我的 → 安全与存储」注册一个?'), t('前往注册 Passkey'), {})) navigate('#me')
 }
 // 单次披露 ack:Passkey ceremony(purpose=direct_pay_disclosure_ack,order+stage 绑 purpose_data)→ POST ack。

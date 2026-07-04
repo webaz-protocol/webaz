@@ -45,11 +45,15 @@ export function registerDirectPayDisclosureAckRoutes(app: Application, deps: Dir
     return order
   }
 
-  // POST — 记录一次 ack(D1 pre_select / D2 pre_confirm)。需现场真人(Passkey + gate token)。幂等(INSERT OR IGNORE)。
+  // POST — 记录 ack。stage = pre_select | pre_confirm | both。需现场真人(Passkey + gate token)。幂等(INSERT OR IGNORE)。
+  //   'both'(2026-07-04 用户决策,contract v14):两屏披露【仍各自展示并确认】(文本证据不减),但一次真人 ceremony
+  //   可覆盖两个 stage → 落库仍是【两行】ack(各带 notice_version+acked_at,requireBothDisclosuresAcked 证据模型不变);
+  //   变化仅是"人在场证明"从两次合并为一次(首单 Passkey 3→2;mark_paid 的独立 RISK 门不变)。token purpose_data 绑
+  //   stage:'both' —— 单 stage token 冒充不了 both,both token 也重放不了单 stage(一次性消费 + validate 精确匹配)。
   app.post('/api/direct-pay/disclosure-acks', async (req, res) => {
     const user = auth(req, res); if (!user) return
-    const stage = req.body?.stage as DisclosureStage
-    if (!VALID_STAGES.includes(stage)) return void res.status(400).json({ error: `无效 stage(只允许 ${VALID_STAGES.join('|')})`, error_code: 'INVALID_STAGE' })
+    const stage = req.body?.stage as DisclosureStage | 'both'
+    if (stage !== 'both' && !VALID_STAGES.includes(stage as DisclosureStage)) return void res.status(400).json({ error: `无效 stage(只允许 ${VALID_STAGES.join('|')}|both)`, error_code: 'INVALID_STAGE' })
     const order = await requireOwnDirectPayOrder(req.body?.order_id as string | undefined, res, user); if (!order) return
     // human-only:现场真人 Passkey 二次确认。purpose 用【固定白名单值】(/api/webauthn/auth/start 才放行申请 challenge);
     //   order+stage 绑定走 purpose_data + validate(杜绝跨单/跨阶段复用 token),不能塞进 purpose 字符串(那样真实 UI 拿不到 token)。
@@ -59,7 +63,7 @@ export function registerDirectPayDisclosureAckRoutes(app: Application, deps: Dir
       validate: (data) => { const d = data as { order_id?: string; stage?: string } | null; return !!d && d.order_id === order.id && d.stage === stage },
     })
     if (!gate.ok) return void res.status(403).json({ error: gate.reason, error_code: gate.error_code })
-    recordDisclosureAck(db, { orderId: order.id, buyerId: user.id as string, stage, ackId: generateId('dpa') })
+    for (const s of (stage === 'both' ? VALID_STAGES : [stage as DisclosureStage])) recordDisclosureAck(db, { orderId: order.id, buyerId: user.id as string, stage: s, ackId: generateId('dpa') })
     return void res.json({
       ok: true, stage,
       both: requireBothDisclosuresAcked(db, order.id).ok,

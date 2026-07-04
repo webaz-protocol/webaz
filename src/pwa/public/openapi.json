@@ -3628,7 +3628,7 @@
     },
     "/api/direct-pay/disclosure-acks": {
       "post": {
-        "summary": "POST — 记录一次 ack(D1 pre_select / D2 pre_confirm)。需现场真人(Passkey + gate token)。幂等(INSERT OR IGNORE)。",
+        "summary": "stage:'both' —— 单 stage token 冒充不了 both,both token 也重放不了单 stage(一次性消费 + validate 精确匹配)。",
         "tags": [],
         "security": [
           {

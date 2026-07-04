@@ -38,10 +38,16 @@ export function getBuyerDisclosures(): { preSelect: typeof D1; preConfirm: typeo
   return { preSelect: D1, preConfirm: D2 }
 }
 
-/** 记录一次提醒 ack(append-only;同单同 stage 幂等)。stage 决定 notice_version。 */
+/** 记录一次提醒 ack(每单每 stage 一行;同版本重复 ack 幂等不刷时间)。stage 决定 notice_version。
+ *  版本升级可刷新(审计 P0 修):披露文本 bump 后旧版本 ack 失效(disclosureStageAcked 按当前版本判),此前
+ *  INSERT OR IGNORE 会让重新确认【静默 no-op】(行永远停在旧版本)→ POST 返回 ok 但 requireBothDisclosuresAcked
+ *  永远 403,在途单不可恢复地变砖。现改 upsert:版本不同才覆盖(notice_version+acked_at 同步刷新为新确认时刻)。 */
 export function recordDisclosureAck(db: Database.Database, args: { orderId: string; buyerId: string; stage: DisclosureStage; ackId: string }): void {
-  db.prepare(`INSERT OR IGNORE INTO direct_pay_disclosure_acks (id, order_id, buyer_id, stage, notice_version, acked_at)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))`).run(args.ackId, args.orderId, args.buyerId, args.stage, STAGE_VERSION[args.stage])
+  db.prepare(`INSERT INTO direct_pay_disclosure_acks (id, order_id, buyer_id, stage, notice_version, acked_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(order_id, stage) DO UPDATE SET notice_version = excluded.notice_version, acked_at = excluded.acked_at
+    WHERE excluded.notice_version != direct_pay_disclosure_acks.notice_version`)
+    .run(args.ackId, args.orderId, args.buyerId, args.stage, STAGE_VERSION[args.stage])
 }
 
 /** 某 stage 是否已 ack(且版本为当前)。 */

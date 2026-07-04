@@ -85,8 +85,6 @@ const _EN = {
   '该卖家直付已被暂停': "This seller's Direct Pay is currently suspended",
   // ── Direct Pay (Rail 1) — PR-4f-b bilingual UI wiring (non-custodial; WebAZ does not custody/verify/route) ──
   '需完成 D1/D2 Passkey 风险确认后才显示收款说明 · 可在订单页继续': 'The payment instruction is shown only after you complete the D1/D2 Passkey risk confirmations · you can continue on the order page',
-  '风险确认完成 · 这是卖家的收款说明(下单时快照,WebAZ 不验证)': 'Risk confirmation complete · This is the seller\'s payment instruction (snapshot at order time; WebAZ does not verify it)',
-  '请按此付款,然后在订单页标记"我已付款"': 'Pay accordingly, then mark "I have paid" on the order page',
   '我知道了': 'Got it',
   '需先完成 D1/D2 Passkey 风险确认,确认后才显示卖家收款说明。': 'Complete the D1/D2 Passkey risk confirmations first; the seller\'s payment instruction is shown only afterwards.',
   '完成风险确认': 'Complete risk confirmation',
@@ -102,13 +100,13 @@ const _EN = {
   '你直接付款给卖家(场外),本金不经 WebAZ': 'You pay the seller directly (off-platform); the principal never passes through WebAZ',
   '直付风险提醒:非担保交易 —— WebAZ 不托管本金、无退款能力、不代维权,也不验证卖家的付款方式或币种,仅对卖家有信誉处罚权。下单后需用 Passkey 完成两次风险确认,再标记付款。': 'Direct Pay risk notice — non-guaranteed transaction: WebAZ does not custody the principal, has NO refund capability, does not pursue claims on your behalf, and does not verify the seller\'s payment method or currency — it can only apply reputation penalties against the seller. After placing the order you must complete two risk confirmations with a Passkey, then mark the payment.',
   '我已阅读并理解上述风险': 'I have read and understood the risks above',
-  '确认(需 Passkey)': 'Confirm (Passkey required)',
   '风险披露': 'Risk disclosure',
   '直付订单(非托管)': 'Direct Pay order (non-custodial)',
   '本金不经 WebAZ —— 你直接付款给卖家(场外)': 'Principal never passes through WebAZ — you pay the seller directly (off-platform)',
   '非担保交易:WebAZ 不托管本金、无退款能力,仅对卖家有信誉处罚权': 'Non-guaranteed transaction: WebAZ does not custody the principal and has NO refund capability — it can only apply reputation penalties against the seller',
   // 融合付款弹窗 + 首单 UX(本次优化)
   '了解直接付款(需 Passkey)': 'I understand direct pay (Passkey required)',
+  '下一步': 'Next',
   '请按以下信息付款': 'Pay using the details below',
   '风险确认已完成。这是卖家收款信息(下单时快照,WebAZ 不验证也不经手)。请【场外】完成付款后回来标记。': 'Risk confirmation complete. These are the seller\'s payment details (snapshot at order time; WebAZ neither verifies nor handles them). Pay OFF-PLATFORM, then come back to mark it.',
   '收款账号 / 说明': 'Payee account / instructions',
