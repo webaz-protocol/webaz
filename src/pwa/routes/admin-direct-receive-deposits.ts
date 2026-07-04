@@ -25,6 +25,8 @@ import { listStoreVerifications, reviewStoreVerification, type StoreVerification
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'
 import { recordFeePrepayTopup, recordFeePrepayAdjustment, recordFeePrepayRefund, getDirectPayFeeAccount } from '../../direct-pay-fee-ar.js'
 import { listAllRequests, getRequest as getFeePrepayRequest, approveFeePrepayRequest, rejectFeePrepayRequest } from '../../direct-pay-fee-prepay-request.js'
+// N3:审批结果通知卖家(approve 入账/reject 驳回;此前审批后卖家无任何未读信号)。
+import { createNotification } from '../../layer2-business/L2-6-notifications/notification-engine.js'
 
 export interface AdminDirectReceiveDepositsDeps {
   db: Database.Database
@@ -219,13 +221,21 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
     (req) => (data) => { const d = data as { request_id?: string; seller_id?: string; amount_units?: number; method?: string } | null
       const fr = getFeePrepayRequest(db, str(req.params.id))
       return !!d && !!fr && d.request_id === str(req.params.id) && d.seller_id === fr.seller_id && Number(d.amount_units) === Number(fr.amount_units) && str(d.method) === str(req.body?.method) },
-    (req, adminId) => { const r = approveFeePrepayRequest(db, { requestId: str(req.params.id), adminId, method: str(req.body?.method), reviewNote: opt(req.body?.note) }); return r.ok ? { ok: true, id: r.paymentId } : { ok: false, error: r.error } },
+    (req, adminId) => { const fr = getFeePrepayRequest(db, str(req.params.id))
+      const r = approveFeePrepayRequest(db, { requestId: str(req.params.id), adminId, method: str(req.body?.method), reviewNote: opt(req.body?.note) })
+      if (r.ok && fr) { const amt = Number(fr.amount_units) / 1_000_000
+        try { createNotification(db, fr.seller_id, null, 'dp_fee_prepay_approved', '✅ 预充值已确认入账', `你的平台服务费预充值 ${amt} USDC 已确认入账,直付新单额度已恢复。`, { templateKey: 'dp_fee_prepay_approved', params: { amount: amt } }) } catch { /* 通知失败不阻断入账 */ } }
+      return r.ok ? { ok: true, id: r.paymentId } : { ok: false, error: r.error } },
     (req) => { const fr = getFeePrepayRequest(db, str(req.params.id)); return { targetId: fr?.seller_id ?? str(req.params.id), detail: { request_id: str(req.params.id), amount_units: fr?.amount_units, method: str(req.body?.method) } } }))
 
   // POST /api/admin/direct-receive/fee-prepay-requests/:id/reject — ROOT + Passkey(不动钱)。purpose_data 绑 request_id。
   app.post('/api/admin/direct-receive/fee-prepay-requests/:id/reject', gatedIngress('direct_pay_fee_prepay_reject',
     (req) => (data) => { const d = data as { request_id?: string } | null; return !!d && d.request_id === str(req.params.id) },
-    (req, adminId) => rejectFeePrepayRequest(db, { requestId: str(req.params.id), adminId, reviewNote: opt(req.body?.note) }),
+    (req, adminId) => { const fr = getFeePrepayRequest(db, str(req.params.id))
+      const r = rejectFeePrepayRequest(db, { requestId: str(req.params.id), adminId, reviewNote: opt(req.body?.note) })
+      if (r.ok && fr) { const note = opt(req.body?.note) ? `(${opt(req.body?.note)})` : ''
+        try { createNotification(db, fr.seller_id, null, 'dp_fee_prepay_rejected', '❌ 预充值申请未通过', `你的平台服务费预充值申请未通过${note}。请核对付款凭据后重新提交,或联系平台。`, { templateKey: 'dp_fee_prepay_rejected', params: { note } }) } catch { /* 通知失败不阻断 */ } }
+      return r },
     (req) => ({ targetId: str(req.params.id), detail: { request_id: str(req.params.id) } })))
 
   // POST /api/admin/direct-receive/readiness — ROOT + 真人 Passkey:返回【完整】Direct Pay launch readiness(blockers + facts,
