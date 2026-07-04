@@ -17087,7 +17087,7 @@ async function p2pConnectTo(peerId) {
 
   const offer = await pc.createOffer()
   await pc.setLocalDescription(offer)
-  await POST('/signaling/send', { to: peerId, type: 'offer', data: offer })
+  await POST('/signaling/send', { to: peerId, type: 'offer', data: offer }); if (window.pollBoost) pollBoost()   // 主动建 P2P 会话 → 握手期间信令保持 3s
   return entry
 }
 
@@ -17271,8 +17271,8 @@ async function p2pStart() {
   p2pStop()
   await p2pHeartbeatTick()
   await p2pSignalingTick()
-  _heartbeatTimer = setInterval(p2pHeartbeatTick, 60_000)
-  _signalingTimer = setInterval(p2pSignalingTick, 3_000)
+  _heartbeatTimer = setInterval(() => { if (!document.hidden) p2pHeartbeatTick() }, 60_000)   // 后台/锁屏暂停(poll-governor)
+  _signalingTimer = setInterval(() => { if (!window.pollGate || window.pollGate('signaling')) p2pSignalingTick() }, 3_000); window._p2pSigTick = p2pSignalingTick   // 按需化:governor 定 3s/60s 节奏+后台暂停(缺 governor fail-open 维持 3s);_p2pSigTick 供回前台补拉
 }
 
 function p2pStop() {
@@ -17313,7 +17313,7 @@ window.p2pUnpinContent = async (hash) => {
 async function p2pSignalingTick() {
   if (!state.user) return
   try {
-    const data = await GET('/signaling/poll')
+    const data = await GET('/signaling/poll'); if (window.pollActivity) pollActivity('signaling', (data.signals || []).length)   // 有信令进来 → governor 恢复 3s 快节奏
     for (const s of (data.signals || [])) {
       try { await p2pHandleSignal(s) } catch (e) { console.warn('[P2P] signal handle err', e) }
     }
