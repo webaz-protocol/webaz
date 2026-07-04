@@ -26,9 +26,9 @@ export function feeUnitsForOrder(totalAmountU: Units, source: string | null | un
 
 /** 开放(未完全关闭、仍会 accrue 费)的 direct_p2p 单状态。完成单已在 receivables(借记预充值),故【不含】completed/终态。 */
 export const OPEN_FEE_ACCRUING_STATUSES = [
-  'created', 'direct_pay_window', 'direct_expired_unconfirmed',
+  'created', 'pending_accept', 'direct_pay_window', 'direct_expired_unconfirmed',
   'accepted', 'shipped', 'picked_up', 'in_transit', 'delivered', 'confirmed', 'disputed',
-] as const
+] as const   // pending_accept(手动接单待确认)保守计入在途:未接单也占预估费口径,防开一堆待接单绕过预充值门
 
 /** 某 SUM 查询结果 → units(空表/NULL → 0)。SUM 的是整数 units 值存成的 REAL,toUnits 精确还原。 */
 function sumUnits(db: Database.Database, sql: string, sellerId: string): Units {

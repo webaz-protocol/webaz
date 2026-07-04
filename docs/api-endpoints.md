@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (746 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (750 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -485,6 +485,9 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/orders/:id/mutual-cancel/decline` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:61 |
 | POST | `/api/orders/:id/mutual-cancel/propose` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:42 |
 | POST | `/api/orders/:id/mutual-cancel/withdraw` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:68 |
+| POST | `/api/orders/:id/pending-accept/accept` | 🔐 |  | 卖家确认接单 → 开付款窗口(deadline 此刻起表;收款信息此刻起买家可见 —— orders-read 状态门放行) | src/pwa/routes/direct-pay-pending-accept.ts:73 |
+| POST | `/api/orders/:id/pending-accept/cancel` | 🔐 |  | 买家撤单(接单前反悔)→ 无责取消 + 回补库存 | src/pwa/routes/direct-pay-pending-accept.ts:112 |
+| POST | `/api/orders/:id/pending-accept/decline` | 🔐 |  | 卖家谢绝(无法发货/物流不可达等;理由可选,买家可见)→ 无责取消 + 回补库存 | src/pwa/routes/direct-pay-pending-accept.ts:93 |
 | GET | `/api/orders/:order_id/buyer-rating` | 🔐 |  | 查 seller → buyer 评价（双盲遮蔽：buyer 看不到，除非自己也评过 OR 窗口到期） | src/pwa/routes/ratings.ts:113 |
 | POST | `/api/orders/:order_id/buyer-rating` | 🔐 |  | seller → buyer 反向评价 | src/pwa/routes/ratings.ts:83 |
 | GET | `/api/orders/:order_id/rating` | 🔐 |  | 查 buyer → seller 评价（双盲遮蔽：seller 视角同样） | src/pwa/routes/ratings.ts:132 |
@@ -618,6 +621,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | PATCH | `/api/secondhand/:id` | 🔐 |  | 5. 编辑（仅 owner；可改 price / description / negotiable / status / fulfillment） | src/pwa/routes/secondhand.ts:155 |
 | POST | `/api/secondhand/:id/order` | 🔐 |  | 6. 下单（CAS 锁库存）— money/escrow + pragma FK-OFF 窗口,保持同步,Phase 3 随资金路径迁移 | src/pwa/routes/secondhand.ts:193 |
 | GET | `/api/secondhand/mine` | 🔐 |  | 3. 我的二手发布 | src/pwa/routes/secondhand.ts:116 |
+| POST | `/api/seller/accept-mode` | 🔐 |  |  | src/pwa/routes/direct-pay-pending-accept.ts:49 |
 | POST | `/api/seller/apply-quota-increase` | 🔐 |  |  | src/pwa/routes/seller-quota.ts:190 |
 | GET | `/api/seller/insights` | 🔐 |  | 数据中心（30d GMV / 7d 曲线 / Top 5 / 客户洞察 / 状态分布） | src/pwa/routes/seller-quota.ts:71 |
 | GET | `/api/seller/quota-status` | 🔐 |  | 配额状态 | src/pwa/routes/seller-quota.ts:45 |

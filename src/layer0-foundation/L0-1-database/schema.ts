@@ -673,6 +673,11 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_per_tx_cap_units_snapshot INTEGER`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_seller_breaker_snapshot INTEGER`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE orders ADD COLUMN direct_pay_decision_code TEXT`) } catch { /* 已存在 */ }
+  // 手动接单模式(v16):卖家可选 auto/manual(单品覆盖 ?? 店铺默认 ?? auto);manual 直付单先进 pending_accept。
+  try { db.exec(`ALTER TABLE products ADD COLUMN accept_mode TEXT`) } catch { /* 已存在 */ }               // 'auto'|'manual'|NULL(=继承店铺默认)
+  try { db.exec(`ALTER TABLE users ADD COLUMN store_accept_mode TEXT`) } catch { /* 已存在 */ }            // 店铺级默认 'auto'|'manual'|NULL(=auto)
+  try { db.exec(`ALTER TABLE orders ADD COLUMN accept_mode_snapshot TEXT`) } catch { /* 已存在 */ }        // 下单时快照(卖家事后改不影响在途单)
+  try { db.exec(`ALTER TABLE orders ADD COLUMN pending_accept_deadline TEXT`) } catch { /* 已存在 */ }     // 接单窗(专属 cron 读;超时无责取消+回补库存)
   try { db.exec(`ALTER TABLE wallets ADD COLUMN fee_staked REAL DEFAULT 0`) } catch { /* 已存在 */ }
   // PR-4b-1: direct_receive_deposits 生产收款 provenance 快照列(既有库补列;additive nullable,无写入方,无 flow 启用)。
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_receipt_ref TEXT`) } catch { /* 已存在 */ }

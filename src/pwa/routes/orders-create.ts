@@ -306,7 +306,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     if (toUnits(wallet.balance) < totalAmountU + donationAmountU) return void res.json({ error: `余额不足：需 ${(totalAmount + donationAmount).toFixed(2)} WAZ（含 ${donationAmount} WAZ 捐赠），当前 ${wallet.balance} WAZ` })
     const now = new Date()
     const orderId = generateId('ord')
-    let autoAccepted = false
+    let autoAccepted = false; const _acceptModeAuto = (((product as { accept_mode?: string | null }).accept_mode ?? (await dbOne<{ store_accept_mode: string | null }>('SELECT store_accept_mode FROM users WHERE id = ?', [product.seller_uid]))?.store_accept_mode) === 'auto')  // 接单模式 v16:单品??店铺默认;'auto'→paid 后系统自动接单;escrow manual/未设=原流程(托管中间态+24h 超时退款)零钱路改动;tx 外 seam 读
     // P0: 整个下单流程原子化 — INSERT order + UPDATE wallet + UPDATE products + transition 任一步抛错全部回滚
     try {
       db.transaction(() => {
@@ -443,11 +443,11 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
           auditSponsorChainCross(orderId, user.id as string, String(product.seller_uid), buyer.sponsor_path)
         } catch (e) { console.error('[M3-C audit]', e) }
 
-        // 检查卖家是否有 auto_accept Skill
-        if (shouldAutoAccept(db, orderId)) {
+        // 自动接单:卖家接单模式 'auto'(v16)或 auto_accept Skill。
+        if (_acceptModeAuto || shouldAutoAccept(db, orderId)) {
           const sysUser = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string } | undefined
           if (sysUser) {
-            const ar = transition(db, orderId, 'accepted', sysUser.id, [], '⚡ auto_accept Skill 自动接单')
+            const ar = transition(db, orderId, 'accepted', sysUser.id, [], _acceptModeAuto ? '⚡ 自动接单(卖家接单模式设置)' : '⚡ auto_accept Skill 自动接单')
             if (ar.success) { notifyTransition(db, orderId, 'paid', 'accepted'); autoAccepted = true }
           }
         }

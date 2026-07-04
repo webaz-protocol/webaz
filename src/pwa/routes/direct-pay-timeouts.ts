@@ -27,6 +27,7 @@ export interface DirectPayTimeoutResult {
   graceCancelled: string[]   // order ids: direct_expired_unconfirmed → cancelled (宽限期满)
   pqRecourseOpened: string[] // order ids: payment_query 买家静默 → 系统代发起取消,开买家申诉窗(不关单)
   pqCancelled: string[]      // order ids: payment_query → cancelled (申诉窗满)
+  acceptExpired: string[]    // order ids: pending_accept → cancelled (接单窗满,v16;无责+回补,没人付过钱)
 }
 
 /** 货款协商买家申诉窗(天),governance 可调,默认 7d。与 request_cancel 同源 param,保证手动/自动一致。 */
@@ -54,6 +55,31 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
   const graceCancelled: string[] = []
   const pqRecourseOpened: string[] = []
   const pqCancelled: string[] = []
+  const acceptExpired: string[] = []
+
+  // E. 手动接单窗超时(v16):pending_accept 过 pending_accept_deadline → 无责取消 + 回补库存。
+  //    零资金(此阶段没人付过钱 —— 时序门);双方通知。WHERE 硬门:仅 now > deadline 命中。
+  const acceptRows = db.prepare(`
+    SELECT id, product_id, quantity, buyer_id, seller_id FROM orders
+    WHERE status = 'pending_accept'
+      AND payment_rail = 'direct_p2p'
+      AND pending_accept_deadline IS NOT NULL
+      AND datetime(pending_accept_deadline) < datetime('now')
+    LIMIT 1000
+  `).all() as Array<{ id: string; product_id: string; quantity: number; buyer_id: string; seller_id: string }>
+  for (const { id, product_id, quantity, buyer_id, seller_id } of acceptRows) {
+    let done = false
+    db.transaction(() => {
+      const r = transition(db, id, 'cancelled', SYS, [], '手动接单:卖家超时未确认接单,系统无责取消(付款前,零资金)')
+      if (!r.success) return
+      restorePreShipDirectPayStock(db, { fromStatus: 'pending_accept', productId: product_id, quantity })
+      acceptExpired.push(id); done = true
+    })()
+    if (done) {
+      try { createNotification(db, buyer_id, id, 'direct_pay_accept_expired', '⏰ 卖家超时未接单,订单已取消', '卖家未在接单窗口内确认,订单已自动取消 —— 你尚未付款,无需任何操作。可换商品或联系卖家后重新下单。', { templateKey: 'dp_pending_accept_expired_buyer', params: {} }) } catch (e) { console.warn('[direct-pay-timeouts] notify accept-expired buyer:', (e as Error).message) }
+      try { createNotification(db, seller_id, id, 'direct_pay_accept_expired', '⏰ 订单因超时未接单已取消', '你未在接单窗口内确认接单,订单已自动取消,库存已恢复。频繁超时会影响买家体验,可考虑改用自动接单或缩短响应时间。', { templateKey: 'dp_pending_accept_expired_seller', params: {} }) } catch (e) { console.warn('[direct-pay-timeouts] notify accept-expired seller:', (e as Error).message) }
+    }
+  }
 
   // A. 付款窗口超时 → 可争议态(非静默关单)+ 退费用质押 + 设宽限期
   const windowRows = db.prepare(`
@@ -148,7 +174,7 @@ export function runDirectPayTimeoutSweep(deps: DirectPayTimeoutDeps): DirectPayT
     if (done) { pqCancelled.push(id); try { notifyTransition(db, id, 'payment_query', 'cancelled') } catch (e) { console.warn('[direct-pay-timeouts] notify pq-cancel:', (e as Error).message) } }  // 通知买卖双方(cron 系统关单也要发,route 之外)
   }
 
-  return { windowExpired, graceCancelled, pqRecourseOpened, pqCancelled }
+  return { windowExpired, graceCancelled, pqRecourseOpened, pqCancelled, acceptExpired }
 }
 
 export function startDirectPayTimeoutCron(deps: DirectPayTimeoutDeps): void {
@@ -156,8 +182,8 @@ export function startDirectPayTimeoutCron(deps: DirectPayTimeoutDeps): void {
   setInterval(() => {
     try {
       const r = runDirectPayTimeoutSweep(deps)
-      if (r.windowExpired.length || r.graceCancelled.length || r.pqRecourseOpened.length || r.pqCancelled.length) {
-        console.log(`[direct-pay-timeouts] window→expired ${r.windowExpired.length}, grace→cancelled ${r.graceCancelled.length}, pq→recourse ${r.pqRecourseOpened.length}, pq→cancelled ${r.pqCancelled.length}`)
+      if (r.windowExpired.length || r.graceCancelled.length || r.pqRecourseOpened.length || r.pqCancelled.length || r.acceptExpired.length) {
+        console.log(`[direct-pay-timeouts] window→expired ${r.windowExpired.length}, grace→cancelled ${r.graceCancelled.length}, pq→recourse ${r.pqRecourseOpened.length}, pq→cancelled ${r.pqCancelled.length}, accept→expired ${r.acceptExpired.length}`)
       }
     } catch (e) {
       console.error('[direct-pay-timeouts-cron]', e)

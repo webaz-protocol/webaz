@@ -261,9 +261,10 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
   app.get('/api/orders/:id/direct-pay-qr', async (req, res) => {
     const user = auth(req, res); if (!user) return
     const orderId = String(req.params.id)
-    const order = await dbOne<{ buyer_id: string; seller_id: string; payment_rail: string; direct_pay_account_snapshot: string | null }>(
-      'SELECT buyer_id, seller_id, payment_rail, direct_pay_account_snapshot FROM orders WHERE id = ?', [orderId])
+    const order = await dbOne<{ buyer_id: string; seller_id: string; payment_rail: string; status: string; direct_pay_account_snapshot: string | null }>(
+      'SELECT buyer_id, seller_id, payment_rail, status, direct_pay_account_snapshot FROM orders WHERE id = ?', [orderId])
     if (!order || order.payment_rail !== 'direct_p2p' || order.buyer_id !== user.id) return void res.status(404).end()
+    if (order.status === 'pending_accept') return void res.status(404).end()              // 手动接单待确认:状态门,接单前不出示收款码(v16)
     if (!requireBothDisclosuresAcked(db, orderId).ok) return void res.status(404).end()   // 未 ack:与"无 QR"同样 404,不泄露存在性
     let snap: { qr_ref?: string | null } = {}
     try { snap = order.direct_pay_account_snapshot ? JSON.parse(order.direct_pay_account_snapshot) : {} } catch { snap = {} }

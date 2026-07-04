@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (746 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (750 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -5697,6 +5697,45 @@
         ]
       }
     },
+    "/api/orders/:id/pending-accept/accept": {
+      "post": {
+        "summary": "卖家确认接单 → 开付款窗口(deadline 此刻起表;收款信息此刻起买家可见 —— orders-read 状态门放行)",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/pending-accept/cancel": {
+      "post": {
+        "summary": "买家撤单(接单前反悔)→ 无责取消 + 回补库存",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/pending-accept/decline": {
+      "post": {
+        "summary": "卖家谢绝(无法发货/物流不可达等;理由可选,买家可见)→ 无责取消 + 回补库存",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/orders/:order_id/buyer-rating": {
       "get": {
         "summary": "查 seller → buyer 评价（双盲遮蔽：buyer 看不到，除非自己也评过 OR 窗口到期）",
@@ -7208,6 +7247,17 @@
     "/api/secondhand/mine": {
       "get": {
         "summary": "3. 我的二手发布",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/seller/accept-mode": {
+      "post": {
+        "summary": "POST /api/seller/accept-mode",
         "tags": [],
         "security": [
           {

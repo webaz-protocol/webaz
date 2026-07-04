@@ -20,10 +20,12 @@
 import type Database from 'better-sqlite3'
 import { requireBothDisclosuresAcked } from '../direct-pay-disclosures.js'
 
-/** 买家自视角:未 both-acked 的 direct_p2p 订单,删收款目标(instruction 原文 + 账号快照 qr_ref)。就地改 o。 */
+/** 买家自视角:未 both-acked 的 direct_p2p 订单,删收款目标(instruction 原文 + 账号快照 qr_ref)。就地改 o。
+ *  手动接单(v16):pending_accept 阶段【状态门】无条件遮蔽 —— 卖家还没确认能发货,买家不该拿到任何收款信息
+ *  (哪怕已 ack 披露;时序门=非托管唯一付款风控,接单后才起表付款窗)。 */
 export function redactUnackedDirectPayTarget(db: Database.Database, o: Record<string, unknown>, userId: string): void {
   if (o.payment_rail !== 'direct_p2p' || o.buyer_id !== userId) return
-  if (requireBothDisclosuresAcked(db, o.id as string).ok) return
+  if (o.status !== 'pending_accept' && requireBothDisclosuresAcked(db, o.id as string).ok) return
   delete o.direct_pay_instruction_snapshot
   if (o.direct_pay_account_snapshot != null) {
     try { const s = JSON.parse(o.direct_pay_account_snapshot as string); delete s.qr_ref; o.direct_pay_account_snapshot = JSON.stringify(s) }

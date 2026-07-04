@@ -544,6 +544,7 @@ function getActiveDeadline(order: Order, db?: Database.Database) {
   // 修：picked_up 状态视为"已揽收，等运输/投递"，下一个 deadline 是 delivery_deadline
   // QA 轮 7 P1（另一条）：disputed 状态下没读 dispute_cases 的 arbitrate_deadline → agent 不知道仲裁还有多久
   const deadlineMapMarket: Record<string, string> = {
+    pending_accept: 'pending_accept_deadline',   // 手动接单(v16):等卖家确认,超时无责取消
     created:   'pay_deadline',
     paid:      'accept_deadline',
     accepted:  'ship_deadline',
