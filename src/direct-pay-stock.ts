@@ -39,8 +39,8 @@
  */
 import type Database from 'better-sqlite3'
 
-/** 允许自动回补的取消来源状态(= A 类:货从未出库)。 */
-export const PRE_SHIP_RESTOCK_STATUSES = new Set(['direct_pay_window', 'direct_expired_unconfirmed', 'payment_query', 'accepted'])
+/** 允许自动回补的取消来源状态(= A 类:货从未出库)。pending_accept=手动接单待确认(v16),付款前必然未出库。 */
+export const PRE_SHIP_RESTOCK_STATUSES = new Set(['pending_accept', 'direct_pay_window', 'direct_expired_unconfirmed', 'payment_query', 'accepted'])
 
 /** 回补库存(仅 A 类 pre-ship 来源;B 类已出库来源拒绝 —— 走退货验收上架)。返回是否真的回补了。 */
 export function restorePreShipDirectPayStock(db: Database.Database, args: { fromStatus: string; productId: string; quantity: number }): boolean {

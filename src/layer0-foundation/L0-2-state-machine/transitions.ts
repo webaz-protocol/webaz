@@ -27,6 +27,7 @@ export type OrderStatus =
   | 'refunded_full'         // 仲裁裁定全额退款，订单作废
   | 'dispute_dismissed'     // 争议被驳回（无效）
   | 'expired'               // 订单超时自动失败（通用兜底）
+  | 'pending_accept' // 手动接单模式:下单后等卖家确认接单(付款前;直付轨此阶段不展示收款信息)
   // ── Direct Pay (Rail 1) 直付专属状态 ───────────────────────────
   | 'direct_pay_window'          // Rail1: 卖家已质押平台费,展示收款方式,等买家付款(直付/场外)
   | 'direct_expired_unconfirmed' // Rail1: 付款窗口超时未标记 —— 不静默关单,留买家争议/确认窗口
@@ -72,6 +73,28 @@ export const VALID_TRANSITIONS: Record<string, Transition> = {
     allowedRoles: ['system'],   // 直付下单路由锁定卖家费用质押后,以 system 显式推进(非超时驱动)
     requiresEvidence: false,
     description: 'Rail1 直付:卖家已质押平台费、展示收款方式,进入付款窗口'
+  },
+  // ── 手动接单模式(accept_mode='manual',v16):付款前先等卖家确认接单 ──────────
+  //   直付轨:created→pending_accept(替代 created→direct_pay_window),卖家接单才进付款窗口 ——
+  //   非托管无 hold 可言,时序门(接单前不出示收款信息)是唯一正确的付款风控。
+  //   escrow 轨不用本状态:escrow 本身就是条件中间态(付款进托管,接单才继续,超时自动全额退回)。
+  'created→pending_accept': {
+    allowedRoles: ['system'],   // 建单路由按 accept_mode 快照以 system 推进(与 created→direct_pay_window 同模式)
+    requiresEvidence: false,
+    description: '手动接单:订单等待卖家确认接单(付款前,不展示收款信息)'
+  },
+  'pending_accept→direct_pay_window': {
+    allowedRoles: ['seller', 'system'],
+    requiresEvidence: false,
+    description: '卖家确认接单 → 进入直付付款窗口(此刻起买家方可见收款信息)'
+  },
+  'pending_accept→cancelled': {
+    // deadlineField 供专属 cron(direct-pay-timeouts.ts)读取;故意不设 autoFaultState →
+    // 通用 engine.checkTimeouts 绝不触发本转移(会漏库存回补等副作用)。超时=无责取消(没人付过钱)。
+    allowedRoles: ['seller', 'buyer', 'system'],
+    deadlineField: 'pending_accept_deadline',
+    requiresEvidence: false,
+    description: '接单前取消:卖家谢绝 / 买家撤单 / 超时未接单(system) → 无责取消 + 回补库存'
   },
   'direct_pay_window→accepted': {
     allowedRoles: ['buyer'],
@@ -384,6 +407,7 @@ export const CURRENT_RESPONSIBLE: Record<string, UserRole> = {
   direct_pay_window:          'buyer',   // Rail1: 等买家付款并标记
   direct_expired_unconfirmed: 'buyer',   // Rail1: 等买家确认未付 或 升级争议
   payment_query:              'buyer',   // Rail1: 卖家报未收款,等买家协商响应(取消/主张已付)
+  pending_accept:             'seller',  // 手动接单:等卖家确认接单(超时无责取消)
 }
 
 /** Phase 1 self-fulfill 覆盖表：seller 一人承担 shipped/picked_up/in_transit 全程 */
@@ -421,6 +445,7 @@ export const ORDER_STATE_MEANINGS: Record<OrderStatus, { zh: string; en: string 
   direct_pay_window:           { zh: 'Rail1 直付:已质押平台费,等买家付款(协议不持货款)', en: 'Rail1 direct-pay: fee-staked, awaiting buyer off-protocol payment (protocol holds no funds)' },
   direct_expired_unconfirmed:  { zh: 'Rail1 直付:付款窗口超时未标记(不静默关单,留争议/确认窗口)', en: 'Rail1 direct-pay: payment window expired unmarked (not silently closed; dispute/confirm window open)' },
   payment_query:               { zh: 'Rail1 直付:卖家报未收货款,双方协商中(非仲裁;暂停履约)', en: 'Rail1 direct-pay: seller reported non-receipt, buyer↔seller negotiating (not arbitration; fulfillment paused)' },
+  pending_accept:              { zh: '手动接单:等待卖家确认接单(付款前;直付轨此阶段不展示收款信息,超时无责取消)', en: 'manual accept: awaiting seller acceptance (pre-payment; direct-pay hides payment info at this stage; times out to no-fault cancel)' },
 }
 
 /** 订单/争议生命周期契约 —— 集成方 agent 读它即懂"订单怎么流转 + 每步谁驱动 + 何时 + 含义"。 */
