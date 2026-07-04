@@ -13422,7 +13422,7 @@ function getActions(order, isBuyer, isSeller, isLogistic) {
   if ((isLogistic || isSelfFulfillSeller) && s === 'in_transit')
     return [{ action: 'deliver', label: '📬 确认投递', style: 'success', needsEvidence: true, noteLabel: '投递凭证', evidencePlaceholder: '门牌照片描述 / 收件人姓名 / 签收时间', helperText: isSelfFulfillSeller ? '自履约投递需留存签收/门牌/交付说明，买家确认后才结算。' : '' }]
   if (isBuyer && s === 'delivered')
-    return [{ action: 'confirm', label: '确认收货', style: 'success' }, { action: 'dispute', label: '发起争议', style: 'danger', needsEvidence: true, noteLabel: '争议理由', evidencePlaceholder: '描述问题（货不对版/货损/未收到等）' }]
+    return [{ action: 'confirm', label: '确认收货', style: 'success' }, { action: 'dispute', label: '未收到货 / 有问题？', style: 'danger', needsEvidence: true, noteLabel: '争议理由', evidencePlaceholder: '描述问题（未收到 / 货不对版 / 货损等）', helperText: '未收到货？可先联系卖家核实（可能晚到或放了代收点）。确认异常再提交 —— 发起争议后自动确认将暂停，不会因超时被视为已收货。' }]
   return null
 }
 
