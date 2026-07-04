@@ -876,7 +876,7 @@ function statusBadge(status, rail) {
     expired:             ['gray',   t('已过期')],
   }
   // 直付(非托管)争议终态:不发生退款/资金释放 → 用信誉裁决语义(dpTerminalBadge,见 app-order-labels.js)
-  const [color, label] = (rail === 'direct_p2p' && ((window.dpTerminalBadge && window.dpTerminalBadge(status)) || (window.dpNegotiationBadge && window.dpNegotiationBadge(status)))) || map[status] || ['gray', status]
+  const [color, label] = (rail === 'direct_p2p' && ((window.dpTerminalBadge && window.dpTerminalBadge(status)) || (window.dpNegotiationBadge && window.dpNegotiationBadge(status)) || (window.dpAcceptBadge && window.dpAcceptBadge(status)))) || map[status] || ['gray', status]
   return `<span class="badge badge-${color}">${label}</span>`
 }
 
@@ -10437,7 +10437,7 @@ window.openBuySheet = function(productId) {
         </div>
       </details>
 
-      ${window.dpRailSelectorHtml ? window.dpRailSelectorHtml(prod.id, prod.price) : ''}
+      ${window.dpRailSelectorHtml ? window.dpRailSelectorHtml(prod.id, prod.price) : ''}${window.shipRegionBlockHtml ? window.shipRegionBlockHtml(prod.id) : ''}
       <div id="buy-msg" style="margin-top:10px"></div>
       <div id="tax-preview-slot" style="margin-top:8px"></div>
 
@@ -11285,7 +11285,7 @@ window.doBuy = async (productId, price) => {
   const qtyInp = document.getElementById('inp-qty')
   const quantity = qtyInp ? Math.max(1, Math.min(Number(qtyInp.max) || 1, Math.floor(Number(qtyInp.value) || 1))) : 1
   const payment_rail = window.dpSelectedRail ? window.dpSelectedRail() : 'escrow'; if (!payment_rail) { const _dp=document.querySelector('input[name="dp-rail"]:checked')?.value==='direct_p2p'; const _m=document.getElementById('buy-msg'); if(_m) _m.innerHTML = alert$('error', _dp ? t('直付暂未就绪或不可用,请稍候重试或改选支付方式') : t('请选择支付方式')); const _b=document.getElementById('dp-rail-block'); if(_b) _b.open=true; return } if (window.closeSheet) window.closeSheet()  // #28 空 rail 一律拦(永不静默落 escrow);[PRELAUNCH-WAZ-SIM] 未选→空;校验通过才关 sheet(块内 return 不关→提示+展开可见,修 P2)
-  const res = await POST('/orders', { product_id: productId, shipping_address: addr, notes, sponsor_hint, coupon_code, delivery_window, variant_id, expected_price, buy_insurance, anonymous_recipient, donation_pct, quantity, payment_rail, direct_receive_account_id: (payment_rail === 'direct_p2p' && window.dpSelectedAccountId) ? (window.dpSelectedAccountId() || undefined) : undefined, ...giftPayload })
+  const res = await POST('/orders', { product_id: productId, shipping_address: addr, notes, sponsor_hint, coupon_code, delivery_window, variant_id, expected_price, buy_insurance, anonymous_recipient, donation_pct, quantity, payment_rail, ship_to_region: (window.shipSelectedRegion ? window.shipSelectedRegion() : undefined), direct_receive_account_id: (payment_rail === 'direct_p2p' && window.dpSelectedAccountId) ? (window.dpSelectedAccountId() || undefined) : undefined, ...giftPayload })
   if (payment_rail === 'direct_p2p') return void (window.dpAfterCreate && window.dpAfterCreate(res))
   if (res.error_code === 'PRICE_CHANGED') {
     document.getElementById('buy-msg').innerHTML = alert$('error', `${t('价格已变动')}：${window.fmtPrice(res.old_price)} → ${window.fmtPrice(res.new_price)} · ${t('请刷新页面')}`)
@@ -12172,7 +12172,7 @@ function orderStageTimeline(order, history) {
     return `<div style="background:#fff;border:0.5px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:10px">
       <div style="width:8px;height:8px;border-radius:50%;background:${c};flex-shrink:0"></div>
       <div style="flex:1">
-        <div style="font-size:14px;font-weight:600;color:#1f2937">${(order.payment_rail === 'direct_p2p' && ((window.dpTerminalLabel && window.dpTerminalLabel(order.status)) || (window.dpNegotiationLabel && window.dpNegotiationLabel(order.status)))) || labelMap[order.status] || order.status}</div>
+        <div style="font-size:14px;font-weight:600;color:#1f2937">${(order.payment_rail === 'direct_p2p' && ((window.dpTerminalLabel && window.dpTerminalLabel(order.status)) || (window.dpNegotiationLabel && window.dpNegotiationLabel(order.status)) || (window.dpAcceptLabel && window.dpAcceptLabel(order.status)))) || labelMap[order.status] || order.status}</div>
         <div style="font-size:11px;color:#8e8e93;margin-top:2px">${t('查看下方时间线了解流转详情')}</div>
       </div>
     </div>`
@@ -12501,7 +12501,7 @@ async function renderOrderDetail(app, orderId) {
       ${order.content_hash_at_order ? `<div class="detail-row"><span class="detail-label">🔒 ${t('P2P 内容哈希')}</span><span class="detail-value" style="font-family:monospace;font-size:11px;word-break:break-all">${escHtml(order.content_hash_at_order)}</span></div>` : ''}
       ${activeDeadline?.deadline ? `<div class="detail-row"><span class="detail-label">${t('截止')}</span><span class="detail-value" style="color:${isOverdue ? '#dc2626' : '#6b7280'};font-size:12px">${fmtTime(activeDeadline.deadline)}</span></div>` : ''}
     </div>
-    ${order.payment_rail === 'direct_p2p' && isBuyer && window.dpOrderDisclosureHtml ? window.dpOrderDisclosureHtml(order) : ''}${window.dpReconcileCard ? window.dpReconcileCard(order, isSeller) : ''}${order.payment_rail === 'direct_p2p' && window.dpNegotiationCard ? window.dpNegotiationCard(order) : ''}${window.dpCancelRefundCard ? window.dpCancelRefundCard(order, isBuyer, isSeller) : ''}${window.mutualCancelCard ? window.mutualCancelCard(order, isBuyer, isSeller) : ''}
+    ${order.payment_rail === 'direct_p2p' && isBuyer && window.dpOrderDisclosureHtml ? window.dpOrderDisclosureHtml(order) : ''}${window.dpReconcileCard ? window.dpReconcileCard(order, isSeller) : ''}${order.payment_rail === 'direct_p2p' && window.dpNegotiationCard ? window.dpNegotiationCard(order) : ''}${window.dpCancelRefundCard ? window.dpCancelRefundCard(order, isBuyer, isSeller) : ''}${window.dpPendingAcceptCard ? window.dpPendingAcceptCard(order, isBuyer, isSeller) : ''}${window.mutualCancelCard ? window.mutualCancelCard(order, isBuyer, isSeller) : ''}
 
     ${trackingHtml}
     ${disputeHtml}
@@ -15486,7 +15486,7 @@ async function renderSeller(app) {
       ${subTabBtn('settings', '⚙️ ' + t('设置'))}
     </div>
   `
-  const settingsSection = sellerSubTab === 'settings' ? ((window.dpSellerReadinessSection ? window.dpSellerReadinessSection() : '') + (window.dpSellerFeeSection ? window.dpSellerFeeSection() : '') + (window.dpFeeRequestSection ? window.dpFeeRequestSection() : '') + (window.dpSellerDeferralSection ? window.dpSellerDeferralSection() : '') + (window.dpSellerProductVerifySection ? window.dpSellerProductVerifySection() : '') + (window.dpSellerStoreVerifySection ? window.dpSellerStoreVerifySection() : '') + (window.dpSellerInstructionSection ? window.dpSellerInstructionSection() : '') + (window.draAccountsSection ? window.draAccountsSection() : '')) : ''
+  const settingsSection = sellerSubTab === 'settings' ? ((window.dpSellerReadinessSection ? window.dpSellerReadinessSection() : '') + (window.dpSellerFeeSection ? window.dpSellerFeeSection() : '') + (window.dpFeeRequestSection ? window.dpFeeRequestSection() : '') + (window.dpSellerDeferralSection ? window.dpSellerDeferralSection() : '') + (window.dpSellerProductVerifySection ? window.dpSellerProductVerifySection() : '') + (window.dpSellerStoreVerifySection ? window.dpSellerStoreVerifySection() : '') + (window.dpSellerInstructionSection ? window.dpSellerInstructionSection() : '') + (window.draAccountsSection ? window.draAccountsSection() : '') + (window.shipSellerSettingsSection ? window.shipSellerSettingsSection() : '')) : ''
 
   // 数据中心区块（30 天聚合 — 销售曲线 / Top 商品 / 客户洞察 / 状态分布）
   const insightsBlock = insights ? renderInsightsBlock(insights) : ''
@@ -15821,7 +15821,7 @@ async function renderSeller(app) {
       </div>
     </div>
   `, 'seller')
-  if (sellerSubTab === 'settings') { window.dpHydrateInstruction && window.dpHydrateInstruction(); window.dpHydrateSellerReadiness && window.dpHydrateSellerReadiness(); window.dpHydrateSellerFee && window.dpHydrateSellerFee(); window.dpHydrateFeeRequest && window.dpHydrateFeeRequest(); window.dpHydrateSellerDeferral && window.dpHydrateSellerDeferral(); window.dpHydrateSellerProductVerify && window.dpHydrateSellerProductVerify(); window.dpHydrateSellerStoreVerify && window.dpHydrateSellerStoreVerify(); window.draHydrateAccounts && window.draHydrateAccounts() }
+  if (sellerSubTab === 'settings') { window.dpHydrateInstruction && window.dpHydrateInstruction(); window.dpHydrateSellerReadiness && window.dpHydrateSellerReadiness(); window.dpHydrateSellerFee && window.dpHydrateSellerFee(); window.dpHydrateFeeRequest && window.dpHydrateFeeRequest(); window.dpHydrateSellerDeferral && window.dpHydrateSellerDeferral(); window.dpHydrateSellerProductVerify && window.dpHydrateSellerProductVerify(); window.dpHydrateSellerStoreVerify && window.dpHydrateSellerStoreVerify(); window.draHydrateAccounts && window.draHydrateAccounts(); window.shipHydrateSellerSettings && window.shipHydrateSellerSettings() }
 
   // 智能下单"我也要上架"跳过来时：自动切到商品 tab + 展开手工上架表单 + 预填标题
   // hashchange 可能多次触发 renderSeller — 用 window cache 保证每次重渲都能应用
