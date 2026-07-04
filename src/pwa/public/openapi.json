@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (755 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (760 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -735,9 +735,35 @@
         ]
       }
     },
+    "/api/admin/direct-receive/deposits": {
+      "get": {
+        "summary": "GET /api/admin/direct-receive/deposits?status=pending — ROOT 只读:保证金申报队列(核对到账用)。B1。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/direct-receive/deposits/:id/confirm-production": {
       "post": {
         "summary": "当前恒 fail-closed(无 legal-cleared rail → assert 抛 → PRODUCTION_RAIL_NOT_CLEARED)。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/direct-receive/deposits/:id/reject": {
+      "post": {
+        "summary": "不 Passkey:驳回不授予/不移动任何东西(与缓交 reject 不同 —— 那是资格决定;这里只是\"到账核不上\"退回重报)。",
         "tags": [
           "admin"
         ],
@@ -3700,6 +3726,39 @@
       },
       "put": {
         "summary": "── upload / replace QR(Passkey + owner;immutable content-addressed store)──",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/bond-deposit": {
+      "post": {
+        "summary": "POST /api/direct-receive/bond-deposit",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/bond-deposit/:id/cancel": {
+      "post": {
+        "summary": "POST /api/direct-receive/bond-deposit/:id/cancel",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/direct-receive/bond-status": {
+      "get": {
+        "summary": "GET /api/direct-receive/bond-status",
         "tags": [],
         "security": [
           {

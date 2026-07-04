@@ -698,6 +698,7 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_rail_id TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_jurisdiction TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_policy_version TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN reject_note TEXT`) } catch { /* 已存在 */ }   // B1:admin 驳回申报说明(卖家可见)
   // PR-6A: sanctions 结论有有效期(过期 → fail-closed)。additive nullable;NULL = 无期限(不过期)。
   try { db.exec(`ALTER TABLE sanctions_screening ADD COLUMN expires_at TEXT`) } catch { /* 已存在 */ }
   // PR-6D: 支撑 #108 AML 监控的窗口查询(seller_id + payment_rail='direct_p2p' + created_at 范围)。

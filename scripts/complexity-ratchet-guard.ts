@@ -55,6 +55,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-direct-pay-cancel-refund.js':   72,
   'src/pwa/public/app-direct-pay-returns.js':         56,
   'src/pwa/public/app-order-accept-ui.js':           166,
+  'src/pwa/public/app-bond-ui.js':                   108,
   'src/pwa/public/app-direct-pay-reconcile.js':       19,
   'src/pwa/public/app-notif-templates.js':            22,
   'src/pwa/public/app-notif-templates-orders.js':     43,

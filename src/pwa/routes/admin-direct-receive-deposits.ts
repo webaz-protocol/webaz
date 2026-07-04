@@ -15,7 +15,8 @@
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
-import { confirmProductionReceipt } from '../../direct-receive-deposits.js'
+import { confirmProductionReceipt, rejectDeposit } from '../../direct-receive-deposits.js'
+import { dbAll, dbOne } from '../../layer0-foundation/L0-1-database/db.js'   // B1:保证金申报队列/通知收件人只读(async seam)
 import { reviewAmlFlag } from '../../direct-pay-aml-review.js'
 import { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress, amlDetailHash } from '../../direct-pay-compliance-ingress.js'
 import { readDirectPayLaunchReadiness } from '../../direct-pay-launch-readiness.js'
@@ -39,9 +40,35 @@ export interface AdminDirectReceiveDepositsDeps {
 export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps: AdminDirectReceiveDepositsDeps): void {
   const { db, requireRootAdmin, consumeGateToken, logAdminAction, getProtocolParam } = deps
 
+  // GET /api/admin/direct-receive/deposits?status=pending — ROOT 只读:保证金申报队列(核对到账用)。B1。
+  app.get('/api/admin/direct-receive/deposits', async (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const status = req.query?.status != null ? String(req.query.status) : ''
+    const rows = await dbAll(`
+      SELECT d.id, d.user_id, d.tier, d.required_amount, d.amount, d.currency, d.deposit_rail, d.status,
+             d.external_ref, d.reject_note, d.production_receipt_confirmed_at, d.created_at, d.locked_at,
+             u.name AS seller_name, u.handle AS seller_handle
+      FROM direct_receive_deposits d JOIN users u ON u.id = d.user_id
+      ${status ? 'WHERE d.status = ?' : ''} ORDER BY d.created_at DESC LIMIT 200`, status ? [status] : [])
+    return void res.json({ deposits: rows })
+  })
+
+  // POST /api/admin/direct-receive/deposits/:id/reject — ROOT 驳回申报(未 lock 的申报;不动钱,留说明通知卖家)。B1。
+  //   不 Passkey:驳回不授予/不移动任何东西(与缓交 reject 不同 —— 那是资格决定;这里只是"到账核不上"退回重报)。
+  app.post('/api/admin/direct-receive/deposits/:id/reject', async (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const note = req.body?.note != null ? String(req.body.note).slice(0, 300) : ''
+    const r = rejectDeposit(db, { depositId: req.params.id, note })
+    logAdminAction(admin.id as string, 'direct_receive.bond_deposit_reject', 'direct_receive_deposit', req.params.id, { ok: r.ok, note_present: !!note, outcome: r.ok ? r.status : r.reason })
+    if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'BOND_REJECT_FAILED' })
+    try { const dep = await dbOne<{ user_id: string }>('SELECT user_id FROM direct_receive_deposits WHERE id = ?', [req.params.id])
+      if (dep) createNotification(db, dep.user_id, null, 'bond_deposit_rejected', '❌ 保证金申报未通过核实', `你的保证金缴纳申报未通过核实${note ? `(${note})` : ''}。请核对付款凭据后重新提交,或联系平台。`, { templateKey: 'bond_deposit_rejected', params: { note: note ? `(${note})` : '' } }) } catch { /* 不阻断 */ }
+    return void res.json({ ok: true, status: r.status })
+  })
+
   // POST /api/admin/direct-receive/deposits/:id/confirm-production — ROOT + 真人 Passkey 手动确认生产保证金 receipt。
   //   当前恒 fail-closed(无 legal-cleared rail → assert 抛 → PRODUCTION_RAIL_NOT_CLEARED)。
-  app.post('/api/admin/direct-receive/deposits/:id/confirm-production', (req, res) => {
+  app.post('/api/admin/direct-receive/deposits/:id/confirm-production', async (req, res) => {
     const admin = requireRootAdmin(req, res); if (!admin) return
     const depositId = req.params.id
     const railId = String(req.body?.rail_id || '')
@@ -74,6 +101,8 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
       logAdminAction(admin.id as string, 'direct_receive.production_confirm', 'direct_receive_deposit', depositId,
         { rail_id: railId, jurisdiction, ok: r.ok, outcome: r.ok ? (r.already ? 'already' : 'confirmed') : r.reason })
       if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'PRODUCTION_CONFIRM_REJECTED' })
+      // B1:确认成功 → 通知卖家保证金已生效(best-effort,不阻断)
+      if (!r.already) { try { const dep = await dbOne<{ user_id: string }>('SELECT user_id FROM direct_receive_deposits WHERE id = ?', [depositId]); if (dep) createNotification(db, dep.user_id, null, 'bond_deposit_confirmed', '✅ 履约保证金已确认锁定', '你的保证金已核实到账并正式锁定,直付入场的保证金门已满足。退出时可申请退还(须无未了结直付责任)。', { templateKey: 'bond_deposit_confirmed', params: {} }) } catch { /* 通知失败不阻断 */ } }
       return void res.json({ ok: true, status: r.status, already: !!r.already })
     } catch (e) {
       // assertProductionDepositRail(及任何写前异常)→ 生产 rail 未 legal-clear → fail-closed。
