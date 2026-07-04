@@ -69,7 +69,7 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   'secondhand.ts': 7,      // order handler: pragma FK-OFF window + CAS + escrow (money path)
   'chat.ts': 4,            // message-send tx (insert msg + bump conv) + mark-read tx (unread + read_at)
   'orders-create.ts': 24,  // 下单原子事务(15) + 价格锁一次性消费 SELECT+mark(2,无 await gap,Codex #224) + 店铺推荐懒升级(7,必须同步:跑在下单 db.transaction 内、getProductShareChain 之前)
-  'orders-action.ts': 20,  // state-machine/decline/settle 写序列 + confirm-in-person tx + 逐单 batch-ship 写 + pq_withdraw 原子(dispute dismiss + transition 同一 tx)(纯校验读已迁 seam)
+  'orders-action.ts': 21,  // state-machine/decline/settle 写序列 + confirm-in-person tx + 逐单 batch-ship 写 + pq_withdraw/dispute_withdraw_confirm 原子(dispute dismiss + transition + settle 同一 tx)(纯校验读已迁 seam)
   'auction.ts': 21,        // 5 db.transaction(create/remind/bid/cancel stake 写序列)+ reminder cron 同步 + 2 个 tx 内余额守恒重读(Codex PR#228 P1:await 预检与同步 stake tx 间的 yield 会让并发超额锁押,故 create/bid 在 tx 内重读余额并先于写抛回滚;create 的 product active→auction_pending flip 同改为带 status 守卫的 CAS 防并发双挂,#239 follow-up)(纯校验读/公开读/读回/单 DELETE/通知已迁 seam)
   'disputes-write.ts': 29, // arbitrate 仲裁核心(原子领取 + 2 settlement tx + reputation/strike/publish)+ 2 pause/resume tx(各含 1 tx 内重读授权/状态守卫,Codex #229 P1:await 预检与同步 tx 间 yield 会用陈旧权限/状态写,故 tx 内重读 dispute 重判 ruling/status/assignment 并从重读行算 baseline,先于写抛回滚)+ tx 内 appendAuditLog + 证据 INSERT/decline 结算序列(纯读/SNF 读/标记写已迁 seam)
   // — not yet started (full original counts; lower as converted) —

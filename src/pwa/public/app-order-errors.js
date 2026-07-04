@@ -5,10 +5,8 @@
 //   中文 t(),英文 i18n.js _EN(双语 parity 同样由 test-order-errors.ts 守)。
 window.orderErrorLookup = (code) => ({
   // 角色 / 所有权
-  NOT_ORDER_BUYER: t('只能操作自己的订单'),
-  NOT_ORDER_SELLER: t('你不是本订单的卖家'),
-  NOT_ORDER_LOGISTICS: t('你不是本订单的物流方'),
-  NOT_ORDER_PARTY: t('只有买卖双方可操作'),
+  NOT_ORDER_BUYER: t('只能操作自己的订单'), NOT_ORDER_SELLER: t('你不是本订单的卖家'),
+  NOT_ORDER_LOGISTICS: t('你不是本订单的物流方'), NOT_ORDER_PARTY: t('只有买卖双方可操作'),
   TRUSTED_ROLE_NO_TRADE: t('运营角色账号不可参与订单流转'),
   // 状态门
   NOT_ACCEPTED: t('仅可在待发货阶段进行此操作'),
@@ -24,9 +22,11 @@ window.orderErrorLookup = (code) => ({
   GRACE_NOT_ELAPSED: t('买家响应宽限期未过,暂不可申请取消'),
   DISPUTE_ALREADY_RULED: t('争议已裁定,不可撤回'),
   NOT_PAYMENT_QUERY_DISPUTE: t('仅可撤回由货款协商升级的仲裁;履约类争议(货损/货不对版)须经仲裁裁定'),
-  WITHDRAW_FAILED: t('撤回失败,请重试'),
-  CANCEL_FAILED: t('取消失败,请重试'),
-  DIRECT_PAY_SETTLE_FAILED: t('直付完成结算失败,订单未完成,可重试'),
+  WITHDRAW_FAILED: t('撤回失败,请重试'), CANCEL_FAILED: t('取消失败,请重试'), DIRECT_PAY_SETTLE_FAILED: t('直付完成结算失败,订单未完成,可重试'),
+  // 买家撤诉并确认收货(dispute_withdraw_confirm)
+  ORDER_NOT_DISPUTED: t('订单不在争议中,不可撤诉确认收货'), NOT_DISPUTE_INITIATOR: t('仅争议发起人可撤诉'),
+  NOT_FULFILMENT_DISPUTE: t('仅"投递后未收到货/货有问题"类争议可撤诉确认收货;货款争议请用"撤回仲裁·回到协商"'),
+  DISPUTE_CLOSE_SETTLE_FAILED: t('撤诉确认收货失败,订单未变更(仍在争议中),请重试'),
   ORDER_NOT_DELIVERED: t('订单尚未送达,暂不可确认收货'),
   // RFC-007 拒单 / 举证
   NOT_PROVISIONAL_DECLINE: t('本订单不是可举证的临时判责状态'),
