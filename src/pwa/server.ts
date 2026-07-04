@@ -3592,7 +3592,7 @@ app.use((req, res, next) => {
       }
     }
   }
-  // 分档 rate limit
+  if (riskInfo.hasPasskey || req.path === '/api/signaling/poll' || req.path === '/api/snf/pending') return next()  // 分档 rate limit 前的真人豁免(Tina 案修复):绑 Passkey=真人本人/监护(PWA 页面加载+轮询天然高频,agent 约束原则=真人豁免,不进速率桶不触发 rate_limit_abuse strike);高频轮询端点亦不计 agent 配额
   const repRow = db.prepare(`SELECT level FROM agent_reputation WHERE api_key = ?`).get(apiKey) as { level: string } | undefined
   const level = repRow?.level || 'new'
   const cap = getAgentRateCap(level)

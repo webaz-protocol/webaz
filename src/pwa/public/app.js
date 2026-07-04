@@ -721,7 +721,7 @@ async function render(page, params) {
       if (params[0] === 'public-ideas')            return renderAdminPublicIdeas(app)
       if (params[0] === 'task-proposals')          return renderAdminTaskProposals(app)
       if (params[0] === 'quota-requests')          return renderAdminBuildTaskQuota(app)
-      if (params[0] === 'operator-claims')         return renderAdminOperatorClaims(app); if (params[0] === 'deferrals') return renderAdminDirectPayDeferrals(app); if (params[0] === 'product-verifications') return renderAdminProductVerifications(app); if (params[0] === 'store-verifications') return renderAdminStoreVerifications(app); if (params[0] === 'compliance') return renderAdminDirectReceiveCompliance(app); if (params[0] === 'dp-ops') return renderAdminDirectPayHub(app); if (params[0] === 'dp-fee') return renderAdminDirectPayFeeOps(app); if (params[0] === 'platform-receive') return renderAdminPlatformReceiveAccounts(app); if (params[0] === 'fee-prepay-requests') return renderAdminFeePrepayRequests(app); if (params[0] === 'arbitrators') return renderAdminArbitrators(app); if (params[0] === 'contribution-ops') return renderAdminContributionHub(app); if (params[0] === 'bond-deposits') return renderAdminBondDeposits(app)  // PR-②c 缓交 / PR-④b 逐品 / PR-⑤b 店铺 / PR-⑧ 合规录入 / PR-B 商户运营 hub + 平台服务费 + 平台收款方式 + 预充值申请审核 / PR-F 仲裁员管理
+      if (params[0] === 'operator-claims')         return renderAdminOperatorClaims(app); if (params[0] === 'deferrals') return renderAdminDirectPayDeferrals(app); if (params[0] === 'product-verifications') return renderAdminProductVerifications(app); if (params[0] === 'store-verifications') return renderAdminStoreVerifications(app); if (params[0] === 'compliance') return renderAdminDirectReceiveCompliance(app); if (params[0] === 'dp-ops') return renderAdminDirectPayHub(app); if (params[0] === 'dp-fee') return renderAdminDirectPayFeeOps(app); if (params[0] === 'platform-receive') return renderAdminPlatformReceiveAccounts(app); if (params[0] === 'fee-prepay-requests') return renderAdminFeePrepayRequests(app); if (params[0] === 'arbitrators') return renderAdminArbitrators(app); if (params[0] === 'contribution-ops') return renderAdminContributionHub(app); if (params[0] === 'bond-deposits') return renderAdminBondDeposits(app); if (params[0] === 'agent-strikes') return renderAdminAgentStrikes(app)  // PR-②c 缓交 / PR-④b 逐品 / PR-⑤b 店铺 / PR-⑧ 合规录入 / PR-B 商户运营 hub + 平台服务费 + 平台收款方式 + 预充值申请审核 / PR-F 仲裁员管理
       if (params[0] === 'params')                  return renderAdminParams(app)
       if (params[0] === 'timeline' && params[1])   return renderAdminUserTimeline(app, params[1])
       if (params[0] === 'timeline')                return renderAdminUserTimelinePicker(app)
@@ -8956,7 +8956,7 @@ window.doLogin = async () => {
   if (!key) return showMsg('error', t('请粘贴 api_key'))
   state.apiKey = key
   const user = await GET('/me')
-  if (user.error) { state.apiKey = null; return showMsg('error', t('无效的 api_key，请重新输入')) }
+  if (user.error) { if (user.error_code === 'AGENT_BLOCKED' && window.renderAgentBlockedAppeal) { try { document.querySelectorAll('.js-modal, .js-sheet').forEach(m => m.remove()) } catch {}; return void window.renderAgentBlockedAppeal(user.error) } state.apiKey = null; return showMsg('error', t('无效的 api_key，请重新输入')) }
   state.user = user
   await persistApiKey(key)
   connectSSE()
@@ -22891,7 +22891,7 @@ async function renderAdminProtocol(app) {
       ${adminLinkCard('📜', t('审计日志'), t('全部 admin 写操作'), '#admin/audit')}
       ${adminLinkCard('🛑', t('错误监控'), t('24h 趋势 + burst 告警'), '#admin/errors')}
       ${adminLinkCard('🌱', t('共建运营'), t('共建任务建议 / Welcome 提交 / 建任务额度 / 贡献账号关联'), '#admin/contribution-ops')}
-      ${((state.user && state.user.admin_type || 'root') === 'root') ? adminLinkCard('💳', t('Direct Pay 商户运营'), t('直付:合规录入 / 缓交 / 商品·店铺验证 / 平台服务费预充值 / 上线控制(仅 root)'), '#admin/dp-ops') : ''}${((state.user && state.user.admin_type || 'root') === 'root') ? adminLinkCard('⚖', t('仲裁员管理'), t('授权/暂停/撤销真人仲裁员(唯一授权源=active 白名单,需现场 Passkey)'), '#admin/arbitrators') : ''}
+      ${((state.user && state.user.admin_type || 'root') === 'root') ? adminLinkCard('💳', t('Direct Pay 商户运营'), t('直付:合规录入 / 缓交 / 商品·店铺验证 / 平台服务费预充值 / 上线控制(仅 root)'), '#admin/dp-ops') : ''}${((state.user && state.user.admin_type || 'root') === 'root') ? adminLinkCard('⚖', t('仲裁员管理'), t('授权/暂停/撤销真人仲裁员(唯一授权源=active 白名单,需现场 Passkey)'), '#admin/arbitrators') + adminLinkCard('🚦', t('Agent 封禁与申诉'), t('待审申诉队列(批准=立即解封)/ 主动签发 strike'), '#admin/agent-strikes') : ''}
     </div>
   `, 'admin-protocol')
 }
