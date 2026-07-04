@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (752 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (754 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -5723,9 +5723,35 @@
         ]
       }
     },
+    "/api/orders/:id/pending-accept/confirm-quote": {
+      "post": {
+        "summary": "CAS:仅 pending_accept 且已报价;总额变更与状态转移同一 db.transaction(要么全生效要么全回滚)。",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/orders/:id/pending-accept/decline": {
       "post": {
         "summary": "卖家谢绝(无法发货/物流不可达等;理由可选,买家可见)→ 无责取消 + 回补库存",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/pending-accept/quote": {
+      "post": {
+        "summary": "可重复报价(买家确认前修正);每次报价重置响应窗(param direct_pay.quote_confirm_hours,默认 48h)。",
         "tags": [
           "order"
         ],

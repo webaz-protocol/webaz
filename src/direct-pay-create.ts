@@ -69,8 +69,9 @@ export interface DirectPayCreateArgs {
   acceptMode: 'auto' | 'manual'
   /** manual 时的接单截止(ISO;超时无责取消+回补库存,专属 cron)。 */
   pendingAcceptDeadlineIso?: string
-  /** 运费快照(PR-2):运费已并入 totalAmount,此处只是快照三列(region/fee/est_days;无模板=null)。 */
-  shipping?: { region: string | null; fee: number; estDays: string | null }
+  /** 运费快照(PR-2):运费已并入 totalAmount,此处只是快照三列(region/fee/est_days;无模板=null)。
+   *  quoteRequired(PR-3):模板外地区询价 —— 强制走 pending_accept,卖家报价+买家确认后才进付款窗。 */
+  shipping?: { region: string | null; fee: number; estDays: string | null; quoteRequired?: boolean }
 }
 
 /** 原子创建 direct_p2p 订单。成功返回 { orderId };任一步失败抛错(调用方回 409,事务已回滚)。 */
@@ -80,18 +81,19 @@ export function createDirectPayOrder(db: Database.Database, deps: DirectPayCreat
   db.transaction(() => {
     // 本金不入协议:escrow_amount=0,不写 buyer wallet。同一 INSERT 写入【入口控制 policy 快照】(frozen-at-create)。
     const s = args.snapshot
-    const manual = args.acceptMode === 'manual'
+    const quoteRequired = !!args.shipping?.quoteRequired
+    const manual = args.acceptMode === 'manual' || quoteRequired   // 询价单必须先接单报价(无论接单模式)
     // manual:不设 window deadline(接单时才起表),记 accept_mode 快照 + 接单截止。
     db.prepare(`INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount,
       status, payment_rail, shipping_address, direct_pay_instruction_snapshot, direct_pay_account_snapshot, direct_pay_window_deadline,
-      accept_mode_snapshot, pending_accept_deadline, ship_to_region, shipping_fee, shipping_est_days,
+      accept_mode_snapshot, pending_accept_deadline, ship_to_region, shipping_fee, shipping_est_days, shipping_quote_required,
       direct_pay_enabled_snapshot, direct_pay_rail_breaker_snapshot, direct_pay_region_snapshot,
       direct_pay_region_allowlist_snapshot, direct_pay_per_tx_cap_units_snapshot, direct_pay_seller_breaker_snapshot, direct_pay_decision_code)
-      VALUES (?,?,?,?,?,?,?,0,'created','direct_p2p',?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?)`)
+      VALUES (?,?,?,?,?,?,?,0,'created','direct_p2p',?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?)`)
       .run(orderId, args.productId, args.buyerId, args.sellerId, args.quantity, args.unitPrice, args.totalAmount,
         args.shippingAddress, args.instructionSnapshot, args.accountSnapshot ? JSON.stringify(args.accountSnapshot) : null,
         manual ? null : args.windowDeadlineIso, args.acceptMode, manual ? (args.pendingAcceptDeadlineIso ?? null) : null,
-        args.shipping?.region ?? null, (args.shipping && (args.shipping.fee > 0 || args.shipping.region)) ? args.shipping.fee : null, args.shipping?.estDays ?? null,
+        args.shipping?.region ?? null, (args.shipping && (args.shipping.fee > 0 || args.shipping.region)) ? args.shipping.fee : null, args.shipping?.estDays ?? null, quoteRequired ? 1 : null,
         s.enabled ? 1 : 0, s.railBreakerTripped ? 1 : 0, s.region,
         JSON.stringify(s.regionAllowlist), s.perTxCapUnits, s.sellerBreakerTripped ? 1 : 0, s.decisionCode)
     appendOrderEvent(db, {
@@ -125,7 +127,7 @@ export interface DirectPayUnsupportedOpts {
  */
 export function createDirectPayResponse(
   res: Response, db: Database.Database, deps: DirectPayCreateDeps & { getProtocolParam: <T>(k: string, fb: T) => T },
-  ctx: { product: Record<string, unknown>; buyerId: string; reqQty: number; basePrice: number; totalAmount: number; totalAmountU: Units; shippingAddress: string; directReceiveAccountId?: string; opts?: DirectPayUnsupportedOpts; shipping?: { region: string | null; fee: number; estDays: string | null } },
+  ctx: { product: Record<string, unknown>; buyerId: string; reqQty: number; basePrice: number; totalAmount: number; totalAmountU: Units; shippingAddress: string; directReceiveAccountId?: string; opts?: DirectPayUnsupportedOpts; shipping?: { region: string | null; fee: number; estDays: string | null; quoteRequired?: boolean } },
 ): void {
   // ① direct_p2p v1 = simple product only。escrow-only 修饰一律 fail-closed(本片不支持,不半支持)。
   const o = ctx.opts ?? {}
@@ -209,7 +211,7 @@ export function createDirectPayResponse(
       unitPrice: ctx.basePrice, totalAmount: ctx.totalAmount,
       instructionSnapshot, accountSnapshot, windowDeadlineIso: new Date(Date.now() + windowHours * 3600_000).toISOString(),
       shippingAddress: ctx.shippingAddress, acceptMode, shipping: ctx.shipping,
-      pendingAcceptDeadlineIso: acceptMode === 'manual' ? new Date(Date.now() + acceptWindowHours * 3600_000).toISOString() : undefined,
+      pendingAcceptDeadlineIso: (acceptMode === 'manual' || ctx.shipping?.quoteRequired) ? new Date(Date.now() + acceptWindowHours * 3600_000).toISOString() : undefined,
       // frozen-at-create policy 快照:control 全过(ctrl.ok)才到此,decisionCode='OK'。
       snapshot: { enabled: cfg.enabled, railBreakerTripped: cfg.railBreakerTripped, region: cfg.region, regionAllowlist: cfg.regionAllowlist, perTxCapUnits: cfg.perTxCapUnits, sellerBreakerTripped, decisionCode: 'OK' },
     })
@@ -218,7 +220,9 @@ export function createDirectPayResponse(
     safeRunDirectPayAmlMonitor(db, { sellerId, orderId, nowIso: new Date().toISOString(), getProtocolParam: deps.getProtocolParam })
     // 审计项 B(N2):通知卖家。manual → 待接单提醒(带截止);auto → 原"等买家付款"。fail-soft 不阻断建单响应。
     try {
-      if (acceptMode === 'manual') {
+      if (ctx.shipping?.quoteRequired) {
+        createNotification(db, sellerId, orderId, 'direct_pay_quote_needed', '🛎️ 新直付订单(模板外地区),待你报价运费', `商品「${String(ctx.product.title || '').slice(0, 40)}」× ${ctx.reqQty},货款 ${ctx.totalAmount} USDC,收货地区 ${ctx.shipping.region ?? '-'} 不在你的运费模板内。请在 ${acceptWindowHours} 小时内核实可达并报价(运费+预计时效),买家确认后才进入付款;超时订单自动取消。`, { templateKey: 'dp_quote_needed', params: { product: String(ctx.product.title || '').slice(0, 40), qty: ctx.reqQty, amount: ctx.totalAmount, region: ctx.shipping.region ?? '-', hours: acceptWindowHours } })
+      } else if (acceptMode === 'manual') {
         createNotification(db, sellerId, orderId, 'direct_pay_pending_accept', '🛎️ 新直付订单,待你确认接单', `商品「${String(ctx.product.title || '').slice(0, 40)}」× ${ctx.reqQty},应付 ${ctx.totalAmount} USDC。请在 ${acceptWindowHours} 小时内确认接单(核实可发货/物流),超时订单自动取消;接单后买家才会看到收款方式。`, { templateKey: 'dp_pending_accept_new', params: { product: String(ctx.product.title || '').slice(0, 40), qty: ctx.reqQty, amount: ctx.totalAmount, hours: acceptWindowHours } })
       } else {
         createNotification(db, sellerId, orderId, 'direct_pay_order_created', '🛒 新直付订单,等买家付款', `商品「${String(ctx.product.title || '').slice(0, 40)}」× ${ctx.reqQty},应付 ${ctx.totalAmount} USDC。买家完成场外付款并标记后你会收到发货提醒。`, { templateKey: 'dp_new_order', params: { product: String(ctx.product.title || '').slice(0, 40), qty: ctx.reqQty, amount: ctx.totalAmount } })
@@ -227,11 +231,15 @@ export function createDirectPayResponse(
     // ⚠️ 不在 create 响应里下发卖家收款说明(payment_instruction/label)——D1/D2 both-acked 前不得泄露(响应契约门,
     //   非仅 UI 软门)。买家先完成披露 ack,再经 GET /orders/:id 读取 redaction-gated 的 direct_pay_instruction_snapshot。
     //   manual 单更进一步:pending_accept 阶段【状态门】也挡收款信息(orders-read),卖家接单后才可见。
+    const _pending = acceptMode === 'manual' || !!ctx.shipping?.quoteRequired
     res.json({
-      success: true, order_id: orderId, status: acceptMode === 'manual' ? 'pending_accept' : 'direct_pay_window', payment_rail: 'direct_p2p',
-      note: acceptMode === 'manual'
-        ? '本单为手动接单:卖家确认可发货并接单后,你才会看到收款方式并进入付款环节;超时未接单将自动取消,你无需任何操作。'
-        : '本金不经 WebAZ;完成 D1/D2 风险确认(Passkey)后即可在订单页查看卖家收款说明,请【场外】付款后点"我已付款"。本档无经济保障、不退款,仅对卖家信誉处罚。',
+      success: true, order_id: orderId, status: _pending ? 'pending_accept' : 'direct_pay_window', payment_rail: 'direct_p2p',
+      shipping_quote_required: ctx.shipping?.quoteRequired || undefined,
+      note: ctx.shipping?.quoteRequired
+        ? '收货地区在卖家运费模板之外:卖家将核实可达性并报价运费/时效,你确认新总额后才进入付款环节;超时未报价将自动取消,你无需任何操作。'
+        : _pending
+          ? '本单为手动接单:卖家确认可发货并接单后,你才会看到收款方式并进入付款环节;超时未接单将自动取消,你无需任何操作。'
+          : '本金不经 WebAZ;完成 D1/D2 风险确认(Passkey)后即可在订单页查看卖家收款说明,请【场外】付款后点"我已付款"。本档无经济保障、不退款,仅对卖家信誉处罚。',
     })
   } catch (e) {
     res.status(409).json({ error: '直付订单创建失败:' + (e as Error).message, error_code: 'DIRECT_PAY_CREATE_FAILED' })

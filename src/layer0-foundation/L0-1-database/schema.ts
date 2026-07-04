@@ -684,6 +684,14 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE orders ADD COLUMN ship_to_region TEXT`) } catch { /* 已存在 */ }              // 买家下单所选收货地区(结构化,非自由文本地址)
   try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_fee DECIMAL(18,2)`) } catch { /* 已存在 */ }       // 下单快照运费(已并入 total_amount;NULL=无模板旧单)
   try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_est_days TEXT`) } catch { /* 已存在 */ }           // 下单快照预计时效(展示;不接判责钟)
+  // 询价握手(PR-3,直付轨):模板外地区先报价后接单。quote_ok=卖家 opt-in(单品??店铺,默认关)。
+  try { db.exec(`ALTER TABLE products ADD COLUMN shipping_quote_ok INTEGER`) } catch { /* 已存在 */ }      // 1|0|NULL(=继承店铺)
+  try { db.exec(`ALTER TABLE users ADD COLUMN store_shipping_quote_ok INTEGER`) } catch { /* 已存在 */ }   // 店铺级默认(NULL=关)
+  try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_quote_required INTEGER`) } catch { /* 已存在 */ }  // 1=本单须先报价(pending_accept 内子流)
+  try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_quote_fee DECIMAL(18,2)`) } catch { /* 已存在 */ } // 卖家报价运费(买家确认后并入 total_amount)
+  try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_quote_est_days TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_quote_note TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_quote_at TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE wallets ADD COLUMN fee_staked REAL DEFAULT 0`) } catch { /* 已存在 */ }
   // PR-4b-1: direct_receive_deposits 生产收款 provenance 快照列(既有库补列;additive nullable,无写入方,无 flow 启用)。
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_receipt_ref TEXT`) } catch { /* 已存在 */ }

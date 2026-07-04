@@ -33,6 +33,19 @@ export function registerShippingTemplateRoutes(app: Application, deps: ShippingT
       await dbRun('UPDATE users SET store_shipping_template = ? WHERE id = ?', [p.entries ? JSON.stringify(p.entries) : null, user.id])
       touched.store_template = p.entries
     }
+    if ('store_quote_ok' in b) {   // PR-3:模板外地区询价 opt-in(店铺默认;直付轨生效)
+      if (b.store_quote_ok !== null && typeof b.store_quote_ok !== 'boolean') return void errorRes(res, 400, 'BAD_QUOTE_OK', 'store_quote_ok 只允许 true|false|null')
+      await dbRun('UPDATE users SET store_shipping_quote_ok = ? WHERE id = ?', [b.store_quote_ok === null ? null : (b.store_quote_ok ? 1 : 0), user.id])
+      touched.store_quote_ok = b.store_quote_ok
+    }
+    if ('product_id' in b && 'quote_ok' in b) {
+      if (b.quote_ok !== null && typeof b.quote_ok !== 'boolean') return void errorRes(res, 400, 'BAD_QUOTE_OK', 'quote_ok 只允许 true|false|null')
+      const prodQ = await dbOne<{ seller_id: string }>('SELECT seller_id FROM products WHERE id = ?', [b.product_id])
+      if (!prodQ) return void errorRes(res, 404, 'PRODUCT_NOT_FOUND', '商品不存在')
+      if (prodQ.seller_id !== user.id) return void errorRes(res, 403, 'NOT_PRODUCT_OWNER', '只能设置自己商品')
+      await dbRun('UPDATE products SET shipping_quote_ok = ? WHERE id = ?', [b.quote_ok === null ? null : (b.quote_ok ? 1 : 0), b.product_id])
+      touched.product_quote_ok = b.quote_ok
+    }
     if ('product_id' in b || 'template' in b) {
       if (!b.product_id) return void errorRes(res, 400, 'MISSING_PRODUCT_ID', '设置单品运费模板须带 product_id')
       const p = parseShippingTemplate(b.template)
@@ -49,22 +62,26 @@ export function registerShippingTemplateRoutes(app: Application, deps: ShippingT
 
   // 公开读:买家下单前查配送范围。生效 = 单品覆盖 ?? 店铺默认;template=null → 不按地区计费(下单不要求选地区)。
   app.get('/api/products/:id/shipping-options', async (req, res) => {
-    const prod = await dbOne<{ id: string; seller_id: string; shipping_template: string | null }>(
-      'SELECT id, seller_id, shipping_template FROM products WHERE id = ?', [req.params.id])
+    const prod = await dbOne<{ id: string; seller_id: string; shipping_template: string | null; shipping_quote_ok: number | null }>(
+      'SELECT id, seller_id, shipping_template, shipping_quote_ok FROM products WHERE id = ?', [req.params.id])
     if (!prod) return void errorRes(res, 404, 'PRODUCT_NOT_FOUND', '商品不存在')
     let entries = loadTemplateJson(prod.shipping_template)
     let source: 'product' | 'store' | null = entries ? 'product' : null
+    const seller = await dbOne<{ store_shipping_template: string | null; store_shipping_quote_ok: number | null }>('SELECT store_shipping_template, store_shipping_quote_ok FROM users WHERE id = ?', [prod.seller_id])
     if (!entries) {
-      const seller = await dbOne<{ store_shipping_template: string | null }>('SELECT store_shipping_template FROM users WHERE id = ?', [prod.seller_id])
       entries = loadTemplateJson(seller?.store_shipping_template)
       if (entries) source = 'store'
     }
+    const quoteOk = prod.shipping_quote_ok != null ? Number(prod.shipping_quote_ok) === 1 : Number(seller?.store_shipping_quote_ok) === 1
     return void res.json({
       product_id: prod.id,
       region_required: !!entries,
       template: entries,
       source,
-      note: entries ? '下单须选择收货地区;运费按模板计入总额(快照)。未覆盖地区暂不可下单。' : '该商品不按地区计运费。',
+      quote_outside_template: !!entries && quoteOk,   // 直付轨:模板外地区可询价(卖家报运费/时效,确认后付款)
+      note: entries
+        ? (quoteOk ? '下单须选择收货地区;模板内地区运费自动计入,模板外地区(直付)可先询价再付款。' : '下单须选择收货地区;运费按模板计入总额(快照)。未覆盖地区暂不可下单。')
+        : '该商品不按地区计运费。',
     })
   })
 }

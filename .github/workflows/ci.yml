@@ -736,6 +736,7 @@ jobs:
       - run: npm run test:notif-order-templates
       - run: npm run test:direct-pay-pending-accept
       - run: npm run test:shipping-templates
+      - run: npm run test:shipping-quote
       - run: npm run test:legacy-arbitrator-role-sweep
       - run: npm run test:arbitration-entry-frontend
       - run: npm run test:arbitrator-admin-ui

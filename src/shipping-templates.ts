@@ -92,24 +92,40 @@ export function resolveShipping(entries: ShippingTemplateEntry[], region: string
   return { covered: false, fee: 0, est_days: null, matched: null }
 }
 
-export interface ShippingGateResult { feeU: Units; fee: number; region: string | null; estDays: string | null }
+export interface ShippingGateResult { feeU: Units; fee: number; region: string | null; estDays: string | null; quoteRequired: boolean }
+
+/** 询价 opt-in(PR-3):单品 shipping_quote_ok ?? 店铺 store_shipping_quote_ok ?? 关。 */
+export function quoteOutsideTemplateOk(db: Database.Database, product: { shipping_quote_ok?: number | null }, sellerId: string): boolean {
+  if (product.shipping_quote_ok != null) return Number(product.shipping_quote_ok) === 1
+  try {
+    const row = db.prepare('SELECT store_shipping_quote_ok FROM users WHERE id = ?').get(sellerId) as { store_shipping_quote_ok: number | null } | undefined
+    return Number(row?.store_shipping_quote_ok) === 1
+  } catch { return false }
+}
 
 /**
  * 建单运费守门(orders-create 单行调用,两轨共用,任何 DB write 之前):
  *  - 无模板:不要求地区(给了就规范化快照),运费 0 —— 原行为。
- *  - 有模板:必须给合法 ship_to_region(否则 400 SHIP_REGION_REQUIRED);未命中(含无 '*')→
- *    409 SHIP_REGION_NOT_COVERED(PR-3 询价握手将接住这个口)。命中 → 返回运费(调用方并入总额)。
+ *  - 有模板:必须给合法 ship_to_region(否则 400 SHIP_REGION_REQUIRED);命中 → 返回运费(调用方并入总额)。
+ *  - 未命中(含无 '*'):卖家开了询价(quoteOutsideTemplateOk)且直付轨 → quoteRequired=true(建单落
+ *    pending_accept,卖家先报运费/时效、买家确认新总额才进付款窗 —— PR-3);否则(未开询价 / escrow 轨,
+ *    escrow 询价需付款后置钱路手术,PR-5)→ 409 SHIP_REGION_NOT_COVERED。
  * 返回 null = 已写错误响应,调用方直接 return。
  */
 export function gateShippingForCreate(
   db: Database.Database, res: Response,
-  product: { shipping_template?: string | null }, sellerId: string, rawRegion: unknown,
+  product: { shipping_template?: string | null; shipping_quote_ok?: number | null }, sellerId: string, rawRegion: unknown,
+  rail: 'escrow' | 'direct_p2p' = 'escrow',
 ): ShippingGateResult | null {
   const region = normalizeRegion(rawRegion)
   const tpl = effectiveShippingTemplate(db, product, sellerId)
-  if (!tpl) return { feeU: 0, fee: 0, region, estDays: null }
+  if (!tpl) return { feeU: 0, fee: 0, region, estDays: null, quoteRequired: false }
   if (!region) { res.status(400).json({ error: '该商品按地区计运费,请选择收货国家/地区', error_code: 'SHIP_REGION_REQUIRED' }); return null }
   const r = resolveShipping(tpl, region)
-  if (!r.covered) { res.status(409).json({ error: '卖家暂不配送到该地区', error_code: 'SHIP_REGION_NOT_COVERED', region }); return null }
-  return { feeU: toUnits(r.fee), fee: r.fee, region, estDays: r.est_days }
+  if (r.covered) return { feeU: toUnits(r.fee), fee: r.fee, region, estDays: r.est_days, quoteRequired: false }
+  if (rail === 'direct_p2p' && quoteOutsideTemplateOk(db, product, sellerId)) {
+    return { feeU: 0, fee: 0, region, estDays: null, quoteRequired: true }   // 运费待卖家报价,先不入总额
+  }
+  res.status(409).json({ error: rail === 'direct_p2p' ? '卖家暂不配送到该地区' : '卖家暂不配送到该地区(该商品支持直付询价的话,可改用直付下单)', error_code: 'SHIP_REGION_NOT_COVERED', region })
+  return null
 }
