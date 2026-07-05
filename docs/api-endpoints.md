@@ -142,8 +142,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/protocol-kpi` | 🔐 | 👑 |  | src/pwa/routes/admin-analytics.ts:142 |
 | GET | `/api/admin/protocol-params` | 🔐 | 👑 |  | src/pwa/routes/admin-protocol-params.ts:61 |
 | PATCH | `/api/admin/protocol-params/:key` | 🔐 | 👑 | 2026-06-03 #1095: + constitutional only-increase 守护 | src/pwa/routes/admin-protocol-params.ts:70 |
-| GET | `/api/admin/protocol-params/:key/history` | 🔐 | 👑 | A-3: 变更历史 | src/pwa/routes/admin-protocol-params.ts:190 |
-| POST | `/api/admin/protocol-params/:key/reset` | 🔐 | 👑 |  | src/pwa/routes/admin-protocol-params.ts:140 |
+| GET | `/api/admin/protocol-params/:key/history` | 🔐 | 👑 | A-3: 变更历史 | src/pwa/routes/admin-protocol-params.ts:201 |
+| POST | `/api/admin/protocol-params/:key/reset` | 🔐 | 👑 |  | src/pwa/routes/admin-protocol-params.ts:151 |
 | GET | `/api/admin/public-ideas` | 🔐 | 👑 | ─── admin 端 ───────────────────────────────────────────── | src/pwa/routes/welcome.ts:38 |
 | PATCH | `/api/admin/public-ideas/:id` | 🔐 | 👑 |  | src/pwa/routes/welcome.ts:66 |
 | GET | `/api/admin/quota-applications` | 🔐 | 👑 | Admin | src/pwa/routes/seller-quota.ts:222 |
