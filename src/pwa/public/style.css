@@ -516,8 +516,9 @@ code, kbd, .mono { word-break: break-all; overflow-wrap: anywhere }
   animation: slide-up 0.3s ease-out;
 }
 @keyframes slide-up { from { opacity: 0; transform: translate(-50%, 20px) } to { opacity: 1; transform: translate(-50%, 0) } }
-/* 走查批次2:浮条悬在内容上方会盖住页面底部操作(如争议页上传控件)— 浮条在场时给内容区让位 */
-body:has(#install-banner) .main { padding-bottom: 96px }
+/* 走查批次2:浮条悬在内容上方会盖住页面底部操作(如争议页上传控件)— 浮条在场时给内容区让位。
+   数值构成:banner bottom 70px + banner 自高 ~64px + 余量 16px = 150px(.main 默认 padding-bottom 80px 不够,曾误设 96px 实际只多让 16px) */
+body:has(#install-banner) .main { padding-bottom: 150px }
 .install-banner-icon { font-size: 22px; line-height: 1 }
 .install-banner-body { flex: 1; min-width: 0 }
 .install-banner-title { font-size: 13px; font-weight: 600; line-height: 1.2 }
