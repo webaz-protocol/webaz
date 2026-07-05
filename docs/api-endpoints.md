@@ -543,7 +543,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | DELETE | `/api/products/:id/links/:linkId` | 🔐 |  |  | src/pwa/routes/products-links.ts:194 |
 | GET | `/api/products/:id/preview` |  |  | 公开预览：未登录可调，返回最小公开信息（分享 banner 用） | src/pwa/routes/products-meta.ts:162 |
 | GET | `/api/products/:id/price-history` |  |  |  | src/pwa/routes/products-meta.ts:58 |
-| GET | `/api/products/:id/shipping-options` |  |  | 公开读:买家下单前查配送范围。生效 = 单品覆盖 ?? 店铺默认;template=null → 不按地区计费(下单不要求选地区)。 | src/pwa/routes/shipping-templates.ts:77 |
+| GET | `/api/products/:id/shipping-options` |  |  | 公开读:买家下单前查配送范围。生效 = 单品覆盖 ?? 店铺默认;template=null → 不按地区计费(下单不要求选地区)。 | src/pwa/routes/shipping-templates.ts:94 |
 | PATCH | `/api/products/:id/status` | 🔐 |  | 状态切换（active / warehouse / deleted） | src/pwa/routes/products-crud.ts:49 |
 | GET | `/api/products/:product_id/flash-sale` |  |  | 公开：商品当前生效的 flash sale | src/pwa/routes/flash-sales.ts:102 |
 | POST | `/api/products/:product_id/flash-sale` | 🔐 |  |  | src/pwa/routes/flash-sales.ts:58 |
@@ -640,8 +640,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/seller/apply-quota-increase` | 🔐 |  |  | src/pwa/routes/seller-quota.ts:190 |
 | GET | `/api/seller/insights` | 🔐 |  | 数据中心（30d GMV / 7d 曲线 / Top 5 / 客户洞察 / 状态分布） | src/pwa/routes/seller-quota.ts:71 |
 | GET | `/api/seller/quota-status` | 🔐 |  | 配额状态 | src/pwa/routes/seller-quota.ts:45 |
-| GET | `/api/seller/shipping-settings` | 🔐 |  | 卖家读自己的店铺级设置(设置 UI 回显):接单模式 + 运费模板 + 询价开关。 | src/pwa/routes/shipping-templates.ts:64 |
-| POST | `/api/seller/shipping-template` | 🔐 |  |  | src/pwa/routes/shipping-templates.ts:25 |
+| GET | `/api/seller/shipping-settings` | 🔐 |  | 卖家读自己的店铺级设置(设置 UI 回显):接单模式 + 运费模板 + 询价开关。 | src/pwa/routes/shipping-templates.ts:80 |
+| POST | `/api/seller/shipping-template` | 🔐 |  |  | src/pwa/routes/shipping-templates.ts:26 |
 | POST | `/api/seller/withdraw-quota-application` | 🔐 |  |  | src/pwa/routes/seller-quota.ts:213 |
 | GET | `/api/sellers/:seller_id/ratings` |  |  | 公开：卖家评价聚合（卖家主页）。注册在 /me 之后(见上面注释)。 | src/pwa/routes/ratings.ts:258 |
 | GET | `/api/sellers/me/analytics` | 🔐 |  | 卖家销售分析 (Wave C-5) | src/pwa/routes/analytics.ts:155 |

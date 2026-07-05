@@ -683,6 +683,7 @@ jobs:
       - run: npm run test:role-ui-consistency
       - run: npm run test:role-switch-guard
       - run: npm run test:trade-terms-snapshot
+      - run: npm run test:sale-regions
       - run: npm run test:wallet-signer
       - run: npm run test:cf-origin-guard
       - run: npm run test:public-contribution-pages
