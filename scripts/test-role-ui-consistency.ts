@@ -32,5 +32,16 @@ ok('2b. trusted-role my-home fallback unchanged (role !== arbitrator gate)',
 ok('3. verifier apply banner gated on NOT already holding the verifier role',
   /vState === 'none' && state\.user\?\.role !== 'verifier' && !\(state\.user\?\.roles \|\| \[\]\)\.includes\('verifier'\)/.test(APP))
 
+// ④ 批次2·横幅降噪:恢复方式红条可关闭(7 天冷却)但 #me 域恒显;PWA 安装浮条在场时内容区让位
+const CSS = readFileSync('src/pwa/public/style.css', 'utf8')
+ok('4a. recovery banner dismissible with 7d cooldown, always shown under #me',
+  /!location\.hash\.startsWith\('#me'\) && Date\.now\(\) < \+\(localStorage\.getItem\('webaz_recovery_dismiss_until'\)/.test(APP)
+  && /webaz_recovery_dismiss_until', String\(Date\.now\(\) \+ 7 \* 86400e3\)/.test(APP))
+// 阈值而非存在性:浮条 bottom 70px + 自高 ~64px + 余量 = 至少 150px;.main 默认 80px,曾误设 96px(只多让 16px,仍遮控件)
+const clearance = Number((CSS.match(/body:has\(#install-banner\) \.main \{ padding-bottom: (\d+)px \}/) || [])[1] || 0)
+ok('4b. install banner clearance ≥ 150px (banner bottom + height + margin; mere presence is NOT enough)', clearance >= 150, `clearance=${clearance}`)
+const I18N = readFileSync('src/pwa/public/i18n.js', 'utf8')
+ok('4c. i18n parity for the dismiss title', I18N.includes("'暂时隐藏(7 天)':"))
+
 if (fail > 0) { console.error(`\n❌ role-ui-consistency FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ role UI consistency (audit batch 1): profile self-heal (no fake-logout) + single arbitration card + no self-apply invite\n  ✅ pass ${pass}`)
