@@ -706,10 +706,10 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE users ADD COLUMN store_sale_regions TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE users ADD COLUMN store_tax_lines TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE users ADD COLUMN store_import_duty_terms TEXT`) } catch { /* 已存在 */ }
-  try { db.exec(`ALTER TABLE orders ADD COLUMN trade_terms_snapshot TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN trade_terms_snapshot TEXT`) } catch { /* 已存在 */ }        // 下单冻结的交易条款 JSON(运费来源/时效/退货/清关字段/税责声明;商家事后改设置不影响旧订单,争议依据)
   // 营销域满额免邮(S2 返工:从运费模板移出 —— 模板=成本结构,免邮=促销;供应商报价期规则不搬家)
   try { db.exec(`ALTER TABLE products ADD COLUMN free_shipping_threshold DECIMAL(18,2)`) } catch { /* 已存在 */ }
-  try { db.exec(`ALTER TABLE users ADD COLUMN store_free_shipping_threshold DECIMAL(18,2)`) } catch { /* 已存在 */ }        // 下单冻结的交易条款 JSON(运费来源/时效/退货/清关字段/税责声明;商家事后改设置不影响旧订单,争议依据)
+  try { db.exec(`ALTER TABLE users ADD COLUMN store_free_shipping_threshold DECIMAL(18,2)`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE wallets ADD COLUMN fee_staked REAL DEFAULT 0`) } catch { /* 已存在 */ }
   // PR-4b-1: direct_receive_deposits 生产收款 provenance 快照列(既有库补列;additive nullable,无写入方,无 flow 启用)。
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_receipt_ref TEXT`) } catch { /* 已存在 */ }

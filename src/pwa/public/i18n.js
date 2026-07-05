@@ -6996,6 +6996,7 @@ const _EN = {
   '买家券后货款(不含保险/捐赠)达到阈值时,本单运费免收、由你承担。人工询价订单不适用;单品可经接口单独覆盖;只影响之后的新订单。': "When the buyer's post-coupon goods subtotal (excl. insurance/donation) reaches the threshold, shipping is free — you absorb it. Manual-quote orders exempt; per-product override via API; affects only new orders.",
   '阈值金额(留空=关闭)': 'Threshold amount (empty = off)',
   '保存免邮设置': 'Save free-shipping setting',
+  '阈值必须是正数': 'Threshold must be a positive number',
   '接受模板外地区询价(直付):先报运费/时效,买家确认后再付款': 'Accept quotes for regions outside the template (Direct Pay): quote fee/ETA first, buyer pays after confirming',
   '保存接单与运费设置': 'Save acceptance & shipping settings',
   '格式错误': 'Bad format',

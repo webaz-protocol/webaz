@@ -19,6 +19,7 @@ const MAX_THRESHOLD = 10_000_000
 /** 写入校验:null/空=清除;返回规范化数值或 {error}。 */
 export function validateFreeShippingThreshold(raw: unknown): { value: number | null } | { error: string } {
   if (raw === null || raw === undefined || raw === '') return { value: null }
+  if (typeof raw !== 'number' && typeof raw !== 'string') return { error: '免邮阈值必须是数字' }   // 审计 P3:拒 boolean/数组(Number(true)=1 会误存)
   const t = Number(raw)
   if (!Number.isFinite(t) || t <= 0 || t > MAX_THRESHOLD) return { error: `免邮阈值必须是 0~${MAX_THRESHOLD} 的正数` }
   return { value: Math.round(t * 100) / 100 }

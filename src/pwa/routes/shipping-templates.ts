@@ -78,7 +78,7 @@ export function registerShippingTemplateRoutes(app: Application, deps: ShippingT
       await dbRun('UPDATE products SET shipping_quote_ok = ? WHERE id = ?', [b.quote_ok === null ? null : (b.quote_ok ? 1 : 0), b.product_id])
       touched.product_quote_ok = b.quote_ok
     }
-    if ('template' in b || (('product_id' in b) && !('quote_ok' in b) && !('sale_regions' in b) && !('free_shipping_threshold' in b))) {   // 避免 {product_id, sale_regions|free_shipping_threshold} 组合误入模板分支;裸 product_id 旧行为(报缺模板)保留
+    if ('template' in b) {   // 单品运费模板:仅在显式带 template 时进入 —— 关闭整类隐患(此前 'product_id' in b 会让 {product_id, store_*} 等组合尾随进来把模板静默清成 NULL;审计 P2)。清除走 {product_id, template:null}('template' in b 成立)
       if (!b.product_id) return void errorRes(res, 400, 'MISSING_PRODUCT_ID', '设置单品运费模板须带 product_id')
       const p = parseShippingTemplate(b.template)
       if (!p.ok) return void errorRes(res, 400, 'BAD_SHIPPING_TEMPLATE', p.error)

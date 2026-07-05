@@ -1,6 +1,4 @@
-// 满额免邮 UI(营销域,S2 返工)。UI ONLY —— 校验/判免全在后端(free-shipping.ts,建单 gate 应用)。
-//   入口:卖家后台「营销」tab 卡(app.js 净零 hook window.freeShippingMarketingCard);点开就地 sheet 配置店铺阈值。
-//   语义:促销杠杆非运费结构 —— 券后货款≥阈值运费商家承担;供应商报价期规则不搬家(补贴对象换人)。单品覆盖走 API。
+// 满额免邮 UI(营销域,S2 返工)。UI ONLY —— 校验/判免全在后端(free-shipping.ts,建单 gate 应用)。入口:卖家后台「营销」tab 卡(app.js 净零 hook);点开就地 sheet 配店铺阈值,单品覆盖走 API。语义:促销非运费结构,券后货款≥阈值运费商家承担;供应商报价期规则不搬家。
 ;(function () {
   window.freeShippingMarketingCard = () => `
       <div onclick="fsOpenSheet()" class="card" style="padding:14px;cursor:pointer;background:linear-gradient(135deg,#ecfeff,#cffafe);border-color:#67e8f9">
@@ -23,6 +21,7 @@
   window.fsSave = async () => {
     const raw = (document.getElementById('fs-threshold')?.value || '').trim()
     const msg = document.getElementById('fs-msg')
+    if (raw !== '' && !(Number.isFinite(Number(raw)) && Number(raw) > 0)) { if (msg) msg.innerHTML = `<span style="color:#dc2626">${t('阈值必须是正数')}</span>`; return }   // 审计 P3:1e999→Infinity→JSON null→静默清除,前端就地拒
     const r = await POST('/seller/shipping-template', { store_free_shipping_threshold: raw === '' ? null : Number(raw) })
     if (r.error) { if (msg) msg.innerHTML = `<span style="color:#dc2626">${escHtml(r.error)}</span>`; return }
     if (msg) msg.innerHTML = `<span style="color:#16a34a">✓ ${t('已保存')}${raw === '' ? ' · ' + t('已关闭') : ''}</span>`

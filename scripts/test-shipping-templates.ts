@@ -104,6 +104,9 @@ try {
     && !!(db.prepare("SELECT store_shipping_template t FROM users WHERE id='s1'").get() as { t: string }).t)
   ok('16. invalid template rejected 400', (await call('POST', '/api/seller/shipping-template', 's1', { store_template: [{ region: 'CN', fee: -3 }] })).status === 400)
   ok('17. per-product override set', (await call('POST', '/api/seller/shipping-template', 's1', { product_id: 'p', template: [{ region: 'SG', fee: 3 }] })).status === 200)
+  // 审计 P2 回归:{product_id, store_free_shipping_threshold} 组合绝不能把商品模板静默清成 NULL(template 分支只认 'template' in b)
+  await call('POST', '/api/seller/shipping-template', 's1', { product_id: 'p', store_free_shipping_threshold: 200 })
+  ok('17b. store-threshold combo with product_id does NOT wipe the product template', !!(db.prepare("SELECT shipping_template t FROM products WHERE id='p'").get() as { t: string | null }).t)
   const opts = await call('GET', '/api/products/p/shipping-options')
   ok('18. public shipping-options resolves product override (source=product)', opts.status === 200 && opts.json.region_required === true
     && (opts.json.template as Array<{ region: string }>).length === 1 && opts.json.source === 'product')
