@@ -43,5 +43,11 @@ ok('4b. install banner clearance ≥ 150px (banner bottom + height + margin; mer
 const I18N = readFileSync('src/pwa/public/i18n.js', 'utf8')
 ok('4c. i18n parity for the dismiss title', I18N.includes("'暂时隐藏(7 天)':"))
 
+// ⑤ 批次3:仲裁员 chip 指向真实申请流程(不再是灰死"联系管理员";资格=白名单,不切角色)+ 争议时间线昵称优先
+ok('5a. arbitrator chip navigates to #apply-arbitrator (no dead contact-admin chip)',
+  /r === 'verifier' \|\| r === 'arbitrator'/.test(ACC) && /'#apply-verifier' : '#apply-arbitrator'/.test(ACC))
+ok('5b. dispute timeline actor prefers display name over auto handle',
+  /actor\.name \? escHtml\(actor\.name\) : \(actor\.handle \? '@' \+ escHtml\(actor\.handle\)/.test(APP))
+
 if (fail > 0) { console.error(`\n❌ role-ui-consistency FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ role UI consistency (audit batch 1): profile self-heal (no fake-logout) + single arbitration card + no self-apply invite\n  ✅ pass ${pass}`)

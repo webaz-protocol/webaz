@@ -13810,8 +13810,8 @@ function buildTimelineEvent(ev, dispute, user, actors) {
   const isMe = user && actor && actor.id === user.id
   // 当无 actor（如 system resolved 事件），不重复显示与 role chip 相同的名字
   const actorLabel = actor
-    ? (actor.handle ? '@' + escHtml(actor.handle) : escHtml(actor.name))
-    : ''
+    ? (actor.name ? escHtml(actor.name) : (actor.handle ? '@' + escHtml(actor.handle) : ''))
+    : ''   // 走查批次3:昵称优先(自动生成的 @handle 可读性差;上方 party chips 本就用昵称,对齐)
 
   // 内容主体 — 按 type 分支
   let bodyHtml = ''

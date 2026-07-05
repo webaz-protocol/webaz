@@ -227,8 +227,8 @@ async function renderProfile(app) {
             <div style="font-size:13px;color:#6b7280;margin:12px 0 6px">${t('需通过申请获得')}</div>
             <div style="display:flex;flex-wrap:wrap;gap:8px">
               ${addable.filter(r => APPLY_ROLES.includes(r)).map(r => {
-                if (r === 'verifier') {
-                  return `<button onclick="navigate('#apply-verifier')" style="
+                if (r === 'verifier' || r === 'arbitrator') {   // 走查批次3:仲裁员早已不是"角色"(资格=白名单+个案COI,#220),灰死"联系管理员"chip 是旧模型残留 → 与审核员一致跳真实申请流程(不切角色,保留买卖身份)
+                  return `<button onclick="navigate('${r === 'verifier' ? '#apply-verifier' : '#apply-arbitrator'}')" style="
                     display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-size:14px;cursor:pointer;
                     background:#eef2ff;border:2px solid #6366f1;color:#4338ca
                   ">${roleIcons[r]} 📥 ${t('申请')} ${roleLabels[r]}</button>`
