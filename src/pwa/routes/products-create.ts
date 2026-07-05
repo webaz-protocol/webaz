@@ -76,6 +76,7 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
       product_type = 'retail',   // 里程碑 6
       aliases = [],              // 里程碑 7.2：上架时同步声明的 alias 集合
       image_hashes = [],         // 商品图片 — 只存 hash（64 hex），实际 blob 在卖家节点 IDB
+      package_size, origin_country, country_of_origin, customs_description, hs_code,   // S0 跨境清关/物流证据字段(全可选,零计费逻辑;进条款快照)
     } = req.body
 
     // 协议化原则：服务端只存 hash 引用，不存图片字节。校验仅做格式 + 数量。
@@ -122,6 +123,11 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
     const priceNum = Number(price)
     const stakeDiscount = await getStakeDiscount(db, user.id as string)
     const stakeRate = Math.max(0.05, 0.15 - stakeDiscount)
+    // S0 清关字段轻校验(可选;长度界 + 区码大写 + HS 编码字符集)
+    const _cc = (x: unknown): string | null => (typeof x === 'string' && x.trim()) ? x.trim().toUpperCase().slice(0, 8) : null
+    const _tx = (x: unknown, n: number): string | null => (typeof x === 'string' && x.trim()) ? x.trim().slice(0, n) : null
+    const _hs = _tx(hs_code, 12)
+    if (_hs && !/^[0-9.]{4,12}$/.test(_hs)) return void res.status(400).json({ error: 'hs_code 须为 4-12 位数字(可含 .)', error_code: 'INVALID_HS_CODE' })
     const stakeAmount = Math.round(priceNum * stakeRate * 100) / 100
 
     const now = new Date().toISOString()
@@ -137,8 +143,9 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
       return_days, return_condition, warranty_days,
       low_stock_threshold, auto_delist_on_zero,
       commitment_hash, description_hash, price_hash, hashed_at,
-      commission_rate, product_type, images, currency
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WAZ')`, [
+      commission_rate, product_type, images, currency,
+      package_size, origin_country, country_of_origin, customs_description, hs_code
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WAZ',?,?,?,?,?)`, [
       id, user.id, title, description, priceNum, Number(stock), category, stakeAmount,
       specsJson, brand ?? null, model ?? null,
       source_url ?? null, source_price ? Number(source_price) : null, source_price ? now : null,
@@ -147,7 +154,8 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
       Math.max(0, Math.floor(Number(low_stock_threshold) || 0)), auto_delist_on_zero ? 1 : 0,
       makeCommitmentHash(pFields), makeDescriptionHash({ title, description, specs: specsJson }),
       makePriceHash(priceNum, now), now,
-      commissionRateNum, product_type, imagesJsonForInsert
+      commissionRateNum, product_type, imagesJsonForInsert,
+      _tx(package_size, 40), _cc(origin_country), _cc(country_of_origin), _tx(customs_description, 120), _hs
     ])
     // M7.2.6：免质押上架 — 不再扣 stake；首单成交时 settleOrder 自动从订单 escrow 锁定
 

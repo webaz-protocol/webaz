@@ -26,6 +26,7 @@ import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 import { toUnits, toDecimal } from '../../money.js'
 import { buildPayableSnapshot, type DirectPayAccountSnapshot } from '../../direct-pay-create.js'
 import { safeRunDirectPayAmlMonitor } from '../../direct-pay-aml-monitor.js'
+import { updateSnapshotShippingQuote } from '../../trade-terms.js'  // S0:询价确认后补记条款快照 shipping 槽(quote_pending→quote,fail-soft)
 
 export interface DirectPayPendingAcceptDeps {
   db: Database.Database
@@ -168,8 +169,9 @@ export function registerDirectPayPendingAcceptRoutes(app: Application, deps: Dir
         if (!t.success) throw new Error(t.error || 'TRANSITION_FAILED')
       })()
     } catch (e) { return void errorRes(res, 409, 'QUOTE_CONFIRM_FAILED', (e as Error).message) }
-    // 总额变更后补跑 AML 监控(fail-soft,绝不回流为失败)
+    // 总额变更后补跑 AML 监控(fail-soft,绝不回流为失败);条款快照补记运费裁决(quote_pending→quote)
     safeRunDirectPayAmlMonitor(db, { sellerId: order.seller_id, orderId: order.id, nowIso: new Date().toISOString(), getProtocolParam })
+    updateSnapshotShippingQuote(db, order.id, feeR, order.shipping_quote_est_days ?? null)
     notify(order.seller_id, order.id, 'direct_pay_quote_confirmed', '✅ 买家已确认运费报价',
       `买家已确认新总额 ${newTotal} USDC(含运费 ${feeR}),订单进入付款窗口。买家完成场外付款并标记后你会收到发货提醒。`,
       { templateKey: 'dp_quote_confirmed', params: { total: newTotal, fee: feeR } })
