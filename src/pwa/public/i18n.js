@@ -6989,7 +6989,7 @@ const _EN = {
   '默认(自动接单)': 'Default (auto-accept)',
   '自动接单(下单/付款后直接进入下一环节)': 'Auto-accept (orders proceed immediately after placement/payment)',
   '手动接单(直付:买家付款前须你确认;担保:维持付款后确认)': 'Manual accept (Direct Pay: you confirm BEFORE the buyer pays; escrow: post-payment confirmation as today)',
-  '运费模板(每行:地区代码 运费 [预计时效];* 为其余地区兜底)': 'Shipping template (one per line: REGION fee [ETA]; * = all other regions)',
+  '运费模板(每行:地区代码 运费 [预计时效] [free:满额免邮阈值];* 为其余地区兜底)': 'Shipping template (per line: REGION fee [ETA] [free:threshold]; * = rest of world)',
   '接受模板外地区询价(直付):先报运费/时效,买家确认后再付款': 'Accept quotes for regions outside the template (Direct Pay): quote fee/ETA first, buyer pays after confirming',
   '保存接单与运费设置': 'Save acceptance & shipping settings',
   '格式错误': 'Bad format',

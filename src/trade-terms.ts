@@ -21,6 +21,7 @@ export interface TradeTermsSnapshot {
     region: string | null
     fee: number | null
     est_days: string | null
+    free_threshold_applied?: boolean   // S2 满额免邮命中(争议对账:0 运费是免出来的不是没设)
   }
   fulfilment: {
     handling_hours: number | null
@@ -50,7 +51,7 @@ export interface TradeTermsSnapshot {
 export function buildTradeTermsSnapshot(db: Database.Database, args: {
   productId: string
   sellerId: string
-  shipping: { source: TradeTermsSnapshot['shipping']['source']; region: string | null; fee: number | null; estDays: string | null }
+  shipping: { source: TradeTermsSnapshot['shipping']['source']; region: string | null; fee: number | null; estDays: string | null; freeThresholdApplied?: boolean }
   acceptModeEffective: string | null
 }): TradeTermsSnapshot {
   // fail-soft 读:缺列(裸测试库/schema 漂移)→ 降级为空槽快照,绝不让证据采集炸掉建单
@@ -69,7 +70,7 @@ export function buildTradeTermsSnapshot(db: Database.Database, args: {
   return {
     v: 1,
     captured_at: new Date().toISOString(),
-    shipping: { source: args.shipping.source, region: args.shipping.region, fee: args.shipping.fee, est_days: args.shipping.estDays },
+    shipping: { source: args.shipping.source, region: args.shipping.region, fee: args.shipping.fee, est_days: args.shipping.estDays, ...(args.shipping.freeThresholdApplied ? { free_threshold_applied: true } : {}) },
     fulfilment: {
       handling_hours: numOrNull(p?.handling_hours), estimated_days: strOrNull(p?.estimated_days),
       return_days: numOrNull(p?.return_days), return_condition: strOrNull(p?.return_condition), warranty_days: numOrNull(p?.warranty_days),

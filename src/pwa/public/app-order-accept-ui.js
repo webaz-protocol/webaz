@@ -131,7 +131,7 @@
     const box = document.getElementById('ship-settings-body'); if (!box) return
     const s = await GET('/seller/shipping-settings').catch(() => null)
     if (!s) { box.textContent = t('加载失败,请刷新'); return }
-    const tplText = (s.store_template || []).map(e => `${e.region} ${e.fee}${e.est_days ? ' ' + e.est_days : ''}`).join('\n')
+    const tplText = (s.store_template || []).map(e => `${e.region} ${e.fee}${e.est_days ? ' ' + e.est_days : ''}${e.free_threshold ? ' free:' + e.free_threshold : ''}`).join('\n')
     box.innerHTML = `
       <label class="form-label" style="font-size:12px">${t('接单模式')}</label>
       <select class="form-control" id="ship-set-mode" style="font-size:13px;margin-bottom:8px">
@@ -139,8 +139,8 @@
         <option value="auto" ${s.store_accept_mode === 'auto' ? 'selected' : ''}>${t('自动接单(下单/付款后直接进入下一环节)')}</option>
         <option value="manual" ${s.store_accept_mode === 'manual' ? 'selected' : ''}>${t('手动接单(直付:买家付款前须你确认;担保:维持付款后确认)')}</option>
       </select>
-      <label class="form-label" style="font-size:12px">${t('运费模板(每行:地区代码 运费 [预计时效];* 为其余地区兜底)')}</label>
-      <textarea class="form-control" id="ship-set-tpl" rows="4" placeholder="CN 0 2-4&#10;SG 5 3-5&#10;* 25 10-20" style="font-size:12px;font-family:monospace;margin-bottom:8px">${escHtml(tplText)}</textarea>
+      <label class="form-label" style="font-size:12px">${t('运费模板(每行:地区代码 运费 [预计时效] [free:满额免邮阈值];* 为其余地区兜底)')}</label>
+      <textarea class="form-control" id="ship-set-tpl" rows="4" placeholder="CN 0 2-4&#10;SG 5 3-5 free:100&#10;* 25 10-20" style="font-size:12px;font-family:monospace;margin-bottom:8px">${escHtml(tplText)}</textarea>
       <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#374151;margin-bottom:10px">
         <input type="checkbox" id="ship-set-quote" style="width:16px;height:16px" ${s.store_quote_ok ? 'checked' : ''}>
         ${t('接受模板外地区询价(直付):先报运费/时效,买家确认后再付款')}
@@ -156,7 +156,7 @@
     for (const l of lines) {
       const m = l.split(/\s+/)
       if (m.length < 2) { msg.innerHTML = `<span style="color:#dc2626">${t('格式错误')}: ${escHtml(l)}</span>`; return }
-      entries.push({ region: m[0], fee: Number(m[1]), ...(m[2] ? { est_days: m[2] } : {}) })
+      const ftTok = m.slice(2).find(x => x.startsWith('free:')); const est = m.slice(2).find(x => !x.startsWith('free:')); entries.push({ region: m[0], fee: Number(m[1]), ...(est ? { est_days: est } : {}), ...(ftTok ? { free_threshold: Number(ftTok.slice(5)) } : {}) })
     }
     const r1 = await POST('/seller/accept-mode', { store_accept_mode: mode })
     const r2 = await POST('/seller/shipping-template', { store_template: entries.length ? entries : null, store_quote_ok: !!document.getElementById('ship-set-quote').checked })

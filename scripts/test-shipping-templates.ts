@@ -121,7 +121,7 @@ try {
   ok('21. orders-create calls gateShippingForCreate BEFORE totals (both rails share)', /gateShippingForCreate\(db, res, product/.test(OC))
   ok('22. shipping fee joins totalAmountU', /priceAfterCouponU \+ insurancePremiumU \+ _ship\.feeU/.test(OC))
   ok('23. escrow INSERT snapshots the 3 shipping cols', /ship_to_region, shipping_fee, shipping_est_days/.test(OC))
-  ok('24. dp ctx passes shipping snapshot (+quoteRequired, PR-3)', /shipping: \{ region: _ship\.region, fee: _ship\.fee, estDays: _ship\.estDays, quoteRequired: _ship\.quoteRequired \}/.test(OC))
+  ok('24. dp ctx passes shipping snapshot (+quoteRequired PR-3, +freeThresholdApplied S2)', /shipping: \{ region: _ship\.region, fee: _ship\.fee, estDays: _ship\.estDays, quoteRequired: _ship\.quoteRequired, freeThresholdApplied: _ship\.freeThresholdApplied \}/.test(OC))
 }
 
 if (fail > 0) { console.error(`\n❌ shipping-templates FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
