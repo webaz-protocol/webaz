@@ -80,7 +80,10 @@ const PEMPTY = <T,>(_k: string, fb: T): T => fb
   m = mkRes()
   ok('4g. platform list alone forces region choice', SR.gateSaleRegionForCreate(db, m.r, { sale_regions: null }, 's1', undefined, P) === false && m.body?.error_code === 'SHIP_REGION_REQUIRED')
   m = mkRes()
-  ok('4h. bad platform param JSON degrades to empty (never crashes create)', SR.gateSaleRegionForCreate(db, m.r, { sale_regions: null }, 's1', 'SG', (<T,>(_k: string, fb: T): T => 'not json' as never ?? fb)) === true)
+  // 审计 P2:坏配置 fail-CLOSED —— 合规名单读不懂时放行=静默解除平台禁售;宁可挡单
+  ok('4h. malformed platform param → 503 PLATFORM_REGION_POLICY_INVALID (fail-closed, NOT silently unrestricted)', SR.gateSaleRegionForCreate(db, m.r, { sale_regions: null }, 's1', 'SG', (<T,>(_k: string, fb: T): T => 'not json' as never ?? fb)) === false && m.status === 503 && m.body?.error_code === 'PLATFORM_REGION_POLICY_INVALID')
+  m = mkRes()
+  ok('4h2. non-array JSON also fail-closed', SR.gateSaleRegionForCreate(db, m.r, { sale_regions: null }, 's1', 'SG', (<T,>(_k: string, fb: T): T => '{"a":1}' as never ?? fb)) === false && m.body?.error_code === 'PLATFORM_REGION_POLICY_INVALID')
 }
 
 // ── ⑤ 静态接线:gate 在运费 gate 之前;硬拒语义;快照槽;写路由;UI 装载 ──
@@ -92,6 +95,11 @@ const PEMPTY = <T,>(_k: string, fb: T): T => fb
   ok('5b. REGION_NOT_FOR_SALE copy says quote does NOT apply (hard reject semantics)', /不适用询价/.test(SRC))
   const TT = readFileSync('src/trade-terms.ts', 'utf8')
   ok('5c. snapshot slot reads sale_regions (S0 slot auto-fills)', /sale_regions_rule: parse\(p\?\.sale_regions\) \?\? parse\(u\?\.store_sale_regions\)/.test(TT))
+  // 审计 P2:参数必须 seed(否则 admin PATCH 404,运营侧永远打不开合规门)+ admin 写入侧强校验
+  const SRV = readFileSync('src/pwa/server.ts', 'utf8')
+  ok('5y1. trade.platform_region_blocklist seeded in DEFAULT_PARAMS (type json, default [])', /key: 'trade\.platform_region_blocklist', value: '\[\]', type: 'json'/.test(SRV))
+  const APP_ = readFileSync('src/pwa/routes/admin-protocol-params.ts', 'utf8')
+  ok('5y2. admin PATCH validates json type + region-code array for this key', /param\.type === 'json'/.test(APP_) && /BAD_REGION_BLOCKLIST/.test(APP_))
   const RT = readFileSync('src/pwa/routes/shipping-templates.ts', 'utf8')
   ok('5d. write route: store + product branches with strict validation', /store_sale_regions' in b/.test(RT) && /'product_id' in b && 'sale_regions' in b/.test(RT) && /BAD_SALE_REGIONS/.test(RT))
   ok('5e. legacy bare-product_id template branch preserved, new combos not swallowed', /'template' in b \|\| \(\('product_id' in b\) && !\('quote_ok' in b\) && !\('sale_regions' in b\)\)/.test(RT))

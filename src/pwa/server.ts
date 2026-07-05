@@ -834,10 +834,10 @@ const DEFAULT_PARAMS: Array<{ key: string; value: string; type: string; descript
   // ⚠️ Codex #111:stake-required 模式(=1)【尚未实现】—— 下单不锁 stake、settleFault 仍按 stake_backing=0 不没收,
   //   开启会给出虚假"真没收"协议语义。故 max 锁 0(不可开启);待 Phase 3 钱路径迁移实现真锁(下单原子锁 balance→staked)再放开。
   { key: 'require_seller_stake', value: '0', type: 'number', description: 'RFC-008 是否要求卖家质押(0=起步免赔付/零门槛)。⚠️ stake-required(=1)未实现、暂锁 0 不可开启,见 Phase 3', category: 'fee', min: 0, max: 0 },
-  // RFC-008 stage 2:违约罚没率,【与质押率解耦】(低质押=低摩擦 + 高罚没=强威慑,单一费率做不到)。
-  //   背书订单:penalty = fault_penalty_rate × total,先扣 staked(封顶背书)再扣自由 balance(责任自负,真可执行)。
+  // RFC-008 stage 2:违约罚没率,【与质押率解耦】(低质押=低摩擦+高罚没=强威慑)。背书订单:penalty=rate×total,先扣 staked(封顶背书)再扣自由 balance(责任自负)。
   //   起步免赔付(stake_backing=0):仍 0 没收,绝不碰新商家自由余额。settleFault 按订单 stake_backing 判定。
   { key: 'fault_penalty_rate', value: '0.30', type: 'number', description: 'RFC-008 违约罚没率(与质押率解耦;背书订单 staked 不足扣自由 balance;起步免赔付订单不适用)', category: 'fee', min: 0, max: 0.50 },
+  { key: 'trade.platform_region_blocklist', value: '[]', type: 'json', description: '跨境 S1 平台合规禁售地区(JSON 数组大写区码,如 ["KP"]):建单 PRODUCT_RESTRICTED 硬拒,商家不可放宽;默认空。admin PATCH 有 JSON+区码校验', category: 'system' },
   // RFC-007 stage 3：客观理由拒单的【举证窗口】小时数。卖家声称客观无责拒单 → 临时判责,此窗口内可开仲裁(stage 5)举证;
   //   到期无人仲裁 → 自动终结为违约。窗口内买家 escrow 暂不退(随终结/翻案一次性结算),0=不给窗口(直接违约)。
   { key: 'decline_contest_window_hours', value: '24', type: 'number', description: 'RFC-007 客观拒单举证窗口(小时);到期未仲裁则终结为违约', category: 'limit', min: 0, max: 168 },

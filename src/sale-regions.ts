@@ -81,9 +81,19 @@ export function gateSaleRegionForCreate(
   getProtocolParam: <T>(key: string, fallback: T) => T,
 ): boolean {
   const region = (typeof rawRegion === 'string' && rawRegion.trim()) ? rawRegion.trim().toUpperCase() : null
-  // ① 平台合规 overlay(admin 可设 JSON 数组;默认空)。有地区才可判;平台名单存在但没给地区 → 与商家规则同样 fail-closed。
+  // ① 平台合规 overlay(protocol param,DEFAULT_PARAMS 已 seed '[]';admin PATCH 有 JSON+区码校验)。
+  //   坏配置【fail-closed】:合规名单读不懂时放行 = 静默解除平台禁售(审计 P2) —— 宁可挡单也不裸奔;
+  //   admin 写入侧已强校验,坏值只可能来自手改 DB,错误信息直接指路。
   let platformBlock: string[] = []
-  try { const v = getProtocolParam<string>('trade.platform_region_blocklist', '[]'); const p = JSON.parse(v); if (Array.isArray(p)) platformBlock = p.map(x => String(x).toUpperCase()) } catch { /* 坏参数=空名单 */ }
+  try {
+    const v = getProtocolParam<string>('trade.platform_region_blocklist', '[]')
+    const p = JSON.parse(String(v))
+    if (!Array.isArray(p)) throw new Error('not array')
+    platformBlock = p.map(x => String(x).toUpperCase())
+  } catch {
+    res.status(503).json({ error: '平台合规配置异常,暂无法下单(运营侧需修复 trade.platform_region_blocklist 参数)', error_code: 'PLATFORM_REGION_POLICY_INVALID' })
+    return false
+  }
   const rule = effectiveSaleRegionsRule(db, product, sellerId)
   if (platformBlock.length === 0 && !rule) return true   // 无任何限制 = 原行为(地区可选)
   if (!region) { res.status(400).json({ error: '该商品设有可售地区限制,请选择收货国家/地区', error_code: 'SHIP_REGION_REQUIRED' }); return false }
