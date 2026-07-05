@@ -12,6 +12,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { parseShippingTemplate, loadTemplateJson } from '../../shipping-templates.js'
 import { validateSaleRegionsInput, parseSaleRegionsRule } from '../../sale-regions.js'  // S1 可售区域(店铺+单品写入;gate 在 orders-create)
+import { validateFreeShippingThreshold } from '../../free-shipping.js'  // 营销域满额免邮(S2 返工:写入口暂列本设置面,规则/判定在 free-shipping.ts)
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 
 export interface ShippingTemplateRoutesDeps {
@@ -54,6 +55,21 @@ export function registerShippingTemplateRoutes(app: Application, deps: ShippingT
       await dbRun('UPDATE products SET sale_regions = ? WHERE id = ?', [v.json, b.product_id])
       touched.product_sale_regions = v.json ? JSON.parse(v.json) : null
     }
+    if ('store_free_shipping_threshold' in b) {   // 营销:满额免邮(店铺默认;null=清除)。券后货款≥阈值→运费商家承担
+      const v = validateFreeShippingThreshold(b.store_free_shipping_threshold)
+      if ('error' in v) return void errorRes(res, 400, 'BAD_FREE_SHIPPING_THRESHOLD', v.error)
+      await dbRun('UPDATE users SET store_free_shipping_threshold = ? WHERE id = ?', [v.value, user.id])
+      touched.store_free_shipping_threshold = v.value
+    }
+    if ('product_id' in b && 'free_shipping_threshold' in b) {   // 营销:单品覆盖(null=回落店铺)
+      const v = validateFreeShippingThreshold(b.free_shipping_threshold)
+      if ('error' in v) return void errorRes(res, 400, 'BAD_FREE_SHIPPING_THRESHOLD', v.error)
+      const prodF = await dbOne<{ seller_id: string }>('SELECT seller_id FROM products WHERE id = ?', [b.product_id])
+      if (!prodF) return void errorRes(res, 404, 'PRODUCT_NOT_FOUND', '商品不存在')
+      if (prodF.seller_id !== user.id) return void errorRes(res, 403, 'NOT_PRODUCT_OWNER', '只能设置自己商品')
+      await dbRun('UPDATE products SET free_shipping_threshold = ? WHERE id = ?', [v.value, b.product_id])
+      touched.product_free_shipping_threshold = v.value
+    }
     if ('product_id' in b && 'quote_ok' in b) {
       if (b.quote_ok !== null && typeof b.quote_ok !== 'boolean') return void errorRes(res, 400, 'BAD_QUOTE_OK', 'quote_ok 只允许 true|false|null')
       const prodQ = await dbOne<{ seller_id: string }>('SELECT seller_id FROM products WHERE id = ?', [b.product_id])
@@ -62,7 +78,7 @@ export function registerShippingTemplateRoutes(app: Application, deps: ShippingT
       await dbRun('UPDATE products SET shipping_quote_ok = ? WHERE id = ?', [b.quote_ok === null ? null : (b.quote_ok ? 1 : 0), b.product_id])
       touched.product_quote_ok = b.quote_ok
     }
-    if ('template' in b || (('product_id' in b) && !('quote_ok' in b) && !('sale_regions' in b))) {   // S1:避免 {product_id, sale_regions} 组合误入模板分支;裸 product_id 旧行为(报缺模板)保留
+    if ('template' in b || (('product_id' in b) && !('quote_ok' in b) && !('sale_regions' in b) && !('free_shipping_threshold' in b))) {   // 避免 {product_id, sale_regions|free_shipping_threshold} 组合误入模板分支;裸 product_id 旧行为(报缺模板)保留
       if (!b.product_id) return void errorRes(res, 400, 'MISSING_PRODUCT_ID', '设置单品运费模板须带 product_id')
       const p = parseShippingTemplate(b.template)
       if (!p.ok) return void errorRes(res, 400, 'BAD_SHIPPING_TEMPLATE', p.error)
@@ -80,11 +96,12 @@ export function registerShippingTemplateRoutes(app: Application, deps: ShippingT
   app.get('/api/seller/shipping-settings', async (req, res) => {
     const user = auth(req, res); if (!user) return
     if (user.role !== 'seller') return void errorRes(res, 403, 'SELLER_ONLY', '仅卖家')
-    const row = await dbOne<{ store_accept_mode: string | null; store_shipping_template: string | null; store_shipping_quote_ok: number | null; store_sale_regions: string | null }>(
-      'SELECT store_accept_mode, store_shipping_template, store_shipping_quote_ok, store_sale_regions FROM users WHERE id = ?', [user.id])
+    const row = await dbOne<{ store_accept_mode: string | null; store_shipping_template: string | null; store_shipping_quote_ok: number | null; store_sale_regions: string | null; store_free_shipping_threshold: number | null }>(
+      'SELECT store_accept_mode, store_shipping_template, store_shipping_quote_ok, store_sale_regions, store_free_shipping_threshold FROM users WHERE id = ?', [user.id])
     return void res.json({
       store_accept_mode: row?.store_accept_mode ?? null,
       store_sale_regions: parseSaleRegionsRule(row?.store_sale_regions ?? null),
+      store_free_shipping_threshold: row?.store_free_shipping_threshold ?? null,
       store_template: loadTemplateJson(row?.store_shipping_template),
       store_quote_ok: row?.store_shipping_quote_ok == null ? null : Number(row.store_shipping_quote_ok) === 1,
     })

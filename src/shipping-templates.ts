@@ -7,12 +7,12 @@
  *   先报价后接单的路径)。无模板 = 原行为(不要求 ship_to_region,不加运费)。
  *
  * 结构(JSON 数组,店铺级默认 users.store_shipping_template + 单品覆盖 products.shipping_template):
- *   [{ region: 'CN', fee: 0, est_days: '2-4' }, { region: 'SG', fee: 5, free_threshold: 100 }, { region: '*', fee: 25, est_days: '10-20' }]
+ *   [{ region: 'CN', fee: 0, est_days: '2-4' }, { region: 'SG', fee: 5 }, { region: '*', fee: 25, est_days: '10-20' }]
  *   - region:大写 code(建议 ISO 3166-1 alpha-2 或平台地区名);'*' = 其余所有地区(通配)。
  *   - fee:与商品价格同单位(escrow=WAZ / direct_p2p=USDC 语境),≥0,整单一口价(v1 不按件数/重量阶梯)。
  *   - est_days:预计时效展示串(≤20 字,可选)。
- *   - free_threshold(S2 满额免邮,可选):券后货款(不含保险/捐赠) ≥ 阈值 → 该单运费 0(整数 units 比较;
- *     人工询价路径不适用 —— 报价是逐单人工定价)。快照记 free_threshold_applied 供争议对账。
+ *   模板=【成本/可达结构】,刻意不含促销语义 —— 满额免邮在营销域(free-shipping.ts,gate 内模板费之后应用;
+ *     供应商报价期运费来源换人,营销补贴规则原样成立,不搬家)。
  *   匹配顺序:精确 region → '*' → 未覆盖。
  *
  * 边界:
@@ -24,8 +24,9 @@
 import type Database from 'better-sqlite3'
 import type { Response } from 'express'
 import { toUnits, type Units } from './money.js'
+import { freeShippingWaives } from './free-shipping.js'   // 营销域:满额免邮(S2 返工 —— 促销语义不进成本模板)
 
-export interface ShippingTemplateEntry { region: string; fee: number; est_days?: string; free_threshold?: number }
+export interface ShippingTemplateEntry { region: string; fee: number; est_days?: string }
 export interface ShippingResolution { covered: boolean; fee: number; est_days: string | null; matched: 'exact' | 'wildcard' | null; freeThresholdApplied?: boolean }
 
 const MAX_ENTRIES = 50
@@ -57,14 +58,7 @@ export function parseShippingTemplate(raw: unknown): { ok: true; entries: Shippi
     const fee = Number(e?.fee)
     if (!Number.isFinite(fee) || fee < 0 || fee > MAX_FEE) return { ok: false, error: `运费必须是 0~${MAX_FEE} 的数字(${region})` }
     const est = e?.est_days == null ? undefined : String(e.est_days).trim().slice(0, MAX_EST_LEN)
-    let ft: number | undefined
-    if (e?.free_threshold != null) {   // S2 满额免邮:>0 有限数;fee=0 的条目设阈值无意义 → 拒(防误配)
-      const t = Number(e.free_threshold)
-      if (!Number.isFinite(t) || t <= 0 || t > MAX_FEE * 10) return { ok: false, error: `free_threshold 必须是 0~${MAX_FEE * 10} 的正数(${region})` }
-      if (fee === 0) return { ok: false, error: `free_threshold 对 0 运费条目无意义(${region})—— 移除阈值或设置运费` }
-      ft = Math.round(t * 100) / 100
-    }
-    out.push({ region, fee: Math.round(fee * 100) / 100, ...(est ? { est_days: est } : {}), ...(ft !== undefined ? { free_threshold: ft } : {}) })
+    out.push({ region, fee: Math.round(fee * 100) / 100, ...(est ? { est_days: est } : {}) })
   }
   return { ok: true, entries: out }
 }
@@ -92,16 +86,11 @@ export function effectiveShippingTemplate(
   } catch { return null }
 }
 
-/** 按买家地区解析运费:精确 → '*' → 未覆盖。goodsSubtotalU(券后货款,整数 units)达到条目 free_threshold → 免邮。 */
-export function resolveShipping(entries: ShippingTemplateEntry[], region: string, goodsSubtotalU?: Units): ShippingResolution {
+/** 按买家地区解析运费:精确 → '*' → 未覆盖。(纯成本结构;营销免邮在 gate 层应用) */
+export function resolveShipping(entries: ShippingTemplateEntry[], region: string): ShippingResolution {
   const hit = entries.find(e => e.region === region) ?? entries.find(e => e.region === '*')
   if (!hit) return { covered: false, fee: 0, est_days: null, matched: null }
-  const matched: 'exact' | 'wildcard' = hit.region === region ? 'exact' : 'wildcard'
-  // S2 满额免邮:整数 units 比较(RFC-014 钱路纪律,绝不浮点比阈值);仅模板路径,询价不经此函数
-  if (hit.free_threshold !== undefined && goodsSubtotalU !== undefined && goodsSubtotalU >= toUnits(hit.free_threshold)) {
-    return { covered: true, fee: 0, est_days: hit.est_days ?? null, matched, freeThresholdApplied: true }
-  }
-  return { covered: true, fee: hit.fee, est_days: hit.est_days ?? null, matched }
+  return { covered: true, fee: hit.fee, est_days: hit.est_days ?? null, matched: hit.region === region ? 'exact' : 'wildcard' }
 }
 
 export interface ShippingGateResult { feeU: Units; fee: number; region: string | null; estDays: string | null; quoteRequired: boolean; freeThresholdApplied?: boolean }
@@ -126,16 +115,23 @@ export function quoteOutsideTemplateOk(db: Database.Database, product: { shippin
  */
 export function gateShippingForCreate(
   db: Database.Database, res: Response,
-  product: { shipping_template?: string | null; shipping_quote_ok?: number | null }, sellerId: string, rawRegion: unknown,
+  product: { shipping_template?: string | null; shipping_quote_ok?: number | null; free_shipping_threshold?: number | null }, sellerId: string, rawRegion: unknown,
   rail: 'escrow' | 'direct_p2p' = 'escrow',
-  goodsSubtotalU?: Units,   // S2 满额免邮:券后货款(units);未传=不判免(向后兼容)
+  goodsSubtotalU?: Units,   // 营销免邮:券后货款(units);未传=不判免(向后兼容)
 ): ShippingGateResult | null {
   const region = normalizeRegion(rawRegion)
   const tpl = effectiveShippingTemplate(db, product, sellerId)
   if (!tpl) return { feeU: 0, fee: 0, region, estDays: null, quoteRequired: false }
   if (!region) { res.status(400).json({ error: '该商品按地区计运费,请选择收货国家/地区', error_code: 'SHIP_REGION_REQUIRED' }); return null }
-  const r = resolveShipping(tpl, region, goodsSubtotalU)
-  if (r.covered) return { feeU: toUnits(r.fee), fee: r.fee, region, estDays: r.est_days, quoteRequired: false, ...(r.freeThresholdApplied ? { freeThresholdApplied: true } : {}) }
+  const r = resolveShipping(tpl, region)
+  if (r.covered) {
+    // 营销域满额免邮(S2 返工:规则在 free-shipping.ts,不在模板)—— 模板费为正 + 券后货款达标 → 免为 0。
+    //   人工询价路径不经此分支(quoteRequired 在下方),天然豁免。
+    if (r.fee > 0 && goodsSubtotalU !== undefined && freeShippingWaives(db, product as { free_shipping_threshold?: number | null }, sellerId, goodsSubtotalU)) {
+      return { feeU: 0, fee: 0, region, estDays: r.est_days, quoteRequired: false, freeThresholdApplied: true }
+    }
+    return { feeU: toUnits(r.fee), fee: r.fee, region, estDays: r.est_days, quoteRequired: false }
+  }
   if (rail === 'direct_p2p' && quoteOutsideTemplateOk(db, product, sellerId)) {
     return { feeU: 0, fee: 0, region, estDays: null, quoteRequired: true }   // 运费待卖家报价,先不入总额
   }
