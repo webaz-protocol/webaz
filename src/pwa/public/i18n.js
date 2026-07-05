@@ -6656,6 +6656,8 @@ const _EN = {
   '下载失败，请改用复制': 'Download failed — please copy instead',
   '账户还没有恢复方式': 'Your account has no recovery method',
   '暂时隐藏(7 天)': 'Hide for 7 days',
+  '仲裁员资格(白名单)': 'Arbitrator capability (whitelist)',
+  '仲裁资格是白名单能力,叠加在你的买卖身份上,不是可切换角色': 'Arbitration is a whitelist capability layered on top of your buyer/seller identity — not a switchable role',
   '闪退或换设备清缓存后可能永久无法登录。': 'After a crash or clearing cache on a new device, you may be permanently locked out.',
   '立即设置密码 / 绑定邮箱': 'Set a password / bind email now',
   '未设置登录密码': 'No login password set',

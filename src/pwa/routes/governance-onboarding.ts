@@ -34,7 +34,8 @@ import { getCasesForRole, getCasesForMaintainer, validateCaseReviews, type CaseR
 // RFC-016 Phase 1 — 申请/题目/案例/申诉的校验读 + 列表读 + 单语句写 → async seam;
 //   activate/resign/resolve-appeal 的 3 个角色态 CAS db.transaction 保持同步(Phase 3 迁 pg)。
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
-import { grantArbitratorTx } from '../arbitrator-lifecycle.js'  // PR-B/PR-C.2:激活仲裁角色桥接到 active arbitrator_whitelist,与状态翻转同事务
+import { grantArbitratorTx, suspendArbitrator } from '../arbitrator-lifecycle.js'  // PR-B/PR-C.2:激活桥接 active whitelist 同事务;#249-P2:仲裁员卸任真源=whitelist(suspend 可复用,非终态 revoke)
+import { isActiveWhitelistArbitrator } from '../../layer3-trust/L3-1-dispute-engine/dispute-engine.js'
 
 interface EligibilityItem {
   key: string
@@ -570,7 +571,10 @@ export function registerGovernanceOnboardingRoutes(app: Application, deps: Gover
     const userRow = await dbOne<{ roles: string | null }>("SELECT roles FROM users WHERE id = ?", [userId])
     let currentRoles: string[] = []
     try { currentRoles = JSON.parse(userRow?.roles || '[]') } catch { currentRoles = [] }
-    if (!currentRoles.includes(role)) {
+    // #249-P2:activate 已不再把 arbitrator 写进 users.roles(资格=白名单)→ 仲裁员的"当前在任"真源
+    //   = active whitelist(或 legacy roles 残留,两者任一即可卸);verifier 真源仍 = users.roles。
+    const wlActiveArb = role === 'arbitrator' && isActiveWhitelistArbitrator(db, userId)
+    if (!currentRoles.includes(role) && !wlActiveArb) {
       return void errorRes(res, 404, 'NOT_ACTIVE', `你当前不是 ${role},无需卸任`)
     }
     // 用于日志显示 + 后续 INSERT 关联(取最新的 active 行;若没有也容许,以 user.roles 为准)
@@ -629,13 +633,21 @@ export function registerGovernanceOnboardingRoutes(app: Application, deps: Gover
     try {
       resignId = generateId('gapp')
       db.transaction(() => {
-        // 1. 重读 users.roles(进事务后)— 验证 role 仍存在再操作
+        // 1. 重读真源(进事务后)。仲裁员=active whitelist(#249 起 activate 不写 roles;suspend=自愿卸任可经
+        //    admin reinstate 复用,刻意不用终态 revoke);legacy roles 里的 'arbitrator' 存量一并摘除。verifier=users.roles。
         const u = db.prepare("SELECT roles FROM users WHERE id = ?").get(userId) as { roles: string | null } | undefined
         let roles: string[] = []
         try { roles = JSON.parse(u?.roles || '[]') } catch { roles = [] }
-        if (!roles.includes(role)) throw new Error(RACE_LOST)
-        roles = roles.filter(r => r !== role)
-        db.prepare("UPDATE users SET roles = ? WHERE id = ?").run(JSON.stringify(roles), userId)
+        const legacyInRoles = roles.includes(role)
+        if (role === 'arbitrator') {
+          const wlNow = isActiveWhitelistArbitrator(db, userId)
+          if (!wlNow && !legacyInRoles) throw new Error(RACE_LOST)
+          if (wlNow) { const m = suspendArbitrator(db, { userId, note: '主动卸任(governance resign)' }); if (!m.ok) throw new Error(RACE_LOST) }
+        } else if (!legacyInRoles) throw new Error(RACE_LOST)
+        if (legacyInRoles) {
+          roles = roles.filter(r => r !== role)
+          db.prepare("UPDATE users SET roles = ? WHERE id = ?").run(JSON.stringify(roles), userId)
+        }
 
         // 2. 把所有该 user+role 的 active 行 → inactive(可能有 apply + activate 两行)
         db.prepare(
