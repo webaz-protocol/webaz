@@ -1,7 +1,5 @@
-// 接单模式+运费模板+询价系列 UI(PR-4;后端 v16-v18 已合)。UI ONLY,边界全在后端。
-//   ① 通知模板注册(PR-1..3 的 9 个 key,此前回退中文);② pending_accept 徽标/标签;③ 买单 sheet 收货地区
-//   选择+运费预览(自调度 hydrate);④ 订单页接单/询价卡(买家+卖家);⑤ 卖家店铺设置区块(接单模式/模板/询价开关)。
-//   中文 t(),英文 i18n.js _EN。
+// 接单模式+运费模板+询价系列 UI(PR-4;后端 v16-v18 已合)。UI ONLY,边界全在后端。中文 t(),英文 i18n.js _EN。
+//   ① 通知模板注册(PR-1..3 的 9 个 key);② pending_accept 徽标/标签;③ 买单 sheet 收货地区选择+运费预览(自调度 hydrate);④ 订单页接单/询价卡;⑤ 卖家店铺设置区块(接单/模板/询价)。
 ;(function () {
   const S = window._notifSub
   const P = (emoji, titleZh, bodyZh) => (p) => ({ title: emoji + ' ' + t(titleZh), body: S(t(bodyZh), p) })
@@ -156,7 +154,9 @@
     for (const l of lines) {
       const m = l.split(/\s+/)
       if (m.length < 2) { msg.innerHTML = `<span style="color:#dc2626">${t('格式错误')}: ${escHtml(l)}</span>`; return }
-      const ftTok = m.slice(2).find(x => x.startsWith('free:')); const est = m.slice(2).find(x => !x.startsWith('free:')); entries.push({ region: m[0], fee: Number(m[1]), ...(est ? { est_days: est } : {}), ...(ftTok ? { free_threshold: Number(ftTok.slice(5)) } : {}) })
+      const ftTok = m.slice(2).find(x => x.toLowerCase().startsWith('free:')); const est = m.slice(2).find(x => !x.toLowerCase().startsWith('free:')); const ftV = ftTok ? Number(ftTok.slice(5)) : undefined
+      if (ftTok && !(Number.isFinite(ftV) && ftV > 0)) { msg.innerHTML = `<span style="color:#dc2626">${t('格式错误')}: ${escHtml(l)}</span>`; return }   // 评审 P1:free:垃圾 会被 JSON 洗成 null 静默丢阈值 → 前端就地拒
+      entries.push({ region: m[0], fee: Number(m[1]), ...(est ? { est_days: est } : {}), ...(ftTok ? { free_threshold: ftV } : {}) })
     }
     const r1 = await POST('/seller/accept-mode', { store_accept_mode: mode })
     const r2 = await POST('/seller/shipping-template', { store_template: entries.length ? entries : null, store_quote_ok: !!document.getElementById('ship-set-quote').checked })
