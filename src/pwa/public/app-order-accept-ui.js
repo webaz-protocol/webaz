@@ -1,7 +1,5 @@
-// 接单模式+运费模板+询价系列 UI(PR-4;后端 v16-v18 已合)。UI ONLY,边界全在后端。
-//   ① 通知模板注册(PR-1..3 的 9 个 key,此前回退中文);② pending_accept 徽标/标签;③ 买单 sheet 收货地区
-//   选择+运费预览(自调度 hydrate);④ 订单页接单/询价卡(买家+卖家);⑤ 卖家店铺设置区块(接单模式/模板/询价开关)。
-//   中文 t(),英文 i18n.js _EN。
+// 接单模式+运费模板+询价系列 UI(PR-4;后端 v16-v18 已合)。UI ONLY,边界全在后端。中文 t(),英文 i18n.js _EN。
+//   ① 通知模板注册(PR-1..3 的 9 个 key);② pending_accept 徽标/标签;③ 买单 sheet 收货地区选择+运费预览(自调度 hydrate);④ 订单页接单/询价卡;⑤ 卖家店铺设置区块(接单/模板/询价)。
 ;(function () {
   const S = window._notifSub
   const P = (emoji, titleZh, bodyZh) => (p) => ({ title: emoji + ' ' + t(titleZh), body: S(t(bodyZh), p) })
@@ -139,7 +137,7 @@
         <option value="auto" ${s.store_accept_mode === 'auto' ? 'selected' : ''}>${t('自动接单(下单/付款后直接进入下一环节)')}</option>
         <option value="manual" ${s.store_accept_mode === 'manual' ? 'selected' : ''}>${t('手动接单(直付:买家付款前须你确认;担保:维持付款后确认)')}</option>
       </select>
-      <label class="form-label" style="font-size:12px">${t('运费模板(每行:地区代码 运费 [预计时效];* 为其余地区兜底)')}</label>
+      <label class="form-label" style="font-size:12px">${t('运费模板(每行:地区代码 运费 [预计时效];* 为其余地区兜底;满额免邮在「营销」页配置)')}</label>
       <textarea class="form-control" id="ship-set-tpl" rows="4" placeholder="CN 0 2-4&#10;SG 5 3-5&#10;* 25 10-20" style="font-size:12px;font-family:monospace;margin-bottom:8px">${escHtml(tplText)}</textarea>
       <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#374151;margin-bottom:10px">
         <input type="checkbox" id="ship-set-quote" style="width:16px;height:16px" ${s.store_quote_ok ? 'checked' : ''}>

@@ -11,6 +11,8 @@
  *   - region:大写 code(建议 ISO 3166-1 alpha-2 或平台地区名);'*' = 其余所有地区(通配)。
  *   - fee:与商品价格同单位(escrow=WAZ / direct_p2p=USDC 语境),≥0,整单一口价(v1 不按件数/重量阶梯)。
  *   - est_days:预计时效展示串(≤20 字,可选)。
+ *   模板=【成本/可达结构】,刻意不含促销语义 —— 满额免邮在营销域(free-shipping.ts,gate 内模板费之后应用;
+ *     供应商报价期运费来源换人,营销补贴规则原样成立,不搬家)。
  *   匹配顺序:精确 region → '*' → 未覆盖。
  *
  * 边界:
@@ -22,9 +24,10 @@
 import type Database from 'better-sqlite3'
 import type { Response } from 'express'
 import { toUnits, type Units } from './money.js'
+import { freeShippingWaives } from './free-shipping.js'   // 营销域:满额免邮(S2 返工 —— 促销语义不进成本模板)
 
 export interface ShippingTemplateEntry { region: string; fee: number; est_days?: string }
-export interface ShippingResolution { covered: boolean; fee: number; est_days: string | null; matched: 'exact' | 'wildcard' | null }
+export interface ShippingResolution { covered: boolean; fee: number; est_days: string | null; matched: 'exact' | 'wildcard' | null; freeThresholdApplied?: boolean }
 
 const MAX_ENTRIES = 50
 const MAX_REGION_LEN = 16
@@ -83,16 +86,14 @@ export function effectiveShippingTemplate(
   } catch { return null }
 }
 
-/** 按买家地区解析运费:精确 → '*' → 未覆盖。 */
+/** 按买家地区解析运费:精确 → '*' → 未覆盖。(纯成本结构;营销免邮在 gate 层应用) */
 export function resolveShipping(entries: ShippingTemplateEntry[], region: string): ShippingResolution {
-  const exact = entries.find(e => e.region === region)
-  if (exact) return { covered: true, fee: exact.fee, est_days: exact.est_days ?? null, matched: 'exact' }
-  const wild = entries.find(e => e.region === '*')
-  if (wild) return { covered: true, fee: wild.fee, est_days: wild.est_days ?? null, matched: 'wildcard' }
-  return { covered: false, fee: 0, est_days: null, matched: null }
+  const hit = entries.find(e => e.region === region) ?? entries.find(e => e.region === '*')
+  if (!hit) return { covered: false, fee: 0, est_days: null, matched: null }
+  return { covered: true, fee: hit.fee, est_days: hit.est_days ?? null, matched: hit.region === region ? 'exact' : 'wildcard' }
 }
 
-export interface ShippingGateResult { feeU: Units; fee: number; region: string | null; estDays: string | null; quoteRequired: boolean }
+export interface ShippingGateResult { feeU: Units; fee: number; region: string | null; estDays: string | null; quoteRequired: boolean; freeThresholdApplied?: boolean }
 
 /** 询价 opt-in(PR-3):单品 shipping_quote_ok ?? 店铺 store_shipping_quote_ok ?? 关。 */
 export function quoteOutsideTemplateOk(db: Database.Database, product: { shipping_quote_ok?: number | null }, sellerId: string): boolean {
@@ -114,15 +115,23 @@ export function quoteOutsideTemplateOk(db: Database.Database, product: { shippin
  */
 export function gateShippingForCreate(
   db: Database.Database, res: Response,
-  product: { shipping_template?: string | null; shipping_quote_ok?: number | null }, sellerId: string, rawRegion: unknown,
+  product: { shipping_template?: string | null; shipping_quote_ok?: number | null; free_shipping_threshold?: number | null }, sellerId: string, rawRegion: unknown,
   rail: 'escrow' | 'direct_p2p' = 'escrow',
+  goodsSubtotalU?: Units,   // 营销免邮:券后货款(units);未传=不判免(向后兼容)
 ): ShippingGateResult | null {
   const region = normalizeRegion(rawRegion)
   const tpl = effectiveShippingTemplate(db, product, sellerId)
   if (!tpl) return { feeU: 0, fee: 0, region, estDays: null, quoteRequired: false }
   if (!region) { res.status(400).json({ error: '该商品按地区计运费,请选择收货国家/地区', error_code: 'SHIP_REGION_REQUIRED' }); return null }
   const r = resolveShipping(tpl, region)
-  if (r.covered) return { feeU: toUnits(r.fee), fee: r.fee, region, estDays: r.est_days, quoteRequired: false }
+  if (r.covered) {
+    // 营销域满额免邮(S2 返工:规则在 free-shipping.ts,不在模板)—— 模板费为正 + 券后货款达标 → 免为 0。
+    //   人工询价路径不经此分支(quoteRequired 在下方),天然豁免。
+    if (r.fee > 0 && goodsSubtotalU !== undefined && freeShippingWaives(db, product as { free_shipping_threshold?: number | null }, sellerId, goodsSubtotalU)) {
+      return { feeU: 0, fee: 0, region, estDays: r.est_days, quoteRequired: false, freeThresholdApplied: true }
+    }
+    return { feeU: toUnits(r.fee), fee: r.fee, region, estDays: r.est_days, quoteRequired: false }
+  }
   if (rail === 'direct_p2p' && quoteOutsideTemplateOk(db, product, sellerId)) {
     return { feeU: 0, fee: 0, region, estDays: null, quoteRequired: true }   // 运费待卖家报价,先不入总额
   }

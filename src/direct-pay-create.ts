@@ -72,7 +72,7 @@ export interface DirectPayCreateArgs {
   pendingAcceptDeadlineIso?: string
   /** 运费快照(PR-2):运费已并入 totalAmount,此处只是快照三列(region/fee/est_days;无模板=null)。
    *  quoteRequired(PR-3):模板外地区询价 —— 强制走 pending_accept,卖家报价+买家确认后才进付款窗。 */
-  shipping?: { region: string | null; fee: number; estDays: string | null; quoteRequired?: boolean }
+  shipping?: { region: string | null; fee: number; estDays: string | null; quoteRequired?: boolean; freeThresholdApplied?: boolean }
 }
 
 /** 原子创建 direct_p2p 订单。成功返回 { orderId };任一步失败抛错(调用方回 409,事务已回滚)。 */
@@ -114,7 +114,7 @@ export function createDirectPayOrder(db: Database.Database, deps: DirectPayCreat
   // S0 条款快照:冻结下单时的时效/退货/清关/税责声明(事务外 fail-soft —— 快照是证据非计价输入,缺失=pre-S0 同待遇)
   writeTradeTermsSnapshot(db, orderId, buildTradeTermsSnapshot(db, {
     productId: args.productId, sellerId: args.sellerId,
-    shipping: { source: args.shipping?.quoteRequired ? 'quote_pending' : (args.shipping?.region ? 'template' : 'none'), region: args.shipping?.region ?? null, fee: args.shipping?.quoteRequired ? null : ((args.shipping && (args.shipping.fee > 0 || args.shipping.region)) ? args.shipping.fee : null), estDays: args.shipping?.estDays ?? null },
+    shipping: { source: args.shipping?.quoteRequired ? 'quote_pending' : (args.shipping?.region ? 'template' : 'none'), region: args.shipping?.region ?? null, fee: args.shipping?.quoteRequired ? null : ((args.shipping && (args.shipping.fee > 0 || args.shipping.region)) ? args.shipping.fee : null), estDays: args.shipping?.estDays ?? null, freeThresholdApplied: args.shipping?.freeThresholdApplied },
     acceptModeEffective: args.acceptMode,
   }))
   return { orderId }
@@ -134,7 +134,7 @@ export interface DirectPayUnsupportedOpts {
  */
 export function createDirectPayResponse(
   res: Response, db: Database.Database, deps: DirectPayCreateDeps & { getProtocolParam: <T>(k: string, fb: T) => T },
-  ctx: { product: Record<string, unknown>; buyerId: string; reqQty: number; basePrice: number; totalAmount: number; totalAmountU: Units; shippingAddress: string; directReceiveAccountId?: string; opts?: DirectPayUnsupportedOpts; shipping?: { region: string | null; fee: number; estDays: string | null; quoteRequired?: boolean } },
+  ctx: { product: Record<string, unknown>; buyerId: string; reqQty: number; basePrice: number; totalAmount: number; totalAmountU: Units; shippingAddress: string; directReceiveAccountId?: string; opts?: DirectPayUnsupportedOpts; shipping?: { region: string | null; fee: number; estDays: string | null; quoteRequired?: boolean; freeThresholdApplied?: boolean } },
 ): void {
   // ① direct_p2p v1 = simple product only。escrow-only 修饰一律 fail-closed(本片不支持,不半支持)。
   const o = ctx.opts ?? {}

@@ -15538,6 +15538,7 @@ async function renderSeller(app) {
         <div style="font-weight:600;font-size:13px;color:#1e40af;margin-top:6px">${t('普通上架')}</div>
         <div style="font-size:10px;color:#1d4ed8;margin-top:2px">${t('标准商品 · 即买即发')}</div>
       </div>
+      ${window.freeShippingMarketingCard ? window.freeShippingMarketingCard() : ''}
       <div onclick="location.hash='#seller-trials'" class="card" style="padding:14px;cursor:pointer;background:linear-gradient(135deg,#faf5ff,#fdf2f8);border-color:#ddd6fe">
         <div style="font-size:24px">🎁</div>
         <div style="font-weight:600;font-size:13px;color:#6b21a8;margin-top:6px">${t('测评免单活动')}</div>
@@ -15549,8 +15550,7 @@ async function renderSeller(app) {
   const skillsSection = sellerSubTab === 'skills' ? `
     <div style="font-size:12px;color:#6b7280;margin-bottom:10px">${t('Skill 自动化 · 让 Agent 替你接单/报价/发货')}</div>
   ` : ''
-  // 注:Skill 真实内容由下方 #my-skills-list 同步渲染(mySkills 已同步就绪);
-  //    此前这里有个 #skill-mgmt-content loading$() 占位但全文件无人填充 → spinner 永转,已删除。
+  // 注:Skill 真实内容由下方 #my-skills-list 同步渲染(mySkills 已同步就绪);此前 #skill-mgmt-content loading$() 占位无人填充 → spinner 永转,已删除。
 
   const productsSection = sellerSubTab === 'products' ? `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">

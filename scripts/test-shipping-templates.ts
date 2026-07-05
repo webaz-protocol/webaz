@@ -104,6 +104,9 @@ try {
     && !!(db.prepare("SELECT store_shipping_template t FROM users WHERE id='s1'").get() as { t: string }).t)
   ok('16. invalid template rejected 400', (await call('POST', '/api/seller/shipping-template', 's1', { store_template: [{ region: 'CN', fee: -3 }] })).status === 400)
   ok('17. per-product override set', (await call('POST', '/api/seller/shipping-template', 's1', { product_id: 'p', template: [{ region: 'SG', fee: 3 }] })).status === 200)
+  // 审计 P2 回归:{product_id, store_free_shipping_threshold} 组合绝不能把商品模板静默清成 NULL(template 分支只认 'template' in b)
+  await call('POST', '/api/seller/shipping-template', 's1', { product_id: 'p', store_free_shipping_threshold: 200 })
+  ok('17b. store-threshold combo with product_id does NOT wipe the product template', !!(db.prepare("SELECT shipping_template t FROM products WHERE id='p'").get() as { t: string | null }).t)
   const opts = await call('GET', '/api/products/p/shipping-options')
   ok('18. public shipping-options resolves product override (source=product)', opts.status === 200 && opts.json.region_required === true
     && (opts.json.template as Array<{ region: string }>).length === 1 && opts.json.source === 'product')
@@ -121,7 +124,7 @@ try {
   ok('21. orders-create calls gateShippingForCreate BEFORE totals (both rails share)', /gateShippingForCreate\(db, res, product/.test(OC))
   ok('22. shipping fee joins totalAmountU', /priceAfterCouponU \+ insurancePremiumU \+ _ship\.feeU/.test(OC))
   ok('23. escrow INSERT snapshots the 3 shipping cols', /ship_to_region, shipping_fee, shipping_est_days/.test(OC))
-  ok('24. dp ctx passes shipping snapshot (+quoteRequired, PR-3)', /shipping: \{ region: _ship\.region, fee: _ship\.fee, estDays: _ship\.estDays, quoteRequired: _ship\.quoteRequired \}/.test(OC))
+  ok('24. dp ctx passes shipping snapshot (+quoteRequired PR-3, +freeThresholdApplied S2)', /shipping: \{ region: _ship\.region, fee: _ship\.fee, estDays: _ship\.estDays, quoteRequired: _ship\.quoteRequired, freeThresholdApplied: _ship\.freeThresholdApplied \}/.test(OC))
 }
 
 if (fail > 0) { console.error(`\n❌ shipping-templates FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

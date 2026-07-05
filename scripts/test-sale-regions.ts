@@ -102,7 +102,7 @@ const PEMPTY = <T,>(_k: string, fb: T): T => fb
   ok('5y2. admin PATCH validates json type + region-code array for this key', /param\.type === 'json'/.test(APP_) && /BAD_REGION_BLOCKLIST/.test(APP_))
   const RT = readFileSync('src/pwa/routes/shipping-templates.ts', 'utf8')
   ok('5d. write route: store + product branches with strict validation', /store_sale_regions' in b/.test(RT) && /'product_id' in b && 'sale_regions' in b/.test(RT) && /BAD_SALE_REGIONS/.test(RT))
-  ok('5e. legacy bare-product_id template branch preserved, new combos not swallowed', /'template' in b \|\| \(\('product_id' in b\) && !\('quote_ok' in b\) && !\('sale_regions' in b\)\)/.test(RT))
+  ok('5e. template branch fires ONLY on explicit template key (审计 P2:关闭 {product_id, store_*} 误清模板整类)', /if \('template' in b\) \{/.test(RT) && !/'product_id' in b\) && !\('quote_ok' in b\)/.test(RT))
   const HTML = readFileSync('src/pwa/public/index.html', 'utf8')
   const UI = readFileSync('src/pwa/public/app-sale-regions-ui.js', 'utf8')
   ok('5f. UI module loaded after order-accept-ui (wrapper needs originals)', HTML.indexOf('app-sale-regions-ui.js') > HTML.indexOf('app-order-accept-ui.js') && HTML.indexOf('app-sale-regions-ui.js') > 0)
