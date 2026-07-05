@@ -97,6 +97,9 @@ When creating or substantially editing a core file, add a top comment block: **w
 
 ---
 
+## Before every push (hard rule)
+Run `npm run preflight:push` (executes ALL cross-cutting gates: api-docs freshness, contract lock, schema + 4-layer PG parity, ratchets, seam, pwa-syntax, tsc). Then consult the change-type → registration-points matrix in `.claude/skills/webaz-invariants/SKILL.md` — every change here touches 5-8 registration points; green guards ≠ all points registered.
+
 ## See also
 - [README.md](README.md) — what WebAZ is + architecture overview
 - [CONTRIBUTING.md](CONTRIBUTING.md) — full contributor guide (this file is the AI-agent quick entry into it)

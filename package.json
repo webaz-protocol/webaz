@@ -39,6 +39,7 @@
     "meta-rules:check": "tsx scripts/meta-rules-invariant-check.ts",
     "params:check": "tsx scripts/meta-rule-locked-params-check.ts",
     "preflight": "tsx scripts/preflight.ts",
+    "preflight:push": "npm run check:api-docs-fresh && npm run contract:verify && npm run schema:verify && npm run pg:verify && npm run guard:complexity && npm run guard:pr-constraints && npm run routes:seam-check && npm run check:pwa-syntax && npm run build && echo '✅ preflight:push all green'",
     "test:github-credential": "tsx scripts/test-github-credential.ts",
     "test:github-fetch-adapter": "tsx scripts/test-github-fetch-adapter.ts",
     "test:github-authenticated-read": "tsx scripts/test-github-authenticated-read.ts",
