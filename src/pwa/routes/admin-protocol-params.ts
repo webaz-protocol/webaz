@@ -126,6 +126,17 @@ export function registerAdminProtocolParamsRoutes(app: Application, deps: AdminP
     if (param.type === 'boolean' && !['true', 'false', '1', '0'].includes(strVal)) {
       return void res.status(400).json({ error: '类型不匹配（需 boolean）' })
     }
+    // S1 审计:json 型参数必须能被 parse(此前只有 number/boolean 校验,json 型能写进任意串 → 消费方 fail-open/closed 两难)
+    if (param.type === 'json') {
+      let parsed: unknown
+      try { parsed = JSON.parse(strVal) } catch { return void res.status(400).json({ error: '类型不匹配(需合法 JSON)' }) }
+      // key 专项:平台禁售名单必须是大写区码数组(2-8 位字母/数字/-)—— 该参数直接进建单硬门,坏值会 fail-closed 挡全部下单
+      if (req.params.key === 'trade.platform_region_blocklist') {
+        if (!Array.isArray(parsed) || !parsed.every(x => typeof x === 'string' && /^[A-Z0-9-]{2,8}$/.test(x))) {
+          return void res.status(400).json({ error: 'trade.platform_region_blocklist 须为大写区码字符串数组,如 ["KP"]', code: 'BAD_REGION_BLOCKLIST' })
+        }
+      }
+    }
     // A-3: 变更前快照旧值
     const oldRow = await dbOne<{ value: string }>('SELECT value FROM protocol_params WHERE key = ?', [req.params.key])
     db.transaction(() => {

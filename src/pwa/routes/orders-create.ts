@@ -32,7 +32,7 @@ import { buildCartMandate, buildPaymentMandate, signMandate } from './ap2-mandat
 // RFC-014 PR3 — 金额走整数 base-units;钱包写绝对值(防 REAL 浮点加法 dust)。
 import { toUnits, toDecimal, mulQty, mulRate } from '../../money.js'
 import { createDirectPayResponse } from '../../direct-pay-create.js'                    // PR-4c: direct_p2p 建单分叉(生产门+收款指令门+原子建单;本金不入协议)
-import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'; import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from '../../trade-terms.js'  // PR-2 运费守门(两轨共用) + S0 交易条款快照(证据,fail-soft 零钱路)
+import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'; import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from '../../trade-terms.js'; import { gateSaleRegionForCreate } from '../../sale-regions.js'  // PR-2 运费守门 + S0 条款快照 + S1 可售门(意愿/合规先于物流)
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam(仅下单事务外的预检查;事务内 escrow/INSERT 保持同步)
 
 // 店铺推荐 → 商品三级归因的【懒升级】(sync,跑在下单事务内、getProductShareChain 之前)。
@@ -289,7 +289,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     const subtotalU = mulQty(basePriceU, reqQty)
     const priceAfterCouponU = Math.max(0, subtotalU - toUnits(couponDiscount))
     const insuranceRate = getProtocolParam<number>('order_insurance_rate', 0.01)
-    const insurancePremiumU = buy_insurance ? mulRate(priceAfterCouponU, insuranceRate) : 0; const _ship = gateShippingForCreate(db, res, product as { shipping_template?: string | null; shipping_quote_ok?: number | null }, String(product.seller_uid), req.body?.ship_to_region, String(req.body?.payment_rail || '') === 'direct_p2p' ? 'direct_p2p' : 'escrow'); if (!_ship) return  // PR-2 运费模板:有模板必选地区且须命中(400/409 已写);无模板=原行为
+    const insurancePremiumU = buy_insurance ? mulRate(priceAfterCouponU, insuranceRate) : 0; if (!gateSaleRegionForCreate(db, res, product as { sale_regions?: string | null }, String(product.seller_uid), req.body?.ship_to_region, getProtocolParam)) return; const _ship = gateShippingForCreate(db, res, product as { shipping_template?: string | null; shipping_quote_ok?: number | null }, String(product.seller_uid), req.body?.ship_to_region, String(req.body?.payment_rail || '') === 'direct_p2p' ? 'direct_p2p' : 'escrow'); if (!_ship) return  // PR-2 运费模板:有模板必选地区且须命中(400/409 已写);无模板=原行为
     const totalAmountU = Math.max(0, priceAfterCouponU + insurancePremiumU + _ship.feeU)   // 运费并入总额(与保险费同惯例;快照 orders.shipping_fee)
     // B5 主动捐赠 — 按订单总额 × 比例算（额外扣款，进 charity_fund）
     const donationAmountU = donationPctNum > 0 ? mulRate(totalAmountU, donationPctNum) : 0
