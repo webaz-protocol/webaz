@@ -18,6 +18,8 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 db.prepare("INSERT INTO users (id,name,role,api_key,store_sale_regions) VALUES ('s1','s','seller','k1',NULL),('s2','s2','seller','k2','{\"mode\":\"list\",\"include\":[\"SG\",\"MY\"]}')").run()
+try { db.exec("ALTER TABLE users ADD COLUMN region TEXT DEFAULT 'global'") } catch { /* 已存在 */ }
+db.prepare("UPDATE users SET region = 'china' WHERE id = 's2'").run()   // s2=中国卖家,规则只卖新马 —— 所在地与可售方向解耦
 
 // ── ① 写入校验 ──
 {
@@ -68,6 +70,12 @@ const PEMPTY = <T,>(_k: string, fb: T): T => fb
   m = mkRes()
   ok('4e. product override widens past store rule', SR.gateSaleRegionForCreate(db, m.r, { sale_regions: '{"mode":"all"}' }, 's2', 'US', PEMPTY) === true)
   m = mkRes()
+  // 不变量(用户要求):卖家所在地区与可售地区完全解耦 —— 中国卖家可以只做跨境(本国不在 include 里),
+  //   规则照常生效:卖到 SG 通过、卖回本国 CN 被自己的规则拒。gate 从不读 users.region。
+  ok('4x1. CN seller selling ONLY abroad: SG passes (own region not required in list)', SR.gateSaleRegionForCreate(db, m.r, { sale_regions: null }, 's2', 'SG', PEMPTY) === true)
+  m = mkRes()
+  ok('4x2. same seller: own home region CN blocked by own rule (no home-region special case)', SR.gateSaleRegionForCreate(db, m.r, { sale_regions: null }, 's2', 'CN', PEMPTY) === false && m.body?.error_code === 'REGION_NOT_FOR_SALE')
+  m = mkRes()
   ok('4f. platform blocklist → 409 PRODUCT_RESTRICTED (merchant cannot widen)', SR.gateSaleRegionForCreate(db, m.r, { sale_regions: '{"mode":"all"}' }, 's2', 'KP', P) === false && m.body?.error_code === 'PRODUCT_RESTRICTED')
   m = mkRes()
   ok('4g. platform list alone forces region choice', SR.gateSaleRegionForCreate(db, m.r, { sale_regions: null }, 's1', undefined, P) === false && m.body?.error_code === 'SHIP_REGION_REQUIRED')
@@ -80,6 +88,7 @@ const PEMPTY = <T,>(_k: string, fb: T): T => fb
   const OC = readFileSync('src/pwa/routes/orders-create.ts', 'utf8')
   ok('5a. sale gate runs BEFORE shipping gate in create', OC.indexOf('gateSaleRegionForCreate') < OC.indexOf('gateShippingForCreate(db, res') && /if \(!gateSaleRegionForCreate\(db, res/.test(OC))
   const SRC = readFileSync('src/sale-regions.ts', 'utf8')
+  ok('5x. gate never reads the seller own region (users.region) — sellable direction fully decoupled', !/users?\.region\b/.test(SRC) && !/SELECT region/.test(SRC))
   ok('5b. REGION_NOT_FOR_SALE copy says quote does NOT apply (hard reject semantics)', /不适用询价/.test(SRC))
   const TT = readFileSync('src/trade-terms.ts', 'utf8')
   ok('5c. snapshot slot reads sale_regions (S0 slot auto-fills)', /sale_regions_rule: parse\(p\?\.sale_regions\) \?\? parse\(u\?\.store_sale_regions\)/.test(TT))
