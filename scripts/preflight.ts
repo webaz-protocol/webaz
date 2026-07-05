@@ -84,7 +84,7 @@ if (!existsSync(DB_PATH)) {
 }
 
 // ── 4. Static-gate reminder (CI enforces these; listed for a manual pre-launch run) ──
-const STATIC_GATES = 'npm run build && npm run schema:verify && npm run routes:seam-check && npm run contract:verify && npm run license:check && npm run meta-rules:check && npm run params:check'
+const STATIC_GATES = 'npm run build && npm run schema:verify && npm run routes:seam-check && npm run contract:verify && npm run license:check && npm run meta-rules:check && npm run params:check && npm run check:api-docs-fresh && npm run pg:verify && npm run guard:complexity && npm run guard:pr-constraints && npm run check:pwa-syntax'   // 2026-07-05 补全:api-docs 漂移(本 session 漏跑 ×4 全靠 CI 拦)/pg 四层 parity/ratchet/pr-constraints/pwa-syntax —— 推 PR 前跑本命令,不靠工作记忆
 
 // ── report ──
 const icon = { PASS: '✅', WARN: '⚠️ ', FAIL: '❌' }
