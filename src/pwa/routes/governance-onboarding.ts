@@ -500,11 +500,14 @@ export function registerGovernanceOnboardingRoutes(app: Application, deps: Gover
           VALUES (?, ?, ?, 'activate', 'active', ?, 'passkey')
         `).run(activateId, app_.user_id, role, webauthn_token || null)
 
-        // 5.3 加 role 到 users.roles JSON 数组(去重)
+        // 5.3 加 role 到 users.roles JSON 数组(去重)。
+        //   仲裁员例外:仲裁资格 = active arbitrator_whitelist(5.1b 已同事务 grant,#209/#220),【不是角色】——
+        //   写进 roles 会在角色切换 UI 造出可切换的"仲裁员"假身份(与买卖身份互斥感误导用户,梦想者1号被卡案根源之一)。
+        //   普通人保留 buyer/seller 身份 + 白名单资格,仲裁台入口随 can_arbitrate 出现,买卖能力不受影响。
         const user = db.prepare("SELECT roles FROM users WHERE id = ?").get(app_.user_id) as { roles: string } | undefined
         let roles: string[] = []
         try { roles = JSON.parse(user?.roles || '[]') } catch { roles = [] }
-        if (!roles.includes(role)) {
+        if (role !== 'arbitrator' && !roles.includes(role)) {
           roles.push(role)
           db.prepare("UPDATE users SET roles = ? WHERE id = ?").run(JSON.stringify(roles), app_.user_id)
         }
