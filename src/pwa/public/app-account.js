@@ -131,7 +131,7 @@ async function renderProfile(app) {
   const allRoles  = [...SELF_SERVE_ROLES, ...APPLY_ROLES]
   const roleLabels = { buyer: t('买家'), seller: t('卖家'), logistics: t('物流'), arbitrator: t('仲裁员'), verifier: t('审核员'), admin: t('管理员') }
   const roleIcons  = { buyer: '🛍️', seller: '🏪', logistics: '🚚', arbitrator: '⚖️', verifier: '🔍', admin: '🛡' }
-  const addable = allRoles.filter(r => !roles.includes(r))
+  if (!state.canArbitrate) { try { const _as = await GET('/arbitrator/status'); state.canArbitrate = !!(_as && _as.can_arbitrate) } catch {} } const addable = allRoles.filter(r => !roles.includes(r) && !(r === 'arbitrator' && state.canArbitrate))   // #249-P3:仲裁资格=白名单非角色,roles 判不出 → 现场查;已持资格不再被邀请"申请仲裁员"
   // 受信角色：admin / verifier / logistics / arbitrator — 隐藏交易/社交相关 UI
   const TRUSTED_ROLES = ['admin', 'verifier', 'logistics', 'arbitrator']
   const isTrustedRole = TRUSTED_ROLES.includes(data.role) || roles.some(r => ['admin','verifier'].includes(r))
@@ -204,7 +204,7 @@ async function renderProfile(app) {
               ${roleIcons[r]} ${roleLabels[r]}
               ${r === data.role ? `<span style="font-size:11px;color:#3b82f6">${t('● 激活')}</span>` : ''}
             </button>
-          `).join('')}
+          `).join('')}${state.canArbitrate ? `<span title="${t('仲裁资格是白名单能力,叠加在你的买卖身份上,不是可切换角色')}" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-size:14px;border:2px dashed #c4b5fd;background:#f5f3ff;color:#6b21a8">⚖️ ${t('仲裁员资格(白名单)')}</span>` : ''}
         </div>
 
         ${roles.some(r => ['admin','verifier'].includes(r)) ? `
