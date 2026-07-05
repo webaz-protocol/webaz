@@ -106,11 +106,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/feedback/:id/reply` | 🔐 |  | admin 回复 + 切状态 | src/pwa/routes/feedback.ts:131 |
 | GET | `/api/admin/finance/monthly` | 🔐 | 👑 |  | src/pwa/routes/admin-analytics.ts:89 |
 | POST | `/api/admin/governance/activate` | 🔐 | 👑 | body: { application_id, webauthn_token, note? } | src/pwa/routes/governance-onboarding.ts:407 |
-| GET | `/api/admin/governance/appeals` | 🔐 | 👑 | GET /api/admin/governance/appeals — maintainer 看待裁决申诉 | src/pwa/routes/governance-onboarding.ts:747 |
+| GET | `/api/admin/governance/appeals` | 🔐 | 👑 | GET /api/admin/governance/appeals — maintainer 看待裁决申诉 | src/pwa/routes/governance-onboarding.ts:750 |
 | GET | `/api/admin/governance/application/:id` | 🔐 | 👑 | GET /api/admin/governance/application/:id — 详情(含 expected_verdict 用于对比 — 仅 maint | src/pwa/routes/governance-onboarding.ts:376 |
 | GET | `/api/admin/governance/applications` | 🔐 | 👑 | GET /api/admin/governance/applications — 列出 pending_onboarding(可筛 quiz_passed +  | src/pwa/routes/governance-onboarding.ts:359 |
-| GET | `/api/admin/governance/auto-deactivations` | 🔐 | 👑 | spec §6.2 公示触发原因(透明 — 元规则 #1) | src/pwa/routes/governance-onboarding.ts:728 |
-| POST | `/api/admin/governance/resolve-appeal` | 🔐 | 👑 | accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由 | src/pwa/routes/governance-onboarding.ts:766 |
+| GET | `/api/admin/governance/auto-deactivations` | 🔐 | 👑 | spec §6.2 公示触发原因(透明 — 元规则 #1) | src/pwa/routes/governance-onboarding.ts:731 |
+| POST | `/api/admin/governance/resolve-appeal` | 🔐 | 👑 | accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由 | src/pwa/routes/governance-onboarding.ts:769 |
 | POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:5324 |
 | GET | `/api/admin/health` | 🔐 | 👑 |  | src/pwa/routes/admin-health.ts:33 |
 | GET | `/api/admin/hot-wallet` |  |  | Legacy x-admin-key 入口：仅余额 | src/pwa/routes/admin-wallet-ops.ts:74 |
@@ -394,15 +394,15 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/follows/me` | 🔐 |  |  | src/pwa/routes/follows.ts:59 |
 | GET | `/api/fx/rates` |  |  |  | src/pwa/routes/fx.ts:19 |
 | GET | `/api/governance/onboarding-stats` |  |  | 无 auth — agent / 用户 / 第三方都可读;不暴露 PII | src/pwa/routes/public-utils.ts:469 |
-| POST | `/api/governance/onboarding/appeal` | 🔐 |  | 必须:source 行 action='auto_deactivate' + window 内 + 未已 appeal + reason 长度 | src/pwa/routes/governance-onboarding.ts:669 |
+| POST | `/api/governance/onboarding/appeal` | 🔐 |  | 必须:source 行 action='auto_deactivate' + window 内 + 未已 appeal + reason 长度 | src/pwa/routes/governance-onboarding.ts:672 |
 | POST | `/api/governance/onboarding/apply` | 🔐 |  |  | src/pwa/routes/governance-onboarding.ts:77 |
 | POST | `/api/governance/onboarding/case-review` | 🔐 |  | 不立即评分 — maintainer 上岗签字前(阶段 3 #1093)对比 expected_verdict | src/pwa/routes/governance-onboarding.ts:299 |
 | GET | `/api/governance/onboarding/cases` | 🔐 |  | 实施 docs/GOVERNANCE-ONBOARDING.md §4.2 案例研读 | src/pwa/routes/governance-onboarding.ts:284 |
 | GET | `/api/governance/onboarding/my` | 🔐 |  |  | src/pwa/routes/governance-onboarding.ts:188 |
-| GET | `/api/governance/onboarding/progress` | 🔐 |  | 返回 onboarding 整体进度(spec §4):申请状态 + 学习包(client localStorage) + 题目分数 + 案例(后续) | src/pwa/routes/governance-onboarding.ts:866 |
+| GET | `/api/governance/onboarding/progress` | 🔐 |  | 返回 onboarding 整体进度(spec §4):申请状态 + 学习包(client localStorage) + 题目分数 + 案例(后续) | src/pwa/routes/governance-onboarding.ts:869 |
 | GET | `/api/governance/onboarding/quiz` | 🔐 |  | 实施 docs/GOVERNANCE-ONBOARDING.md §4.3 题目 | src/pwa/routes/governance-onboarding.ts:206 |
 | POST | `/api/governance/onboarding/quiz-submit` | 🔐 |  | body: { role, answers: [{question_id, answer}] } | src/pwa/routes/governance-onboarding.ts:219 |
-| POST | `/api/governance/onboarding/resign` | 🔐 |  | confirm_text 必须等于 'RESIGN arbitrator' 或 'RESIGN verifier'(type-to-confirm 防误触) | src/pwa/routes/governance-onboarding.ts:550 |
+| POST | `/api/governance/onboarding/resign` | 🔐 |  | confirm_text 必须等于 'RESIGN arbitrator' 或 'RESIGN verifier'(type-to-confirm 防误触) | src/pwa/routes/governance-onboarding.ts:553 |
 | GET | `/api/governance/params` |  |  | ─── 治理参数 ──────────────────────────────────────────────── | src/pwa/routes/payments-governance.ts:52 |
 | GET | `/api/governance/params/:key/history` |  |  |  | src/pwa/routes/payments-governance.ts:75 |
 | POST | `/api/group-buys` | 🔐 |  | 卖家开团 | src/pwa/routes/group-buys.ts:110 |
@@ -570,15 +570,15 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/profile/add-role` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:41 |
 | POST | `/api/profile/bind-email` | 🔐 |  | 绑定邮箱 — 步骤 1：发码 | src/pwa/routes/profile-credentials.ts:87 |
 | POST | `/api/profile/bind-placement` | 🔐 |  |  | src/pwa/routes/profile-placement.ts:55 |
-| POST | `/api/profile/change-handle` | 🔐 |  | 改 handle：累进式冷却 — 第 N 次改需距上次 N × 12 月 | src/pwa/routes/profile-identity.ts:140 |
-| POST | `/api/profile/change-name` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:127 |
+| POST | `/api/profile/change-handle` | 🔐 |  | 改 handle：累进式冷却 — 第 N 次改需距上次 N × 12 月 | src/pwa/routes/profile-identity.ts:142 |
+| POST | `/api/profile/change-name` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:129 |
 | POST | `/api/profile/clear-location` | 🔐 |  |  | src/pwa/routes/profile-location.ts:56 |
 | POST | `/api/profile/confirm-email` | 🔐 |  | 绑定邮箱 — 步骤 2：确认验证码 | src/pwa/routes/profile-credentials.ts:109 |
 | POST | `/api/profile/default-address` | 🔐 |  | 默认地址（结构化 + 兼容旧 text/region） | src/pwa/routes/profile-prefs.ts:31 |
 | PATCH | `/api/profile/feed-visible` | 🔐 |  | 隐私开关（旧 API，向后兼容；新代码用 PATCH /api/profile） | src/pwa/routes/profile-prefs.ts:74 |
 | POST | `/api/profile/placement-pref` | 🔐 |  |  | src/pwa/routes/profile-placement.ts:88 |
 | GET | `/api/profile/placement-status` | 🔐 |  |  | src/pwa/routes/profile-placement.ts:40 |
-| POST | `/api/profile/region` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:95 |
+| POST | `/api/profile/region` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:97 |
 | POST | `/api/profile/remove-password` | 🔐 |  | 移除密码（恢复只用 API Key 模式） | src/pwa/routes/profile-credentials.ts:74 |
 | POST | `/api/profile/set-location` | 🔐 |  |  | src/pwa/routes/profile-location.ts:37 |
 | POST | `/api/profile/set-password` | 🔐 |  | 设置 / 修改密码 | src/pwa/routes/profile-credentials.ts:43 |

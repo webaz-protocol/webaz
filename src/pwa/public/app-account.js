@@ -135,8 +135,8 @@ async function renderProfile(app) {
   // 受信角色：admin / verifier / logistics / arbitrator — 隐藏交易/社交相关 UI
   const TRUSTED_ROLES = ['admin', 'verifier', 'logistics', 'arbitrator']
   const isTrustedRole = TRUSTED_ROLES.includes(data.role) || roles.some(r => ['admin','verifier'].includes(r))
-  // 受信角色显示的"已有角色" chip 只展示受信角色（隐藏 buyer/seller，即使账户有遗留多角色）
-  const visibleRoles = isTrustedRole ? roles.filter(r => TRUSTED_ROLES.includes(r)) : roles
+  const identityLocked = ['admin', 'verifier'].includes(data.role) || roles.some(r => ['admin', 'verifier'].includes(r))   // 角色 chip 过滤:身份锁只看 admin/verifier(与服务端 switch-role 守卫同谓词)。此前 arbitrator/logistics active 也触发过滤 → legacy 仲裁员角色下 buyer/seller chip 被藏切不回买家(梦想者1号案);服务端本就允许该切换,前后端对齐
+  const visibleRoles = identityLocked ? roles.filter(r => TRUSTED_ROLES.includes(r)) : roles
 
   app.innerHTML = shell(`
     ${mySubTabsHTML('settings')}

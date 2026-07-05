@@ -81,8 +81,10 @@ export function registerProfileIdentityRoutes(app: Application, deps: ProfileIde
     const { role } = req.body
     const roles = safeRoles(user)
     if (!roles.includes(role)) return void res.json({ error: '你还没有该角色，请先添加' })
-    // 防御：已是 admin/verifier 的用户不能切到 buyer/seller（防遗留多角色账户绕过）
-    if (roles.some(r => ROLE_LOCKED_ROLES.includes(r)) && !ROLE_LOCKED_ROLES.includes(role)) {
+    // 防御：已是 admin/verifier 的用户不能切到 buyer/seller（防遗留多角色账户绕过）。
+    //   锁的是【交易面目标】,不是一切切换 —— 此前 `!ROLE_LOCKED_ROLES.includes(role)` 连 verifier→arbitrator/logistics
+    //   (同为受信/治理身份,零交易能力)都拦 → 切到审核员后被永久卡死在审核员(梦想者1号案:回不到仲裁员)。
+    if (roles.some(r => ROLE_LOCKED_ROLES.includes(r)) && ['buyer', 'seller'].includes(role)) {
       return void res.json({
         error: '受信角色不能切换为 buyer / seller',
         hint: '权责分离原则；如需买卖请用其他账号。'
