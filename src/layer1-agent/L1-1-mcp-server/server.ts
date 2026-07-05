@@ -423,8 +423,11 @@ db.exec(`
     error_msg  TEXT
   )
 `)
-db.exec(`CREATE INDEX IF NOT EXISTS idx_mcp_tool_calls_ts   ON mcp_tool_calls(ts)`)
-db.exec(`CREATE INDEX IF NOT EXISTS idx_mcp_tool_calls_tool ON mcp_tool_calls(tool_name, ts)`)
+// 索引命名与 runtime bridge(apply-webaz-runtime-schema)统一 —— 两组合根曾各自命名(idx_mcp_tool_calls_* vs idx_mcp_tc_*)
+//   → 同库跑过两根就出现同列重复索引,且 pg 产物逐列/索引 parity 因根不同而漂移。老名幂等清除。
+db.exec(`DROP INDEX IF EXISTS idx_mcp_tool_calls_ts`); db.exec(`DROP INDEX IF EXISTS idx_mcp_tool_calls_tool`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_mcp_tc_ts   ON mcp_tool_calls(ts)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_mcp_tc_tool ON mcp_tool_calls(tool_name, ts)`)
 
 // ─── 4 层身份模型 helpers（与 PWA server 同源逻辑）───────────────
 const PERMA_ALPHABET_MCP = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'

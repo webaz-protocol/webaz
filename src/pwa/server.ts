@@ -1255,8 +1255,7 @@ try { db.exec("CREATE INDEX IF NOT EXISTS idx_share_owner ON shareables(owner_id
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_share_product ON shareables(related_product_id, status)") } catch {}
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_share_anchor ON shareables(related_anchor, status)") } catch {}
 // 2026-05-22: 复合索引 — GET /api/shares/dashboard bought_products 5 子查询性能优化
-// note_count / first_note_id 用：owner_id + related_order_id + type + status
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_share_owner_order_type ON shareables(owner_id, related_order_id, type, status)") } catch {}
+// note_count / first_note_id 用的 idx_share_owner_order_type 已移至下方 related_order_id ALTER 之后(此处列尚不存在,先建=fresh 库永缺该索引)
 // product_share_count 用：owner_id + related_product_id + status（避免回表）
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_share_owner_product ON shareables(owner_id, related_product_id, status)") } catch {}
 // owner_code: 创建时的 permanent_code 快照（owner 改 handle 不影响溯源 + 链接更短）
@@ -1278,6 +1277,7 @@ for (const stmt of [
 ]) { try { db.exec(stmt) } catch { /* 已存在 */ } }
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_share_parent ON shareables(parent_id) WHERE parent_id IS NOT NULL") } catch {}
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_share_order ON shareables(related_order_id) WHERE related_order_id IS NOT NULL") } catch {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_share_owner_order_type ON shareables(owner_id, related_order_id, type, status)") } catch {}
 
 // 笔记图片 hash 索引 / Wave A 购物表（心愿单 · 商品Q&A · 优惠券）→ server-schema.ts
 // 纯幂等建表/建索引 DDL，原位调用保持 boot 顺序不变
@@ -1438,8 +1438,7 @@ try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS uniq_pv_product_options ON prod
 for (const stmt of [
   'ALTER TABLE products ADD COLUMN claim_loss_count INTEGER DEFAULT 0',
   'ALTER TABLE secondhand_items ADD COLUMN claim_loss_count INTEGER DEFAULT 0',
-  'ALTER TABLE auctions ADD COLUMN claim_loss_count INTEGER DEFAULT 0',
-]) { try { db.exec(stmt) } catch {} }
+]) { try { db.exec(stmt) } catch {} }   // auctions 的同名 ALTER 在 auctions CREATE 之后(此处表尚不存在,先跑=fresh 库永缺列 — 铁律:ALTER AFTER CREATE)
 
 // P2P 原生商店 — 卖家本地节点存详情，WebAZ 只锚定 hash + 关键字段
 for (const stmt of [
@@ -1711,10 +1710,10 @@ try {
           read       INTEGER DEFAULT 0,
           created_at TEXT DEFAULT (datetime('now')),
           wish_id    TEXT,
-          actions    TEXT
+          actions    TEXT, template_key TEXT, params TEXT
         );
-        INSERT INTO notifications_new (id, user_id, order_id, type, title, body, read, created_at, wish_id, actions)
-          SELECT id, user_id, order_id, type, title, body, read, created_at, wish_id, actions FROM notifications;
+        INSERT INTO notifications_new (id, user_id, order_id, type, title, body, read, created_at, wish_id, actions, template_key, params)
+          SELECT id, user_id, order_id, type, title, body, read, created_at, wish_id, actions, template_key, params FROM notifications;
         DROP TABLE notifications;
         ALTER TABLE notifications_new RENAME TO notifications;
         CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, read, created_at DESC);
@@ -2020,8 +2019,9 @@ db.exec(`
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_auctions_seller ON auctions(seller_id, status, created_at DESC)') } catch {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_auctions_board ON auctions(status, category, deadline_at)') } catch {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_auctions_deadline ON auctions(status, deadline_at)') } catch {}
-// AUC P1：反狙击延长上限
+// AUC P1：反狙击延长上限;claim_loss_count 从 Sprint 4 数组移来(那里先于本表 CREATE,fresh 库静默失败)
 try { db.exec('ALTER TABLE auctions ADD COLUMN max_extends INTEGER DEFAULT 10') } catch {}
+try { db.exec('ALTER TABLE auctions ADD COLUMN claim_loss_count INTEGER DEFAULT 0') } catch {}
 try { db.exec('ALTER TABLE auctions ADD COLUMN extends_used INTEGER DEFAULT 0') } catch {}
 
 db.exec(`

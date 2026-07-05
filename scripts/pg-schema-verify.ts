@@ -118,18 +118,87 @@ console.log(`  CREATE INDEX ${createIdxTotal}(全 IF NOT EXISTS: ${createIdxTota
 console.log(`  事务包裹     BEGIN×${beginN} / COMMIT×${commitN}`)
 
 // ── ② parity(需 SQLite DB)──
+// 解析 pg 产物每张表的列名集合(深度感知逗号切分;跳过表级约束行)。
+//   为什么逐列:计数 parity 抓不住"列漏同步"(#250 审计:S0 12 列只进了 SQLite,表数/索引数照样相等)。
+function pgTableColumns(sql: string): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>()
+  const re = /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+"?([a-zA-Z_]+)"?\s*\(/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(sql))) {
+    let depth = 1; let i = re.lastIndex
+    for (; i < sql.length && depth > 0; i++) { if (sql[i] === '(') depth++; else if (sql[i] === ')') depth-- }
+    const inner = sql.slice(re.lastIndex, i - 1)
+    const parts: string[] = []
+    let d = 0; let start = 0
+    for (let j = 0; j < inner.length; j++) {
+      const ch = inner[j]
+      if (ch === '(') d++
+      else if (ch === ')') d--
+      else if (ch === ',' && d === 0) { parts.push(inner.slice(start, j)); start = j + 1 }
+    }
+    parts.push(inner.slice(start))
+    const cols = new Set<string>()
+    for (const part of parts) {
+      const tok = part.trim().match(/^"?([a-zA-Z_][a-zA-Z0-9_]*)"?/)
+      if (!tok) continue
+      if (['PRIMARY', 'FOREIGN', 'UNIQUE', 'CHECK', 'CONSTRAINT'].includes(tok[1].toUpperCase())) continue
+      cols.add(tok[1].toLowerCase())
+    }
+    map.set(m[1].toLowerCase(), cols)
+    re.lastIndex = i
+  }
+  return map
+}
 if (existsSync(SQLITE_DB_PATH)) {
   const sdb = new Database(SQLITE_DB_PATH, { readonly: true })
+  const sdbTriggers = (): { tbl: string; op: string }[] =>
+    (sdb.prepare(`SELECT name, tbl_name FROM sqlite_master WHERE type='trigger' AND (name LIKE '%_no_update' OR name LIKE '%_no_delete')`).all() as { name: string; tbl_name: string }[])
+      .map(r => ({ tbl: r.tbl_name.toLowerCase(), op: r.name.endsWith('_no_update') ? 'UPDATE' : 'DELETE' }))
   const t = sdb.prepare(
     `SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL`,
   ).get() as { n: number }
   const ix = sdb.prepare(
     `SELECT COUNT(*) n FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL`,
   ).get() as { n: number }
-  sdb.close()
   console.log(`  parity      SQLite 表 ${t.n} / pg 表 ${createTableTotal} · SQLite 索引 ${ix.n} / pg 索引 ${createIdxTotal}`)
   if (t.n !== createTableTotal) failures.push(`表数不匹配:SQLite ${t.n} vs pg ${createTableTotal} —— 产物 stale,重跑 npm run pg:schema`)
   if (ix.n !== createIdxTotal) failures.push(`索引数不匹配:SQLite ${ix.n} vs pg ${createIdxTotal} —— 产物 stale,重跑 npm run pg:schema`)
+  // 逐表逐列 parity(#250 审计根治)
+  const pgCols = pgTableColumns(body)
+  const tables = sdb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL`).all() as { name: string }[]
+  const colDiffs: string[] = []
+  for (const { name } of tables) {
+    const sCols = new Set((sdb.prepare(`PRAGMA table_info(${JSON.stringify(name).replace(/"/g, '')})`).all() as { name: string }[]).map(c => c.name.toLowerCase()))
+    const pCols = pgCols.get(name.toLowerCase())
+    if (!pCols) continue   // 表数 parity 已另报
+    const missing = [...sCols].filter(c => !pCols.has(c))
+    const extra = [...pCols].filter(c => !sCols.has(c))
+    if (missing.length) colDiffs.push(`${name}: pg 缺列 [${missing.join(', ')}]`)
+    if (extra.length) colDiffs.push(`${name}: pg 多列 [${extra.join(', ')}](SQLite 已删?)`)
+  }
+  if (colDiffs.length) {
+    failures.push(`列 parity 不匹配 ×${colDiffs.length} —— 产物 stale,重跑 npm run pg:schema:`)
+    for (const dLine of colDiffs.slice(0, 12)) failures.push(`    ${dLine}`)
+    if (colDiffs.length > 12) failures.push(`    …及另外 ${colDiffs.length - 12} 张表`)
+  } else {
+    console.log(`  列 parity   ✅ 全部 ${tables.length} 张表列集合一致`)
+  }
+  // 不可变性 trigger parity(#252 审计):SQLite 里有 *_no_update/*_no_delete 触发器的表,
+  //   PG 产物必须有对应 BEFORE UPDATE/DELETE 守卫 —— 否则 PG 导入后 append-only/immutable 审计不变量静默消失。
+  //   以 sqlite_master 内省为准(不靠 gen 白名单自证),表名从 tbl_name 取(trigger 名不含全表名,如 trg_dr_qr_no_update)。
+  const sTrigs = sdbTriggers()
+  const trigDiffs: string[] = []
+  for (const { tbl, op } of sTrigs) {
+    const re = new RegExp(`CREATE\\s+TRIGGER\\s+\\S+\\s+BEFORE\\s+${op}\\s+ON\\s+"?${tbl}"?\\b`, 'i')
+    if (!re.test(body)) trigDiffs.push(`${tbl}: 缺 BEFORE ${op} 守卫`)
+  }
+  if (trigDiffs.length) {
+    failures.push(`不可变性 trigger parity 不匹配 ×${trigDiffs.length} —— 把表加进 gen-pg-schema APPEND_ONLY_TABLES 再重跑:`)
+    for (const dLine of trigDiffs) failures.push(`    ${dLine}`)
+  } else {
+    console.log(`  trigger     ✅ ${sTrigs.length} 条不可变性守卫全部有 PG 对应`)
+  }
+  sdb.close()
 } else {
   console.log(`  parity      ⏭  跳过(无 SQLite DB at ${SQLITE_DB_PATH})`)
 }
