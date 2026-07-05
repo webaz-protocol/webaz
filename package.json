@@ -236,6 +236,7 @@
     "test:payment-query-actions": "tsx scripts/test-payment-query-actions.ts",
     "test:dispute-withdraw-confirm": "tsx scripts/test-dispute-withdraw-confirm.ts",
     "test:poll-governor": "tsx scripts/test-poll-governor.ts",
+    "test:role-ui-consistency": "tsx scripts/test-role-ui-consistency.ts",
     "lint:secrets": "gitleaks detect --no-banner --redact --config .gitleaks.toml --exit-code 1",
     "test:wallet-signer": "tsx scripts/test-wallet-signer.ts",
     "test:cf-origin-guard": "tsx scripts/test-cf-origin-guard.ts"

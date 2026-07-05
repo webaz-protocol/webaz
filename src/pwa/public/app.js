@@ -17676,7 +17676,7 @@ async function renderVerifyTasks(app) {
   // ── Verifier 状态 banner（依据 /verifier/status） ─────────────
   const vState = vStatus?.state || 'none'
   let verifierBanner = ''
-  if (vState === 'none') {
+  if (vState === 'none' && state.user?.role !== 'verifier' && !(state.user?.roles || []).includes('verifier')) {   // 已是审核员(role 直授,无申请记录)不再邀请"申请审核员资格"(走查:身份矛盾卡)
     verifierBanner = `
       <div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,#f5f3ff,#fce7f3);border-color:#c4b5fd">
         <div style="font-size:15px;font-weight:600;margin-bottom:6px">🛡 ${t('申请审核员资格')}</div>

@@ -1512,7 +1512,7 @@ async function renderBuyerMyHome(app) {
   `
 
   // 顺序：我的购物 → 我的市场记录 → Agent 进阶 → 通信 → 信任与协议（条件显示）→ 公益折叠 → 账户与配置
-  app.innerHTML = shell(mySubTabsHTML('dashboard') + header + notePromptPlaceholder('me') + shopGrid + marketGrid + aiGrid + commsGrid + trustGrid + ((state.canArbitrate && window.arbTaishCard) ? window.arbTaishCard() : '') + socialGrid + charitySection + settingsGrid, 'me')
+  app.innerHTML = shell(mySubTabsHTML('dashboard') + header + notePromptPlaceholder('me') + shopGrid + marketGrid + aiGrid + commsGrid + trustGrid + ((state.canArbitrate && !isExternalArb && window.arbTaishCard) ? window.arbTaishCard() : '') + socialGrid + charitySection + settingsGrid, 'me')   // isExternalArb 已在"外部仲裁员·已批准"区渲染仲裁台 → 兜底卡不再重复(走查:同页两张仲裁台卡)
   hydrateNotePrompt('me')
 }
 
