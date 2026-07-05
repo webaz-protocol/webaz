@@ -18,7 +18,7 @@ export function initNotificationSchema(db: Database.Database): void {
       id         TEXT PRIMARY KEY,
       user_id    TEXT NOT NULL REFERENCES users(id),
       order_id   TEXT REFERENCES orders(id),
-      type       TEXT NOT NULL,
+      type       TEXT NOT NULL DEFAULT 'system',   -- fresh 库直接带默认:server 的 2026-05-24 重建迁移只在"无默认"时触发,曾在 fresh boot 上重建并吞掉本函数刚 ALTER 的 template_key/params(pg 逐列 parity 抓出)
       title      TEXT NOT NULL,
       body       TEXT NOT NULL,
       read       INTEGER DEFAULT 0,
