@@ -1028,10 +1028,10 @@ function preLaunchBannerHTML() {
 // 没有 Passkey 登录 / 找回路径,丢 key 换设备后 Passkey 救不回账号(与弹窗"增强不替代恢复邮箱"一致)。
 function recoveryBannerHTML() {
   const u = state.user
-  if (!u || u.role === 'admin') return ''
-  const hasRecovery = u.has_password || u.email_verified
-  if (hasRecovery) return ''
-  return `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;font-size:12px;color:#991b1b;line-height:1.6;margin:8px 12px 12px">
+  if (!u || u.role === 'admin' || u.has_password || u.email_verified) return ''
+  if (!location.hash.startsWith('#me') && Date.now() < +(localStorage.getItem('webaz_recovery_dismiss_until') || 0)) return ''   // 走查批次2·横幅降噪:可关闭 7 天冷却;「我的」域恒显(设置入口所在,安全提醒不静音到死角)
+  return `<div data-rcv style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;font-size:12px;color:#991b1b;line-height:1.6;margin:8px 12px 12px;position:relative">
+    <button title="${t('暂时隐藏(7 天)')}" onclick="localStorage.setItem('webaz_recovery_dismiss_until', String(Date.now() + 7 * 86400e3)); this.closest('[data-rcv]').remove()" style="position:absolute;top:6px;right:8px;background:none;border:none;cursor:pointer;color:#b91c1c;font-size:14px;padding:2px 6px">×</button>
     🚨 <strong>${t('账户还没有恢复方式')}</strong> — ${t('闪退或换设备清缓存后可能永久无法登录。')}
     <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-sm" style="font-size:11px;padding:4px 10px;background:#dc2626;color:#fff;border:none;border-radius:6px;cursor:pointer" onclick="navigate('#me/settings')">${t('立即设置密码 / 绑定邮箱')} →</button>
