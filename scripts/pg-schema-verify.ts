@@ -151,6 +151,9 @@ function pgTableColumns(sql: string): Map<string, Set<string>> {
 }
 if (existsSync(SQLITE_DB_PATH)) {
   const sdb = new Database(SQLITE_DB_PATH, { readonly: true })
+  const sdbTriggers = (): { tbl: string; op: string }[] =>
+    (sdb.prepare(`SELECT name, tbl_name FROM sqlite_master WHERE type='trigger' AND (name LIKE '%_no_update' OR name LIKE '%_no_delete')`).all() as { name: string; tbl_name: string }[])
+      .map(r => ({ tbl: r.tbl_name.toLowerCase(), op: r.name.endsWith('_no_update') ? 'UPDATE' : 'DELETE' }))
   const t = sdb.prepare(
     `SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL`,
   ).get() as { n: number }
@@ -173,7 +176,6 @@ if (existsSync(SQLITE_DB_PATH)) {
     if (missing.length) colDiffs.push(`${name}: pg 缺列 [${missing.join(', ')}]`)
     if (extra.length) colDiffs.push(`${name}: pg 多列 [${extra.join(', ')}](SQLite 已删?)`)
   }
-  sdb.close()
   if (colDiffs.length) {
     failures.push(`列 parity 不匹配 ×${colDiffs.length} —— 产物 stale,重跑 npm run pg:schema:`)
     for (const dLine of colDiffs.slice(0, 12)) failures.push(`    ${dLine}`)
@@ -181,6 +183,22 @@ if (existsSync(SQLITE_DB_PATH)) {
   } else {
     console.log(`  列 parity   ✅ 全部 ${tables.length} 张表列集合一致`)
   }
+  // 不可变性 trigger parity(#252 审计):SQLite 里有 *_no_update/*_no_delete 触发器的表,
+  //   PG 产物必须有对应 BEFORE UPDATE/DELETE 守卫 —— 否则 PG 导入后 append-only/immutable 审计不变量静默消失。
+  //   以 sqlite_master 内省为准(不靠 gen 白名单自证),表名从 tbl_name 取(trigger 名不含全表名,如 trg_dr_qr_no_update)。
+  const sTrigs = sdbTriggers()
+  const trigDiffs: string[] = []
+  for (const { tbl, op } of sTrigs) {
+    const re = new RegExp(`CREATE\\s+TRIGGER\\s+\\S+\\s+BEFORE\\s+${op}\\s+ON\\s+"?${tbl}"?\\b`, 'i')
+    if (!re.test(body)) trigDiffs.push(`${tbl}: 缺 BEFORE ${op} 守卫`)
+  }
+  if (trigDiffs.length) {
+    failures.push(`不可变性 trigger parity 不匹配 ×${trigDiffs.length} —— 把表加进 gen-pg-schema APPEND_ONLY_TABLES 再重跑:`)
+    for (const dLine of trigDiffs) failures.push(`    ${dLine}`)
+  } else {
+    console.log(`  trigger     ✅ ${sTrigs.length} 条不可变性守卫全部有 PG 对应`)
+  }
+  sdb.close()
 } else {
   console.log(`  parity      ⏭  跳过(无 SQLite DB at ${SQLITE_DB_PATH})`)
 }
