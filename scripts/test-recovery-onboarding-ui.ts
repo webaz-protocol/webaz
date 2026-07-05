@@ -46,9 +46,9 @@ ok('honest copy: email recovers/resets, API Key still primary, Passkey not a rep
 // ── 首页无恢复方式横幅 ───────────────────────────────────────
 // Passkey 不算恢复方式(它是真人在场门,无登录/找回路径)→ hasRecovery 只看密码+邮箱
 ok('recoveryBannerHTML recovery = password OR verified email (Passkey excluded)',
-  /function recoveryBannerHTML[\s\S]{0,400}const hasRecovery = u\.has_password \|\| u\.email_verified\b[\s\S]{0,40}if \(hasRecovery\) return ''/.test(app))
+  /function recoveryBannerHTML[\s\S]{0,400}u\.role === 'admin' \|\| u\.has_password \|\| u\.email_verified\) return ''/.test(app))
 ok('recoveryBannerHTML does NOT count has_passkey as recovery',
-  !/const hasRecovery = u\.has_password \|\| u\.email_verified \|\| u\.has_passkey/.test(app))
+  !/function recoveryBannerHTML[\s\S]{0,400}\|\| u\.has_passkey/.test(app))
 ok('recovery banner injected at top of shell main', /<main class="main">\$\{recoveryBannerHTML\(\)\}\$\{content\}<\/main>/.test(app))
 
 // ── 卖家后台安全提醒(P1) ───────────────────────────────────
