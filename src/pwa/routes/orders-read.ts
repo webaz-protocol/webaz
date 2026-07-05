@@ -25,6 +25,7 @@ import { getMutualCancelState } from '../../layer3-trust/L3-1-dispute-engine/mut
 import { getCancelRefundState } from '../../direct-pay-cancel-refund.js'  // 直付取消退款握手状态(仅 direct_p2p+accepted 计算,UI 便利字段)
 import { isEligibleArbitrator } from '../arbitrator-lifecycle.js'  // 白名单仲裁员可查【争议中】订单(裁定所需);不看 legacy role==='arbitrator'
 import { getQrImageForOwner } from '../../direct-receive-account-qr.js'  // Rail1 D2:ack 门后按订单快照 qr_ref 取收款码字节((ref,seller_id) 域内)
+import { readTradeTermsSnapshot } from '../../trade-terms.js'  // S0:下单冻结的交易条款(时效/退货/清关/税责),争议书面依据
 
 export interface OrdersReadDeps {
   db: Database.Database
@@ -65,6 +66,7 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
         o.buyer_name = '🔒 ' + (typeof code === 'string' ? code : 'PR-?????')
       }
       projectDirectPayTargetForViewer(db, o, user.id as string)   // #179/#218 审计:收款目标按查看者投影(买家=ack 门/卖家保留/第三方剥离),列表不得旁路
+      delete o.trade_terms_snapshot   // S0:列表不下放条款快照原始串(详情页解析后下放,列表省流量)
     }
     res.json(orders)
   })
@@ -260,6 +262,8 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
       }
     }
 
+    // S0 交易条款快照:parse-don't-validate 后下放(坏 JSON/pre-S0 旧单 → null;原始串不下放)
+    order.trade_terms = readTradeTermsSnapshot(order.trade_terms_snapshot); delete order.trade_terms_snapshot
     res.json({ ...statusInfo, history, product, dispute, trackingInfo })
   })
 

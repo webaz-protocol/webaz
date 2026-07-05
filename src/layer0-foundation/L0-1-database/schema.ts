@@ -692,6 +692,21 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_quote_est_days TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_quote_note TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_quote_at TEXT`) } catch { /* 已存在 */ }
+  // 跨境交易条款骨架(S0):清关/物流证据字段(即时开放,展示+快照证据,零计费逻辑=守 ERP 边界)+
+  //   结构化规则列(sale_regions/tax_lines/import_duty_terms 先建列【不开 API】—— 不上假开关:S1 带可售 gate、
+  //   S3 带税费明细进 total 时才各自开放;既有 ship_regions 是自由文本仅展示,真相源=这些结构化列)。
+  try { db.exec(`ALTER TABLE products ADD COLUMN package_size TEXT`) } catch { /* 已存在 */ }              // 长x宽x高 cm 文本(证据/报价参考)
+  try { db.exec(`ALTER TABLE products ADD COLUMN origin_country TEXT`) } catch { /* 已存在 */ }            // 发货国(ISO 区码)
+  try { db.exec(`ALTER TABLE products ADD COLUMN country_of_origin TEXT`) } catch { /* 已存在 */ }         // 原产国(清关申报)
+  try { db.exec(`ALTER TABLE products ADD COLUMN customs_description TEXT`) } catch { /* 已存在 */ }       // 报关品名(英文)
+  try { db.exec(`ALTER TABLE products ADD COLUMN hs_code TEXT`) } catch { /* 已存在 */ }                   // HS 编码(可选)
+  try { db.exec(`ALTER TABLE products ADD COLUMN sale_regions TEXT`) } catch { /* 已存在 */ }              // S1 gate 消费:{mode,include,exclude} JSON(NULL=继承店铺)
+  try { db.exec(`ALTER TABLE products ADD COLUMN tax_lines TEXT`) } catch { /* 已存在 */ }                 // S3 消费:按目的区税费科目 JSON(NULL=继承店铺)
+  try { db.exec(`ALTER TABLE products ADD COLUMN import_duty_terms TEXT`) } catch { /* 已存在 */ }         // 'ddu'|'ddp'|NULL(=继承店铺;跨境进口税责声明)
+  try { db.exec(`ALTER TABLE users ADD COLUMN store_sale_regions TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE users ADD COLUMN store_tax_lines TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE users ADD COLUMN store_import_duty_terms TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN trade_terms_snapshot TEXT`) } catch { /* 已存在 */ }        // 下单冻结的交易条款 JSON(运费来源/时效/退货/清关字段/税责声明;商家事后改设置不影响旧订单,争议依据)
   try { db.exec(`ALTER TABLE wallets ADD COLUMN fee_staked REAL DEFAULT 0`) } catch { /* 已存在 */ }
   // PR-4b-1: direct_receive_deposits 生产收款 provenance 快照列(既有库补列;additive nullable,无写入方,无 flow 启用)。
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_receipt_ref TEXT`) } catch { /* 已存在 */ }
