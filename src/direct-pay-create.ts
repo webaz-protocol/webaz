@@ -26,6 +26,7 @@ import { sellerExemptFromPerProduct } from './store-verification.js'
 import { safeRunDirectPayAmlMonitor } from './direct-pay-aml-monitor.js'
 import { getUsdRatesSync, convertUsdcToLocal, SUPPORTED_CURRENCIES, type Currency } from './fx-rates.js'  // 审计项 E:建单冻结应付参考换算(display-only,同步缓存)
 import { createNotification } from './layer2-business/L2-6-notifications/notification-engine.js'  // 审计项 B:直付转移此前通知黑洞(卖家不知有单/已付款)
+import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from './trade-terms.js'  // S0 交易条款快照(证据,fail-soft 零钱路)
 
 export interface DirectPayCreateDeps {
   generateId: (prefix: string) => string
@@ -110,6 +111,12 @@ export function createDirectPayOrder(db: Database.Database, deps: DirectPayCreat
     const upd = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?').run(args.quantity, args.productId, args.quantity)
     if (upd.changes !== 1) throw new Error('stock depleted')
   })()
+  // S0 条款快照:冻结下单时的时效/退货/清关/税责声明(事务外 fail-soft —— 快照是证据非计价输入,缺失=pre-S0 同待遇)
+  writeTradeTermsSnapshot(db, orderId, buildTradeTermsSnapshot(db, {
+    productId: args.productId, sellerId: args.sellerId,
+    shipping: { source: args.shipping?.quoteRequired ? 'quote_pending' : (args.shipping?.region ? 'template' : 'none'), region: args.shipping?.region ?? null, fee: args.shipping?.quoteRequired ? null : ((args.shipping && (args.shipping.fee > 0 || args.shipping.region)) ? args.shipping.fee : null), estDays: args.shipping?.estDays ?? null },
+    acceptModeEffective: args.acceptMode,
+  }))
   return { orderId }
 }
 

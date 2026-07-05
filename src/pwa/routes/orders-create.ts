@@ -32,7 +32,7 @@ import { buildCartMandate, buildPaymentMandate, signMandate } from './ap2-mandat
 // RFC-014 PR3 — 金额走整数 base-units;钱包写绝对值(防 REAL 浮点加法 dust)。
 import { toUnits, toDecimal, mulQty, mulRate } from '../../money.js'
 import { createDirectPayResponse } from '../../direct-pay-create.js'                    // PR-4c: direct_p2p 建单分叉(生产门+收款指令门+原子建单;本金不入协议)
-import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'  // PR-2 运费模板:建单守门(两轨共用,任何写之前)
+import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'; import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from '../../trade-terms.js'  // PR-2 运费守门(两轨共用) + S0 交易条款快照(证据,fail-soft 零钱路)
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam(仅下单事务外的预检查;事务内 escrow/INSERT 保持同步)
 
 // 店铺推荐 → 商品三级归因的【懒升级】(sync,跑在下单事务内、getProductShareChain 之前)。
@@ -375,7 +375,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
           variant ? variant.options_json : null,
           giftRecipientName, giftRecipientPhone, giftMessage, insurancePremium,
           anonymousFlag, recipientCode, donationAmount, stakeBacking, _ship.region, _ship.feeU > 0 || _ship.region ? shippingFee : null, _ship.estDays,
-        )
+        ); writeTradeTermsSnapshot(db, orderId, buildTradeTermsSnapshot(db, { productId: String(product.id), sellerId: String(product.seller_uid), shipping: { source: _ship.region ? 'template' : 'none', region: _ship.region ?? null, fee: _ship.region ? shippingFee : null, estDays: _ship.estDays ?? null }, acceptModeEffective: _acceptModeAuto ? 'auto' : null }))   // S0 条款快照:冻结下单时效/退货/清关/税责声明(fail-soft,非计价输入)
         // 协议层：写 genesis 事件 — order 创建（必然是 buyer 自己）
         try {
           appendOrderEvent(db, {

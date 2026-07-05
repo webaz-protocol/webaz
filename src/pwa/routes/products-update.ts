@@ -53,6 +53,7 @@ export function registerProductsUpdateRoutes(app: Application, deps: ProductsUpd
       low_stock_threshold, auto_delist_on_zero,
       origin_claims,
       i18n_titles, i18n_descs,
+      package_size, origin_country, country_of_origin, customs_description, hs_code,   // S0 跨境清关/物流证据字段(可选;进后续订单条款快照,不影响在途单)
     } = req.body
 
     const now = new Date().toISOString()
@@ -119,6 +120,11 @@ export function registerProductsUpdateRoutes(app: Application, deps: ProductsUpd
       }
       return Object.keys(out).length > 0 ? JSON.stringify(out) : null
     }
+    // S0 清关字段(可选;与 create 同校验;null 显式清除,undefined 保留)
+    const _cc = (x: unknown): string | null | undefined => x === undefined ? undefined : ((typeof x === 'string' && x.trim()) ? x.trim().toUpperCase().slice(0, 8) : null)
+    const _tx = (x: unknown, n: number): string | null | undefined => x === undefined ? undefined : ((typeof x === 'string' && x.trim()) ? x.trim().slice(0, n) : null)
+    const _hs = _tx(hs_code, 12)
+    if (typeof _hs === 'string' && !/^[0-9.]{4,12}$/.test(_hs)) return void res.status(400).json({ error: 'hs_code 须为 4-12 位数字(可含 .)', error_code: 'INVALID_HS_CODE' })
     const titlesResult = validateI18n(i18n_titles)
     const descsResult = validateI18n(i18n_descs)
     const newI18nTitles = titlesResult === undefined ? product.i18n_titles : titlesResult
@@ -132,6 +138,7 @@ export function registerProductsUpdateRoutes(app: Application, deps: ProductsUpd
       low_stock_alerted_at = CASE WHEN ?=1 THEN NULL ELSE low_stock_alerted_at END,
       origin_claims=?,
       i18n_titles=?, i18n_descs=?,
+      package_size=?, origin_country=?, country_of_origin=?, customs_description=?, hs_code=?,
       commitment_hash=?, description_hash=?, price_hash=?, hashed_at=?,
       updated_at=datetime('now')
       WHERE id=?`, [
@@ -142,6 +149,11 @@ export function registerProductsUpdateRoutes(app: Application, deps: ProductsUpd
       newLowThreshold, newAutoDelist, resetAlert,
       newOriginClaims,
       newI18nTitles, newI18nDescs,
+      _tx(package_size, 40) === undefined ? product.package_size : _tx(package_size, 40),
+      _cc(origin_country) === undefined ? product.origin_country : _cc(origin_country),
+      _cc(country_of_origin) === undefined ? product.country_of_origin : _cc(country_of_origin),
+      _tx(customs_description, 120) === undefined ? product.customs_description : _tx(customs_description, 120),
+      _hs === undefined ? product.hs_code : _hs,
       makeCommitmentHash(pFields),
       makeDescriptionHash({ title: newTitle, description: newDesc, specs: specsJson }),
       makePriceHash(newPrice, now), now,
