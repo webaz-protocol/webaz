@@ -117,6 +117,9 @@ jobs:
           ls -la ~/.webaz/
 
       - run: npm run schema:verify
+      # pg parity(含逐列)在这里跑 —— 本 job 已真启服务器生成完整 SQLite DB;独立的 pg-schema-verify job 无 DB 只跑静态 lint。
+      # #250 审计教训:列漂移(S0 12 列只进 SQLite)靠表/索引计数抓不住,逐列 parity 在此守。
+      - run: npm run pg:verify
 
   pg-schema-verify:
     name: pg schema verify (static dialect lint)
