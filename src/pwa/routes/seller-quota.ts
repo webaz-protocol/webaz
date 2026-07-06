@@ -83,9 +83,9 @@ export function registerSellerQuotaRoutes(app: Application, deps: SellerQuotaDep
 
     const orders = await dbAll<{
       id: string; product_id: string; buyer_id: string; status: string;
-      total_amount: number; created_at: string; product_title: string; buyer_name: string;
+      total_amount: number; created_at: string; product_title: string; buyer_name: string; payment_rail: string | null;
     }>(`
-      SELECT o.id, o.product_id, o.buyer_id, o.status, o.total_amount, o.created_at,
+      SELECT o.id, o.product_id, o.buyer_id, o.status, o.total_amount, o.created_at, o.payment_rail,
              COALESCE(p.title, '已下架商品') as product_title,
              COALESCE(ub.name, '匿名') as buyer_name
       FROM orders o
@@ -95,7 +95,7 @@ export function registerSellerQuotaRoutes(app: Application, deps: SellerQuotaDep
       ORDER BY o.created_at DESC
     `, [sellerId, d60]) as Array<{
       id: string; product_id: string; buyer_id: string; status: string;
-      total_amount: number; created_at: string; product_title: string; buyer_name: string;
+      total_amount: number; created_at: string; product_title: string; buyer_name: string; payment_rail: string | null;
     }>
 
     const completedStatuses = new Set(['completed', 'confirmed'])
@@ -105,6 +105,8 @@ export function registerSellerQuotaRoutes(app: Application, deps: SellerQuotaDep
     const inLast30 = orders.filter(o => o.created_at >= d30)
     const inPrev30 = orders.filter(o => o.created_at < d30)
     const gmv = (arr: typeof orders) => arr.filter(o => completedStatuses.has(o.status)).reduce((s, o) => s + Number(o.total_amount || 0), 0)
+    // GMV 按支付轨拆分:托管=平台真实托管收入,直接收款=场外收款(平台不经手)—— 不再混算(诚实口径)
+    const gmvRail = (arr: typeof orders, rail: 'escrow' | 'direct_p2p') => arr.filter(o => completedStatuses.has(o.status) && (rail === 'direct_p2p' ? o.payment_rail === 'direct_p2p' : (o.payment_rail || 'escrow') === 'escrow')).reduce((s, o) => s + Number(o.total_amount || 0), 0)
     const curGmv = gmv(inLast30)
     const prevGmv = gmv(inPrev30)
     const curCount = inLast30.length
@@ -165,6 +167,8 @@ export function registerSellerQuotaRoutes(app: Application, deps: SellerQuotaDep
       period_days: 30,
       summary: {
         gmv: curGmv,
+        gmv_escrow: gmvRail(inLast30, 'escrow'),
+        gmv_direct_pay: gmvRail(inLast30, 'direct_p2p'),
         order_count: curCount,
         completed_count: completedOrders30.length,
         aov,
