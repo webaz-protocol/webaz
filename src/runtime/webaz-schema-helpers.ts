@@ -1669,12 +1669,44 @@ export function initAgentDelegationGrantsSchema(db: Database.Database): void {
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       expires_at      TEXT NOT NULL,                    -- short-lived (clamped, RFC-020 bearer-first)
       revoked_at      TEXT,
-      revoked_reason  TEXT
+      revoked_reason  TEXT,
+      permission_bundle TEXT                            -- named bundle key if issued/expanded via a bundle (e.g. 'catalog_agent'); NULL = ad-hoc scopes
     )
   `)
+  try { db.exec(`ALTER TABLE agent_delegation_grants ADD COLUMN permission_bundle TEXT`) } catch { /* existing DB: column already added */ }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_adg_human  ON agent_delegation_grants(human_id, status)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_adg_token  ON agent_delegation_grants(token_hash)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_adg_expiry ON agent_delegation_grants(status, expires_at)`)
+}
+
+/**
+ * RFC-020 — Agent Permission Requests (JIT + bundle authorization). An already-connected agent (holds a
+ * grant) that hits a missing scope, or wants a job bundle, lodges a REQUEST here; the human sees it in
+ * #agent-approvals and approves/rejects. Approval expands the agent's existing grant (safe scopes only,
+ * duration-capped). Bound to (human_id, grant_id). NO money/order/status columns; a request grants nothing
+ * until a human approves it.
+ */
+export function initAgentPermissionRequestsSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_permission_requests (
+      id               TEXT PRIMARY KEY,                 -- apr_xxx
+      human_id         TEXT NOT NULL,                    -- resolved from the requesting agent's grant
+      grant_id         TEXT NOT NULL,                    -- the agent's existing grant that approval expands
+      agent_label      TEXT,
+      requested_scopes TEXT NOT NULL DEFAULT '[]',       -- JSON string[] — resolved (bundle expanded) safe scopes
+      permission_bundle TEXT,                            -- bundle key if requested as a bundle; NULL = ad-hoc
+      reason           TEXT,                             -- agent free-text (display only, unverified)
+      task_context     TEXT,                             -- agent free-text about the task (display only)
+      risk_level       TEXT NOT NULL DEFAULT 'low',      -- low | medium | high (derived, not agent-supplied)
+      duration         TEXT NOT NULL DEFAULT '7d',       -- once | 1h | 24h | 7d | 30d (capped by risk tier)
+      status           TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected | expired | revoked
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at       TEXT NOT NULL,                    -- request TTL (auto-expire if unanswered)
+      approved_at      TEXT
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_apr_human  ON agent_permission_requests(human_id, status)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_apr_status ON agent_permission_requests(status, expires_at)`)
 }
 
 /**
