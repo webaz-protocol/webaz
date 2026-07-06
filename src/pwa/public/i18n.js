@@ -704,7 +704,6 @@ const _EN = {
   '该区间暂无直接收款订单': 'No direct-pay orders in this range',
   '总销售额': 'Total sales',
   '已完成销售额': 'Completed sales',
-  '订单总额': 'Gross order total',
   '含在途/已关闭': 'incl. in-progress/closed',
   '按月(已完成 / 订单总额)': 'By month (completed / gross)',
   '在途 / 已关闭': 'In progress / closed',
