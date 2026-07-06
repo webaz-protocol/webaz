@@ -696,6 +696,8 @@ const _EN = {
   '钱包': 'Wallet',
   '质押': 'Staked',
   '托管': 'Escrow',
+  '全部类型': 'All types',
+  '直接收款': 'Direct pay',
   '直付': 'Direct pay',
   '已指派': 'Assigned',
   '未指派': 'Unassigned',

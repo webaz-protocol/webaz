@@ -47,6 +47,10 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
 
   app.get('/api/orders', async (req: Request, res: Response) => {
     const user = auth(req, res); if (!user) return
+    // 可选按支付轨筛选(escrow=托管 / direct_p2p=直接收款);非法值忽略。参与方 OR 必须整体括起,否则 AND 优先级会绑错。
+    const rail = req.query.rail === 'direct_p2p' ? 'direct_p2p' : req.query.rail === 'escrow' ? 'escrow' : null
+    const railClause = rail ? ' AND o.payment_rail = ?' : ''
+    const railParams = rail ? [rail] : []
     const orders = await dbAll<Record<string, unknown>>(`
       SELECT o.*, p.title as product_title, p.images,
         ub.name as buyer_name, us.name as seller_name
@@ -54,9 +58,9 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
       JOIN products p ON o.product_id = p.id
       JOIN users ub ON o.buyer_id = ub.id
       JOIN users us ON o.seller_id = us.id
-      WHERE o.buyer_id = ? OR o.seller_id = ? OR o.logistics_id = ?
+      WHERE (o.buyer_id = ? OR o.seller_id = ? OR o.logistics_id = ?)${railClause}
       ORDER BY o.created_at DESC LIMIT 50
-    `, [user.id, user.id, user.id])
+    `, [user.id, user.id, user.id, ...railParams])
     // B2 隐私购物：列表里也做相同 mask（防 seller/logistics 通过列表绕过详情 mask）
     for (const o of orders) {
       if (Number(o.anonymous_recipient) === 1 && o.buyer_id !== user.id) {
@@ -78,14 +82,17 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     const field = role === 'seller' ? 'o.seller_id' : 'o.buyer_id'
     const from = req.query.from ? String(req.query.from) : null
     const to = req.query.to ? String(req.query.to) : null
+    const rail = req.query.rail === 'direct_p2p' ? 'direct_p2p' : req.query.rail === 'escrow' ? 'escrow' : null
     const where = [`${field} = ?`]
     const params: unknown[] = [user.id]
     if (from) { where.push(`o.created_at >= ?`); params.push(from) }
     if (to) { where.push(`o.created_at <= ?`); params.push(to) }
+    if (rail) { where.push(`o.payment_rail = ?`); params.push(rail) }   // 按支付轨导出(对账:托管 vs 直接收款分开)
     const EXPORT_LIMIT = 5000
     const rows = await dbAll<Record<string, unknown>>(`
       SELECT o.id, o.created_at, o.status, o.quantity, o.unit_price, o.total_amount,
              o.coupon_discount, o.variant_options_snapshot, o.shipping_address,
+             COALESCE(o.payment_rail, 'escrow') as payment_rail,
              p.title as product_title, p.category,
              ub.handle as buyer_handle, ub.name as buyer_name,
              us.handle as seller_handle, us.name as seller_name
@@ -106,7 +113,7 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
       }
       return s
     }
-    const headers = ['order_id', 'created_at', 'status', 'product', 'category', 'qty', 'unit_price', 'total', 'coupon_discount', 'variant', 'buyer', 'seller', 'address']
+    const headers = ['order_id', 'created_at', 'status', 'payment_rail', 'product', 'category', 'qty', 'unit_price', 'total', 'coupon_discount', 'variant', 'buyer', 'seller', 'address']
     const lines = [headers.join(',')]
     for (const r of rows) {
       let variantStr = ''
@@ -115,7 +122,7 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
         if (v) variantStr = Object.entries(v).map(([k, val]) => `${k}:${val}`).join(';')
       } catch {}
       lines.push([
-        r.id, r.created_at, r.status, r.product_title, r.category,
+        r.id, r.created_at, r.status, r.payment_rail, r.product_title, r.category,
         r.quantity, r.unit_price, r.total_amount, r.coupon_discount || 0,
         variantStr, r.buyer_handle, r.seller_handle, r.shipping_address,
       ].map(csvEscape).join(','))
