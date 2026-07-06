@@ -45,6 +45,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-direct-pay-compliance.js':       67,
   'src/pwa/public/app-direct-pay-fee-ops.js':         112,
   'src/pwa/public/app-direct-pay-fee-center.js':      33,
+  'src/pwa/public/app-direct-pay-sales-report.js':    70,
   'src/pwa/public/app-direct-pay-accounts.js':       141,
   'src/pwa/public/app-direct-pay-buyer.js':           72,
   'src/pwa/public/app-direct-pay-pay.js':             15,

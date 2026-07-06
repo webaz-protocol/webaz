@@ -745,6 +745,7 @@ jobs:
       - run: npm run test:admin-dispute-triage
       - run: npm run test:orders-read-arbitrator-view
       - run: npm run test:orders-rail-filter
+      - run: npm run test:directpay-sales-report
       - run: npm run test:direct-pay-cancel-refund
       - run: npm run test:direct-pay-returns
       - run: npm run test:notif-order-templates
