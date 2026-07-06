@@ -114,7 +114,23 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
         }
       }
       // Deny path: return the denial regardless of audit (no access is granted, so nothing to fail closed on).
-      if (!r.ok) return void res.status(r.status).json({ error: r.error, error_code: r.error_code })
+      if (!r.ok) {
+        // Structured permission_required (RFC-020): the agent IS validly connected but its grant simply lacks
+        //   this SAFE scope. Instead of a bare 403, hand it the exact next step — ask the human to expand the
+        //   grant (approval_url + the create-request call), then retry this same request. Other grant failures
+        //   (no/expired/revoked/suspended grant) stay plain: those aren't "request more", they must re-pair.
+        if (r.error_code === 'SCOPE_NOT_GRANTED') {
+          return void res.status(403).json({
+            error: `this action needs the "${scope}" permission, which your grant does not carry`,
+            error_code: 'PERMISSION_REQUIRED',
+            required_scope: scope,
+            approval_url: '/#agent-approvals',
+            request_permission: { method: 'POST', endpoint: '/api/agent-grants/permission-requests', body: { scopes: [scope] } },
+            note: 'Ask the human to approve at approval_url; on approval your existing grant is expanded — then retry this request.',
+          })
+        }
+        return void res.status(r.status).json({ error: r.error, error_code: r.error_code })
+      }
       // Success path: FAIL CLOSED if the authorization could not be audited — a grant-authorized request
       // must never proceed unaudited (RFC-020 invariant). Better to deny (503, retryable) than act unaccountably.
       if (!audited) return void res.status(503).json({ error: 'authorization audit unavailable; refusing to proceed unaudited', error_code: 'GRANT_AUDIT_FAILED' })
@@ -127,6 +143,18 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   app.get('/api/agent-grants/whoami', requireAgentGrantScope('read_public'), (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant
     res.json({ grant: p, note: 'Authorized via delegation grant (safe scope read_public). This is a grant principal, not a human session.' })
+  })
+
+  // First REAL grant-consumed seller surface (Catalog Agent): read the grant human's OWN catalog. Read-only,
+  //   money fields (commission/stake) excluded. A grant that lacks seller_products_read → structured
+  //   permission_required (see requireAgentGrantScope) so the agent can request → human approves → retry.
+  //   The consumption (allow AND the permission_required deny) is audited by the middleware.
+  app.get('/api/agent/seller/products', requireAgentGrantScope('seller_products_read'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const rows = await dbAll<Record<string, unknown>>(
+      "SELECT id, title, status, price, currency, stock, category, created_at, updated_at FROM products WHERE seller_id = ? AND status != 'deleted' ORDER BY created_at DESC LIMIT 200",
+      [p.human_id])
+    res.json({ seller_id: p.human_id, agent_label: p.agent_label, count: rows.length, products: rows, note: 'Seller-owned catalog read via delegation grant (safe scope seller_products_read). Read-only; no money/commission fields.' })
   })
 
   // helpers for the permission-request flow ----------------------------------------------------------------
