@@ -42,6 +42,14 @@ db.prepare(`UPDATE products SET shipping_template=?, shipping_quote_ok=1, free_s
 // p_quote:模板仅覆盖 SG,开询价;无可售区限制
 db.prepare("INSERT INTO products (id,seller_id,title,description,price,stock,shipping_template,shipping_quote_ok) VALUES ('p_quote','s1','T','d',120,10,?,1)").run(
   JSON.stringify([{ region: 'SG', fee: 8 }]))
+// s3:无任何店铺默认(无运费模板/无可售区)—— 供"真·无模板"用例,避免继承 s1 的店铺模板
+db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('s3','s3','seller','ks3')").run()
+// p_sr_list:仅设可售白名单(JP,MY),【无运费模板、店铺也无模板】—— P1 回归:买家仍须有地区入口
+db.prepare("INSERT INTO products (id,seller_id,title,description,price,stock,sale_regions) VALUES ('p_sr_list','s3','T','d',120,10,?)").run(
+  JSON.stringify({ mode: 'list', include: ['JP', 'MY'] }))
+// p_sr_excl:排除式可售区(全球除 US),【无运费模板】—— 无有限白名单,须自由输入
+db.prepare("INSERT INTO products (id,seller_id,title,description,price,stock,sale_regions) VALUES ('p_sr_excl','s3','T','d',120,10,?)").run(
+  JSON.stringify({ mode: 'all', exclude: ['US'] }))
 
 const app = express(); app.use(express.json())
 registerShippingTemplateRoutes(app, {
@@ -118,21 +126,67 @@ try {
     ok('6c. tax lines region-filtered: MY does not leak SG-only GST', (my.json.tax_included_lines as { region: string }[]).every(l => l.region !== 'SG'))
   }
 
-  // ── ⑦ 静态:UI 装载 + 买单页注入 + 区变刷新接线 + i18n parity ──
+  // ── ⑦ P1 回归:仅可售区、无运费模板的商品,买家仍有地区入口 ──
+  {
+    const list = await get('/products/p_sr_list/shipping-options')   // 无 ship_to_region
+    ok('7a. sale_regions-only (no template): region_required true', list.json.region_required === true)
+    ok('7b. sale_regions-only: response carries effective sale_regions (list mode + include)', (list.json.sale_regions as { mode: string; include: string[] } | null)?.mode === 'list' && (list.json.sale_regions as { include: string[] }).include.join(',') === 'JP,MY')
+    ok('7c. sale_regions-only: no template → resolved_shipping null, template null', list.json.resolved_shipping === null && list.json.template === null)
+    const jp = await get('/products/p_sr_list/shipping-options?ship_to_region=JP')
+    ok('7d. sale_regions-only: allowed region JP sellable ok', (jp.json.sellable as { ok: boolean }).ok === true)
+    const us = await get('/products/p_sr_list/shipping-options?ship_to_region=US')
+    ok('7e. sale_regions-only: disallowed US → region_not_for_sale', (us.json.sellable as { reason: string }).reason === 'region_not_for_sale')
+    const excl = await get('/products/p_sr_excl/shipping-options')
+    ok('7f. exclude-mode sale_regions (no finite list): region_required true + sale_regions all/exclude echoed', excl.json.region_required === true && (excl.json.sale_regions as { mode: string }).mode === 'all')
+  }
+
+  // ── ⑧ P2:预检与建单门用同一 blocklist parser,坏配置 fail-closed 一致 ──
+  {
+    const { parsePlatformBlocklist } = await import('../src/sale-regions.js')
+    ok('8a. parser: good array → ok+uppercased', (() => { const r = parsePlatformBlocklist('["kp","cu"]'); return r.ok === true && r.ok && r.list.join(',') === 'KP,CU' })())
+    ok('8b. parser: default []/absent → ok empty', (() => { const r = parsePlatformBlocklist('[]'); return r.ok === true && r.ok && r.list.length === 0 })() && parsePlatformBlocklist(null).ok === true)
+    ok('8c. parser: malformed JSON → not ok (fail-closed)', parsePlatformBlocklist('{oops').ok === false)
+    ok('8d. parser: non-array JSON → not ok (fail-closed)', parsePlatformBlocklist('{"a":1}').ok === false && parsePlatformBlocklist('"KP"').ok === false)
+    // 预检路由消费:坏配置 → sellable.ok=false + platform_policy_invalid(不再静默当空名单显示"可买")
+    db.prepare("INSERT OR REPLACE INTO protocol_params (key,value,type) VALUES ('trade.platform_region_blocklist','{bad json','json')").run()
+    const bad = await get('/products/p_store/shipping-options?ship_to_region=SG')
+    ok('8e. malformed blocklist → sellable.ok=false reason=platform_policy_invalid (not silently sellable)', (bad.json.sellable as { ok: boolean; reason: string }).ok === false && (bad.json.sellable as { reason: string }).reason === 'platform_policy_invalid')
+    const badNoRegion = await get('/products/p_store/shipping-options')
+    ok('8f. policy_invalid surfaces even without ship_to_region (consistent with create-gate 503)', (badNoRegion.json.sellable as { reason: string }).reason === 'platform_policy_invalid')
+    db.prepare("DELETE FROM protocol_params WHERE key='trade.platform_region_blocklist'").run()
+  }
+
+  // ── ⑨ 行为:_shipRegionInputHtml 三态入口(模板下拉 / 白名单下拉 / 自由输入)——保证 region_required 恒有入口 ──
+  {
+    const g = globalThis as unknown as { window: unknown; t: (s: string) => string; escHtml: (s: unknown) => string }
+    g.t = (s: string) => s; g.escHtml = (s: unknown) => String(s); g.window = g
+    ;(0, eval)(readFileSync('src/pwa/public/app-purchase-terms-ui.js', 'utf8'))   // IIFE 仅赋值 window.*,不执行网络/DOM
+    const inputHtml = (g.window as { _shipRegionInputHtml: (o: unknown) => string })._shipRegionInputHtml
+    const tplHtml = inputHtml({ template: [{ region: 'SG', fee: 8 }], quote_outside_template: false })
+    ok('9a. template present → <select> dropdown', /<select[^>]*id="ship-region-select"/.test(tplHtml) && /value="SG"/.test(tplHtml))
+    const listHtml = inputHtml({ template: [], sale_regions: { mode: 'list', include: ['JP', 'MY'] }, quote_outside_template: false })
+    ok('9b. no template + list sale_regions → dropdown from allowlist (JP+MY)', /<select[^>]*id="ship-region-select"/.test(listHtml) && /value="JP"/.test(listHtml) && /value="MY"/.test(listHtml))
+    const exclHtml = inputHtml({ template: [], sale_regions: { mode: 'all', exclude: ['US'] }, quote_outside_template: false })
+    ok('9c. no template + exclude sale_regions → free-text input (NO select, visible ship-region-other)', !/<select/.test(exclHtml) && /id="ship-region-other"/.test(exclHtml) && !/display:none/.test(exclHtml))
+    const policyHtml = inputHtml({ template: [], sale_regions: null, quote_outside_template: false })
+    ok('9d. no template + no sale rule (platform-only/policy) → free-text input entry exists', !/<select/.test(policyHtml) && /id="ship-region-other"/.test(policyHtml))
+  }
+
+  // ── ⑩ 静态:UI 装载 + 买单页注入 + 区变刷新接线 + i18n parity ──
   {
     const HTML = readFileSync('src/pwa/public/index.html', 'utf8')
     const APPJS = readFileSync('src/pwa/public/app.js', 'utf8')
     const ACC = readFileSync('src/pwa/public/app-order-accept-ui.js', 'utf8')
     const UI = readFileSync('src/pwa/public/app-purchase-terms-ui.js', 'utf8')
-    ok('7a. module loaded in index.html', HTML.includes('app-purchase-terms-ui.js'))
-    ok('7b. buy sheet injects purchaseTermsBlockHtml (net-zero of old tradeTaxBlockHtml)', /purchaseTermsBlockHtml \? window\.purchaseTermsBlockHtml/.test(APPJS) && !/tradeTaxBlockHtml/.test(APPJS))
-    ok('7c. region selector refreshes via _purchaseTermsRefresh (both onchange + oninput)', (ACC.match(/_purchaseTermsRefresh/g) || []).length >= 2 && !/_tradeTaxRefresh/.test(ACC))
-    ok('7d. card consumes S5 fields + states platform no-collect', /sellable/.test(UI) && /resolved_shipping/.test(UI) && /free_shipping_threshold/.test(UI) && /平台不代收代缴/.test(UI))
+    ok('10a. module loaded in index.html', HTML.includes('app-purchase-terms-ui.js'))
+    ok('10b. buy sheet injects purchaseTermsBlockHtml (net-zero of old tradeTaxBlockHtml)', /purchaseTermsBlockHtml \? window\.purchaseTermsBlockHtml/.test(APPJS) && !/tradeTaxBlockHtml/.test(APPJS))
+    ok('10c. accept-ui delegates region input to _shipRegionInputHtml; refresh wired inside it (onchange+oninput)', /_shipRegionInputHtml/.test(ACC) && !/_tradeTaxRefresh/.test(ACC) && (UI.match(/_purchaseTermsRefresh/g) || []).length >= 2)
+    ok('10d. card consumes S5 fields + states platform no-collect', /sellable/.test(UI) && /resolved_shipping/.test(UI) && /free_shipping_threshold/.test(UI) && /平台不代收代缴/.test(UI))
     const I18N = readFileSync('src/pwa/public/i18n.js', 'utf8')
     const keys = new Set<string>()
     for (const m of UI.matchAll(/(?<![\w$])t\('([^']+)'\)/g)) keys.add(m[1])
     const noEn = [...keys].filter(k => !I18N.includes(`'${k}':`))
-    ok('7e. i18n parity', keys.size >= 12 && noEn.length === 0, noEn.slice(0, 3).join(' | '))
+    ok('10e. i18n parity', keys.size >= 12 && noEn.length === 0, noEn.slice(0, 3).join(' | '))
   }
 } finally { server!.close() }
 

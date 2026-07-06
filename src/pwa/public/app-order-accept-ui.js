@@ -27,21 +27,15 @@
   window._shipHydrateRegion = async (productId) => {
     const box = document.getElementById('ship-region-block'); if (!box) return
     const o = await GET(`/products/${productId}/shipping-options`).catch(() => null)
-    if (!o || !o.region_required) return
-    const opts = (o.template || []).map(e => `<option value="${escHtml(e.region)}">${e.region === '*' ? t('其他地区(通用运费)') : escHtml(e.region)} · ${t('运费')} ${e.fee}${e.est_days ? ` · ${escHtml(e.est_days)} ${t('天')}` : ''}</option>`).join('')
-    box.innerHTML = `<label class="form-label" style="font-size:12px">📍 ${t('收货国家/地区')} *</label>
-      <select class="form-control" id="ship-region-select" style="font-size:13px" onchange="document.getElementById('ship-region-other').style.display = this.value === '__other' ? 'block' : 'none'; window._purchaseTermsRefresh && window._purchaseTermsRefresh()">
-        <option value="">${t('请选择')}</option>${opts}
-        ${o.quote_outside_template ? `<option value="__other">${t('其他地区(需卖家报价运费,直付)')}</option>` : ''}
-      </select>
-      <input class="form-control" id="ship-region-other" maxlength="16" placeholder="${t('地区代码,如 US / JP / DE')}" oninput="window._purchaseTermsRefresh && window._purchaseTermsRefresh()" style="display:none;margin-top:6px;font-size:13px;text-transform:uppercase">
-      <div style="font-size:11px;color:#6b7280;margin-top:4px">${o.quote_outside_template ? t('模板内地区运费自动计入总额;其他地区由卖家先报价、你确认后再付款。') : t('运费按所选地区自动计入订单总额。')}</div>`
+    if (!o || !o.region_required || !window._shipRegionInputHtml) return
+    box.innerHTML = window._shipRegionInputHtml(o)   // 入口 HTML 委托 app-purchase-terms-ui(据模板/可售白名单/自由输入择一,含无模板+可售区的填写入口)
     box.style.display = 'block'
   }
   window.shipSelectedRegion = () => {
     const sel = document.getElementById('ship-region-select')
-    if (!sel) return undefined
-    if (sel.value === '__other') return (document.getElementById('ship-region-other')?.value || '').trim().toUpperCase() || undefined
+    const other = () => (document.getElementById('ship-region-other')?.value || '').trim().toUpperCase() || undefined
+    if (!sel) return other()   // 无下拉=自由输入态(无模板+排除式可售区/仅平台限制)
+    if (sel.value === '__other') return other()
     return sel.value || undefined
   }
 

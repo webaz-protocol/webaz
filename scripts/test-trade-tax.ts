@@ -126,9 +126,9 @@ try {
   ok('6b. seller settings module loaded + buy sheet injects aggregated purchase-terms card', HTML.includes('app-trade-tax-ui.js') && /purchaseTermsBlockHtml \? window\.purchaseTermsBlockHtml/.test(readFileSync('src/pwa/public/app.js', 'utf8')))
   const UI = readFileSync('src/pwa/public/app-trade-tax-ui.js', 'utf8')
   ok('6c. seller card states platform does not collect tax', /平台不代收/.test(UI))
-  ok('6c2. tax disclosure is region-aware (route filters via taxLinesForRegion; buyer card refreshes on region change)',
+  ok('6c2. tax disclosure is region-aware (route filters via taxLinesForRegion; buyer card refreshes on region change via region input)',
     /taxLinesForRegion\(effectiveTaxLines/.test(readFileSync('src/pwa/routes/shipping-templates.ts', 'utf8'))
-    && /_purchaseTermsRefresh/.test(readFileSync('src/pwa/public/app-purchase-terms-ui.js', 'utf8')) && /_purchaseTermsRefresh\(\)/.test(readFileSync('src/pwa/public/app-order-accept-ui.js', 'utf8')))
+    && /_purchaseTermsRefresh/.test(readFileSync('src/pwa/public/app-purchase-terms-ui.js', 'utf8')) && /_shipRegionInputHtml/.test(readFileSync('src/pwa/public/app-order-accept-ui.js', 'utf8')))
   const DOC = readFileSync('docs/COMPLIANCE-CROSS-BORDER-TAX.INTERNAL.md', 'utf8')
   ok('6d. INTERNAL compliance doc records the deemed-supplier finding + counsel-gate', /deemed[ -]supplier/i.test(DOC) && /trade\.platform_region_blocklist/.test(DOC))
   const I18N = readFileSync('src/pwa/public/i18n.js', 'utf8')
