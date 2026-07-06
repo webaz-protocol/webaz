@@ -36,12 +36,12 @@
     if (!s || s.order_count === 0) { box.innerHTML = `<div style="font-size:12px;color:#9ca3af;padding:8px 0">${t('该区间暂无直接收款订单')}</div>`; return }
     const tile = (label, val, sub) => `<div style="flex:1;min-width:96px;background:#faf5ff;border:1px solid #ede9fe;border-radius:8px;padding:8px 10px"><div style="font-size:11px;color:#7c3aed">${label}</div><div style="font-size:16px;font-weight:700;color:#5b21b6">${val}</div>${sub ? `<div style="font-size:10px;color:#9ca3af">${sub}</div>` : ''}</div>`
     const tiles = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
-      ${tile(t('总销售额'), _amt(s.sales_total), t('订单') + ' ' + s.order_count)}
-      ${tile(t('已完成销售额'), _amt(s.completed_sales), t('已完成') + ' ' + s.completed_count)}
+      ${tile(t('已完成销售额'), _amt(s.completed_sales), t('已完成') + ' ' + s.completed_count + ' ' + t('单'))}
+      ${tile(t('订单总额'), _amt(s.gross_order_total), t('含在途/已关闭') + ' · ' + s.order_count + ' ' + t('单'))}
       ${tile(t('已计提平台费'), _fee(s.fee_accrued_total), s.fee_order_count + ' ' + t('单'))}
       ${tile(t('在途 / 已关闭'), s.in_flight_count + ' / ' + s.closed_count, t('单'))}
     </div>`
-    const byMonth = (r.by_month && r.by_month.length > 1) ? `<div style="margin-bottom:10px"><div style="font-size:12px;color:#6b7280;margin-bottom:4px">${t('按月')}</div>${r.by_month.map(m => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;border-bottom:1px solid #f3f4f6"><span>${escHtml(m.month)}</span><span>${_amt(m.sales_total)} · ${m.order_count} ${t('单')}</span></div>`).join('')}</div>` : ''
+    const byMonth = (r.by_month && r.by_month.length > 1) ? `<div style="margin-bottom:10px"><div style="font-size:12px;color:#6b7280;margin-bottom:4px">${t('按月(已完成 / 订单总额)')}</div>${r.by_month.map(m => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;border-bottom:1px solid #f3f4f6"><span>${escHtml(m.month)}</span><span>${_amt(m.completed_sales)} <span style="color:#9ca3af">/ ${_amt(m.gross_order_total)}</span></span></div>`).join('')}</div>` : ''
     const th = (txt, right) => `<th style="text-align:${right ? 'right' : 'left'};padding:5px 4px;font-size:11px;color:#9ca3af;white-space:nowrap">${txt}</th>`
     const rowsHtml = r.orders.map(o => `<tr style="border-bottom:1px solid #f3f4f6">
       <td style="padding:5px 4px;font-size:11px"><a href="#order/${o.id}" style="color:#6366f1;text-decoration:none">${escHtml(String(o.id).slice(0, 10))}</a></td>

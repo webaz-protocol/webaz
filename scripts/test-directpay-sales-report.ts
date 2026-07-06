@@ -49,10 +49,11 @@ const get = (path: string, uid = 's1'): Promise<{ status: number; json: Record<s
 })
 
 try {
-  const r = (await get('/sellers/me/direct-pay-report')).json as { summary: Record<string, number>; by_month: { month: string; order_count: number }[]; orders: { id: string; fee_amount: number | null; status: string }[] }
+  const r = (await get('/sellers/me/direct-pay-report')).json as { summary: Record<string, number>; by_month: { month: string; order_count: number; gross_order_total: number; completed_sales: number }[]; orders: { id: string; fee_amount: number | null; status: string }[] }
   const s = r.summary
   ok('1. order_count = 4 direct_p2p (escrow + other seller excluded)', s.order_count === 4)
-  ok('2. sales_total = 380 (100+200+50+30; escrow 999 & other 500 excluded)', s.sales_total === 380)
+  ok('2. gross_order_total = 380 (all statuses incl cancelled 30; escrow 999 & other 500 excluded)', s.gross_order_total === 380)
+  ok('2b. completed_sales EXCLUDES cancelled/in-flight (真实销售 = 300, not 380)', s.completed_sales === 300 && s.completed_sales !== s.gross_order_total)
   ok('3. completed: count 2, sales 300', s.completed_count === 2 && s.completed_sales === 300)
   ok('4. in_flight_count = 1 (accepted)', s.in_flight_count === 1)
   ok('5. closed_count = 1 (cancelled)', s.closed_count === 1)
@@ -61,16 +62,18 @@ try {
   const byId = Object.fromEntries(r.orders.map(o => [o.id, o]))
   ok('7. per-order fee 明细: completed order has fee', byId[o1] && Math.abs((byId[o1].fee_amount as number) - 0.5) < 1e-9)
   ok('8. in-flight order fee null (未完成尚未计提)', r.orders.some(o => o.status === 'accepted' && o.fee_amount === null))
-  ok('9. by_month has 2026-03 (2) and 2026-04 (2)', r.by_month.find(m => m.month === '2026-03')?.order_count === 2 && r.by_month.find(m => m.month === '2026-04')?.order_count === 2)
+  const mar3 = r.by_month.find(m => m.month === '2026-03'); const apr = r.by_month.find(m => m.month === '2026-04')
+  ok('9. by_month 2026-03: 2 orders, gross 300, completed 300 (both completed)', mar3?.order_count === 2 && mar3?.gross_order_total === 300 && mar3?.completed_sales === 300)
+  ok('9b. by_month 2026-04: 2 orders, gross 80, completed 0 (accepted+cancelled, none completed)', apr?.order_count === 2 && apr?.gross_order_total === 80 && apr?.completed_sales === 0)
 
   // 日期区间
   const mar = (await get('/sellers/me/direct-pay-report?from=2026-03-01&to=2026-03-31')).json as { summary: Record<string, number> }
-  ok('10. range 2026-03 → 2 orders, sales 300', mar.summary.order_count === 2 && mar.summary.sales_total === 300)
+  ok('10. range 2026-03 → 2 orders, sales 300', mar.summary.order_count === 2 && mar.summary.gross_order_total === 300)
 
   // 授权 / 范围
   ok('11. non-seller → 403', (await get('/sellers/me/direct-pay-report', 'b1')).status === 403)
   const oth = (await get('/sellers/me/direct-pay-report', 'other')).json as { summary: Record<string, number> }
-  ok('12. other seller sees only own (1 order, 500)', oth.summary.order_count === 1 && oth.summary.sales_total === 500)
+  ok('12. other seller sees only own (1 order, 500)', oth.summary.order_count === 1 && oth.summary.gross_order_total === 500)
 } finally { server!.close() }
 
 if (fail > 0) { console.error(`\n❌ directpay-sales-report FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
