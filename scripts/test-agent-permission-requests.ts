@@ -20,7 +20,14 @@ const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fail
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 const app = express(); app.use(express.json())
 const auth = (req: express.Request, res: express.Response) => { const u = req.header('x-test-user'); if (!u) { res.status(401).json({ error: 'unauthorized' }); return null } return { id: u } }
-const requireHumanPresence = (_u: string, _p: 'agent_pair_approve', t: string | undefined) => (t === 'gtk_ok' ? { ok: true } : { ok: false, error_code: 'HUMAN_PRESENCE_REQUIRED', reason: 'x' })
+// Stub Passkey gate: a token 'gtk_ok:<request_id>' carries the request it was minted for (mirrors the real
+//   purpose_data binding). No token → fail-closed. validate() must accept the bound request_id or we reject.
+const requireHumanPresence = (_u: string, _p: 'agent_pair_approve' | 'agent_permission_approve', t: string | undefined, _k: string, validate?: (d: unknown) => boolean) => {
+  if (typeof t !== 'string' || !t.startsWith('gtk_ok')) return { ok: false, error_code: 'HUMAN_PRESENCE_REQUIRED', reason: 'no live passkey' }
+  const bound = t.includes(':') ? t.split(':')[1] : undefined
+  if (validate && !validate({ request_id: bound })) return { ok: false, error_code: 'GATE_BINDING_MISMATCH', reason: 'passkey bound to a different request' }
+  return { ok: true }
+}
 registerAgentGrantsRoutes(app, { db, auth, generateId: (p: string) => p + '_' + Math.floor(performance.now() * 1000), rateLimitOk: () => true, requireHumanPresence } as never)
 const server = app.listen(0); const port = (server.address() as AddressInfo).port
 
@@ -69,9 +76,16 @@ try {
   // ── wrong human can\'t approve ──
   ok('non-owner cannot approve', (await j(`/api/agent-grants/permission-requests/${aprId}/approve`, { method: 'POST', user: 'bob' })).status === 403)
 
+  // ── approve requires a LIVE Passkey (RFC-020: expansion = privilege escalation), bound to THIS request ──
+  ok('approve WITHOUT a passkey token → 412 (fail-closed)', (await j(`/api/agent-grants/permission-requests/${aprId}/approve`, { method: 'POST', user: 'alice' })).status === 412)
+  const wrongTok = await j(`/api/agent-grants/permission-requests/${aprId}/approve`, { method: 'POST', user: 'alice', body: { webauthn_token: 'gtk_ok:apr_someoneelse' } })
+  ok('approve with a passkey bound to a DIFFERENT request → 412 GATE_BINDING_MISMATCH', wrongTok.status === 412 && wrongTok.body.error_code === 'GATE_BINDING_MISMATCH')
+  const vStill = await j('/api/agent-grants/verify', { bearer: BEARER })
+  ok('after rejected passkey attempts the grant is UNCHANGED (still read_public, request still pending)', ((vStill.body.grant as Record<string, string[]>).scopes).join() === 'read_public')
+
   const auditBefore = auditCount()
-  // ── approve (session-confirm, no Passkey for safe) → expands the grant ──
-  const approve = await j(`/api/agent-grants/permission-requests/${aprId}/approve`, { method: 'POST', user: 'alice' })
+  // ── approve with the correctly-bound Passkey → expands the grant ──
+  const approve = await j(`/api/agent-grants/permission-requests/${aprId}/approve`, { method: 'POST', user: 'alice', body: { webauthn_token: `gtk_ok:${aprId}` } })
   ok('approve → 200, grant expanded with the 9 catalog scopes', approve.status === 200 && (approve.body.scopes as string[]).includes('seller_products_read') && (approve.body.scopes as string[]).includes('read_public') && approve.body.permission_bundle === 'catalog_agent')
   ok('approve writes an audit log row', auditCount() > auditBefore)
 
@@ -90,9 +104,17 @@ try {
   ok('reject a pending request → rejected', (await j(`/api/agent-grants/permission-requests/${singleId}/reject`, { method: 'POST', user: 'alice' })).body.status === 'rejected')
   ok('approve a rejected request → 409', (await j(`/api/agent-grants/permission-requests/${singleId}/approve`, { method: 'POST', user: 'alice' })).status === 409)
 
+  // ── (P2) grant goes inactive BEFORE approval → 409, and the request MUST stay pending (no phantom approved) ──
+  const p2 = await j('/api/agent-grants/permission-requests', { method: 'POST', bearer: BEARER, body: { scopes: ['seller_inventory_read'] } })
+  const p2Id = String(p2.body.approval_id)
+  db.prepare("UPDATE agent_delegation_grants SET status='revoked', revoked_at=? WHERE grant_id='grt_1'").run(new Date().toISOString())
+  const p2Approve = await j(`/api/agent-grants/permission-requests/${p2Id}/approve`, { method: 'POST', user: 'alice', body: { webauthn_token: `gtk_ok:${p2Id}` } })
+  ok('approve when grant is revoked → 409 GRANT_INACTIVE', p2Approve.status === 409 && p2Approve.body.error_code === 'GRANT_INACTIVE')
+  ok('the request stays PENDING after a failed approve (no phantom approved)', (db.prepare('SELECT status FROM agent_permission_requests WHERE id=?').get(p2Id) as { status: string }).status === 'pending')
+
   // ── no raw token/api_key leaks in any response ──
   ok('no raw token / token_hash / api_key in create/verify/approve bodies', !/gtk_agentbearer|token_hash|api_key|k_alice/.test(JSON.stringify([create.body, v1.body, approve.body])))
 } finally { server.close(); try { rmSync(process.env.HOME as string, { recursive: true, force: true }) } catch {} }
 
 if (fail > 0) { console.error(`\n❌ agent-permission-requests FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-console.log(`✅ agent permission requests: grant-bound create (safe-only; risk/never rejected) + bundle/single-scope + human list (scoped) + session-confirm approve EXPANDS grant (union scopes + bundle + extend expiry) + full verify + reject + audit + no raw creds\n  ✅ pass ${pass}`)
+console.log(`✅ agent permission requests: grant-bound create (safe-only; risk/never rejected) + bundle/single-scope + human list (scoped) + live-Passkey approve (bound to request; no-token/wrong-request→412) EXPANDS grant (union scopes + bundle + extend expiry) + grant-active-before-CAS (revoked grant→409, request stays pending) + full verify + reject + audit + no raw creds\n  ✅ pass ${pass}`)

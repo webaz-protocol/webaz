@@ -36,7 +36,7 @@ export interface AgentGrantsDeps {
   generateId: (prefix: string) => string
   rateLimitOk: (key: string, max?: number, windowMs?: number) => boolean  // throttles the anonymous pair/start
   // 人工在场 gate:批准配对必须真人 Passkey/WebAuthn(与 agent_revoke 同机制)。param 关闭时放行。
-  requireHumanPresence: (userId: string, purpose: 'agent_pair_approve', token: string | undefined, paramKey: string, validate?: (data: unknown) => boolean) => { ok: boolean; error_code?: string; reason?: string }
+  requireHumanPresence: (userId: string, purpose: 'agent_pair_approve' | 'agent_permission_approve', token: string | undefined, paramKey: string, validate?: (data: unknown) => boolean) => { ok: boolean; error_code?: string; reason?: string }
 }
 
 // Bounds on a pairing request (anti-bloat for the anonymous start endpoint).
@@ -179,8 +179,11 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     res.json({ requests: rows.map(r => ({ ...r, requested_scopes: scopeNames(String(r.requested_scopes)), human_summary: bundleSummary(r.permission_bundle as string | null) })) })
   })
 
-  // POST approve — human-authed. Low/medium (safe-only here) = session-confirm (no Passkey; your product call).
-  //   Expands the bound grant (union scopes + bundle + extend expiry, duration-capped). Audited.
+  // RFC-020: expanding an agent grant is a privilege escalation (like initial pairing) — a stolen web session
+  //   must NOT widen an agent from read_public to a long-term bundle. So a LIVE Passkey bound to this request_id
+  //   is required. Grant-active is checked BEFORE claiming the request, and the expand is guarded + reversible,
+  //   so a mid-flight expire/revoke can never strand a phantom 'approved'.
+  // POST approve — human-authed + live Passkey; expands the bound grant (union scopes + bundle + extend expiry). Audited.
   app.post('/api/agent-grants/permission-requests/:id/approve', async (req, res) => {
     const user = auth(req, res); if (!user) return
     const now = new Date().toISOString()
@@ -189,23 +192,33 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     if (!r) return void res.status(404).json({ error: 'permission_request_not_found' })
     if (r.human_id !== user.id) return void res.status(403).json({ error: 'not your permission request' })
     if (r.status !== 'pending' || r.expires_at <= now) return void res.status(409).json({ error: 'permission_request_not_pending', status: r.status })
+    // Live Passkey, bound to THIS request (a token minted for request A can't approve B).
+    const hp = requireHumanPresence(user.id as string, 'agent_permission_approve', (req.body || {}).webauthn_token as string | undefined, 'require_human_presence_for_agent_permission_approve',
+      (data) => { try { return typeof data === 'object' && data !== null && (data as Record<string, unknown>).request_id === req.params.id } catch { return false } })
+    if (!hp.ok) return void res.status(412).json({ error: hp.reason, error_code: hp.error_code })
     const reqScopes = scopeNames(r.requested_scopes)
     // Defense in depth: re-validate safe-only + duration allowed at approval time.
     if (!validateRequestedCapabilities(reqScopes.map(s => ({ capability: s }))).ok) return void res.status(403).json({ error: 'permission_not_grantable', error_code: 'PERMISSION_NOT_GRANTABLE' })
     if (!durationAllowedForScopes(reqScopes, r.duration)) return void res.status(403).json({ error: 'duration_not_allowed_for_risk', error_code: 'DURATION_NOT_ALLOWED' })
-    // CAS-claim the request (only one approval wins) BEFORE mutating the grant.
-    const claimed = await dbRun("UPDATE agent_permission_requests SET status='approved', approved_at=? WHERE id=? AND status='pending'", [now, req.params.id])
-    if (!claimed || claimed.changes !== 1) return void res.status(409).json({ error: 'permission_request_not_pending' })
+    // (P2) Verify the grant is ACTIVE *before* claiming the request — never leave a phantom 'approved'.
     const grant = await dbOne<{ grant_id: string; capabilities: string; status: string; expires_at: string; revoked_at: string | null }>(
       'SELECT grant_id, capabilities, status, expires_at, revoked_at FROM agent_delegation_grants WHERE grant_id = ?', [r.grant_id])
-    if (!grant || !grantIsActive(grant, now)) { return void res.status(409).json({ error: 'grant_inactive', error_code: 'GRANT_INACTIVE', note: 'the agent grant expired or was revoked; re-pair' }) }
+    if (!grant || !grantIsActive(grant, now)) return void res.status(409).json({ error: 'grant_inactive', error_code: 'GRANT_INACTIVE', note: 'the agent grant expired or was revoked; re-pair (this request stays pending)' })
+    // CAS-claim the request (only one approval wins).
+    const claimed = await dbRun("UPDATE agent_permission_requests SET status='approved', approved_at=? WHERE id=? AND status='pending'", [now, req.params.id])
+    if (!claimed || claimed.changes !== 1) return void res.status(409).json({ error: 'permission_request_not_pending' })
     // Union new scopes into the grant; set bundle; extend expiry (never shorten). 'once' → short 1h window.
-    const existing = scopeNames(grant.capabilities)
-    const union = [...new Set([...existing, ...reqScopes])].map(s => ({ capability: s, constraints: {} }))
+    const union = [...new Set([...scopeNames(grant.capabilities), ...reqScopes])].map(s => ({ capability: s, constraints: {} }))
     const secs = durationToSeconds(r.duration as GrantDuration) || 3600
     const newExpiry = new Date(Date.now() + secs * 1000).toISOString()
     const expiresAt = newExpiry > grant.expires_at ? newExpiry : grant.expires_at
-    await dbRun('UPDATE agent_delegation_grants SET capabilities=?, permission_bundle=COALESCE(?, permission_bundle), expires_at=? WHERE grant_id=?', [JSON.stringify(union), r.permission_bundle, expiresAt, grant.grant_id])
+    // Guarded expand: only if the grant is STILL active. If it was revoked in the race window, REVERT the
+    //   request claim back to pending (compensating action) so nothing is stranded.
+    const expanded = await dbRun("UPDATE agent_delegation_grants SET capabilities=?, permission_bundle=COALESCE(?, permission_bundle), expires_at=? WHERE grant_id=? AND status='active' AND revoked_at IS NULL", [JSON.stringify(union), r.permission_bundle, expiresAt, grant.grant_id])
+    if (!expanded || expanded.changes !== 1) {
+      await dbRun("UPDATE agent_permission_requests SET status='pending', approved_at=NULL WHERE id=? AND status='approved'", [req.params.id])
+      return void res.status(409).json({ error: 'grant_inactive', error_code: 'GRANT_INACTIVE', note: 'the agent grant was revoked while approving; request reverted to pending' })
+    }
     await auditGrant(grant.grant_id, user.id as string, `permission_request:approve:${r.permission_bundle || reqScopes.join(',')}`, 'allow')
     res.json({ success: true, grant_id: grant.grant_id, scopes: union.map(u => u.capability), permission_bundle: r.permission_bundle, expires_at: expiresAt })
   })

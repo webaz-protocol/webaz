@@ -2651,7 +2651,7 @@
     },
     "/api/agent-grants/permission-requests/:id/approve": {
       "post": {
-        "summary": "Expands the bound grant (union scopes + bundle + extend expiry, duration-capped). Audited.",
+        "summary": "POST approve — human-authed + live Passkey; expands the bound grant (union scopes + bundle + extend expiry). Audited.",
         "tags": [],
         "security": [
           {
