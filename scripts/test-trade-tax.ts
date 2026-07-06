@@ -122,19 +122,20 @@ try {
   const RT = readFileSync('src/pwa/routes/shipping-templates.ts', 'utf8')
   ok('6a. write branches store + product for both fields', /store_import_duty_terms' in b/.test(RT) && /'product_id' in b && 'import_duty_terms' in b/.test(RT) && /store_tax_lines' in b/.test(RT) && /'product_id' in b && 'tax_lines' in b/.test(RT))
   const HTML = readFileSync('src/pwa/public/index.html', 'utf8')
-  ok('6b. buyer disclosure module loaded + injected in buy sheet', HTML.includes('app-trade-tax-ui.js') && /tradeTaxBlockHtml \? window\.tradeTaxBlockHtml/.test(readFileSync('src/pwa/public/app.js', 'utf8')))
+  // 买家披露 S5 起迁至 app-purchase-terms-ui.js(见 test:purchase-terms);此处只锁 S3 卖家设置卡 + 买单页注入聚合卡
+  ok('6b. seller settings module loaded + buy sheet injects aggregated purchase-terms card', HTML.includes('app-trade-tax-ui.js') && /purchaseTermsBlockHtml \? window\.purchaseTermsBlockHtml/.test(readFileSync('src/pwa/public/app.js', 'utf8')))
   const UI = readFileSync('src/pwa/public/app-trade-tax-ui.js', 'utf8')
-  ok('6c. disclosure states platform does not collect/remit', /平台不代收代缴/.test(UI))
-  ok('6c2. tax disclosure is region-aware (route filters via taxLinesForRegion; UI refreshes on region change)',
+  ok('6c. seller card states platform does not collect tax', /平台不代收/.test(UI))
+  ok('6c2. tax disclosure is region-aware (route filters via taxLinesForRegion; buyer card refreshes on region change)',
     /taxLinesForRegion\(effectiveTaxLines/.test(readFileSync('src/pwa/routes/shipping-templates.ts', 'utf8'))
-    && /_tradeTaxRefresh/.test(UI) && /_tradeTaxRefresh\(\)/.test(readFileSync('src/pwa/public/app-order-accept-ui.js', 'utf8')))
+    && /_purchaseTermsRefresh/.test(readFileSync('src/pwa/public/app-purchase-terms-ui.js', 'utf8')) && /_purchaseTermsRefresh\(\)/.test(readFileSync('src/pwa/public/app-order-accept-ui.js', 'utf8')))
   const DOC = readFileSync('docs/COMPLIANCE-CROSS-BORDER-TAX.INTERNAL.md', 'utf8')
   ok('6d. INTERNAL compliance doc records the deemed-supplier finding + counsel-gate', /deemed[ -]supplier/i.test(DOC) && /trade\.platform_region_blocklist/.test(DOC))
   const I18N = readFileSync('src/pwa/public/i18n.js', 'utf8')
   const keys = new Set<string>()
   for (const m of UI.matchAll(/(?<![\w$])t\('([^']+)'\)/g)) keys.add(m[1])
   const noEn = [...keys].filter(k => !I18N.includes(`'${k}':`))
-  ok('6e. i18n parity', keys.size >= 10 && noEn.length === 0, noEn.slice(0, 3).join(' | '))
+  ok('6e. i18n parity', keys.size >= 5 && noEn.length === 0, noEn.slice(0, 3).join(' | '))
 }
 
 if (fail > 0) { console.error(`\n❌ trade-tax FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

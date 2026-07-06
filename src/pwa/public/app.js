@@ -10437,7 +10437,7 @@ window.openBuySheet = function(productId) {
         </div>
       </details>
 
-      ${window.dpRailSelectorHtml ? window.dpRailSelectorHtml(prod.id, prod.price) : ''}${window.shipRegionBlockHtml ? window.shipRegionBlockHtml(prod.id) : ''}${window.tradeTaxBlockHtml ? window.tradeTaxBlockHtml(prod.id) : ''}
+      ${window.dpRailSelectorHtml ? window.dpRailSelectorHtml(prod.id, prod.price) : ''}${window.shipRegionBlockHtml ? window.shipRegionBlockHtml(prod.id) : ''}${window.purchaseTermsBlockHtml ? window.purchaseTermsBlockHtml(prod.id) : ''}
       <div id="buy-msg" style="margin-top:10px"></div>
       <div id="tax-preview-slot" style="margin-top:8px"></div>
 
