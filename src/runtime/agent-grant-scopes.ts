@@ -30,6 +30,13 @@ export const SAFE_SCOPES = [
   'list_product_draft',
   'product_publish_request',
   'draft_order',
+  // Seller-scoped read/draft surfaces (Catalog Agent role) — read the seller's own catalog + propose
+  //   drafts/pricing/publish-REQUESTS. NONE of these publish, accept orders, ship, or move money.
+  'seller_profile_read',
+  'seller_products_read',
+  'seller_inventory_read',
+  'seller_product_draft',
+  'seller_pricing_suggestion',
 ] as const
 
 /**
@@ -128,9 +135,82 @@ export function grantIsActive(grant: GrantRow, nowIso: string): boolean {
 
 /** Short-lived bearer policy for SAFE scopes (RFC-020 bearer-first; PoP before risk/longer). */
 export const GRANT_TTL_DEFAULT_SEC = 3600        // 1h
-export const GRANT_TTL_MAX_SEC = 24 * 3600       // 24h cap — short-lived only
+export const GRANT_TTL_MAX_SEC = 24 * 3600       // 24h cap — short-lived only (legacy webaz_pair bearer)
 export function clampTtlSeconds(requested: unknown): number {
   const n = Number(requested)
   if (!Number.isFinite(n) || n <= 0) return GRANT_TTL_DEFAULT_SEC
   return Math.min(Math.floor(n), GRANT_TTL_MAX_SEC)
+}
+
+// ─────────────────────────── Permission Bundles (named safe-only scope sets) ───────────────────────────
+// A bundle bundles common-job scopes so a merchant approves ONE thing, not N scopes. INVARIANT: a bundle
+// may carry ONLY safe scopes — a risk/never-delegable scope can never enter a bundle (asserted at load).
+export interface PermissionBundle { key: string; label: string; scopes: readonly string[]; human_summary: string; human_summary_en: string }
+
+export const PERMISSION_BUNDLES: Record<string, PermissionBundle> = {
+  catalog_agent: {
+    key: 'catalog_agent',
+    label: 'Catalog Agent',
+    scopes: ['read_public', 'profile_read', 'search', 'seller_profile_read', 'seller_products_read', 'seller_inventory_read', 'seller_product_draft', 'seller_pricing_suggestion', 'product_publish_request'],
+    human_summary: '选品、商品草稿、库存字段检查、价格建议、上架请求。它不能发布商品、不能接单、不能发货、不能动用资金。',
+    human_summary_en: 'Sourcing, product drafts, inventory-field checks, pricing suggestions, and publish REQUESTS. It cannot publish products, accept orders, ship, or move funds.',
+  },
+}
+
+/** Resolve a bundle key → its safe scopes + human summary, or null if unknown. */
+export function resolveBundle(key: unknown): PermissionBundle | null {
+  return (typeof key === 'string' && Object.prototype.hasOwnProperty.call(PERMISSION_BUNDLES, key)) ? PERMISSION_BUNDLES[key] : null
+}
+
+/** INVARIANT check (acceptance #7): a bundle must be all-safe. Returns the offending non-safe scopes. */
+export function bundleNonSafeScopes(bundle: PermissionBundle): string[] {
+  return bundle.scopes.filter(s => classifyScope(s) !== 'safe')
+}
+
+// Load-time assertion: no bundle may ship with a risk/never/unknown scope (fail LOUD at import, not runtime).
+for (const b of Object.values(PERMISSION_BUNDLES)) {
+  const bad = bundleNonSafeScopes(b)
+  if (bad.length) throw new Error(`Permission bundle '${b.key}' contains non-safe scope(s): ${bad.join(', ')} — bundles are safe-only (RFC-020)`)
+}
+
+// ─────────────────────────── Duration policy (risk tier → allowed grant lifetimes) ───────────────────────────
+export type GrantDuration = 'once' | '1h' | '24h' | '7d' | '30d'
+export const DURATION_SECONDS: Record<Exclude<GrantDuration, 'once'>, number> = { '1h': 3600, '24h': 86400, '7d': 604800, '30d': 2592000 }
+
+/**
+ * Which durations a set of scopes may be granted for, capped by the HIGHEST risk tier present:
+ *   - never-delegable / unknown  → []            (cannot be granted at all)
+ *   - risk (high)                → ['once']       (single Passkey each time; NEVER long-term)
+ *   - safe (low/medium)          → once…30d       (long-term ok)
+ */
+export function allowedDurationsForScopes(scopes: readonly string[]): GrantDuration[] {
+  const tiers = scopes.map(classifyScope)
+  if (tiers.some(t => t === 'never_delegable' || t === 'unknown')) return []
+  if (tiers.some(t => t === 'risk')) return ['once']
+  return ['once', '1h', '24h', '7d', '30d']
+}
+
+export function durationAllowedForScopes(scopes: readonly string[], duration: unknown): boolean {
+  return typeof duration === 'string' && (allowedDurationsForScopes(scopes) as string[]).includes(duration)
+}
+
+/** Suggested default: 7d for long-term-eligible safe scopes; else the safest available (once). */
+export function suggestedDurationForScopes(scopes: readonly string[]): GrantDuration {
+  const a = allowedDurationsForScopes(scopes)
+  return a.includes('7d') ? '7d' : (a[0] ?? 'once')
+}
+
+/** Grant lifetime in seconds for an approved (non-'once') duration. 'once' handled separately (single-use). */
+export function durationToSeconds(duration: GrantDuration): number {
+  return duration === 'once' ? 0 : DURATION_SECONDS[duration]
+}
+
+export type RiskLevel = 'low' | 'medium' | 'high' | 'blocked'
+/** Coarse risk label for the human-facing request card. */
+export function riskLevelForScopes(scopes: readonly string[]): RiskLevel {
+  const tiers = scopes.map(classifyScope)
+  if (tiers.some(t => t === 'never_delegable' || t === 'unknown')) return 'blocked'
+  if (tiers.some(t => t === 'risk')) return 'high'
+  if (scopes.includes('product_publish_request')) return 'medium'   // request-only (still human-gated to publish), flag as medium
+  return 'low'
 }
