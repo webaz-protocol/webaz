@@ -11683,6 +11683,7 @@ async function renderOrders(app) {
   const ordersScope = state.ordersScope || (state.user.role === 'seller' ? 'sold' : 'all')
   if (ordersScope === 'sold')      orders = orders.filter(o => o.seller_id === state.user.id)
   else if (ordersScope === 'bought') orders = orders.filter(o => o.buyer_id === state.user.id)
+  const railChipsHtml = window.orderRailChipsHtml(orders); orders = window.orderRailApply(orders)   // 类型(支付轨)筛选 chip + 过滤;逻辑在 app-order-rail-filter.js
   const groups = {
     all:        { label: t('全部'),         icon: '📋', match: () => true },
     pay:        { label: t('待付款'),       icon: '💳', match: o => o.status === 'created' },
@@ -11752,7 +11753,7 @@ async function renderOrders(app) {
           <div class="order-icon">${pending ? '⏰' : getCategoryIcon(o.category)}</div>
           <div class="order-info">
             <div class="order-title">${escHtml(o.product_title)}</div>
-            <div class="order-meta">${fmtTime(o.created_at)} · ${o.buyer_id === state.user.id ? t('我买的') : t('我卖的')}</div>
+            <div class="order-meta">${fmtTime(o.created_at)} · ${o.buyer_id === state.user.id ? t('我买的') : t('我卖的')}${window.orderRailBadge(o)}</div>
             <div style="margin-top:6px">${orderStatusBadges(o)}</div>
           </div>
           <div class="order-amount">${window.orderAmountHtml(o)}</div>
@@ -11762,8 +11763,8 @@ async function renderOrders(app) {
       }).join('')
 
   const exportRole = state.user?.role === 'seller' ? 'seller' : 'buyer'
-  const exportBtn = `<button class="btn btn-outline btn-sm" style="float:right;font-size:11px;padding:4px 10px" onclick="exportOrders('${exportRole}')">📥 ${t('导出 CSV')}</button>`
-  app.innerHTML = shell(`<h1 class="page-title">${t('我的订单')} ${exportBtn}</h1>${mainTabsHtml}${scopeChipsHtml}${notePromptPlaceholder('orders')}${tabsHtml}${pendingBanner}${list}`, 'orders')
+  const exportBtn = `<button class="btn btn-outline btn-sm" style="float:right;font-size:11px;padding:4px 10px" onclick="exportOrders('${exportRole}','${state.ordersRail || 'all'}')">📥 ${t('导出 CSV')}</button>`
+  app.innerHTML = shell(`<h1 class="page-title">${t('我的订单')} ${exportBtn}</h1>${mainTabsHtml}${scopeChipsHtml}${railChipsHtml}${notePromptPlaceholder('orders')}${tabsHtml}${pendingBanner}${list}`, 'orders')
   hydrateNotePrompt('orders')
 }
 
@@ -11806,12 +11807,10 @@ window.printOrderReceipt = async (orderId) => {
   w.document.close()
 }
 
-window.exportOrders = (role) => {
-  // 直接打开端点 → 浏览器下载（Authorization 头通过 token query 传递）
-  const url = `/api/orders/export?role=${role}&token=${encodeURIComponent(state.apiKey)}`
-  // 浏览器导航触发下载（Content-Disposition: attachment）
-  // 由于 auth() 当前只读 Authorization 头，导出端点需支持 query token；改用 fetch + blob 下载更稳
-  fetch(`/api/orders/export?role=${role}`, { headers: { Authorization: 'Bearer ' + state.apiKey } })
+window.exportOrders = (role, rail) => {
+  const railQ = (rail === 'escrow' || rail === 'direct_p2p') ? `&rail=${rail}` : ''   // 导出与当前筛选一致(对账分轨)
+  // auth() 只读 Authorization 头 → 用 fetch + blob 下载（Content-Disposition: attachment）
+  fetch(`/api/orders/export?role=${role}${railQ}`, { headers: { Authorization: 'Bearer ' + state.apiKey } })
     .then(async (r) => {
       const truncated = r.headers.get('X-Truncated') === '1'
       const limit = r.headers.get('X-Truncated-Limit')
