@@ -43,6 +43,10 @@ export interface AgentGrantsDeps {
 const MAX_CAPABILITIES = 12
 const MAX_CONSTRAINTS_JSON = 2000
 
+// Thrown inside the approve transaction when the grant is no longer active (revoked/expired in the race
+// window) — rolls the whole tx back so the request claim + expansion + audit are all-or-nothing.
+class GrantInactiveError extends Error {}
+
 function safeParseCaps(json: unknown): unknown {
   try { return JSON.parse(String(json)) } catch { return [] }
 }
@@ -128,8 +132,11 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   // helpers for the permission-request flow ----------------------------------------------------------------
   const parseCapList = (json: string): Array<{ capability: string; constraints?: Record<string, unknown> }> => { try { const a = JSON.parse(json); return Array.isArray(a) ? a : [] } catch { return [] } }
   const scopeNames = (json: string): string[] => parseCapList(json).map(c => (typeof c === 'string' ? c : c?.capability)).filter((s): s is string => typeof s === 'string')
-  const auditGrant = async (grantId: string | null, humanId: string | null, cap: string, outcome: 'allow' | 'deny', errorCode?: string): Promise<void> => {
-    try { await dbRun('INSERT INTO agent_grant_auth_log (grant_id, human_id, capability, outcome, error_code) VALUES (?,?,?,?,?)', [grantId, humanId, cap, outcome, errorCode ?? null]) } catch (e) { console.error('[agent-grant] audit write failed:', (e as Error).message) }
+  // Returns true iff the audit row was durably written. Callers on the grant-authorized SUCCESS path MUST
+  // fail closed when this is false (RFC-020 invariant: a grant-authorized action is audited or it does not
+  // happen) — parity with the requireAgentGrantScope middleware above.
+  const auditGrant = async (grantId: string | null, humanId: string | null, cap: string, outcome: 'allow' | 'deny', errorCode?: string): Promise<boolean> => {
+    try { await dbRun('INSERT INTO agent_grant_auth_log (grant_id, human_id, capability, outcome, error_code) VALUES (?,?,?,?,?)', [grantId, humanId, cap, outcome, errorCode ?? null]); return true } catch (e) { console.error('[agent-grant] audit write failed:', (e as Error).message); return false }
   }
   const bundleSummary = (key: string | null): string | null => { const b = key ? resolveBundle(key) : null; return b ? b.human_summary : null }
 
@@ -140,7 +147,8 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     if (!g) { return void res.status(401).json({ error: 'active delegation grant required', error_code: 'GRANT_REQUIRED' }) }
     const full = await dbOne<{ grant_id: string; human_id: string; agent_label: string | null; capabilities: string; status: string; expires_at: string; permission_bundle: string | null }>(
       'SELECT grant_id, human_id, agent_label, capabilities, status, expires_at, permission_bundle FROM agent_delegation_grants WHERE grant_id = ?', [g.grant_id])
-    await auditGrant(g.grant_id, g.human_id, 'grant:verify', 'allow')
+    // Fail closed: a grant-authorized read is audited or it does not proceed (parity with requireAgentGrantScope).
+    if (!(await auditGrant(g.grant_id, g.human_id, 'grant:verify', 'allow'))) return void res.status(503).json({ error: 'authorization audit unavailable; refusing to proceed unaudited', error_code: 'GRANT_AUDIT_FAILED' })
     res.json({ grant: { grant_id: full!.grant_id, agent_label: full!.agent_label, scopes: scopeNames(full!.capabilities), permission_bundle: full!.permission_bundle, expires_at: full!.expires_at, status: full!.status }, note: 'Full grant principal — scopes/bundle/expiry/status. Not a human session; never authorizes risk/never-delegable actions.' })
   })
 
@@ -204,22 +212,31 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const grant = await dbOne<{ grant_id: string; capabilities: string; status: string; expires_at: string; revoked_at: string | null }>(
       'SELECT grant_id, capabilities, status, expires_at, revoked_at FROM agent_delegation_grants WHERE grant_id = ?', [r.grant_id])
     if (!grant || !grantIsActive(grant, now)) return void res.status(409).json({ error: 'grant_inactive', error_code: 'GRANT_INACTIVE', note: 'the agent grant expired or was revoked; re-pair (this request stays pending)' })
-    // CAS-claim the request (only one approval wins).
-    const claimed = await dbRun("UPDATE agent_permission_requests SET status='approved', approved_at=? WHERE id=? AND status='pending'", [now, req.params.id])
-    if (!claimed || claimed.changes !== 1) return void res.status(409).json({ error: 'permission_request_not_pending' })
     // Union new scopes into the grant; set bundle; extend expiry (never shorten). 'once' → short 1h window.
     const union = [...new Set([...scopeNames(grant.capabilities), ...reqScopes])].map(s => ({ capability: s, constraints: {} }))
     const secs = durationToSeconds(r.duration as GrantDuration) || 3600
     const newExpiry = new Date(Date.now() + secs * 1000).toISOString()
     const expiresAt = newExpiry > grant.expires_at ? newExpiry : grant.expires_at
-    // Guarded expand: only if the grant is STILL active. If it was revoked in the race window, REVERT the
-    //   request claim back to pending (compensating action) so nothing is stranded.
-    const expanded = await dbRun("UPDATE agent_delegation_grants SET capabilities=?, permission_bundle=COALESCE(?, permission_bundle), expires_at=? WHERE grant_id=? AND status='active' AND revoked_at IS NULL", [JSON.stringify(union), r.permission_bundle, expiresAt, grant.grant_id])
-    if (!expanded || expanded.changes !== 1) {
-      await dbRun("UPDATE agent_permission_requests SET status='pending', approved_at=NULL WHERE id=? AND status='approved'", [req.params.id])
-      return void res.status(409).json({ error: 'grant_inactive', error_code: 'GRANT_INACTIVE', note: 'the agent grant was revoked while approving; request reverted to pending' })
+    // ATOMIC (RFC-020 invariant: a grant expansion is audited-or-it-does-not-happen; parity with arbitrator
+    //   approve). CAS-claim the request + guarded-expand the grant + write the audit row in ONE sync
+    //   db.transaction. If the audit INSERT throws, OR the grant was revoked in the race window (guarded
+    //   WHERE → 0 rows → GrantInactiveError), the WHOLE tx rolls back: scopes unchanged, request stays pending.
+    let outcome: 'expanded' | 'not_pending'
+    try {
+      outcome = db.transaction((): 'expanded' | 'not_pending' => {
+        const claimed = db.prepare("UPDATE agent_permission_requests SET status='approved', approved_at=? WHERE id=? AND status='pending'").run(now, req.params.id)
+        if (claimed.changes !== 1) return 'not_pending'
+        const expanded = db.prepare("UPDATE agent_delegation_grants SET capabilities=?, permission_bundle=COALESCE(?, permission_bundle), expires_at=? WHERE grant_id=? AND status='active' AND revoked_at IS NULL").run(JSON.stringify(union), r.permission_bundle, expiresAt, grant.grant_id)
+        if (expanded.changes !== 1) throw new GrantInactiveError()
+        db.prepare('INSERT INTO agent_grant_auth_log (grant_id, human_id, capability, outcome, error_code) VALUES (?,?,?,?,?)').run(grant.grant_id, user.id as string, `permission_request:approve:${r.permission_bundle || reqScopes.join(',')}`, 'allow', null)
+        return 'expanded'
+      })()
+    } catch (e) {
+      if (e instanceof GrantInactiveError) return void res.status(409).json({ error: 'grant_inactive', error_code: 'GRANT_INACTIVE', note: 'the agent grant was revoked while approving; request stays pending' })
+      console.error('[agent-grant] approve tx failed (audit unavailable?):', (e as Error).message)
+      return void res.status(503).json({ error: 'authorization audit unavailable; refusing to expand unaudited', error_code: 'GRANT_AUDIT_FAILED' })
     }
-    await auditGrant(grant.grant_id, user.id as string, `permission_request:approve:${r.permission_bundle || reqScopes.join(',')}`, 'allow')
+    if (outcome === 'not_pending') return void res.status(409).json({ error: 'permission_request_not_pending' })
     res.json({ success: true, grant_id: grant.grant_id, scopes: union.map(u => u.capability), permission_bundle: r.permission_bundle, expires_at: expiresAt })
   })
 

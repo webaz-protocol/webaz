@@ -104,6 +104,20 @@ try {
   ok('reject a pending request → rejected', (await j(`/api/agent-grants/permission-requests/${singleId}/reject`, { method: 'POST', user: 'alice' })).body.status === 'rejected')
   ok('approve a rejected request → 409', (await j(`/api/agent-grants/permission-requests/${singleId}/approve`, { method: 'POST', user: 'alice' })).status === 409)
 
+  // ── (P2') audit sink unavailable → grant read/expansion FAIL CLOSED (never proceed unaudited, invariant) ──
+  const p3 = await j('/api/agent-grants/permission-requests', { method: 'POST', bearer: BEARER, body: { scopes: ['draft_order'] } })  // draft_order is NOT yet in grt_1's grant
+  const p3Id = String(p3.body.approval_id)
+  const capsBefore = (db.prepare("SELECT capabilities FROM agent_delegation_grants WHERE grant_id='grt_1'").get() as { capabilities: string }).capabilities
+  db.exec('ALTER TABLE agent_grant_auth_log RENAME TO agent_grant_auth_log__bak')  // simulate the audit sink being down
+  const vAudit = await j('/api/agent-grants/verify', { bearer: BEARER })
+  ok('verify with audit sink down → 503 GRANT_AUDIT_FAILED (no unaudited grant read)', vAudit.status === 503 && vAudit.body.error_code === 'GRANT_AUDIT_FAILED')
+  const p3Approve = await j(`/api/agent-grants/permission-requests/${p3Id}/approve`, { method: 'POST', user: 'alice', body: { webauthn_token: `gtk_ok:${p3Id}` } })
+  ok('approve with audit sink down → 503 GRANT_AUDIT_FAILED', p3Approve.status === 503 && p3Approve.body.error_code === 'GRANT_AUDIT_FAILED')
+  const capsAfter = (db.prepare("SELECT capabilities FROM agent_delegation_grants WHERE grant_id='grt_1'").get() as { capabilities: string }).capabilities
+  ok('grant NOT expanded when the audit write failed (whole tx rolled back; draft_order absent)', capsAfter === capsBefore && !capsAfter.includes('draft_order'))
+  ok('request stays PENDING when the audit write failed (no phantom approved)', (db.prepare('SELECT status FROM agent_permission_requests WHERE id=?').get(p3Id) as { status: string }).status === 'pending')
+  db.exec('ALTER TABLE agent_grant_auth_log__bak RENAME TO agent_grant_auth_log')  // restore the audit sink
+
   // ── (P2) grant goes inactive BEFORE approval → 409, and the request MUST stay pending (no phantom approved) ──
   const p2 = await j('/api/agent-grants/permission-requests', { method: 'POST', bearer: BEARER, body: { scopes: ['seller_inventory_read'] } })
   const p2Id = String(p2.body.approval_id)
@@ -117,4 +131,4 @@ try {
 } finally { server.close(); try { rmSync(process.env.HOME as string, { recursive: true, force: true }) } catch {} }
 
 if (fail > 0) { console.error(`\n❌ agent-permission-requests FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-console.log(`✅ agent permission requests: grant-bound create (safe-only; risk/never rejected) + bundle/single-scope + human list (scoped) + live-Passkey approve (bound to request; no-token/wrong-request→412) EXPANDS grant (union scopes + bundle + extend expiry) + grant-active-before-CAS (revoked grant→409, request stays pending) + full verify + reject + audit + no raw creds\n  ✅ pass ${pass}`)
+console.log(`✅ agent permission requests: grant-bound create (safe-only; risk/never rejected) + bundle/single-scope + human list (scoped) + live-Passkey approve (bound to request; no-token/wrong-request→412) EXPANDS grant (union scopes + bundle + extend expiry) + grant-active-before-CAS (revoked grant→409, request stays pending) + atomic claim+expand+audit (audit sink down → verify/approve 503, grant unchanged, request pending) + full verify + reject + audit + no raw creds\n  ✅ pass ${pass}`)
