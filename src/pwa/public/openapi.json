@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (768 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (769 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2566,7 +2566,7 @@
         ]
       },
       "post": {
-        "summary": "── Issue a grant (human-authenticated). Safe scopes only; risk/never-delegable rejected. ──",
+        "summary": "agent delegation\"的安全叙事。零消费方(前端/MCP/测试均不用),故降级为不可用,统一走 pairing。",
         "tags": [],
         "security": [
           {
@@ -2607,6 +2607,17 @@
     "/api/agent-grants/pair/:user_code/approve": {
       "post": {
         "summary": "(pair 3) Human approves — human-authenticated. Issues the grant (token_hash filled at retrieve).",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/agent-grants/pair/:user_code/reject": {
+      "post": {
+        "summary": "拒绝是保护性动作,无需 Passkey(不签发任何凭证)。幂等:仅 pending 可拒。",
         "tags": [],
         "security": [
           {

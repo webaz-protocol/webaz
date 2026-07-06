@@ -43,12 +43,20 @@ const auth = (req: express.Request, res: express.Response) => {
   if (!u) { res.status(401).json({ error: 'unauthorized' }); return null }
   return { id: u }
 }
-registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true })
+// stub human-presence gate mirroring the real Passkey gate + purpose_data binding:
+//   test token format 'gtk_ok:<user_code>' carries the code it was minted for; the route's `validate`
+//   callback must confirm purpose_data.user_code === :user_code (so an A-token can't approve B).
+const requireHumanPresence = (_uid: string, _purpose: 'agent_pair_approve', token: string | undefined, _paramKey: string, validate?: (d: unknown) => boolean) => {
+  if (typeof token !== 'string' || !token.startsWith('gtk_ok:')) return { ok: false, error_code: 'HUMAN_PRESENCE_REQUIRED', reason: 'passkey required' }
+  if (validate && !validate({ user_code: token.slice('gtk_ok:'.length) })) return { ok: false, error_code: 'HUMAN_PRESENCE_REQUIRED', reason: 'token bound to a different pairing' }
+  return { ok: true }
+}
+registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true, requireHumanPresence })
 
 // second app with the limiter "exceeded" — to prove pair/start 429s + writes no row
 const appLimited = express()
 appLimited.use(express.json())
-registerAgentGrantsRoutes(appLimited, { db, auth, generateId, rateLimitOk: () => false })
+registerAgentGrantsRoutes(appLimited, { db, auth, generateId, rateLimitOk: () => false, requireHumanPresence })
 const serverLimited = appLimited.listen(0)
 const portLimited = (serverLimited.address() as AddressInfo).port
 const countPairings = (): number => (db.prepare('SELECT COUNT(*) n FROM agent_pairing_sessions').get() as { n: number }).n
@@ -112,9 +120,30 @@ try {
 
   const approveNoAuth = await j(`/api/agent-grants/pair/${user_code}/approve`, { method: 'POST' })
   ok('approve requires human auth', approveNoAuth.status === 401)
-  const approve = await j(`/api/agent-grants/pair/${user_code}/approve`, { method: 'POST', user: 'usr_alice' })
-  ok('approve issues a grant', approve.status === 200 && !!approve.body.grant_id)
+  const approveNoPasskey = await j(`/api/agent-grants/pair/${user_code}/approve`, { method: 'POST', user: 'usr_alice' })
+  ok('approve WITHOUT Passkey gate token → 412 (human-presence required)', approveNoPasskey.status === 412 && approveNoPasskey.body.error_code === 'HUMAN_PRESENCE_REQUIRED')
+  const approve = await j(`/api/agent-grants/pair/${user_code}/approve`, { method: 'POST', user: 'usr_alice', body: { webauthn_token: `gtk_ok:${user_code}` } })
+  ok('approve WITH Passkey token (bound to this code) issues a grant', approve.status === 200 && !!approve.body.grant_id)
   ok('approve response has NO token', !hasTokenField(approve.body))
+
+  // ── P2: the Passkey token is BOUND to the pairing code — an A-token cannot approve B (validate purpose_data) ──
+  const startB = await j('/api/agent-grants/pair/start', { method: 'POST', body: { code_challenge: challenge, capabilities: [{ capability: 'search' }] } })
+  const codeB = startB.body.user_code
+  const cross = await j(`/api/agent-grants/pair/${codeB}/approve`, { method: 'POST', user: 'usr_alice', body: { webauthn_token: `gtk_ok:${user_code}` } })
+  ok('token minted for code A cannot approve code B → 412 (user_code binding)', cross.status === 412 && cross.body.error_code === 'HUMAN_PRESENCE_REQUIRED')
+  const grantsBeforeB = ((await j('/api/agent-grants', { user: 'usr_alice' })).body.grants || []).length
+  const rightB = await j(`/api/agent-grants/pair/${codeB}/approve`, { method: 'POST', user: 'usr_alice', body: { webauthn_token: `gtk_ok:${codeB}` } })
+  ok('token bound to code B approves code B', rightB.status === 200 && !!rightB.body.grant_id)
+  // ── P3: re-approving an already-approved code → 409 via CAS, no duplicate/orphan grant ──
+  const reB = await j(`/api/agent-grants/pair/${codeB}/approve`, { method: 'POST', user: 'usr_alice', body: { webauthn_token: `gtk_ok:${codeB}` } })
+  ok('re-approve already-approved code → 409 (CAS claim)', reB.status === 409)
+  const grantsAfterB = ((await j('/api/agent-grants', { user: 'usr_alice' })).body.grants || []).length
+  ok('no duplicate/orphan grant from the losing approve', grantsAfterB === grantsBeforeB + 1)
+
+  // ── P2: direct grant-issuance bypass is disabled — no Passkey-less minting of a raw bearer ──
+  const direct = await j('/api/agent-grants', { method: 'POST', user: 'usr_alice', body: { capabilities: [{ capability: 'search' }] } })
+  ok('POST /api/agent-grants (direct issue) → 410 USE_PAIRING_FLOW', direct.status === 410 && direct.body.error_code === 'USE_PAIRING_FLOW')
+  ok('disabled direct issue returns NO token', !hasTokenField(direct.body))
 
   // PKCE mismatch on retrieve
   const badPkce = await j(`/api/agent-grants/pair/${pairing_id}/retrieve`, { method: 'POST', body: { code_verifier: verifier + 'tampered' } })
@@ -133,6 +162,16 @@ try {
   const list = await j('/api/agent-grants', { user: 'usr_alice' })
   ok('grants list shows the grant', list.status === 200 && list.body.grants?.length >= 1)
   ok('grants list has NO token / token_hash', !hasTokenField(list.body))
+
+  // ── reject: human declines a fresh pending pairing (terminal 'rejected'; no credential ever issued) ──
+  const rj = await j('/api/agent-grants/pair/start', { method: 'POST', body: { code_challenge: challenge, capabilities: [{ capability: 'search' }] } })
+  const rjCode = rj.body.user_code
+  ok('reject requires human auth', (await j(`/api/agent-grants/pair/${rjCode}/reject`, { method: 'POST' })).status === 401)
+  const reject = await j(`/api/agent-grants/pair/${rjCode}/reject`, { method: 'POST', user: 'usr_bob' })
+  ok('reject a pending pairing → rejected (no Passkey needed to decline)', reject.status === 200 && reject.body.status === 'rejected')
+  ok('re-reject → 409 (already handled)', (await j(`/api/agent-grants/pair/${rjCode}/reject`, { method: 'POST', user: 'usr_bob' })).status === 409)
+  ok('rejected pairing cannot be approved', (await j(`/api/agent-grants/pair/${rjCode}/approve`, { method: 'POST', user: 'usr_bob', body: { webauthn_token: 'gtk_ok' } })).status === 409)
+  ok('rejected pairing cannot be retrieved (agent gets a clear failure, not a lingering pending)', (await j(`/api/agent-grants/pair/${rj.body.pairing_id}/retrieve`, { method: 'POST', body: { code_verifier: verifier } })).status === 409)
 
   // ── expired pairing: cannot approve or retrieve ──
   const past = new Date(Date.now() - 1000).toISOString()

@@ -12,7 +12,7 @@
  */
 import type Database from 'better-sqlite3'
 
-export type HumanPresencePurpose = 'vote' | 'arbitrate' | 'agent_revoke' | 'delete_passkey' | 'identity_claim'
+export type HumanPresencePurpose = 'vote' | 'arbitrate' | 'agent_revoke' | 'agent_pair_approve' | 'delete_passkey' | 'identity_claim'
 export interface GateResult { ok: boolean; reason?: string }
 export interface HumanPresenceResult { ok: boolean; reason?: string; error_code?: string; required_when_enabled?: boolean }
 

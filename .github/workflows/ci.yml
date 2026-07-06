@@ -793,6 +793,7 @@ jobs:
       - run: npm run test:currency-schema-flip
       - run: npm run test:agent-delegation-grants
       - run: npm run test:agent-pairing
+      - run: npm run test:agent-pair-ui
       - run: npm run test:agent-grant-verify
       - run: npm run test:agent-grant-mcp-consume
       - run: npm run test:connected-agents-read
