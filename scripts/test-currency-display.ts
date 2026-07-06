@@ -31,8 +31,6 @@ ok('7. non-string → WAZ', displayCurrency(42 as unknown) === 'WAZ')
 const db = initDatabase()
 db.pragma('foreign_keys = OFF')
 // the ACP feed SELECT reads columns added outside initDatabase (runtime/inline DDL); add them so the fresh test DB matches prod shape
-for (const c of ['brand', 'model', 'product_type']) { try { db.exec(`ALTER TABLE products ADD COLUMN ${c} TEXT`) } catch { /* exists */ } }
-try { db.exec('ALTER TABLE products ADD COLUMN return_days INTEGER') } catch { /* exists */ }
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('s1','Seller','seller','k1')").run()
 const mkP = (id: string, cur: string | null) => db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status, currency) VALUES (?,?,?,?,?,?, 'active', ?)").run(id, 's1', 'P-' + id, 'desc', 10, 5, cur)
 mkP('p_dcp', 'DCP')      // legacy row

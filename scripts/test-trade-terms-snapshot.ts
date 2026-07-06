@@ -33,7 +33,6 @@ const db = initDatabase(); applyWebazRuntimeSchema(db); db.pragma('foreign_keys 
   ok('1c. orders.trade_terms_snapshot', oc.includes('trade_terms_snapshot'))
 }
 
-for (const c of ['weight_kg REAL', 'estimated_days TEXT', 'return_condition TEXT', 'warranty_days INTEGER']) { try { db.exec(`ALTER TABLE products ADD COLUMN ${c}`) } catch { /* 已存在 */ } }   // 商品扩展列历史上在 server.ts 迁移段,bare init+bridge 缺(test 前置补齐)
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('b1','b','buyer','kb'),('s1','s','seller','ks')").run()
 db.prepare(`INSERT INTO products (id,seller_id,title,description,price,stock,handling_hours,estimated_days,return_days,return_condition,warranty_days,weight_kg,ship_regions,package_size,origin_country,country_of_origin,customs_description,hs_code)
   VALUES ('p1','s1','T','d',50,10,24,'5-9',7,'unopened',0,1.2,'全国','30x20x10 cm','SG','CN','ceramic mug','6912.00')`).run()

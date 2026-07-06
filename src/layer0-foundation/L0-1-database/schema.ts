@@ -711,6 +711,22 @@ export function initDatabase(): Database.Database {
   // 营销域满额免邮(S2 返工:从运费模板移出 —— 模板=成本结构,免邮=促销;供应商报价期规则不搬家)
   try { db.exec(`ALTER TABLE products ADD COLUMN free_shipping_threshold DECIMAL(18,2)`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE users ADD COLUMN store_free_shipping_threshold DECIMAL(18,2)`) } catch { /* 已存在 */ }
+  // ── 商品【非钱路】扩展列收敛到 base(测试 schema 初始化单一来源;与 weight_kg S4 同法)──
+  //   products-create/update/read 写这些属性/溯源/物流/退货/i18n/库存/信誉计数列;历史上只在 server.ts 迁移段(或 MCP register-list-search 助手),
+  //   裸 initDatabase / bridge / 测试缺列 → 各测试各自手动补 ALTER(band-aid)。收进 base 后每条 init 路径一致有列,band-aid 可删。
+  //   server.ts 内联迁移【保留不动】(byte-identical guarded ALTER,生产迁移序不变;非 wholesale 抽取,不碰钱/单/状态迁移)。
+  //   刻意排除:commission_rate(佣金=钱路,不进);stake_amount / images 已在 CREATE TABLE products。
+  for (const col of [
+    'specs TEXT', 'brand TEXT', 'model TEXT', 'source_price REAL', 'ship_regions TEXT DEFAULT "全国"',          // 属性 + 溯源参考 + 既有自由文本运费地区
+    'handling_hours INTEGER DEFAULT 24', 'estimated_days TEXT', 'fragile INTEGER DEFAULT 0',                    // 履约:处理时长/预计时效/易碎
+    'return_days INTEGER DEFAULT 7', 'return_condition TEXT', 'warranty_days INTEGER DEFAULT 0',                // 退货/保修承诺
+    'source_url TEXT', 'source_price_at TEXT',                                                                 // 溯源链接 + 采价时间
+    'commitment_hash TEXT', 'description_hash TEXT', 'price_hash TEXT', 'hashed_at TEXT',                       // 承诺哈希(内容/描述/价格),非价格数值本身
+    'origin_claims TEXT', 'i18n_titles TEXT', 'i18n_descs TEXT', `product_type TEXT DEFAULT 'retail'`, 'has_variants INTEGER DEFAULT 0',  // 声明/多语言/分型
+    'last_sold_at TEXT', 'first_sold_at TEXT',                                                                 // 销售生命周期时间戳(展示/排序)
+    'completion_count INTEGER DEFAULT 0', 'dispute_loss_count INTEGER DEFAULT 0', 'claim_loss_count INTEGER DEFAULT 0', 'value_badge INTEGER DEFAULT 0',  // 信誉/价值计数(纯列,不含状态机/结算逻辑)
+    'low_stock_threshold INTEGER DEFAULT 3', 'auto_delist_on_zero INTEGER DEFAULT 1', 'low_stock_alerted_at TEXT',  // 低库存提醒/自动下架(库存运营)
+  ]) { try { db.exec(`ALTER TABLE products ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
   try { db.exec(`ALTER TABLE wallets ADD COLUMN fee_staked REAL DEFAULT 0`) } catch { /* 已存在 */ }
   // PR-4b-1: direct_receive_deposits 生产收款 provenance 快照列(既有库补列;additive nullable,无写入方,无 flow 启用)。
   try { db.exec(`ALTER TABLE direct_receive_deposits ADD COLUMN production_receipt_ref TEXT`) } catch { /* 已存在 */ }

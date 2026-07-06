@@ -31,7 +31,6 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 initSystemUser(db); initArbitratorReviewSchema(db); initWebauthnSchema(db); initOrderChainSchema(db)
 D.initDisputeSchema(db); D.initEvidenceRequestSchema(db)
-try { db.exec('ALTER TABLE products ADD COLUMN dispute_loss_count INTEGER DEFAULT 0') } catch { /* Tier7 hook */ }
 
 const mkUser = (id: string, role = 'buyer'): void => {
   db.prepare('INSERT INTO users (id,name,role,api_key) VALUES (?,?,?,?)').run(id, id, role, 'k_' + id)
