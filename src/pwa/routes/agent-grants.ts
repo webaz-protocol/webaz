@@ -35,6 +35,8 @@ export interface AgentGrantsDeps {
   auth: (req: Request, res: Response) => Record<string, unknown> | null
   generateId: (prefix: string) => string
   rateLimitOk: (key: string, max?: number, windowMs?: number) => boolean  // throttles the anonymous pair/start
+  // 人工在场 gate:批准配对必须真人 Passkey/WebAuthn(与 agent_revoke 同机制)。param 关闭时放行。
+  requireHumanPresence: (userId: string, purpose: 'agent_pair_approve', token: string | undefined, paramKey: string, validate?: (data: unknown) => boolean) => { ok: boolean; error_code?: string; reason?: string }
 }
 
 // Bounds on a pairing request (anti-bloat for the anonymous start endpoint).
@@ -59,7 +61,7 @@ function consentView(p: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDeps): void {
-  const { db, auth, generateId, rateLimitOk } = deps
+  const { db, auth, generateId, rateLimitOk, requireHumanPresence } = deps
   // PWA runtime self-init (MCP gets the tables via applyWebazRuntimeSchema). Idempotent.
   initAgentDelegationGrantsSchema(db)
   initAgentPairingSchema(db)
@@ -167,6 +169,11 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     if (!p) return void res.status(404).json({ error: 'pairing_not_found' })
     if (!pairingApprovable(p, now)) return void res.status(409).json({ error: 'pairing_not_pending_or_expired', status: p.status })
 
+    // 人工在场 gate:批准 = 真人 Passkey/WebAuthn 确认(默认必需,param 可关)。挡"账号被静默批准"。
+    //   注:这挡的是"是不是真人在批",不挡 illicit-consent(人被骗批错 agent)—— 那由前端强制口令核对 + safe-scope 兜底。
+    const hp = requireHumanPresence(user.id as string, 'agent_pair_approve', (req.body || {}).webauthn_token as string | undefined, 'require_human_presence_for_agent_pair_approve')
+    if (!hp.ok) return void res.status(412).json({ error: hp.reason, error_code: hp.error_code })
+
     // Re-validate scopes at approval time (defense in depth) — must still be safe-only.
     const caps = safeParseCaps(p.capabilities) as Array<{ capability: string; constraints?: Record<string, unknown> }>
     const v = validateRequestedCapabilities(caps)
@@ -184,6 +191,18 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       [user.id, grantId, now, req.params.user_code],
     )
     res.json({ success: true, grant_id: grantId, capabilities: caps })
+  })
+
+  // (pair 3b) Human rejects — human-authenticated. Terminal 'rejected' → agent's retrieve fails clearly (no silent lingering).
+  //   拒绝是保护性动作,无需 Passkey(不签发任何凭证)。幂等:仅 pending 可拒。
+  app.post('/api/agent-grants/pair/:user_code/reject', async (req, res) => {
+    const user = auth(req, res); if (!user) return
+    const p = await dbOne<{ status: string }>('SELECT status FROM agent_pairing_sessions WHERE user_code = ?', [req.params.user_code])
+    if (!p) return void res.status(404).json({ error: 'pairing_not_found' })
+    if (p.status !== 'pending') return void res.status(409).json({ error: 'pairing_not_pending', status: p.status })
+    const r = await dbRun("UPDATE agent_pairing_sessions SET status='rejected', human_id=? WHERE user_code=? AND status='pending'", [user.id, req.params.user_code])
+    if (!r || r.changes !== 1) return void res.status(409).json({ error: 'pairing_not_pending' })
+    res.json({ success: true, status: 'rejected' })
   })
 
   // (pair 4) Agent retrieves the credential ONCE via PKCE verifier — UNAUTHENTICATED (PKCE-gated).

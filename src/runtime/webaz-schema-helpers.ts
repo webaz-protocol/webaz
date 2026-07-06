@@ -1698,7 +1698,7 @@ export function initAgentPairingSchema(db: Database.Database): void {
       agent_pubkey    TEXT,                             -- RESERVED (PoP); stored if sent, NOT verified in C1
       reason          TEXT,                             -- agent free-text reason (shown in consent)
       capabilities    TEXT NOT NULL DEFAULT '[]',       -- requested SAFE scopes (validated safe-only at start)
-      status          TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | consumed | expired | revoked
+      status          TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | consumed | expired | revoked | rejected(human declined)
       human_id        TEXT,                             -- set on approve
       grant_id        TEXT,                             -- set on approve (issued grant; token_hash filled at retrieve)
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
