@@ -43,17 +43,23 @@ ok('16. capabilities framed as safe-only (never money/vote/arbitrate/keys)', /�
 ok('17. no raw credential rendered on the page (no bearer/token_hash/api_key display)', !/token_hash|\.api_key|gtk_/.test(UI))
 
 // ── 后端安全边界 ──
-ok('18. backend approve is Passkey-gated (requireHumanPresence agent_pair_approve)', /requireHumanPresence\([\s\S]{0,80}'agent_pair_approve'/.test(GRANTS))
+ok('18. backend approve is Passkey-gated (requireHumanPresence agent_pair_approve)', /requireHumanPresence\([\s\S]{0,120}'agent_pair_approve'/.test(GRANTS))
 ok('19. backend reject endpoint exists (terminal rejected, no Passkey)', /pair\/:user_code\/reject/.test(GRANTS) && /status='rejected'/.test(GRANTS))
 ok('20. agent_pair_approve in HumanPresencePurpose whitelist', /agent_pair_approve/.test(HP))
 ok('21. agent_pair_approve in webauthn auth/start allowed purposes', /'agent_pair_approve'/.test(WEBAUTHN))
+// review fixes:
+ok('22. Passkey token BOUND to the code: approve validate checks user_code === req.params.user_code', /user_code === req\.params\.user_code/.test(GRANTS))
+ok('23. frontend requests the gate with { user_code } (purpose_data binding)', /requestPasskeyGate\('agent_pair_approve',\s*\{\s*user_code/.test(UI))
+ok('24. direct grant-issuance bypass disabled → USE_PAIRING_FLOW (no Passkey-less minting)', /app\.post\('\/api\/agent-grants',[\s\S]{0,400}USE_PAIRING_FLOW/.test(GRANTS))
+ok('25. approve CAS-claims the pairing (changes!==1 guard) BEFORE minting the grant (no orphan on race)',
+  /claimed\.changes !== 1/.test(GRANTS) && GRANTS.indexOf('claimed.changes !== 1') < GRANTS.indexOf('INSERT INTO agent_delegation_grants (grant_id'))
 
 // ── i18n parity ──
 {
   const keys = new Set<string>()
   for (const m of UI.matchAll(/(?<![A-Za-z])t\('([^']+)'\)/g)) keys.add(m[1])
   const noEn = [...keys].filter(k => !I18N.includes(`'${k.replace(/\\/g, '\\\\')}':`))
-  ok('22. i18n parity (all t() keys have EN)', keys.size >= 25 && noEn.length === 0)
+  ok('26. i18n parity (all t() keys have EN)', keys.size >= 25 && noEn.length === 0)
 }
 
 if (fail > 0) { console.error(`\n❌ agent-pair-ui FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

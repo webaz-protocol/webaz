@@ -171,7 +171,9 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
 
     // 人工在场 gate:批准 = 真人 Passkey/WebAuthn 确认(默认必需,param 可关)。挡"账号被静默批准"。
     //   注:这挡的是"是不是真人在批",不挡 illicit-consent(人被骗批错 agent)—— 那由前端强制口令核对 + safe-scope 兜底。
-    const hp = requireHumanPresence(user.id as string, 'agent_pair_approve', (req.body || {}).webauthn_token as string | undefined, 'require_human_presence_for_agent_pair_approve')
+    //   token 必须【绑定这个配对码】(purpose_data.user_code === :user_code)—— 防"为批 A 拿到的 token 被首次提交去批 B"(与 delete_passkey 绑 credential_id 同法)。
+    const hp = requireHumanPresence(user.id as string, 'agent_pair_approve', (req.body || {}).webauthn_token as string | undefined, 'require_human_presence_for_agent_pair_approve',
+      (data) => { try { return typeof data === 'object' && data !== null && (data as Record<string, unknown>).user_code === req.params.user_code } catch { return false } })
     if (!hp.ok) return void res.status(412).json({ error: hp.reason, error_code: hp.error_code })
 
     // Re-validate scopes at approval time (defense in depth) — must still be safe-only.
@@ -181,14 +183,17 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
 
     const grantId = generateId('grt')
     const expiresAt = new Date(Date.now() + clampTtlSeconds(undefined) * 1000).toISOString()
+    // 先【CAS 抢占】pending 配对(唯一赢家),再插 grant —— 竞态下输家 changes!==1 直接 409、不插任何 grant,
+    //   杜绝"插了 grant 但配对更新失败"留下 token_hash NULL 的 orphan grant(污染连接记录)。
+    const claimed = await dbRun(
+      "UPDATE agent_pairing_sessions SET status='approved', human_id=?, grant_id=?, approved_at=? WHERE user_code=? AND status='pending'",
+      [user.id, grantId, now, req.params.user_code],
+    )
+    if (!claimed || claimed.changes !== 1) return void res.status(409).json({ error: 'pairing_not_pending_or_expired' })
     // Grant created WITHOUT a token (token_hash NULL) — the bearer is minted only at retrieval.
     await dbRun(
       'INSERT INTO agent_delegation_grants (grant_id, human_id, agent_label, capabilities, token_hash, human_confirm_required, status, expires_at) VALUES (?,?,?,?,?,?,?,?)',
       [grantId, user.id, p.agent_label || null, JSON.stringify(caps), null, 0, 'active', expiresAt],
-    )
-    await dbRun(
-      "UPDATE agent_pairing_sessions SET status='approved', human_id=?, grant_id=?, approved_at=? WHERE user_code=? AND status='pending'",
-      [user.id, grantId, now, req.params.user_code],
     )
     res.json({ success: true, grant_id: grantId, capabilities: caps })
   })
@@ -240,41 +245,14 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     })
   })
 
-  // ── Issue a grant (human-authenticated). Safe scopes only; risk/never-delegable rejected. ──
-  app.post('/api/agent-grants', async (req, res) => {
+  // ── Direct grant issuance is DISABLED — single blessed path is the Passkey pairing flow. ──
+  //   旧的"仅登录即直接 mint 原文 bearer"入口会旁路 #pair 的真人 Passkey 批准,削弱"human Passkey-approves
+  //   agent delegation"的安全叙事。零消费方(前端/MCP/测试均不用),故降级为不可用,统一走 pairing。
+  app.post('/api/agent-grants', (req, res) => {
     const user = auth(req, res); if (!user) return
-    const body = (req.body || {}) as Record<string, unknown>
-    const caps = Array.isArray(body.capabilities) ? body.capabilities as Array<{ capability: string; constraints?: Record<string, unknown> }> : []
-
-    const v = validateRequestedCapabilities(caps)
-    if (!v.ok) {
-      // Fail-closed: any risk / never-delegable / unknown scope rejects the whole request.
-      return void res.status(403).json({ error: 'grant_rejected', rejected: v.rejected })
-    }
-
-    const ttl = clampTtlSeconds(body.ttl_seconds)
-    const grantId = generateId('grt')
-    const token = `gtk_${randomBytes(32).toString('hex')}`           // bearer — shown once
-    const tokenHash = createHash('sha256').update(token).digest('hex')
-    const expiresAt = new Date(Date.now() + ttl * 1000).toISOString()
-    const label = typeof body.agent_label === 'string' ? body.agent_label.slice(0, 120) : null
-    const capsJson = JSON.stringify(v.safe.map(c => ({
-      capability: c,
-      constraints: (caps.find(x => x?.capability === c)?.constraints) || {},
-    })))
-
-    await dbRun(
-      'INSERT INTO agent_delegation_grants (grant_id, human_id, agent_label, capabilities, token_hash, human_confirm_required, status, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [grantId, user.id, label, capsJson, tokenHash, 0, 'active', expiresAt],
-    )
-
-    res.status(201).json({
-      grant_id: grantId,
-      token,
-      token_note: 'Shown once — store securely. The server keeps only a hash; it cannot show this again.',
-      capabilities: JSON.parse(capsJson),
-      expires_at: expiresAt,
-      note: 'Bearer-first grant for safe scopes only. Risk scopes are not delegable until their route has a live-Passkey gate; PoP binding is required before any risk scope or longer-lived delegation (RFC-020).',
+    return void res.status(410).json({
+      error: 'USE_PAIRING_FLOW', error_code: 'USE_PAIRING_FLOW',
+      note: 'Direct grant issuance is disabled. Start pairing with webaz_pair (action=start); the human approves at /#pair with a Passkey, then the agent retrieves the credential with its PKCE verifier. No endpoint mints a bearer without a live Passkey ceremony bound to the pairing.',
     })
   })
 

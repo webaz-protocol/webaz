@@ -2566,7 +2566,7 @@
         ]
       },
       "post": {
-        "summary": "── Issue a grant (human-authenticated). Safe scopes only; risk/never-delegable rejected. ──",
+        "summary": "agent delegation\"的安全叙事。零消费方(前端/MCP/测试均不用),故降级为不可用,统一走 pairing。",
         "tags": [],
         "security": [
           {
