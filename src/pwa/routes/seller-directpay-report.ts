@@ -5,7 +5,7 @@
  *   所以钱包/收入视图对直付销售完全不显示,商家原本无法统计"直付卖了多少 / 平台费欠多少 / 逐单对账"。
  *   本报表把已存在的数据(orders.payment_rail='direct_p2p' 各列 + direct_pay_fee_receivables 逐单平台费)聚合出来。
  *
- * 纯读:不建单、不碰 wallet/escrow/settlement/refund/bond,不改状态机,无同步 db.prepare(走 dbOne/dbAll seam)。
+ * 纯读:不建单、不碰 wallet/escrow/settlement/refund/bond,不改状态机;全部走 dbOne/dbAll 异步 seam(无同步 prepare)。
  *   销售额 = Σ orders.total_amount(下单计价币,买家被告知应付的金额);平台费 = direct_pay_fee_receivables.amount(USDC 小数)。
  *   二者币种不同,分别呈现,不混加。
  */

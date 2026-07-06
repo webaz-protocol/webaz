@@ -315,8 +315,7 @@ import { registerOrdersActionRoutes } from './routes/orders-action.js'
 import { registerOrdersCreateRoutes } from './routes/orders-create.js'
 import { registerDirectPayDisclosureAckRoutes } from './routes/direct-pay-disclosure-acks.js'  // PR-4d: Direct Pay 风险披露 ack 端点(薄 adapter)
 import { registerDirectReceivePaymentInstructionRoutes } from './routes/direct-receive-payment-instructions.js'; import { registerDirectReceiveAccountsRoutes } from './routes/direct-receive-accounts.js'; import { registerFeePrepayRequestRoutes } from './routes/fee-prepay-requests.js'  // PR-4f-a instruction CRUD + Phase C1 multi-account+QR + 平台服务费预充值申请(卖家侧)
-import { registerDirectPayAvailabilityRoutes } from './routes/direct-pay-availability.js'  // PR-4a: Direct Pay 可用性只读(控制面 SSOT)
-import { registerSellerDirectPayReportRoutes } from './routes/seller-directpay-report.js'  // 卖家直付销售统计/对账/平台费明细(只读)
+import { registerDirectPayAvailabilityRoutes } from './routes/direct-pay-availability.js'; import { registerSellerDirectPayReportRoutes } from './routes/seller-directpay-report.js'  // PR-4a 可用性 + 卖家直付销售统计/对账/平台费明细(只读)
 import { registerAdminDirectReceiveDepositsRoutes } from './routes/admin-direct-receive-deposits.js'; import { registerPlatformReceiveAccountsRoutes } from './routes/platform-receive-accounts.js'  // PR-4b-3 ROOT 生产保证金 + 平台多收款方式 admin 管理(fee 预充值申请流前置)
 // Disputes 读端点 (#1013 Phase 86) — 5 endpoints (list/similar/detail/evidence-list/parties)
 import { registerDisputesReadRoutes } from './routes/disputes-read.js'; import { isArbitrationReadAdmin } from './arbitration-read-admin.js'  // 争议详情只读 admin 门(与后台列表授权一致)
@@ -3873,8 +3872,7 @@ registerAgentReputationRoutes(app, {
 registerUsersPublicRoutes(app, { db, auth, noteAuthenticityBadges })
 registerDirectPayDisclosureAckRoutes(app, { db, auth, generateId, consumeGateToken })  // PR-4d
 registerDirectReceivePaymentInstructionRoutes(app, { db, auth, generateId }); registerDirectReceiveAccountsRoutes(app, { db, auth, generateId, consumeGateToken }); registerFeePrepayRequestRoutes(app, { db, auth, generateId })  // PR-4f-a + Phase C1 + fee 预充值申请
-registerDirectPayAvailabilityRoutes(app, { db, auth, getProtocolParam, generateId })  // PR-4a + 缓交 apply/status
-registerSellerDirectPayReportRoutes(app, { db, auth })  // 卖家直接收款销售统计 + 对账 + 逐单平台费明细(只读)
+registerDirectPayAvailabilityRoutes(app, { db, auth, getProtocolParam, generateId }); registerSellerDirectPayReportRoutes(app, { db, auth })  // PR-4a + 缓交 + 卖家直付销售统计/对账/平台费明细(只读)
 registerAdminDirectReceiveDepositsRoutes(app, { db, requireRootAdmin: (req, res) => requireRootAdmin(req, res), consumeGateToken, logAdminAction, getProtocolParam }); registerPlatformReceiveAccountsRoutes(app, { db, requireRootAdmin: (req, res) => requireRootAdmin(req, res), generateId, consumeGateToken, logAdminAction })  // PR-4b-3 + readiness + 平台多收款方式 admin CRUD(root+Passkey)
 // RFC-004 build_feedback — agent-native "use → build" 反馈管道
 registerBuildFeedbackRoutes(app, {
