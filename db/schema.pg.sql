@@ -2782,6 +2782,23 @@ CREATE TABLE IF NOT EXISTS agent_delegation_grants (
       expires_at      TEXT NOT NULL,
       revoked_at      TEXT,
       revoked_reason  TEXT
+    , permission_bundle TEXT);
+
+CREATE TABLE IF NOT EXISTS agent_permission_requests (
+      id               TEXT PRIMARY KEY,
+      human_id         TEXT NOT NULL,
+      grant_id         TEXT NOT NULL,
+      agent_label      TEXT,
+      requested_scopes TEXT NOT NULL DEFAULT '[]',
+      permission_bundle TEXT,
+      reason           TEXT,
+      task_context     TEXT,
+      risk_level       TEXT NOT NULL DEFAULT 'low',
+      duration         TEXT NOT NULL DEFAULT '7d',
+      status           TEXT NOT NULL DEFAULT 'pending',
+      created_at       TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
+      expires_at       TEXT NOT NULL,
+      approved_at      TEXT
     );
 
 CREATE TABLE IF NOT EXISTS agent_pairing_sessions (
@@ -3158,6 +3175,8 @@ CREATE INDEX IF NOT EXISTS idx_kyc_status ON kyc_records(status, submitted_at);
 CREATE INDEX IF NOT EXISTS idx_adg_human  ON agent_delegation_grants(human_id, status);
 CREATE INDEX IF NOT EXISTS idx_adg_token  ON agent_delegation_grants(token_hash);
 CREATE INDEX IF NOT EXISTS idx_adg_expiry ON agent_delegation_grants(status, expires_at);
+CREATE INDEX IF NOT EXISTS idx_apr_human  ON agent_permission_requests(human_id, status);
+CREATE INDEX IF NOT EXISTS idx_apr_status ON agent_permission_requests(status, expires_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_aps_user_code ON agent_pairing_sessions(user_code);
 CREATE INDEX IF NOT EXISTS idx_aps_status ON agent_pairing_sessions(status, expires_at);
 CREATE INDEX IF NOT EXISTS idx_agal_grant ON agent_grant_auth_log(grant_id, ts);

@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (769 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (774 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2629,6 +2629,51 @@
     "/api/agent-grants/pair/start": {
       "post": {
         "summary": "(pair 1) Agent starts a pairing — UNAUTHENTICATED (agent has no credential yet). Safe scopes only.",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/agent-grants/permission-requests": {
+      "get": {
+        "summary": "GET list this human's PENDING permission requests (for #agent-approvals). Human-authed.",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "NOT grantable (they need a per-action live Passkey, not a persistent grant) → structured reject.",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/agent-grants/permission-requests/:id/approve": {
+      "post": {
+        "summary": "Expands the bound grant (union scopes + bundle + extend expiry, duration-capped). Audited.",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/agent-grants/permission-requests/:id/reject": {
+      "post": {
+        "summary": "POST reject — human-authed. Terminal 'rejected'; nothing is granted.",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/agent-grants/verify": {
+      "get": {
+        "summary": "Audited (acceptance #8: every grant use logs). Never returns the raw token/api_key.",
         "tags": [],
         "security": []
       }

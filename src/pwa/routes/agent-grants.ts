@@ -25,8 +25,8 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
-import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrantAuthLogSchema } from '../../runtime/webaz-schema-helpers.js'
-import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive } from '../../runtime/agent-grant-scopes.js'
+import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrantAuthLogSchema, initAgentPermissionRequestsSchema } from '../../runtime/webaz-schema-helpers.js'
+import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveBundle, durationAllowedForScopes, suggestedDurationForScopes, durationToSeconds, riskLevelForScopes, type GrantDuration } from '../../runtime/agent-grant-scopes.js'
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
 import { verifyGrantToken, type GrantPrincipal } from '../../runtime/agent-grant-verifier.js'
 
@@ -66,6 +66,19 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   initAgentDelegationGrantsSchema(db)
   initAgentPairingSchema(db)
   initAgentGrantAuthLogSchema(db)
+  initAgentPermissionRequestsSchema(db)
+
+  // Resolve the ACTIVE grant behind a gtk_ bearer (no scope check) — used to bind a permission request to
+  // (grant_id, human_id). Returns null on missing/expired/revoked. token_hash lookup mirrors the verifier.
+  async function resolveActiveGrantByBearer(req: Request): Promise<{ grant_id: string; human_id: string; agent_label: string | null; capabilities: string } | null> {
+    const bearer = (req.header('authorization') || '').replace(/^Bearer\s+/i, '')
+    if (!bearer.startsWith('gtk_')) return null
+    const g = await dbOne<{ grant_id: string; human_id: string; agent_label: string | null; capabilities: string; status: string; expires_at: string; revoked_at: string | null }>(
+      'SELECT grant_id, human_id, agent_label, capabilities, status, expires_at, revoked_at FROM agent_delegation_grants WHERE token_hash = ?',
+      [createHash('sha256').update(bearer).digest('hex')])
+    if (!g || !grantIsActive(g, new Date().toISOString())) return null
+    return { grant_id: g.grant_id, human_id: g.human_id, agent_label: g.agent_label, capabilities: g.capabilities }
+  }
 
   // ─────────────────────────── RFC-020 PR-C2a: opt-in grant-scope enforcement ───────────────────────────
   // EXPLICIT, per-route, per-SAFE-scope. NOT global auth — a gtk_* token is accepted ONLY by routes that
@@ -110,6 +123,103 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   app.get('/api/agent-grants/whoami', requireAgentGrantScope('read_public'), (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant
     res.json({ grant: p, note: 'Authorized via delegation grant (safe scope read_public). This is a grant principal, not a human session.' })
+  })
+
+  // helpers for the permission-request flow ----------------------------------------------------------------
+  const parseCapList = (json: string): Array<{ capability: string; constraints?: Record<string, unknown> }> => { try { const a = JSON.parse(json); return Array.isArray(a) ? a : [] } catch { return [] } }
+  const scopeNames = (json: string): string[] => parseCapList(json).map(c => (typeof c === 'string' ? c : c?.capability)).filter((s): s is string => typeof s === 'string')
+  const auditGrant = async (grantId: string | null, humanId: string | null, cap: string, outcome: 'allow' | 'deny', errorCode?: string): Promise<void> => {
+    try { await dbRun('INSERT INTO agent_grant_auth_log (grant_id, human_id, capability, outcome, error_code) VALUES (?,?,?,?,?)', [grantId, humanId, cap, outcome, errorCode ?? null]) } catch (e) { console.error('[agent-grant] audit write failed:', (e as Error).message) }
+  }
+  const bundleSummary = (key: string | null): string | null => { const b = key ? resolveBundle(key) : null; return b ? b.human_summary : null }
+
+  // GET verify — grant-authed. Returns the FULL grant (scopes, bundle, expiry, status), not just read_public.
+  //   Audited (acceptance #8: every grant use logs). Never returns the raw token/api_key.
+  app.get('/api/agent-grants/verify', async (req, res) => {
+    const g = await resolveActiveGrantByBearer(req)
+    if (!g) { return void res.status(401).json({ error: 'active delegation grant required', error_code: 'GRANT_REQUIRED' }) }
+    const full = await dbOne<{ grant_id: string; human_id: string; agent_label: string | null; capabilities: string; status: string; expires_at: string; permission_bundle: string | null }>(
+      'SELECT grant_id, human_id, agent_label, capabilities, status, expires_at, permission_bundle FROM agent_delegation_grants WHERE grant_id = ?', [g.grant_id])
+    await auditGrant(g.grant_id, g.human_id, 'grant:verify', 'allow')
+    res.json({ grant: { grant_id: full!.grant_id, agent_label: full!.agent_label, scopes: scopeNames(full!.capabilities), permission_bundle: full!.permission_bundle, expires_at: full!.expires_at, status: full!.status }, note: 'Full grant principal — scopes/bundle/expiry/status. Not a human session; never authorizes risk/never-delegable actions.' })
+  })
+
+  // POST create a permission request — the AGENT (holding its current grant) asks for MORE scope / a bundle.
+  //   Bound to (human_id, grant_id) from the grant bearer. Rate-limited. Safe-only: risk/never-delegable are
+  //   NOT grantable (they need a per-action live Passkey, not a persistent grant) → structured reject.
+  app.post('/api/agent-grants/permission-requests', async (req, res) => {
+    if (!rateLimitOk(`agent_perm_req:${req.ip || 'anon'}`, 20, 60_000)) return void res.status(429).json({ error: 'too_many_permission_requests', retry_after_s: 60 })
+    const g = await resolveActiveGrantByBearer(req)
+    if (!g) return void res.status(401).json({ error: 'an active delegation grant is required to request more permissions (pair first with webaz_pair)', error_code: 'GRANT_REQUIRED' })
+    const body = (req.body || {}) as Record<string, unknown>
+    const bundleKey = typeof body.bundle === 'string' ? body.bundle : null
+    const bundle = bundleKey ? resolveBundle(bundleKey) : null
+    if (bundleKey && !bundle) return void res.status(400).json({ error: 'unknown permission bundle', error_code: 'UNKNOWN_BUNDLE' })
+    const scopes = bundle ? [...bundle.scopes] : (Array.isArray(body.scopes) ? body.scopes.filter((s): s is string => typeof s === 'string') : [])
+    if (scopes.length === 0) return void res.status(400).json({ error: 'bundle or scopes required', error_code: 'NO_SCOPES' })
+    const v = validateRequestedCapabilities(scopes.map(s => ({ capability: s })))
+    if (!v.ok) return void res.status(403).json({ error: 'permission_not_grantable', error_code: 'PERMISSION_NOT_GRANTABLE', rejected: v.rejected, note: 'Only safe (read/draft) scopes can be granted. Risk actions (order/publish/refund/…) require the human to act with a live Passkey — they are never delegated to a persistent grant.' })
+    const risk = riskLevelForScopes(scopes)
+    const duration: GrantDuration = durationAllowedForScopes(scopes, body.duration) ? body.duration as GrantDuration : suggestedDurationForScopes(scopes)
+    const id = generateId('apr')
+    const reqTtlIso = new Date(Date.now() + 7 * 86400_000).toISOString()   // request auto-expires in 7d if unanswered
+    await dbRun(
+      'INSERT INTO agent_permission_requests (id, human_id, grant_id, agent_label, requested_scopes, permission_bundle, reason, task_context, risk_level, duration, status, expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+      [id, g.human_id, g.grant_id, g.agent_label, JSON.stringify(scopes), bundleKey, typeof body.reason === 'string' ? body.reason.slice(0, 280) : null, typeof body.task_context === 'string' ? body.task_context.slice(0, 500) : null, risk, duration, 'pending', reqTtlIso],
+    )
+    res.status(201).json({ approval_id: id, approval_url: '/#agent-approvals', status: 'pending', risk_level: risk, requested_scopes: scopes, permission_bundle: bundleKey, human_summary: bundleSummary(bundleKey), suggested_duration: duration, note: 'Ask the human to open approve_url (logged in) and approve. On approval your existing grant is expanded; then retry.' })
+  })
+
+  // GET list this human's PENDING permission requests (for #agent-approvals). Human-authed.
+  app.get('/api/agent-grants/permission-requests', async (req, res) => {
+    const user = auth(req, res); if (!user) return
+    const rows = await dbAll<Record<string, unknown>>(
+      "SELECT id, agent_label, requested_scopes, permission_bundle, reason, task_context, risk_level, duration, created_at, expires_at FROM agent_permission_requests WHERE human_id = ? AND status = 'pending' AND expires_at > ? ORDER BY created_at DESC LIMIT 100",
+      [user.id, new Date().toISOString()])
+    res.json({ requests: rows.map(r => ({ ...r, requested_scopes: scopeNames(String(r.requested_scopes)), human_summary: bundleSummary(r.permission_bundle as string | null) })) })
+  })
+
+  // POST approve — human-authed. Low/medium (safe-only here) = session-confirm (no Passkey; your product call).
+  //   Expands the bound grant (union scopes + bundle + extend expiry, duration-capped). Audited.
+  app.post('/api/agent-grants/permission-requests/:id/approve', async (req, res) => {
+    const user = auth(req, res); if (!user) return
+    const now = new Date().toISOString()
+    const r = await dbOne<{ human_id: string; grant_id: string; requested_scopes: string; permission_bundle: string | null; duration: string; status: string; expires_at: string }>(
+      'SELECT human_id, grant_id, requested_scopes, permission_bundle, duration, status, expires_at FROM agent_permission_requests WHERE id = ?', [req.params.id])
+    if (!r) return void res.status(404).json({ error: 'permission_request_not_found' })
+    if (r.human_id !== user.id) return void res.status(403).json({ error: 'not your permission request' })
+    if (r.status !== 'pending' || r.expires_at <= now) return void res.status(409).json({ error: 'permission_request_not_pending', status: r.status })
+    const reqScopes = scopeNames(r.requested_scopes)
+    // Defense in depth: re-validate safe-only + duration allowed at approval time.
+    if (!validateRequestedCapabilities(reqScopes.map(s => ({ capability: s }))).ok) return void res.status(403).json({ error: 'permission_not_grantable', error_code: 'PERMISSION_NOT_GRANTABLE' })
+    if (!durationAllowedForScopes(reqScopes, r.duration)) return void res.status(403).json({ error: 'duration_not_allowed_for_risk', error_code: 'DURATION_NOT_ALLOWED' })
+    // CAS-claim the request (only one approval wins) BEFORE mutating the grant.
+    const claimed = await dbRun("UPDATE agent_permission_requests SET status='approved', approved_at=? WHERE id=? AND status='pending'", [now, req.params.id])
+    if (!claimed || claimed.changes !== 1) return void res.status(409).json({ error: 'permission_request_not_pending' })
+    const grant = await dbOne<{ grant_id: string; capabilities: string; status: string; expires_at: string; revoked_at: string | null }>(
+      'SELECT grant_id, capabilities, status, expires_at, revoked_at FROM agent_delegation_grants WHERE grant_id = ?', [r.grant_id])
+    if (!grant || !grantIsActive(grant, now)) { return void res.status(409).json({ error: 'grant_inactive', error_code: 'GRANT_INACTIVE', note: 'the agent grant expired or was revoked; re-pair' }) }
+    // Union new scopes into the grant; set bundle; extend expiry (never shorten). 'once' → short 1h window.
+    const existing = scopeNames(grant.capabilities)
+    const union = [...new Set([...existing, ...reqScopes])].map(s => ({ capability: s, constraints: {} }))
+    const secs = durationToSeconds(r.duration as GrantDuration) || 3600
+    const newExpiry = new Date(Date.now() + secs * 1000).toISOString()
+    const expiresAt = newExpiry > grant.expires_at ? newExpiry : grant.expires_at
+    await dbRun('UPDATE agent_delegation_grants SET capabilities=?, permission_bundle=COALESCE(?, permission_bundle), expires_at=? WHERE grant_id=?', [JSON.stringify(union), r.permission_bundle, expiresAt, grant.grant_id])
+    await auditGrant(grant.grant_id, user.id as string, `permission_request:approve:${r.permission_bundle || reqScopes.join(',')}`, 'allow')
+    res.json({ success: true, grant_id: grant.grant_id, scopes: union.map(u => u.capability), permission_bundle: r.permission_bundle, expires_at: expiresAt })
+  })
+
+  // POST reject — human-authed. Terminal 'rejected'; nothing is granted.
+  app.post('/api/agent-grants/permission-requests/:id/reject', async (req, res) => {
+    const user = auth(req, res); if (!user) return
+    const r = await dbOne<{ human_id: string; status: string }>('SELECT human_id, status FROM agent_permission_requests WHERE id = ?', [req.params.id])
+    if (!r) return void res.status(404).json({ error: 'permission_request_not_found' })
+    if (r.human_id !== user.id) return void res.status(403).json({ error: 'not your permission request' })
+    if (r.status !== 'pending') return void res.status(409).json({ error: 'permission_request_not_pending', status: r.status })
+    const rj = await dbRun("UPDATE agent_permission_requests SET status='rejected' WHERE id=? AND status='pending'", [req.params.id])
+    if (!rj || rj.changes !== 1) return void res.status(409).json({ error: 'permission_request_not_pending' })
+    res.json({ success: true, status: 'rejected' })
   })
 
   // ─────────────────────────── RFC-020 PR-C1: pairing (device-flow + PKCE) ───────────────────────────
