@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (767 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (768 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -7521,6 +7521,17 @@
     "/api/sellers/me/analytics": {
       "get": {
         "summary": "卖家销售分析 (Wave C-5)",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/sellers/me/direct-pay-report": {
+      "get": {
+        "summary": "from/to 均可选(闭区间,按日期比较 substr(created_at,1,10));返回汇总 + 按月 + 逐单(含平台费明细)。",
         "tags": [],
         "security": [
           {

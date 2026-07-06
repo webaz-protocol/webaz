@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (767 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (768 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -645,6 +645,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/seller/withdraw-quota-application` | 🔐 |  |  | src/pwa/routes/seller-quota.ts:213 |
 | GET | `/api/sellers/:seller_id/ratings` |  |  | 公开：卖家评价聚合（卖家主页）。注册在 /me 之后(见上面注释)。 | src/pwa/routes/ratings.ts:258 |
 | GET | `/api/sellers/me/analytics` | 🔐 |  | 卖家销售分析 (Wave C-5) | src/pwa/routes/analytics.ts:155 |
+| GET | `/api/sellers/me/direct-pay-report` | 🔐 |  | from/to 均可选(闭区间,按日期比较 substr(created_at,1,10));返回汇总 + 按月 + 逐单(含平台费明细)。 | src/pwa/routes/seller-directpay-report.ts:39 |
 | GET | `/api/sellers/me/flash-sales` | 🔐 |  | seller 自己的 flash sales（全部状态） | src/pwa/routes/flash-sales.ts:109 |
 | GET | `/api/sellers/me/ratings` | 🔐 |  | ⚠️ 必须注册在 /api/sellers/:seller_id/ratings 【之前】,否则 'me' 会被 :seller_id 参数路由抢匹配。 | src/pwa/routes/ratings.ts:212 |
 | GET | `/api/sellers/me/return-stats` | 🔐 |  | 卖家退货仪表盘 | src/pwa/routes/analytics.ts:285 |
