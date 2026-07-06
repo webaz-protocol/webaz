@@ -30,11 +30,11 @@
     if (!o || !o.region_required) return
     const opts = (o.template || []).map(e => `<option value="${escHtml(e.region)}">${e.region === '*' ? t('其他地区(通用运费)') : escHtml(e.region)} · ${t('运费')} ${e.fee}${e.est_days ? ` · ${escHtml(e.est_days)} ${t('天')}` : ''}</option>`).join('')
     box.innerHTML = `<label class="form-label" style="font-size:12px">📍 ${t('收货国家/地区')} *</label>
-      <select class="form-control" id="ship-region-select" style="font-size:13px" onchange="document.getElementById('ship-region-other').style.display = this.value === '__other' ? 'block' : 'none'">
+      <select class="form-control" id="ship-region-select" style="font-size:13px" onchange="document.getElementById('ship-region-other').style.display = this.value === '__other' ? 'block' : 'none'; window._tradeTaxRefresh && window._tradeTaxRefresh()">
         <option value="">${t('请选择')}</option>${opts}
         ${o.quote_outside_template ? `<option value="__other">${t('其他地区(需卖家报价运费,直付)')}</option>` : ''}
       </select>
-      <input class="form-control" id="ship-region-other" maxlength="16" placeholder="${t('地区代码,如 US / JP / DE')}" style="display:none;margin-top:6px;font-size:13px;text-transform:uppercase">
+      <input class="form-control" id="ship-region-other" maxlength="16" placeholder="${t('地区代码,如 US / JP / DE')}" oninput="window._tradeTaxRefresh && window._tradeTaxRefresh()" style="display:none;margin-top:6px;font-size:13px;text-transform:uppercase">
       <div style="font-size:11px;color:#6b7280;margin-top:4px">${o.quote_outside_template ? t('模板内地区运费自动计入总额;其他地区由卖家先报价、你确认后再付款。') : t('运费按所选地区自动计入订单总额。')}</div>`
     box.style.display = 'block'
   }

@@ -13,6 +13,7 @@ import type Database from 'better-sqlite3'
 import { parseShippingTemplate, loadTemplateJson } from '../../shipping-templates.js'
 import { validateSaleRegionsInput, parseSaleRegionsRule } from '../../sale-regions.js'  // S1 可售区域(店铺+单品写入;gate 在 orders-create)
 import { validateFreeShippingThreshold } from '../../free-shipping.js'  // 营销域满额免邮(S2 返工:写入口暂列本设置面,规则/判定在 free-shipping.ts)
+import { validateImportDutyTerms, validateTaxLines, effectiveImportDutyTerms, effectiveTaxLines, parseTaxLines, taxLinesForRegion } from '../../trade-tax.js'  // S3 跨境税费/进口责任声明层(seller-declared,平台不算不收)
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 
 export interface ShippingTemplateRoutesDeps {
@@ -70,6 +71,36 @@ export function registerShippingTemplateRoutes(app: Application, deps: ShippingT
       await dbRun('UPDATE products SET free_shipping_threshold = ? WHERE id = ?', [v.value, b.product_id])
       touched.product_free_shipping_threshold = v.value
     }
+    if ('store_import_duty_terms' in b) {   // S3:DDP/DDU 进口责任声明(店铺默认;null=清除)
+      const v = validateImportDutyTerms(b.store_import_duty_terms)
+      if ('error' in v) return void errorRes(res, 400, 'BAD_IMPORT_DUTY_TERMS', v.error)
+      await dbRun('UPDATE users SET store_import_duty_terms = ? WHERE id = ?', [v.value, user.id])
+      touched.store_import_duty_terms = v.value
+    }
+    if ('product_id' in b && 'import_duty_terms' in b) {   // S3:单品覆盖(null=回落店铺)
+      const v = validateImportDutyTerms(b.import_duty_terms)
+      if ('error' in v) return void errorRes(res, 400, 'BAD_IMPORT_DUTY_TERMS', v.error)
+      const prodD = await dbOne<{ seller_id: string }>('SELECT seller_id FROM products WHERE id = ?', [b.product_id])
+      if (!prodD) return void errorRes(res, 404, 'PRODUCT_NOT_FOUND', '商品不存在')
+      if (prodD.seller_id !== user.id) return void errorRes(res, 403, 'NOT_PRODUCT_OWNER', '只能设置自己商品')
+      await dbRun('UPDATE products SET import_duty_terms = ? WHERE id = ?', [v.value, b.product_id])
+      touched.product_import_duty_terms = v.value
+    }
+    if ('store_tax_lines' in b) {   // S3:价内已含税声明(店铺默认;仅 'included';null=清除)
+      const v = validateTaxLines(b.store_tax_lines)
+      if ('error' in v) return void errorRes(res, 400, 'BAD_TAX_LINES', v.error)
+      await dbRun('UPDATE users SET store_tax_lines = ? WHERE id = ?', [v.value, user.id])
+      touched.store_tax_lines = v.value ? JSON.parse(v.value) : null
+    }
+    if ('product_id' in b && 'tax_lines' in b) {   // S3:单品覆盖(null=回落店铺)
+      const v = validateTaxLines(b.tax_lines)
+      if ('error' in v) return void errorRes(res, 400, 'BAD_TAX_LINES', v.error)
+      const prodT = await dbOne<{ seller_id: string }>('SELECT seller_id FROM products WHERE id = ?', [b.product_id])
+      if (!prodT) return void errorRes(res, 404, 'PRODUCT_NOT_FOUND', '商品不存在')
+      if (prodT.seller_id !== user.id) return void errorRes(res, 403, 'NOT_PRODUCT_OWNER', '只能设置自己商品')
+      await dbRun('UPDATE products SET tax_lines = ? WHERE id = ?', [v.value, b.product_id])
+      touched.product_tax_lines = v.value ? JSON.parse(v.value) : null
+    }
     if ('product_id' in b && 'quote_ok' in b) {
       if (b.quote_ok !== null && typeof b.quote_ok !== 'boolean') return void errorRes(res, 400, 'BAD_QUOTE_OK', 'quote_ok 只允许 true|false|null')
       const prodQ = await dbOne<{ seller_id: string }>('SELECT seller_id FROM products WHERE id = ?', [b.product_id])
@@ -96,12 +127,14 @@ export function registerShippingTemplateRoutes(app: Application, deps: ShippingT
   app.get('/api/seller/shipping-settings', async (req, res) => {
     const user = auth(req, res); if (!user) return
     if (user.role !== 'seller') return void errorRes(res, 403, 'SELLER_ONLY', '仅卖家')
-    const row = await dbOne<{ store_accept_mode: string | null; store_shipping_template: string | null; store_shipping_quote_ok: number | null; store_sale_regions: string | null; store_free_shipping_threshold: number | null }>(
-      'SELECT store_accept_mode, store_shipping_template, store_shipping_quote_ok, store_sale_regions, store_free_shipping_threshold FROM users WHERE id = ?', [user.id])
+    const row = await dbOne<{ store_accept_mode: string | null; store_shipping_template: string | null; store_shipping_quote_ok: number | null; store_sale_regions: string | null; store_free_shipping_threshold: number | null; store_import_duty_terms: string | null; store_tax_lines: string | null }>(
+      'SELECT store_accept_mode, store_shipping_template, store_shipping_quote_ok, store_sale_regions, store_free_shipping_threshold, store_import_duty_terms, store_tax_lines FROM users WHERE id = ?', [user.id])
     return void res.json({
       store_accept_mode: row?.store_accept_mode ?? null,
       store_sale_regions: parseSaleRegionsRule(row?.store_sale_regions ?? null),
       store_free_shipping_threshold: row?.store_free_shipping_threshold ?? null,
+      store_import_duty_terms: (row?.store_import_duty_terms === 'ddu' || row?.store_import_duty_terms === 'ddp') ? row.store_import_duty_terms : null,
+      store_tax_lines: parseTaxLines(row?.store_tax_lines ?? null),
       store_template: loadTemplateJson(row?.store_shipping_template),
       store_quote_ok: row?.store_shipping_quote_ok == null ? null : Number(row.store_shipping_quote_ok) === 1,
     })
@@ -109,22 +142,30 @@ export function registerShippingTemplateRoutes(app: Application, deps: ShippingT
 
   // 公开读:买家下单前查配送范围。生效 = 单品覆盖 ?? 店铺默认;template=null → 不按地区计费(下单不要求选地区)。
   app.get('/api/products/:id/shipping-options', async (req, res) => {
-    const prod = await dbOne<{ id: string; seller_id: string; shipping_template: string | null; shipping_quote_ok: number | null }>(
-      'SELECT id, seller_id, shipping_template, shipping_quote_ok FROM products WHERE id = ?', [req.params.id])
+    const prod = await dbOne<{ id: string; seller_id: string; shipping_template: string | null; shipping_quote_ok: number | null; import_duty_terms: string | null; tax_lines: string | null }>(
+      'SELECT id, seller_id, shipping_template, shipping_quote_ok, import_duty_terms, tax_lines FROM products WHERE id = ?', [req.params.id])
     if (!prod) return void errorRes(res, 404, 'PRODUCT_NOT_FOUND', '商品不存在')
     let entries = loadTemplateJson(prod.shipping_template)
     let source: 'product' | 'store' | null = entries ? 'product' : null
-    const seller = await dbOne<{ store_shipping_template: string | null; store_shipping_quote_ok: number | null }>('SELECT store_shipping_template, store_shipping_quote_ok FROM users WHERE id = ?', [prod.seller_id])
+    const seller = await dbOne<{ store_shipping_template: string | null; store_shipping_quote_ok: number | null; store_import_duty_terms: string | null; store_tax_lines: string | null }>('SELECT store_shipping_template, store_shipping_quote_ok, store_import_duty_terms, store_tax_lines FROM users WHERE id = ?', [prod.seller_id])
     if (!entries) {
       entries = loadTemplateJson(seller?.store_shipping_template)
       if (entries) source = 'store'
     }
     const quoteOk = prod.shipping_quote_ok != null ? Number(prod.shipping_quote_ok) === 1 : Number(seller?.store_shipping_quote_ok) === 1
+    // S3 税费/进口责任披露(买家下单前可见;卖家 seller-declared,平台不算不收)。
+    //   价内含税【按收货地区过滤】(?ship_to_region):目的区匹配项 + '*' 通用项;无地区参数=仅 '*'(只披露必然适用的,
+    //   不把不属于该目的地的税误示给买家)。DDP/DDU 是整单单一声明,不按区分。
+    const importDuty = effectiveImportDutyTerms(prod.import_duty_terms, seller?.store_import_duty_terms)
+    const shipToRegion = typeof req.query.ship_to_region === 'string' && req.query.ship_to_region.trim() ? req.query.ship_to_region.trim().toUpperCase() : null
+    const taxLines = taxLinesForRegion(effectiveTaxLines(prod.tax_lines, seller?.store_tax_lines), shipToRegion)
     return void res.json({
       product_id: prod.id,
       region_required: !!entries,
       template: entries,
       source,
+      import_duty_terms: importDuty,   // 'ddu'(买家到境自付关税/税)| 'ddp'(卖家已含)| null(未声明)
+      tax_included_lines: taxLines,    // 价内已含税声明(如 [{region:'SG',label:'GST',rate_pct:9,kind:'included'}])
       quote_outside_template: !!entries && quoteOk,   // 直付轨:模板外地区可询价(卖家报运费/时效,确认后付款)
       note: entries
         ? (quoteOk ? '下单须选择收货地区;模板内地区运费自动计入,模板外地区(直付)可先询价再付款。' : '下单须选择收货地区;运费按模板计入总额(快照)。未覆盖地区暂不可下单。')
