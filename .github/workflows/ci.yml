@@ -687,6 +687,7 @@ jobs:
       - run: npm run test:trade-tax
       - run: npm run test:listing-commerce
       - run: npm run test:shipping-free-threshold
+      - run: npm run test:purchase-terms
       - run: npm run test:wallet-signer
       - run: npm run test:cf-origin-guard
       - run: npm run test:public-contribution-pages

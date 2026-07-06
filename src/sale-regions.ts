@@ -64,6 +64,19 @@ export function effectiveSaleRegionsRule(db: Database.Database, product: { sale_
   } catch { return null }
 }
 
+/**
+ * 平台合规名单解析(单一真相源:建单门 gateSaleRegionForCreate + S5 预检 shipping-options 共用)。
+ *   坏配置(非 JSON / 非数组)→ { ok:false },由调用方 fail-closed(建单 503;预检 sellable=platform_policy_invalid)。
+ *   缺省 '[]' → { ok:true, list:[] }。区码统一大写。
+ */
+export function parsePlatformBlocklist(raw: unknown): { ok: true; list: string[] } | { ok: false } {
+  try {
+    const p = JSON.parse(String(raw ?? '[]'))
+    if (!Array.isArray(p)) return { ok: false }
+    return { ok: true, list: p.map(x => String(x).toUpperCase()) }
+  } catch { return { ok: false } }
+}
+
 export function regionAllowedByRule(rule: SaleRegionsRule, region: string): boolean {
   const r = region.toUpperCase()
   if (rule.exclude?.includes(r)) return false
@@ -84,16 +97,12 @@ export function gateSaleRegionForCreate(
   // ① 平台合规 overlay(protocol param,DEFAULT_PARAMS 已 seed '[]';admin PATCH 有 JSON+区码校验)。
   //   坏配置【fail-closed】:合规名单读不懂时放行 = 静默解除平台禁售(审计 P2) —— 宁可挡单也不裸奔;
   //   admin 写入侧已强校验,坏值只可能来自手改 DB,错误信息直接指路。
-  let platformBlock: string[] = []
-  try {
-    const v = getProtocolParam<string>('trade.platform_region_blocklist', '[]')
-    const p = JSON.parse(String(v))
-    if (!Array.isArray(p)) throw new Error('not array')
-    platformBlock = p.map(x => String(x).toUpperCase())
-  } catch {
+  const parsedBlock = parsePlatformBlocklist(getProtocolParam<string>('trade.platform_region_blocklist', '[]'))
+  if (!parsedBlock.ok) {
     res.status(503).json({ error: '平台合规配置异常,暂无法下单(运营侧需修复 trade.platform_region_blocklist 参数)', error_code: 'PLATFORM_REGION_POLICY_INVALID' })
     return false
   }
+  const platformBlock = parsedBlock.list
   const rule = effectiveSaleRegionsRule(db, product, sellerId)
   if (platformBlock.length === 0 && !rule) return true   // 无任何限制 = 原行为(地区可选)
   if (!region) { res.status(400).json({ error: '该商品设有可售地区限制,请选择收货国家/地区', error_code: 'SHIP_REGION_REQUIRED' }); return false }

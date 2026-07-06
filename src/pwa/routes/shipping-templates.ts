@@ -10,8 +10,8 @@
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
-import { parseShippingTemplate, loadTemplateJson } from '../../shipping-templates.js'
-import { validateSaleRegionsInput, parseSaleRegionsRule } from '../../sale-regions.js'  // S1 可售区域(店铺+单品写入;gate 在 orders-create)
+import { parseShippingTemplate, loadTemplateJson, resolveShipping } from '../../shipping-templates.js'
+import { validateSaleRegionsInput, parseSaleRegionsRule, regionAllowedByRule, parsePlatformBlocklist } from '../../sale-regions.js'  // S1 可售区域(店铺+单品写入;gate 在 orders-create;S5 只读披露复用判定 + 与建单门同一 blocklist parser)
 import { validateFreeShippingThreshold } from '../../free-shipping.js'  // 营销域满额免邮(S2 返工:写入口暂列本设置面,规则/判定在 free-shipping.ts)
 import { validateImportDutyTerms, validateTaxLines, effectiveImportDutyTerms, effectiveTaxLines, parseTaxLines, taxLinesForRegion } from '../../trade-tax.js'  // S3 跨境税费/进口责任声明层(seller-declared,平台不算不收)
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
@@ -142,12 +142,12 @@ export function registerShippingTemplateRoutes(app: Application, deps: ShippingT
 
   // 公开读:买家下单前查配送范围。生效 = 单品覆盖 ?? 店铺默认;template=null → 不按地区计费(下单不要求选地区)。
   app.get('/api/products/:id/shipping-options', async (req, res) => {
-    const prod = await dbOne<{ id: string; seller_id: string; shipping_template: string | null; shipping_quote_ok: number | null; import_duty_terms: string | null; tax_lines: string | null }>(
-      'SELECT id, seller_id, shipping_template, shipping_quote_ok, import_duty_terms, tax_lines FROM products WHERE id = ?', [req.params.id])
+    const prod = await dbOne<{ id: string; seller_id: string; shipping_template: string | null; shipping_quote_ok: number | null; import_duty_terms: string | null; tax_lines: string | null; sale_regions: string | null; free_shipping_threshold: number | null }>(
+      'SELECT id, seller_id, shipping_template, shipping_quote_ok, import_duty_terms, tax_lines, sale_regions, free_shipping_threshold FROM products WHERE id = ?', [req.params.id])
     if (!prod) return void errorRes(res, 404, 'PRODUCT_NOT_FOUND', '商品不存在')
     let entries = loadTemplateJson(prod.shipping_template)
     let source: 'product' | 'store' | null = entries ? 'product' : null
-    const seller = await dbOne<{ store_shipping_template: string | null; store_shipping_quote_ok: number | null; store_import_duty_terms: string | null; store_tax_lines: string | null }>('SELECT store_shipping_template, store_shipping_quote_ok, store_import_duty_terms, store_tax_lines FROM users WHERE id = ?', [prod.seller_id])
+    const seller = await dbOne<{ store_shipping_template: string | null; store_shipping_quote_ok: number | null; store_import_duty_terms: string | null; store_tax_lines: string | null; store_sale_regions: string | null; store_free_shipping_threshold: number | null }>('SELECT store_shipping_template, store_shipping_quote_ok, store_import_duty_terms, store_tax_lines, store_sale_regions, store_free_shipping_threshold FROM users WHERE id = ?', [prod.seller_id])
     if (!entries) {
       entries = loadTemplateJson(seller?.store_shipping_template)
       if (entries) source = 'store'
@@ -159,17 +159,44 @@ export function registerShippingTemplateRoutes(app: Application, deps: ShippingT
     const importDuty = effectiveImportDutyTerms(prod.import_duty_terms, seller?.store_import_duty_terms)
     const shipToRegion = typeof req.query.ship_to_region === 'string' && req.query.ship_to_region.trim() ? req.query.ship_to_region.trim().toUpperCase() : null
     const taxLines = taxLinesForRegion(effectiveTaxLines(prod.tax_lines, seller?.store_tax_lines), shipToRegion)
+    // S5 买家下单前聚合(只读,复用 S1-S4 判定;不动订单金额/不收税)。
+    const saleRule = parseSaleRegionsRule(prod.sale_regions) ?? parseSaleRegionsRule(seller?.store_sale_regions ?? null)   // 可售规则(商品??店铺)
+    // 平台合规名单:与建单门 gateSaleRegionForCreate 共用 parsePlatformBlocklist,坏配置 fail-closed 一致(建单 503 ⇄ 预检 platform_policy_invalid),
+    //   不再把坏配置当空名单静默放行(否则预检显示"可买"、提交才 503,与 create gate 不一致)。缺省 '[]'/无行=空名单=可售。
+    const pr = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'trade.platform_region_blocklist'").catch(() => null)
+    const parsedBlock = parsePlatformBlocklist(pr ? pr.value : '[]')
+    const policyInvalid = !parsedBlock.ok
+    const platformBlock = parsedBlock.ok ? parsedBlock.list : []
+    const freeThreshold = (prod.free_shipping_threshold != null && Number(prod.free_shipping_threshold) > 0) ? Number(prod.free_shipping_threshold)
+      : (seller?.store_free_shipping_threshold != null && Number(seller.store_free_shipping_threshold) > 0 ? Number(seller.store_free_shipping_threshold) : null)
+    // 可售裁定(镜像建单 gateSaleRegionForCreate 的判定,只读不抛):平台配置异常 > 平台合规 > 商家意愿。
+    const restricted = policyInvalid || !!saleRule || platformBlock.length > 0
+    let sellable: { ok: boolean; reason: string } = { ok: true, reason: 'ok' }
+    if (policyInvalid) sellable = { ok: false, reason: 'platform_policy_invalid' }   // 坏配置 fail-closed:显示不可下单,不诱导买家提交后才 503
+    else if (restricted) {
+      if (!shipToRegion) sellable = { ok: false, reason: 'region_required' }
+      else if (platformBlock.includes(shipToRegion)) sellable = { ok: false, reason: 'product_restricted' }   // 平台合规,商家不可放宽
+      else if (saleRule && !regionAllowedByRule(saleRule, shipToRegion)) sellable = { ok: false, reason: 'region_not_for_sale' }   // 商家不销往
+    }
+    // 目的区运费裁定(有模板时;免邮阈值仅回传数值供 UI 提示"满 X 免邮",实际是否免取决于买家券后货款,建单时定)
+    let resolvedShipping: { covered: boolean; fee: number | null; est_days: string | null; quote_required: boolean } | null = null
+    if (entries && shipToRegion) { const r = resolveShipping(entries, shipToRegion); resolvedShipping = { covered: r.covered, fee: r.covered ? r.fee : null, est_days: r.est_days, quote_required: !r.covered && quoteOk } }
     return void res.json({
       product_id: prod.id,
-      region_required: !!entries,
+      region_required: !!entries || restricted,   // S5:可售/合规限制也需买家指定目的地(与建单 SHIP_REGION_REQUIRED 一致)
       template: entries,
       source,
+      sellable,                        // S5:{ ok, reason: ok|region_required|product_restricted|region_not_for_sale|platform_policy_invalid }
+      sale_regions: saleRule,          // S5:生效可售规则(商品??店铺){mode:'list',include:[...]} | {mode:'all',exclude:[...]} | null —— UI 据此在无运费模板时也能生成地区入口
+      resolved_shipping: resolvedShipping,   // S5:目的区运费裁定(covered/fee/est_days/quote_required)| null(无模板或未选区)
+      free_shipping_threshold: freeThreshold,   // S5:生效满额免邮阈值(UI 提示"满 X 免邮";实际免取决于建单时券后货款)
       import_duty_terms: importDuty,   // 'ddu'(买家到境自付关税/税)| 'ddp'(卖家已含)| null(未声明)
       tax_included_lines: taxLines,    // 价内已含税声明(如 [{region:'SG',label:'GST',rate_pct:9,kind:'included'}])
+      tax_disclosure: 'seller_declared_platform_no_collect',   // S5:税费/进口责任均为卖家声明,平台不代收代缴(直付非托管)
       quote_outside_template: !!entries && quoteOk,   // 直付轨:模板外地区可询价(卖家报运费/时效,确认后付款)
       note: entries
         ? (quoteOk ? '下单须选择收货地区;模板内地区运费自动计入,模板外地区(直付)可先询价再付款。' : '下单须选择收货地区;运费按模板计入总额(快照)。未覆盖地区暂不可下单。')
-        : '该商品不按地区计运费。',
+        : (restricted ? '该商品设有可售地区限制,请选择收货地区确认。' : '该商品不按地区计运费。'),
     })
   })
 }

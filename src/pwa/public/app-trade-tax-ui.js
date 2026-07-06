@@ -1,25 +1,6 @@
-// 跨境税费/进口责任(S3)。UI ONLY —— 卖家 seller-declared,平台不算不收代缴。买家侧:下单前披露 DDP/DDU + 价内已含税(按收货地区筛,GET /products/:id/shipping-options?ship_to_region)。卖家侧:店铺设置卡追加 DDP/DDU + 价内含税行(包装 shipHydrateSellerSettings/Save)。
-//   诚实披露纪律(调研):DDU 付款前明示"关税/税到境自付";DDP 明示"已含";价内含税据实列且只列目的区适用项。
+// 跨境税费/进口责任【卖家设置】(S3;S5 起买家披露移至 app-purchase-terms-ui.js)。UI ONLY —— seller-declared,平台不算不收代缴。
+//   店铺设置卡追加 DDP/DDU 下拉 + 价内含税行(包装 shipHydrateSellerSettings/Save)。诚实纪律:仅"价内已含"披露,向买家加收税不支持。
 ;(function () {
-  // ── 买家下单前披露 ──
-  window.tradeTaxBlockHtml = (productId) => { window._tradeTaxPid = productId; setTimeout(() => window._tradeTaxHydrate(productId), 70); return `<div id="trade-tax-block" style="display:none;margin-top:10px"></div>` }
-  window._tradeTaxRefresh = () => window._tradeTaxHydrate(window._tradeTaxPid, window.shipSelectedRegion ? window.shipSelectedRegion() : undefined)   // 收货地区变更后由运费选择器调用:税费披露随目的区重筛
-  window._tradeTaxHydrate = async (productId, region) => {
-    const box = document.getElementById('trade-tax-block'); if (!box) return
-    const o = await GET(`/products/${productId}/shipping-options${region ? '?ship_to_region=' + encodeURIComponent(region) : ''}`).catch(() => null); if (!o) return
-    box.style.display = 'none'   // 重筛可能清空(换到无该区税的目的地)→ 先隐藏,有内容再显
-    const duty = o.import_duty_terms; const lines = Array.isArray(o.tax_included_lines) ? o.tax_included_lines : []
-    if (!duty && lines.length === 0) return   // 卖家未声明 → 不臆造
-    const dutyRow = duty === 'ddu'
-      ? `<div style="color:#92400e">🛃 <strong>${t('进口关税/税:到境自付(DDU)')}</strong> — ${t('本商品价格不含目的国进口关税/税;跨境到货时可能由承运人向你收取,金额由海关核定,与卖家/平台无关。')}</div>`
-      : duty === 'ddp' ? `<div style="color:#166534">🛃 <strong>${t('进口关税/税:卖家已含(DDP)')}</strong> — ${t('卖家声明价格已包含目的国进口关税/税,正常到货应无额外费用。')}</div>` : ''
-    const taxRows = lines.map(l => `<div style="color:#374151">🧾 ${t('价内已含')}:${escHtml(l.label)}${l.rate_pct != null ? ' ' + l.rate_pct + '%' : ''}${l.region && l.region !== '*' ? ' (' + escHtml(l.region) + ')' : ''}${l.note ? ' · ' + escHtml(l.note) : ''}</div>`).join('')
-    box.innerHTML = `<div class="card" style="border:1px solid #e5e7eb;background:#fafafa;padding:10px 12px;font-size:12px;line-height:1.7">
-      <div style="font-weight:600;color:#6b7280;margin-bottom:4px">${t('税费与进口责任(卖家声明)')}</div>${dutyRow}${taxRows}
-      <div style="color:#9ca3af;font-size:11px;margin-top:4px">${t('以上为卖家自行声明,平台不代收代缴税费。')}</div></div>`
-    box.style.display = 'block'
-  }
-
   // ── 卖家店铺设置(包装既有运费设置卡)──
   const _origHydrate = window.shipHydrateSellerSettings
   window.shipHydrateSellerSettings = async () => {
