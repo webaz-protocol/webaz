@@ -164,6 +164,8 @@ export function registerAnalyticsRoutes(app: Application, deps: AnalyticsDeps): 
         SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled_orders,
         SUM(CASE WHEN status IN ('paid','accepted','shipped','picked_up','in_transit','delivered','confirmed') THEN 1 ELSE 0 END) as in_progress_orders,
         COALESCE(SUM(CASE WHEN status = 'completed' THEN total_amount ELSE 0 END), 0) as gmv,
+        COALESCE(SUM(CASE WHEN status = 'completed' AND COALESCE(payment_rail,'escrow') = 'escrow' THEN total_amount ELSE 0 END), 0) as gmv_escrow,
+        COALESCE(SUM(CASE WHEN status = 'completed' AND payment_rail = 'direct_p2p' THEN total_amount ELSE 0 END), 0) as gmv_direct_pay,
         COALESCE(AVG(CASE WHEN status = 'completed' THEN total_amount END), 0) as aov
       FROM orders WHERE seller_id = ? AND created_at > datetime('now', '-' || ? || ' days')
     `, [user.id, windowDays]))!

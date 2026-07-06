@@ -14953,7 +14953,7 @@ function renderInsightsBlock(d) {
       <div class="card" style="padding:12px">
         <div style="font-size:10px;color:#9ca3af;text-transform:uppercase">${t('30 天 GMV')}</div>
         <div style="font-size:18px;font-weight:800;color:#15803d;margin-top:2px">${Number(s.gmv||0).toFixed(0)} <span style="font-size:11px;font-weight:600;color:#6b7280">WAZ</span></div>
-        <div style="font-size:10px;color:#6b7280;margin-top:2px">${deltaChip(vs.gmv_pct||0, t('环比'))}</div>
+        <div style="font-size:10px;color:#6b7280;margin-top:2px">${deltaChip(vs.gmv_pct||0, t('环比'))}</div>${window.gmvRailSplitHtml ? window.gmvRailSplitHtml(s.gmv_escrow, s.gmv_direct_pay) : ''}
       </div>
       <div class="card" style="padding:12px">
         <div style="font-size:10px;color:#9ca3af;text-transform:uppercase">${t('30 天订单')}</div>

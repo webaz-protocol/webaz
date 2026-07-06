@@ -728,6 +728,7 @@ const _EN = {
   '钱包': 'Wallet',
   '质押': 'Staked',
   '托管': 'Escrow',
+  '托管=平台托管收入;直接收款=场外收款,平台不经手': 'Escrow = platform-custodied revenue; Direct pay = off-platform receipts the platform never touches',
   '全部类型': 'All types',
   '直接收款': 'Direct pay',
   '直接收款销售统计 + 对账(仅你可见)': 'Direct-pay sales & reconciliation (private to you)',
