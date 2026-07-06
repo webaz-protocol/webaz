@@ -695,6 +695,7 @@ export function initDatabase(): Database.Database {
   // 跨境交易条款骨架(S0):清关/物流证据字段(即时开放,展示+快照证据,零计费逻辑=守 ERP 边界)+
   //   结构化规则列(sale_regions/tax_lines/import_duty_terms 先建列【不开 API】—— 不上假开关:S1 带可售 gate、
   //   S3 带税费明细进 total 时才各自开放;既有 ship_regions 是自由文本仅展示,真相源=这些结构化列)。
+  try { db.exec(`ALTER TABLE products ADD COLUMN weight_kg REAL`) } catch { /* 已存在 */ }                 // 重量(S0 起 products-update 也写此列 → 收进 base schema,不再只靠 server.ts 迁移;裸 init 路径一致有列)
   try { db.exec(`ALTER TABLE products ADD COLUMN package_size TEXT`) } catch { /* 已存在 */ }              // 长x宽x高 cm 文本(证据/报价参考)
   try { db.exec(`ALTER TABLE products ADD COLUMN origin_country TEXT`) } catch { /* 已存在 */ }            // 发货国(ISO 区码)
   try { db.exec(`ALTER TABLE products ADD COLUMN country_of_origin TEXT`) } catch { /* 已存在 */ }         // 原产国(清关申报)

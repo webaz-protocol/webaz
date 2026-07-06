@@ -15728,7 +15728,7 @@ async function renderSeller(app) {
             <input type="checkbox" id="prd-fragile" style="width:16px;height:16px">
             <label for="prd-fragile" style="font-size:13px">${t('易碎品，需特殊包装')}</label>
           </div>
-        </details>
+        </details>${window.listingCommerceSectionHtml ? window.listingCommerceSectionHtml(null) : ''}
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px"><label class="form-label" style="margin:0;font-size:13px">${t('低库存阈值')}</label><input class="form-control" id="prd-low-stock" type="number" value="3" min="0" style="width:90px"><input type="checkbox" id="prd-auto-delist" checked style="width:16px;height:16px"><label for="prd-auto-delist" style="font-size:13px">${t('售罄自动下架')}</label></div>
         <!-- 2026-05-24 #981：测评免单 (Trial Review Refund) -->
         <details style="margin-bottom:16px" id="prd-trial-section">
@@ -16121,10 +16121,10 @@ window.doAddProduct = async () => {
     commission_rate: commissionPct / 100,
     ...(extTitle ? { external_title: extTitle } : {}),
     ...(checkedAliases.length ? { aliases: checkedAliases } : {}),
-    ...(state._addProductImgs?.length ? { image_hashes: state._addProductImgs.map(it => it.hash) } : {}),
+    ...(state._addProductImgs?.length ? { image_hashes: state._addProductImgs.map(it => it.hash) } : {}), ...(window.listingCommerceHasOverrides && window.listingCommerceHasOverrides() ? { create_status: 'warehouse' } : {}),   // S4:含覆盖的新品先落仓库,全落定后激活
   }
   const res = await POST('/products', payload)
-  if (res.error) { msgEl.innerHTML = alert$('error', res.error); return }
+  if (res.error) { msgEl.innerHTML = alert$('error', res.error); return } if (res.product_id && window.listingCommerceSave) { const lc = await window.listingCommerceSave(res.product_id, { activate: payload.create_status === 'warehouse' }); if (!lc.ok) { msgEl.innerHTML = alert$('error', (payload.create_status === 'warehouse' ? t('商品已存为仓库(未公开),配送/税费设置失败,请到「我的商品」编辑修复后上架:') : t('单品配送/税费设置失败:')) + lc.error); return } }
 
   // 产品创建成功 → 把每张图的 blob 存到本地 IDB + 注册 manifest（带 thumbnail）
   // 服务端只拿到了 hash 数组；blob 字节留在卖家节点
@@ -16674,7 +16674,7 @@ async function renderEditProduct(app, productId) {
             <label for="ep-fragile" style="font-size:13px">${t('易碎品，需特殊包装')}</label>
           </div>
         </div>
-      </details>
+      </details>${window.listingCommerceSectionHtml ? window.listingCommerceSectionHtml(p) : ''}
       <button class="btn btn-primary" onclick="doUpdateProduct('${productId}')">${t('保存修改')}</button>
     </div>
 
@@ -16859,7 +16859,7 @@ window.doUpdateProduct = async (productId) => {
     body: JSON.stringify(payload),
   }).then(r => r.json())
   if (btn) { btn.disabled = false; btn.textContent = t('保存修改') }
-  if (res.error) { msgEl.innerHTML = alert$('error', res.error); return }
+  if (res.error) { msgEl.innerHTML = alert$('error', res.error); return } if (window.listingCommerceSave) { const lc = await window.listingCommerceSave(productId); if (!lc.ok) { msgEl.innerHTML = alert$('error', t('单品配送/税费设置失败:') + lc.error); return } }   // S4 单品覆盖
   msgEl.innerHTML = alert$('success', t('已保存'))
   setTimeout(() => msgEl.innerHTML = '', 2000)
 }
