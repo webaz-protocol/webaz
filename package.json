@@ -84,6 +84,7 @@
     "test:agent-delegation-grants": "tsx scripts/test-agent-delegation-grants.ts",
     "test:agent-pairing": "tsx scripts/test-agent-pairing.ts",
     "test:agent-pair-ui": "tsx scripts/test-agent-pair-ui.ts",
+    "test:agent-perm-taxonomy": "tsx scripts/test-agent-perm-taxonomy.ts",
     "test:agent-grant-verify": "tsx scripts/test-agent-grant-verify.ts",
     "test:agent-grant-mcp-consume": "tsx scripts/test-agent-grant-mcp-consume.ts",
     "test:connected-agents-read": "tsx scripts/test-connected-agents-read.ts",
