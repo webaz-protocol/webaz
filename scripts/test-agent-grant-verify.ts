@@ -98,8 +98,13 @@ try {
   ok('3b expired grant → 403 GRANT_INACTIVE', (await j('/api/agent-grants/whoami', 'gtk_expired')).body.error_code === 'GRANT_INACTIVE')
   ok('3c unknown token → 401 GRANT_NOT_FOUND', (await j('/api/agent-grants/whoami', 'gtk_nope')).body.error_code === 'GRANT_NOT_FOUND')
 
-  // 4) wrong safe scope
-  ok('4 grant without required scope → 403 SCOPE_NOT_GRANTED', (await j('/api/agent-grants/whoami', 'gtk_wrongscope')).body.error_code === 'SCOPE_NOT_GRANTED')
+  // 4) wrong safe scope — the VERIFIER still returns SCOPE_NOT_GRANTED (source of truth), but the opt-in
+  //    middleware translates that one case into a structured PERMISSION_REQUIRED (RFC-020 PR-3): tell the
+  //    agent exactly how to request the missing safe scope, then retry. (All other grant failures stay plain.)
+  ok('4a verifier: valid grant missing the safe scope → SCOPE_NOT_GRANTED', (await verifyGrantToken('gtk_wrongscope', 'read_public')).ok === false && ((await verifyGrantToken('gtk_wrongscope', 'read_public')) as { error_code?: string }).error_code === 'SCOPE_NOT_GRANTED')
+  const missing = await j('/api/agent-grants/whoami', 'gtk_wrongscope')
+  ok('4b middleware: missing safe scope → 403 PERMISSION_REQUIRED', missing.status === 403 && missing.body.error_code === 'PERMISSION_REQUIRED')
+  ok('4c PERMISSION_REQUIRED carries required_scope + approval_url + request hint', missing.body.required_scope === 'read_public' && missing.body.approval_url === '/#agent-approvals' && ((missing.body.request_permission as Record<string, unknown>)?.endpoint) === '/api/agent-grants/permission-requests')
 
   // 5) risk / never / unknown required scope can never pass (verifier unit)
   ok('5a risk required scope → SCOPE_NOT_SAFE', (await verifyGrantToken('gtk_ok', 'place_order')).ok === false)
