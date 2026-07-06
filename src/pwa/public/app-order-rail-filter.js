@@ -8,10 +8,13 @@
     if (r === 'escrow')     return orders.filter(o => (o.payment_rail || 'escrow') === 'escrow')
     return orders
   }
-  // 类型筛选 chip 行(传入【筛选前】订单以判定是否有直接收款单;无则返回空串,纯托管用户不打扰)。
+  // 类型筛选 chip 行(传入【筛选前】订单以判定是否有直接收款单)。
+  //   隐藏条件:当前范围没有直付单【且】没有激活筛选 —— 纯托管用户不打扰。
+  //   但只要 ordersRail!=='all'(筛选激活),即使切到无直付单的范围(如"我买的")也保留 chip,
+  //   否则用户会被锁在空列表里、看不到"全部类型"按钮无法恢复(P2:切 scope 不重置 rail)。
   window.orderRailChipsHtml = (ordersBeforeFilter) => {
-    if (!ordersBeforeFilter.some(o => o.payment_rail === 'direct_p2p')) return ''
     const cur = state.ordersRail || 'all'
+    if (cur === 'all' && !ordersBeforeFilter.some(o => o.payment_rail === 'direct_p2p')) return ''
     return `<div style="display:flex;gap:6px;margin-bottom:10px">${[['all', t('全部类型')], ['escrow', '🏦 ' + t('托管')], ['direct_p2p', '🤝 ' + t('直接收款')]].map(([k, label]) => {
       const on = cur === k
       return `<button onclick="setOrdersRail('${k}')" style="padding:4px 10px;border-radius:12px;font-size:11px;border:1px solid ${on ? '#5b21b6' : '#e5e7eb'};background:${on ? '#5b21b6' : '#fff'};color:${on ? '#fff' : '#374151'};cursor:pointer;font-weight:${on ? '600' : '400'}">${label}</button>`

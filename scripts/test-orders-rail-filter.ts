@@ -70,6 +70,19 @@ try {
   const expDp = (await get('/orders/export?role=seller&rail=direct_p2p')).body
   const dpRows = expDp.replace(/^﻿/, '').trim().split('\n').slice(1)
   ok('6c. export rail=direct_p2p → only direct_p2p rows', dpRows.length === 3 && dpRows.every(r => r.includes(',direct_p2p,')))
+
+  // ── ⑦ 行为:类型 chip 可见性(P2 逃生门:激活筛选时必显 chip,否则切 scope 到无直付单会锁死空列表)──
+  const { readFileSync } = await import('fs')
+  const g = globalThis as unknown as { window: unknown; state: { ordersRail: string }; t: (s: string) => string }
+  g.state = { ordersRail: 'all' }; g.t = (s: string) => s; g.window = g
+  ;(0, eval)(readFileSync('src/pwa/public/app-order-rail-filter.js', 'utf8'))   // IIFE 仅赋值 window.*
+  const chips = (g.window as { orderRailChipsHtml: (o: unknown[]) => string }).orderRailChipsHtml
+  const noDp = [{ payment_rail: 'escrow' }]
+  ok('7a. no direct_p2p + rail=all → chips hidden (纯托管不打扰)', chips(noDp) === '')
+  const withDp = [{ payment_rail: 'escrow' }, { payment_rail: 'direct_p2p' }]
+  ok('7b. has direct_p2p → chips shown', chips(withDp).includes('setOrdersRail'))
+  g.state.ordersRail = 'direct_p2p'
+  ok('7c. rail active but scope has NO direct_p2p → chips STILL shown (逃生门,可点回全部类型)', chips(noDp).includes("setOrdersRail('all')"))
 } finally { server!.close() }
 
 if (fail > 0) { console.error(`\n❌ orders-rail-filter FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
