@@ -325,7 +325,6 @@ db.prepare("DELETE FROM aml_flags WHERE subject_user_id='seller1'").run()  // �
 
 // ══════ Part D: GET /orders/:id 响应契约门 —— buyer 在 D1/D2 both-acked 前拿不到 snapshot ══════
 // 生产由 runtime schema bridge(webaz-schema-helpers)给 products 加 return_days;本测试用 schema.ts initDatabase,补上以匹配。
-db.exec("ALTER TABLE products ADD COLUMN return_days INTEGER DEFAULT 7")
 const { registerOrdersReadRoutes } = await import('../src/pwa/routes/orders-read.js')
 const { recordDisclosureAck, STAGE } = await import('../src/direct-pay-disclosures.js')
 registerOrdersReadRoutes(app, {

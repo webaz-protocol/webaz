@@ -30,7 +30,6 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 const db: any = initDatabase()
 applyWebazRuntimeSchema(db)
 db.pragma('foreign_keys = OFF')
-try { db.exec("ALTER TABLE products ADD COLUMN completion_count INTEGER DEFAULT 0") } catch {}  // server.ts inline ALTER (not in L0/helpers)
 db.prepare("INSERT INTO users (id, name, role, api_key) VALUES ('usr_b','b','buyer','k')").run()
 
 let n = 0

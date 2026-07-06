@@ -20,7 +20,6 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 const db = initDatabase()
 db.pragma('foreign_keys = OFF')
-try { db.exec("ALTER TABLE products ADD COLUMN has_variants INTEGER DEFAULT 0") } catch { /* exists */ }
 db.exec("CREATE TABLE IF NOT EXISTS flash_sales (id TEXT PRIMARY KEY, seller_id TEXT, product_id TEXT, variant_id TEXT, sale_price REAL, original_price REAL, max_qty INTEGER DEFAULT 0, sold_count INTEGER DEFAULT 0, starts_at TEXT, ends_at TEXT, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))")
 const cp: Record<string, unknown> = {}
 const gp = <T,>(k: string, fb: T): T => (k in cp ? cp[k] as T : fb)

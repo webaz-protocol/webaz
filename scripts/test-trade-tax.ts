@@ -25,7 +25,6 @@ let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
 const db = initDatabase(); applyWebazRuntimeSchema(db); db.pragma('foreign_keys = OFF'); setSeamDb(db); initSystemUser(db); initOrderChainSchema(db)
-for (const c of ['handling_hours INTEGER', 'estimated_days TEXT', 'return_days INTEGER', 'return_condition TEXT', 'warranty_days INTEGER', 'weight_kg REAL']) { try { db.exec(`ALTER TABLE products ADD COLUMN ${c}`) } catch { /* 已有 */ } }
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('b1','b','buyer','kb'),('s1','s','seller','ks')").run()
 
 // ── ① DDP/DDU 校验 ──

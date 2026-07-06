@@ -38,8 +38,6 @@ const mkUser = (id: string, role = 'buyer'): void => {
 }
 mkUser('buyer1'); mkUser('seller1', 'seller'); mkUser('arb'); mkUser('outsider'); mkUser('roleArb', 'arbitrator'); mkUser('logi', 'logistics')  // roleArb = legacy role only, NOT whitelisted
 grantArbitrator(db, { userId: 'arb', grantedBy: 'admin1' })   // active whitelist, role stays buyer
-try { db.exec('ALTER TABLE products ADD COLUMN return_days INTEGER') } catch { /* 真实库已有 */ }
-try { db.exec('ALTER TABLE products ADD COLUMN images TEXT') } catch { /* 真实库已有 */ }
 for (const col of ['direct_pay_instruction_snapshot TEXT', 'direct_pay_account_snapshot TEXT']) { try { db.exec('ALTER TABLE orders ADD COLUMN ' + col) } catch { /* 已有 */ } }
 db.prepare("INSERT INTO products (id,seller_id,title,description,price,stock,images) VALUES ('p','seller1','P','d',50,9,'[]')").run()
 

@@ -24,10 +24,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 const db = initDatabase(); setSeamDb(db)
 db.pragma('foreign_keys = OFF')
-// products-update writes columns added by runtime ALTER migrations (not in base initDatabase); add them here.
-for (const col of ['specs TEXT', 'brand TEXT', 'model TEXT', 'handling_hours INTEGER', 'ship_regions TEXT', 'estimated_days TEXT', 'fragile INTEGER', 'return_days INTEGER', 'return_condition TEXT', 'warranty_days INTEGER', 'low_stock_threshold INTEGER', 'auto_delist_on_zero INTEGER', 'low_stock_alerted_at TEXT', 'origin_claims TEXT', 'i18n_titles TEXT', 'i18n_descs TEXT', 'commitment_hash TEXT', 'description_hash TEXT', 'price_hash TEXT', 'hashed_at TEXT']) {
-  try { db.exec(`ALTER TABLE products ADD COLUMN ${col}`) } catch { /* already exists */ }
-}
+// products-update writes these product attribute columns; now consolidated into base initDatabase() (schema.ts) — no manual ALTER needed.
 const seedVerified = (pid: string) => db.prepare("INSERT INTO product_verifications (id, product_id, seller_id, code, status, reviewed_by, reviewed_at) VALUES (?,?,?,?, 'verified','admin1',datetime('now'))").run('pvf_' + pid, pid, 'seller1', 'wzv_' + pid)
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p1','seller1','Orig','d1',50,10,'active')").run()
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p2','seller1','Orig2','d2',50,10,'active')").run()

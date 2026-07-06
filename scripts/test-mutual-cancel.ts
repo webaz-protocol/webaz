@@ -20,14 +20,12 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 initSystemUser(db); initOrderChainSchema(db); D.initDisputeSchema(db); D.initEvidenceRequestSchema(db); MC.initMutualCancelSchema(db)
-try { db.exec('ALTER TABLE products ADD COLUMN dispute_loss_count INTEGER DEFAULT 0') } catch { /* Tier7 hook */ }
 
 const mkUser = (id: string, role = 'buyer'): void => {
   db.prepare('INSERT INTO users (id,name,role,api_key) VALUES (?,?,?,?)').run(id, id, role, 'k_' + id)
   db.prepare('INSERT INTO wallets (user_id,balance,staked,escrowed,earned) VALUES (?,0,0,0,0)').run(id)
 }
 mkUser('buyer', 'buyer'); mkUser('seller', 'seller'); mkUser('outsider', 'buyer')
-try { db.exec('ALTER TABLE products ADD COLUMN stake_amount REAL DEFAULT 0') } catch { /* 真实库已有 */ }
 try { db.exec('ALTER TABLE orders ADD COLUMN bid_stake_held REAL DEFAULT 0') } catch { /* server.ts ALTER,真实库已有 */ }
 try { db.exec('ALTER TABLE orders ADD COLUMN stake_backing REAL DEFAULT 0') } catch { /* server.ts ALTER,真实库已有 */ }
 db.prepare("INSERT INTO products (id,seller_id,title,description,price,stake_amount) VALUES ('p1','seller','P','d',50,10)").run()  // 商品名义 stake_amount=10(当前 escrow 不据此锁 stake → 结算不得读它)

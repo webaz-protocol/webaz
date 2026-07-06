@@ -28,7 +28,6 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 initSystemUser(db); initRegisterListSearchColumns(db); initReturnRequestsSchema(db); initReturnMessagesSchema(db); initWebauthnSchema(db); initNotificationSchema(db); initReputationSchema(db); initDisputeSchema(db); initPendingCommissionEscrowSchema(db)
-try { db.exec('ALTER TABLE products ADD COLUMN completion_count INTEGER DEFAULT 0') } catch { /* 已存在(生产为 server.ts 内联 ALTER) */ }
 try { db.exec('ALTER TABLE return_requests ADD COLUMN pickup_requested INTEGER DEFAULT 0') } catch { /* 同上 */ }
 try { db.exec('ALTER TABLE return_requests ADD COLUMN pickup_address TEXT') } catch { /* 同上 */ }
 try { db.exec('ALTER TABLE return_messages ADD COLUMN flagged INTEGER DEFAULT 0') } catch { /* 同上 */ }

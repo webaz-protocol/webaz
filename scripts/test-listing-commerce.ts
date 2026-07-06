@@ -28,10 +28,8 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 const db = initDatabase(); applyWebazRuntimeSchema(db); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('s1','s','seller','ks'),('s2','s2','seller','k2')").run()
 db.prepare("INSERT OR IGNORE INTO wallets (user_id,balance) VALUES ('s1',500),('s2',500)").run()
-// products/crud/create/update 写的列在 server.ts 迁移里(非 base/bridge)—— 测试前补齐(与 reverify 测试同法)
-for (const col of ['specs TEXT', 'brand TEXT', 'model TEXT', 'source_url TEXT', 'source_price REAL', 'source_price_at TEXT', 'handling_hours INTEGER', 'estimated_days TEXT', 'fragile INTEGER', 'return_days INTEGER', 'return_condition TEXT', 'warranty_days INTEGER', 'low_stock_threshold INTEGER', 'auto_delist_on_zero INTEGER', 'low_stock_alerted_at TEXT', 'origin_claims TEXT', 'i18n_titles TEXT', 'i18n_descs TEXT', 'commitment_hash TEXT', 'description_hash TEXT', 'price_hash TEXT', 'hashed_at TEXT', 'commission_rate REAL', 'product_type TEXT', 'claim_loss_count INTEGER DEFAULT 0', 'completion_count INTEGER DEFAULT 0', 'dispute_loss_count INTEGER DEFAULT 0', 'last_sold_at TEXT', 'first_sold_at TEXT', 'value_badge INTEGER DEFAULT 0']) {
-  try { db.exec(`ALTER TABLE products ADD COLUMN ${col}`) } catch { /* 已有 */ }
-}
+// 商品非钱路扩展列已收进 base schema(initDatabase),无需再手动补。仅 commission_rate 是钱路字段(佣金),刻意不进共享 schema —— 单独补。
+try { db.exec('ALTER TABLE products ADD COLUMN commission_rate REAL DEFAULT 0.10') } catch { /* 已有 */ }
 db.exec("CREATE TABLE IF NOT EXISTS reputation_scores (user_id TEXT PRIMARY KEY, total_points REAL DEFAULT 0, level TEXT DEFAULT 'new')")
 db.exec("CREATE TABLE IF NOT EXISTS product_external_links (id TEXT PRIMARY KEY, product_id TEXT, url TEXT, verified INTEGER DEFAULT 0, revoked INTEGER DEFAULT 0)")
 try { db.exec("ALTER TABLE product_external_links ADD COLUMN revoked INTEGER DEFAULT 0") } catch { /* 已有 */ }
