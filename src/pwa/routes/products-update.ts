@@ -53,7 +53,7 @@ export function registerProductsUpdateRoutes(app: Application, deps: ProductsUpd
       low_stock_threshold, auto_delist_on_zero,
       origin_claims,
       i18n_titles, i18n_descs,
-      package_size, origin_country, country_of_origin, customs_description, hs_code,   // S0 跨境清关/物流证据字段(可选;进后续订单条款快照,不影响在途单)
+      weight_kg, package_size, origin_country, country_of_origin, customs_description, hs_code,   // S0 跨境清关/物流证据字段(可选;进后续订单条款快照,不影响在途单)
     } = req.body
 
     const now = new Date().toISOString()
@@ -138,7 +138,7 @@ export function registerProductsUpdateRoutes(app: Application, deps: ProductsUpd
       low_stock_alerted_at = CASE WHEN ?=1 THEN NULL ELSE low_stock_alerted_at END,
       origin_claims=?,
       i18n_titles=?, i18n_descs=?,
-      package_size=?, origin_country=?, country_of_origin=?, customs_description=?, hs_code=?,
+      weight_kg=?, package_size=?, origin_country=?, country_of_origin=?, customs_description=?, hs_code=?,
       commitment_hash=?, description_hash=?, price_hash=?, hashed_at=?,
       updated_at=datetime('now')
       WHERE id=?`, [
@@ -149,6 +149,7 @@ export function registerProductsUpdateRoutes(app: Application, deps: ProductsUpd
       newLowThreshold, newAutoDelist, resetAlert,
       newOriginClaims,
       newI18nTitles, newI18nDescs,
+      weight_kg === undefined ? product.weight_kg : (weight_kg === null || weight_kg === '' ? null : Number(weight_kg)),
       _tx(package_size, 40) === undefined ? product.package_size : _tx(package_size, 40),
       _cc(origin_country) === undefined ? product.origin_country : _cc(origin_country),
       _cc(country_of_origin) === undefined ? product.country_of_origin : _cc(country_of_origin),
