@@ -98,7 +98,7 @@ try {
   ok('SAFE draft did NOT debit the seller wallet (no 0.1 WAZ verify fee)', (db.prepare("SELECT balance FROM wallets WHERE user_id='alice'").get() as { balance: number }).balance === balBefore)
   ok('SAFE draft created NO verify_task', (db.prepare('SELECT COUNT(*) n FROM verify_tasks WHERE product_id=?').get(cpid) as { n: number }).n === 0)
   ok('SAFE draft did NOT claim/verify the external link (no product_external_links row)', (db.prepare('SELECT COUNT(*) n FROM product_external_links WHERE product_id=?').get(cpid) as { n: number }).n === 0)
-  ok('source_url is kept as inert product metadata; product stays warehouse', (db.prepare('SELECT source_url, status FROM products WHERE id=?').get(cpid) as { source_url: string; status: string }).source_url === 'http://conflict.example/x')
+  ok('grant draft does NOT persist source_url at all (no unadjudicated link claim); product stays warehouse', (() => { const r = db.prepare('SELECT source_url, status FROM products WHERE id=?').get(cpid) as { source_url: string | null; status: string }; return (r.source_url === null || r.source_url === undefined) && r.status === 'warehouse' })())
 
   // ── even a valid draft carries no raw token in the response ──
   ok('no raw grant token leaked in any response', !/gtk_alice|gtk_bob|gtk_carol|token_hash/.test(JSON.stringify([denied.body, notSeller.body, created.body])))

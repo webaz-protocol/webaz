@@ -535,7 +535,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/pin-receipts/mine` | 🔐 |  |  | src/pwa/routes/pin-receipts.ts:53 |
 | POST | `/api/product-share/touch` | 🔐 |  | 商品分享归因落库（前端登录后首次进入带 share_id 时调用） | src/pwa/routes/share-redirects.ts:129 |
 | GET | `/api/products` |  |  |  | src/pwa/routes/products-list.ts:57 |
-| POST | `/api/products` | 🔐 |  |  | src/pwa/routes/products-create.ts:303 |
+| POST | `/api/products` | 🔐 |  |  | src/pwa/routes/products-create.ts:307 |
 | DELETE | `/api/products/:id` | 🔐 |  | 硬删（仅 deleted 状态 + 无进行中订单） | src/pwa/routes/products-crud.ts:71 |
 | GET | `/api/products/:id` |  |  | 卖家可查看自己的非上架商品（编辑页用），其他人只能看 active | src/pwa/routes/products-crud.ts:33 |
 | PUT | `/api/products/:id` | 🔐 |  |  | src/pwa/routes/products-update.ts:44 |

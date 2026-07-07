@@ -43,10 +43,14 @@ export interface ProductsCreateDeps {
 export interface CreateProductOpts {
   forceStatus?: 'warehouse'
   onCreated?: (productId: string) => Promise<void> | void
-  // RFC-020 PR-4: when a SAFE grant (seller_product_draft) creates a draft, the external source-link handling
-  //   MUST be skipped — otherwise a colliding source_url debits the seller's wallet (0.1 WAZ verify fee) and
-  //   spawns a verify_task, i.e. a money/reputation side-effect a safe scope must never trigger. source_url is
-  //   still stored as inert product metadata; the human claims/verifies links when they publish (their action).
+  // RFC-020 PR-4: when a SAFE grant (seller_product_draft) creates a draft, ALL external source-link handling
+  //   MUST be skipped AND source_url/source_price are NOT persisted — a grant cannot associate a source link
+  //   at all. Otherwise (a) a colliding source_url debits the seller's wallet (0.1 WAZ verify fee) + spawns a
+  //   verify_task — a money side-effect a safe scope must never trigger; and (b) even just storing source_url
+  //   would let the draft carry a link claim that never enters the conflict/verification machinery the human
+  //   create path opens (verification is the feature that ADJUDICATES a claim — keep vs revoke the link — not a
+  //   publish gate; publish never re-checks source_url). The human associates links themselves when they
+  //   edit/publish, which opens that adjudication normally.
   skipExternalLinkEffects?: boolean
 }
 
@@ -159,7 +163,7 @@ export function makeCreateProductHandler(deps: ProductsCreateDeps) {
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WAZ',?,?,?,?,?,?)`, [
       id, user.id, title, description, priceNum, Number(stock), category, stakeAmount,
       specsJson, brand ?? null, model ?? null,
-      source_url ?? null, source_price ? Number(source_price) : null, source_price ? now : null,
+      opts.skipExternalLinkEffects ? null : (source_url ?? null), opts.skipExternalLinkEffects ? null : (source_price ? Number(source_price) : null), opts.skipExternalLinkEffects ? null : (source_price ? now : null),
       weight_kg ? Number(weight_kg) : null, ship_regions, Number(handling_hours), estJson, fragile ? 1 : 0,
       Number(return_days), return_condition, Number(warranty_days),
       Math.max(0, Math.floor(Number(low_stock_threshold) || 0)), auto_delist_on_zero ? 1 : 0,
