@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (774 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (775 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2755,6 +2755,18 @@
         "summary": "GET /api/agent/negative-space",
         "tags": [],
         "security": []
+      }
+    },
+    "/api/agent/seller/products": {
+      "get": {
+        "summary": "The consumption (allow AND the permission_required deny) is audited by the middleware.",
+        "tags": [],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "seller_products_read"
       }
     },
     "/api/agent/verifiability": {
