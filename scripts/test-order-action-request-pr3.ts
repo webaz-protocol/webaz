@@ -26,7 +26,7 @@ const { executeSellerOrderAction, validateTrackingContent } = await import('../s
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push('✗ ' + n) } }
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
-const NOW = '2026-07-08T00:00:00Z'; const FUTURE = '2026-07-20 00:00:00'; const PAST = '2000-01-01 00:00:00'
+const NOW = '2026-07-08T00:00:00Z'; const FUTURE = '2030-01-01 00:00:00'; const PAST = '2000-01-01 00:00:00'
 
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 initUserModerationSchema(db); applyWebazRuntimeSchema(db); initWebauthnSchema(db); initOrderChainSchema(db)
@@ -135,6 +135,37 @@ try {
     const a = orderRow(oid)
     ok('I3 执行前后 accept/ship_deadline 不变', a.accept_deadline === b.accept_deadline && a.ship_deadline === b.ship_deadline && a.status === 'accepted')
   }
+
+  // ══ P1-c(a):deadline=NULL → 执行器 fail-closed(拒绝放行,绝不 skip)══
+  { const oid = seedOrder('paid'); db.prepare('UPDATE orders SET accept_deadline=NULL WHERE id=?').run(oid)
+    const r = executeSellerOrderAction(db, { orderId: oid, action: 'accept', actorId: 'seller1', nowIso: NOW, generateId: (p) => `${p}_x`, path: 'approve' })
+    ok('P1c-a1 accept_deadline=NULL → SLA_DEADLINE_MISSING(订单不变)', r.error_code === 'SLA_DEADLINE_MISSING' && r.ok === false && orderRow(oid).status === 'paid') }
+  { const oid = seedOrder('accepted'); db.prepare('UPDATE orders SET ship_deadline=NULL WHERE id=?').run(oid)
+    const r = executeSellerOrderAction(db, { orderId: oid, action: 'ship', actorId: 'seller1', nowIso: NOW, strictTracking: false, evidenceDescription: 'x', generateId: (p) => `${p}_y`, path: 'api_key' })
+    ok('P1c-a2 ship_deadline=NULL → SLA_DEADLINE_MISSING(订单不变)', r.error_code === 'SLA_DEADLINE_MISSING' && orderRow(oid).status === 'accepted') }
+
+  // ══ P2:strictTracking fail-safe 默认(漏传/undefined → strict;仅显式 false 放宽)══
+  { const o1 = seedOrder('accepted'), o2 = seedOrder('accepted'), o3 = seedOrder('accepted')
+    const omit = executeSellerOrderAction(db, { orderId: o1, action: 'ship', actorId: 'seller1', nowIso: NOW, tracking: '00000000', generateId: (p) => `${p}_o`, path: 'approve' })                    // 不传 strictTracking
+    const undef = executeSellerOrderAction(db, { orderId: o2, action: 'ship', actorId: 'seller1', nowIso: NOW, strictTracking: undefined, tracking: '00000000', generateId: (p) => `${p}_u`, path: 'approve' })  // 显式 undefined
+    const relaxed = executeSellerOrderAction(db, { orderId: o3, action: 'ship', actorId: 'seller1', nowIso: NOW, strictTracking: false, evidenceDescription: '自发货无单号', generateId: (p) => `${p}_f`, path: 'api_key' })
+    ok('P2-1 漏传 strictTracking → 按 strict(占位单号被拒)', omit.error_code === 'INVALID_TRACKING' && orderRow(o1).status === 'accepted')
+    ok('P2-2 strictTracking=undefined → 按 strict(占位单号被拒)', undef.error_code === 'INVALID_TRACKING')
+    ok('P2-3 仅显式 false → 宽松(自履行无单号放行 → shipped)', relaxed.ok === true && orderRow(o3).status === 'shipped') }
+
+  // ══ P1-b:审计 fail-closed —— approve/execute 审计写失败 → 回滚,订单不动、未 approve/未 execute ══
+  { const oid = seedOrder('paid')
+    const sub = await rq('POST', `/api/agent/orders/${oid}/action-request`, { action: 'accept' }, bearer('gtk_fa'))
+    const reqId = String(sub.body.request_id)
+    const list = await rq('GET', '/api/agent-grants/permission-requests', undefined, { 'x-uid': 'seller1' })
+    const item = (list.body.requests as Array<Record<string, unknown>>).find(x => x.id === reqId)!
+    const tok = mintToken('seller1', { request_id: reqId, order_id: item.order_id, action: item.order_action, params_hash: item.params_hash })
+    db.exec("CREATE TRIGGER _audit_boom BEFORE INSERT ON agent_grant_auth_log BEGIN SELECT RAISE(ABORT,'audit boom'); END")   // 注入审计写失败
+    const approve = await rq('POST', `/api/agent-grants/permission-requests/${reqId}/approve`, { webauthn_token: tok }, { 'x-uid': 'seller1' })
+    db.exec('DROP TRIGGER _audit_boom')
+    ok('P1b-1 审计写失败 → approve 不成功(5xx AUDIT_WRITE_FAILED)', approve.status >= 500 && approve.body.error_code === 'AUDIT_WRITE_FAILED')
+    ok('P1b-2 订单状态不变(仍 paid)', orderRow(oid).status === 'paid')
+    ok('P1b-3 请求未 approve、executed_at 仍 NULL(fail-closed)', reqRow(reqId).status === 'pending' && reqRow(reqId).executed_at == null) }
 
   // ══ I1:agent-bearer 不可达执行器 ══
   ok('I1-1 order-action-request.ts(agent-submit 域)不 import 执行器', !/from '\.\/order-action-exec/.test(readFileSync('src/pwa/order-action-request.ts', 'utf8')))

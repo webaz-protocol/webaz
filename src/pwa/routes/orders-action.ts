@@ -510,6 +510,14 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     const result = transition(db, req.params.id, toStatus, user.id as string, evidenceIds, notes)
     if (!result.success) return void res.json({ error: result.error })
 
+    // P1-c(b):direct_p2p 首次进 accepted(mark_paid / confirm_received)才生成 ship_deadline —— direct-pay-create 建单不设该列,
+    //   缺 ship_deadline 会被共享执行器 SLA【fail-closed】卡住发货。WHERE ship_deadline IS NULL 兜死:仅 null→值 那一次写,
+    //   绝不覆盖已有值(守 I3:deadline 绝对列不重写)。判责钟从付款确认(now)起。
+    if (toStatus === 'accepted' && order.payment_rail === 'direct_p2p') {
+      let sh = 72; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'direct_pay.ship_window_hours'"); if (p) sh = Math.max(1, Number(p.value) || 72) } catch { /* 用默认 72h */ }
+      await dbRun("UPDATE orders SET ship_deadline = datetime('now', ?) WHERE id = ? AND ship_deadline IS NULL", [`+${sh} hours`, req.params.id])
+    }
+
     notifyTransition(db, req.params.id, fromStatus, toStatus)
 
     // 审计项 B(N2):买家标记付款 → 通知卖家核款发货(direct_pay_window→accepted 不在 notifyTransition RULES,

@@ -98,6 +98,7 @@
     "test:order-action-request-p2": "tsx scripts/test-order-action-request-pr2.ts",
     "test:order-action-request-p3": "tsx scripts/test-order-action-request-pr3.ts",
     "backfill:decline-contest": "tsx scripts/backfill-decline-contest-disputes.ts",
+    "backfill:direct-pay-ship-deadline": "tsx scripts/backfill-direct-pay-ship-deadline.ts",
     "test:mcp-version-nudge": "tsx scripts/test-mcp-version-nudge.ts",
     "test:agent-grant-verify": "tsx scripts/test-agent-grant-verify.ts",
     "test:agent-grant-mcp-consume": "tsx scripts/test-agent-grant-mcp-consume.ts",

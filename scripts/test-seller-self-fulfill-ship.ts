@@ -29,7 +29,9 @@ db.exec(`CREATE TABLE order_state_history (id TEXT PRIMARY KEY, order_id TEXT, f
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('usr_seller','S','seller','k_s'),('usr_buyer','B','buyer','k_b'),('usr_logi','L','logistics','k_l')").run()
 setSeamDb(db)
 
-const seedOrder = (id: string) => db.prepare("INSERT INTO orders (id,buyer_id,seller_id,logistics_id,status) VALUES (?, 'usr_buyer','usr_seller',NULL,'accepted')").run(id)
+// accepted 单在生产恒有 ship_deadline(escrow 建单即设;direct_p2p mark_paid 时设 + backfill)。
+// RFC-021 PR3 起共享执行器对缺 ship_deadline 的 ship 做 fail-closed,故 fixture 须照生产给一个未过的 ship_deadline。
+const seedOrder = (id: string) => db.prepare("INSERT INTO orders (id,buyer_id,seller_id,logistics_id,status,ship_deadline) VALUES (?, 'usr_buyer','usr_seller',NULL,'accepted','2099-01-01 00:00:00')").run(id)
 
 // ⚠️ 用【真实】状态机 transition(不是桩)。accepted→shipped requiresEvidence,这样才能抓到
 // "批量自发货无单号 → evIds 空 → 被状态机拒绝" 的真 bug(原桩版假绿)。

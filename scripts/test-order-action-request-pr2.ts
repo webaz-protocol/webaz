@@ -3,11 +3,12 @@
  * RFC-021 PR2(重审版)—— order-action 请求提交 + 真实 Passkey /approve(到 approved,【绝不执行】)。
  *   用法:npm run test:order-action-request-p2
  *
- * ⚠️ 硬边界:approve 后订单状态不变、executed_at 恒 NULL、无结算。
+ * 阶段契约(Codex P1-a):PR2 只测【提交 → approved 的提交/审批机制】—— Passkey 绑三元组、CAS、过期、去重、地址 sanitize、
+ *   提交侧不改 deadline(I3)。approved→【执行】语义(订单状态真变 / executed_at / 幂等 / 不结算)属 PR3 契约,不在此重复断言。
  * P1-a 审批闭环:走【真实 requireHumanPresence + 真实 gate token】,token 的 purpose_data 由【list 响应字段】拼装
  *   —— 不伪造/手拼三元组 token(上轮漏洞根因)。list 缺 params_hash 则拼不出正确 token → approve 必 412。
- * P1-b:过期 CAS 原子(approve-after-expire 必失败 + 顺序双 approve 只一次成功)。
- * P2-a:approved 占锁 —— 同 (order_id,action) 重提被唯一索引/服务端拒。
+ * P1-b:过期 CAS 原子(approve-after-expire 必失败,过期请求仍 pending)。
+ * P2-a:approved 占锁 —— 同 (order_id,action) 重提被唯一索引/服务端拒(approved 请求仍占锁)。
  */
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs'; import { tmpdir } from 'node:os'; import { join } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -96,22 +97,15 @@ try {
   //   正确 purpose_data(全取自 list)→ approve 成功
   const okTok = mintToken('seller1', { request_id: accId, order_id: lf.order_id, action: lf.order_action, params_hash: lf.params_hash })
   const okApprove = await rq('POST', `/api/agent-grants/permission-requests/${accId}/approve`, { webauthn_token: okTok }, { 'x-uid': 'seller1' })
-  ok('P1a-4 list 字段拼装的真实 token → 200 approved', okApprove.status === 200 && okApprove.body.status === 'approved')
-  ok('P1a-5 请求 = approved', reqRow(accId).status === 'approved')
+  ok('P1a-4 list 字段拼装的真实 token → 200 success(审批闭环通;approve→执行 结果属 PR3 契约)', okApprove.status === 200 && okApprove.body.success === true)
+  ok('P1a-5 请求进 approved(占锁生效)', reqRow(accId).status === 'approved')
 
-  // ══ 硬边界 ══
+  // ══ 提交侧不改 deadline(I3;approved→执行 语义在 PR3 契约,不在此断言)══
   const after = orderRow('ord_1')
-  ok('E1 订单仍 paid(未执行)', after.status === 'paid')
-  ok('E2 executed_at / execution_result 恒 NULL', reqRow(accId).executed_at == null && reqRow(accId).execution_result == null)
-  ok('E3 未结算', after.settled_fault_at == null)
   ok('I3 accept/ship_deadline 未被改写', after.accept_deadline === before.accept_deadline && after.ship_deadline === before.ship_deadline)
 
-  // ══ P2-a:approved 占锁 —— 同 (ord_1,accept) 重提被拒 ══
+  // ══ P2-a:approved 占锁 —— 同 (ord_1,accept) 重提被拒(approved 请求仍占唯一索引)══
   ok('P2a approved 占锁:同 (ord_1,accept) 重提 → 409 DUPLICATE(唯一索引含 approved)', (await rq('POST', '/api/agent/orders/ord_1/action-request', { action: 'accept' }, bearer('gtk_fa'))).body.error_code === 'DUPLICATE_ACTION_REQUEST')
-
-  // ══ P1-b:顺序双 approve 只一次成功(CAS)══
-  const okTok2 = mintToken('seller1', { request_id: accId, order_id: 'ord_1', action: 'accept', params_hash: lf.params_hash })
-  ok('P1b-1 已 approved 的请求再 approve → 409(CAS 只一次)', (await rq('POST', `/api/agent-grants/permission-requests/${accId}/approve`, { webauthn_token: okTok2 }, { 'x-uid': 'seller1' })).status === 409)
 
   // ══ P1-b:approve-after-expire 必失败(过期在 CAS 里判)══
   //   新单(ship)→ 手动置 expires_at 过去 → 真实 token → CAS 0 行 → 409
@@ -132,6 +126,6 @@ try {
   ok('UI-3 aaCard 落 data-aa-hash(供 aaApprove 取 params_hash)', /data-aa-hash=/.test(uiAppr) && /r\.kind === 'order_action'/.test(uiAppr))
 
   server.close()
-  if (fail === 0) console.log(`\n✅ RFC-021 PR2(重审):真实 Passkey 审批闭环(list→真实 token→approve,不伪造)+ 硬边界 + P1-b 过期/双 approve CAS + P2-a approved 占锁 + 地址 sanitize + I3\n  ✅ pass ${pass}`)
+  if (fail === 0) console.log(`\n✅ RFC-021 PR2(阶段契约=提交→approved 机制):真实 Passkey 审批闭环(list→真实 token→approve,不伪造)+ P1-b 过期 CAS(仍 pending)+ P2-a approved 占锁 + 地址 sanitize + 提交侧 I3(approved→执行 语义属 PR3)\n  ✅ pass ${pass}`)
   else { console.error(`\n❌ PR2 FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exitCode = 1 }
 } finally { server.close?.(); try { rmSync(process.env.HOME as string, { recursive: true, force: true }) } catch { /* */ } }
