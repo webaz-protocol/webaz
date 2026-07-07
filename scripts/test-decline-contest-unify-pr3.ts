@@ -166,7 +166,7 @@ try {
     ok('H2 decline_contest 提交两选名 → 成功裁决 + order completed', good.body.success === true && good.body.order_status === 'completed' && orderRow(s2.orderId).status === 'completed')
 
     const gone = await post(`/api/admin/decline-contests/${s2.orderId}/resolve`, { decision: 'uphold', reason: 'x' })
-    ok('H3 旧订单级端点 → 410 ENDPOINT_GONE(旁路已封)', gone.status === 410 && gone.body.error_code === 'ENDPOINT_GONE')
+    ok('H3 旧订单级端点已物理移除(PR4)→ 404,不再有旁路', gone.status === 404)
     server.close()
   }
 
