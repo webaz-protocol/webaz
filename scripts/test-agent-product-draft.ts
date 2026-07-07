@@ -52,6 +52,7 @@ const mkGrant = (gid: string, human: string, bearer: string, scopes: string[]) =
 mkGrant('g_a', 'alice', 'gtk_alice', ['read_public', 'seller_product_draft'])
 mkGrant('g_b', 'bob', 'gtk_bob', ['read_public', 'seller_product_draft'])
 mkGrant('g_c', 'carol', 'gtk_carol', ['read_public'])   // lacks seller_product_draft
+mkGrant('g_r', 'alice', 'gtk_ronly', ['read_public', 'seller_products_read'])   // READ scope only — can mine, NOT create
 
 const base = `http://127.0.0.1:${port}`
 const j = async (path: string, opts: { method?: string; body?: unknown; bearer?: string } = {}) => {
@@ -100,8 +101,20 @@ try {
   ok('SAFE draft did NOT claim/verify the external link (no product_external_links row)', (db.prepare('SELECT COUNT(*) n FROM product_external_links WHERE product_id=?').get(cpid) as { n: number }).n === 0)
   ok('grant draft does NOT persist source_url at all (no unadjudicated link claim); product stays warehouse', (() => { const r = db.prepare('SELECT source_url, status FROM products WHERE id=?').get(cpid) as { source_url: string | null; status: string }; return (r.source_url === null || r.source_url === undefined) && r.status === 'warehouse' })())
 
+  // ── (hardening) a READ-only grant (seller_products_read, NO seller_product_draft) can mine but NOT create ──
+  const readOnly = await j('/api/agent/seller/products', { method: 'POST', bearer: 'gtk_ronly', body: draftBody })
+  ok('seller_products_read grant → create → 403 PERMISSION_REQUIRED (read scope cannot create)', readOnly.status === 403 && readOnly.body.error_code === 'PERMISSION_REQUIRED' && (readOnly.body.missing_scopes as string[]).includes('seller_product_draft'))
+
+  // ── (hardening) a publish attempt in the body is IGNORED — the draft is FORCED to warehouse, never active ──
+  const tryActive = await j('/api/agent/seller/products', { method: 'POST', bearer: 'gtk_alice', body: { ...draftBody, title: 'TryActive', status: 'active', create_status: 'active' } })
+  ok('body status/create_status="active" is ignored → still warehouse (agent can never publish)', tryActive.body.success === true && tryActive.body.status === 'warehouse' && (db.prepare('SELECT status FROM products WHERE id=?').get(String(tryActive.body.product_id)) as { status: string }).status === 'warehouse')
+
+  // ── (hardening) invalid payload → 400 VALIDATION_ERROR (grant path translates the shared handler's error) ──
+  const badPayload = await j('/api/agent/seller/products', { method: 'POST', bearer: 'gtk_alice', body: { title: 'NoDesc', price: 5 } })
+  ok('invalid payload (missing description) → 400 VALIDATION_ERROR', badPayload.status === 400 && badPayload.body.error_code === 'VALIDATION_ERROR')
+
   // ── even a valid draft carries no raw token in the response ──
-  ok('no raw grant token leaked in any response', !/gtk_alice|gtk_bob|gtk_carol|token_hash/.test(JSON.stringify([denied.body, notSeller.body, created.body])))
+  ok('no raw grant token leaked in any response', !/gtk_alice|gtk_bob|gtk_carol|gtk_ronly|token_hash/.test(JSON.stringify([denied.body, notSeller.body, created.body])))
 } finally { server.close(); try { rmSync(process.env.HOME as string, { recursive: true, force: true }) } catch {} }
 
 if (fail > 0) { console.error(`\n❌ agent-product-draft FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
