@@ -14050,7 +14050,7 @@ function buildDisputeHtml(dispute, user) {
     </div>` : ''
 
   // ── 仲裁员裁定（含责任分配）────────────────────
-  const arbitrateSection = isArbitrator && (dispute.status === 'open' || dispute.status === 'in_review') ? (dispute.dispute_type === 'decline_contest' ? (window.dcNotice ? window.dcNotice(dispute) : '') : `
+  const arbitrateSection = isArbitrator && (dispute.status === 'open' || dispute.status === 'in_review') ? (dispute.dispute_type === 'decline_contest' ? (window.dcRulingForm ? window.dcRulingForm(dispute) : '') : `
     <div style="margin-top:12px;border-top:1px solid #fecaca;padding-top:12px">
       <div style="font-weight:600;font-size:13px;margin-bottom:8px">⚖️ 仲裁员裁定（截止 ${fmtTime(dispute.arbitrate_deadline)}）</div>
       ${window.dpArbFeeNote ? window.dpArbFeeNote(dispute.payment_rail) : ''}

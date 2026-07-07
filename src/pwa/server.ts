@@ -4814,7 +4814,7 @@ function computeLightTags(user: Record<string, unknown>, mod: { suspended: numbe
 
 // #1013 Phase 101: admin/orders + admin/disputes + admin/verify-tasks + admin/audit-log 已迁出
 registerAdminReportsRoutes(app, {
-  db,
+  db, requireHumanPresence,
   requireContentAdmin:     (req, res) => requireAdminPermission(req, res, 'content'),
   requireArbitrationAdmin: (req, res) => requireAdminPermission(req, res, 'arbitration'),
   requireProtocolAdmin:    (req, res) => requireAdminPermission(req, res, 'protocol'),

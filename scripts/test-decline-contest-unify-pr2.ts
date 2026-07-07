@@ -83,7 +83,7 @@ try {
 
   // ══ D. 前端接线源检查 ══
   const appSrc = readFileSync('src/pwa/public/app.js', 'utf8')
-  ok('D1 app.js 详情走 dcNotice 分支', /dispute\.dispute_type === 'decline_contest' \? \(window\.dcNotice/.test(appSrc))
+  ok('D1 app.js 详情按 dispute_type 分流(PR3:仲裁员见 dcRulingForm 裁决表单)', /dispute\.dispute_type === 'decline_contest' \? \(window\.dcRulingForm/.test(appSrc))
   ok('D2 app.js 列表调 dcChip', appSrc.includes('window.dcChip ? window.dcChip(d)'))
   ok('D3 app.js boot 调 refreshArbBadge', appSrc.includes('if (window.refreshArbBadge) refreshArbBadge()'))
   ok('D4 app.js ⚖️ tab 带 arbBadge + 渲染 arb-badge span', appSrc.includes("label: t('仲裁台'), arbBadge: true") && appSrc.includes('class="arb-badge"'))

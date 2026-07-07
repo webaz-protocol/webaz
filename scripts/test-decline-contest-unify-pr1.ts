@@ -18,7 +18,7 @@ import express from 'express'; import type { AddressInfo } from 'node:net'
 
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')
-const { initDisputeSchema, createDeclineContestDispute, getOpenDisputes, checkDisputeTimeouts, getDisputeDetails } =
+const { initDisputeSchema, createDeclineContestDispute, getOpenDisputes, getDisputeDetails } =
   await import('../src/layer3-trust/L3-1-dispute-engine/dispute-engine.js')
 const { registerDisputesWriteRoutes } = await import('../src/pwa/routes/disputes-write.js')
 
@@ -77,18 +77,8 @@ try {
   ok('B1 普通争议在仲裁员队列里', ids.includes('dsp_norm'))
   ok('B2 decline_contest 现已在仲裁员队列(PR2 反转了 PR1 的队列过滤;可见但裁决仍 409)', ids.includes(r1.disputeId))
 
-  // ══ C. checkDisputeTimeouts 跳过 decline_contest ══
-  seedOrder('ord_C')
-  const rc = createDeclineContestDispute(db, 'ord_C')
-  // 把它推到"仲裁窗口已过期"的自动裁决触发条件下
-  db.prepare("UPDATE disputes SET status='in_review', arbitrate_deadline='2000-01-01T00:00:00Z' WHERE id=?").run(rc.disputeId)
-  const res = checkDisputeTimeouts(db)
-  const touched = res.details.some(d => d.disputeId === rc.disputeId)
-  ok('C1 decline_contest 未被自动裁决处理', !touched)
-  ok('C2 dispute 仍 in_review(未被结案)', (db.prepare('SELECT status FROM disputes WHERE id=?').get(rc.disputeId) as { status: string }).status === 'in_review')
-  ok('C3 订单未被结算(settled_fault_at 仍 NULL)', (db.prepare('SELECT settled_fault_at FROM orders WHERE id=?').get('ord_C') as { settled_fault_at: string | null }).settled_fault_at == null)
-
-  // ══ D. arbitrate 路由 fail-closed 409(在结算前) ══
+  // ══ C. arbitrate 路由:decline_contest 只收专用两选,通用枚举(refund_buyer)被拒(PR3 ruling-order)══
+  //   裁决语义 / 单事务防双结算 / 四段式超时 见 PR3 专测(test-decline-contest-unify-pr3.ts)。
   let arbitrateCalled = false
   const errorRes = (res: express.Response, status: number, code: string, msg: string) => { res.status(status).json({ error: msg, error_code: code }) }
   const app = express(); app.use(express.json())
@@ -110,8 +100,8 @@ try {
   })
   const rb = await rr.json().catch(() => ({})) as Record<string, unknown>
   server.close()
-  ok('D1 decline_contest 裁决 → 409 DECLINE_CONTEST_RULING_NOT_ENABLED', rr.status === 409 && rb.error_code === 'DECLINE_CONTEST_RULING_NOT_ENABLED')
-  ok('D2 arbitrateDispute 从未被调用(结算前就被拦)', arbitrateCalled === false)
+  ok('C1 decline_contest + 通用 ruling(refund_buyer) → 400 BAD_DECISION(按 dispute_type 选 allowlist)', rr.status === 400 && rb.error_code === 'BAD_DECISION')
+  ok('C2 通用 arbitrateDispute 从未被调用(decline_contest 不走通用路径)', arbitrateCalled === false)
 
   // ══ E. backfill 机制(候选查询 + 幂等) ══
   const backfillCandidates = () => db.prepare(`

@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (778 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (779 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -661,7 +661,7 @@
     },
     "/api/admin/decline-contests/:orderId/resolve": {
       "post": {
-        "summary": "仲裁员裁决",
+        "summary": "(PR4 物理删除本端点 + GET 列表。)",
         "tags": [],
         "security": [
           {
@@ -1024,6 +1024,20 @@
     "/api/admin/disputes": {
       "get": {
         "summary": "GET /api/admin/disputes",
+        "tags": [
+          "admin",
+          "dispute"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/disputes/:id/decline-contest-resolve": {
+      "post": {
+        "summary": "(dispute CAS + COI + 终态 completed + 结算 + 审计,单事务全回滚)。admin override 不占用 assigned_arbitrators。",
         "tags": [
           "admin",
           "dispute"

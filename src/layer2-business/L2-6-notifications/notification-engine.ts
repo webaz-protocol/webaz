@@ -384,6 +384,45 @@ export function notifyDeclineContestCase(
   return { notified, skipped }
 }
 
+/**
+ * 四段式超时升级:仲裁窗口过后仍无裁决 → 通知 active 仲裁员 + 仲裁 admin 尽快处理(admin 可 override)。
+ *   与 [[notifyDeclineContestCase]] 同一收件人 + 同一 (order_id, type, user_id) 去重键,type='arb:decline_contest_escalated' 只发一次。
+ */
+export function notifyDeclineContestEscalated(db: Database.Database, orderId: string): { notified: number; skipped: number } {
+  const TYPE = 'arb:decline_contest_escalated'
+  const ids = new Set<string>()
+  try { (db.prepare("SELECT user_id AS id FROM arbitrator_whitelist WHERE status IS NULL OR status = 'active'").all() as { id: string }[]).forEach(r => ids.add(r.id)) } catch { /* */ }
+  resolveArbitrationAdminIds(db).forEach(id => ids.add(id))
+  let notified = 0, skipped = 0
+  for (const uid of ids) {
+    if (db.prepare('SELECT 1 FROM notifications WHERE order_id = ? AND type = ? AND user_id = ? LIMIT 1').get(orderId, TYPE, uid)) { skipped++; continue }
+    createNotification(db, uid, orderId, TYPE,
+      '拒单举证仲裁已超时,请尽快裁决',
+      '一笔拒单举证仲裁已过仲裁窗口仍未裁决,已进入 admin 兜底窗口 —— 请仲裁员或管理员尽快处理,否则将自动判卖家违约。',
+      { templateKey: 'arb_decline_contest_escalated', params: { order_id: orderId } })
+    notified++
+  }
+  return { notified, skipped }
+}
+
+/**
+ * 裁决落定后通知买卖双方结果(维持无责 / 驳回判违约)。非去重(每案只落定一次);买卖各一条。
+ */
+export function notifyDeclineContestResolved(db: Database.Database, orderId: string, decision: string): void {
+  const o = db.prepare('SELECT buyer_id, seller_id FROM orders WHERE id = ?').get(orderId) as { buyer_id: string | null; seller_id: string | null } | undefined
+  if (!o) return
+  const upheld = decision === 'decline_no_fault_upheld'
+  const title = upheld ? '拒单举证仲裁:维持无责' : '拒单举证仲裁:驳回,判卖家违约'
+  const body = upheld
+    ? '仲裁认定卖家客观无责:买家已全额退款,卖家质押已退回,无罚没。订单已结。'
+    : '仲裁驳回卖家举证,判卖家违约:买家已退款,卖家质押按违约处置。订单已结。'
+  for (const uid of [o.buyer_id, o.seller_id]) {
+    if (!uid) continue
+    createNotification(db, uid, orderId, 'arb:decline_contest_resolved', title, body,
+      { templateKey: 'arb_decline_contest_resolved', params: { order_id: orderId, decision } })
+  }
+}
+
 // ─── 查询 ─────────────────────────────────────────────────────
 
 // RFC-016 Phase 1:纯读 → 异步 seam。db 参数保留(签名兼容),内部走 dbAll/dbOne(同实例,setSeamDb)。
