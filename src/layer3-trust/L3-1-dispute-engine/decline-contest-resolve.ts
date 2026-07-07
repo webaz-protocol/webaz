@@ -2,7 +2,7 @@
  * 统一仲裁台 · decline_contest 唯一裁决 domain resolver(PR3)。
  *
  * 所有裁决入口 —— 仲裁员 arbitrate 路由、admin fallback 端点、超时自动兜底 —— 都【必须】调用此函数;
- * 旧 /api/admin/decline-contests/:orderId/resolve 已 410 禁用,不再有旁路。保证同一套:
+ * 旧 /api/admin/decline-contests/:orderId/resolve 已物理移除(PR4;曾 PR3 410),不再有旁路。保证同一套:
  *   ① dispute CAS(抢占裁决权,防并发/重复裁决)
  *   ② 按 source 授权(arbitrator: COI+assignment;admin_fallback: COI+仲裁窗口已过+不占用 assignment;timeout_auto: 系统)
  *   ③ 订单【终态到 completed】(uphold: fault_seller→declined_nofault→settleDeclinedNoFault→completed;

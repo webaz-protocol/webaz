@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (779 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (777 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -641,28 +641,6 @@
         "tags": [
           "admin"
         ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/admin/decline-contests": {
-      "get": {
-        "summary": "仲裁员待办:列出所有被举证的临时判责拒单",
-        "tags": [],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/admin/decline-contests/:orderId/resolve": {
-      "post": {
-        "summary": "(PR4 物理删除本端点 + GET 列表。)",
-        "tags": [],
         "security": [
           {
             "bearerAuth": []
