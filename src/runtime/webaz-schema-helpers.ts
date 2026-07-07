@@ -1707,6 +1707,20 @@ export function initAgentPermissionRequestsSchema(db: Database.Database): void {
   `)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_apr_human  ON agent_permission_requests(human_id, status)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_apr_status ON agent_permission_requests(status, expires_at)`)
+  // RFC-021 PR2:order-action 请求复用本队列(I9)。新列均可空;kind 默认 'scope_grant' → 旧行行为不变,零迁移。
+  //   executed_at / execution_result 本 PR 只建列【永不写】(PR3 才写);ALTER-AFTER-CREATE 幂等。
+  for (const stmt of [
+    "ALTER TABLE agent_permission_requests ADD COLUMN kind TEXT DEFAULT 'scope_grant'",   // scope_grant | order_action
+    "ALTER TABLE agent_permission_requests ADD COLUMN order_id TEXT",
+    "ALTER TABLE agent_permission_requests ADD COLUMN order_action TEXT",                  // accept | ship(v1)
+    "ALTER TABLE agent_permission_requests ADD COLUMN params_hash TEXT",                   // I2 绑定键 SHA-256(order_id,action,params)
+    "ALTER TABLE agent_permission_requests ADD COLUMN action_params TEXT",                 // JSON:ship 的 {tracking,evidence_ref};accept '{}'
+    "ALTER TABLE agent_permission_requests ADD COLUMN executed_at TEXT",                   // I5 幂等 CAS 键 —— PR3 写,PR2 恒 NULL
+    "ALTER TABLE agent_permission_requests ADD COLUMN execution_result TEXT",              // I7 执行结果 —— PR3 写
+  ]) { try { db.exec(stmt) } catch { /* 列已存在 */ } }
+  // 防双 pending + I5 幂等根基:同一 (order_id, order_action) 至多一条未终结(pending/approved)的 order_action 请求。
+  //   rejected/expired/executed 为终态,不占索引 → 允许事后重新提交。
+  try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_apr_order_action_active ON agent_permission_requests(order_id, order_action) WHERE kind='order_action' AND status IN ('pending','approved')") } catch { /* */ }
 }
 
 /**

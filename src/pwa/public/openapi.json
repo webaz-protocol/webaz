@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (779 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (780 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2782,6 +2782,20 @@
           }
         ],
         "x-webaz-grant-scope": "seller_orders_read_minimal"
+      }
+    },
+    "/api/agent/orders/:orderId/action-request": {
+      "post": {
+        "summary": "同 (order_id,action) 双 pending 被唯一索引拒。执行(accept/ship)在 PR3 经人 Passkey 批准后由服务端跑。",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "order_action_request"
       }
     },
     "/api/agent/seller/products": {

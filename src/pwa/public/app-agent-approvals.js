@@ -49,10 +49,10 @@
     const risk = RISK[r.risk_level] || RISK.low
     const scopes = Array.isArray(r.requested_scopes) ? r.requested_scopes : []
     // Prefer the human-readable bundle summary; otherwise show the individual safe-scope chips.
-    const what = r.human_summary
+    const what = r.kind === 'order_action' ? (window.aaOrderWhat ? window.aaOrderWhat(r) : '') : r.human_summary
       ? `<div style="font-size:13px;color:#374151;line-height:1.7">${escHtml(r.human_summary)}</div>`
       : `<div style="margin-top:2px">${scopes.map(s => `<span style="display:inline-block;font-size:11px;color:#4f46e5;background:#eef2ff;padding:2px 8px;border-radius:4px;margin:2px 4px 2px 0">${escHtml(String(s))}</span>`).join('') || `<span style="font-size:12px;color:#9ca3af">${t('(无 —— 仅基础只读)')}</span>`}</div>`
-    return `<div class="card" style="margin-bottom:12px;padding:16px;border:1px solid #e5e7eb" data-aa-id="${escHtml(String(r.id))}">
+    return `<div class="card" style="margin-bottom:12px;padding:16px;border:1px solid #e5e7eb" data-aa-id="${escHtml(String(r.id))}" data-aa-order-id="${escHtml(String(r.order_id||''))}" data-aa-action="${escHtml(String(r.order_action||''))}" data-aa-hash="${escHtml(String(r.params_hash||''))}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="font-weight:600">${escHtml(r.agent_label || t('未命名 Agent'))} <span style="font-size:10px;color:#9ca3af">(${t('未验证')})</span></div>
         <span style="font-size:11px;color:${risk.color};background:${risk.bg};padding:2px 8px;border-radius:999px">${t(risk.label)}</span>
@@ -74,7 +74,7 @@
     const btn = card ? card.querySelector('.btn-primary') : null; if (btn) btn.disabled = true
     let token
     // Passkey bound to THIS request (a token minted for request A can't approve B — server re-validates).
-    try { token = await requestPasskeyGate('agent_permission_approve', { request_id: id }) }
+    try { token = await requestPasskeyGate('agent_permission_approve', { request_id: id, order_id: (card && card.dataset.aaOrderId) || undefined, action: (card && card.dataset.aaAction) || undefined, params_hash: (card && card.dataset.aaHash) || undefined }) }
     catch (e) { if (window.dpPromptRegisterPasskey && e && e.code === 'NO_PASSKEY_REGISTERED') { await window.dpPromptRegisterPasskey(e) } else { toast$((e && e.message) || t('Passkey 验证已取消'), 'error') } if (btn) btn.disabled = false; return }
     const r = await POST('/agent-grants/permission-requests/' + encodeURIComponent(id) + '/approve', { webauthn_token: token, duration: window.grantDurationValue('aa-dur-' + id) }).catch(() => null)
     if (!r || r.error) { toast$((r && r.error) || t('批准失败,请重试'), 'error'); if (btn) btn.disabled = false; return }

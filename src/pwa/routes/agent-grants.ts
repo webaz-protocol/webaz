@@ -30,6 +30,7 @@ import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveB
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
 import { verifyGrantToken, type GrantPrincipal } from '../../runtime/agent-grant-verifier.js'
 import { minimalSellerOrderView, MINIMAL_ORDER_COLUMNS } from '../agent-order-minimal-view.js'  // RFC-021 §6a 最小化订单读投影
+import { createOrderActionRequest, approveOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
 
 export interface AgentGrantsDeps {
   db: Database.Database
@@ -185,6 +186,18 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     res.json({ order: minimalSellerOrderView(o, db) })
   })
 
+  // RFC-021 PR2 — order-action 请求提交(safe scope order_action_request)。SUBMIT-only:写 pending,【绝不执行】。
+  //   D2 拒 decline;归属校验 seller 本人;ship 须带 tracking+evidence_ref(I4 提交侧);地址永不入参/入 audit(I6);
+  //   同 (order_id,action) 双 pending 被唯一索引拒。执行(accept/ship)在 PR3 经人 Passkey 批准后由服务端跑。
+  app.post('/api/agent/orders/:orderId/action-request', requireAgentGrantScope('order_action_request'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const b = (req.body ?? {}) as { action?: string; action_params?: unknown }
+    const orderId = String(req.params.orderId)
+    const r = createOrderActionRequest(db, { orderId, action: String(b.action ?? ''), rawParams: b.action_params, grantId: p.grant_id, humanId: p.human_id, agentLabel: p.agent_label, generateId })
+    if (!r.ok) return void res.status(r.http || 400).json({ error: r.error, error_code: r.error_code })
+    res.json({ success: true, request_id: r.request_id, order_id: orderId, action: b.action, params_hash: r.params_hash, approval_url: '/#agent-approvals', note: 'Pending human Passkey approval. NOT executed — execution (accept/ship) lands in RFC-021 PR3.' })
+  })
+
   // POST create a DRAFT product via a delegation grant (Catalog Agent, safe scope seller_product_draft). The
   //   draft is FORCED to status='warehouse' (not public/sellable). PUBLISHING STAYS HUMAN-ONLY — the human
   //   flips warehouse→active in the existing 我的商品→仓库 UI (publish is never delegated to a grant, matching
@@ -275,9 +288,15 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   app.get('/api/agent-grants/permission-requests', async (req, res) => {
     const user = auth(req, res); if (!user) return
     const rows = await dbAll<Record<string, unknown>>(
-      "SELECT id, agent_label, requested_scopes, permission_bundle, reason, task_context, risk_level, duration, created_at, expires_at FROM agent_permission_requests WHERE human_id = ? AND status = 'pending' AND expires_at > ? ORDER BY created_at DESC LIMIT 100",
+      "SELECT id, agent_label, requested_scopes, permission_bundle, reason, task_context, risk_level, duration, created_at, expires_at, kind, order_id, order_action, params_hash, action_params FROM agent_permission_requests WHERE human_id = ? AND status = 'pending' AND expires_at > ? ORDER BY created_at DESC LIMIT 100",
       [user.id, new Date().toISOString()])
-    res.json({ requests: rows.map(r => ({ ...r, requested_scopes: scopeNames(String(r.requested_scopes)), human_summary: bundleSummary(r.permission_bundle as string | null) })) })
+    // order_action:额外返回 kind/order_id/order_action/params_hash/action_params(action_params 经 PR2 sanitize,
+    //   只含 tracking/evidence_ref,【无地址/PII】)。前端据此绑 Passkey purpose_data {request_id, order_id, action, params_hash}。
+    res.json({ requests: rows.map(r => {
+      const base: Record<string, unknown> = { ...r, requested_scopes: scopeNames(String(r.requested_scopes)), human_summary: bundleSummary(r.permission_bundle as string | null) }
+      if (r.kind === 'order_action') { try { base.action_params = r.action_params ? JSON.parse(String(r.action_params)) : {} } catch { base.action_params = {} } }
+      return base
+    }) })
   })
 
   // GET list the requests THIS grant created — GRANT-authed (the agent, via webaz_pair), so an agent can poll
@@ -301,10 +320,24 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   app.post('/api/agent-grants/permission-requests/:id/approve', async (req, res) => {
     const user = auth(req, res); if (!user) return
     const now = new Date().toISOString()
-    const r = await dbOne<{ human_id: string; grant_id: string; requested_scopes: string; permission_bundle: string | null; duration: string; status: string; expires_at: string }>(
-      'SELECT human_id, grant_id, requested_scopes, permission_bundle, duration, status, expires_at FROM agent_permission_requests WHERE id = ?', [req.params.id])
+    const r = await dbOne<{ human_id: string; grant_id: string; requested_scopes: string; permission_bundle: string | null; duration: string; status: string; expires_at: string; kind: string | null; order_id: string | null; order_action: string | null; params_hash: string | null }>(
+      'SELECT human_id, grant_id, requested_scopes, permission_bundle, duration, status, expires_at, kind, order_id, order_action, params_hash FROM agent_permission_requests WHERE id = ?', [req.params.id])
     if (!r) return void res.status(404).json({ error: 'permission_request_not_found' })
     if (r.human_id !== user.id) return void res.status(403).json({ error: 'not your permission request' })
+
+    // RFC-021 PR2:order-action 请求分流。Passkey 绑三元组 (order_id, action, params_hash)(对齐 admin fallback 严格绑定);
+    //   过期/pending 判定【原子在 domain 的 CAS 里】(P1-b,含 expires_at > now),不做两步式预检查。
+    //   批到 approved 就【停】—— 绝不执行、不改订单、不碰钱路(execute 在 PR3)。
+    if ((r.kind ?? 'scope_grant') === 'order_action') {
+      const hp = requireHumanPresence(user.id as string, 'agent_permission_approve', (req.body || {}).webauthn_token as string | undefined, 'require_human_presence_for_agent_permission_approve',
+        (data) => { const d = data as Record<string, unknown> | null; return d != null && typeof d === 'object' && d.request_id === req.params.id && d.order_id === r.order_id && d.action === r.order_action && d.params_hash === r.params_hash })
+      if (!hp.ok) return void res.status(412).json({ error: hp.reason, error_code: hp.error_code })
+      const ar = approveOrderActionRequest(db, req.params.id, user.id as string, r.grant_id, r.order_id as string, r.order_action as string, now)
+      if (!ar.ok) return void res.status(ar.http || 409).json({ error: ar.error, error_code: ar.error_code })
+      return void res.json({ success: true, kind: 'order_action', status: 'approved', order_id: r.order_id, action: r.order_action, note: 'Approved. Execution (accept/ship) lands in RFC-021 PR3 — NO order state changed here.' })
+    }
+
+    // scope_grant:保留既有两步(下方还有 grant-active 复检 + 原子 tx;非 order-action)。
     if (r.status !== 'pending' || r.expires_at <= now) return void res.status(409).json({ error: 'permission_request_not_pending', status: r.status })
     // Live Passkey, bound to THIS request (a token minted for request A can't approve B).
     const hp = requireHumanPresence(user.id as string, 'agent_permission_approve', (req.body || {}).webauthn_token as string | undefined, 'require_human_presence_for_agent_permission_approve',
