@@ -55,6 +55,8 @@ export function registerAdminReportsRoutes(app: Application, deps: AdminReportsD
     const status = typeof req.query.status === 'string' ? req.query.status.trim() : ''
     const rail = typeof req.query.rail === 'string' ? req.query.rail.trim() : ''
     const where: string[] = []; const params: unknown[] = []
+    // PR1 fail-closed:decline_contest 并入 disputes 但统一展示(PR2)前从 admin 监督台过滤,避免误当普通买家争议显示。
+    where.push("COALESCE(d.dispute_type, 'buyer_dispute') <> 'decline_contest'")
     if (status) { where.push('d.status = ?'); params.push(status) }
     if (rail) { where.push('o.payment_rail = ?'); params.push(rail) }
     const rows = await dbAll(`
@@ -72,7 +74,7 @@ export function registerAdminReportsRoutes(app: Application, deps: AdminReportsD
       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
       ORDER BY d.created_at DESC LIMIT 100
     `, params)
-    const counts = await dbAll<{ status: string; n: number }>('SELECT status, COUNT(*) n FROM disputes GROUP BY status')
+    const counts = await dbAll<{ status: string; n: number }>("SELECT status, COUNT(*) n FROM disputes WHERE COALESCE(dispute_type, 'buyer_dispute') <> 'decline_contest' GROUP BY status")
     res.json({ disputes: rows, counts: Object.fromEntries(counts.map(c => [c.status, c.n])), total: counts.reduce((s, c) => s + c.n, 0) })
   })
 

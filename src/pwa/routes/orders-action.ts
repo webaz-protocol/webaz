@@ -42,6 +42,8 @@ export interface OrdersActionDeps {
   settleFault: (db: Database.Database, orderId: string, faultState: OrderStatus) => void
   detectFraud: (text: string) => string[]
   createDispute: any
+  /** 统一仲裁台:卖家举证客观拒单时,同步建一条 decline_contest dispute 行(不改 order.status;幂等)。 */
+  createDeclineContestDispute: (db: Database.Database, orderId: string) => { success: boolean; disputeId?: string; existing?: boolean; error?: string }
   checkTimeouts: any
   recordViolationReputation: any
   broadcastSystemEvent: (type: string, icon: string, msg: string, refId?: string | null) => void
@@ -51,7 +53,7 @@ export interface OrdersActionDeps {
 
 export function registerOrdersActionRoutes(app: Application, deps: OrdersActionDeps): void {
   const { db, auth, isTrustedRole, generateId, transition, notifyTransition,
-          settleOrder, settleFault, detectFraud, createDispute, checkTimeouts, recordViolationReputation,
+          settleOrder, settleFault, detectFraud, createDispute, createDeclineContestDispute, checkTimeouts, recordViolationReputation,
           broadcastSystemEvent, consumeGateToken } = deps
 
   // PR-4e: direct_p2p 风险动作门 —— ① D1/D2 两次披露都 ack(缺则 DISCLOSURE_NOT_ACKED);② 现场真人 Passkey + 一次性
@@ -364,8 +366,12 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
         evIds.push(eid)
       }
       db.prepare("UPDATE orders SET decline_contested = 1 WHERE id = ?").run(req.params.id)
+      // 统一仲裁台:并入 disputes(不改 order.status)。幂等——重复举证不会建第二条。失败不阻断举证本身
+      //   (标志位已置;backfill 脚本可事后补建),但记录以便排查。
+      const dc = createDeclineContestDispute(db, req.params.id)
+      if (!dc.success) console.error(`[contest_decline] createDeclineContestDispute failed for ${req.params.id}: ${dc.error}`)
       return void res.json({
-        success: true, outcome: 'contested', evidence_ids: evIds,
+        success: true, outcome: 'contested', evidence_ids: evIds, dispute_id: dc.disputeId,
         note: '已就客观无责拒单发起人工仲裁举证。自动终结已暂停,等待仲裁员裁决:维持→免责全退+退质押,驳回→违约结算。',
       })
     }
