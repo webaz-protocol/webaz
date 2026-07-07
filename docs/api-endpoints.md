@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (776 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (777 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -208,21 +208,21 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/withdrawals` |  |  |  | src/pwa/routes/admin-wallet-ops.ts:88 |
 | POST | `/api/admin/withdrawals/:id/approve` |  |  |  | src/pwa/routes/admin-wallet-ops.ts:98 |
 | POST | `/api/agent-buy` | 🔐 |  |  | src/pwa/routes/agent-buy.ts:41 |
-| GET | `/api/agent-grants` | 🔐 |  | "Connected agents" UI shows so a human can spot stale/unused or busy agents befo | src/pwa/routes/agent-grants.ts:445 |
-| POST | `/api/agent-grants` | 🔐 |  | agent delegation"的安全叙事。零消费方(前端/MCP/测试均不用),故降级为不可用,统一走 pairing。 | src/pwa/routes/agent-grants.ts:434 |
-| POST | `/api/agent-grants/:grant_id/revoke` | 🔐 |  | ── Revoke (online, one-click). ── | src/pwa/routes/agent-grants.ts:470 |
-| GET | `/api/agent-grants/my-permission-requests` |  |  | grant_id: an agent sees ONLY its own requests, never the human's other agents'.  | src/pwa/routes/agent-grants.ts:223 |
-| POST | `/api/agent-grants/pair/:pairing_id/retrieve` |  |  | (pair 4) Agent retrieves the credential ONCE via PKCE verifier — UNAUTHENTICATED | src/pwa/routes/agent-grants.ts:397 |
-| GET | `/api/agent-grants/pair/:user_code` | 🔐 |  | (pair 2) Human reviews the server-generated consent — human-authenticated. | src/pwa/routes/agent-grants.ts:339 |
-| POST | `/api/agent-grants/pair/:user_code/approve` | 🔐 |  | (pair 3) Human approves — human-authenticated. Issues the grant (token_hash fill | src/pwa/routes/agent-grants.ts:348 |
-| POST | `/api/agent-grants/pair/:user_code/reject` | 🔐 |  | 拒绝是保护性动作,无需 Passkey(不签发任何凭证)。幂等:仅 pending 可拒。 | src/pwa/routes/agent-grants.ts:386 |
-| POST | `/api/agent-grants/pair/start` |  |  | (pair 1) Agent starts a pairing — UNAUTHENTICATED (agent has no credential yet). | src/pwa/routes/agent-grants.ts:302 |
-| GET | `/api/agent-grants/permission-requests` | 🔐 |  | GET list this human's PENDING permission requests (for #agent-approvals). Human- | src/pwa/routes/agent-grants.ts:212 |
-| POST | `/api/agent-grants/permission-requests` |  |  | NOT grantable (they need a per-action live Passkey, not a persistent grant) → st | src/pwa/routes/agent-grants.ts:188 |
-| POST | `/api/agent-grants/permission-requests/:id/approve` | 🔐 |  | POST approve — human-authed + live Passkey; expands the bound grant (union scope | src/pwa/routes/agent-grants.ts:238 |
-| POST | `/api/agent-grants/permission-requests/:id/reject` | 🔐 |  | POST reject — human-authed. Terminal 'rejected'; nothing is granted. | src/pwa/routes/agent-grants.ts:287 |
-| GET | `/api/agent-grants/verify` |  |  | Audited (acceptance #8: every grant use logs). Never returns the raw token/api_k | src/pwa/routes/agent-grants.ts:175 |
-| GET | `/api/agent-grants/whoami` | 🎫 grant:read_public |  | end-to-end on a brand-new read-only endpoint that touches NO existing route and  | src/pwa/routes/agent-grants.ts:145 |
+| GET | `/api/agent-grants` | 🔐 |  | "Connected agents" UI shows so a human can spot stale/unused or busy agents befo | src/pwa/routes/agent-grants.ts:471 |
+| POST | `/api/agent-grants` | 🔐 |  | agent delegation"的安全叙事。零消费方(前端/MCP/测试均不用),故降级为不可用,统一走 pairing。 | src/pwa/routes/agent-grants.ts:460 |
+| POST | `/api/agent-grants/:grant_id/revoke` | 🔐 |  | ── Revoke (online, one-click). ── | src/pwa/routes/agent-grants.ts:496 |
+| GET | `/api/agent-grants/my-permission-requests` |  |  | grant_id: an agent sees ONLY its own requests, never the human's other agents'.  | src/pwa/routes/agent-grants.ts:249 |
+| POST | `/api/agent-grants/pair/:pairing_id/retrieve` |  |  | (pair 4) Agent retrieves the credential ONCE via PKCE verifier — UNAUTHENTICATED | src/pwa/routes/agent-grants.ts:423 |
+| GET | `/api/agent-grants/pair/:user_code` | 🔐 |  | (pair 2) Human reviews the server-generated consent — human-authenticated. | src/pwa/routes/agent-grants.ts:365 |
+| POST | `/api/agent-grants/pair/:user_code/approve` | 🔐 |  | (pair 3) Human approves — human-authenticated. Issues the grant (token_hash fill | src/pwa/routes/agent-grants.ts:374 |
+| POST | `/api/agent-grants/pair/:user_code/reject` | 🔐 |  | 拒绝是保护性动作,无需 Passkey(不签发任何凭证)。幂等:仅 pending 可拒。 | src/pwa/routes/agent-grants.ts:412 |
+| POST | `/api/agent-grants/pair/start` |  |  | (pair 1) Agent starts a pairing — UNAUTHENTICATED (agent has no credential yet). | src/pwa/routes/agent-grants.ts:328 |
+| GET | `/api/agent-grants/permission-requests` | 🔐 |  | GET list this human's PENDING permission requests (for #agent-approvals). Human- | src/pwa/routes/agent-grants.ts:238 |
+| POST | `/api/agent-grants/permission-requests` |  |  | NOT grantable (they need a per-action live Passkey, not a persistent grant) → st | src/pwa/routes/agent-grants.ts:214 |
+| POST | `/api/agent-grants/permission-requests/:id/approve` | 🔐 |  | POST approve — human-authed + live Passkey; expands the bound grant (union scope | src/pwa/routes/agent-grants.ts:264 |
+| POST | `/api/agent-grants/permission-requests/:id/reject` | 🔐 |  | POST reject — human-authed. Terminal 'rejected'; nothing is granted. | src/pwa/routes/agent-grants.ts:313 |
+| GET | `/api/agent-grants/verify` |  |  | Audited (acceptance #8: every grant use logs). Never returns the raw token/api_k | src/pwa/routes/agent-grants.ts:201 |
+| GET | `/api/agent-grants/whoami` | 🎫 grant:read_public |  | end-to-end on a brand-new read-only endpoint that touches NO existing route and  | src/pwa/routes/agent-grants.ts:148 |
 | GET | `/api/agent/acp-feed` |  |  |  | src/pwa/routes/public-utils.ts:398 |
 | GET | `/api/agent/capabilities` |  |  |  | src/pwa/routes/public-utils.ts:290 |
 | GET | `/api/agent/changes` |  |  | 指纹由 tests/test-contract-fingerprint.ts + docs/CONTRACT-LOCK.json 守住(静默改契约不可 merg | src/pwa/routes/public-utils.ts:334 |
@@ -232,7 +232,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/agent/goals` |  |  |  | src/pwa/routes/public-utils.ts:326 |
 | GET | `/api/agent/integration` |  |  |  | src/pwa/routes/public-utils.ts:344 |
 | GET | `/api/agent/negative-space` |  |  |  | src/pwa/routes/public-utils.ts:387 |
-| GET | `/api/agent/seller/products` | 🎫 grant:seller_products_read |  | The consumption (allow AND the permission_required deny) is audited by the middl | src/pwa/routes/agent-grants.ts:154 |
+| GET | `/api/agent/seller/products` | 🎫 grant:seller_products_read |  | The consumption (allow AND the permission_required deny) is audited by the middl | src/pwa/routes/agent-grants.ts:157 |
+| POST | `/api/agent/seller/products` | 🎫 grant:seller_product_draft |  |  | src/pwa/routes/agent-grants.ts:172 |
 | GET | `/api/agent/verifiability` |  |  |  | src/pwa/routes/public-utils.ts:354 |
 | GET | `/api/agents/me/reputation` | 🔐 |  |  | src/pwa/routes/agent-reputation.ts:28 |
 | POST | `/api/ai/generate-description` | 🔐 |  | G-1: AI 文案生成（卖家发品辅助） | src/pwa/routes/ai.ts:86 |
@@ -534,7 +535,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/pin-receipts/mine` | 🔐 |  |  | src/pwa/routes/pin-receipts.ts:53 |
 | POST | `/api/product-share/touch` | 🔐 |  | 商品分享归因落库（前端登录后首次进入带 share_id 时调用） | src/pwa/routes/share-redirects.ts:129 |
 | GET | `/api/products` |  |  |  | src/pwa/routes/products-list.ts:57 |
-| POST | `/api/products` | 🔐 |  |  | src/pwa/routes/products-create.ts:47 |
+| POST | `/api/products` | 🔐 |  |  | src/pwa/routes/products-create.ts:295 |
 | DELETE | `/api/products/:id` | 🔐 |  | 硬删（仅 deleted 状态 + 无进行中订单） | src/pwa/routes/products-crud.ts:71 |
 | GET | `/api/products/:id` |  |  | 卖家可查看自己的非上架商品（编辑页用），其他人只能看 active | src/pwa/routes/products-crud.ts:33 |
 | PUT | `/api/products/:id` | 🔐 |  |  | src/pwa/routes/products-update.ts:44 |
@@ -755,13 +756,13 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/wallet/withdraw/:id/confirm` | 🔐 |  | 大额提现：邮件验证码确认 | src/pwa/routes/wallet-write.ts:233 |
 | GET | `/api/wallet/withdrawals` | 🔐 |  | 我的提现记录 | src/pwa/routes/wallet-read.ts:153 |
 | POST | `/api/wallet/withdrawals/:id/cancel` | 🔐 |  | 用户取消尚未 approve 的 withdrawal — 余额自动退回 | src/pwa/routes/wallet-write.ts:261 |
-| POST | `/api/webauthn/auth/finish` | 🔐 |  | 4. 认证：finish — 验证签名 + 颁发短 gate token | src/pwa/routes/webauthn.ts:138 |
-| POST | `/api/webauthn/auth/start` | 🔐 |  | 3. 认证：start — 生成 challenge（指定 purpose + 业务数据；同一 challenge 不可复用） | src/pwa/routes/webauthn.ts:113 |
-| GET | `/api/webauthn/credentials` | 🔐 |  | 列出 / 删除 credential | src/pwa/routes/webauthn.ts:183 |
-| DELETE | `/api/webauthn/credentials/:id` | 🔐 |  |  | src/pwa/routes/webauthn.ts:190 |
-| POST | `/api/webauthn/register/finish` | 🔐 |  | 2. 注册：finish — 验证 + 入库 | src/pwa/routes/webauthn.ts:77 |
-| POST | `/api/webauthn/register/start` | 🔐 |  | 1. 注册：start — 生成 challenge + 选项 | src/pwa/routes/webauthn.ts:57 |
-| POST | `/api/webauthn/settings` | 🔐 |  |  | src/pwa/routes/webauthn.ts:208 |
+| POST | `/api/webauthn/auth/finish` | 🔐 |  | 4. 认证：finish — 验证签名 + 颁发短 gate token | src/pwa/routes/webauthn.ts:141 |
+| POST | `/api/webauthn/auth/start` | 🔐 |  | 3. 认证：start — 生成 challenge（指定 purpose + 业务数据；同一 challenge 不可复用） | src/pwa/routes/webauthn.ts:116 |
+| GET | `/api/webauthn/credentials` | 🔐 |  | 列出 / 删除 credential | src/pwa/routes/webauthn.ts:186 |
+| DELETE | `/api/webauthn/credentials/:id` | 🔐 |  |  | src/pwa/routes/webauthn.ts:193 |
+| POST | `/api/webauthn/register/finish` | 🔐 |  | 2. 注册：finish — 验证 + 入库 | src/pwa/routes/webauthn.ts:80 |
+| POST | `/api/webauthn/register/start` | 🔐 |  | 1. 注册：start — 生成 challenge + 选项 | src/pwa/routes/webauthn.ts:60 |
+| POST | `/api/webauthn/settings` | 🔐 |  |  | src/pwa/routes/webauthn.ts:211 |
 | GET | `/api/webhooks` | 🔐 |  | GET 我的订阅 | src/pwa/routes/webhooks.ts:125 |
 | POST | `/api/webhooks` | 🔐 |  | POST 订阅 | src/pwa/routes/webhooks.ts:103 |
 | DELETE | `/api/webhooks/:id` | 🔐 |  | DELETE | src/pwa/routes/webhooks.ts:133 |

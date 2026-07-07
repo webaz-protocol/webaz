@@ -40,14 +40,17 @@ export interface ProductsCreateDeps {
   makePriceHash: (price: number, ts: string) => string
 }
 
-export function registerProductsCreateRoutes(app: Application, deps: ProductsCreateDeps): void {
-  const { db, auth, generateId, checkSellerCanList, getStakeDiscount, VALID_PRODUCT_TYPES,
+export interface CreateProductOpts { forceStatus?: 'warehouse'; onCreated?: (productId: string) => Promise<void> | void }
+
+/**
+ * The SINGLE source of product-create validation + insert. res-coupled but auth-agnostic: the caller resolves
+ * `user` (the human api_key route, OR the delegation-grant draft route) and may force `warehouse` status. Both
+ * the human `POST /api/products` and the grant-gated draft route MUST go through this — no parallel copy.
+ */
+export function makeCreateProductHandler(deps: ProductsCreateDeps) {
+  const { db, generateId, checkSellerCanList, getStakeDiscount, VALID_PRODUCT_TYPES,
           parsePlatformUrl, makeCommitmentHash, makeDescriptionHash, makePriceHash } = deps
-
-  app.post('/api/products', async (req, res) => {
-    const user = auth(req, res); if (!user) return
-    if (user.role !== 'seller') return void res.json({ error: '仅卖家可上架商品' })
-
+  return async function createProductHandler(req: Request, res: Response, user: Record<string, unknown>, opts: CreateProductOpts = {}): Promise<void> {
     // 里程碑 3-D：1h 上架限速（防 spam 批量上架）
     const LISTING_RATE_LIMIT = 5
     const recentListings = (await dbOne<{ n: number }>(`
@@ -155,7 +158,7 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
       makeCommitmentHash(pFields), makeDescriptionHash({ title, description, specs: specsJson }),
       makePriceHash(priceNum, now), now,
       commissionRateNum, product_type, imagesJsonForInsert,
-      _tx(package_size, 40), _cc(origin_country), _cc(country_of_origin), _tx(customs_description, 120), _hs, create_status === 'warehouse' ? 'warehouse' : 'active'
+      _tx(package_size, 40), _cc(origin_country), _cc(country_of_origin), _tx(customs_description, 120), _hs, (opts.forceStatus === 'warehouse' || create_status === 'warehouse') ? 'warehouse' : 'active'
     ])
     // M7.2.6：免质押上架 — 不再扣 stake；首单成交时 settleOrder 自动从订单 escrow 锁定
 
@@ -273,13 +276,25 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
       }
     }
 
+    if (opts.onCreated) { try { await opts.onCreated(id) } catch (e) { console.error('[products-create onCreated]', (e as Error).message) } }
+
     res.json({
       success: true,
       product_id: id,
+      status: (opts.forceStatus === 'warehouse' || create_status === 'warehouse') ? 'warehouse' : 'active',
       stake_locked: 0,                                  // 免质押上架（M7.2.6 方案 3）
       stake_deferred: stakeAmount,                      // 首单成交时自动锁定（trusted+ 跳过）
       ...(linkConflict ? { link_conflict: linkConflict } : {}),
       ...(blockedLinks.length > 0 ? { blocked_links: blockedLinks } : {}),
     })
+  }
+}
+
+export function registerProductsCreateRoutes(app: Application, deps: ProductsCreateDeps): void {
+  const createProductHandler = makeCreateProductHandler(deps)
+  app.post('/api/products', async (req, res) => {
+    const user = deps.auth(req, res); if (!user) return
+    if (user.role !== 'seller') return void res.json({ error: '仅卖家可上架商品' })
+    await createProductHandler(req, res, user)
   })
 }
