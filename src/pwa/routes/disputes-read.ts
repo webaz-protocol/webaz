@@ -20,6 +20,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { getRecentResolvedDisputes } from '../../layer3-trust/L3-1-dispute-engine/dispute-engine.js'  // 历史裁决(已结)供仲裁员"已结"tab
 
 export interface DisputesReadDeps {
   db: Database.Database
@@ -43,7 +44,11 @@ export function registerDisputesReadRoutes(app: Application, deps: DisputesReadD
     const user = auth(req, res); if (!user) return
     const elig = isEligibleArbitrator(user.id as string)
     if (!elig.ok) return void errorRes(res, 403, 'NOT_ARBITRATOR', elig.reason || '仅限仲裁员访问')
-    res.json(await getOpenDisputes(db))
+    // 待裁(open+in_review)+ 近期已结(resolved/dismissed)—— 前端"待裁/已结"sub-tab 客户端切分;
+    //   getOpenDisputes 语义不变(MCP 复用),历史走 getRecentResolvedDisputes(LIMIT 50)。
+    const open = await getOpenDisputes(db) as Array<Record<string, unknown>>
+    const resolved = await getRecentResolvedDisputes(db, 50)
+    res.json([...open, ...resolved])
   })
 
   // PR2 统一仲裁台待办角标:仲裁员待处理案数(open+in_review,含并入的 decline_contest)。轻量 count,喂前端 badge。

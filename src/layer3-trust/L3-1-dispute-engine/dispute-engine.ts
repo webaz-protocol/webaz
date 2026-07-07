@@ -1055,6 +1055,27 @@ export async function getOpenDisputes(_db: Database.Database): Promise<(DisputeR
 /* PR2:decline_contest 现已进入统一仲裁员队列(SELECT d.* 带出 dispute_type,前端渲染"拒单举证仲裁"标签)。
    裁决仍 fail-closed(checkDisputeTimeouts 跳过 + arbitrate 路由 409),PR3 打通专用两选裁决。 */
 
+/**
+ * 仲裁员历史裁决:近期已结(resolved/dismissed)争议。与 [[getOpenDisputes]] 同 DTO 形状(前端 compactRow 通用)。
+ *   `/api/disputes` 路由把它拼在 open+in_review 之后 → 前端"已结"sub-tab + todayDone KPI 有数据(此前恒空)。
+ *   getOpenDisputes 语义(仅 open)不变(MCP 也用它);历史用本函数,按 resolved_at 倒序,LIMIT 防拉全表。
+ */
+export async function getRecentResolvedDisputes(_db: Database.Database, limit = 50): Promise<(DisputeRecord & Record<string, unknown>)[]> {
+  return await dbAll<DisputeRecord & Record<string, unknown>>(`
+    SELECT d.*,
+      u1.name as initiator_name, u1.role as initiator_role,
+      u2.name as defendant_name, u2.role as defendant_role,
+      o.total_amount, o.status as order_status, o.payment_rail
+    FROM disputes d
+    LEFT JOIN users u1 ON d.initiator_id = u1.id
+    LEFT JOIN users u2 ON d.defendant_id = u2.id
+    LEFT JOIN orders o ON d.order_id = o.id
+    WHERE d.status IN ('resolved', 'dismissed')
+    ORDER BY d.resolved_at DESC, d.created_at DESC
+    LIMIT ?
+  `, [limit])
+}
+
 // ─── 工具函数 ─────────────────────────────────────────────────
 
 function addHours(date: Date, hours: number): string {

@@ -247,7 +247,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/arbitrator/apply` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:93 |
 | GET | `/api/arbitrator/eligibility` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:83 |
 | GET | `/api/arbitrator/me/kpi` | 🔐 |  | Arbitrator KPI（仲裁累计 + 裁决分布 + pending） | src/pwa/routes/trusted-kpi.ts:70 |
-| GET | `/api/arbitrator/pending-count` | 🔐 |  | 非仲裁员返回 0(不报错,前端 badge 拉取对所有人无害)。 | src/pwa/routes/disputes-read.ts:51 |
+| GET | `/api/arbitrator/pending-count` | 🔐 |  | 非仲裁员返回 0(不报错,前端 badge 拉取对所有人无害)。 | src/pwa/routes/disputes-read.ts:56 |
 | GET | `/api/arbitrator/status` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:88 |
 | POST | `/api/arbitrator/withdraw-application` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:144 |
 | GET | `/api/auctions` |  |  | 看板：浏览公开拍卖（匿名可访问） | src/pwa/routes/auction.ts:221 |
@@ -352,18 +352,18 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/direct-receive/store-verification` | 🔐 |  | GET /api/direct-receive/store-verification — 卖家本人店铺认证状态(脱敏 DTO,含豁免位)。 | src/pwa/routes/direct-pay-availability.ts:178 |
 | POST | `/api/direct-receive/store-verification` | 🔐 |  | POST /api/direct-receive/store-verification — 卖家申领店铺验证码(单一活跃 per seller)。 | src/pwa/routes/direct-pay-availability.ts:159 |
 | PUT | `/api/direct-receive/store-verification` | 🔐 |  | PUT /api/direct-receive/store-verification — 卖家提交店铺外链(仅存储,不抓取)。 | src/pwa/routes/direct-pay-availability.ts:168 |
-| GET | `/api/disputes` | 🔐 |  | 仲裁员：查看所有开放争议 | src/pwa/routes/disputes-read.ts:42 |
-| GET | `/api/disputes/:id` | 🔐 |  | 详情聚合（含 W4 timeline + chain ruling） | src/pwa/routes/disputes-read.ts:124 |
+| GET | `/api/disputes` | 🔐 |  | 仲裁员：查看所有开放争议 | src/pwa/routes/disputes-read.ts:43 |
+| GET | `/api/disputes/:id` | 🔐 |  | 详情聚合（含 W4 timeline + chain ruling） | src/pwa/routes/disputes-read.ts:129 |
 | POST | `/api/disputes/:id/add-evidence` | 🔐 |  | 参与方主动举证（text）+ SNF 信封分发 | src/pwa/routes/disputes-write.ts:389 |
 | POST | `/api/disputes/:id/arbitrate` | 🔐 |  | 仲裁员裁定 | src/pwa/routes/disputes-write.ts:131 |
 | POST | `/api/disputes/:id/arbitrator-pause-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:602 |
 | POST | `/api/disputes/:id/arbitrator-resume-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:699 |
 | POST | `/api/disputes/:id/evidence-blob` | 🔐 |  | N: limit 精确 = EVIDENCE_MAX_BYTES | src/pwa/routes/disputes-write.ts:450 |
-| GET | `/api/disputes/:id/evidence-list` | 🔐 |  | 当事人 + 仲裁员可查（meta only，blob 单独拉） | src/pwa/routes/disputes-read.ts:383 |
-| GET | `/api/disputes/:id/parties` | 🔐 |  | 涉案三方（仲裁员选择发证据请求的对象） | src/pwa/routes/disputes-read.ts:395 |
+| GET | `/api/disputes/:id/evidence-list` | 🔐 |  | 当事人 + 仲裁员可查（meta only，blob 单独拉） | src/pwa/routes/disputes-read.ts:388 |
+| GET | `/api/disputes/:id/parties` | 🔐 |  | 涉案三方（仲裁员选择发证据请求的对象） | src/pwa/routes/disputes-read.ts:400 |
 | POST | `/api/disputes/:id/request-evidence` | 🔐 |  | 仲裁员：请求某方补证 | src/pwa/routes/disputes-write.ts:535 |
 | POST | `/api/disputes/:id/respond` | 🔐 |  | 被诉方反驳 | src/pwa/routes/disputes-write.ts:107 |
-| GET | `/api/disputes/:id/similar-cases` | 🔐 |  | A2 同类判例推荐 | src/pwa/routes/disputes-read.ts:59 |
+| GET | `/api/disputes/:id/similar-cases` | 🔐 |  | A2 同类判例推荐 | src/pwa/routes/disputes-read.ts:64 |
 | GET | `/api/disputes/cases` |  |  | 公开列表（全网）— 判例库总览 | src/pwa/routes/dispute-cases.ts:53 |
 | GET | `/api/disputes/cases/:case_id` |  |  | 案件详情（含评论 + 评论者身份标签） | src/pwa/routes/dispute-cases.ts:109 |
 | POST | `/api/disputes/cases/:case_id/comment` | 🔐 |  | 写评论 — 当事人禁评，一人一案一次 | src/pwa/routes/dispute-cases.ts:175 |
