@@ -100,6 +100,11 @@ try {
   const gMine = await mcp.handleListProduct({ action: 'mine' })
   ok('3h grant now carries seller_products_read → action=mine returns the seller catalog via grant', gMine.via === 'delegation_grant' && Array.isArray(gMine.products) && (gMine.products as Array<Record<string, unknown>>).some(p => p.id === 'prd_g1'))
   ok('3i grant business-read leaks no raw token', !JSON.stringify([gDenied, gMine]).includes('gtk_int'))
+  // 3j) a grant can never PUBLISH/ACTIVATE — relist/delist/update/delete via a grant → GRANT_WRITE_NOT_ENABLED
+  const gRelist = await mcp.handleListProduct({ action: 'relist', product_id: 'prd_g1' })
+  ok('3j action=relist (publish/activate) via grant → GRANT_WRITE_NOT_ENABLED (publish stays human/api_key)', gRelist.error_code === 'GRANT_WRITE_NOT_ENABLED')
+  const gDelete = await mcp.handleListProduct({ action: 'delete', product_id: 'prd_g1' })
+  ok('3k action=delete via grant → GRANT_WRITE_NOT_ENABLED', gDelete.error_code === 'GRANT_WRITE_NOT_ENABLED')
 
   // 4) revoke the grant → verify now fails per-call (revocation honored live)
   db.prepare("UPDATE agent_delegation_grants SET status='revoked', revoked_at=datetime('now') WHERE grant_id=?").run(gid)
