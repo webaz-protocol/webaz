@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (775 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (776 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2584,6 +2584,13 @@
             "bearerAuth": []
           }
         ]
+      }
+    },
+    "/api/agent-grants/my-permission-requests": {
+      "get": {
+        "summary": "grant_id: an agent sees ONLY its own requests, never the human's other agents'. Audited (fail-closed).",
+        "tags": [],
+        "security": []
       }
     },
     "/api/agent-grants/pair/:pairing_id/retrieve": {

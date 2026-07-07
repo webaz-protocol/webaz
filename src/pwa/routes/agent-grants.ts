@@ -215,6 +215,19 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     res.json({ requests: rows.map(r => ({ ...r, requested_scopes: scopeNames(String(r.requested_scopes)), human_summary: bundleSummary(r.permission_bundle as string | null) })) })
   })
 
+  // GET list the requests THIS grant created — GRANT-authed (the agent, via webaz_pair), so an agent can poll
+  //   its own request status (pending/approved/rejected/expired) without hitting the target surface. Bound to
+  //   grant_id: an agent sees ONLY its own requests, never the human's other agents'. Audited (fail-closed).
+  app.get('/api/agent-grants/my-permission-requests', async (req, res) => {
+    if (!rateLimitOk(`agent_perm_list:${req.ip || 'anon'}`, 30, 60_000)) return void res.status(429).json({ error: 'too_many_requests', error_code: 'GRANT_RATE_LIMITED', retry_after_s: 60 })
+    const g = await resolveActiveGrantByBearer(req)
+    if (!g) return void res.status(401).json({ error: 'an active delegation grant is required (pair first with webaz_pair)', error_code: 'GRANT_REQUIRED' })
+    const rows = await dbAll<Record<string, unknown>>(
+      'SELECT id, requested_scopes, permission_bundle, risk_level, duration, status, created_at, expires_at, approved_at FROM agent_permission_requests WHERE grant_id = ? ORDER BY created_at DESC LIMIT 50', [g.grant_id])
+    if (!(await auditGrant(g.grant_id, g.human_id, 'grant:list_requests', 'allow'))) return void res.status(503).json({ error: 'authorization audit unavailable; refusing to proceed unaudited', error_code: 'GRANT_AUDIT_FAILED' })
+    res.json({ requests: rows.map(r => ({ ...r, requested_scopes: scopeNames(String(r.requested_scopes)), human_summary: bundleSummary(r.permission_bundle as string | null) })) })
+  })
+
   // RFC-020: expanding an agent grant is a privilege escalation (like initial pairing) — a stolen web session
   //   must NOT widen an agent from read_public to a long-term bundle. So a LIVE Passkey bound to this request_id
   //   is required. Grant-active is checked BEFORE claiming the request, and the expand is guarded + reversible,
