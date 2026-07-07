@@ -98,33 +98,10 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
     return assigned.includes(userId) ? { ok: true } : { ok: false, error_code: 'NOT_ASSIGNED_ARBITRATOR' }
   }
 
-  // ── RFC-007 stage 5：客观拒单【临时判责】的仲裁翻案 ─────────────────────────────
-  //   卖家 contest_decline 后,订单 = fault_seller + decline_objective_pending=1 + decline_contested=1(未结算)。
-  //   仲裁员(真实人工 + WebAuthn)裁决:uphold → declined_nofault(免责全退+退质押);reject → 违约结算。
-  const SYS = 'sys_protocol'
-
-  // 仲裁员待办:列出所有被举证的临时判责拒单
-  app.get('/api/admin/decline-contests', async (req, res) => {
-    const user = auth(req, res); if (!user) return
-    const elig = isEligibleArbitrator(user.id as string)
-    if (!elig.ok) return void errorRes(res, 403, 'NOT_ARBITRATOR', elig.reason || '仅限仲裁员')
-    const rows = await dbAll(`
-      SELECT id AS order_id, buyer_id, seller_id, product_id, total_amount, decline_reason_code, declined_at, decline_contest_deadline
-      FROM orders
-      WHERE status = 'fault_seller' AND COALESCE(decline_objective_pending,0)=1 AND COALESCE(decline_contested,0)=1 AND settled_fault_at IS NULL
-      ORDER BY declined_at ASC
-    `)
-    res.json({ contests: rows })
-  })
-
-  // PR3:旧订单级裁决端点【已 410 停用】。它绕过统一 resolver(无 dispute CAS / assignment / dispute 状态更新),
-  //   会造成"订单结了但 decline_contest dispute 仍 open"的半闭环。裁决统一走:
-  //     仲裁员 → POST /api/disputes/:id/arbitrate(ruling=decline_no_fault_upheld|decline_fault_confirmed)
-  //     admin 兜底 → POST /api/admin/disputes/:id/decline-contest-resolve
-  //   (PR4 物理删除本端点 + GET 列表。)
-  app.post('/api/admin/decline-contests/:orderId/resolve', async (_req, res) => {
-    return void errorRes(res, 410, 'ENDPOINT_GONE', '此端点已停用。请在统一仲裁台裁决:仲裁员用 POST /api/disputes/:id/arbitrate(ruling=decline_no_fault_upheld|decline_fault_confirmed),管理员用 POST /api/admin/disputes/:id/decline-contest-resolve。')
-  })
+  // RFC-007 客观拒单举证仲裁已并入统一 disputes 仲裁台(PR1-3,#279-#281):dispute_type='decline_contest'。
+  //   旧订单级 GET /api/admin/decline-contests 列表 + POST .../:orderId/resolve 裁决端点【已物理移除】(PR4)。
+  //   现统一走:仲裁员 POST /api/disputes/:id/arbitrate(ruling=decline_no_fault_upheld|decline_fault_confirmed);
+  //   admin 兜底 POST /api/admin/disputes/:id/decline-contest-resolve;两者都经唯一 resolveDeclineContestDispute。
 
   // 被诉方反驳
   app.post('/api/disputes/:id/respond', async (req, res) => {
