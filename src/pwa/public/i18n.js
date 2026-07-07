@@ -17,6 +17,12 @@ window.resolveInitialLang = (savedLang, navigatorLike) => {
 window._lang = window.resolveInitialLang(localStorage.getItem('webaz_lang'), typeof navigator !== 'undefined' ? navigator : null)
 
 const _EN = {
+  // ── 统一仲裁台:decline_contest(拒单举证仲裁,app-decline-contest-ui.js)──
+  '拒单举证仲裁': 'Decline-contest arbitration',
+  '裁决通道即将开放': 'Ruling channel opening soon',
+  '卖家主张客观无责并已举证。裁决通道即将开放——届时可裁定:维持无责(全退买家+退卖家质押)或驳回(判卖家违约)。': 'The seller claims objective no-fault and has submitted evidence. The ruling channel is opening soon — an arbitrator will then rule: uphold no-fault (full refund to buyer + seller stake returned) or reject (seller at fault).',
+  '新的拒单举证仲裁待处理': 'New decline-contest arbitration pending',
+  '一笔卖家客观拒单举证已进入统一仲裁台,等待仲裁员裁决。': 'A seller objective-decline contest has entered the unified arbitration desk, awaiting an arbitrator ruling.',
   // ── 仲裁员管理 admin UI(app-arbitrator-admin.js,PR-F)──
   '仲裁员管理': 'Arbitrator management',
   '授权真人仲裁员(唯一授权源=active 白名单)。目标须已注册 Passkey、非本案当事人、非 agent/系统账号。授权/暂停/撤销均需你现场 Passkey,后端留痕。': 'Grant real human arbitrators (the sole authorization source is the active whitelist). The target must have a registered Passkey, not be a party to the case, and not be an agent/system account. Grant/suspend/revoke each require your live Passkey and are audited server-side.',

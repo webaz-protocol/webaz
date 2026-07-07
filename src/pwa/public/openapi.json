@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (777 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (778 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -3019,6 +3019,17 @@
     "/api/arbitrator/me/kpi": {
       "get": {
         "summary": "Arbitrator KPI（仲裁累计 + 裁决分布 + pending）",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/arbitrator/pending-count": {
+      "get": {
+        "summary": "非仲裁员返回 0(不报错,前端 badge 拉取对所有人无害)。",
         "tags": [],
         "security": [
           {

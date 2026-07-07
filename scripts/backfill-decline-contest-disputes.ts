@@ -21,6 +21,7 @@ import os from 'node:os'
 import path from 'node:path'
 import Database from 'better-sqlite3'
 import { initDisputeSchema, createDeclineContestDispute } from '../src/layer3-trust/L3-1-dispute-engine/dispute-engine.js'
+import { notifyDeclineContestCase } from '../src/layer2-business/L2-6-notifications/notification-engine.js'
 
 const argv = process.argv.slice(2)
 const apply = argv.includes('--apply')
@@ -59,7 +60,11 @@ for (const c of candidates) {
   const r = createDeclineContestDispute(db, c.id)
   if (!r.success) { failed++; console.error(`  ✗ ${c.id}: ${r.error}`) }
   else if (r.existing) { existing++; console.log(`  = ${c.id}: 已存在 ${r.disputeId}(幂等,跳过)`) }
-  else { created++; console.log(`  ✓ ${c.id}: 已建 ${r.disputeId}`) }
+  else {
+    created++; console.log(`  ✓ ${c.id}: 已建 ${r.disputeId}`)
+    // 通知仲裁员 + admin(去重;历史 stuck 单让仲裁员知道有活)。
+    try { const n = notifyDeclineContestCase(db, c.id, r.disputeId!); console.log(`      ↳ 通知 ${n.notified} 人(去重跳过 ${n.skipped})`) } catch (e) { console.error(`      ↳ 通知失败: ${(e as Error).message}`) }
+  }
 }
 console.log(`\nAPPLY 完成。created=${created} existing=${existing} failed=${failed}`)
 process.exit(failed ? 1 : 0)

@@ -566,7 +566,7 @@ async function render(page, params) {
     const { status, body } = await apiWithStatus('GET', '/me')
     if (status === 200 && body && !body.error) {
       state.user = body
-      connectSSE(); maybePromptPlacementBind(); refreshCartBadge(); maybeShowInstallBanner(); maybeClaimPendingProductShare(); maybeClaimPendingShopReferral(); setTimeout(refreshCompareBadge, 0); refreshChatsBadge(); refreshFeedbackBadge(); refreshSnfBadge(); setTimeout(ensureSnfPull, 800); if (window.arbEntryHydrate) arbEntryHydrate()
+      connectSSE(); maybePromptPlacementBind(); refreshCartBadge(); maybeShowInstallBanner(); maybeClaimPendingProductShare(); maybeClaimPendingShopReferral(); setTimeout(refreshCompareBadge, 0); refreshChatsBadge(); refreshFeedbackBadge(); refreshSnfBadge(); setTimeout(ensureSnfPull, 800); if (window.arbEntryHydrate) arbEntryHydrate(); if (window.refreshArbBadge) refreshArbBadge()
       try { p2pStart() } catch (e) { console.warn('[P2P] start err', e) }
     } else if (status === 401 || status === 403) {
       // 真·鉴权失败：清掉两层存储
@@ -1073,7 +1073,7 @@ function shell(content, activeTab, opts) {
     ]
   } else if (role === 'arbitrator') {
     tabs = [
-      { id: 'seller',        icon: '⚖️', label: t('仲裁台') },
+      { id: 'seller',        icon: '⚖️', label: t('仲裁台'), arbBadge: true },
       { id: 'orders',        icon: '📋', label: t('记录') },
       { id: 'chats',         target: 'chats/notifs', icon: '💬', label: t('消息'), chatsBadge: true },
       { id: 'wallet',        icon: '💰', label: t('钱包') },
@@ -1204,7 +1204,7 @@ function shell(content, activeTab, opts) {
           <span class="tab-icon" style="position:relative">
             ${tb.icon}
             ${tb.badge ? `<span id="notif-badge" style="position:absolute;top:-4px;right:-6px;background:#dc2626;color:#fff;border-radius:99px;font-size:10px;padding:0 4px;min-width:16px;text-align:center;display:${state.unread > 0 ? 'inline' : 'none'}">${state.unread || ''}</span>` : ''}
-            ${tb.chatsBadge ? (() => { const _agg = (state.chatsUnread||0)+(state.unread||0)+(state.announcementsUnread||0)+(state.feedbackUnread||0); return `<span class="chats-badge" style="position:absolute;top:-4px;right:-6px;background:#4f46e5;color:#fff;border-radius:99px;font-size:10px;padding:0 4px;min-width:16px;text-align:center;display:${_agg > 0 ? 'inline' : 'none'}">${_agg || ''}</span>` })() : ''}
+            ${tb.chatsBadge ? (() => { const _agg = (state.chatsUnread||0)+(state.unread||0)+(state.announcementsUnread||0)+(state.feedbackUnread||0); return `<span class="chats-badge" style="position:absolute;top:-4px;right:-6px;background:#4f46e5;color:#fff;border-radius:99px;font-size:10px;padding:0 4px;min-width:16px;text-align:center;display:${_agg > 0 ? 'inline' : 'none'}">${_agg || ''}</span>` })() : ''}${tb.arbBadge ? `<span class="arb-badge" style="position:absolute;top:-4px;right:-6px;background:#7c3aed;color:#fff;border-radius:99px;font-size:10px;padding:0 4px;min-width:16px;text-align:center;display:${(state.arbPending||0) > 0 ? 'inline' : 'none'}">${state.arbPending || ''}</span>` : ''}
           </span>${tb.label}
         </button>`).join('')}
     </nav>`}`
@@ -13974,7 +13974,7 @@ function buildDisputeHtml(dispute, user) {
   // ── 仲裁员:暂停 / 恢复自动判定时钟(playbook §2.1)────
   // 补证据期 > 48h 时必须显式暂停,避免被协议层 48h 沉默判架空
   const isPaused = dispute.auto_judge_paused_until && dispute.auto_judge_paused_until * 1000 > Date.now()
-  const pauseSection = isArbitrator && dispute.status !== 'resolved' && !dispute.ruling_type ? (
+  const pauseSection = isArbitrator && dispute.dispute_type !== 'decline_contest' && dispute.status !== 'resolved' && !dispute.ruling_type ? (
     isPaused ? `
     <div style="margin-top:12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:12px">
       <div style="font-size:13px;font-weight:600;color:#92400e;margin-bottom:6px">⏸️ ${t('自动判定时钟已冻结')}</div>
@@ -14011,7 +14011,7 @@ function buildDisputeHtml(dispute, user) {
   ) : ''
 
   // ── 仲裁员：发起补充证据请求 ──────────────────
-  const requestEvidenceSection = isArbitrator && dispute.status !== 'resolved' ? `
+  const requestEvidenceSection = isArbitrator && dispute.dispute_type !== 'decline_contest' && dispute.status !== 'resolved' ? `
     <div style="margin-top:12px">
       <button class="btn btn-outline btn-sm" style="width:auto;font-size:12px" onclick="(function(){var s=document.getElementById('req-ev-section');s.style.display=s.style.display==='none'?'':'none'})()">📋 请求补充证据</button>
       <div id="req-ev-section" style="display:none;margin-top:10px;background:#f8fafc;border-radius:8px;padding:12px">
@@ -14050,7 +14050,7 @@ function buildDisputeHtml(dispute, user) {
     </div>` : ''
 
   // ── 仲裁员裁定（含责任分配）────────────────────
-  const arbitrateSection = isArbitrator && (dispute.status === 'open' || dispute.status === 'in_review') ? `
+  const arbitrateSection = isArbitrator && (dispute.status === 'open' || dispute.status === 'in_review') ? (dispute.dispute_type === 'decline_contest' ? (window.dcNotice ? window.dcNotice(dispute) : '') : `
     <div style="margin-top:12px;border-top:1px solid #fecaca;padding-top:12px">
       <div style="font-weight:600;font-size:13px;margin-bottom:8px">⚖️ 仲裁员裁定（截止 ${fmtTime(dispute.arbitrate_deadline)}）</div>
       ${window.dpArbFeeNote ? window.dpArbFeeNote(dispute.payment_rail) : ''}
@@ -14102,7 +14102,7 @@ function buildDisputeHtml(dispute, user) {
         <textarea class="form-control" id="arb-reason" placeholder="${t('请详细说明裁定依据（将记录在案）')}" style="font-size:13px"></textarea>
       </div>
       <button class="btn btn-danger btn-sm" style="width:auto" onclick="handleArbitrate('${dispute.id}')">${t('确认裁定')}</button>
-    </div>` : ''
+    </div>`) : ''
   // ── 裁定结果已在 timeline 末尾以 'ruling' / 'resolved' 事件呈现（W4）
 
   // W4: 三方参与者头部（取代两行 detail-row，更紧凑）
@@ -14622,7 +14622,7 @@ async function renderDisputeList(app) {
       <div class="card" onclick="navigate('#dispute/${d.id}')" style="padding:10px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;${urgent ? 'border-left:3px solid #dc2626;' : ''}">
         <div style="font-size:22px;flex-shrink:0">${urgent ? '⏰' : stIcon}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(d.reason || '')}</div>
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${window.dcChip ? window.dcChip(d) : ''}${escHtml(d.reason || '')}</div>
           <div style="font-size:11px;color:#6b7280;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(d.initiator_name || '?')} → ${escHtml(d.defendant_name || '—')} · ${d.total_amount} WAZ</div>
           <div style="font-size:10px;color:${urgent ? '#dc2626' : '#9ca3af'};margin-top:2px${urgent ? ';font-weight:600' : ''}">${disputeStatusLabelText(d.status)}${deadline ? ` · ${urgent ? '⚠ ' : ''}${t('截止')} ${fmtTime(deadline)}` : ` · ${fmtTime(d.updated_at || d.created_at)}`}</div>
         </div>

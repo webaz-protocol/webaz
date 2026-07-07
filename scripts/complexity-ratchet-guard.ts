@@ -79,6 +79,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-order-errors.js':               50,
   'src/pwa/public/app-arbitrator-entry.js':           10,
   'src/pwa/public/app-arbitrator-admin.js':           87,
+  'src/pwa/public/app-decline-contest-ui.js':         44,
   'src/pwa/public/app-contribution-hub.js':           23,
   'src/pwa/public/app-platform-receive-accounts.js': 140,
   'src/pwa/public/app-direct-pay-fee-request.js':     81,
