@@ -176,6 +176,19 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
       const human = await dbOne<{ id: string; role: string }>('SELECT id, role FROM users WHERE id = ?', [p.human_id])
       if (!human || human.role !== 'seller') return void res.status(403).json({ error: 'the grant owner is not a seller — product drafts need a seller account', error_code: 'NOT_A_SELLER' })
+      // Accurate error codes for the GRANT path WITHOUT touching the shared handler / human path: the create
+      //   handler emits legacy validation errors as `200 + {error}` (no success). For a grant caller that's
+      //   misleading, so translate exactly those to `400 VALIDATION_ERROR`. Explicit res.status(400/429/500…)
+      //   and the success ({product_id}) response pass through unchanged.
+      const origJson = res.json.bind(res)
+      ;(res as unknown as { json: (b: unknown) => unknown }).json = (body: unknown) => {
+        const b = body as Record<string, unknown> | null
+        if (res.statusCode === 200 && b && typeof b === 'object' && b.error && !b.success) {
+          res.status(400)
+          return origJson({ error: b.error, error_code: 'VALIDATION_ERROR' })
+        }
+        return origJson(body as never)
+      }
       await createProductDraftHandler(req, res, human as Record<string, unknown>, {
         forceStatus: 'warehouse',
         skipExternalLinkEffects: true,   // a SAFE draft grant must never trigger wallet debit / verify_tasks / auto-verified links (source_url stays inert metadata)
