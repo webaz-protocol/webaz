@@ -681,7 +681,7 @@ Actions: create (title/description/price) | mine | update (product_id + changed 
         product_id: { type: 'string', description: 'Product ID (required for update/delist/relist/trash/delete)' },
         title: { type: 'string', description: 'Product name (required for create; optional for update)' },
         description: { type: 'string', description: 'Product description (required for create; optional for update)' },
-        price: { type: 'number', description: 'Listing amount (protocol unit; waz_usdc_rate 1.0, so 1 = 1 USDC). No currency is set at listing time — the same amount displays/settles as USDC when the buyer orders on the direct_p2p (direct-pay) rail, or as WAZ on the legacy escrow rail. Required for create; optional for update.' },
+        price: { type: 'number', description: 'Listing amount = the protocol/base amount (waz_usdc_rate 1.0). No currency is set at listing time. On the direct_p2p rail the actual payable DISPLAY follows the seller\'s declared receiving-account currency/instruction — USDC only when that account is USDC/USD, otherwise the seller\'s currency ("以收款说明为准"); WebAZ does not custody, route, validate, or restrict the payment method/currency. USDC is only the base/reference amount when applicable. Legacy escrow uses WAZ. Required for create; optional for update.' },
         stock: { type: 'number', description: 'Stock, default 1' },
         category: { type: 'string', description: 'Category (optional)' },
         specs: {
@@ -738,7 +738,7 @@ Actions: create (title/description/price) | mine | update (product_id + changed 
 
 Payment rail (chosen here, at purchase — default: escrow):
 - **escrow** (default, legacy): funds auto-enter protocol escrow; the amount is the WAZ/protocol-unit price. The deadlines/auto-judge below apply.
-- **direct_p2p** (live, non-custodial direct pay): buyer pays the seller directly OFF-platform; the same amount is shown/settled as USDC (waz_usdc_rate 1.0). Pass \`direct_receive_account_id\` (seller's receiving account). Eligibility — product/store verification, per-tx caps, valid account — is enforced by the SERVER; you do not decide it. Ineligible → the route's own gate error (e.g. DIRECT_PAY_PRODUCT_NOT_VERIFIED → use escrow).
+- **direct_p2p** (live, non-custodial direct pay): buyer pays the seller directly OFF-platform via the seller's chosen receiving account. The order amount is the protocol/base amount; the actual payable DISPLAY follows that account's declared currency/instruction (USDC only when the account is USDC/USD — otherwise the seller's currency, "以收款说明为准"). WebAZ does NOT custody, route, validate, or restrict the method/currency. Pass \`direct_receive_account_id\` (seller's receiving account). Eligibility — product/store verification, per-tx caps, valid account — is enforced by the SERVER; you do not decide it. Ineligible → the route's own gate error (e.g. DIRECT_PAY_PRODUCT_NOT_VERIFIED → use escrow).
 - onchain_full_stake / psp: PLANNED, not enabled → passing them returns PAYMENT_RAIL_DISABLED.
 
 Order deadlines (escrow rail; absolute ISO timestamps in response):
@@ -758,7 +758,7 @@ Options:
         api_key: { type: 'string', description: "Buyer's api_key (or omit and set the WEBAZ_API_KEY env var)" },
         product_id: { type: 'string', description: 'Product ID to buy (from webaz_search)' },
         quantity: { type: 'number', description: 'Quantity, default 1' },
-        payment_rail: { type: 'string', enum: ['escrow', 'direct_p2p'], description: 'Payment rail (default: escrow). "direct_p2p" = live non-custodial direct pay (amount shown/settled as USDC, off-platform) — requires direct_receive_account_id; the server runs the direct-pay eligibility gates (you do not). Other rails (onchain_full_stake / psp) are planned but disabled → PAYMENT_RAIL_DISABLED.' },
+        payment_rail: { type: 'string', enum: ['escrow', 'direct_p2p'], description: 'Payment rail (default: escrow). "direct_p2p" = live non-custodial direct pay, off-platform; the payable display follows the seller\'s receiving-account currency/instruction (USDC only as the base/reference amount, WebAZ doesn\'t custody/route/validate/restrict currency) — requires direct_receive_account_id; the server runs the direct-pay eligibility gates (you do not). Other rails (onchain_full_stake / psp) are planned but disabled → PAYMENT_RAIL_DISABLED.' },
         direct_receive_account_id: { type: 'string', description: 'For payment_rail="direct_p2p": the seller\'s direct-receive account id to pay. Ignored on escrow.' },
         shipping_address: { type: 'string', description: 'Shipping address' },
         notes: { type: 'string', description: 'Note to seller (optional)' },
@@ -1601,7 +1601,7 @@ Enums: **category** phone/computer/appliance/furniture/clothing/book/toy/sports/
         description: { type: 'string', description: 'Description (≤1000 chars, optional)' },
         category: { type: 'string', enum: ['phone', 'computer', 'appliance', 'furniture', 'clothing', 'book', 'toy', 'sports', 'other'], description: 'Category (required for publish)' },
         condition_grade: { type: 'string', enum: ['brand_new', 'like_new', 'lightly_used', 'well_used', 'heavily_used'], description: 'Condition grade (required for publish)' },
-        price: { type: 'number', description: 'Listing amount 0-100000 (protocol unit; waz_usdc_rate 1.0). Displays/settles as USDC on the direct_p2p rail or WAZ on legacy escrow — rail is chosen at purchase. Required for publish.' },
+        price: { type: 'number', description: 'Listing amount 0-100000 = protocol/base amount (waz_usdc_rate 1.0). On direct_p2p the payable display follows the seller\'s receiving-account currency/instruction (USDC only as the base/reference; WebAZ doesn\'t custody/route/validate/restrict currency); WAZ on legacy escrow. Rail chosen at purchase. Required for publish.' },
         negotiable: { type: 'boolean', description: 'Negotiable flag (optional)' },
         images: { type: 'array', items: { type: 'string' }, description: 'Images dataURL/URL array, ≥1 ≤9 (required for publish)' },
         region: { type: 'string', description: 'Region (≤40 chars, optional)' },

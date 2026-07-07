@@ -52,8 +52,11 @@ try {
   // ── schema conformance (static): only live rails selectable; product listings add NO currency field ──
   ok('place_order payment_rail enum = [escrow, direct_p2p] only (onchain/psp NOT selectable)', /payment_rail:\s*\{\s*type:\s*'string',\s*enum:\s*\['escrow',\s*'direct_p2p'\]/.test(SRC))
   ok('place_order exposes direct_receive_account_id', /direct_receive_account_id:\s*\{\s*type:\s*'string'/.test(SRC))
-  ok('list_product price wording aligned to PWA (not "Price in WAZ")', /Listing amount \(protocol unit/.test(SRC))
+  ok('product listing price uses base/reference framing (list_product + secondhand, not "Price in WAZ")', (SRC.match(/protocol\/base amount/g) || []).length >= 2)
   ok('no invented parallel currency field on any product listing tool', !/settlement_currency|price_currency/.test(SRC))
+  // ── NEVER claim direct_p2p "settles as USDC" — payable follows the seller's declared receiving-account currency ──
+  ok('no absolute "settles/settled/shown as USDC" wording (WebAZ doesn\'t custody/route/validate currency)', !/settl(?:e|ed|es)\s+as\s+USDC/i.test(SRC) && !/shown\/settled as USDC/.test(SRC))
+  ok('direct_p2p wording defers to the seller receiving-account currency/instruction', /receiving-account currency\/instruction|receiving account\b/.test(SRC) && /USDC (?:is )?only (?:the )?(?:as )?(?:the )?base\/reference/i.test(SRC))
 } finally { server.close() }
 
 if (fail > 0) { console.error(`\n❌ mcp-place-order-rail FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
