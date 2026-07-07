@@ -122,6 +122,22 @@ const r1 = await call('o1', { action: 'mark_paid', webauthn_token: seedToken('bu
 ok('mark_paid acks+token → 200 accepted', r1.status === 200 && status('o1') === 'accepted', JSON.stringify(r1))
 ok('mark_paid leaves fee-stake locked', stakeStatus('o1') === 'locked')
 
+// ═══ RFC-021 PR3 / Codex P1-c:direct_p2p 进 accepted 生成 ship_deadline + 执行器 SLA fail-closed + backfill ═══
+const shipDl = (id: string) => (db.prepare('SELECT ship_deadline FROM orders WHERE id=?').get(id) as { ship_deadline: string | null } | undefined)?.ship_deadline
+ok('P1c-b mark_paid→accepted 后生成 ship_deadline(direct-pay 建单不设该列)', shipDl('o1') != null)
+{ const before = shipDl('o1')   // 幂等/不覆盖:再跑一次 WHERE IS NULL 的写不应改动已有值(守 I3)
+  db.prepare("UPDATE orders SET ship_deadline = datetime('now', '+999 hours') WHERE id='o1' AND ship_deadline IS NULL").run()
+  ok('P1c-b ship_deadline 不被覆盖(WHERE IS NULL 兜死,守 I3)', shipDl('o1') === before) }
+{ const r = await call('o1', { action: 'ship', evidence_description: '直付自发货' }, 'seller1', 'seller')   // 真实 ship_deadline → SLA 生效 → 放行
+  ok('P1c direct_p2p accept→ship 有真实 ship_deadline 且 SLA 生效 → shipped', r.status === 200 && status('o1') === 'shipped', JSON.stringify(r)) }
+mkOrder('oNull', 'accepted', 'direct_p2p')   // 构造 ship_deadline=NULL 的存量 accepted 单
+ok('P1c-a 前置:oNull ship_deadline 为 NULL', shipDl('oNull') == null)
+{ const r = await call('oNull', { action: 'ship', evidence_description: 'x' }, 'seller1', 'seller')
+  ok('P1c-a deadline=NULL → 执行器 fail-closed SLA_DEADLINE_MISSING(绝不 skip/放行)', r.json?.error_code === 'SLA_DEADLINE_MISSING' && status('oNull') === 'accepted', JSON.stringify(r)) }
+db.prepare("UPDATE orders SET ship_deadline = datetime('now', '+72 hours') WHERE payment_rail='direct_p2p' AND status='accepted' AND ship_deadline IS NULL").run()   // 镜像 backfill 脚本
+{ const r = await call('oNull', { action: 'ship', evidence_description: 'x' }, 'seller1', 'seller')
+  ok('P1c-c backfill 补齐后,存量 accepted 单可正常走完发货 → shipped', r.status === 200 && status('oNull') === 'shipped', JSON.stringify(r)) }
+
 // 2. 缺 acks → 409 DISCLOSURE_NOT_ACKED,无写入
 mkOrder('oNoAck', 'direct_pay_window', 'direct_p2p'); lock('oNoAck')
 const r2 = await call('oNoAck', { action: 'mark_paid', webauthn_token: seedToken('buyer1', 'oNoAck', 'mark_paid') }, 'buyer1')

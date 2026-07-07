@@ -26,6 +26,7 @@ import type Database from 'better-sqlite3'
 import type { OrderStatus } from '../../layer0-foundation/L0-2-state-machine/transitions.js'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 import { createNotification, notifyDeclineContestCase } from '../../layer2-business/L2-6-notifications/notification-engine.js'
+import { executeSellerOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 共享执行器(api_key 路径 strictTracking=false)
 import { releaseFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:取消/超时释放任何遗留模拟质押(AR 订单无 stake → no-op)
 import { restorePreShipDirectPayStock } from '../../direct-pay-stock.js'   // D3 库存回补唯一入口(pre-ship 放行;已出库拒绝)
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'   // PR-4e: D1/D2 披露契约门
@@ -437,6 +438,16 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       return void res.json({ success: true, status: 'completed', dispute_dismissed: true })
     }
 
+    // RFC-021 PR3:accept/ship 经【共享执行器】(与 Passkey-approve 路径同一真相源;守卫全内置)。
+    //   api_key 路径 = seller 本人直发 → strictTracking=false(保持现状:无单号/占位单号发货不破坏;tracking 仍为 hint)。
+    //   evidence_description 现状语义保留(缺则执行器内 transition 因证据空而拒);logistics 绑定已在上方完成。
+    if (action === 'accept' || action === 'ship') {
+      const exec = executeSellerOrderAction(db, { orderId: req.params.id, action, actorId: user.id as string, nowIso: new Date().toISOString(), strictTracking: false, tracking: (req.body?.tracking as string | undefined), evidenceDescription: evidence_description as string | undefined, generateId, path: 'api_key' })
+      if (!exec.ok) return void res.status(exec.http || 409).json({ error: exec.error, error_code: exec.error_code })
+      try { notifyTransition(db, req.params.id, exec.fromStatus as string, exec.toStatus as string) } catch (e) { console.warn('[order-action notify]', (e as Error).message) }
+      return void res.json({ success: true, status: exec.toStatus })
+    }
+
     const actionMap: Record<string, string> = {
       accept: 'accepted', ship: 'shipped', pickup: 'picked_up',
       transit: 'in_transit', deliver: 'delivered', confirm: 'confirmed', dispute: 'disputed',
@@ -498,6 +509,14 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     const fromStatus = order.status as string
     const result = transition(db, req.params.id, toStatus, user.id as string, evidenceIds, notes)
     if (!result.success) return void res.json({ error: result.error })
+
+    // P1-c(b):direct_p2p 首次进 accepted(mark_paid / confirm_received)才生成 ship_deadline —— direct-pay-create 建单不设该列,
+    //   缺 ship_deadline 会被共享执行器 SLA【fail-closed】卡住发货。WHERE ship_deadline IS NULL 兜死:仅 null→值 那一次写,
+    //   绝不覆盖已有值(守 I3:deadline 绝对列不重写)。判责钟从付款确认(now)起。
+    if (toStatus === 'accepted' && order.payment_rail === 'direct_p2p') {
+      let sh = 72; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'direct_pay.ship_window_hours'"); if (p) sh = Math.max(1, Number(p.value) || 72) } catch { /* 用默认 72h */ }
+      await dbRun("UPDATE orders SET ship_deadline = datetime('now', ?) WHERE id = ? AND ship_deadline IS NULL", [`+${sh} hours`, req.params.id])
+    }
 
     notifyTransition(db, req.params.id, fromStatus, toStatus)
 

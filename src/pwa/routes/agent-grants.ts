@@ -30,7 +30,9 @@ import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveB
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
 import { verifyGrantToken, type GrantPrincipal } from '../../runtime/agent-grant-verifier.js'
 import { minimalSellerOrderView, MINIMAL_ORDER_COLUMNS } from '../agent-order-minimal-view.js'  // RFC-021 §6a 最小化订单读投影
-import { createOrderActionRequest, approveOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
+import { createOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
+import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 approve→执行(CAS approved + 执行 + executed_at CAS,domain 层)
+import { notifyTransition } from '../../layer2-business/L2-6-notifications/notification-engine.js'  // 执行后通知买卖双方
 
 export interface AgentGrantsDeps {
   db: Database.Database
@@ -332,9 +334,13 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       const hp = requireHumanPresence(user.id as string, 'agent_permission_approve', (req.body || {}).webauthn_token as string | undefined, 'require_human_presence_for_agent_permission_approve',
         (data) => { const d = data as Record<string, unknown> | null; return d != null && typeof d === 'object' && d.request_id === req.params.id && d.order_id === r.order_id && d.action === r.order_action && d.params_hash === r.params_hash })
       if (!hp.ok) return void res.status(412).json({ error: hp.reason, error_code: hp.error_code })
-      const ar = approveOrderActionRequest(db, req.params.id, user.id as string, r.grant_id, r.order_id as string, r.order_action as string, now)
+      // PR3:CAS→approved 后【由服务端在 seller 本人授权下执行】accept/ship(strictTracking=true,守卫全在执行器内)。
+      //   执行成功写 executed_at(I5 幂等);执行失败请求保持 approved 可重试。执行器对 agent-bearer 不可达(/approve 需人类 session)。
+      const ar = approveAndExecuteOrderAction(db, req.params.id, user.id as string, r.grant_id, now, generateId)
       if (!ar.ok) return void res.status(ar.http || 409).json({ error: ar.error, error_code: ar.error_code })
-      return void res.json({ success: true, kind: 'order_action', status: 'approved', order_id: r.order_id, action: r.order_action, note: 'Approved. Execution (accept/ship) lands in RFC-021 PR3 — NO order state changed here.' })
+      // 执行成功后通知买卖双方(事务外;通知失败不回滚已完成的状态跃迁)
+      if (!ar.already_executed && ar.order_status) { try { const fromS = ar.order_status === 'accepted' ? 'paid' : 'accepted'; notifyTransition(db, r.order_id as string, fromS, ar.order_status) } catch { /* */ } }
+      return void res.json({ success: true, kind: 'order_action', status: 'executed', order_id: r.order_id, action: r.order_action, order_status: ar.order_status, already_executed: ar.already_executed || false })
     }
 
     // scope_grant:保留既有两步(下方还有 grant-active 复检 + 原子 tx;非 order-action)。
