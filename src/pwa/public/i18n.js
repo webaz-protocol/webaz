@@ -17,6 +17,9 @@ window.resolveInitialLang = (savedLang, navigatorLike) => {
 window._lang = window.resolveInitialLang(localStorage.getItem('webaz_lang'), typeof navigator !== 'undefined' ? navigator : null)
 
 const _EN = {
+  // ── RFC-021 order-action 审批卡(app-agent-approvals-order.js)──
+  '对订单': 'On order',
+  '批准后由服务端在你授权下执行;agent 不直接执行': 'On approval the server executes under your authority; the agent never executes directly',
   // ── 统一仲裁台:decline_contest(拒单举证仲裁,app-decline-contest-ui.js)──
   '拒单举证仲裁': 'Decline-contest arbitration',
   '裁决通道即将开放': 'Ruling channel opening soon',

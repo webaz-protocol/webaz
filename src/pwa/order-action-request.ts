@@ -72,12 +72,14 @@ export function createOrderActionRequest(db: Database.Database, opts: {
 /**
  * 人 Passkey 批准后:CAS pending→approved + 审计,单事务。**停在 approved,绝不执行**(PR3 才 execute)。
  * Passkey 校验(绑三元组)由 route 层先做(requireHumanPresence 消费 gate token);本函数只做原子状态跃迁 + 审计。
+ * P1-b:过期判定【原子在 CAS 里】—— WHERE 含 expires_at > nowIso(nowIso 由 route 传入),移除"预检查再 CAS"两步式;
+ *   过期/已批/竞态 → 0 行 → 409(approve-after-expire 必失败,并发双 approve 只一次成功)。
  */
-export function approveOrderActionRequest(db: Database.Database, requestId: string, actorId: string, grantId: string, orderId: string, action: string): DomainResult {
+export function approveOrderActionRequest(db: Database.Database, requestId: string, actorId: string, grantId: string, orderId: string, action: string, nowIso: string): DomainResult {
   let claimed = 0
   try {
     claimed = db.transaction((): number => {
-      const c = db.prepare("UPDATE agent_permission_requests SET status='approved', approved_at=datetime('now') WHERE id=? AND status='pending' AND kind='order_action'").run(requestId).changes
+      const c = db.prepare("UPDATE agent_permission_requests SET status='approved', approved_at=? WHERE id=? AND status='pending' AND kind='order_action' AND expires_at > ?").run(nowIso, requestId, nowIso).changes
       if (c === 1) {
         db.prepare('INSERT INTO agent_grant_auth_log (grant_id, human_id, capability, outcome, error_code) VALUES (?,?,?,?,?)')
           .run(grantId, actorId, `order_action:approve:${orderId}:${action}`, 'allow', null)   // I7
@@ -88,6 +90,6 @@ export function approveOrderActionRequest(db: Database.Database, requestId: stri
   } catch (e) {
     return { ok: false, error_code: 'APPROVE_AUDIT_FAILED', error: (e as Error).message, http: 503 }   // 审计失败 → 不留无审计 approved
   }
-  if (claimed !== 1) return { ok: false, error_code: 'REQUEST_NOT_PENDING', error: '请求非 pending(可能已批/已过期/竞态)', http: 409 }
+  if (claimed !== 1) return { ok: false, error_code: 'REQUEST_NOT_PENDING_OR_EXPIRED', error: '请求非 pending 或已过期(可能已批/已过期/竞态)', http: 409 }
   return { ok: true }
 }
