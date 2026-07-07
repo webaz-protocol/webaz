@@ -807,6 +807,7 @@ jobs:
       - run: npm run test:arb-resolved-history
       - run: npm run test:order-action-request-p1
       - run: npm run test:order-action-request-p2
+      - run: npm run test:order-action-request-p3
       - run: npm run test:mcp-version-nudge
       - run: npm run test:agent-grant-verify
       - run: npm run test:agent-grant-mcp-consume

@@ -23,7 +23,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const db: any = new Database(':memory:')
 db.exec(`CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, role TEXT, api_key TEXT)`)
-db.exec(`CREATE TABLE orders (id TEXT PRIMARY KEY, buyer_id TEXT, seller_id TEXT, logistics_id TEXT, status TEXT, fulfillment_mode TEXT DEFAULT 'shipping', total_amount REAL DEFAULT 100, updated_at TEXT, ship_deadline TEXT)`)
+db.exec(`CREATE TABLE orders (id TEXT PRIMARY KEY, buyer_id TEXT, seller_id TEXT, logistics_id TEXT, status TEXT, fulfillment_mode TEXT DEFAULT 'shipping', total_amount REAL DEFAULT 100, updated_at TEXT, accept_deadline TEXT, ship_deadline TEXT)`)
 db.exec(`CREATE TABLE evidence (id TEXT PRIMARY KEY, order_id TEXT, uploader_id TEXT, type TEXT, description TEXT, file_hash TEXT, flag_reasons TEXT)`)
 db.exec(`CREATE TABLE order_state_history (id TEXT PRIMARY KEY, order_id TEXT, from_status TEXT, to_status TEXT, actor_id TEXT, actor_role TEXT, evidence_ids TEXT, notes TEXT, created_at TEXT DEFAULT (datetime('now')))`)
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('usr_seller','S','seller','k_s'),('usr_buyer','B','buyer','k_b'),('usr_logi','L','logistics','k_l')").run()

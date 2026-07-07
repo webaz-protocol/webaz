@@ -96,6 +96,7 @@
     "test:arb-resolved-history": "tsx scripts/test-arb-resolved-history.ts",
     "test:order-action-request-p1": "tsx scripts/test-order-action-request-pr1.ts",
     "test:order-action-request-p2": "tsx scripts/test-order-action-request-pr2.ts",
+    "test:order-action-request-p3": "tsx scripts/test-order-action-request-pr3.ts",
     "backfill:decline-contest": "tsx scripts/backfill-decline-contest-disputes.ts",
     "test:mcp-version-nudge": "tsx scripts/test-mcp-version-nudge.ts",
     "test:agent-grant-verify": "tsx scripts/test-agent-grant-verify.ts",

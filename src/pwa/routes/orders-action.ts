@@ -26,6 +26,7 @@ import type Database from 'better-sqlite3'
 import type { OrderStatus } from '../../layer0-foundation/L0-2-state-machine/transitions.js'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 import { createNotification, notifyDeclineContestCase } from '../../layer2-business/L2-6-notifications/notification-engine.js'
+import { executeSellerOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 共享执行器(api_key 路径 strictTracking=false)
 import { releaseFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:取消/超时释放任何遗留模拟质押(AR 订单无 stake → no-op)
 import { restorePreShipDirectPayStock } from '../../direct-pay-stock.js'   // D3 库存回补唯一入口(pre-ship 放行;已出库拒绝)
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'   // PR-4e: D1/D2 披露契约门
@@ -435,6 +436,16 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       try { createNotification(db, sellerId as string, req.params.id, 'dispute_withdrawn_confirmed', '✅ 买家已撤诉并确认收货', '买家撤回争议并确认收货,订单已完成结算,双方信誉不受影响。', { templateKey: 'dispute_withdrawn_confirmed', params: {} }) } catch { /* 通知失败不阻断 */ }
       try { broadcastSystemEvent('order_completed', '✓', `订单完成 ${req.params.id}`, req.params.id) } catch {}
       return void res.json({ success: true, status: 'completed', dispute_dismissed: true })
+    }
+
+    // RFC-021 PR3:accept/ship 经【共享执行器】(与 Passkey-approve 路径同一真相源;守卫全内置)。
+    //   api_key 路径 = seller 本人直发 → strictTracking=false(保持现状:无单号/占位单号发货不破坏;tracking 仍为 hint)。
+    //   evidence_description 现状语义保留(缺则执行器内 transition 因证据空而拒);logistics 绑定已在上方完成。
+    if (action === 'accept' || action === 'ship') {
+      const exec = executeSellerOrderAction(db, { orderId: req.params.id, action, actorId: user.id as string, nowIso: new Date().toISOString(), strictTracking: false, tracking: (req.body?.tracking as string | undefined), evidenceDescription: evidence_description as string | undefined, generateId, path: 'api_key' })
+      if (!exec.ok) return void res.status(exec.http || 409).json({ error: exec.error, error_code: exec.error_code })
+      try { notifyTransition(db, req.params.id, exec.fromStatus as string, exec.toStatus as string) } catch (e) { console.warn('[order-action notify]', (e as Error).message) }
+      return void res.json({ success: true, status: exec.toStatus })
     }
 
     const actionMap: Record<string, string> = {

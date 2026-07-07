@@ -1,8 +1,7 @@
 /**
- * RFC-021 PR2 — order-action 请求 domain(创建 pending + Passkey 批准到 approved)。
+ * RFC-021 — order-action 请求【提交】domain(创建 pending)。PR3 起 approve/execute 移入 order-action-exec.ts。
  *
- * ⚠️ 硬边界(PR2):本模块【绝不执行订单动作、不改订单状态、不碰钱路】。approveOrderActionRequest 只把请求
- *   CAS 到 status='approved' 就停;执行(executeSellerOrderAction)全在 PR3。本模块不 import 任何执行/状态机/结算。
+ * ⚠️ 本模块【绝不执行订单动作、不改订单状态、不碰钱路】,【不】import 任何执行/状态机/结算(I1:agent-submit 域不可达执行器)。
  *
  * 放在【非 route 文件】:sync db.transaction(CAS + 审计原子)在这里,route(agent-grants.ts)只调本模块 →
  *   不增加 route 层 sync db.prepare 计数(routes seam ratchet 已满,只能降不能升)。
@@ -69,27 +68,5 @@ export function createOrderActionRequest(db: Database.Database, opts: {
   return { ok: true, request_id: id, params_hash: paramsHash }
 }
 
-/**
- * 人 Passkey 批准后:CAS pending→approved + 审计,单事务。**停在 approved,绝不执行**(PR3 才 execute)。
- * Passkey 校验(绑三元组)由 route 层先做(requireHumanPresence 消费 gate token);本函数只做原子状态跃迁 + 审计。
- * P1-b:过期判定【原子在 CAS 里】—— WHERE 含 expires_at > nowIso(nowIso 由 route 传入),移除"预检查再 CAS"两步式;
- *   过期/已批/竞态 → 0 行 → 409(approve-after-expire 必失败,并发双 approve 只一次成功)。
- */
-export function approveOrderActionRequest(db: Database.Database, requestId: string, actorId: string, grantId: string, orderId: string, action: string, nowIso: string): DomainResult {
-  let claimed = 0
-  try {
-    claimed = db.transaction((): number => {
-      const c = db.prepare("UPDATE agent_permission_requests SET status='approved', approved_at=? WHERE id=? AND status='pending' AND kind='order_action' AND expires_at > ?").run(nowIso, requestId, nowIso).changes
-      if (c === 1) {
-        db.prepare('INSERT INTO agent_grant_auth_log (grant_id, human_id, capability, outcome, error_code) VALUES (?,?,?,?,?)')
-          .run(grantId, actorId, `order_action:approve:${orderId}:${action}`, 'allow', null)   // I7
-      }
-      return c
-      // 【硬边界】此处结束:无 execute、无 transition、无 settle、不写 executed_at。
-    })()
-  } catch (e) {
-    return { ok: false, error_code: 'APPROVE_AUDIT_FAILED', error: (e as Error).message, http: 503 }   // 审计失败 → 不留无审计 approved
-  }
-  if (claimed !== 1) return { ok: false, error_code: 'REQUEST_NOT_PENDING_OR_EXPIRED', error: '请求非 pending 或已过期(可能已批/已过期/竞态)', http: 409 }
-  return { ok: true }
-}
+// PR3:approve→执行 已移入 order-action-exec.ts::approveAndExecuteOrderAction(CAS approved + 执行 + executed_at CAS)。
+//   本模块自 PR3 起【只负责 submit】(createOrderActionRequest);approve/execute 不在此。
