@@ -1741,6 +1741,9 @@ export function initAgentPairingSchema(db: Database.Database): void {
   `)
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_aps_user_code ON agent_pairing_sessions(user_code)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_aps_status ON agent_pairing_sessions(status, expires_at)`)
+  // RFC-020 duration-choice: the agent's SUGGESTED grant lifetime (once/1h/24h/7d/30d) shown in consent so the
+  //   human can accept or override it at approve. Safe-scope only; the human's choice wins. ALTER after CREATE.
+  try { db.exec("ALTER TABLE agent_pairing_sessions ADD COLUMN grant_duration TEXT") } catch { /* 已有 */ }
 }
 
 /**

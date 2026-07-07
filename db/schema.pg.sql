@@ -2815,7 +2815,8 @@ CREATE TABLE IF NOT EXISTS agent_pairing_sessions (
       created_at      TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
       expires_at      TEXT NOT NULL,
       approved_at     TEXT,
-      consumed_at     TEXT
+      consumed_at     TEXT,
+      grant_duration  TEXT
     );
 
 CREATE TABLE IF NOT EXISTS agent_grant_auth_log (

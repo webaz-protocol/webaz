@@ -26,7 +26,7 @@ import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrantAuthLogSchema, initAgentPermissionRequestsSchema } from '../../runtime/webaz-schema-helpers.js'
-import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveBundle, durationAllowedForScopes, suggestedDurationForScopes, durationToSeconds, riskLevelForScopes, type GrantDuration } from '../../runtime/agent-grant-scopes.js'
+import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveBundle, durationAllowedForScopes, suggestedDurationForScopes, allowedDurationsForScopes, durationToSeconds, riskLevelForScopes, type GrantDuration } from '../../runtime/agent-grant-scopes.js'
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
 import { verifyGrantToken, type GrantPrincipal } from '../../runtime/agent-grant-verifier.js'
 
@@ -63,7 +63,10 @@ function consentView(p: Record<string, unknown>): Record<string, unknown> {
     capabilities: safeParseCaps(p.capabilities),    // server-validated safe scopes
     status: p.status,
     expires_at: p.expires_at,
-    notice: 'Approving issues a scoped, short-lived, revocable delegation grant — NOT your api_key, NOT your funds. Safe (read/draft) scopes only; it can never move money, vote, arbitrate, or change keys.',
+    // Duration-choice: agent's suggested lifetime + the durations the human may pick (safe scopes → up to 30d).
+    suggested_duration: (p.grant_duration as string) || suggestedDurationForScopes((safeParseCaps(p.capabilities) as Array<{ capability?: string }>).map(c => String(c?.capability || '')).filter(Boolean)),
+    allowed_durations: allowedDurationsForScopes((safeParseCaps(p.capabilities) as Array<{ capability?: string }>).map(c => String(c?.capability || '')).filter(Boolean)),
+    notice: 'Approving issues a scoped, revocable delegation grant — NOT your api_key, NOT your funds. Safe (read/draft) scopes only; it can never move money, vote, arbitrate, or change keys. You choose how long it lasts.',
   }
 }
 
@@ -282,9 +285,17 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const grant = await dbOne<{ grant_id: string; capabilities: string; status: string; expires_at: string; revoked_at: string | null }>(
       'SELECT grant_id, capabilities, status, expires_at, revoked_at FROM agent_delegation_grants WHERE grant_id = ?', [r.grant_id])
     if (!grant || !grantIsActive(grant, now)) return void res.status(409).json({ error: 'grant_inactive', error_code: 'GRANT_INACTIVE', note: 'the agent grant expired or was revoked; re-pair (this request stays pending)' })
-    // Union new scopes into the grant; set bundle; extend expiry (never shorten). 'once' → short 1h window.
+    // Duration: the HUMAN's submitted value is authoritative. If body.duration is PRESENT but not allowed →
+    //   400 (no silent fallback; nothing claimed/expanded below). Only when ABSENT do we fall back to the
+    //   agent's requested duration. Checked BEFORE the tx so an invalid value never claims/extends anything.
+    const bodyDur = (req.body || {}).duration
+    if (bodyDur !== undefined && bodyDur !== null && !durationAllowedForScopes(reqScopes, bodyDur)) {
+      return void res.status(400).json({ error: 'invalid grant duration', error_code: 'INVALID_GRANT_DURATION', allowed_durations: allowedDurationsForScopes(reqScopes) })
+    }
+    // Union new scopes into the grant; set bundle; extend expiry (never shorten).
     const union = [...new Set([...scopeNames(grant.capabilities), ...reqScopes])].map(s => ({ capability: s, constraints: {} }))
-    const secs = durationToSeconds(r.duration as GrantDuration) || 3600
+    const effDuration: GrantDuration = (bodyDur !== undefined && bodyDur !== null) ? bodyDur as GrantDuration : (r.duration as GrantDuration)
+    const secs = durationToSeconds(effDuration) || 3600
     const newExpiry = new Date(Date.now() + secs * 1000).toISOString()
     const expiresAt = newExpiry > grant.expires_at ? newExpiry : grant.expires_at
     // ATOMIC (RFC-020 invariant: a grant expansion is audited-or-it-does-not-happen; parity with arbitrator
@@ -307,7 +318,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       return void res.status(503).json({ error: 'authorization audit unavailable; refusing to expand unaudited', error_code: 'GRANT_AUDIT_FAILED' })
     }
     if (outcome === 'not_pending') return void res.status(409).json({ error: 'permission_request_not_pending' })
-    res.json({ success: true, grant_id: grant.grant_id, scopes: union.map(u => u.capability), permission_bundle: r.permission_bundle, expires_at: expiresAt })
+    res.json({ success: true, grant_id: grant.grant_id, scopes: union.map(u => u.capability), permission_bundle: r.permission_bundle, duration: effDuration, expires_at: expiresAt })
   })
 
   // POST reject — human-authed. Terminal 'rejected'; nothing is granted.
@@ -348,17 +359,21 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const pubkey = typeof body.agent_pubkey === 'string' ? body.agent_pubkey.slice(0, 1000) : null  // RESERVED (PoP), not verified in C1
     const capsJson = JSON.stringify(v.safe.map(c => ({ capability: c, constraints: (caps.find(x => x?.capability === c)?.constraints) || {} })))
     if (capsJson.length > MAX_CONSTRAINTS_JSON) return void res.status(400).json({ error: 'capabilities_too_large', max_bytes: MAX_CONSTRAINTS_JSON })
+    // Agent SUGGESTS a grant lifetime; the human accepts or overrides it at approve. Safe-scope only → up to 30d.
+    const reqDuration: GrantDuration = durationAllowedForScopes(v.safe, body.duration) ? body.duration as GrantDuration : suggestedDurationForScopes(v.safe)
 
     await dbRun(
-      'INSERT INTO agent_pairing_sessions (pairing_id, user_code, code_challenge, agent_label, agent_pubkey, reason, capabilities, status, expires_at) VALUES (?,?,?,?,?,?,?,?,?)',
-      [pairingId, userCode, codeChallenge, label, pubkey, reason, capsJson, 'pending', expiresAt],
+      'INSERT INTO agent_pairing_sessions (pairing_id, user_code, code_challenge, agent_label, agent_pubkey, reason, capabilities, grant_duration, status, expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      [pairingId, userCode, codeChallenge, label, pubkey, reason, capsJson, reqDuration, 'pending', expiresAt],
     )
     res.status(201).json({
       pairing_id: pairingId,
       user_code: userCode,
       approve_url: `/#pair?code=${userCode}`,
       expires_at: expiresAt,
-      note: 'Ask the human to open approve_url at webaz.xyz (logged in) and approve. Then retrieve the credential with the PKCE verifier.',
+      suggested_duration: reqDuration,
+      allowed_durations: allowedDurationsForScopes(v.safe),
+      note: 'Ask the human to open approve_url at webaz.xyz (logged in) and approve. The human picks the grant duration (your suggested_duration is pre-selected; they can change it). Then retrieve the credential with the PKCE verifier.',
     })
   })
 
@@ -392,7 +407,17 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     if (!v.ok) return void res.status(403).json({ error: 'pairing_rejected', rejected: v.rejected })
 
     const grantId = generateId('grt')
-    const expiresAt = new Date(Date.now() + clampTtlSeconds(undefined) * 1000).toISOString()
+    // Duration: the HUMAN's submitted value is authoritative. If body.duration is PRESENT but not in the
+    //   safe-scope matrix → 400 (no silent fallback; nothing claimed/issued below). Only when ABSENT do we
+    //   fall back to the agent's suggestion (grant_duration) then the safe default.
+    const bodyDur = (req.body || {}).duration
+    if (bodyDur !== undefined && bodyDur !== null && !durationAllowedForScopes(v.safe, bodyDur)) {
+      return void res.status(400).json({ error: 'invalid grant duration', error_code: 'INVALID_GRANT_DURATION', allowed_durations: allowedDurationsForScopes(v.safe) })
+    }
+    const chosenDuration: GrantDuration = (bodyDur !== undefined && bodyDur !== null)
+      ? bodyDur as GrantDuration
+      : (durationAllowedForScopes(v.safe, p.grant_duration) ? p.grant_duration as GrantDuration : suggestedDurationForScopes(v.safe))
+    const expiresAt = new Date(Date.now() + (durationToSeconds(chosenDuration) || 3600) * 1000).toISOString()
     // 先【CAS 抢占】pending 配对(唯一赢家),再插 grant —— 竞态下输家 changes!==1 直接 409、不插任何 grant,
     //   杜绝"插了 grant 但配对更新失败"留下 token_hash NULL 的 orphan grant(污染连接记录)。
     const claimed = await dbRun(
@@ -405,7 +430,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       'INSERT INTO agent_delegation_grants (grant_id, human_id, agent_label, capabilities, token_hash, human_confirm_required, status, expires_at) VALUES (?,?,?,?,?,?,?,?)',
       [grantId, user.id, p.agent_label || null, JSON.stringify(caps), null, 0, 'active', expiresAt],
     )
-    res.json({ success: true, grant_id: grantId, capabilities: caps })
+    res.json({ success: true, grant_id: grantId, capabilities: caps, duration: chosenDuration, expires_at: expiresAt })
   })
 
   // (pair 3b) Human rejects — human-authenticated. Terminal 'rejected' → agent's retrieve fails clearly (no silent lingering).

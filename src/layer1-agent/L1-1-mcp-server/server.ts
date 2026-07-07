@@ -285,6 +285,7 @@ export async function handlePair(args: Record<string, unknown>): Promise<Record<
         capabilities: caps,
         agent_label: typeof args.agent_label === 'string' ? args.agent_label : undefined,
         reason: typeof args.reason === 'string' ? args.reason : undefined,   // free-text reason only
+        duration: typeof args.duration === 'string' ? args.duration : undefined,   // SUGGESTED grant lifetime; the human picks/overrides at approve
       },
     })
     if (resp.error) return resp
@@ -295,7 +296,9 @@ export async function handlePair(args: Record<string, unknown>): Promise<Record<
       user_code: resp.user_code,
       approve_url: `${WEBAZ_API_URL}${String(resp.approve_url || '')}`,
       expires_at: resp.expires_at,
-      next: `Ask the human to open approve_url (logged in at webaz.xyz) and approve. Then call webaz_pair again with action="complete".`,
+      suggested_duration: resp.suggested_duration,
+      allowed_durations: resp.allowed_durations,
+      next: `Ask the human to open approve_url (logged in at webaz.xyz) and approve — they choose the grant duration (your suggested_duration is pre-selected; allowed: ${Array.isArray(resp.allowed_durations) ? (resp.allowed_durations as string[]).join('/') : 'once/1h/24h/7d/30d'}). Then call webaz_pair again with action="complete".`,
       capabilities_requested: caps.map(c => c.capability),
       note: 'Safe scopes only. The credential is delivered once on completion and stored in your OS secret store — it is never shown here.',
     }
@@ -559,7 +562,7 @@ NOTE: this consumes the grant only on safe read paths; no business tool and no r
         capabilities: { type: 'array', items: { type: 'string' }, description: 'action="start": requested SAFE scopes (default: read_public, search). Non-safe scopes are rejected.' },
         bundle: { type: 'string', description: 'action="request": a permission bundle key (e.g. "catalog_agent") — a named all-safe scope set the human approves as one thing.' },
         scopes: { type: 'array', items: { type: 'string' }, description: 'action="request": individual SAFE scopes to request (alternative to bundle).' },
-        duration: { type: 'string', enum: ['once', '1h', '24h', '7d', '30d'], description: 'action="request": how long the expanded grant should last (safe scopes may be long-term; the server caps by risk).' },
+        duration: { type: 'string', enum: ['1h', '24h', '7d', '30d'], description: 'SUGGESTED grant lifetime for action="start" (initial pairing) or action="request" (expansion). Safe scopes may be long-term (up to 30d); the human PICKS/overrides it at approve time and their choice wins. (No single-use "once" yet.)' },
         agent_label: { type: 'string', description: 'Human-friendly name for this agent (shown in the consent screen)' },
         reason: { type: 'string', description: 'Free-text reason shown to the human (you cannot relabel the scopes)' },
       },

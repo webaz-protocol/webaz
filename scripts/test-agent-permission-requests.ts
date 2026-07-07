@@ -109,6 +109,15 @@ try {
   ok('reject a pending request → rejected', (await j(`/api/agent-grants/permission-requests/${singleId}/reject`, { method: 'POST', user: 'alice' })).body.status === 'rejected')
   ok('approve a rejected request → 409', (await j(`/api/agent-grants/permission-requests/${singleId}/approve`, { method: 'POST', user: 'alice' })).status === 409)
 
+  // ── (duration override) explicit invalid duration at approve → 400, no expansion, request stays pending ──
+  const durReq = await j('/api/agent-grants/permission-requests', { method: 'POST', bearer: BEARER, body: { scopes: ['seller_inventory_read'] } })
+  const durId = String(durReq.body.approval_id)
+  const badDur = await j(`/api/agent-grants/permission-requests/${durId}/approve`, { method: 'POST', user: 'alice', body: { webauthn_token: `gtk_ok:${durId}`, duration: 'banana' } })
+  ok('approve with explicit invalid duration=banana → 400 INVALID_GRANT_DURATION', badDur.status === 400 && badDur.body.error_code === 'INVALID_GRANT_DURATION')
+  ok('rejected-duration request stays PENDING (no expansion/claim)', (db.prepare('SELECT status FROM agent_permission_requests WHERE id=?').get(durId) as { status: string }).status === 'pending')
+  const okDur = await j(`/api/agent-grants/permission-requests/${durId}/approve`, { method: 'POST', user: 'alice', body: { webauthn_token: `gtk_ok:${durId}`, duration: '24h' } })
+  ok('same request re-approved with a VALID duration (24h) → 200, duration echoed', okDur.status === 200 && okDur.body.duration === '24h')
+
   // ── (P2') audit sink unavailable → grant read/expansion FAIL CLOSED (never proceed unaudited, invariant) ──
   const p3 = await j('/api/agent-grants/permission-requests', { method: 'POST', bearer: BEARER, body: { scopes: ['draft_order'] } })  // draft_order is NOT yet in grt_1's grant
   const p3Id = String(p3.body.approval_id)

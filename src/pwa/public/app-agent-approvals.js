@@ -3,7 +3,6 @@
 //   经典脚本,全局函数;globals(GET/POST/state/shell/t/escHtml/fmtTime/navigate/loading$/toast$/requestPasskeyGate)调用时解析。
 //   商家视角:不需要懂 scope/complete/verify —— 只看【哪个 agent · 要做什么 · 风险 · 多久】。批准需 Passkey(扩权=提权)。
 ;(function () {
-  const DURATION_LABEL = { once: '一次性', '1h': '1 小时', '24h': '24 小时', '7d': '7 天', '30d': '30 天' }
   const RISK = {
     low:    { label: '低风险', color: '#16a34a', bg: '#dcfce7' },
     medium: { label: '中风险', color: '#b45309', bg: '#fef3c7' },
@@ -53,7 +52,6 @@
     const what = r.human_summary
       ? `<div style="font-size:13px;color:#374151;line-height:1.7">${escHtml(r.human_summary)}</div>`
       : `<div style="margin-top:2px">${scopes.map(s => `<span style="display:inline-block;font-size:11px;color:#4f46e5;background:#eef2ff;padding:2px 8px;border-radius:4px;margin:2px 4px 2px 0">${escHtml(String(s))}</span>`).join('') || `<span style="font-size:12px;color:#9ca3af">${t('(无 —— 仅基础只读)')}</span>`}</div>`
-    const dur = DURATION_LABEL[r.duration] || r.duration || '—'
     return `<div class="card" style="margin-bottom:12px;padding:16px;border:1px solid #e5e7eb" data-aa-id="${escHtml(String(r.id))}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="font-weight:600">${escHtml(r.agent_label || t('未命名 Agent'))} <span style="font-size:10px;color:#9ca3af">(${t('未验证')})</span></div>
@@ -62,7 +60,8 @@
       <div style="font-size:11px;color:#6b7280;margin-bottom:2px">${t('它想做什么')}:</div>
       ${what}
       ${r.reason ? `<div style="font-size:12px;color:#6b7280;margin-top:8px">${t('用途(agent 自述)')}: ${escHtml(r.reason)} <span style="font-size:10px;color:#9ca3af">(${t('未验证')})</span></div>` : ''}
-      <div style="font-size:11px;color:#9ca3af;margin-top:8px">${t('授权时长')}: <strong style="color:#374151">${t(dur)}</strong> · ${t('请求于')} ${r.created_at ? fmtTime(r.created_at) : '—'}</div>
+      ${window.grantDurationSelect(r.allowed_durations, r.duration, 'aa-dur-' + escHtml(String(r.id)))}
+      <div style="font-size:11px;color:#9ca3af;margin-top:6px">${t('请求于')} ${r.created_at ? fmtTime(r.created_at) : '—'}</div>
       <div style="display:flex;gap:8px;margin-top:12px">
         <button class="btn btn-outline" style="flex:1;color:#dc2626;border-color:#fecaca" onclick="aaReject('${escHtml(String(r.id))}')">${t('拒绝')}</button>
         <button class="btn btn-primary" style="flex:2" onclick="aaApprove('${escHtml(String(r.id))}')">🔑 ${t('用 Passkey 批准')}</button>
@@ -77,7 +76,7 @@
     // Passkey bound to THIS request (a token minted for request A can't approve B — server re-validates).
     try { token = await requestPasskeyGate('agent_permission_approve', { request_id: id }) }
     catch (e) { if (window.dpPromptRegisterPasskey && e && e.code === 'NO_PASSKEY_REGISTERED') { await window.dpPromptRegisterPasskey(e) } else { toast$((e && e.message) || t('Passkey 验证已取消'), 'error') } if (btn) btn.disabled = false; return }
-    const r = await POST('/agent-grants/permission-requests/' + encodeURIComponent(id) + '/approve', { webauthn_token: token }).catch(() => null)
+    const r = await POST('/agent-grants/permission-requests/' + encodeURIComponent(id) + '/approve', { webauthn_token: token, duration: window.grantDurationValue('aa-dur-' + id) }).catch(() => null)
     if (!r || r.error) { toast$((r && r.error) || t('批准失败,请重试'), 'error'); if (btn) btn.disabled = false; return }
     toast$(t('已批准 —— 该 agent 的权限已扩展'))
     aaHydrate(); hydrateAgentApprovalsBadge()

@@ -1,7 +1,8 @@
 #!/usr/bin/env tsx
 /**
  * Agent 权限分级 taxonomy(PR-1,纯逻辑无 I/O):新 seller-scoped safe scopes + Permission Bundles +
- *   风险等级→有效期矩阵。安全铁律:bundle 只能全 safe(高风险永不入 bundle);risk 只能 once(永不长期);
+ *   风险等级→有效期矩阵。安全铁律:bundle 只能全 safe(高风险永不入 bundle);risk 不可委托(不进持久 grant);
+ *   safe → 1h/24h/7d/30d,**不提供 "once"**(无真 single-use 消费机制,once 会变成误导性的 1h 可重用 bearer);
  *   never-delegable 完全不可授。为后续 permission-request / grant 流程打地基。
  * Usage: npm run test:agent-perm-taxonomy
  */
@@ -35,14 +36,14 @@ ok('7b. bundleNonSafeScopes flags a never-delegable scope', bundleNonSafeScopes(
 ok('7c. all shipped bundles loaded (all-safe assertion passed at import)', Object.values(PERMISSION_BUNDLES).every(b => bundleNonSafeScopes(b).length === 0))
 
 // ── duration matrix by risk tier ──
-ok('8. safe scopes → once…30d (long-term ok)', allowedDurationsForScopes(['seller_products_read']).join() === 'once,1h,24h,7d,30d')
-ok('9. any RISK scope → once ONLY (never long-term)', allowedDurationsForScopes(['seller_products_read', 'order_accept']).join() === 'once')
+ok('8. safe scopes → 1h/24h/7d/30d (long-term ok); NO "once" (no single-use grant yet)', allowedDurationsForScopes(['seller_products_read']).join() === '1h,24h,7d,30d' && !allowedDurationsForScopes(['seller_products_read']).includes('once'))
+ok('9. any RISK scope → [] (not delegable to a persistent grant)', allowedDurationsForScopes(['seller_products_read', 'order_accept']).length === 0)
 ok('10. any never-delegable → [] (cannot grant at all)', allowedDurationsForScopes(['withdraw']).length === 0)
 ok('11. unknown scope → [] ', allowedDurationsForScopes(['made_up_scope']).length === 0)
-ok('12. durationAllowed: safe+7d ok, safe+forever rejected', durationAllowedForScopes(['seller_products_read'], '7d') && !durationAllowedForScopes(['seller_products_read'], 'forever'))
-ok('13. durationAllowed: risk+7d REJECTED (high-risk cannot be long-term)', !durationAllowedForScopes(['order_accept'], '7d') && durationAllowedForScopes(['order_accept'], 'once'))
-ok('14. suggested default = 7d for safe, once for risk', suggestedDurationForScopes(['seller_products_read']) === '7d' && suggestedDurationForScopes(['order_accept']) === 'once')
-ok('15. durationToSeconds: 7d=604800, 30d=2592000, once=0', durationToSeconds('7d') === 604800 && durationToSeconds('30d') === 2592000 && durationToSeconds('once') === 0)
+ok('12. durationAllowed: safe+7d ok, safe+forever rejected, safe+once REJECTED (once not offered)', durationAllowedForScopes(['seller_products_read'], '7d') && !durationAllowedForScopes(['seller_products_read'], 'forever') && !durationAllowedForScopes(['seller_products_read'], 'once'))
+ok('13. durationAllowed: risk rejects EVERYTHING incl once (not delegable)', !durationAllowedForScopes(['order_accept'], '7d') && !durationAllowedForScopes(['order_accept'], 'once'))
+ok('14. suggested default = 7d for safe', suggestedDurationForScopes(['seller_products_read']) === '7d')
+ok('15. durationToSeconds: 1h=3600, 7d=604800, 30d=2592000 (real, non-zero)', durationToSeconds('1h') === 3600 && durationToSeconds('7d') === 604800 && durationToSeconds('30d') === 2592000)
 
 // ── risk level labels ──
 ok('16. read/draft scopes → low', riskLevelForScopes(['seller_products_read', 'seller_product_draft']) === 'low')

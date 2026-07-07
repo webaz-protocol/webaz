@@ -126,6 +126,32 @@ try {
   ok('approve WITH Passkey token (bound to this code) issues a grant', approve.status === 200 && !!approve.body.grant_id)
   ok('approve response has NO token', !hasTokenField(approve.body))
 
+  // ── duration choice: agent SUGGESTS, human PICKS/overrides at approve; grant TTL reflects the human's choice ──
+  ok('start exposes suggested_duration + allowed_durations (safe → up to 30d)', Array.isArray(start.body.allowed_durations) && (start.body.allowed_durations as string[]).includes('30d') && typeof start.body.suggested_duration === 'string')
+  const startD = await j('/api/agent-grants/pair/start', { method: 'POST', body: { code_challenge: challenge, capabilities: [{ capability: 'read_public' }], duration: '30d' } })
+  ok('start with duration=30d → suggested_duration echoed 30d', startD.body.suggested_duration === '30d')
+  const codeD = startD.body.user_code
+  const approveD = await j(`/api/agent-grants/pair/${codeD}/approve`, { method: 'POST', user: 'usr_alice', body: { webauthn_token: `gtk_ok:${codeD}`, duration: '24h' } })
+  ok('human OVERRIDES the 30d suggestion to 24h at approve → grant duration=24h', approveD.status === 200 && approveD.body.duration === '24h')
+  const secsToExpiry = (new Date(String(approveD.body.expires_at)).getTime() - Date.now()) / 1000
+  ok('grant expires_at ≈ 24h out (human choice wins — not 30d, not a hardcoded 1h)', secsToExpiry > 86000 && secsToExpiry < 86500)
+  // each allowed value issues the matching expires_at
+  const expiryFor = async (dur: string): Promise<number> => {
+    const s = await j('/api/agent-grants/pair/start', { method: 'POST', body: { code_challenge: challenge, capabilities: [{ capability: 'read_public' }] } })
+    const a = await j(`/api/agent-grants/pair/${s.body.user_code}/approve`, { method: 'POST', user: 'usr_alice', body: { webauthn_token: `gtk_ok:${s.body.user_code}`, duration: dur } })
+    return (new Date(String(a.body.expires_at)).getTime() - Date.now()) / 1000
+  }
+  const e1h = await expiryFor('1h'); ok('duration=1h → grant expires ≈ 1h', e1h > 3500 && e1h < 3700)
+  const e30d = await expiryFor('30d'); ok('duration=30d → grant expires ≈ 30d', e30d > 2591000 && e30d < 2593000)
+  // explicit INVALID duration → 400, no grant issued (not a silent fallback)
+  const startBad = await j('/api/agent-grants/pair/start', { method: 'POST', body: { code_challenge: challenge, capabilities: [{ capability: 'read_public' }] } })
+  const grantsBeforeBad = ((await j('/api/agent-grants', { user: 'usr_alice' })).body.grants || []).length
+  const badDur = await j(`/api/agent-grants/pair/${startBad.body.user_code}/approve`, { method: 'POST', user: 'usr_alice', body: { webauthn_token: `gtk_ok:${startBad.body.user_code}`, duration: 'banana' } })
+  ok('explicit invalid duration=banana → 400 INVALID_GRANT_DURATION', badDur.status === 400 && badDur.body.error_code === 'INVALID_GRANT_DURATION')
+  ok('invalid duration issued NO grant (no silent fallback)', ((await j('/api/agent-grants', { user: 'usr_alice' })).body.grants || []).length === grantsBeforeBad)
+  ok('the pairing stays approvable after a rejected duration (not consumed)', (await j(`/api/agent-grants/pair/${startBad.body.user_code}`, { user: 'usr_alice' })).status === 200)
+  ok('"once" is NOT an allowed duration (removed until real single-use)', !(start.body.allowed_durations as string[]).includes('once'))
+
   // ── P2: the Passkey token is BOUND to the pairing code — an A-token cannot approve B (validate purpose_data) ──
   const startB = await j('/api/agent-grants/pair/start', { method: 'POST', body: { code_challenge: challenge, capabilities: [{ capability: 'search' }] } })
   const codeB = startB.body.user_code

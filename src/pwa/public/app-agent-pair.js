@@ -74,7 +74,7 @@
           <div><span style="color:#6b7280">${t('Agent 自称')}:</span> <strong>${escHtml(c.agent_label || t('未命名'))}</strong> <span style="font-size:10px;color:#9ca3af">(${t('未验证')})</span></div>
           ${c.reason ? `<div><span style="color:#6b7280">${t('用途(agent 自述)')}:</span> ${escHtml(c.reason)} <span style="font-size:10px;color:#9ca3af">(${t('未验证')})</span></div>` : ''}
           <div style="margin-top:6px"><span style="color:#6b7280">${t('请求的权限')}:</span><div style="margin-top:4px">${capHtml}</div></div>
-          <div style="font-size:11px;color:#9ca3af;margin-top:6px">${t('有效期至')} ${c.expires_at ? fmtTime(c.expires_at) : '—'}</div>
+          ${window.grantDurationSelect(c.allowed_durations, c.suggested_duration, 'pair-duration')}
         </div>
         <label style="display:flex;align-items:flex-start;gap:8px;margin:14px 0 4px;font-size:12px;color:#374151;cursor:pointer">
           <input type="checkbox" id="pair-confirm" onchange="document.getElementById('pair-approve-btn').disabled=!this.checked" style="margin-top:2px">
@@ -92,7 +92,7 @@
     let token
     try { token = await requestPasskeyGate('agent_pair_approve', { user_code: _code }) }
     catch (e) { if (window.dpPromptRegisterPasskey && e && e.code === 'NO_PASSKEY_REGISTERED') { await window.dpPromptRegisterPasskey(e) } else { toast$((e && e.message) || t('Passkey 验证已取消'), 'error') } if (btn) btn.disabled = false; return }
-    const r = await POST('/agent-grants/pair/' + encodeURIComponent(_code) + '/approve', { webauthn_token: token }).catch(() => null)
+    const r = await POST('/agent-grants/pair/' + encodeURIComponent(_code) + '/approve', { webauthn_token: token, duration: window.grantDurationValue('pair-duration') }).catch(() => null)
     if (!r || r.error) { toast$((r && r.error) || t('批准失败,请重试'), 'error'); if (btn) btn.disabled = false; return }
     dpairShowResult('approved', r)
   }
