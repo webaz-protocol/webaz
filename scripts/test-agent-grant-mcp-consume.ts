@@ -84,6 +84,13 @@ try {
   ok('3b verify response does not leak the raw token', !JSON.stringify(active).includes('gtk_int'))
   ok('3c advisory local_cache is labeled separately from the authoritative grant', !!active.local_cache && (active.grant as any)?.capability === 'read_public')
 
+  // 3d/3e) agent requests MORE scope via the grant bearer, then lists its OWN requests (grant-authed, no human)
+  const reqd = await mcp.handlePair({ action: 'request', bundle: 'catalog_agent', reason: 'read my catalog' })
+  ok('3d request → requested + approval_id + approval_url (safe bundle via grant bearer)', reqd.status === 'requested' && String(reqd.approval_id).startsWith('apr_') && String(reqd.approval_url).includes('/#agent-approvals'))
+  const listed = await mcp.handlePair({ action: 'requests' })
+  ok("3e requests lists this grant's own pending request", Array.isArray(listed.requests) && (listed.requests as Array<any>).some(r => r.id === reqd.approval_id && r.status === 'pending'))
+  ok('3f request/list never leak the raw token', !JSON.stringify([reqd, listed]).includes('gtk_int'))
+
   // 4) revoke the grant → verify now fails per-call (revocation honored live)
   db.prepare("UPDATE agent_delegation_grants SET status='revoked', revoked_at=datetime('now') WHERE grant_id=?").run(gid)
   const revoked = await mcp.handlePair({ action: 'verify' })

@@ -349,7 +349,48 @@ export async function handlePair(args: Record<string, unknown>): Promise<Record<
     }
   }
 
-  return { error: `unknown action "${action}" — use "start" | "complete" | "verify"`, error_code: 'BAD_ACTION' }
+  if (action === 'request') {
+    // The agent asks the human to EXPAND this grant with more SAFE scope / a permission bundle. Uses the
+    // stored grant bearer; the server binds the request to (human, grant). Approval is Passkey-gated on the
+    // human's side. Only SAFE scopes — risk/never-delegable are structurally rejected.
+    const cred = resolveGrantCredential()
+    if (!cred) return { status: 'not_paired', error_code: 'NO_GRANT_CREDENTIAL', hint: 'No stored grant. Pair first: webaz_pair action="start" → human approves → action="complete".' }
+    const bundle = typeof args.bundle === 'string' ? args.bundle : undefined
+    const scopes = Array.isArray(args.scopes) ? (args.scopes as unknown[]).map(String).filter(Boolean) : undefined
+    if (!bundle && (!scopes || !scopes.length)) return { error: 'provide a bundle (e.g. "catalog_agent") OR a scopes[] array of SAFE scopes', error_code: 'NO_SCOPES' }
+    const resp = await apiCall('/api/agent-grants/permission-requests', {
+      method: 'POST', apiKey: cred.token,
+      body: { bundle, scopes, reason: typeof args.reason === 'string' ? args.reason : undefined, duration: typeof args.duration === 'string' ? args.duration : undefined },
+    })
+    if (resp.error) return resp
+    return {
+      status: 'requested',
+      approval_id: resp.approval_id,
+      approval_url: `${WEBAZ_API_URL}${String(resp.approval_url || '')}`,
+      requested_scopes: resp.requested_scopes,
+      permission_bundle: resp.permission_bundle,
+      risk_level: resp.risk_level,
+      suggested_duration: resp.suggested_duration,
+      next: 'Ask the human to open approval_url (logged in at webaz.xyz) and approve with their Passkey. Then simply RETRY your original call — on approval your grant carries the new scope. Use action="requests" to poll status.',
+      note: 'Only SAFE (read/draft) scopes can be requested; risk actions are never delegated to a persistent grant.',
+    }
+  }
+
+  if (action === 'requests') {
+    // Poll THIS grant's own permission requests + their status (pending/approved/rejected) without hitting the
+    // target surface. Grant-authed, grant-scoped (you see only your own requests). Server audits every call.
+    const cred = resolveGrantCredential()
+    if (!cred) return { status: 'not_paired', error_code: 'NO_GRANT_CREDENTIAL', hint: 'No stored grant. Pair first: webaz_pair action="start" → human approves → action="complete".' }
+    const resp = await apiCall('/api/agent-grants/my-permission-requests', { method: 'GET', apiKey: cred.token })
+    if (resp.error) return resp
+    return {
+      status: 'ok',
+      requests: resp.requests,
+      note: 'Your grant\'s own permission requests + status. On "approved", just retry your original call — the grant now carries the scope. "pending" → the human has not approved yet.',
+    }
+  }
+
+  return { error: `unknown action "${action}" — use "start" | "complete" | "verify" | "request" | "requests"`, error_code: 'BAD_ACTION' }
 }
 
 // 启动 banner(stderr)+ status 声明用 —— 让用户/agent 一眼知道现在是真网络还是沙盒
@@ -505,14 +546,21 @@ No auth required, no parameters needed.
 2. action="complete" → retrieves the credential ONCE (PKCE) and stores it in your OS secret store (macOS Keychain → ~/.webaz/credentials 0600 fallback). Returns only a credential_handle + status — the raw token is never shown.
 3. action="verify" → uses the stored grant against a safe read endpoint to confirm it is still valid. The server re-checks active/expiry/revoked/suspension/scope and audits the call every time. Returns the grant principal/status; never the raw token.
 
-Scopes: SAFE only (read_public, profile_read, search, list_product_draft, product_publish_request, draft_order). Risk scopes (place_order/wallet/refund/...) and never-delegable actions (withdraw/key-change/vote/...) are hard-rejected.
+Need MORE scope later? If a call returns error_code="PERMISSION_REQUIRED", do NOT re-pair:
+4. action="request" (bundle="catalog_agent" OR scopes=[...]) → asks the human to expand THIS grant. Returns an approval_id + approval_url; the human approves with a Passkey, then you simply RETRY your original call.
+5. action="requests" → lists your grant's own requests + status (pending/approved/rejected) so you can poll instead of hitting the target surface.
+
+Scopes: SAFE only (read_public, profile_read, search, list_product_draft, product_publish_request, draft_order + seller_*_read / seller_product_draft / seller_pricing_suggestion; bundle "catalog_agent"). Risk scopes (place_order/wallet/refund/...) and never-delegable actions (withdraw/key-change/vote/...) are hard-rejected.
 
 NOTE: this consumes the grant only on safe read paths; no business tool and no risk scope is wired to grants. No account is created (registration stays human-only at webaz.xyz).`,
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['start', 'complete', 'verify'], description: 'start a pairing, complete it after the human approves, or verify the stored grant (default: start)' },
-        capabilities: { type: 'array', items: { type: 'string' }, description: 'Requested SAFE scopes (default: read_public, search). Non-safe scopes are rejected.' },
+        action: { type: 'string', enum: ['start', 'complete', 'verify', 'request', 'requests'], description: 'start a pairing, complete it after the human approves, verify the stored grant, request MORE scope (bundle/scopes), or list your requests (default: start)' },
+        capabilities: { type: 'array', items: { type: 'string' }, description: 'action="start": requested SAFE scopes (default: read_public, search). Non-safe scopes are rejected.' },
+        bundle: { type: 'string', description: 'action="request": a permission bundle key (e.g. "catalog_agent") — a named all-safe scope set the human approves as one thing.' },
+        scopes: { type: 'array', items: { type: 'string' }, description: 'action="request": individual SAFE scopes to request (alternative to bundle).' },
+        duration: { type: 'string', enum: ['once', '1h', '24h', '7d', '30d'], description: 'action="request": how long the expanded grant should last (safe scopes may be long-term; the server caps by risk).' },
         agent_label: { type: 'string', description: 'Human-friendly name for this agent (shown in the consent screen)' },
         reason: { type: 'string', description: 'Free-text reason shown to the human (you cannot relabel the scopes)' },
       },

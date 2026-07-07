@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (775 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (776 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -208,18 +208,19 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/withdrawals` |  |  |  | src/pwa/routes/admin-wallet-ops.ts:88 |
 | POST | `/api/admin/withdrawals/:id/approve` |  |  |  | src/pwa/routes/admin-wallet-ops.ts:98 |
 | POST | `/api/agent-buy` | 🔐 |  |  | src/pwa/routes/agent-buy.ts:41 |
-| GET | `/api/agent-grants` | 🔐 |  | "Connected agents" UI shows so a human can spot stale/unused or busy agents befo | src/pwa/routes/agent-grants.ts:430 |
-| POST | `/api/agent-grants` | 🔐 |  | agent delegation"的安全叙事。零消费方(前端/MCP/测试均不用),故降级为不可用,统一走 pairing。 | src/pwa/routes/agent-grants.ts:419 |
-| POST | `/api/agent-grants/:grant_id/revoke` | 🔐 |  | ── Revoke (online, one-click). ── | src/pwa/routes/agent-grants.ts:455 |
-| POST | `/api/agent-grants/pair/:pairing_id/retrieve` |  |  | (pair 4) Agent retrieves the credential ONCE via PKCE verifier — UNAUTHENTICATED | src/pwa/routes/agent-grants.ts:382 |
-| GET | `/api/agent-grants/pair/:user_code` | 🔐 |  | (pair 2) Human reviews the server-generated consent — human-authenticated. | src/pwa/routes/agent-grants.ts:324 |
-| POST | `/api/agent-grants/pair/:user_code/approve` | 🔐 |  | (pair 3) Human approves — human-authenticated. Issues the grant (token_hash fill | src/pwa/routes/agent-grants.ts:333 |
-| POST | `/api/agent-grants/pair/:user_code/reject` | 🔐 |  | 拒绝是保护性动作,无需 Passkey(不签发任何凭证)。幂等:仅 pending 可拒。 | src/pwa/routes/agent-grants.ts:371 |
-| POST | `/api/agent-grants/pair/start` |  |  | (pair 1) Agent starts a pairing — UNAUTHENTICATED (agent has no credential yet). | src/pwa/routes/agent-grants.ts:287 |
+| GET | `/api/agent-grants` | 🔐 |  | "Connected agents" UI shows so a human can spot stale/unused or busy agents befo | src/pwa/routes/agent-grants.ts:443 |
+| POST | `/api/agent-grants` | 🔐 |  | agent delegation"的安全叙事。零消费方(前端/MCP/测试均不用),故降级为不可用,统一走 pairing。 | src/pwa/routes/agent-grants.ts:432 |
+| POST | `/api/agent-grants/:grant_id/revoke` | 🔐 |  | ── Revoke (online, one-click). ── | src/pwa/routes/agent-grants.ts:468 |
+| GET | `/api/agent-grants/my-permission-requests` |  |  | grant_id: an agent sees ONLY its own requests, never the human's other agents'.  | src/pwa/routes/agent-grants.ts:221 |
+| POST | `/api/agent-grants/pair/:pairing_id/retrieve` |  |  | (pair 4) Agent retrieves the credential ONCE via PKCE verifier — UNAUTHENTICATED | src/pwa/routes/agent-grants.ts:395 |
+| GET | `/api/agent-grants/pair/:user_code` | 🔐 |  | (pair 2) Human reviews the server-generated consent — human-authenticated. | src/pwa/routes/agent-grants.ts:337 |
+| POST | `/api/agent-grants/pair/:user_code/approve` | 🔐 |  | (pair 3) Human approves — human-authenticated. Issues the grant (token_hash fill | src/pwa/routes/agent-grants.ts:346 |
+| POST | `/api/agent-grants/pair/:user_code/reject` | 🔐 |  | 拒绝是保护性动作,无需 Passkey(不签发任何凭证)。幂等:仅 pending 可拒。 | src/pwa/routes/agent-grants.ts:384 |
+| POST | `/api/agent-grants/pair/start` |  |  | (pair 1) Agent starts a pairing — UNAUTHENTICATED (agent has no credential yet). | src/pwa/routes/agent-grants.ts:300 |
 | GET | `/api/agent-grants/permission-requests` | 🔐 |  | GET list this human's PENDING permission requests (for #agent-approvals). Human- | src/pwa/routes/agent-grants.ts:210 |
 | POST | `/api/agent-grants/permission-requests` |  |  | NOT grantable (they need a per-action live Passkey, not a persistent grant) → st | src/pwa/routes/agent-grants.ts:186 |
-| POST | `/api/agent-grants/permission-requests/:id/approve` | 🔐 |  | POST approve — human-authed + live Passkey; expands the bound grant (union scope | src/pwa/routes/agent-grants.ts:223 |
-| POST | `/api/agent-grants/permission-requests/:id/reject` | 🔐 |  | POST reject — human-authed. Terminal 'rejected'; nothing is granted. | src/pwa/routes/agent-grants.ts:272 |
+| POST | `/api/agent-grants/permission-requests/:id/approve` | 🔐 |  | POST approve — human-authed + live Passkey; expands the bound grant (union scope | src/pwa/routes/agent-grants.ts:236 |
+| POST | `/api/agent-grants/permission-requests/:id/reject` | 🔐 |  | POST reject — human-authed. Terminal 'rejected'; nothing is granted. | src/pwa/routes/agent-grants.ts:285 |
 | GET | `/api/agent-grants/verify` |  |  | Audited (acceptance #8: every grant use logs). Never returns the raw token/api_k | src/pwa/routes/agent-grants.ts:173 |
 | GET | `/api/agent-grants/whoami` | 🎫 grant:read_public |  | end-to-end on a brand-new read-only endpoint that touches NO existing route and  | src/pwa/routes/agent-grants.ts:143 |
 | GET | `/api/agent/acp-feed` |  |  |  | src/pwa/routes/public-utils.ts:398 |

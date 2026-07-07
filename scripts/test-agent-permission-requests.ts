@@ -69,6 +69,11 @@ try {
   ok('alice sees her pending request with scopes + bundle + summary', reqs.length === 1 && reqs[0].permission_bundle === 'catalog_agent' && (reqs[0].requested_scopes as string[]).includes('seller_products_read'))
   ok('bob does NOT see alice\'s request (human-scoped)', ((await j('/api/agent-grants/permission-requests', { user: 'bob' })).body.requests as unknown[]).length === 0)
 
+  // ── grant-authed self-list (agent polls its OWN requests via the grant bearer, for webaz_pair action=requests) ──
+  ok('my-permission-requests requires a grant bearer', (await j('/api/agent-grants/my-permission-requests')).body.error_code === 'GRANT_REQUIRED')
+  const mine = await j('/api/agent-grants/my-permission-requests', { bearer: BEARER })
+  ok('grant sees its OWN request (bound to grant_id) with status + bundle', (mine.body.requests as Array<Record<string, unknown>>).some(r => r.id === aprId && r.status === 'pending' && r.permission_bundle === 'catalog_agent' && (r.requested_scopes as string[]).includes('seller_products_read')))
+
   // ── verify BEFORE approval: full grant = only read_public ──
   const v0 = await j('/api/agent-grants/verify', { bearer: BEARER })
   ok('verify returns FULL grant (scopes/bundle/expiry/status), not just read_public', v0.status === 200 && Array.isArray((v0.body.grant as Record<string, unknown>).scopes) && ((v0.body.grant as Record<string, string[]>).scopes).join() === 'read_public')
