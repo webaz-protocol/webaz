@@ -18,6 +18,7 @@ const GRANTS = readFileSync('src/pwa/routes/agent-grants.ts', 'utf8')
 const WEBAUTHN = readFileSync('src/pwa/routes/webauthn.ts', 'utf8')
 const HP = readFileSync('src/pwa/human-presence.ts', 'utf8')
 const I18N = readFileSync('src/pwa/public/i18n.js', 'utf8')
+const HELPER = readFileSync('src/pwa/public/app-grant-duration.js', 'utf8')
 
 // ── 路由 + 装载 ──
 ok('1. router: #pair → renderAgentPair', /case 'pair':\s*return window\.renderAgentPair\(app\)/.test(APP))
@@ -57,8 +58,10 @@ ok('25. approve CAS-claims the pairing (changes!==1 guard) BEFORE minting the gr
 // ── duration choice (human picks the grant lifetime at approve) ──
 ok('27. #pair renders the shared duration selector from consent (allowed/suggested)', /grantDurationSelect\(c\.allowed_durations, c\.suggested_duration, 'pair-duration'\)/.test(UI))
 ok('28. #pair approve sends the chosen duration (shared reader)', /grantDurationValue\('pair-duration'\)/.test(UI) && /\/approve'[\s\S]{0,160}duration/.test(UI))
-ok('29. backend pair/approve issues the grant with the human-chosen duration (validated), not a hardcoded 1h', /durationAllowedForScopes\(v\.safe, \(req\.body \|\| \{\}\)\.duration\)/.test(GRANTS) && /durationToSeconds\(chosenDuration\)/.test(GRANTS))
+ok('29. backend pair/approve issues the grant with the human-chosen duration, not a hardcoded 1h', /durationToSeconds\(chosenDuration\)/.test(GRANTS) && !/clampTtlSeconds\(undefined\)/.test(GRANTS))
 ok('30. pair/start stores + exposes suggested_duration/allowed_durations', /grant_duration/.test(GRANTS) && /allowed_durations: allowedDurationsForScopes/.test(GRANTS))
+ok('31. shared selector offers ONLY 1h/24h/7d/30d — no "once" (no fake single-use)', /LABEL = \{ '1h': '1 小时', '24h': '24 小时', '7d': '7 天', '30d': '30 天' \}/.test(HELPER) && /\['1h', '24h', '7d', '30d'\]/.test(HELPER))
+ok('32. approve rejects an explicit out-of-matrix duration → 400 INVALID_GRANT_DURATION (no silent fallback)', /INVALID_GRANT_DURATION/.test(GRANTS) && /bodyDur !== undefined && bodyDur !== null && !durationAllowedForScopes\(v\.safe, bodyDur\)/.test(GRANTS))
 
 // ── i18n parity ──
 {

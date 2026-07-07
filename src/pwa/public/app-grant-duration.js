@@ -3,7 +3,7 @@
 //   The human chooses the grant lifetime; safe scopes → up to 30d. Kept in one place so both approval
 //   surfaces stay identical and the pinned page files don't grow.
 ;(function () {
-  const LABEL = { once: '一次性', '1h': '1 小时', '24h': '24 小时', '7d': '7 天', '30d': '30 天' }
+  const LABEL = { '1h': '1 小时', '24h': '24 小时', '7d': '7 天', '30d': '30 天' }   // 'once' intentionally omitted — no real single-use grant yet (would become a misleading 1h reusable bearer)
 
   // Render a <select id=selectId> of `allowed` durations, pre-selecting `suggested`. Falls back to a safe set.
   window.grantDurationSelect = function (allowed, suggested, selectId) {

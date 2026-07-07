@@ -561,7 +561,6 @@ const _EN = {
   '低风险': 'Low risk',
   '中风险': 'Medium risk',
   '高风险': 'High risk',
-  '一次性': 'One-time',
   '1 小时': '1 hour',
   '7 天': '7 days',
   '确认拒绝这个授权请求?': 'Reject this permission request?',

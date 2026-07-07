@@ -562,7 +562,7 @@ NOTE: this consumes the grant only on safe read paths; no business tool and no r
         capabilities: { type: 'array', items: { type: 'string' }, description: 'action="start": requested SAFE scopes (default: read_public, search). Non-safe scopes are rejected.' },
         bundle: { type: 'string', description: 'action="request": a permission bundle key (e.g. "catalog_agent") — a named all-safe scope set the human approves as one thing.' },
         scopes: { type: 'array', items: { type: 'string' }, description: 'action="request": individual SAFE scopes to request (alternative to bundle).' },
-        duration: { type: 'string', enum: ['once', '1h', '24h', '7d', '30d'], description: 'SUGGESTED grant lifetime for action="start" (initial pairing) or action="request" (expansion). Safe scopes may be long-term (up to 30d); the human PICKS/overrides it at approve time and their choice wins.' },
+        duration: { type: 'string', enum: ['1h', '24h', '7d', '30d'], description: 'SUGGESTED grant lifetime for action="start" (initial pairing) or action="request" (expansion). Safe scopes may be long-term (up to 30d); the human PICKS/overrides it at approve time and their choice wins. (No single-use "once" yet.)' },
         agent_label: { type: 'string', description: 'Human-friendly name for this agent (shown in the consent screen)' },
         reason: { type: 'string', description: 'Free-text reason shown to the human (you cannot relabel the scopes)' },
       },

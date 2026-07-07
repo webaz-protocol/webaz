@@ -285,11 +285,16 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const grant = await dbOne<{ grant_id: string; capabilities: string; status: string; expires_at: string; revoked_at: string | null }>(
       'SELECT grant_id, capabilities, status, expires_at, revoked_at FROM agent_delegation_grants WHERE grant_id = ?', [r.grant_id])
     if (!grant || !grantIsActive(grant, now)) return void res.status(409).json({ error: 'grant_inactive', error_code: 'GRANT_INACTIVE', note: 'the agent grant expired or was revoked; re-pair (this request stays pending)' })
-    // Union new scopes into the grant; set bundle; extend expiry (never shorten). 'once' → short 1h window.
-    //   The human may OVERRIDE the agent's requested duration at approve (body.duration), validated against the
-    //   scope matrix; falls back to what the agent requested.
+    // Duration: the HUMAN's submitted value is authoritative. If body.duration is PRESENT but not allowed →
+    //   400 (no silent fallback; nothing claimed/expanded below). Only when ABSENT do we fall back to the
+    //   agent's requested duration. Checked BEFORE the tx so an invalid value never claims/extends anything.
+    const bodyDur = (req.body || {}).duration
+    if (bodyDur !== undefined && bodyDur !== null && !durationAllowedForScopes(reqScopes, bodyDur)) {
+      return void res.status(400).json({ error: 'invalid grant duration', error_code: 'INVALID_GRANT_DURATION', allowed_durations: allowedDurationsForScopes(reqScopes) })
+    }
+    // Union new scopes into the grant; set bundle; extend expiry (never shorten).
     const union = [...new Set([...scopeNames(grant.capabilities), ...reqScopes])].map(s => ({ capability: s, constraints: {} }))
-    const effDuration: GrantDuration = durationAllowedForScopes(reqScopes, (req.body || {}).duration) ? (req.body as Record<string, unknown>).duration as GrantDuration : (r.duration as GrantDuration)
+    const effDuration: GrantDuration = (bodyDur !== undefined && bodyDur !== null) ? bodyDur as GrantDuration : (r.duration as GrantDuration)
     const secs = durationToSeconds(effDuration) || 3600
     const newExpiry = new Date(Date.now() + secs * 1000).toISOString()
     const expiresAt = newExpiry > grant.expires_at ? newExpiry : grant.expires_at
@@ -402,10 +407,15 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     if (!v.ok) return void res.status(403).json({ error: 'pairing_rejected', rejected: v.rejected })
 
     const grantId = generateId('grt')
-    // Human chooses the grant lifetime (body.duration), validated against the safe-scope matrix (up to 30d).
-    //   Falls back to the agent's suggested (grant_duration) then the safe default. 'once' → a short 1h window.
-    const chosenDuration: GrantDuration = durationAllowedForScopes(v.safe, (req.body || {}).duration)
-      ? (req.body as Record<string, unknown>).duration as GrantDuration
+    // Duration: the HUMAN's submitted value is authoritative. If body.duration is PRESENT but not in the
+    //   safe-scope matrix → 400 (no silent fallback; nothing claimed/issued below). Only when ABSENT do we
+    //   fall back to the agent's suggestion (grant_duration) then the safe default.
+    const bodyDur = (req.body || {}).duration
+    if (bodyDur !== undefined && bodyDur !== null && !durationAllowedForScopes(v.safe, bodyDur)) {
+      return void res.status(400).json({ error: 'invalid grant duration', error_code: 'INVALID_GRANT_DURATION', allowed_durations: allowedDurationsForScopes(v.safe) })
+    }
+    const chosenDuration: GrantDuration = (bodyDur !== undefined && bodyDur !== null)
+      ? bodyDur as GrantDuration
       : (durationAllowedForScopes(v.safe, p.grant_duration) ? p.grant_duration as GrantDuration : suggestedDurationForScopes(v.safe))
     const expiresAt = new Date(Date.now() + (durationToSeconds(chosenDuration) || 3600) * 1000).toISOString()
     // 先【CAS 抢占】pending 配对(唯一赢家),再插 grant —— 竞态下输家 changes!==1 直接 409、不插任何 grant,

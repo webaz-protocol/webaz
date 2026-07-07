@@ -59,7 +59,7 @@ ok('25. agent_permission_approve in webauthn auth/start allowed purposes', /'age
 // ── duration choice (human can change the grant lifetime at approve) ──
 ok('26a. each card renders the shared duration selector (per-request id)', /grantDurationSelect\(r\.allowed_durations, r\.duration, 'aa-dur-' \+ escHtml\(String\(r\.id\)\)\)/.test(UI))
 ok('26b. approve sends the chosen duration (shared reader)', /grantDurationValue\('aa-dur-' \+ id\)/.test(UI) && /\/approve'[\s\S]{0,160}duration/.test(UI))
-ok('26c. backend approve honors a human duration override (validated)', /effDuration[\s\S]{0,140}durationAllowedForScopes\(reqScopes, \(req\.body \|\| \{\}\)\.duration\)/.test(GRANTS))
+ok('26c. backend approve honors a human duration override, strict-validated (400 on invalid, no silent fallback)', /durationAllowedForScopes\(reqScopes, bodyDur\)/.test(GRANTS) && /INVALID_GRANT_DURATION/.test(GRANTS) && /effDuration: GrantDuration = \(bodyDur !== undefined/.test(GRANTS))
 
 // ── i18n parity ──
 {

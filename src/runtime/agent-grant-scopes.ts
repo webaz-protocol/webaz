@@ -179,28 +179,32 @@ export const DURATION_SECONDS: Record<Exclude<GrantDuration, 'once'>, number> = 
 
 /**
  * Which durations a set of scopes may be granted for, capped by the HIGHEST risk tier present:
- *   - never-delegable / unknown  → []            (cannot be granted at all)
- *   - risk (high)                → ['once']       (single Passkey each time; NEVER long-term)
- *   - safe (low/medium)          → once…30d       (long-term ok)
+ *   - never-delegable / unknown  → []                  (cannot be granted at all)
+ *   - risk (high)                → []                  (not delegable to a persistent grant)
+ *   - safe (low/medium)          → 1h / 24h / 7d / 30d  (long-term ok)
+ * NOTE: 'once' is intentionally NOT offered. It's a real single-use concept, but no single-use grant
+ *   CONSUMPTION mechanism exists yet — durationToSeconds('once') would fall back to a 1h *reusable* bearer,
+ *   which misleads. Until a true single-use grant is built, 'once' stays out of the allowed set / UI / i18n.
  */
 export function allowedDurationsForScopes(scopes: readonly string[]): GrantDuration[] {
   const tiers = scopes.map(classifyScope)
   if (tiers.some(t => t === 'never_delegable' || t === 'unknown')) return []
-  if (tiers.some(t => t === 'risk')) return ['once']
-  return ['once', '1h', '24h', '7d', '30d']
+  if (tiers.some(t => t === 'risk')) return []
+  return ['1h', '24h', '7d', '30d']
 }
 
 export function durationAllowedForScopes(scopes: readonly string[], duration: unknown): boolean {
   return typeof duration === 'string' && (allowedDurationsForScopes(scopes) as string[]).includes(duration)
 }
 
-/** Suggested default: 7d for long-term-eligible safe scopes; else the safest available (once). */
+/** Suggested default: 7d for long-term-eligible safe scopes; else the safest available. */
 export function suggestedDurationForScopes(scopes: readonly string[]): GrantDuration {
   const a = allowedDurationsForScopes(scopes)
-  return a.includes('7d') ? '7d' : (a[0] ?? 'once')
+  return a.includes('7d') ? '7d' : (a[0] ?? '7d')
 }
 
-/** Grant lifetime in seconds for an approved (non-'once') duration. 'once' handled separately (single-use). */
+/** Grant lifetime in seconds. 'once' is RESERVED for a future single-use grant (no consumption path yet) and
+ *  is never offered; if it somehow arrives it maps to 0 → callers fall back to a short window. */
 export function durationToSeconds(duration: GrantDuration): number {
   return duration === 'once' ? 0 : DURATION_SECONDS[duration]
 }
