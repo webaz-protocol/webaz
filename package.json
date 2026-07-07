@@ -88,6 +88,7 @@
     "test:agent-permission-requests": "tsx scripts/test-agent-permission-requests.ts",
     "test:agent-permission-consume": "tsx scripts/test-agent-permission-consume.ts",
     "test:agent-approvals-ui": "tsx scripts/test-agent-approvals-ui.ts",
+    "test:mcp-place-order-rail": "tsx scripts/test-mcp-place-order-rail.ts",
     "test:agent-grant-verify": "tsx scripts/test-agent-grant-verify.ts",
     "test:agent-grant-mcp-consume": "tsx scripts/test-agent-grant-mcp-consume.ts",
     "test:connected-agents-read": "tsx scripts/test-connected-agents-read.ts",
