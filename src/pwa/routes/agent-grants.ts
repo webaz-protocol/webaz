@@ -124,7 +124,9 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
             error: `this action needs the "${scope}" permission, which your grant does not carry`,
             error_code: 'PERMISSION_REQUIRED',
             required_scope: scope,
+            missing_scopes: [scope],
             approval_url: '/#agent-approvals',
+            retry_after_approval: true,
             request_permission: { method: 'POST', endpoint: '/api/agent-grants/permission-requests', body: { scopes: [scope] } },
             note: 'Ask the human to approve at approval_url; on approval your existing grant is expanded — then retry this request.',
           })

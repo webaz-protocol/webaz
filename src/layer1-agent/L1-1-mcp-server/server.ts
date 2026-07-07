@@ -664,7 +664,7 @@ Skipping is allowed but agent then carries price/stock-race risk itself.`,
     // was ~1336 chars, now ~650 chars
     description: `⚠️ **"list" = PUBLISH** (verb), NOT "list out". Seller-only catalog publish + manage.
 
-USE THIS when seller wants to publish / update / delist / relist / trash / delete own product, OR view own listings (action=mine). NOT for browsing marketplace — use webaz_search (anyone, no auth). Requires seller api_key. On create: system auto-suggests stake ~15% of price (buyer protection).
+USE THIS when seller wants to publish / update / delist / relist / trash / delete own product, OR view own listings (action=mine). NOT for browsing marketplace — use webaz_search (anyone, no auth). Writes need a seller api_key; **action=mine (read own catalog) also works with a paired delegation grant** (webaz_pair — Catalog Agent). A grant that lacks the scope gets a structured PERMISSION_REQUIRED (request it via webaz_pair action="request", then retry). On create: system auto-suggests stake ~15% of price (buyer protection).
 
 Fill agent_summary fields completely (brand/return/handling/warranty) — helps buyer agents compare. For "exclusive-price vs external-link" listing → PWA Web only (link claim needs crowd-verify).
 
@@ -2397,11 +2397,25 @@ async function handleVerifyPrice(args: Record<string, unknown>) {
   }
 }
 
-async function handleListProduct(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function handleListProduct(args: Record<string, unknown>): Promise<Record<string, unknown>> {
   // Wave 3 audit P0: 加 action 分发 — agent 卖家能完整管理目录（不止 create）
   const action = (args.action as string) || 'create'
   const apiKey = resolveMcpApiKey(args)
-  if (!apiKey) return { error: 'api_key required' }
+  if (!apiKey) {
+    // No human api_key — fall back to a delegation grant (Catalog Agent). A grant does SAFE READS now
+    //   (action="mine" → the grant-gated seller catalog); creating drafts / publish-requests via a grant
+    //   arrives with the draft workflow. Missing scope → structured PERMISSION_REQUIRED (agent can request it).
+    if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+    const cred = resolveGrantCredential()
+    if (!cred) return { error: 'api_key required — or pair a delegation grant: webaz_pair action="start", have the human approve the catalog_agent bundle, then retry.', error_code: 'AUTH_REQUIRED' }
+    if (action === 'mine') {
+      const r = await apiCall('/api/agent/seller/products', { method: 'GET', apiKey: cred.token })
+      if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks seller_products_read. Run webaz_pair action="request" bundle="catalog_agent", have the human approve, then retry.' }
+      if (r.error) return r
+      return { found: r.count, products: r.products, seller_id: r.seller_id, via: 'delegation_grant', note: 'Read via your delegation grant (safe scope seller_products_read). Creating/publishing products via a grant is not enabled yet — that needs the draft/publish-request flow (coming) or a seller api_key.' }
+    }
+    return { error_code: 'GRANT_WRITE_NOT_ENABLED', note: `action="${action}" is not available via a delegation grant yet — a grant can currently READ your catalog (action="mine"). Creating drafts and submitting publish-requests via a grant is coming next; for now provide a seller api_key for writes.` }
+  }
 
   // RFC-003 P2b: NETWORK 模式 — 卖家目录管理全部转发生产端点（单一真相源）
   if (toolBackend('webaz_list_product') === 'network') {
