@@ -126,6 +126,16 @@ try {
   ok('approve WITH Passkey token (bound to this code) issues a grant', approve.status === 200 && !!approve.body.grant_id)
   ok('approve response has NO token', !hasTokenField(approve.body))
 
+  // ── duration choice: agent SUGGESTS, human PICKS/overrides at approve; grant TTL reflects the human's choice ──
+  ok('start exposes suggested_duration + allowed_durations (safe → up to 30d)', Array.isArray(start.body.allowed_durations) && (start.body.allowed_durations as string[]).includes('30d') && typeof start.body.suggested_duration === 'string')
+  const startD = await j('/api/agent-grants/pair/start', { method: 'POST', body: { code_challenge: challenge, capabilities: [{ capability: 'read_public' }], duration: '30d' } })
+  ok('start with duration=30d → suggested_duration echoed 30d', startD.body.suggested_duration === '30d')
+  const codeD = startD.body.user_code
+  const approveD = await j(`/api/agent-grants/pair/${codeD}/approve`, { method: 'POST', user: 'usr_alice', body: { webauthn_token: `gtk_ok:${codeD}`, duration: '24h' } })
+  ok('human OVERRIDES the 30d suggestion to 24h at approve → grant duration=24h', approveD.status === 200 && approveD.body.duration === '24h')
+  const secsToExpiry = (new Date(String(approveD.body.expires_at)).getTime() - Date.now()) / 1000
+  ok('grant expires_at ≈ 24h out (human choice wins — not 30d, not a hardcoded 1h)', secsToExpiry > 86000 && secsToExpiry < 86500)
+
   // ── P2: the Passkey token is BOUND to the pairing code — an A-token cannot approve B (validate purpose_data) ──
   const startB = await j('/api/agent-grants/pair/start', { method: 'POST', body: { code_challenge: challenge, capabilities: [{ capability: 'search' }] } })
   const codeB = startB.body.user_code

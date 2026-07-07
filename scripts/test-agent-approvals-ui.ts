@@ -36,7 +36,7 @@ ok('9. approve POSTs /permission-requests/:id/approve with webauthn_token', /per
 ok('10. reject path calls the reject endpoint', /\/reject'/.test(UI) && /aaReject/.test(UI))
 ok('11. empty state when no pending requests', UI.includes('暂无待处理的授权请求'))
 ok('12. renders a risk badge (low/medium/high)', /低风险/.test(UI) && /中风险/.test(UI) && /高风险/.test(UI))
-ok('13. shows grant duration', /授权时长/.test(UI) && /DURATION_LABEL/.test(UI))
+ok('13. shows grant duration (via the shared selector)', /grantDurationSelect\(/.test(UI))
 ok('14. prefers the human bundle summary, falls back to scope chips', /human_summary/.test(UI) && /requested_scopes/.test(UI))
 
 // ── 入口 + 通知 badge(设置页)──
@@ -55,6 +55,11 @@ ok('22. Passkey token BOUND to the request: approve validate checks request_id =
 ok('23. frontend requests the gate with { request_id } (purpose_data binding)', /requestPasskeyGate\('agent_permission_approve',\s*\{\s*request_id/.test(UI))
 ok('24. agent_permission_approve in HumanPresencePurpose whitelist', /agent_permission_approve/.test(HP))
 ok('25. agent_permission_approve in webauthn auth/start allowed purposes', /'agent_permission_approve'/.test(WEBAUTHN))
+
+// ── duration choice (human can change the grant lifetime at approve) ──
+ok('26a. each card renders the shared duration selector (per-request id)', /grantDurationSelect\(r\.allowed_durations, r\.duration, 'aa-dur-' \+ escHtml\(String\(r\.id\)\)\)/.test(UI))
+ok('26b. approve sends the chosen duration (shared reader)', /grantDurationValue\('aa-dur-' \+ id\)/.test(UI) && /\/approve'[\s\S]{0,160}duration/.test(UI))
+ok('26c. backend approve honors a human duration override (validated)', /effDuration[\s\S]{0,140}durationAllowedForScopes\(reqScopes, \(req\.body \|\| \{\}\)\.duration\)/.test(GRANTS))
 
 // ── i18n parity ──
 {

@@ -556,6 +556,7 @@ const _EN = {
   '当你的 agent 请求更多权限时,会出现在这里等你批准。': 'When your agent requests more permissions, they appear here for your approval.',
   '它想做什么': 'What it wants to do',
   '授权时长': 'Grant duration',
+  '你可以改': 'you can change this',
   '请求于': 'Requested',
   '低风险': 'Low risk',
   '中风险': 'Medium risk',

@@ -54,6 +54,12 @@ ok('24. direct grant-issuance bypass disabled → USE_PAIRING_FLOW (no Passkey-l
 ok('25. approve CAS-claims the pairing (changes!==1 guard) BEFORE minting the grant (no orphan on race)',
   /claimed\.changes !== 1/.test(GRANTS) && GRANTS.indexOf('claimed.changes !== 1') < GRANTS.indexOf('INSERT INTO agent_delegation_grants (grant_id'))
 
+// ── duration choice (human picks the grant lifetime at approve) ──
+ok('27. #pair renders the shared duration selector from consent (allowed/suggested)', /grantDurationSelect\(c\.allowed_durations, c\.suggested_duration, 'pair-duration'\)/.test(UI))
+ok('28. #pair approve sends the chosen duration (shared reader)', /grantDurationValue\('pair-duration'\)/.test(UI) && /\/approve'[\s\S]{0,160}duration/.test(UI))
+ok('29. backend pair/approve issues the grant with the human-chosen duration (validated), not a hardcoded 1h', /durationAllowedForScopes\(v\.safe, \(req\.body \|\| \{\}\)\.duration\)/.test(GRANTS) && /durationToSeconds\(chosenDuration\)/.test(GRANTS))
+ok('30. pair/start stores + exposes suggested_duration/allowed_durations', /grant_duration/.test(GRANTS) && /allowed_durations: allowedDurationsForScopes/.test(GRANTS))
+
 // ── i18n parity ──
 {
   const keys = new Set<string>()
