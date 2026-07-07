@@ -46,6 +46,15 @@ export function registerDisputesReadRoutes(app: Application, deps: DisputesReadD
     res.json(await getOpenDisputes(db))
   })
 
+  // PR2 统一仲裁台待办角标:仲裁员待处理案数(open+in_review,含并入的 decline_contest)。轻量 count,喂前端 badge。
+  //   非仲裁员返回 0(不报错,前端 badge 拉取对所有人无害)。
+  app.get('/api/arbitrator/pending-count', async (req, res) => {
+    const user = auth(req, res); if (!user) return
+    if (!isEligibleArbitrator(user.id as string).ok) return void res.json({ count: 0 })
+    const row = await dbOne<{ n: number }>("SELECT COUNT(*) n FROM disputes WHERE status IN ('open','in_review')")
+    res.json({ count: row?.n ?? 0 })
+  })
+
   // A2 同类判例推荐
   app.get('/api/disputes/:id/similar-cases', async (req, res) => {
     const user = auth(req, res); if (!user) return

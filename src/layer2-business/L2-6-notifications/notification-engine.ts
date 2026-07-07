@@ -336,6 +336,35 @@ export function createNotification(
   return notif
 }
 
+/**
+ * 统一仲裁台:一笔卖家客观拒单举证并入 disputes 后,通知全体 active 仲裁员 + admin(管理面)有新案待处理。
+ *   幂等去重:按 (order_id, type='arb:decline_contest_new', user_id) 存在性探测 —— 新建行、backfill 补建、
+ *   重复调用皆只对每个收件人发一次,不重复轰炸(镜像 scanDeadlineReminders 的 (order_id,type) 去重)。
+ *   收件人为 active arbitrator_whitelist(唯一仲裁能力源)+ users.role='admin'(监督/兜底)。
+ * 同步 better-sqlite3(engine 层);调用方(contest 路由 / backfill 脚本)传入同一个 db 句柄。
+ */
+export function notifyDeclineContestCase(
+  db: Database.Database,
+  orderId: string,
+  disputeId: string,
+): { notified: number; skipped: number } {
+  const TYPE = 'arb:decline_contest_new'
+  const ids = new Set<string>()
+  try { (db.prepare("SELECT user_id AS id FROM arbitrator_whitelist WHERE status IS NULL OR status = 'active'").all() as { id: string }[]).forEach(r => ids.add(r.id)) } catch { /* fresh-DB 无表 */ }
+  try { (db.prepare("SELECT id FROM users WHERE role = 'admin'").all() as { id: string }[]).forEach(r => ids.add(r.id)) } catch { /* */ }
+  let notified = 0, skipped = 0
+  for (const uid of ids) {
+    const exists = db.prepare('SELECT 1 FROM notifications WHERE order_id = ? AND type = ? AND user_id = ? LIMIT 1').get(orderId, TYPE, uid)
+    if (exists) { skipped++; continue }
+    createNotification(db, uid, orderId, TYPE,
+      '新的拒单举证仲裁待处理',
+      '一笔卖家客观拒单举证已进入统一仲裁台,等待仲裁员裁决。',
+      { templateKey: 'arb_decline_contest_new', params: { order_id: orderId, dispute_id: disputeId } })
+    notified++
+  }
+  return { notified, skipped }
+}
+
 // ─── 查询 ─────────────────────────────────────────────────────
 
 // RFC-016 Phase 1:纯读 → 异步 seam。db 参数保留(签名兼容),内部走 dbAll/dbOne(同实例,setSeamDb)。

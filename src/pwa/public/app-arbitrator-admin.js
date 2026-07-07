@@ -71,7 +71,7 @@ window.arbTaishCard = () => `
   <div style="margin-bottom:10px">
     <div class="card" onclick="location.hash='#disputes'" style="padding:14px;cursor:pointer;display:flex;align-items:center;gap:10px;min-height:64px">
       <div style="font-size:22px">⚖</div>
-      <div><div style="font-weight:600;font-size:14px">${t('仲裁台')}</div><div style="font-size:12px;color:#6b7280">${t('待响应 / 仲裁中 / 已结')}</div></div>
+      <div><div style="font-weight:600;font-size:14px">${t('仲裁台')}<span class="arb-badge" style="background:#7c3aed;color:#fff;border-radius:99px;font-size:11px;padding:1px 7px;margin-left:6px;display:${(window.state && state.arbPending > 0) ? 'inline' : 'none'}">${(window.state && state.arbPending) || ''}</span></div><div style="font-size:12px;color:#6b7280">${t('待响应 / 仲裁中 / 已结')}</div></div>
     </div>
   </div>`
 

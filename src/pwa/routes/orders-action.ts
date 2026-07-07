@@ -25,7 +25,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import type { OrderStatus } from '../../layer0-foundation/L0-2-state-machine/transitions.js'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
-import { createNotification } from '../../layer2-business/L2-6-notifications/notification-engine.js'
+import { createNotification, notifyDeclineContestCase } from '../../layer2-business/L2-6-notifications/notification-engine.js'
 import { releaseFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:取消/超时释放任何遗留模拟质押(AR 订单无 stake → no-op)
 import { restorePreShipDirectPayStock } from '../../direct-pay-stock.js'   // D3 库存回补唯一入口(pre-ship 放行;已出库拒绝)
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'   // PR-4e: D1/D2 披露契约门
@@ -370,6 +370,8 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       //   (标志位已置;backfill 脚本可事后补建),但记录以便排查。
       const dc = createDeclineContestDispute(db, req.params.id)
       if (!dc.success) console.error(`[contest_decline] createDeclineContestDispute failed for ${req.params.id}: ${dc.error}`)
+      // PR2:通知全体 active 仲裁员 + admin 有新案(去重,只对新建行发;既有行不重复轰炸)。
+      else if (!dc.existing && dc.disputeId) { try { notifyDeclineContestCase(db, req.params.id, dc.disputeId) } catch (e) { console.error(`[contest_decline] notify failed: ${(e as Error).message}`) } }
       return void res.json({
         success: true, outcome: 'contested', evidence_ids: evIds, dispute_id: dc.disputeId,
         note: '已就客观无责拒单发起人工仲裁举证。自动终结已暂停,等待仲裁员裁决:维持→免责全退+退质押,驳回→违约结算。',

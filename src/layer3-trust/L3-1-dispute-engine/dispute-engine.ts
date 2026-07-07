@@ -1032,12 +1032,11 @@ export async function getOpenDisputes(_db: Database.Database): Promise<(DisputeR
     LEFT JOIN users u2 ON d.defendant_id = u2.id
     LEFT JOIN orders o ON d.order_id = o.id
     WHERE d.status IN ('open', 'in_review')
-      AND COALESCE(d.dispute_type, 'buyer_dispute') <> 'decline_contest'
     ORDER BY d.created_at ASC
   `)
 }
-/* ↑ PR1 fail-closed:decline_contest 行虽已并入 disputes 表,但在统一台展示(PR2)+ 专用裁决(PR3)就绪前,
-   从仲裁员工作队列过滤掉 —— 避免"看得到却不能裁"的中间态。PR2 反转此过滤并加"拒单举证仲裁"展示。 */
+/* PR2:decline_contest 现已进入统一仲裁员队列(SELECT d.* 带出 dispute_type,前端渲染"拒单举证仲裁"标签)。
+   裁决仍 fail-closed(checkDisputeTimeouts 跳过 + arbitrate 路由 409),PR3 打通专用两选裁决。 */
 
 // ─── 工具函数 ─────────────────────────────────────────────────
 

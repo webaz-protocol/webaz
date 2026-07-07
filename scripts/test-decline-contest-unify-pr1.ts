@@ -70,12 +70,12 @@ try {
   ok('A9 非【已举证】订单被拒(未 contested)', r3.success === false)
   ok('A10 未知订单被拒', createDeclineContestDispute(db, 'ord_missing').success === false)
 
-  // ══ B. getOpenDisputes 过滤 decline_contest ══
+  // ══ B. getOpenDisputes 队列 ══(PR2 已反转 PR1 的队列过滤 → decline_contest 现在可见;裁决仍 fail-closed,见 C/D)
   db.prepare("INSERT INTO disputes (id,order_id,initiator_id,defendant_id,reason,status,dispute_type) VALUES ('dsp_norm','ord_A','buyer1','seller1','普通买家争议','open','buyer_dispute')").run()
   const openList = await getOpenDisputes(db)
   const ids = openList.map(d => (d as Record<string, unknown>).id)
   ok('B1 普通争议在仲裁员队列里', ids.includes('dsp_norm'))
-  ok('B2 decline_contest 不在仲裁员队列里(PR2 前 fail-closed)', !ids.includes(r1.disputeId))
+  ok('B2 decline_contest 现已在仲裁员队列(PR2 反转了 PR1 的队列过滤;可见但裁决仍 409)', ids.includes(r1.disputeId))
 
   // ══ C. checkDisputeTimeouts 跳过 decline_contest ══
   seedOrder('ord_C')
@@ -128,7 +128,7 @@ try {
   ok('E4 重跑候选为空(幂等,0 新增)', backfillCandidates().length === 0)
 
   if (fail === 0) {
-    console.log(`\n✅ decline_contest 并入 disputes(PR1):建行幂等 + fail-closed(队列/监督台/自动裁决/裁决路由)+ backfill 幂等\n  ✅ pass ${pass}\n  ❌ fail ${fail}`)
+    console.log(`\n✅ decline_contest 并入 disputes(PR1 + PR2 队列反转):建行幂等 + 裁决 fail-closed(自动裁决 skip + arbitrate 409)+ backfill 幂等\n  ✅ pass ${pass}\n  ❌ fail ${fail}`)
   } else {
     console.error(`\n❌ PR1 FAILED\n  ✅ pass ${pass}\n  ❌ fail ${fail}\n${fails.join('\n')}`); process.exitCode = 1
   }
