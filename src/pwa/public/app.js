@@ -648,7 +648,7 @@ async function render(page, params) {
       return renderSeller(app)
     case 'edit-product':  return renderEditProduct(app, params[0])
     case 'wallet':        return renderWallet(app)
-    case 'agents':        return renderConnectedAgents(app); case 'pair': return window.renderAgentPair(app)  // RFC-020 #pair 配对授权页
+    case 'agents':        return renderConnectedAgents(app); case 'pair': return window.renderAgentPair(app); case 'agent-approvals': return window.renderAgentApprovals(app)  // RFC-020 #pair 配对授权页 / #agent-approvals 扩权审批页
     case 'note':          return renderNoteLanding(app, params[0])
     case 'tag':           return renderTagPage(app, decodeURIComponent(params[0] || ''))
     case 'governance':    return renderGovernance(app)

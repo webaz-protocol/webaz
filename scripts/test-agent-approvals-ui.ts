@@ -1,0 +1,68 @@
+#!/usr/bin/env tsx
+/**
+ * RFC-020 — #agent-approvals 扩权审批页 前端接线 + 安全属性(静态断言;端到端逻辑见 test:agent-permission-requests).
+ *   覆盖:路由存在 / 装载 / 未登录提示 / 列出待批请求 / Passkey 批准(绑 request_id)/ 拒绝 / 空态 /
+ *   风险徽章 / 时长展示 / bundle 摘要优先 / 设置页入口+待办 badge / 不显示 raw 凭证 / 后端 Passkey 边界 / i18n.
+ * Usage: npm run test:agent-approvals-ui
+ */
+import { readFileSync } from 'fs'
+
+let pass = 0, fail = 0; const fails: string[] = []
+const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push('✗ ' + n) } }
+
+const UI = readFileSync('src/pwa/public/app-agent-approvals.js', 'utf8')
+const APP = readFileSync('src/pwa/public/app.js', 'utf8')
+const ACCOUNT = readFileSync('src/pwa/public/app-account.js', 'utf8')
+const HTML = readFileSync('src/pwa/public/index.html', 'utf8')
+const PKG = readFileSync('package.json', 'utf8')
+const CEIL = readFileSync('scripts/complexity-ratchet-guard.ts', 'utf8')
+const GRANTS = readFileSync('src/pwa/routes/agent-grants.ts', 'utf8')
+const WEBAUTHN = readFileSync('src/pwa/routes/webauthn.ts', 'utf8')
+const HP = readFileSync('src/pwa/human-presence.ts', 'utf8')
+const I18N = readFileSync('src/pwa/public/i18n.js', 'utf8')
+
+// ── 路由 + 装载 ──
+ok('1. router: #agent-approvals → renderAgentApprovals', /case 'agent-approvals':\s*return window\.renderAgentApprovals\(app\)/.test(APP))
+ok('2. module loaded in index.html', HTML.includes('app-agent-approvals.js'))
+ok('3. module in check:pwa-syntax', PKG.includes('app-agent-approvals.js'))
+ok('4. module registered in complexity ceiling', /app-agent-approvals\.js'?:\s*\d+/.test(CEIL))
+ok('5. defines window.renderAgentApprovals', /window\.renderAgentApprovals\s*=/.test(UI))
+
+// ── 页面行为要点 ──
+ok('6. not-logged-in guard (prompt login)', /if \(!state\.user\)/.test(UI))
+ok('7. lists pending requests via GET /agent-grants/permission-requests', /GET\('\/agent-grants\/permission-requests'\)/.test(UI))
+ok('8. approve goes through Passkey ceremony (agent_permission_approve)', /requestPasskeyGate\('agent_permission_approve'/.test(UI))
+ok('9. approve POSTs /permission-requests/:id/approve with webauthn_token', /permission-requests\/'[\s\S]{0,60}\/approve'[\s\S]{0,80}webauthn_token/.test(UI))
+ok('10. reject path calls the reject endpoint', /\/reject'/.test(UI) && /aaReject/.test(UI))
+ok('11. empty state when no pending requests', UI.includes('暂无待处理的授权请求'))
+ok('12. renders a risk badge (low/medium/high)', /低风险/.test(UI) && /中风险/.test(UI) && /高风险/.test(UI))
+ok('13. shows grant duration', /授权时长/.test(UI) && /DURATION_LABEL/.test(UI))
+ok('14. prefers the human bundle summary, falls back to scope chips', /human_summary/.test(UI) && /requested_scopes/.test(UI))
+
+// ── 入口 + 通知 badge(设置页)──
+ok('15. settings nav links to #agent-approvals', /navigate\('#agent-approvals'\)/.test(ACCOUNT))
+ok('16. settings shows a pending-count badge element', /id="aa-pending-badge"/.test(ACCOUNT))
+ok('17. badge hydrated from account render (net-zero piggyback)', /hydrateAgentApprovalsBadge\(\)/.test(ACCOUNT) && /window\.hydrateAgentApprovalsBadge\s*=/.test(UI))
+
+// ── 安全属性 ──
+ok('18. agent label framed as unverified', UI.includes('未验证'))
+ok('19. framed as safe-only (never money/vote/arbitrate/keys)', /资金.*投票.*仲裁|安全只读|SAFE/.test(UI))
+ok('20. no raw credential rendered (no bearer/token_hash/api_key display)', !/token_hash|\.api_key|gtk_/.test(UI))
+
+// ── 后端安全边界(扩权=提权,必须真人 Passkey,绑 request)──
+ok('21. backend approve is Passkey-gated (requireHumanPresence agent_permission_approve)', /requireHumanPresence\([\s\S]{0,140}'agent_permission_approve'/.test(GRANTS))
+ok('22. Passkey token BOUND to the request: approve validate checks request_id === req.params.id', /request_id === req\.params\.id/.test(GRANTS))
+ok('23. frontend requests the gate with { request_id } (purpose_data binding)', /requestPasskeyGate\('agent_permission_approve',\s*\{\s*request_id/.test(UI))
+ok('24. agent_permission_approve in HumanPresencePurpose whitelist', /agent_permission_approve/.test(HP))
+ok('25. agent_permission_approve in webauthn auth/start allowed purposes', /'agent_permission_approve'/.test(WEBAUTHN))
+
+// ── i18n parity ──
+{
+  const keys = new Set<string>()
+  for (const m of UI.matchAll(/(?<![A-Za-z])t\('([^']+)'\)/g)) keys.add(m[1])
+  const noEn = [...keys].filter(k => !I18N.includes(`'${k.replace(/\\/g, '\\\\')}':`))
+  ok('26. i18n parity (all literal t() keys have EN)', keys.size >= 12 && noEn.length === 0)
+}
+
+if (fail > 0) { console.error(`\n❌ agent-approvals-ui FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
+console.log(`✅ #agent-approvals 扩权审批页: route + wiring + not-logged-in + list pending + Passkey approve (bound to request_id) + reject + empty state + risk badge + duration + bundle summary + settings entry & pending badge + no raw credential + backend Passkey/bound gate + i18n\n  ✅ pass ${pass}`)

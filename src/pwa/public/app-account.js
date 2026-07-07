@@ -438,7 +438,7 @@ async function renderProfile(app) {
             ${t('提现等敏感操作可要求设备指纹 / Face ID 二次确认。私钥不离开你的手机，手机丢失也不会泄露。')}
           </div>
           <div id="passkey-list" style="font-size:12px;color:#6b7280">${t('加载中…')}</div>
-          <a onclick="navigate('#agents')" style="display:block;margin-top:12px;font-size:12px;color:#4f46e5;cursor:pointer">🔌 ${t('已连接的 Agent')} →</a>
+          <a onclick="navigate('#agents')" style="display:block;margin-top:12px;font-size:12px;color:#4f46e5;cursor:pointer">🔌 ${t('已连接的 Agent')} →</a><a onclick="navigate('#agent-approvals')" style="display:block;margin-top:8px;font-size:12px;color:#4f46e5;cursor:pointer">🔔 ${t('Agent 授权请求')}<span id="aa-pending-badge"></span> →</a>
         </div>
       </div>
     </div>
@@ -552,7 +552,7 @@ async function renderProfile(app) {
   })()
 
   // 加载 Passkey 列表
-  refreshPasskeyList()
+  refreshPasskeyList(); if (window.hydrateAgentApprovalsBadge) hydrateAgentApprovalsBadge()
 }
 
 async function refreshPasskeyList() {
