@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (777 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (779 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2754,6 +2754,34 @@
         "summary": "GET /api/agent/negative-space",
         "tags": [],
         "security": []
+      }
+    },
+    "/api/agent/orders": {
+      "get": {
+        "summary": "买家地址/联系/gift_recipient 连取都不取(I6)。纯只读,无任何执行(order_action_request 在 PR2/PR3 才有提交/执行)。",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "seller_orders_read_minimal"
+      }
+    },
+    "/api/agent/orders/:id": {
+      "get": {
+        "summary": "GET /api/agent/orders/:id",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "seller_orders_read_minimal"
       }
     },
     "/api/agent/seller/products": {

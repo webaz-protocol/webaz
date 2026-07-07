@@ -94,6 +94,7 @@
     "test:decline-contest-unify-p2": "tsx scripts/test-decline-contest-unify-pr2.ts",
     "test:decline-contest-unify-p3": "tsx scripts/test-decline-contest-unify-pr3.ts",
     "test:arb-resolved-history": "tsx scripts/test-arb-resolved-history.ts",
+    "test:order-action-request-p1": "tsx scripts/test-order-action-request-pr1.ts",
     "backfill:decline-contest": "tsx scripts/backfill-decline-contest-disputes.ts",
     "test:mcp-version-nudge": "tsx scripts/test-mcp-version-nudge.ts",
     "test:agent-grant-verify": "tsx scripts/test-agent-grant-verify.ts",

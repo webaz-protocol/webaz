@@ -29,6 +29,7 @@ import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrant
 import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveBundle, durationAllowedForScopes, suggestedDurationForScopes, allowedDurationsForScopes, durationToSeconds, riskLevelForScopes, type GrantDuration } from '../../runtime/agent-grant-scopes.js'
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
 import { verifyGrantToken, type GrantPrincipal } from '../../runtime/agent-grant-verifier.js'
+import { minimalSellerOrderView, MINIMAL_ORDER_COLUMNS } from '../agent-order-minimal-view.js'  // RFC-021 §6a 最小化订单读投影
 
 export interface AgentGrantsDeps {
   db: Database.Database
@@ -163,6 +164,25 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       "SELECT id, title, status, price, currency, stock, category, created_at, updated_at FROM products WHERE seller_id = ? AND status != 'deleted' ORDER BY created_at DESC LIMIT 200",
       [p.human_id])
     res.json({ seller_id: p.human_id, agent_label: p.agent_label, count: rows.length, products: rows, note: 'Seller-owned catalog read via delegation grant (safe scope seller_products_read). Read-only; no money/commission fields.' })
+  })
+
+  // RFC-021 §6a — 最小化订单读(safe scope seller_orders_read_minimal)。仅读该 agent 之人(卖家)的订单;
+  //   ALLOWLIST 投影(minimalSellerOrderView)只产出 6 字段,SELECT 只取非 PII 列(MINIMAL_ORDER_COLUMNS) ——
+  //   买家地址/联系/gift_recipient 连取都不取(I6)。纯只读,无任何执行(order_action_request 在 PR2/PR3 才有提交/执行)。
+  app.get('/api/agent/orders', requireAgentGrantScope('seller_orders_read_minimal'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const rows = await dbAll<Record<string, unknown>>(
+      `SELECT ${MINIMAL_ORDER_COLUMNS.join(', ')} FROM orders WHERE seller_id = ? ORDER BY created_at DESC LIMIT 200`,
+      [p.human_id])
+    res.json({ seller_id: p.human_id, agent_label: p.agent_label, count: rows.length, orders: rows.map(o => minimalSellerOrderView(o, db)), note: 'RFC-021 minimal order read (safe scope seller_orders_read_minimal). No buyer address/contact; no execution.' })
+  })
+  app.get('/api/agent/orders/:id', requireAgentGrantScope('seller_orders_read_minimal'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const o = await dbOne<Record<string, unknown>>(
+      `SELECT ${MINIMAL_ORDER_COLUMNS.join(', ')} FROM orders WHERE id = ? AND seller_id = ?`,
+      [req.params.id, p.human_id])
+    if (!o) return void res.status(404).json({ error: '订单不存在或不属于你', error_code: 'ORDER_NOT_FOUND' })
+    res.json({ order: minimalSellerOrderView(o, db) })
   })
 
   // POST create a DRAFT product via a delegation grant (Catalog Agent, safe scope seller_product_draft). The

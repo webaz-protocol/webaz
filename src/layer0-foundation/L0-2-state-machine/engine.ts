@@ -539,7 +539,7 @@ function findActiveDeadlineTransition(
 }
 
 /** 获取当前有效的截止时间 */
-function getActiveDeadline(order: Order, db?: Database.Database) {
+export function getActiveDeadline(order: Order, db?: Database.Database) {
   // QA 轮 7 P1：旧表 picked_up 状态没 deadline → agent 不知道下一步多久前要做完
   // 修：picked_up 状态视为"已揽收，等运输/投递"，下一个 deadline 是 delivery_deadline
   // QA 轮 7 P1（另一条）：disputed 状态下没读 dispute_cases 的 arbitrate_deadline → agent 不知道仲裁还有多久
