@@ -84,6 +84,22 @@ try {
   const notif = db.prepare("SELECT type, title, user_id FROM notifications WHERE user_id='alice' AND type='agent_product_draft' ORDER BY rowid DESC LIMIT 1").get() as { type: string; title: string; user_id: string } | undefined
   ok('lightweight signal: notification queued for the human to review + publish', !!notif && notif.user_id === 'alice')
 
+  // ── (audit P1) a SAFE draft grant must NOT trigger money/reputation side-effects via a colliding source_url ──
+  //   Another seller (dave) has a VERIFIED external link; alice has wallet balance. Drafting with that same
+  //   source_url must NOT debit alice, must NOT create a verify_task, must NOT claim the link — just a warehouse draft.
+  db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('dave','dave','seller','k_d')").run()
+  db.prepare("INSERT INTO products (id,seller_id,title,description,price,status) VALUES ('prd_dave','dave','D','d',9,'active')").run()
+  db.prepare("INSERT INTO product_external_links (id,product_id,url,source,verified,verified_at) VALUES ('lnk_d','prd_dave','http://conflict.example/x','import',1,datetime('now'))").run()
+  db.prepare("INSERT INTO wallets (user_id,balance) VALUES ('alice',5) ON CONFLICT(user_id) DO UPDATE SET balance=5").run()
+  const balBefore = (db.prepare("SELECT balance FROM wallets WHERE user_id='alice'").get() as { balance: number }).balance
+  const conflict = await j('/api/agent/seller/products', { method: 'POST', bearer: 'gtk_alice', body: { title: 'Conflicted', description: 'd', price: 20, product_type: 'retail', source_url: 'http://conflict.example/x' } })
+  ok('grant draft with a CONFLICTING source_url still succeeds as a warehouse draft', conflict.body.success === true && conflict.body.status === 'warehouse')
+  const cpid = String(conflict.body.product_id)
+  ok('SAFE draft did NOT debit the seller wallet (no 0.1 WAZ verify fee)', (db.prepare("SELECT balance FROM wallets WHERE user_id='alice'").get() as { balance: number }).balance === balBefore)
+  ok('SAFE draft created NO verify_task', (db.prepare('SELECT COUNT(*) n FROM verify_tasks WHERE product_id=?').get(cpid) as { n: number }).n === 0)
+  ok('SAFE draft did NOT claim/verify the external link (no product_external_links row)', (db.prepare('SELECT COUNT(*) n FROM product_external_links WHERE product_id=?').get(cpid) as { n: number }).n === 0)
+  ok('source_url is kept as inert product metadata; product stays warehouse', (db.prepare('SELECT source_url, status FROM products WHERE id=?').get(cpid) as { source_url: string; status: string }).source_url === 'http://conflict.example/x')
+
   // ── even a valid draft carries no raw token in the response ──
   ok('no raw grant token leaked in any response', !/gtk_alice|gtk_bob|gtk_carol|token_hash/.test(JSON.stringify([denied.body, notSeller.body, created.body])))
 } finally { server.close(); try { rmSync(process.env.HOME as string, { recursive: true, force: true }) } catch {} }

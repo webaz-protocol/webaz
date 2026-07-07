@@ -40,7 +40,15 @@ export interface ProductsCreateDeps {
   makePriceHash: (price: number, ts: string) => string
 }
 
-export interface CreateProductOpts { forceStatus?: 'warehouse'; onCreated?: (productId: string) => Promise<void> | void }
+export interface CreateProductOpts {
+  forceStatus?: 'warehouse'
+  onCreated?: (productId: string) => Promise<void> | void
+  // RFC-020 PR-4: when a SAFE grant (seller_product_draft) creates a draft, the external source-link handling
+  //   MUST be skipped — otherwise a colliding source_url debits the seller's wallet (0.1 WAZ verify fee) and
+  //   spawns a verify_task, i.e. a money/reputation side-effect a safe scope must never trigger. source_url is
+  //   still stored as inert product metadata; the human claims/verifies links when they publish (their action).
+  skipExternalLinkEffects?: boolean
+}
 
 /**
  * The SINGLE source of product-create validation + insert. res-coupled but auth-agnostic: the caller resolves
@@ -110,7 +118,7 @@ export function makeCreateProductHandler(deps: ProductsCreateDeps) {
     }
 
     // 上架前检查：同一卖家不能重复关联相同外部链接
-    if (source_url) {
+    if (source_url && !opts.skipExternalLinkEffects) {
       const sameSellerDupe = (await dbOne<{ n: number }>(`
         SELECT COUNT(*) as n FROM product_external_links pel
         JOIN products p ON pel.product_id = p.id
@@ -184,7 +192,7 @@ export function makeCreateProductHandler(deps: ProductsCreateDeps) {
 
     // 来源链接：冲突检测
     let linkConflict: { task_id?: string; code?: string; expires_at?: string; message: string } | null = null
-    if (source_url) {
+    if (source_url && !opts.skipExternalLinkEffects) {
       // 另一家卖家已认领此链接（verified=1）
       const otherClaim = await dbOne<{ product_id: string }>(`
         SELECT pel.product_id FROM product_external_links pel
@@ -240,7 +248,7 @@ export function makeCreateProductHandler(deps: ProductsCreateDeps) {
     // 额外链接：同步冲突检查（最多 5 个）
     const additionalLinks = req.body.additional_links
     const blockedLinks: { url: string; message: string }[] = []
-    if (Array.isArray(additionalLinks) && additionalLinks.length > 0) {
+    if (!opts.skipExternalLinkEffects && Array.isArray(additionalLinks) && additionalLinks.length > 0) {
       for (const extraUrl of additionalLinks.slice(0, 5)) {
         if (typeof extraUrl !== 'string' || !extraUrl.startsWith('http')) continue
         const alreadyLinked = await dbOne('SELECT id FROM product_external_links WHERE product_id = ? AND url = ?', [id, extraUrl])

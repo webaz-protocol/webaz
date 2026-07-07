@@ -39,7 +39,7 @@ export interface AgentGrantsDeps {
   requireHumanPresence: (userId: string, purpose: 'agent_pair_approve' | 'agent_permission_approve', token: string | undefined, paramKey: string, validate?: (data: unknown) => boolean) => { ok: boolean; error_code?: string; reason?: string }
   // RFC-020 PR-4: shared product-create handler (single source with the human POST /api/products); used by the
   //   grant-gated warehouse-draft route so the agent path can never drift from the human validation.
-  createProductDraftHandler?: (req: Request, res: Response, user: Record<string, unknown>, opts?: { forceStatus?: 'warehouse'; onCreated?: (productId: string) => Promise<void> | void }) => Promise<void>
+  createProductDraftHandler?: (req: Request, res: Response, user: Record<string, unknown>, opts?: { forceStatus?: 'warehouse'; onCreated?: (productId: string) => Promise<void> | void; skipExternalLinkEffects?: boolean }) => Promise<void>
 }
 
 // Bounds on a pairing request (anti-bloat for the anonymous start endpoint).
@@ -175,6 +175,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       if (!human || human.role !== 'seller') return void res.status(403).json({ error: 'the grant owner is not a seller — product drafts need a seller account', error_code: 'NOT_A_SELLER' })
       await createProductDraftHandler(req, res, human as Record<string, unknown>, {
         forceStatus: 'warehouse',
+        skipExternalLinkEffects: true,   // a SAFE draft grant must never trigger wallet debit / verify_tasks / auto-verified links (source_url stays inert metadata)
         onCreated: async (productId) => {
           try {
             await dbRun("INSERT INTO notifications (id, user_id, type, title, body) VALUES (?,?,?,?,?)",
