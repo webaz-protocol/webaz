@@ -73,10 +73,15 @@ export function initDisputeSchema(db: Database.Database): void {
     `ALTER TABLE disputes ADD COLUMN auto_judge_paused_until INTEGER`,
     `ALTER TABLE disputes ADD COLUMN auto_judge_pause_reason TEXT`,
     `ALTER TABLE disputes ADD COLUMN audit_log TEXT DEFAULT '[]'`,
+    // 2026-07 统一仲裁台:案子类型标签。默认 'buyer_dispute'(既有买家/直付/退货争议);
+    //   'decline_contest' = RFC-007 卖家客观拒单举证并入 disputes(UI 显示"拒单举证仲裁",裁决走专用两选 + settleFault/settleDeclinedNoFault)。
+    `ALTER TABLE disputes ADD COLUMN dispute_type TEXT DEFAULT 'buyer_dispute'`,
   ]
   for (const stmt of newColumns) {
     try { db.exec(stmt) } catch { /* 列已存在，跳过 */ }
   }
+  // 幂等硬约束:一个订单最多一条 decline_contest dispute(防重复建行/重复结算)。部分唯一索引 —— 仅约束该类型行。
+  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS ux_disputes_decline_contest_order ON disputes(order_id) WHERE dispute_type = 'decline_contest'`) } catch { /* 已存在，跳过 */ }
 }
 
 /** 任意参与方（非被告）主动提交证据 */
@@ -172,6 +177,57 @@ export function createDispute(
     respondDeadline,
     message: `争议已记录（${disputeId}）。被诉方有 48 小时提交反驳证据，超时协议自动判你胜诉。`,
   }
+}
+
+/**
+ * RFC-007 → 统一仲裁台:为【已举证的客观拒单】订单建一条 decline_contest dispute 行。
+ *
+ * 单一真相源:contest_decline 路由(新单)与 backfill 脚本(历史 stuck 单,如 ord_54fa)都调此函数。
+ * 设计约束:
+ *   - 不改 order.status(订单仍 fault_seller + 标志位);dispute 行只是并入统一仲裁台的把手。
+ *   - initiator = 卖家(发起举证、承担"客观无责"举证责任);defendant = 买家(受影响方)。COI 由 arbitratorHasConflict
+ *     统一覆盖(买/卖/物流/发起/被告均不可裁,PR3 复用)。
+ *   - 幂等:一个订单至多一条 decline_contest dispute —— 存在性检查 + 部分唯一索引(ux_disputes_decline_contest_order)
+ *     双保险;并发建行由唯一索引兜底,重复调用返回既有行(existing=true),绝不建第二条。
+ *   - PR1 fail-closed:此行建好后【不可被通用自动裁决结算、不可被通用 arbitrate 误裁】(见 checkDisputeTimeouts /
+ *     arbitrate 路由的 decline_contest 分支),直到 PR3 打通专用两选裁决 + settleFault/settleDeclinedNoFault。
+ */
+export function createDeclineContestDispute(
+  db: Database.Database,
+  orderId: string
+): { success: boolean; disputeId?: string; existing?: boolean; error?: string } {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<string, unknown> | undefined
+  if (!order) return { success: false, error: `订单不存在：${orderId}` }
+  // 仅【已举证的临时判责】合格:fault_seller + provisional pending + contested + 未结算。
+  if (order.status !== 'fault_seller' || Number(order.decline_objective_pending) !== 1 || Number(order.decline_contested) !== 1 || order.settled_fault_at) {
+    return { success: false, error: '订单不是【已举证的客观拒单临时判责】状态,不建仲裁行' }
+  }
+  // 幂等①:存在性检查。
+  const existing = db.prepare("SELECT id FROM disputes WHERE order_id = ? AND dispute_type = 'decline_contest'").get(orderId) as { id: string } | undefined
+  if (existing) return { success: true, disputeId: existing.id, existing: true }
+
+  const sellerId = order.seller_id as string
+  const buyerId = order.buyer_id as string
+  const now = new Date()
+  const disputeId = generateId('dsp')
+  const respondDeadline = addHours(now, 48)     // 买家反驳窗口(PR3 定义超时四段式;PR1 仅建行,不驱动自动裁决)
+  const arbitrateDeadline = addHours(now, 120)  // 仲裁窗口
+  const reasonCode = String(order.decline_reason_code || 'objective_decline')
+  const reason = `卖家客观拒单举证仲裁(${reasonCode}):卖家主张客观无责,请仲裁维持(免责·全退买家+退卖家质押)或驳回(判卖家违约)。`
+  try {
+    db.prepare(`
+      INSERT INTO disputes (
+        id, order_id, initiator_id, defendant_id, reason, status, dispute_type,
+        defendant_evidence_ids, respond_deadline, arbitrate_deadline, assigned_arbitrators
+      ) VALUES (?, ?, ?, ?, ?, 'open', 'decline_contest', '[]', ?, ?, '[]')
+    `).run(disputeId, orderId, sellerId, buyerId, reason, respondDeadline, arbitrateDeadline)
+  } catch (e) {
+    // 幂等②:并发建行撞唯一索引 → 返回既有行,不报错、不建第二条。
+    const race = db.prepare("SELECT id FROM disputes WHERE order_id = ? AND dispute_type = 'decline_contest'").get(orderId) as { id: string } | undefined
+    if (race) return { success: true, disputeId: race.id, existing: true }
+    return { success: false, error: (e as Error).message }
+  }
+  return { success: true, disputeId }
 }
 
 // ─── L3-2 证据收集 ────────────────────────────────────────────
@@ -732,6 +788,9 @@ export function checkDisputeTimeouts(db: Database.Database): {
   const sysUser = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string }
 
   for (const dispute of openDisputes) {
+    // PR1 fail-closed:decline_contest 不走通用自动裁决(refund_buyer/release_seller 语义不适用)。
+    //   其超时四段式(仲裁窗口→admin fallback 48h→硬兜底判卖家违约)在 PR3 单独定义;PR3 前绝不自动结算。
+    if ((dispute as DisputeRecord & { dispute_type?: string }).dispute_type === 'decline_contest') continue
     // task #1093 stage 6: skip auto-judge if arbitrator paused the clock (playbook §2.1)
     // Pause expires automatically when auto_judge_paused_until passes; no resume needed
     // for the clock to thaw — explicit resume just clears the field eagerly + audit log.
@@ -973,9 +1032,12 @@ export async function getOpenDisputes(_db: Database.Database): Promise<(DisputeR
     LEFT JOIN users u2 ON d.defendant_id = u2.id
     LEFT JOIN orders o ON d.order_id = o.id
     WHERE d.status IN ('open', 'in_review')
+      AND COALESCE(d.dispute_type, 'buyer_dispute') <> 'decline_contest'
     ORDER BY d.created_at ASC
   `)
 }
+/* ↑ PR1 fail-closed:decline_contest 行虽已并入 disputes 表,但在统一台展示(PR2)+ 专用裁决(PR3)就绪前,
+   从仲裁员工作队列过滤掉 —— 避免"看得到却不能裁"的中间态。PR2 反转此过滤并加"拒单举证仲裁"展示。 */
 
 // ─── 工具函数 ─────────────────────────────────────────────────
 

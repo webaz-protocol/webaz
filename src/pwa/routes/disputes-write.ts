@@ -212,6 +212,13 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
     const dispute = await getDisputeDetails(db, req.params.id)
     if (!dispute) return void res.status(404).json({ error: '争议不存在' })
 
+    // PR1 fail-closed:decline_contest 走专用两选裁决(维持/驳回 → settleDeclinedNoFault/settleFault),
+    //   通用 4 裁决(refund_buyer/release_seller/...)语义不适用。PR3 打通专用裁决前,此路径对 decline_contest 硬拒,
+    //   绝不用通用裁决误结算(防钱/库存错动)。
+    if ((dispute as Record<string, unknown>).dispute_type === 'decline_contest') {
+      return void errorRes(res, 409, 'DECLINE_CONTEST_RULING_NOT_ENABLED', '拒单举证仲裁的裁决通道即将开放,请稍后在统一仲裁台处理')
+    }
+
     // PR-B COI 硬门:当事方(买家/卖家/物流/发起人/被诉人)不得仲裁本案。在领取/裁定前拦截。
     if (arbitratorHasConflict(db, dispute.order_id as string, (dispute.initiator_id as string | null) ?? null, (dispute.defendant_id as string | null) ?? null, user.id as string)) {
       return void res.status(403).json({ error: '你是本案当事方,不可仲裁(利益冲突)', error_code: 'ARBITRATOR_CONFLICT_OF_INTEREST' })

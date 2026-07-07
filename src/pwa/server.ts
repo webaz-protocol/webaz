@@ -55,7 +55,7 @@ import {
   type AnchorTargetKind,
 } from '../layer2-business/L2-anchor-registry/anchor-registry.js'
 import {
-  initDisputeSchema, createDispute, respondToDispute, arbitrateDispute,
+  initDisputeSchema, createDispute, createDeclineContestDispute, respondToDispute, arbitrateDispute,
   getOrderDispute, getDisputeDetails, getOpenDisputes, checkDisputeTimeouts,
   initEvidenceRequestSchema, requestEvidence, submitEvidenceForRequest, getEvidenceRequests,
   addPartyEvidence,
@@ -5488,7 +5488,7 @@ registerOrdersReadRoutes(app, { db, auth, getOrderStatus, getOrderChain, verifyO
 // 注意：settleOrder 是函数声明（hoisted）但绑了 db 闭包，无需注入 db
 registerOrdersActionRoutes(app, {
   db, auth, isTrustedRole, generateId, transition, notifyTransition,
-  settleOrder, settleFault, detectFraud, createDispute, checkTimeouts, recordViolationReputation,
+  settleOrder, settleFault, detectFraud, createDispute, createDeclineContestDispute, checkTimeouts, recordViolationReputation,
   broadcastSystemEvent, consumeGateToken,
 })
 
