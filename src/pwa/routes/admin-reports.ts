@@ -89,10 +89,12 @@ export function registerAdminReportsRoutes(app: Application, deps: AdminReportsD
     const { decision, reason } = (req.body ?? {}) as { decision?: string; reason?: string }
     if (decision !== 'decline_no_fault_upheld' && decision !== 'decline_fault_confirmed') return void res.status(400).json({ error: "decision 必须为 'decline_no_fault_upheld' / 'decline_fault_confirmed'", error_code: 'BAD_DECISION' })
     if (!reason || !String(reason).trim()) return void res.status(400).json({ error: '请提供裁决理由', error_code: 'REASON_REQUIRED' })
-    // P2-5:Passkey purpose_data 绑 dispute_id + action + decision —— 防拿 A 案/A 结果的 token 执行 B。
+    // Passkey purpose_data 绑 dispute_id + action + decision —— 钱路/状态闭环动作,fail-closed:
+    //   token 必须【显式绑定】本案 + 本动作 + 本结果。绝不允许 null(未绑定 token)或缺字段通过,否则一个泛化的
+    //   arbitrate token 就能对任意过期 decline-contest 触发退款/罚没/completed。
     const hp = requireHumanPresence(admin.id as string, 'arbitrate', (req.body as { webauthn_token?: string })?.webauthn_token, 'require_human_presence_for_arbitrate', (data) => {
       const d = data as Record<string, unknown> | null
-      return d == null || (d.dispute_id === req.params.id && (d.action == null || d.action === 'decline_contest_resolve') && (d.decision == null || d.decision === decision))
+      return d != null && typeof d === 'object' && d.dispute_id === req.params.id && d.action === 'decline_contest_resolve' && d.decision === decision
     })
     if (!hp.ok) return void res.status(412).json({ error: hp.reason || '此操作需真实人工 WebAuthn 验证', error_code: hp.error_code || 'HUMAN_PRESENCE_REQUIRED' })
     try {

@@ -25,6 +25,7 @@ const { initNotificationSchema } = await import('../src/layer2-business/L2-6-not
 const { initOrderChainSchema } = await import('../src/layer0-foundation/L0-2-state-machine/order-chain.js')
 const { initReputationSchema } = await import('../src/layer4-economics/L4-3-reputation/reputation-engine.js')
 const { registerDisputesWriteRoutes } = await import('../src/pwa/routes/disputes-write.js')
+const { registerAdminReportsRoutes } = await import('../src/pwa/routes/admin-reports.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push('✗ ' + n) } }
@@ -169,7 +170,33 @@ try {
     server.close()
   }
 
-  if (fail === 0) console.log(`\n✅ decline_contest 裁决闭环(PR3):唯一 resolver + 三入口 + 旧端点 410 + completed 终态 + 单事务防双结算 + 四段式超时\n  ✅ pass ${pass}`)
+  // ══ I. admin 兜底端点 Passkey 绑定(钱路 fail-closed:未绑定/错绑 token → 412,绝不结算)══
+  { let tokenData: unknown = null
+    const requireHumanPresence = (_u: string, _p: string, _t: string | undefined, _k: string, validate?: (d: unknown) => boolean) =>
+      ((validate ? validate(tokenData) : true) ? { ok: true } : { ok: false, error_code: 'HUMAN_PRESENCE_BINDING_MISMATCH', reason: 'token 未绑定本动作' })
+    const adminApp = express(); adminApp.use(express.json())
+    registerAdminReportsRoutes(adminApp, { db, requireContentAdmin: () => null, requireArbitrationAdmin: () => ({ id: 'adm1' }), requireProtocolAdmin: () => null, requireHumanPresence } as never)
+    const aserver = adminApp.listen(0); const aport = (aserver.address() as AddressInfo).port
+    const post = async (id: string, body: unknown) => { const r = await fetch(`http://127.0.0.1:${aport}/api/admin/disputes/${id}/decline-contest-resolve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); return { status: r.status, body: await r.json().catch(() => ({})) as Record<string, unknown> } }
+    const s = setup(); const decision = 'decline_fault_confirmed'   // arbitrate_deadline 默认过期 → admin fallback 可用
+
+    tokenData = null   // 未绑定 purpose_data 的 token
+    const r1 = await post(s.disputeId, { decision, reason: 'x', webauthn_token: 'tk' })
+    ok('I1 未绑定 purpose_data 的 token → 412(不触发钱路裁决)', r1.status === 412)
+    ok('I1b 订单未被结算', !orderRow(s.orderId).settled_fault_at)
+    tokenData = { dispute_id: 'ord_wrong', action: 'decline_contest_resolve', decision }   // 错 dispute
+    const r2 = await post(s.disputeId, { decision, reason: 'x', webauthn_token: 'tk' })
+    ok('I2 dispute_id 不匹配(A 案 token 裁 B 案)→ 412,未结算', r2.status === 412 && !orderRow(s.orderId).settled_fault_at)
+    tokenData = { dispute_id: s.disputeId, action: 'decline_contest_resolve', decision: 'decline_no_fault_upheld' }   // token 绑无责,请求判违约
+    const r3 = await post(s.disputeId, { decision, reason: 'x', webauthn_token: 'tk' })
+    ok('I3 decision 不匹配(A 结果 token 执行 B 结果)→ 412,未结算', r3.status === 412 && !orderRow(s.orderId).settled_fault_at)
+    tokenData = { dispute_id: s.disputeId, action: 'decline_contest_resolve', decision }   // 全等绑定
+    const r4 = await post(s.disputeId, { decision, reason: '正确绑定', webauthn_token: 'tk' })
+    ok('I4 正确绑定(dispute_id+action+decision 全等)→ 成功裁决 + order completed', r4.body.success === true && orderRow(s.orderId).status === 'completed')
+    aserver.close()
+  }
+
+  if (fail === 0) console.log(`\n✅ decline_contest 裁决闭环(PR3):唯一 resolver + 三入口 + 旧端点 410 + completed 终态 + 单事务防双结算 + 四段式超时 + admin token 绑定 fail-closed\n  ✅ pass ${pass}`)
   else { console.error(`\n❌ PR3 FAILED\n  ✅ pass ${pass}  ❌ fail ${fail}\n${fails.join('\n')}`); process.exitCode = 1 }
 } finally {
   try { rmSync(process.env.HOME as string, { recursive: true, force: true }) } catch { /* */ }
