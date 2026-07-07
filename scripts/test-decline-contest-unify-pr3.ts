@@ -170,6 +170,35 @@ try {
     server.close()
   }
 
+  // ══ J. 仲裁员路由 Passkey 绑定(decline_contest 钱路 fail-closed:未绑定/错案/错结果 token → 412,绝不结算)══
+  { let tokenData: unknown = null
+    const errorRes = (res: express.Response, s: number, code: string, msg: string) => { res.status(s).json({ error: msg, error_code: code }) }
+    const requireHumanPresence = (_u: string, _p: string, _t: string | undefined, _k: string, validate?: (d: unknown) => boolean) =>
+      ((validate ? validate(tokenData) : true) ? { ok: true } : { ok: false, error_code: 'HP_BIND_MISMATCH', reason: 'token 未绑定本案/本结果' })
+    const app = express(); app.use(express.json())
+    registerDisputesWriteRoutes(app, {
+      db, auth: () => ({ id: 'arb1' }), generateId: (p: string) => `${p}_t`, detectFraud: () => [], errorRes,
+      isEligibleArbitrator: () => ({ ok: true }), requireHumanPresence, getDisputeDetails, logAdminAction: () => {}, arbitrateDispute: () => ({ success: true }),
+    } as never)
+    const server = app.listen(0); const port = (server.address() as AddressInfo).port
+    const post = async (id: string, body: unknown) => { const r = await fetch(`http://127.0.0.1:${port}/api/disputes/${id}/arbitrate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); return { status: r.status, body: await r.json().catch(() => ({})) as Record<string, unknown> } }
+    const s = setup(); const ruling = 'decline_no_fault_upheld'
+
+    tokenData = null
+    const j1 = await post(s.disputeId, { ruling, reason: 'x', webauthn_token: 'tk' })
+    ok('J1 未绑定 token 裁 decline_contest → 412,未结算', j1.status === 412 && !orderRow(s.orderId).settled_fault_at)
+    tokenData = { dispute_id: 'ord_wrong', decision: ruling }
+    const j2 = await post(s.disputeId, { ruling, reason: 'x', webauthn_token: 'tk' })
+    ok('J2 错 dispute_id(跨案 token)→ 412,未结算', j2.status === 412 && !orderRow(s.orderId).settled_fault_at)
+    tokenData = { dispute_id: s.disputeId, decision: 'decline_fault_confirmed' }   // token 绑判违约,却请求维持无责
+    const j3 = await post(s.disputeId, { ruling, reason: 'x', webauthn_token: 'tk' })
+    ok('J3 错 decision(为判违约签的 token 用于维持无责)→ 412,未结算', j3.status === 412 && !orderRow(s.orderId).settled_fault_at)
+    tokenData = { dispute_id: s.disputeId, decision: ruling }   // 全等绑定
+    const j4 = await post(s.disputeId, { ruling, reason: '正确绑定', webauthn_token: 'tk' })
+    ok('J4 正确绑定(dispute_id + decision 全等)→ 成功 + order completed', j4.body.success === true && orderRow(s.orderId).status === 'completed')
+    server.close()
+  }
+
   // ══ I. admin 兜底端点 Passkey 绑定(钱路 fail-closed:未绑定/错绑 token → 412,绝不结算)══
   { let tokenData: unknown = null
     const requireHumanPresence = (_u: string, _p: string, _t: string | undefined, _k: string, validate?: (d: unknown) => boolean) =>

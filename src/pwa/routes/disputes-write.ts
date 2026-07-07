@@ -156,9 +156,14 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
     const elig = isEligibleArbitrator(user.id as string)
     if (!elig.ok) return void errorRes(res, 403, 'NOT_ARBITRATOR', elig.reason || '仅限仲裁员')
 
-    // 2026-05-23 Agent 治理铁律：仲裁需真实人工
+    // 2026-05-23 Agent 治理铁律：仲裁需真实人工。
+    //   decline_contest 两选裁决 = 钱路/状态闭环(退款/罚没/completed)→ 与 admin fallback 一致 fail-closed:
+    //   token 必须【显式绑定】本案 dispute_id + 本结果 decision,绝不允许 null/未绑定的泛化 arbitrate token 跨案裁决。
+    //   通用争议维持既有(d==null 允许);resolver 只对两选 ruling 执行,故钱路仅在严格绑定时可达。
+    const _dcRuling = req.body?.ruling === 'decline_no_fault_upheld' || req.body?.ruling === 'decline_fault_confirmed'
     const hpCheck = requireHumanPresence(user.id as string, 'arbitrate', req.body?.webauthn_token, 'require_human_presence_for_arbitrate', (data) => {
       const d = data as Record<string, unknown> | null
+      if (_dcRuling) return d != null && typeof d === 'object' && d.dispute_id === req.params.id && d.decision === req.body?.ruling
       return d == null || d.dispute_id === req.params.id
     })
     if (!hpCheck.ok) return void errorRes(res, 412, hpCheck.error_code || 'HUMAN_PRESENCE_REQUIRED', hpCheck.reason || '此操作需真实人工 WebAuthn 验证')
