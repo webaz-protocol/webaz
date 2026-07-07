@@ -681,7 +681,7 @@ Actions: create (title/description/price) | mine | update (product_id + changed 
         product_id: { type: 'string', description: 'Product ID (required for update/delist/relist/trash/delete)' },
         title: { type: 'string', description: 'Product name (required for create; optional for update)' },
         description: { type: 'string', description: 'Product description (required for create; optional for update)' },
-        price: { type: 'number', description: 'Price in WAZ (required for create; optional for update)' },
+        price: { type: 'number', description: 'Listing amount (protocol unit; waz_usdc_rate 1.0, so 1 = 1 USDC). No currency is set at listing time — the same amount displays/settles as USDC when the buyer orders on the direct_p2p (direct-pay) rail, or as WAZ on the legacy escrow rail. Required for create; optional for update.' },
         stock: { type: 'number', description: 'Stock, default 1' },
         category: { type: 'string', description: 'Category (optional)' },
         specs: {
@@ -734,9 +734,14 @@ Actions: create (title/description/price) | mine | update (product_id + changed 
   {
     name: 'webaz_place_order',
     // was ~1117 chars, now ~580 chars
-    description: `Buyer places order. Buyer api_key required. Funds auto-enter protocol escrow.
+    description: `Buyer places order. Buyer api_key required.
 
-Order deadlines (absolute ISO timestamps in response):
+Payment rail (chosen here, at purchase — default: escrow):
+- **escrow** (default, legacy): funds auto-enter protocol escrow; the amount is the WAZ/protocol-unit price. The deadlines/auto-judge below apply.
+- **direct_p2p** (live, non-custodial direct pay): buyer pays the seller directly OFF-platform; the same amount is shown/settled as USDC (waz_usdc_rate 1.0). Pass \`direct_receive_account_id\` (seller's receiving account). Eligibility — product/store verification, per-tx caps, valid account — is enforced by the SERVER; you do not decide it. Ineligible → the route's own gate error (e.g. DIRECT_PAY_PRODUCT_NOT_VERIFIED → use escrow).
+- onchain_full_stake / psp: PLANNED, not enabled → passing them returns PAYMENT_RAIL_DISABLED.
+
+Order deadlines (escrow rail; absolute ISO timestamps in response):
 - accept    T+48h  | ship  T+120h (72h after accept)
 - pickup    T+168h (48h after ship) | delivery T+336h (7d after pickup)
 - confirm   T+408h (72h after delivery)
@@ -753,6 +758,8 @@ Options:
         api_key: { type: 'string', description: "Buyer's api_key (or omit and set the WEBAZ_API_KEY env var)" },
         product_id: { type: 'string', description: 'Product ID to buy (from webaz_search)' },
         quantity: { type: 'number', description: 'Quantity, default 1' },
+        payment_rail: { type: 'string', enum: ['escrow', 'direct_p2p'], description: 'Payment rail (default: escrow). "direct_p2p" = live non-custodial direct pay (amount shown/settled as USDC, off-platform) — requires direct_receive_account_id; the server runs the direct-pay eligibility gates (you do not). Other rails (onchain_full_stake / psp) are planned but disabled → PAYMENT_RAIL_DISABLED.' },
+        direct_receive_account_id: { type: 'string', description: 'For payment_rail="direct_p2p": the seller\'s direct-receive account id to pay. Ignored on escrow.' },
         shipping_address: { type: 'string', description: 'Shipping address' },
         notes: { type: 'string', description: 'Note to seller (optional)' },
         session_token: {
@@ -1594,7 +1601,7 @@ Enums: **category** phone/computer/appliance/furniture/clothing/book/toy/sports/
         description: { type: 'string', description: 'Description (≤1000 chars, optional)' },
         category: { type: 'string', enum: ['phone', 'computer', 'appliance', 'furniture', 'clothing', 'book', 'toy', 'sports', 'other'], description: 'Category (required for publish)' },
         condition_grade: { type: 'string', enum: ['brand_new', 'like_new', 'lightly_used', 'well_used', 'heavily_used'], description: 'Condition grade (required for publish)' },
-        price: { type: 'number', description: 'Price in WAZ 0-100000 (required for publish)' },
+        price: { type: 'number', description: 'Listing amount 0-100000 (protocol unit; waz_usdc_rate 1.0). Displays/settles as USDC on the direct_p2p rail or WAZ on legacy escrow — rail is chosen at purchase. Required for publish.' },
         negotiable: { type: 'boolean', description: 'Negotiable flag (optional)' },
         images: { type: 'array', items: { type: 'string' }, description: 'Images dataURL/URL array, ≥1 ≤9 (required for publish)' },
         region: { type: 'string', description: 'Region (≤40 chars, optional)' },
@@ -2593,15 +2600,28 @@ export async function handleListProduct(args: Record<string, unknown>): Promise<
   }
 }
 
-async function handlePlaceOrder(args: Record<string, unknown>) {
+export async function handlePlaceOrder(args: Record<string, unknown>) {
+  // Payment rail (PWA-aligned). Only escrow (legacy) + direct_p2p (live, non-custodial) are enabled; the
+  //   other declared rails (onchain_full_stake / psp) are PLANNED placeholders — refuse them here, never
+  //   silently downgrade. The MCP does NOT judge direct-pay eligibility: it forwards payment_rail +
+  //   direct_receive_account_id to the SAME /api/orders route, which runs all the PWA gates.
+  const rail = args.payment_rail
+  if (rail != null && rail !== 'escrow' && rail !== 'direct_p2p') {
+    return { error: `payment rail "${String(rail)}" is planned but not enabled — only "direct_p2p" (live, non-custodial direct pay) and "escrow" (legacy) are available.`, error_code: 'PAYMENT_RAIL_DISABLED' }
+  }
+  if (rail === 'direct_p2p' && !isNetworkMode()) {
+    return { error: 'direct_p2p (direct pay) requires NETWORK mode — it settles against a real seller receiving account on webaz.xyz.', error_code: 'DIRECT_PAY_REQUIRES_NETWORK' }
+  }
   // RFC-003 P2: network 模式转发到生产 POST /api/orders(前置,绕过本地 db)。
-  // 生产端做完整鉴权/库存/session/spend-cap/结算。
+  // 生产端做完整鉴权/库存/session/spend-cap/结算 + direct-pay gate(createDirectPayResponse)。
   if (toolBackend('webaz_place_order') === 'network') {
     const body: Record<string, unknown> = { product_id: args.product_id, quantity: Number(args.quantity ?? 1) }
     if (args.session_token != null)    body.session_token = args.session_token
     if (args.expected_price != null)   body.expected_price = args.expected_price
     if (args.shipping_address != null) body.shipping_address = args.shipping_address
     if (args.donation_pct != null)     body.donation_pct = args.donation_pct
+    if (args.payment_rail != null)     body.payment_rail = args.payment_rail                       // escrow | direct_p2p (route forks + gates)
+    if (args.direct_receive_account_id != null) body.direct_receive_account_id = args.direct_receive_account_id  // seller receiving acct (direct_p2p)
     return apiCall('/api/orders', { method: 'POST', apiKey: resolveMcpApiKey(args), body })
   }
   const auth = requireAuth(db, resolveMcpApiKey(args))
