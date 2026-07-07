@@ -59,7 +59,7 @@ export function registerAdminReportsRoutes(app: Application, deps: AdminReportsD
     if (status) { where.push('d.status = ?'); params.push(status) }
     if (rail) { where.push('o.payment_rail = ?'); params.push(rail) }
     const rows = await dbAll(`
-      SELECT d.id, d.order_id, d.initiator_id, d.defendant_id, d.reason, d.status,
+      SELECT d.id, d.order_id, d.initiator_id, d.defendant_id, d.reason, d.status, d.dispute_type,
              d.created_at, d.respond_deadline, d.arbitrate_deadline, d.resolved_at,
              d.verdict, d.ruling_type, d.assigned_arbitrators,
              u1.name as initiator_name, u2.name as defendant_name,

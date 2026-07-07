@@ -337,7 +337,26 @@ export function createNotification(
 }
 
 /**
- * 统一仲裁台:一笔卖家客观拒单举证并入 disputes 后,通知全体 active 仲裁员 + admin(管理面)有新案待处理。
+ * 仲裁 admin 收件人:root(admin_type='root' → 隐含 ['all'])或 admin_permissions 含 'all'/'arbitration' 的 admin。
+ *   与争议读写授权边界(requireAdminPermission(...,'arbitration'))一致 —— content/support 等无 arbitration 权限的
+ *   admin【不】收到争议通知。复刻 hasAdminPermission 逻辑,不 import server 层。列缺失(fresh-DB)→ 空集。
+ */
+export function resolveArbitrationAdminIds(db: Database.Database): string[] {
+  const ids: string[] = []
+  try {
+    const rows = db.prepare("SELECT id, admin_type, admin_permissions FROM users WHERE role = 'admin'").all() as { id: string; admin_type: string | null; admin_permissions: string | null }[]
+    for (const r of rows) {
+      if (r.admin_type === 'root') { ids.push(r.id); continue }
+      let perms: unknown = []
+      try { perms = JSON.parse(r.admin_permissions || '[]') } catch { perms = [] }
+      if (Array.isArray(perms) && (perms.includes('all') || perms.includes('arbitration'))) ids.push(r.id)
+    }
+  } catch { /* fresh-DB 无 admin_type/permissions 列 → 空集 */ }
+  return ids
+}
+
+/**
+ * 统一仲裁台:一笔卖家客观拒单举证并入 disputes 后,通知全体 active 仲裁员 + 仲裁 admin(管理面)有新案待处理。
  *   幂等去重:按 (order_id, type='arb:decline_contest_new', user_id) 存在性探测 —— 新建行、backfill 补建、
  *   重复调用皆只对每个收件人发一次,不重复轰炸(镜像 scanDeadlineReminders 的 (order_id,type) 去重)。
  *   收件人为 active arbitrator_whitelist(唯一仲裁能力源)+ users.role='admin'(监督/兜底)。
@@ -351,7 +370,7 @@ export function notifyDeclineContestCase(
   const TYPE = 'arb:decline_contest_new'
   const ids = new Set<string>()
   try { (db.prepare("SELECT user_id AS id FROM arbitrator_whitelist WHERE status IS NULL OR status = 'active'").all() as { id: string }[]).forEach(r => ids.add(r.id)) } catch { /* fresh-DB 无表 */ }
-  try { (db.prepare("SELECT id FROM users WHERE role = 'admin'").all() as { id: string }[]).forEach(r => ids.add(r.id)) } catch { /* */ }
+  resolveArbitrationAdminIds(db).forEach(id => ids.add(id))   // 仅仲裁 admin(root / all / arbitration),不含 content/support
   let notified = 0, skipped = 0
   for (const uid of ids) {
     const exists = db.prepare('SELECT 1 FROM notifications WHERE order_id = ? AND type = ? AND user_id = ? LIMIT 1').get(orderId, TYPE, uid)

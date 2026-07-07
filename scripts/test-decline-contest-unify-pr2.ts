@@ -21,6 +21,7 @@ const { initDisputeSchema, createDeclineContestDispute, getOpenDisputes } = awai
 const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
 const { notifyDeclineContestCase } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
 const { registerDisputesReadRoutes } = await import('../src/pwa/routes/disputes-read.js')
+const { registerAdminReportsRoutes } = await import('../src/pwa/routes/admin-reports.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push('✗ ' + n) } }
@@ -29,8 +30,13 @@ const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 initDisputeSchema(db); initNotificationSchema(db)
 db.exec('CREATE TABLE IF NOT EXISTS arbitrator_whitelist (user_id TEXT PRIMARY KEY, status TEXT)')
 for (const c of ['decline_objective_pending INTEGER', 'decline_contested INTEGER', 'decline_reason_code TEXT', 'decline_contest_deadline TEXT', 'declined_at TEXT', 'settled_fault_at TEXT']) { try { db.exec(`ALTER TABLE orders ADD COLUMN ${c}`) } catch { /* */ } }
+for (const c of ['admin_type TEXT', 'admin_permissions TEXT']) { try { db.exec(`ALTER TABLE users ADD COLUMN ${c}`) } catch { /* */ } }
 
-db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller1','S','seller','k_s'),('buyer1','B','buyer','k_b'),('arb1','A1','buyer','k_a1'),('arb2','A2','buyer','k_a2'),('arbX','AX','buyer','k_ax'),('adm1','ADM','admin','k_adm')").run()
+// admin 收件人权限维度:adm1=root、admArb=arbitration 权限 → 应收到;admContent=仅 content → 【不】收到。
+db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller1','S','seller','k_s'),('buyer1','B','buyer','k_b'),('arb1','A1','buyer','k_a1'),('arb2','A2','buyer','k_a2'),('arbX','AX','buyer','k_ax'),('adm1','ADM','admin','k_adm'),('admArb','ADMA','admin','k_adma'),('admContent','ADMC','admin','k_admc')").run()
+db.prepare("UPDATE users SET admin_type='root' WHERE id='adm1'").run()
+db.prepare(`UPDATE users SET admin_permissions='["arbitration"]' WHERE id='admArb'`).run()
+db.prepare(`UPDATE users SET admin_permissions='["content"]' WHERE id='admContent'`).run()
 db.prepare("INSERT INTO arbitrator_whitelist (user_id,status) VALUES ('arb1','active'),('arb2',NULL),('arbX','suspended')").run()
 const seedOrder = (id: string) => db.prepare(`INSERT INTO orders (id,buyer_id,seller_id,product_id,status,unit_price,total_amount,escrow_amount,payment_rail,decline_objective_pending,decline_contested,settled_fault_at,decline_reason_code,declined_at,decline_contest_deadline)
   VALUES (?,?,?,?,'fault_seller',30,30,30,'escrow',1,1,NULL,'force_majeure','2026-07-05 10:00:00','2026-07-08 10:00:00')`).run(id, 'buyer1', 'seller1', 'prd_x')
@@ -64,14 +70,16 @@ try {
   ok('B2 非仲裁员 pending-count = 0(不报错)', cBuyer.count === 0)
   server.close()
 
-  // ══ C. 去重通知 ══
+  // ══ C. 去重通知 + admin 权限收敛 ══
   const n1 = notifyDeclineContestCase(db, 'ord_A', dc.disputeId!)
-  ok('C1 首次通知 active 仲裁员(arb1+arb2) + admin(adm1) = 3', n1.notified === 3 && n1.skipped === 0)
+  ok('C1 首次通知 active 仲裁员(arb1+arb2)+ 仲裁 admin(root adm1 + arbitration admArb)= 4', n1.notified === 4 && n1.skipped === 0)
   ok('C2 suspended 仲裁员 arbX 未收到', (db.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id='arbX'").get() as { n: number }).n === 0)
-  ok('C3 通知 type + order_id 正确', (db.prepare("SELECT COUNT(*) n FROM notifications WHERE order_id='ord_A' AND type='arb:decline_contest_new'").get() as { n: number }).n === 3)
+  ok('C2b content-only admin(admContent)未收到 —— 与 arbitration 读写权限边界一致', (db.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id='admContent'").get() as { n: number }).n === 0)
+  ok('C2c root(adm1)+ arbitration(admArb)admin 均收到', (db.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id IN ('adm1','admArb')").get() as { n: number }).n === 2)
+  ok('C3 通知 type + order_id 正确 = 4', (db.prepare("SELECT COUNT(*) n FROM notifications WHERE order_id='ord_A' AND type='arb:decline_contest_new'").get() as { n: number }).n === 4)
   const n2 = notifyDeclineContestCase(db, 'ord_A', dc.disputeId!)
-  ok('C4 第二次调用全部去重(0 新增,3 skipped)', n2.notified === 0 && n2.skipped === 3)
-  ok('C5 通知总数仍为 3(无重复轰炸)', (db.prepare("SELECT COUNT(*) n FROM notifications WHERE order_id='ord_A' AND type='arb:decline_contest_new'").get() as { n: number }).n === 3)
+  ok('C4 第二次调用全部去重(0 新增,4 skipped)', n2.notified === 0 && n2.skipped === 4)
+  ok('C5 通知总数仍为 4(无重复轰炸)', (db.prepare("SELECT COUNT(*) n FROM notifications WHERE order_id='ord_A' AND type='arb:decline_contest_new'").get() as { n: number }).n === 4)
 
   // ══ D. 前端接线源检查 ══
   const appSrc = readFileSync('src/pwa/public/app.js', 'utf8')
@@ -83,6 +91,16 @@ try {
   ok('D5 index.html 载入 app-decline-contest-ui.js', idx.includes('/app-decline-contest-ui.js'))
   const ui = readFileSync('src/pwa/public/app-decline-contest-ui.js', 'utf8')
   ok('D6 新文件挂 dcChip/dcNotice/refreshArbBadge + 通知模板', /window\.dcChip/.test(ui) && /window\.dcNotice/.test(ui) && /window\.refreshArbBadge/.test(ui) && /arb_decline_contest_new/.test(ui))
+
+  // ══ E. admin 监督台 DTO 含 dispute_type(前端 window.dcChip(d) 依赖它才能打"拒单举证仲裁"标签)══
+  const adminApp = express(); adminApp.use(express.json())
+  registerAdminReportsRoutes(adminApp, { db, requireContentAdmin: () => null, requireArbitrationAdmin: () => ({ id: 'adm1' }), requireProtocolAdmin: () => null } as never)
+  const aserver = adminApp.listen(0); const aport = (aserver.address() as AddressInfo).port
+  const adminDisputes = (await (await fetch(`http://127.0.0.1:${aport}/api/admin/disputes`)).json()) as { disputes: Array<Record<string, unknown>> }
+  aserver.close()
+  const dcRow = (adminDisputes.disputes || []).find(d => d.id === dc.disputeId)
+  ok('E1 admin 监督台返回该 decline_contest 行', !!dcRow)
+  ok('E2 admin DTO 带 dispute_type=decline_contest(否则前端标签打不出)', dcRow?.dispute_type === 'decline_contest')
 
   if (fail === 0) console.log(`\n✅ decline_contest 统一台展示(PR2):队列/监督台可见 + 待办角标端点 + 去重通知(active 仲裁员+admin,suspended 排除,幂等)\n  ✅ pass ${pass}`)
   else { console.error(`\n❌ PR2 FAILED\n  ✅ pass ${pass}  ❌ fail ${fail}\n${fails.join('\n')}`); process.exitCode = 1 }
