@@ -2800,7 +2800,8 @@ CREATE TABLE IF NOT EXISTS agent_permission_requests (
       created_at       TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
       expires_at       TEXT NOT NULL,
       approved_at      TEXT
-    );
+    , kind TEXT DEFAULT 'scope_grant', order_id TEXT, order_action TEXT, params_hash TEXT, action_params TEXT, executed_at TEXT, execution_result TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_apr_order_action_active ON agent_permission_requests(order_id, order_action) WHERE kind='order_action' AND status IN ('pending','approved');
 
 CREATE TABLE IF NOT EXISTS agent_pairing_sessions (
       pairing_id      TEXT PRIMARY KEY,
