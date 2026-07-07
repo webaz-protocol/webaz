@@ -76,7 +76,7 @@ try {
 
   // ── verify BEFORE approval: full grant = only read_public ──
   const v0 = await j('/api/agent-grants/verify', { bearer: BEARER })
-  ok('verify returns FULL grant (scopes/bundle/expiry/status), not just read_public', v0.status === 200 && Array.isArray((v0.body.grant as Record<string, unknown>).scopes) && ((v0.body.grant as Record<string, string[]>).scopes).join() === 'read_public')
+  ok('verify returns FULL grant (human_id/scopes/bundle/expiry/status), not just read_public', v0.status === 200 && (v0.body.grant as Record<string, unknown>).human_id === 'alice' && Array.isArray((v0.body.grant as Record<string, unknown>).scopes) && ((v0.body.grant as Record<string, string[]>).scopes).join() === 'read_public')
 
   // ── wrong human can\'t approve ──
   ok('non-owner cannot approve', (await j(`/api/agent-grants/permission-requests/${aprId}/approve`, { method: 'POST', user: 'bob' })).status === 403)

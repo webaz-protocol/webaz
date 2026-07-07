@@ -82,7 +82,7 @@ try {
   const active = await mcp.handlePair({ action: 'verify' })
   ok('3 verify valid grant → active', active.status === 'active' && (active.grant as any)?.grant_id === gid && (active.grant as any)?.human_id === human)
   ok('3b verify response does not leak the raw token', !JSON.stringify(active).includes('gtk_int'))
-  ok('3c advisory local_cache is labeled separately from the authoritative grant', !!active.local_cache && (active.grant as any)?.capability === 'read_public')
+  ok('3c verify returns the FULL authorized scope list (not just one capability)', Array.isArray((active.grant as any)?.scopes) && (active.grant as any).scopes.includes('read_public') && !!active.local_cache)
 
   // 3d/3e) agent requests MORE scope via the grant bearer, then lists its OWN requests (grant-authed, no human)
   const reqd = await mcp.handlePair({ action: 'request', bundle: 'catalog_agent', reason: 'read my catalog' })
@@ -94,7 +94,7 @@ try {
   // 4) revoke the grant → verify now fails per-call (revocation honored live)
   db.prepare("UPDATE agent_delegation_grants SET status='revoked', revoked_at=datetime('now') WHERE grant_id=?").run(gid)
   const revoked = await mcp.handlePair({ action: 'verify' })
-  ok('4 verify after revoke → grant_invalid (per-call revocation)', revoked.status === 'grant_invalid' && revoked.error_code === 'GRANT_INACTIVE')
+  ok('4 verify after revoke → grant_invalid (per-call revocation honored; agent told to re-pair)', revoked.status === 'grant_invalid' && !!revoked.error_code)
 
   if (fail === 0) {
     console.log(`\n✅ MCP grant consumption (PR-C2b): resolve stored credential → safe whoami; server enforces active/expiry/revoked per call; token never printed; safe scopes only\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)

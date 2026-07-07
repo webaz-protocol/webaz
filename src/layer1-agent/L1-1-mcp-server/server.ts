@@ -331,21 +331,20 @@ export async function handlePair(args: Record<string, unknown>): Promise<Record<
   }
 
   if (action === 'verify') {
-    // Consume the stored grant against a SAFE grant-gated route (read_public). The SERVER is authoritative:
-    // it re-checks active/expiry/revoked/subject-suspension/scope + audits on EVERY call. We resolve the
-    // bearer from the secret store and attach it; the raw token is never printed. Safe scopes only — no
-    // business tool and no risk scope is wired to grants here.
+    // Ask the server for the FULL grant (all authorized scopes/bundle/expiry/status), not just one capability.
+    // The SERVER is authoritative: it re-checks active/expiry/revoked/subject-suspension + audits on EVERY call.
+    // We resolve the bearer from the secret store and attach it; the raw token is never printed.
     const cred = resolveGrantCredential()
     if (!cred) return { status: 'not_paired', error_code: 'NO_GRANT_CREDENTIAL', hint: 'No stored grant. Run webaz_pair action="start", have the human approve, then action="complete".' }
-    const resp = await apiCall('/api/agent-grants/whoami', { method: 'GET', apiKey: cred.token })
+    const resp = await apiCall('/api/agent-grants/verify', { method: 'GET', apiKey: cred.token })
     if (resp.error) {
       return { status: 'grant_invalid', grant_id: cred.grant_id, error: resp.error, error_code: resp.error_code, hint: 'Grant is no longer valid (revoked / expired / suspended). Re-pair with webaz_pair action="start".' }
     }
     return {
       status: 'active',
-      grant: resp.grant,                 // SERVER-AUTHORITATIVE principal (grant_id/human_id/agent_label/capability)
+      grant: resp.grant,                 // SERVER-AUTHORITATIVE principal: grant_id/human_id/agent_label + ALL scopes[]/permission_bundle/expiry/status
       local_cache: { capabilities: cred.capabilities, expires_at: cred.expires_at },  // advisory only, may be stale — NOT authoritative
-      note: 'Grant verified LIVE by the server (per-call: active/expiry/revoked/subject-suspension/scope + audited). `grant` is authoritative; `local_cache` is advisory. Safe scopes only; no business tool or risk scope consumes this grant.',
+      note: 'Grant verified LIVE by the server (per-call: active/expiry/revoked/subject-suspension + audited). `grant.scopes` is the authoritative full scope list; `local_cache` is advisory. Safe scopes only.',
     }
   }
 

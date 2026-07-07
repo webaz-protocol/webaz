@@ -177,7 +177,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       'SELECT grant_id, human_id, agent_label, capabilities, status, expires_at, permission_bundle FROM agent_delegation_grants WHERE grant_id = ?', [g.grant_id])
     // Fail closed: a grant-authorized read is audited or it does not proceed (parity with requireAgentGrantScope).
     if (!(await auditGrant(g.grant_id, g.human_id, 'grant:verify', 'allow'))) return void res.status(503).json({ error: 'authorization audit unavailable; refusing to proceed unaudited', error_code: 'GRANT_AUDIT_FAILED' })
-    res.json({ grant: { grant_id: full!.grant_id, agent_label: full!.agent_label, scopes: scopeNames(full!.capabilities), permission_bundle: full!.permission_bundle, expires_at: full!.expires_at, status: full!.status }, note: 'Full grant principal — scopes/bundle/expiry/status. Not a human session; never authorizes risk/never-delegable actions.' })
+    res.json({ grant: { grant_id: full!.grant_id, human_id: full!.human_id, agent_label: full!.agent_label, scopes: scopeNames(full!.capabilities), permission_bundle: full!.permission_bundle, expires_at: full!.expires_at, status: full!.status }, note: 'Full grant principal — all authorized scopes/bundle/expiry/status. Not a human session; never authorizes risk/never-delegable actions.' })
   })
 
   // POST create a permission request — the AGENT (holding its current grant) asks for MORE scope / a bundle.

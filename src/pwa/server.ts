@@ -3496,7 +3496,7 @@ app.use((req, res, next) => {
   // 不限制读 / 心跳 / 公开列表
   if (req.method === 'GET' && /^\/api\/(info|leaderboard|payment-methods|governance|openapi)/.test(req.path)) return next()
   const apiKey = req.headers.authorization?.replace('Bearer ', '')
-  if (!apiKey) return next()  // 无 key 走原 IP 速率
+  if (!apiKey || apiKey.startsWith('gtk_')) return next()  // 无 key→IP 速率;gtk_* 委托凭证(RFC-020)是独立自守 auth 通道(requireAgentGrantScope/resolveActiveGrantByBearer 管 safe-scope+active/expiry/revoked+audit),非 api_key,不进下面 agent 声明/风控/strike;否则合法 safe-scope grant 写(如 POST /api/agent-grants/permission-requests)被误判 AGENT_SCOPE_UNDECLARED。gtk_* 只命中 grant-aware 路由,别处 auth() 自然 401。
   // 2026-05-23 P1 fix：被封禁用户仍可走以下路径（看自己 agent 状态 + 申诉）
   // - GET /api/me/agents 系列（看强 / 申诉前必查）
   // - POST /api/me/agents/strikes/:id/appeal（申诉权不能被封禁阻断）
