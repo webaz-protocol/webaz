@@ -125,7 +125,8 @@ CREATE TABLE IF NOT EXISTS disputes (
 
       created_at      TEXT DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
       resolved_at     TEXT
-    , defendant_id TEXT, defendant_notes TEXT, defendant_evidence_ids TEXT DEFAULT '[]', respond_deadline TEXT, arbitrate_deadline TEXT, ruling_type TEXT, refund_amount DOUBLE PRECISION, party_evidence_ids TEXT DEFAULT '[]', liability_parties TEXT DEFAULT '[]', auto_judge_paused_until BIGINT, auto_judge_pause_reason TEXT, audit_log TEXT DEFAULT '[]');
+    , defendant_id TEXT, defendant_notes TEXT, defendant_evidence_ids TEXT DEFAULT '[]', respond_deadline TEXT, arbitrate_deadline TEXT, ruling_type TEXT, refund_amount DOUBLE PRECISION, party_evidence_ids TEXT DEFAULT '[]', liability_parties TEXT DEFAULT '[]', auto_judge_paused_until BIGINT, auto_judge_pause_reason TEXT, audit_log TEXT DEFAULT '[]', dispute_type TEXT DEFAULT 'buyer_dispute');
+CREATE UNIQUE INDEX IF NOT EXISTS ux_disputes_decline_contest_order ON disputes(order_id) WHERE dispute_type='decline_contest';
 
 CREATE TABLE IF NOT EXISTS wallets (
       user_id   TEXT PRIMARY KEY REFERENCES users(id),
