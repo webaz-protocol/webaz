@@ -90,6 +90,7 @@
     "test:agent-approvals-ui": "tsx scripts/test-agent-approvals-ui.ts",
     "test:mcp-place-order-rail": "tsx scripts/test-mcp-place-order-rail.ts",
     "test:agent-product-draft": "tsx scripts/test-agent-product-draft.ts",
+    "test:mcp-version-nudge": "tsx scripts/test-mcp-version-nudge.ts",
     "test:agent-grant-verify": "tsx scripts/test-agent-grant-verify.ts",
     "test:agent-grant-mcp-consume": "tsx scripts/test-agent-grant-mcp-consume.ts",
     "test:connected-agents-read": "tsx scripts/test-connected-agents-read.ts",

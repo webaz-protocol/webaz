@@ -1889,8 +1889,38 @@ export async function handleContribute(args: Record<string, unknown>): Promise<R
   return { error: 'unknown action: ' + action }
 }
 
+/** Minimal semver "a < b" for plain x.y.z release strings (our versions carry no pre-release tags).
+ *  NUMERIC per-part — must not string-compare (else '0.1.9' > '0.1.10' is wrong). */
+export function isOlderVersion(a: string, b: string): boolean {
+  const pa = String(a).split('.').map(n => parseInt(n, 10) || 0)
+  const pb = String(b).split('.').map(n => parseInt(n, 10) || 0)
+  for (let i = 0; i < 3; i++) { const x = pa[i] || 0, y = pb[i] || 0; if (x !== y) return x < y }
+  return false
+}
+
+/** Best-effort "is a newer MCP published?" nudge for webaz_info. npm is the source of truth (the live server
+ *  version can LAG a publish), so we ask the registry directly. Network-gated + short timeout + never throws —
+ *  a missing/slow check must never break webaz_info. */
+async function checkMcpVersion(): Promise<Record<string, unknown>> {
+  const current = SOFTWARE_VERSION
+  if (!isNetworkMode()) return { mcp_version: current, update_check: 'skipped (sandbox mode — no external calls)' }
+  try {
+    const r = await fetch('https://registry.npmjs.org/@seasonkoh/webaz/latest', { signal: AbortSignal.timeout(2500) })
+    if (!r.ok) return { mcp_version: current, update_check: `unavailable (npm ${r.status})` }
+    const latest = String(((await r.json()) as { version?: string }).version || '')
+    const stale = !!latest && isOlderVersion(current, latest)
+    return {
+      mcp_version: current,
+      latest_version: latest || undefined,
+      update_available: stale,
+      ...(stale ? { update_note: `A newer WebAZ MCP is published (${latest} > your ${current}). Update your connector to "@seasonkoh/webaz@latest" (or @${latest}), then FULLY restart the client (Cmd+Q) and open a NEW conversation — a conversation's MCP tool set is fixed at connect time, so an in-place refresh will NOT pick up new tools like webaz_pair.` } : {}),
+    }
+  } catch (e) { return { mcp_version: current, update_check: `unavailable (${(e as Error).message})` } }
+}
+
 async function handleInfo() {
   const summary = getManifestSummary()
+  const mcp = await checkMcpVersion()
   // RFC-003 Batch 0:NETWORK 模式下,best-effort 拉 webaz.xyz 的 live 协议状态,
   // 让带 key 的 agent 拿到【真网络】数字,而非只看本机本地 live_stats(下方仍保留并标注为本地)。
   let network_live: Record<string, unknown> | null = null
@@ -1938,6 +1968,7 @@ async function handleInfo() {
 
   return {
     ...summary,
+    mcp,   // client MCP version + best-effort npm update check (mcp_version / latest_version / update_available / update_note)
     // 诚实化披露 — 排在 stats / quick_start 之前,让 agent 先建立正确预期。
     // 第三方尽调 agent 抓到过的破绽:live_stats 是本地库数字、引导词推 agent 拉新。
     // 此处主动披露真实状态(pre-launch / 数据来源),不抗辩;agent 自己判断如何处理。
