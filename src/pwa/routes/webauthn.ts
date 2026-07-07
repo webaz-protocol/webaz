@@ -48,6 +48,9 @@ export interface WebauthnDeps {
     paramKey: string,
     validate?: (data: unknown) => boolean
   ) => { ok: boolean; reason?: string; error_code?: string }
+  // RFC-020 PR-4: the shared product-create handler (from makeCreateProductHandler), forwarded to the
+  //   grant-gated warehouse-draft route. Optional so other registrations of webauthn routes don't break.
+  createProductDraftHandler?: (req: Request, res: Response, user: Record<string, unknown>, opts?: { forceStatus?: 'warehouse'; onCreated?: (productId: string) => Promise<void> | void; skipExternalLinkEffects?: boolean }) => Promise<void>
 }
 
 export function registerWebauthnRoutes(app: Application, deps: WebauthnDeps): void {
@@ -220,5 +223,5 @@ export function registerWebauthnRoutes(app: Application, deps: WebauthnDeps): vo
   // RFC-020 PR-B — agent delegation grants (issue/read/revoke). Co-registered with the
   // Passkey security routes so the money-dense server.ts stays untouched. Safe scopes
   // only; risk scopes default-hard-reject. Reuses db/auth/generateId from WebauthnDeps.
-  registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk, requireHumanPresence })
+  registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk, requireHumanPresence, createProductDraftHandler: deps.createProductDraftHandler })
 }

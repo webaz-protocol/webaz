@@ -800,6 +800,7 @@ jobs:
       - run: npm run test:agent-permission-consume
       - run: npm run test:agent-approvals-ui
       - run: npm run test:mcp-place-order-rail
+      - run: npm run test:agent-product-draft
       - run: npm run test:agent-grant-verify
       - run: npm run test:agent-grant-mcp-consume
       - run: npm run test:connected-agents-read

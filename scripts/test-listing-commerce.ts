@@ -126,7 +126,7 @@ try {
   ok('7b3. saves are serialized fail-fast (not Promise.all — no partial commit across the 3)', /for \(const step of steps\) \{ const r = await step\(\)/.test(UI) && !/Promise\.all/.test(UI))
   ok('7b5. atomic add: module exposes hasOverrides + activates on success (warehouse-first)', /listingCommerceHasOverrides/.test(UI) && /opts && opts\.activate/.test(UI) && /status: 'active'/.test(UI))
   const PC = readFileSync('src/pwa/routes/products-create.ts', 'utf8')
-  ok('7b6. products-create honors create_status=warehouse (non-atomic-active hole closed)', /create_status/.test(PC) && /create_status === 'warehouse' \? 'warehouse' : 'active'/.test(PC))
+  ok('7b6. products-create honors create_status=warehouse (non-atomic-active hole closed)', /create_status === 'warehouse'/.test(PC) && /\? 'warehouse' : 'active'/.test(PC))
   const SCH = readFileSync('src/layer0-foundation/L0-1-database/schema.ts', 'utf8')
   ok('7b7. weight_kg in base schema (not just server.ts migration; all init paths consistent)', /ADD COLUMN weight_kg REAL/.test(SCH))
   const PU = readFileSync('src/pwa/routes/products-update.ts', 'utf8')

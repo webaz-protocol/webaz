@@ -40,14 +40,29 @@ export interface ProductsCreateDeps {
   makePriceHash: (price: number, ts: string) => string
 }
 
-export function registerProductsCreateRoutes(app: Application, deps: ProductsCreateDeps): void {
-  const { db, auth, generateId, checkSellerCanList, getStakeDiscount, VALID_PRODUCT_TYPES,
+export interface CreateProductOpts {
+  forceStatus?: 'warehouse'
+  onCreated?: (productId: string) => Promise<void> | void
+  // RFC-020 PR-4: when a SAFE grant (seller_product_draft) creates a draft, ALL external source-link handling
+  //   MUST be skipped AND source_url/source_price are NOT persisted — a grant cannot associate a source link
+  //   at all. Otherwise (a) a colliding source_url debits the seller's wallet (0.1 WAZ verify fee) + spawns a
+  //   verify_task — a money side-effect a safe scope must never trigger; and (b) even just storing source_url
+  //   would let the draft carry a link claim that never enters the conflict/verification machinery the human
+  //   create path opens (verification is the feature that ADJUDICATES a claim — keep vs revoke the link — not a
+  //   publish gate; publish never re-checks source_url). The human associates links themselves when they
+  //   edit/publish, which opens that adjudication normally.
+  skipExternalLinkEffects?: boolean
+}
+
+/**
+ * The SINGLE source of product-create validation + insert. res-coupled but auth-agnostic: the caller resolves
+ * `user` (the human api_key route, OR the delegation-grant draft route) and may force `warehouse` status. Both
+ * the human `POST /api/products` and the grant-gated draft route MUST go through this — no parallel copy.
+ */
+export function makeCreateProductHandler(deps: ProductsCreateDeps) {
+  const { db, generateId, checkSellerCanList, getStakeDiscount, VALID_PRODUCT_TYPES,
           parsePlatformUrl, makeCommitmentHash, makeDescriptionHash, makePriceHash } = deps
-
-  app.post('/api/products', async (req, res) => {
-    const user = auth(req, res); if (!user) return
-    if (user.role !== 'seller') return void res.json({ error: '仅卖家可上架商品' })
-
+  return async function createProductHandler(req: Request, res: Response, user: Record<string, unknown>, opts: CreateProductOpts = {}): Promise<void> {
     // 里程碑 3-D：1h 上架限速（防 spam 批量上架）
     const LISTING_RATE_LIMIT = 5
     const recentListings = (await dbOne<{ n: number }>(`
@@ -107,7 +122,7 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
     }
 
     // 上架前检查：同一卖家不能重复关联相同外部链接
-    if (source_url) {
+    if (source_url && !opts.skipExternalLinkEffects) {
       const sameSellerDupe = (await dbOne<{ n: number }>(`
         SELECT COUNT(*) as n FROM product_external_links pel
         JOIN products p ON pel.product_id = p.id
@@ -148,14 +163,14 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'WAZ',?,?,?,?,?,?)`, [
       id, user.id, title, description, priceNum, Number(stock), category, stakeAmount,
       specsJson, brand ?? null, model ?? null,
-      source_url ?? null, source_price ? Number(source_price) : null, source_price ? now : null,
+      opts.skipExternalLinkEffects ? null : (source_url ?? null), opts.skipExternalLinkEffects ? null : (source_price ? Number(source_price) : null), opts.skipExternalLinkEffects ? null : (source_price ? now : null),
       weight_kg ? Number(weight_kg) : null, ship_regions, Number(handling_hours), estJson, fragile ? 1 : 0,
       Number(return_days), return_condition, Number(warranty_days),
       Math.max(0, Math.floor(Number(low_stock_threshold) || 0)), auto_delist_on_zero ? 1 : 0,
       makeCommitmentHash(pFields), makeDescriptionHash({ title, description, specs: specsJson }),
       makePriceHash(priceNum, now), now,
       commissionRateNum, product_type, imagesJsonForInsert,
-      _tx(package_size, 40), _cc(origin_country), _cc(country_of_origin), _tx(customs_description, 120), _hs, create_status === 'warehouse' ? 'warehouse' : 'active'
+      _tx(package_size, 40), _cc(origin_country), _cc(country_of_origin), _tx(customs_description, 120), _hs, (opts.forceStatus === 'warehouse' || create_status === 'warehouse') ? 'warehouse' : 'active'
     ])
     // M7.2.6：免质押上架 — 不再扣 stake；首单成交时 settleOrder 自动从订单 escrow 锁定
 
@@ -181,7 +196,7 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
 
     // 来源链接：冲突检测
     let linkConflict: { task_id?: string; code?: string; expires_at?: string; message: string } | null = null
-    if (source_url) {
+    if (source_url && !opts.skipExternalLinkEffects) {
       // 另一家卖家已认领此链接（verified=1）
       const otherClaim = await dbOne<{ product_id: string }>(`
         SELECT pel.product_id FROM product_external_links pel
@@ -237,7 +252,7 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
     // 额外链接：同步冲突检查（最多 5 个）
     const additionalLinks = req.body.additional_links
     const blockedLinks: { url: string; message: string }[] = []
-    if (Array.isArray(additionalLinks) && additionalLinks.length > 0) {
+    if (!opts.skipExternalLinkEffects && Array.isArray(additionalLinks) && additionalLinks.length > 0) {
       for (const extraUrl of additionalLinks.slice(0, 5)) {
         if (typeof extraUrl !== 'string' || !extraUrl.startsWith('http')) continue
         const alreadyLinked = await dbOne('SELECT id FROM product_external_links WHERE product_id = ? AND url = ?', [id, extraUrl])
@@ -273,13 +288,25 @@ export function registerProductsCreateRoutes(app: Application, deps: ProductsCre
       }
     }
 
+    if (opts.onCreated) { try { await opts.onCreated(id) } catch (e) { console.error('[products-create onCreated]', (e as Error).message) } }
+
     res.json({
       success: true,
       product_id: id,
+      status: (opts.forceStatus === 'warehouse' || create_status === 'warehouse') ? 'warehouse' : 'active',
       stake_locked: 0,                                  // 免质押上架（M7.2.6 方案 3）
       stake_deferred: stakeAmount,                      // 首单成交时自动锁定（trusted+ 跳过）
       ...(linkConflict ? { link_conflict: linkConflict } : {}),
       ...(blockedLinks.length > 0 ? { blocked_links: blockedLinks } : {}),
     })
+  }
+}
+
+export function registerProductsCreateRoutes(app: Application, deps: ProductsCreateDeps): void {
+  const createProductHandler = makeCreateProductHandler(deps)
+  app.post('/api/products', async (req, res) => {
+    const user = deps.auth(req, res); if (!user) return
+    if (user.role !== 'seller') return void res.json({ error: '仅卖家可上架商品' })
+    await createProductHandler(req, res, user)
   })
 }

@@ -37,6 +37,9 @@ export interface AgentGrantsDeps {
   rateLimitOk: (key: string, max?: number, windowMs?: number) => boolean  // throttles the anonymous pair/start
   // 人工在场 gate:批准配对必须真人 Passkey/WebAuthn(与 agent_revoke 同机制)。param 关闭时放行。
   requireHumanPresence: (userId: string, purpose: 'agent_pair_approve' | 'agent_permission_approve', token: string | undefined, paramKey: string, validate?: (data: unknown) => boolean) => { ok: boolean; error_code?: string; reason?: string }
+  // RFC-020 PR-4: shared product-create handler (single source with the human POST /api/products); used by the
+  //   grant-gated warehouse-draft route so the agent path can never drift from the human validation.
+  createProductDraftHandler?: (req: Request, res: Response, user: Record<string, unknown>, opts?: { forceStatus?: 'warehouse'; onCreated?: (productId: string) => Promise<void> | void; skipExternalLinkEffects?: boolean }) => Promise<void>
 }
 
 // Bounds on a pairing request (anti-bloat for the anonymous start endpoint).
@@ -65,7 +68,7 @@ function consentView(p: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDeps): void {
-  const { db, auth, generateId, rateLimitOk, requireHumanPresence } = deps
+  const { db, auth, generateId, rateLimitOk, requireHumanPresence, createProductDraftHandler } = deps
   // PWA runtime self-init (MCP gets the tables via applyWebazRuntimeSchema). Idempotent.
   initAgentDelegationGrantsSchema(db)
   initAgentPairingSchema(db)
@@ -158,6 +161,30 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       [p.human_id])
     res.json({ seller_id: p.human_id, agent_label: p.agent_label, count: rows.length, products: rows, note: 'Seller-owned catalog read via delegation grant (safe scope seller_products_read). Read-only; no money/commission fields.' })
   })
+
+  // POST create a DRAFT product via a delegation grant (Catalog Agent, safe scope seller_product_draft). The
+  //   draft is FORCED to status='warehouse' (not public/sellable). PUBLISHING STAYS HUMAN-ONLY — the human
+  //   flips warehouse→active in the existing 我的商品→仓库 UI (publish is never delegated to a grant, matching
+  //   the taxonomy). Reuses the SAME product-create validation as the human POST /api/products
+  //   (createProductDraftHandler) so the agent path can't drift. Audited by the middleware. Lightweight signal:
+  //   a notification tells the human a draft is waiting to review + publish.
+  if (createProductDraftHandler) {
+    app.post('/api/agent/seller/products', requireAgentGrantScope('seller_product_draft'), async (req, res) => {
+      const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+      const human = await dbOne<{ id: string; role: string }>('SELECT id, role FROM users WHERE id = ?', [p.human_id])
+      if (!human || human.role !== 'seller') return void res.status(403).json({ error: 'the grant owner is not a seller — product drafts need a seller account', error_code: 'NOT_A_SELLER' })
+      await createProductDraftHandler(req, res, human as Record<string, unknown>, {
+        forceStatus: 'warehouse',
+        skipExternalLinkEffects: true,   // a SAFE draft grant must never trigger wallet debit / verify_tasks / auto-verified links (source_url stays inert metadata)
+        onCreated: async (productId) => {
+          try {
+            await dbRun("INSERT INTO notifications (id, user_id, type, title, body) VALUES (?,?,?,?,?)",
+              [generateId('ntf'), p.human_id, 'agent_product_draft', 'AI 助手起草了商品草稿', `${p.agent_label || 'An agent'} 起草了商品草稿 ${productId}，请到「我的商品 → 仓库」审核并发布。`])
+          } catch (e) { console.error('[agent-grant draft notify]', (e as Error).message) }
+        },
+      })
+    })
+  }
 
   // helpers for the permission-request flow ----------------------------------------------------------------
   const parseCapList = (json: string): Array<{ capability: string; constraints?: Record<string, unknown> }> => { try { const a = JSON.parse(json); return Array.isArray(a) ? a : [] } catch { return [] } }

@@ -334,7 +334,7 @@ import { registerProductsCrudRoutes } from './routes/products-crud.js'
 // Products PUT update (#1013 Phase 93) — 1 endpoint (123 行)
 import { registerProductsUpdateRoutes } from './routes/products-update.js'
 // Products POST create (#1013 Phase 94) — 1 endpoint (232 行)
-import { registerProductsCreateRoutes } from './routes/products-create.js'
+import { registerProductsCreateRoutes, makeCreateProductHandler } from './routes/products-create.js'
 // Products GET list (#1013 Phase 95) — 1 endpoint (399 行)
 import { registerProductsListRoutes } from './routes/products-list.js'
 // P2P 商品 (#1013 Phase 96) — 5 endpoints
@@ -7366,7 +7366,7 @@ registerWebauthnRoutes(app, {
   origin: WEBAUTHN_ORIGIN,
   challengeTtlMs: WEBAUTHN_CHALLENGE_TTL_MS,
   gateTtlMs: WEBAUTHN_GATE_TTL_MS,
-  invalidateAgentRiskCacheForUser,
+  invalidateAgentRiskCacheForUser, createProductDraftHandler: makeCreateProductHandler({ db, auth, generateId, checkSellerCanList, getStakeDiscount, VALID_PRODUCT_TYPES, parsePlatformUrl, makeCommitmentHash, makeDescriptionHash, makePriceHash }),  // RFC-020 PR-4: grant-gated warehouse draft reuses the human create logic
   requireHumanPresence,  // #1044 — DELETE passkey 自身需 token
 })
 
