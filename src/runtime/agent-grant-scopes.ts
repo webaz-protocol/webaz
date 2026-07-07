@@ -37,6 +37,12 @@ export const SAFE_SCOPES = [
   'seller_inventory_read',
   'seller_product_draft',
   'seller_pricing_suggestion',
+  // RFC-021 Fulfillment Agent (order 侧 申请→人工 Passkey 批准). BOTH safe:
+  //   seller_orders_read_minimal = 最小化订单读(无买家地址/联系);
+  //   order_action_request = SUBMIT-only —— 只能把 {accept|ship} 请求塞进人的审批队列,【绝不执行】;
+  //     执行始终由人 Passkey 逐笔批准后服务端跑(RFC-021 §5/§6b)。RISK 档 order_accept/order_ship 不动、仍硬拒。
+  'seller_orders_read_minimal',
+  'order_action_request',
 ] as const
 
 /**
@@ -154,6 +160,14 @@ export const PERMISSION_BUNDLES: Record<string, PermissionBundle> = {
     scopes: ['read_public', 'profile_read', 'search', 'seller_profile_read', 'seller_products_read', 'seller_inventory_read', 'seller_product_draft', 'seller_pricing_suggestion', 'product_publish_request'],
     human_summary: '选品、商品草稿、库存字段检查、价格建议、上架请求。它不能发布商品、不能接单、不能发货、不能动用资金。',
     human_summary_en: 'Sourcing, product drafts, inventory-field checks, pricing suggestions, and publish REQUESTS. It cannot publish products, accept orders, ship, or move funds.',
+  },
+  // RFC-021:独立于 catalog_agent 授予/撤销/TTL(§15.1)。仅含两个 SAFE scope,均不直接执行订单动作。
+  fulfillment_agent: {
+    key: 'fulfillment_agent',
+    label: 'Fulfillment Agent',
+    scopes: ['seller_orders_read_minimal', 'order_action_request'],
+    human_summary: '读你订单的最小信息(订单号/状态/下一步责任方/截止/金额/商品),再把"接单/发货"请求提交到你的审批队列等你逐笔 Passkey 批准。它【不能】直接接单或发货、看不到买家收货地址与联系方式(接单获批前)、不动任何资金。',
+    human_summary_en: 'Reads a minimal view of your orders (id / status / next actor / deadline / amount / item) and SUBMITS "accept / ship" requests into your approval queue for you to approve one-by-one with Passkey. It CANNOT accept or ship directly, cannot see the buyer\'s shipping address or contact (before an accept is approved), and moves no funds.',
   },
 }
 
