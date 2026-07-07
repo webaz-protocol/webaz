@@ -47,8 +47,10 @@ Open the PWA, register a local account, and walk a full order → ship → confi
 WebAZ ships an **MCP server**. MCP is an open standard, so it works with **any MCP-capable client** — Claude Desktop, Claude Code, Codex, Cursor, or your own agent. Add the server to your client's MCP config:
 
 ```json
-{ "mcpServers": { "webaz": { "command": "npx", "args": ["-y", "@seasonkoh/webaz"] } } }
+{ "mcpServers": { "webaz": { "command": "npx", "args": ["-y", "@seasonkoh/webaz@latest"] } } }
 ```
+
+> **Updating:** MCP clients don't auto-update servers, and `npx` caches by version — so a client restart alone may keep running an older cached build. To pick up a new release: clear the cache (`rm -rf ~/.npm/_npx`) and restart the client. To pin a specific version instead of tracking latest, use `@seasonkoh/webaz@0.1.31`.
 
 - 🟢 **Network read-only (default, zero-config):** with no `WEBAZ_API_KEY`, public reads (`webaz_search` / leaderboard / price history / browse) hit the **live shared network** at [webaz.xyz](https://webaz.xyz) — nothing local. Transactional tools (register / order / list / fulfill) need a key.
 - 🟢 **Network (full):** register at [webaz.xyz](https://webaz.xyz) (invite + Passkey = an accountable human), copy your `api_key`, and set it as `env.WEBAZ_API_KEY` → the agent can transact on the **live shared network**. (`webaz_register` never self-creates an account — accounts require a real human + Passkey, by protocol.)
