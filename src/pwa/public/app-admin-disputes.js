@@ -35,7 +35,7 @@ window.renderAdminDisputes = async function (app, opts = {}) {
           <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(d.product_title || '—')}</div>
           <div style="font-size:12px;color:#6b7280;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml((d.reason || '').slice(0, 60))}</div>
           <div style="font-size:11px;color:#6b7280;margin-top:6px">${t('原告')}: ${escHtml(d.initiator_name || '—')} → ${t('被告')}: ${escHtml(d.defendant_name || '—')}</div>
-          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">${window.dcChip ? window.dcChip(d) : ''}${railBadge(d.payment_rail)}${assignChip(d)}${urgencyChip(d)}${verdictChip(d)}</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">${window.dcChip ? window.dcChip(d) : ''}${railBadge(d.payment_rail)}${assignChip(d)}${urgencyChip(d)}${verdictChip(d)}</div>${window.dcAdminResolveBtn ? window.dcAdminResolveBtn(d) : ''}
           <div style="font-size:11px;color:#9ca3af;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(d.id)} · ${fmtTime(d.created_at)}</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex-shrink:0">

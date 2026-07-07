@@ -35,7 +35,7 @@ ok('8. renderBuyerMyHome renders arbTaishCard — deduped when external-arb appr
 ok('9. renderMyHome dispatcher re-checks /arbitrator/status → grant propagates without full re-login', /renderMyHome[\s\S]{0,600}\/arbitrator\/status[\s\S]{0,200}state\.canArbitrate =/.test(PROFILE))
 
 // handleArbitrate 必须先取 purpose='arbitrate' 的 Passkey gate token 再 POST(否则后端 requireHumanPresence → 412,确认裁定永远失败)
-ok('10. handleArbitrate acquires arbitrate Passkey token + sends webauthn_token', /requestPasskeyGate\('arbitrate', \{ dispute_id: disputeId \}\)/.test(APP) && /arbitrate`, \{ \.\.\.body, webauthn_token: _arbTk \}/.test(APP))
+ok('10. handleArbitrate acquires arbitrate Passkey token (bound to dispute_id + decision) + sends webauthn_token', /requestPasskeyGate\('arbitrate', \{ dispute_id: disputeId, decision: ruling \}\)/.test(APP) && /arbitrate`, \{ \.\.\.body, webauthn_token: _arbTk \}/.test(APP))
 // 驳回仲裁选项:后端 can_dismiss_to_negotiation 传入 dpArbRulingOptions;仅 direct_p2p+pq-origin 追加 dismiss_to_negotiation
 const LABELS = readFileSync('src/pwa/public/app-order-labels.js', 'utf8')
 ok('11. app.js passes can_dismiss_to_negotiation into dpArbRulingOptions', /dpArbRulingOptions\(dispute\.payment_rail, dispute\.can_dismiss_to_negotiation\)/.test(APP))

@@ -42,6 +42,8 @@ import { applyWalletDelta } from '../../ledger.js'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 import { arbitratorHasConflict } from '../arbitrator-lifecycle.js'  // PR-B COI 硬门
 import { dismissDisputeToNegotiation } from '../../layer3-trust/L3-1-dispute-engine/dispute-engine.js'  // 仲裁员驳回仲裁,退回协商(非胜负裁决)
+import { resolveDeclineContestDispute, type DcDecision } from '../../layer3-trust/L3-1-dispute-engine/decline-contest-resolve.js'  // PR3 拒单举证唯一裁决器
+import { notifyDeclineContestResolved } from '../../layer2-business/L2-6-notifications/notification-engine.js'  // 裁决落定通知买卖双方
 
 export interface DisputesWriteDeps {
   db: Database.Database
@@ -115,44 +117,13 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
     res.json({ contests: rows })
   })
 
-  // 仲裁员裁决
-  app.post('/api/admin/decline-contests/:orderId/resolve', async (req, res) => {
-    const user = auth(req, res); if (!user) return
-    const elig = isEligibleArbitrator(user.id as string)
-    if (!elig.ok) return void errorRes(res, 403, 'NOT_ARBITRATOR', elig.reason || '仅限仲裁员')
-    // 铁律:仲裁需真实人工 WebAuthn
-    const hp = requireHumanPresence(user.id as string, 'arbitrate', req.body?.webauthn_token, 'require_human_presence_for_arbitrate')
-    if (!hp.ok) return void errorRes(res, 412, hp.error_code || 'HUMAN_PRESENCE_REQUIRED', hp.reason || '此操作需真实人工 WebAuthn 验证')
-
-    const { decision, reason } = req.body ?? {}
-    if (!['uphold', 'reject'].includes(decision)) return void errorRes(res, 400, 'BAD_DECISION', "decision 必须为 'uphold'(认定无责) 或 'reject'(驳回,判违约)")
-    if (!reason || !String(reason).trim()) return void errorRes(res, 400, 'REASON_REQUIRED', '请提供裁决理由')
-
-    const order = await dbOne<Record<string, unknown>>('SELECT * FROM orders WHERE id = ?', [req.params.orderId])
-    if (!order) return void res.status(404).json({ error: '订单不存在' })
-    if (order.status !== 'fault_seller' || Number(order.decline_objective_pending) !== 1 || Number(order.decline_contested) !== 1 || order.settled_fault_at) {
-      return void errorRes(res, 400, 'NOT_CONTESTED_PROVISIONAL', '本订单不是【已举证·待裁决】的临时判责拒单')
-    }
-
-    try {
-      appendOrderEvent(db, { orderId: req.params.orderId, eventType: 'transition', fromStatus: 'fault_seller', toStatus: 'fault_seller', actorId: user.id as string, actorRole: 'arbitrator', extra: { action: 'decline_contest_ruling', decision, reason } })
-    } catch (e) { console.warn('[order-chain] decline ruling event:', (e as Error).message) }
-
-    if (decision === 'uphold') {
-      // 认定客观无责 → declined_nofault：全退买家 + 退卖家质押,零罚没
-      const r1 = transition(db, req.params.orderId, 'declined_nofault', user.id as string, [], `客观拒单仲裁维持(无责)：${reason}`)
-      if (!r1.success) return void res.json({ error: r1.error })
-      settleDeclinedNoFault(db, req.params.orderId)
-      transition(db, req.params.orderId, 'completed', SYS, [], '无责拒单结算完成')
-      logAdminAction(user.id as string, 'decline_contest_uphold', 'order', req.params.orderId, { reason })
-      return void res.json({ success: true, outcome: 'declined_nofault', note: '裁决:客观无责。买家已全额退款,卖家质押已退回,无罚没。' })
-    }
-    // reject → 违约结算(终结临时判责)
-    settleFault(db, req.params.orderId, 'fault_seller')
-    transition(db, req.params.orderId, 'completed', SYS, [], `客观拒单仲裁驳回 → 违约结算：${reason}`)
-    db.prepare('UPDATE orders SET decline_objective_pending = 0, decline_contested = 0 WHERE id = ?').run(req.params.orderId)
-    logAdminAction(user.id as string, 'decline_contest_reject', 'order', req.params.orderId, { reason })
-    res.json({ success: true, outcome: 'fault_seller', note: '裁决:驳回。按违约结算,买家已全额退款,卖家质押按规则罚没。' })
+  // PR3:旧订单级裁决端点【已 410 停用】。它绕过统一 resolver(无 dispute CAS / assignment / dispute 状态更新),
+  //   会造成"订单结了但 decline_contest dispute 仍 open"的半闭环。裁决统一走:
+  //     仲裁员 → POST /api/disputes/:id/arbitrate(ruling=decline_no_fault_upheld|decline_fault_confirmed)
+  //     admin 兜底 → POST /api/admin/disputes/:id/decline-contest-resolve
+  //   (PR4 物理删除本端点 + GET 列表。)
+  app.post('/api/admin/decline-contests/:orderId/resolve', async (_req, res) => {
+    return void errorRes(res, 410, 'ENDPOINT_GONE', '此端点已停用。请在统一仲裁台裁决:仲裁员用 POST /api/disputes/:id/arbitrate(ruling=decline_no_fault_upheld|decline_fault_confirmed),管理员用 POST /api/admin/disputes/:id/decline-contest-resolve。')
   })
 
   // 被诉方反驳
@@ -185,15 +156,40 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
     const elig = isEligibleArbitrator(user.id as string)
     if (!elig.ok) return void errorRes(res, 403, 'NOT_ARBITRATOR', elig.reason || '仅限仲裁员')
 
-    // 2026-05-23 Agent 治理铁律：仲裁需真实人工
+    // 2026-05-23 Agent 治理铁律：仲裁需真实人工。
+    //   decline_contest 两选裁决 = 钱路/状态闭环(退款/罚没/completed)→ 与 admin fallback 一致 fail-closed:
+    //   token 必须【显式绑定】本案 dispute_id + 本结果 decision,绝不允许 null/未绑定的泛化 arbitrate token 跨案裁决。
+    //   通用争议维持既有(d==null 允许);resolver 只对两选 ruling 执行,故钱路仅在严格绑定时可达。
+    const _dcRuling = req.body?.ruling === 'decline_no_fault_upheld' || req.body?.ruling === 'decline_fault_confirmed'
     const hpCheck = requireHumanPresence(user.id as string, 'arbitrate', req.body?.webauthn_token, 'require_human_presence_for_arbitrate', (data) => {
       const d = data as Record<string, unknown> | null
+      if (_dcRuling) return d != null && typeof d === 'object' && d.dispute_id === req.params.id && d.decision === req.body?.ruling
       return d == null || d.dispute_id === req.params.id
     })
     if (!hpCheck.ok) return void errorRes(res, 412, hpCheck.error_code || 'HUMAN_PRESENCE_REQUIRED', hpCheck.reason || '此操作需真实人工 WebAuthn 验证')
 
     const { ruling, reason, refund_amount, liable_party_id, liability_parties } = req.body
     if (!ruling || !reason) return void res.json({ error: '请提供裁定结果（ruling）和理由（reason）' })
+
+    // P1-1:先读 dispute,再按 dispute_type 选 ruling allowlist —— 否则 decline_contest 的专用枚举会被通用校验提前 400。
+    const dispute = await getDisputeDetails(db, req.params.id)
+    if (!dispute) return void res.status(404).json({ error: '争议不存在' })
+
+    // PR3:decline_contest → 唯一 domain resolver(两选;dispute CAS + COI + assignment + 终态 completed + 结算 + 审计,单事务失败全回滚)。
+    if ((dispute as Record<string, unknown>).dispute_type === 'decline_contest') {
+      const dcAllow = ['decline_no_fault_upheld', 'decline_fault_confirmed']
+      if (!dcAllow.includes(ruling)) return void errorRes(res, 400, 'BAD_DECISION', `拒单举证仲裁的 ruling 必须是 ${dcAllow.join(' / ')} 之一`)
+      try {
+        const r = resolveDeclineContestDispute(db, req.params.id, user.id as string, ruling as DcDecision, reason, 'arbitrator')
+        try { notifyDeclineContestResolved(db, r.orderId, r.decision) } catch (e) { console.warn('[notify] dc-resolve:', (e as Error).message) }
+        try { logAdminAction(user.id as string, `decline_contest_${r.decision}`, 'order', r.orderId, { source: 'arbitrator', dispute_id: req.params.id, reason }) } catch { /* */ }
+        return void res.json({ success: true, outcome: r.decision, order_status: 'completed' })
+      } catch (e) {
+        const err = e as { code?: string; http?: number; message?: string }
+        return void errorRes(res, err.http || 400, err.code || 'DC_RESOLVE_FAILED', err.message || '裁决失败')
+      }
+    }
+
     const validRulings = ['refund_buyer', 'release_seller', 'partial_refund', 'liability_split', 'dismiss_to_negotiation']
     if (!validRulings.includes(ruling)) {
       return void res.json({ error: `ruling 必须是 ${validRulings.join(' / ')} 之一` })
@@ -207,16 +203,6 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
           return void res.json({ error: '每个责任方需提供 user_id 和非负 amount' })
         }
       }
-    }
-
-    const dispute = await getDisputeDetails(db, req.params.id)
-    if (!dispute) return void res.status(404).json({ error: '争议不存在' })
-
-    // PR1 fail-closed:decline_contest 走专用两选裁决(维持/驳回 → settleDeclinedNoFault/settleFault),
-    //   通用 4 裁决(refund_buyer/release_seller/...)语义不适用。PR3 打通专用裁决前,此路径对 decline_contest 硬拒,
-    //   绝不用通用裁决误结算(防钱/库存错动)。
-    if ((dispute as Record<string, unknown>).dispute_type === 'decline_contest') {
-      return void errorRes(res, 409, 'DECLINE_CONTEST_RULING_NOT_ENABLED', '拒单举证仲裁的裁决通道即将开放,请稍后在统一仲裁台处理')
     }
 
     // PR-B COI 硬门:当事方(买家/卖家/物流/发起人/被诉人)不得仲裁本案。在领取/裁定前拦截。

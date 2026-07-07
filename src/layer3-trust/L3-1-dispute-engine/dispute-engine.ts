@@ -17,6 +17,8 @@ import Database from 'better-sqlite3'
 import { generateId } from '../../layer0-foundation/L0-1-database/schema.js'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 seam(纯读)
 import { transition } from '../../layer0-foundation/L0-2-state-machine/engine.js'
+import { resolveDeclineContestDispute } from './decline-contest-resolve.js'   // PR3 唯一裁决器(超时硬兜底入口)
+import { notifyDeclineContestEscalated } from '../../layer2-business/L2-6-notifications/notification-engine.js'   // 四段式升级通知
 // RFC-014 PR5 — 争议资金处置走整数 base-units + 绝对值落库 + allocate 精确拆分。
 import { toUnits, toDecimal, mulRate, allocate } from '../../money.js'
 import { applyWalletDelta, debitStakeThenBalance, walletUnits } from '../../ledger.js'
@@ -788,9 +790,24 @@ export function checkDisputeTimeouts(db: Database.Database): {
   const sysUser = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string }
 
   for (const dispute of openDisputes) {
-    // PR1 fail-closed:decline_contest 不走通用自动裁决(refund_buyer/release_seller 语义不适用)。
-    //   其超时四段式(仲裁窗口→admin fallback 48h→硬兜底判卖家违约)在 PR3 单独定义;PR3 前绝不自动结算。
-    if ((dispute as DisputeRecord & { dispute_type?: string }).dispute_type === 'decline_contest') continue
+    // PR3 四段式超时:decline_contest 不走通用自动裁决,走专用兜底。
+    //   仲裁窗口(arbitrate_deadline)内 → 不动;过窗口且 ≤+48h → 升级通知(去重,只发一次),等仲裁员/admin;
+    //   过 +48h admin fallback → 硬兜底判卖家违约(resolver 强制 decline_fault_confirmed + auto_resolved_by_timeout)。
+    if ((dispute as DisputeRecord & { dispute_type?: string }).dispute_type === 'decline_contest') {
+      const ad = dispute.arbitrate_deadline
+      if (!ad || now <= ad) continue                                   // 仲裁窗口内
+      const fallbackDeadline = addHours(new Date(ad), 48)              // admin fallback 截止 = arbitrate_deadline + 48h
+      if (now <= fallbackDeadline) {                                   // 段3:升级通知(去重),等人裁
+        try { notifyDeclineContestEscalated(db, dispute.order_id) } catch (e) { console.warn('[dc-escalate]', (e as Error).message) }
+        continue
+      }
+      // 段4:硬兜底 —— 判卖家违约。走与仲裁员完全相同的 resolver(dispute CAS + 终态 completed + 结算,单事务)。
+      try {
+        resolveDeclineContestDispute(db, dispute.id, 'sys_protocol', 'decline_fault_confirmed', '仲裁窗口 + admin 兜底窗口均超时,协议自动判卖家违约(卖家担客观无责举证责任)', 'timeout_auto')
+        details.push({ disputeId: dispute.id, action: 'decline_contest 超时自动判违约', orderId: dispute.order_id })
+      } catch (e) { console.warn('[dc-timeout-auto]', (e as Error).message) }
+      continue
+    }
     // task #1093 stage 6: skip auto-judge if arbitrator paused the clock (playbook §2.1)
     // Pause expires automatically when auto_judge_paused_until passes; no resume needed
     // for the clock to thaw — explicit resume just clears the field eagerly + audit log.

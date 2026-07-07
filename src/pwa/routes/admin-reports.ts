@@ -15,17 +15,21 @@ import type { Application } from 'express'
 import type Database from 'better-sqlite3'
 import type { Request, Response } from 'express'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { resolveDeclineContestDispute } from '../../layer3-trust/L3-1-dispute-engine/decline-contest-resolve.js'  // PR3 唯一裁决器(admin fallback 入口)
+import { notifyDeclineContestResolved } from '../../layer2-business/L2-6-notifications/notification-engine.js'
 
 export interface AdminReportsDeps {
   db: Database.Database
   requireContentAdmin: (req: Request, res: Response) => Record<string, unknown> | null
   requireArbitrationAdmin: (req: Request, res: Response) => Record<string, unknown> | null
   requireProtocolAdmin: (req: Request, res: Response) => Record<string, unknown> | null
+  /** PR3 admin fallback 裁决:一次性真人 WebAuthn gate(server.ts createHumanPresence 注入);purpose_data 绑 dispute_id+action+decision。 */
+  requireHumanPresence: (userId: string, purpose: 'arbitrate' | 'vote' | 'agent_revoke', token: string | undefined, paramKey: string, validate?: (data: unknown) => boolean) => { ok: boolean; reason?: string; error_code?: string }
 }
 
 export function registerAdminReportsRoutes(app: Application, deps: AdminReportsDeps): void {
-  // db 已全量走 RFC-016 异步 seam(dbOne/dbAll),不再直接用 deps.db
-  const { requireContentAdmin, requireArbitrationAdmin, requireProtocolAdmin } = deps
+  // 读表盘走 RFC-016 异步 seam(dbOne/dbAll);唯一例外 = decline-contest 裁决器需 sync db.transaction(domain 层),用 deps.db。
+  const { db, requireContentAdmin, requireArbitrationAdmin, requireProtocolAdmin, requireHumanPresence } = deps
 
   app.get('/api/admin/orders', async (req, res) => {
     const admin = requireContentAdmin(req, res); if (!admin) return
@@ -75,6 +79,32 @@ export function registerAdminReportsRoutes(app: Application, deps: AdminReportsD
     `, params)
     const counts = await dbAll<{ status: string; n: number }>('SELECT status, COUNT(*) n FROM disputes GROUP BY status')
     res.json({ disputes: rows, counts: Object.fromEntries(counts.map(c => [c.status, c.n])), total: counts.reduce((s, c) => s + c.n, 0) })
+  })
+
+  // PR3 admin fallback:仲裁窗口(arbitrate_deadline)过后,仲裁 admin 可 override 裁决卡住的拒单举证仲裁。
+  //   §3 仲裁员优先(窗口未过 → resolver 抛 FALLBACK_TOO_EARLY);走【与仲裁员完全相同】的唯一 resolver
+  //   (dispute CAS + COI + 终态 completed + 结算 + 审计,单事务全回滚)。admin override 不占用 assigned_arbitrators。
+  app.post('/api/admin/disputes/:id/decline-contest-resolve', async (req, res) => {
+    const admin = requireArbitrationAdmin(req, res); if (!admin) return
+    const { decision, reason } = (req.body ?? {}) as { decision?: string; reason?: string }
+    if (decision !== 'decline_no_fault_upheld' && decision !== 'decline_fault_confirmed') return void res.status(400).json({ error: "decision 必须为 'decline_no_fault_upheld' / 'decline_fault_confirmed'", error_code: 'BAD_DECISION' })
+    if (!reason || !String(reason).trim()) return void res.status(400).json({ error: '请提供裁决理由', error_code: 'REASON_REQUIRED' })
+    // Passkey purpose_data 绑 dispute_id + action + decision —— 钱路/状态闭环动作,fail-closed:
+    //   token 必须【显式绑定】本案 + 本动作 + 本结果。绝不允许 null(未绑定 token)或缺字段通过,否则一个泛化的
+    //   arbitrate token 就能对任意过期 decline-contest 触发退款/罚没/completed。
+    const hp = requireHumanPresence(admin.id as string, 'arbitrate', (req.body as { webauthn_token?: string })?.webauthn_token, 'require_human_presence_for_arbitrate', (data) => {
+      const d = data as Record<string, unknown> | null
+      return d != null && typeof d === 'object' && d.dispute_id === req.params.id && d.action === 'decline_contest_resolve' && d.decision === decision
+    })
+    if (!hp.ok) return void res.status(412).json({ error: hp.reason || '此操作需真实人工 WebAuthn 验证', error_code: hp.error_code || 'HUMAN_PRESENCE_REQUIRED' })
+    try {
+      const r = resolveDeclineContestDispute(db, req.params.id, admin.id as string, decision, reason, 'admin_fallback')
+      try { notifyDeclineContestResolved(db, r.orderId, r.decision) } catch { /* 通知失败不影响已完成结算 */ }
+      return void res.json({ success: true, outcome: r.decision, order_status: 'completed', source: 'admin_fallback' })
+    } catch (e) {
+      const err = e as { code?: string; http?: number; message?: string }
+      return void res.status(err.http || 400).json({ error: err.message || '裁决失败', error_code: err.code || 'DC_RESOLVE_FAILED' })
+    }
   })
 
   app.get('/api/admin/verify-tasks', async (req, res) => {

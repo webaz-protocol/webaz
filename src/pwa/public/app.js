@@ -14050,7 +14050,7 @@ function buildDisputeHtml(dispute, user) {
     </div>` : ''
 
   // ── 仲裁员裁定（含责任分配）────────────────────
-  const arbitrateSection = isArbitrator && (dispute.status === 'open' || dispute.status === 'in_review') ? (dispute.dispute_type === 'decline_contest' ? (window.dcNotice ? window.dcNotice(dispute) : '') : `
+  const arbitrateSection = isArbitrator && (dispute.status === 'open' || dispute.status === 'in_review') ? (dispute.dispute_type === 'decline_contest' ? (window.dcRulingForm ? window.dcRulingForm(dispute) : '') : `
     <div style="margin-top:12px;border-top:1px solid #fecaca;padding-top:12px">
       <div style="font-weight:600;font-size:13px;margin-bottom:8px">⚖️ 仲裁员裁定（截止 ${fmtTime(dispute.arbitrate_deadline)}）</div>
       ${window.dpArbFeeNote ? window.dpArbFeeNote(dispute.payment_rail) : ''}
@@ -14342,7 +14342,7 @@ window.handleArbitrate = async (disputeId) => {
     body = { ...body, liability_parties: liabilityParties, refund_amount: totalCalc }
   }
 
-  let _arbTk; try { _arbTk = await requestPasskeyGate('arbitrate', { dispute_id: disputeId }) } catch (e) { msgEl.innerHTML = alert$('error', (e && e.message ? e.message + ' — ' : '') + t('仲裁裁定需现场真人 Passkey 验证')); return }; msgEl.innerHTML = `<div class="alert alert-info"><span class="spinner"></span>${t('裁定中...')}</div>`  // 所有 ruling(含驳回)先取 arbitrate gate token
+  let _arbTk; try { _arbTk = await requestPasskeyGate('arbitrate', { dispute_id: disputeId, decision: ruling }) } catch (e) { msgEl.innerHTML = alert$('error', (e && e.message ? e.message + ' — ' : '') + t('仲裁裁定需现场真人 Passkey 验证')); return }; msgEl.innerHTML = `<div class="alert alert-info"><span class="spinner"></span>${t('裁定中...')}</div>`  // 所有 ruling(含驳回)先取 arbitrate gate token;绑 dispute_id + decision(decline_contest 钱路 fail-closed 校验)
   const res = await POST(`/disputes/${disputeId}/arbitrate`, { ...body, webauthn_token: _arbTk })
   if (res.error) { msgEl.innerHTML = alert$('error', res.error); return }
 
