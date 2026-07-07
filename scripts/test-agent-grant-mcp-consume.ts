@@ -91,6 +91,16 @@ try {
   ok("3e requests lists this grant's own pending request", Array.isArray(listed.requests) && (listed.requests as Array<any>).some(r => r.id === reqd.approval_id && r.status === 'pending'))
   ok('3f request/list never leak the raw token', !JSON.stringify([reqd, listed]).includes('gtk_int'))
 
+  // 3g/3h/3i) business tool consumes the grant: webaz_list_product action=mine reads the seller catalog.
+  //   gid still holds only read_public → PERMISSION_REQUIRED; grant it seller_products_read → returns catalog.
+  const gDenied = await mcp.handleListProduct({ action: 'mine' })
+  ok('3g list_product action=mine via grant, missing seller_products_read → PERMISSION_REQUIRED + retry', gDenied.error_code === 'PERMISSION_REQUIRED' && gDenied.retry_after_approval === true)
+  db.prepare('UPDATE agent_delegation_grants SET capabilities=? WHERE grant_id=?').run(JSON.stringify([{ capability: 'read_public' }, { capability: 'seller_products_read' }]), gid)
+  db.prepare("INSERT INTO products (id, seller_id, title, description, price, status) VALUES ('prd_g1',?,'Grant Widget','d',12,'active')").run(human)
+  const gMine = await mcp.handleListProduct({ action: 'mine' })
+  ok('3h grant now carries seller_products_read → action=mine returns the seller catalog via grant', gMine.via === 'delegation_grant' && Array.isArray(gMine.products) && (gMine.products as Array<Record<string, unknown>>).some(p => p.id === 'prd_g1'))
+  ok('3i grant business-read leaks no raw token', !JSON.stringify([gDenied, gMine]).includes('gtk_int'))
+
   // 4) revoke the grant → verify now fails per-call (revocation honored live)
   db.prepare("UPDATE agent_delegation_grants SET status='revoked', revoked_at=datetime('now') WHERE grant_id=?").run(gid)
   const revoked = await mcp.handlePair({ action: 'verify' })
