@@ -38,7 +38,10 @@ export const DEFERRAL_QUOTA_CODES = {
  *     · 未付款:created / pending_accept / direct_pay_window / direct_expired_unconfirmed
  *     · 取消:cancelled
  *     · 退款/拒单(买家已退款):refunded_full / refunded_partial / fault_seller / fault_buyer / fault_logistics / declined_nofault / dispute_dismissed / expired
- *   争议中的单若最终裁成退款/取消,会自动落到排除态而移出配额(白名单构造,无需额外释放逻辑)。
+ *   ⚠️ 边界:拒单/违约会【结算到 status=completed】(fault_seller→completed / declined_nofault→completed,"不留半闭环"),
+ *   只按 status 白名单会误把这些【已退款】单当 completed 计入 —— 故 SQL 另加 `settled_fault_at IS NULL`(settleFault/
+ *   settleDeclinedNoFault 写此标记)排除之;genuine confirmed→completed 无此标记,仍计入。
+ *   争议中的单若最终裁成退款/取消,会自动落到排除态或被 settled_fault_at 挡下而移出配额(无需额外释放逻辑)。
  */
 export const DEFERRAL_QUOTA_COUNTED_STATUSES = [
   'accepted', 'shipped', 'picked_up', 'in_transit', 'delivered', 'confirmed', 'completed',
@@ -73,8 +76,10 @@ export function checkDeferralQuota(
   if (!active) return { ok: true }   // 非缓交卖家 → no-op
   const since = windowStartSql(nowIso, cfg.windowDays)
   // 口径:只数【已付款且有效】的单(DEFERRAL_QUOTA_COUNTED_STATUSES 白名单)—— 未付款/取消/退款的单不占卖家配额。
+  //   `settled_fault_at IS NULL`:排除【拒单/违约结算到 completed】的单(settleFault/settleDeclinedNoFault 写此标记;
+  //   fault_seller→completed / declined_nofault→completed 都是"买家已退款"却终态=completed —— 若只按 status 会误计入)。
   const rows = db.prepare(
-    `SELECT total_amount FROM orders WHERE seller_id = ? AND payment_rail = 'direct_p2p' AND status IN (${DEFERRAL_QUOTA_COUNTED_STATUSES.map(() => '?').join(',')}) AND created_at >= ?`,
+    `SELECT total_amount FROM orders WHERE seller_id = ? AND payment_rail = 'direct_p2p' AND status IN (${DEFERRAL_QUOTA_COUNTED_STATUSES.map(() => '?').join(',')}) AND settled_fault_at IS NULL AND created_at >= ?`,
   ).all(sellerId, ...DEFERRAL_QUOTA_COUNTED_STATUSES, since) as Array<{ total_amount: number }>
   // ① 笔数上限(factor 缩放,下限 ≥ 1)。
   const countLimit = Math.max(1, Math.floor(cfg.baseOrderCount * active.reducedQuotaFactor))
