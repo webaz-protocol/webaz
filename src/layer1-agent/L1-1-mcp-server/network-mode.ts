@@ -37,6 +37,10 @@ export const NETWORK_TOOLS = new Set<string>([
   'webaz_get_status',
   'webaz_feedback',
   'webaz_contribute',
+  // RFC-021 fulfillment-agent grant-wired order tools (read minimal + submit action-request).
+  //   Grant-only (no api_key path); grants live on webaz.xyz so they must be network-reachable.
+  'webaz_get_agent_order',
+  'webaz_order_action_request',
   // Batch 1(只读 + 低危自身写):走 webaz.xyz Bearer api_key。
   'webaz_notifications',
   'webaz_nearby',

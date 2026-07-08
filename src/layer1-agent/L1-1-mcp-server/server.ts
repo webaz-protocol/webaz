@@ -1728,6 +1728,39 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
       },
     },
   },
+  {
+    name: 'webaz_get_agent_order',
+    description: `Grant-wired MINIMAL order read for a fulfillment agent (safe scope seller_orders_read_minimal). Reads the seller's OWN orders via a paired delegation grant (webaz_pair — fulfillment_agent bundle), NOT an api_key. Returns a minimal projection only — order_id / status / next_actor / deadline / amount / item_ref — with NO buyer address / contact / PII and no execution.
+
+- order_id given → that one order; omitted → the seller's order list.
+- No grant paired → GRANT_REQUIRED (run webaz_pair action="start"). Missing scope → structured PERMISSION_REQUIRED (request via webaz_pair action="request" bundle="fulfillment_agent", have the human approve, then retry).
+- To ACT on an order (accept/ship), use webaz_order_action_request (submit → human Passkey approves → server executes).`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        order_id: { type: 'string', description: "Order ID. Omit to list the seller's orders (minimal projection)." },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'webaz_order_action_request',
+    description: `Grant-wired order-action SUBMIT for a fulfillment agent (safe scope order_action_request). Submits an accept/ship request into the seller's HUMAN approval queue — it does NOT execute. The order action runs only after the human approves with their Passkey. Uses a paired delegation grant (webaz_pair — fulfillment_agent), NOT an api_key.
+
+- action="accept" (a paid order) | action="ship" (an accepted order; action_params needs { tracking, evidence_ref }).
+- Returns request_id + approval_url — tell the human to open it and approve with their Passkey; only then does the server execute the action.
+- decline is NOT delegable — the backend returns DECLINE_NOT_DELEGATED; a human must decline in the PWA.
+- No grant → GRANT_REQUIRED. Missing scope → structured PERMISSION_REQUIRED (request via webaz_pair action="request" bundle="fulfillment_agent"). No buyer address/PII in params.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        order_id: { type: 'string', description: 'Order ID' },
+        action: { type: 'string', enum: ['accept', 'ship'], description: 'accept a paid order, or ship an accepted order' },
+        action_params: { type: 'object', description: 'ship needs { tracking, evidence_ref }; accept needs none. Never put buyer address/PII here.' },
+      },
+      required: ['order_id', 'action'],
+    },
+  },
 ]
 
 // ─── 工具处理函数 ─────────────────────────────────────────────
@@ -2436,6 +2469,40 @@ async function handleVerifyPrice(args: Record<string, unknown>) {
     expires_in_seconds: 600,
     next: `调用 webaz_place_order 时传入 session_token="${token}" 确保以此价格成交`,
   }
+}
+
+// RFC-021 fulfillment-agent grant-wired order tools. PURE WRAPPERS over already-live endpoints —
+//   no backend/executor/projection/money change. Grant-only (these endpoints require a gtk_ grant
+//   bearer via requireAgentGrantScope; an api_key does not resolve them). Replicates the
+//   resolveGrantCredential → apiCall pattern (samizdat of handleListProduct's grant path).
+export async function handleGetAgentOrder(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // Wraps GET /api/agent/orders(/:id) (safe scope seller_orders_read_minimal). Passes the minimal
+  //   projection through UNCHANGED — no field reshaped/added, nothing persisted; PII never enters here.
+  if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential()
+  if (!cred) return { error: 'a delegation grant is required — run webaz_pair action="start", have the human approve the fulfillment_agent bundle, then retry.', error_code: 'GRANT_REQUIRED' }
+  const orderId = (typeof args.order_id === 'string' && args.order_id) ? args.order_id : ''
+  const path = orderId ? `/api/agent/orders/${encodeURIComponent(orderId)}` : '/api/agent/orders'
+  const r = await apiCall(path, { method: 'GET', apiKey: cred.token })
+  if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks seller_orders_read_minimal. Run webaz_pair action="request" bundle="fulfillment_agent", have the human approve, then retry.' }
+  return r
+}
+
+export async function handleOrderActionRequest(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // Wraps POST /api/agent/orders/:id/action-request (safe scope order_action_request). SUBMIT-ONLY:
+  //   writes a pending request to the human approval queue; NEVER executes (execution needs a human
+  //   Passkey approval). decline is not delegable — the backend returns DECLINE_NOT_DELEGATED and we
+  //   pass it through untouched. We forward only action + action_params; no PII, no logging of params.
+  if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential()
+  if (!cred) return { error: 'a delegation grant is required — run webaz_pair action="start", have the human approve the fulfillment_agent bundle, then retry.', error_code: 'GRANT_REQUIRED' }
+  const orderId = (typeof args.order_id === 'string' && args.order_id) ? args.order_id : ''
+  if (!orderId) return { error: 'order_id is required', error_code: 'ORDER_ID_REQUIRED' }
+  const body: Record<string, unknown> = { action: args.action }
+  if (args.action_params !== undefined) body.action_params = args.action_params
+  const r = await apiCall(`/api/agent/orders/${encodeURIComponent(orderId)}/action-request`, { method: 'POST', apiKey: cred.token, body })
+  if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks order_action_request. Run webaz_pair action="request" bundle="fulfillment_agent", have the human approve, then retry.' }
+  return r
 }
 
 export async function handleListProduct(args: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -5181,6 +5248,8 @@ export async function startMCPServer() {
         case 'webaz_place_order':   result = await handlePlaceOrder(args); break
         case 'webaz_update_order':  result = await handleUpdateOrder(args); break
         case 'webaz_get_status':    result = await handleGetStatus(args); break
+        case 'webaz_get_agent_order':     result = await handleGetAgentOrder(args); break
+        case 'webaz_order_action_request': result = await handleOrderActionRequest(args); break
         case 'webaz_feedback':      result = await handleFeedback(args); break
         case 'webaz_contribute':    result = await handleContribute(args); break
         case 'webaz_wallet':        result = await handleWallet(args); break
