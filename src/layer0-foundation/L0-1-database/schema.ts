@@ -692,6 +692,30 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_quote_est_days TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_quote_note TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_quote_at TEXT`) } catch { /* 已存在 */ }
+  // PR-B(undeliverable/拒收收口):证据裁决 + fault-neutral。两截止列均存 ISO(与 #299 归一化一致)。
+  //   delivery_failed_deadline = 买家争议窗口锚(delivery_failed→fault_buyer 的 X 窗口,default 120h)。
+  //   goods_return_deadline    = escrow 下卖家确认收货窗口锚(Guardrail B2:超时未确认→默认退买家)。
+  try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_failed_deadline TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN goods_return_deadline TEXT`) } catch { /* 已存在 */ }
+  // PR-B params:seed 于此(非 server.ts DEFAULT_PARAMS)—— server.ts 已达 LOC 天花板(ratchet,不可加行)。
+  //   protocol_params 形状与 server.ts:790 一致(均 IF NOT EXISTS / INSERT OR IGNORE,幂等共存,防漂移见该处)。
+  //   硬上限走 max_value(Guardrail A:restocking ≤15%)。运行时另在结算处 clamp 兜底(DB 值异常也不越界)。
+  db.exec(`CREATE TABLE IF NOT EXISTS protocol_params (
+    key TEXT PRIMARY KEY, value TEXT NOT NULL, type TEXT NOT NULL, description TEXT,
+    category TEXT DEFAULT 'general', default_value TEXT, min_value REAL, max_value REAL,
+    updated_at TEXT DEFAULT (datetime('now')), updated_by TEXT
+  )`)
+  for (const p of [
+    { key: 'undeliverable_closure_enabled', value: '0', type: 'number', desc: 'PR-B rollout flag:undeliverable/拒收收口分阶段启用;默认 0=关(旧 fault_logistics 路径不变)。', cat: 'system', min: 0, max: 1 },
+    { key: 'restocking_fee_rate', value: '0.10', type: 'number', desc: 'PR-B escrow 买家责任收口的 restocking 费率(基于 price 不含运费)。硬上限 15%(Guardrail A,防满额没收绕回全额)。', cat: 'fee', min: 0, max: 0.15 },
+    { key: 'return_shipping_max_rate', value: '0.20', type: 'number', desc: 'PR-B 卖家申报实际退程运费的上限(占 total 比例,防灌水);实际值随 return-tracking 提交并 clamp 至此。', cat: 'fee', min: 0, max: 0.30 },
+    { key: 'undeliverable_contest_window_hours', value: '120', type: 'number', desc: 'PR-B delivery_failed→fault_buyer 的买家争议窗口(小时,X=120,锚 delivery_failed 时刻)。', cat: 'limit', min: 0, max: 336 },
+    { key: 'goods_return_confirm_window_hours', value: '120', type: 'number', desc: 'PR-B(Guardrail B2)escrow 卖家确认收货窗口(小时);超时未确认→默认退买家。', cat: 'limit', min: 0, max: 336 },
+  ]) {
+    try { db.prepare(`INSERT OR IGNORE INTO protocol_params (key, value, type, description, category, default_value, min_value, max_value) VALUES (?,?,?,?,?,?,?,?)`)
+      .run(p.key, p.value, p.type, p.desc, p.cat, p.value, p.min, p.max) } catch { /* 已存在 */ }
+    try { db.prepare(`UPDATE protocol_params SET min_value = COALESCE(min_value, ?), max_value = COALESCE(max_value, ?) WHERE key = ?`).run(p.min, p.max, p.key) } catch {}
+  }
   // 跨境交易条款骨架(S0):清关/物流证据字段(即时开放,展示+快照证据,零计费逻辑=守 ERP 边界)+
   //   结构化规则列(sale_regions/tax_lines/import_duty_terms 先建列【不开 API】—— 不上假开关:S1 带可售 gate、
   //   S3 带税费明细进 total 时才各自开放;既有 ship_regions 是自由文本仅展示,真相源=这些结构化列)。
