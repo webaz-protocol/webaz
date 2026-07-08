@@ -485,7 +485,7 @@ export const ORDER_STATE_MEANINGS: Record<OrderStatus, { zh: string; en: string 
   disputed:            { zh: '争议中,等待人工仲裁', en: 'in dispute, awaiting human arbitration' },
   completed:           { zh: '交易完成,资金已分配(终态)', en: 'completed, funds settled (terminal)' },
   cancelled:           { zh: '已取消(终态)', en: 'cancelled (terminal)' },
-  fault_buyer:         { zh: '买家违约(超时未付,终态)', en: 'buyer fault (payment timeout, terminal)' },
+  fault_buyer:         { zh: '买家违约(支付超时未付,或未派送成功经证据裁定;结算 → completed)', en: 'buyer fault (payment timeout, or undeliverable adjudicated; settles → completed)' },
   fault_seller:        { zh: '卖家违约(超时未接/发 或 主动拒单)', en: 'seller fault (accept/ship timeout or active decline)' },
   fault_logistics:     { zh: '物流违约', en: 'logistics fault' },
   declined_nofault:    { zh: '卖家无责拒单裁定(仲裁认定客观),待系统结算 → completed;全退买家+退卖家质押,零罚没', en: 'seller no-fault decline (arbitration-cleared), pending system settlement → completed; full refund + stake returned, no forfeit' },

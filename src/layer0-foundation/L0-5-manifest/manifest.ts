@@ -48,7 +48,7 @@ const STATE_MACHINE = {
     disputed:         { label: '争议中',    responsible: 'arbitrator', terminal: false, description: '争议冻结中，等待仲裁员介入' },
     fault_seller:     { label: '卖家违约',  responsible: 'system',     terminal: false, description: '卖家超时判责，正在退款买家' },
     fault_logistics:  { label: '物流违约',  responsible: 'system',     terminal: false, description: '物流方超时判责，正在处置赔付' },
-    fault_buyer:      { label: '买家违约',  responsible: 'system',     terminal: false, description: '买家超时判责，资金转给卖家' },
+    fault_buyer:      { label: '买家违约',  responsible: 'system',     terminal: false, description: '买家违约:支付超时未付,或未派送成功经证据裁定。escrow 资金按规则处置;direct_p2p 仅信誉(协议未托管)' },
   },
 
   // 所有合法转移（从 transitions.ts 同步）
