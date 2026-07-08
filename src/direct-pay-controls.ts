@@ -144,6 +144,17 @@ export const DIRECT_PAY_CONTROL_PARAMS: Array<{ key: string; value: string; type
   { key: 'direct_pay.exposure_factor_bps', value: '8000', type: 'number', description: '§6.5 抵押背书的开放敞口上限系数(bps):open_exposure + new_order ≤ active_collateral × bps/10000。仅对有真实链上抵押(collateral>0)的卖家生效;缓交卖家不受此门。默认 8000(=80%)。风险控制,非买家赔付。', category: 'system', min: 1, max: 10000 },
   // 注:平台服务费门 = 首单宽限 + 预充值续用(数据驱动:available_prepay = Σ预充值 − Σ已计提费),【无 protocol_param 旋钮】
   //   (额度即商家实际预付余额,宽限自动判定);故此处不再有 fee_ar_credit_ceiling_units 参数。
+  // 运营时钟 / 反滥用 / 缓交配额包络 / 保证金冷静期 —— 此前仅代码默认(getProtocolParam fallback)、未入 protocol_params 表 →
+  //   admin protocol-params PATCH 404、UI 看不见、只能裸改 DB。这里 seed;value == 代码默认(INSERT OR IGNORE,零行为变化),
+  //   仅令其可治理/可视/可 PATCH。默认值必须与各 getProtocolParam 调用点 fallback 逐字一致。
+  { key: 'direct_pay.payment_window_hours', value: '4', type: 'number', description: 'direct_p2p 买家付款窗口(小时);买家须在此时限内标记付款,否则订单超时。默认 4。', category: 'system', min: 1, max: 168 },
+  { key: 'direct_pay.accept_window_hours', value: '24', type: 'number', description: 'direct_p2p 卖家接单窗口(小时);manual 接单模式下卖家须在此时限内确认接单。默认 24。', category: 'system', min: 1, max: 168 },
+  { key: 'direct_pay.max_open_per_buyer_seller', value: '5', type: 'number', description: 'direct_p2p 同一买家↔卖家并发进行中订单上限(反滥用节流)。默认 5。', category: 'system', min: 1, max: 50 },
+  { key: 'direct_pay.deferral_window_days', value: '30', type: 'number', description: '缓交卖家配额【滚动窗口】(天);窗口内统计 non-cancelled direct_p2p 笔数/金额。默认 30。', category: 'system', min: 1, max: 365 },
+  { key: 'direct_pay.deferral_base_order_count', value: '20', type: 'number', description: '缓交卖家窗口内【基础订单笔数】上限;实际上限 = floor(本值 × 该卖家 reduced_quota_factor)。默认 20。', category: 'system', min: 1, max: 1000 },
+  { key: 'direct_pay.deferral_max_window_amount_units', value: '500000000', type: 'number', description: '缓交卖家窗口内【累计金额绝对上限】(整数 base-units,6dp;500000000 = 500 单位)。不随 factor 缩放。默认 500000000。', category: 'system', min: 0, max: 100000000000 },
+  { key: 'direct_pay.bond_refund_cooling_days', value: '14', type: 'number', description: '履约保证金【退还冷静期】(天);申请后须过此期方可执行退还。默认 14。', category: 'system', min: 0, max: 90 },
+  { key: 'direct_pay.bond_slash_cooling_days', value: '7', type: 'number', description: '履约保证金【罚没冷静期】(天)= 卖家申诉窗口;提案后须过此期方可执行罚没。默认 7。', category: 'system', min: 0, max: 90 },
 ]
 
 /**

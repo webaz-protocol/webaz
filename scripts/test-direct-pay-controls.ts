@@ -146,11 +146,27 @@ const EXPECTED: Record<string, string> = {
   'direct_pay.region_allowlist': '',
   'direct_pay.per_tx_cap_units': '0',
   'direct_pay.exposure_factor_bps': '8000',   // §6.5 抵押背书敞口上限系数(默认 80%;治理可调;create-gate fail-closed)
+  // 2026-07-08 补 seed 的运营时钟 / 反滥用 / 缓交配额包络 / 保证金冷静期 —— value 必须【逐字】== 各 getProtocolParam 调用点 fallback(零行为变化)
+  'direct_pay.payment_window_hours': '4',
+  'direct_pay.accept_window_hours': '24',
+  'direct_pay.max_open_per_buyer_seller': '5',
+  'direct_pay.deferral_window_days': '30',
+  'direct_pay.deferral_base_order_count': '20',
+  'direct_pay.deferral_max_window_amount_units': '500000000',
+  'direct_pay.bond_refund_cooling_days': '14',
+  'direct_pay.bond_slash_cooling_days': '7',
 }
 for (const [k, v] of Object.entries(EXPECTED)) {
   ok(`seed list has ${k} (default '${v}')`, !!seedByKey[k] && seedByKey[k].value === v, JSON.stringify(seedByKey[k]))
 }
-ok('seed list has exactly the 6 operational control keys', DIRECT_PAY_CONTROL_PARAMS.length === 6)
+ok('seed list has exactly the 14 operational control keys', DIRECT_PAY_CONTROL_PARAMS.length === 14)
+// units param 必须 == toUnits(500)(防手写 500000000 与 money scale 漂移)
+ok('deferral_max_window_amount_units seed == toUnits(500) base-units', seedByKey['direct_pay.deferral_max_window_amount_units'].value === String(toUnits(500)))
+// 新 seed 的 param 必须 type=number + min/max 有界(否则 admin PATCH 无法校验)
+for (const k of ['direct_pay.payment_window_hours', 'direct_pay.accept_window_hours', 'direct_pay.max_open_per_buyer_seller', 'direct_pay.deferral_window_days', 'direct_pay.deferral_base_order_count', 'direct_pay.deferral_max_window_amount_units', 'direct_pay.bond_refund_cooling_days', 'direct_pay.bond_slash_cooling_days']) {
+  const p = seedByKey[k]
+  ok(`${k}: type=number + min≤max 有界(可 PATCH 校验)`, !!p && p.type === 'number' && typeof p.min === 'number' && typeof p.max === 'number' && (p.min as number) <= (p.max as number))
+}
 // hard invariants must NOT be governance params (no operator soft-bypass of launch blockers)
 ok('require_production_base_bond NOT a param (hard invariant)', !seedByKey['direct_pay.require_production_base_bond'])
 ok('require_kyc_sanctions NOT a param (hard invariant)', !seedByKey['direct_pay.require_kyc_sanctions'])
