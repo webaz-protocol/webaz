@@ -20,7 +20,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 const db = new Database(':memory:')
 db.exec("CREATE TABLE direct_receive_deferrals (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, reason TEXT, period_days INTEGER NOT NULL, reduced_quota_factor REAL NOT NULL DEFAULT 0.5, status TEXT NOT NULL DEFAULT 'pending', approved_by TEXT, approved_at TEXT, expires_at TEXT, grace_until TEXT, created_at TEXT DEFAULT (datetime('now')))")
 db.exec("CREATE TABLE direct_receive_deposits (id TEXT PRIMARY KEY, user_id TEXT, status TEXT, production_receipt_confirmed_at TEXT)")
-db.exec("CREATE TABLE orders (id TEXT PRIMARY KEY, seller_id TEXT, payment_rail TEXT, status TEXT, total_amount REAL, created_at TEXT)")
+db.exec("CREATE TABLE orders (id TEXT PRIMARY KEY, seller_id TEXT, payment_rail TEXT, status TEXT, total_amount REAL, created_at TEXT, settled_fault_at TEXT)")
 
 const NOW = '2026-07-01T00:00:00.000Z'
 const sqlTime = (iso: string): string => new Date(iso).toISOString().slice(0, 19).replace('T', ' ')
@@ -111,6 +111,16 @@ for (const st of ['created', 'pending_accept', 'direct_pay_window', 'direct_expi
 ok('8a. COUNTED_STATUSES 常量含 accepted/completed/disputed,不含 cancelled/direct_pay_window(防常量↔SQL 漂移)',
   DEFERRAL_QUOTA_COUNTED_STATUSES.includes('accepted' as never) && DEFERRAL_QUOTA_COUNTED_STATUSES.includes('completed' as never) && DEFERRAL_QUOTA_COUNTED_STATUSES.includes('disputed' as never)
   && !(DEFERRAL_QUOTA_COUNTED_STATUSES as readonly string[]).includes('cancelled') && !(DEFERRAL_QUOTA_COUNTED_STATUSES as readonly string[]).includes('direct_pay_window'))
+
+// ── 8b. completed 边界:拒单/违约结算(settled_fault_at 非空)= 买家已退款 → 不占额;genuine completed(NULL)→ 占额 ──
+//   fault_seller→completed / declined_nofault→completed 都终态 completed,但 settled_fault_at 被 settleFault/settleDeclinedNoFault 写入。
+grantDeferral('s_fc', 0.1)   // countLimit = 1
+db.prepare("INSERT INTO orders (id, seller_id, payment_rail, status, total_amount, created_at, settled_fault_at) VALUES ('o_fc','s_fc','direct_p2p','completed',10,?, ?)")
+  .run(sqlTime(plusDays(0)), sqlTime(plusDays(0)))
+ok('8b. completed + settled_fault_at(拒单/违约已退款)→ 不占额(+1=1≤1 → ok)', check('s_fc', 10).ok === true)
+grantDeferral('s_gc', 0.1)   // countLimit = 1
+order('s_gc', 10, 'completed')   // genuine completed:order() 不写 settled_fault_at → NULL
+ok('8c. genuine completed(settled_fault_at NULL)→ 占额(+1=2>1 → 拒)', check('s_gc', 10).ok === false)
 
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} direct-pay-deferral-quota tests passed`)
