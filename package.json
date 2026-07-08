@@ -89,6 +89,7 @@
     "test:agent-permission-consume": "tsx scripts/test-agent-permission-consume.ts",
     "test:agent-approvals-ui": "tsx scripts/test-agent-approvals-ui.ts",
     "test:mcp-place-order-rail": "tsx scripts/test-mcp-place-order-rail.ts",
+    "test:mcp-agent-order-tools": "tsx scripts/test-mcp-agent-order-tools.ts",
     "test:agent-product-draft": "tsx scripts/test-agent-product-draft.ts",
     "test:decline-contest-unify-p1": "tsx scripts/test-decline-contest-unify-pr1.ts",
     "test:decline-contest-unify-p2": "tsx scripts/test-decline-contest-unify-pr2.ts",
