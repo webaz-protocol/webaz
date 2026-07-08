@@ -73,12 +73,12 @@ window.dpAfterCreate = async (res) => {
     return
   }
   const orderId = res.order_id
+  // 手动接单(pending_accept):接单前买家零收款信息、不能付款 —— 不弹付款/不做 ack,只提示等待落订单页(接单→direct_pay_window 后才 D1/D2+付款)。
+  if (res.status === 'pending_accept') { if (typeof toast$ === 'function') toast$(t('订单已提交,等待卖家接单'), 'info'); return void setTimeout(() => navigate(`#order/${orderId}`), 400) }
   // 边界:必须【先】完成 D1/D2 + Passkey,之后【才】展示卖家收款说明(快照)。未完成则不展示,留到订单页继续。
   const acked = await window.dpEnsureAcks(orderId)
-  if (!acked) {
-    if (typeof toast$ === 'function') toast$(t('需完成 D1/D2 Passkey 风险确认后才显示收款说明 · 可在订单页继续'), 'info')
-    setTimeout(() => navigate(`#order/${orderId}`), 600)
-    return
+  if (!acked) { if (typeof toast$ === 'function') toast$(t('需完成 D1/D2 Passkey 风险确认后才显示收款说明 · 可在订单页继续'), 'info')
+    return void setTimeout(() => navigate(`#order/${orderId}`), 600)
   }
   // 两次披露已 ack —— 收款说明【不】来自 create 响应(后端在 both-acked 前不下发);现在才 GET 订单读取 redaction-gated 快照。
   //   【先落订单页,融合付款弹窗叠在其上】:订单页本身有收款信息+对账卡+自动隐藏倒计时,所以无论用户点按钮、点遮罩还是

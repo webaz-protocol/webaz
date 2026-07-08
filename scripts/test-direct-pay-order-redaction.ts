@@ -72,5 +72,25 @@ const p4 = mkOrder({ id: 'ord10', seller_id: 's1' })
 projectDirectPayTargetForViewer(db, p4, 'third_party')
 ok('7d. projector/third-party (logistics/仲裁员/任何非当事方): BOTH snapshots removed', !('direct_pay_instruction_snapshot' in p4) && !('direct_pay_account_snapshot' in p4))
 
+// ── 8. 手动接单 pending_accept:买家【接单前】零收款目标 —— 整块 account_snapshot + instruction 全删(连 method/currency/label 元数据也不给),哪怕已 both-acked(时序门只在接单前遮蔽)──
+const q1 = mkOrder({ id: 'ord11', status: 'pending_accept' })   // not acked
+redactUnackedDirectPayTarget(db, q1, 'b1')
+ok('8a. pending_accept un-acked buyer: instruction deleted', !('direct_pay_instruction_snapshot' in q1))
+ok('8b. pending_accept: WHOLE account_snapshot deleted (元数据也不给)', !('direct_pay_account_snapshot' in q1))
+ackBoth('ord12')
+const q2 = mkOrder({ id: 'ord12', status: 'pending_accept' })   // both-acked 但仍在接单前
+redactUnackedDirectPayTarget(db, q2, 'b1')
+ok('8c. pending_accept 即便 both-acked 仍遮蔽:instruction + 整块 account_snapshot 全删', !('direct_pay_instruction_snapshot' in q2) && !('direct_pay_account_snapshot' in q2))
+ackBoth('ord13')
+const q3 = mkOrder({ id: 'ord13', status: 'direct_pay_window' })   // 已接单 + both-acked → 完整可见
+redactUnackedDirectPayTarget(db, q3, 'b1')
+ok('8d. direct_pay_window + both-acked:收款目标完整保留(接单后才可见)', q3.direct_pay_instruction_snapshot === 'SECRET' && JSON.parse(q3.direct_pay_account_snapshot as string).qr_ref === 'qref1')
+const q4 = mkOrder({ id: 'ord14', status: 'pending_accept', seller_id: 's1' })   // 经唯一入口 projector 同样成立
+projectDirectPayTargetForViewer(db, q4, 'b1')
+ok('8e. projector/buyer pending_accept: BOTH snapshots removed', !('direct_pay_instruction_snapshot' in q4) && !('direct_pay_account_snapshot' in q4))
+const q5 = mkOrder({ id: 'ord15', status: 'pending_accept', seller_id: 's1' })   // 卖家看自己单不受影响(收款方,instruction 自填)
+projectDirectPayTargetForViewer(db, q5, 's1')
+ok('8f. projector/seller pending_accept: untouched (payee)', q5.direct_pay_instruction_snapshot === 'SECRET')
+
 if (fail > 0) { console.error(`\n❌ direct-pay order redaction FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exitCode = 1 }
 else console.log(`✅ direct-pay order redaction: primitives (redact/strip) + viewer-projector matrix (buyer-unacked/buyer-acked/seller/third-party)\n  ✅ pass ${pass}`)
