@@ -105,7 +105,8 @@ approveDeferral(db, { deferralId: 'dq_s', adminId: 'admin1', nowIso: new Date().
 seedProduct('p_q', 's_q'); seedProductVerified('p_q', 's_q')
 cp['direct_pay.deferral_base_order_count'] = 1   // countLimit = max(1, floor(1×0.5)) = 1
 // exhaust: one existing non-cancelled direct_p2p order in window → existing 1 + new 1 = 2 > 1
-db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail, created_at) VALUES ('o_q','p_q','buyer1','s_q',1,50,50,0,'direct_pay_window','direct_p2p', datetime('now'))").run()
+// 口径(2026-07-08):只有【已付款(accepted+)】的单占配额;用 accepted 才能耗尽额度(direct_pay_window 未付款不再计入)。
+db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail, created_at) VALUES ('o_q','p_q','buyer1','s_q',1,50,50,0,'accepted','direct_p2p', datetime('now'))").run()
 const s10 = summarizeDirectPayLaunchReadiness(db, gp)
 const q = s10.sellers.find(s => s.sellerId === 's_q')!
 ok('10. 缓交 seller ready + verified product but quota exhausted → 0 eligible, not launchable', q.ready === true && q.eligibleProductCount === 0 && q.launchable === false, JSON.stringify(q))
