@@ -60,6 +60,11 @@ try {
   ok('C5 ship_to_region 缺失 → dest_country null', minimalSellerOrderView({ ...piiRow, ship_to_region: undefined }).dest_country === null)
   ok('C6 dest_country 只来自结构化 ship_to_region,不解析 shipping_address 自由文本',
     minimalSellerOrderView({ ...piiRow, ship_to_region: undefined, shipping_address: 'Country: Singapore, 123 Secret St' }).dest_country === null)
+  // dim2/dim3:白名单归一为 2 字母国家码;次国家级/城市名/脏值一律 null(绝不透出比国家更细 or 过度声称)
+  ok('C7 次国家级分区 SG-CHANGI → null(不透比国家更细)', minimalSellerOrderView({ ...piiRow, ship_to_region: 'SG-CHANGI' }).dest_country === null)
+  ok('C8 城市/国家全名 SINGAPORE(>2 字母)→ null(不把细节透为国家)', minimalSellerOrderView({ ...piiRow, ship_to_region: 'SINGAPORE' }).dest_country === null)
+  ok('C9 脏值 12/含符号 → null', minimalSellerOrderView({ ...piiRow, ship_to_region: '12' }).dest_country === null && minimalSellerOrderView({ ...piiRow, ship_to_region: 'S G' }).dest_country === null)
+  ok('C10 合法 2 字母国家码归一(小写 sg → SG)', minimalSellerOrderView({ ...piiRow, ship_to_region: 'sg' }).dest_country === 'SG')
 
   // ══ D. SELECT 白名单无 PII 列 ══
   const piiCols = ['shipping_address', 'notes', 'gift_recipient_name', 'gift_recipient_phone', 'gift_message', 'recipient_code', 'buyer_name']
