@@ -167,6 +167,7 @@ export type RepEventType =
   | 'rating_received_bad'  // -5  收到 1-2 星评价
   // RFC-004 — co-build：被采纳的建设性反馈 = 贡献,记入共建信誉
   | 'feedback_accepted'    // +8  提交的 build feedback / proposal 被 maintainer 采纳
+  | 'undeliverable_buyer_fault'  // -20 PR-B:未派送成功落定买家责任(地址错/拒收/无人)—— 比超时未付(-40)轻,非"超时"语义
 
 const EVENT_POINTS: Record<RepEventType, (role?: string) => number> = {
   order_completed:  (role) => role === 'seller' ? 10 : role === 'logistics' ? 8 : 5,
@@ -184,6 +185,7 @@ const EVENT_POINTS: Record<RepEventType, (role?: string) => number> = {
   rating_received_neutral: () => 0,
   rating_received_bad:     () => -5,
   feedback_accepted:       () => 8,   // RFC-004 co-build：被采纳的反馈/提案
+  undeliverable_buyer_fault: () => -20,   // PR-B:未派送成功买家责任(轻于 timeout_violation -40)
 }
 
 // ─── 写入声誉事件 ─────────────────────────────────────────────
@@ -308,12 +310,17 @@ export function recordViolationReputation(
   orderId: string,
   faultStatus: string,   // fault_seller | fault_logistics | fault_buyer
 ): void {
-  const order = db.prepare('SELECT seller_id, buyer_id, logistics_id FROM orders WHERE id = ?').get(orderId) as Record<string, string | null> | undefined
+  const order = db.prepare('SELECT seller_id, buyer_id, logistics_id, delivery_failed_deadline FROM orders WHERE id = ?').get(orderId) as Record<string, string | null> | undefined
   if (!order) return
 
   if (faultStatus === 'fault_seller'    && order.seller_id)    recordRepEvent(db, order.seller_id,    'timeout_violation', '超时违约（卖家）', orderId)
   if (faultStatus === 'fault_logistics' && order.logistics_id) recordRepEvent(db, order.logistics_id, 'timeout_violation', '超时违约（物流）', orderId)
-  if (faultStatus === 'fault_buyer'     && order.buyer_id)     recordRepEvent(db, order.buyer_id,     'timeout_violation', '超时违约（买家）', orderId)
+  if (faultStatus === 'fault_buyer'     && order.buyer_id) {
+    // PR-B:区分【未派送成功】买家责任(经 delivery_failed,该列已置)与【超时未付】买家责任(created→fault_buyer,列 NULL)。
+    //   前者=地址错/拒收/无人,-20 非"超时"语义;后者=支付超时,-40。单一入口,按数据信号分流,避免 cron 正则错标+双记。
+    if (order.delivery_failed_deadline) recordRepEvent(db, order.buyer_id, 'undeliverable_buyer_fault', '未派送成功·买家责任(退回/拒收/地址错)', orderId)
+    else                                recordRepEvent(db, order.buyer_id, 'timeout_violation',         '超时违约（买家）', orderId)
+  }
 }
 
 // ─── 评价反哺声誉 ─────────────────────────────────────────────

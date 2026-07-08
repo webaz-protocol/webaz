@@ -454,9 +454,18 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       mark_paid: 'accepted',   // Rail1 直付:买家声明"我已付款" → accepted(汇入既有卖家发货流程;协议不验真实付款)
       // Rail1 货款协商:卖家报未收款→协商;卖家确认已收→恢复;升级→举证仲裁;撤回→回协商(pq_withdraw 由上方原子块 early-return 处理,列此仅为通过 !toStatus 校验)。
       report_nonpayment: 'payment_query', confirm_received: 'accepted', pq_escalate: 'disputed', pq_withdraw: 'payment_query',
+      mark_undeliverable: 'delivery_failed',   // PR-B:卖家/物流举证未派送成功(退回/拒收)→ 证据裁决
     }
     const toStatus = actionMap[action]
     if (!toStatus) return void res.json({ error: `未知操作：${action}` })
+
+    // PR-B:mark_undeliverable 门控 —— rollout flag + rail(B2 仅 direct_p2p;escrow 资金收口由 B3 接,先拒不误结算)。
+    //   fail fast:在写 evidence / transition 前拦下。证据要求由 delivery_failed 转移规则(requiresEvidence)强制。
+    if (action === 'mark_undeliverable') {
+      let enabled = 0; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'undeliverable_closure_enabled'"); enabled = Number(p?.value) || 0 } catch {}
+      if (enabled !== 1) return void res.status(403).json({ error: 'undeliverable 收口未启用', error_code: 'UNDELIVERABLE_DISABLED' })
+      if (order.payment_rail !== 'direct_p2p') return void res.status(409).json({ error: 'escrow 轨 undeliverable 收口尚未上线(B3)', error_code: 'UNDELIVERABLE_ESCROW_PENDING' })
+    }
 
     // 创建证据记录 + 跨窗反诈：description 跑 detectFraud
     const evidenceIds: string[] = []
@@ -509,6 +518,13 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     const fromStatus = order.status as string
     const result = transition(db, req.params.id, toStatus, user.id as string, evidenceIds, notes)
     if (!result.success) return void res.json({ error: result.error })
+
+    // PR-B:进 delivery_failed 时置买家争议窗口(delivery_failed_deadline,ISO 与 #299 一致,X 默认 120h)。
+    //   WHERE IS NULL 守 I3(deadline 绝对列不重写)。到期无争议 → checkTimeouts 落定 fault_buyer。
+    if (toStatus === 'delivery_failed') {
+      let ch = 120; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'undeliverable_contest_window_hours'"); if (p) ch = Math.max(1, Number(p.value) || 120) } catch {}
+      await dbRun("UPDATE orders SET delivery_failed_deadline = ? WHERE id = ? AND delivery_failed_deadline IS NULL", [new Date(Date.now() + ch * 3600 * 1000).toISOString(), req.params.id])
+    }
 
     // P1-c(b):direct_p2p 首次进 accepted(mark_paid / confirm_received)才生成 ship_deadline —— direct-pay-create 建单不设该列,
     //   缺 ship_deadline 会被共享执行器 SLA【fail-closed】卡住发货。WHERE ship_deadline IS NULL 兜死:仅 null→值 那一次写,

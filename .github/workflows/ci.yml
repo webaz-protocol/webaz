@@ -703,6 +703,7 @@ jobs:
       - run: npm run test:direct-pay-actions
       - run: npm run test:deadline-compare-normalize
       - run: npm run test:undeliverable-schema-params
+      - run: npm run test:undeliverable-closure
       - run: npm run test:direct-pay-eligibility
       - run: npm run test:direct-receive-deposits
       - run: npm run test:direct-receive-accounts
