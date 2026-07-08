@@ -320,10 +320,15 @@ export function settleFault(db: Database.Database, orderId: string, faultState: 
     //   退款分支(applyWalletDelta escrowed→balance),买家从无 escrowed → escrowed 转负 + balance 凭空 +total =
     //   【印钱 + 冤枉卖家】。信誉处罚由 cron 侧 recordViolationReputation(timeout_violation)另记,不受此早退影响;
     //   争议路径早已非托管感知(disputes-write.ts ncRail 门),此处补齐【超时/settleFault】这条被漏掉的路径。
-    //   库存回补:命中 settleFault 的 fault 态均为【发货前】(超时/客观拒单),pre-ship 回补符合库存边界。
     if (order.payment_rail === 'direct_p2p') {
-      if (!isSecondhand) db.prepare('UPDATE products SET stock = stock + 1 WHERE id = ?').run(order.product_id as string)
-      else { try { db.prepare("UPDATE secondhand_items SET status = 'available', updated_at = datetime('now') WHERE id = ?").run(order.product_id as string) } catch { /* 二手回补 best-effort */ } }
+      // 库存回补仅【发货前】fault(fault_seller/fault_buyer):post-ship 的 fault_logistics 绝不回补【已发出】的货。
+      //   今天直付不设 pickup/delivery deadline → fault_logistics 不可达;此显式门把"发货前"从隐式不变量变成守卫,
+      //   防未来给直付加 SLA 后对已发货单幻影回补。按 create 扣减口径回补 quantity(非 +1)。
+      if (faultState !== 'fault_logistics') {
+        const qty = Math.max(1, Number(order.quantity) || 1)
+        if (!isSecondhand) db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(qty, order.product_id as string)
+        else { try { db.prepare("UPDATE secondhand_items SET status = 'available', updated_at = datetime('now') WHERE id = ?").run(order.product_id as string) } catch { /* 二手回补 best-effort */ } }
+      }
       db.prepare("UPDATE orders SET settled_fault_at = datetime('now') WHERE id = ?").run(orderId)   // 幂等标记(也供缓交配额排除已退款单)
       return
     }
