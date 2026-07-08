@@ -27,15 +27,17 @@ ok('3. rollout flag seed 且默认 0=关', !!rollout && rollout.value === '0', J
 const restock = param('restocking_fee_rate')
 ok('4. restocking_fee_rate seed 且硬上限 15%(Guardrail A)', !!restock && Number(restock.value) === 0.10 && restock.max_value === 0.15, JSON.stringify(restock))
 const retCap = param('return_shipping_max_rate')
-ok('5. return_shipping_max_rate seed(退程运费灌水上限)', !!retCap && retCap.max_value === 0.30, JSON.stringify(retCap))
+ok('5. return_shipping_max_rate seed(退程运费灌水上限)', !!retCap && Number(retCap.value) === 0.20 && retCap.min_value === 0 && retCap.max_value === 0.30, JSON.stringify(retCap))
 const contestWin = param('undeliverable_contest_window_hours')
-ok('6. 争议窗口 X=120h seed', !!contestWin && Number(contestWin.value) === 120, JSON.stringify(contestWin))
+ok('6. 争议窗口 X=120h seed(bounds 0..336)', !!contestWin && Number(contestWin.value) === 120 && contestWin.min_value === 0 && contestWin.max_value === 336, JSON.stringify(contestWin))
 const returnWin = param('goods_return_confirm_window_hours')
-ok('7. 卖家确认收货窗口 120h seed(B2)', !!returnWin && Number(returnWin.value) === 120, JSON.stringify(returnWin))
+ok('7. 卖家确认收货窗口 120h seed(B2,bounds 0..336)', !!returnWin && Number(returnWin.value) === 120 && returnWin.min_value === 0 && returnWin.max_value === 336, JSON.stringify(returnWin))
 
-// ── ③ 幂等:再次 initDatabase 不改动已 seed 值(INSERT OR IGNORE)──
-const db2 = initDatabase()
-ok('8. 幂等:重复 init 不覆盖 rollout flag', (db2.prepare("SELECT value FROM protocol_params WHERE key='undeliverable_closure_enabled'").get() as { value: string }).value === '0')
+// ── ③ 幂等(load-bearing):先把 flag 改成 '1'(模拟 admin 开启),再重跑 init;INSERT OR IGNORE 绝不 clobber。
+//    若 seed 误用 INSERT OR REPLACE,重跑会把值打回 '0' → 本断言失败。故此测试真能抓非幂等回归。
+db.prepare("UPDATE protocol_params SET value='1' WHERE key='undeliverable_closure_enabled'").run()
+const db2 = initDatabase()   // 同一 HOME → 同一 DB 文件,重跑迁移/seed
+ok('8. 幂等:重复 init 不覆盖已被改过的值(INSERT OR IGNORE 不 clobber)', (db2.prepare("SELECT value FROM protocol_params WHERE key='undeliverable_closure_enabled'").get() as { value: string }).value === '1')
 
 if (fail > 0) { console.error(`\n❌ undeliverable-schema-params FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ undeliverable-schema-params (PR-B1): ${pass} pass — 两截止列 + 5 param(rollout off / restocking 15% cap / 退程 cap / 窗口 120h)就位`)
