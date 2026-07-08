@@ -22,7 +22,7 @@ window.orderErrorLookup = (code) => ({
   GRACE_NOT_ELAPSED: t('买家响应宽限期未过,暂不可申请取消'),
   DISPUTE_ALREADY_RULED: t('争议已裁定,不可撤回'),
   NOT_PAYMENT_QUERY_DISPUTE: t('仅可撤回由货款协商升级的仲裁;履约类争议(货损/货不对版)须经仲裁裁定'),
-  WITHDRAW_FAILED: t('撤回失败,请重试'), CANCEL_FAILED: t('取消失败,请重试'), DIRECT_PAY_SETTLE_FAILED: t('直付完成结算失败,订单未完成,可重试'),
+  WITHDRAW_FAILED: t('撤回失败,请重试'), CANCEL_FAILED: t('取消失败,请重试'), DIRECT_PAY_SETTLE_FAILED: t('直付完成结算失败,订单未完成,可重试'), UNDELIVERABLE_DISABLED: t('未派送成功收口功能未启用'), UNDELIVERABLE_ESCROW_PENDING: t('托管订单的未派送成功收口尚未上线'), UNDELIVERABLE_MARK_FAILED: t('登记未派送成功失败,请重试'),
   // 买家撤诉并确认收货(dispute_withdraw_confirm)
   ORDER_NOT_DISPUTED: t('订单不在争议中,不可撤诉确认收货'), NOT_DISPUTE_INITIATOR: t('仅争议发起人可撤诉'),
   NOT_FULFILMENT_DISPUTE: t('仅"投递后未收到货/货有问题"类争议可撤诉确认收货;货款争议请用"撤回仲裁·回到协商"'),
