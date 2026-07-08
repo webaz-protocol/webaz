@@ -167,6 +167,8 @@ for (const k of ['direct_pay.payment_window_hours', 'direct_pay.accept_window_ho
   const p = seedByKey[k]
   ok(`${k}: type=number + min≤max 有界(可 PATCH 校验)`, !!p && p.type === 'number' && typeof p.min === 'number' && typeof p.max === 'number' && (p.min as number) <= (p.max as number))
 }
+// 正当程序底线:罚没冷静期=卖家申诉窗,治理不得清零(min≥1)
+ok('bond_slash_cooling_days min ≥ 1(申诉窗不可被治理清零)', (seedByKey['direct_pay.bond_slash_cooling_days'].min as number) >= 1)
 // hard invariants must NOT be governance params (no operator soft-bypass of launch blockers)
 ok('require_production_base_bond NOT a param (hard invariant)', !seedByKey['direct_pay.require_production_base_bond'])
 ok('require_kyc_sanctions NOT a param (hard invariant)', !seedByKey['direct_pay.require_kyc_sanctions'])

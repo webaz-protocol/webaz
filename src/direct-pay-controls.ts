@@ -154,7 +154,7 @@ export const DIRECT_PAY_CONTROL_PARAMS: Array<{ key: string; value: string; type
   { key: 'direct_pay.deferral_base_order_count', value: '20', type: 'number', description: '缓交卖家窗口内【基础订单笔数】上限;实际上限 = floor(本值 × 该卖家 reduced_quota_factor)。默认 20。', category: 'system', min: 1, max: 1000 },
   { key: 'direct_pay.deferral_max_window_amount_units', value: '500000000', type: 'number', description: '缓交卖家窗口内【累计金额绝对上限】(整数 base-units,6dp;500000000 = 500 单位)。不随 factor 缩放。默认 500000000。', category: 'system', min: 0, max: 100000000000 },
   { key: 'direct_pay.bond_refund_cooling_days', value: '14', type: 'number', description: '履约保证金【退还冷静期】(天);申请后须过此期方可执行退还。默认 14。', category: 'system', min: 0, max: 90 },
-  { key: 'direct_pay.bond_slash_cooling_days', value: '7', type: 'number', description: '履约保证金【罚没冷静期】(天)= 卖家申诉窗口;提案后须过此期方可执行罚没。默认 7。', category: 'system', min: 0, max: 90 },
+  { key: 'direct_pay.bond_slash_cooling_days', value: '7', type: 'number', description: '履约保证金【罚没冷静期】(天)= 卖家申诉窗口;提案后须过此期方可执行罚没。默认 7。min=1:此为卖家申诉的正当程序窗口,治理不得清零(≥1 天)。', category: 'system', min: 1, max: 90 },
 ]
 
 /**
