@@ -16,14 +16,14 @@ import { createServer, request as httpRequest, type Server } from 'node:http'
 
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')
-const { initSystemUser, transition, settleFault } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
+const { initSystemUser, transition, settleFault, checkTimeouts } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
 const { initOrderChainSchema } = await import('../src/layer0-foundation/L0-2-state-machine/order-chain.js')
 const { registerOrdersActionRoutes } = await import('../src/pwa/routes/orders-action.js')
 const { createHumanPresence } = await import('../src/pwa/human-presence.js')
 const { recordDisclosureAck, STAGE } = await import('../src/direct-pay-disclosures.js')
 const { lockFeeStake, releaseFeeStake } = await import('../src/direct-pay-ledger.js')
 const { accrueFeeReceivable, feeUnitsForOrder } = await import('../src/direct-pay-fee-ar.js')
-const { walletUnits } = await import('../src/ledger.js')
+const { walletUnits, applyWalletDelta } = await import('../src/ledger.js')
 const { toUnits } = await import('../src/money.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -36,6 +36,11 @@ initOrderChainSchema(db)
 try { db.exec("ALTER TABLE orders ADD COLUMN fulfillment_mode TEXT DEFAULT 'shipped'") } catch {}  // server-boot ALTER(schema.ts 不含)
 try { db.exec("ALTER TABLE orders ADD COLUMN source TEXT DEFAULT 'shop'") } catch {}  // server-boot ALTER(settleOrder 读 order.source 算费率)
 try { db.exec("ALTER TABLE orders ADD COLUMN settled_fault_at TEXT") } catch {}  // server-boot ALTER(settleFault 写幂等标记;真实 settleFault 回归用)
+try { db.exec("ALTER TABLE orders ADD COLUMN has_pending_claim INTEGER DEFAULT 0") } catch {}  // server-boot ALTER(checkTimeouts SELECT 读它跳过 claim 进行中单;P1 auto-confirm 回归用)
+try { db.exec("ALTER TABLE orders ADD COLUMN decline_objective_pending INTEGER DEFAULT 0") } catch {}  // server-boot ALTER(checkTimeouts RFC-007 临时判责扫描读)
+try { db.exec("ALTER TABLE orders ADD COLUMN decline_contested INTEGER DEFAULT 0") } catch {}  // server-boot ALTER(同上)
+try { db.exec("ALTER TABLE orders ADD COLUMN decline_contest_deadline TEXT") } catch {}  // server-boot ALTER(同上)
+try { db.exec("ALTER TABLE evidence ADD COLUMN flag_reasons TEXT") } catch {}  // server-boot ALTER(deliver 带证据→detectFraud 写入;P1k route 回归用)
 db.exec('CREATE TABLE IF NOT EXISTS webauthn_credentials (id TEXT PRIMARY KEY, user_id TEXT)')
 db.exec('CREATE TABLE IF NOT EXISTS webauthn_gate_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, purpose TEXT NOT NULL, purpose_data TEXT, expires_at TEXT NOT NULL, consumed_at TEXT)')
 const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
@@ -324,6 +329,77 @@ ok('accrue 失败 → 无应收落库', !receivable('oZero'))
   settleFault(db, 'oFaultLog', 'fault_logistics')
   ok('P0h. direct_p2p fault_logistics(post-ship):不回补已发出的货(stock 不变)', stockOf() === stL, `before=${stL} after=${stockOf()}`)
   ok('P0i. direct_p2p fault_logistics:仍零钱包(不印钱)+ settled_fault_at 落库', wu('buyer1').balance === bL.balance && wu('buyer1').escrowed === bL.escrowed && wu('buyer1').escrowed >= 0 && !!(db.prepare("SELECT settled_fault_at FROM orders WHERE id='oFaultLog'").get() as { settled_fault_at?: string } | undefined)?.settled_fault_at)
+}
+
+// ═══ P1(钱路):送达后买家逾期未确认 → checkTimeouts 走 settleOrder 收口(两轨),绝不 settleFault('confirmed') ═══
+{
+  const stockOf = () => (db.prepare("SELECT stock FROM products WHERE id='p1'").get() as { stock: number }).stock
+  const wu = (u: string) => walletUnits(db, u)
+  const confirmedSettled: string[] = []
+  // settleConfirmed = 注入的成交结算(镜像 server.ts settleOrder):direct_p2p 释放遗留 stake+accrue;escrow 释放 escrow→卖家。
+  const settleConfirmedStub = (orderId: string): void => { db.transaction(() => {
+    const o = db.prepare('SELECT payment_rail, total_amount, source, seller_id, buyer_id FROM orders WHERE id=?').get(orderId) as { payment_rail?: string; total_amount?: number; source?: string | null; seller_id?: string; buyer_id?: string }
+    confirmedSettled.push(orderId)
+    if (o?.payment_rail === 'direct_p2p') {
+      releaseFeeStake(db, { orderId })
+      accrueFeeReceivable(db, { orderId, sellerId: o.seller_id as string, feeUnits: feeUnitsForOrder(toUnits(Number(o.total_amount) || 0), o.source ?? null), receivableId: `dpfr_${++rk}` })
+      return
+    }
+    const totalU = toUnits(Number(o.total_amount) || 0)   // escrow 最小镜像:escrow→卖家(证明卖家收款,对照旧 settleFault('confirmed') 空结算)
+    applyWalletDelta(db, o.buyer_id as string, { escrowed: -totalU })
+    applyWalletDelta(db, o.seller_id as string, { balance: totalU, earned: totalU })
+  })() }
+
+  // (a) direct_p2p delivered + confirm_deadline 已过 + settler → 自动确认成交:走 settler、completed、不回补库存、不落 settled_fault_at
+  mkOrder('oAcDp', 'delivered', 'direct_p2p'); lock('oAcDp')
+  db.prepare("UPDATE orders SET confirm_deadline = datetime('now','-1 hour') WHERE id='oAcDp'").run()
+  const stA = stockOf()
+  checkTimeouts(db, { settleConfirmed: settleConfirmedStub })
+  ok('P1a. direct_p2p 逾期未确认 → completed', status('oAcDp') === 'completed', `status=${status('oAcDp')}`)
+  ok('P1b. direct_p2p 自动确认走 settleConfirmed(非 settleFault)', confirmedSettled.includes('oAcDp'))
+  ok('P1c. direct_p2p 自动确认 accrue 平台费应收', !!receivable('oAcDp'))
+  ok('P1d. direct_p2p 自动确认【不回补库存】(已售出,对照 settleFault 幻影回补)', stockOf() === stA, `before=${stA} after=${stockOf()}`)
+  ok('P1e. direct_p2p 自动确认【不落 settled_fault_at】(未走 settleFault)', !(db.prepare("SELECT settled_fault_at FROM orders WHERE id='oAcDp'").get() as { settled_fault_at?: string } | undefined)?.settled_fault_at)
+
+  // (b) escrow delivered + confirm_deadline 已过 + settler → 卖家收款(对照旧 settleFault('confirmed') 空结算=卖家永不收款、escrow 锁死)
+  db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('buyerE2','托管买家2','buyer','k_be2')").run()
+  db.prepare("INSERT INTO wallets (user_id, balance, escrowed) VALUES ('buyerE2', 0, 50)").run()
+  db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail, fulfillment_mode, confirm_deadline) VALUES ('oAcEsc','p1','buyerE2','seller1',1,50,50,50,'delivered','escrow','shipped',datetime('now','-1 hour'))").run()
+  const sBefore = wu('seller1')
+  checkTimeouts(db, { settleConfirmed: settleConfirmedStub })
+  ok('P1f. escrow 逾期未确认 → completed', status('oAcEsc') === 'completed', `status=${status('oAcEsc')}`)
+  // 断言"发生了资金移动 + escrow 释放"(方向,非精确金额)—— 修复空结算(旧 settleFault('confirmed') 零移动)。
+  //   精确净额分账(总额−费−佣金−基金)由 test:settlement-breakdown / seller-order-actions 覆盖真实 settleOrder;
+  //   此处 settleConfirmed 是【注入的协作者】,只验 checkTimeouts 路由到它、且成交路径确有资金移动,不复刻分账数字。
+  ok('P1g. escrow 自动确认走 settleConfirmed → 卖家收款(movement>0 + escrow 释放,修复空结算)', confirmedSettled.includes('oAcEsc') && wu('seller1').balance > sBefore.balance && wu('buyerE2').escrowed === 0, `seller ${sBefore.balance}→${wu('seller1').balance} buyerE2.esc=${wu('buyerE2').escrowed}`)
+
+  // (c) 无 settler(独立 cron/CLI)→ 不自动确认:留 delivered、settler 未调、不落 settled_fault_at(绝不 settleFault('confirmed') 误结算/搁浅)
+  mkOrder('oAcNo', 'delivered', 'direct_p2p'); lock('oAcNo')
+  db.prepare("UPDATE orders SET confirm_deadline = datetime('now','-1 hour') WHERE id='oAcNo'").run()
+  const stN = stockOf()
+  checkTimeouts(db)
+  ok('P1h. 无 settler:留 delivered(不搁浅在 confirmed)', status('oAcNo') === 'delivered', `status=${status('oAcNo')}`)
+  ok('P1i. 无 settler:不回补库存 + 不落 settled_fault_at(未误走 settleFault)', stockOf() === stN && !(db.prepare("SELECT settled_fault_at FROM orders WHERE id='oAcNo'").get() as { settled_fault_at?: string } | undefined)?.settled_fault_at)
+
+  // (d) confirm_deadline 未到 → 不触发(确实以 deadline 为准)
+  mkOrder('oAcFut', 'delivered', 'direct_p2p')
+  db.prepare("UPDATE orders SET confirm_deadline = datetime('now','+72 hours') WHERE id='oAcFut'").run()
+  checkTimeouts(db, { settleConfirmed: settleConfirmedStub })
+  ok('P1j. confirm_deadline 未到 → 不自动确认(仍 delivered)', status('oAcFut') === 'delivered')
+
+  // (e) route:direct_p2p in_transit→deliver 生成 confirm_deadline(+72h)——补全 direct-pay 建单缺失列
+  mkOrder('oDlv', 'in_transit', 'direct_p2p')
+  const rDlv = await call('oDlv', { action: 'deliver', evidence_description: '已投递签收' }, 'seller1', 'seller')
+  const cd = (db.prepare("SELECT confirm_deadline FROM orders WHERE id='oDlv'").get() as { confirm_deadline: string | null }).confirm_deadline
+  // ISO 格式('T')断言:防回退到 datetime('now',...) 空格格式 —— 后者与 ISO now 字符串比较会在同日提前 ~24h 触发。
+  ok('P1k. route:direct_p2p deliver → delivered 且生成 confirm_deadline(ISO 格式)', rDlv.status === 200 && status('oDlv') === 'delivered' && !!cd && cd!.includes('T'), `${JSON.stringify(rDlv)} cd=${cd}`)
+
+  // (f) 回归防线(review finding #1):同一日历日稍晚(+3h)的 ISO confirm_deadline 未到 → 绝不提前自动确认。
+  //   若 findActiveDeadlineTransition 的 now(ISO) > deadline 比较对同日未来 deadline 误判为已过,本单会被错误 completed。
+  mkOrder('oAcSoon', 'delivered', 'direct_p2p')
+  db.prepare("UPDATE orders SET confirm_deadline = ? WHERE id='oAcSoon'").run(new Date(Date.now() + 3 * 3600 * 1000).toISOString())
+  checkTimeouts(db, { settleConfirmed: settleConfirmedStub })
+  ok('P1l. 同日 +3h 的 ISO deadline 未到 → 不提前自动确认(仍 delivered)', status('oAcSoon') === 'delivered', `status=${status('oAcSoon')}`)
 }
 
 server!.close()
