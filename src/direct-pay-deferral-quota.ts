@@ -31,6 +31,20 @@ export const DEFERRAL_QUOTA_CODES = {
   AMOUNT: 'DIRECT_PAY_DEFERRAL_AMOUNT_EXCEEDED',
 } as const
 
+/**
+ * 计入配额的【已付款且有效】状态白名单(口径决策 2026-07-08):只算已付款、未取消/未退款的直付单。
+ *   计入 = 买家已 mark_paid(→ accepted)且仍在有效轨:accepted→…→completed 全履约链 + resolved_for_seller + 争议中(payment_query/disputed,按决策计入)。
+ *   不计入(不在白名单即排除):
+ *     · 未付款:created / pending_accept / direct_pay_window / direct_expired_unconfirmed
+ *     · 取消:cancelled
+ *     · 退款/拒单(买家已退款):refunded_full / refunded_partial / fault_seller / fault_buyer / fault_logistics / declined_nofault / dispute_dismissed / expired
+ *   争议中的单若最终裁成退款/取消,会自动落到排除态而移出配额(白名单构造,无需额外释放逻辑)。
+ */
+export const DEFERRAL_QUOTA_COUNTED_STATUSES = [
+  'accepted', 'shipped', 'picked_up', 'in_transit', 'delivered', 'confirmed', 'completed',
+  'resolved_for_seller', 'payment_query', 'disputed',
+] as const
+
 export type DeferralQuotaResult = { ok: true } | { ok: false; code: string; reason: string }
 
 /** 从治理参数读取额度配置(全部带保守默认;真值由治理调)。 */
@@ -58,9 +72,10 @@ export function checkDeferralQuota(
   const active = getActiveDeferral(db, sellerId, nowIso)
   if (!active) return { ok: true }   // 非缓交卖家 → no-op
   const since = windowStartSql(nowIso, cfg.windowDays)
+  // 口径:只数【已付款且有效】的单(DEFERRAL_QUOTA_COUNTED_STATUSES 白名单)—— 未付款/取消/退款的单不占卖家配额。
   const rows = db.prepare(
-    `SELECT total_amount FROM orders WHERE seller_id = ? AND payment_rail = 'direct_p2p' AND status != 'cancelled' AND created_at >= ?`,
-  ).all(sellerId, since) as Array<{ total_amount: number }>
+    `SELECT total_amount FROM orders WHERE seller_id = ? AND payment_rail = 'direct_p2p' AND status IN (${DEFERRAL_QUOTA_COUNTED_STATUSES.map(() => '?').join(',')}) AND created_at >= ?`,
+  ).all(sellerId, ...DEFERRAL_QUOTA_COUNTED_STATUSES, since) as Array<{ total_amount: number }>
   // ① 笔数上限(factor 缩放,下限 ≥ 1)。
   const countLimit = Math.max(1, Math.floor(cfg.baseOrderCount * active.reducedQuotaFactor))
   if (rows.length + 1 > countLimit) {
