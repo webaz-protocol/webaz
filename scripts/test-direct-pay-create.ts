@@ -30,6 +30,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 const db = initDatabase()
 db.pragma('foreign_keys = OFF')
+try { db.exec('ALTER TABLE orders ADD COLUMN settled_fault_at TEXT') } catch { /* boot-ALTER col;缓交配额 SQL 用它排除拒单/违约结算单 */ }
 setSeamDb(db)
 initOrderChainSchema(db)
 const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')

@@ -18,6 +18,7 @@ let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
+try { db.exec('ALTER TABLE orders ADD COLUMN settled_fault_at TEXT') } catch { /* boot-ALTER col;checkDeferralQuota SQL 用它排除拒单/违约结算单 */ }
 initNotificationSchema(db)
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('s1','s1','seller','k1'),('s2','s2','seller','k2'),('s3','s3','seller','k3')").run()
 const notifCount = (uid: string, type: string): number => (db.prepare('SELECT COUNT(*) c FROM notifications WHERE user_id=? AND type=?').get(uid, type) as { c: number }).c
