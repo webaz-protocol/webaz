@@ -457,9 +457,19 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
         { ok: false, outcome: gate.error_code === 'PASSKEY_REQUIRED_FOR_DIRECT_PAY' ? 'passkey_required' : 'human_presence_required', error_code: gate.error_code })
       return void res.status(403).json({ error: gate.reason, error_code: gate.error_code })
     }
-    const r = adjustGrantedDeferralQuota(db, { deferralId, adminId: admin.id as string, reducedQuotaFactor: Number(rqfRaw) })
-    logAdminAction(admin.id as string, 'direct_pay.deferral_adjust_quota', 'direct_receive_deferral', deferralId,
-      { ok: r.ok, outcome: r.ok ? `factor ${r.previousFactor}→${r.newFactor}` : r.reason })
+    // 审计 fail-closed:配额 UPDATE 与 audit INSERT 进【同一事务】—— logAdminAction(bare INSERT,会抛)失败即回滚,
+    //   调整不生效。杜绝"改了 factor 却没审计"的 fail-open(RFC-020 approve tx 同规格)。
+    let r: ReturnType<typeof adjustGrantedDeferralQuota>
+    try {
+      r = db.transaction((): ReturnType<typeof adjustGrantedDeferralQuota> => {
+        const res = adjustGrantedDeferralQuota(db, { deferralId, adminId: admin.id as string, reducedQuotaFactor: Number(rqfRaw) })
+        logAdminAction(admin.id as string, 'direct_pay.deferral_adjust_quota', 'direct_receive_deferral', deferralId,
+          { ok: res.ok, outcome: res.ok ? `factor ${res.previousFactor}→${res.newFactor}` : res.reason })
+        return res
+      })()
+    } catch (e) {
+      return void res.status(500).json({ error: 'audit write failed; adjustment rolled back', error_code: 'AUDIT_WRITE_FAILED' })
+    }
     if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'DEFERRAL_ADJUST_REJECTED' })
     return void res.json({ ok: true, status: r.status, previous_factor: r.previousFactor, new_factor: r.newFactor })
   })

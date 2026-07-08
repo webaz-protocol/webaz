@@ -124,6 +124,13 @@ const adjok = await req('POST', `/api/admin/direct-receive/deferrals/${dfrId}/ad
 ok('5f. adjust success → 200 factor 0.5→0.9 (previous/new 回传)', adjok.status === 200 && adjok.json?.new_factor === 0.9 && adjok.json?.previous_factor === 0.5, JSON.stringify(adjok.json))
 ok('5g. adjust success audited', (db.prepare("SELECT COUNT(*) n FROM admin_audit_log WHERE action='direct_pay.deferral_adjust_quota' AND detail LIKE '%factor%'").get() as any).n >= 1)
 ok('5h. adjust token single-use (reuse → 403)', (await req('POST', `/api/admin/direct-receive/deferrals/${dfrId}/adjust-quota`, { reduced_quota_factor: 0.9, webauthn_token: 'tk_adjok' }, { 'x-root': '1', 'x-uid': 'root1' })).status === 403)
+// 5i. audit fail-closed:注入 audit 写失败(RAISE trigger)→ 配额 UPDATE 与 audit INSERT 同事务 → 整体回滚,factor 不变 + 500
+db.prepare("INSERT INTO webauthn_gate_tokens (id, user_id, purpose, purpose_data, expires_at) VALUES ('tk_adjfc','root1','direct_pay_deferral_adjust',?,datetime('now','+60 seconds'))").run(JSON.stringify({ deferral_id: dfrId, reduced_quota_factor: 0.7 }))
+db.exec("CREATE TRIGGER _audit_boom BEFORE INSERT ON admin_audit_log WHEN NEW.action='direct_pay.deferral_adjust_quota' BEGIN SELECT RAISE(ABORT,'boom'); END")
+const fBefore = (db.prepare("SELECT reduced_quota_factor f FROM direct_receive_deferrals WHERE id=?").get(dfrId) as { f: number }).f
+const adjfc = await req('POST', `/api/admin/direct-receive/deferrals/${dfrId}/adjust-quota`, { reduced_quota_factor: 0.7, webauthn_token: 'tk_adjfc' }, { 'x-root': '1', 'x-uid': 'root1' })
+db.exec("DROP TRIGGER _audit_boom")
+ok('5i. audit fail-closed → 500 AUDIT_WRITE_FAILED + factor 回滚(不变)', adjfc.status >= 500 && adjfc.json?.error_code === 'AUDIT_WRITE_FAILED' && (db.prepare("SELECT reduced_quota_factor f FROM direct_receive_deferrals WHERE id=?").get(dfrId) as { f: number }).f === fBefore)
 
 // ══════ 6. admin reject (fresh seller2 application) ══════
 await req('POST', '/api/direct-receive/deferral', { reason: 'x' }, { 'x-uid': 'seller2' })
