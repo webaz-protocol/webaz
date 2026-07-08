@@ -82,12 +82,12 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/direct-receive/fee-prepay-requests/:id/reject` | 🔐 | 👑 | POST /api/admin/direct-receive/fee-prepay-requests/:id/reject — ROOT + Passkey(不 | src/pwa/routes/admin-direct-receive-deposits.ts:353 |
 | POST | `/api/admin/direct-receive/fee-refund` | 🔐 | 👑 | amount ≤ 当前 available(helper 同事务校验)。append-only + audit。purpose_data 绑 seller_id | src/pwa/routes/admin-direct-receive-deposits.ts:317 |
 | POST | `/api/admin/direct-receive/kyb-reviews` | 🔐 | 👑 | Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B  | src/pwa/routes/admin-direct-receive-deposits.ts:271 |
-| GET | `/api/admin/direct-receive/product-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/product-verifications?status=submitted — ROOT 审核队列 | src/pwa/routes/admin-direct-receive-deposits.ts:472 |
-| POST | `/api/admin/direct-receive/product-verifications/:id/review` | 🔐 | 👑 | Passkey purpose_data 绑 verification_id + decision:签 A 用 B / 改结论一律拒。verify = 放行该产 | src/pwa/routes/admin-direct-receive-deposits.ts:481 |
+| GET | `/api/admin/direct-receive/product-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/product-verifications?status=submitted — ROOT 审核队列 | src/pwa/routes/admin-direct-receive-deposits.ts:482 |
+| POST | `/api/admin/direct-receive/product-verifications/:id/review` | 🔐 | 👑 | Passkey purpose_data 绑 verification_id + decision:签 A 用 B / 改结论一律拒。verify = 放行该产 | src/pwa/routes/admin-direct-receive-deposits.ts:491 |
 | POST | `/api/admin/direct-receive/readiness` | 🔐 | 👑 | 含 KYB/sanctions/AML/base-bond/rail clearance 全细节)。只读诊断(不写库、不 flip launch);ROOT 专 | src/pwa/routes/admin-direct-receive-deposits.ts:364 |
 | POST | `/api/admin/direct-receive/sanctions-screenings` | 🔐 | 👑 | purpose_data 绑定 user_id+status+provider_ref+expires_at。 | src/pwa/routes/admin-direct-receive-deposits.ts:280 |
-| GET | `/api/admin/direct-receive/store-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/store-verifications?status=submitted — ROOT 审核队列(默 | src/pwa/routes/admin-direct-receive-deposits.ts:509 |
-| POST | `/api/admin/direct-receive/store-verifications/:id/review` | 🔐 | 👑 | POST /api/admin/direct-receive/store-verifications/:id/review — ROOT + 真人 Passke | src/pwa/routes/admin-direct-receive-deposits.ts:517 |
+| GET | `/api/admin/direct-receive/store-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/store-verifications?status=submitted — ROOT 审核队列(默 | src/pwa/routes/admin-direct-receive-deposits.ts:519 |
+| POST | `/api/admin/direct-receive/store-verifications/:id/review` | 🔐 | 👑 | POST /api/admin/direct-receive/store-verifications/:id/review — ROOT + 真人 Passke | src/pwa/routes/admin-direct-receive-deposits.ts:527 |
 | GET | `/api/admin/disputes` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:55 |
 | POST | `/api/admin/disputes/:id/decline-contest-resolve` | 🔐 | 👑 | (dispute CAS + COI + 终态 completed + 结算 + 审计,单事务全回滚)。admin override 不占用 assigned_ | src/pwa/routes/admin-reports.ts:87 |
 | GET | `/api/admin/economic-summary` | 🔐 | 👑 | 隐私第一：运营财务，仅 protocol admin 可见。 | src/pwa/routes/admin-reports.ts:127 |
