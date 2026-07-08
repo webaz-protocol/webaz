@@ -30,6 +30,10 @@ async function enforce() {
   const start = Date.now()
 
   // ── 1. 订单超时判责 ───────────────────────────────────────
+  //   注:本独立守护进程【不注入 settleConfirmed】(settleOrder 是 PWA server.ts 闭包,此处够不着)。
+  //   故 delivered→confirmed 逾期自动确认【只在 PWA 进程内 runEnforcement 收口】(server.ts,已注入)。
+  //   本进程遇 delivered 逾期单会安全跳过(留 delivered),不会误结算 —— 优于旧 settleFault('confirmed')
+  //   空结算/幻影回补。生产执法走 PWA 内置 runEnforcement;本 daemon 仅作判责(fault_*)兜底。
   const orderResult = checkTimeouts(db)
 
   // ── 2. 争议超时自动裁定 ───────────────────────────────────

@@ -368,7 +368,10 @@ ok('accrue 失败 → 无应收落库', !receivable('oZero'))
   const sBefore = wu('seller1')
   checkTimeouts(db, { settleConfirmed: settleConfirmedStub })
   ok('P1f. escrow 逾期未确认 → completed', status('oAcEsc') === 'completed', `status=${status('oAcEsc')}`)
-  ok('P1g. escrow 自动确认走 settleConfirmed → 卖家收款(修复空结算)', confirmedSettled.includes('oAcEsc') && wu('seller1').balance === sBefore.balance + toUnits(50), `seller ${sBefore.balance}→${wu('seller1').balance}`)
+  // 断言"发生了资金移动 + escrow 释放"(方向,非精确金额)—— 修复空结算(旧 settleFault('confirmed') 零移动)。
+  //   精确净额分账(总额−费−佣金−基金)由 test:settlement-breakdown / seller-order-actions 覆盖真实 settleOrder;
+  //   此处 settleConfirmed 是【注入的协作者】,只验 checkTimeouts 路由到它、且成交路径确有资金移动,不复刻分账数字。
+  ok('P1g. escrow 自动确认走 settleConfirmed → 卖家收款(movement>0 + escrow 释放,修复空结算)', confirmedSettled.includes('oAcEsc') && wu('seller1').balance > sBefore.balance && wu('buyerE2').escrowed === 0, `seller ${sBefore.balance}→${wu('seller1').balance} buyerE2.esc=${wu('buyerE2').escrowed}`)
 
   // (c) 无 settler(独立 cron/CLI)→ 不自动确认:留 delivered、settler 未调、不落 settled_fault_at(绝不 settleFault('confirmed') 误结算/搁浅)
   mkOrder('oAcNo', 'delivered', 'direct_p2p'); lock('oAcNo')
@@ -388,7 +391,15 @@ ok('accrue 失败 → 无应收落库', !receivable('oZero'))
   mkOrder('oDlv', 'in_transit', 'direct_p2p')
   const rDlv = await call('oDlv', { action: 'deliver', evidence_description: '已投递签收' }, 'seller1', 'seller')
   const cd = (db.prepare("SELECT confirm_deadline FROM orders WHERE id='oDlv'").get() as { confirm_deadline: string | null }).confirm_deadline
-  ok('P1k. route:direct_p2p deliver → delivered 且生成 confirm_deadline', rDlv.status === 200 && status('oDlv') === 'delivered' && !!cd, `${JSON.stringify(rDlv)} cd=${cd}`)
+  // ISO 格式('T')断言:防回退到 datetime('now',...) 空格格式 —— 后者与 ISO now 字符串比较会在同日提前 ~24h 触发。
+  ok('P1k. route:direct_p2p deliver → delivered 且生成 confirm_deadline(ISO 格式)', rDlv.status === 200 && status('oDlv') === 'delivered' && !!cd && cd!.includes('T'), `${JSON.stringify(rDlv)} cd=${cd}`)
+
+  // (f) 回归防线(review finding #1):同一日历日稍晚(+3h)的 ISO confirm_deadline 未到 → 绝不提前自动确认。
+  //   若 findActiveDeadlineTransition 的 now(ISO) > deadline 比较对同日未来 deadline 误判为已过,本单会被错误 completed。
+  mkOrder('oAcSoon', 'delivered', 'direct_p2p')
+  db.prepare("UPDATE orders SET confirm_deadline = ? WHERE id='oAcSoon'").run(new Date(Date.now() + 3 * 3600 * 1000).toISOString())
+  checkTimeouts(db, { settleConfirmed: settleConfirmedStub })
+  ok('P1l. 同日 +3h 的 ISO deadline 未到 → 不提前自动确认(仍 delivered)', status('oAcSoon') === 'delivered', `status=${status('oAcSoon')}`)
 }
 
 server!.close()
