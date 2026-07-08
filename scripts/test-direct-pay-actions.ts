@@ -16,7 +16,7 @@ import { createServer, request as httpRequest, type Server } from 'node:http'
 
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')
-const { initSystemUser, transition } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
+const { initSystemUser, transition, settleFault } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
 const { initOrderChainSchema } = await import('../src/layer0-foundation/L0-2-state-machine/order-chain.js')
 const { registerOrdersActionRoutes } = await import('../src/pwa/routes/orders-action.js')
 const { createHumanPresence } = await import('../src/pwa/human-presence.js')
@@ -35,11 +35,13 @@ setSeamDb(db)
 initOrderChainSchema(db)
 try { db.exec("ALTER TABLE orders ADD COLUMN fulfillment_mode TEXT DEFAULT 'shipped'") } catch {}  // server-boot ALTER(schema.ts 不含)
 try { db.exec("ALTER TABLE orders ADD COLUMN source TEXT DEFAULT 'shop'") } catch {}  // server-boot ALTER(settleOrder 读 order.source 算费率)
+try { db.exec("ALTER TABLE orders ADD COLUMN settled_fault_at TEXT") } catch {}  // server-boot ALTER(settleFault 写幂等标记;真实 settleFault 回归用)
 db.exec('CREATE TABLE IF NOT EXISTS webauthn_credentials (id TEXT PRIMARY KEY, user_id TEXT)')
 db.exec('CREATE TABLE IF NOT EXISTS webauthn_gate_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, purpose TEXT NOT NULL, purpose_data TEXT, expires_at TEXT NOT NULL, consumed_at TEXT)')
 const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
 initNotificationSchema(db)   // 审计项 B:mark_paid → 卖家模板通知断言用
 initSystemUser(db)
+db.exec('CREATE TABLE IF NOT EXISTS protocol_params (key TEXT PRIMARY KEY, value TEXT)')   // settleFault escrow 对照读 fault_penalty_rate/protocol_fee_rate(空表→默认率)
 db.exec('CREATE TABLE IF NOT EXISTS protocol_reserve_pool (id INTEGER PRIMARY KEY, balance REAL DEFAULT 0)')
 db.prepare('INSERT OR IGNORE INTO protocol_reserve_pool (id, balance) VALUES (1, 0)').run()
 db.prepare("INSERT OR IGNORE INTO wallets (user_id, balance) VALUES ('sys_protocol', 0)").run()
@@ -287,6 +289,30 @@ ok('accrue 失败 → 无应收落库', !receivable('oZero'))
   const rc3 = await call('oCancExp', { action: 'cancel' }, 'buyer1')
   ok('H. expired 宽限期买家取消 → 200 cancelled + 库存恢复', rc3.status === 200 && status('oCancExp') === 'cancelled' && stockOf() === s2 + 1, JSON.stringify(rc3))
   ok('H2. mark_paid 仍仅付款窗口(expired 不可 mark_paid)', (await call('oCancExp', { action: 'mark_paid', webauthn_token: seedToken('buyer1', 'oCancExp', 'mark_paid') }, 'buyer1')).status === 409)
+}
+
+// ═══ P0(钱路):非托管轨 settleFault = 零钱包移动 —— 修"direct_p2p 超时判责凭空印钱 + 冤枉退款" ═══
+{
+  const stockOf = () => (db.prepare("SELECT stock FROM products WHERE id='p1'").get() as { stock: number }).stock
+  const wu = (u: string) => walletUnits(db, u)
+  // (a) direct_p2p accepted → 真实 settleFault('fault_seller'):买家钱包零变动(escrowed 不转负、balance 不凭空 +total),卖家不被没收,发货前库存回补,标记落库。
+  mkOrder('oFaultDp', 'accepted', 'direct_p2p')
+  const bBefore = wu('buyer1'), sBefore = wu('seller1'), stBefore = stockOf()
+  settleFault(db, 'oFaultDp', 'fault_seller')
+  const bAfter = wu('buyer1'), sAfter = wu('seller1')
+  ok('P0a. direct_p2p fault_seller:买家 balance 不凭空增(零印钱)', bAfter.balance === bBefore.balance, `before=${bBefore.balance} after=${bAfter.balance}`)
+  ok('P0b. direct_p2p fault_seller:买家 escrowed 不转负(从无托管)', bAfter.escrowed === bBefore.escrowed && bAfter.escrowed >= 0, `escrowed after=${bAfter.escrowed}`)
+  ok('P0c. direct_p2p fault_seller:卖家 balance 不被没收(仅信誉,信誉由 cron 侧另记)', sAfter.balance === sBefore.balance, `before=${sBefore.balance} after=${sAfter.balance}`)
+  ok('P0d. direct_p2p fault_seller:settled_fault_at 落库(幂等 + 供缓交配额排除)', !!(db.prepare("SELECT settled_fault_at FROM orders WHERE id='oFaultDp'").get() as { settled_fault_at?: string } | undefined)?.settled_fault_at)
+  ok('P0e. direct_p2p fault_seller:发货前库存回补 +1', stockOf() === stBefore + 1, `before=${stBefore} after=${stockOf()}`)
+  // (b) 对照:escrow accepted 且买家已托管 → fault_seller 仍全额退回买家(托管路径不受本次改动影响 = 未 regress)。
+  db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('buyerE','托管买家','buyer','k_be')").run()
+  db.prepare("INSERT INTO wallets (user_id, balance, escrowed) VALUES ('buyerE', 0, 50)").run()
+  db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail, fulfillment_mode) VALUES ('oFaultEsc','p1','buyerE','seller1',1,50,50,50,'accepted','escrow','shipped')").run()
+  const eBefore = wu('buyerE')
+  settleFault(db, 'oFaultEsc', 'fault_seller')
+  const eAfter = wu('buyerE')
+  ok('P0f. 对照:escrow fault_seller 仍全额退回买家(escrowed→balance,托管路径未改)', eAfter.escrowed === eBefore.escrowed - toUnits(50) && eAfter.balance === eBefore.balance + toUnits(50), `esc ${eBefore.escrowed}→${eAfter.escrowed} bal ${eBefore.balance}→${eAfter.balance}`)
 }
 
 server!.close()
