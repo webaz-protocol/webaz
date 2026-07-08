@@ -12,6 +12,7 @@ window.renderAdminDirectPayDeferrals = async function (app) {
   const data = await GET('/admin/direct-receive/deferrals?status=pending')
   if (!data || data.error) { app.innerHTML = shell(alert$('error', (data && data.error) || t('加载失败')), 'admin'); return }
   const rows = (data.deferrals || [])
+  const grantedRows = ((await GET('/admin/direct-receive/deferrals?status=granted')) || {}).deferrals || []
   const list = rows.length ? rows.map(d => `
     <div class="card" style="margin-bottom:10px">
       <div style="font-size:11px;color:#9ca3af">${escHtml(d.user_id)} · ${fmtTime(d.created_at)}</div>
@@ -44,9 +45,9 @@ window.renderAdminDirectPayDeferrals = async function (app) {
     <div style="margin-bottom:12px"><button class="btn btn-outline btn-sm" style="width:auto" onclick="navigate('#admin')">${t('返回概览')}</button></div>
     <div style="font-size:12px;color:#6b7280;line-height:1.6;margin-bottom:10px">${t('批准后该卖家可先入场直付、保证金延后交;直付仍需满足全部合规条件,且缓交期内额度被压低。批准/拒绝均需真人 Passkey。')}</div>
     ${list}
+    ${window.dpGrantedDeferralsSection ? window.dpGrantedDeferralsSection(grantedRows) : ''}
   `, 'admin')
 }
-
 // 批准:purpose_data 必须与请求体逐字一致(后端绑定 deferral_id + reduced_quota_factor + grace_days)。
 window.doApproveDeferralInline = async function (id) {
   const fEl = document.getElementById('dfr-approve-factor-' + id), gEl = document.getElementById('dfr-approve-grace-' + id)
@@ -60,7 +61,6 @@ window.doApproveDeferralInline = async function (id) {
   if (typeof toast$ === 'function') toast$(t('缓交已批准'))
   window.renderAdminDirectPayDeferrals(document.getElementById('app'))
 }
-
 // 拒绝:purpose_data 绑 deferral_id。
 window.doRejectDeferralInline = async function (id) {
   const token = await requestPasskeyGate('direct_pay_deferral_reject', { deferral_id: id })

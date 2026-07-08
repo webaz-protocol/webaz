@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (780 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (781 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -67,6 +67,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/direct-receive/bond-slash/:id/execute` | 🔐 | 👑 | 执行(ROOT + 真人 Passkey,purpose direct_pay_bond_slash 绑 proposal_id;冷静期由域内绝对截止校验)。 | src/pwa/routes/admin-direct-receive-deposits.ts:104 |
 | POST | `/api/admin/direct-receive/bond-slash/propose` | 🔐 | 👑 | 提案(ROOT,审计留痕,不 Passkey —— 提案不动任何东西;执行才是终局动作)。通知卖家(冷静期=申诉窗)。 | src/pwa/routes/admin-direct-receive-deposits.ts:79 |
 | GET | `/api/admin/direct-receive/deferrals` | 🔐 | 👑 | GET /api/admin/direct-receive/deferrals?status=pending — ROOT 审批队列(默认全部;可按 statu | src/pwa/routes/admin-direct-receive-deposits.ts:386 |
+| POST | `/api/admin/direct-receive/deferrals/:id/adjust-quota` | 🔐 | 👑 | reduced_quota_factor(签 A 改 B / 改数值一律拒)。adjustGrantedDeferralQuota 是唯一 writer(CAS | src/pwa/routes/admin-direct-receive-deposits.ts:444 |
 | POST | `/api/admin/direct-receive/deferrals/:id/approve` | 🔐 | 👑 | Passkey purpose_data 绑定【完整审批条款】(deferral_id + reduced_quota_factor + grace_days) | src/pwa/routes/admin-direct-receive-deposits.ts:395 |
 | POST | `/api/admin/direct-receive/deferrals/:id/reject` | 🔐 | 👑 | POST /api/admin/direct-receive/deferrals/:id/reject — ROOT + 真人 Passkey 拒绝缓交。pur | src/pwa/routes/admin-direct-receive-deposits.ts:420 |
 | GET | `/api/admin/direct-receive/deposits` | 🔐 | 👑 | GET /api/admin/direct-receive/deposits?status=pending — ROOT 只读:保证金申报队列(核对到账用)。B | src/pwa/routes/admin-direct-receive-deposits.ts:46 |
@@ -81,12 +82,12 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/direct-receive/fee-prepay-requests/:id/reject` | 🔐 | 👑 | POST /api/admin/direct-receive/fee-prepay-requests/:id/reject — ROOT + Passkey(不 | src/pwa/routes/admin-direct-receive-deposits.ts:353 |
 | POST | `/api/admin/direct-receive/fee-refund` | 🔐 | 👑 | amount ≤ 当前 available(helper 同事务校验)。append-only + audit。purpose_data 绑 seller_id | src/pwa/routes/admin-direct-receive-deposits.ts:317 |
 | POST | `/api/admin/direct-receive/kyb-reviews` | 🔐 | 👑 | Passkey purpose_data 绑定【完整写入内容】(user_id+status+provider_ref+expires_at):签 A 写 B  | src/pwa/routes/admin-direct-receive-deposits.ts:271 |
-| GET | `/api/admin/direct-receive/product-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/product-verifications?status=submitted — ROOT 审核队列 | src/pwa/routes/admin-direct-receive-deposits.ts:445 |
-| POST | `/api/admin/direct-receive/product-verifications/:id/review` | 🔐 | 👑 | Passkey purpose_data 绑 verification_id + decision:签 A 用 B / 改结论一律拒。verify = 放行该产 | src/pwa/routes/admin-direct-receive-deposits.ts:454 |
+| GET | `/api/admin/direct-receive/product-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/product-verifications?status=submitted — ROOT 审核队列 | src/pwa/routes/admin-direct-receive-deposits.ts:482 |
+| POST | `/api/admin/direct-receive/product-verifications/:id/review` | 🔐 | 👑 | Passkey purpose_data 绑 verification_id + decision:签 A 用 B / 改结论一律拒。verify = 放行该产 | src/pwa/routes/admin-direct-receive-deposits.ts:491 |
 | POST | `/api/admin/direct-receive/readiness` | 🔐 | 👑 | 含 KYB/sanctions/AML/base-bond/rail clearance 全细节)。只读诊断(不写库、不 flip launch);ROOT 专 | src/pwa/routes/admin-direct-receive-deposits.ts:364 |
 | POST | `/api/admin/direct-receive/sanctions-screenings` | 🔐 | 👑 | purpose_data 绑定 user_id+status+provider_ref+expires_at。 | src/pwa/routes/admin-direct-receive-deposits.ts:280 |
-| GET | `/api/admin/direct-receive/store-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/store-verifications?status=submitted — ROOT 审核队列(默 | src/pwa/routes/admin-direct-receive-deposits.ts:482 |
-| POST | `/api/admin/direct-receive/store-verifications/:id/review` | 🔐 | 👑 | POST /api/admin/direct-receive/store-verifications/:id/review — ROOT + 真人 Passke | src/pwa/routes/admin-direct-receive-deposits.ts:490 |
+| GET | `/api/admin/direct-receive/store-verifications` | 🔐 | 👑 | GET /api/admin/direct-receive/store-verifications?status=submitted — ROOT 审核队列(默 | src/pwa/routes/admin-direct-receive-deposits.ts:519 |
+| POST | `/api/admin/direct-receive/store-verifications/:id/review` | 🔐 | 👑 | POST /api/admin/direct-receive/store-verifications/:id/review — ROOT + 真人 Passke | src/pwa/routes/admin-direct-receive-deposits.ts:527 |
 | GET | `/api/admin/disputes` | 🔐 | 👑 |  | src/pwa/routes/admin-reports.ts:55 |
 | POST | `/api/admin/disputes/:id/decline-contest-resolve` | 🔐 | 👑 | (dispute CAS + COI + 终态 completed + 结算 + 审计,单事务全回滚)。admin override 不占用 assigned_ | src/pwa/routes/admin-reports.ts:87 |
 | GET | `/api/admin/economic-summary` | 🔐 | 👑 | 隐私第一：运营财务，仅 protocol admin 可见。 | src/pwa/routes/admin-reports.ts:127 |

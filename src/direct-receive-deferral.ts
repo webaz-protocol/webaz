@@ -107,6 +107,24 @@ export function approveDeferral(db: Database.Database, args: {
   return { ok: true, status: 'granted' }
 }
 
+/** 调整【已 granted】缓交的压低配额系数(只改系数,不动到期/宽限)。仅 granted 可调(pending 用 approve;
+ *  expired/rejected/satisfied 拒);factor 经 clampReducedQuotaFactor 卡 [min,max](缓交仍必压低)。CAS on status='granted'
+ *  防竞态(到期/驳回 race 输家 0 行 → 拒)。ROOT/Passkey/audit 由【调用方 route】强制,helper 不验证身份。 */
+export function adjustGrantedDeferralQuota(db: Database.Database, args: {
+  deferralId: string; adminId: string; reducedQuotaFactor: number; config?: DeferralConfig
+}): { ok: true; status: DeferralStatus; previousFactor: number; newFactor: number } | { ok: false; reason: string } {
+  const config = args.config ?? DEFAULT_DEFERRAL_CONFIG
+  if (!args.adminId) return { ok: false, reason: 'adjustGrantedDeferralQuota requires a human adminId (no auto-adjust)' }
+  if (!Number.isFinite(args.reducedQuotaFactor)) return { ok: false, reason: 'reducedQuotaFactor must be a finite number' }
+  const row = getRow(db, args.deferralId)
+  if (!row) return { ok: false, reason: 'deferral not found' }
+  if (row.status !== 'granted') return { ok: false, reason: `can only adjust a granted deferral (status '${row.status}')` }
+  const factor = clampReducedQuotaFactor(args.reducedQuotaFactor, config)
+  const changes = db.prepare("UPDATE direct_receive_deferrals SET reduced_quota_factor = ? WHERE id = ? AND status = 'granted'").run(factor, args.deferralId).changes
+  if (changes !== 1) return { ok: false, reason: 'deferral no longer granted (raced)' }
+  return { ok: true, status: 'granted', previousFactor: row.reduced_quota_factor, newFactor: factor }
+}
+
 /** 真人 admin 拒绝 → rejected。 */
 export function rejectDeferral(db: Database.Database, args: { deferralId: string; adminId: string }): DeferralOpResult {
   if (!args.adminId) return { ok: false, reason: 'rejectDeferral requires a human adminId' }

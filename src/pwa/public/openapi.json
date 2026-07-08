@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (780 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (781 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -729,6 +729,19 @@
     "/api/admin/direct-receive/deferrals": {
       "get": {
         "summary": "GET /api/admin/direct-receive/deferrals?status=pending — ROOT 审批队列(默认全部;可按 status 过滤)。纯读。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/direct-receive/deferrals/:id/adjust-quota": {
+      "post": {
+        "summary": "reduced_quota_factor(签 A 改 B / 改数值一律拒)。adjustGrantedDeferralQuota 是唯一 writer(CAS on granted)。",
         "tags": [
           "admin"
         ],
