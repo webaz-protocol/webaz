@@ -218,7 +218,7 @@ export function recordRepEvent(
     const newTotal = Math.max(0, (existing.total_points as number) + points)  // 最低 0 分
     const isDisputeWon  = eventType === 'dispute_won'
     const isDisputeLost = eventType === 'dispute_lost'
-    const isViolation   = eventType === 'timeout_violation'
+    const isViolation   = eventType === 'timeout_violation' || eventType === 'undeliverable_buyer_fault'   // PR-B:未派送成功买家责任也计入违约计数
     const isDone        = eventType === 'order_completed'
 
     db.prepare(`UPDATE reputation_scores SET

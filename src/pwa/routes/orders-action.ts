@@ -478,6 +478,25 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       evidenceIds.push(eid)
     }
 
+    // PR-B:mark_undeliverable 原子块(镜像 confirm/pq_withdraw)—— transition→delivery_failed + 置争议窗口截止
+    //   包进【同一 db.transaction】。否则 transition 先提交、随后 deadline UPDATE 失败(crash/BUSY)→ 卡在
+    //   delivery_failed 且 delivery_failed_deadline=NULL(checkTimeouts 因 deadline 空不触发 → 无法自动落定,liveness 死角)。
+    if (action === 'mark_undeliverable') {
+      let ch = 120; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'undeliverable_contest_window_hours'"); if (p) ch = Math.max(1, Number(p.value) || 120) } catch {}
+      const dfIso = new Date(Date.now() + ch * 3600 * 1000).toISOString()   // ISO(#299),X 默认 120h
+      try {
+        db.transaction(() => {
+          const r = transition(db, req.params.id, 'delivery_failed', user.id as string, evidenceIds, notes)   // requiresEvidence 由转移规则强制
+          if (!r.success) throw new Error(r.error || 'delivery_failed transition failed')
+          db.prepare("UPDATE orders SET delivery_failed_deadline = ? WHERE id = ? AND delivery_failed_deadline IS NULL").run(dfIso, req.params.id)   // I3:IS NULL 不重写
+        })()
+      } catch (e) {
+        return void res.status(409).json({ error: `未派送成功登记失败(仍停在 ${order.status},可重试):${(e as Error).message}`, error_code: 'UNDELIVERABLE_MARK_FAILED' })
+      }
+      notifyTransition(db, req.params.id, order.status as string, 'delivery_failed')
+      return void res.json({ success: true, status: 'delivery_failed', contest_deadline: dfIso })
+    }
+
     // Rail1 全原子(Codex P1):direct_p2p confirm 必须把 delivered→confirmed→completed→settle/accrue 包进【同一 db.transaction】。
     //   否则 delivered→confirmed 先单独提交、随后 accrue 失败 → 订单卡在 confirmed(retry 被 ORDER_NOT_DELIVERED 拒)。
     //   任一步失败 → 整体回滚到 delivered(可重试);成功后再发通知。confirm-in-person 是另一端点、已单事务原子。
@@ -518,13 +537,6 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     const fromStatus = order.status as string
     const result = transition(db, req.params.id, toStatus, user.id as string, evidenceIds, notes)
     if (!result.success) return void res.json({ error: result.error })
-
-    // PR-B:进 delivery_failed 时置买家争议窗口(delivery_failed_deadline,ISO 与 #299 一致,X 默认 120h)。
-    //   WHERE IS NULL 守 I3(deadline 绝对列不重写)。到期无争议 → checkTimeouts 落定 fault_buyer。
-    if (toStatus === 'delivery_failed') {
-      let ch = 120; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'undeliverable_contest_window_hours'"); if (p) ch = Math.max(1, Number(p.value) || 120) } catch {}
-      await dbRun("UPDATE orders SET delivery_failed_deadline = ? WHERE id = ? AND delivery_failed_deadline IS NULL", [new Date(Date.now() + ch * 3600 * 1000).toISOString(), req.params.id])
-    }
 
     // P1-c(b):direct_p2p 首次进 accepted(mark_paid / confirm_received)才生成 ship_deadline —— direct-pay-create 建单不设该列,
     //   缺 ship_deadline 会被共享执行器 SLA【fail-closed】卡住发货。WHERE ship_deadline IS NULL 兜死:仅 null→值 那一次写,

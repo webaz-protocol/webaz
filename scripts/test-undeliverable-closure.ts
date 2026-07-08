@@ -31,6 +31,9 @@ initReputationSchema(db); initDisputeSchema(db); initSystemUser(db)
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('buyer1','买家','buyer','kb'),('seller1','卖家','seller','ks'),('log1','物流','logistics','kl')").run()
 db.prepare("INSERT INTO wallets (user_id, balance) VALUES ('buyer1',0),('seller1',100)").run()
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock) VALUES ('p1','seller1','P','d',50,100)").run()
+// 预置 buyer1 声誉汇总行 —— recordRepEvent 首事件走 INSERT 分支(violations 硬置 0,pre-existing 行为);
+//   预置行使后续 violation 走 UPDATE 分支,才能验 isViolation 计数(U5g)。
+db.prepare("INSERT INTO reputation_scores (user_id, total_points, transactions_done, disputes_won, disputes_lost, violations, level) VALUES ('buyer1', 0, 0, 0, 0, 0, 'new')").run()
 // PR-B1 已 seed undeliverable_closure_enabled=0;本测试大部分用例需开启 →置 1(U1 先测关闭态)。
 
 const status = (id: string) => (db.prepare('SELECT status FROM orders WHERE id=?').get(id) as { status?: string } | undefined)?.status
@@ -95,23 +98,27 @@ db.prepare("UPDATE protocol_params SET value='1' WHERE key='undeliverable_closur
 {
   const o = mkOrder('shipped', 'direct_p2p')
   const r = await call(o, { action: 'mark_undeliverable' }, 'seller1', 'seller')
-  ok('U4. 无证据 → 拒(requiresEvidence),不进 delivery_failed', status(o) === 'shipped' && !!r.json.error, JSON.stringify(r))
+  ok('U4. 无证据 → 409 UNDELIVERABLE_MARK_FAILED(requiresEvidence 拒),不进 delivery_failed', r.status === 409 && r.json.error_code === 'UNDELIVERABLE_MARK_FAILED' && status(o) === 'shipped', JSON.stringify(r))
 }
 // ═══ U5:窗口内不争议 → checkTimeouts 落定 fault_buyer→completed;direct_p2p 零资金零回补 + 幂等标记 ═══
 {
   const o = mkOrder('shipped', 'direct_p2p')
   await call(o, { action: 'mark_undeliverable', evidence_description: '退回·快照地址' }, 'seller1', 'seller')
-  db.prepare("UPDATE orders SET delivery_failed_deadline = datetime('now','-1 hours') WHERE id=?").run(o)   // 窗口已过(空格格式也 OK:已过)
+  db.prepare("UPDATE orders SET delivery_failed_deadline = datetime('now','-1 hours') WHERE id=?").run(o)   // 窗口已过
   const st0 = stockOf(); const b0 = wu('buyer1'); const s0 = wu('seller1')
-  checkTimeouts(db)
+  const r5 = checkTimeouts(db)
   ok('U5. 逾期未争议 → fault_buyer 收口至 completed', status(o) === 'completed', `status=${status(o)}`)
-  ok('U5b. direct_p2p 零资金移动(D4:协议未托管)', wu('buyer1').balance === b0.balance && wu('buyer1').escrowed === b0.escrowed && wu('seller1').balance === s0.balance)
-  ok('U5c. direct_p2p 已发出的货【不回补库存】(G7 post-ship 守卫)', stockOf() === st0, `before=${st0} after=${stockOf()}`)
+  const eq = (a: ReturnType<typeof wu>, b: ReturnType<typeof wu>) => a.balance === b.balance && a.escrowed === b.escrowed && a.staked === b.staked && a.earned === b.earned && (a.fee_staked ?? 0) === (b.fee_staked ?? 0)
+  ok('U5b. direct_p2p 零资金移动(D4:买卖双方全钱包字段不变)', eq(wu('buyer1'), b0) && eq(wu('seller1'), s0))
+  ok('U5c. direct_p2p 已发出的货【不回补库存】(G7 post-ship + 已出库绝不自动回补)', stockOf() === st0, `before=${st0} after=${stockOf()}`)
   ok('U5d. settled_fault_at 幂等标记落库', !!(db.prepare('SELECT settled_fault_at FROM orders WHERE id=?').get(o) as { settled_fault_at?: string })?.settled_fault_at)
-  // U5e:声誉 = undeliverable_buyer_fault(-20),非 timeout_violation(-40)。cron 侧按 detail 正则调 recordViolationReputation。
-  recordViolationReputation(db, o, 'fault_buyer')
+  // U5e:声誉走【真实 cron 布线】—— 从 checkTimeouts detail 经 /→ (fault_\w+)/ 提取(非直接 hand-call),防 detail↔正则契约漂移导致 prod 零记录。
+  const det = r5.details.find(d => d.orderId === o); const m = det?.action.match(/→ (fault_\w+)/)
+  ok('U5e. checkTimeouts detail 命中 cron 正则 → fault_buyer(prod 布线守卫)', !!m && m[1] === 'fault_buyer', JSON.stringify(det))
+  recordViolationReputation(db, o, (m ? m[1] : 'fault_buyer'))
   const ev = repEvents('buyer1')
-  ok('U5e. 买家声誉 = undeliverable_buyer_fault(-20),非超时违约(-40)', ev.length === 1 && ev[0].event_type === 'undeliverable_buyer_fault' && ev[0].points === -20, JSON.stringify(ev))
+  ok('U5f. 买家声誉 = undeliverable_buyer_fault(-20),非超时违约(-40)', ev.length === 1 && ev[0].event_type === 'undeliverable_buyer_fault' && ev[0].points === -20, JSON.stringify(ev))
+  ok('U5g. 违约计数 +1(isViolation 含 undeliverable_buyer_fault)', (db.prepare("SELECT violations FROM reputation_scores WHERE user_id='buyer1'").get() as { violations: number }).violations === 1)
 }
 // ═══ U6:回归 —— created→fault_buyer(发货前,delivery_failed_deadline NULL)仍回补 + timeout_violation(-40)═══
 {
@@ -135,8 +142,15 @@ db.prepare("UPDATE protocol_params SET value='1' WHERE key='undeliverable_closur
 {
   const o = mkOrder('shipped', 'direct_p2p')
   await call(o, { action: 'mark_undeliverable', evidence_description: '退回·快照地址' }, 'seller1', 'seller')   // deadline = now+120h(ISO,未来)
+  const dl8 = dfDeadline(o)
   checkTimeouts(db)
-  ok('U8. 争议窗口未到 → 仍 delivery_failed(不提前判买家)', status(o) === 'delivery_failed', `status=${status(o)}`)
+  ok('U8. 争议窗口未到(未来 ISO deadline)→ 仍 delivery_failed(不提前判买家)', status(o) === 'delivery_failed' && !!dl8 && new Date(dl8).getTime() > Date.now(), `status=${status(o)} dl=${dl8}`)
+}
+// ═══ U9:防御 —— escrow 若到 fault_buyer 且 delivery_failed_deadline 已置(B2 不可达)→ settleFault fail-loud,不静默锁死 escrow ═══
+{
+  db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail, fulfillment_mode, delivery_failed_deadline) VALUES ('oEscUn','p1','buyer1','seller1',1,50,50,50,'fault_buyer','escrow','shipped',datetime('now','-1 hours'))").run()
+  let threw = false; try { settleFault(db, 'oEscUn', 'fault_buyer') } catch { threw = true }
+  ok('U9. escrow undeliverable settleFault fail-loud(防静默锁死 escrow;资金收口=B3)', threw && status('oEscUn') === 'fault_buyer' && !(db.prepare("SELECT settled_fault_at FROM orders WHERE id='oEscUn'").get() as { settled_fault_at?: string })?.settled_fault_at, `threw=${threw}`)
 }
 
 server!.close()

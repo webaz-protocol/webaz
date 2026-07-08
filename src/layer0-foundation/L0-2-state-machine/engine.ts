@@ -513,7 +513,11 @@ export function settleFault(db: Database.Database, orderId: string, faultState: 
         // TODO（Phase 2）：logistics 接入 stake/insurance/deposit 后，从 logistics 池扣给 seller 补货款
       }
     } else if (faultState === 'fault_buyer') {
-      // created→fault_buyer：escrow 未锁，仅库存回退
+      // PR-B 防御(defense-in-depth):escrow 轨的 undeliverable(delivery_failed_deadline 已置)= post-ship 买家责任,
+      //   资金收口(成本扣除/退余款)在 PR-B3。B2 不可达(mark_undeliverable 门控拒 escrow)——此处 fail-loud,
+      //   防未来若门控回归导致【静默锁死 escrow + 错误回补已发出的货】。抛错→checkTimeouts 记录并留 fault_buyer 不 completed。
+      if (order.delivery_failed_deadline) throw new Error('escrow undeliverable(delivery_failed)结算未上线(见 PR-B3);拒绝在 B2 mis-settle 以免锁死 escrow')
+      // created→fault_buyer：escrow 未锁，仅库存回退(pre-ship)
       if (!isSecondhand) db.prepare('UPDATE products SET stock = stock + 1 WHERE id = ?').run(order.product_id as string)
       if (isSecondhand) {
         try { db.prepare("UPDATE secondhand_items SET status = 'available', updated_at = datetime('now') WHERE id = ?").run(order.product_id as string) } catch {}

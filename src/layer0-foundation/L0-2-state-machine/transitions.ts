@@ -404,12 +404,13 @@ export const VALID_TRANSITIONS: Record<string, Transition> = {
     faultParty: 'buyer',
     description: 'PR-B:买家未在窗口内争议 → 未派送成功落定为买家责任(direct_p2p=仅声誉;escrow=B3 成本扣除)'
   },
-  // 买家反证(卖家发错/未发)或卖家主张货丢 → 进仲裁(复用现有 dispute/arbitration,三方按证据定责)。
+  // 买家反证(卖家发错/未发)→ 进仲裁(复用现有 dispute/arbitration,三方按证据定责)。
+  //   B2 仅 buyer 反证;卖家"主张货丢/弃货求全额没收"依赖 escrow 没收机制,属 B3,届时再放开 seller。
   'delivery_failed→disputed': {
-    allowedRoles: ['buyer', 'seller'],
+    allowedRoles: ['buyer'],
     requiresEvidence: true,
-    evidenceHint: '买家:证明卖家发到错误地址/未发货(对比订单快照地址);卖家:主张货丢/弃货求全额没收(B3)',
-    description: 'PR-B:买家争议未派送成功裁定(或卖家主张货丢)→ 人工仲裁,三方按证据定责'
+    evidenceHint: '证明卖家发到错误地址/未发货(对比订单快照收货地址)',
+    description: 'PR-B:买家争议未派送成功裁定 → 人工仲裁,按证据定责(卖家货丢主张=B3)'
   },
 
   // ── RFC-007 stage 5：客观拒单仲裁翻案 ─────────────────────────────
