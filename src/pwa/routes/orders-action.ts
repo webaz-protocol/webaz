@@ -518,6 +518,17 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       await dbRun("UPDATE orders SET ship_deadline = datetime('now', ?) WHERE id = ? AND ship_deadline IS NULL", [`+${sh} hours`, req.params.id])
     }
 
+    // P1:direct_p2p 进 delivered 时生成 confirm_deadline(投递后 72h)—— direct-pay 建单不设该列,缺它则
+    //   checkTimeouts 永不自动确认 → 卡死 delivered、平台费不入账。WHERE confirm_deadline IS NULL 守 I3(deadline
+    //   绝对列不重写)。escrow 该列建单时已按 +408h 预置(orders-create),不走本路径。判责钟从投递(now)起。
+    if (toStatus === 'delivered' && order.payment_rail === 'direct_p2p') {
+      // ISO 存储(非 datetime('now',...) 的空格格式):checkTimeouts.findActiveDeadlineTransition 用 JS 字符串比较
+      //   `now(ISO) > deadline`,now=new Date().toISOString() 带 'T'。空格格式 deadline 在同一日历日会因 'T'(0x54)>' '(0x20)
+      //   被误判为已过 → 提前最多 ~24h 自动确认。escrow 各 deadline 走 addHours→ISO 无此问题,故此处对齐 ISO。
+      const confirmDeadlineIso = new Date(Date.now() + 72 * 3600 * 1000).toISOString()
+      await dbRun("UPDATE orders SET confirm_deadline = ? WHERE id = ? AND confirm_deadline IS NULL", [confirmDeadlineIso, req.params.id])
+    }
+
     notifyTransition(db, req.params.id, fromStatus, toStatus)
 
     // 审计项 B(N2):买家标记付款 → 通知卖家核款发货(direct_pay_window→accepted 不在 notifyTransition RULES,
@@ -648,7 +659,8 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       return void res.status(403).json({ error: '非订单当事人' })
     }
     const beforeStatus = order.status
-    const r = checkTimeouts(db)
+    // settleConfirmed 注入:当事人强制超时检查若命中 delivered 逾期 → 与 PWA cron 同路径自动确认+结算(否则本端点对 delivered 单空转)。
+    const r = checkTimeouts(db, { settleConfirmed: settleOrder })
     const after = (await dbOne<{ status: string }>('SELECT status FROM orders WHERE id = ?', [req.params.id]))!
     const touched = r.details.find((d: { orderId: string; action: string }) => d.orderId === req.params.id) || null
     if (touched) {

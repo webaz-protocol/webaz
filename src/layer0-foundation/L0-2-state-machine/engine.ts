@@ -167,11 +167,16 @@ export function transition(
  * 扫描所有超时订单，自动判责
  * 这个函数应该定期运行（如每分钟），是「协议自动执法」的实现
  */
-export function checkTimeouts(db: Database.Database): {
+export function checkTimeouts(db: Database.Database, opts?: {
+  // 自动确认(delivered→confirmed 超时)的成交结算回调 = settleOrder。engine(layer0)够不着 PWA settleOrder,
+  // 由调用方注入(PWA runEnforcement 传);不注入的独立 cron/CLI 不自动确认,避免用 settleFault 误结算。
+  settleConfirmed?: (orderId: string) => void
+}): {
   processed: number
   details: Array<{ orderId: string; action: string }>
 } {
   const now = new Date().toISOString()
+  const settleConfirmed = opts?.settleConfirmed
   const details: Array<{ orderId: string; action: string }> = []
 
   // 找出所有进行中的订单
@@ -186,14 +191,38 @@ export function checkTimeouts(db: Database.Database): {
     const transitionKey = findActiveDeadlineTransition(order, now)
     if (!transitionKey) continue
 
-    const [, autoFaultState] = transitionKey
+    const [, autoNextState] = transitionKey
     const systemUser = getSystemUser(db)
 
-    // 系统自动触发判责状态
+    // ── delivered→confirmed 超时 = 买家逾期未确认 → 自动确认收货(非判责)──────────────────────
+    //   必须走 settleOrder(escrow 结算+佣金 / direct_p2p 释放遗留 stake+accrueFee),【绝不】用 settleFault:
+    //   settleFault 是 fault-only(fault_seller/logistics/buyer),对 'confirmed' 会空结算(escrow 卖家永不收款、
+    //   escrow 锁死)或幻影回补(direct_p2p 回补已售库存)。settleOrder 由调用方注入(PWA runEnforcement 传);
+    //   无 settler 的独立 cron/CLI 不自动确认 → 留 delivered,等有 settler 的 PWA 扫描收口,不误结算、不搁浅。
+    //   全链 delivered→confirmed→completed→settle 包一个 db.transaction(镜像 orders-action 手动 confirm 原子路径):
+    //   任一步失败整体回滚回 delivered 可重试;买家没收到货会先 delivered→disputed(has_pending_claim 门已滤掉争议单)。
+    if (autoNextState === 'confirmed') {
+      if (!settleConfirmed) continue
+      try {
+        db.transaction(() => {
+          const r1 = transition(db, order.id, 'confirmed', systemUser.id, [], '买家逾期未确认,系统自动确认收货')
+          if (!r1.success) throw new Error(r1.error || 'auto-confirm transition failed')
+          const r2 = transition(db, order.id, 'completed', systemUser.id, [], '自动确认后系统结算')
+          if (!r2.success) throw new Error(r2.error || 'auto-complete transition failed')
+          settleConfirmed(order.id)   // = settleOrder:两轨各自正确结算(escrow 释放+佣金 / direct_p2p accrueFee)
+        })()
+        details.push({ orderId: order.id, action: `${order.status} → completed（逾期自动确认结算）` })
+      } catch (e) {
+        console.error(`[auto-confirm settle] order=${order.id}`, e)
+      }
+      continue
+    }
+
+    // ── 判责状态(fault_*)自动触发 + 资金处置 ────────────────────────────────────────────────
     const result = transition(
       db,
       order.id,
-      autoFaultState,
+      autoNextState,
       systemUser.id,
       [],
       `系统自动判责：超过截止时间 ${new Date(now).toLocaleString()}`
@@ -202,17 +231,17 @@ export function checkTimeouts(db: Database.Database): {
     if (result.success) {
       details.push({
         orderId: order.id,
-        action: `${order.status} → ${autoFaultState}（超时自动判责）`
+        action: `${order.status} → ${autoNextState}（超时自动判责）`
       })
 
       // 如果判责状态可以自动完成，继续执行 — 资金处置 + 状态转移在一个事务内
-      const completionKey = `${autoFaultState}→completed`
+      const completionKey = `${autoNextState}→completed`
       if (VALID_TRANSITIONS[completionKey]) {
         try {
-          settleFault(db, order.id, autoFaultState as OrderStatus)
+          settleFault(db, order.id, autoNextState as OrderStatus)
           transition(db, order.id, 'completed', systemUser.id, [], '系统自动执行处置')
         } catch (e) {
-          console.error(`[settleFault] order=${order.id} state=${autoFaultState}`, e)
+          console.error(`[settleFault] order=${order.id} state=${autoNextState}`, e)
         }
       }
     }
