@@ -454,9 +454,18 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       mark_paid: 'accepted',   // Rail1 直付:买家声明"我已付款" → accepted(汇入既有卖家发货流程;协议不验真实付款)
       // Rail1 货款协商:卖家报未收款→协商;卖家确认已收→恢复;升级→举证仲裁;撤回→回协商(pq_withdraw 由上方原子块 early-return 处理,列此仅为通过 !toStatus 校验)。
       report_nonpayment: 'payment_query', confirm_received: 'accepted', pq_escalate: 'disputed', pq_withdraw: 'payment_query',
+      mark_undeliverable: 'delivery_failed',   // PR-B:卖家/物流举证未派送成功(退回/拒收)→ 证据裁决
     }
     const toStatus = actionMap[action]
     if (!toStatus) return void res.json({ error: `未知操作：${action}` })
+
+    // PR-B:mark_undeliverable 门控 —— rollout flag + rail(B2 仅 direct_p2p;escrow 资金收口由 B3 接,先拒不误结算)。
+    //   fail fast:在写 evidence / transition 前拦下。证据要求由 delivery_failed 转移规则(requiresEvidence)强制。
+    if (action === 'mark_undeliverable') {
+      let enabled = 0; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'undeliverable_closure_enabled'"); enabled = Number(p?.value) || 0 } catch {}
+      if (enabled !== 1) return void res.status(403).json({ error: 'undeliverable 收口未启用', error_code: 'UNDELIVERABLE_DISABLED' })
+      if (order.payment_rail !== 'direct_p2p') return void res.status(409).json({ error: 'escrow 轨 undeliverable 收口尚未上线(B3)', error_code: 'UNDELIVERABLE_ESCROW_PENDING' })
+    }
 
     // 创建证据记录 + 跨窗反诈：description 跑 detectFraud
     const evidenceIds: string[] = []
@@ -467,6 +476,25 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
         VALUES (?,?,?,'description',?,?,?)`).run(eid, req.params.id, user.id, evidence_description, `hash_${Date.now()}`,
           evReasons.length ? JSON.stringify(evReasons) : null)
       evidenceIds.push(eid)
+    }
+
+    // PR-B:mark_undeliverable 原子块(镜像 confirm/pq_withdraw)—— transition→delivery_failed + 置争议窗口截止
+    //   包进【同一 db.transaction】。否则 transition 先提交、随后 deadline UPDATE 失败(crash/BUSY)→ 卡在
+    //   delivery_failed 且 delivery_failed_deadline=NULL(checkTimeouts 因 deadline 空不触发 → 无法自动落定,liveness 死角)。
+    if (action === 'mark_undeliverable') {
+      let ch = 120; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'undeliverable_contest_window_hours'"); if (p) ch = Math.max(1, Number(p.value) || 120) } catch {}
+      const dfIso = new Date(Date.now() + ch * 3600 * 1000).toISOString()   // ISO(#299),X 默认 120h
+      try {
+        db.transaction(() => {
+          const r = transition(db, req.params.id, 'delivery_failed', user.id as string, evidenceIds, notes)   // requiresEvidence 由转移规则强制
+          if (!r.success) throw new Error(r.error || 'delivery_failed transition failed')
+          db.prepare("UPDATE orders SET delivery_failed_deadline = ? WHERE id = ? AND delivery_failed_deadline IS NULL").run(dfIso, req.params.id)   // I3:IS NULL 不重写
+        })()
+      } catch (e) {
+        return void res.status(409).json({ error: `未派送成功登记失败(仍停在 ${order.status},可重试):${(e as Error).message}`, error_code: 'UNDELIVERABLE_MARK_FAILED' })
+      }
+      notifyTransition(db, req.params.id, order.status as string, 'delivery_failed')
+      return void res.json({ success: true, status: 'delivery_failed', contest_deadline: dfIso })
     }
 
     // Rail1 全原子(Codex P1):direct_p2p confirm 必须把 delivered→confirmed→completed→settle/accrue 包进【同一 db.transaction】。
