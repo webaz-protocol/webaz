@@ -518,6 +518,13 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       await dbRun("UPDATE orders SET ship_deadline = datetime('now', ?) WHERE id = ? AND ship_deadline IS NULL", [`+${sh} hours`, req.params.id])
     }
 
+    // P1:direct_p2p 进 delivered 时生成 confirm_deadline(投递后 72h)—— direct-pay 建单不设该列,缺它则
+    //   checkTimeouts 永不自动确认 → 卡死 delivered、平台费不入账。WHERE confirm_deadline IS NULL 守 I3(deadline
+    //   绝对列不重写)。escrow 该列建单时已按 +408h 预置(orders-create),不走本路径。判责钟从投递(now)起。
+    if (toStatus === 'delivered' && order.payment_rail === 'direct_p2p') {
+      await dbRun("UPDATE orders SET confirm_deadline = datetime('now', '+72 hours') WHERE id = ? AND confirm_deadline IS NULL", [req.params.id])
+    }
+
     notifyTransition(db, req.params.id, fromStatus, toStatus)
 
     // 审计项 B(N2):买家标记付款 → 通知卖家核款发货(direct_pay_window→accepted 不在 notifyTransition RULES,
