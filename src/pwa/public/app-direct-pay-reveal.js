@@ -23,7 +23,7 @@ window.dpShowPaymentInfo = (order, orderId, lightweight) => {
   window.dpClearRevealTimer(orderId)
   const snap = order && order.direct_pay_instruction_snapshot ? order.direct_pay_instruction_snapshot : ''
   const pay = window.dpPayAmountText ? window.dpPayAmountText(order) : ''
-  if (!snap) { box.innerHTML = `<div style="font-size:12px;color:#9ca3af">${t('卖家尚未设置收款说明,暂不可直付')}</div>`; return }
+  if (!snap) { const st = order && order.status; box.innerHTML = `<div style="font-size:12px;color:#9ca3af">${escHtml(st === 'pending_accept' ? t('卖家尚未接单,接单后可见收款信息') : (order && order.payment_rail === 'direct_p2p' && st === 'direct_pay_window') ? t('请先完成两次风险披露(D1 + D2)后可见收款信息') : t('卖家尚未设置收款说明,暂不可直付'))}</div>`; return }  // ③旧:空快照按状态分文案(不碰后端 redaction)
   box.innerHTML = `<div style="font-size:12px;color:#374151;background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">
     ${pay ? `<div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:4px">💸 ${escHtml(pay)}</div>` : ''}
     <div style="font-size:11px;color:#9ca3af;margin-bottom:2px">${t('卖家收款说明(下单时快照)')}${window.dpCopyBtn ? window.dpCopyBtn(snap, t('复制收款说明')) : ''}</div><div style="white-space:pre-wrap;word-break:break-word">${escHtml(snap)}</div><div id="dp-order-qr"></div>${lightweight && window.dpMemoInputHtml ? window.dpMemoInputHtml(orderId) : ''}

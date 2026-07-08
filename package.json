@@ -208,6 +208,7 @@
     "test:direct-pay-launch-summary": "tsx scripts/test-direct-pay-launch-summary.ts",
     "test:product-verification-reverify": "tsx scripts/test-product-verification-reverify.ts",
     "test:direct-pay-controls": "tsx scripts/test-direct-pay-controls.ts",
+    "test:direct-pay-reveal-ux": "tsx scripts/test-direct-pay-reveal-ux.ts",
     "test:direct-pay-aml-monitor": "tsx scripts/test-direct-pay-aml-monitor.ts",
     "test:direct-pay-aml-review": "tsx scripts/test-direct-pay-aml-review.ts",
     "test:direct-pay-compliance-ingress": "tsx scripts/test-direct-pay-compliance-ingress.ts",

@@ -56,7 +56,7 @@ window.dpOnRailChange = async (productId) => {
   const _sel = document.querySelector('input[name="dp-rail"]:checked')?.value; if (window.wazEscrowRailNote) window.wazEscrowRailNote(_sel); if (_sel !== 'direct_p2p') return  // [PRELAUNCH-WAZ-SIM] 选 escrow→测试币提醒
   let av = null
   try { av = await GET('/direct-pay/availability?product_id=' + encodeURIComponent(productId || '')) } catch { av = null }
-  if (av && av.available === true) { window._dpDirectAvailable = true; if (note) note.style.display = ''; if (window.dpLoadBuyerAccounts) window.dpLoadBuyerAccounts(productId); return }  // D3:可用时加载卖家可选收款账号
+  if (av && av.available === true) { window._dpDirectAvailable = true; if (note && !(state.user && state.user.has_passkey === true)) note.style.display = ''; if (window.dpLoadBuyerAccounts) window.dpLoadBuyerAccounts(productId); return }  // ① 仅无Passkey显软提醒(非D1/D2契约门,后端硬强制,不削弱披露不变量);D3 可用时加载账号
   if (un) { un.textContent = '⚠️ ' + window.dpErrorText(av && av.error_code, av && av.reason) ; un.style.display = '' }  // 不可用:明确原因 + 退回 escrow
   const esc = document.querySelector('input[name="dp-rail"][value="escrow"]')
   if (esc) { esc.checked = true; if (window.wazEscrowRailNote) window.wazEscrowRailNote('escrow') }  // [PRELAUNCH-WAZ-SIM] 直付不可用退回 escrow 时也提醒测试币

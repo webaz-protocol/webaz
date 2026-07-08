@@ -730,6 +730,7 @@ jobs:
       - run: npm run test:product-verification-reverify
       - run: npm run test:direct-pay-launch-summary
       - run: npm run test:direct-pay-controls
+      - run: npm run test:direct-pay-reveal-ux
       - run: npm run test:direct-pay-aml-monitor
       - run: npm run test:direct-pay-aml-review
       - run: npm run test:direct-pay-compliance-ingress

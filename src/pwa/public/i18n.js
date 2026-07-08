@@ -525,6 +525,8 @@ const _EN = {
   '停用': 'Deactivate',
   '停用后买家将无法对你发起直付订单,确定停用?': 'After deactivation, buyers cannot start Direct Pay orders with you. Deactivate?',
   '卖家尚未设置收款说明,暂不可直付': 'The seller has not set a payment instruction; Direct Pay is unavailable',
+  '卖家尚未接单,接单后可见收款信息': 'The seller has not accepted the order yet; payment info becomes visible after acceptance',
+  '请先完成两次风险披露(D1 + D2)后可见收款信息': 'Complete both risk disclosures (D1 + D2) first to view the payment info',
   '该卖家暂不支持直付': 'This seller does not support Direct Pay yet',
   '直付需要先注册 Passkey': 'Direct Pay requires registering a Passkey first',
   '需先完成两次风险披露确认(D1 + D2)': 'You must complete both risk disclosures first (D1 + D2)',
