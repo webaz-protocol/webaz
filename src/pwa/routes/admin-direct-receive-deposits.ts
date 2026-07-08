@@ -22,7 +22,7 @@ import { dbAll, dbOne } from '../../layer0-foundation/L0-1-database/db.js'   // 
 import { reviewAmlFlag } from '../../direct-pay-aml-review.js'
 import { recordKybReview, recordSanctionsScreening, recordAmlFlagIngress, amlDetailHash } from '../../direct-pay-compliance-ingress.js'
 import { readDirectPayLaunchReadiness } from '../../direct-pay-launch-readiness.js'
-import { approveDeferral, rejectDeferral, listDeferrals, satisfyDeferralOnBond, type DeferralStatus } from '../../direct-receive-deferral.js'
+import { approveDeferral, rejectDeferral, adjustGrantedDeferralQuota, listDeferrals, satisfyDeferralOnBond, type DeferralStatus } from '../../direct-receive-deferral.js'
 import { listProductVerifications, reviewProductVerification, type ProductVerificationStatus } from '../../product-verification.js'
 import { listStoreVerifications, reviewStoreVerification, type StoreVerificationStatus } from '../../store-verification.js'
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'
@@ -435,6 +435,33 @@ export function registerAdminDirectReceiveDepositsRoutes(app: Application, deps:
       { ok: r.ok, outcome: r.ok ? (r.already ? 'already' : 'rejected') : r.reason })
     if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'DEFERRAL_REJECT_REJECTED' })
     return void res.json({ ok: true, status: r.status, already: !!r.already })
+  })
+
+  // POST /api/admin/direct-receive/deferrals/:id/adjust-quota — ROOT + 真人 Passkey 调整【已 granted】缓交的压低配额系数
+  //   (只改 reduced_quota_factor,不动到期/宽限)。补齐"缓交批后无调额入口"的运营缺口:批准时一次性设定后,卖家逼近
+  //   配额时此前只能裸改 DB → 现有正规、带 Passkey+audit+clamp 的端点。Passkey purpose_data 绑 deferral_id +
+  //   reduced_quota_factor(签 A 改 B / 改数值一律拒)。adjustGrantedDeferralQuota 是唯一 writer(CAS on granted)。
+  app.post('/api/admin/direct-receive/deferrals/:id/adjust-quota', (req, res) => {
+    const admin = requireRootAdmin(req, res); if (!admin) return
+    const deferralId = req.params.id
+    const rqfRaw = req.body?.reduced_quota_factor
+    const webauthnToken = req.body?.webauthn_token as string | undefined
+    if (rqfRaw == null || !Number.isFinite(Number(rqfRaw))) return void res.status(400).json({ error: 'reduced_quota_factor 必填(数值)', error_code: 'INVALID_QUOTA_FACTOR' })
+    const gate = requireDirectPayHumanPasskey({ db, consumeGateToken }, {
+      userId: admin.id as string, webauthnToken, purpose: 'direct_pay_deferral_adjust',
+      validate: (data) => { const d = data as { deferral_id?: string; reduced_quota_factor?: unknown } | null
+        return !!d && str(d.deferral_id) === deferralId && str(d.reduced_quota_factor) === str(rqfRaw) },
+    })
+    if (!gate.ok) {
+      logAdminAction(admin.id as string, 'direct_pay.deferral_adjust_quota', 'direct_receive_deferral', deferralId,
+        { ok: false, outcome: gate.error_code === 'PASSKEY_REQUIRED_FOR_DIRECT_PAY' ? 'passkey_required' : 'human_presence_required', error_code: gate.error_code })
+      return void res.status(403).json({ error: gate.reason, error_code: gate.error_code })
+    }
+    const r = adjustGrantedDeferralQuota(db, { deferralId, adminId: admin.id as string, reducedQuotaFactor: Number(rqfRaw) })
+    logAdminAction(admin.id as string, 'direct_pay.deferral_adjust_quota', 'direct_receive_deferral', deferralId,
+      { ok: r.ok, outcome: r.ok ? `factor ${r.previousFactor}→${r.newFactor}` : r.reason })
+    if (!r.ok) return void res.status(409).json({ error: r.reason, error_code: 'DEFERRAL_ADJUST_REJECTED' })
+    return void res.json({ ok: true, status: r.status, previous_factor: r.previousFactor, new_factor: r.newFactor })
   })
 
   // ── 按产品认证(per-product verification)审批。读 = ROOT;verify/reject = ROOT + 真人 Passkey(硬门:核验=放行该产品直付,

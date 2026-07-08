@@ -7,7 +7,7 @@
  */
 import Database from 'better-sqlite3'
 
-const { requestDeferral, approveDeferral, rejectDeferral, getActiveDeferral, expireDeferrals, clampReducedQuotaFactor, DEFAULT_DEFERRAL_CONFIG, listDeferrals, getLatestDeferral } = await import('../src/direct-receive-deferral.js')
+const { requestDeferral, approveDeferral, rejectDeferral, adjustGrantedDeferralQuota, getActiveDeferral, expireDeferrals, clampReducedQuotaFactor, DEFAULT_DEFERRAL_CONFIG, listDeferrals, getLatestDeferral } = await import('../src/direct-receive-deferral.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -42,6 +42,19 @@ ok('3a. approve → granted', ap.ok && row('d1').status === 'granted' && row('d1
 ok('3b. expires_at = now + period(30d), grace_until = +37d', row('d1').expires_at === '2026-07-31 00:00:00' && row('d1').grace_until === '2026-08-07 00:00:00')
 ok('3c. reduced_quota_factor stored (clamped 0.4)', row('d1').reduced_quota_factor === 0.4)
 ok('3d. approve idempotent', approveDeferral(db, { deferralId: 'd1', adminId: 'admin1', nowIso: T0 }).already === true)
+
+// ── adjustGrantedDeferralQuota:批后调整已 granted 缓交的配额系数(只改系数)。用【专属】缓交 da,不动 d1(4c 仍读 d1)。──
+requestDeferral(db, { deferralId: 'da', userId: 'ua', periodDays: 30, nowIso: T0 })
+approveDeferral(db, { deferralId: 'da', adminId: 'admin1', nowIso: T0, graceDays: 7, reducedQuotaFactor: 0.4 })
+{ const r = adjustGrantedDeferralQuota(db, { deferralId: 'da', adminId: 'admin1', reducedQuotaFactor: 0.9 })
+  ok('3e. adjust granted → factor 0.4→0.9 + previous/new 回传', r.ok && (r as { newFactor: number }).newFactor === 0.9 && (r as { previousFactor: number }).previousFactor === 0.4 && row('da').reduced_quota_factor === 0.9) }
+ok('3f. adjust clamps out-of-range 1.5 → max 0.9', (() => { const r = adjustGrantedDeferralQuota(db, { deferralId: 'da', adminId: 'admin1', reducedQuotaFactor: 1.5 }); return r.ok && (r as { newFactor: number }).newFactor === 0.9 })())
+ok('3g. adjust clamps low 0.01 → min 0.1', (() => { const r = adjustGrantedDeferralQuota(db, { deferralId: 'da', adminId: 'admin1', reducedQuotaFactor: 0.01 }); return r.ok && (r as { newFactor: number }).newFactor === 0.1 && row('da').reduced_quota_factor === 0.1 })())
+ok('3h. adjust without adminId rejected', !adjustGrantedDeferralQuota(db, { deferralId: 'da', adminId: '', reducedQuotaFactor: 0.5 }).ok)
+ok('3i. adjust non-finite factor rejected', !adjustGrantedDeferralQuota(db, { deferralId: 'da', adminId: 'admin1', reducedQuotaFactor: NaN }).ok)
+ok('3j. adjust missing deferral rejected', !adjustGrantedDeferralQuota(db, { deferralId: 'nope', adminId: 'admin1', reducedQuotaFactor: 0.5 }).ok)
+{ requestDeferral(db, { deferralId: 'dp', userId: 'up', periodDays: 30, nowIso: T0 })
+  ok('3k. cannot adjust a PENDING deferral (granted-only)', !adjustGrantedDeferralQuota(db, { deferralId: 'dp', adminId: 'admin1', reducedQuotaFactor: 0.5 }).ok && row('dp').reduced_quota_factor === 0.5) }
 
 // ── 4. getActiveDeferral: within window / within grace / after grace ──
 ok('4. active within window (day 10)', getActiveDeferral(db, 'u1', plus(10))?.id === 'd1')
