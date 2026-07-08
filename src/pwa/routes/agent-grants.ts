@@ -170,8 +170,9 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   })
 
   // RFC-021 §6a — 最小化订单读(safe scope seller_orders_read_minimal)。仅读该 agent 之人(卖家)的订单;
-  //   ALLOWLIST 投影(minimalSellerOrderView)只产出 6 字段,SELECT 只取非 PII 列(MINIMAL_ORDER_COLUMNS) ——
-  //   买家地址/联系/gift_recipient 连取都不取(I6)。纯只读,无任何执行(order_action_request 在 PR2/PR3 才有提交/执行)。
+  //   ALLOWLIST 投影(minimalSellerOrderView)只产出 7 字段(含 PR-B 粗粒度 dest_country=结构化 ship_to_region),
+  //   SELECT 只取非 PII 列(MINIMAL_ORDER_COLUMNS)—— 买家街道/门牌/邮编/联系/gift_recipient 连取都不取(I6)。
+  //   纯只读,无任何执行(order_action_request 在 PR2/PR3 才有提交/执行)。
   app.get('/api/agent/orders', requireAgentGrantScope('seller_orders_read_minimal'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     const rows = await dbAll<Record<string, unknown>>(

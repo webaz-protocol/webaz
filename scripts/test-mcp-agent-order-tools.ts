@@ -89,7 +89,7 @@ try {
     const orders = r.orders as Array<Record<string, unknown>> | undefined
     ok('GET-2 list → returns minimal orders', Array.isArray(orders) && orders.length === 4, JSON.stringify(r).slice(0, 200))
     const keys = orders ? Object.keys(orders[0]).sort().join(',') : ''
-    ok('GET-3 each order = exactly 6 minimal keys (no reshape/extra)', keys === 'amount,deadline,item_ref,next_actor,order_id,status', keys)
+    ok('GET-3 each order = exactly 7 minimal keys (6 + dest_country; no reshape/extra)', keys === 'amount,deadline,dest_country,item_ref,next_actor,order_id,status', keys)
     ok('GET-4 list output carries NO PII', !PII.test(JSON.stringify(r))) }
   { const r = await mcp.handleGetAgentOrder({ order_id: 'ord_paid' })   // single
     const o = r.order as Record<string, unknown> | undefined
