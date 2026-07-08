@@ -2492,14 +2492,24 @@ export async function handleOrderActionRequest(args: Record<string, unknown>): P
   // Wraps POST /api/agent/orders/:id/action-request (safe scope order_action_request). SUBMIT-ONLY:
   //   writes a pending request to the human approval queue; NEVER executes (execution needs a human
   //   Passkey approval). decline is not delegable — the backend returns DECLINE_NOT_DELEGATED and we
-  //   pass it through untouched. We forward only action + action_params; no PII, no logging of params.
+  //   pass it through untouched. Client-side forward-allowlist keeps PII off the wire (see below).
   if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
   const cred = resolveGrantCredential()
   if (!cred) return { error: 'a delegation grant is required — run webaz_pair action="start", have the human approve the fulfillment_agent bundle, then retry.', error_code: 'GRANT_REQUIRED' }
   const orderId = (typeof args.order_id === 'string' && args.order_id) ? args.order_id : ''
   if (!orderId) return { error: 'order_id is required', error_code: 'ORDER_ID_REQUIRED' }
   const body: Record<string, unknown> = { action: args.action }
-  if (args.action_params !== undefined) body.action_params = args.action_params
+  // Client-side forward-allowlist (defense-in-depth): only `ship` carries params, and only
+  //   {tracking, evidence_ref} — so PII (address/recipient/phone) NEVER leaves the agent, not even
+  //   in the outbound request body. `accept` forwards no params. Canonical allowlist = the backend's
+  //   sanitizeOrderActionParams (order-action-request.ts) — keep these two fields in sync.
+  if (args.action === 'ship' && args.action_params && typeof args.action_params === 'object') {
+    const p = args.action_params as Record<string, unknown>
+    const clean: Record<string, unknown> = {}
+    if (p.tracking != null) clean.tracking = p.tracking
+    if (p.evidence_ref != null) clean.evidence_ref = p.evidence_ref
+    body.action_params = clean
+  }
   const r = await apiCall(`/api/agent/orders/${encodeURIComponent(orderId)}/action-request`, { method: 'POST', apiKey: cred.token, body })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks order_action_request. Run webaz_pair action="request" bundle="fulfillment_agent", have the human approve, then retry.' }
   return r

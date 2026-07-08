@@ -41,9 +41,17 @@ db.prepare(`INSERT INTO orders (id,buyer_id,seller_id,product_id,status,unit_pri
   VALUES ('ord_paid','buyer1','seller1','prd_x','paid',30,30,30,'escrow','123 SECRET St · recipient Jane · +6591234567',?,?)`).run(FUT, FUT)
 db.prepare(`INSERT INTO orders (id,buyer_id,seller_id,product_id,status,unit_price,total_amount,escrow_amount,payment_rail,shipping_address,ship_deadline)
   VALUES ('ord_acc','buyer1','seller1','prd_y','accepted',40,40,40,'escrow','999 SECRET Rd · Bob · +6598887777',?)`).run(FUT)
+db.prepare(`INSERT INTO orders (id,buyer_id,seller_id,product_id,status,unit_price,total_amount,escrow_amount,payment_rail,accept_deadline,ship_deadline)
+  VALUES ('ord_paid2','buyer1','seller1','prd_x','paid',30,30,30,'escrow',?,?)`).run(FUT, FUT)
+db.prepare(`INSERT INTO orders (id,buyer_id,seller_id,product_id,status,unit_price,total_amount,escrow_amount,payment_rail,ship_deadline)
+  VALUES ('ord_acc2','buyer1','seller1','prd_y','accepted',40,40,40,'escrow',?)`).run(FUT)
 
 const auth = (_req: express.Request, res: express.Response) => { res.status(401).json({ error: 'no human auth in this test' }); return null }
 const app = express(); app.use(express.json())
+// spy: capture the exact body the MCP wrapper sends to the action-request endpoint (proves the
+//   CLIENT-side allowlist, not just the backend sanitize).
+let lastActionBody: Record<string, unknown> | null = null
+app.use((req, _res, next) => { if (req.method === 'POST' && req.path.endsWith('/action-request')) lastActionBody = req.body as Record<string, unknown>; next() })
 registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true })
 const server = app.listen(0)
 const port = (server.address() as AddressInfo).port
@@ -79,7 +87,7 @@ try {
   useCred('grt_both', 'gtk_both', ['seller_orders_read_minimal', 'order_action_request'])
   { const r = await mcp.handleGetAgentOrder({})   // list
     const orders = r.orders as Array<Record<string, unknown>> | undefined
-    ok('GET-2 list → returns minimal orders', Array.isArray(orders) && orders.length === 2, JSON.stringify(r).slice(0, 200))
+    ok('GET-2 list → returns minimal orders', Array.isArray(orders) && orders.length === 4, JSON.stringify(r).slice(0, 200))
     const keys = orders ? Object.keys(orders[0]).sort().join(',') : ''
     ok('GET-3 each order = exactly 6 minimal keys (no reshape/extra)', keys === 'amount,deadline,item_ref,next_actor,order_id,status', keys)
     ok('GET-4 list output carries NO PII', !PII.test(JSON.stringify(r))) }
@@ -109,6 +117,16 @@ try {
   { const r = await mcp.handleOrderActionRequest({ order_id: 'ord_acc', action: 'ship', action_params: { tracking: 'SF12345678', evidence_ref: 'ev1' } })
     ok('ACT-6 ship SUBMIT (tracking+evidence) → request_id', typeof r.request_id === 'string', JSON.stringify(r).slice(0, 200))
     ok('ACT-7 order NOT executed (still accepted)', orderStatus('ord_acc') === 'accepted') }
+
+  // ── client-side forward-allowlist: PII in action_params NEVER reaches the outbound request body ──
+  { const r = await mcp.handleOrderActionRequest({ order_id: 'ord_acc2', action: 'ship', action_params: { tracking: 'SF99999999', evidence_ref: 'ev2', shipping_address: '42 SECRET Ln', recipient: 'Alice', phone: '+6591234567' } })
+    ok('ACT-10 client allowlist: ship submit still ok (valid fields kept)', typeof r.request_id === 'string', JSON.stringify(r).slice(0, 160))
+    ok('ACT-11 client allowlist: outbound body carried ONLY tracking+evidence_ref, zero PII',
+      !!lastActionBody && Object.keys((lastActionBody.action_params ?? {}) as object).sort().join(',') === 'evidence_ref,tracking' && !PII.test(JSON.stringify(lastActionBody))) }
+  { lastActionBody = null
+    await mcp.handleOrderActionRequest({ order_id: 'ord_paid2', action: 'accept', action_params: { note: 'x', shipping_address: '7 SECRET Ave' } })
+    ok('ACT-12 client allowlist: accept forwards NO action_params (all dropped, incl PII)',
+      !!lastActionBody && (lastActionBody.action_params === undefined || Object.keys((lastActionBody.action_params ?? {}) as object).length === 0)) }
 
   { const r = await mcp.handleOrderActionRequest({ order_id: 'ord_paid', action: 'decline' })
     ok('ACT-8 decline → passthrough DECLINE_NOT_DELEGATED (tool adds no bypass)', r.error_code === 'DECLINE_NOT_DELEGATED') }
