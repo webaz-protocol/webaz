@@ -7076,6 +7076,7 @@ const _EN = {
   '不接受,撤单': 'Reject & withdraw',
   '等待卖家核实物流并报价运费;确认报价前你无需付款。': 'Waiting for the seller to verify logistics and quote shipping; you pay nothing before confirming the quote.',
   '等待卖家确认接单;接单后你才会看到收款方式并进入付款。': 'Waiting for the seller to accept; payment details appear only after acceptance.',
+  '订单已提交,等待卖家接单': 'Order placed — waiting for the seller to accept',
   '撤回订单': 'Withdraw order',
   '响应截止': 'Respond by',
   '超时自动取消,无人担责': 'auto-cancels on timeout, no fault to anyone',

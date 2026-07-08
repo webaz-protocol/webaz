@@ -20,13 +20,17 @@
 import type Database from 'better-sqlite3'
 import { requireBothDisclosuresAcked } from '../direct-pay-disclosures.js'
 
-/** 买家自视角:未 both-acked 的 direct_p2p 订单,删收款目标(instruction 原文 + 账号快照 qr_ref)。就地改 o。
- *  手动接单(v16):pending_accept 阶段【状态门】无条件遮蔽 —— 卖家还没确认能发货,买家不该拿到任何收款信息
- *  (哪怕已 ack 披露;时序门=非托管唯一付款风控,接单后才起表付款窗)。 */
+/** 买家自视角:未 both-acked 的 direct_p2p 订单,删收款目标。就地改 o。
+ *  手动接单(v16):pending_accept 阶段【状态门】无条件遮蔽 —— 卖家还没确认能发货,买家【不该拿到任何收款信息】,
+ *  故整块 account_snapshot(连 method/currency/label 非敏感元数据)+ instruction 一并删除,响应零收款目标
+ *  (时序门=非托管唯一付款风控,接单→direct_pay_window 才起付款窗;哪怕已 ack 披露也遮蔽)。
+ *  已接单但未 both-acked:只删 instruction 原文 + 剥 qr_ref,保留买家结账时已选过的非敏感元数据。 */
 export function redactUnackedDirectPayTarget(db: Database.Database, o: Record<string, unknown>, userId: string): void {
   if (o.payment_rail !== 'direct_p2p' || o.buyer_id !== userId) return
-  if (o.status !== 'pending_accept' && requireBothDisclosuresAcked(db, o.id as string).ok) return
+  const preAccept = o.status === 'pending_accept'
+  if (!preAccept && requireBothDisclosuresAcked(db, o.id as string).ok) return
   delete o.direct_pay_instruction_snapshot
+  if (preAccept) { delete o.direct_pay_account_snapshot; return }   // 接单前:零收款目标(元数据也删)
   if (o.direct_pay_account_snapshot != null) {
     try { const s = JSON.parse(o.direct_pay_account_snapshot as string); delete s.qr_ref; o.direct_pay_account_snapshot = JSON.stringify(s) }
     catch { delete o.direct_pay_account_snapshot }
