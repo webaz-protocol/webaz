@@ -183,7 +183,7 @@ export function checkTimeouts(db: Database.Database): {
   `).all() as Order[]
 
   for (const order of activeOrders) {
-    const transitionKey = findActiveDeadlineTransition(order, now)
+    const transitionKey = findActiveDeadlineTransition(db, order, now)
     if (!transitionKey) continue
 
     const [, autoFaultState] = transitionKey
@@ -535,6 +535,7 @@ export function settleDeclinedNoFault(db: Database.Database, orderId: string): v
 
 /** 找出当前订单超时的转移（如果有） */
 function findActiveDeadlineTransition(
+  db: Database.Database,
   order: Order,
   now: string
 ): [string, OrderStatus] | null {
@@ -546,12 +547,19 @@ function findActiveDeadlineTransition(
       rule.autoFaultState
   )
 
+  // deadline 到期判定统一走 SQLite datetime() 归一化(而非 JS 字符串直比):
+  //   deadline 有两种存储格式 —— escrow 建单走 addHours→ISO('YYYY-MM-DDTHH:MM:SS.sssZ','T'),
+  //   直付路径(如 ship_deadline @ orders-action)走 datetime('now',...)→空格格式('YYYY-MM-DD HH:MM:SS')。
+  //   `now`(new Date().toISOString())带 'T'。JS 字符串比较 now>deadline 对【空格格式】deadline 在同一日历日会因
+  //   'T'(0x54) > ' '(0x20) 误判为已过 → 最多提前 ~24h 自动判责(如卖家被提前判 fault_seller 未发货)。
+  //   本函数此前是仓库里唯一未归一化的 deadline 比较点;改为 datetime()<datetime(),与本文件 RFC-007 块
+  //   (checkTimeouts 内)+ order-action-exec.ts SLA 的既有约定一致,对 ISO/空格两种格式都正确。
   for (const [, rule] of relevantRules) {
     const deadlineField = rule.deadlineField!
     const deadline = order[deadlineField] as string | null
-    if (deadline && now > deadline && rule.autoFaultState) {
-      return [deadlineField, rule.autoFaultState]
-    }
+    if (!deadline || !rule.autoFaultState) continue
+    const expired = (db.prepare('SELECT datetime(?) < datetime(?) AS e').get(deadline, now) as { e: number }).e === 1
+    if (expired) return [deadlineField, rule.autoFaultState]
   }
 
   return null

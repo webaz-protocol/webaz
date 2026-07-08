@@ -138,6 +138,7 @@
     "test:deposit-rails": "tsx scripts/test-deposit-rails.ts",
     "test:direct-pay-timeouts": "tsx scripts/test-direct-pay-timeouts.ts",
     "test:direct-pay-actions": "tsx scripts/test-direct-pay-actions.ts",
+    "test:deadline-compare-normalize": "tsx scripts/test-deadline-compare-normalize.ts",
     "test:direct-pay-eligibility": "tsx scripts/test-direct-pay-eligibility.ts",
     "test:direct-receive-deposits": "tsx scripts/test-direct-receive-deposits.ts",
     "test:direct-receive-accounts": "tsx scripts/test-direct-receive-accounts.ts",
