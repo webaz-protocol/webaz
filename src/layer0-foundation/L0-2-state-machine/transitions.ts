@@ -13,6 +13,7 @@ export type OrderStatus =
   | 'picked_up'    // 物流已揽收
   | 'in_transit'   // 运输中
   | 'delivered'    // 物流已投递
+  | 'delivery_failed'  // PR-B:卖家/物流举证"未派送成功"(送到快照地址退回/拒收);fault-neutral,证据裁决
   | 'confirmed'    // 买家确认收货 → 触发结算
   | 'disputed'     // 争议中
   | 'completed'    // 交易完成（无争议自然完成 — 旧）
@@ -372,6 +373,46 @@ export const VALID_TRANSITIONS: Record<string, Transition> = {
     description: '物流超时未投递，标记物流违约'
   },
 
+  // ── PR-B:undeliverable/拒收收口(fault-neutral + 证据裁决)────────────────────────────
+  //   卖家/物流举证"未派送成功"(送到订单快照 shipping_address 却退回/拒收)→ delivery_failed。
+  //   证据锚 = 快照地址(买家自己的输入):发到该地址退回=买家责任;发到别处/无证据=卖家责任。
+  //   绝不自动判任何一方:卖家【不作为】仍走既有 delivery_deadline→fault_logistics(卖家兜底),不翻转成自动判买家。
+  'shipped→delivery_failed': {
+    allowedRoles: ['seller', 'logistics'],
+    requiresEvidence: true,
+    evidenceHint: '承运商"无法投递/拒收"通知 或 投递尝试证明,须引用订单 on-file 快照收货地址',
+    description: '卖家/物流举证未派送成功(发到快照地址退回/拒收)→ 证据裁决,买家可在窗口内争议'
+  },
+  'picked_up→delivery_failed': {
+    allowedRoles: ['seller', 'logistics'],
+    requiresEvidence: true,
+    evidenceHint: '承运商"无法投递/拒收"通知 或 投递尝试证明,须引用订单 on-file 快照收货地址',
+    description: '卖家/物流举证未派送成功 → 证据裁决'
+  },
+  'in_transit→delivery_failed': {
+    allowedRoles: ['seller', 'logistics'],
+    requiresEvidence: true,
+    evidenceHint: '承运商"无法投递/拒收"通知 或 投递尝试证明,须引用订单 on-file 快照收货地址',
+    description: '卖家/物流举证未派送成功 → 证据裁决'
+  },
+  // 买家窗口内不争议 → 落定买家责任(证据未被反驳)。锚 delivery_failed_deadline(PR-B1 列,ISO)。
+  'delivery_failed→fault_buyer': {
+    allowedRoles: ['system'],
+    deadlineField: 'delivery_failed_deadline',
+    requiresEvidence: false,
+    autoFaultState: 'fault_buyer',
+    faultParty: 'buyer',
+    description: 'PR-B:买家未在窗口内争议 → 未派送成功落定为买家责任(direct_p2p=仅声誉;escrow=B3 成本扣除)'
+  },
+  // 买家反证(卖家发错/未发)→ 进仲裁(复用现有 dispute/arbitration,三方按证据定责)。
+  //   B2 仅 buyer 反证;卖家"主张货丢/弃货求全额没收"依赖 escrow 没收机制,属 B3,届时再放开 seller。
+  'delivery_failed→disputed': {
+    allowedRoles: ['buyer'],
+    requiresEvidence: true,
+    evidenceHint: '证明卖家发到错误地址/未发货(对比订单快照收货地址)',
+    description: 'PR-B:买家争议未派送成功裁定 → 人工仲裁,按证据定责(卖家货丢主张=B3)'
+  },
+
   // ── RFC-007 stage 5：客观拒单仲裁翻案 ─────────────────────────────
   //   临时判责(fault_seller + decline_objective_pending)经【人工仲裁】认定客观无责 → declined_nofault。
   'fault_seller→declined_nofault': {
@@ -412,6 +453,7 @@ export const CURRENT_RESPONSIBLE: Record<string, UserRole> = {
   picked_up:  'logistics',   // 等物流投递
   in_transit: 'logistics',   // 等物流投递
   delivered:  'buyer',       // 等买家确认
+  delivery_failed: 'buyer',  // PR-B:等买家在窗口内争议(否则落定买家责任)
   disputed:   'arbitrator',  // 等仲裁处理
   direct_pay_window:          'buyer',   // Rail1: 等买家付款并标记
   direct_expired_unconfirmed: 'buyer',   // Rail1: 等买家确认未付 或 升级争议
@@ -438,6 +480,7 @@ export const ORDER_STATE_MEANINGS: Record<OrderStatus, { zh: string; en: string 
   picked_up:           { zh: '物流已揽收', en: 'picked up by logistics' },
   in_transit:          { zh: '运输中', en: 'in transit' },
   delivered:           { zh: '已投递,等待买家确认', en: 'delivered, awaiting buyer confirmation' },
+  delivery_failed:     { zh: 'PR-B:卖家/物流举证未派送成功(退回/拒收),等买家在窗口内争议;不争议则落定买家责任', en: 'PR-B: seller/logistics evidenced failed delivery (returned/refused), awaiting buyer contest; no contest → buyer fault' },
   confirmed:           { zh: '买家确认收货 → 触发结算', en: 'buyer confirmed → triggers settlement' },
   disputed:            { zh: '争议中,等待人工仲裁', en: 'in dispute, awaiting human arbitration' },
   completed:           { zh: '交易完成,资金已分配(终态)', en: 'completed, funds settled (terminal)' },

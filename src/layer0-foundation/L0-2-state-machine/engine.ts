@@ -352,10 +352,12 @@ export function settleFault(db: Database.Database, orderId: string, faultState: 
     //   【印钱 + 冤枉卖家】。信誉处罚由 cron 侧 recordViolationReputation(timeout_violation)另记,不受此早退影响;
     //   争议路径早已非托管感知(disputes-write.ts ncRail 门),此处补齐【超时/settleFault】这条被漏掉的路径。
     if (order.payment_rail === 'direct_p2p') {
-      // 库存回补仅【发货前】fault(fault_seller/fault_buyer):post-ship 的 fault_logistics 绝不回补【已发出】的货。
-      //   今天直付不设 pickup/delivery deadline → fault_logistics 不可达;此显式门把"发货前"从隐式不变量变成守卫,
-      //   防未来给直付加 SLA 后对已发货单幻影回补。按 create 扣减口径回补 quantity(非 +1)。
-      if (faultState !== 'fault_logistics') {
+      // 库存回补仅【发货前】fault:post-ship 绝不回补【已发出】的货。两条 post-ship 排除:
+      //   ① fault_logistics(直付今天不设 pickup/delivery deadline,不可达;显式守卫防未来加 SLA 后幻影回补)。
+      //   ② PR-B undeliverable:fault_buyer 且 delivery_failed_deadline 已置(经 delivery_failed 而来=货已发出)。
+      //      —— 区分【发货前】created→fault_buyer(该列 NULL,正常回补)与【发货后】delivery_failed→fault_buyer(不回补)。
+      //   按 create 扣减口径回补 quantity(非 +1)。
+      if (faultState !== 'fault_logistics' && !order.delivery_failed_deadline) {
         const qty = Math.max(1, Number(order.quantity) || 1)
         if (!isSecondhand) db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(qty, order.product_id as string)
         else { try { db.prepare("UPDATE secondhand_items SET status = 'available', updated_at = datetime('now') WHERE id = ?").run(order.product_id as string) } catch { /* 二手回补 best-effort */ } }
@@ -511,7 +513,11 @@ export function settleFault(db: Database.Database, orderId: string, faultState: 
         // TODO（Phase 2）：logistics 接入 stake/insurance/deposit 后，从 logistics 池扣给 seller 补货款
       }
     } else if (faultState === 'fault_buyer') {
-      // created→fault_buyer：escrow 未锁，仅库存回退
+      // PR-B 防御(defense-in-depth):escrow 轨的 undeliverable(delivery_failed_deadline 已置)= post-ship 买家责任,
+      //   资金收口(成本扣除/退余款)在 PR-B3。B2 不可达(mark_undeliverable 门控拒 escrow)——此处 fail-loud,
+      //   防未来若门控回归导致【静默锁死 escrow + 错误回补已发出的货】。抛错→checkTimeouts 记录并留 fault_buyer 不 completed。
+      if (order.delivery_failed_deadline) throw new Error('escrow undeliverable(delivery_failed)结算未上线(见 PR-B3);拒绝在 B2 mis-settle 以免锁死 escrow')
+      // created→fault_buyer：escrow 未锁，仅库存回退(pre-ship)
       if (!isSecondhand) db.prepare('UPDATE products SET stock = stock + 1 WHERE id = ?').run(order.product_id as string)
       if (isSecondhand) {
         try { db.prepare("UPDATE secondhand_items SET status = 'available', updated_at = datetime('now') WHERE id = ?").run(order.product_id as string) } catch {}
@@ -611,6 +617,7 @@ export function getActiveDeadline(order: Order, db?: Database.Database) {
     picked_up: 'delivery_deadline',
     in_transit: 'delivery_deadline',
     delivered: 'confirm_deadline',
+    delivery_failed: 'delivery_failed_deadline',   // PR-B:买家争议窗口(不争议→fault_buyer)
   }
   // 2026-05-31 修：self-fulfill(logistics_id 空)无三方揽收环节,shipped/picked_up/in_transit
   // 全部直接走 delivery_deadline,跟 CURRENT_RESPONSIBLE_SELF_FULFILL 对齐(都归 seller)。
