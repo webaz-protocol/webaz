@@ -28,7 +28,7 @@ let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push('✗ ' + n) } }
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
 const keys = (o: object) => JSON.stringify(Object.keys(o).sort())
-const SIX = JSON.stringify(['amount', 'deadline', 'item_ref', 'next_actor', 'order_id', 'status'])
+const SEVEN = JSON.stringify(['amount', 'deadline', 'dest_country', 'item_ref', 'next_actor', 'order_id', 'status'])
 
 try {
   // ══ A. scope 分类 ══
@@ -48,13 +48,18 @@ try {
 
   // ══ C. minimalSellerOrderView ALLOWLIST ══
   const piiRow = {
-    id: 'ord_1', status: 'paid', total_amount: 30, product_id: 'prd_x', logistics_id: null, accept_deadline: '2026-07-10 00:00:00',
+    id: 'ord_1', status: 'paid', total_amount: 30, product_id: 'prd_x', logistics_id: null, accept_deadline: '2026-07-10 00:00:00', ship_to_region: 'SG',
     shipping_address: '123 Secret St Apt4', notes: 'buyer note', gift_recipient_name: 'Alice', gift_recipient_phone: '99988', recipient_code: 'PR-ZZZZ', buyer_name: 'Bob',
   }
   const view = minimalSellerOrderView(piiRow)
-  ok('C1 输出恰 6 键', keys(view) === SIX)
-  ok('C2 六字段值正确(next_actor=seller/deadline/amount/item_ref)', view.order_id === 'ord_1' && view.status === 'paid' && view.next_actor === 'seller' && view.deadline === '2026-07-10 00:00:00' && view.amount === 30 && view.item_ref === 'prd_x')
-  ok('C3 输出无任何 PII', !/123 Secret|buyer note|Alice|99988|PR-ZZZZ|Bob|shipping_address|gift_recipient|recipient_code/.test(JSON.stringify(view)))
+  ok('C1 输出恰 7 键(含 dest_country)', keys(view) === SEVEN)
+  ok('C2 七字段值正确(含 dest_country=ship_to_region)', view.order_id === 'ord_1' && view.status === 'paid' && view.next_actor === 'seller' && view.deadline === '2026-07-10 00:00:00' && view.amount === 30 && view.item_ref === 'prd_x' && view.dest_country === 'SG')
+  ok('C3 输出无任何 PII(含街道/门牌;dest_country 只是国家级 SG)', !/123 Secret|Apt4|buyer note|Alice|99988|PR-ZZZZ|Bob|shipping_address|gift_recipient|recipient_code/.test(JSON.stringify(view)))
+  // PR-B dest_country 边界:'*'(通配)/缺失/空 → null(绝不暴露 wildcard 或从自由文本反推)
+  ok('C4 ship_to_region="*" → dest_country null', minimalSellerOrderView({ ...piiRow, ship_to_region: '*' }).dest_country === null)
+  ok('C5 ship_to_region 缺失 → dest_country null', minimalSellerOrderView({ ...piiRow, ship_to_region: undefined }).dest_country === null)
+  ok('C6 dest_country 只来自结构化 ship_to_region,不解析 shipping_address 自由文本',
+    minimalSellerOrderView({ ...piiRow, ship_to_region: undefined, shipping_address: 'Country: Singapore, 123 Secret St' }).dest_country === null)
 
   // ══ D. SELECT 白名单无 PII 列 ══
   const piiCols = ['shipping_address', 'notes', 'gift_recipient_name', 'gift_recipient_phone', 'gift_message', 'recipient_code', 'buyer_name']
@@ -64,8 +69,8 @@ try {
   const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
   initUserModerationSchema(db); applyWebazRuntimeSchema(db)
   db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller1','S','seller','k_s'),('buyer1','B','buyer','k_b')").run()
-  db.prepare(`INSERT INTO orders (id,buyer_id,seller_id,product_id,status,unit_price,total_amount,escrow_amount,payment_rail,shipping_address,accept_deadline)
-    VALUES ('ord_1','buyer1','seller1','prd_x','paid',30,30,30,'escrow','123 Secret St Apt4','2026-07-10 00:00:00')`).run()
+  db.prepare(`INSERT INTO orders (id,buyer_id,seller_id,product_id,status,unit_price,total_amount,escrow_amount,payment_rail,shipping_address,ship_to_region,accept_deadline)
+    VALUES ('ord_1','buyer1','seller1','prd_x','paid',30,30,30,'escrow','123 Secret St Apt4','SG','2026-07-10 00:00:00')`).run()
 
   const auth = (_req: express.Request, res: express.Response) => { res.status(401).json({ error: 'no human auth' }); return null }
   const app = express(); app.use(express.json())
@@ -81,7 +86,8 @@ try {
   const list = await get('/api/agent/orders', 'gtk_ok')
   const orders = list.body.orders as Array<Record<string, unknown>> | undefined
   ok('E1 GET /api/agent/orders 200 + 该卖家 1 单', list.status === 200 && Array.isArray(orders) && orders.length === 1)
-  ok('E2 list 项恰 6 字段', !!orders && keys(orders[0]) === SIX)
+  ok('E2 list 项恰 7 字段(含 dest_country)', !!orders && keys(orders[0]) === SEVEN)
+  ok('E2b dest_country 经路由投影出来 = SG(structured ship_to_region)', !!orders && orders[0].dest_country === 'SG')
   ok('E3 list 响应无买家地址(I6)', !JSON.stringify(list.body).includes('Secret'))
   const det = await get('/api/agent/orders/ord_1', 'gtk_ok')
   ok('E4 detail 200 + order_id 对 + 无地址', det.status === 200 && (det.body.order as Record<string, unknown>)?.order_id === 'ord_1' && !JSON.stringify(det.body).includes('Secret'))

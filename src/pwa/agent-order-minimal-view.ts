@@ -8,7 +8,13 @@
  * next_actor / deadline 复用既有状态机计算(与人类订单视图同源,不 drift):
  *   next_actor = CURRENT_RESPONSIBLE[status](self-fulfill 用 CURRENT_RESPONSIBLE_SELF_FULFILL)
  *   deadline   = getActiveDeadline(order).deadline
- * PR1 不含任何执行/写入;地址揭示(D1 address_reveal_policy)在 PR2 接入,PR1 恒不含地址。
+ *
+ * PR-B(dest_country,第 7 键):粗粒度目的地【国家/平台区】,让 agent 在 accept 前判断货源能否发到买家所在地。
+ *   来源【只用结构化列 ship_to_region】(schema 注明"结构化,非自由文本地址";ISO alpha-2 或平台区码;'*'/缺 → null)。
+ *   【绝不解析 shipping_address 自由文本】—— 保持 allowlist 构造(不碰 detail/门牌/邮编),I6 不退化。
+ *   一级行政区(dest_region)/邮编前缀(dest_postal_prefix)【故意不做】:数据模型无结构化省/邮编列,只在自由文本
+ *   detail 里,解析=违 allowlist 原则 + 稀疏区反推风险 → 需先上游结构化改造,不在本 PR。
+ * 无任何执行/写入;完整地址揭示(after_accept)仍未实现,本 PR 不引入。
  */
 import type Database from 'better-sqlite3'
 import { getActiveDeadline } from '../layer0-foundation/L0-2-state-machine/engine.js'
@@ -21,6 +27,7 @@ export interface MinimalSellerOrderView {
   deadline: string | null     // 当前活跃截止(getActiveDeadline().deadline)
   amount: number | null       // total_amount
   item_ref: string | null     // product_id
+  dest_country: string | null // 粗粒度目的地(结构化 ship_to_region;ISO alpha-2/平台区;'*'或缺→null)。绝不含街道/门牌/邮编
 }
 
 /** 调用方须只 SELECT 非 PII 列:id, status, total_amount, product_id, logistics_id, 及各 *_deadline 列。 */
@@ -37,6 +44,8 @@ export function minimalSellerOrderView(order: Record<string, unknown>, db?: Data
     deadline,
     amount: order.total_amount == null ? null : Number(order.total_amount),
     item_ref: order.product_id == null ? null : String(order.product_id),
+    // 只取结构化 ship_to_region;'*'(通配)与空/缺一律 null。不解析 shipping_address 自由文本(守 allowlist)。
+    dest_country: (order.ship_to_region == null || order.ship_to_region === '*' || String(order.ship_to_region).trim() === '') ? null : String(order.ship_to_region),
   }
 }
 
@@ -45,4 +54,5 @@ export const MINIMAL_ORDER_COLUMNS = [
   'id', 'status', 'total_amount', 'product_id', 'logistics_id',
   'pending_accept_deadline', 'pay_deadline', 'accept_deadline', 'ship_deadline',
   'pickup_deadline', 'delivery_deadline', 'confirm_deadline',
+  'ship_to_region',   // PR-B 粗粒度目的地(结构化列,schema 注明"非自由文本地址")→ dest_country
 ] as const

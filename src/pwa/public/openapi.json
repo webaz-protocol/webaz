@@ -2758,7 +2758,7 @@
     },
     "/api/agent/orders": {
       "get": {
-        "summary": "买家地址/联系/gift_recipient 连取都不取(I6)。纯只读,无任何执行(order_action_request 在 PR2/PR3 才有提交/执行)。",
+        "summary": "纯只读,无任何执行(order_action_request 在 PR2/PR3 才有提交/执行)。",
         "tags": [
           "order"
         ],
