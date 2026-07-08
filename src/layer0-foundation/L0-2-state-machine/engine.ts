@@ -314,7 +314,9 @@ export function getOrderStatus(db: Database.Database, orderId: string) {
     history,
     currentResponsible,
     activeDeadline,
-    isOverdue: activeDeadline ? new Date() > new Date(activeDeadline.deadline) : false,
+    // isOverdue 与 checkTimeouts 判定同源:走 SQLite datetime() 归一化。旧写法 new Date()>new Date(deadline) 对
+    //   空格格式 deadline 会被 V8 按【本地时区】解析 → 展示"是否超时"与执法判定分叉(尤其直付 ship_deadline)。
+    isOverdue: activeDeadline ? (db.prepare('SELECT datetime(?) < datetime(?) AS e').get(activeDeadline.deadline, new Date().toISOString()) as { e: number }).e === 1 : false,
     fulfillmentPhase,
     responsibleContext,
   }
@@ -583,11 +585,12 @@ function findActiveDeadlineTransition(
   //   'T'(0x54) > ' '(0x20) 误判为已过 → 最多提前 ~24h 自动判责(如卖家被提前判 fault_seller 未发货)。
   //   本函数此前是仓库里唯一未归一化的 deadline 比较点;改为 datetime()<datetime(),与本文件 RFC-007 块
   //   (checkTimeouts 内)+ order-action-exec.ts SLA 的既有约定一致,对 ISO/空格两种格式都正确。
+  const expiryStmt = db.prepare('SELECT datetime(?) < datetime(?) AS e')   // 预编译一次(而非每规则重编译)
   for (const [, rule] of relevantRules) {
     const deadlineField = rule.deadlineField!
     const deadline = order[deadlineField] as string | null
     if (!deadline || !rule.autoFaultState) continue
-    const expired = (db.prepare('SELECT datetime(?) < datetime(?) AS e').get(deadline, now) as { e: number }).e === 1
+    const expired = (expiryStmt.get(deadline, now) as { e: number }).e === 1
     if (expired) return [deadlineField, rule.autoFaultState]
   }
 
