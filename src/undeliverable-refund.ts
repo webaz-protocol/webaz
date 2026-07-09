@@ -56,15 +56,23 @@ export function computeUndeliverableRefund(i: UndeliverableRefundInput): Undeliv
     return { mode: i.mode, refundBuyerU: totalU, toSellerU: 0, outboundU: 0, returnU: 0, restockU: 0 }
   }
   if (i.mode === 'goods_lost_forfeit') {
-    // 仅仲裁裁定货丢/弃货可达:全额归卖家(货没了,买家违约方承担全损)
+    // 仅仲裁裁定货丢/弃货可达:全额归卖家(货没了,买家违约方承担全损)。
+    //   ⚠️ B3b 接线铁律:本 mode 只允许从 arbitration 裁决路径调用,任何自动/超时路径传它=违反"禁全额没收"。
     return { mode: i.mode, refundBuyerU: 0, toSellerU: totalU, outboundU: 0, returnU: 0, restockU: 0 }
   }
+  // 钱路 fail-loud:未知 mode(JS 调用方 typo/未来枚举)绝不静默走成本扣除 —— 抛错回滚,不误扣买家。
+  if (i.mode !== 'goods_returned') throw new Error(`computeUndeliverableRefund: unknown mode ${String(i.mode)}`)
 
   // ── goods_returned:成本扣除(护栏 A 全 clamp)──────────────────────────────────────
   const outboundU = clamp(nonNeg(i.outboundShippingU), 0, totalU)                              // 去程:已在 total 内,只扣一次
   const priceU = totalU - outboundU                                                            // 货价(不含运费)= restocking 基数
-  const returnU = clamp(nonNeg(i.sellerDeclaredReturnU), 0,                                    // 退程:实际申报,帽 total×rate(双帽)
-    mulRate(totalU, safeRate(i.returnShippingMaxRate, RETURN_SHIPPING_HARD_CAP_RATE)))
+  // 退程双锚(审计 F1,堵"申报灌水在 total% 帽内仍获利"的不牟利漏洞):
+  //   ① param 帽 total×rate(硬帽 0.30 兜底);② 有去程快照时再锚去程实价(同路线对称,退程≤去程;
+  //   退回=同一包裹同一路线,carrier 退件价通常≤原单)。取两帽最小。无去程快照(旧单/面交)只有 ① 生效。
+  //   卖家真实退程超锚的极端场景(如偏远地区)走仲裁主张,不在自动路径放宽。
+  const paramCapU = mulRate(totalU, safeRate(i.returnShippingMaxRate, RETURN_SHIPPING_HARD_CAP_RATE))
+  const returnCapU = outboundU > 0 ? Math.min(paramCapU, outboundU) : paramCapU
+  const returnU = clamp(nonNeg(i.sellerDeclaredReturnU), 0, returnCapU)
   const restockU = clamp(mulRate(priceU, safeRate(i.restockingFeeRate, RESTOCKING_HARD_CAP_RATE)), 0,
     mulRate(priceU, RESTOCKING_HARD_CAP_RATE))                                                 // restocking:基于 price,15% 硬帽
   const refundBuyerU = clamp(totalU - outboundU - returnU - restockU, 0, totalU)
