@@ -602,6 +602,12 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
 
     if (toStatus === 'disputed') {
       createDispute(db, req.params.id, user.id as string, notes || evidence_description || '买家发起争议', evidenceIds)
+      // PR-B3b(审计 F1):卖家货丢主张(return_pending 发起)打 dispute_type 标 —— checkDisputeTimeouts 据此
+      //   【排除】"被告沉默→自动判发起方胜"的通用规则(否则买家 48h 沉默 = 自动 release_seller 全额没收,
+      //   绕过"全额没收仅人工仲裁可达"铁律);超时兜底改中性 partial_refund(全退买家+全退质押,零罚没)。
+      if (fromStatus === 'return_pending') {
+        try { db.prepare("UPDATE disputes SET dispute_type = 'return_loss_claim' WHERE order_id = ? AND status = 'open'").run(req.params.id) } catch (e) { console.warn('[loss-claim tag]', (e as Error).message) }
+      }
       try { broadcastSystemEvent('dispute_open', '⚖', `争议发起 (订单 ${req.params.id})`, req.params.id) } catch {}
     }
     if (toStatus === 'completed') {

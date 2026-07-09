@@ -241,6 +241,7 @@ export function checkTimeouts(db: Database.Database, opts?: {
             settleFault(db, order.id, 'fault_buyer')   // direct_p2p 分支:零钱包 + G7 不回补 + settled_fault_at
             const r2 = transition(db, order.id, 'completed', systemUser.id, [], '系统自动执行处置')
             if (!r2.success) throw new Error(r2.error || 'completion transition failed')
+            recordUndeliverableFault(order.id)   // 回调在【事务内】(审计 F:commit 后回调抛错=声誉永久丢失,订单已进终态不再复扫;tx 内抛错→整体回滚→下轮重试)
           })()
           details.push({ orderId: order.id, action: `delivery_failed ⇒ 买家责任落定并收口(completed,direct_p2p 仅声誉)` })
         } else {
@@ -250,10 +251,10 @@ export function checkTimeouts(db: Database.Database, opts?: {
             const r1 = transition(db, order.id, 'return_pending', systemUser.id, [], '未派送成功·买家未在窗口内争议,责任落定;escrow 持有等货物返还')
             if (!r1.success) throw new Error(r1.error || 'return_pending transition failed')
             db.prepare('UPDATE orders SET goods_return_deadline = ? WHERE id = ? AND goods_return_deadline IS NULL').run(grIso, order.id)   // I3:IS NULL 不重写
+            recordUndeliverableFault(order.id)   // 同上:声誉写与状态转移同一原子边界
           })()
           details.push({ orderId: order.id, action: `delivery_failed ⇒ 买家责任落定,escrow 持有等货物返还(return_pending)` })
         }
-        recordUndeliverableFault(order.id)   // 两轨统一:-20 undeliverable_buyer_fault(reputation-engine 按 delivery_failed_deadline 分流)
       } catch (e) {
         console.error(`[undeliverable finalize] order=${order.id}`, e)
       }
@@ -264,6 +265,10 @@ export function checkTimeouts(db: Database.Database, opts?: {
     //   settleUndeliverableEscrow('seller_silent_default') 在事务内:escrow 全额 → 买家 balance,卖家 0,
     //   退卖家 stake,盖 settled_fault_at;随后转 completed。任一步失败整体回滚回 return_pending 可重试。
     if (autoNextState === 'completed' && order.status === 'return_pending') {
+      // rail 守卫(审计 F2,防御性):direct_p2p 不可能进 return_pending(rail 分流只送 escrow);若经数据修复/
+      //   未来写入者误入,settle 硬门会抛错 → 每轮扫描重抛刷屏且永不收口。此处直接跳过 + 单行错误日志,
+      //   留待人工数据修复(不假装结算)。
+      if (order.payment_rail === 'direct_p2p') { console.error(`[return_pending sweep] 不可能状态:direct_p2p 订单 ${order.id} 处于 return_pending,跳过待人工修复`); continue }
       try {
         db.transaction(() => {
           settleUndeliverableEscrow(db, order.id, 'seller_silent_default')
