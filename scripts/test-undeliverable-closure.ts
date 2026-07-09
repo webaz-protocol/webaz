@@ -79,12 +79,12 @@ function call(orderId: string, body: Record<string, unknown>, uid?: string, role
 // 开启 rollout flag(其余用例)
 db.prepare("UPDATE protocol_params SET value='1' WHERE key='undeliverable_closure_enabled'").run()
 
-// ═══ U2:escrow 轨门控(B3 未上)→ 拒 ═══
+// ═══ U2:escrow 轨(B3b 起放行)→ 进 delivery_failed(资金收口细测在 test-undeliverable-escrow-closure)═══
 {
   const o = mkOrder('shipped', 'escrow')
-  const r = await call(o, { action: 'mark_undeliverable', evidence_description: '退回证明' }, 'seller1', 'seller')
-  ok('U2. escrow 轨 → 409 UNDELIVERABLE_ESCROW_PENDING(资金收口留 B3)', r.status === 409 && r.json.error_code === 'UNDELIVERABLE_ESCROW_PENDING', JSON.stringify(r))
-  ok('U2b. escrow 单未进 delivery_failed', status(o) === 'shipped')
+  const r = await call(o, { action: 'mark_undeliverable', evidence_description: '退回证明·快照地址' }, 'seller1', 'seller')
+  ok('U2. escrow 轨 mark_undeliverable → 200 delivery_failed(B3b 开门)', r.status === 200 && status(o) === 'delivery_failed', JSON.stringify(r))
+  ok('U2b. escrow 单也置争议窗口(ISO)', !!dfDeadline(o) && dfDeadline(o)!.includes('T'))
 }
 // ═══ U3:direct_p2p + 证据 → delivery_failed + 争议窗口(ISO,X=120h)═══
 {
@@ -100,22 +100,27 @@ db.prepare("UPDATE protocol_params SET value='1' WHERE key='undeliverable_closur
   const r = await call(o, { action: 'mark_undeliverable' }, 'seller1', 'seller')
   ok('U4. 无证据 → 409 UNDELIVERABLE_MARK_FAILED(requiresEvidence 拒),不进 delivery_failed', r.status === 409 && r.json.error_code === 'UNDELIVERABLE_MARK_FAILED' && status(o) === 'shipped', JSON.stringify(r))
 }
-// ═══ U5:窗口内不争议 → checkTimeouts 落定 fault_buyer→completed;direct_p2p 零资金零回补 + 幂等标记 ═══
+// ═══ U5:窗口内不争议(direct_p2p)→ checkTimeouts【回调分支】收口 fault_buyer→completed;零资金零回补 ═══
+//   B3b 起声誉=统一注入回调(单一发射点),detail 刻意不匹配 cron /→ (fault_\w+)/ 正则(防双记);无回调则跳过。
 {
   const o = mkOrder('shipped', 'direct_p2p')
   await call(o, { action: 'mark_undeliverable', evidence_description: '退回·快照地址' }, 'seller1', 'seller')
   db.prepare("UPDATE orders SET delivery_failed_deadline = datetime('now','-1 hours') WHERE id=?").run(o)   // 窗口已过
   const st0 = stockOf(); const b0 = wu('buyer1'); const s0 = wu('seller1')
-  const r5 = checkTimeouts(db)
+  // (a) 无回调 → 整个分支跳过,留 delivery_failed(声誉不丢)
+  checkTimeouts(db)
+  ok('U5-pre. 无 recordUndeliverableFault 回调 → 跳过(仍 delivery_failed,不静默丢声誉)', status(o) === 'delivery_failed', `status=${status(o)}`)
+  // (b) 带回调(镜像 runEnforcement/cron-enforcement 接线)→ 收口 + 回调发射一次
+  const repCalls: string[] = []
+  const r5 = checkTimeouts(db, { recordUndeliverableFault: (oid) => { repCalls.push(oid); recordViolationReputation(db, oid, 'fault_buyer') } })
   ok('U5. 逾期未争议 → fault_buyer 收口至 completed', status(o) === 'completed', `status=${status(o)}`)
   const eq = (a: ReturnType<typeof wu>, b: ReturnType<typeof wu>) => a.balance === b.balance && a.escrowed === b.escrowed && a.staked === b.staked && a.earned === b.earned && (a.fee_staked ?? 0) === (b.fee_staked ?? 0)
   ok('U5b. direct_p2p 零资金移动(D4:买卖双方全钱包字段不变)', eq(wu('buyer1'), b0) && eq(wu('seller1'), s0))
   ok('U5c. direct_p2p 已发出的货【不回补库存】(G7 post-ship + 已出库绝不自动回补)', stockOf() === st0, `before=${st0} after=${stockOf()}`)
   ok('U5d. settled_fault_at 幂等标记落库', !!(db.prepare('SELECT settled_fault_at FROM orders WHERE id=?').get(o) as { settled_fault_at?: string })?.settled_fault_at)
-  // U5e:声誉走【真实 cron 布线】—— 从 checkTimeouts detail 经 /→ (fault_\w+)/ 提取(非直接 hand-call),防 detail↔正则契约漂移导致 prod 零记录。
-  const det = r5.details.find(d => d.orderId === o); const m = det?.action.match(/→ (fault_\w+)/)
-  ok('U5e. checkTimeouts detail 命中 cron 正则 → fault_buyer(prod 布线守卫)', !!m && m[1] === 'fault_buyer', JSON.stringify(det))
-  recordViolationReputation(db, o, (m ? m[1] : 'fault_buyer'))
+  // U5e(反双记):detail 绝不匹配 cron 的 /→ (fault_\w+)/ —— 声誉只经回调这个单一发射点。
+  const det = r5.details.find(d => d.orderId === o)
+  ok('U5e. detail 不匹配 /→ (fault_\\w+)/(cron 正则零命中,防双记)+ 回调恰好发射一次', !!det && !det.action.match(/→ (fault_\w+)/) && repCalls.length === 1 && repCalls[0] === o, JSON.stringify({ det, repCalls }))
   const ev = repEvents('buyer1')
   ok('U5f. 买家声誉 = undeliverable_buyer_fault(-20),非超时违约(-40)', ev.length === 1 && ev[0].event_type === 'undeliverable_buyer_fault' && ev[0].points === -20, JSON.stringify(ev))
   ok('U5g. 违约计数 +1(isViolation 含 undeliverable_buyer_fault)', (db.prepare("SELECT violations FROM reputation_scores WHERE user_id='buyer1'").get() as { violations: number }).violations === 1)

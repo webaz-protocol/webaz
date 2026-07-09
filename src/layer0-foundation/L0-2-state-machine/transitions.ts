@@ -14,6 +14,7 @@ export type OrderStatus =
   | 'in_transit'   // 运输中
   | 'delivered'    // 物流已投递
   | 'delivery_failed'  // PR-B:卖家/物流举证"未派送成功"(送到快照地址退回/拒收);fault-neutral,证据裁决
+  | 'return_pending'   // PR-B3b:escrow 单买家责任已定,持有 escrow 等货物返还确认(卖家确认→成本扣除;超时→默认退买家;货丢→仲裁)
   | 'confirmed'    // 买家确认收货 → 触发结算
   | 'disputed'     // 争议中
   | 'completed'    // 交易完成（无争议自然完成 — 旧）
@@ -410,7 +411,32 @@ export const VALID_TRANSITIONS: Record<string, Transition> = {
     allowedRoles: ['buyer'],
     requiresEvidence: true,
     evidenceHint: '证明卖家发到错误地址/未发货(对比订单快照收货地址)',
-    description: 'PR-B:买家争议未派送成功裁定 → 人工仲裁,按证据定责(卖家货丢主张=B3)'
+    description: 'PR-B:买家争议未派送成功裁定 → 人工仲裁,按证据定责(卖家货丢主张走 return_pending→disputed)'
+  },
+  // ── PR-B3b:escrow 轨的货物返还持有态(护栏 B2)──────────────────────────────────────
+  //   escrow 在争议窗口过期时【不能】直接 fault_buyer 结算(货物去向未知,escrow 该退多少未定)→ 进
+  //   return_pending 持有:escrow 保持锁定,等三选一收口。direct_p2p 不经此态(无托管,B2 路径不变)。
+  'delivery_failed→return_pending': {
+    allowedRoles: ['system'],
+    requiresEvidence: false,
+    description: 'PR-B3b:escrow 单争议窗口过期(买家责任已定)→ 持有 escrow 等货物返还确认(卖家确认收货窗口 goods_return_deadline 起算)'
+  },
+  // 收口①卖家确认收货(带 return-tracking + 实际退程运费)→ 成本扣除结算;②窗口过期卖家未确认 → 默认
+  // 全款退买家(放弃扣除)。两者都在 checkTimeouts / confirm_return_received 的原子块内先结算再转移。
+  'return_pending→completed': {
+    allowedRoles: ['system'],
+    deadlineField: 'goods_return_deadline',
+    requiresEvidence: false,
+    autoFaultState: 'completed',   // 超时=默认退买家全款(非判责;checkTimeouts 专属分支处理,绝不走 settleFault)
+    faultParty: 'system',
+    description: 'PR-B3b:货物返还收口 → 结算(卖家确认=成本扣除;超时未确认=默认全款退买家)'
+  },
+  // 收口③卖家主张货丢/弃货 → 仲裁(裁 release_seller=全额归卖家;唯一可达全额没收的路径,绝非自动)。
+  'return_pending→disputed': {
+    allowedRoles: ['seller'],
+    requiresEvidence: true,
+    evidenceHint: '货丢/弃货主张:承运商遗失证明/退回件拒收记录等(仲裁裁定后才全额没收,自动路径永不没收)',
+    description: 'PR-B3b:卖家主张货丢/弃货 → 人工仲裁(release_seller=全额归卖家;买家可应诉)'
   },
 
   // ── RFC-007 stage 5：客观拒单仲裁翻案 ─────────────────────────────
@@ -454,6 +480,7 @@ export const CURRENT_RESPONSIBLE: Record<string, UserRole> = {
   in_transit: 'logistics',   // 等物流投递
   delivered:  'buyer',       // 等买家确认
   delivery_failed: 'buyer',  // PR-B:等买家在窗口内争议(否则落定买家责任)
+  return_pending: 'seller',  // PR-B3b:等卖家确认收到退回货物(超时=默认全款退买家)
   disputed:   'arbitrator',  // 等仲裁处理
   direct_pay_window:          'buyer',   // Rail1: 等买家付款并标记
   direct_expired_unconfirmed: 'buyer',   // Rail1: 等买家确认未付 或 升级争议
@@ -481,6 +508,7 @@ export const ORDER_STATE_MEANINGS: Record<OrderStatus, { zh: string; en: string 
   in_transit:          { zh: '运输中', en: 'in transit' },
   delivered:           { zh: '已投递,等待买家确认', en: 'delivered, awaiting buyer confirmation' },
   delivery_failed:     { zh: 'PR-B:卖家/物流举证未派送成功(退回/拒收),等买家在窗口内争议;不争议则落定买家责任', en: 'PR-B: seller/logistics evidenced failed delivery (returned/refused), awaiting buyer contest; no contest → buyer fault' },
+  return_pending:      { zh: 'PR-B3b:escrow 单买家责任已定,escrow 保持锁定等货物返还;卖家确认收货→成本扣除退余款,超时未确认→默认全款退买家,货丢主张→仲裁', en: 'PR-B3b: buyer fault established on escrow order; escrow held pending goods return — seller confirms receipt → cost-deducted refund; seller silent past window → full refund to buyer; loss claim → arbitration' },
   confirmed:           { zh: '买家确认收货 → 触发结算', en: 'buyer confirmed → triggers settlement' },
   disputed:            { zh: '争议中,等待人工仲裁', en: 'in dispute, awaiting human arbitration' },
   completed:           { zh: '交易完成,资金已分配(终态)', en: 'completed, funds settled (terminal)' },

@@ -7777,7 +7777,7 @@ const ENFORCE_INTERVAL_MS = 5 * 60 * 1000   // 每 5 分钟扫描一次
 
 function runEnforcement() {
   try {
-    const orderResult   = checkTimeouts(db, { settleConfirmed: settleOrder })   // P1:送达后买家逾期未确认 → settleOrder 收口(两轨),绝不 settleFault('confirmed')
+    const orderResult   = checkTimeouts(db, { settleConfirmed: settleOrder, recordUndeliverableFault: (oid: string) => recordViolationReputation(db, oid, 'fault_buyer') })   // P1:逾期自动确认走 settleOrder;PR-B3b:undeliverable 买家责任落定的声誉统一由此回调发射(detail 不匹配下方 fault_ 正则,不双记)
     const disputeResult = checkDisputeTimeouts(db)
 
     if (orderResult.processed > 0) {

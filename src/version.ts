@@ -34,4 +34,4 @@ export const SOFTWARE_VERSION: string = pkg.version
  *  safe for agents to ignore. Guarded by tests/test-contract-fingerprint.ts + docs/CONTRACT-LOCK.json.
  *  NB: the fingerprint hashes only §②/§① content; a change to the §④ entry document (e.g. agent_quickstart)
  *  is integrator-observable but NOT fingerprinted, so it must be registered here by hand. */
-export const CONTRACT_VERSION = 24
+export const CONTRACT_VERSION = 25

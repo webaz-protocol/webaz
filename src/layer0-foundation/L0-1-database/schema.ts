@@ -697,6 +697,7 @@ export function initDatabase(): Database.Database {
   //   goods_return_deadline    = escrow 下卖家确认收货窗口锚(Guardrail B2:超时未确认→默认退买家)。
   try { db.exec(`ALTER TABLE orders ADD COLUMN delivery_failed_deadline TEXT`) } catch { /* 已存在 */ }
   try { db.exec(`ALTER TABLE orders ADD COLUMN goods_return_deadline TEXT`) } catch { /* 已存在 */ }
+  try { db.exec(`ALTER TABLE orders ADD COLUMN return_shipping_actual DECIMAL(18,2)`) } catch { /* 已存在 */ }   // PR-B3b:卖家申报的实际退程运费【原始值】(审计/争议记录;结算用 clamp 后值,可由本值+帽复算)
   // PR-B params:seed 于此(非 server.ts DEFAULT_PARAMS)—— server.ts 已达 LOC 天花板(ratchet,不可加行)。
   //   protocol_params 形状与 server.ts:790 一致(均 IF NOT EXISTS / INSERT OR IGNORE,幂等共存,防漂移见该处)。
   //   硬上限走 max_value(Guardrail A:restocking ≤15%)。运行时另在结算处 clamp 兜底(DB 值异常也不越界)。

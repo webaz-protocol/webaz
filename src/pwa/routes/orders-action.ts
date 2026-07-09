@@ -27,6 +27,8 @@ import type { OrderStatus } from '../../layer0-foundation/L0-2-state-machine/tra
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 import { createNotification, notifyDeclineContestCase } from '../../layer2-business/L2-6-notifications/notification-engine.js'
 import { executeSellerOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 共享执行器(api_key 路径 strictTracking=false)
+import { settleUndeliverableEscrow } from '../../layer0-foundation/L0-2-state-machine/engine.js'   // PR-B3b:退货确认成本扣除结算(直连域 helper,与 releaseFeeStake 等同模式)
+import { toUnits } from '../../money.js'   // PR-B3b:卖家申报退程运费 → 整数 base-units
 import { releaseFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:取消/超时释放任何遗留模拟质押(AR 订单无 stake → no-op)
 import { restorePreShipDirectPayStock } from '../../direct-pay-stock.js'   // D3 库存回补唯一入口(pre-ship 放行;已出库拒绝)
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'   // PR-4e: D1/D2 披露契约门
@@ -455,16 +457,17 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       // Rail1 货款协商:卖家报未收款→协商;卖家确认已收→恢复;升级→举证仲裁;撤回→回协商(pq_withdraw 由上方原子块 early-return 处理,列此仅为通过 !toStatus 校验)。
       report_nonpayment: 'payment_query', confirm_received: 'accepted', pq_escalate: 'disputed', pq_withdraw: 'payment_query',
       mark_undeliverable: 'delivery_failed',   // PR-B:卖家/物流举证未派送成功(退回/拒收)→ 证据裁决
+      confirm_return_received: 'completed',    // PR-B3b:卖家确认收到退回货物 → 成本扣除结算(由下方原子块 early-return 处理)
     }
     const toStatus = actionMap[action]
     if (!toStatus) return void res.json({ error: `未知操作：${action}` })
 
-    // PR-B:mark_undeliverable 门控 —— rollout flag + rail(B2 仅 direct_p2p;escrow 资金收口由 B3 接,先拒不误结算)。
+    // PR-B:mark_undeliverable 门控 —— rollout flag(B3b 起两轨都开:direct_p2p=仅声誉收口,escrow=return_pending 资金收口)。
     //   fail fast:在写 evidence / transition 前拦下。证据要求由 delivery_failed 转移规则(requiresEvidence)强制。
+    //   注:confirm_return_received(出口动作)【不】查 flag —— 已进流程的单必须能收口,即使 flag 事后关闭。
     if (action === 'mark_undeliverable') {
       let enabled = 0; try { const p = await dbOne<{ value: string }>("SELECT value FROM protocol_params WHERE key = 'undeliverable_closure_enabled'"); enabled = Number(p?.value) || 0 } catch {}
       if (enabled !== 1) return void res.status(403).json({ error: 'undeliverable 收口未启用', error_code: 'UNDELIVERABLE_DISABLED' })
-      if (order.payment_rail !== 'direct_p2p') return void res.status(409).json({ error: 'escrow 轨 undeliverable 收口尚未上线(B3)', error_code: 'UNDELIVERABLE_ESCROW_PENDING' })
     }
 
     // 创建证据记录 + 跨窗反诈：description 跑 detectFraud
@@ -495,6 +498,29 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       }
       notifyTransition(db, req.params.id, order.status as string, 'delivery_failed')
       return void res.json({ success: true, status: 'delivery_failed', contest_deadline: dfIso })
+    }
+
+    // PR-B3b:confirm_return_received 原子块 —— 卖家确认收到退回货物(带 return-tracking 证据 + 实际退程运费申报)
+    //   → settleUndeliverableEscrow('goods_returned')(成本扣除:去程+退程[双锚 clamp]+restocking[15%硬帽],
+    //   余款退买家,退卖家 stake,守恒断言)+ 转 completed,同一 db.transaction,失败整体回滚回 return_pending 可重试。
+    //   仅 escrow(settle 层有硬门)、仅卖家本人、仅 return_pending;不查 rollout flag(出口动作,在途单必须能收口)。
+    if (action === 'confirm_return_received') {
+      if (order.status !== 'return_pending') return void res.status(409).json({ error: `订单状态 ${order.status} 不可确认退货收货(仅 return_pending)`, error_code: 'NOT_RETURN_PENDING' })
+      if (order.seller_id !== user.id) return void res.status(403).json({ error: '仅本订单卖家可确认收到退货', error_code: 'NOT_ORDER_SELLER' })
+      if (!evidence_description) return void res.status(400).json({ error: '须附退货物流凭证(return-tracking 单号/收件照片描述)', error_code: 'RETURN_EVIDENCE_REQUIRED' })
+      const declaredRaw = Number(req.body?.return_shipping_actual)
+      const declaredU = Number.isFinite(declaredRaw) && declaredRaw > 0 ? toUnits(declaredRaw) : 0   // 未申报=0(只扣 restocking);clamp 在纯函数层
+      try {
+        db.transaction(() => {
+          settleUndeliverableEscrow(db, req.params.id, 'goods_returned', declaredU)
+          const r = transition(db, req.params.id, 'completed', 'sys_protocol', evidenceIds, notes || '卖家确认收到退货,成本扣除结算')
+          if (!r.success) throw new Error(r.error || 'return completion transition failed')
+        })()
+      } catch (e) {
+        return void res.status(409).json({ error: `退货确认结算失败(仍停在 return_pending,可重试):${(e as Error).message}`, error_code: 'RETURN_CONFIRM_FAILED' })
+      }
+      notifyTransition(db, req.params.id, 'return_pending', 'completed')
+      return void res.json({ success: true, status: 'completed', settlement: { rail: 'escrow', mode: 'goods_returned' } })
     }
 
     // Rail1 全原子(Codex P1):direct_p2p confirm 必须把 delivered→confirmed→completed→settle/accrue 包进【同一 db.transaction】。
@@ -688,7 +714,7 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     }
     const beforeStatus = order.status
     // settleConfirmed 注入:当事人强制超时检查若命中 delivered 逾期 → 与 PWA cron 同路径自动确认+结算(否则本端点对 delivered 单空转)。
-    const r = checkTimeouts(db, { settleConfirmed: settleOrder })
+    const r = checkTimeouts(db, { settleConfirmed: settleOrder, recordUndeliverableFault: (oid: string) => recordViolationReputation(db, oid, 'fault_buyer') })   // PR-B3b:与 runEnforcement 同全套回调
     const after = (await dbOne<{ status: string }>('SELECT status FROM orders WHERE id = ?', [req.params.id]))!
     const touched = r.details.find((d: { orderId: string; action: string }) => d.orderId === req.params.id) || null
     if (touched) {
