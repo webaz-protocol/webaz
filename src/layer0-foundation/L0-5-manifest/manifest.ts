@@ -49,6 +49,8 @@ const STATE_MACHINE = {
     fault_seller:     { label: '卖家违约',  responsible: 'system',     terminal: false, description: '卖家超时判责，正在退款买家' },
     fault_logistics:  { label: '物流违约',  responsible: 'system',     terminal: false, description: '物流方超时判责，正在处置赔付' },
     fault_buyer:      { label: '买家违约',  responsible: 'system',     terminal: false, description: '买家违约:支付超时未付,或未派送成功经证据裁定。escrow 资金按规则处置;direct_p2p 仅信誉(协议未托管)' },
+    delivery_failed:  { label: '未派送成功', responsible: 'buyer',      terminal: false, description: 'PR-B:卖家/物流举证退回/拒收(引用快照地址),买家可在窗口内争议;不争议则落定买家责任' },
+    return_pending:   { label: '待退货确认', responsible: 'seller',     terminal: false, description: 'PR-B3b:escrow 单买家责任已定,escrow 锁定等货物返还;卖家确认→成本扣除退余款,超时→默认全款退买家,货丢主张→仲裁' },
   },
 
   // 所有合法转移（从 transitions.ts 同步）
@@ -71,6 +73,12 @@ const STATE_MACHINE = {
     { from: 'confirmed', to: 'completed',      actor: 'system',              deadline: null,      auto_fault: null,               evidence: false, description: '系统自动结算，交易完成' },
     { from: 'disputed',  to: 'completed',      actor: 'arbitrator/system',   deadline: null,      auto_fault: null,               evidence: false, description: '仲裁裁定：资金释放给卖家' },
     { from: 'disputed',  to: 'cancelled',      actor: 'arbitrator/system',   deadline: null,      auto_fault: null,               evidence: false, description: '仲裁裁定：退款买家' },
+    // PR-B undeliverable/拒收收口(fault-neutral,rollout-flag 门控)
+    { from: 'shipped/picked_up/in_transit', to: 'delivery_failed', actor: 'seller/logistics', deadline: null, auto_fault: null, evidence: true, evidence_hint: '承运商"无法投递/拒收"通知或投递尝试证明,须引用订单快照收货地址', description: 'PR-B:举证未派送成功(action=mark_undeliverable)→ 证据裁决,买家可争议' },
+    { from: 'delivery_failed', to: 'fault_buyer/return_pending', actor: 'system', deadline: 'delivery_failed', auto_fault: 'fault_buyer', evidence: false, description: 'PR-B:买家窗口内未争议 → 责任落定(direct_p2p→fault_buyer 仅声誉;escrow→return_pending 持有等退货)' },
+    { from: 'delivery_failed', to: 'disputed', actor: 'buyer', deadline: null, auto_fault: null, evidence: true, evidence_hint: '证明卖家发到错误地址/未发货(对比快照地址)', description: 'PR-B:买家反证 → 人工仲裁' },
+    { from: 'return_pending', to: 'completed', actor: 'seller/system', deadline: 'goods_return', auto_fault: 'auto_full_refund', evidence: false, description: 'PR-B3b:卖家确认收到退货(action=confirm_return_received,成本扣除结算)或超时默认全款退买家' },
+    { from: 'return_pending', to: 'disputed', actor: 'seller', deadline: null, auto_fault: null, evidence: true, evidence_hint: '货丢/弃货主张证据', description: 'PR-B3b:卖家主张货丢 → 仲裁(唯一可全额没收的路径)' },
   ],
 
   // 超时截止时间配置（从下单到结束每个阶段的 hours）

@@ -705,6 +705,7 @@ jobs:
       - run: npm run test:undeliverable-schema-params
       - run: npm run test:undeliverable-closure
       - run: npm run test:undeliverable-refund
+      - run: npm run test:undeliverable-escrow-closure
       - run: npm run test:direct-pay-eligibility
       - run: npm run test:direct-receive-deposits
       - run: npm run test:direct-receive-accounts

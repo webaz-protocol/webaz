@@ -24,6 +24,8 @@ import {
 import { toUnits, toDecimal, mulRate, allocate, type Units } from '../../money.js'
 // RFC-014 PR3 — 钱包落库 helper 抽到共享 ledger 模块(原私有于此),防多份漂移。
 import { walletUnits, applyWalletDelta } from '../../ledger.js'
+// PR-B3b — undeliverable escrow 收口的纯资金拆分(守恒 + 护栏 A clamp 全在纯函数层,单测见 test-undeliverable-refund)。
+import { computeUndeliverableRefund, undeliverableConserves } from '../../undeliverable-refund.js'
 
 // ─── 类型定义 ───────────────────────────────────────────────
 
@@ -171,12 +173,17 @@ export function checkTimeouts(db: Database.Database, opts?: {
   // 自动确认(delivered→confirmed 超时)的成交结算回调 = settleOrder。engine(layer0)够不着 PWA settleOrder,
   // 由调用方注入(PWA runEnforcement 传);不注入的独立 cron/CLI 不自动确认,避免用 settleFault 误结算。
   settleConfirmed?: (orderId: string) => void
+  // PR-B3b:undeliverable 买家责任落定(delivery_failed 争议窗口过期)的声誉回调 = recordViolationReputation(oid,'fault_buyer')。
+  // 统一注入(两轨单一发射点,detail 字符串刻意不匹配 cron 的 /→ (fault_\w+)/ 正则 → 绝不双记);
+  // 不注入则整个 delivery_failed 落定分支跳过(留 delivery_failed,等带回调的 PWA/守护进程扫描,不丢声誉)。
+  recordUndeliverableFault?: (orderId: string) => void
 }): {
   processed: number
   details: Array<{ orderId: string; action: string }>
 } {
   const now = new Date().toISOString()
   const settleConfirmed = opts?.settleConfirmed
+  const recordUndeliverableFault = opts?.recordUndeliverableFault
   const details: Array<{ orderId: string; action: string }> = []
 
   // 找出所有进行中的订单
@@ -214,6 +221,63 @@ export function checkTimeouts(db: Database.Database, opts?: {
         details.push({ orderId: order.id, action: `${order.status} → completed（逾期自动确认结算）` })
       } catch (e) {
         console.error(`[auto-confirm settle] order=${order.id}`, e)
+      }
+      continue
+    }
+
+    // ── PR-B3b:delivery_failed 争议窗口过期 = 买家责任落定(非普通判责)——【按 rail 分流】────────
+    //   direct_p2p:B2 语义不变(fault_buyer→completed,零资金零回补,settleFault 的 G7 守卫处理)。
+    //   escrow:货物去向未知 → 不能立刻结算,进 return_pending 持有(escrow 保持锁定),置卖家确认收货
+    //   窗口 goods_return_deadline。两轨声誉统一走注入回调(单一发射点);detail 刻意写"买家责任落定"
+    //   不含"→ fault_xxx"模式 → cron 的 /→ (fault_\w+)/ 正则不命中,绝不双记。无回调则跳过整个分支
+    //   (留 delivery_failed 等带回调的扫描收口,声誉不丢、escrow 不误动)。
+    if (autoNextState === 'fault_buyer' && order.status === 'delivery_failed') {
+      if (!recordUndeliverableFault) continue
+      try {
+        if (order.payment_rail === 'direct_p2p') {
+          db.transaction(() => {
+            const r1 = transition(db, order.id, 'fault_buyer', systemUser.id, [], '未派送成功·买家未在窗口内争议,责任落定')
+            if (!r1.success) throw new Error(r1.error || 'fault_buyer transition failed')
+            settleFault(db, order.id, 'fault_buyer')   // direct_p2p 分支:零钱包 + G7 不回补 + settled_fault_at
+            const r2 = transition(db, order.id, 'completed', systemUser.id, [], '系统自动执行处置')
+            if (!r2.success) throw new Error(r2.error || 'completion transition failed')
+            recordUndeliverableFault(order.id)   // 回调在【事务内】(审计 F:commit 后回调抛错=声誉永久丢失,订单已进终态不再复扫;tx 内抛错→整体回滚→下轮重试)
+          })()
+          details.push({ orderId: order.id, action: `delivery_failed ⇒ 买家责任落定并收口(completed,direct_p2p 仅声誉)` })
+        } else {
+          const windowH = protocolParamNumber(db, 'goods_return_confirm_window_hours', 120)
+          const grIso = new Date(Date.now() + Math.max(1, windowH) * 3600 * 1000).toISOString()
+          db.transaction(() => {
+            const r1 = transition(db, order.id, 'return_pending', systemUser.id, [], '未派送成功·买家未在窗口内争议,责任落定;escrow 持有等货物返还')
+            if (!r1.success) throw new Error(r1.error || 'return_pending transition failed')
+            db.prepare('UPDATE orders SET goods_return_deadline = ? WHERE id = ? AND goods_return_deadline IS NULL').run(grIso, order.id)   // I3:IS NULL 不重写
+            recordUndeliverableFault(order.id)   // 同上:声誉写与状态转移同一原子边界
+          })()
+          details.push({ orderId: order.id, action: `delivery_failed ⇒ 买家责任落定,escrow 持有等货物返还(return_pending)` })
+        }
+      } catch (e) {
+        console.error(`[undeliverable finalize] order=${order.id}`, e)
+      }
+      continue
+    }
+
+    // ── PR-B3b:return_pending 过 goods_return_deadline = 卖家逾期未确认收货 → 默认全款退买家(护栏 B2)──
+    //   settleUndeliverableEscrow('seller_silent_default') 在事务内:escrow 全额 → 买家 balance,卖家 0,
+    //   退卖家 stake,盖 settled_fault_at;随后转 completed。任一步失败整体回滚回 return_pending 可重试。
+    if (autoNextState === 'completed' && order.status === 'return_pending') {
+      // rail 守卫(审计 F2,防御性):direct_p2p 不可能进 return_pending(rail 分流只送 escrow);若经数据修复/
+      //   未来写入者误入,settle 硬门会抛错 → 每轮扫描重抛刷屏且永不收口。此处直接跳过 + 单行错误日志,
+      //   留待人工数据修复(不假装结算)。
+      if (order.payment_rail === 'direct_p2p') { console.error(`[return_pending sweep] 不可能状态:direct_p2p 订单 ${order.id} 处于 return_pending,跳过待人工修复`); continue }
+      try {
+        db.transaction(() => {
+          settleUndeliverableEscrow(db, order.id, 'seller_silent_default')
+          const r = transition(db, order.id, 'completed', systemUser.id, [], '卖家逾期未确认收到退货 → 默认全款退买家')
+          if (!r.success) throw new Error(r.error || 'return_pending completion failed')
+        })()
+        details.push({ orderId: order.id, action: `return_pending ⇒ 卖家逾期未确认,默认全款退买家(completed)` })
+      } catch (e) {
+        console.error(`[return_pending default settle] order=${order.id}`, e)
       }
       continue
     }
@@ -568,6 +632,68 @@ export function settleDeclinedNoFault(db: Database.Database, orderId: string): v
   })()
 }
 
+// ─── PR-B3b:undeliverable escrow 收口结算(买家责任已定,货物返还三选一中的两条自动/确认路径)────────
+//   mode 类型【刻意只收两值】:goods_returned(卖家确认收货→成本扣除)/ seller_silent_default(卖家逾期→
+//   默认全款退买家)。"货丢全额没收"(goods_lost_forfeit)【结构性不可达】—— 本函数类型层就表达不了,
+//   只能经 return_pending→disputed 仲裁走既有 executeSettlement(release_seller),兑现"没收仅仲裁"铁律。
+//   资金:纯 escrow 再分配(refund+seller ≡ total,undeliverableConserves 运行期断言,fail-loud);
+//   另退卖家 stake(买家违约,卖家无责 —— 镜像 settleDeclinedNoFault);零佣金/零 PV(无真实成交);
+//   【零库存回补】(已出库绝不自动回补 —— 货物经卖家退货验收后手动重新上架)。
+//   幂等:settled_fault_at(与 settleFault/settleDeclinedNoFault 同一标记,语义=fault 类结算已处置)。
+export function settleUndeliverableEscrow(
+  db: Database.Database,
+  orderId: string,
+  mode: 'goods_returned' | 'seller_silent_default',
+  sellerDeclaredReturnU: Units = 0,
+): void {
+  db.transaction(() => {
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<string, unknown> | undefined
+    if (!order) return
+    if (order.settled_fault_at) return   // 幂等:已处置
+    // escrow-only 硬门:direct_p2p 无托管,任何调用都是接线 bug → fail-loud(绝不假装结算)
+    if (order.payment_rail === 'direct_p2p') throw new Error('settleUndeliverableEscrow 仅限 escrow 轨(direct_p2p 无托管,收口=仅声誉)')
+
+    const totalU = toUnits(Number(order.total_amount))
+    const buyerId = order.buyer_id as string
+    const sellerId = order.seller_id as string
+    const split = computeUndeliverableRefund({
+      mode,
+      totalU,
+      outboundShippingU: toUnits(Number(order.shipping_fee || 0)),
+      sellerDeclaredReturnU,
+      restockingFeeRate: protocolParamNumber(db, 'restocking_fee_rate', 0.10),
+      returnShippingMaxRate: protocolParamNumber(db, 'return_shipping_max_rate', 0.20),
+    })
+    if (!undeliverableConserves(totalU, split)) throw new Error(`undeliverable split 守恒断言失败 order=${orderId}`)   // 绝不带着坏拆分动钱
+
+    // 1. escrow 释放:退买家余款(escrowed 全解,balance 只进 refund;差额即卖家成本补偿)
+    applyWalletDelta(db, buyerId, { escrowed: -totalU, balance: split.refundBuyerU })
+    // 2. 卖家成本补偿(仅 goods_returned 有;silent_default 恒 0)
+    if (split.toSellerU > 0) applyWalletDelta(db, sellerId, { balance: split.toSellerU })
+    // 3. 退卖家 stake(封顶实际 staked,绝不转负 —— 买家违约,卖家无责)
+    const stakeBackingU = Math.max(0, toUnits(Number(order.stake_backing || 0)))
+    const bidStakeU = toUnits(Number(order.bid_stake_held || 0))
+    const sellerStakedU = Math.max(0, walletUnits(db, sellerId).staked)
+    const returnStake = Math.min(stakeBackingU + bidStakeU, sellerStakedU)
+    if (returnStake > 0) applyWalletDelta(db, sellerId, { staked: -returnStake, balance: returnStake })
+    // 4. 审计留痕:卖家申报的退程运费【原始值】(结算用的 clamp 后值 = split.returnU,可由本值+帽复算)
+    if (mode === 'goods_returned') {
+      db.prepare('UPDATE orders SET return_shipping_actual = ? WHERE id = ?').run(toDecimal(Math.max(0, Math.floor(sellerDeclaredReturnU))), orderId)
+    }
+    // 5. 幂等标记(无佣金/PV/回补 —— 无真实成交,货物走线下退货验收再上架)
+    db.prepare("UPDATE orders SET settled_fault_at = datetime('now') WHERE id = ?").run(orderId)
+  })()
+}
+
+/** 读 number 型协议参数(finite 且 ≥0 才生效,否则回退默认 —— 坏值只会让纯函数层 clamp 到更保守)。 */
+function protocolParamNumber(db: Database.Database, key: string, fallback: number): number {
+  try {
+    const row = db.prepare('SELECT value FROM protocol_params WHERE key = ?').get(key) as { value: string } | undefined
+    const v = Number(row?.value)
+    return Number.isFinite(v) && v >= 0 ? v : fallback
+  } catch { return fallback }
+}
+
 // ─── 内部工具函数 ─────────────────────────────────────────────
 
 /** 找出当前订单超时的转移（如果有） */
@@ -617,7 +743,8 @@ export function getActiveDeadline(order: Order, db?: Database.Database) {
     picked_up: 'delivery_deadline',
     in_transit: 'delivery_deadline',
     delivered: 'confirm_deadline',
-    delivery_failed: 'delivery_failed_deadline',   // PR-B:买家争议窗口(不争议→fault_buyer)
+    delivery_failed: 'delivery_failed_deadline',   // PR-B:买家争议窗口(不争议→fault_buyer/return_pending 按 rail)
+    return_pending: 'goods_return_deadline',       // PR-B3b:卖家确认收货窗口(超时→默认全款退买家)
   }
   // 2026-05-31 修：self-fulfill(logistics_id 空)无三方揽收环节,shipped/picked_up/in_transit
   // 全部直接走 delivery_deadline,跟 CURRENT_RESPONSIBLE_SELF_FULFILL 对齐(都归 seller)。

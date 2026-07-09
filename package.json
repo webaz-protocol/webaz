@@ -142,6 +142,7 @@
     "test:undeliverable-schema-params": "tsx scripts/test-undeliverable-schema-params.ts",
     "test:undeliverable-closure": "tsx scripts/test-undeliverable-closure.ts",
     "test:undeliverable-refund": "tsx scripts/test-undeliverable-refund.ts",
+    "test:undeliverable-escrow-closure": "tsx scripts/test-undeliverable-escrow-closure.ts",
     "test:direct-pay-eligibility": "tsx scripts/test-direct-pay-eligibility.ts",
     "test:direct-receive-deposits": "tsx scripts/test-direct-receive-deposits.ts",
     "test:direct-receive-accounts": "tsx scripts/test-direct-receive-accounts.ts",

@@ -816,6 +816,21 @@ export function checkDisputeTimeouts(db: Database.Database): {
       continue
     }
 
+    // PR-B3b(审计 F1):货丢主张(return_loss_claim,卖家从 return_pending 发起)——
+    //   【全额没收仅人工仲裁可达,自动路径永不没收】。被告=买家(已判 undeliverable 责任,通知面弱)沉默
+    //   绝不能触发下方"自动判发起方胜"规则(= 自动 release_seller 全额没收后门)。
+    //   liveness(disputed 不卡死):过 arbitrate_deadline 仍无人裁 → 中性兜底 partial_refund(refund=全额):
+    //   买家全额退款 + 卖家质押全退、零罚没 —— 非没收方向;卖家真实货丢损失须由人工仲裁 release_seller 裁定。
+    if ((dispute as DisputeRecord & { dispute_type?: string }).dispute_type === 'return_loss_claim') {
+      const ad = dispute.arbitrate_deadline
+      if (ad && now > ad) {
+        const ord = db.prepare('SELECT total_amount FROM orders WHERE id = ?').get(dispute.order_id) as { total_amount: number } | undefined
+        const r = arbitrateDispute(db, dispute.id, sysUser.id, 'partial_refund', '货丢主张仲裁窗口超时无人裁定 → 中性兜底:买家全额退款+卖家质押全退(全额没收仅人工仲裁可达)', Number(ord?.total_amount ?? 0))
+        if (r.success) details.push({ disputeId: dispute.id, action: 'return_loss_claim 仲裁超时 → 中性兜底全额退款(非没收)', orderId: dispute.order_id })
+      }
+      continue
+    }
+
     if (dispute.status === 'open' && dispute.respond_deadline && now > dispute.respond_deadline) {
       // 被告未在截止时间内回应 → 自动判发起方胜诉
       const initiator = db.prepare('SELECT role FROM users WHERE id = ?')

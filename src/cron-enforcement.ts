@@ -34,7 +34,9 @@ async function enforce() {
   //   故 delivered→confirmed 逾期自动确认【只在 PWA 进程内 runEnforcement 收口】(server.ts,已注入)。
   //   本进程遇 delivered 逾期单会安全跳过(留 delivered),不会误结算 —— 优于旧 settleFault('confirmed')
   //   空结算/幻影回补。生产执法走 PWA 内置 runEnforcement;本 daemon 仅作判责(fault_*)兜底。
-  const orderResult = checkTimeouts(db)
+  //   PR-B3b:undeliverable 声誉回调【可】注入(reputation-engine 本进程就有)—— delivery_failed 落定 +
+  //   return_pending 超时默认结算(settleUndeliverableEscrow 在 engine 内部,无需 PWA 闭包)本 daemon 同样收口。
+  const orderResult = checkTimeouts(db, { recordUndeliverableFault: (oid) => recordViolationReputation(db, oid, 'fault_buyer') })
 
   // ── 2. 争议超时自动裁定 ───────────────────────────────────
   const disputeResult = checkDisputeTimeouts(db)
