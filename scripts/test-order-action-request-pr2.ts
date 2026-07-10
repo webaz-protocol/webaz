@@ -31,7 +31,7 @@ initUserModerationSchema(db); applyWebazRuntimeSchema(db); initWebauthnSchema(db
 try { db.exec('ALTER TABLE orders ADD COLUMN settled_fault_at TEXT') } catch { /* */ }
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller1','S','seller','k_s'),('seller2','S2','seller','k_s2'),('buyer1','B','buyer','k_b')").run()
 db.prepare(`INSERT INTO orders (id,buyer_id,seller_id,product_id,status,unit_price,total_amount,escrow_amount,payment_rail,shipping_address,accept_deadline,ship_deadline)
-  VALUES ('ord_1','buyer1','seller1','prd_x','paid',30,30,30,'escrow','123 SECRET St','2026-07-10 00:00:00','2026-07-12 00:00:00')`).run()
+  VALUES ('ord_1','buyer1','seller1','prd_x','paid',30,30,30,'escrow','123 SECRET St',datetime('now','+2 days'),datetime('now','+4 days'))`).run()
 db.prepare(`INSERT INTO orders (id,buyer_id,seller_id,product_id,status,unit_price,total_amount,escrow_amount,payment_rail)
   VALUES ('ord_other','buyer1','seller2','prd_x','paid',30,30,30,'escrow')`).run()
 
