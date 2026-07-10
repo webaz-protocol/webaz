@@ -1730,9 +1730,10 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
   },
   {
     name: 'webaz_get_agent_order',
-    description: `Grant-wired MINIMAL order read for a fulfillment agent (safe scope seller_orders_read_minimal). Reads the seller's OWN orders via a paired delegation grant (webaz_pair — fulfillment_agent bundle), NOT an api_key. Returns a minimal projection only — order_id / status / next_actor / deadline / amount / item_ref — with NO buyer address / contact / PII and no execution.
+    description: `Grant-wired MINIMAL order read for a fulfillment agent (safe scope seller_orders_read_minimal). Reads the seller's OWN orders via a paired delegation grant (webaz_pair — fulfillment_agent bundle), NOT an api_key. Returns a minimal projection only — order_id / status / next_actor / deadline / amount / item_ref / dest_country — with NO buyer address / contact / PII and no execution.
 
 - order_id given → that one order; omitted → the seller's order list.
+- dest_country: coarse ISO-3166 alpha-2 country code of the destination (derived from the structured ship_to_region) for deliverability / accept judgment — NEVER street / unit / postal / sub-national. NULL when the order carries no valid 2-letter region code (e.g. the product declares no sale_regions / shipping rule, so the buyer sent none); to guarantee it, the seller declares sale_regions with ISO alpha-2 codes.
 - No grant paired → GRANT_REQUIRED (run webaz_pair action="start"). Missing scope → structured PERMISSION_REQUIRED (request via webaz_pair action="request" bundle="fulfillment_agent", have the human approve, then retry).
 - To ACT on an order (accept/ship), use webaz_order_action_request (submit → human Passkey approves → server executes).`,
     inputSchema: {
