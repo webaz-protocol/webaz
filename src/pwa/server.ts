@@ -3238,7 +3238,7 @@ app.use((req, res, next) => {
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: https:",                     // 商品/外链缩略图
+    "img-src 'self' data: https: blob:",               // 商品/外链缩略图 + blob:(本地产品图 createObjectURL / 缩略图生成,同源作用域)
     "media-src 'self' blob: data:",
     `connect-src ${CONNECT_ALLOW}`,
     "font-src 'self' data:",

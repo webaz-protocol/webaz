@@ -9775,9 +9775,9 @@ async function hydrateProductGallery(pid, hashes) {
   const wrap = document.getElementById('pg-' + pid)
   if (!wrap) return
   // 1. 拉 manifests 拿到 thumbnails（即时可显示）
-  const manifests = await GET(`/manifests/by-product/${pid}`).catch(() => ({ items: [] }))
+  const manifests = await GET(`/manifests/by-product/${pid}`).catch(() => ({ manifests: [] }))
   const byHash = {}
-  for (const m of (manifests.items || manifests || [])) byHash[m.hash] = m
+  for (const m of (manifests.manifests || manifests.items || [])) byHash[m.hash] = m
   // 2. 对每个 hash 解析显示 URL：优先 IDB 原图 → 否则 thumbnail
   const urls = []
   for (const h of hashes) {
