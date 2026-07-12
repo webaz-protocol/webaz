@@ -87,8 +87,8 @@
       try {
         const mime = f.type === 'image/png' ? 'image/png' : 'image/jpeg'
         const fullBlob = await compressImageToBlob(f, 800, 0.82, mime)
-        let thumb = await compressImageToDataURL(f, 200, 0.7)  // 逐级压到 ≤9KB(webaz manifest THUMB 硬限 12000 base64)
-        for (const c of [[160, 0.5], [120, 0.42], [96, 0.38], [72, 0.34]]) { if (thumb.length <= 11800) break; thumb = await compressImageToDataURL(f, c[0], c[1]) }
+        const _jt = (px, q) => compressImageToBlob(f, px, q, 'image/jpeg').then(function (b) { return new Promise(function (r) { const R = new FileReader(); R.onload = function () { r(R.result) }; R.readAsDataURL(b) }) })
+        let thumb = await _jt(200, 0.7); for (const c of [[160, 0.5], [120, 0.42], [96, 0.38], [72, 0.34]]) { if (thumb.length <= 11800) break; thumb = await _jt(c[0], c[1]) }  // 缩略图【强制 JPEG】(PNG 照片缩略图会超 9KB manifest 硬限)+ 逐级压到 ≤9KB
         const hash = await sha256Hex(fullBlob)
         const blobUrl = URL.createObjectURL(fullBlob)
         window._editProductImgs.push({ blob: fullBlob, hash: hash, thumb: thumb, contentType: mime, blobUrl: blobUrl, existing: false })
