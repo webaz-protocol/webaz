@@ -1,10 +1,7 @@
-// 商品编辑页图片编辑器（补 renderEditProduct 缺失的加图/换图 UI）。
-// app.js 已到 LOC 天花板冻结（classic 拆分完成，禁回塞），故本模块独立成文件并【运行时注入】：
-//   - 包裹 window.renderEditProduct：原渲染后把图片区插入编辑表单 DOM。
-//   - 加图/删图【即时保存】：先 p2pPublishContent 注册 manifest+缩略图，再 PUT /api/products/:id {image_hashes}
-//     写 product.images，让 productThumbSrc 显示图。全图 blob 仍留在卖家节点（与建单流程同机制）。
-// 在 index.html 中于 app.js 之后加载（才能包裹已定义的全局函数）。依赖全局：GET/state/t/toast$/
-//   compressImageToBlob/compressImageToDataURL/sha256Hex/p2pPublishContent（均来自 app.js）。
+// 商品编辑页图片编辑器（补 renderEditProduct 缺失的加图/换图 UI）。app.js 已到 LOC 天花板冻结（禁回塞），
+// 故独立成文件、运行时注入:包裹 window.renderEditProduct 在原渲染后插入图片区;加图/删图即时保存
+// （p2pPublishContent 注册 manifest+缩略图 → PUT image_hashes 写 product.images,全图 blob 留卖家节点）。
+// index.html 中于 app.js 之后加载。依赖全局 GET/state/t/toast$/compress*/sha256Hex/p2pPublishContent。
 ;(function () {
   if (typeof window.renderEditProduct !== 'function') return
   const _origRenderEditProduct = window.renderEditProduct
@@ -58,12 +55,15 @@
     const imgs = window._editProductImgs || []
     const msg = document.getElementById('ep-img-msg')
     if (msg) msg.textContent = t('保存中...')
+    // 新图任一 manifest 发布失败 → 中止本次保存,不把无 active manifest 的 hash PUT 上去(否则 /thumb 404 却显示已保存;失败图留待重试)
+    let failed = 0
     for (const it of imgs.filter(function (x) { return !x.existing && x.blob })) {
       try {
         await p2pPublishContent({ blob: it.blob, content_type: it.contentType, description: '', related_product_id: window._editProductPid, thumbnail_data_uri: it.thumb })
         it.existing = true
-      } catch (e) { console.warn('[edit image manifest publish]', e) }
+      } catch (e) { console.warn('[edit image manifest publish]', e); failed++ }
     }
+    if (failed > 0) { if (msg) msg.textContent = '⚠️ ' + failed + ' ' + t('图片处理失败'); return }
     let res
     try {
       res = await fetch('/api/products/' + window._editProductPid, {
