@@ -687,6 +687,11 @@ Actions: create (title/description/price) | mine | update (product_id + changed 
         price: { type: 'number', description: 'Listing amount = the protocol/base amount (waz_usdc_rate 1.0). No currency is set at listing time. On the direct_p2p rail the actual payable DISPLAY follows the seller\'s declared receiving-account currency/instruction — USDC only when that account is USDC/USD, otherwise the seller\'s currency ("以收款说明为准"); WebAZ does not custody, route, validate, or restrict the payment method/currency. USDC is only the base/reference amount when applicable. Legacy escrow uses WAZ. Required for create; optional for update.' },
         stock: { type: 'number', description: 'Stock, default 1' },
         category: { type: 'string', description: 'Category (optional)' },
+        image_hashes: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Product image content hashes (64-hex SHA-256, ≤9, first = cover). Sets product.images so the card/detail shows the image. You compute the hash of the image bytes; separately publish each hash as a manifest (POST /api/manifests with thumbnail_data_uri) so the thumbnail is served. For agent dropship listing: capture the source image → hash → pass here on create/update. Optional.',
+        },
         specs: {
           type: 'object',
           description: 'Structured specs k/v, e.g. {"color":"black","ram":"16GB","storage":"512GB"} (optional)',
@@ -2572,7 +2577,7 @@ export async function handleListProduct(args: Record<string, unknown>): Promise<
     }
     if (!pid) return { error: `product_id required for action=${action}` }
     if (action === 'update') {
-      const updatable = ['title','description','price','stock','specs','brand','model','handling_hours','ship_regions','estimated_days','fragile','return_days','return_condition','warranty_days','low_stock_threshold','auto_delist_on_zero','i18n_titles','i18n_descs','origin_claims']
+      const updatable = ['title','description','price','stock','specs','brand','model','handling_hours','ship_regions','estimated_days','fragile','return_days','return_condition','warranty_days','low_stock_threshold','auto_delist_on_zero','i18n_titles','i18n_descs','origin_claims','image_hashes']
       const body: Record<string, unknown> = {}
       for (const k of updatable) if (args[k] !== undefined) body[k] = args[k]
       return apiCall(`/api/products/${encodeURIComponent(pid)}`, { method: 'PUT', apiKey, body })

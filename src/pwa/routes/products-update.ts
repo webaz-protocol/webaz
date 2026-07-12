@@ -53,6 +53,7 @@ export function registerProductsUpdateRoutes(app: Application, deps: ProductsUpd
       low_stock_threshold, auto_delist_on_zero,
       origin_claims,
       i18n_titles, i18n_descs,
+      image_hashes,   // 商品图片 hash 数组(64hex,≤9);编辑页加图/换图用。与 create 同格式:JSON.stringify 存 images 列
       weight_kg, package_size, origin_country, country_of_origin, customs_description, hs_code,   // S0 跨境清关/物流证据字段(可选;进后续订单条款快照,不影响在途单)
     } = req.body
 
@@ -130,7 +131,19 @@ export function registerProductsUpdateRoutes(app: Application, deps: ProductsUpd
     const newI18nTitles = titlesResult === undefined ? product.i18n_titles : titlesResult
     const newI18nDescs = descsResult === undefined ? product.i18n_descs : descsResult
 
+    // 商品图片 hash 数组(编辑页加图/换图):undefined=不更新;[]=清空;否则校验(≤9 张、64hex,与 create 同规则)→ JSON 存 images 列
+    let newImages: string | null | undefined = undefined
+    if (image_hashes !== undefined) {
+      if (!Array.isArray(image_hashes)) return void res.status(400).json({ error: 'image_hashes 必须为数组' })
+      if (image_hashes.length > 9) return void res.status(400).json({ error: '图片最多 9 张' })
+      for (const h of image_hashes) {
+        if (typeof h !== 'string' || !/^[a-f0-9]{64}$/i.test(h)) return void res.status(400).json({ error: 'image_hashes 必须为 64 字符十六进制' })
+      }
+      newImages = image_hashes.length ? JSON.stringify(image_hashes.map((h: string) => h.toLowerCase())) : null
+    }
+
     await dbRun(`UPDATE products SET
+      images=?,
       title=?, description=?, price=?, stock=?,
       specs=?, brand=?, model=?, handling_hours=?, ship_regions=?,
       estimated_days=?, fragile=?, return_days=?, return_condition=?, warranty_days=?,
@@ -142,6 +155,7 @@ export function registerProductsUpdateRoutes(app: Application, deps: ProductsUpd
       commitment_hash=?, description_hash=?, price_hash=?, hashed_at=?,
       updated_at=datetime('now')
       WHERE id=?`, [
+      newImages === undefined ? product.images : newImages,
       newTitle, newDesc, newPrice, newStock,
       specsJson, brand ?? product.brand, model ?? product.model,
       newHandling, newShipRegions, newEstDays, newFragile,
