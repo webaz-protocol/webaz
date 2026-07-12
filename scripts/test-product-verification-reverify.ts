@@ -75,6 +75,22 @@ db.prepare("UPDATE product_verifications SET status='verified' WHERE product_id=
 const e6 = await req('PUT', '/api/products/p4', { brand: 'NewBrand' }, { 'x-uid': 'seller1' })
 ok('brand edit → verification invalidated', e6.status === 200 && productStoreVerified(db, 'p4') === false)
 
+// #308 follow-up P1:图片(image_hashes)= 买家可见商品身份。换封面/图集 → 作废逐品验证(防"验证商品 A 后换成 B")。
+const imgHash = 'a'.repeat(64)
+db.prepare("UPDATE product_verifications SET status='verified' WHERE product_id='p4'").run()
+const e7 = await req('PUT', '/api/products/p4', { image_hashes: [imgHash] }, { 'x-uid': 'seller1' })
+ok('image_hashes change → verification invalidated (buyer-visible identity)', e7.status === 200 && productStoreVerified(db, 'p4') === false)
+ok('p4 status stale after image change', getProductVerification(db, 'p4')?.status === 'stale')
+// 仅改库存(不传 image_hashes)→ 保持 verified(图未变,不作废)
+db.prepare("UPDATE product_verifications SET status='verified' WHERE product_id='p4'").run()
+const e8 = await req('PUT', '/api/products/p4', { stock: 3 }, { 'x-uid': 'seller1' })
+ok('stock-only edit (no image_hashes) → stays verified', e8.status === 200 && productStoreVerified(db, 'p4') === true)
+// 传【相同】image_hashes(无变化)→ 不作废(newImages == product.images)
+db.prepare("UPDATE products SET images=? WHERE id='p4'").run(JSON.stringify([imgHash]))
+db.prepare("UPDATE product_verifications SET status='verified' WHERE product_id='p4'").run()
+const e9 = await req('PUT', '/api/products/p4', { image_hashes: [imgHash] }, { 'x-uid': 'seller1' })
+ok('same image_hashes (no change) → stays verified', e9.status === 200 && productStoreVerified(db, 'p4') === true)
+
 server!.close()
 if (fail > 0) { console.error(`\n${fail} test(s) failed:`); console.log(fails.join('\n')); process.exit(1) }
 console.log(`✅ ${pass} product-verification-reverify tests passed`)

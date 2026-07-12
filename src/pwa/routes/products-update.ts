@@ -196,10 +196,13 @@ export function registerProductsUpdateRoutes(app: Application, deps: ProductsUpd
     const newBrand = brand ?? product.brand
     const newModel = model ?? product.model
     const eq = (a: unknown, b: unknown) => String(a ?? '') === String(b ?? '')
+    //   图片同样是【买家可见的商品身份】:换封面/图集 = 展示成另一件商品,故也须作废验证。
+    //   只在【本次传了 image_hashes 且与现有不同】时触发(newImages===undefined = 未改图,不触发;仅改库存亦不触发)。
     const materialChanged = !eq(newTitle, product.title) || !eq(newDesc, product.description)
       || Number(newPrice) !== Number(product.price) || !eq(specsJson, product.specs)
       || !eq(newI18nTitles, product.i18n_titles) || !eq(newI18nDescs, product.i18n_descs)
       || !eq(newBrand, product.brand) || !eq(newModel, product.model)
+      || (newImages !== undefined && !eq(newImages, product.images))
     if (materialChanged) { try { invalidateProductVerification(db, String(req.params.id)) } catch (e) { console.error('[product-verify invalidate]', e) } }
 
     res.json({ success: true })
