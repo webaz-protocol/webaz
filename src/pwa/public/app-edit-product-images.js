@@ -1,7 +1,6 @@
 // 商品编辑页图片编辑器（补 renderEditProduct 缺失的加图/换图 UI）。app.js 已到 LOC 天花板冻结（禁回塞），
 // 故独立成文件、运行时注入:包裹 window.renderEditProduct 在原渲染后插入图片区;加图/删图即时保存
-// （p2pPublishContent 注册 manifest+缩略图 → PUT image_hashes 写 product.images,全图 blob 留卖家节点）。
-// index.html 中于 app.js 之后加载。依赖全局 GET/state/t/toast$/compress*/sha256Hex/p2pPublishContent。
+// （p2pPublishContent 注册 manifest+缩略图 → PUT image_hashes 写 product.images）。index.html 中 app.js 之后加载,依赖全局 GET/state/t/toast$/compress*/sha256Hex/p2pPublishContent。
 ;(function () {
   if (typeof window.renderEditProduct !== 'function') return
   const _origRenderEditProduct = window.renderEditProduct
@@ -88,7 +87,8 @@
       try {
         const mime = f.type === 'image/png' ? 'image/png' : 'image/jpeg'
         const fullBlob = await compressImageToBlob(f, 800, 0.82, mime)
-        const thumb = await compressImageToDataURL(f, 200, 0.7)
+        let thumb = await compressImageToDataURL(f, 200, 0.7)  // 逐级压到 ≤9KB(webaz manifest THUMB 硬限 12000 base64)
+        for (const c of [[160, 0.5], [120, 0.42], [96, 0.38], [72, 0.34]]) { if (thumb.length <= 11800) break; thumb = await compressImageToDataURL(f, c[0], c[1]) }
         const hash = await sha256Hex(fullBlob)
         const blobUrl = URL.createObjectURL(fullBlob)
         window._editProductImgs.push({ blob: fullBlob, hash: hash, thumb: thumb, contentType: mime, blobUrl: blobUrl, existing: false })
