@@ -1,4 +1,3 @@
-# remote-dev smoke test
 # AGENTS.md — guide for AI agents working on this repo / 给改这个仓库的 AI agent
 
 You are most likely an AI coding agent (Claude Code, Cursor, etc.) reading this to **modify the repo and open a PR**. This file is your onboarding entry — read it first.

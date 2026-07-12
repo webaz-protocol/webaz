@@ -33,6 +33,7 @@
     "test:pg-placeholders": "tsx scripts/test-pg-placeholders.ts",
     "test:pg-datetime": "tsx scripts/test-pg-datetime.ts",
     "test:agent-task-spec": "tsx scripts/test-agent-task-spec.ts",
+    "test:agents-md-title": "tsx scripts/test-agents-md-title.ts",
     "contract:verify": "tsx tests/test-contract-fingerprint.ts",
     "test:integration-contract": "tsx tests/test-integration-contract.ts",
     "license:check": "tsx scripts/license-invariant-check.ts",

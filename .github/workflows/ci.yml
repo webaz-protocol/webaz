@@ -216,6 +216,25 @@ jobs:
           echo "this fails BY DESIGN — those are CHARTER §4 I-2 invariants."
           echo "Otherwise: sync the doc that drifted to match the others."
 
+  agents-md-invariants:
+    name: AGENTS.md title invariant
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:agents-md-title
+      - name: On failure — AGENTS.md identity context
+        if: failure()
+        run: |
+          echo "::error title=AGENTS.md title invariant violated::"
+          echo "AGENTS.md is the canonical agent-onboarding doc (CLAUDE.md defers to it)."
+          echo "Its first line must be the '# AGENTS.md …' H1 and the only H1 —"
+          echo "no test/scratch lines above the title."
+
   meta-rules-invariants:
     name: meta-rules invariants (CHARTER §4 I-1)
     runs-on: ubuntu-latest
