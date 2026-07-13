@@ -268,7 +268,7 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
         first_order_completed_at: firstCompleted,
         first_dispute_resolved_at: firstDispute,
       },
-      next: 'Public launch unlocks real settlement. Follow it / get notified at launch + request an invite: https://webaz.xyz/#welcome',
+      next: 'Public launch unlocks real settlement on the escrow rail (Direct Pay already runs live as a non-custodial off-platform rail). Follow it / get notified at launch + request an invite: https://webaz.xyz/#welcome',
       honesty: 'Pre-launch: the escrow rail settles simulated WAZ test currency only; Direct Pay orders are real off-platform payments between buyer and seller (non-custodial — WebAZ never holds principal). These numbers are the live protocol state, not market-size or investment signal.',
     }
   }
