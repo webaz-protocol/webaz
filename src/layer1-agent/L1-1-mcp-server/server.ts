@@ -2024,21 +2024,22 @@ async function handleInfo() {
       phase: 'pre_launch',
       // 真实用户/规模【不在此硬编码】—— 网络模式下 network_live(上方,实时拉 /api/protocol-status)带有 real_users_on_canonical 真值。
       canonical_endpoint: 'https://webaz.xyz',
-      economic_flow: 'simulated WAZ (test currency, 1 WAZ ≈ 1 USDC peg is a模拟基准, not a real exchange rate). No fiat/crypto settles yet.',
-      disclaimer: '本协议尚未公开上线(pre-launch),无真实经济流转。真实用户/规模请以 network_live(本次从 webaz.xyz 实时拉取的 /api/protocol-status,含 real_users_on_canonical)为准;下方 live_stats / 工具示例的所有计数均来自**本机 MCP 服务器的本地 SQLite**(~/.webaz/webaz.db),仅供 dev / demo,不代表协议全网真实状态。请勿据此评估市场规模、做投资决策、或替终端用户承诺任何经济关系。',
+      economic_flow: 'dual-rail — escrow rail: simulated WAZ (test currency, 1 WAZ ≈ 1 USDC peg is a模拟基准, not a real exchange rate); no fiat/crypto settles through WebAZ custody. Direct Pay rail: real off-platform payment directly between buyer and seller (non-custodial; conditions-gated, fail-closed).',
+      disclaimer: '本协议尚未公开上线(pre-launch)。资金双轨:托管轨仅模拟测试币,无真实资金经 WebAZ 结算;直付轨(Direct Pay)为受条件控制的真实场外付款,本金在买卖双方之间直接流转,不经过 WebAZ。真实用户/规模请以 network_live(本次从 webaz.xyz 实时拉取的 /api/protocol-status,含 real_users_on_canonical)为准;下方 live_stats / 工具示例的所有计数均来自**本机 MCP 服务器的本地 SQLite**(~/.webaz/webaz.db),仅供 dev / demo,不代表协议全网真实状态。请勿据此评估市场规模、做投资决策、或替终端用户承诺任何经济关系。',
     },
     description: 'WebAZ is a decentralized commerce protocol. Every transaction flows through a state machine; each state transition needs proof-of-action from the responsible party. Any timeout-without-action: protocol auto-rules default + executes remedy. / WebAZ 是去中心化商业协议;每笔交易通过状态机流转,每次状态转移需对应责任方的操作证明;超时未操作则协议自动判违约并执行处置。',
     // 给【终端用户/买家】的价值主张 —— 陌生 agent / 普通买家先要知道"对我有什么用",而非只读抽象 tagline + 技术 description。
     for_end_user: {
       note: 'What WebAZ does FOR a buyer (why use it): / 这个协议对买家有什么用(为什么用它):',
       value: [
-        'Escrow on every order — your money is held by the protocol and only released to the seller after you confirm receipt (or an auto-confirm window). / 每笔订单托管:钱由协议托管,你确认收货(或到自动确认期)才放款给卖家。',
-        'Automatic fault ruling — if the seller does not accept / ship / deliver in time, the protocol auto-refunds you, no haggling. / 自动判责:卖家不接单/不发货/不送达超时,协议自动退款给你,无需扯皮。',
+        'Escrow rail — your money is held by the protocol and only released to the seller after you confirm receipt (or an auto-confirm window); pre-launch this rail settles simulated WAZ test currency only. / 托管轨:钱由协议托管,确认收货(或到自动确认期)才放款给卖家;预发布阶段本轨仅结算模拟测试币。',
+        'Direct Pay rail (live, conditions-gated) — you pay the seller directly off-platform; non-custodial: WebAZ never holds the principal, does not guarantee and cannot refund, but records risk confirmation + Passkey + payment-info snapshot + order evidence. / 直付轨(已上线,按条件开放):买家直接付给卖家的真实场外付款;非托管——WebAZ 不代持、不担保、不退款,但记录风险确认+Passkey+收款信息快照+订单证据。',
+        'Automatic fault ruling — if the seller does not accept / ship / deliver in time, the protocol auto-refunds you on the escrow rail (Direct Pay: reputation fault, no money moves through WebAZ). / 自动判责:卖家不接单/不发货/不送达超时,托管轨协议自动退款(直付轨判信誉责任,资金不经 WebAZ)。',
         'Disputes with evidence + arbitration — open a dispute with proof; a neutral process decides. / 争议可凭证据发起 + 中立仲裁裁决。',
         'Decision-ready transparency — price history, seller reputation, win/loss record and arbitration precedents are public before you buy. / 知情决策:价格历史、卖家信誉、胜诉/败诉记录、仲裁判例,下单前都公开可查。',
         'Agent-native — your AI agent can compare prices, place orders, and track fulfillment for you via the MCP tools. / agent 原生:你的 AI 可经 MCP 工具替你比价、下单、跟踪履约。',
       ],
-      honesty: 'Pre-launch: WAZ is a simulated test currency, no real money settles yet. Don\'t treat balances as real value. / 尚未上线:WAZ 是模拟测试币,暂无真实资金结算,余额勿当真实价值。',
+      honesty: 'Pre-launch: the escrow rail settles simulated WAZ test currency — don\'t treat balances as real value. Direct Pay is real off-platform payment between buyer and seller (non-custodial; WebAZ never holds principal, no guarantee, no refunds). / 预发布:托管轨仅模拟测试币,余额勿当真实价值;直付轨为买卖双方之间的真实场外付款(非托管——WebAZ 不代持、不担保、不退款)。',
       try_it: 'Browse without an account at https://webaz.xyz/#discover ; the protocol state is public at https://webaz.xyz/.well-known/webaz-protocol.json',
       get_access: 'Pre-launch is invite-gated — request an invite at https://webaz.xyz/#welcome (browsing/reading needs no invite). / 上线前邀请制:到 #welcome 申请邀请,浏览/查看无需邀请。',
     },

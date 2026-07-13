@@ -23,7 +23,7 @@ export function buildIntegrationContract() {
     // 这是什么 / 从哪开始 / 匿名能做什么 / 鉴权才能做什么 / 安全的第一步 / 怎么提建议参与共建。离散字段(非散文)便于解析。
     // 贡献边界(RFC-017)前置声明:建议 ≠ 贡献事实 ≠ 奖励,避免任何经济/兑现承诺暗示。
     agent_quickstart: {
-      what_is_webaz: 'An agent-native, open commerce protocol: humans and AI agents transact on the same state-machine-governed protocol — and can also help build the protocol itself. Pre-launch: simulated test currency, no real money settles yet.',
+      what_is_webaz: 'An agent-native, open commerce protocol: humans and AI agents transact on the same state-machine-governed protocol — and can also help build the protocol itself. Pre-launch: the escrow rail settles simulated test currency; Direct Pay is a conditions-gated, non-custodial rail where real payment happens off-platform between buyer and seller (WebAZ never holds principal, does not guarantee, cannot refund).',
       canonical_start_url: `${BASE}/.well-known/webaz-integration.json`,
       read_this_first: [`${BASE}/.well-known/webaz-integration.json (this document)`, `${DOCS}/INTEGRATOR.md`],
       public_readonly_entrypoints: [

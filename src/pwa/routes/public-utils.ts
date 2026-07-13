@@ -127,15 +127,16 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
       // 给【终端用户/买家】的一句话价值主张 —— 陌生 agent / 爬虫抓 manifest 第一眼就懂"对买家有什么用",
       //   不只是抽象 tagline + 技术 description。与 MCP webaz_info.for_end_user 对齐(两个发现面一致)。
       for_end_user: {
-        one_liner: 'Shop with built-in protection: every order is escrow-held and only released after you confirm receipt; if the seller is late, you are auto-refunded. / 自带保护的购物:每笔订单托管,确认收货才放款;卖家超时自动退款给你。',
+        one_liner: 'Shop under rules that hold: escrow-rail orders are held and released only after you confirm receipt (pre-launch: simulated test currency); Direct Pay orders are real off-platform payments straight to the seller — non-custodial, WebAZ never holds your money. / 规则先行的购物:托管轨订单确认收货才放款(预发布:模拟测试币);直付轨(Direct Pay)是你直接付给卖家的真实场外付款——非托管,WebAZ 不经手本金。',
         why_use: [
-          'Escrow on every order — money released only after you confirm receipt (or auto-confirm window).',
-          'Automatic fault ruling — seller fails to accept/ship/deliver in time → auto-refund, no haggling.',
+          'Escrow rail — money released only after you confirm receipt (or auto-confirm window). Pre-launch: this rail settles simulated WAZ test currency only.',
+          'Direct Pay rail (live, conditions-gated) — pay the seller directly off-platform; non-custodial: WebAZ never holds the principal, does not guarantee and cannot refund, but records risk confirmation + Passkey, payment-info snapshot, order states and evidence for auditability.',
+          'Automatic fault ruling — seller fails to accept/ship/deliver in time → auto-refund on the escrow rail; on Direct Pay, timeouts rule reputation fault (non-custodial: no money moves through WebAZ).',
           'Disputes with evidence + neutral arbitration.',
           'Decision-ready transparency — seller reputation, price history and arbitration precedents are public before you buy.',
           'Agent-native — your AI agent can compare, order and track fulfillment via MCP.',
         ],
-        honesty: 'Pre-launch: WAZ is a simulated test currency; no real money settles yet.',
+        honesty: 'Pre-launch: the escrow rail settles simulated WAZ test currency; no real money settles through WebAZ custody. Direct Pay is real off-platform payment between buyer and seller — non-custodial, gated per seller/product/region/amount, fail-closed by default.',
         try_it: 'Browse now, no account needed → https://webaz.xyz/#discover',
         get_access: 'Want to register? Pre-launch is invite-gated — request an invite at https://webaz.xyz/#welcome (browsing needs no invite).',
       },
@@ -143,10 +144,10 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
         phase,
         real_users_on_canonical: realUsers,
         canonical_endpoint: 'https://webaz.xyz',
-        economic_flow: 'simulated WAZ (test currency, 1 WAZ ≈ 1 USDC peg is a模拟基准, not a real exchange rate). No fiat/crypto settlement yet.',
+        economic_flow: 'dual-rail — escrow rail: simulated WAZ (test currency, 1 WAZ ≈ 1 USDC peg is a模拟基准, not a real exchange rate); no fiat/crypto settles through WebAZ custody. Direct Pay rail: real off-platform payment directly between buyer and seller (non-custodial — WebAZ never holds the principal; conditions-gated per seller/product/region/amount, fail-closed).',
         disclaimer: {
-          zh: '本协议尚未公开上线,真实用户(已绑 Passkey 的账号)数实时反映在 real_users_on_canonical。无真实经济流转。请勿据此评估市场规模、做投资决策、或替终端用户承诺任何经济关系。',
-          en: 'Protocol is pre-launch; real_users_on_canonical reflects live count of Passkey-bound accounts. No real economic settlement yet. Do not use this data to evaluate market size, make investment decisions, or commit to third parties on a user\'s behalf.',
+          zh: '本协议尚未公开上线,真实用户(已绑 Passkey 的账号)数实时反映在 real_users_on_canonical。资金双轨:托管轨仅模拟测试币,无真实资金经 WebAZ 结算;直付轨(Direct Pay)为受条件控制的真实场外付款,本金在买卖双方之间直接流转,不经过 WebAZ。请勿据此评估市场规模、做投资决策、或替终端用户承诺任何经济关系。',
+          en: 'Protocol is pre-launch; real_users_on_canonical reflects live count of Passkey-bound accounts. Funds run on two rails: the escrow rail settles simulated test currency only (no real settlement through WebAZ custody); the Direct Pay rail is conditions-gated real off-platform payment directly between buyer and seller — WebAZ never holds the principal. Do not use this data to evaluate market size, make investment decisions, or commit to third parties on a user\'s behalf.',
         },
       },
       issuers: {
@@ -267,8 +268,8 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
         first_order_completed_at: firstCompleted,
         first_dispute_resolved_at: firstDispute,
       },
-      next: 'Public launch unlocks real settlement. Follow it / get notified at launch + request an invite: https://webaz.xyz/#welcome',
-      honesty: 'Pre-launch: WAZ is a simulated test currency; no real money settles yet. These numbers are the live protocol state, not market-size or investment signal.',
+      next: 'Public launch unlocks real settlement on the escrow rail (Direct Pay already runs live as a non-custodial off-platform rail). Follow it / get notified at launch + request an invite: https://webaz.xyz/#welcome',
+      honesty: 'Pre-launch: the escrow rail settles simulated WAZ test currency only; Direct Pay orders are real off-platform payments between buyer and seller (non-custodial — WebAZ never holds principal). These numbers are the live protocol state, not market-size or investment signal.',
     }
   }
   app.get('/.well-known/webaz-launch-pulse.json', async (_req, res) => {
