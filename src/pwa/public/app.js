@@ -9762,7 +9762,7 @@ function productImageGallery(p) {
   setTimeout(() => hydrateProductGallery(pid, hashes), 0)
   return `<div id="pg-${pid}" data-hashes='${JSON.stringify(hashes)}' style="margin:0 -16px 12px">
     <div style="aspect-ratio:4/3;background:#f3f4f6;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center">
-      <img id="pg-${pid}-main" style="width:100%;height:100%;object-fit:cover;display:none;cursor:zoom-in" onclick="openImageLightbox('${pid}', 0)">
+      <img id="pg-${pid}-main" style="width:100%;height:100%;object-fit:cover;display:none;cursor:zoom-in" onclick="openImageLightbox('${pid}', 0)" onerror="galleryMainImgFail('${pid}')">
       <div id="pg-${pid}-loading" style="color:#9ca3af;font-size:12px">${t('加载图片…')}</div>
       ${hashes.length > 1 ? `<div style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.55);color:#fff;font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600" id="pg-${pid}-cnt">1 / ${hashes.length}</div>` : ''}
     </div>
@@ -9778,17 +9778,8 @@ async function hydrateProductGallery(pid, hashes) {
   const manifests = await GET(`/manifests/by-product/${pid}`).catch(() => ({ manifests: [] }))
   const byHash = {}
   for (const m of (manifests.manifests || manifests.items || [])) byHash[m.hash] = m
-  // 2. 对每个 hash 解析显示 URL：优先 IDB 原图 → 否则 thumbnail
-  const urls = []
-  for (const h of hashes) {
-    let url = null
-    try {
-      const row = await p2pGetContent(h)
-      if (row?.blob) url = URL.createObjectURL(row.blob)
-    } catch {}
-    if (!url) url = byHash[h]?.thumbnail_data_uri || null
-    urls.push(url)
-  }
+  // 2. 对每个 hash 解析显示 URL：IDB 原图 → 本品 manifest thumbnail → 按-hash 公开 /thumb（app-product-gallery.js）
+  const urls = await window.resolveGalleryUrls(hashes, byHash)
   // 3. 渲染主图（首张）
   const main = document.getElementById('pg-' + pid + '-main')
   const loading = document.getElementById('pg-' + pid + '-loading')
@@ -9816,7 +9807,8 @@ window.switchGalleryImage = (pid, idx) => {
   if (!main || !wrap) return
   const thumbs = wrap.querySelectorAll('img[data-gal-idx]')
   const url = thumbs[idx]?.dataset?.url || thumbs[idx]?.src
-  if (url) { main.src = url; main.style.display = 'block' }
+  const loading = document.getElementById('pg-' + pid + '-loading')
+  if (url) { main.src = url; main.style.display = 'block'; if (loading) loading.style.display = 'none' }
   if (cnt) cnt.textContent = `${idx + 1} / ${thumbs.length}`
   thumbs.forEach((tImg, i) => { tImg.style.border = '2px solid ' + (i === idx ? '#4f46e5' : 'transparent') })
 }
