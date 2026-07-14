@@ -8284,10 +8284,11 @@ window.initiateFollowSell = (productId, listingId, title) => {
 
 // 智能下单上架 CTA 统一入口：自动处理 anon / 受信 / buyer 升级 / seller 切换
 // 直达卖家「商品」sub-tab，展开手工上架表单 + 预填标题
+window.clearSellerListingIntent = () => { window._sellerAddPrefill = null; try { sessionStorage.removeItem('webaz_seller_add_prefill') } catch {} }
 window.goCreateListingFromBuy = (prefillTitle) => {
   const title = String(prefillTitle || '').trim().slice(0, 80)
-  window._sellerAddPrefill = null
   const stashPrefill = () => {
+    window._sellerAddPrefill = title ? { title } : null
     if (title) {
       try { sessionStorage.setItem('webaz_seller_add_prefill', JSON.stringify({ title })) } catch {}
     } else {
@@ -8297,13 +8298,13 @@ window.goCreateListingFromBuy = (prefillTitle) => {
   // 未登录：跳登录，保留意图
   if (!state.user) {
     stashPrefill()
-    sessionStorage.setItem('webaz_intended_hash', '#seller/products')
+    try { sessionStorage.setItem('webaz_intended_hash', '#seller/products') } catch {}
     location.hash = '#login'
     return
   }
   const TRUSTED = ['admin', 'verifier', 'logistics', 'arbitrator']
   if (TRUSTED.includes(state.user.role)) {
-    alert(t('当前角色不支持上架（受信角色不参与交易）'))
+    clearSellerListingIntent(); alert(t('当前角色不支持上架（受信角色不参与交易）'))
     return
   }
   // 已是卖家：直达 dashboard
@@ -8332,7 +8333,7 @@ window.goCreateListingFromBuy = (prefillTitle) => {
     </div>
     <div id="cl-msg" style="font-size:12px;margin-bottom:6px"></div>
     <div style="display:flex;gap:8px">
-      <button class="btn btn-outline btn-sm" style="flex:1" onclick="closeModal()">${t('再想想')}</button>
+      <button class="btn btn-outline btn-sm" style="flex:1" onclick="clearSellerListingIntent();closeModal()">${t('再想想')}</button>
       <button class="btn btn-primary btn-sm" style="flex:1" id="cl-confirm" onclick="confirmCreateListingUpgrade(${hasSellerRole ? 'false' : 'true'})">${hasSellerRole ? t('确认切换并上架 →') : t('确认升级并上架 →')}</button>
     </div>
   `)
@@ -9116,8 +9117,8 @@ async function maybeClaimPendingShopReferral() {
 
 // 还原意图 hash（注册/登录后调用，没意图就走 fallback）
 function navigateIntended(fallback) {
-  const intended = sessionStorage.getItem('webaz_intended_hash')
-  sessionStorage.removeItem('webaz_intended_hash')
+  let intended = null; try { intended = sessionStorage.getItem('webaz_intended_hash') } catch {}
+  if (intended !== null) try { sessionStorage.removeItem('webaz_intended_hash') } catch { intended = null }
   const target = (intended && intended !== '#' && intended !== '') ? intended : fallback
   if (!target) return
   // 2026-06-01 fix(BUG-PWA-NEW): 防御 hashchange 不触发
@@ -15784,7 +15785,7 @@ window.updateTrialCost = () => {
   const cost = Math.round(price * quota * 100) / 100
   el.innerHTML = `💰 ${t('需预留')} <strong>${cost} WAZ</strong>（${quota} ${t('名额')} × ${price} WAZ / ${t('件')}）— ${t('确保你的钱包余额 ≥ 此数')}`
 }
-window.hideAddProduct = () => { document.getElementById('add-product-form').style.display = 'none'; window._sellerAddPrefill = null; try { sessionStorage.removeItem('webaz_seller_add_prefill') } catch {} }
+window.hideAddProduct = () => { document.getElementById('add-product-form').style.display = 'none'; clearSellerListingIntent() }
 
 // 商品图片上传 — 协议化设计：blob 留在卖家 IndexedDB，服务器只存 hash
 // 每张图：800px 全图（blob ~150KB → IDB），9KB 缩略（dataURL → manifest 元数据）
@@ -16060,7 +16061,7 @@ window.doAddProduct = async () => {
     ...(state._addProductImgs?.length ? { image_hashes: state._addProductImgs.map(it => it.hash) } : {}), ...(window.listingCommerceHasOverrides && window.listingCommerceHasOverrides() ? { create_status: 'warehouse' } : {}),   // S4:含覆盖的新品先落仓库,全落定后激活
   }
   const res = await POST('/products', payload)
-  if (res.error) { msgEl.innerHTML = alert$('error', res.error); return } if (res.product_id && window.listingCommerceSave) { const lc = await window.listingCommerceSave(res.product_id, { activate: payload.create_status === 'warehouse' }); if (!lc.ok) { msgEl.innerHTML = alert$('error', (payload.create_status === 'warehouse' ? t('商品已存为仓库(未公开),配送/税费设置失败,请到「我的商品」编辑修复后上架:') : t('单品配送/税费设置失败:')) + lc.error); return } }
+  if (res.error) { msgEl.innerHTML = alert$('error', res.error); return } if (res.product_id) clearSellerListingIntent(); if (res.product_id && window.listingCommerceSave) { const lc = await window.listingCommerceSave(res.product_id, { activate: payload.create_status === 'warehouse' }); if (!lc.ok) { msgEl.innerHTML = alert$('error', (payload.create_status === 'warehouse' ? t('商品已存为仓库(未公开),配送/税费设置失败,请到「我的商品」编辑修复后上架:') : t('单品配送/税费设置失败:')) + lc.error); return } }
 
   // 产品创建成功 → 把每张图的 blob 存到本地 IDB + 注册 manifest（带 thumbnail）
   // 服务端只拿到了 hash 数组；blob 字节留在卖家节点
@@ -16097,7 +16098,6 @@ window.doAddProduct = async () => {
     else if (tr.error) trialHint = ` · ⚠️ ${t('测评活动开启失败:')} ${tr.error}`
   }
   msgEl.innerHTML = alert$('success', `${t('上架成功！零质押入驻')} · ${t('首单成交时将自动锁定')} ${res.stake_deferred || 0} WAZ ${t('（trusted 卖家跳过）')}${checkedAliases.length ? ` · ${checkedAliases.length} ${t('个 alias 已声明')}` : ''}${imgHint}${trialHint}`)
-  window._sellerAddPrefill = null; try { sessionStorage.removeItem('webaz_seller_add_prefill') } catch {}
   for (const it of state._addProductImgs) { try { URL.revokeObjectURL(it.blobUrl) } catch {} }
   state._addProductImgs = []
   setTimeout(() => renderSeller(document.getElementById('app')), 1500)

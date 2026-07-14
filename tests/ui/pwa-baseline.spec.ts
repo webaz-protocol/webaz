@@ -357,6 +357,8 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     await expect(page.locator('#app .navbar')).toBeVisible()
     await expect(page.locator('#app main')).toContainText(/卖家后台|Seller Dashboard/)
     await expect(page.locator('.seller-kpi-card')).toHaveCount(5)
+    await expect(page.locator('.seller-subtab[aria-current="page"]')).toContainText(/看板|Board/)
+    await expect(page.locator('.seller-subtab[aria-current="page"]')).toHaveCSS('background-color', 'rgb(255, 247, 237)')
     await expect(page.locator('.tabbar .tab-item').nth(1)).toContainText(/营销|Marketing/)
     await expect(page.locator('.seller-subnav .seller-subtab').nth(2)).toContainText(/抢单|Bid Market/)
     await expect(page.locator('.seller-subnav')).toContainText('Skill')
@@ -395,6 +397,9 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     await page.locator('#seller-product-search').fill('prepared')
     await expect(page.locator('#prd-tab-warehouse')).toBeVisible()
     await expect(page.locator('#prd-tab-warehouse .seller-product-entry:not([hidden])')).toContainText('Agent prepared draft')
+    await page.locator('.prd-tab-btn[data-tab="warehouse"]').focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(page.locator('.prd-tab-btn[data-tab="warehouse"]')).toBeFocused()
     await page.locator('#seller-product-search').fill('retired')
     await expect(page.locator('#prd-tab-deleted')).toBeVisible()
     await expect(page.locator('#prd-tab-deleted .seller-product-entry:not([hidden])')).toContainText('Retired sample listing')
@@ -408,6 +413,12 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     await page.keyboard.press('ArrowRight')
     await expect(page.locator('.prd-tab-btn[data-tab="warehouse"]')).toBeFocused()
     await expect(page.locator('#prd-tab-warehouse')).toBeVisible()
+    await page.keyboard.press('End')
+    await expect(page.locator('.prd-tab-btn[data-tab="deleted"]')).toBeFocused()
+    await page.keyboard.press('Home')
+    await expect(page.locator('.prd-tab-btn[data-tab="active"]')).toBeFocused()
+    await page.keyboard.press('ArrowLeft')
+    await expect(page.locator('.prd-tab-btn[data-tab="deleted"]')).toBeFocused()
     await page.goto('/#seller/dashboard')
     await page.evaluate(() => (window as any).goCreateListingFromBuy('Prefilled product title'))
     await expect(page).toHaveURL(/#seller\/products$/)
@@ -417,6 +428,43 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     await expect(page.locator('#add-product-form')).toBeVisible()
     await expect(page.locator('#prd-title')).toHaveValue('Prefilled product title')
     await page.locator('#add-product-form .btn-gray').last().click()
+    await page.reload()
+    await expect(page.locator('#add-product-form')).toBeHidden()
+    await page.evaluate(() => {
+      const proto = Object.getPrototypeOf(sessionStorage), getItem = proto.getItem
+      proto.getItem = () => { throw new DOMException('storage read denied') }
+      try { (window as any).navigateIntended('#seller/dashboard') } finally { proto.getItem = getItem }
+    })
+    await expect(page).toHaveURL(/#seller\/dashboard$/)
+    await page.evaluate(() => {
+      sessionStorage.setItem('webaz_intended_hash', '#seller/products')
+      const proto = Object.getPrototypeOf(sessionStorage), removeItem = proto.removeItem
+      proto.removeItem = () => { throw new DOMException('storage removal denied') }
+      try { (window as any).navigateIntended('#seller/dashboard') } finally { proto.removeItem = removeItem; sessionStorage.removeItem('webaz_intended_hash') }
+    })
+    await expect(page).toHaveURL(/#seller\/dashboard$/)
+    await page.evaluate(() => { (window as any)._sellerAddPrefill = { title: 'stale' }; sessionStorage.setItem('webaz_seller_add_prefill', '{"title":"stale"}'); (window as any).state.user.role = 'admin' })
+    page.once('dialog', dialog => dialog.dismiss())
+    await page.evaluate(() => (window as any).goCreateListingFromBuy('blocked'))
+    expect(await page.evaluate(() => ({ memory: (window as any)._sellerAddPrefill, stored: sessionStorage.getItem('webaz_seller_add_prefill') }))).toEqual({ memory: null, stored: null })
+    await page.evaluate(() => { (window as any).state.user.role = 'seller' })
+    await page.goto('/#seller/dashboard')
+    await page.evaluate(() => {
+      const proto = Object.getPrototypeOf(sessionStorage), original = proto.setItem
+      proto.setItem = () => { throw new DOMException('storage disabled') }
+      try { (window as any).goCreateListingFromBuy('Storage-safe title') } finally { proto.setItem = original }
+    })
+    await expect(page).toHaveURL(/#seller\/products$/)
+    await expect(page.locator('#prd-title')).toHaveValue('Storage-safe title')
+    await page.route('**/api/products', route => route.request().method() === 'POST'
+      ? route.fulfill({ json: { product_id: 'ux-created-product' } })
+      : route.fallback())
+    await page.locator('#prd-desc').fill('Created product description')
+    await page.locator('#prd-price').fill('10')
+    await page.evaluate(() => { (window as any).listingCommerceSave = async () => ({ ok: false, error: 'forced post-create failure' }) })
+    await page.evaluate(() => (window as any).doAddProduct())
+    await expect(page.locator('#add-msg')).toContainText('forced post-create failure')
+    expect(await page.evaluate(() => ({ memory: (window as any)._sellerAddPrefill, stored: sessionStorage.getItem('webaz_seller_add_prefill') }))).toEqual({ memory: null, stored: null })
     await page.reload()
     await expect(page.locator('#add-product-form')).toBeHidden()
     await assertLanguageSync(page)
