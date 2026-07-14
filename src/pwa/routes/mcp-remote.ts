@@ -22,6 +22,26 @@ export function remoteMcpEnabled(): boolean {
   return process.env.WEBAZ_REMOTE_MCP === '1' && process.env.WEBAZ_MODE !== 'sandbox'
 }
 
+// 机器可读的 Remote MCP 公告(单一真相源,两个 well-known 清单共用防漂移)。只在端点真开时返回,
+// 让陌生 agent 一次 fetch well-known 就能发现"可连接的 HTTPS MCP 地址 + 匿名/鉴权边界 + 怎么浏览商品"。
+export function remoteMcpManifest(): Record<string, unknown> | null {
+  if (!remoteMcpEnabled()) return null
+  return {
+    transport: 'streamable_http',
+    endpoint: 'https://webaz.xyz/mcp',
+    methods: 'POST (JSON-RPC 2.0); GET/DELETE → 405 (stateless, no session)',
+    protocol_version: '2025-03-26',
+    status: 'live',
+    authentication: {
+      anonymous: 'public read-only tools (webaz_info / webaz_search / leaderboard / price-history / open build-tasks)',
+      bearer: 'Authorization: Bearer <api_key> → authenticated write tools; RISK actions return approve_url (Passkey in browser)',
+    },
+    stdio_alternative: 'npx -y @seasonkoh/webaz  (local STDIO transport — same 42-tool surface, for clients that run a local process)',
+    anonymous_quickstart: 'initialize → tools/list → call webaz_search. Browse the catalog: webaz_search with filters (category/sort/max_price) and NO query. Strict exact-title match when you pass query. Machine catalog: https://webaz.xyz/.well-known/webaz-acp-feed.json',
+    docs: 'https://webaz.xyz/docs/REMOTE-MCP.md',
+  }
+}
+
 // deps.rateLimitOk 复用主 server 的进程级 IP 限流器(T2/T3:防公开端点被刷 / 暴力猜 key / DoS)。
 export interface RemoteMcpDeps {
   rateLimitOk: (ip: string, max?: number, windowMs?: number) => boolean

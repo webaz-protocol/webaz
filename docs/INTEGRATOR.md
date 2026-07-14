@@ -6,6 +6,28 @@
 
 ---
 
+## Two ways to connect the MCP tools / 两种接入(工具面相同)
+
+WebAZ exposes the **same 42-tool MCP surface** over two transports — pick by whether your client can run a local process:
+
+| | Remote MCP (HTTPS) | STDIO MCP (local) |
+|---|---|---|
+| **Address** | `https://webaz.xyz/mcp` | `npx -y @seasonkoh/webaz` |
+| **Transport** | Streamable HTTP (`POST` JSON-RPC; stateless) | stdio |
+| **For** | ChatGPT / Claude mobile / cloud agents / anything with no local runtime | Claude Desktop, Claude Code, local dev |
+| **Anonymous** | ✅ public read-only tools, no account | ✅ (network_readonly) |
+| **Authenticated** | `Authorization: Bearer <api_key>` header | `WEBAZ_API_KEY` env |
+
+**Anonymous read-only quickstart over Remote MCP** (no login):
+```bash
+# 1) handshake  2) list tools  3) browse the catalog (filters, NO query = list all)
+curl -s https://webaz.xyz/mcp -H 'content-type: application/json' -H 'accept: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"webaz_search","arguments":{"sort":"newest","limit":10}}}'
+```
+`webaz_search` is **strict** when you pass `query` (exact title/SKU). To discover by category, omit `query` and pass filters; or read the machine catalog projection at [`/.well-known/webaz-acp-feed.json`](https://webaz.xyz/.well-known/webaz-acp-feed.json). Full guide: [docs/REMOTE-MCP.md](./REMOTE-MCP.md). The endpoint is advertised (when live) as the top-level `remote_mcp` object in both `/.well-known/webaz-integration.json` and `/.well-known/webaz-protocol.json`.
+
+---
+
 ## Three access tiers / 三层访问(责任随权力递增)
 
 | Tier | Auth | In accountability net? | Can | Liability |

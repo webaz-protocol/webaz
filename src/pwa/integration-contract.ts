@@ -4,7 +4,7 @@
  * 它只【链接 + 导航】,不复制内容(各维度的真身是各自的 live 端点 / 文档),所以不漂移。
  */
 import { SOFTWARE_VERSION, CONTRACT_VERSION } from '../version.js'
-import { remoteMcpEnabled } from './routes/mcp-remote.js'
+import { remoteMcpEnabled, remoteMcpManifest } from './routes/mcp-remote.js'
 
 const BASE = 'https://webaz.xyz'
 const GH = 'https://github.com/webaz-protocol/webaz/blob/main'
@@ -17,6 +17,8 @@ export function buildIntegrationContract() {
     name: 'WebAZ Agent-Native Integration Contract',
     contract_version: CONTRACT_VERSION,
     software_version: SOFTWARE_VERSION,
+    // ★ Remote MCP — 顶层公告(陌生 agent 一眼可见的可连接 HTTPS 地址)。仅端点真开时出现。
+    ...(remoteMcpManifest() ? { remote_mcp: remoteMcpManifest() } : {}),
     thesis: 'WebAZ is agent-native: you integrate by your agent reading this machine-readable contract and self-integrating — we do NOT build a bespoke API/auth/webhook layer per integrator. The protocol provides rules + semantics + boundaries + accountability + eventing + verifiability + settlement. See docs/RFC-011.',
     // 源码仓库已公开(github.com/webaz-protocol/webaz);机器可读 spec 也在 /.well-known/*。
     source_status: 'The source repo (github.com/webaz-protocol/webaz) is public (open source). The full machine-readable spec is also available via these /.well-known/* surfaces; an agent never needs the repo to integrate or verify.',
@@ -26,8 +28,8 @@ export function buildIntegrationContract() {
     agent_quickstart: {
       what_is_webaz: 'An agent-native, open commerce protocol: humans and AI agents transact on the same state-machine-governed protocol — and can also help build the protocol itself. Pre-launch: the escrow rail settles simulated test currency; Direct Pay is a conditions-gated, non-custodial rail where real payment happens off-platform between buyer and seller (WebAZ never holds principal, does not guarantee, cannot refund).',
       canonical_start_url: `${BASE}/.well-known/webaz-integration.json`,
-      // RFC-022:远程 MCP 端点 — 仅在真实开启时披露(不广告 404)
-      ...(remoteMcpEnabled() ? { remote_mcp: { url: `${BASE}/mcp`, transport: 'streamable-http (stateless, POST only)', auth: 'anonymous = public reads; Authorization: Bearer <api_key> = authenticated; RISK actions return approve_url (Passkey)', docs: `${DOCS}/REMOTE-MCP.md`, note: 'Reach WebAZ from any agent with no local runtime (ChatGPT / Claude mobile / cloud). Rate-limited per IP.' } } : {}),
+      // RFC-022:Remote MCP 端点(完整 shape 见顶层 remote_mcp);此处补进 quickstart 视野
+      ...(remoteMcpEnabled() ? { remote_mcp_endpoint: `${BASE}/mcp` } : {}),
       read_this_first: [`${BASE}/.well-known/webaz-integration.json (this document)`, `${DOCS}/INTEGRATOR.md`],
       public_readonly_entrypoints: [
         `${BASE}/.well-known/webaz-protocol.json`,

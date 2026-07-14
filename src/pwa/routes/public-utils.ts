@@ -31,7 +31,7 @@ import { buildVerifiabilityIndex } from '../verifiability-index.js'
 import { buildEconomicParticipation } from '../economic-participation.js'
 import { buildNegativeSpace } from '../negative-space.js'
 import { buildAcpProductFeed } from '../acp-feed.js'
-import { remoteMcpEnabled } from './mcp-remote.js'
+import { remoteMcpEnabled, remoteMcpManifest } from './mcp-remote.js'
 
 export interface PublicUtilsDeps {
   db: Database.Database
@@ -125,6 +125,8 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
       //   software_version = 本代码 npm/release semver(= package.json,自动同步,永不漂移)
       schema_version: CONTRACT_VERSION,
       software_version: SOFTWARE_VERSION,
+      // ★ Remote MCP — 顶层公告(完整 shape),陌生 agent 扫 protocol.json 即发现可连接地址。仅端点真开时出现。
+      ...(remoteMcpManifest() ? { remote_mcp: remoteMcpManifest() } : {}),
       // 给【终端用户/买家】的一句话价值主张 —— 陌生 agent / 爬虫抓 manifest 第一眼就懂"对买家有什么用",
       //   不只是抽象 tagline + 技术 description。与 MCP webaz_info.for_end_user 对齐(两个发现面一致)。
       for_end_user: {

@@ -6230,6 +6230,7 @@ const _EN = {
   '开放协议':                          'Open protocol',
   'Agent 原生':                        'Agent-native',
   'DAO 治理':                          'DAO-governed',
+  '内部走浏览器接 LLM key 适合体验；外部 MCP 适合长跑 / 复杂任务 / 命令行自动化。STDIO(npx)给本地 host,Remote(https://webaz.xyz/mcp)给 ChatGPT/Claude 手机端与云端 Agent。两条路径后端、信誉、escrow 完全共享。': 'Browser + your LLM key is for trying it out; external MCP suits long-running / complex / CLI automation. STDIO (npx) for local hosts, Remote (https://webaz.xyz/mcp) for ChatGPT/Claude mobile and cloud agents. Both paths fully share backend, reputation and escrow.',
   '直付已上线(非托管:不代持·不担保·不退款)· 托管轨=模拟测试币 · USDC 计价仅展示 · 邀请制预发布 · 勿据此投资或承诺': 'Direct Pay is live (non-custodial: no holding · no guarantee · no refunds) · escrow rail = simulated test tokens · USDC prices are display-only · invite-only pre-launch · do not invest or commit to third parties based on this',
   '渐进去中心化':                       'Progressive decentralization',
 
