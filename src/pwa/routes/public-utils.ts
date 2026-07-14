@@ -316,7 +316,7 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
   // 集成必需文档(规则 + onboarding)由协议自身 serve —— 外部 agent 必须能读到约束它的规则,
   //   不能指向私有 repo 的 GitHub(对外 404)。显式白名单:只暴露这 3 份"本就该公开"的文档,
   //   非白名单 → 404(不泄漏 RFC/审计等内部设计文档;它们是 provenance,随 repo 公开解锁)。
-  const PUBLIC_DOCS = new Set(['INTEGRATOR.md', 'META-RULES-FULL.md', 'ECONOMIC-MODEL.md'])
+  const PUBLIC_DOCS = new Set(['INTEGRATOR.md', 'META-RULES-FULL.md', 'ECONOMIC-MODEL.md', 'REMOTE-MCP.md'])
   const DOCS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../docs')  // repo-root/docs(dev+prod 都解析到此)
   app.get('/docs/:name', (req: Request, res: Response) => {
     const name = String(req.params.name)
