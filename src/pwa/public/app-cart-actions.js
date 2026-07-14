@@ -55,7 +55,7 @@
       }
       await renderCart(document.getElementById('app'))
       await refreshCartBadge()
-      const summary = t('已删除 ') + removed + (failed.length ? ' · ' + t('失败 ') + failed.length : '')
+      const summary = t('已删除') + ' ' + removed + (failed.length ? ' · ' + t('失败 ') + failed.length : '')
       if (failed.length) alert(summary); else toast$(summary)
     } catch (_) {
       alert(t('操作失败，请重试'))
