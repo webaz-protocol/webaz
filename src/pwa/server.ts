@@ -362,6 +362,7 @@ import { registerAdminOpsRoutes } from './routes/admin-ops.js'
 // 公开工具小端点 (#1013 Phase 107) — 6 endpoints
 import { registerPublicUtilsRoutes } from './routes/public-utils.js'
 import { registerRemoteMcpRoutes } from './routes/mcp-remote.js'
+import { registerOAuthDiscoveryRoutes } from './routes/oauth-discovery.js'
 // Agent reputation (#1013 Phase 108) — 2 endpoints
 import { registerAgentReputationRoutes } from './routes/agent-reputation.js'
 // Checkout helpers (#1013 Phase 109) — 2 endpoints
@@ -4647,8 +4648,6 @@ registerAdminAdminsRoutes(app, {
 
 // finance/monthly — Phase 105 已迁出
 
-
-
 // ─── Wave F-5: 实时事件 stream ──────────────────────────
 // #1013 Phase 67: 3 admin/events endpoints 已迁出
 registerAdminEventsRoutes(app, {
@@ -7745,6 +7744,7 @@ registerWalletWriteRoutes(app, {
 })
 // #1013 Phase 107: 6 public/util endpoints 统一 register（必须在 SPA catch-all 之前；logError/generateManifest 在上方定义）
 registerRemoteMcpRoutes(app, { rateLimitOk })   // RFC-022:WEBAZ_REMOTE_MCP=1 才挂载(fail-closed)+ IP 限流
+registerOAuthDiscoveryRoutes(app)   // RFC-023 PR-1:WEBAZ_OAUTH=1 才挂载(fail-closed)发现面元数据
 registerPublicUtilsRoutes(app, {
   db, MASTER_SEED, NODE_ENV, SERVICE_START_MS,
   rateLimitOk, generateManifest, getUser, logError,

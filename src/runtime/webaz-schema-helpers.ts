@@ -1878,3 +1878,45 @@ export function initPendingCommissionEscrowSchema(db: Database.Database): void {
   // on binary_score_records.settled_at instead (source-side dedup).
   try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS uniq_escrow_recipient_order_path ON pending_commission_escrow(recipient_user_id, order_id, attribution_path)') } catch {}
 }
+
+// ─── RFC-023 OAuth for Remote MCP (PR-1: schema only; no auth logic yet) ──────────
+// Opaque tokens (D1) + no refresh (D2) + allowlist clients (D3) + SAFE scope (D5) + aud-bound (I-3).
+// Secrets are stored HASHED, never plaintext. Tokens are credentials FOR an RFC-020 grant (I-5):
+// oauth_access_tokens.grant_id references the RFC-020 grant that carries the real capability/revocation.
+export function initOAuthSchema(db: Database.Database): void {
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS oauth_clients (
+    client_id     TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    redirect_uris TEXT NOT NULL,           -- JSON array; exact-match validated (T5)
+    status        TEXT NOT NULL DEFAULT 'active',   -- active | disabled
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  )`)
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS oauth_auth_codes (
+    code_hash      TEXT PRIMARY KEY,       -- sha256 of the code; never store plaintext
+    client_id      TEXT NOT NULL,
+    user_id        TEXT NOT NULL,
+    grant_id       TEXT NOT NULL,          -- the RFC-020 grant minted at consent (I-5)
+    scope          TEXT NOT NULL,          -- space-delimited SAFE scopes
+    code_challenge TEXT NOT NULL,          -- PKCE S256 challenge (I-4)
+    redirect_uri   TEXT NOT NULL,          -- exact-match on exchange (T5)
+    resource       TEXT NOT NULL,          -- RFC 8707; must == https://webaz.xyz/mcp (I-3)
+    expires_at     TEXT NOT NULL,
+    consumed_at    TEXT                    -- single-use (CAS on exchange)
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_oauth_codes_expiry ON oauth_auth_codes(expires_at)`)
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS oauth_access_tokens (
+    token_hash  TEXT PRIMARY KEY,          -- sha256 of the opaque token (D1); never store plaintext
+    grant_id    TEXT NOT NULL,             -- RFC-020 grant principal (I-5)
+    client_id   TEXT NOT NULL,
+    scope       TEXT NOT NULL,             -- SAFE scopes (I-6)
+    aud         TEXT NOT NULL,             -- must == https://webaz.xyz/mcp; validated每 /mcp 调用 (I-3)
+    expires_at  TEXT NOT NULL,             -- short TTL
+    revoked_at  TEXT,                      -- revocation is online (introspection checks this) (D1)
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_oauth_tokens_grant  ON oauth_access_tokens(grant_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_oauth_tokens_expiry ON oauth_access_tokens(expires_at)`)
+}

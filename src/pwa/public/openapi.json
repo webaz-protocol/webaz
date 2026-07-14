@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (781 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (784 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -33,6 +33,27 @@
     "/.well-known/did.json": {
       "get": {
         "summary": "任何标准 DID resolver(Veramo / SpruceID / KILT / web5 ...)可 GET → 解出 issuer key → 验 Phase 4 凭证签名",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/oauth-authorization-server": {
+      "get": {
+        "summary": "RFC 8414 — Authorization Server Metadata",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/oauth-protected-resource": {
+      "get": {
+        "summary": "GET /.well-known/oauth-protected-resource",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/oauth-protected-resource/mcp": {
+      "get": {
+        "summary": "GET /.well-known/oauth-protected-resource/mcp",
         "tags": [],
         "security": []
       }
