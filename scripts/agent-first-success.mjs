@@ -20,7 +20,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
 const ENDPOINT = process.argv[2] || 'https://webaz.xyz/mcp'
-const RUNS = Number(process.argv[3] || 5)
+const RUNS = Math.max(1, Math.floor(Number(process.argv[3] || 5)) || 5)   // 至少 1 次,防 runs=0 → NaN% 假 PASS(Codex P2)
 
 // Canonical first-task steps. Each returns true/false; a run succeeds only if the LAST step (task
 // complete) succeeds — earlier steps are diagnostics telling you WHERE a stranger agent fails.
