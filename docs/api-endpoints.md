@@ -1,12 +1,14 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (781 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (783 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
 | Method | Path | Auth | Admin | Description | Source |
 |---|---|---|---|---|---|
 | GET | `/.well-known/did.json` |  |  | 任何标准 DID resolver(Veramo / SpruceID / KILT / web5 ...)可 GET → 解出 issuer key → 验  | src/pwa/routes/public-utils.ts:409 |
+| GET | `/.well-known/oauth-authorization-server` |  |  | RFC 8414 — Authorization Server Metadata | src/pwa/routes/oauth-discovery.ts:49 |
+| GET | `/.well-known/oauth-protected-resource` |  |  | RFC 9728 — Protected Resource Metadata | src/pwa/routes/oauth-discovery.ts:38 |
 | GET | `/.well-known/webaz-acp-feed.json` |  |  |  | src/pwa/routes/public-utils.ts:402 |
 | GET | `/.well-known/webaz-capabilities.json` |  |  | 集成方 agent fetch 此端点即知"我要做的写需要声明哪个 scope / 哪些写无需 scope / 哪些读受约束"。 | src/pwa/routes/public-utils.ts:291 |
 | GET | `/.well-known/webaz-economic.json` |  |  |  | src/pwa/routes/public-utils.ts:383 |
@@ -111,7 +113,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/governance/applications` | 🔐 | 👑 | GET /api/admin/governance/applications — 列出 pending_onboarding(可筛 quiz_passed +  | src/pwa/routes/governance-onboarding.ts:360 |
 | GET | `/api/admin/governance/auto-deactivations` | 🔐 | 👑 | spec §6.2 公示触发原因(透明 — 元规则 #1) | src/pwa/routes/governance-onboarding.ts:743 |
 | POST | `/api/admin/governance/resolve-appeal` | 🔐 | 👑 | accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由 | src/pwa/routes/governance-onboarding.ts:781 |
-| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:5325 |
+| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:5324 |
 | GET | `/api/admin/health` | 🔐 | 👑 |  | src/pwa/routes/admin-health.ts:33 |
 | GET | `/api/admin/hot-wallet` |  |  | Legacy x-admin-key 入口：仅余额 | src/pwa/routes/admin-wallet-ops.ts:74 |
 | GET | `/api/admin/hot-wallet/status` | 🔐 | 👑 | P2-5: protocol 权限（区域 admin 看不到全局热钱包） | src/pwa/routes/admin-wallet-ops.ts:48 |
