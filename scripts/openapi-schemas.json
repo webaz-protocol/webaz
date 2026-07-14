@@ -86,7 +86,7 @@
         "400": { "type": "object", "description": "选择或地址无效" },
         "401": { "type": "object", "description": "未登录，或 agent API key 未通过 Bearer header 提交" },
         "403": { "type": "object", "description": "角色或 agent 消费额度不允许" },
-        "409": { "type": "object", "description": "购物车选择、余额或库存已变化" }
+        "409": { "type": "object", "description": "购物车选择或库存已变化" }
       }
     },
 

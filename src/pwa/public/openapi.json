@@ -3563,7 +3563,7 @@
           },
           "409": {
             "type": "object",
-            "description": "购物车选择、余额或库存已变化"
+            "description": "购物车选择或库存已变化"
           }
         }
       }

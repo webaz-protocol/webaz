@@ -1,7 +1,7 @@
 {
   "_note": "RFC-011 §④ contract fingerprint baseline. Regenerate ONLY together with a CONTRACT_VERSION bump + a CONTRACT_CHANGES entry. tests/test-contract-fingerprint.ts guards this.",
-  "contract_version": 26,
-  "capability": "e3ddd8514a5f4c2a172b350ca17b72feab07c99d30b3d3beeaedb5392848096a",
+  "contract_version": 27,
+  "capability": "a0a409a5ff0c83a4172568ef6789d00915e0eb93bbe508e1db2145ad11c19336",
   "entity": "57cb05c03591e4089362c2a751ac0f876b6b9fbc1503ecde878fee47fba42dd2",
-  "combined": "37622f59f4e5d0013bb2d828a0c990381767d543a5624dfbeed4b4c0e61fb9a3"
+  "combined": "750b88f83728c398222bf077f530aee1c1e3196972cbab8b622bef9feffed26c"
 }

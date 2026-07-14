@@ -113,7 +113,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-ai.js': 2162,
   'src/pwa/routes/orders-create.ts': 485,
   'src/cart-checkout.ts': 165,
-  'src/agent-spend-cap.ts': 54,
+  'src/agent-spend-cap.ts': 52,
   'src/price-session-consume.ts': 9,
 }
 
