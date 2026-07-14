@@ -47,8 +47,10 @@ async function main() {
   const { registerOAuthTokenRoutes } = await import('../src/pwa/routes/oauth-token.js')
   const app = express()
   app.use(express.json())   // production-like: server.ts mounts the global JSON parser BEFORE the oauth routes
+  app.get('/oauth/token/boom', () => { throw new Error('internal boom') })   // non-parse error UPSTREAM of the oauth error handler
   const rlKeys: string[] = []
   registerOAuthTokenRoutes(app, { rateLimitOk: (k: string) => { rlKeys.push(k); return true } })
+  app.use((_e: unknown, _req: express.Request, res: express.Response, _next: unknown) => { if (!res.headersSent) res.status(500).json({ error: 'server_error' }) })
   const http = await new Promise<HttpServer>(r => { const s = app.listen(0, () => r(s)) })
   const addr = http.address(); const base = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`
   const exchange = (params: Record<string, string>) =>
@@ -107,6 +109,11 @@ async function main() {
     const ct = r.headers.get('content-type') || ''
     const j = ct.includes('json') ? await r.json() as { error?: string } : {}
     return r.status === 400 && j.error === 'invalid_request' && (r.headers.get('cache-control') || '').includes('no-store')
+  })())
+  ok('5a3. non-parse error on /oauth/token path passes through (not masked as invalid_request)', await (async () => {
+    const r = await fetch(`${base}/oauth/token/boom`)
+    const j = await r.json().catch(() => ({})) as { error?: string }
+    return r.status === 500 && j.error === 'server_error'
   })())
   ok('5a2. malformed JSON via the GLOBAL parser → RFC shape + no-store (prod parser order)', await (async () => {
     const r = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{broken' })

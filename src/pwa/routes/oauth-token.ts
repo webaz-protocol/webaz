@@ -60,8 +60,15 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
   //   ① 本路由的 urlencoded parser(显式 2kb 上限);② 生产在本路由注册【之前】挂的全局 express.json()
   //   —— 它的 parse 错误发生在路由匹配前,route 级 guard 接不到。解法 = path-scoped 4-arg error handler
   //   (Express 错误处理器按注册序在错误后运行,不管错误来自哪个更早的中间件),统一转 RFC JSON。
+  // Convert ONLY body-parser errors (Codex PR-3 round-3): a body-parser error always sets a string
+  // `.type` (entity.parse.failed / entity.too.large / encoding.unsupported / …). Any OTHER earlier
+  // error on /oauth/token must pass through untouched — masking it as invalid_request would hide real
+  // failures.
+  const BODY_PARSER_ERR = /^(entity\.|encoding\.|charset\.|request\.|parameters\.|stream\.)/
   app.use('/oauth/token', (err: unknown, _req: Request, res: Response, next: (e?: unknown) => void): void => {
     if (!err) return next()
+    const type = (err as { type?: unknown }).type
+    if (typeof type !== 'string' || !BODY_PARSER_ERR.test(type)) return next(err)   // not a parse error → don't hijack
     if (res.headersSent) return next(err)
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('Pragma', 'no-cache')
     res.status(400).json({ error: 'invalid_request', error_description: 'malformed or oversized request body' })
