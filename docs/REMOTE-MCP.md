@@ -46,3 +46,12 @@ Pre-launch is invite-gated (Sybil resistance). A key requires a **real human** t
 - **Isolated by construction.** The remote endpoint never uses the server host's credentials; an anonymous caller is strictly read-only. Your Bearer key acts only as your own account.
 - **Rate-limited.** Per-client throttling — keyed on the Cloudflare-attributed client IP for traffic arriving through Cloudflare (the normal path via `webaz.xyz`) — is a defense-in-depth layer atop Cloudflare's edge DDoS protection; back off on `429`. It is not the primary access control (isolation, the Passkey human-gate, and 128-bit keys are). Direct-to-origin traffic that bypasses Cloudflare could rotate the client-IP header to evade this limiter; that residual DoS vector is closed by enabling the Cloudflare-only origin guard (`CF_ORIGIN_GUARD_MODE=enforce`).
 - The machine-readable entry point for agents is [`/.well-known/webaz-integration.json`](https://webaz.xyz/.well-known/webaz-integration.json) (it lists `remote_mcp` when the endpoint is live).
+
+## Compatibility & the North Star (P1)
+
+Two live harnesses measure whether a stranger agent can actually use WebAZ (run against the live endpoint):
+
+- **`npm run agent:first-success`** — the North Star: fresh anonymous MCP client, canonical first task (connect → tools/list → natural-language search recovery → browse → act on a product), reports the **Agent First Task Success Rate**.
+- **`npm run agent:compat-matrix`** — runs that same task through the distinct request shapes real clients use (MCP SDK = Claude Desktop/Code, Cursor; ChatGPT-connector init order; older/newer protocol-version negotiation; stateless no-initialize clients like OpenClaw/Hermes; bare JSON-RPC). All profiles must pass.
+
+These verify the server-side compatibility surface (protocol-version negotiation, Accept handling, stateless call ordering) that determines whether each client can connect. Driving the hosted ChatGPT / Claude / Cursor UIs themselves is manual (steps above).
