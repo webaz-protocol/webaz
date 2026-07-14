@@ -84,7 +84,7 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   'rewards-clearing-mature.ts': 7,  // RFC-018 maturation:matureClearingRow 的同步钱路 db.transaction(order/dispute 重校验读 + CAS pending→settled + region 读 + commission_records 写 + commissionSourceType 的 2 读);sweep 扫描用 async seam(dbAll)。Phase 3 迁 pg
   'rewards-escrow-expire.ts': 2,  // cron money-sweep:扫描读已迁 seam,到期 materialize 的 db.transaction 写仍同步(Phase 3)
   'direct-pay-timeouts.ts': 11,   // Direct Pay (Rail 1) 超时 cron:扫描读(付款窗口/宽限/货款协商×2/接单窗 5 扫)+ 状态转移/释放质押的 db.transaction 写仍同步(money/state path,Phase 3 迁 pg);v16 +1:pending_accept 接单窗超时扫描(sweep E);B4 +1:缓交提醒天数 param 读(sweep F,同步 cron 上下文)
-  'direct-pay-pending-accept.ts': 2,  // 手动接单(v16)+询价(v18):accept 设付款窗 deadline、confirm-quote 总额并入运费+快照重建,均在 db.transaction 内与状态转移同原子(money-adjacent:total_amount 是 dp 平台费/上限口径基数);其余读写全走 async seam
+  'direct-pay-pending-accept.ts': 1,  // 手动接单(v16):accept 设付款窗 deadline,与状态转移同原子;confirm-quote 钱路已抽到 direct-pay-quote-confirm.ts;其余读写全走 async seam
   'rfqs.ts': 25,        // create/cancel/bid/patch/delete 的 db.transaction 写序列 + award/first_match 选标读(rfq/winner 作为权威 subject 喂 awardBidAndCreateOrder,事务内不 re-read);Codex #236 P1:5 条 stake 路径加 tx 内权威守卫——扣款带 balance>=? 守卫、cancel/delete 用 status CAS、create-bid 重确认 RFQ open、patch tx 内重读 bid/rfq 并从重读 stake 算 delta(+3 tx 内重读:patch 2 + delete 1);端点纯校验读/列表/读回 + 单语句通知写已迁 seam
   'trial.ts': 14,          // eval cron 逐 claim metrics 读 + 退款 db.transaction(12)+ claim 抢名额 tx(2);端点纯读/单写已迁 seam。Codex #233 P1:退款 tx 内先 CAS claim(WHERE status='pending_threshold' + changes===1)再扣款(WHERE balance>=amount + changes===1)防并发 eval 双退;metrics/expired 更新同加 status guard(改现有语句,计数不变)
 }
@@ -94,6 +94,7 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
 const EXTRACTED_SYNC_PREPARES: Record<string, number> = {
   'cart-checkout.ts': 5,
   'agent-spend-cap.ts': 2,
+  'direct-pay-quote-confirm.ts': 2,
   'price-session-consume.ts': 1,
 }
 

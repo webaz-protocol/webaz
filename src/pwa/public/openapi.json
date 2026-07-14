@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (784 endpoints, 18 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (784 endpoints, 19 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -3563,7 +3563,7 @@
           },
           "409": {
             "type": "object",
-            "description": "购物车选择、余额或库存已变化"
+            "description": "购物车选择或库存已变化"
           }
         }
       }
@@ -6140,15 +6140,50 @@
     },
     "/api/orders/:id/pending-accept/confirm-quote": {
       "post": {
-        "summary": "CAS:仅 pending_accept 且已报价;总额变更与状态转移同一 db.transaction(要么全生效要么全回滚)。",
+        "summary": "买家确认 Direct Pay 模板外地区运费报价",
         "tags": [
-          "order"
+          "order",
+          "direct-pay"
         ],
         "security": [
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "description": "确认卖家报价后的新订单总额并进入付款窗口。Agent API key 必须经 Authorization: Bearer 发送，且 declared scope 必须包含 place_order；服务端在同一事务内以报价后的总额重新校验单笔及滚动 24 小时消费上限。body api_key 不支持。",
+        "requestBody": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "responses": {
+          "200": {
+            "type": "object",
+            "properties": {
+              "success": {
+                "type": "boolean"
+              },
+              "status": {
+                "const": "direct_pay_window"
+              },
+              "total_amount": {
+                "type": "number"
+              }
+            }
+          },
+          "401": {
+            "type": "object",
+            "description": "未登录，或 API key 未通过 Bearer header 提交"
+          },
+          "403": {
+            "type": "object",
+            "description": "place_order 未声明，或报价后总额超过 agent 单笔/滚动 24 小时消费上限"
+          },
+          "409": {
+            "type": "object",
+            "description": "尚未报价、订单状态竞态，或确认事务失败"
+          }
+        }
       }
     },
     "/api/orders/:id/pending-accept/decline": {

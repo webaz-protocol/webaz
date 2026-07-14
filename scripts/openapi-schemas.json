@@ -1,7 +1,7 @@
 {
   "_meta": {
     "description": "手动维护的 endpoint schema 覆盖（top 核心 path）— gen-openapi.ts 读取并合并到自动生成 inventory",
-    "covered_endpoints": 18,
+    "covered_endpoints": 19,
     "last_updated": "2026-07-14"
   },
   "endpoints": {
@@ -86,7 +86,25 @@
         "400": { "type": "object", "description": "选择或地址无效" },
         "401": { "type": "object", "description": "未登录，或 agent API key 未通过 Bearer header 提交" },
         "403": { "type": "object", "description": "角色或 agent 消费额度不允许" },
-        "409": { "type": "object", "description": "购物车选择、余额或库存已变化" }
+        "409": { "type": "object", "description": "购物车选择或库存已变化" }
+      }
+    },
+
+    "POST /api/orders/:id/pending-accept/confirm-quote": {
+      "summary": "买家确认 Direct Pay 模板外地区运费报价",
+      "description": "确认卖家报价后的新订单总额并进入付款窗口。Agent API key 必须经 Authorization: Bearer 发送，且 declared scope 必须包含 place_order；服务端在同一事务内以报价后的总额重新校验单笔及滚动 24 小时消费上限。body api_key 不支持。",
+      "tags": ["order", "direct-pay"],
+      "security": [{"bearerAuth": []}],
+      "requestBody": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "responses": {
+        "200": { "type": "object", "properties": { "success": {"type":"boolean"}, "status": {"const":"direct_pay_window"}, "total_amount": {"type":"number"} } },
+        "401": { "type": "object", "description": "未登录，或 API key 未通过 Bearer header 提交" },
+        "403": { "type": "object", "description": "place_order 未声明，或报价后总额超过 agent 单笔/滚动 24 小时消费上限" },
+        "409": { "type": "object", "description": "尚未报价、订单状态竞态，或确认事务失败" }
       }
     },
 

@@ -3,7 +3,7 @@
  * 询价握手(PR-3,直付轨)—— 建单分流(quote_ok 三态×轨道)+ 报价/确认端点 + 上限快照约束 + 总额/payable 重建。
  * Usage: npm run test:shipping-quote
  */
-import { mkdtempSync } from 'fs'; import { join } from 'path'; import { tmpdir } from 'os'
+import { mkdtempSync, readFileSync } from 'fs'; import { join } from 'path'; import { tmpdir } from 'os'
 process.env.HOME = mkdtempSync(join(tmpdir(), 'shipq-'))
 import express, { type Request, type Response } from 'express'
 import { createServer, request as httpRequest, type Server } from 'node:http'
@@ -13,15 +13,19 @@ const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js
 const { initSystemUser, transition } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
 const { initOrderChainSchema, appendOrderEvent } = await import('../src/layer0-foundation/L0-2-state-machine/order-chain.js')
 const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
+const { initAgentAttestationsSchema } = await import('../src/runtime/webaz-schema-helpers.js')
 const ST = await import('../src/shipping-templates.js')
 const { createDirectPayOrder } = await import('../src/direct-pay-create.js')
 const { registerDirectPayPendingAcceptRoutes } = await import('../src/pwa/routes/direct-pay-pending-accept.js')
+const { endpointToAction } = await import('../src/pwa/endpoint-actions.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
-initSystemUser(db); initOrderChainSchema(db); initNotificationSchema(db)
+initSystemUser(db); initOrderChainSchema(db); initNotificationSchema(db); initAgentAttestationsSchema(db)
+// donation_amount is still a server boot migration; this focused fixture needs the spend-cap reader's production shape.
+db.exec('ALTER TABLE orders ADD COLUMN donation_amount REAL DEFAULT 0')
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('s1','s1','seller','k_s1'),('b1','b1','buyer','k_b1'),('outsider','o','buyer','k_o')").run()
 db.prepare("INSERT INTO products (id,seller_id,title,description,price,stock) VALUES ('p','s1','P','d',30,10)").run()
 db.prepare("UPDATE users SET store_shipping_template = ? WHERE id='s1'").run(JSON.stringify([{ region: 'SG', fee: 2 }]))
@@ -72,14 +76,19 @@ const orderRow = (id: string): Record<string, unknown> => db.prepare('SELECT * F
 const app = express(); app.use(express.json())
 registerDirectPayPendingAcceptRoutes(app, {
   db,
-  auth: (req: Request, res: Response) => { const uid = req.headers['x-test-uid'] as string | undefined; if (!uid) { res.status(401).json({ error: 'login' }); return null } return { id: uid, role: uid === 's1' ? 'seller' : 'buyer' } },
+  auth: (req: Request, res: Response) => {
+    const bearer = req.headers.authorization?.match(/^Bearer ([^\s]+)$/)?.[1]
+    const uid = req.headers['x-test-uid'] as string | undefined || (bearer === 'quote-agent' ? 'b1' : undefined)
+    if (!uid) { res.status(401).json({ error: 'login' }); return null }
+    return { id: uid, role: uid === 's1' ? 'seller' : 'buyer' }
+  },
   errorRes: (res: Response, s: number, c: string, m: string) => { res.status(s).json({ error: m, error_code: c }) },
   getProtocolParam: <T,>(_k: string, fb: T): T => fb,
 } as never)
 let server!: Server
 const port: number = await new Promise(r => { server = createServer(app); server.listen(0, () => r((server.address() as { port: number }).port)) })
-const call = (method: string, path: string, uid?: string, body?: unknown): Promise<{ status: number; json: Record<string, unknown> }> => new Promise((resolve, reject) => {
-  const headers: Record<string, string> = { 'content-type': 'application/json' }; if (uid) headers['x-test-uid'] = uid
+const call = (method: string, path: string, uid?: string, body?: unknown, authorization?: string): Promise<{ status: number; json: Record<string, unknown> }> => new Promise((resolve, reject) => {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }; if (uid) headers['x-test-uid'] = uid; if (authorization) headers.authorization = authorization
   const rq = httpRequest({ host: '127.0.0.1', port, method, path, headers }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve({ status: res.statusCode || 0, json: d ? JSON.parse(d) : {} }) } catch { resolve({ status: res.statusCode || 0, json: {} }) } }) })
   rq.on('error', reject); if (body) rq.write(JSON.stringify(body)); rq.end()
 })
@@ -107,13 +116,58 @@ try {
   ok('17. seller notified of confirmation', (db.prepare("SELECT COUNT(*) c FROM notifications WHERE order_id=? AND user_id='s1' AND type='direct_pay_quote_confirmed'").get(oid) as { c: number }).c === 1)
   ok('18. double confirm rejected (order no longer pending_accept)', (await call('POST', `/api/orders/${oid}/pending-accept/confirm-quote`, 'b1')).status === 409)
   db.prepare("UPDATE orders SET status='cancelled' WHERE id=?").run(oid); db.prepare("UPDATE products SET stock=10 WHERE id='p'").run()
+  // 确认报价也是购买承诺:严格 Bearer + 事务内以新总额替换旧订单金额重算 agent cap。
+  {
+    const capped = mkQuoteOrder()
+    await call('POST', `/api/orders/${capped}/pending-accept/quote`, 's1', { shipping_fee: 6 })
+    ok('19. confirm-quote classifies as place_order', endpointToAction('POST', `/api/orders/${capped}/pending-accept/confirm-quote`) === 'place_order')
+    ok('20. body api_key is rejected before quote confirmation', (await call('POST', `/api/orders/${capped}/pending-accept/confirm-quote`, 'b1', { api_key: 'quote-agent' })).status === 401
+      && orderRow(capped).status === 'pending_accept' && Number(orderRow(capped).total_amount) === 30)
+    ok('21. malformed Authorization is rejected before quote confirmation', (await call('POST', `/api/orders/${capped}/pending-accept/confirm-quote`, 'b1', {}, 'quote-agent')).status === 401
+      && orderRow(capped).status === 'pending_accept' && Number(orderRow(capped).total_amount) === 30)
+    db.prepare(`INSERT INTO agent_attestations
+      (id,api_key,user_id,approved_scope,spend_cap_per_order,spend_cap_daily)
+      VALUES ('quote-cap','quote-agent','b1','["place_order"]',35,NULL)`).run()
+    const overCap = await call('POST', `/api/orders/${capped}/pending-accept/confirm-quote`, undefined, {}, 'Bearer quote-agent')
+    ok('22. quote-adjusted total is rechecked against agent per-order cap', overCap.status === 403 && overCap.json.error_code === 'AGENT_SPEND_CAP_PER_ORDER', JSON.stringify(overCap))
+    ok('23. cap rejection rolls back total and state', orderRow(capped).status === 'pending_accept' && Number(orderRow(capped).total_amount) === 30)
+    const historicalWithoutTarget = (db.prepare(`SELECT COALESCE(SUM(total_amount + COALESCE(donation_amount,0)),0) AS total
+      FROM orders WHERE buyer_id='b1' AND created_at > datetime('now','-24 hours') AND status != 'cancelled' AND id != ?`).get(capped) as { total: number }).total
+    db.prepare("UPDATE agent_attestations SET spend_cap_per_order=40, spend_cap_daily=? WHERE id='quote-cap'").run(historicalWithoutTarget + 36)
+    const exactDaily = await call('POST', `/api/orders/${capped}/pending-accept/confirm-quote`, undefined, {}, 'Bearer quote-agent')
+    ok('24. daily cap replaces the existing order total instead of double-counting it', exactDaily.status === 200 && Number(orderRow(capped).total_amount) === 36, JSON.stringify(exactDaily))
+    db.prepare("UPDATE orders SET created_at=datetime('now','-30 hours') WHERE id=?").run(capped)
+    const delayedTarget = mkQuoteOrder()
+    await call('POST', `/api/orders/${delayedTarget}/pending-accept/quote`, 's1', { shipping_fee: 1 })
+    db.prepare("UPDATE agent_attestations SET spend_cap_per_order=40, spend_cap_daily=60 WHERE id='quote-cap'").run()
+    const delayedBlocked = await call('POST', `/api/orders/${delayedTarget}/pending-accept/confirm-quote`, undefined, {}, 'Bearer quote-agent')
+    ok('25. delayed quote confirmation stays in rolling-24h spend by confirmation history', delayedBlocked.status === 403 && delayedBlocked.json.error_code === 'AGENT_SPEND_CAP_DAILY', JSON.stringify(delayedBlocked))
+    ok('26. delayed-history cap rejection leaves the next order unchanged', orderRow(delayedTarget).status === 'pending_accept' && Number(orderRow(delayedTarget).total_amount) === 30)
+    db.prepare("DELETE FROM agent_attestations WHERE id='quote-cap'").run()
+    db.prepare("UPDATE orders SET status='cancelled' WHERE id IN (?,?)").run(capped, delayedTarget); db.prepare("UPDATE products SET stock=10 WHERE id='p'").run()
+  }
+  // 确认报价的钱路要求签名事件成功;审计写失败必须回滚总额、快照、状态与历史。
+  {
+    const auditOrder = mkQuoteOrder()
+    await call('POST', `/api/orders/${auditOrder}/pending-accept/quote`, 's1', { shipping_fee: 4 })
+    const before = orderRow(auditOrder)
+    db.exec("CREATE TRIGGER force_quote_audit_failure BEFORE INSERT ON order_events BEGIN SELECT RAISE(ABORT,'forced audit failure'); END")
+    const auditFailed = await call('POST', `/api/orders/${auditOrder}/pending-accept/confirm-quote`, 'b1')
+    db.exec('DROP TRIGGER force_quote_audit_failure')
+    const after = orderRow(auditOrder)
+    ok('27. signed-event failure rejects quote confirmation', auditFailed.status === 409 && String(auditFailed.json.error).includes('forced audit failure'), JSON.stringify(auditFailed))
+    ok('28. signed-event failure rolls back amount/state/snapshot/history', after.status === 'pending_accept' && Number(after.total_amount) === Number(before.total_amount)
+      && after.direct_pay_account_snapshot === before.direct_pay_account_snapshot
+      && (db.prepare("SELECT COUNT(*) c FROM order_state_history WHERE order_id=? AND to_status='direct_pay_window'").get(auditOrder) as { c: number }).c === 0)
+    db.prepare("UPDATE orders SET status='cancelled' WHERE id=?").run(auditOrder); db.prepare("UPDATE products SET stock=10 WHERE id='p'").run()
+  }
   // 买家不接受报价 → 既有 /cancel(无责+回补)
   {
     const s0 = (db.prepare("SELECT stock s FROM products WHERE id='p'").get() as { s: number }).s
     const o2 = mkQuoteOrder()
     await call('POST', `/api/orders/${o2}/pending-accept/quote`, 's1', { shipping_fee: 6 })
     const r = await call('POST', `/api/orders/${o2}/pending-accept/cancel`, 'b1')
-    ok('19. buyer declines quote via cancel → no-fault cancelled + restock', r.status === 200 && orderRow(o2).status === 'cancelled'
+    ok('29. buyer declines quote via cancel → no-fault cancelled + restock', r.status === 200 && orderRow(o2).status === 'cancelled'
       && (db.prepare("SELECT stock s FROM products WHERE id='p'").get() as { s: number }).s === s0)
   }
   // quote on non-quote order → 409
@@ -125,9 +179,14 @@ try {
       pendingAcceptDeadlineIso: new Date(Date.now() + 24 * 3600_000).toISOString(),
       shipping: { region: 'SG', fee: 2, estDays: null, quoteRequired: false },
     }).orderId
-    ok('20. quote on covered/manual order → 409 NOT_QUOTE_ORDER (plain accept still works)', (await call('POST', `/api/orders/${o3}/pending-accept/quote`, 's1', { shipping_fee: 5 })).status === 409
+    ok('30. quote on covered/manual order → 409 NOT_QUOTE_ORDER (plain accept still works)', (await call('POST', `/api/orders/${o3}/pending-accept/quote`, 's1', { shipping_fee: 5 })).status === 409
       && (await call('POST', `/api/orders/${o3}/pending-accept/accept`, 's1')).status === 200)
   }
+  const routeSource = readFileSync(new URL('../src/pwa/routes/direct-pay-pending-accept.ts', import.meta.url), 'utf8')
+  const quoteCas = routeSource.indexOf('if (quoted.changes !== 1)')
+  ok('31. stale seller re-quote CAS rejects before notification', quoteCas > 0 && routeSource.indexOf('notify(order.buyer_id', quoteCas) > quoteCas)
+  const indexes = (db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all() as Array<{ name: string }>).map(r => r.name)
+  ok('32. rolling-24h cap query has buyer + confirmation-history indexes', indexes.includes('idx_orders_buyer_created_at') && indexes.includes('idx_order_history_order_status_created'))
 } finally { server.close() }
 
 if (fail > 0) { console.error(`\n❌ shipping-quote FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
