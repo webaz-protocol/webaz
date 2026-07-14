@@ -286,11 +286,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/build-tasks/:id/claim` | 🔐 |  | task → claim respects auto_claimable. Success appends value_boundary + canonical | src/pwa/routes/build-tasks.ts:64 |
 | POST | `/api/build-tasks/:id/release` | 🔐 |  |  | src/pwa/routes/build-tasks.ts:94 |
 | POST | `/api/build-tasks/:id/submit` | 🔐 |  |  | src/pwa/routes/build-tasks.ts:76 |
-| GET | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:43 |
-| POST | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:58 |
-| DELETE | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:124 |
-| PATCH | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:73 |
-| POST | `/api/cart/checkout` | 🔐 |  | C-1: 购物车批量下单（每个选中商品独立订单） | src/pwa/routes/cart.ts:82 |
+| GET | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:44 |
+| POST | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:59 |
+| DELETE | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:125 |
+| PATCH | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:74 |
+| POST | `/api/cart/checkout` | 🔐 |  | C-1: 购物车批量下单（每个选中商品独立订单） | src/pwa/routes/cart.ts:83 |
 | GET | `/api/charity/fund` |  |  | GET 基金概况 + 最近流水 | src/pwa/routes/charity.ts:696 |
 | POST | `/api/charity/fund/donate` | 🔐 |  | 任何人捐款给慈善基金 | src/pwa/routes/charity.ts:654 |
 | GET | `/api/charity/leaderboard` |  |  | 慈善排行 | src/pwa/routes/charity.ts:843 |
@@ -493,7 +493,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | PATCH | `/api/offers/:id` | 🔐 |  |  | src/pwa/routes/offers.ts:33 |
 | POST | `/api/offers/:id/refresh` | 🔐 |  | 刷新 freshness（卖家点 "现货确认"） | src/pwa/routes/offers.ts:105 |
 | GET | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-read.ts:48 |
-| POST | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-create.ts:119 |
+| POST | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-create.ts:120 |
 | GET | `/api/orders/:id` | 🔐 |  |  | src/pwa/routes/orders-read.ts:174 |
 | POST | `/api/orders/:id/action` | 🔐 |  | 通用状态机 action — accept/ship/pickup/transit/deliver/confirm/dispute | src/pwa/routes/orders-action.ts:173 |
 | GET | `/api/orders/:id/cancel-refund` | 🔐 |  |  | src/pwa/routes/direct-pay-cancel-refund.ts:48 |

@@ -32,6 +32,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 const db = initDatabase()
 db.pragma('foreign_keys = OFF')
 try { db.exec('ALTER TABLE orders ADD COLUMN settled_fault_at TEXT') } catch { /* boot-ALTER col;缓交配额 SQL 用它排除拒单/违约结算单 */ }
+try { db.exec('ALTER TABLE orders ADD COLUMN donation_amount REAL DEFAULT 0') } catch { /* server boot migration; agent cap includes donations */ }
 setSeamDb(db)
 initAgentAttestationsSchema(db)
 initOrderChainSchema(db)
@@ -107,7 +108,7 @@ registerOrdersCreateRoutes(app, {
   db,
   auth: (req: Request, res: Response) => { const uid = req.headers['x-test-uid'] as string | undefined; if (!uid) { res.status(401).json({ error: 'login' }); return null } return { id: uid, role: 'buyer' } },
   isTrustedRole: () => false, generateId: (p: string) => `${p}_${++oc}`, generateRecipientCode: () => 'RC',
-  DONATION_VALID_PCTS: new Set([0, 1, 2, 5]), INTERNAL_AUDITOR_ID: 'audit',
+  DONATION_VALID_PCTS: new Set([0, 0.005, 0.01, 0.02, 0.05]), INTERNAL_AUDITOR_ID: 'audit',
   addHours: (d: Date, h: number) => new Date(d.getTime() + h * 3600_000).toISOString(),
   getActiveFlashSale: () => null, applyCouponToOrder: () => ({ ok: false }),
   getProtocolParam: <T,>(k: string, fb: T): T => (k in cp ? cp[k] as T : fb),
@@ -118,11 +119,12 @@ registerOrdersCreateRoutes(app, {
 })
 let server: Server
 const port: number = await new Promise(r => { server = createServer(app); server.listen(0, () => r((server.address() as any).port)) })
-function post(body: Record<string, unknown>, uid?: string, apiKey?: string): Promise<{ status: number; json: any }> {
+function post(body: Record<string, unknown>, uid?: string, apiKey?: string, authorization?: string): Promise<{ status: number; json: any }> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body); const headers: Record<string, string> = { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(payload)) }
     if (uid) headers['x-test-uid'] = uid
-    if (apiKey) headers.authorization = `Bearer ${apiKey}`
+    if (authorization) headers.authorization = authorization
+    else if (apiKey) headers.authorization = `Bearer ${apiKey}`
     const rq = httpRequest({ host: '127.0.0.1', port, method: 'POST', path: '/api/orders', headers }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve({ status: res.statusCode || 0, json: d ? JSON.parse(d) : null }) } catch { resolve({ status: res.statusCode || 0, json: d }) } }) })
     rq.on('error', reject); rq.write(payload); rq.end()
   })
@@ -130,12 +132,20 @@ function post(body: Record<string, unknown>, uid?: string, apiKey?: string): Pro
 
 const bodyKey = await post({ product_id: 'p1', shipping_address: 'addr', api_key: 'cap-key' }, 'buyer1')
 ok('orders route: body api_key cannot authenticate purchase', bodyKey.status === 401 && bodyKey.json?.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(bodyKey))
+const rawKey = await post({ product_id: 'p1', shipping_address: 'addr' }, 'buyer1', undefined, 'cap-key')
+ok('orders route: raw Authorization credential cannot bypass Bearer-only cap enforcement', rawKey.status === 401 && rawKey.json?.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(rawKey))
 db.prepare(`INSERT INTO agent_attestations (id,api_key,user_id,approved_scope,spend_cap_per_order,spend_cap_daily)
   VALUES ('create-cap','cap-key','buyer1','[]',10,1000)`).run()
 const escrowCapOrders = (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n; const escrowCapStock = pstock()
 const escrowCap = await post({ product_id: 'p1', quantity: 1, shipping_address: 'addr' }, 'buyer1', 'cap-key')
 ok('escrow route: final amount is cap-checked inside the write transaction', escrowCap.status === 403 && escrowCap.json?.error_code === 'AGENT_SPEND_CAP_PER_ORDER', JSON.stringify(escrowCap))
 ok('escrow route: cap rejection leaves order and stock unchanged', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === escrowCapOrders && pstock() === escrowCapStock)
+db.prepare("UPDATE agent_attestations SET spend_cap_per_order=52 WHERE id='create-cap'").run()
+const donationCapOrders = (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n; const donationCapStock = pstock()
+const donationCap = await post({ product_id: 'p1', quantity: 1, shipping_address: 'addr', donation_pct: 0.05 }, 'buyer1', 'cap-key')
+ok('escrow route: spend cap includes the additional donation debit', donationCap.status === 403 && donationCap.json?.error_code === 'AGENT_SPEND_CAP_PER_ORDER', JSON.stringify(donationCap))
+ok('escrow route: donation-inclusive cap rejection has no side effects', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === donationCapOrders && pstock() === donationCapStock)
+db.prepare("UPDATE agent_attestations SET spend_cap_per_order=10 WHERE id='create-cap'").run()
 
 // seller2: no bond, no instruction
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller2','s2','seller','k_s2')").run()

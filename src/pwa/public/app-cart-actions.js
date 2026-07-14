@@ -1,11 +1,8 @@
 // Cart selection is a transaction intent: totals, deletes and checkout share this one source.
 (function () {
-  function selectedProductIds() {
-    return [...document.querySelectorAll('.cart-item-check')]
-      .filter(cb => cb.checked)
-      .map(cb => cb.dataset.pid)
-      .filter(Boolean)
-  }
+  function selectedCartRows() { return [...document.querySelectorAll('.cart-item-check')].filter(cb => cb.checked) }
+  function selectedProductIds() { return selectedCartRows().map(cb => cb.dataset.pid).filter(Boolean) }
+  function selectedCheckoutItems() { return selectedCartRows().map(cb => ({ product_id: cb.dataset.pid, qty: Number(cb.dataset.qty), unit_price: Number(cb.dataset.unitPrice) })) }
 
   function setBusy(busy) {
     document.querySelectorAll('.cart-item-check, #cart-select-all, #cart-remove-selected, #cart-checkout')
@@ -83,13 +80,13 @@
     const addr = document.getElementById('cart-addr').value.trim()
     const msg = document.getElementById('cart-msg')
     if (!addr) { msg.innerHTML = alert$('error', t('请填写收货地址')); return }
-    const productIds = selectedProductIds()
-    if (productIds.length === 0) { msg.innerHTML = alert$('error', t('未选中任何商品')); return }
+    const items = selectedCheckoutItems()
+    if (items.length === 0) { msg.innerHTML = alert$('error', t('未选中任何商品')); return }
     setBusy(true)
     msg.innerHTML = loading$()
     let result
     try {
-      result = await POST('/cart/checkout', { shipping_address: addr, product_ids: productIds })
+      result = await POST('/cart/checkout', { shipping_address: addr, items })
     } catch (_) {
       setBusy(false)
       msg.innerHTML = alert$('error', t('操作失败，请重试'))

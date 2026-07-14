@@ -33,7 +33,7 @@ import { buildCartMandate, buildPaymentMandate, signMandate } from './ap2-mandat
 import { toUnits, toDecimal, mulQty, mulRate } from '../../money.js'
 import { createDirectPayResponse } from '../../direct-pay-create.js'                    // PR-4c: direct_p2p 建单分叉(生产门+收款指令门+原子建单;本金不入协议)
 import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'; import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from '../../trade-terms.js'; import { gateSaleRegionForCreate } from '../../sale-regions.js'  // PR-2 运费守门 + S0 条款快照 + S1 可售门(意愿/合规先于物流)
-import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'; import { AgentSpendCapExceeded, getAgentSpendCapViolation } from '../../agent-spend-cap.js'  // RFC-016 异步 DB seam(仅下单事务外的预检查;事务内 escrow/INSERT 保持同步)
+import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'; import { AgentSpendCapExceeded, getAgentSpendCapViolation } from '../../agent-spend-cap.js'; import { hasInvalidPurchaseCredential, readStrictBearerCredential } from '../bearer-auth.js'  // RFC-016 异步 DB seam(仅下单事务外的预检查;事务内 escrow/INSERT 保持同步)
 
 // 店铺推荐 → 商品三级归因的【懒升级】(sync,跑在下单事务内、getProductShareChain 之前)。
 // 严格门槛(任一不满足则不升级,绝不覆盖已有有效直接归因):
@@ -122,7 +122,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     if (isTrustedRole(user as Record<string, unknown>)) return void res.status(403).json({ error: '受信角色不可参与交易', error_code: 'TRUSTED_ROLE_NO_TRADE' })
     if (user.role !== 'buyer') return void res.json({ error: '仅买家可下单' })
     // 2026-05-23 P0 audit fix 2.1：agent_attestations spend_cap 强制
-    const apiKey = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1]; if (typeof req.body?.api_key === 'string' && !apiKey) return void res.status(401).json({ error: '下单必须使用 Authorization: Bearer <api_key>', error_code: 'AUTH_HEADER_REQUIRED' })
+    const apiKey = readStrictBearerCredential(req.headers.authorization); if (hasInvalidPurchaseCredential(req.headers.authorization, req.body?.api_key, apiKey)) return void res.status(401).json({ error: '下单必须使用 Authorization: Bearer <api_key>', error_code: 'AUTH_HEADER_REQUIRED' })
     if (apiKey) {
       const cap = await dbOne<{ spend_cap_per_order: number | null; spend_cap_daily: number | null }>(`SELECT spend_cap_per_order, spend_cap_daily FROM agent_attestations
         WHERE api_key = ? AND user_id = ? AND revoked_at IS NULL`, [apiKey, user.id])
@@ -138,7 +138,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
           })
         }
         if (cap.spend_cap_daily != null) {
-          const todaySpent = (await dbOne<{ t: number }>(`SELECT COALESCE(SUM(total_amount), 0) as t
+          const todaySpent = (await dbOne<{ t: number }>(`SELECT COALESCE(SUM(total_amount + COALESCE(donation_amount, 0)), 0) as t
             FROM orders WHERE buyer_id = ? AND created_at > datetime('now', '-24 hours') AND status != 'cancelled'`,
             [user.id]))!.t
           if (todaySpent + estTotal > cap.spend_cap_daily) {
@@ -309,7 +309,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     // P0: 整个下单流程原子化 — INSERT order + UPDATE wallet + UPDATE products + transition 任一步抛错全部回滚
     try {
       db.transaction(() => {
-        const spendViolation = getAgentSpendCapViolation(db, apiKey, user.id as string, [totalAmount]); if (spendViolation) throw new AgentSpendCapExceeded(spendViolation)
+        const spendViolation = getAgentSpendCapViolation(db, apiKey, user.id as string, [totalAmount + donationAmount]); if (spendViolation) throw new AgentSpendCapExceeded(spendViolation)
         // 推土机分享快照：从 buyer.sponsor_path 解析 L1/L2/L3，应用 region 限制
         const buyer = db.prepare("SELECT sponsor_id, sponsor_path, region FROM users WHERE id = ?").get(user.id) as { sponsor_id: string | null; sponsor_path: string | null; region: string | null }
         // 孤儿用户首次绑 sponsor：buyer 无 sponsor + 客户端传 sponsor_hint

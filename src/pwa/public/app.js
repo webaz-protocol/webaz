@@ -11355,7 +11355,7 @@ async function renderCart(app) {
         const lowStock = Number(it.stock) < Number(it.qty)
         return `<div class="card" style="margin-bottom:8px;padding:12px${lowStock ? ';border-left:3px solid #dc2626' : ''}">
           <div style="display:flex;gap:10px;align-items:center">
-            <input type="checkbox" class="cart-item-check" data-pid="${it.product_id}" data-subtotal="${subtotal}" checked onchange="cartRecalcTotal()" style="width:18px;height:18px">
+            <input type="checkbox" class="cart-item-check" data-pid="${it.product_id}" data-qty="${Number(it.qty)}" data-unit-price="${Number(it.price)}" data-subtotal="${subtotal}" checked onchange="cartRecalcTotal()" style="width:18px;height:18px">
             <div style="font-size:28px">${getCategoryIcon(it.category)}</div>
             <div style="flex:1;min-width:0">
               <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(it.title)}</div>

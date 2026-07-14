@@ -21,14 +21,16 @@ const section = (start: string, end: string): string => {
   return cart.slice(from, to === -1 ? cart.length : to)
 }
 
-const selection = section('function selectedProductIds()', 'function setBusy')
+const selection = section('function selectedCartRows()', 'function setBusy')
 const removeChecked = section('window.cartRemoveChecked = async () =>', 'window.cartChangeQty')
 const checkout = section('window.cartCheckout = async () =>', '// ─── 订单列表页')
 
 ok('cart action module is loaded by the PWA', index.includes('/app-cart-actions.js'))
-ok('selection derives IDs only from checked cart rows', /querySelectorAll\('\.cart-item-check'\)[\s\S]*filter\(cb => cb\.checked\)[\s\S]*map\(cb => cb\.dataset\.pid\)/.test(selection))
-ok('checkout refuses an empty local selection', /selectedProductIds\(\)[\s\S]*productIds\.length === 0/.test(checkout))
-ok('checkout posts selected product_ids with the address', /POST\('\/cart\/checkout',\s*\{\s*shipping_address:\s*addr,\s*product_ids:\s*productIds\s*\}\)/.test(checkout))
+ok('selection derives rows only from checked cart entries', /querySelectorAll\('\.cart-item-check'\)[\s\S]*filter\(cb => cb\.checked\)/.test(selection))
+ok('checkout intent binds product id, quantity and unit price', /selectedCheckoutItems[\s\S]*product_id:[\s\S]*qty:[\s\S]*unit_price:/.test(selection))
+ok('cart rows expose the confirmed quantity and unit price', /data-qty=/.test(app) && /data-unit-price=/.test(app))
+ok('checkout refuses an empty local selection', /selectedCheckoutItems\(\)[\s\S]*items\.length === 0/.test(checkout))
+ok('checkout posts selected item intents with the address', /POST\('\/cart\/checkout',\s*\{\s*shipping_address:\s*addr,\s*items\s*\}\)/.test(checkout))
 ok('bulk removal deletes each selected product independently', /for \(const pid of ids\)[\s\S]*DELETE\(`\/cart\/\$\{encodeURIComponent\(pid\)\}`\)/.test(removeChecked))
 ok('bulk removal never calls the retired cart/remove endpoint', !(app + cart).includes('/cart/remove'))
 ok('bulk removal always releases busy state after refresh/network failure', /finally\s*\{\s*setBusy\(false\)\s*\}/.test(removeChecked))

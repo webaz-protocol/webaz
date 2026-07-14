@@ -35,6 +35,7 @@ initOrderChainSchema(db)
 initNotificationSchema(db)
 // `source` is an older server-start migration; route integration uses the same production shape.
 try { db.exec('ALTER TABLE orders ADD COLUMN source TEXT') } catch { /* fresh schema already has it */ }
+try { db.exec('ALTER TABLE orders ADD COLUMN donation_amount REAL DEFAULT 0') } catch { /* server boot migration */ }
 
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('buyer','Buyer','buyer','buyer-key'),('other-buyer','Other buyer','buyer','other-key'),('seller','Seller','seller','seller-key'),('seller-2','Seller 2','seller','seller-2-key')").run()
 db.prepare("INSERT INTO wallets (user_id,balance,escrowed) VALUES ('buyer',100,0),('other-buyer',100,0),('seller',0,0),('seller-2',0,0)").run()
@@ -81,24 +82,32 @@ registerCartRoutes(app, {
 
 const server = app.listen(0)
 const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-const checkout = async (body: Record<string, unknown>, apiKey?: string): Promise<{ status: number; json: Record<string, unknown> }> => {
+const checkout = async (body: Record<string, unknown>, apiKey?: string, authorization?: string): Promise<{ status: number; json: Record<string, unknown> }> => {
   const response = await fetch(`${base}/api/cart/checkout`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-test-user': 'buyer', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
+    headers: { 'content-type': 'application/json', 'x-test-user': 'buyer', ...(authorization ? { authorization } : apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
     body: JSON.stringify(body),
   })
   return { status: response.status, json: await response.json() as Record<string, unknown> }
 }
-const selected = (productIds: string[]) => ({ shipping_address: '1 Checkout Road', product_ids: productIds })
+const selected = (productIds: string[]) => ({
+  shipping_address: '1 Checkout Road',
+  items: productIds.map(productId => {
+    const item = row<{ qty: number; price: number }>('SELECT c.qty, p.price FROM cart_items c JOIN products p ON p.id=c.product_id WHERE c.user_id=\'buyer\' AND c.product_id=?', productId.trim())
+    return { product_id: productId, qty: item?.qty ?? 1, unit_price: item?.price ?? 0 }
+  }),
+})
 
 try {
   const openapi = JSON.parse(readFileSync(new URL('./openapi-schemas.json', import.meta.url), 'utf8'))
   const checkoutSchema = openapi.endpoints?.['POST /api/cart/checkout']?.requestBody
-  ok('OpenAPI requires shipping_address and product_ids', checkoutSchema?.required?.includes('shipping_address') && checkoutSchema.required.includes('product_ids'))
-  ok('OpenAPI selection bounds match runtime', checkoutSchema?.properties?.product_ids?.minItems === 1 && checkoutSchema.properties.product_ids.maxItems === 500 && checkoutSchema.properties.product_ids.uniqueItems === true)
+  ok('OpenAPI requires shipping_address and items', checkoutSchema?.required?.includes('shipping_address') && checkoutSchema.required.includes('items'))
+  ok('OpenAPI selection bounds match runtime', checkoutSchema?.properties?.items?.minItems === 1 && checkoutSchema.properties.items.maxItems === 500)
 
   const bodyKey = await checkout({ ...selected(['not-needed']), api_key: 'capped-key' })
   ok('body api_key cannot authenticate checkout', bodyKey.status === 401 && bodyKey.json.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(bodyKey))
+  const rawKey = await checkout(selected(['not-needed']), undefined, 'capped-key')
+  ok('raw Authorization credential cannot bypass Bearer-only checkout', rawKey.status === 401 && rawKey.json.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(rawKey))
 
   // Partial choice: only explicit IDs are candidates; selected skips retain their historical semantics.
   seedProduct('chosen', 10, 5)
@@ -148,7 +157,9 @@ try {
   const invalidCases: Array<[string, Record<string, unknown>, string]> = [
     ['missing selection', { shipping_address: '1 Checkout Road' }, 'CART_SELECTION_REQUIRED'],
     ['empty selection', selected([]), 'CART_SELECTION_REQUIRED'],
-    ['non-string selection member', selected([123] as unknown as string[]), 'CART_SELECTION_INVALID'],
+    ['non-object selection member', { shipping_address: '1 Checkout Road', items: [123] }, 'CART_SELECTION_INVALID'],
+    ['invalid quantity', { shipping_address: '1 Checkout Road', items: [{ product_id: 'validation-item', qty: 0, unit_price: 5 }] }, 'CART_SELECTION_INVALID'],
+    ['invalid unit price', { shipping_address: '1 Checkout Road', items: [{ product_id: 'validation-item', qty: 1, unit_price: Number.NaN }] }, 'CART_SELECTION_INVALID'],
     ['exact duplicate selection', selected(['validation-item', 'validation-item']), 'CART_SELECTION_INVALID'],
     ['duplicate after trim', selected(['validation-item', ' validation-item ']), 'CART_SELECTION_INVALID'],
     ['selection over 500 items', selected(Array.from({ length: 501 }, (_, i) => `item-${i}`)), 'CART_SELECTION_INVALID'],
@@ -174,6 +185,24 @@ try {
     && crossUser.json.error_code === 'CART_SELECTION_STALE' && crossUser.json.error === stale.json.error)
   ok('another buyer cart id cannot cause commerce side effects', state(['validation-item', 'other-buyer-cart-item']) === crossUserBefore)
 
+  seedProduct('price-drift', 11, 4)
+  seedCart('price-drift', 2)
+  const priceIntent = selected(['price-drift'])
+  db.prepare("UPDATE products SET price=12 WHERE id='price-drift'").run()
+  const priceDriftBefore = state(['price-drift'])
+  const priceDrift = await checkout(priceIntent)
+  ok('price change after buyer confirmation returns CART_SELECTION_STALE', priceDrift.status === 409 && priceDrift.json.error_code === 'CART_SELECTION_STALE', JSON.stringify(priceDrift))
+  ok('price drift rejection has no side effects', state(['price-drift']) === priceDriftBefore)
+
+  seedProduct('qty-drift', 3, 6)
+  seedCart('qty-drift', 1)
+  const qtyIntent = selected(['qty-drift'])
+  db.prepare("UPDATE cart_items SET qty=2 WHERE user_id='buyer' AND product_id='qty-drift'").run()
+  const qtyDriftBefore = state(['qty-drift'])
+  const qtyDrift = await checkout(qtyIntent)
+  ok('quantity change after buyer confirmation returns CART_SELECTION_STALE', qtyDrift.status === 409 && qtyDrift.json.error_code === 'CART_SELECTION_STALE', JSON.stringify(qtyDrift))
+  ok('quantity drift rejection has no side effects', state(['qty-drift']) === qtyDriftBefore)
+
   // Agent spend limits apply to the actual selected, orderable total inside the same transaction.
   db.prepare(`INSERT INTO agent_attestations
     (id,api_key,user_id,approved_scope,spend_cap_per_order,spend_cap_daily)
@@ -195,7 +224,15 @@ try {
   ok('per-order cap applies to each independent cart order, not the batch sum', withinCap.status === 200
     && withinCap.json.orders_created === 2, JSON.stringify(withinCap))
 
-  const spentBefore = row<{ total: number }>("SELECT COALESCE(SUM(total_amount),0) AS total FROM orders WHERE buyer_id='buyer' AND created_at > datetime('now','-24 hours') AND status != 'cancelled'")!.total
+  db.prepare("UPDATE orders SET donation_amount=1 WHERE id=(SELECT id FROM orders WHERE buyer_id='buyer' ORDER BY created_at LIMIT 1)").run()
+  const spentBefore = row<{ total: number }>("SELECT COALESCE(SUM(total_amount + COALESCE(donation_amount,0)),0) AS total FROM orders WHERE buyer_id='buyer' AND created_at > datetime('now','-24 hours') AND status != 'cancelled'")!.total
+  db.prepare('UPDATE agent_attestations SET spend_cap_per_order=10, spend_cap_daily=? WHERE id=\'cap-attestation\'').run(spentBefore + 3.5)
+  seedProduct('donation-history-cap', 4, 3)
+  seedCart('donation-history-cap')
+  const donationHistoryBefore = state(['donation-history-cap'])
+  const donationHistoryCap = await checkout(selected(['donation-history-cap']), 'capped-key')
+  ok('daily cap includes historical donation debits', donationHistoryCap.status === 403 && donationHistoryCap.json.error_code === 'AGENT_SPEND_CAP_DAILY', JSON.stringify(donationHistoryCap))
+  ok('donation-inclusive daily rejection has no side effects', state(['donation-history-cap']) === donationHistoryBefore)
   db.prepare('UPDATE agent_attestations SET spend_cap_per_order=10, spend_cap_daily=? WHERE id=\'cap-attestation\'').run(spentBefore + 4)
   seedProduct('daily-cap-a', 4, 3)
   seedProduct('daily-cap-b', 4, 3)

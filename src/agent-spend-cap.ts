@@ -36,7 +36,7 @@ export function getAgentSpendCapViolation(
   if (cap.spend_cap_daily == null) return null
   const selectedTotal = orderTotals.reduce((sum, total) => sum + total, 0)
 
-  const todaySpent = (db.prepare(`SELECT COALESCE(SUM(total_amount), 0) as t
+  const todaySpent = (db.prepare(`SELECT COALESCE(SUM(total_amount + COALESCE(donation_amount, 0)), 0) as t
     FROM orders WHERE buyer_id = ? AND created_at > datetime('now', '-24 hours') AND status != 'cancelled'`)
     .get(userId) as { t: number }).t
   if (todaySpent + selectedTotal <= cap.spend_cap_daily) return null

@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3'
 import { transition } from './layer0-foundation/L0-2-state-machine/engine.js'
 import { notifyTransition } from './layer2-business/L2-6-notifications/notification-engine.js'
 import { getAgentSpendCapViolation } from './agent-spend-cap.js'
+import { toUnits } from './money.js'
 
 type CartCheckoutItem = {
   product_id: string
@@ -32,7 +33,7 @@ export class CartCheckoutError extends Error {
 interface CheckoutSelectedCartArgs {
   db: Database.Database
   buyerId: string
-  selectedIds: unknown
+  selectedItems: unknown
   shippingAddress: string
   notes?: string
   generateId: (prefix: string) => string
@@ -41,23 +42,44 @@ interface CheckoutSelectedCartArgs {
   agentApiKey?: string
 }
 
-export function normalizeCartSelection(input: unknown): string[] {
+export interface CartCheckoutIntent {
+  product_id: string
+  qty: number
+  unit_price: number
+}
+
+export function normalizeCartSelection(input: unknown): CartCheckoutIntent[] {
   if (!Array.isArray(input) || input.length === 0) {
     throw new CartCheckoutError('请选择要结账的商品', 400, 'CART_SELECTION_REQUIRED')
   }
-  if (input.length > 500 || input.some(id => typeof id !== 'string' || !id.trim())) {
+  if (input.length > 500 || input.some(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return true
+    const candidate = item as Record<string, unknown>
+    return typeof candidate.product_id !== 'string' || !candidate.product_id.trim()
+      || typeof candidate.qty !== 'number' || !Number.isInteger(candidate.qty) || candidate.qty < 1 || candidate.qty > 99
+      || typeof candidate.unit_price !== 'number' || !Number.isFinite(candidate.unit_price) || Number(candidate.unit_price) < 0
+  })) {
     throw new CartCheckoutError('购物车选择无效', 400, 'CART_SELECTION_INVALID')
   }
-  const selectedIds = input.map(id => id.trim())
+  const selectedItems = (input as Array<Record<string, unknown>>).map(item => ({
+    product_id: String(item.product_id).trim(),
+    qty: Number(item.qty),
+    unit_price: Number(item.unit_price),
+  }))
+  try { selectedItems.forEach(item => toUnits(item.unit_price)) } catch {
+    throw new CartCheckoutError('购物车选择无效', 400, 'CART_SELECTION_INVALID')
+  }
+  const selectedIds = selectedItems.map(item => item.product_id)
   if (new Set(selectedIds).size !== selectedIds.length) {
     throw new CartCheckoutError('购物车选择无效', 400, 'CART_SELECTION_INVALID')
   }
-  return selectedIds
+  return selectedItems
 }
 
 export function checkoutSelectedCart(args: CheckoutSelectedCartArgs): CartCheckoutResult {
   const { db, buyerId, shippingAddress, notes, generateId, checkStockAndMaybeDelist, addHours, agentApiKey } = args
-  const selectedIds = normalizeCartSelection(args.selectedIds)
+  const selectedItems = normalizeCartSelection(args.selectedItems)
+  const selectedIds = selectedItems.map(item => item.product_id)
   const checkout = db.transaction((): CartCheckoutResult => {
     const items = db.prepare(`
       SELECT c.product_id, c.qty, p.price, p.stock, p.seller_id, p.has_variants, p.status
@@ -68,6 +90,12 @@ export function checkoutSelectedCart(args: CheckoutSelectedCartArgs): CartChecko
 
     const itemById = new Map(items.map(item => [item.product_id, item]))
     if (selectedIds.some(id => !itemById.has(id))) {
+      throw new CartCheckoutError('购物车已变化，请刷新后重试', 409, 'CART_SELECTION_STALE')
+    }
+    if (selectedItems.some(intent => {
+      const current = itemById.get(intent.product_id)!
+      return current.qty !== intent.qty || toUnits(current.price) !== toUnits(intent.unit_price)
+    })) {
       throw new CartCheckoutError('购物车已变化，请刷新后重试', 409, 'CART_SELECTION_STALE')
     }
 

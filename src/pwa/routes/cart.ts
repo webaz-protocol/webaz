@@ -25,6 +25,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { CartCheckoutError, checkoutSelectedCart } from '../../cart-checkout.js'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { hasInvalidPurchaseCredential, readStrictBearerCredential } from '../bearer-auth.js'
 
 export interface CartDeps {
   db: Database.Database
@@ -83,9 +84,9 @@ export function registerCartRoutes(app: Application, deps: CartDeps): void {
     const user = auth(req, res); if (!user) return
     if (isTrustedRole(user)) return void errorRes(res, 403, 'TRUSTED_ROLE_NO_TRADE', '受信角色无购物功能')
     if (user.role !== 'buyer') return void res.status(403).json({ error: '仅买家可下单' })
-    const agentApiKey = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1]
-    if (typeof req.body?.api_key === 'string' && !agentApiKey) return void res.status(401).json({ error: '下单必须使用 Authorization: Bearer <api_key>', error_code: 'AUTH_HEADER_REQUIRED' })
-    const { shipping_address, notes, product_ids } = req.body || {}
+    const agentApiKey = readStrictBearerCredential(req.headers.authorization)
+    if (hasInvalidPurchaseCredential(req.headers.authorization, req.body?.api_key, agentApiKey)) return void res.status(401).json({ error: '下单必须使用 Authorization: Bearer <api_key>', error_code: 'AUTH_HEADER_REQUIRED' })
+    const { shipping_address, notes, items } = req.body || {}
     if (!shipping_address) return void res.status(400).json({ error: '请填写收货地址' })
 
     let checkoutResult
@@ -93,7 +94,7 @@ export function registerCartRoutes(app: Application, deps: CartDeps): void {
       checkoutResult = checkoutSelectedCart({
         db,
         buyerId: String(user.id),
-        selectedIds: product_ids,
+        selectedItems: items,
         shippingAddress: shipping_address,
         notes,
         generateId,

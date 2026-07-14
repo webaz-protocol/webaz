@@ -3481,26 +3481,45 @@
             "bearerAuth": []
           }
         ],
-        "description": "只结算 product_ids 明确列出的当前购物车商品；选择已变化时整笔失败。Agent API key 必须经 Authorization: Bearer 发送。",
+        "description": "只结算 items 明确列出的当前购物车商品；服务端在事务内核对商品、数量和单价，任一变化时整笔失败。Agent API key 必须经 Authorization: Bearer 发送。",
         "requestBody": {
           "type": "object",
           "required": [
             "shipping_address",
-            "product_ids"
+            "items"
           ],
           "properties": {
             "shipping_address": {
               "type": "string",
               "description": "完整收货地址"
             },
-            "product_ids": {
+            "items": {
               "type": "array",
               "minItems": 1,
               "maxItems": 500,
-              "uniqueItems": true,
               "items": {
-                "type": "string",
-                "minLength": 1
+                "type": "object",
+                "required": [
+                  "product_id",
+                  "qty",
+                  "unit_price"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "product_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "qty": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 99
+                  },
+                  "unit_price": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                }
               }
             },
             "notes": {
@@ -5794,6 +5813,14 @@
               "type": "boolean",
               "default": false
             },
+            "payment_rail": {
+              "type": "string",
+              "enum": [
+                "escrow",
+                "direct_p2p"
+              ],
+              "default": "escrow"
+            },
             "expected_price": {
               "type": "number",
               "description": "防价格漂移（session_token 模式）"
@@ -5823,9 +5850,17 @@
               }
             }
           },
+          "401": {
+            "type": "object",
+            "description": "未登录，或 API key 未通过 Bearer header 提交"
+          },
           "402": {
             "type": "object",
             "description": "钱包余额不足"
+          },
+          "403": {
+            "type": "object",
+            "description": "角色或 agent 消费额度不允许"
           }
         }
       }
