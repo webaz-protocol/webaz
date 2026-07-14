@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { add, sum, toDecimal, toUnits, type Units } from './money.js'
 
 export interface AgentSpendCapViolation {
   error: string
@@ -25,25 +26,29 @@ export function getAgentSpendCapViolation(
     .get(apiKey, userId) as { spend_cap_per_order: number | null; spend_cap_daily: number | null } | undefined
   if (!cap) return null
 
-  const overPerOrder = orderTotals.find(total => total > 0 && cap.spend_cap_per_order != null && total > cap.spend_cap_per_order)
-  if (cap.spend_cap_per_order != null && overPerOrder != null) {
+  const orderTotalUnits = orderTotals.map(toUnits)
+  const perOrderCapU = cap.spend_cap_per_order == null ? null : toUnits(cap.spend_cap_per_order)
+  const overPerOrderU = orderTotalUnits.find(totalU => totalU > 0 && perOrderCapU != null && totalU > perOrderCapU)
+  if (perOrderCapU != null && overPerOrderU != null) {
     return {
-      error: `本笔订单 ${overPerOrder} WAZ 超过 agent 单笔上限 ${cap.spend_cap_per_order} WAZ（用户设定）`,
+      error: `本笔订单 ${toDecimal(overPerOrderU)} WAZ 超过 agent 单笔上限 ${toDecimal(perOrderCapU)} WAZ（用户设定）`,
       error_code: 'AGENT_SPEND_CAP_PER_ORDER',
-      spend_cap: cap.spend_cap_per_order,
+      spend_cap: toDecimal(perOrderCapU),
     }
   }
   if (cap.spend_cap_daily == null) return null
-  const selectedTotal = orderTotals.reduce((sum, total) => sum + total, 0)
-
-  const todaySpent = (db.prepare(`SELECT COALESCE(SUM(total_amount + COALESCE(donation_amount, 0)), 0) as t
+  const selectedTotalU = sum(orderTotalUnits)
+  const todaySpentU = (db.prepare(`SELECT total_amount, COALESCE(donation_amount, 0) AS donation_amount
     FROM orders WHERE buyer_id = ? AND created_at > datetime('now', '-24 hours') AND status != 'cancelled'`)
-    .get(userId) as { t: number }).t
-  if (todaySpent + selectedTotal <= cap.spend_cap_daily) return null
+    .all(userId) as Array<{ total_amount: number; donation_amount: number }>).reduce<Units>(
+      (totalU, order) => add(totalU, add(toUnits(order.total_amount), toUnits(order.donation_amount))), 0,
+    )
+  const dailyCapU = toUnits(cap.spend_cap_daily)
+  if (add(todaySpentU, selectedTotalU) <= dailyCapU) return null
   return {
-    error: `24h 累计 ${todaySpent}+${selectedTotal} 超 agent 日上限 ${cap.spend_cap_daily} WAZ（用户设定）`,
+    error: `24h 累计 ${toDecimal(todaySpentU)}+${toDecimal(selectedTotalU)} 超 agent 日上限 ${toDecimal(dailyCapU)} WAZ（用户设定）`,
     error_code: 'AGENT_SPEND_CAP_DAILY',
-    spend_cap: cap.spend_cap_daily,
-    today_spent: todaySpent,
+    spend_cap: toDecimal(dailyCapU),
+    today_spent: toDecimal(todaySpentU),
   }
 }

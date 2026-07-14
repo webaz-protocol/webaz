@@ -28,6 +28,7 @@ import { getUsdRatesSync, convertUsdcToLocal, SUPPORTED_CURRENCIES, type Currenc
 import { createNotification } from './layer2-business/L2-6-notifications/notification-engine.js'  // 审计项 B:直付转移此前通知黑洞(卖家不知有单/已付款)
 import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from './trade-terms.js'  // S0 交易条款快照(证据,fail-soft 零钱路)
 import { AgentSpendCapExceeded, getAgentSpendCapViolation } from './agent-spend-cap.js'
+import { PriceSessionConsumeError } from './price-session-consume.js'
 
 export interface DirectPayCreateDeps {
   generateId: (prefix: string) => string
@@ -75,6 +76,7 @@ export interface DirectPayCreateArgs {
    *  quoteRequired(PR-3):模板外地区询价 —— 强制走 pending_accept,卖家报价+买家确认后才进付款窗。 */
   shipping?: { region: string | null; fee: number; estDays: string | null; quoteRequired?: boolean; freeThresholdApplied?: boolean }
   agentApiKey?: string
+  consumePriceSession?: () => void
 }
 
 /** 原子创建 direct_p2p 订单。成功返回 { orderId };任一步失败抛错(调用方回 409,事务已回滚)。 */
@@ -84,6 +86,7 @@ export function createDirectPayOrder(db: Database.Database, deps: DirectPayCreat
   db.transaction(() => {
     const spendViolation = getAgentSpendCapViolation(db, args.agentApiKey, args.buyerId, [args.totalAmount])
     if (spendViolation) throw new AgentSpendCapExceeded(spendViolation)
+    args.consumePriceSession?.()
     // 本金不入协议:escrow_amount=0,不写 buyer wallet。同一 INSERT 写入【入口控制 policy 快照】(frozen-at-create)。
     const s = args.snapshot
     const quoteRequired = !!args.shipping?.quoteRequired
@@ -138,7 +141,7 @@ export interface DirectPayUnsupportedOpts {
  */
 export function createDirectPayResponse(
   res: Response, db: Database.Database, deps: DirectPayCreateDeps & { getProtocolParam: <T>(k: string, fb: T) => T },
-  ctx: { product: Record<string, unknown>; buyerId: string; reqQty: number; basePrice: number; totalAmount: number; totalAmountU: Units; shippingAddress: string; directReceiveAccountId?: string; agentApiKey?: string; opts?: DirectPayUnsupportedOpts; shipping?: { region: string | null; fee: number; estDays: string | null; quoteRequired?: boolean; freeThresholdApplied?: boolean } },
+  ctx: { product: Record<string, unknown>; buyerId: string; reqQty: number; basePrice: number; totalAmount: number; totalAmountU: Units; shippingAddress: string; directReceiveAccountId?: string; agentApiKey?: string; consumePriceSession?: () => void; opts?: DirectPayUnsupportedOpts; shipping?: { region: string | null; fee: number; estDays: string | null; quoteRequired?: boolean; freeThresholdApplied?: boolean } },
 ): void {
   // ① direct_p2p v1 = simple product only。escrow-only 修饰一律 fail-closed(本片不支持,不半支持)。
   const o = ctx.opts ?? {}
@@ -223,6 +226,7 @@ export function createDirectPayResponse(
       instructionSnapshot, accountSnapshot, windowDeadlineIso: new Date(Date.now() + windowHours * 3600_000).toISOString(),
       shippingAddress: ctx.shippingAddress, acceptMode, shipping: ctx.shipping,
       agentApiKey: ctx.agentApiKey,
+      consumePriceSession: ctx.consumePriceSession,
       pendingAcceptDeadlineIso: (acceptMode === 'manual' || ctx.shipping?.quoteRequired) ? new Date(Date.now() + acceptWindowHours * 3600_000).toISOString() : undefined,
       // frozen-at-create policy 快照:control 全过(ctrl.ok)才到此,decisionCode='OK'。
       snapshot: { enabled: cfg.enabled, railBreakerTripped: cfg.railBreakerTripped, region: cfg.region, regionAllowlist: cfg.regionAllowlist, perTxCapUnits: cfg.perTxCapUnits, sellerBreakerTripped, decisionCode: 'OK' },
@@ -255,6 +259,7 @@ export function createDirectPayResponse(
     })
   } catch (e) {
     if (e instanceof AgentSpendCapExceeded) { res.status(403).json(e.violation); return }
+    if (e instanceof PriceSessionConsumeError) { res.status(409).json({ error: e.message, error_code: 'PRICE_SESSION_USED' }); return }
     res.status(409).json({ error: '直付订单创建失败:' + (e as Error).message, error_code: 'DIRECT_PAY_CREATE_FAILED' })
   }
 }

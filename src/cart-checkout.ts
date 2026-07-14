@@ -2,7 +2,8 @@ import type Database from 'better-sqlite3'
 import { transition } from './layer0-foundation/L0-2-state-machine/engine.js'
 import { notifyTransition } from './layer2-business/L2-6-notifications/notification-engine.js'
 import { getAgentSpendCapViolation } from './agent-spend-cap.js'
-import { toUnits } from './money.js'
+import { add, mulQty, toDecimal, toUnits, type Units } from './money.js'
+import { applyWalletDelta } from './ledger.js'
 
 type CartCheckoutItem = {
   product_id: string
@@ -13,6 +14,7 @@ type CartCheckoutItem = {
   has_variants: number
   status: string
 }
+type OrderableCartItem = CartCheckoutItem & { totalU: Units }
 
 export interface CartCheckoutResult {
   created: Array<{ order_id: string; product_id: string; total: number }>
@@ -86,8 +88,6 @@ export function checkoutSelectedCart(args: CheckoutSelectedCartArgs): CartChecko
       FROM cart_items c JOIN products p ON p.id = c.product_id
       WHERE c.user_id = ?
     `).all(buyerId) as CartCheckoutItem[]
-    if (items.length === 0) throw new CartCheckoutError('购物车为空', 400)
-
     const itemById = new Map(items.map(item => [item.product_id, item]))
     if (selectedIds.some(id => !itemById.has(id))) {
       throw new CartCheckoutError('购物车已变化，请刷新后重试', 409, 'CART_SELECTION_STALE')
@@ -101,15 +101,16 @@ export function checkoutSelectedCart(args: CheckoutSelectedCartArgs): CartChecko
 
     const skipped: CartCheckoutResult['skipped'] = []
     const created: CartCheckoutResult['created'] = []
-    const orderable: CartCheckoutItem[] = []
-    let totalNeed = 0
+    const orderable: OrderableCartItem[] = []
+    let totalNeedU: Units = 0
     for (const item of selectedIds.map(id => itemById.get(id)!)) {
       if (item.status !== 'active') { skipped.push({ product_id: item.product_id, reason: '商品已下架' }); continue }
       if (item.has_variants) { skipped.push({ product_id: item.product_id, reason: '需在商品详情页选规格下单' }); continue }
       if (item.stock < item.qty) { skipped.push({ product_id: item.product_id, reason: `库存不足（${item.stock} < ${item.qty}）` }); continue }
       if (item.seller_id === buyerId) { skipped.push({ product_id: item.product_id, reason: '不可购买自己的商品' }); continue }
-      orderable.push(item)
-      totalNeed += Number(item.price) * Number(item.qty)
+      const unitPrice = toDecimal(toUnits(item.price)); const totalU = mulQty(toUnits(unitPrice), item.qty)
+      orderable.push({ ...item, price: unitPrice, totalU })
+      totalNeedU = add(totalNeedU, totalU)
     }
     if (orderable.length === 0) throw new CartCheckoutError('购物车中无可下单商品', 400, undefined, skipped)
 
@@ -117,7 +118,7 @@ export function checkoutSelectedCart(args: CheckoutSelectedCartArgs): CartChecko
       db,
       agentApiKey,
       buyerId,
-      orderable.map(item => Number(item.price) * Number(item.qty)),
+      orderable.map(item => toDecimal(item.totalU)),
     )
     if (spendViolation) {
       const { error, error_code, ...details } = spendViolation
@@ -126,19 +127,14 @@ export function checkoutSelectedCart(args: CheckoutSelectedCartArgs): CartChecko
 
     const wallet = db.prepare('SELECT balance FROM wallets WHERE user_id = ?').get(buyerId) as { balance: number } | undefined
     if (!wallet) throw new CartCheckoutError('钱包记录缺失', 500)
-    if (wallet.balance < totalNeed) {
-      throw new CartCheckoutError(`余额不足：需 ${totalNeed.toFixed(2)} WAZ，当前 ${wallet.balance.toFixed(2)}`, 400)
+    if (toUnits(wallet.balance) < totalNeedU) {
+      throw new CartCheckoutError(`余额不足：需 ${toDecimal(totalNeedU).toFixed(2)} WAZ，当前 ${wallet.balance.toFixed(2)}`, 400)
     }
-
-    const walletUpdate = db.prepare(`
-      UPDATE wallets SET balance = balance - ?, escrowed = escrowed + ?
-      WHERE user_id = ? AND balance >= ?
-    `).run(totalNeed, totalNeed, buyerId, totalNeed)
-    if (walletUpdate.changes !== 1) throw new CartCheckoutError('余额已变化，请重试', 409, 'BALANCE_CHANGED')
+    applyWalletDelta(db, buyerId, { balance: -totalNeedU, escrowed: totalNeedU })
 
     const now = new Date()
     for (const item of orderable) {
-      const total = Number(item.price) * Number(item.qty)
+      const total = toDecimal(item.totalU)
       const orderId = generateId('ord')
       db.prepare(`INSERT INTO orders (
         id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount,
@@ -163,7 +159,7 @@ export function checkoutSelectedCart(args: CheckoutSelectedCartArgs): CartChecko
     const placeholders = orderableIds.map(() => '?').join(',')
     db.prepare(`DELETE FROM cart_items WHERE user_id = ? AND product_id IN (${placeholders})`)
       .run(buyerId, ...orderableIds)
-    return { created, skipped, totalNeed }
+    return { created, skipped, totalNeed: toDecimal(totalNeedU) }
   })
   return checkout.immediate()
 }

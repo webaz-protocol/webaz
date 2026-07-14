@@ -108,6 +108,8 @@ try {
   ok('body api_key cannot authenticate checkout', bodyKey.status === 401 && bodyKey.json.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(bodyKey))
   const mixedKey = await checkout({ ...selected(['not-needed']), api_key: 'capped-key' }, 'capped-key')
   ok('body api_key is rejected even when a Bearer credential is also present', mixedKey.status === 401 && mixedKey.json.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(mixedKey))
+  const malformedBodyKey = await checkout({ ...selected(['not-needed']), api_key: { key: 'capped-key' } }, 'capped-key')
+  ok('non-string body api_key is also rejected', malformedBodyKey.status === 401 && malformedBodyKey.json.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(malformedBodyKey))
   const rawKey = await checkout(selected(['not-needed']), undefined, 'capped-key')
   ok('raw Authorization credential cannot bypass Bearer-only checkout', rawKey.status === 401 && rawKey.json.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(rawKey))
 
@@ -226,6 +228,12 @@ try {
   ok('per-order cap applies to each independent cart order, not the batch sum', withinCap.status === 200
     && withinCap.json.orders_created === 2, JSON.stringify(withinCap))
 
+  db.prepare("UPDATE agent_attestations SET spend_cap_per_order=0.3, spend_cap_daily=NULL WHERE id='cap-attestation'").run()
+  seedProduct('decimal-cap-boundary', 0.1, 5)
+  seedCart('decimal-cap-boundary', 3)
+  const decimalCap = await checkout(selected(['decimal-cap-boundary']), 'capped-key')
+  ok('integer money units allow the exact 0.10 x 3 = 0.30 cap boundary', decimalCap.status === 200, JSON.stringify(decimalCap))
+
   db.prepare("UPDATE orders SET donation_amount=1 WHERE id=(SELECT id FROM orders WHERE buyer_id='buyer' ORDER BY created_at LIMIT 1)").run()
   const spentBefore = row<{ total: number }>("SELECT COALESCE(SUM(total_amount + COALESCE(donation_amount,0)),0) AS total FROM orders WHERE buyer_id='buyer' AND created_at > datetime('now','-24 hours') AND status != 'cancelled'")!.total
   db.prepare('UPDATE agent_attestations SET spend_cap_per_order=10, spend_cap_daily=? WHERE id=\'cap-attestation\'').run(spentBefore + 3.5)
@@ -257,6 +265,15 @@ try {
     && remainingDailyItems === 1)
   db.prepare("DELETE FROM agent_attestations WHERE id='cap-attestation'").run()
 
+  seedProduct('unit-rounding', 1.0000004, 3)
+  seedCart('unit-rounding')
+  const roundingWalletBefore = row<{ balance: number }>("SELECT balance FROM wallets WHERE user_id='buyer'")!.balance
+  const unitRounding = await checkout(selected(['unit-rounding']))
+  const roundingOrder = row<{ unit_price: number; total_amount: number }>("SELECT unit_price,total_amount FROM orders WHERE product_id='unit-rounding'")
+  const roundingWalletAfter = row<{ balance: number }>("SELECT balance FROM wallets WHERE user_id='buyer'")!.balance
+  ok('cart canonicalizes matched display price to six-decimal money units', unitRounding.status === 200 && roundingOrder?.unit_price === 1 && roundingOrder.total_amount === 1, JSON.stringify({ unitRounding, roundingOrder }))
+  ok('cart wallet debit uses the same canonical units as the stored order', roundingWalletBefore - roundingWalletAfter === 1)
+
   seedProduct('too-expensive', 91, 3)
   seedCart('too-expensive')
   const insufficientBefore = state(['too-expensive'])
@@ -274,6 +291,15 @@ try {
   injectRace = false
   ok('stock race returns STOCK_DEPLETED', race.status === 409 && race.json.error_code === 'STOCK_DEPLETED', JSON.stringify(race))
   ok('stock race rolls back the whole checkout transaction', state(['race-first', 'race-second']) === raceBefore)
+
+  db.prepare("DELETE FROM cart_items WHERE user_id='buyer'").run()
+  seedProduct('empty-replay', 0.5, 2)
+  seedCart('empty-replay')
+  const emptyReplayBody = selected(['empty-replay'])
+  const emptyReplayFirst = await checkout(emptyReplayBody)
+  const emptyReplaySecond = await checkout(emptyReplayBody)
+  ok('isolated checkout succeeds before an empty-cart replay', emptyReplayFirst.status === 200, JSON.stringify(emptyReplayFirst))
+  ok('replay after the cart becomes empty returns CART_SELECTION_STALE', emptyReplaySecond.status === 409 && emptyReplaySecond.json.error_code === 'CART_SELECTION_STALE', JSON.stringify(emptyReplaySecond))
 } finally {
   await new Promise<void>(resolve => server.close(() => resolve()))
   db.close()
