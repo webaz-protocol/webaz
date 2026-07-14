@@ -74,7 +74,7 @@ ok('4c. main-img click opens lightbox at current index', has(APPJS, "openImageLi
 // 5. review section: gallery manifests are images, not reviews (dual-purpose manifest_registry)
 const reviewSec = APPJS.slice(APPJS.indexOf('const manifests = (manifestsData.manifests'), APPJS.indexOf('const reviewsCount'))
 ok('5x. detail review section filters out manifests that ARE the product gallery images',
-  reviewSec.includes('!JSON.parse(p.images') && reviewSec.includes('.includes(m.hash)'))
+  reviewSec.includes('.includes(m.hash)') && reviewSec.includes("typeof h === 'string'") && reviewSec.includes('Array.isArray(h)'))
 
 // 6. new file wired: load order + Guard B
 ok('5a. index.html loads app-product-image-ui.js after media/gallery, before app.js',
