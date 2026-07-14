@@ -134,7 +134,7 @@ async function mockSellerDashboard(page: Page) {
   await page.route('**/api/my-products', route => route.fulfill({ json: [] }))
   await page.route('**/api/profile', route => route.fulfill({ json: { wallet: { balance: 0, staked: 0 } } }))
   await page.route('**/api/orders', route => route.fulfill({ json: [] }))
-  await page.route('**/api/rfqs?limit=50', route => route.fulfill({ json: { items: [], urgencies: ['now', 'today', 'flex'], categories: [] } }))
+  await page.route('**/api/rfqs?limit=50', route => route.fulfill({ json: { items: [{ id: 'rfq-ux-1', status: 'open' }], urgencies: ['now', 'today', 'flex'], categories: [] } }))
   await page.route('**/api/charity/me', route => route.fulfill({ json: { reputation: {}, pending_repayments: [] } }))
   await page.route('**/api/agents/me/reputation', route => route.fulfill({ json: { level: 'new', trust_score: 0 } }))
   await page.route('**/api/claim-tasks/mine', route => route.fulfill({ json: { as_buyer: [], as_verifier: [] } }))
@@ -211,7 +211,8 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
 
     await expect(page.locator('#app main')).toContainText(/我的购物|My shopping/i)
     await expect(page.locator('#app .tabbar')).toBeVisible()
-    // UI-1 tightens this smoke into overflow + axe gates after fixing the known legacy debt.
+    await assertNoHorizontalOverflow(page)
+    await assertAxeHasNoSeriousOrCriticalViolations(page)
     guards.assertClean()
   })
 
@@ -223,9 +224,11 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     await page.goto('/#me')
 
     await expect(page.locator('#app main')).toContainText('UX Seller')
-    await expect(page.locator(`[onclick="location.hash='#rfqs'"]`)).toContainText(/抢单|RFQ/)
+    await expect(page.locator('a.hub-action-card[href="#rfqs"]')).toContainText(/1 .*公开求购|1 open RFQ/i)
+    expect(await page.locator('a.hub-action-card[href]').count()).toBeGreaterThan(0)
     await expect(page.locator('#app .tabbar')).toBeVisible()
-    // UI-1 tightens this smoke into overflow + axe gates after fixing the known legacy debt.
+    await assertNoHorizontalOverflow(page)
+    await assertAxeHasNoSeriousOrCriticalViolations(page)
     guards.assertClean()
   })
 }
@@ -276,4 +279,69 @@ test('authenticated seller baseline uses route-level API mocks', async ({ page }
   await assertNoHorizontalOverflow(page)
   await assertAxeHasNoSeriousOrCriticalViolations(page)
   guards.assertClean()
+})
+
+for (const viewport of [
+  { name: 'tablet-edge', width: 919, height: 480, desktop: false },
+  { name: 'desktop-edge', width: 920, height: 480, desktop: true },
+] as const) {
+  test(`shell geometry at ${viewport.name}`, async ({ page }) => {
+    await mockBuyerSession(page)
+    await page.addInitScript(() => localStorage.setItem('webaz_key', 'ux-buyer-token'))
+    await page.setViewportSize(viewport)
+    await page.goto('/#me')
+
+    const geometry = await page.evaluate(() => {
+      const nav = document.querySelector('.tabbar') as HTMLElement
+      const main = document.querySelector('.main') as HTMLElement
+      const navStyle = getComputedStyle(nav)
+      const mainStyle = getComputedStyle(main)
+      return {
+        direction: navStyle.flexDirection,
+        navFits: nav.scrollHeight <= nav.clientHeight && nav.scrollWidth <= nav.clientWidth,
+        mainLeft: main.getBoundingClientRect().left,
+        mainRight: window.innerWidth - main.getBoundingClientRect().right,
+        mainPaddingLeft: Number.parseFloat(mainStyle.paddingLeft),
+      }
+    })
+    expect(geometry.navFits).toBe(true)
+    expect(geometry.direction).toBe(viewport.desktop ? 'column' : 'row')
+    if (viewport.desktop) {
+      expect(geometry.mainLeft).toBe(196)
+      expect(geometry.mainPaddingLeft).toBeGreaterThanOrEqual(28)
+    } else {
+      expect(Math.abs(geometry.mainLeft - geometry.mainRight)).toBeLessThanOrEqual(1)
+    }
+    await assertNoHorizontalOverflow(page)
+  })
+}
+
+test('desktop bottom-bar shell has no rail gap or FAB overlap', async ({ page }) => {
+  await mockBuyerSession(page)
+  await page.addInitScript(() => localStorage.setItem('webaz_key', 'ux-buyer-token'))
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/#discover')
+  await page.evaluate(() => {
+    const app = document.getElementById('app')
+    if (app) app.innerHTML = (window as any).shell('<div>Product detail</div>', 'discover', {
+      hideTabbar: true,
+      bottomBar: '<button id="test-purchase-cta">Buy now</button>',
+    })
+  })
+
+  expect(await page.locator('.tabbar').count()).toBe(0)
+  const geometry = await page.evaluate(() => {
+    const main = document.querySelector('.main') as HTMLElement
+    const bar = document.querySelector('.page-bottom-bar') as HTMLElement
+    const left = main.getBoundingClientRect().left
+    const right = window.innerWidth - main.getBoundingClientRect().right
+    return {
+      centered: Math.abs(left - right) <= 1,
+      barLeft: bar.getBoundingClientRect().left,
+      barRight: window.innerWidth - bar.getBoundingClientRect().right,
+      agentDisplay: getComputedStyle(document.getElementById('agent-fab')!).display,
+      feedbackDisplay: getComputedStyle(document.getElementById('feedback-fab')!).display,
+    }
+  })
+  expect(geometry).toEqual({ centered: true, barLeft: 0, barRight: 0, agentDisplay: 'none', feedbackDisplay: 'none' })
 })

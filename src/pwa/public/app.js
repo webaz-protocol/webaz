@@ -1137,7 +1137,7 @@ function shell(content, activeTab, opts) {
   }
   const rb = state.user ? roleBadgeMap[state.user.role] : null
   const roleBadgeHtml = rb
-    ? `<span style="display:inline-flex;align-items:center;gap:3px;background:${rb.bg};color:${rb.color};padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600">${rb.icon} ${rb.label}</span>`
+    ? `<span class="role-badge" style="background:${rb.bg};color:${rb.color}">${rb.icon} ${rb.label}</span>`
     : ''
 
   const canInstall = typeof window.canInstallPWA === 'function' && window.canInstallPWA()
@@ -1145,15 +1145,15 @@ function shell(content, activeTab, opts) {
     <nav class="navbar">
       <a class="navbar-brand" href="#buy">🦞 WebAZ</a>
       <div class="navbar-actions">
-        ${canInstall ? `<button onclick="doInstallPWA()" title="${t('把 WebAZ 装到桌面')}" style="background:#eef2ff;border:1px solid #c7d2fe;cursor:pointer;padding:3px 8px;border-radius:6px;font-size:12px;color:#3730a3;margin-right:4px;font-weight:600">📲 ${t('安装')}</button>` : ''}
-        <button onclick="toggleLang()" style="background:none;border:1px solid #e5e7eb;cursor:pointer;padding:3px 8px;border-radius:6px;font-size:12px;color:#6b7280;margin-right:4px">${window._lang === 'en' ? '中文' : 'EN'}</button>
+        ${canInstall ? `<button class="shell-tool-btn" onclick="doInstallPWA()" title="${t('把 WebAZ 装到桌面')}">📲 ${t('安装')}</button>` : ''}
+        <button class="shell-tool-btn" onclick="toggleLang()">${window._lang === 'en' ? '中文' : 'EN'}</button>
         ${state.user
-          ? `${role === 'buyer' ? `<button onclick="navigate('#cart')" style="background:none;border:none;cursor:pointer;position:relative;padding:4px 8px;font-size:18px;color:#374151" title="${t('购物车')}">
+          ? `${role === 'buyer' ? `<button class="shell-icon-btn" onclick="navigate('#cart')" title="${t('购物车')}">
                🛒
                <span id="cart-badge" style="position:absolute;top:0;right:0;background:#4f46e5;color:#fff;border-radius:99px;font-size:10px;padding:0 4px;min-width:16px;text-align:center;display:${(state.cartCount || 0) > 0 ? 'inline' : 'none'}">${state.cartCount || ''}</span>
              </button>` : ''}
-             ${role === 'seller' ? `<button onclick="navigate('#wallet')" style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:18px;color:#374151" title="${t('钱包')}">💰</button>` : ''}
-             <button onclick="openAvatarMenu()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:8px;color:#374151" title="${t('快捷菜单')}">
+             ${role === 'seller' ? `<button class="shell-icon-btn" onclick="navigate('#wallet')" title="${t('钱包')}">💰</button>` : ''}
+             <button class="shell-user-btn" onclick="openAvatarMenu()" title="${t('快捷菜单')}">
                ${roleBadgeHtml}
                <span style="font-size:13px;color:#6b7280">${state.user.name}</span>
                <span style="font-size:18px">👤</span>
@@ -1161,7 +1161,7 @@ function shell(content, activeTab, opts) {
           : `<button class="btn btn-primary btn-sm" onclick="navigate('#login')">${t('登录')}</button>`}
       </div>
     </nav>
-    <main class="main">${recoveryBannerHTML()}${content}</main>
+    <main class="main${_opts.hideTabbar ? ' main--no-tabbar' : ''}${_opts.bottomBar ? ' main--has-bottom-bar' : ''}">${recoveryBannerHTML()}${content}</main>
     ${state.user?.role === 'buyer' ? `
       <button id="compare-fab" onclick="openCompare()" title="${t('对比商品')}"
         style="position:fixed;bottom:136px;right:14px;background:#4f46e5;color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:600;padding:8px 14px;border-radius:99px;box-shadow:0 4px 12px rgba(79,70,229,0.3);z-index:98;display:none;align-items:center;gap:4px">
@@ -15410,7 +15410,7 @@ async function renderSeller(app) {
   const sellerSubTab = state._sellerSubTab || 'dashboard'
   const subTabBtn = (k, label) => {
     const on = sellerSubTab === k
-    return `<button onclick="setSellerSubTab('${k}')" style="background:none;border:none;padding:8px 14px;font-size:13px;cursor:pointer;border-bottom:2px solid ${on?'#92400e':'transparent'};color:${on?'#92400e':'#6b7280'};font-weight:${on?'600':'400'}">${label}</button>`
+    return `<button onclick="setSellerSubTab('${k}')" style="background:none;border:none;padding:8px 14px;font-size:13px;cursor:pointer;border-bottom:2px solid ${on?'#92400e':'transparent'};color:${on?'#92400e':'#596570'};font-weight:${on?'600':'400'}">${label}</button>`
   }
   const sellerSubNav = `
     <div style="display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid #e5e7eb;overflow-x:auto;-webkit-overflow-scrolling:touch">
