@@ -7737,14 +7737,12 @@ registerWalletReadRoutes(app, {
   getUsdcContract:  () => USDC_CONTRACT,
   getNetwork:       () => NETWORK,
 })
-
 // #1013 Phase 81: 5 wallet write endpoints 已迁出
 registerWalletWriteRoutes(app, {
   db, auth, isTrustedRole, generateId, getProtocolParam,
   consumeGateToken, issueCode, findActiveCode, maskEmail,
   LARGE_WITHDRAW_THRESHOLD,
 })
-
 // #1013 Phase 107: 6 public/util endpoints 统一 register（必须在 SPA catch-all 之前；logError/generateManifest 在上方定义）
 registerRemoteMcpRoutes(app)   // RFC-022:WEBAZ_REMOTE_MCP=1 才挂载(fail-closed)
 registerPublicUtilsRoutes(app, {
