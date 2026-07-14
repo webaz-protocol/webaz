@@ -36,12 +36,19 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
   // 公开端点 IP 限流:240/min(4/s)足够正常 agent 会话(initialize+tools/list+多次 tools/call),
   // 又挡住刷量 / 暴力猜 128-bit key。body 体积由全局 express.json 100kb 帽兜(T3)。
   const REMOTE_MCP_RPM = 240
-  // 客户端 IP 真相源(修 Codex P1):webaz.xyz 前置 Cloudflare → CF-Connecting-IP 是 CF 覆盖的真实客户端 IP,
-  //   客户端无法伪造(CF 会重写该头)。CF 后面 req.ip 可能塌缩成 CF 边缘 IP(trust proxy 不含公网 CF 段),
-  //   故优先取 CF-Connecting-IP,缺失才回退 req.ip(直连 origin 时 = 反伪造后的 socket IP)。
-  //   注:限流是 CF 边缘 DDoS 之上的第二层纵深;密钥 128-bit 使暴力破解无论限流与否都不可行。
-  const clientIp = (req: Request): string =>
-    String(req.headers['cf-connecting-ip'] || '').trim() || req.ip || 'unknown'
+  // 客户端 IP 真相源:webaz.xyz 前置 Cloudflare → CF-Connecting-IP 是 CF 覆盖的真实客户端 IP,经 CF 的流量
+  //   不可伪造(CF 重写该头)。CF 后面 req.ip 可能塌缩成 CF 边缘 IP(trust proxy 不含公网 CF 段),故优先取
+  //   CF-Connecting-IP(且校验为合法 IP 形态,防任意字符串当桶键),缺失/非法才回退 req.ip(反伪造 socket IP)。
+  //   ★残余(Codex round-2 P2,已知并接受):直连 origin(绕过 CF)可伪造该头轮换桶键、规避限流 —— 这是
+  //   【DoS 规避,非鉴权/数据风险】(隔离/Passkey/128-bit key 才是主控,暴力破解无论限流都不可行)。彻底闭合 =
+  //   开 cf-origin-guard enforce(CF_ORIGIN_GUARD_MODE=enforce + 共享密钥,挡直连 origin)。限流本身只是 CF 边缘
+  //   DDoS 之上的第二层纵深。
+  const IP_RE = /^[0-9a-fA-F:.]{3,45}$/   // 粗校验 IPv4/IPv6 形态,拒任意字符串桶键
+  const clientIp = (req: Request): string => {
+    const cf = String(req.headers['cf-connecting-ip'] || '').trim()
+    if (cf && IP_RE.test(cf)) return cf
+    return req.ip || 'unknown'
+  }
 
   app.post('/mcp', async (req: Request, res: Response) => {
     // 命名空间桶(修 Codex P2):'remote_mcp:' 前缀,与 telemetry/error-report 的裸-IP 桶隔离,不互相消耗
