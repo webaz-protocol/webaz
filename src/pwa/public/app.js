@@ -9761,8 +9761,8 @@ function productImageGallery(p) {
   // 同步占位 — async 拿 manifest thumbnail 填充
   setTimeout(() => hydrateProductGallery(pid, hashes), 0)
   return `<div id="pg-${pid}" data-hashes='${JSON.stringify(hashes)}' style="margin:0 -16px 12px">
-    <div style="aspect-ratio:4/3;background:#f3f4f6;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center">
-      <img id="pg-${pid}-main" style="width:100%;height:100%;object-fit:cover;display:none;cursor:zoom-in" onclick="openImageLightbox('${pid}', 0)" onerror="galleryMainImgFail('${pid}')">
+    <div style="aspect-ratio:4/3;background:#f3f4f6;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center" ontouchstart="galleryTouchStart(event)" ontouchend="galleryTouchEnd('${pid}', event)">
+      <img id="pg-${pid}-main" style="width:100%;height:100%;object-fit:cover;display:none;cursor:zoom-in" onclick="openImageLightbox('${pid}', Number(this.closest('[data-hashes]').dataset.galIdx||0))" onerror="galleryMainImgFail('${pid}')">
       <div id="pg-${pid}-loading" style="color:#9ca3af;font-size:12px">${t('加载图片…')}</div>
       ${hashes.length > 1 ? `<div style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.55);color:#fff;font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600" id="pg-${pid}-cnt">1 / ${hashes.length}</div>` : ''}
     </div>
@@ -9807,7 +9807,7 @@ window.switchGalleryImage = (pid, idx) => {
   if (!main || !wrap) return
   const thumbs = wrap.querySelectorAll('img[data-gal-idx]')
   const url = thumbs[idx]?.dataset?.url || thumbs[idx]?.src
-  const loading = document.getElementById('pg-' + pid + '-loading')
+  const loading = document.getElementById('pg-' + pid + '-loading'); wrap.dataset.galIdx = idx
   if (url) { main.src = url; main.style.display = 'block'; if (loading) loading.style.display = 'none' }
   if (cnt) cnt.textContent = `${idx + 1} / ${thumbs.length}`
   thumbs.forEach((tImg, i) => { tImg.style.border = '2px solid ' + (i === idx ? '#4f46e5' : 'transparent') })
