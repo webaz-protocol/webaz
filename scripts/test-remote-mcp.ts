@@ -162,10 +162,12 @@ async function main() {
     const r3 = await rpc(lb, { jsonrpc: '2.0', id: 3, method: 'ping' })   // 超配额
     ok('10a. 配额内请求正常(非 429)', r1.status !== 429 && r2.status !== 429)
     ok('10b. 超配额 → 429 rate limited', r3.status === 429)
-    ok('10c. 429 前不建 MCP server(限流在装配之前)', has(ROUTE, 'deps.rateLimitOk(req.ip') && ROUTE.indexOf('deps.rateLimitOk(req.ip') < ROUTE.indexOf('buildMcpServer({ isolated'))
+    ok('10c. 429 前不建 MCP server(限流在装配之前)', ROUTE.indexOf('deps.rateLimitOk(') < ROUTE.indexOf('buildMcpServer({ isolated'))
     lh.close()
   }
   ok('10d. 注册需 rateLimitOk dep(server.ts 已注入)', has(SERVER, 'registerRemoteMcpRoutes(app, { rateLimitOk })'))
+  ok('10e. 命名空间桶 remote_mcp:(修 P2,不与 telemetry 裸-IP 桶串)', has(ROUTE, "'remote_mcp:' + clientIp(req)"))
+  ok('10f. 客户端 IP 真相源优先 CF-Connecting-IP(修 P1,CF 覆盖不可伪造)', has(ROUTE, "req.headers['cf-connecting-ip']") && has(ROUTE, '|| req.ip'))
 
   if (fail > 0) { console.error(`\n❌ remote MCP FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ remote MCP: real handshake over Streamable HTTP (stateless) + fail-closed flag + sandbox refuse + 405s + no-CORS + bearer seam\n  ✅ pass ${pass}`)

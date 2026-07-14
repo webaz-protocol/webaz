@@ -36,9 +36,16 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
   // 公开端点 IP 限流:240/min(4/s)足够正常 agent 会话(initialize+tools/list+多次 tools/call),
   // 又挡住刷量 / 暴力猜 128-bit key。body 体积由全局 express.json 100kb 帽兜(T3)。
   const REMOTE_MCP_RPM = 240
+  // 客户端 IP 真相源(修 Codex P1):webaz.xyz 前置 Cloudflare → CF-Connecting-IP 是 CF 覆盖的真实客户端 IP,
+  //   客户端无法伪造(CF 会重写该头)。CF 后面 req.ip 可能塌缩成 CF 边缘 IP(trust proxy 不含公网 CF 段),
+  //   故优先取 CF-Connecting-IP,缺失才回退 req.ip(直连 origin 时 = 反伪造后的 socket IP)。
+  //   注:限流是 CF 边缘 DDoS 之上的第二层纵深;密钥 128-bit 使暴力破解无论限流与否都不可行。
+  const clientIp = (req: Request): string =>
+    String(req.headers['cf-connecting-ip'] || '').trim() || req.ip || 'unknown'
 
   app.post('/mcp', async (req: Request, res: Response) => {
-    if (!deps.rateLimitOk(req.ip || 'unknown', REMOTE_MCP_RPM, 60_000)) {
+    // 命名空间桶(修 Codex P2):'remote_mcp:' 前缀,与 telemetry/error-report 的裸-IP 桶隔离,不互相消耗
+    if (!deps.rateLimitOk('remote_mcp:' + clientIp(req), REMOTE_MCP_RPM, 60_000)) {
       return void res.status(429).json({ jsonrpc: '2.0', error: { code: -32000, message: 'rate limited — slow down' }, id: null })
     }
     try {

@@ -44,5 +44,5 @@ Pre-launch is invite-gated (Sybil resistance). A key requires a **real human** t
 
 - **Pre-launch, invite-gated.** The escrow rail settles simulated test currency; Direct Pay is a conditions-gated, non-custodial rail (real payment happens off-platform between buyer and seller — WebAZ never holds principal, does not guarantee, cannot refund).
 - **Isolated by construction.** The remote endpoint never uses the server host's credentials; an anonymous caller is strictly read-only. Your Bearer key acts only as your own account.
-- **Rate-limited.** Per-IP throttling protects the shared endpoint; back off on `429`.
+- **Rate-limited.** Per-client throttling (keyed on the Cloudflare-attributed client IP) is a defense-in-depth layer atop Cloudflare's edge DDoS protection; back off on `429`. It is not the primary access control — isolation, the Passkey human-gate, and 128-bit keys are.
 - The machine-readable entry point for agents is [`/.well-known/webaz-integration.json`](https://webaz.xyz/.well-known/webaz-integration.json) (it lists `remote_mcp` when the endpoint is live).
