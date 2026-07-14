@@ -96,7 +96,7 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
 
     if (asStr(b.grant_type) !== 'authorization_code') return err(400, 'unsupported_grant_type', 'only grant_type=authorization_code is supported')
     const clientId = asStr(b.client_id)
-    const client = clientId ? oauthClients().find(c => c.client_id === clientId) : undefined
+    const client = clientId ? (await oauthClients()).find(c => c.client_id === clientId) : undefined
     if (!client) return err(401, 'invalid_client', 'unknown or missing client_id')
     const code = asStr(b.code)
     const verifier = asStr(b.code_verifier)

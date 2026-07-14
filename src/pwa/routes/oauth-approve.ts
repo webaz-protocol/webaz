@@ -73,7 +73,7 @@ export function registerOAuthApproveRoutes(app: Express, deps: OAuthApproveDeps)
   }
   const { db, auth, generateId, consumeGateToken, rateLimitOk } = deps
 
-  app.post('/oauth/authorize/approve', (req: Request, res: Response) => {
+  app.post('/oauth/authorize/approve', async (req: Request, res: Response) => {
     const user = auth(req, res); if (!user) return
     if (!rateLimitOk(`oauth_approve:${user.id as string}`, 10, 60_000)) {
       return void res.status(429).json({ error: 'rate limited', error_code: 'RATE_LIMITED' })
@@ -85,7 +85,7 @@ export function registerOAuthApproveRoutes(app: Express, deps: OAuthApproveDeps)
       client_id: b.client_id, redirect_uri: b.redirect_uri, response_type: 'code',
       scope: b.scope, code_challenge: b.code_challenge, code_challenge_method: 'S256',
       resource: b.resource, state: b.state,
-    }, oauthClients())
+    }, await oauthClients())
     if (!v.ok) return void res.status(400).json({ error: v.error_description, error_code: v.error.toUpperCase() })
 
     // I-1: live Passkey — token consumed DIRECTLY (no param toggle can disable a credential mint),
@@ -120,19 +120,22 @@ export function registerOAuthApproveRoutes(app: Express, deps: OAuthApproveDeps)
       db.prepare(
         'INSERT INTO oauth_auth_codes (code_hash, client_id, user_id, grant_id, scope, code_challenge, redirect_uri, resource, expires_at) VALUES (?,?,?,?,?,?,?,?,?)',
       ).run(codeHash, v.client.client_id, user.id, grantId, v.scopes.join(' '), v.code_challenge, v.redirect_uri, v.resource, codeExpiresAt)
+      // RFC-024: mark the client as having earned a real human consent → exempts it from the
+      // never-authorized TTL-sweep (no-op for the dev client, which isn't a DB row).
+      db.prepare("UPDATE oauth_clients SET last_authorized_at = ? WHERE client_id = ?").run(new Date(now).toISOString(), v.client.client_id)
     })()
 
     // The raw code appears exactly once: in the redirect back to the validated redirect_uri.
     res.json({ redirect_to: buildRedirect(v.redirect_uri, { code, state: v.state }) })
   })
 
-  app.post('/oauth/authorize/deny', (req: Request, res: Response) => {
+  app.post('/oauth/authorize/deny', async (req: Request, res: Response) => {
     const user = auth(req, res); if (!user) return
     const b = (req.body || {}) as Record<string, unknown>
     // Client + exact redirect_uri still required — deny must not become an open redirector either.
     const clientId = asStr(b.client_id)
     const redirectUri = asStr(b.redirect_uri)
-    const client = clientId ? oauthClients().find(c => c.client_id === clientId) : undefined
+    const client = clientId ? (await oauthClients()).find(c => c.client_id === clientId) : undefined
     if (!client || !redirectUri || !client.redirect_uris.includes(redirectUri)) {
       return void res.status(400).json({ error: 'unknown client or unregistered redirect_uri', error_code: 'INVALID_CLIENT' })
     }

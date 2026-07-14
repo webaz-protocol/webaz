@@ -20,27 +20,50 @@
  */
 import type { Express, Request, Response } from 'express'
 import { OAUTH_RESOURCE, OAUTH_SCOPES } from './oauth-discovery.js'
+import { dbAll } from '../../layer0-foundation/L0-1-database/db.js'
 
 export interface OAuthClient {
   client_id: string
   name: string
   redirect_uris: readonly string[]
+  verified?: boolean   // RFC-024: DCR clients are self-declared/unverified until curated (fast-follow)
 }
 
-// v1 static client allowlist (D3). Real connector entries (ChatGPT / Claude / …) are added here at
-// onboarding time with their exact redirect_uris. A local dev client is available ONLY when
-// WEBAZ_OAUTH_DEV_CLIENT=1 (used by tests / local flows) — never populated in production.
-const PROD_CLIENTS: readonly OAuthClient[] = []
+// A local dev client is available ONLY when WEBAZ_OAUTH_DEV_CLIENT=1 (tests / local flows) — never prod.
 const DEV_CLIENT: OAuthClient = {
   client_id: 'webaz-dev-client',
   name: 'WebAZ Dev Client (local only)',
   redirect_uris: ['http://localhost:8787/callback', 'http://127.0.0.1:8787/callback'],
+  verified: true,
 }
 
-export function oauthClients(): OAuthClient[] {
-  const clients = [...PROD_CLIENTS]
+// RFC-024: the client allowlist is now the oauth_clients table (populated by Dynamic Client
+// Registration, POST /oauth/register), unioned with the dev client under the flag. Async because it
+// reads the DB via the RFC-016 seam; every caller already runs inside an async route handler.
+export async function oauthClients(): Promise<OAuthClient[]> {
+  const rows = await dbAll<{ client_id: string; name: string; redirect_uris: string; verified: number | null }>(
+    "SELECT client_id, name, redirect_uris, verified FROM oauth_clients WHERE status = 'active'",
+  )
+  const clients: OAuthClient[] = rows.map(r => ({
+    client_id: r.client_id,
+    name: r.name,
+    redirect_uris: (() => { try { const v = JSON.parse(r.redirect_uris); return Array.isArray(v) ? v.filter(x => typeof x === 'string') : [] } catch { return [] } })(),
+    verified: r.verified === 1,
+  }))
   if (process.env.WEBAZ_OAUTH_DEV_CLIENT === '1') clients.push(DEV_CLIENT)
   return clients
+}
+
+// RFC-024 T3 — redirect_uri policy: https OR loopback (any port); reject wildcards, fragments,
+// userinfo, non-http(s) schemes. Same rule at registration AND (via exact-match) at /authorize.
+export function isRegisterableRedirectUri(uri: unknown): boolean {
+  if (typeof uri !== 'string' || uri.length === 0 || uri.length > 2000) return false
+  let u: URL
+  try { u = new URL(uri) } catch { return false }
+  if (u.hash || u.username || u.password) return false                       // no fragment / userinfo
+  if (u.protocol === 'https:') return true
+  if (u.protocol === 'http:') return u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]' || u.hostname === '::1'
+  return false                                                               // no custom / non-http(s) schemes (v1)
 }
 
 // S256 code_challenge = base64url(SHA-256(verifier)) → 43 chars, base64url alphabet, no padding.
@@ -124,8 +147,8 @@ export function registerOAuthAuthorizeRoutes(app: Express): void {
     return
   }
 
-  app.get('/oauth/authorize', (req: Request, res: Response) => {
-    const v = validateAuthorizeRequest(req.query as Record<string, unknown>, oauthClients())
+  app.get('/oauth/authorize', async (req: Request, res: Response) => {
+    const v = validateAuthorizeRequest(req.query as Record<string, unknown>, await oauthClients())
     res.setHeader('Cache-Control', 'no-store')
 
     if (v.ok) {

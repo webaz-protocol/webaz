@@ -1919,4 +1919,18 @@ export function initOAuthSchema(db: Database.Database): void {
   )`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_oauth_tokens_grant  ON oauth_access_tokens(grant_id)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_oauth_tokens_expiry ON oauth_access_tokens(expires_at)`)
+
+  // RFC-024 Dynamic Client Registration — columns added to oauth_clients (ALTER-after-CREATE, idempotent):
+  //   verified: DCR clients are 0 (self-declared/unverified); a curated set may be flipped to 1 (fast-follow).
+  //   created_ip_hash: hashed registering IP for abuse-audit (no raw IP stored).
+  //   client_metadata: raw RFC 7591 registration fields (audit).
+  //   last_authorized_at: set on first successful consent — drives the 30d never-authorized TTL-sweep.
+  for (const [col, ddl] of [
+    ['verified', 'INTEGER NOT NULL DEFAULT 0'],
+    ['created_ip_hash', 'TEXT'],
+    ['client_metadata', 'TEXT'],
+    ['last_authorized_at', 'TEXT'],
+  ] as const) {
+    try { db.exec(`ALTER TABLE oauth_clients ADD COLUMN ${col} ${ddl}`) } catch { /* already present */ }
+  }
 }

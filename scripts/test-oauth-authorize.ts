@@ -10,8 +10,15 @@
  * Usage: npm run test:oauth-authorize
  */
 import express from 'express'
+import Database from 'better-sqlite3'
 import type { Server as HttpServer } from 'node:http'
 import { validateAuthorizeRequest, type OAuthClient } from '../src/pwa/routes/oauth-authorize.js'
+import { initOAuthSchema } from '../src/runtime/webaz-schema-helpers.js'
+import { setSeamDb } from '../src/layer0-foundation/L0-1-database/db.js'
+
+// RFC-024: the GET /authorize route now resolves clients via await oauthClients() (DB seam).
+// Point the seam at a fresh oauth_clients-bearing DB; the dev client comes from WEBAZ_OAUTH_DEV_CLIENT.
+{ const d = new Database(':memory:'); initOAuthSchema(d); setSeamDb(d) }
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}`) } }

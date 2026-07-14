@@ -18,6 +18,7 @@ import { createHash } from 'node:crypto'
 import type { Server as HttpServer } from 'node:http'
 import type { Request, Response } from 'express'
 import { initOAuthSchema, initAgentDelegationGrantsSchema, initWebauthnSchema } from '../src/runtime/webaz-schema-helpers.js'
+import { setSeamDb } from '../src/layer0-foundation/L0-1-database/db.js'
 import { createHumanPresence } from '../src/pwa/human-presence.js'
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -32,6 +33,7 @@ const GOOD = {
 
 const db = new Database(':memory:')
 initOAuthSchema(db); initAgentDelegationGrantsSchema(db); initWebauthnSchema(db)
+setSeamDb(db)   // RFC-024: the approve route now reads oauth_clients via the async seam (await oauthClients())
 const hp = createHumanPresence(db, <T,>(_k: string, _fb: T): T => 0 as T)   // params claim DISABLED — the mint gate must ignore params entirely (P2 fix: consumeGateToken direct)
 
 let gateSeq = 0

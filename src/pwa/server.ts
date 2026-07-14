@@ -366,6 +366,7 @@ import { registerOAuthDiscoveryRoutes } from './routes/oauth-discovery.js'
 import { registerOAuthAuthorizeRoutes } from './routes/oauth-authorize.js'
 import { registerOAuthApproveRoutes } from './routes/oauth-approve.js'
 import { registerOAuthTokenRoutes } from './routes/oauth-token.js'
+import { registerOAuthRegisterRoutes } from './routes/oauth-register.js'
 // Agent reputation (#1013 Phase 108) — 2 endpoints
 import { registerAgentReputationRoutes } from './routes/agent-reputation.js'
 // Checkout helpers (#1013 Phase 109) — 2 endpoints
@@ -4346,7 +4347,6 @@ registerSearchRoutes(app, {
   searchByExternalLink, detectShareCommandFormat, formatProductForAgent,
 })
 
-
 // #1013 Phase 58: 3 profile-prefs endpoints (default-address / feed-visible / PATCH /api/profile) 已迁出
 registerProfilePrefsRoutes(app, { db, auth })
 
@@ -7744,6 +7744,7 @@ registerOAuthDiscoveryRoutes(app)   // RFC-023 PR-1:WEBAZ_OAUTH=1 才挂载(fail
 registerOAuthAuthorizeRoutes(app)   // RFC-023 PR-2a:GET /oauth/authorize 校验+SPA consent 交接(mint 无)
 registerOAuthApproveRoutes(app, { db, auth, generateId, consumeGateToken, rateLimitOk })   // RFC-023 PR-2b:Passkey 门 consent → mint grant+code
 registerOAuthTokenRoutes(app, { rateLimitOk })   // RFC-023 PR-3:code+PKCE → opaque token(hashed,aud-bound,不超 grant 寿命)
+registerOAuthRegisterRoutes(app, { rateLimitOk })   // RFC-024:Dynamic Client Registration(POST /oauth/register,inert-until-consented)
 registerPublicUtilsRoutes(app, {
   db, MASTER_SEED, NODE_ENV, SERVICE_START_MS,
   rateLimitOk, generateManifest, getUser, logError,
