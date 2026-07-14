@@ -25,6 +25,7 @@ const { getActivePaymentInstruction } = await import('../src/direct-receive-paym
 const { sellerHasProductionBaseBondLocked } = await import('../src/direct-receive-deposits.js')
 const { walletUnits } = await import('../src/ledger.js')
 const { toUnits } = await import('../src/money.js')
+const { consumePriceSession, PriceSessionConsumeError } = await import('../src/price-session-consume.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -152,6 +153,19 @@ const donationCap = await post({ product_id: 'p1', quantity: 1, shipping_address
 ok('escrow route: spend cap includes the additional donation debit', donationCap.status === 403 && donationCap.json?.error_code === 'AGENT_SPEND_CAP_PER_ORDER', JSON.stringify(donationCap))
 ok('escrow route: donation-inclusive cap rejection has no side effects', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === donationCapOrders && pstock() === donationCapStock)
 ok('final cap rejection does not consume the one-time price session', (db.prepare("SELECT used_at FROM price_sessions WHERE token='cap-session'").get() as { used_at: string | null }).used_at === null)
+
+db.prepare("INSERT INTO price_sessions (token,product_id,user_id,price,quantity,created_at,expires_at) VALUES ('rollback-session','p1','buyer1',50,1,?,?)").run(new Date().toISOString(), new Date(Date.now() + 10 * 60_000).toISOString())
+let consumeRollbackThrew = false
+try {
+  db.transaction(() => { consumePriceSession(db, 'rollback-session'); throw new Error('post-consume failure') }).immediate()
+} catch { consumeRollbackThrew = true }
+ok('price session: a later transaction failure rolls consumption back', consumeRollbackThrew
+  && (db.prepare("SELECT used_at FROM price_sessions WHERE token='rollback-session'").get() as { used_at: string | null }).used_at === null)
+db.transaction(() => consumePriceSession(db, 'rollback-session')).immediate()
+ok('price session: a committed transaction consumes the token', (db.prepare("SELECT used_at FROM price_sessions WHERE token='rollback-session'").get() as { used_at: string | null }).used_at !== null)
+let replayRejected = false
+try { db.transaction(() => consumePriceSession(db, 'rollback-session')).immediate() } catch (error) { replayRejected = error instanceof PriceSessionConsumeError }
+ok('price session: a committed token rejects second use', replayRejected)
 db.prepare("UPDATE agent_attestations SET spend_cap_per_order=10 WHERE id='create-cap'").run()
 
 // seller2: no bond, no instruction

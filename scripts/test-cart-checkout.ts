@@ -265,6 +265,13 @@ try {
     && remainingDailyItems === 1)
   db.prepare("DELETE FROM agent_attestations WHERE id='cap-attestation'").run()
 
+  seedProduct('decimal-total-a', 0.1, 2)
+  seedProduct('decimal-total-b', 0.2, 2)
+  seedCart('decimal-total-a')
+  seedCart('decimal-total-b')
+  const decimalTotal = await checkout(selected(['decimal-total-a', 'decimal-total-b']))
+  ok('multi-item response reuses the canonical checkout total without float drift', decimalTotal.status === 200 && decimalTotal.json.total_paid === 0.3, JSON.stringify(decimalTotal))
+
   seedProduct('unit-rounding', 1.0000004, 3)
   seedCart('unit-rounding')
   const roundingWalletBefore = row<{ balance: number }>("SELECT balance FROM wallets WHERE user_id='buyer'")!.balance

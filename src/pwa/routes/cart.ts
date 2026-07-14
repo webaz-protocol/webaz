@@ -118,7 +118,7 @@ export function registerCartRoutes(app: Application, deps: CartDeps): void {
       orders_created: created.length,
       orders: created,
       skipped,
-      total_paid: created.reduce((s, c) => s + c.total, 0),
+      total_paid: totalNeed,
     })
   })
 
