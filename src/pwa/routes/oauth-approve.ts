@@ -35,7 +35,10 @@ import type { HumanPresence } from '../human-presence.js'
 export const OAUTH_SCOPE_CAPABILITIES: Record<string, readonly string[]> = {
   'read': ['read_public', 'profile_read', 'search'],
   'order:draft': ['draft_order'],
-  'list:draft': ['list_product_draft'],
+  // Codex P1:曾映射 list_product_draft —— 没有任何端点消费该 capability(草稿端点强制的是
+  // seller_product_draft,见 agent-grants.ts POST /api/agent/seller/products),合规客户端完成 OAuth
+  // 后重试永远 PERMISSION_REQUIRED。对齐到端点真正强制的 scope,list:draft 才是真实的成功路径。
+  'list:draft': ['seller_product_draft'],
 }
 
 export const OAUTH_GRANT_TTL_SECONDS = 3600        // grant lives as long as the access token (D2: no refresh)

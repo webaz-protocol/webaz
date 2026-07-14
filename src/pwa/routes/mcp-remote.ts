@@ -27,15 +27,16 @@ export function remoteMcpEnabled(): boolean {
 // resource=https://webaz.xyz/mcp 的规范推导),合规 MCP 客户端读到它即可自启 OAuth 流。
 const PROTECTED_RESOURCE_METADATA_URL = 'https://webaz.xyz/.well-known/oauth-protected-resource/mcp'
 
-// RFC-023 PR-5:无凭证时【必然】失败的工具 —— 它们以特定账号行事/读私有数据(place_order/update_order/
-// wallet/notifications/default_address/list_product),或必须携带 delegation grant(get_agent_order/
-// order_action_request)。仅用于 401 OAuth 挑战判定,不改任何工具语义。保守名单(I-2 匿名读不变是硬
-// 不变量):双模工具(匿名读+鉴权写,如 webaz_search / webaz_contribute / webaz_profile)与匿名返回
-// 引导文案的工具(webaz_mykey / webaz_rotate_key / webaz_revoke_key / webaz_pair)绝不入列。
+// RFC-023 PR-5:401 OAuth 挑战名单 —— 挑战即承诺(Codex P1):只列【OAuth 完流后重试真能走通】的工具。
+// oat_ 在 /mcp 只作为 grant 凭证注入(PR-4),永远不是 human api_key,所以入列条件 = 该工具有 grant 路径
+// (resolveGrantCredential → requireAgentGrantScope 端点),oat_ 重试 = 成功或 scope 级 PERMISSION_REQUIRED
+// (结构化、可恢复)。api_key-only 工具(place_order/update_order/wallet/notifications/default_address)
+// 【绝不入列】—— oat_ 满足不了它们,401 广告 OAuth = 虚假恢复路径;双模工具(匿名读+鉴权写,如
+// webaz_search / webaz_contribute / webaz_profile)与匿名返回引导文案的工具(webaz_mykey /
+// webaz_rotate_key / webaz_revoke_key / webaz_pair)照旧绝不入列(I-2 匿名读不变是硬不变量)。
 // 漏列 fail-soft:未列出的鉴权工具照旧走工具层的 API_KEY_REQUIRED / GRANT_REQUIRED 带引导 JSON。
 const AUTH_ONLY_TOOLS = new Set([
-  'webaz_place_order', 'webaz_update_order', 'webaz_wallet', 'webaz_notifications',
-  'webaz_default_address', 'webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request',
+  'webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request',
 ])
 function isAuthOnlyToolCall(body: unknown): boolean {
   const b = body as { method?: unknown; params?: { name?: unknown } } | null
