@@ -11337,7 +11337,7 @@ async function renderCart(app) {
         <input type="checkbox" id="cart-select-all" checked onclick="cartToggleAll(this.checked)" style="width:16px;height:16px">
         ${t('全选')} (${items.length})
       </label>
-      <button onclick="cartRemoveChecked()" style="background:none;border:none;color:#dc2626;font-size:11px;cursor:pointer">${t('删除选中')}</button>
+      <button type="button" id="cart-remove-selected" onclick="cartRemoveChecked()" style="background:none;border:none;color:#dc2626;font-size:11px;cursor:pointer">${t('删除选中')}</button>
     </div>
   ` : ''
 
@@ -11355,7 +11355,7 @@ async function renderCart(app) {
         const lowStock = Number(it.stock) < Number(it.qty)
         return `<div class="card" style="margin-bottom:8px;padding:12px${lowStock ? ';border-left:3px solid #dc2626' : ''}">
           <div style="display:flex;gap:10px;align-items:center">
-            <input type="checkbox" class="cart-item-check" data-pid="${it.product_id}" checked onclick="cartRecalcTotal()" style="width:18px;height:18px">
+            <input type="checkbox" class="cart-item-check" data-pid="${it.product_id}" data-subtotal="${subtotal}" checked onchange="cartRecalcTotal()" style="width:18px;height:18px">
             <div style="font-size:28px">${getCategoryIcon(it.category)}</div>
             <div style="flex:1;min-width:0">
               <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(it.title)}</div>
@@ -11388,10 +11388,10 @@ async function renderCart(app) {
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <span style="font-size:13px;color:#6b7280">${t('已选合计')}</span>
-          <span id="cart-checked-total" style="font-size:18px;font-weight:700;color:#4f46e5">${totalAll.toFixed(2)} WAZ</span>
+          <span id="cart-checked-total" aria-live="polite" style="font-size:18px;font-weight:700;color:#4f46e5">${totalAll.toFixed(2)} WAZ</span>
         </div>
-        <button class="btn btn-primary" onclick="cartCheckout()">${t('批量结账（每商品独立订单）')}</button>
-        <div id="cart-msg" style="margin-top:8px"></div>
+        <button type="button" id="cart-checkout" class="btn btn-primary" onclick="cartCheckout()">${t('批量结账（每商品独立订单）')}</button>
+        <div id="cart-msg" aria-live="polite" style="margin-top:8px"></div>
       </div>
     ` : ''}
   `, 'buy')
@@ -11592,62 +11592,6 @@ window.batchAcceptOrders = async (ids) => {
   }
   alert(t('已接单 ') + ok + (fail ? ' · ' + t('失败 ') + fail : ''))
   renderSeller(document.getElementById('app'))
-}
-
-window.cartToggleAll = (checked) => {
-  document.querySelectorAll('.cart-item-check').forEach(cb => { cb.checked = checked })
-  cartRecalcTotal()
-}
-window.cartRecalcTotal = () => {
-  const cards = document.querySelectorAll('.card')
-  let total = 0
-  document.querySelectorAll('.cart-item-check').forEach(cb => {
-    if (!cb.checked) return
-    const card = cb.closest('.card')
-    const m = card?.innerText.match(/(\d+(?:\.\d+)?) WAZ × (\d+) = (\d+(?:\.\d+)?) WAZ/)
-    if (m) total += parseFloat(m[3])
-  })
-  const el = document.getElementById('cart-checked-total')
-  if (el) el.innerText = total.toFixed(2) + ' WAZ'
-}
-window.cartRemoveChecked = async () => {
-  const ids = [...document.querySelectorAll('.cart-item-check')].filter(cb => cb.checked).map(cb => cb.dataset.pid)
-  if (ids.length === 0) return alert(t('未选中任何商品'))
-  if (!confirm(t('确认删除选中的 ') + ids.length + t(' 个商品？'))) return
-  for (const pid of ids) await POST('/cart/remove', { product_id: pid })
-  renderCart(document.getElementById('app'))
-}
-
-window.cartChangeQty = async (productId, qty) => {
-  if (qty < 1) return cartRemove(productId)
-  if (qty > 99) return
-  const r = await PATCH(`/cart/${productId}`, { qty })
-  if (r.error) return alert(r.error)
-  renderCart(document.getElementById('app'))
-  refreshCartBadge()
-}
-
-window.cartRemove = async (productId) => {
-  await DELETE(`/cart/${productId}`)
-  renderCart(document.getElementById('app'))
-  refreshCartBadge()
-}
-
-window.cartCheckout = async () => {
-  const addr = document.getElementById('cart-addr').value.trim()
-  const msg = document.getElementById('cart-msg')
-  if (!addr) { msg.innerHTML = alert$('error', t('请填写收货地址')); return }
-  msg.innerHTML = loading$()
-  // C-1: 单次后端事务批量下单（多 seller 自动分订单）
-  const r = await POST('/cart/checkout', { shipping_address: addr })
-  if (r.error) { msg.innerHTML = alert$('error', r.error + (r.skipped?.length ? ` · ${t('跳过')} ${r.skipped.length}` : '')); return }
-  let html = `<div class="alert alert-success">${t('成功下单')} ${r.orders_created} ${t('单')} · ${t('共支付')} ${Number(r.total_paid || 0).toFixed(2)} WAZ</div>`
-  if ((r.skipped || []).length > 0) {
-    html += `<div class="alert alert-warn" style="font-size:11px">${t('跳过')}: ${r.skipped.map(s => s.product_id.slice(0,10) + '… (' + escHtml(s.reason) + ')').join('；')}</div>`
-  }
-  msg.innerHTML = html
-  refreshCartBadge()
-  setTimeout(() => navigate('#orders'), 1500)
 }
 
 // ─── 订单列表页 ───────────────────────────────────────────────
