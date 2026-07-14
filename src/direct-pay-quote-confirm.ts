@@ -35,7 +35,7 @@ export function confirmDirectPayShippingQuote(
       WHERE id = ? AND status = 'pending_accept' AND shipping_quote_fee = ?`)
       .run(total, fee, current.shipping_quote_est_days, accountSnapshot, new Date(Date.now() + args.windowHours * 3600_000).toISOString(), args.orderId, fee)
     if (updated.changes !== 1) throw new Error('QUOTE_CONFIRM_RACE')
-    const moved = transition(db, args.orderId, 'direct_pay_window', 'sys_protocol', [], `买家确认运费报价(${fee} USDC,新总额 ${total})→ 进入直付付款窗口`)
+    const moved = transition(db, args.orderId, 'direct_pay_window', 'sys_protocol', [], `买家确认运费报价(${fee} USDC,新总额 ${total})→ 进入直付付款窗口`, { requireSignedEvent: true })
     if (!moved.success) throw new Error(moved.error || 'TRANSITION_FAILED')
     return { fee, total, estDays: current.shipping_quote_est_days }
   }).immediate()

@@ -178,6 +178,7 @@
     "test:direct-pay-pending-accept": "tsx scripts/test-direct-pay-pending-accept.ts",
     "test:shipping-templates": "tsx scripts/test-shipping-templates.ts",
     "test:shipping-quote": "tsx scripts/test-shipping-quote.ts",
+    "test:endpoint-actions": "tsx tests/test-endpoint-actions.ts",
     "test:order-accept-ui": "tsx scripts/test-order-accept-ui.ts",
     "test:bond-deposit-flow": "tsx scripts/test-bond-deposit-flow.ts",
     "test:bond-refund-flow": "tsx scripts/test-bond-refund-flow.ts",

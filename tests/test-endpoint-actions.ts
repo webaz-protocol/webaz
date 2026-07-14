@@ -1,6 +1,7 @@
 // RFC-011 §② — endpoint-action classifier 行为等价 + 规约测试。
 // 核心:把【重构前的 legacy if-chain 原样复制】与【新的 data-driven endpointToAction】在大批量路径上逐一 diff,
 //       证明边界脊梁零行为变化(auth boundary 重构的金标准)。再加正向规约点。
+import { readFileSync } from 'node:fs'
 import { endpointToAction, endpointToReadAction, capabilityMatrix } from '../src/pwa/endpoint-actions.js'
 
 let pass = 0, fail = 0
@@ -11,6 +12,7 @@ function legacy(method: string, path: string): string | null {
   if (method === 'GET') return null
   if (method === 'POST' && path === '/api/orders') return 'place_order'
   if (method === 'POST' && path === '/api/cart/checkout') return 'place_order'
+  if (method === 'POST' && /^\/api\/orders\/[^/]+\/pending-accept\/confirm-quote$/.test(path)) return 'place_order'
   if ((method === 'POST' || method === 'PUT') && /^\/api\/products(\/[^/]+)?$/.test(path)) return 'list_product'
   if (method === 'POST' && /^\/api\/orders\/[^/]+\/(accept|ship|deliver|pickup|transit)/.test(path)) return 'fulfill'
   if (method === 'POST' && /^\/api\/orders\/[^/]+\/confirm/.test(path)) return 'confirm_order'
@@ -57,6 +59,7 @@ function legacy(method: string, path: string): string | null {
 const paths = [
   // 命名写动作代表路径
   '/api/orders', '/api/products', '/api/products/p1', '/api/orders/o1/accept', '/api/orders/o1/ship',
+  '/api/orders/o1/pending-accept/confirm-quote',
   '/api/orders/o1/deliver', '/api/orders/o1/pickup', '/api/orders/o1/transit', '/api/orders/o1/confirm',
   '/api/orders/o1/action', '/api/claim-tasks/c1/vote', '/api/disputes/d1/arbitrate', '/api/disputes/d1/respond',
   '/api/charity/fund/donate', '/api/wishes', '/api/wishes/w1/proof', '/api/charity/x', '/api/shareables',
@@ -101,6 +104,7 @@ expect('wallet DELETE→wallet(WRITE 多方法)', endpointToAction('DELETE', '/a
 expect('addresses PATCH→set_address', endpointToAction('PATCH', '/api/addresses/a1') === 'set_address')
 expect('default-address→set_address(非 set_profile)', endpointToAction('POST', '/api/profile/default-address') === 'set_address')
 expect('cart/checkout→place_order', endpointToAction('POST', '/api/cart/checkout') === 'place_order')
+expect('confirm shipping quote→place_order', endpointToAction('POST', '/api/orders/o1/pending-accept/confirm-quote') === 'place_order')
 expect('未映射写→write(default-deny)', endpointToAction('POST', '/api/some-new-sensitive-write') === 'write')
 expect('SAFE login→null', endpointToAction('POST', '/api/login') === null)
 // Direct Pay (Rail 1) RISK scope:全部写 → direct_pay(WRITE 多方法);GET 不锁
@@ -122,12 +126,19 @@ expect('read 普通→null', endpointToReadAction('/api/products') === null)
 
 // ── capabilityMatrix 自洽 ──
 const cm = capabilityMatrix()
-expect('matrix 含全部命名 action', cm.write_actions.length === 24, cm.write_actions.length)
+expect('matrix 含全部命名 action', cm.write_actions.length === 25, cm.write_actions.length)
 expect('matrix 含 direct_pay', cm.write_actions.some(w => w.action === 'direct_pay'))
 expect('matrix 含 review_claim', cm.write_actions.some(w => w.action === 'review_claim'))
 expect('matrix 有 read_scopes', cm.read_scopes.length === 3)
 expect('matrix 带版本双轴', typeof cm.software_version === 'string' && typeof cm.contract_version === 'number')
 expect('matrix 每个 write action 的 match 可回放(=exact 或 regex source)', cm.write_actions.every(w => typeof w.match === 'string' && w.match.length > 0))
+
+// 分类器不是孤立文档:生产 middleware 必须消费同一结果并保留未声明/错 scope/通配/真人四个分支。
+const serverSource = readFileSync(new URL('../src/pwa/server.ts', import.meta.url), 'utf8')
+expect('production middleware consumes endpointToAction', /const action = endpointToAction\(req\.method, req\.path\)/.test(serverSource))
+expect('undeclared agent write is denied', /action && declaredActions === null && !riskInfo\.hasPasskey[\s\S]{0,300}AGENT_SCOPE_UNDECLARED/.test(serverSource))
+expect('wrong declared scope denied while wildcard remains explicit', /!declaredActions\.includes\('\*'\) && !declaredActions\.includes\(scopeToken\)[\s\S]{0,300}AGENT_SCOPE_DENIED/.test(serverSource))
+expect('Passkey human exception remains explicit', /!riskInfo\.hasPasskey/.test(serverSource))
 
 console.log(`\n${pass} pass · ${fail} fail`)
 if (fail > 0) process.exit(1)

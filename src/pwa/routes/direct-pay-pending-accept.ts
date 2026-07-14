@@ -139,8 +139,9 @@ export function registerDirectPayPendingAcceptRoutes(app: Application, deps: Dir
     const est = req.body?.est_days == null ? null : String(req.body.est_days).trim().slice(0, 20) || null
     const note = req.body?.note == null ? null : String(req.body.note).trim().slice(0, 200) || null
     const confirmHours = Math.max(1, Number(getProtocolParam<number>('direct_pay.quote_confirm_hours', 48)) || 48)
-    await dbRun(`UPDATE orders SET shipping_quote_fee = ?, shipping_quote_est_days = ?, shipping_quote_note = ?, shipping_quote_at = datetime('now'), pending_accept_deadline = ? WHERE id = ? AND status = 'pending_accept'`,
+    const quoted = await dbRun(`UPDATE orders SET shipping_quote_fee = ?, shipping_quote_est_days = ?, shipping_quote_note = ?, shipping_quote_at = datetime('now'), pending_accept_deadline = ? WHERE id = ? AND status = 'pending_accept'`,
       [feeR, est, note, new Date(Date.now() + confirmHours * 3600_000).toISOString(), order.id])
+    if (quoted.changes !== 1) return void errorRes(res, 409, 'QUOTE_RACE', '订单状态已变化,请刷新后重试')
     notify(order.buyer_id, order.id, 'direct_pay_quote_submitted', '📦 卖家已报价运费,请确认',
       `卖家确认可发货并报价:运费 ${feeR} USDC${est ? `,预计时效 ${est} 天` : ''}${note ? `(${note})` : ''}。新总额 ${Math.round((Number(order.total_amount) + feeR) * 100) / 100} USDC。请在 ${confirmHours} 小时内确认(确认后进入付款环节)或撤单;逾期订单自动取消。`,
       { templateKey: 'dp_quote_submitted', params: { fee: feeR, est: est ?? '', note: note ?? '', total: Math.round((Number(order.total_amount) + feeR) * 100) / 100, hours: confirmHours } })

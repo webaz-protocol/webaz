@@ -3,7 +3,7 @@
  * 询价握手(PR-3,直付轨)—— 建单分流(quote_ok 三态×轨道)+ 报价/确认端点 + 上限快照约束 + 总额/payable 重建。
  * Usage: npm run test:shipping-quote
  */
-import { mkdtempSync } from 'fs'; import { join } from 'path'; import { tmpdir } from 'os'
+import { mkdtempSync, readFileSync } from 'fs'; import { join } from 'path'; import { tmpdir } from 'os'
 process.env.HOME = mkdtempSync(join(tmpdir(), 'shipq-'))
 import express, { type Request, type Response } from 'express'
 import { createServer, request as httpRequest, type Server } from 'node:http'
@@ -136,8 +136,30 @@ try {
     db.prepare("UPDATE agent_attestations SET spend_cap_per_order=40, spend_cap_daily=? WHERE id='quote-cap'").run(historicalWithoutTarget + 36)
     const exactDaily = await call('POST', `/api/orders/${capped}/pending-accept/confirm-quote`, undefined, {}, 'Bearer quote-agent')
     ok('24. daily cap replaces the existing order total instead of double-counting it', exactDaily.status === 200 && Number(orderRow(capped).total_amount) === 36, JSON.stringify(exactDaily))
+    db.prepare("UPDATE orders SET created_at=datetime('now','-30 hours') WHERE id=?").run(capped)
+    const delayedTarget = mkQuoteOrder()
+    await call('POST', `/api/orders/${delayedTarget}/pending-accept/quote`, 's1', { shipping_fee: 1 })
+    db.prepare("UPDATE agent_attestations SET spend_cap_per_order=40, spend_cap_daily=60 WHERE id='quote-cap'").run()
+    const delayedBlocked = await call('POST', `/api/orders/${delayedTarget}/pending-accept/confirm-quote`, undefined, {}, 'Bearer quote-agent')
+    ok('25. delayed quote confirmation stays in rolling-24h spend by confirmation history', delayedBlocked.status === 403 && delayedBlocked.json.error_code === 'AGENT_SPEND_CAP_DAILY', JSON.stringify(delayedBlocked))
+    ok('26. delayed-history cap rejection leaves the next order unchanged', orderRow(delayedTarget).status === 'pending_accept' && Number(orderRow(delayedTarget).total_amount) === 30)
     db.prepare("DELETE FROM agent_attestations WHERE id='quote-cap'").run()
-    db.prepare("UPDATE orders SET status='cancelled' WHERE id=?").run(capped); db.prepare("UPDATE products SET stock=10 WHERE id='p'").run()
+    db.prepare("UPDATE orders SET status='cancelled' WHERE id IN (?,?)").run(capped, delayedTarget); db.prepare("UPDATE products SET stock=10 WHERE id='p'").run()
+  }
+  // 确认报价的钱路要求签名事件成功;审计写失败必须回滚总额、快照、状态与历史。
+  {
+    const auditOrder = mkQuoteOrder()
+    await call('POST', `/api/orders/${auditOrder}/pending-accept/quote`, 's1', { shipping_fee: 4 })
+    const before = orderRow(auditOrder)
+    db.exec("CREATE TRIGGER force_quote_audit_failure BEFORE INSERT ON order_events BEGIN SELECT RAISE(ABORT,'forced audit failure'); END")
+    const auditFailed = await call('POST', `/api/orders/${auditOrder}/pending-accept/confirm-quote`, 'b1')
+    db.exec('DROP TRIGGER force_quote_audit_failure')
+    const after = orderRow(auditOrder)
+    ok('27. signed-event failure rejects quote confirmation', auditFailed.status === 409 && String(auditFailed.json.error).includes('forced audit failure'), JSON.stringify(auditFailed))
+    ok('28. signed-event failure rolls back amount/state/snapshot/history', after.status === 'pending_accept' && Number(after.total_amount) === Number(before.total_amount)
+      && after.direct_pay_account_snapshot === before.direct_pay_account_snapshot
+      && (db.prepare("SELECT COUNT(*) c FROM order_state_history WHERE order_id=? AND to_status='direct_pay_window'").get(auditOrder) as { c: number }).c === 0)
+    db.prepare("UPDATE orders SET status='cancelled' WHERE id=?").run(auditOrder); db.prepare("UPDATE products SET stock=10 WHERE id='p'").run()
   }
   // 买家不接受报价 → 既有 /cancel(无责+回补)
   {
@@ -145,7 +167,7 @@ try {
     const o2 = mkQuoteOrder()
     await call('POST', `/api/orders/${o2}/pending-accept/quote`, 's1', { shipping_fee: 6 })
     const r = await call('POST', `/api/orders/${o2}/pending-accept/cancel`, 'b1')
-    ok('25. buyer declines quote via cancel → no-fault cancelled + restock', r.status === 200 && orderRow(o2).status === 'cancelled'
+    ok('29. buyer declines quote via cancel → no-fault cancelled + restock', r.status === 200 && orderRow(o2).status === 'cancelled'
       && (db.prepare("SELECT stock s FROM products WHERE id='p'").get() as { s: number }).s === s0)
   }
   // quote on non-quote order → 409
@@ -157,9 +179,12 @@ try {
       pendingAcceptDeadlineIso: new Date(Date.now() + 24 * 3600_000).toISOString(),
       shipping: { region: 'SG', fee: 2, estDays: null, quoteRequired: false },
     }).orderId
-    ok('26. quote on covered/manual order → 409 NOT_QUOTE_ORDER (plain accept still works)', (await call('POST', `/api/orders/${o3}/pending-accept/quote`, 's1', { shipping_fee: 5 })).status === 409
+    ok('30. quote on covered/manual order → 409 NOT_QUOTE_ORDER (plain accept still works)', (await call('POST', `/api/orders/${o3}/pending-accept/quote`, 's1', { shipping_fee: 5 })).status === 409
       && (await call('POST', `/api/orders/${o3}/pending-accept/accept`, 's1')).status === 200)
   }
+  const routeSource = readFileSync(new URL('../src/pwa/routes/direct-pay-pending-accept.ts', import.meta.url), 'utf8')
+  const quoteCas = routeSource.indexOf('if (quoted.changes !== 1)')
+  ok('31. stale seller re-quote CAS rejects before notification', quoteCas > 0 && routeSource.indexOf('notify(order.buyer_id', quoteCas) > quoteCas)
 } finally { server.close() }
 
 if (fail > 0) { console.error(`\n❌ shipping-quote FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
