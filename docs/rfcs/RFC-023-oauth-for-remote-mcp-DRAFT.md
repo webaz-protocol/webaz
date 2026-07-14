@@ -1,6 +1,6 @@
 # RFC-023 v2 (DRAFT for review): OAuth for Remote MCP — replace pasted api_key, gradually
 
-- Status: **Draft v2 — design only, NOT approved, NOT implemented.** Awaiting Holden's decisions (§6).
+- Status: **Accepted (v2, decisions locked 2026-07-14).** Implementation plan: `docs/superpowers/plans/2026-07-14-oauth-remote-mcp.md`. Feature-flagged, built serially; api_key stays valid throughout.
 - Supersedes: RFC-023 v1 (incorporates the Codex design review, 2026-07-14).
 - Depends on: RFC-020 (agent delegation grants), RFC-021 (approve-to-execute), RFC-022 (Remote MCP)
 - Normative refs: MCP Authorization spec · OAuth 2.1 · RFC 9728 (protected-resource metadata) · RFC 8414 (AS metadata) · RFC 8707 (resource indicators) · RFC 7636 (PKCE) · RFC 7591 (DCR) · Client ID Metadata Documents
@@ -47,17 +47,15 @@ These are hard design boundaries. Anything that violates one is out of scope by 
 - **Dedicated OAuth tables** for protocol artifacts (do NOT overload `agent_delegation_grants`): `oauth_clients`, `oauth_auth_codes`, `oauth_access_tokens` (or introspection view), `oauth_refresh_tokens` (with family/rotation + reuse-detection columns), `oauth_redirect_uris`, and DCR/client-metadata records.
 - Reuse: identity + Passkey ceremony (`src/pwa/routes/webauthn.ts`); the RFC-022 transport, isolation (ALS), and rate-limit are unchanged.
 
-## 6. Decisions Holden must make (before an implementation plan)
+## 6. Decisions — RESOLVED (locked 2026-07-14)
 
-Each has a recommendation; picking these unblocks a full RFC + plan.
-
-- **D1 · Token format** — (a) **opaque + server introspection DB lookup** *(recommended: online revocation + scope-downgrade are trivial)* vs (b) JWT access token (self-contained but revocation/downgrade need a denylist or very short TTL).
-- **D2 · Refresh-token policy** — (a) **none in v1** *(recommended for a clean, low-risk start; re-consent on expiry)* vs (b) rotating refresh with reuse-detection + short max lifetime vs (c) long-lived (rejected — that is today's api_key).
-- **D3 · Client onboarding** — one staged path: **v1 = allowlist of a few known clients (Claude/ChatGPT/Cursor)** (smallest surface); **v2 migration target = Client ID Metadata Documents** (the MCP-preferred direction); **full DCR (RFC 7591) deferred** (widest surface, revisit only if a long tail of unknown clients appears). *Decision = confirm this staging, or pick a single stage.*
-- **D4 · Sender-constraint** — (a) **bearer-only, SAFE-scope v1** *(recommended; simplest)* vs (b) DPoP-bound from day one (stronger against T1 but heavier client support).
-- **D5 · Scope granularity** — (a) **coarse named scopes (`read`, `order:draft`, `list:draft`) mapped onto capability-matrix SAFE actions** *(recommended; agent-legible)* vs (b) 1:1 with every capability token.
-- **D6 · Fixed values / rules** — canonical `aud` = `https://webaz.xyz/mcp` (confirm); `redirect_uri` validation = exact-match allowlist; consent anti-phishing rules; insufficient-scope representation = HTTP `403` + `WWW-Authenticate: error="insufficient_scope"` AND a typed `error_code` in the MCP tool JSON result (so agents can self-correct). Confirm/adjust.
-- **D7 · Sequencing** — this is a larger build (AS endpoints + consent UI + security audit) and is NOT roadshow-critical. Recommend it follows PyPI publish + the current adoption items; place before or after further P3 ecosystem work.
+- **D1 · Token format** → **opaque + server introspection** (DB lookup on every `/mcp` call). Online revocation + scope-downgrade are trivial; no JWT verifier/denylist.
+- **D2 · Refresh tokens** → **none in v1.** Short-lived access token only; re-consent on expiry. (Revisit rotating-refresh-with-reuse-detection in a later version if offline-agent demand appears.)
+- **D3 · Client onboarding** → staged: **v1 = allowlist** (Claude / ChatGPT / Cursor); **v2 = Client ID Metadata Documents**; **DCR (RFC 7591) deferred.**
+- **D4 · Sender-constraint** → **bearer-only, SAFE-scope v1.** (DPoP is a later hardening if T1 pressure appears.)
+- **D5 · Scope granularity** → **coarse named scopes** (`read`, `order:draft`, `list:draft`, …) mapped onto capability-matrix SAFE actions. Agent-legible.
+- **D6 · Fixed values / rules** → canonical `aud` = `https://webaz.xyz/mcp`; `redirect_uri` = **exact-match allowlist**; consent screen shows client identity + exact scopes + resource; insufficient-scope = HTTP `403` + `WWW-Authenticate: error="insufficient_scope"` **and** a typed `error_code` in the MCP tool JSON result.
+- **D7 · Sequencing** → after PyPI publish (done) + current adoption items; built serially, flag-gated (`WEBAZ_OAUTH=1`, fail-closed), api_key kept valid throughout. Not roadshow-critical.
 
 ## 7. Non-goals (v1)
 
@@ -68,4 +66,4 @@ Not an identity provider for third-party sites (no "log in with WebAZ" elsewhere
 Feature-flagged like RFC-022. api_key Bearer stays valid throughout. Disabling the flag removes the AS endpoints + the protected-resource metadata; the endpoint reverts to api_key-only with zero residual state.
 
 ---
-**Decision requested**: resolve §6 (D1–D7). On sign-off I will write the full RFC + a threat-model-first implementation plan. **No code is written against this until then.**
+**Decisions locked (2026-07-14).** Implementation proceeds serially per `docs/superpowers/plans/2026-07-14-oauth-remote-mcp.md`, flag-gated, each PR Codex-reviewed. api_key Bearer stays valid throughout; anonymous read unchanged.
