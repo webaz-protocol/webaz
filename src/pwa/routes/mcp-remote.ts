@@ -37,6 +37,11 @@ export function remoteMcpManifest(): Record<string, unknown> | null {
       bearer: 'Authorization: Bearer <api_key> → authenticated write tools; RISK actions return approve_url (Passkey in browser)',
     },
     stdio_alternative: 'npx -y @seasonkoh/webaz  (local STDIO transport — same 42-tool surface, for clients that run a local process)',
+    sdks: {
+      python: 'pip install webaz  →  async with WebAZ() as wz: await wz.browse()  (thin wrapper over this endpoint; anonymous by default, api_key for writes)',
+      typescript_stdio: 'npx -y @seasonkoh/webaz  (STDIO MCP server)',
+    },
+    connect_page: 'https://webaz.xyz/#connect',
     anonymous_quickstart: 'initialize → tools/list → call webaz_search. Browse the catalog: webaz_search with filters (category/sort/max_price) and NO query. Strict exact-title match when you pass query. Machine catalog: https://webaz.xyz/.well-known/webaz-acp-feed.json',
     docs: 'https://webaz.xyz/docs/REMOTE-MCP.md',
   }

@@ -28,12 +28,12 @@ window.renderConnect = (app) => {
       </div>
 
       ${card('⌨️', T('Claude Code(最快)','Claude Code (fastest)'), copy('cc', 'claude mcp add --transport http webaz https://webaz.xyz/mcp') + `<div style="font-size:12px;color:#71717a;line-height:1.5">${T('跑完对 Claude 说 “browse WebAZ products”。','Then tell Claude “browse WebAZ products”.')}</div>`)}
-
       ${card('🖥️', T('Claude 桌面 / 手机','Claude Desktop / mobile'), `<div style="font-size:12px;color:#3f3f46;line-height:1.7">${T('设置 → Connectors → 添加自定义连接器 → 粘贴上面的地址(鉴权留空 = 匿名浏览)。','Settings → Connectors → Add custom connector → paste the URL above (leave auth empty = anonymous browse).')}</div>`)}
 
       ${card('🤖', T('ChatGPT','ChatGPT'), `<div style="font-size:12px;color:#3f3f46;line-height:1.7">${T('设置 → Connectors →（开发者模式）添加自定义连接器 → 粘贴地址。','Settings → Connectors → (developer mode) Add custom connector → paste the URL.')}<br><span style="color:#b45309">${T('注意:需支持自定义连接器的套餐;连接器管理通常在网页/桌面端,手机 App 一般不暴露入口。','Note: needs a plan that allows custom connectors; connector management is usually web/desktop — the mobile app typically does not expose it.')}</span></div>`)}
 
       ${card('🔍', T('MCP Inspector(任意第三方测试)','MCP Inspector (any third-party test)'), copy('insp', 'npx @modelcontextprotocol/inspector') + `<div style="font-size:12px;color:#71717a;line-height:1.6">${T('Transport = Streamable HTTP · URL = 上面地址 · Auth = None。','Transport = Streamable HTTP · URL = the URL above · Auth = None.')}</div>`)}
+      ${card('🐍', T('Python','Python'), copy('py', 'pip install webaz') + `<div style="font-size:12px;color:#71717a;line-height:1.6"><code style="background:#f4f4f5;padding:1px 5px;border-radius:4px;font-size:11px">async with WebAZ() as wz: await wz.browse()</code> ${T('· 匿名默认,api_key 交易。','· anonymous by default, api_key for writes.')}</div>`)}
 
       ${card('📦', T('本地 STDIO(需要本地进程时)','Local STDIO (when you run a local process)'), copy('stdio', 'npx -y @seasonkoh/webaz') + `<div style="font-size:12px;color:#71717a;line-height:1.5">${T('与远程同一套 42 个工具面。','Same 42-tool surface as remote.')}</div>`)}
 
