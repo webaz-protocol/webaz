@@ -31,7 +31,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/server.ts': 8394,
   'src/pwa/public/app.js': 25761,
-  'src/pwa/public/app-cart-actions.js': 108,
+  'src/pwa/public/app-cart-actions.js': 121,
   'src/pwa/public/app-edit-product-images.js': 107,
   'src/pwa/public/app-create-product-images.js': 29,
   'src/pwa/public/app-admin.js': 608,

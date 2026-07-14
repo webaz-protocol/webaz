@@ -11365,10 +11365,10 @@ async function renderCart(app) {
             </div>
           </div>
           <div style="display:flex;gap:6px;margin-top:10px;align-items:center">
-            <button class="btn btn-outline btn-sm" style="padding:4px 10px;width:auto" onclick="cartChangeQty('${it.product_id}', ${Number(it.qty) - 1})">−</button>
+            <button class="btn btn-outline btn-sm cart-mutation-control" style="padding:4px 10px;width:auto" onclick="cartChangeQty('${it.product_id}', ${Number(it.qty) - 1})">−</button>
             <span style="font-size:13px;min-width:30px;text-align:center">${it.qty}</span>
-            <button class="btn btn-outline btn-sm" style="padding:4px 10px;width:auto" onclick="cartChangeQty('${it.product_id}', ${Number(it.qty) + 1})">+</button>
-            <button class="btn btn-outline btn-sm" style="margin-left:auto;padding:4px 10px;width:auto;color:#dc2626" onclick="cartRemove('${it.product_id}')">${t('删除')}</button>
+            <button class="btn btn-outline btn-sm cart-mutation-control" style="padding:4px 10px;width:auto" onclick="cartChangeQty('${it.product_id}', ${Number(it.qty) + 1})">+</button>
+            <button class="btn btn-outline btn-sm cart-mutation-control" style="margin-left:auto;padding:4px 10px;width:auto;color:#dc2626" onclick="cartRemove('${it.product_id}')">${t('删除')}</button>
           </div>
         </div>`
       }).join('')

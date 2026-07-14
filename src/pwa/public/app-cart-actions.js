@@ -1,17 +1,20 @@
 // Cart selection is a transaction intent: totals, deletes and checkout share this one source.
 (function () {
+  let cartBusy = false
   function selectedCartRows() { return [...document.querySelectorAll('.cart-item-check')].filter(cb => cb.checked) }
   function selectedProductIds() { return selectedCartRows().map(cb => cb.dataset.pid).filter(Boolean) }
   function selectedCheckoutItems() { return selectedCartRows().map(cb => ({ product_id: cb.dataset.pid, qty: Number(cb.dataset.qty), unit_price: Number(cb.dataset.unitPrice) })) }
 
   function setBusy(busy) {
-    document.querySelectorAll('.cart-item-check, #cart-select-all, #cart-remove-selected, #cart-checkout')
+    cartBusy = busy
+    document.querySelectorAll('.cart-item-check, #cart-select-all, #cart-remove-selected, #cart-checkout, .cart-mutation-control')
       .forEach(el => { el.disabled = busy })
     const msg = document.getElementById('cart-msg')
     if (msg) msg.setAttribute('aria-busy', busy ? 'true' : 'false')
   }
 
   window.cartToggleAll = (checked) => {
+    if (cartBusy) return
     document.querySelectorAll('.cart-item-check').forEach(cb => { cb.checked = checked })
     window.cartRecalcTotal()
   }
@@ -36,6 +39,7 @@
   }
 
   window.cartRemoveChecked = async () => {
+    if (cartBusy) return
     const ids = selectedProductIds()
     if (ids.length === 0) return alert(t('未选中任何商品'))
     if (!confirm(t('确认删除选中的 ') + ids.length + t(' 个商品？'))) return
@@ -62,21 +66,30 @@
   }
 
   window.cartChangeQty = async (productId, qty) => {
+    if (cartBusy) return
     if (qty < 1) return window.cartRemove(productId)
     if (qty > 99) return
-    const result = await PATCH(`/cart/${productId}`, { qty })
-    if (result.error) return alert(result.error)
-    renderCart(document.getElementById('app'))
-    refreshCartBadge()
+    setBusy(true)
+    try {
+      const result = await PATCH(`/cart/${productId}`, { qty })
+      if (result.error) return alert(result.error)
+      await renderCart(document.getElementById('app'))
+      await refreshCartBadge()
+    } finally { setBusy(false) }
   }
 
   window.cartRemove = async (productId) => {
-    await DELETE(`/cart/${productId}`)
-    renderCart(document.getElementById('app'))
-    refreshCartBadge()
+    if (cartBusy) return
+    setBusy(true)
+    try {
+      await DELETE(`/cart/${productId}`)
+      await renderCart(document.getElementById('app'))
+      await refreshCartBadge()
+    } finally { setBusy(false) }
   }
 
   window.cartCheckout = async () => {
+    if (cartBusy) return
     const addr = document.getElementById('cart-addr').value.trim()
     const msg = document.getElementById('cart-msg')
     if (!addr) { msg.innerHTML = alert$('error', t('请填写收货地址')); return }
@@ -103,6 +116,6 @@
     }
     msg.innerHTML = html
     refreshCartBadge()
-    setTimeout(() => navigate('#orders'), 1500)
+    setTimeout(() => { setBusy(false); navigate('#orders') }, 1500)
   }
 })()

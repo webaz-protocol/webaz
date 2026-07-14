@@ -23,6 +23,8 @@ const section = (start: string, end: string): string => {
 
 const selection = section('function selectedCartRows()', 'function setBusy')
 const removeChecked = section('window.cartRemoveChecked = async () =>', 'window.cartChangeQty')
+const changeQty = section('window.cartChangeQty = async (productId, qty) =>', 'window.cartRemove = async (productId) =>')
+const removeOne = section('window.cartRemove = async (productId) =>', 'window.cartCheckout = async () =>')
 const checkout = section('window.cartCheckout = async () =>', '// ─── 订单列表页')
 
 ok('cart action module is loaded by the PWA', index.includes('/app-cart-actions.js'))
@@ -34,6 +36,9 @@ ok('checkout posts selected item intents with the address', /POST\('\/cart\/chec
 ok('bulk removal deletes each selected product independently', /for \(const pid of ids\)[\s\S]*DELETE\(`\/cart\/\$\{encodeURIComponent\(pid\)\}`\)/.test(removeChecked))
 ok('bulk removal never calls the retired cart/remove endpoint', !(app + cart).includes('/cart/remove'))
 ok('bulk removal always releases busy state after refresh/network failure', /finally\s*\{\s*setBusy\(false\)\s*\}/.test(removeChecked))
+ok('busy state disables every per-item cart mutation control', /\.cart-mutation-control/.test(cart) && (app.match(/cart-mutation-control/g) || []).length === 3)
+ok('quantity and single-delete handlers reject overlap and release busy state', /if \(cartBusy\) return/.test(changeQty) && /finally \{ setBusy\(false\) \}/.test(changeQty)
+  && /if \(cartBusy\) return/.test(removeOne) && /finally \{ setBusy\(false\) \}/.test(removeOne))
 
 if (fail > 0) {
   console.error(`\nFAIL cart UI contract\n  pass ${pass}  fail ${fail}\n${failures.join('\n')}`)
