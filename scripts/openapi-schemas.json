@@ -1,8 +1,8 @@
 {
   "_meta": {
     "description": "手动维护的 endpoint schema 覆盖（top 核心 path）— gen-openapi.ts 读取并合并到自动生成 inventory",
-    "covered_endpoints": 17,
-    "last_updated": "2026-05-22"
+    "covered_endpoints": 19,
+    "last_updated": "2026-07-14"
   },
   "endpoints": {
     "POST /api/register": {
@@ -29,6 +29,7 @@
 
     "POST /api/orders": {
       "summary": "创建订单（含分享分润链路追踪）",
+      "description": "Agent API key 必须经 Authorization: Bearer 发送；body api_key 不支持。",
       "tags": ["order"],
       "security": [{"bearerAuth": []}],
       "requestBody": {
@@ -43,13 +44,67 @@
           "sponsor_hint": { "type": "string", "description": "推荐人 user_id / permanent_code（三层归属用）" },
           "coupon_code": { "type": "string" },
           "buy_insurance": { "type": "boolean", "default": false },
+          "payment_rail": { "type": "string", "enum": ["escrow", "direct_p2p"], "default": "escrow" },
           "expected_price": { "type": "number", "description": "防价格漂移（session_token 模式）" }
         }
       },
       "responses": {
         "200": { "type": "object", "properties": { "order_id": {"type":"string"}, "status": {"type":"string"}, "total_amount": {"type":"number"} } },
         "400": { "type": "object", "properties": { "error": {"type":"string"} } },
+        "401": { "type": "object", "description": "未登录，或 API key 未通过 Bearer header 提交" },
+        "403": { "type": "object", "description": "角色或 agent 消费额度不允许" },
         "402": { "type": "object", "description": "钱包余额不足" }
+      }
+    },
+
+    "POST /api/cart/checkout": {
+      "summary": "结算当前勾选的购物车商品",
+      "description": "只结算 items 明确列出的当前购物车商品；服务端在事务内核对商品、数量和单价，任一变化时整笔失败。Agent API key 必须经 Authorization: Bearer 发送。",
+      "tags": ["cart", "order"],
+      "security": [{"bearerAuth": []}],
+      "requestBody": {
+        "type": "object",
+        "required": ["shipping_address", "items"],
+        "properties": {
+          "shipping_address": { "type": "string", "description": "完整收货地址" },
+          "items": {
+            "type": "array", "minItems": 1, "maxItems": 500,
+            "items": {
+              "type": "object", "required": ["product_id", "qty", "unit_price"], "additionalProperties": false,
+              "properties": {
+                "product_id": {"type":"string", "minLength":1},
+                "qty": {"type":"integer", "minimum":1, "maximum":99},
+                "unit_price": {"type":"number", "minimum":0}
+              }
+            }
+          },
+          "notes": { "type": "string", "description": "应用到本次生成的订单" }
+        }
+      },
+      "responses": {
+        "200": { "type": "object", "properties": { "success": {"type":"boolean"}, "orders_created": {"type":"integer"}, "orders": {"type":"array"}, "skipped": {"type":"array"}, "total_paid": {"type":"number"} } },
+        "400": { "type": "object", "description": "选择或地址无效" },
+        "401": { "type": "object", "description": "未登录，或 agent API key 未通过 Bearer header 提交" },
+        "403": { "type": "object", "description": "角色或 agent 消费额度不允许" },
+        "409": { "type": "object", "description": "购物车选择或库存已变化" }
+      }
+    },
+
+    "POST /api/orders/:id/pending-accept/confirm-quote": {
+      "summary": "买家确认 Direct Pay 模板外地区运费报价",
+      "description": "确认卖家报价后的新订单总额并进入付款窗口。Agent API key 必须经 Authorization: Bearer 发送，且 declared scope 必须包含 place_order；服务端在同一事务内以报价后的总额重新校验单笔及滚动 24 小时消费上限。body api_key 不支持。",
+      "tags": ["order", "direct-pay"],
+      "security": [{"bearerAuth": []}],
+      "requestBody": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "responses": {
+        "200": { "type": "object", "properties": { "success": {"type":"boolean"}, "status": {"const":"direct_pay_window"}, "total_amount": {"type":"number"} } },
+        "401": { "type": "object", "description": "未登录，或 API key 未通过 Bearer header 提交" },
+        "403": { "type": "object", "description": "place_order 未声明，或报价后总额超过 agent 单笔/滚动 24 小时消费上限" },
+        "409": { "type": "object", "description": "尚未报价、订单状态竞态，或确认事务失败" }
       }
     },
 

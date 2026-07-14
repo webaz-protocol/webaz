@@ -39,6 +39,8 @@ Thumbs.db
 # 日志
 *.log
 npm-debug.log*
+playwright-report/
+test-results/
 
 # Internal-only: archived reward-engine design (kept local, excluded from public repo per item-4 strategy review)
 docs/modules/tokenomics-pv-commission.md

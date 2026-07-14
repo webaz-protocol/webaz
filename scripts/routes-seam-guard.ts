@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const ROUTES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'pwa', 'routes')
+const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src')
 
 // basename → allowed remaining sync `db.prepare(` sites. Absent ⇒ 0 (fully on seam).
 const REMAINING_SYNC_PREPARES: Record<string, number> = {
@@ -51,7 +52,6 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   'anchors.ts': 2,         // touch user-anchor batch attribution (loop INSERTs)
   'shareables.ts': 3,      // DELETE soft-remove tx (status + total_likes + photo_index)
   'shareables-interactions.ts': 7,  // like toggle tx (existing/del/upd×2/ins/upd×2)
-  'cart.ts': 4,            // checkout tx (order insert + wallet deduct + stock + cart clear)
   'listings.ts': 5,        // create + offer stake tx (insert + wallet deduct ×2 + listing counter)
   'variants.ts': 10,       // 3 stock-aggregate tx (insert/update + product.stock sync)
   'ratings.ts': 4,         // 2 insert+notify tx (rating/buyer-rating → reputation)
@@ -70,7 +70,7 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   'agent-buy.ts': 12,      // order-create + wallet deduct path(auto_buy 原子核心已包 db.transaction:余额守卫扣款 + 库存 stock>=1 CAS + 建单 + 价格锁,任一 changes!==1 回滚;transition/通知在 tx 后,因 transition 自带事务不可嵌套)
   'secondhand.ts': 7,      // order handler: pragma FK-OFF window + CAS + escrow (money path)
   'chat.ts': 4,            // message-send tx (insert msg + bump conv) + mark-read tx (unread + read_at)
-  'orders-create.ts': 24,  // 下单原子事务(15) + 价格锁一次性消费 SELECT+mark(2,无 await gap,Codex #224) + 店铺推荐懒升级(7,必须同步:跑在下单 db.transaction 内、getProductShareChain 之前)
+  'orders-create.ts': 23,  // 下单原子事务 + 价格锁校验 SELECT + 店铺推荐懒升级;价格锁 consume 已移到受本守卫追踪的 price-session-consume.ts,仍在订单 tx 内
   'orders-action.ts': 23,  // state-machine/decline/settle 写序列 + confirm-in-person tx + 逐单 batch-ship 写 + pq_withdraw/dispute_withdraw_confirm 原子(dispute dismiss + transition + settle 同一 tx)+ PR-B mark_undeliverable 原子块(transition + 置 deadline 同一 tx)+ B3b 货丢主张 dispute_type 标(createDispute 后同步 UPDATE,防 checkDisputeTimeouts 自动没收后门,须与转移同步不可 async)(纯校验读已迁 seam)
   'auction.ts': 21,        // 5 db.transaction(create/remind/bid/cancel stake 写序列)+ reminder cron 同步 + 2 个 tx 内余额守恒重读(Codex PR#228 P1:await 预检与同步 stake tx 间的 yield 会让并发超额锁押,故 create/bid 在 tx 内重读余额并先于写抛回滚;create 的 product active→auction_pending flip 同改为带 status 守卫的 CAS 防并发双挂,#239 follow-up)(纯校验读/公开读/读回/单 DELETE/通知已迁 seam)
   'disputes-write.ts': 28, // arbitrate 仲裁核心(原子领取 + 2 settlement tx + reputation/strike/publish)+ 2 pause/resume tx(各含 1 tx 内重读授权/状态守卫,Codex #229 P1:await 预检与同步 tx 间 yield 会用陈旧权限/状态写,故 tx 内重读 dispute 重判 ruling/status/assignment 并从重读行算 baseline,先于写抛回滚)+ tx 内 appendAuditLog + 证据 INSERT(PR3:旧订单级 decline 结算端点已 410,其 sync 结算序列移入 domain resolver)
@@ -84,9 +84,18 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   'rewards-clearing-mature.ts': 7,  // RFC-018 maturation:matureClearingRow 的同步钱路 db.transaction(order/dispute 重校验读 + CAS pending→settled + region 读 + commission_records 写 + commissionSourceType 的 2 读);sweep 扫描用 async seam(dbAll)。Phase 3 迁 pg
   'rewards-escrow-expire.ts': 2,  // cron money-sweep:扫描读已迁 seam,到期 materialize 的 db.transaction 写仍同步(Phase 3)
   'direct-pay-timeouts.ts': 11,   // Direct Pay (Rail 1) 超时 cron:扫描读(付款窗口/宽限/货款协商×2/接单窗 5 扫)+ 状态转移/释放质押的 db.transaction 写仍同步(money/state path,Phase 3 迁 pg);v16 +1:pending_accept 接单窗超时扫描(sweep E);B4 +1:缓交提醒天数 param 读(sweep F,同步 cron 上下文)
-  'direct-pay-pending-accept.ts': 2,  // 手动接单(v16)+询价(v18):accept 设付款窗 deadline、confirm-quote 总额并入运费+快照重建,均在 db.transaction 内与状态转移同原子(money-adjacent:total_amount 是 dp 平台费/上限口径基数);其余读写全走 async seam
+  'direct-pay-pending-accept.ts': 1,  // 手动接单(v16):accept 设付款窗 deadline,与状态转移同原子;confirm-quote 钱路已抽到 direct-pay-quote-confirm.ts;其余读写全走 async seam
   'rfqs.ts': 25,        // create/cancel/bid/patch/delete 的 db.transaction 写序列 + award/first_match 选标读(rfq/winner 作为权威 subject 喂 awardBidAndCreateOrder,事务内不 re-read);Codex #236 P1:5 条 stake 路径加 tx 内权威守卫——扣款带 balance>=? 守卫、cancel/delete 用 status CAS、create-bid 重确认 RFQ open、patch tx 内重读 bid/rfq 并从重读 stake 算 delta(+3 tx 内重读:patch 2 + delete 1);端点纯校验读/列表/读回 + 单语句通知写已迁 seam
   'trial.ts': 14,          // eval cron 逐 claim metrics 读 + 退款 db.transaction(12)+ claim 抢名额 tx(2);端点纯读/单写已迁 seam。Codex #233 P1:退款 tx 内先 CAS claim(WHERE status='pending_threshold' + changes===1)再扣款(WHERE balance>=amount + changes===1)防并发 eval 双退;metrics/expired 更新同加 status guard(改现有语句,计数不变)
+}
+
+// Route-extracted synchronous transaction helpers remain part of this ratchet.
+// Moving a money path out of routes/ must not make its db.prepare debt disappear.
+const EXTRACTED_SYNC_PREPARES: Record<string, number> = {
+  'cart-checkout.ts': 5,
+  'agent-spend-cap.ts': 2,
+  'direct-pay-quote-confirm.ts': 2,
+  'price-session-consume.ts': 1,
 }
 
 const PREPARE_RE = /\bdb\.prepare\s*\(/g
@@ -119,8 +128,18 @@ for (const file of Object.keys(REMAINING_SYNC_PREPARES)) {
   }
 }
 
+for (const [file, allowed] of Object.entries(EXTRACTED_SYNC_PREPARES)) {
+  const src = readFileSync(join(SRC_DIR, file), 'utf8')
+  const count = (src.match(PREPARE_RE) || []).length
+  totalRemaining += count
+  if (count !== allowed) {
+    failed = true
+    console.error(`❌ src/${file}: ${count} db.prepare, allowlist=${allowed} — keep extracted transaction helpers on the seam ratchet.`)
+  }
+}
+
 if (failed) {
   console.error('\nRFC-016 routes seam ratchet failed. The allowlist only goes DOWN as call sites move to the async seam.')
   process.exit(1)
 }
-console.log(`✅ routes seam ratchet: all ${seen.size} route files match allowlist (${totalRemaining} sync db.prepare remaining across the tx-tier + deferred money-path files)`)
+console.log(`✅ routes seam ratchet: all ${seen.size} route files + ${Object.keys(EXTRACTED_SYNC_PREPARES).length} extracted transaction helpers match allowlist (${totalRemaining} sync db.prepare remaining across the tx-tier + deferred money-path files)`)

@@ -790,6 +790,9 @@ export function initDatabase(): Database.Database {
   // PR-6D: 支撑 #108 AML 监控的窗口查询(seller_id + payment_rail='direct_p2p' + created_at 范围)。
   //   纯只读索引;不改行为、不打开任何规则。命名随既有 idx_orders_* 风格。
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_direct_pay_seller_window ON orders(seller_id, payment_rail, created_at)`) } catch { /* 已存在 */ }
+  // Quote-confirm agent cap:先按 buyer 缩小订单,再以进入付款窗的时间锚定延迟确认订单的 rolling-24h 支出。
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_buyer_created_at ON orders(buyer_id, created_at)`) } catch { /* 已存在 */ }
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_order_history_order_status_created ON order_state_history(order_id, to_status, created_at)`) } catch { /* 已存在 */ }
   // 币种回填(Claim 5 gated):把存量遗留内部代号 'DCP' 一次性刷成 'WAZ'。幂等、可重跑(每次 init 都跑,已是 WAZ 则 0 行);
   //   DCP 与 WAZ 是【同一模拟单位纯改名】,金额不变、无汇率换算;且全仓无 `currency='DCP'` 的筛选逻辑,不破坏任何查询。
   //   fresh-DB 默认已是 WAZ;existing-DB 新建单路径亦显式写 WAZ(见 products-create / MCP list_product / RFQ·auction fulfillment)。

@@ -66,6 +66,7 @@ export interface TransitionResult {
  * @param actorId   操作者用户ID
  * @param evidenceIds 附上的证据ID列表
  * @param notes     备注说明
+ * @param options   requireSignedEvent=true 时签名链失败必须回滚转移
  */
 export function transition(
   db: Database.Database,
@@ -73,7 +74,8 @@ export function transition(
   toStatus: OrderStatus,
   actorId: string,
   evidenceIds: string[] = [],
-  notes: string = ''
+  notes: string = '',
+  options: { requireSignedEvent?: boolean } = {},
 ): TransitionResult {
 
   // 1. 读取订单和操作者
@@ -155,6 +157,7 @@ export function transition(
         extra: { evidence_ids: evidenceIds, notes: notes || null, history_id: historyId },
       })
     } catch (e) {
+      if (options.requireSignedEvent) throw e
       // 签名链失败不应阻塞主流程（旧数据 / 老 actor 缺 api_key 等场景）
       console.warn('[order-chain] appendEvent failed:', (e as Error).message)
     }

@@ -49,7 +49,7 @@ ok('recoveryBannerHTML recovery = password OR verified email (Passkey excluded)'
   /function recoveryBannerHTML[\s\S]{0,400}u\.role === 'admin' \|\| u\.has_password \|\| u\.email_verified\) return ''/.test(app))
 ok('recoveryBannerHTML does NOT count has_passkey as recovery',
   !/function recoveryBannerHTML[\s\S]{0,400}\|\| u\.has_passkey/.test(app))
-ok('recovery banner injected at top of shell main', /<main class="main">\$\{recoveryBannerHTML\(\)\}\$\{content\}<\/main>/.test(app))
+ok('recovery banner injected at top of shell main', /<main class="main(?="| |\$\{)[^"]*">\$\{recoveryBannerHTML\(\)\}\$\{content\}<\/main>/.test(app))
 
 // ── 卖家后台安全提醒(P1) ───────────────────────────────────
 ok('sellerRecoveryReminderHTML lists password/email gaps',

@@ -54,6 +54,29 @@ jobs:
       # tsc does not parse the plain-JS PWA bundle; a stray escape there breaks the whole app.js at runtime.
       - run: npm run check:pwa-syntax
 
+  pwa-ui-baseline:
+    name: PWA UI baseline (Playwright + axe)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:pwa-ui
+      - name: Upload browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pwa-ui-browser-diagnostics
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
   secret-scan:
     name: secret scan (gitleaks)
     runs-on: ubuntu-latest
@@ -340,6 +363,7 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run contract:verify
+      - run: npm run test:endpoint-actions
       # §④ integration-contract entry document (/.well-known/webaz-integration.json): its agent_quickstart
       # block + onboarding boundaries are integrator-observable but NOT fingerprinted, so guard them here.
       - run: npm run test:integration-contract
@@ -697,6 +721,8 @@ jobs:
       - run: npm run test:invite-code-narrowing
       - run: npm run test:shop-referral-attribution
       - run: npm run test:money-units
+      - run: npm run test:cart-checkout
+      - run: npm run test:cart-ui-contract
       - run: npm run test:direct-pay-ledger
       - run: npm run test:deposit-rails
       - run: npm run test:direct-pay-timeouts
