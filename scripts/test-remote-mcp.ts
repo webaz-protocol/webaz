@@ -40,13 +40,16 @@ const SERVER = readFileSync('src/pwa/server.ts', 'utf8')
 const IC = readFileSync('src/pwa/integration-contract.ts', 'utf8')
 const PU = readFileSync('src/pwa/routes/public-utils.ts', 'utf8')
 
-async function boot(env: Record<string, string | undefined>): Promise<{ base: string; http: HttpServer }> {
+async function boot(env: Record<string, string | undefined>, rlCap?: number): Promise<{ base: string; http: HttpServer }> {
   const saved: Record<string, string | undefined> = {}
   for (const [k, v] of Object.entries(env)) { saved[k] = process.env[k]; if (v === undefined) delete process.env[k]; else process.env[k] = v }
   const { registerRemoteMcpRoutes } = await import('../src/pwa/routes/mcp-remote.js')
   const app = express()
   app.use(express.json())
-  registerRemoteMcpRoutes(app)
+  let rlCalls = 0
+  const rateLimitOk = () => { rlCalls++; return rlCalls <= (rlCap ?? 1e9) }
+  ;(app as unknown as { _rl: () => number })._rl = () => rlCalls
+  registerRemoteMcpRoutes(app, { rateLimitOk })
   for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v }
   const http = await new Promise<HttpServer>(r => { const s = app.listen(0, () => r(s)) })
   const addr = http.address()
@@ -111,7 +114,7 @@ async function main() {
   ok('6c. L1 注入点:args 无 api_key 才注入', has(L1, "opts.defaultApiKey && (args as Record<string, unknown>).api_key == null"))
   ok('6d. stdio 入口仍走 buildMcpServer(同一工具面)', has(L1, 'const server = buildMcpServer()') && has(L1, 'new StdioServerTransport()'))
   ok('6e. route 模块不打印 args/Authorization(T8)', !/console\.(log|error)\([^)]*(args|authorization|bearer)/i.test(ROUTE.replace('REFUSING to mount', '')))
-  ok('6f. pwa server 注册了远程路由', has(SERVER, 'registerRemoteMcpRoutes(app)'))
+  ok('6f. pwa server 注册了远程路由', has(SERVER, 'registerRemoteMcpRoutes(app,'))
 
   // ── 7. 发现面:sandbox-aware gate(P2 修复)+ 仅开启时披露(不广告 404)──
   ok('7a. integration-contract 用 remoteMcpEnabled() gate(含 sandbox 检查)', has(IC, 'remoteMcpEnabled()') && has(IC, 'remote_mcp') && !has(IC, "process.env.WEBAZ_REMOTE_MCP === '1' ? { remote_mcp"))
@@ -150,6 +153,23 @@ async function main() {
   ok('9c. ★宿主 env key 绝不出现在任何远程出站请求里(匿名或 bearer 都不泄漏宿主身份)',
     outboundAuth.every(a => a !== 'Bearer wz_HOST_ENV_KEY_MUST_NOT_LEAK'))
   rhttp.close()
+
+  // ── 10. IP 限流(T2/T3:公开端点防刷 / 暴力猜 key / DoS)──
+  {
+    const { base: lb, http: lh } = await boot({ WEBAZ_REMOTE_MCP: '1', WEBAZ_MODE: undefined }, 2)   // 配额=2
+    const r1 = await rpc(lb, { jsonrpc: '2.0', id: 1, method: 'ping' })
+    const r2 = await rpc(lb, { jsonrpc: '2.0', id: 2, method: 'ping' })
+    const r3 = await rpc(lb, { jsonrpc: '2.0', id: 3, method: 'ping' })   // 超配额
+    ok('10a. 配额内请求正常(非 429)', r1.status !== 429 && r2.status !== 429)
+    ok('10b. 超配额 → 429 rate limited', r3.status === 429)
+    ok('10c. 429 前不建 MCP server(限流在装配之前)', ROUTE.indexOf('deps.rateLimitOk(') < ROUTE.indexOf('buildMcpServer({ isolated'))
+    lh.close()
+  }
+  ok('10d. 注册需 rateLimitOk dep(server.ts 已注入)', has(SERVER, 'registerRemoteMcpRoutes(app, { rateLimitOk })'))
+  ok('10e. 命名空间桶 remote_mcp:(修 P2,不与 telemetry 裸-IP 桶串)', has(ROUTE, "'remote_mcp:' + clientIp(req)"))
+  ok('10f. 客户端 IP 真相源优先 CF-Connecting-IP(修 P1,CF 覆盖不可伪造)', has(ROUTE, "req.headers['cf-connecting-ip']") && has(ROUTE, 'req.ip'))
+  ok('10g. CF-Connecting-IP 需过 IP 形态校验(拒任意字符串桶键,P2 收窄)', has(ROUTE, 'IP_RE.test(cf)'))
+  ok('10h. 直连-origin DoS 残余已显式文档化(RFC/docs 诚实)', readFileSync('docs/REMOTE-MCP.md','utf8').includes('bypasses Cloudflare') && readFileSync('docs/REMOTE-MCP.md','utf8').includes('CF_ORIGIN_GUARD_MODE=enforce'))
 
   if (fail > 0) { console.error(`\n❌ remote MCP FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ remote MCP: real handshake over Streamable HTTP (stateless) + fail-closed flag + sandbox refuse + 405s + no-CORS + bearer seam\n  ✅ pass ${pass}`)
