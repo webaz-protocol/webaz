@@ -179,6 +179,7 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
       // RFC-011 agent 接入 live 端点;总入口 integration.json 把它们按旅程串起来
       agent_endpoints: {
         integration_contract: 'https://webaz.xyz/.well-known/webaz-integration.json', // RFC-011 总入口(按旅程导航全维度)
+        ...(process.env.WEBAZ_REMOTE_MCP === '1' ? { remote_mcp: 'https://webaz.xyz/mcp' } : {}),           // RFC-022 远程 MCP(仅开启时披露)
         capability_matrix: 'https://webaz.xyz/.well-known/webaz-capabilities.json',   // ② 边界(#126)
         entity_dictionary: 'https://webaz.xyz/.well-known/webaz-entities.json',       // ① 语义(order/product/dispute 状态机 + 字段)
         goal_index: 'https://webaz.xyz/.well-known/webaz-goals.json',                 // ① 目标索引(intent → action + endpoint + 工具)

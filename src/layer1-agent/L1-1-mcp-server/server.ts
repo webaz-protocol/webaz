@@ -5060,7 +5060,11 @@ function settleOrder(db: Database.Database, orderId: string) {
 
 // ─── MCP Server 主体 ──────────────────────────────────────────
 
-export async function startMCPServer() {
+// RFC-022:装配与传输解耦 — buildMcpServer 构建完整 Server(工具/资源/提示全注册,无传输),
+// stdio 入口(startMCPServer)与远程入口(src/pwa/routes/mcp-remote.ts)共用同一工具面,零漂移。
+// opts.defaultApiKey = 远程 bearer key 的注入点:等价本地 WEBAZ_API_KEY 默认值,
+// 仅在工具 args 未显式携带 api_key 时生效(优先级不变:args > bearer > env)。
+export function buildMcpServer(opts: { defaultApiKey?: string } = {}) {
   const server = new Server(
     // name 是客户端配置引用的 server 标识(勿改);version 走单一来源(旧硬编码 '0.1.0' 已漂移)。
     { name: 'dcp-protocol', version: SOFTWARE_VERSION },
@@ -5244,6 +5248,8 @@ export async function startMCPServer() {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params
+    // RFC-022:远程 bearer 注入(见 buildMcpServer 头注)— args 显式 api_key 永远优先
+    if (opts.defaultApiKey && (args as Record<string, unknown>).api_key == null) (args as Record<string, unknown>).api_key = opts.defaultApiKey
     const t0 = Date.now()
     let result: unknown
 
@@ -5337,6 +5343,11 @@ export async function startMCPServer() {
     }
   })
 
+  return server
+}
+
+export async function startMCPServer() {
+  const server = buildMcpServer()
   const transport = new StdioServerTransport()
   await server.connect(transport)
   console.error('✅ WebAZ MCP Server 已启动，等待 Agent 连接...')
