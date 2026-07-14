@@ -103,3 +103,10 @@ Round-1 fix was **necessary but incomplete**: it patched the three obvious crede
 **Root-cause fix — a single authoritative isolation context (AsyncLocalStorage).** Instead of threading `__isolated__` through every call site (fragile — this is exactly what leaked), the remote request runs inside `isolationALS.run(true, …)` set once in the CallTool interceptor. `isIsolated()` is then read at *every* ambient-credential source: `apiCall`'s env fallback, `resolveMcpApiKey`, `resolveGrantCredential`, `handlePair`, and the `recentCalls` push. AsyncLocalStorage propagates across `await` and isolates per request (remote builds a fresh server per request). `args.__isolated__` is kept as a defense-in-depth second signal.
 
 End-to-end proof in `test:remote-mcp` (30 checks): with a non-empty host `WEBAZ_API_KEY`, a fetch spy confirms an **anonymous remote `tools/call` emits zero outbound requests carrying the host key** — and no remote request (anonymous or bearer) ever does. Round-3 re-audit pending.
+
+
+## 9. Security review — round 3 (confirmation, Codex, 2026-07-14)
+
+**No P0, no P1.** Confirmed complete: every ambient host-credential source reachable from an isolated remote request goes through `isIsolated()` — `apiCall` env fallback, `resolveGrantCredential` (before pointer/keychain/file reads), `handlePair`, and `pwaApi`/`readEndpoint` (which route through `apiCall`). Direct `fetch()` sites (npm version check, search-by-link, telemetry, local public reads) attach no host credentials. ALS wraps the entire awaited dispatch with no `setTimeout`/detached-promise escape; the per-request fresh server prevents cross-request store bleed; a caller cannot force `isIsolated()` false; stdio path unchanged.
+
+One residual **P2** (read-side mirror of the recentCalls guard): `webaz_feedback` submit read the process-global `recentCalls` buffer — metadata only (tool/arg-key/outcome/mode, no credentials), and empty in a pure-remote process. Fixed: `scene: isIsolated() ? [] : recentCalls.slice(-8)`. Isolation is now airtight on both write and read sides. Security review closed at the two-round cap (round-1 fix → round-2 fix → round-3 confirmation clean).

@@ -135,6 +135,7 @@ async function main() {
   ok('8g. 拦截器服务端强制 __isolated__(覆盖调用方伪造),stdio 清除', has(L1, "if (opts.isolated) (args as Record<string, unknown>).__isolated__ = true") && has(L1, "else delete (args as Record<string, unknown>).__isolated__"))
   ok('8h. apiCall fallback 走 ALS isIsolated()(单一权威,覆盖所有调用点)', has(L1, "const key = opts.apiKey || (isIsolated() ? '' : WEBAZ_API_KEY)"))
   ok('8i. recentCalls ring buffer 隔离态不写(防跨请求元数据 bleed)', has(L1, "name !== 'webaz_feedback' && !isIsolated()"))
+  ok('8j. webaz_feedback 隔离态不读进程级 recentCalls(读侧镜像守卫)', has(L1, 'scene: isIsolated() ? [] : recentCalls.slice(-8)'))
 
   // ── 9. 端到端证明:即使宿主设了 WEBAZ_API_KEY,匿名远程的出站请求也不带它(ALS 隔离真生效)──
   const { base: rbase, http: rhttp } = await boot({ WEBAZ_REMOTE_MCP: '1', WEBAZ_MODE: 'network' })

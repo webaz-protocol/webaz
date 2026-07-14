@@ -1826,7 +1826,8 @@ async function handleFeedback(args: Record<string, unknown>): Promise<Record<str
       severity: args.severity,
       subject: args.subject,
       text,
-      scene: recentCalls.slice(-8),   // 现场证据:脱敏摘要(tool / arg_keys / outcome / mode)
+      scene: isIsolated() ? [] : recentCalls.slice(-8),   // 现场证据:脱敏摘要(tool / arg_keys / outcome / mode)。RFC-022:隔离态(远程共享端点)不读进程级 buffer,防跨请求元数据 bleed(读侧镜像写侧守卫)
+
     },
   })
 }
