@@ -38,9 +38,20 @@ const PROTECTED_RESOURCE_METADATA_URL = 'https://webaz.xyz/.well-known/oauth-pro
 const AUTH_ONLY_TOOLS = new Set([
   'webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request',
 ])
+// webaz_list_product 是多 action 工具:只有 grant 路径真支持的 action 才配挑战(承诺即真实)。
+//   mine → seller_products_read;create/draft(缺省即 create)→ seller_product_draft —— 均可由 OAuth scope 铸出。
+//   update/delist/publish/delete = api_key-only(GRANT_WRITE_NOT_ENABLED),oat_ 满足不了 → 不挑战,
+//   照旧落工具层 api_key 引导。get_agent_order / order_action_request 单 capability,整工具可挑战。
+const LIST_PRODUCT_GRANT_ACTIONS = new Set(['mine', 'create', 'draft'])
 function isAuthOnlyToolCall(body: unknown): boolean {
-  const b = body as { method?: unknown; params?: { name?: unknown } } | null
-  return !!b && b.method === 'tools/call' && typeof b.params?.name === 'string' && AUTH_ONLY_TOOLS.has(b.params.name)
+  const b = body as { method?: unknown; params?: { name?: unknown; arguments?: { action?: unknown } } } | null
+  if (!b || b.method !== 'tools/call' || typeof b.params?.name !== 'string') return false
+  const name = b.params.name
+  if (name === 'webaz_list_product') {
+    const action = typeof b.params.arguments?.action === 'string' ? b.params.arguments.action : 'create'  // 缺省 create
+    return LIST_PRODUCT_GRANT_ACTIONS.has(action)
+  }
+  return AUTH_ONLY_TOOLS.has(name)
 }
 
 // 机器可读的 Remote MCP 公告(单一真相源,两个 well-known 清单共用防漂移)。只在端点真开时返回,

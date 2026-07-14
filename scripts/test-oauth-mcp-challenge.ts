@@ -96,6 +96,15 @@ async function main() {
     const r = await call(base, t)
     ok(`1f. anonymous ${t} NOT challenged (oat_ cannot satisfy it — no false OAuth recovery)`, r.status === 200 && !r.headers.get('www-authenticate'))
   }
+  // Codex PR-5 P1b:list_product 按 action 分粒度 —— grant 路径支持的 action 才挑战。
+  {
+    const mine = await call(base, 'webaz_list_product', {}, 71, { action: 'mine' })
+    ok('1g. list_product action=mine → 401 (grant path: seller_products_read)', mine.status === 401 && mine.headers.get('www-authenticate') === EXPECTED_CHALLENGE)
+    const delist = await call(base, 'webaz_list_product', {}, 72, { action: 'delist', product_id: 'p1' })
+    ok('1h. list_product action=delist → NOT challenged (api_key-only, no false OAuth promise)', delist.status === 200 && !delist.headers.get('www-authenticate'))
+    const del = await call(base, 'webaz_list_product', {}, 73, { action: 'delete', product_id: 'p1' })
+    ok('1i. list_product action=delete → NOT challenged (api_key-only)', del.status === 200 && !del.headers.get('www-authenticate'))
+  }
 
   // ── 2. I-2:匿名【读】面绝不被挑战 ──
   {
@@ -168,6 +177,19 @@ async function main() {
     ok('6e. list:draft mints seller_product_draft (the scope POST /api/agent/seller/products enforces)', caps.includes('seller_product_draft'))
     for (const c of caps) {
       ok(`6f. every list:draft capability (${c}) is enforced by an agent-grants endpoint`, GRANTS_ROUTE.includes(`requireAgentGrantScope('${c}')`))
+    }
+    // Codex PR-5 P1 回归(核心):EVERY challenged tool 的 required scope 必须能被某个 OAuth scope 铸出 ——
+    // 否则合规客户端完成 OAuth 后重试永远 PERMISSION_REQUIRED(虚假承诺)。widen 决策后三工具全覆盖。
+    const union = new Set(Object.values(OAUTH_SCOPE_CAPABILITIES).flat() as string[])
+    const TOOL_REQUIRED_CAPS: Record<string, string[]> = {
+      webaz_get_agent_order: ['seller_orders_read_minimal'],
+      webaz_order_action_request: ['order_action_request'],
+      webaz_list_product: ['seller_product_draft', 'seller_products_read'],   // create + mine
+    }
+    for (const [tool, reqCaps] of Object.entries(TOOL_REQUIRED_CAPS)) {
+      for (const c of reqCaps) {
+        ok(`6g. challenged ${tool} needs ${c} → OAuth CAN mint it (promise is real) + endpoint enforces it`, union.has(c) && GRANTS_ROUTE.includes(`requireAgentGrantScope('${c}')`))
+      }
     }
   }
   ok('6g. docs describe the 401 self-start flow', readFileSync('docs/REMOTE-MCP.md', 'utf8').includes('WWW-Authenticate') && readFileSync('docs/REMOTE-MCP.md', 'utf8').includes('Connect via OAuth'))

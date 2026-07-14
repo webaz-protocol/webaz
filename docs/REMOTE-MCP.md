@@ -41,7 +41,7 @@ When the OAuth surface is live (`WEBAZ_OAUTH=1`), a compliant MCP client (Claude
 2. **Authorize.** Authorization Code + PKCE (`S256` only). You're redirected to webaz.xyz, log in with your **Passkey**, and see a consent screen naming the client, the exact SAFE scopes (`read`, `order:draft`, `list:draft`), and the resource (`https://webaz.xyz/mcp`).
 3. **Token.** The client exchanges the code for a **short-lived, audience-bound, opaque** access token — a credential for the delegation grant your approval minted (revocable anytime from your account; no refresh tokens in v1, the client re-consents on expiry).
 
-Boundaries (identical to every other path): OAuth tokens carry **SAFE scopes only** — RISK actions (pay, ship, arbitrate…) still return an `approve_url` you confirm with your Passkey; no token ever bypasses the human gate. Anonymous browsing needs no OAuth and is unchanged.
+Boundaries (identical to every other path): OAuth tokens carry **SAFE scopes only** — read (public + your own catalog + minimal orders, no buyer PII), draft creation, and *submitting* accept/ship requests to your approval queue. Anything beyond that — executing an order action, publishing, paying, arbitrating, or any api_key-only operation — is **not performed by an OAuth token**; it needs your `api_key` or a per-action Passkey approval. No token ever bypasses the human gate. Anonymous browsing needs no OAuth and is unchanged.
 
 ## Get an api_key
 
