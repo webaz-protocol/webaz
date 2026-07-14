@@ -27,13 +27,10 @@ const _EN = {
   '一个 AI 客户端请求通过 OAuth 连接你的 WebAZ 账号。它只会拿到下列受限、短期(1小时)、可随时撤销的权限 —— 不是你的账号或密钥;资金/发布/发货等敏感动作永远需要你的 Passkey 逐次批准。': 'An AI client is requesting to connect to your WebAZ account via OAuth. It will only receive the limited, short-lived (1 hour), revocable permissions below — never your account or keys; money, publishing, shipping and other sensitive actions always require your Passkey per action.',
   '请求方 client_id(自称,未验证)': 'Requesting client_id (self-declared, unverified)',
   '访问目标': 'Resource',
-  '请求的权限': 'Requested permissions',
   '未知权限(将被服务端拒绝)': 'Unknown permission (the server will reject it)',
   '批准后将跳回:': 'After approval you will be redirected to:',
   '🔐 Passkey 批准连接': '🔐 Approve with Passkey',
-  '批准失败,请重试': 'Approval failed, please retry',
   '已批准,正在跳回 AI 客户端…': 'Approved — returning to the AI client…',
-  'Passkey 验证未完成': 'Passkey verification was not completed',
   // ── RFC-021 order-action 审批卡(app-agent-approvals-order.js)──
   '对订单': 'On order',
   '批准后由服务端在你授权下执行;agent 不直接执行': 'On approval the server executes under your authority; the agent never executes directly',
