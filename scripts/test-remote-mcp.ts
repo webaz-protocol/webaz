@@ -171,6 +171,19 @@ async function main() {
   ok('10g. CF-Connecting-IP 需过 IP 形态校验(拒任意字符串桶键,P2 收窄)', has(ROUTE, 'IP_RE.test(cf)'))
   ok('10h. 直连-origin DoS 残余已显式文档化(RFC/docs 诚实)', readFileSync('docs/REMOTE-MCP.md','utf8').includes('bypasses Cloudflare') && readFileSync('docs/REMOTE-MCP.md','utf8').includes('CF_ORIGIN_GUARD_MODE=enforce'))
 
+  // ── 11. 发现面:顶层 remote_mcp 公告(陌生 agent 一眼可见)+ 完整 shape ──
+  process.env.WEBAZ_REMOTE_MCP = '1'; delete process.env.WEBAZ_MODE
+  const { remoteMcpManifest } = await import('../src/pwa/routes/mcp-remote.js')
+  const man = remoteMcpManifest()
+  ok('11a. remoteMcpManifest 返回完整 shape(端点开时)', !!man && man.transport === 'streamable_http' && man.endpoint === 'https://webaz.xyz/mcp' && man.status === 'live')
+  ok('11b. shape 含 authentication.anonymous / .bearer', !!(man as Record<string, Record<string, unknown>>)?.authentication?.anonymous && !!(man as Record<string, Record<string, unknown>>)?.authentication?.bearer)
+  ok('11c. shape 含 protocol_version + stdio 区分', man?.protocol_version === '2025-03-26' && String(man?.stdio_alternative || '').includes('npx -y @seasonkoh/webaz'))
+  const ICsrc = readFileSync('src/pwa/integration-contract.ts', 'utf8')
+  const PUsrc = readFileSync('src/pwa/routes/public-utils.ts', 'utf8')
+  ok('11d. integration.json 顶层公告 remote_mcp(via builder)', ICsrc.includes('{ remote_mcp: remoteMcpManifest() }'))
+  ok('11e. protocol.json 顶层公告 remote_mcp(via builder)', PUsrc.includes('{ remote_mcp: remoteMcpManifest() }'))
+  ok('11f. strict 0-命中 hint 指向远程可达浏览(不只 PWA #discover)', L1.includes('不带 query') && L1.includes('acp-feed.json'))
+
   if (fail > 0) { console.error(`\n❌ remote MCP FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ remote MCP: real handshake over Streamable HTTP (stateless) + fail-closed flag + sandbox refuse + 405s + no-CORS + bearer seam\n  ✅ pass ${pass}`)
 }

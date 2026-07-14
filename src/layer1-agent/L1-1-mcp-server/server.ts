@@ -2295,7 +2295,7 @@ async function handleSearch(args: Record<string, unknown>) {
       found: products.length,
       hint: products.length
         ? `网络上匹配到 ${products.length} 件商品。下单前用 webaz_verify_price 锁价。`
-        : '网络上未找到精确匹配商品(协议级 strict 匹配)。可换更准确的商品名,或用 paste_text 贴外链搜索。',
+        : '网络上未找到精确匹配商品(协议级 strict 匹配,只按完整标题/SKU 命中)。要浏览目录:再调 webaz_search 但【不带 query】只给筛选(category / sort / max_price),即返回在售商品列表;或读机器目录 /.well-known/webaz-acp-feed.json。(PWA 用户可用 #discover 模糊浏览。) / No exact match (strict). To BROWSE, call webaz_search again with filters and NO query; or read /.well-known/webaz-acp-feed.json.',
     }
   }
 
