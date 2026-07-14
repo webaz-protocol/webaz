@@ -61,10 +61,32 @@ export async function oauthClients(): Promise<OAuthClient[]> {
 const HOST_RE = /^(?:\[[0-9a-fA-F:]+\]|[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*)$/
 export function isRegisterableRedirectUri(uri: unknown): boolean {
   if (typeof uri !== 'string' || uri.length === 0 || uri.length > 2000) return false
+  // Require printable-ASCII ONLY, BEFORE parsing (Codex round-2/3). A valid redirect_uri is always
+  //   ASCII per RFC 3986 (unicode domains are punycode xn--, unicode paths are %-encoded). The WHATWG
+  //   URL parser strips/IDNA-ignores many chars before u.hostname is read — raw C0 controls, DEL, and
+  //   also non-ASCII like U+FEFF / U+200B / U+00AD / U+2060 / U+FE0F — any of which would normalize a
+  //   junk string to a clean host and slip past HOST_RE. Rejecting everything outside 0x21..0x7e closes
+  //   the whole class in one rule (no per-code-point blacklist to chase).
+  // Printable-ASCII only (cheap early defense): a valid redirect_uri is ASCII per RFC 3986.
+  if (!/^[\x21-\x7e]+$/.test(uri)) return false
   let u: URL
   try { u = new URL(uri) } catch { return false }
   if (u.hash || u.username || u.password) return false                       // no fragment / userinfo
-  if (!HOST_RE.test(u.hostname)) return false                                // no wildcard / malformed host
+  if (!HOST_RE.test(u.hostname)) return false                                // valid host shape (no wildcard)
+  // AUTHORITY-OF-TRUTH (the definitive close of the host-normalization class, replacing per-quirk
+  //   guards — Codex rounds 2-5 found controls, IDNA-ignored Unicode, %-encoded host, and backslash
+  //   authority all rewrite u.hostname). Require the RAW string to BEGIN with EXACTLY Node's canonical
+  //   `scheme://authority`. If the parser normalized the host in ANY way (%-decode, `\`→`/`, IDNA,
+  //   control-strip, userinfo split), the canonical prefix won't literally match → reject. u.host is
+  //   the complete authority (host[:non-default-port]), so the match boundary is exact.
+  //   IPv6 literals are exempt: Node canonicalizes them (`[0:0:0:0:0:0:0:1]` → `[::1]`) so the raw
+  //   prefix wouldn't match a legit expanded form (Codex P2 false-positive). They can't be host-
+  //   obfuscated the DNS way — HOST_RE constrains them to `[0-9a-fA-F:]`, ASCII-only blocks the rest,
+  //   and http still requires an exact `[::1]` loopback match below; https allows any host anyway.
+  if (!u.hostname.startsWith('[')) {
+    const canonical = `${u.protocol}//${u.host}`.toLowerCase()
+    if (!uri.toLowerCase().startsWith(canonical)) return false
+  }
   if (u.protocol === 'https:') return true
   if (u.protocol === 'http:') return u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]' || u.hostname === '::1'
   return false                                                               // no custom / non-http(s) schemes (v1)

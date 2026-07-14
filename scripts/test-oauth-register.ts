@@ -31,6 +31,32 @@ ok('1g. garbage / empty / overlong REJECTED', !isRegisterableRedirectUri('not a 
 ok('1h. wildcard https host REJECTED', !isRegisterableRedirectUri('https://*.evil.example/cb') && !isRegisterableRedirectUri('https://foo.*.example/cb'))
 ok('1i. valid IPv4 / bracketed IPv6 loopback accepted', isRegisterableRedirectUri('http://[::1]:9/cb') && isRegisterableRedirectUri('https://1.2.3.4/cb'))
 ok('1j. subdomain + hyphen hosts accepted (normal DNS)', isRegisterableRedirectUri('https://app.my-connector.example/cb'))
+// Codex round-2: raw control chars (tab/newline/CR) that the URL parser would strip must be rejected up-front
+ok('1k. raw tab/newline/CR in host REJECTED (no parser-strip bypass)', !isRegisterableRedirectUri('https://exa\tmple.com/cb') && !isRegisterableRedirectUri('https://exa\nmple.com/cb') && !isRegisterableRedirectUri('https://example.com/cb\r'))
+// Codex round-3: IDNA-ignored Unicode (BOM/ZWSP/soft-hyphen/word-joiner/variation-selector) also
+// normalizes away in the host → ASCII-only guard closes the whole class.
+ok('1k2. IDNA-ignored Unicode in host REJECTED (ASCII-only)', ['﻿', '​', '­', '⁠', '️', ' '].every(c => !isRegisterableRedirectUri(`https://exa${c}mple.com/cb`)))
+ok('1k3. any non-ASCII redirect_uri REJECTED (use punycode / %-encoding)', !isRegisterableRedirectUri('https://münchen.example/cb') && !isRegisterableRedirectUri('https://example.com/café'))
+ok('1k4. punycode + %-encoded PATH still accepted', isRegisterableRedirectUri('https://xn--mnchen-3ya.example/cb') && isRegisterableRedirectUri('https://example.com/caf%C3%A9?q=1'))
+// Codex round-4: percent-encoded HOST bytes normalize away (%65→e, %2e→.) → reject % in the authority.
+ok('1k5. percent-encoded host REJECTED', !isRegisterableRedirectUri('https://%65xample.com/cb') && !isRegisterableRedirectUri('https://exa%6dple.com/cb') && !isRegisterableRedirectUri('https://example%2ecom/cb'))
+ok('1k6. %-encoding in path/query still fine (only authority is constrained)', isRegisterableRedirectUri('https://example.com/a%2fb?x=%20y'))
+// Codex round-5: backslash authority (Node treats \ as /) and the whole normalization class must fail
+// the canonical-prefix check. This is the definitive close — assert the accumulated bypasses all die.
+ok('1k7. backslash authority REJECTED', !isRegisterableRedirectUri('https:\\\\%65xample.com/cb') && !isRegisterableRedirectUri('https:/\\example.com/cb') && !isRegisterableRedirectUri('https:\\\\example.com/cb'))
+ok('1k8. all accumulated host-normalization bypasses REJECTED', [
+  'https://%65xample.com/cb', 'https://exa%6dple.com/cb', 'https://example%2ecom/cb',
+  'https://exa\tmple.com/cb', 'https://exa﻿mple.com/cb', 'https://exa​mple.com/cb',
+  'https://example.com%2f@evil.com/cb', 'https://münchen.example/cb',
+].every(x => !isRegisterableRedirectUri(x)))
+ok('1k9. legit hosts with ports/paths/query still accepted', [
+  'https://example.com/cb', 'https://app.x.example:8443/oauth/cb?v=1', 'http://localhost:53682/callback',
+  'http://127.0.0.1/cb', 'http://[::1]:9/cb', 'https://xn--mnchen-3ya.example/cb',
+].every(x => isRegisterableRedirectUri(x)))
+// Codex round-5 P2: expanded/non-canonical IPv6 loopback literals must be accepted (Node compresses them)
+ok('1k10. expanded IPv6 loopback accepted', ['http://[0:0:0:0:0:0:0:1]/cb', 'https://[0:0:0:0:0:0:0:1]/cb', 'https://[::0001]/cb'].every(x => isRegisterableRedirectUri(x)))
+ok('1k11. non-loopback IPv6 over http still REJECTED (loopback-only)', !isRegisterableRedirectUri('http://[2001:db8::1]/cb'))
+ok('1l. raw space + NUL + DEL REJECTED', !isRegisterableRedirectUri('https://exa mple.com/cb') && !isRegisterableRedirectUri('https://example.com/\u0000') && !isRegisterableRedirectUri('https://example.com/\u007f'))
 
 const db = new Database(':memory:')
 initOAuthSchema(db)
