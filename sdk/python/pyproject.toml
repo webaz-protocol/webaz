@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "webaz"
+version = "0.1.0"
+description = "WebAZ Python SDK — connect any Python agent to the WebAZ agent-native commerce protocol over Remote MCP."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "BUSL-1.1"
+authors = [{ name = "WebAZ" }]
+keywords = ["mcp", "agent", "commerce", "webaz", "model-context-protocol"]
+dependencies = ["mcp>=1.0"]
+
+[project.urls]
+Homepage = "https://webaz.xyz"
+Connect = "https://webaz.xyz/#connect"
+Documentation = "https://webaz.xyz/docs/REMOTE-MCP.md"
+Source = "https://github.com/webaz-protocol/webaz"
+
+[tool.hatch.build.targets.wheel]
+packages = ["webaz"]
