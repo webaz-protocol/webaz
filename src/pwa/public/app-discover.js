@@ -771,7 +771,7 @@ async function renderDiscover(app) {
   const sortLabel = ({trending:'🔥 '+t('热门'), recommended:'📣 '+t('推荐多'), seller_win_rate:'⚖️ '+t('胜诉率'), newest:'🆕 '+t('最新'), rating:'⭐ '+t('信誉'), price_asc:'💰 '+t('价格 ↑'), random:'🎲 '+t('随机')}[sort]) || sort
   const typeLabel = ({retail:'🛍️ '+t('零售'), wholesale:'📦 '+t('批发'), service:'🛠️ '+t('服务'), digital:'💾 '+t('数字')}[ptype]) || ptype
   const filterPanel = `
-    <details style="margin-bottom:10px;background:#fff;border:1px solid #e5e7eb;border-radius:8px">
+    <details class="buyer-filter-panel" style="margin-bottom:10px;background:#fff;border:1px solid #e5e7eb;border-radius:8px">
       <summary style="padding:8px 12px;cursor:pointer;font-size:12px;color:#374151;display:flex;justify-content:space-between;align-items:center">
         <span>🔧 ${t('筛选')}</span>
         <span style="color:#6b7280;font-size:11px">${sortLabel} · ${typeLabel}</span>
@@ -790,7 +790,7 @@ async function renderDiscover(app) {
     ${subTabs}
     ${sectionStrip}
     ${filterPanel}
-    <div style="font-size:11px;color:#9ca3af;margin-bottom:10px">
+    <div class="buyer-discover-note" style="font-size:11px;color:#9ca3af;margin-bottom:10px">
       ${t('只展示真实成交且好评推荐的内容，用户共建非平台算法推荐')}
     </div>
     <div id="product-list">${grid}</div>
@@ -941,13 +941,13 @@ function productCardHtml(p, showSales) {
   //  L3 @sellerName    ← 单独一行，ellipsis 保护
   //  L4 ⭐可信 · 12 单  ← 信誉行，浅灰
   //  L5 🔥 3 已购 · 📣 3 推荐  ← 销量信号，绿字
-  return `<div class="product-card" onclick="navigate('#order-product/${p.id}')">
+  return `<a class="product-card buyer-product-card" href="#order-product/${p.id}">
     <div class="product-img">${window.productCardImg(p)}</div>
     <div class="product-body">
       <div class="product-name">${escHtml(p.title)}${typeBadge}</div>
       <div class="product-price">${window.fmtPrice(p.price)}</div>
       <div class="product-seller">${t('卖家')}：@${escHtml(p.seller_name)}</div>
-      ${p.seller_created_at ? `<div style="font-size:10px;color:#9ca3af;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t('入驻时长')}：${joinDuration(p.seller_created_at)}</div>` : ''}
+      ${p.seller_created_at ? `<div style="font-size:10px;color:#596570;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t('入驻时长')}：${joinDuration(p.seller_created_at)}</div>` : ''}
       ${trust ? `<div style="font-size:10px;color:#6b7280;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${trust}</div>` : ''}
       ${lowStockBadge}
       ${p.trial_quota_remaining > 0 ? `<div style="font-size:11px;color:#9333ea;margin-top:3px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">🎁 ${t('测评免单 剩')} ${p.trial_quota_remaining} ${t('名额')}</div>` : ''}
@@ -955,10 +955,10 @@ function productCardHtml(p, showSales) {
         const sales = Number(p.sales_count) || 0
         const rec = Number(p.recommend_count) || 0
         const pct = sales > 0 ? Math.min(100, Math.round((rec / sales) * 100)) : null
-        return `<div style="font-size:11px;color:#16a34a;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">🔥 ${sales} ${t('已购')}${rec > 0 ? ` · 📣 ${rec} ${t('推荐')}` : ''}${pct !== null ? ` · ${t('推荐比例')}：${pct}%` : ''}</div>`
+        return `<div style="font-size:11px;color:#087a5a;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">🔥 ${sales} ${t('已购')}${rec > 0 ? ` · 📣 ${rec} ${t('推荐')}` : ''}${pct !== null ? ` · ${t('推荐比例')}：${pct}%` : ''}</div>`
       })() : ''}
     </div>
-  </div>`
+  </a>`
 }
 
 window.loadMoreDiscover = async (qsBase, gridId, moreId) => {

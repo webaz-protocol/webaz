@@ -1266,12 +1266,12 @@ window.openSheet = function(html, opts) {
   const o = opts || {}
   // 2026-05-22：opts.maxWidth 可覆盖默认 560px（笔记页等用 680px 保持视觉宽度一致）
   const maxW = o.maxWidth || 560
-  const titleHtml = o.title ? `<div style="padding:14px 16px 8px;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;gap:10px"><div class="line-clamp-1" style="font-size:16px;font-weight:700;flex:1;min-width:0">${o.title}</div><button onclick="closeSheet()" style="flex-shrink:0;background:#f3f4f6;border:none;border-radius:50%;width:28px;height:28px;font-size:14px;cursor:pointer;color:#6b7280">×</button></div>` : ''
+  const titleHtml = o.title ? `<div class="sheet-header" style="padding:14px 16px 8px;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;gap:10px"><div class="line-clamp-1" style="font-size:16px;font-weight:700;flex:1;min-width:0">${o.title}</div><button class="sheet-close" onclick="closeSheet()" style="flex-shrink:0;background:#f3f4f6;border:none;border-radius:50%;width:28px;height:28px;font-size:14px;cursor:pointer;color:#6b7280">×</button></div>` : ''
   const sheet = `
-    <div class="js-sheet" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:flex-end;justify-content:center" onclick="closeSheet()">
-      <div style="background:#fff;width:100%;max-width:${maxW}px;border-radius:18px 18px 0 0;max-height:88vh;overflow-y:auto;display:flex;flex-direction:column;padding-bottom:max(0px, env(safe-area-inset-bottom))" onclick="event.stopPropagation()">
+    <div class="js-sheet sheet-overlay ${o.className || ''}" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:flex-end;justify-content:center" onclick="closeSheet()">
+      <div class="sheet-panel" style="background:#fff;width:100%;max-width:${maxW}px;border-radius:18px 18px 0 0;max-height:88vh;overflow-y:auto;display:flex;flex-direction:column;padding-bottom:max(0px, env(safe-area-inset-bottom))" onclick="event.stopPropagation()">
         ${titleHtml}
-        <div id="sheet-body" style="overflow-y:auto;flex:1;padding:14px 16px">${html}</div>
+        <div id="sheet-body" class="sheet-body ${o.bodyClass || ''}" style="overflow-y:auto;flex:1;padding:14px 16px">${html}</div>
       </div>
     </div>`
   const div = document.createElement('div')
@@ -9848,7 +9848,7 @@ function stockBadgeHtml(p) {
   if (stock <= 0) return `<span style="color:#dc2626;font-weight:500">${t('缺货')}</span>`
   const low = Number(p?.low_stock || 0)
   if (low > 0) return `<span style="color:#dc2626;font-weight:600">⚡ ${t('仅剩')} ${low} ${t('件')}</span>`
-  return `<span style="color:#16a34a">● ${t('有货')}</span>`
+  return `<span style="color:#087a5a">● ${t('有货')}</span>`
 }
 // 限购上限（与 server MAX_PER_ORDER 保持一致）
 const BUY_MAX_PER_ORDER = 10
@@ -10083,7 +10083,7 @@ async function renderBuyPage(app, productId) {
       <span style="font-size:10px;white-space:nowrap">${label}</span>
     </button>`
   const actionIcons = canBuy ? `
-    <div style="display:flex;gap:6px;justify-content:space-around;padding:10px;background:#f9fafb;border-radius:10px;margin-top:10px">
+    <div class="buyer-product-actions" style="display:flex;gap:6px;justify-content:space-around;padding:10px;background:#f9fafb;border-radius:10px;margin-top:10px">
       ${iconBtn(state._wlInitial ? '💗' : '🤍', state._wlInitial ? t('已收藏') : t('收藏'), `toggleWishlist('${p.id}', this)`, state._wlInitial)}
       ${isOOS ? iconBtn(state._waitInitial ? '⏰' : '🔔', state._waitInitial ? t('已订阅') : t('到货提醒'), `toggleWaitlist('${p.id}', this)`, state._waitInitial) : ''}
       ${iconBtn('📊', t('对比'), `toggleCompare('${p.id}', this)`, getCompareList().includes(p.id))}
@@ -10093,7 +10093,7 @@ async function renderBuyPage(app, productId) {
 
   // 底部固定 CTA — 详情页隐藏 tab bar，CTA 独占
   const bottomBar = canBuy ? `
-    <div style="display:flex;gap:8px;align-items:center">
+    <div class="buyer-product-bottom-bar" style="display:flex;gap:8px;align-items:center">
       <div style="flex:0 0 auto">
         <div style="font-size:18px;font-weight:800;color:#dc2626;line-height:1">${window.fmtPrice(livePrice)}</div>
         ${state._flashSale ? `<div style="font-size:10px;color:#9ca3af;text-decoration:line-through">${p.price}</div>` : ''}
@@ -10102,14 +10102,12 @@ async function renderBuyPage(app, productId) {
       <button class="btn btn-primary" id="btn-openBuy" onclick="openBuySheet('${p.id}')" style="flex:1;padding:12px 14px;font-size:14px;font-weight:700" ${isOOS ? 'disabled' : ''}>${isOOS ? t('已售罄') : t('立即下单')}</button>
     </div>` : (state.user ? `<div style="text-align:center;color:#6b7280;font-size:12px">${t('只有买家账号可以下单')}</div>` : `<div style="text-align:center"><a href="#login" class="btn btn-primary" style="padding:10px 24px">${t('登录后下单')}</a></div>`)
 
-  app.innerHTML = shell(`
-    <button class="btn btn-gray btn-sm" style="width:auto;margin-bottom:12px" onclick="history.back()">${t('← 返回')}</button>
-    ${trustBadge}
-    ${valueBadge}
-    ${originBadge}
-    <div class="card">
-      ${productImageGallery(p)}
-      <h2 style="font-size:18px;font-weight:700;margin-bottom:6px">${escHtml(p.title)}</h2>${window.extLinksBarHtml ? window.extLinksBarHtml(productId) : ''}
+	  app.innerHTML = shell(`
+	    <div class="buyer-product-page"><button class="btn btn-gray btn-sm buyer-back-button" style="width:auto;margin-bottom:12px" onclick="history.back()">${t('← 返回')}</button>
+	    <div class="card buyer-product-hero">
+	      ${trustBadge}
+	      ${productImageGallery(p)}
+      <h2 class="buyer-product-title" style="font-size:18px;font-weight:700;margin-bottom:6px">${escHtml(p.title)}</h2>${window.extLinksBarHtml ? window.extLinksBarHtml(productId) : ''}
       ${state._flashSale ? `
       <div style="background:linear-gradient(135deg,#dc2626,#f59e0b);color:#fff;border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
         <div>
@@ -10118,7 +10116,7 @@ async function renderBuyPage(app, productId) {
         </div>
         <div style="text-align:right;font-size:10px;opacity:0.9">${t('截止')}<br><span style="font-size:11px;font-weight:600">${fmtTime(state._flashSale.ends_at)}</span></div>
       </div>` : `
-      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">
+      <div class="buyer-product-price" style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">
         <span style="font-size:22px;font-weight:800;color:#dc2626">${p.price}</span>
         <span style="font-size:12px;color:#6b7280" data-usdc-local="${p.price}">USDC${window._fxLocal(p.price) ? ' ≈ ' + window._fxLocal(p.price) : ''}</span>
       </div>`}
@@ -10132,6 +10130,7 @@ async function renderBuyPage(app, productId) {
         ${state._ratings?.agg?.cnt > 0 ? `<span>⭐ ${Number(state._ratings.agg.avg_stars).toFixed(1)} (${state._ratings.agg.cnt})</span>` : ''}
         <a href="#shop/${p.seller_id}" style="color:#4f46e5;text-decoration:none">🏪 ${escHtml(p.seller_name)} →</a>
       </div>
+	      ${valueBadge}${originBadge}
       ${(() => {
         // 2026-05-22 audit P1：商品页 hero 三柱信号融合
         // 评测分享 / 验证声明 / 仲裁公开 — 让买家在决策时一眼看到三柱
@@ -10152,7 +10151,7 @@ async function renderBuyPage(app, productId) {
         const _canClaim = !!state.user && state.user.id !== p.seller_id
         const claimChip = claimsResolved + claimsOpen > 0
           ? chip('✓', t('已验证'), '#059669', '#d1fae5', `document.getElementById('claims-block-${p.id}')?.scrollIntoView({behavior:'smooth',block:'start'})`, claimsResolved)
-          : (_canClaim ? chip('+', t('发起验证'), '#6366f1', '#eef2ff', `openProductClaimForm('${p.id}')`) : '')
+          : (_canClaim ? chip('+', t('发起验证'), '#3659c9', '#edf1ff', `openProductClaimForm('${p.id}')`) : '')
         const disputeChip = sellerDisputes > 0
           ? chip('⚖', t('仲裁'), sellerOpenDisputes > 0 ? '#dc2626' : '#92400e', sellerOpenDisputes > 0 ? '#fee2e2' : '#fef3c7', `navigate('#shop/${p.seller_id}?tab=disputes')`, sellerDisputes)
           : ''
@@ -10186,7 +10185,7 @@ async function renderBuyPage(app, productId) {
         const rec = Number(p.recommend_count || 0)
         const sales = Number(p.sales_count || 0)
         const pct = sales > 0 ? Math.round((rec / sales) * 100) : 0
-        const tone = pct >= 80 ? '#16a34a' : pct >= 50 ? '#3b82f6' : pct >= 20 ? '#f59e0b' : '#9ca3af'
+        const tone = pct >= 80 ? '#087a5a' : pct >= 50 ? '#3659c9' : pct >= 20 ? '#ad6700' : '#596570'
         return `
         <div style="margin-top:6px;padding:8px 12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px">
           <span style="color:#374151">📣 ${t('推荐指数')}${sales > 0 ? ` <strong style="color:${tone}">${pct}%</strong>` : ''}</span>
@@ -10219,7 +10218,7 @@ async function renderBuyPage(app, productId) {
     <div id="claims-block-${p.id}">${renderProductClaimsBlock(claimsData?.claims || [], p, state.user)}</div>
     ${renderProductQABlock(qaItems, p, state.user)}
 
-    <div style="height:80px"></div> <!-- 底部 CTA 占位 -->
+    <div style="height:80px"></div></div> <!-- 底部 CTA 占位 -->
   `, 'discover', { hideTabbar: true, bottomBar })
 
   // #1051 Schema.org Product — 浏览器内 agent / 搜索引擎可直接读价格/库存/评级/规格/物流/退货/保修
@@ -10336,7 +10335,7 @@ window.openBuySheet = function(productId) {
         ${variants.length === 0 && max > 0 ? `
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
             <button onclick="qtyStep(-1, ${max})" style="width:30px;height:30px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:18px;cursor:pointer;color:#374151">−</button>
-            <input id="inp-qty" type="number" min="1" max="${max}" value="1" oninput="qtyClamp(${max})" style="width:46px;text-align:center;padding:6px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px">
+            <label class="sr-only" for="inp-qty">${t('数量')}</label><input id="inp-qty" type="number" min="1" max="${max}" value="1" oninput="qtyClamp(${max})" style="width:46px;text-align:center;padding:6px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px">
             <button onclick="qtyStep(1, ${max})" style="width:30px;height:30px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:18px;cursor:pointer;color:#374151">+</button>
           </div>` : ''}
       </div>
@@ -10345,7 +10344,7 @@ window.openBuySheet = function(productId) {
 
       <div style="padding-top:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <label class="form-label" style="margin:0">${t('收货地址')}${hasDefault ? ` <span style="font-size:10px;color:#10b981;font-weight:500">· ${escHtml(defaultAddr.label || t('默认'))}</span>` : ''}</label>
+          <label class="form-label" style="margin:0">${t('收货地址')}${hasDefault ? ` <span style="font-size:10px;color:#087a5a;font-weight:500">· ${escHtml(defaultAddr.label || t('默认'))}</span>` : ''}</label>
           <div style="display:flex;gap:6px">
             ${(state._addresses || []).length > 0 ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px" onclick="openAddressPicker()">📍 ${t('地址簿')} (${state._addresses.length})</button>` : ''}
             <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px" onclick="openAddressModal()">+ ${t('新建')}</button>
@@ -10353,7 +10352,7 @@ window.openBuySheet = function(productId) {
         </div>
         <div id="addr-collapsed" style="${hasDefault ? 'display:flex;' : 'display:none;'}padding:10px 12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;color:#374151;justify-content:space-between;align-items:center;gap:8px">
           <div id="addr-summary-text" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(summary)}">${escHtml(summary) || `<span style="color:#9ca3af">${t('未填写')}</span>`}</div>
-          <a href="javascript:void(0)" onclick="toggleOrderAddrEdit(true)" style="font-size:12px;color:#6366f1;white-space:nowrap">✏️ ${t('修改')}</a>
+          <button type="button" onclick="toggleOrderAddrEdit(true)" style="font-size:12px;color:#3659c9;white-space:nowrap;background:none;border:0;cursor:pointer">✏️ ${t('修改')}</button>
         </div>
         <div id="addr-expanded" style="${hasDefault ? 'display:none;' : ''}">
           <input class="form-control" id="inp-addr" placeholder="${t('省市区 详细地址')}" value="${summary ? escHtml(summary) : ''}">
@@ -10437,7 +10436,7 @@ window.openBuySheet = function(productId) {
         <button class="btn btn-primary" id="btn-doBuy" onclick="doBuy('${prod.id}', ${livePrice})" style="width:100%;padding:14px;font-size:15px;font-weight:700">${t('确认下单')} · ${window.fmtPrice(livePrice)}</button>
       </div>
     `
-    openSheet(html, { title: t('下单') })
+    openSheet(html, { title: t('下单'), className: 'buyer-checkout-overlay', bodyClass: 'buyer-checkout-sheet' })
     // B1 跨境税费提示 — 异步注水
     hydrateTaxPreview(prod.id, 1)
   })()
@@ -10481,7 +10480,7 @@ function renderCommentSection(product, ratingsData) {
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;padding:0 2px;gap:8px">
         <div>
           <h3 style="font-size:16px;font-weight:700;margin:0">🌐 ${t('webazer 共建区')}</h3>
-          <div style="font-size:10px;color:#9ca3af;margin-top:2px;font-weight:400">${t('商品页属于所有参与者 · 不属于商家也不属于平台')}</div>
+          <div style="font-size:10px;color:#596570;margin-top:2px;font-weight:400">${t('商品页属于所有参与者 · 不属于商家也不属于平台')}</div>
         </div>
         <span style="font-size:11px;color:var(--gray-500);white-space:nowrap;margin-top:4px">${t('真实购买 + 公开判例')}</span>
       </div>
@@ -10489,14 +10488,9 @@ function renderCommentSection(product, ratingsData) {
       <details class="card" style="padding:0;margin-bottom:14px" id="comment-arb-block">
         <summary style="padding:10px 14px;border-bottom:1px solid #f3f4f6;display:flex;align-items:center;justify-content:space-between;cursor:pointer;list-style:none">
           <span style="font-size:13px;font-weight:600">📋 ${t('仲裁判例')} <span style="color:var(--gray-500);font-weight:500" id="arb-count-pill">(0)</span></span>
-          <span style="position:relative;display:inline-block">
-            <button type="button" onclick="toggleArbRulesTip(event)" onblur="setTimeout(()=>{const e=document.getElementById('arb-rules-tip');if(e)e.style.display='none'},150)" aria-label="${t('共建区规则')}"
-              style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#f3f4f6;color:#6b7280;font-size:13px;cursor:pointer;border:1px solid #e5e7eb;padding:0;line-height:1">ℹ</button>
-            <span id="arb-rules-tip" style="display:none;position:absolute;top:26px;right:-4px;background:#1f2937;color:#fff;padding:8px 12px;border-radius:8px;font-size:11px;line-height:1.6;z-index:100;box-shadow:0 4px 16px rgba(0,0,0,0.15);width:240px;text-align:left;white-space:normal;font-weight:400">
-              ${t('当事人禁评（已购 / 同类卖家 / 验证员 / 围观）')}
-            </span>
-          </span>
+          <span title="${t('当事人禁评（已购 / 同类卖家 / 验证员 / 围观）')}" aria-label="${t('共建区规则')}" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#f3f4f6;color:#596570;font-size:13px;border:1px solid #e5e7eb;line-height:1">ⓘ</span>
         </summary>
+        <div style="padding:7px 14px;background:#f9fafb;color:#596570;font-size:10px">${t('当事人禁评（已购 / 同类卖家 / 验证员 / 围观）')}</div>
         <div id="arb-list">${loading$()}</div>
       </details>
     </div>
