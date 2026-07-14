@@ -71,7 +71,12 @@ ok('4a. gallery container has ontouchstart/ontouchend', has(APPJS, `ontouchstart
 ok('4b. switchGalleryImage maintains wrap.dataset.galIdx', has(APPJS, 'wrap.dataset.galIdx = idx'))
 ok('4c. main-img click opens lightbox at current index', has(APPJS, "openImageLightbox('${pid}', Number(this.closest('[data-hashes]').dataset.galIdx||0))"))
 
-// 5. new file wired: load order + Guard B
+// 5. review section: gallery manifests are images, not reviews (dual-purpose manifest_registry)
+const reviewSec = APPJS.slice(APPJS.indexOf('const manifests = (manifestsData.manifests'), APPJS.indexOf('const reviewsCount'))
+ok('5x. detail review section filters out manifests that ARE the product gallery images',
+  reviewSec.includes('!JSON.parse(p.images') && reviewSec.includes('.includes(m.hash)'))
+
+// 6. new file wired: load order + Guard B
 ok('5a. index.html loads app-product-image-ui.js after media/gallery, before app.js',
   HTML.indexOf('/app-product-gallery.js') < HTML.indexOf('/app-product-image-ui.js') && HTML.indexOf('/app-product-image-ui.js') < HTML.indexOf('/app.js'))
 ok('5b. app-product-image-ui.js in check:pwa-syntax', has(PKG, 'node --check src/pwa/public/app-product-image-ui.js'))

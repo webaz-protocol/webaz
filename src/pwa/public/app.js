@@ -9977,7 +9977,7 @@ async function renderBuyPage(app, productId) {
   if (!p) return app.innerHTML = shell(`<div class="empty">${t('商品不存在')}</div>`, 'discover')
 
   const shares = sharesData.shareables || []
-  const manifests = manifestsData.manifests || []
+  const manifests = (manifestsData.manifests || []).filter(m => { try { return !JSON.parse(p.images || '[]').includes(m.hash) } catch { return true } })   // 商品图库图同样注册在 manifest_registry(双用途表)——是图不是测评,不进测评区
   const reviewsCount = shares.length + manifests.length
   const platformIcon = (pl) => ({ youtube: '📺', tiktok: '🎵', xiaohongshu: '📕', bilibili: '🅱', instagram: '📷', twitter: '🐦' }[pl] || '🔗')
   // 策展引用：每条加"被选中理由"chip — 点击/赞/促成订单 哪个突出显示哪个
