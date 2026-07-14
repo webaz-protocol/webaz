@@ -365,6 +365,7 @@ import { registerRemoteMcpRoutes } from './routes/mcp-remote.js'
 import { registerOAuthDiscoveryRoutes } from './routes/oauth-discovery.js'
 import { registerOAuthAuthorizeRoutes } from './routes/oauth-authorize.js'
 import { registerOAuthApproveRoutes } from './routes/oauth-approve.js'
+import { registerOAuthTokenRoutes } from './routes/oauth-token.js'
 // Agent reputation (#1013 Phase 108) — 2 endpoints
 import { registerAgentReputationRoutes } from './routes/agent-reputation.js'
 // Checkout helpers (#1013 Phase 109) — 2 endpoints
@@ -7674,8 +7675,6 @@ registerReviewsRoutes(app, {
 // #1013 Phase 76: 3 垂类 × 2 (POST claim + GET claims) = 6 endpoints 已迁出
 registerClaimInitiatorsRoutes(app, { db, auth, isTrustedRole, errorRes, generateId })
 
-
-
 // ─── 分享 / 重定向 / QR (#1013 Phase 54) ────────────────────
 registerShareRedirectsRoutes(app, { db, auth, clientIpHash, clientUaHash, resolveInviteCodeRef })
 registerShopReferralRoutes(app, { db, auth, errorRes, internalAuditorId: INTERNAL_AUDITOR_ID, resolveUserRef, resolveInviteCodeRef })
@@ -7744,6 +7743,7 @@ registerRemoteMcpRoutes(app, { rateLimitOk })   // RFC-022:WEBAZ_REMOTE_MCP=1 �
 registerOAuthDiscoveryRoutes(app)   // RFC-023 PR-1:WEBAZ_OAUTH=1 才挂载(fail-closed)发现面元数据
 registerOAuthAuthorizeRoutes(app)   // RFC-023 PR-2a:GET /oauth/authorize 校验+SPA consent 交接(mint 无)
 registerOAuthApproveRoutes(app, { db, auth, generateId, consumeGateToken, rateLimitOk })   // RFC-023 PR-2b:Passkey 门 consent → mint grant+code
+registerOAuthTokenRoutes(app, { rateLimitOk })   // RFC-023 PR-3:code+PKCE → opaque token(hashed,aud-bound,不超 grant 寿命)
 registerPublicUtilsRoutes(app, {
   db, MASTER_SEED, NODE_ENV, SERVICE_START_MS,
   rateLimitOk, generateManifest, getUser, logError,
