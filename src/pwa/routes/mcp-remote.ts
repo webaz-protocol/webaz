@@ -33,8 +33,10 @@ export function registerRemoteMcpRoutes(app: Express) {
     try {
       const authz = String(req.headers.authorization || '')
       const bearer = authz.startsWith('Bearer ') ? authz.slice(7).trim() : ''
-      // 每请求独立装配(SDK 无状态模式的标准形态)— 请求间零共享状态
-      const server = buildMcpServer(bearer ? { defaultApiKey: bearer } : {})
+      // 每请求独立装配(SDK 无状态模式的标准形态)— 请求间零共享状态。
+      // isolated:true = 凭证隔离(RFC-022 §2 T5):远程只认本请求 bearer,绝不继承宿主 env key / 存储 grant /
+      //   pairing 文件;匿名远程 = 真 network_readonly。修 Codex 两个 P0(跨请求越权 + pairing 竞态)。
+      const server = buildMcpServer({ isolated: true, ...(bearer ? { defaultApiKey: bearer } : {}) })
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,        // stateless:不发 session id
         enableJsonResponse: true,             // 纯 JSON 响应(连接器兼容性最大化,不开 SSE)

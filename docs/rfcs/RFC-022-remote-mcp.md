@@ -85,3 +85,13 @@ Tool backends keep calling REST via `WEBAZ_API_URL` (default `https://webaz.xyz`
 ## 6. Rollback
 
 Flag off (`WEBAZ_REMOTE_MCP` unset) → endpoint unmounted, zero residual state (stateless by construction).
+
+## 7. Security review — round 1 findings (Codex, 2026-07-14)
+
+Two P0s and one P2 found and fixed before any flag flip (endpoint was never live).
+
+- **P0-1 — host ambient credential leak.** The remote server called the same tool impls, which fall back to the host's `WEBAZ_API_KEY` env and read the host's stored RFC-020 grant (`resolveGrantCredential`). An anonymous remote caller would inherit whatever grant/key the ops host holds → privilege escalation.
+- **P0-2 — pairing cross-request race.** `webaz_pair` writes a single host-global PENDING file; under stateless remote, caller A starts pairing and caller B completes it, then any remote caller uses the resulting grant.
+- **P2 — discovery vs sandbox.** `remoteMcpEnabled()` checks `WEBAZ_MODE !== 'sandbox'`, but discovery advertised on the raw flag → could advertise a 404 under `REMOTE_MCP=1 + sandbox`.
+
+**Fix — credential isolation.** `buildMcpServer({ isolated: true })` (remote always passes it). Threaded per-request via `args.__isolated__` (server-forced in the CallTool interceptor, overwriting any caller value; deleted for stdio) — no shared module state, concurrency-safe. When isolated: (a) `resolveMcpApiKey` ignores the host env fallback (anonymous remote = truly empty → readonly); (b) `resolveGrantCredential` returns null (never reads host grant); (c) `handlePair` returns `PAIRING_LOCAL_ONLY` (pairing is a local-only action). Discovery gates on `remoteMcpEnabled()`. Regression coverage in `test:remote-mcp` (25 checks) evals the real functions. Round-2 re-audit pending.

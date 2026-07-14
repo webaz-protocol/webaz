@@ -89,15 +89,32 @@ async function main() {
 
   // ── 6. 源码守卫:bearer 解析 + 注入 seam + 优先级 + 日志隐私 ──
   ok('6a. route parses Authorization: Bearer', has(ROUTE, "authz.startsWith('Bearer ')"))
-  ok('6b. bearer 只作 defaultApiKey 传入(不越过 args 优先级)', has(ROUTE, 'buildMcpServer(bearer ? { defaultApiKey: bearer } : {})'))
+  ok('6b. bearer 只作 defaultApiKey 传入(不越过 args 优先级)', has(ROUTE, 'defaultApiKey: bearer'))
   ok('6c. L1 注入点:args 无 api_key 才注入', has(L1, "opts.defaultApiKey && (args as Record<string, unknown>).api_key == null"))
   ok('6d. stdio 入口仍走 buildMcpServer(同一工具面)', has(L1, 'const server = buildMcpServer()') && has(L1, 'new StdioServerTransport()'))
   ok('6e. route 模块不打印 args/Authorization(T8)', !/console\.(log|error)\([^)]*(args|authorization|bearer)/i.test(ROUTE.replace('REFUSING to mount', '')))
   ok('6f. pwa server 注册了远程路由', has(SERVER, 'registerRemoteMcpRoutes(app)'))
 
-  // ── 7. 发现面:仅开启时披露(不广告 404)──
-  ok('7a. integration-contract 条件披露 remote_mcp', has(IC, "process.env.WEBAZ_REMOTE_MCP === '1'") && has(IC, 'remote_mcp'))
-  ok('7b. protocol-status 条件披露 remote_mcp', has(PU, "process.env.WEBAZ_REMOTE_MCP === '1'") && has(PU, "remote_mcp: 'https://webaz.xyz/mcp'"))
+  // ── 7. 发现面:sandbox-aware gate(P2 修复)+ 仅开启时披露(不广告 404)──
+  ok('7a. integration-contract 用 remoteMcpEnabled() gate(含 sandbox 检查)', has(IC, 'remoteMcpEnabled()') && has(IC, 'remote_mcp') && !has(IC, "process.env.WEBAZ_REMOTE_MCP === '1' ? { remote_mcp"))
+  ok('7b. protocol-status 用 remoteMcpEnabled() gate', has(PU, 'remoteMcpEnabled()') && has(PU, "remote_mcp: 'https://webaz.xyz/mcp'"))
+
+  // ── 8. 凭证隔离(修 Codex 两个 P0)— 直接 eval 真实函数,不靠字符串匹配 ──
+  process.env.WEBAZ_MODE = 'network'; process.env.WEBAZ_API_KEY = 'wz_host_env_key_MUST_NOT_LEAK'
+  const L1mod = await import('../src/layer1-agent/L1-1-mcp-server/server.js')
+  // 8a-c. resolveMcpApiKey:显式 envKey 参数测隔离逻辑(module const 在 import 时固化,故显式传更确定)
+  const HOST = 'wz_host_env_key_MUST_NOT_LEAK'
+  ok('8a. isolated 匿名 → 忽略宿主 env key(→ 空 → readonly)', L1mod.resolveMcpApiKey({ __isolated__: true }, HOST) === '')
+  ok('8b. isolated + 显式 bearer(注入 args.api_key)→ 用 bearer', L1mod.resolveMcpApiKey({ __isolated__: true, api_key: 'wz_caller_bearer' }, HOST) === 'wz_caller_bearer')
+  ok('8c. 非隔离(stdio)→ 用宿主 env key 回退(本地行为不变)', L1mod.resolveMcpApiKey({}, HOST) === HOST)
+  // 8d. resolveGrantCredential:隔离态绝不读宿主存储 grant
+  ok('8d. isolated → resolveGrantCredential(args) 返回 null(不继承宿主 grant)', L1mod.resolveGrantCredential({ __isolated__: true }) === null)
+  // 8e. handlePair:隔离态禁 pairing(修跨请求竞态 P0)
+  const pairRes = await L1mod.handlePair({ __isolated__: true, action: 'start' })
+  ok('8e. isolated → webaz_pair 禁用(PAIRING_LOCAL_ONLY,不触碰宿主 pairing 文件)', pairRes?.error_code === 'PAIRING_LOCAL_ONLY')
+  // 8f. 源码守卫:远程路由强制 isolated:true + 拦截器服务端强制标记(覆盖伪造)
+  ok('8f. 远程路由强制 isolated:true', has(ROUTE, 'buildMcpServer({ isolated: true'))
+  ok('8g. 拦截器服务端强制 __isolated__(覆盖调用方伪造),stdio 清除', has(L1, "if (opts.isolated) (args as Record<string, unknown>).__isolated__ = true") && has(L1, "else delete (args as Record<string, unknown>).__isolated__"))
 
   if (fail > 0) { console.error(`\n❌ remote MCP FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ remote MCP: real handshake over Streamable HTTP (stateless) + fail-closed flag + sandbox refuse + 405s + no-CORS + bearer seam\n  ✅ pass ${pass}`)
