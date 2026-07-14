@@ -29,7 +29,7 @@ async function renderShop(app, opts = {}) {
     : `<div class="product-grid">
         ${products.map(p => `
           <div class="product-card" onclick="navigate('#order-product/${p.id}')">
-            <div class="product-img">${getCategoryIcon(p.category)}</div>
+            <div class="product-img">${window.productCardImg(p)}</div>
             <div class="product-body">
               <div class="product-name">${escHtml(p.title)}</div>
               <div class="product-price">${window.fmtPrice(p.price)}</div>
@@ -942,7 +942,7 @@ function productCardHtml(p, showSales) {
   //  L4 ⭐可信 · 12 单  ← 信誉行，浅灰
   //  L5 🔥 3 已购 · 📣 3 推荐  ← 销量信号，绿字
   return `<div class="product-card" onclick="navigate('#order-product/${p.id}')">
-    <div class="product-img">${getCategoryIcon(p.category)}</div>
+    <div class="product-img">${window.productCardImg(p)}</div>
     <div class="product-body">
       <div class="product-name">${escHtml(p.title)}${typeBadge}</div>
       <div class="product-price">${window.fmtPrice(p.price)}</div>
@@ -1173,7 +1173,7 @@ async function renderNewArrivals(app) {
     : `<div class="product-grid" id="new-grid">
         ${products.map(p => `
           <div class="product-card" onclick="navigate('#order-product/${p.id}')">
-            <div class="product-img">${getCategoryIcon(p.category)}</div>
+            <div class="product-img">${window.productCardImg(p)}</div>
             <div class="product-body">
               <div class="product-name">${escHtml(p.title)}</div>
               <div class="product-price">${window.fmtPrice(p.price)}</div>
@@ -1246,7 +1246,7 @@ function renderSearchResults(products, banner, q) {
     : `<div class="product-grid">
         ${products.map(p => `
           <div class="product-card" onclick="navigate('#order-product/${p.id}')">
-            <div class="product-img">${getCategoryIcon(p.category)}</div>
+            <div class="product-img">${window.productCardImg(p)}</div>
             <div class="product-body">
               <div class="product-name">${escHtml(p.title)}</div>
               <div class="product-price">${window.fmtPrice(p.price)}</div>
