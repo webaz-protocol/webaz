@@ -134,7 +134,7 @@ async function main() {
   const pairRes = await L1mod.handlePair({ __isolated__: true, action: 'start' })
   ok('8e. isolated → webaz_pair 禁用(PAIRING_LOCAL_ONLY,不触碰宿主 pairing 文件)', pairRes?.error_code === 'PAIRING_LOCAL_ONLY')
   // 8f. 源码守卫:远程路由强制 isolated:true + 拦截器服务端强制标记(覆盖伪造)
-  ok('8f. 远程路由强制 isolated:true', has(ROUTE, 'buildMcpServer({ isolated: true'))
+  ok('8f. 远程路由强制 isolated:true', has(ROUTE, 'buildMcpServer({') && /buildMcpServer\(\{\s*isolated: true/.test(ROUTE))
   ok('8g. 拦截器服务端强制 __isolated__(覆盖调用方伪造),stdio 清除', has(L1, "if (opts.isolated) (args as Record<string, unknown>).__isolated__ = true") && has(L1, "else delete (args as Record<string, unknown>).__isolated__"))
   ok('8h. apiCall fallback 走 ALS isIsolated()(单一权威,覆盖所有调用点)', has(L1, "const key = opts.apiKey || (isIsolated() ? '' : WEBAZ_API_KEY)"))
   ok('8i. recentCalls ring buffer 隔离态不写(防跨请求元数据 bleed)', has(L1, "name !== 'webaz_feedback' && !isIsolated()"))
@@ -162,7 +162,7 @@ async function main() {
     const r3 = await rpc(lb, { jsonrpc: '2.0', id: 3, method: 'ping' })   // 超配额
     ok('10a. 配额内请求正常(非 429)', r1.status !== 429 && r2.status !== 429)
     ok('10b. 超配额 → 429 rate limited', r3.status === 429)
-    ok('10c. 429 前不建 MCP server(限流在装配之前)', ROUTE.indexOf('deps.rateLimitOk(') < ROUTE.indexOf('buildMcpServer({ isolated'))
+    ok('10c. 429 前不建 MCP server(限流在装配之前)', ROUTE.indexOf('deps.rateLimitOk(') < ROUTE.indexOf('buildMcpServer({'))
     lh.close()
   }
   ok('10d. 注册需 rateLimitOk dep(server.ts 已注入)', has(SERVER, 'registerRemoteMcpRoutes(app, { rateLimitOk })'))
