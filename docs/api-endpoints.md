@@ -1,14 +1,15 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (783 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (784 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
 | Method | Path | Auth | Admin | Description | Source |
 |---|---|---|---|---|---|
 | GET | `/.well-known/did.json` |  |  | 任何标准 DID resolver(Veramo / SpruceID / KILT / web5 ...)可 GET → 解出 issuer key → 验  | src/pwa/routes/public-utils.ts:409 |
-| GET | `/.well-known/oauth-authorization-server` |  |  | RFC 8414 — Authorization Server Metadata | src/pwa/routes/oauth-discovery.ts:49 |
-| GET | `/.well-known/oauth-protected-resource` |  |  | RFC 9728 — Protected Resource Metadata | src/pwa/routes/oauth-discovery.ts:38 |
+| GET | `/.well-known/oauth-authorization-server` |  |  | RFC 8414 — Authorization Server Metadata | src/pwa/routes/oauth-discovery.ts:54 |
+| GET | `/.well-known/oauth-protected-resource` |  |  |  | src/pwa/routes/oauth-discovery.ts:50 |
+| GET | `/.well-known/oauth-protected-resource/mcp` |  |  |  | src/pwa/routes/oauth-discovery.ts:51 |
 | GET | `/.well-known/webaz-acp-feed.json` |  |  |  | src/pwa/routes/public-utils.ts:402 |
 | GET | `/.well-known/webaz-capabilities.json` |  |  | 集成方 agent fetch 此端点即知"我要做的写需要声明哪个 scope / 哪些写无需 scope / 哪些读受约束"。 | src/pwa/routes/public-utils.ts:291 |
 | GET | `/.well-known/webaz-economic.json` |  |  |  | src/pwa/routes/public-utils.ts:383 |

@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (783 endpoints, 17 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (784 endpoints, 17 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -46,7 +46,14 @@
     },
     "/.well-known/oauth-protected-resource": {
       "get": {
-        "summary": "RFC 9728 — Protected Resource Metadata",
+        "summary": "GET /.well-known/oauth-protected-resource",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/oauth-protected-resource/mcp": {
+      "get": {
+        "summary": "GET /.well-known/oauth-protected-resource/mcp",
         "tags": [],
         "security": []
       }

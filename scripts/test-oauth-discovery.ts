@@ -77,6 +77,10 @@ async function main() {
     const pr = await (await fetch(`${base}/.well-known/oauth-protected-resource`)).json() as Record<string, unknown>
     ok('4f. protected-resource: aud-bound resource = /mcp (I-3)', pr.resource === 'https://webaz.xyz/mcp')
     ok('4g. protected-resource: names the AS', Array.isArray(pr.authorization_servers) && (pr.authorization_servers as string[])[0] === 'https://webaz.xyz')
+    // RFC 9728 §3.1: resource carries a path (/mcp) → strict client derives the suffixed well-known
+    const prPath = await fetch(`${base}/.well-known/oauth-protected-resource/mcp`)
+    const prPathJson = prPath.headers.get('content-type')?.includes('json') ? await prPath.json() as Record<string, unknown> : null
+    ok('4h. protected-resource served at path-suffixed URI (RFC 9728 §3.1)', prPath.status === 200 && prPathJson?.resource === 'https://webaz.xyz/mcp')
   }
   http.close()
 

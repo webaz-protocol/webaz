@@ -34,8 +34,11 @@ export function registerOAuthDiscoveryRoutes(app: Express): void {
     return
   }
 
-  // RFC 9728 — Protected Resource Metadata
-  app.get('/.well-known/oauth-protected-resource', (_req: Request, res: Response) => {
+  // RFC 9728 — Protected Resource Metadata.
+  // Served at BOTH the root and the path-suffixed URI (RFC 9728 §3.1: a resource whose identifier
+  // carries a path — here /mcp — is discovered at /.well-known/oauth-protected-resource/mcp). A
+  // strict MCP client derives the suffixed form; without it the request falls through to the SPA.
+  const protectedResource = (_req: Request, res: Response): void => {
     res.setHeader('Cache-Control', 'public, max-age=300')
     res.json({
       resource: OAUTH_RESOURCE,
@@ -43,7 +46,9 @@ export function registerOAuthDiscoveryRoutes(app: Express): void {
       bearer_methods_supported: ['header'],
       resource_documentation: `${BASE}/docs/REMOTE-MCP.md`,
     })
-  })
+  }
+  app.get('/.well-known/oauth-protected-resource', protectedResource)
+  app.get('/.well-known/oauth-protected-resource/mcp', protectedResource)
 
   // RFC 8414 — Authorization Server Metadata
   app.get('/.well-known/oauth-authorization-server', (_req: Request, res: Response) => {
