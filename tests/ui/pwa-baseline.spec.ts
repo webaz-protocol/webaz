@@ -201,6 +201,34 @@ async function mockBuyerSession(page: Page) {
   }))
 }
 
+const BUYER_PRODUCT = {
+  id: 'ux-product', seller_id: 'ux-seller', seller_name: 'Verified Studio', seller_created_at: '2025-01-01 00:00:00',
+  title: 'Portable ceramic tea set', description: 'A compact, carefully packed tea set for everyday use.', category: '茶具', product_type: 'retail',
+  price: 48, stock: 8, low_stock: 0, images: '', rep_level: 'trusted', seller_tx_count: 32, sales_count: 18, recommend_count: 15,
+  claim_loss_count: 0, trial_quota_remaining: 0, value_badge: 0, return_days: 7, warranty_days: 30, handling_hours: 24,
+  ship_regions: 'global', specs: '{}', i18n_titles: {}, i18n_descs: {}, created_at: '2026-07-01 00:00:00',
+}
+
+async function mockBuyerCommerce(page: Page) {
+  await page.route('**/api/products?*', route => route.fulfill({ json: [BUYER_PRODUCT] }))
+  await page.route('**/api/products', route => route.fulfill({ json: [BUYER_PRODUCT] }))
+  await page.route('**/api/shareables/by-product/ux-product', route => route.fulfill({ json: { shareables: [] } }))
+  await page.route('**/api/manifests/by-product/ux-product', route => route.fulfill({ json: { manifests: [] } }))
+  await page.route('**/api/products/ux-product/claims', route => route.fulfill({ json: { claims: [] } }))
+  await page.route('**/api/wishlist/ux-product/check', route => route.fulfill({ json: { in_wishlist: false } }))
+  await page.route('**/api/products/ux-product/qa', route => route.fulfill({ json: { items: [] } }))
+  await page.route('**/api/products/ux-product/waitlist/check', route => route.fulfill({ json: { in_waitlist: false } }))
+  await page.route('**/api/products/ux-product/variants', route => route.fulfill({ json: { items: [] } }))
+  await page.route('**/api/addresses', route => route.fulfill({ json: { items: [{ id: 'addr-1', label: 'Home', is_default: 1, text: '1 Market Street, Singapore', region: 'SG' }] } }))
+  await page.route('**/api/products/ux-product/ratings?limit=5', route => route.fulfill({ json: { items: [], agg: { cnt: 12, avg_stars: 4.8 } } }))
+  await page.route('**/api/products/ux-product/flash-sale', route => route.fulfill({ json: { sale: null } }))
+  await page.route('**/api/reputation/ux-seller', route => route.fulfill({ json: { metrics: { is_new_seller: false, sample_size: 32, fulfillment_rate: .97, on_time_rate: .94, dispute_count: 0, refund_rate: .02 } } }))
+  await page.route('**/api/disputes/cases/by-product/ux-product', route => route.fulfill({ json: { items: [] } }))
+  await page.route('**/api/products/ux-product/external-links', route => route.fulfill({ json: { links: [] } }))
+  await page.route('**/api/products/ux-product/shipping-options*', route => route.fulfill({ json: { sellable: { ok: true, reason: 'ok' }, shipping_templates: [], tax_included_lines: [] } }))
+  await page.route('**/api/checkout/tax-preview?*', route => route.fulfill({ json: { is_cross_border: false } }))
+}
+
 for (const viewport of DASHBOARD_VIEWPORTS) {
   test(`authenticated buyer account dashboard at ${viewport.name}`, async ({ page }) => {
     const guards = installRuntimeGuards(page)
@@ -260,6 +288,49 @@ for (const viewport of VIEWPORTS) {
     await expect(page.locator('#app .tabbar')).toBeVisible()
     await assertLanguageSync(page)
     await assertNoHorizontalOverflow(page)
+    await assertAxeHasNoSeriousOrCriticalViolations(page)
+    guards.assertClean()
+  })
+}
+
+for (const viewport of DASHBOARD_VIEWPORTS) {
+  test(`buyer discovery to checkout journey at ${viewport.name}`, async ({ page }) => {
+    const guards = installRuntimeGuards(page)
+    await mockBuyerSession(page)
+    await mockBuyerCommerce(page)
+    await page.addInitScript(() => localStorage.setItem('webaz_key', 'ux-buyer-token'))
+    await page.setViewportSize(viewport)
+    await page.goto('/#discover')
+
+    const product = page.locator('a.buyer-product-card[href="#order-product/ux-product"]')
+    await expect(product).toContainText('Portable ceramic tea set')
+    await assertAxeHasNoSeriousOrCriticalViolations(page)
+    await product.click()
+    await expect(page.locator('.buyer-product-hero')).toContainText('Portable ceramic tea set')
+    await expect(page.locator('#btn-openBuy')).toBeVisible()
+    await assertAxeHasNoSeriousOrCriticalViolations(page)
+	    await page.locator('#btn-openBuy').click()
+	    const panel = page.locator('.buyer-checkout-overlay .sheet-panel')
+	    await expect(panel.locator('.buyer-checkout-sheet')).toBeVisible()
+	    await expect(panel.locator('.buyer-checkout-sheet')).toContainText(/Home|1 Market Street/)
+	    const panelBox = await panel.boundingBox()
+	    expect(panelBox).not.toBeNull()
+	    if (viewport.name === 'mobile') {
+	      expect(Math.abs(panelBox!.x)).toBeLessThanOrEqual(1)
+	      expect(Math.abs(panelBox!.width - viewport.width)).toBeLessThanOrEqual(2)
+	      expect(Math.abs(panelBox!.y + panelBox!.height - viewport.height)).toBeLessThanOrEqual(2)
+	    } else {
+	      expect(Math.abs(panelBox!.x + panelBox!.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(2)
+	      expect(Math.abs(panelBox!.y + panelBox!.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(2)
+	    }
+	    const checkoutCta = panel.locator('#btn-doBuy')
+	    await checkoutCta.scrollIntoViewIfNeeded()
+	    await expect(checkoutCta).toBeVisible()
+	    const ctaBox = await checkoutCta.boundingBox()
+	    expect(ctaBox).not.toBeNull()
+	    expect(ctaBox!.y).toBeGreaterThanOrEqual(0)
+	    expect(ctaBox!.y + ctaBox!.height).toBeLessThanOrEqual(viewport.height)
+	    await assertNoHorizontalOverflow(page)
     await assertAxeHasNoSeriousOrCriticalViolations(page)
     guards.assertClean()
   })
