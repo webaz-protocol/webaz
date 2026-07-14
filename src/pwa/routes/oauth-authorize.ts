@@ -67,17 +67,20 @@ export function isRegisterableRedirectUri(uri: unknown): boolean {
   //   also non-ASCII like U+FEFF / U+200B / U+00AD / U+2060 / U+FE0F — any of which would normalize a
   //   junk string to a clean host and slip past HOST_RE. Rejecting everything outside 0x21..0x7e closes
   //   the whole class in one rule (no per-code-point blacklist to chase).
+  // Printable-ASCII only (cheap early defense): a valid redirect_uri is ASCII per RFC 3986.
   if (!/^[\x21-\x7e]+$/.test(uri)) return false
-  // The authority (host[:port]) must not be percent-encoded (Codex round-4): the URL parser decodes
-  //   host %-escapes before u.hostname is read, so `https://%65xample.com` → `example.com` would pass
-  //   HOST_RE. A host/port is never legitimately %-encoded. With ASCII-only + no host-%, the parsed
-  //   host is a pure-ASCII, un-encoded string Node cannot rewrite (beyond case) → HOST_RE is reliable.
-  const rawAuthority = /^https?:\/\/([^/?#]*)/i.exec(uri)?.[1] ?? ''
-  if (rawAuthority.includes('%')) return false
   let u: URL
   try { u = new URL(uri) } catch { return false }
   if (u.hash || u.username || u.password) return false                       // no fragment / userinfo
-  if (!HOST_RE.test(u.hostname)) return false                                // no wildcard / malformed host
+  if (!HOST_RE.test(u.hostname)) return false                                // valid host shape (no wildcard)
+  // AUTHORITY-OF-TRUTH (the definitive close of the host-normalization class, replacing per-quirk
+  //   guards — Codex rounds 2-5 found controls, IDNA-ignored Unicode, %-encoded host, and backslash
+  //   authority all rewrite u.hostname). Require the RAW string to BEGIN with EXACTLY Node's canonical
+  //   `scheme://authority`. If the parser normalized the host in ANY way (%-decode, `\`→`/`, IDNA,
+  //   control-strip, userinfo split), the canonical prefix won't literally match → reject. u.host is
+  //   the complete authority (host[:non-default-port]), so the match boundary is exact.
+  const canonical = `${u.protocol}//${u.host}`.toLowerCase()
+  if (!uri.toLowerCase().startsWith(canonical)) return false
   if (u.protocol === 'https:') return true
   if (u.protocol === 'http:') return u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]' || u.hostname === '::1'
   return false                                                               // no custom / non-http(s) schemes (v1)

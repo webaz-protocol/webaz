@@ -41,6 +41,18 @@ ok('1k4. punycode + %-encoded PATH still accepted', isRegisterableRedirectUri('h
 // Codex round-4: percent-encoded HOST bytes normalize away (%65→e, %2e→.) → reject % in the authority.
 ok('1k5. percent-encoded host REJECTED', !isRegisterableRedirectUri('https://%65xample.com/cb') && !isRegisterableRedirectUri('https://exa%6dple.com/cb') && !isRegisterableRedirectUri('https://example%2ecom/cb'))
 ok('1k6. %-encoding in path/query still fine (only authority is constrained)', isRegisterableRedirectUri('https://example.com/a%2fb?x=%20y'))
+// Codex round-5: backslash authority (Node treats \ as /) and the whole normalization class must fail
+// the canonical-prefix check. This is the definitive close — assert the accumulated bypasses all die.
+ok('1k7. backslash authority REJECTED', !isRegisterableRedirectUri('https:\\\\%65xample.com/cb') && !isRegisterableRedirectUri('https:/\\example.com/cb') && !isRegisterableRedirectUri('https:\\\\example.com/cb'))
+ok('1k8. all accumulated host-normalization bypasses REJECTED', [
+  'https://%65xample.com/cb', 'https://exa%6dple.com/cb', 'https://example%2ecom/cb',
+  'https://exa\tmple.com/cb', 'https://exa﻿mple.com/cb', 'https://exa​mple.com/cb',
+  'https://example.com%2f@evil.com/cb', 'https://münchen.example/cb',
+].every(x => !isRegisterableRedirectUri(x)))
+ok('1k9. legit hosts with ports/paths/query still accepted', [
+  'https://example.com/cb', 'https://app.x.example:8443/oauth/cb?v=1', 'http://localhost:53682/callback',
+  'http://127.0.0.1/cb', 'http://[::1]:9/cb', 'https://xn--mnchen-3ya.example/cb',
+].every(x => isRegisterableRedirectUri(x)))
 ok('1l. raw space + NUL + DEL REJECTED', !isRegisterableRedirectUri('https://exa mple.com/cb') && !isRegisterableRedirectUri('https://example.com/\u0000') && !isRegisterableRedirectUri('https://example.com/\u007f'))
 
 const db = new Database(':memory:')
