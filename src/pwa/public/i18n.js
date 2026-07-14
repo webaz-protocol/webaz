@@ -17,6 +17,20 @@ window.resolveInitialLang = (savedLang, navigatorLike) => {
 window._lang = window.resolveInitialLang(localStorage.getItem('webaz_lang'), typeof navigator !== 'undefined' ? navigator : null)
 
 const _EN = {
+  // OAuth consent (#oauth-consent, RFC-023 PR-2b)
+  '读取公开商品/搜索/你的公开资料(只读)': 'Read public products, search, and your public profile (read-only)',
+  '起草订单(仅草稿 —— 不下单、不付款,执行永远需要你的 Passkey)': 'Draft orders (drafts only — never places or pays; execution always needs your Passkey)',
+  '起草商品上架(仅草稿 —— 发布仍需你的 Passkey)': 'Draft product listings (drafts only — publishing still needs your Passkey)',
+  '请先登录以审核授权请求': 'Please sign in to review this authorization request',
+  '授权请求参数缺失。请从发起连接的 AI 客户端重新开始。': 'Authorization request parameters are missing. Please restart from the AI client that initiated the connection.',
+  '🔐 授权连接请求': '🔐 Authorization request',
+  '一个 AI 客户端请求通过 OAuth 连接你的 WebAZ 账号。它只会拿到下列受限、短期(1小时)、可随时撤销的权限 —— 不是你的账号或密钥;资金/发布/发货等敏感动作永远需要你的 Passkey 逐次批准。': 'An AI client is requesting to connect to your WebAZ account via OAuth. It will only receive the limited, short-lived (1 hour), revocable permissions below — never your account or keys; money, publishing, shipping and other sensitive actions always require your Passkey per action.',
+  '请求方 client_id(自称,未验证)': 'Requesting client_id (self-declared, unverified)',
+  '访问目标': 'Resource',
+  '未知权限(将被服务端拒绝)': 'Unknown permission (the server will reject it)',
+  '批准后将跳回:': 'After approval you will be redirected to:',
+  '🔐 Passkey 批准连接': '🔐 Approve with Passkey',
+  '已批准,正在跳回 AI 客户端…': 'Approved — returning to the AI client…',
   // ── RFC-021 order-action 审批卡(app-agent-approvals-order.js)──
   '对订单': 'On order',
   '批准后由服务端在你授权下执行;agent 不直接执行': 'On approval the server executes under your authority; the agent never executes directly',

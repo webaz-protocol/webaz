@@ -37,7 +37,8 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   'claim-initiators.ts': 3,    // claim stake/escrow tx (dup guard + wallet debit + INSERT task)
   'products-claims.ts': 3,     // claim stake/escrow tx (dup guard + wallet debit + INSERT task)
   'arbitrator.ts': 9,          // apply/withdraw/reject stake tx;approve 的 grant+申请状态 CAS 必须【同一 db.transaction】原子(PR-C.2),故 CAS 保留同步 db.prepare
-  'agent-grants.ts': 3,        // RFC-020 permission-request approve: request-claim + grant-expand + audit-insert 必须【同一 db.transaction】原子(audit 失败/mid-flight revoke → 整体回滚,不留假 approved/无审计扩权)
+  'agent-grants.ts': 3,
+  'oauth-approve.ts': 2,       // RFC-023 PR-2b consent approve: grant-INSERT + auth-code-INSERT 必须【同一 db.transaction】原子(半 mint = 有 grant 无 code 的悬挂委托),故保留同步 db.prepare        // RFC-020 permission-request approve: request-claim + grant-expand + audit-insert 必须【同一 db.transaction】原子(audit 失败/mid-flight revoke → 整体回滚,不留假 approved/无审计扩权)
   'verifier-user.ts': 6,       // apply/withdraw stake tx (CAS + wallet)
   'admin-verifier-flow.ts': 13,// approve/reject/decide tx (CAS flip + refund/reward payout)
   'admin-verifier-whitelist.ts': 5,  // revoke forfeit tx (re-read + forfeit/refund + whitelist rewrite)
