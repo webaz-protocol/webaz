@@ -61,10 +61,13 @@ export async function oauthClients(): Promise<OAuthClient[]> {
 const HOST_RE = /^(?:\[[0-9a-fA-F:]+\]|[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*)$/
 export function isRegisterableRedirectUri(uri: unknown): boolean {
   if (typeof uri !== 'string' || uri.length === 0 || uri.length > 2000) return false
-  // Reject raw C0 controls / DEL / whitespace BEFORE parsing (Codex round-2): the WHATWG URL parser
-  //   strips tab/newline, so `https://exa\tmple.com/cb` would normalize to a clean host and slip past
-  //   HOST_RE while the stored/displayed string stays malformed. A legit redirect_uri never has these.
-  if (/[\u0000-\u0020\u007f]/.test(uri)) return false
+  // Require printable-ASCII ONLY, BEFORE parsing (Codex round-2/3). A valid redirect_uri is always
+  //   ASCII per RFC 3986 (unicode domains are punycode xn--, unicode paths are %-encoded). The WHATWG
+  //   URL parser strips/IDNA-ignores many chars before u.hostname is read — raw C0 controls, DEL, and
+  //   also non-ASCII like U+FEFF / U+200B / U+00AD / U+2060 / U+FE0F — any of which would normalize a
+  //   junk string to a clean host and slip past HOST_RE. Rejecting everything outside 0x21..0x7e closes
+  //   the whole class in one rule (no per-code-point blacklist to chase).
+  if (!/^[\x21-\x7e]+$/.test(uri)) return false
   let u: URL
   try { u = new URL(uri) } catch { return false }
   if (u.hash || u.username || u.password) return false                       // no fragment / userinfo
