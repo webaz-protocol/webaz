@@ -15406,16 +15406,16 @@ async function renderSeller(app) {
   const sellerSubTab = state._sellerSubTab || 'dashboard'
   const subTabBtn = (k, label) => {
     const on = sellerSubTab === k
-    return `<button class="seller-subtab" role="tab" aria-selected="${on}" onclick="setSellerSubTab('${k}')">${label}</button>`
+    return `<button class="seller-subtab" ${on ? 'aria-current="page"' : ''} onclick="setSellerSubTab('${k}')">${label}</button>`
   }
   const sellerSubNav = `
-    <div class="seller-subnav" role="tablist" aria-label="${t('卖家后台')}">
+    <nav class="seller-subnav" aria-label="${t('卖家后台')}">
       ${subTabBtn('dashboard', '📊 ' + t('看板'))}
       ${subTabBtn('products', '📦 ' + t('商品'))}
-      <button class="seller-subtab" role="tab" aria-selected="false" onclick="navigate('#rfqs')">💎 ${t('抢单')}</button>
+      <button class="seller-subtab" onclick="navigate('#rfqs')">💎 ${t('抢单')}</button>
       ${subTabBtn('skills', '⚡ ' + t('Skill'))}
       ${subTabBtn('settings', '⚙️ ' + t('经营设置'))}
-    </div>
+    </nav>
   `
   const settingsSection = sellerSubTab === 'settings' ? ((window.dpSellerReadinessSection ? window.dpSellerReadinessSection() : '') + (window.dpSellerFeeSection ? window.dpSellerFeeSection() : '') + (window.dpSalesReportSection ? window.dpSalesReportSection() : '') + (window.dpFeeRequestSection ? window.dpFeeRequestSection() : '') + (window.dpSellerDeferralSection ? window.dpSellerDeferralSection() : '') + (window.dpSellerProductVerifySection ? window.dpSellerProductVerifySection() : '') + (window.dpSellerStoreVerifySection ? window.dpSellerStoreVerifySection() : '') + (window.dpSellerInstructionSection ? window.dpSellerInstructionSection() : '') + (window.draAccountsSection ? window.draAccountsSection() : '') + (window.shipSellerSettingsSection ? window.shipSellerSettingsSection() : '') + (window.bondSellerSection ? window.bondSellerSection() : '')) : ''
 
@@ -15496,7 +15496,7 @@ async function renderSeller(app) {
 
     <!-- 商品分类标签页（仅 products sub-tab 下显示）-->
     ${sellerSubTab === 'products' ? `
-    <div class="seller-product-tabs" role="tablist" aria-label="${t('商品管理')}" data-active-tab="active">
+    <div class="seller-product-tabs" role="tablist" aria-label="${t('商品管理')}" data-active-tab="active" onkeydown="moveProductTabFocus(event)">
       <button class="prd-tab-btn" id="prd-tab-btn-active" role="tab" aria-selected="true" aria-controls="prd-tab-active" data-tab="active"
         onclick="switchProductTab('active')"
         style="flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid #3b82f6;background:#eff6ff;color:#1d4ed8">
@@ -15754,7 +15754,7 @@ async function renderSeller(app) {
     let prefill = window._sellerAddPrefill
     if (!prefill) {
       const raw = sessionStorage.getItem('webaz_seller_add_prefill')
-      if (raw) { prefill = JSON.parse(raw); sessionStorage.removeItem('webaz_seller_add_prefill'); window._sellerAddPrefill = prefill }
+      if (raw) { prefill = JSON.parse(raw); window._sellerAddPrefill = prefill }
     }
     if (prefill?.title && sellerSubTab === 'products') {
       const form = document.getElementById('add-product-form')
@@ -15784,7 +15784,7 @@ window.updateTrialCost = () => {
   const cost = Math.round(price * quota * 100) / 100
   el.innerHTML = `💰 ${t('需预留')} <strong>${cost} WAZ</strong>（${quota} ${t('名额')} × ${price} WAZ / ${t('件')}）— ${t('确保你的钱包余额 ≥ 此数')}`
 }
-window.hideAddProduct = () => { document.getElementById('add-product-form').style.display = 'none' }
+window.hideAddProduct = () => { document.getElementById('add-product-form').style.display = 'none'; window._sellerAddPrefill = null; try { sessionStorage.removeItem('webaz_seller_add_prefill') } catch {} }
 
 // 商品图片上传 — 协议化设计：blob 留在卖家 IndexedDB，服务器只存 hash
 // 每张图：800px 全图（blob ~150KB → IDB），9KB 缩略（dataURL → manifest 元数据）
@@ -15873,6 +15873,7 @@ window.switchProductTab = (tab) => {
     btn.style.borderColor    = isActive ? '#3b82f6' : '#e5e7eb'
   })
 }
+window.moveProductTabFocus = (e) => { const dir = { ArrowLeft: -1, ArrowRight: 1 }; if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return; const tabs = [...document.querySelectorAll('.prd-tab-btn:not(:disabled)')], i = tabs.indexOf(document.activeElement), next = e.key === 'Home' ? tabs[0] : e.key === 'End' ? tabs.at(-1) : tabs[(i + dir[e.key] + tabs.length) % tabs.length]; if (!next) return; e.preventDefault(); next.focus(); window.switchProductTab(next.dataset.tab) }
 window.filterSellerProducts = (value) => {
   const q = String(value || '').trim().toLowerCase(), entries = [...document.querySelectorAll('.seller-product-entry')], matchesByTab = { active: 0, warehouse: 0, deleted: 0 }
   entries.forEach(el => { const match = !q || (el.dataset.productSearch || '').includes(q); el.hidden = !match; if (q && match) matchesByTab[el.dataset.productTab]++ })
@@ -16095,9 +16096,8 @@ window.doAddProduct = async () => {
     if (tr.ok) trialHint = ` · 🎁 ${t('测评活动已开启 (')}${trialPayload.quota_total}${t(' 名额)')}`
     else if (tr.error) trialHint = ` · ⚠️ ${t('测评活动开启失败:')} ${tr.error}`
   }
-
   msgEl.innerHTML = alert$('success', `${t('上架成功！零质押入驻')} · ${t('首单成交时将自动锁定')} ${res.stake_deferred || 0} WAZ ${t('（trusted 卖家跳过）')}${checkedAliases.length ? ` · ${checkedAliases.length} ${t('个 alias 已声明')}` : ''}${imgHint}${trialHint}`)
-  window._sellerAddPrefill = null
+  window._sellerAddPrefill = null; try { sessionStorage.removeItem('webaz_seller_add_prefill') } catch {}
   for (const it of state._addProductImgs) { try { URL.revokeObjectURL(it.blobUrl) } catch {} }
   state._addProductImgs = []
   setTimeout(() => renderSeller(document.getElementById('app')), 1500)
