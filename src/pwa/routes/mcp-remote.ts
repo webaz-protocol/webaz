@@ -22,14 +22,25 @@ export function remoteMcpEnabled(): boolean {
   return process.env.WEBAZ_REMOTE_MCP === '1' && process.env.WEBAZ_MODE !== 'sandbox'
 }
 
-export function registerRemoteMcpRoutes(app: Express) {
+// deps.rateLimitOk 复用主 server 的进程级 IP 限流器(T2/T3:防公开端点被刷 / 暴力猜 key / DoS)。
+export interface RemoteMcpDeps {
+  rateLimitOk: (ip: string, max?: number, windowMs?: number) => boolean
+}
+
+export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
   if (process.env.WEBAZ_REMOTE_MCP !== '1') return               // fail-closed:默认不挂载
   if (process.env.WEBAZ_MODE === 'sandbox') {                    // T7:远程面 + 沙盒 = 配置错误,拒绝启动该面
     console.error('[mcp-remote] REFUSING to mount: WEBAZ_MODE=sandbox must never be exposed remotely')
     return
   }
+  // 公开端点 IP 限流:240/min(4/s)足够正常 agent 会话(initialize+tools/list+多次 tools/call),
+  // 又挡住刷量 / 暴力猜 128-bit key。body 体积由全局 express.json 100kb 帽兜(T3)。
+  const REMOTE_MCP_RPM = 240
 
   app.post('/mcp', async (req: Request, res: Response) => {
+    if (!deps.rateLimitOk(req.ip || 'unknown', REMOTE_MCP_RPM, 60_000)) {
+      return void res.status(429).json({ jsonrpc: '2.0', error: { code: -32000, message: 'rate limited — slow down' }, id: null })
+    }
     try {
       const authz = String(req.headers.authorization || '')
       const bearer = authz.startsWith('Bearer ') ? authz.slice(7).trim() : ''

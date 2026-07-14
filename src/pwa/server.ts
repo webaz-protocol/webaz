@@ -7744,7 +7744,7 @@ registerWalletWriteRoutes(app, {
   LARGE_WITHDRAW_THRESHOLD,
 })
 // #1013 Phase 107: 6 public/util endpoints 统一 register（必须在 SPA catch-all 之前；logError/generateManifest 在上方定义）
-registerRemoteMcpRoutes(app)   // RFC-022:WEBAZ_REMOTE_MCP=1 才挂载(fail-closed)
+registerRemoteMcpRoutes(app, { rateLimitOk })   // RFC-022:WEBAZ_REMOTE_MCP=1 才挂载(fail-closed)+ IP 限流
 registerPublicUtilsRoutes(app, {
   db, MASTER_SEED, NODE_ENV, SERVICE_START_MS,
   rateLimitOk, generateManifest, getUser, logError,
