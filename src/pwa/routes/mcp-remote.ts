@@ -17,9 +17,29 @@
 import type { Express, Request, Response } from 'express'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { buildMcpServer } from '../../layer1-agent/L1-1-mcp-server/server.js'
+import { oauthEnabled } from './oauth-discovery.js'
 
 export function remoteMcpEnabled(): boolean {
   return process.env.WEBAZ_REMOTE_MCP === '1' && process.env.WEBAZ_MODE !== 'sandbox'
+}
+
+// RFC-023 PR-5:/mcp 的 401 挑战指向 RFC 9728 protected-resource metadata(路径后缀形态,对应
+// resource=https://webaz.xyz/mcp 的规范推导),合规 MCP 客户端读到它即可自启 OAuth 流。
+const PROTECTED_RESOURCE_METADATA_URL = 'https://webaz.xyz/.well-known/oauth-protected-resource/mcp'
+
+// RFC-023 PR-5:无凭证时【必然】失败的工具 —— 它们以特定账号行事/读私有数据(place_order/update_order/
+// wallet/notifications/default_address/list_product),或必须携带 delegation grant(get_agent_order/
+// order_action_request)。仅用于 401 OAuth 挑战判定,不改任何工具语义。保守名单(I-2 匿名读不变是硬
+// 不变量):双模工具(匿名读+鉴权写,如 webaz_search / webaz_contribute / webaz_profile)与匿名返回
+// 引导文案的工具(webaz_mykey / webaz_rotate_key / webaz_revoke_key / webaz_pair)绝不入列。
+// 漏列 fail-soft:未列出的鉴权工具照旧走工具层的 API_KEY_REQUIRED / GRANT_REQUIRED 带引导 JSON。
+const AUTH_ONLY_TOOLS = new Set([
+  'webaz_place_order', 'webaz_update_order', 'webaz_wallet', 'webaz_notifications',
+  'webaz_default_address', 'webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request',
+])
+function isAuthOnlyToolCall(body: unknown): boolean {
+  const b = body as { method?: unknown; params?: { name?: unknown } } | null
+  return !!b && b.method === 'tools/call' && typeof b.params?.name === 'string' && AUTH_ONLY_TOOLS.has(b.params.name)
 }
 
 // 机器可读的 Remote MCP 公告(单一真相源,两个 well-known 清单共用防漂移)。只在端点真开时返回,
@@ -35,6 +55,14 @@ export function remoteMcpManifest(): Record<string, unknown> | null {
     authentication: {
       anonymous: 'public read-only tools (webaz_info / webaz_search / leaderboard / price-history / open build-tasks)',
       bearer: 'Authorization: Bearer <api_key> → authenticated write tools; RISK actions return approve_url (Passkey in browser)',
+      // RFC-023 PR-5:OAuth 面仅在 WEBAZ_OAUTH=1 时披露(fail-closed:关着时 metadata/端点 404,不广告)。
+      ...(oauthEnabled() ? {
+        oauth: {
+          flow: 'OAuth 2.1 authorization_code + PKCE(S256) — Connect without pasting an api_key: log in with Passkey, approve SAFE scopes, get a short-lived audience-bound token. RISK actions still return approve_url (human gate unchanged).',
+          protected_resource_metadata: PROTECTED_RESOURCE_METADATA_URL,
+          authorization_server_metadata: 'https://webaz.xyz/.well-known/oauth-authorization-server',
+        },
+      } : {}),
     },
     stdio_alternative: 'npx -y @seasonkoh/webaz  (local STDIO transport — same 42-tool surface, for clients that run a local process)',
     sdks: {
@@ -83,6 +111,18 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
     try {
       const authz = String(req.headers.authorization || '')
       const bearer = authz.startsWith('Bearer ') ? authz.slice(7).trim() : ''
+      // RFC-023 PR-5:匿名调用注定需要身份的工具 → 401 + WWW-Authenticate 指回 protected-resource
+      //   metadata,合规 MCP 客户端据此自启 OAuth 流(MCP Authorization spec)。仅 WEBAZ_OAUTH=1 时
+      //   挑战(关着时 metadata 404,不能把客户端指向不存在的文档);带任何 Bearer 的请求照旧进工具层
+      //   (无效凭证的语义化 error_code 在那里,PR-4)。匿名【读】面完全不受影响(I-2)。
+      if (!bearer && oauthEnabled() && isAuthOnlyToolCall(req.body)) {
+        res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`)
+        return void res.status(401).json({
+          jsonrpc: '2.0',
+          error: { code: -32001, message: 'authentication required — this tool acts as an account. A compliant MCP client can connect via OAuth (see the WWW-Authenticate header), or send Authorization: Bearer <api_key>.' },
+          id: (req.body as { id?: number | string | null } | null)?.id ?? null,
+        })
+      }
       // RFC-023 PR-4:grant token(gtk_ 直接 grant / oat_ OAuth access token)走 grant 凭证注入,不当 human
       //   api_key —— 它 audience-bound 到 /mcp 的 grant 面,通用工具照旧匿名。human api_key 走 defaultApiKey。
       const isGrantBearer = bearer.startsWith('gtk_') || bearer.startsWith('oat_')
