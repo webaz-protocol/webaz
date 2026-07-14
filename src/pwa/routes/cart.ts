@@ -81,11 +81,11 @@ export function registerCartRoutes(app: Application, deps: CartDeps): void {
 
   // C-1: 购物车批量下单（每个选中商品独立订单）
   app.post('/api/cart/checkout', async (req, res) => {
+    const agentApiKey = readStrictBearerCredential(req.headers.authorization)
+    if (hasInvalidPurchaseCredential(req.headers.authorization, req.body?.api_key, agentApiKey)) return void res.status(401).json({ error: '下单必须使用 Authorization: Bearer <api_key>', error_code: 'AUTH_HEADER_REQUIRED' })
     const user = auth(req, res); if (!user) return
     if (isTrustedRole(user)) return void errorRes(res, 403, 'TRUSTED_ROLE_NO_TRADE', '受信角色无购物功能')
     if (user.role !== 'buyer') return void res.status(403).json({ error: '仅买家可下单' })
-    const agentApiKey = readStrictBearerCredential(req.headers.authorization)
-    if (hasInvalidPurchaseCredential(req.headers.authorization, req.body?.api_key, agentApiKey)) return void res.status(401).json({ error: '下单必须使用 Authorization: Bearer <api_key>', error_code: 'AUTH_HEADER_REQUIRED' })
     const { shipping_address, notes, items } = req.body || {}
     if (!shipping_address) return void res.status(400).json({ error: '请填写收货地址' })
 

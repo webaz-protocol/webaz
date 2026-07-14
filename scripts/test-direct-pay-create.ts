@@ -132,6 +132,8 @@ function post(body: Record<string, unknown>, uid?: string, apiKey?: string, auth
 
 const bodyKey = await post({ product_id: 'p1', shipping_address: 'addr', api_key: 'cap-key' }, 'buyer1')
 ok('orders route: body api_key cannot authenticate purchase', bodyKey.status === 401 && bodyKey.json?.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(bodyKey))
+const mixedKey = await post({ product_id: 'p1', shipping_address: 'addr', api_key: 'cap-key' }, 'buyer1', 'cap-key')
+ok('orders route: body api_key is rejected even with a Bearer credential', mixedKey.status === 401 && mixedKey.json?.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(mixedKey))
 const rawKey = await post({ product_id: 'p1', shipping_address: 'addr' }, 'buyer1', undefined, 'cap-key')
 ok('orders route: raw Authorization credential cannot bypass Bearer-only cap enforcement', rawKey.status === 401 && rawKey.json?.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(rawKey))
 db.prepare(`INSERT INTO agent_attestations (id,api_key,user_id,approved_scope,spend_cap_per_order,spend_cap_daily)

@@ -8,5 +8,5 @@ export function hasInvalidPurchaseCredential(
   bodyApiKey: unknown,
   credential: string | undefined,
 ): boolean {
-  return (!!authorization || typeof bodyApiKey === 'string') && !credential
+  return typeof bodyApiKey === 'string' || (!!authorization && !credential)
 }

@@ -117,12 +117,12 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
           broadcastSystemEvent, signPassport, issuerAddress } = deps
 
   app.post('/api/orders', async (req, res) => {
+    const apiKey = readStrictBearerCredential(req.headers.authorization); if (hasInvalidPurchaseCredential(req.headers.authorization, req.body?.api_key, apiKey)) return void res.status(401).json({ error: '下单必须使用 Authorization: Bearer <api_key>', error_code: 'AUTH_HEADER_REQUIRED' })
     const user = auth(req, res); if (!user) return
     // P0 fix: 受信角色不可下单（铁律）
     if (isTrustedRole(user as Record<string, unknown>)) return void res.status(403).json({ error: '受信角色不可参与交易', error_code: 'TRUSTED_ROLE_NO_TRADE' })
     if (user.role !== 'buyer') return void res.json({ error: '仅买家可下单' })
     // 2026-05-23 P0 audit fix 2.1：agent_attestations spend_cap 强制
-    const apiKey = readStrictBearerCredential(req.headers.authorization); if (hasInvalidPurchaseCredential(req.headers.authorization, req.body?.api_key, apiKey)) return void res.status(401).json({ error: '下单必须使用 Authorization: Bearer <api_key>', error_code: 'AUTH_HEADER_REQUIRED' })
     if (apiKey) {
       const cap = await dbOne<{ spend_cap_per_order: number | null; spend_cap_daily: number | null }>(`SELECT spend_cap_per_order, spend_cap_daily FROM agent_attestations
         WHERE api_key = ? AND user_id = ? AND revoked_at IS NULL`, [apiKey, user.id])

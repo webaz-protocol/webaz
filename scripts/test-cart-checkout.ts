@@ -106,6 +106,8 @@ try {
 
   const bodyKey = await checkout({ ...selected(['not-needed']), api_key: 'capped-key' })
   ok('body api_key cannot authenticate checkout', bodyKey.status === 401 && bodyKey.json.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(bodyKey))
+  const mixedKey = await checkout({ ...selected(['not-needed']), api_key: 'capped-key' }, 'capped-key')
+  ok('body api_key is rejected even when a Bearer credential is also present', mixedKey.status === 401 && mixedKey.json.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(mixedKey))
   const rawKey = await checkout(selected(['not-needed']), undefined, 'capped-key')
   ok('raw Authorization credential cannot bypass Bearer-only checkout', rawKey.status === 401 && rawKey.json.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(rawKey))
 
