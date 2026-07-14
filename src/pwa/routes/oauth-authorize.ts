@@ -68,6 +68,12 @@ export function isRegisterableRedirectUri(uri: unknown): boolean {
   //   junk string to a clean host and slip past HOST_RE. Rejecting everything outside 0x21..0x7e closes
   //   the whole class in one rule (no per-code-point blacklist to chase).
   if (!/^[\x21-\x7e]+$/.test(uri)) return false
+  // The authority (host[:port]) must not be percent-encoded (Codex round-4): the URL parser decodes
+  //   host %-escapes before u.hostname is read, so `https://%65xample.com` → `example.com` would pass
+  //   HOST_RE. A host/port is never legitimately %-encoded. With ASCII-only + no host-%, the parsed
+  //   host is a pure-ASCII, un-encoded string Node cannot rewrite (beyond case) → HOST_RE is reliable.
+  const rawAuthority = /^https?:\/\/([^/?#]*)/i.exec(uri)?.[1] ?? ''
+  if (rawAuthority.includes('%')) return false
   let u: URL
   try { u = new URL(uri) } catch { return false }
   if (u.hash || u.username || u.password) return false                       // no fragment / userinfo

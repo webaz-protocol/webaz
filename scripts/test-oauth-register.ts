@@ -37,7 +37,10 @@ ok('1k. raw tab/newline/CR in host REJECTED (no parser-strip bypass)', !isRegist
 // normalizes away in the host → ASCII-only guard closes the whole class.
 ok('1k2. IDNA-ignored Unicode in host REJECTED (ASCII-only)', ['﻿', '​', '­', '⁠', '️', ' '].every(c => !isRegisterableRedirectUri(`https://exa${c}mple.com/cb`)))
 ok('1k3. any non-ASCII redirect_uri REJECTED (use punycode / %-encoding)', !isRegisterableRedirectUri('https://münchen.example/cb') && !isRegisterableRedirectUri('https://example.com/café'))
-ok('1k4. punycode + %-encoded ASCII still accepted', isRegisterableRedirectUri('https://xn--mnchen-3ya.example/cb') && isRegisterableRedirectUri('https://example.com/caf%C3%A9?q=1'))
+ok('1k4. punycode + %-encoded PATH still accepted', isRegisterableRedirectUri('https://xn--mnchen-3ya.example/cb') && isRegisterableRedirectUri('https://example.com/caf%C3%A9?q=1'))
+// Codex round-4: percent-encoded HOST bytes normalize away (%65→e, %2e→.) → reject % in the authority.
+ok('1k5. percent-encoded host REJECTED', !isRegisterableRedirectUri('https://%65xample.com/cb') && !isRegisterableRedirectUri('https://exa%6dple.com/cb') && !isRegisterableRedirectUri('https://example%2ecom/cb'))
+ok('1k6. %-encoding in path/query still fine (only authority is constrained)', isRegisterableRedirectUri('https://example.com/a%2fb?x=%20y'))
 ok('1l. raw space + NUL + DEL REJECTED', !isRegisterableRedirectUri('https://exa mple.com/cb') && !isRegisterableRedirectUri('https://example.com/\u0000') && !isRegisterableRedirectUri('https://example.com/\u007f'))
 
 const db = new Database(':memory:')
