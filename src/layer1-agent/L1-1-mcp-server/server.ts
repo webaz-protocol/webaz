@@ -629,7 +629,7 @@ Roles: buyer (browse/order/confirm) | seller (list/accept/ship) | logistics (pic
     // was ~2607 chars, now ~1050 chars
     description: `Search WebAZ marketplace + cross-platform anchor lookup. No auth required.
 
-⚠️ **STRICT MATCH ONLY** (no fuzzy fallback). query matches = exact title OR exact external_title OR alias ≥6 chars contained in user text. Short queries (e.g. "iphone") likely return 0 — **this is by design, NOT a bug**. On 0 results: do NOT retry with shorter terms, do NOT call other tools to fake search. Direct user to https://webaz.xyz/#discover for fuzzy browse (user action, not agent's job).
+⚠️ **STRICT MATCH ONLY** (no fuzzy fallback). query matches = exact title OR exact external_title OR alias ≥6 chars contained in user text. Short/natural-language queries (e.g. "phone stand") return found:0 — **by design, NOT a bug**. On 0 results the response carries a **recovery** object: a labeled catalog_sample (NOT query matches) + a machine-actionable next_step (call webaz_search again with filters and NO query to browse). Do NOT retry with shorter terms; follow recovery.next_step to browse, or read /.well-known/webaz-acp-feed.json.
 
 USE THIS when:
 - User gives **full product title / SKU / precise description** (strict-match candidate), OR
@@ -2290,12 +2290,35 @@ async function handleSearch(args: Record<string, unknown>) {
     const r = await apiCall('/api/products?' + qs.toString())
     if ('error' in r) return r
     const products = (r.products as unknown[]) ?? []
+    if (products.length) {
+      return { ...r, found: products.length, hint: `网络上匹配到 ${products.length} 件商品。下单前用 webaz_verify_price 锁价。` }
+    }
+    // ★ P2 可恢复建议(北极星:陌生 agent 首次自然语言搜 strict 返 0 时,给可动的下一步而非死路)。
+    //   strict 结果保持 0/[](不破 strict-match 不变量);recovery.catalog_sample 是【明确标注的目录样本,
+    //   非 query 匹配】—— 真浏览一次拿几件在售商品,让 agent 立即有可执行的下一步。仅 0-命中且有 query 时走。
+    let recovery: Record<string, unknown> | undefined
+    if (query) {
+      const browseArgs: Record<string, unknown> = { sort: 'newest', limit: 5 }
+      if (category) browseArgs.category = category
+      if (maxPrice != null) browseArgs.max_price = maxPrice
+      const bqs = new URLSearchParams({ mode: 'agent', limit: '5', sort: 'newest' })
+      if (category) bqs.set('category', String(category))
+      if (maxPrice != null) bqs.set('max_price', String(maxPrice))
+      const br = await apiCall('/api/products?' + bqs.toString()).catch(() => ({}))
+      const sample = ((br as Record<string, unknown>).products as Array<Record<string, unknown>> | undefined) ?? []
+      recovery = {
+        reason: 'strict_no_match',
+        note: 'These are NOT query matches — webaz_search is strict (exact title/SKU). This is a small catalog sample so you can proceed. / 以下【不是】搜索匹配结果,而是目录样本,供你继续。',
+        next_step: { tool: 'webaz_search', arguments: browseArgs, description: 'browse the catalog with filters and NO query' },
+        acp_feed: 'https://webaz.xyz/.well-known/webaz-acp-feed.json',
+        catalog_sample: sample.map(p => ({ id: p.id, title: p.title, price: p.price, category: p.category })),
+      }
+    }
     return {
       ...r,
-      found: products.length,
-      hint: products.length
-        ? `网络上匹配到 ${products.length} 件商品。下单前用 webaz_verify_price 锁价。`
-        : '网络上未找到精确匹配商品(协议级 strict 匹配,只按完整标题/SKU 命中)。要浏览目录:再调 webaz_search 但【不带 query】只给筛选(category / sort / max_price),即返回在售商品列表;或读机器目录 /.well-known/webaz-acp-feed.json。(PWA 用户可用 #discover 模糊浏览。) / No exact match (strict). To BROWSE, call webaz_search again with filters and NO query; or read /.well-known/webaz-acp-feed.json.',
+      found: 0,
+      hint: '网络上未找到精确匹配商品(协议级 strict 匹配,只按完整标题/SKU 命中)。见 recovery:目录样本 + 可执行的浏览 next_step。 / No exact match (strict). See recovery: a catalog sample + an actionable browse next_step.',
+      ...(recovery ? { recovery } : {}),
     }
   }
 

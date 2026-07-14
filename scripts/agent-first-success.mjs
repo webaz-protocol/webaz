@@ -24,7 +24,7 @@ const RUNS = Number(process.argv[3] || 5)
 
 // Canonical first-task steps. Each returns true/false; a run succeeds only if the LAST step (task
 // complete) succeeds — earlier steps are diagnostics telling you WHERE a stranger agent fails.
-const STEPS = ['connect', 'tools_list', 'find_search', 'browse_products', 'task_complete']
+const STEPS = ['connect', 'tools_list', 'find_search', 'nl_search_recovers', 'browse_products', 'task_complete']
 
 async function oneRun() {
   const res = Object.fromEntries(STEPS.map(s => [s, false]))
@@ -36,6 +36,10 @@ async function oneRun() {
     const tools = await client.listTools(); res.tools_list = tools.tools.length > 0   // 2. list
     res.find_search = tools.tools.some(x => x.name === 'webaz_search')        // 3. discover the tool
     if (!res.find_search) return res
+    // 4. 陌生 agent 最自然的第一动作 = 自然语言搜;strict 返 0,但 recovery 应给可动样本(北极星真缺口)
+    const nl = await client.callTool({ name: 'webaz_search', arguments: { query: 'phone stand' } })
+    const nlj = JSON.parse(nl.content[0].text)
+    res.nl_search_recovers = (nlj.recovery?.catalog_sample || []).length > 0
     const browse = await client.callTool({ name: 'webaz_search', arguments: { sort: 'newest', limit: 5 } })
     const bj = JSON.parse(browse.content[0].text)
     const products = bj.products || []

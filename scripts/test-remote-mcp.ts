@@ -183,8 +183,9 @@ async function main() {
 const PUsrc2 = PUsrc
   ok('11d. integration.json 顶层公告 remote_mcp(via builder)', ICsrc.includes('{ remote_mcp: remoteMcpManifest() }'))
   ok('11e. protocol.json 顶层公告 remote_mcp(via builder)', PUsrc.includes('{ remote_mcp: remoteMcpManifest() }'))
-  ok('11f. strict 0-命中 hint 指向远程可达浏览(不只 PWA #discover)', L1.includes('不带 query') && L1.includes('acp-feed.json'))
+  ok('11f. strict 0-命中指向远程可达浏览(recovery + acp-feed,不只 PWA #discover)', L1.includes('见 recovery') && L1.includes('acp-feed.json'))
   ok('11g. REMOTE-MCP.md 在 PUBLIC_DOCS 白名单(manifest 广告的 docs 链接不能 404)', PUsrc2.includes("'REMOTE-MCP.md'"))
+  ok('11h. P2:search 0-命中带 recovery(catalog_sample + next_step),strict 结果仍 found:0', L1.includes("reason: 'strict_no_match'") && L1.includes('catalog_sample:') && L1.includes('next_step:') && L1.includes('found: 0,'))
 
   if (fail > 0) { console.error(`\n❌ remote MCP FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ remote MCP: real handshake over Streamable HTTP (stateless) + fail-closed flag + sandbox refuse + 405s + no-CORS + bearer seam\n  ✅ pass ${pass}`)
