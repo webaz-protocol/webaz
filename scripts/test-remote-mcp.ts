@@ -180,9 +180,11 @@ async function main() {
   ok('11c. shape 含 protocol_version + stdio 区分', man?.protocol_version === '2025-03-26' && String(man?.stdio_alternative || '').includes('npx -y @seasonkoh/webaz'))
   const ICsrc = readFileSync('src/pwa/integration-contract.ts', 'utf8')
   const PUsrc = readFileSync('src/pwa/routes/public-utils.ts', 'utf8')
+const PUsrc2 = PUsrc
   ok('11d. integration.json 顶层公告 remote_mcp(via builder)', ICsrc.includes('{ remote_mcp: remoteMcpManifest() }'))
   ok('11e. protocol.json 顶层公告 remote_mcp(via builder)', PUsrc.includes('{ remote_mcp: remoteMcpManifest() }'))
   ok('11f. strict 0-命中 hint 指向远程可达浏览(不只 PWA #discover)', L1.includes('不带 query') && L1.includes('acp-feed.json'))
+  ok('11g. REMOTE-MCP.md 在 PUBLIC_DOCS 白名单(manifest 广告的 docs 链接不能 404)', PUsrc2.includes("'REMOTE-MCP.md'"))
 
   if (fail > 0) { console.error(`\n❌ remote MCP FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ remote MCP: real handshake over Streamable HTTP (stateless) + fail-closed flag + sandbox refuse + 405s + no-CORS + bearer seam\n  ✅ pass ${pass}`)
