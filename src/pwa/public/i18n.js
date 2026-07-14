@@ -3726,6 +3726,8 @@ const _EN = {
   '我的':                              'Me',
   '发现':                              'Discover',
   '抢单':                              'Bid Market',
+  '选择':                              'Select',
+  '经营设置':                          'Business Settings',
   '私信':                              'Messages',
   '慈善许愿':                          'Charity Wishes',
   '未读':                              'unread',

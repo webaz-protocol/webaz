@@ -645,6 +645,7 @@ async function render(page, params) {
     case 'seller':
       if (state.user?.role === 'logistics')  return renderLogistics(app)
       if (state.canArbitrate) return renderDisputeList(app)  // PR-E:仲裁入口跟随 can_arbitrate,非 role==='arbitrator'
+      if (state.user?.role === 'seller') state._sellerSubTab = ['dashboard', 'marketing', 'products', 'skills', 'settings'].includes(params[0]) ? params[0] : 'dashboard'
       return renderSeller(app)
     case 'edit-product':  return renderEditProduct(app, params[0])
     case 'wallet':        return renderWallet(app)
@@ -1104,8 +1105,8 @@ function shell(content, activeTab, opts) {
   } else if (role === 'seller') {
     // 卖家：钱包挪顶部 navbar 右侧；底部腾给消息（chats 私信 + 订单聊天 + RFQ 沟通）
     tabs = [
-      { id: 'seller',        icon: '🏪', label: t('店铺') },
-      { id: 'rfqs',          icon: '💎', label: t('抢单') },
+      { id: 'seller',        target: 'seller/dashboard', icon: '🏪', label: t('店铺') },
+      { id: 'seller-marketing', target: 'seller/marketing', icon: '📣', label: t('营销') },
       { id: 'chats',         icon: '💬', label: t('消息'), chatsBadge: true },
       { id: 'orders',        icon: '📦', label: t('订单') },
       { id: 'me',            icon: '👤', label: t('我的'), badge: true },  // 通知未读数 → 此 tab 红点
@@ -8282,7 +8283,7 @@ window.initiateFollowSell = (productId, listingId, title) => {
 }
 
 // 智能下单上架 CTA 统一入口：自动处理 anon / 受信 / buyer 升级 / seller 切换
-// 跳到 #seller dashboard，自动切到「商品」sub-tab + 展开手工上架表单 + 预填标题
+// 直达卖家「商品」sub-tab，展开手工上架表单 + 预填标题
 window.goCreateListingFromBuy = (prefillTitle) => {
   const title = String(prefillTitle || '').trim().slice(0, 80)
   window._sellerAddPrefill = null
@@ -8296,7 +8297,7 @@ window.goCreateListingFromBuy = (prefillTitle) => {
   // 未登录：跳登录，保留意图
   if (!state.user) {
     stashPrefill()
-    sessionStorage.setItem('webaz_intended_hash', '#seller')
+    sessionStorage.setItem('webaz_intended_hash', '#seller/products')
     location.hash = '#login'
     return
   }
@@ -8308,8 +8309,7 @@ window.goCreateListingFromBuy = (prefillTitle) => {
   // 已是卖家：直达 dashboard
   if (state.user.role === 'seller') {
     stashPrefill()
-    state._sellerSubTab = 'products'
-    location.hash = '#seller'
+    location.hash = '#seller/products'
     return
   }
   // buyer：先看是否已有 seller 角色（只需切换不需新增）
@@ -8360,8 +8360,7 @@ window.confirmCreateListingUpgrade = async (needAddRole) => {
   state.user.role = 'seller'
   if (Array.isArray(state.user.roles) && !state.user.roles.includes('seller')) state.user.roles.push('seller')
   if (msg) msg.innerHTML = `<span style="color:#16a34a">✓ ${t('已切换为卖家')}</span>`
-  state._sellerSubTab = 'products'
-  setTimeout(() => { closeModal(); location.hash = '#seller' }, 500)
+  setTimeout(() => { closeModal(); location.hash = '#seller/products' }, 500)
 }
 
 // 买家确认升级 → 调 add-role + switch-role → 跳跟卖表单
@@ -9656,8 +9655,9 @@ window.toggleFollow = async (userId, btn) => {
 // 轻量 toast（自动消失，不打断流程）
 function toast$(msg, kind = 'info') {
   const bg = kind === 'error' ? '#fee2e2' : '#dcfce7'
-  const fg = kind === 'error' ? '#b91c1c' : '#15803d'
+  const fg = kind === 'error' ? '#b91c1c' : '#14532d'
   const el = document.createElement('div')
+  el.className = 'toast-message'
   el.style.cssText = `position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:${bg};color:${fg};padding:10px 18px;border-radius:24px;font-size:13px;font-weight:500;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:9999;opacity:0;transition:opacity 0.2s`
   el.textContent = msg
   document.body.appendChild(el)
@@ -9945,6 +9945,7 @@ window.addEventListener('hashchange', () => {
   }
 })
 
+function productIdHtml(id, compact = false) { return `<div class="product-id-line${compact ? ' product-id-line--compact' : ''}"><span>ID</span><code>${escHtml(String(id || ''))}</code><button type="button" class="product-id-copy" title="${t('复制')}" aria-label="${t('复制')} ID" onclick="event.stopPropagation();copyText(this.closest('.product-id-line').querySelector('code').textContent).then(ok=>toast$(ok?t('已复制'):t('复制失败，请手动复制'),ok?'success':'error'))">⧉</button></div>` }
 async function renderBuyPage(app, productId) {
   app.innerHTML = shell(loading$(), 'discover')
   const [products, sharesData, manifestsData, claimsData, wlCheck, qaData, waitCheck, variantsRes, addrRes, ratingsRes, flashRes] = await Promise.all([
@@ -10107,7 +10108,7 @@ async function renderBuyPage(app, productId) {
 	    <div class="card buyer-product-hero">
 	      ${trustBadge}
 	      ${productImageGallery(p)}
-      <h2 class="buyer-product-title" style="font-size:18px;font-weight:700;margin-bottom:6px">${escHtml(p.title)}</h2>${window.extLinksBarHtml ? window.extLinksBarHtml(productId) : ''}
+      <h2 class="buyer-product-title" style="font-size:18px;font-weight:700;margin-bottom:6px">${escHtml(p.title)}</h2>${window.extLinksBarHtml ? window.extLinksBarHtml(productId) : ''}${productIdHtml(p.id)}
       ${state._flashSale ? `
       <div style="background:linear-gradient(135deg,#dc2626,#f59e0b);color:#fff;border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
         <div>
@@ -11526,8 +11527,9 @@ window.whToggleAll = (checked) => {
 }
 
 window.setSellerSubTab = (k) => {
-  state._sellerSubTab = k
-  renderSeller(document.getElementById('app'))
+  const target = `#seller/${k}`
+  if (location.hash === target) renderSeller(document.getElementById('app'))
+  else location.hash = target
 }
 
 // C-4: 批量发货 modal
@@ -14980,7 +14982,7 @@ function renderInsightsBlock(d) {
     return `
       <div style="margin-top:18px;padding-top:14px;border-top:1px solid #e5e7eb">
         <div style="font-size:13px;font-weight:700;margin-bottom:8px">📊 ${t('数据中心')}</div>
-        <div class="card" style="padding:24px;text-align:center;color:#9ca3af;font-size:12px">
+        <div class="card" style="padding:24px;text-align:center;color:#596570;font-size:12px">
           <div style="font-size:28px;margin-bottom:6px">📈</div>
           ${t('暂无销售数据 — 完成第一单后即可看到分析')}
         </div>
@@ -15096,27 +15098,27 @@ async function renderSeller(app) {
   const kpiTodayCount = todayOrders.length
   const kpiTodaySales = todayOrders.filter(o => o.status === 'completed').reduce((s,o) => s + Number(o.total_amount || 0), 0)
   const sellerKpis = `
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:14px">
-      <div class="card" style="padding:10px;text-align:center;background:linear-gradient(135deg,#eff6ff,#dbeafe);border-color:#bfdbfe">
+    <div class="seller-kpi-grid">
+      <div class="card seller-kpi-card" style="background:#eff6ff;border-color:#bfdbfe">
         <div style="font-size:18px;font-weight:800;color:#1d4ed8">${kpiTodayCount}</div>
         <div style="font-size:10px;color:#6b7280;margin-top:2px">${t('今日订单')}</div>
       </div>
-      <div class="card" style="padding:10px;text-align:center;background:${kpiPaid > 0 ? 'linear-gradient(135deg,#fef3c7,#fde68a)' : '#f9fafb'};border-color:${kpiPaid > 0 ? '#fcd34d' : '#e5e7eb'}">
+      <button type="button" class="card seller-kpi-card" aria-controls="seller-task-accept" onclick="document.getElementById('seller-task-accept')?.scrollIntoView({behavior:'smooth',block:'start'})" style="background:${kpiPaid > 0 ? '#fffbeb' : '#f9fafb'};border-color:${kpiPaid > 0 ? '#fcd34d' : '#e5e7eb'}">
         <div style="font-size:18px;font-weight:800;color:${kpiPaid > 0 ? '#b45309' : '#9ca3af'}">${kpiPaid}</div>
         <div style="font-size:10px;color:#6b7280;margin-top:2px">${t('待接单')}</div>
-      </div>
-      <div class="card" style="padding:10px;text-align:center;background:${kpiAccepted > 0 ? 'linear-gradient(135deg,#fff7ed,#fed7aa)' : '#f9fafb'};border-color:${kpiAccepted > 0 ? '#fdba74' : '#e5e7eb'}">
+      </button>
+      <button type="button" class="card seller-kpi-card" aria-controls="seller-task-ship" onclick="document.getElementById('seller-task-ship')?.scrollIntoView({behavior:'smooth',block:'start'})" style="background:${kpiAccepted > 0 ? '#fff7ed' : '#f9fafb'};border-color:${kpiAccepted > 0 ? '#fdba74' : '#e5e7eb'}">
         <div style="font-size:18px;font-weight:800;color:${kpiAccepted > 0 ? '#c2410c' : '#9ca3af'}">${kpiAccepted}</div>
         <div style="font-size:10px;color:#6b7280;margin-top:2px">${t('待发货')}</div>
-      </div>
-      <div class="card" style="padding:10px;text-align:center">
+      </button>
+      <div class="card seller-kpi-card">
         <div style="font-size:18px;font-weight:800;color:#374151">${kpiInTransit}</div>
         <div style="font-size:10px;color:#6b7280;margin-top:2px">${t('在途')}</div>
       </div>
-      <div class="card" style="padding:10px;text-align:center;background:${kpiExceptions > 0 ? 'linear-gradient(135deg,#fef2f2,#fee2e2)' : '#f9fafb'};border-color:${kpiExceptions > 0 ? '#fca5a5' : '#e5e7eb'}">
+      <button type="button" class="card seller-kpi-card" aria-controls="seller-task-exceptions" onclick="document.getElementById('seller-task-exceptions')?.scrollIntoView({behavior:'smooth',block:'start'})" style="background:${kpiExceptions > 0 ? '#fef2f2' : '#f9fafb'};border-color:${kpiExceptions > 0 ? '#fca5a5' : '#e5e7eb'}">
         <div style="font-size:18px;font-weight:800;color:${kpiExceptions > 0 ? '#dc2626' : '#9ca3af'}">${kpiExceptions}</div>
         <div style="font-size:10px;color:#6b7280;margin-top:2px">${t('异常')}</div>
-      </div>
+      </button>
     </div>
   `
 
@@ -15156,7 +15158,7 @@ async function renderSeller(app) {
       quotaBanner = `
         <div class="card" style="margin-bottom:12px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-            <div style="font-size:13px;color:#374151">${t('商品配额')}: <strong>${quota.total_used} / ${quota.max_products}</strong>${quota.new_user ? ` <span style="font-size:11px;color:#6366f1;margin-left:6px">🆕 ${t('新用户')}</span>` : ''}</div>
+            <div style="font-size:13px;color:#374151">${t('商品配额')}: <strong>${quota.total_used} / ${quota.max_products}</strong>${quota.new_user ? ` <span class="seller-quota-new-user" style="font-size:11px;margin-left:6px">🆕 ${t('新用户')}</span>` : ''}</div>
             ${nextBtn}
           </div>
           <div style="background:#f3f4f6;height:6px;border-radius:3px;overflow:hidden;margin-bottom:8px">
@@ -15198,7 +15200,7 @@ async function renderSeller(app) {
   ` : ''
 
   const pendingOrderRows = (list) => list.map(o => `
-      <div class="card" onclick="navigate('#order/${o.id}')" style="cursor:pointer">
+      <a class="card seller-order-link" href="#order/${o.id}">
         <div class="order-item">
           <div class="order-icon">📦</div>
           <div class="order-info">
@@ -15208,7 +15210,7 @@ async function renderSeller(app) {
           </div>
           <div class="order-amount">${window.orderAmountHtml(o)}</div>
         </div>
-      </div>`).join('')
+      </a>`).join('')
   const acceptHtml = paidOrders.length === 0
     ? `<div class="empty" style="padding:24px"><div class="empty-icon">✅</div><div class="empty-text">${t('暂无待处理订单')}</div></div>`
     : batchAcceptBar + pendingOrderRows(paidOrders)
@@ -15221,7 +15223,7 @@ async function renderSeller(app) {
     ? `<div class="empty" style="padding:18px"><div class="empty-icon">✅</div><div class="empty-text">${t('暂无异常待处理')}</div></div>`
     : `
       ${exceptionOrders.map(o => `
-        <div class="card" onclick="navigate('#order/${o.id}')" style="cursor:pointer;border-left:3px solid ${o.status === 'disputed' ? '#dc2626' : '#f59e0b'};padding:10px 12px;margin-bottom:8px">
+        <a class="card seller-order-link" href="#order/${o.id}" style="border-left:3px solid ${o.status === 'disputed' ? '#dc2626' : '#f59e0b'};padding:10px 12px;margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
             <div style="min-width:0">
               <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(o.product_title)}</div>
@@ -15229,9 +15231,9 @@ async function renderSeller(app) {
             </div>
             <span style="font-size:11px;color:#dc2626;font-weight:600;white-space:nowrap">${t('查看处理')} →</span>
           </div>
-        </div>`).join('')}
+        </a>`).join('')}
       ${exceptionReturns.map(r => `
-        <div class="card" onclick="navigate('#order/${r.order_id}')" style="cursor:pointer;border-left:3px solid #0891b2;padding:10px 12px;margin-bottom:8px">
+        <a class="card seller-order-link" href="#order/${r.order_id}" style="border-left:3px solid #0891b2;padding:10px 12px;margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
             <div style="min-width:0">
               <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(r.product_title)}</div>
@@ -15239,7 +15241,7 @@ async function renderSeller(app) {
             </div>
             <span style="font-size:11px;color:#0891b2;font-weight:600;white-space:nowrap">${t('查看订单')} →</span>
           </div>
-        </div>`).join('')}
+        </a>`).join('')}
       <button class="btn btn-outline btn-sm" style="width:auto;font-size:12px" onclick="navigate('#returns')">↩ ${t('退货管理')}</button>
     `
 
@@ -15281,18 +15283,18 @@ async function renderSeller(app) {
     const threshold = Number(p.low_stock_threshold ?? 3)
     const lowStock = Number(p.stock) > 0 && Number(p.stock) <= threshold
     const outOfStock = Number(p.stock) === 0
-    return `<div class="card" style="padding:10px 12px;margin-bottom:8px;${outOfStock ? 'border-left:3px solid #dc2626' : lowStock ? 'border-left:3px solid #f59e0b' : ''}">
+    return `<div class="card seller-product-row" style="padding:10px 12px;margin-bottom:8px;${outOfStock ? 'border-left:3px solid #dc2626' : lowStock ? 'border-left:3px solid #f59e0b' : ''}">
       <div style="display:flex;align-items:center;gap:10px">
         <div style="font-size:20px;flex-shrink:0">${getCategoryIcon(p.category) || '📦'}</div>
         <div style="flex:1;min-width:0;cursor:pointer" onclick="navigate('#edit-product/${p.id}')">
-          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.title)}</div>
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.title)}</div>${productIdHtml(p.id, true)}
           <div style="font-size:11px;color:#6b7280;margin-top:2px;display:flex;gap:8px;flex-wrap:wrap">
             <span><strong style="color:#374151">${window.fmtPrice(p.price)}</strong></span>
-            <span style="color:${outOfStock?'#dc2626':lowStock?'#d97706':'#6b7280'}${outOfStock||lowStock?';font-weight:600':''}">${t('库存')} ${p.stock}${outOfStock?' ⛔':lowStock?' ⚠':''}</span>
+            <span style="color:${outOfStock?'#dc2626':lowStock?'#9a3412':'#6b7280'}${outOfStock||lowStock?';font-weight:600':''}">${t('库存')} ${p.stock}${outOfStock?' ⛔':lowStock?' ⚠':''}</span>
             ${p.completion_count > 0 ? `<span>🛒 ${p.completion_count}</span>` : ''}
           </div>
         </div>
-        <div style="display:flex;gap:4px;flex-shrink:0">
+        <div class="seller-product-row-actions" style="display:flex;gap:4px;flex-shrink:0">
           <button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 10px" onclick="navigate('#edit-product/${p.id}')">${t('编辑')}</button>
           <button class="btn btn-gray btn-sm" style="font-size:11px;padding:4px 10px" onclick="setProductStatus('${p.id}','warehouse')">${t('下架')}</button>
         </div>
@@ -15319,7 +15321,7 @@ async function renderSeller(app) {
     return `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div style="flex:1;min-width:0">
-          <div style="font-weight:600">${escHtml(p.title)}</div>
+          <div style="font-weight:600">${escHtml(p.title)}</div>${productIdHtml(p.id, true)}
           <div style="font-size:13px;color:#6b7280;margin-top:2px">${window.fmtPrice(p.price)} · ${t('库存')} ${p.stock}</div>
           ${autoDelistedRecently ? `<div style="font-size:11px;color:#92400e;margin-top:2px;padding:4px 8px;background:#fef3c7;border-radius:6px;display:inline-block">📦 ${t('售罄自动下架')} · ${new Date(p.auto_delisted_at).toLocaleDateString()}</div>` : ''}
           ${p.has_pending_task ? `<div style="font-size:11px;color:#d97706;margin-top:2px">⏳ ${t('链接核验中，请等待验证结果')}</div>` : ''}
@@ -15340,7 +15342,7 @@ async function renderSeller(app) {
     return `<div class="card" style="opacity:0.75;border:1px dashed #fca5a5">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div style="flex:1;min-width:0">
-          <div style="font-weight:600;text-decoration:line-through;color:#9ca3af">${escHtml(p.title)}</div>
+          <div style="font-weight:600;text-decoration:line-through;color:#9ca3af">${escHtml(p.title)}</div>${productIdHtml(p.id, true)}
           <div style="font-size:13px;color:#d1d5db;margin-top:2px">${window.fmtPrice(p.price)}</div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
@@ -15370,8 +15372,8 @@ async function renderSeller(app) {
   ` : ''
   // wrap each active card with checkbox prefix；P2.1 把当前 price 落到 data-price 省一次 GET
   const wrapWithCheck = (htmlList, products) => products.map((p, i) => `
-    <div style="display:flex;gap:8px;align-items:flex-start">
-      <input type="checkbox" class="prd-check" data-pid="${p.id}" data-price="${Number(p.price || 0)}" style="width:16px;height:16px;margin-top:14px;cursor:pointer">
+    <div class="seller-product-entry" data-product-tab="active" data-product-search="${escHtml((p.id + ' ' + p.title).toLowerCase())}" style="display:flex;gap:8px;align-items:flex-start">
+      <input type="checkbox" class="prd-check" data-pid="${p.id}" data-price="${Number(p.price || 0)}" aria-label="${t('选择')} ${escHtml(p.title)}" style="width:16px;height:16px;margin-top:14px;cursor:pointer">
       <div style="flex:1;min-width:0">${activeCard(p)}</div>
     </div>
   `).join('')
@@ -15392,27 +15394,27 @@ async function renderSeller(app) {
     </div>
   ` : ''
   const wrapWithWhCheck = (products) => products.map(p => `
-    <div style="display:flex;gap:8px;align-items:flex-start">
-      <input type="checkbox" class="wh-check" data-pid="${p.id}" style="width:16px;height:16px;margin-top:14px;cursor:pointer">
+    <div class="seller-product-entry" data-product-tab="warehouse" data-product-search="${escHtml((p.id + ' ' + p.title).toLowerCase())}" style="display:flex;gap:8px;align-items:flex-start">
+      <input type="checkbox" class="wh-check" data-pid="${p.id}" aria-label="${t('选择')} ${escHtml(p.title)}" style="width:16px;height:16px;margin-top:14px;cursor:pointer">
       <div style="flex:1;min-width:0">${warehouseCard(p)}</div>
     </div>
   `).join('')
   const warehouseHtml = warehouseProducts.length ? warehouseBatchBar + wrapWithWhCheck(warehouseProducts) : emptyHtml
-  const deletedHtml   = deletedProducts.length   ? deletedProducts.map(deletedCard).join('')     : emptyHtml
+  const deletedHtml   = deletedProducts.length   ? deletedProducts.map(p => `<div class="seller-product-entry" data-product-tab="deleted" data-product-search="${escHtml((p.id + ' ' + p.title).toLowerCase())}">${deletedCard(p)}</div>`).join('') : emptyHtml
 
   // 套用 admin 方法论：sub-tab 拆分 + pageHeader + 紧凑列表
   const sellerSubTab = state._sellerSubTab || 'dashboard'
   const subTabBtn = (k, label) => {
     const on = sellerSubTab === k
-    return `<button onclick="setSellerSubTab('${k}')" style="background:none;border:none;padding:8px 14px;font-size:13px;cursor:pointer;border-bottom:2px solid ${on?'#92400e':'transparent'};color:${on?'#92400e':'#596570'};font-weight:${on?'600':'400'}">${label}</button>`
+    return `<button class="seller-subtab" role="tab" aria-selected="${on}" onclick="setSellerSubTab('${k}')">${label}</button>`
   }
   const sellerSubNav = `
-    <div style="display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid #e5e7eb;overflow-x:auto;-webkit-overflow-scrolling:touch">
+    <div class="seller-subnav" role="tablist" aria-label="${t('卖家后台')}">
       ${subTabBtn('dashboard', '📊 ' + t('看板'))}
       ${subTabBtn('products', '📦 ' + t('商品'))}
-      ${subTabBtn('marketing', '💎 ' + t('营销'))}
+      <button class="seller-subtab" role="tab" aria-selected="false" onclick="navigate('#rfqs')">💎 ${t('抢单')}</button>
       ${subTabBtn('skills', '⚡ ' + t('Skill'))}
-      ${subTabBtn('settings', '⚙️ ' + t('设置'))}
+      ${subTabBtn('settings', '⚙️ ' + t('经营设置'))}
     </div>
   `
   const settingsSection = sellerSubTab === 'settings' ? ((window.dpSellerReadinessSection ? window.dpSellerReadinessSection() : '') + (window.dpSellerFeeSection ? window.dpSellerFeeSection() : '') + (window.dpSalesReportSection ? window.dpSalesReportSection() : '') + (window.dpFeeRequestSection ? window.dpFeeRequestSection() : '') + (window.dpSellerDeferralSection ? window.dpSellerDeferralSection() : '') + (window.dpSellerProductVerifySection ? window.dpSellerProductVerifySection() : '') + (window.dpSellerStoreVerifySection ? window.dpSellerStoreVerifySection() : '') + (window.dpSellerInstructionSection ? window.dpSellerInstructionSection() : '') + (window.draAccountsSection ? window.draAccountsSection() : '') + (window.shipSellerSettingsSection ? window.shipSellerSettingsSection() : '') + (window.bondSellerSection ? window.bondSellerSection() : '')) : ''
@@ -15427,16 +15429,16 @@ async function renderSeller(app) {
     ${stockAlertBanner}
     ${quotaBanner}
     ${pendingOrders.length > 0 ? `<div class="alert alert-warning">📬 ${t('你有')} ${pendingOrders.length} ${t('个订单需要处理')}</div>` : ''}
-    <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:12px">
-      <details ${paidOrders.length > 0 ? 'open' : ''}>
+    <div class="seller-task-stack">
+      <details id="seller-task-accept" ${paidOrders.length > 0 ? 'open' : ''}>
         <summary style="font-weight:700;margin-bottom:8px;cursor:pointer;list-style:revert">📬 ${t('待接单')} (${paidOrders.length})</summary>
         ${acceptHtml}
       </details>
-      <details ${acceptedOrders.length > 0 ? 'open' : ''}>
+      <details id="seller-task-ship" ${acceptedOrders.length > 0 ? 'open' : ''}>
         <summary style="font-weight:700;margin-bottom:8px;cursor:pointer;list-style:revert">📦 ${t('待发货')} (${acceptedOrders.length})</summary>
         ${shipHtml}
       </details>
-      <details ${(exceptionOrders.length + exceptionReturns.length) > 0 ? 'open' : ''}>
+      <details id="seller-task-exceptions" ${(exceptionOrders.length + exceptionReturns.length) > 0 ? 'open' : ''}>
         <summary style="font-weight:700;margin-bottom:8px;cursor:pointer;list-style:revert">⚠ ${t('退货 · 争议 · 异常')} (${exceptionOrders.length + exceptionReturns.length})</summary>
         ${exceptionsHtml}
       </details>
@@ -15457,16 +15459,6 @@ async function renderSeller(app) {
         <div style="font-weight:600;font-size:13px;color:#166534;margin-top:6px">${t('发起跟卖')}</div>
         <div style="font-size:10px;color:#15803d;margin-top:2px">${t('多商家同款 · 抢市占')}</div>
       </div>
-      <div onclick="location.hash='#p2p-shop/publish'" class="card" style="padding:14px;cursor:pointer;background:linear-gradient(135deg,#ede9fe,#ddd6fe);border-color:#c4b5fd">
-        <div style="font-size:24px">🌐</div>
-        <div style="font-weight:600;font-size:13px;color:#5b21b6;margin-top:6px">${t('P2P 上架')}</div>
-        <div style="font-size:10px;color:#6d28d9;margin-top:2px">${t('本地节点 · 去中心化')}</div>
-      </div>
-      <div onclick="showAddProduct()" class="card" style="padding:14px;cursor:pointer;background:linear-gradient(135deg,#eff6ff,#dbeafe);border-color:#93c5fd">
-        <div style="font-size:24px">📦</div>
-        <div style="font-weight:600;font-size:13px;color:#1e40af;margin-top:6px">${t('普通上架')}</div>
-        <div style="font-size:10px;color:#1d4ed8;margin-top:2px">${t('标准商品 · 即买即发')}</div>
-      </div>
       ${window.freeShippingMarketingCard ? window.freeShippingMarketingCard() : ''}
       <div onclick="location.hash='#seller-trials'" class="card" style="padding:14px;cursor:pointer;background:linear-gradient(135deg,#faf5ff,#fdf2f8);border-color:#ddd6fe">
         <div style="font-size:24px">🎁</div>
@@ -15482,16 +15474,18 @@ async function renderSeller(app) {
   // 注:Skill 真实内容由下方 #my-skills-list 同步渲染(mySkills 已同步就绪);此前 #skill-mgmt-content loading$() 占位无人填充 → spinner 永转,已删除。
 
   const productsSection = sellerSubTab === 'products' ? `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div class="seller-products-toolbar">
       <div style="font-weight:700;font-size:14px">${t('商品管理')}</div>
-      <div style="display:flex;gap:8px">
+      <div class="seller-products-toolbar-actions">
+        <button class="btn btn-primary btn-sm" onclick="showAddProduct()">+ ${t('普通上架')}</button>
+        <button class="btn btn-outline btn-sm" onclick="location.hash='#p2p-shop/publish'">🌐 ${t('P2P 上架')}</button>
         <button class="btn btn-outline btn-sm" onclick="showImportProduct()">🔗 ${t('导入')}</button>
-        <button class="btn btn-primary btn-sm" onclick="showAddProduct()">${t('+ 上架')}</button>
       </div>
     </div>
+    <label class="seller-product-search"><span>⌕</span><input id="seller-product-search" type="search" aria-label="${t('商品名称')} / ID" placeholder="${t('商品名称')} / ID" oninput="filterSellerProducts(this.value)"><span id="seller-product-search-count" aria-live="polite"></span></label>
   ` : ''
 
-  app.innerHTML = shell(`
+  app.innerHTML = shell(`<div class="seller-workbench">
     ${pageHeader('🏪', t('卖家后台'), t('销售 / 商品 / 营销 / 自动化'), 'seller')}
     ${sellerSubNav}
     ${dashboardSection}
@@ -15502,26 +15496,27 @@ async function renderSeller(app) {
 
     <!-- 商品分类标签页（仅 products sub-tab 下显示）-->
     ${sellerSubTab === 'products' ? `
-    <div style="display:flex;gap:6px;margin-bottom:12px">
-      <button class="prd-tab-btn" data-tab="active"
+    <div class="seller-product-tabs" role="tablist" aria-label="${t('商品管理')}" data-active-tab="active">
+      <button class="prd-tab-btn" id="prd-tab-btn-active" role="tab" aria-selected="true" aria-controls="prd-tab-active" data-tab="active"
         onclick="switchProductTab('active')"
         style="flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid #3b82f6;background:#eff6ff;color:#1d4ed8">
-        ${t('在售')} <span style="font-size:11px;font-weight:400">(${activeProducts.length})</span>
+        ${t('在售')} <span class="prd-tab-count" data-total="${activeProducts.length}" style="font-size:11px;font-weight:400">(${activeProducts.length})</span>
       </button>
-      <button class="prd-tab-btn" data-tab="warehouse"
+      <button class="prd-tab-btn" id="prd-tab-btn-warehouse" role="tab" aria-selected="false" aria-controls="prd-tab-warehouse" tabindex="-1" data-tab="warehouse"
         onclick="switchProductTab('warehouse')"
         style="flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid #e5e7eb;background:#f9fafb;color:#374151">
-        ${t('仓库')} <span style="font-size:11px;font-weight:400">(${warehouseProducts.length})</span>
+        ${t('仓库')} <span class="prd-tab-count" data-total="${warehouseProducts.length}" style="font-size:11px;font-weight:400">(${warehouseProducts.length})</span>
       </button>
-      <button class="prd-tab-btn" data-tab="deleted"
+      <button class="prd-tab-btn" id="prd-tab-btn-deleted" role="tab" aria-selected="false" aria-controls="prd-tab-deleted" tabindex="-1" data-tab="deleted"
         onclick="switchProductTab('deleted')"
         style="flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid #e5e7eb;background:#f9fafb;color:#374151">
-        ${t('回收箱')} <span style="font-size:11px;font-weight:400">(${deletedProducts.length})</span>
+        ${t('回收箱')} <span class="prd-tab-count" data-total="${deletedProducts.length}" style="font-size:11px;font-weight:400">(${deletedProducts.length})</span>
       </button>
     </div>
-    <div id="prd-tab-active">${activeHtml}</div>
-    <div id="prd-tab-warehouse" style="display:none">${warehouseHtml}</div>
-    <div id="prd-tab-deleted" style="display:none">${deletedHtml}</div>
+    <div id="seller-product-search-empty" class="empty" hidden><div class="empty-icon">⌕</div><div class="empty-text">${t('暂无商品')}</div></div>
+    <div id="prd-tab-active" role="tabpanel" aria-labelledby="prd-tab-btn-active">${activeHtml}</div>
+    <div id="prd-tab-warehouse" role="tabpanel" aria-labelledby="prd-tab-btn-warehouse" hidden>${warehouseHtml}</div>
+    <div id="prd-tab-deleted" role="tabpanel" aria-labelledby="prd-tab-btn-deleted" hidden>${deletedHtml}</div>
     ` : ''}
 
     <!-- 一键导入面板 -->
@@ -15748,8 +15743,8 @@ async function renderSeller(app) {
           <button class="btn btn-primary" onclick="doPublishSkill()">${t('发布')}</button>
         </div>
       </div>
-    </div>
-  `, 'seller')
+    </div></div>
+  `, sellerSubTab === 'marketing' ? 'seller-marketing' : 'seller')
   if (sellerSubTab === 'settings') { window.dpHydrateInstruction && window.dpHydrateInstruction(); window.dpHydrateSellerReadiness && window.dpHydrateSellerReadiness(); window.dpHydrateSellerFee && window.dpHydrateSellerFee(); window.dpHydrateSalesReport && window.dpHydrateSalesReport(); window.dpHydrateFeeRequest && window.dpHydrateFeeRequest(); window.dpHydrateSellerDeferral && window.dpHydrateSellerDeferral(); window.dpHydrateSellerProductVerify && window.dpHydrateSellerProductVerify(); window.dpHydrateSellerStoreVerify && window.dpHydrateSellerStoreVerify(); window.draHydrateAccounts && window.draHydrateAccounts(); window.shipHydrateSellerSettings && window.shipHydrateSellerSettings(); window.bondHydrateSeller && window.bondHydrateSeller() }
 
   // 智能下单"我也要上架"跳过来时：自动切到商品 tab + 展开手工上架表单 + 预填标题
@@ -15862,18 +15857,29 @@ window.removeAddProductImage = (i) => {
 }
 
 window.switchProductTab = (tab) => {
-  ['active', 'warehouse', 'deleted'].forEach(k => {
+  if (!['active', 'warehouse', 'deleted'].includes(tab)) return
+  const tabs = document.querySelector('.seller-product-tabs')
+  if (tabs) tabs.dataset.activeTab = tab
+  ;['active', 'warehouse', 'deleted'].forEach(k => {
     const panel = document.getElementById(`prd-tab-${k}`)
-    if (panel) panel.style.display = k === tab ? '' : 'none'
+    if (panel) panel.hidden = k !== tab
   })
   document.querySelectorAll('.prd-tab-btn').forEach(btn => {
     const isActive = btn.dataset.tab === tab
+    btn.setAttribute('aria-selected', String(isActive))
+    btn.tabIndex = isActive ? 0 : -1
     btn.style.background     = isActive ? '#eff6ff' : '#f9fafb'
     btn.style.color          = isActive ? '#1d4ed8' : '#374151'
     btn.style.borderColor    = isActive ? '#3b82f6' : '#e5e7eb'
   })
 }
-
+window.filterSellerProducts = (value) => {
+  const q = String(value || '').trim().toLowerCase(), entries = [...document.querySelectorAll('.seller-product-entry')], matchesByTab = { active: 0, warehouse: 0, deleted: 0 }
+  entries.forEach(el => { const match = !q || (el.dataset.productSearch || '').includes(q); el.hidden = !match; if (q && match) matchesByTab[el.dataset.productTab]++ })
+  const matches = q ? Object.values(matchesByTab).reduce((sum, n) => sum + n, 0) : entries.length
+  const count = document.getElementById('seller-product-search-count'), empty = document.getElementById('seller-product-search-empty'); if (count) count.textContent = q ? (matches ? String(matches) : t('暂无商品')) : ''; if (empty) empty.hidden = !q || matches > 0
+  document.querySelectorAll('.prd-tab-btn').forEach(btn => { const n = q ? matchesByTab[btn.dataset.tab] : Number(btn.querySelector('.prd-tab-count')?.dataset.total || 0), badge = btn.querySelector('.prd-tab-count'); if (badge) badge.textContent = `(${n})`; btn.disabled = !!q && n === 0 })
+  if (q && matches) window.switchProductTab(['active', 'warehouse', 'deleted'].find(k => matchesByTab[k] > 0)) }
 window.setProductStatus = async (id, status) => {
   let confirmMsg = ''
   if (status === 'deleted')   confirmMsg = t('确认移入回收箱？移入后商品将下架，可随时恢复。')

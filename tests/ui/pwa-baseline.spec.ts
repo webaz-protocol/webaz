@@ -131,16 +131,24 @@ async function mockSellerDashboard(page: Page) {
     has_passkey: false,
     wallet: { balance: 0, staked: 0, escrowed: 0, earned: 0 },
   } }))
-  await page.route('**/api/my-products', route => route.fulfill({ json: [] }))
+  await page.route('**/api/my-products', route => route.fulfill({ json: [
+    { id: 'ux-product-active', title: 'Ceramic travel tea set', status: 'active', price: 34, stock: 2, low_stock_threshold: 3, category: '茶具', completion_count: 7, has_variants: 0 },
+    { id: 'ux-product-draft', title: 'Agent prepared draft', status: 'warehouse', price: 21, stock: 4, category: '家居', has_pending_task: 0, all_links_revoked: 0 },
+    { id: 'ux-product-deleted', title: 'Retired sample listing', status: 'deleted', price: 13, stock: 0, category: '家居' },
+  ] }))
   await page.route('**/api/profile', route => route.fulfill({ json: { wallet: { balance: 0, staked: 0 } } }))
-  await page.route('**/api/orders', route => route.fulfill({ json: [] }))
+  await page.route('**/api/orders', route => route.fulfill({ json: [
+    { id: 'ux-order-paid', seller_id: 'ux-seller', status: 'paid', product_title: 'Ceramic travel tea set', total_amount: 34, payment_rail: 'direct_p2p', created_at: '2026-07-14T08:00:00Z' },
+    { id: 'ux-order-accepted', seller_id: 'ux-seller', status: 'accepted', product_title: 'Handmade storage basket', total_amount: 52, payment_rail: 'escrow', created_at: '2026-07-14T07:00:00Z' },
+    { id: 'ux-order-disputed', seller_id: 'ux-seller', status: 'disputed', product_title: 'Portable lamp', total_amount: 18, payment_rail: 'direct_p2p', created_at: '2026-07-13T06:00:00Z' },
+  ] }))
   await page.route('**/api/rfqs?limit=50', route => route.fulfill({ json: { items: [{ id: 'rfq-ux-1', status: 'open' }], urgencies: ['now', 'today', 'flex'], categories: [] } }))
   await page.route('**/api/charity/me', route => route.fulfill({ json: { reputation: {}, pending_repayments: [] } }))
   await page.route('**/api/agents/me/reputation', route => route.fulfill({ json: { level: 'new', trust_score: 0 } }))
   await page.route('**/api/claim-tasks/mine', route => route.fulfill({ json: { as_buyer: [], as_verifier: [] } }))
   await page.route('**/api/skills/mine', route => route.fulfill({ json: [] }))
   await page.route('**/api/seller/quota-status', route => route.fulfill({ json: {
-    total_used: 0,
+    total_used: 2,
     max_products: 10,
     daily_used: 0,
     daily_limit: 3,
@@ -307,6 +315,7 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     await assertAxeHasNoSeriousOrCriticalViolations(page)
     await product.click()
     await expect(page.locator('.buyer-product-hero')).toContainText('Portable ceramic tea set')
+    await expect(page.locator('.buyer-product-hero .product-id-line code')).toHaveText('ux-product')
     await expect(page.locator('#btn-openBuy')).toBeVisible()
     await assertAxeHasNoSeriousOrCriticalViolations(page)
 	    await page.locator('#btn-openBuy').click()
@@ -336,21 +345,79 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
   })
 }
 
-test('authenticated seller baseline uses route-level API mocks', async ({ page }) => {
-  const guards = installRuntimeGuards(page)
-  await mockSellerDashboard(page)
-  await page.addInitScript(() => localStorage.setItem('webaz_key', 'ux-seller-token'))
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto('/#seller')
+for (const viewport of DASHBOARD_VIEWPORTS) {
+  test(`authenticated seller workbench at ${viewport.name}`, async ({ page }) => {
+    const guards = installRuntimeGuards(page)
+    await mockSellerDashboard(page)
+    await page.addInitScript(() => localStorage.setItem('webaz_key', 'ux-seller-token'))
+    await page.setViewportSize(viewport)
+    await page.goto('/#seller')
 
-  await assertClassicScriptsLoaded(page)
-  await expect(page.locator('#app .navbar')).toBeVisible()
-  await expect(page.locator('#app main')).toContainText(/卖家后台|Seller Dashboard/)
-  await assertLanguageSync(page)
-  await assertNoHorizontalOverflow(page)
-  await assertAxeHasNoSeriousOrCriticalViolations(page)
-  guards.assertClean()
-})
+    await assertClassicScriptsLoaded(page)
+    await expect(page.locator('#app .navbar')).toBeVisible()
+    await expect(page.locator('#app main')).toContainText(/卖家后台|Seller Dashboard/)
+    await expect(page.locator('.seller-kpi-card')).toHaveCount(5)
+    await expect(page.locator('.tabbar .tab-item').nth(1)).toContainText(/营销|Marketing/)
+    await expect(page.locator('.seller-subnav .seller-subtab').nth(2)).toContainText(/抢单|Bid Market/)
+    await expect(page.locator('.seller-subnav')).toContainText('Skill')
+    await expect(page.locator('.seller-subnav')).toContainText(/经营设置|Business Settings/)
+    await expect(page.locator('a.seller-order-link[href="#order/ux-order-paid"]')).toBeVisible()
+    await expect(page.locator('#seller-task-exceptions')).toContainText('Portable lamp')
+    const columns = await page.locator('.seller-kpi-grid').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length)
+    expect(columns).toBe(viewport.name === 'mobile' ? 2 : 5)
+    if (viewport.name === 'mobile') {
+      await expect(page.locator('#agent-fab')).toBeHidden()
+      await expect(page.locator('#feedback-fab')).toBeHidden()
+    }
+    await assertAxeHasNoSeriousOrCriticalViolations(page)
+    await page.locator('.tabbar .tab-item').nth(1).click()
+    await expect(page.locator('.tabbar .tab-item.active')).toContainText(/营销|Marketing/)
+    await expect(page.locator('#app main')).toContainText(/发起拍卖|Start Auction/)
+    await expect(page.locator('#app main')).not.toContainText(/普通上架|Standard listing|P2P 上架|P2P Publish/)
+    await page.locator('.seller-subtab').filter({ hasText: /商品|Product/ }).click()
+    await expect(page.locator('.seller-products-toolbar')).toBeVisible()
+    await page.goBack()
+    await expect(page.locator('#app main')).toContainText(/发起拍卖|Start Auction/)
+    await page.goForward()
+    await expect(page.locator('.seller-products-toolbar')).toBeVisible()
+    await expect(page.locator('.seller-products-toolbar-actions')).toContainText(/普通上架|Standard listing/)
+    await expect(page.locator('.seller-products-toolbar-actions')).toContainText(/P2P 上架|P2P Publish/)
+    await expect(page.locator('.seller-products-toolbar-actions')).toContainText(/导入|Import/)
+    await expect(page.locator('.seller-product-row')).toContainText('Ceramic travel tea set')
+    await expect(page.locator('.seller-product-row .product-id-line code')).toHaveText('ux-product-active')
+    await page.locator('.seller-product-row .product-id-copy').click()
+    await expect(page).toHaveURL(/#seller\/products$/)
+    await expect(page.locator('.toast-message')).toBeVisible()
+    await expect(page.locator('.toast-message')).toBeHidden({ timeout: 3000 })
+    await page.locator('#seller-product-search').fill('ux-product')
+    await expect(page.locator('#seller-product-search-count')).toHaveText('3')
+    await expect(page.locator('.prd-tab-count')).toHaveText(['(1)', '(1)', '(1)'])
+    await page.locator('#seller-product-search').fill('prepared')
+    await expect(page.locator('#prd-tab-warehouse')).toBeVisible()
+    await expect(page.locator('#prd-tab-warehouse .seller-product-entry:not([hidden])')).toContainText('Agent prepared draft')
+    await page.locator('#seller-product-search').fill('retired')
+    await expect(page.locator('#prd-tab-deleted')).toBeVisible()
+    await expect(page.locator('#prd-tab-deleted .seller-product-entry:not([hidden])')).toContainText('Retired sample listing')
+    await page.locator('#seller-product-search').fill('missing-product')
+    await expect(page.locator('#seller-product-search-empty')).toBeVisible()
+    await expect(page.locator('.prd-tab-btn:disabled')).toHaveCount(3)
+    await page.locator('#seller-product-search').fill('')
+    await expect(page.locator('#seller-product-search-empty')).toBeHidden()
+    await expect(page.locator('.prd-tab-btn:enabled')).toHaveCount(3)
+    await page.goto('/#seller/dashboard')
+    await page.evaluate(() => (window as any).goCreateListingFromBuy('Prefilled product title'))
+    await expect(page).toHaveURL(/#seller\/products$/)
+    await expect(page.locator('#add-product-form')).toBeVisible()
+    await expect(page.locator('#prd-title')).toHaveValue('Prefilled product title')
+    await page.goto('/#seller/products')
+    await page.reload()
+    await expect(page.locator('.seller-products-toolbar')).toBeVisible()
+    await assertLanguageSync(page)
+    await assertNoHorizontalOverflow(page)
+    await assertAxeHasNoSeriousOrCriticalViolations(page)
+    guards.assertClean()
+  })
+}
 
 for (const viewport of [
   { name: 'tablet-edge', width: 919, height: 480, desktop: false },
