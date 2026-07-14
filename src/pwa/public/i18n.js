@@ -4845,7 +4845,7 @@ const _EN = {
   '邮箱格式无效':                          'Invalid email format',
   '已收到，上线时第一时间通知你':            "Received — we'll notify you at launch",
   // 首屏新文案
-  '属于每一个参与者。':                  'Built & Owned by everyone.',
+  '属于每一个参与者。':                  'Built by everyone · owned progressively.',
   '你的贡献会被看见！':                  'You will be seen & matter!',
   '使用、建设、贡献。':                  'Use it = Build it = Earn from it.',
   '参与共建':                            'Participate',
@@ -6230,6 +6230,7 @@ const _EN = {
   '开放协议':                          'Open protocol',
   'Agent 原生':                        'Agent-native',
   'DAO 治理':                          'DAO-governed',
+  '渐进去中心化':                       'Progressive decentralization',
 
   // ── 2026-05-24 #me 重设计（方案 C）
   '快捷菜单':                          'Quick menu',
