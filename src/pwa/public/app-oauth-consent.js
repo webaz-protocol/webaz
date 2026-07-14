@@ -53,7 +53,8 @@
   window.oauthConsentApprove = async (btn) => {
     btn.disabled = true
     try {
-      const token = await requestPasskeyGate('oauth_consent_approve', { client_id: q('client_id'), scope: q('scope'), code_challenge: q('code_challenge') })
+      // purpose_data 绑全量请求(含 redirect_uri+resource):人批的 = 服务端 mint 的,一字不差
+      const token = await requestPasskeyGate('oauth_consent_approve', { client_id: q('client_id'), scope: q('scope'), code_challenge: q('code_challenge'), redirect_uri: q('redirect_uri'), resource: q('resource') })
       const r = await oauthPost('/oauth/authorize/approve', {
         client_id: q('client_id'), redirect_uri: q('redirect_uri'), scope: q('scope'),
         code_challenge: q('code_challenge'), resource: q('resource'), state: q('state') || undefined,

@@ -7743,7 +7743,7 @@ registerWalletWriteRoutes(app, {
 registerRemoteMcpRoutes(app, { rateLimitOk })   // RFC-022:WEBAZ_REMOTE_MCP=1 才挂载(fail-closed)+ IP 限流
 registerOAuthDiscoveryRoutes(app)   // RFC-023 PR-1:WEBAZ_OAUTH=1 才挂载(fail-closed)发现面元数据
 registerOAuthAuthorizeRoutes(app)   // RFC-023 PR-2a:GET /oauth/authorize 校验+SPA consent 交接(mint 无)
-registerOAuthApproveRoutes(app, { db, auth, generateId, requireHumanPresence, rateLimitOk })   // RFC-023 PR-2b:Passkey 门 consent → mint grant+code
+registerOAuthApproveRoutes(app, { db, auth, generateId, consumeGateToken, rateLimitOk })   // RFC-023 PR-2b:Passkey 门 consent → mint grant+code
 registerPublicUtilsRoutes(app, {
   db, MASTER_SEED, NODE_ENV, SERVICE_START_MS,
   rateLimitOk, generateManifest, getUser, logError,

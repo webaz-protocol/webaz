@@ -7,6 +7,9 @@
  * the gate is the key judge here and is NOT stubbed (only the browser-side ceremony is simulated by
  * inserting the token row it would mint). auth is injected via the deps seam (standard route pattern).
  *
+ * Gate has NO param bypass: the injected getProtocolParam returns 0 ('disabled') and every unauthorized
+ * mint attempt must still 412 — the route consumes gate tokens directly (Codex PR-2b P2 fix).
+ *
  * Usage: npm run test:oauth-approve
  */
 import express from 'express'
@@ -29,7 +32,7 @@ const GOOD = {
 
 const db = new Database(':memory:')
 initOAuthSchema(db); initAgentDelegationGrantsSchema(db); initWebauthnSchema(db)
-const hp = createHumanPresence(db, <T,>(_k: string, fb: T): T => fb)   // params at defaults → gate ENFORCED (default 1)
+const hp = createHumanPresence(db, <T,>(_k: string, _fb: T): T => 0 as T)   // params claim DISABLED — the mint gate must ignore params entirely (P2 fix: consumeGateToken direct)
 
 let gateSeq = 0
 /** Simulate the post-ceremony state: insert the gate-token row /api/webauthn/auth/finish would mint. */
@@ -53,7 +56,7 @@ async function main() {
   registerOAuthApproveRoutes(app, {
     db, auth,
     generateId: (p: string) => `${p}_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`,
-    requireHumanPresence: hp.requireHumanPresence,
+    consumeGateToken: hp.consumeGateToken,
     rateLimitOk: () => true,
   })
   const http = await new Promise<HttpServer>(r => { const s = app.listen(0, () => r(s)) })
@@ -67,7 +70,7 @@ async function main() {
 
   // ── 1. happy path: approve mints grant + code ──
   {
-    const tok = mintGateToken({ client_id: GOOD.client_id, scope: GOOD.scope, code_challenge: CHALLENGE })
+    const tok = mintGateToken({ client_id: GOOD.client_id, scope: GOOD.scope, code_challenge: CHALLENGE, redirect_uri: GOOD.redirect_uri, resource: GOOD.resource })
     const r = await post('/oauth/authorize/approve', { ...GOOD, webauthn_token: tok })
     const j = await r.json() as { redirect_to?: string }
     ok('1a. approve → 200 with redirect_to', r.status === 200 && typeof j.redirect_to === 'string')
@@ -91,19 +94,23 @@ async function main() {
   // ── 2. human gate (I-1) ──
   ok('2a. missing webauthn_token → 412, no mint', await (async () => { const r = await post('/oauth/authorize/approve', { ...GOOD }); return r.status === 412 && counts().grants === 1 })())
   ok('2b. token bound to DIFFERENT client rejected (purpose_data binding)', await (async () => {
-    const tok = mintGateToken({ client_id: 'other-client', scope: GOOD.scope, code_challenge: CHALLENGE })
+    const tok = mintGateToken({ client_id: 'other-client', scope: GOOD.scope, code_challenge: CHALLENGE, redirect_uri: GOOD.redirect_uri, resource: GOOD.resource })
     const r = await post('/oauth/authorize/approve', { ...GOOD, webauthn_token: tok }); return r.status === 412 && counts().grants === 1
   })())
   ok('2c. token with WRONG purpose rejected', await (async () => {
-    const tok = mintGateToken({ client_id: GOOD.client_id, scope: GOOD.scope, code_challenge: CHALLENGE }, 'agent_pair_approve')
+    const tok = mintGateToken({ client_id: GOOD.client_id, scope: GOOD.scope, code_challenge: CHALLENGE, redirect_uri: GOOD.redirect_uri, resource: GOOD.resource }, 'agent_pair_approve')
+    const r = await post('/oauth/authorize/approve', { ...GOOD, webauthn_token: tok }); return r.status === 412 && counts().grants === 1
+  })())
+  ok('2e. token bound to DIFFERENT redirect_uri rejected (approve-what-you-saw)', await (async () => {
+    const tok = mintGateToken({ client_id: GOOD.client_id, scope: GOOD.scope, code_challenge: CHALLENGE, redirect_uri: 'http://127.0.0.1:8787/callback', resource: GOOD.resource })
     const r = await post('/oauth/authorize/approve', { ...GOOD, webauthn_token: tok }); return r.status === 412 && counts().grants === 1
   })())
   ok("2d. another user's token rejected", await (async () => {
-    const tok = mintGateToken({ client_id: GOOD.client_id, scope: GOOD.scope, code_challenge: CHALLENGE }, 'oauth_consent_approve', 'usr_other')
+    const tok = mintGateToken({ client_id: GOOD.client_id, scope: GOOD.scope, code_challenge: CHALLENGE, redirect_uri: GOOD.redirect_uri, resource: GOOD.resource }, 'oauth_consent_approve', 'usr_other')
     const r = await post('/oauth/authorize/approve', { ...GOOD, webauthn_token: tok }); return r.status === 412 && counts().grants === 1
   })())
   // ── 3. request re-validation (untrusted SPA hand-off) ──
-  const withTok = (over: Record<string, unknown>) => ({ ...GOOD, ...over, webauthn_token: mintGateToken({ client_id: GOOD.client_id, scope: GOOD.scope, code_challenge: CHALLENGE }) })
+  const withTok = (over: Record<string, unknown>) => ({ ...GOOD, ...over, webauthn_token: mintGateToken({ client_id: GOOD.client_id, scope: GOOD.scope, code_challenge: CHALLENGE, redirect_uri: GOOD.redirect_uri, resource: GOOD.resource }) })
   ok('3a. tampered redirect_uri → 400, no mint', await (async () => { const r = await post('/oauth/authorize/approve', withTok({ redirect_uri: 'http://evil/cb' })); return r.status === 400 && counts().grants === 1 })())
   ok('3b. RISK/unknown scope → 400 (T8)', await (async () => { const r = await post('/oauth/authorize/approve', withTok({ scope: 'order:execute' })); return r.status === 400 && counts().grants === 1 })())
   ok('3c. wrong resource → 400 (I-3)', await (async () => { const r = await post('/oauth/authorize/approve', withTok({ resource: 'https://webaz.xyz/other' })); return r.status === 400 && counts().grants === 1 })())
@@ -124,7 +131,7 @@ async function main() {
     delete process.env.WEBAZ_OAUTH
     const { registerOAuthApproveRoutes: reg2 } = await import('../src/pwa/routes/oauth-approve.js')
     const app2 = express(); app2.use(express.json())
-    reg2(app2, { db, auth, generateId: (p: string) => `${p}_x`, requireHumanPresence: hp.requireHumanPresence, rateLimitOk: () => true })
+    reg2(app2, { db, auth, generateId: (p: string) => `${p}_x`, consumeGateToken: hp.consumeGateToken, rateLimitOk: () => true })
     const h2 = await new Promise<HttpServer>(r => { const s = app2.listen(0, () => r(s)) })
     const a2 = h2.address(); const b2 = `http://127.0.0.1:${typeof a2 === 'object' && a2 ? a2.port : 0}`
     const r = await fetch(`${b2}/oauth/authorize/approve`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer k_test' }, body: '{}' })

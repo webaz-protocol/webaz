@@ -7,8 +7,11 @@
  * consumed by the SPA — they return { redirect_to }, the SPA performs the navigation.
  *
  * Security decisions enforced (RFC-023 §4/§6):
- *   I-1   approval REQUIRES live human presence (Passkey gate token, single-use, purpose-bound to
- *         this client_id+scope+code_challenge — a token minted for one consent cannot approve another)
+ *   I-1   approval REQUIRES live human presence — the gate consumes the token DIRECTLY
+ *         (consumeGateToken, not the param-toggleable requireHumanPresence wrapper: a credential
+ *         mint must not be disable-able by a protocol param — Codex PR-2b P2). Token is single-use
+ *         and purpose-bound to the FULL request (client_id+scope+code_challenge+redirect_uri+resource)
+ *         so what the human approved is exactly what mints (Codex PR-2b P2: redirect_uri binding).
  *   I-5   token-for-grant: approve mints an RFC-020 agent_delegation_grants row; the OAuth code/token
  *         (PR-3) is a credential FOR that grant. Capabilities are the OAuth-scope mapping, re-validated
  *         through validateRequestedCapabilities — defense-in-depth: only SAFE tiers can enter (T8/I-6).
@@ -42,7 +45,7 @@ export interface OAuthApproveDeps {
   db: Database.Database
   auth: (req: Request, res: Response) => Record<string, unknown> | null
   generateId: (prefix: string) => string
-  requireHumanPresence: HumanPresence['requireHumanPresence']
+  consumeGateToken: HumanPresence['consumeGateToken']
   rateLimitOk: (key: string, max?: number, windowMs?: number) => boolean
 }
 
@@ -62,7 +65,7 @@ export function registerOAuthApproveRoutes(app: Express, deps: OAuthApproveDeps)
     console.error('[oauth] REFUSING to mount /oauth/authorize/approve: WEBAZ_MODE=sandbox must never expose OAuth')
     return
   }
-  const { db, auth, generateId, requireHumanPresence, rateLimitOk } = deps
+  const { db, auth, generateId, consumeGateToken, rateLimitOk } = deps
 
   app.post('/oauth/authorize/approve', (req: Request, res: Response) => {
     const user = auth(req, res); if (!user) return
@@ -79,16 +82,17 @@ export function registerOAuthApproveRoutes(app: Express, deps: OAuthApproveDeps)
     }, oauthClients())
     if (!v.ok) return void res.status(400).json({ error: v.error_description, error_code: v.error.toUpperCase() })
 
-    // I-1: live Passkey, purpose-bound to THIS exact consent request (client+scope+challenge).
-    const hp = requireHumanPresence(
-      user.id as string, 'oauth_consent_approve',
-      asStr(b.webauthn_token), 'require_human_presence_for_oauth_consent',
+    // I-1: live Passkey — token consumed DIRECTLY (no param toggle can disable a credential mint),
+    // purpose-bound to the FULL consent request the human saw (incl. redirect_uri + resource).
+    const gate = consumeGateToken(
+      user.id as string, asStr(b.webauthn_token), 'oauth_consent_approve',
       (data) => {
         const d = data as Record<string, unknown> | null
-        return !!d && d.client_id === v.client.client_id && d.scope === v.scopes.join(' ') && d.code_challenge === v.code_challenge
+        return !!d && d.client_id === v.client.client_id && d.scope === v.scopes.join(' ')
+          && d.code_challenge === v.code_challenge && d.redirect_uri === v.redirect_uri && d.resource === v.resource
       },
     )
-    if (!hp.ok) return void res.status(412).json({ error: hp.reason, error_code: hp.error_code })
+    if (!gate.ok) return void res.status(412).json({ error: gate.reason || 'Passkey verification required', error_code: 'HUMAN_PRESENCE_REQUIRED' })
 
     // OAuth scopes → SAFE capabilities; re-classified so a mapping mistake can never mint risk (I-6).
     const caps = [...new Set(v.scopes.flatMap(s => OAUTH_SCOPE_CAPABILITIES[s] ?? []))].map(capability => ({ capability }))
