@@ -38,6 +38,16 @@ function asStr(v: unknown): string | undefined {
 }
 function sha256hex(s: string): string { return createHash('sha256').update(s).digest('hex') }
 
+// 客户端 IP 真相源(同 mcp-remote.ts):CF 后 req.ip 塌缩成边缘 IP → 优先取 CF-Connecting-IP(CF 重写,
+// 经 CF 不可伪造;校验 IP 形态防任意字符串桶键)。★残余(已知并接受,同 mcp-remote):直连 origin 可伪造
+// 该头规避限流 —— 仅 DoS 规避,非鉴权风险(code 256-bit+60s TTL+单次焚毁才是主控);彻底闭合=cf-origin-guard enforce。
+const IP_RE = /^[0-9a-fA-F:.]{3,45}$/
+function clientIp(req: Request): string {
+  const cf = String(req.headers['cf-connecting-ip'] || '').trim()
+  if (cf && IP_RE.test(cf)) return cf
+  return req.ip || 'unknown'
+}
+
 export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): void {
   if (process.env.WEBAZ_OAUTH !== '1') return                 // fail-closed
   if (process.env.WEBAZ_MODE === 'sandbox') {
@@ -46,13 +56,25 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
   }
   const { rateLimitOk } = deps
 
-  app.post('/oauth/token', express.urlencoded({ extended: false }), async (req: Request, res: Response) => {
+  // P2(Codex PR-3):parser 错误也必须守 RFC 6749 错误形状 + no-store —— 显式 2kb 上限(合法兑换请求
+  // 远小于此),parse 失败经错误中间件转 invalid_request JSON,不落 express 默认 HTML 400/413。
+  const tokenBodyParser = express.urlencoded({ extended: false, limit: '2kb' })
+  const parseGuard = (req: Request, res: Response, next: (e?: unknown) => void): void => {
+    tokenBodyParser(req, res, (e?: unknown) => {
+      if (e) {
+        res.setHeader('Cache-Control', 'no-store'); res.setHeader('Pragma', 'no-cache')
+        return void res.status(400).json({ error: 'invalid_request', error_description: 'malformed or oversized request body' })
+      }
+      next()
+    })
+  }
+  app.post('/oauth/token', parseGuard, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store')
     res.setHeader('Pragma', 'no-cache')
     const err = (status: number, error: string, error_description: string): void =>
       void res.status(status).json({ error, error_description })   // RFC 6749 §5.2 shape
 
-    if (!rateLimitOk(`oauth_token:${req.ip}`, 30, 60_000)) return err(429, 'invalid_request', 'rate limited')
+    if (!rateLimitOk(`oauth_token:${clientIp(req)}`, 30, 60_000)) return err(429, 'invalid_request', 'rate limited')
     const b = (req.body || {}) as Record<string, unknown>
 
     if (asStr(b.grant_type) !== 'authorization_code') return err(400, 'unsupported_grant_type', 'only grant_type=authorization_code is supported')
@@ -77,7 +99,7 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
     if (claimed.changes !== 1) {
       // Replay of an ALREADY-consumed code → the code leaked; revoke that grant's tokens (RFC 6749 §10.5).
       const revoked = await dbRun(
-        'UPDATE oauth_access_tokens SET revoked_at = ? WHERE revoked_at IS NULL AND grant_id = (SELECT grant_id FROM oauth_auth_codes WHERE code_hash = ?)',
+        'UPDATE oauth_access_tokens SET revoked_at = ? WHERE revoked_at IS NULL AND grant_id = (SELECT grant_id FROM oauth_auth_codes WHERE code_hash = ? AND consumed_at IS NOT NULL)',
         [nowIso, codeHash],
       )
       if (revoked.changes > 0) console.error(`[oauth] auth-code replay detected — revoked ${revoked.changes} token(s) on the code's grant`)

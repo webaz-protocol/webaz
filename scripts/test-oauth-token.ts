@@ -46,7 +46,8 @@ async function main() {
   process.env.WEBAZ_OAUTH = '1'; delete process.env.WEBAZ_MODE; process.env.WEBAZ_OAUTH_DEV_CLIENT = '1'
   const { registerOAuthTokenRoutes } = await import('../src/pwa/routes/oauth-token.js')
   const app = express()
-  registerOAuthTokenRoutes(app, { rateLimitOk: () => true })
+  const rlKeys: string[] = []
+  registerOAuthTokenRoutes(app, { rateLimitOk: (k: string) => { rlKeys.push(k); return true } })
   const http = await new Promise<HttpServer>(r => { const s = app.listen(0, () => r(s)) })
   const addr = http.address(); const base = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`
   const exchange = (params: Record<string, string>) =>
@@ -99,9 +100,29 @@ async function main() {
   ok('4a. wrong grant_type → unsupported_grant_type', await (async () => { const r = await exchange({ grant_type: 'client_credentials', client_id: CLIENT }); return r.status === 400 && ((await r.json()) as { error: string }).error === 'unsupported_grant_type' })())
   ok('4b. unknown client → 401 invalid_client', await (async () => { const { code } = seed(); const r = await exchange({ ...good(code), client_id: 'ghost' }); return r.status === 401 })())
   ok('4c. unknown code → invalid_grant (no oracle)', await (async () => { const r = await exchange(good('oac_' + 'f'.repeat(64))); return r.status === 400 && ((await r.json()) as { error: string }).error === 'invalid_grant' })())
+  // ── 5. Codex PR-3 fixes ──
+  ok('5a. oversized body → RFC-shaped invalid_request + no-store (not HTML 413)', await (async () => {
+    const r = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'a='.padEnd(4096, 'x') })
+    const ct = r.headers.get('content-type') || ''
+    const j = ct.includes('json') ? await r.json() as { error?: string } : {}
+    return r.status === 400 && j.error === 'invalid_request' && (r.headers.get('cache-control') || '').includes('no-store')
+  })())
+  ok('5b. expired-UNCONSUMED code replay does NOT revoke the grant tokens (no DoS)', await (async () => {
+    const { code, grantId } = seed({ codeExpMs: -1000 })
+    db.prepare('INSERT INTO oauth_access_tokens (token_hash, grant_id, client_id, scope, aud, expires_at) VALUES (?,?,?,?,?,?)')
+      .run(sha('some_other_token'), grantId, CLIENT, 'read', RESOURCE, new Date(Date.now() + 60_000).toISOString())
+    const r = await exchange(good(code))
+    const tok = db.prepare('SELECT revoked_at FROM oauth_access_tokens WHERE grant_id = ?').get(grantId) as { revoked_at: string | null }
+    return r.status === 400 && tok.revoked_at === null
+  })())
+  ok('5c. rate-limit bucket keys on CF-Connecting-IP when present (P1)', await (async () => {
+    rlKeys.length = 0
+    await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'cf-connecting-ip': '203.0.113.9' }, body: 'grant_type=x' })
+    return rlKeys.length === 1 && rlKeys[0] === 'oauth_token:203.0.113.9'
+  })())
   http.close()
 
-  // ── 5. fail-closed ──
+  // ── 6. fail-closed ──
   {
     delete process.env.WEBAZ_OAUTH
     const { registerOAuthTokenRoutes: reg2 } = await import('../src/pwa/routes/oauth-token.js')
@@ -109,7 +130,7 @@ async function main() {
     const h2 = await new Promise<HttpServer>(r => { const s = app2.listen(0, () => r(s)) })
     const a2 = h2.address(); const b2 = `http://127.0.0.1:${typeof a2 === 'object' && a2 ? a2.port : 0}`
     const r = await fetch(`${b2}/oauth/token`, { method: 'POST' })
-    ok('5. flag off → 404', r.status === 404)
+    ok('6. flag off → 404', r.status === 404)
     h2.close()
   }
 
