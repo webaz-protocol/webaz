@@ -11,6 +11,17 @@ requires-python = ">=3.10"
 license = "BUSL-1.1"
 authors = [{ name = "WebAZ" }]
 keywords = ["mcp", "agent", "commerce", "webaz", "model-context-protocol"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Framework :: AsyncIO",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Operating System :: OS Independent",
+]
 dependencies = ["mcp>=1.0"]
 
 [project.urls]
