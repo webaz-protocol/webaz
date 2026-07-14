@@ -871,7 +871,7 @@ async function renderTrustedMyHome(app, role) {
     <div class="card" onclick="location.hash='${hash}'" style="padding:14px;cursor:pointer;display:flex;align-items:center;gap:10px;min-height:64px;position:relative">
       <div style="font-size:24px;flex-shrink:0">${icon}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
+        <div class="hub-action-title">${label}</div>
         ${sub ? `<div style="font-size:11px;color:#9ca3af;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sub}</div>` : ''}
       </div>
       ${badge ? `<div style="background:#dc2626;color:#fff;border-radius:99px;font-size:10px;padding:2px 7px;min-width:18px;text-align:center;flex-shrink:0">${badge}</div>` : ''}
@@ -986,7 +986,7 @@ async function renderTrustedMyHome(app, role) {
     <details style="margin:14px 0 10px;background:#fff;border:1px solid #e5e7eb;border-radius:8px">
       <summary style="padding:10px 14px;cursor:pointer;font-size:13px;color:#6b7280;font-weight:600;display:flex;justify-content:space-between;align-items:center">
         <span>🌸 ${t('公益')}</span>
-        <span style="font-size:11px;color:#9ca3af">${rep.badge_tier && rep.badge_tier !== 'none' ? rep.badge_tier + ' · ' : ''}${t('威望')} ${Number(rep.prestige_score||0).toFixed(0)}</span>
+        <span style="font-size:11px;color:#596570">${rep.badge_tier && rep.badge_tier !== 'none' ? rep.badge_tier + ' · ' : ''}${t('威望')} ${Number(rep.prestige_score||0).toFixed(0)}</span>
       </summary>
       <div style="padding:8px;border-top:1px solid #f3f4f6;display:grid;grid-template-columns:1fr 1fr;gap:8px">
         ${card('🌸', t('许愿池'), pendingRepays ? pendingRepays + ' ' + t('待还愿') : t('浏览许愿 / 为他人圆梦'), '#wishes', pendingRepays || '')}
@@ -1143,7 +1143,7 @@ async function renderSellerMyHome(app) {
   const sellOrders = orders.filter(o => o.seller_id === myUid)
   const toShip = sellOrders.filter(o => ['paid','accepted'].includes(o.status)).length
   const inDispute = sellOrders.filter(o => o.status === 'disputed').length
-  const rfqs = Array.isArray(rfqsRes) ? rfqsRes : []
+  const rfqs = Array.isArray(rfqsRes) ? rfqsRes : (rfqsRes?.items || [])
   const openRfqs = rfqs.filter(r => r.status === 'open').length
   const mySkills = Array.isArray(skillsRes) ? skillsRes : []
   const skillCount = mySkills.length
@@ -1160,17 +1160,17 @@ async function renderSellerMyHome(app) {
   const agentBandColor = { legend:'#dc2626', quality:'#9333ea', trusted:'#4f46e5', new:'#9ca3af' }[agentLevel] || '#6b7280'
 
   const card = (icon, label, sub, hash, badge, accent) => `
-    <div class="card" onclick="location.hash='${hash}'" style="padding:14px;cursor:pointer;display:flex;align-items:center;gap:10px;min-height:64px;position:relative${accent ? ';border-left:3px solid '+accent : ''}">
-      <div style="font-size:24px;flex-shrink:0">${icon}</div>
+    <a class="card hub-action-card" href="${hash}" style="${accent ? '--hub-accent:'+accent : ''}">
+      <div class="hub-action-icon">${icon}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
-        ${sub ? `<div style="font-size:11px;color:#9ca3af;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sub}</div>` : ''}
+        <div class="hub-action-title">${label}</div>
+        ${sub ? `<div class="hub-action-subtitle">${sub}</div>` : ''}
       </div>
       ${badge ? `<div style="background:#dc2626;color:#fff;border-radius:99px;font-size:10px;padding:2px 7px;min-width:18px;text-align:center;flex-shrink:0">${badge}</div>` : ''}
-    </div>`
+    </a>`
 
   const header = `
-    <div class="card" style="padding:16px;margin-bottom:14px;background:linear-gradient(135deg,#7c2d12,#9a3412);color:#fff">
+    <div class="card profile-summary profile-summary--seller">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         <div style="font-size:28px">🏪</div>
         <div style="flex:1">
@@ -1178,22 +1178,22 @@ async function renderSellerMyHome(app) {
           <div style="font-size:11px;opacity:0.85;margin-top:2px">@${escHtml(state.user.handle || '')} · ${t('卖家')}</div>
         </div>
       </div>
-      <div onclick="location.hash='#wallet'" style="cursor:pointer;padding:10px 12px;background:rgba(255,255,255,0.12);border-radius:8px;display:flex;justify-content:space-between;align-items:center">
+      <button type="button" class="profile-balance" onclick="location.hash='#wallet'">
         <div>
-          <div style="font-size:10px;opacity:0.85;text-transform:uppercase;letter-spacing:0.5px">${t('钱包余额')}</div>
+          <div style="font-size:10px;opacity:0.85;text-transform:uppercase;letter-spacing:0">${t('钱包余额')}</div>
           <div style="font-size:22px;font-weight:800;line-height:1.2">${Number(wal.balance).toFixed(2)} <span style="font-size:13px;font-weight:600">WAZ</span></div>
           ${wal.staked > 0 ? `<div style="font-size:10px;opacity:0.75;margin-top:2px">${t('已锁定')} ${Number(wal.staked).toFixed(2)} WAZ</div>` : ''}
         </div>
         <div style="font-size:18px;opacity:0.85">→</div>
-      </div>
+      </button>
     </div>
   `
 
   // 2026-05-24 agentDash 移除 — Advanced sub-tab 的 heroAgent 已展示同样 Agent trust + skill 统计
 
   const workGrid = `
-    <div style="font-size:12px;color:#6b7280;font-weight:600;margin:14px 0 6px">⚡ ${t('工作中心')}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+    <div class="hub-section-title">⚡ ${t('工作中心')}</div>
+    <div class="hub-grid">
       ${card('📦', t('订单管理'), toShip > 0 ? toShip + ' ' + t('待发货') : t('全部已发货'), '#orders', toShip || '', toShip > 0 ? '#f59e0b' : '')}
       ${card('💎', t('抢单（RFQ）'), openRfqs > 0 ? openRfqs + ' ' + t('个公开求购') : t('暂无求购'), '#rfqs', openRfqs > 0 ? String(openRfqs) : '')}
       ${card('🏪', t('店铺管理'), t('商品 / 营销 / Skill'), '#seller')}
@@ -1208,8 +1208,8 @@ async function renderSellerMyHome(app) {
 
   // 销售扩展（seller 限定的销售形式 — 拍卖 / 跟卖 / P2P / 链接对标 / 二手）
   const marketGrid = `
-    <div style="font-size:12px;color:#6b7280;font-weight:600;margin:14px 0 6px">🛍️ ${t('销售扩展')}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+    <div class="hub-section-title">🛍️ ${t('销售扩展')}</div>
+    <div class="hub-grid">
       ${card('🔨', t('加价竞拍'), t('限量稀缺 · 发起拍卖'), '#auctions')}
       ${card('🏬', t('跟卖加入'), t('多商家同款 · 抢市占'), '#listings')}
       ${card('📋', t('我的跟卖'), t('已上架 listings · 价格竞争位'), '#listings/mine')}
@@ -1224,16 +1224,16 @@ async function renderSellerMyHome(app) {
 
   // 卖家账户：只留钱包；个人资料/设置已在 Settings sub-tab
   const commsGrid = `
-    <div style="font-size:12px;color:#6b7280;font-weight:600;margin:14px 0 6px">💰 ${t('账户')}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+    <div class="hub-section-title">💰 ${t('账户')}</div>
+    <div class="hub-grid">
       ${card('💰', t('钱包'), `${Number(wal.balance).toFixed(2)} WAZ`, '#wallet')}
     </div>
   `
 
   // 社交与发现（卖家弱网络 — 同城商家 + 排行）
   const socialGrid = `
-    <div style="font-size:12px;color:#6b7280;font-weight:600;margin:14px 0 6px">🧭 ${t('社交与发现')}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+    <div class="hub-section-title">🧭 ${t('社交与发现')}</div>
+    <div class="hub-grid">
       ${card('📍', t('附近'), t('同城节点 · 面交可达'), '#nearby')}
       ${card('🏆', t('排行榜'), t('热门商品 / 创作者 / 威望'), '#leaderboard')}
     </div>
@@ -1244,7 +1244,7 @@ async function renderSellerMyHome(app) {
     <details style="margin:14px 0 10px;background:#fff;border:1px solid #e5e7eb;border-radius:8px">
       <summary style="padding:10px 14px;cursor:pointer;font-size:13px;color:#6b7280;font-weight:600;display:flex;justify-content:space-between;align-items:center">
         <span>🌸 ${t('公益')}</span>
-        <span style="font-size:11px;color:#9ca3af">${rep.badge_tier && rep.badge_tier !== 'none' ? rep.badge_tier + ' · ' : ''}${t('威望')} ${Number(rep.prestige_score||0).toFixed(0)}</span>
+        <span style="font-size:11px;color:#596570">${rep.badge_tier && rep.badge_tier !== 'none' ? rep.badge_tier + ' · ' : ''}${t('威望')} ${Number(rep.prestige_score||0).toFixed(0)}</span>
       </summary>
       <div style="padding:8px;border-top:1px solid #f3f4f6;display:grid;grid-template-columns:1fr 1fr;gap:8px">
         ${card('🌸', t('许愿池'), pendingRepays ? pendingRepays + ' ' + t('待还愿') : t('浏览许愿 / 为他人圆梦'), '#wishes', pendingRepays || '')}
@@ -1264,7 +1264,7 @@ async function renderSellerMyHome(app) {
   ` : ''
 
   // 顺序：工作中心 → 销售扩展 → 效率工具 → 资金/沟通 → 信任与协议（条件显示）→ 社交发现 → 公益折叠
-  app.innerHTML = shell(mySubTabsHTML('dashboard') + header + workGrid + ((state.canArbitrate && role !== 'arbitrator' && window.arbTaishCard) ? window.arbTaishCard() : '') + marketGrid + commsGrid + trustGrid + socialGrid + charitySection, 'me')
+  app.innerHTML = shell('<section class="me-dashboard me-dashboard--seller">' + mySubTabsHTML('dashboard') + header + workGrid + ((state.canArbitrate && role !== 'arbitrator' && window.arbTaishCard) ? window.arbTaishCard() : '') + marketGrid + commsGrid + trustGrid + socialGrid + charitySection + '</section>', 'me')
 }
 
 // ─── 买家 #me 专业版（聚焦购物/订单/AI；慈善折叠次要） ────────
@@ -1328,17 +1328,17 @@ async function renderBuyerMyHome(app) {
   const arbPending = arbState === 'pending'
 
   const card = (icon, label, sub, hash, badge, accent) => `
-    <div class="card" onclick="location.hash='${hash}'" style="padding:14px;cursor:pointer;display:flex;align-items:center;gap:10px;min-height:64px;position:relative${accent ? ';border-left:3px solid '+accent : ''}">
-      <div style="font-size:24px;flex-shrink:0">${icon}</div>
+    <a class="card hub-action-card" href="${hash}" style="${accent ? '--hub-accent:'+accent : ''}">
+      <div class="hub-action-icon">${icon}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
-        ${sub ? `<div style="font-size:11px;color:#9ca3af;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sub}</div>` : ''}
+        <div class="hub-action-title">${label}</div>
+        ${sub ? `<div class="hub-action-subtitle">${sub}</div>` : ''}
       </div>
       ${badge ? `<div style="background:#dc2626;color:#fff;border-radius:99px;font-size:10px;padding:2px 7px;min-width:18px;text-align:center;flex-shrink:0">${badge}</div>` : ''}
-    </div>`
+    </a>`
 
   const header = `
-    <div class="card" style="padding:16px;margin-bottom:14px;background:linear-gradient(135deg,#1e3a8a,#1e40af);color:#fff">
+    <div class="card profile-summary profile-summary--buyer">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         <div style="font-size:28px">🛒</div>
         <div style="flex:1">
@@ -1346,14 +1346,14 @@ async function renderBuyerMyHome(app) {
           <div style="font-size:11px;opacity:0.85;margin-top:2px">@${escHtml(state.user.handle || '')} · ${t('买家')}</div>
         </div>
       </div>
-      <div onclick="location.hash='#wallet'" style="cursor:pointer;padding:10px 12px;background:rgba(255,255,255,0.12);border-radius:8px;display:flex;justify-content:space-between;align-items:center">
+      <button type="button" class="profile-balance" onclick="location.hash='#wallet'">
         <div>
-          <div style="font-size:10px;opacity:0.85;text-transform:uppercase;letter-spacing:0.5px">${t('钱包余额')}</div>
+          <div style="font-size:10px;opacity:0.85;text-transform:uppercase;letter-spacing:0">${t('钱包余额')}</div>
           <div style="font-size:22px;font-weight:800;line-height:1.2">${Number(wal.balance).toFixed(2)} <span style="font-size:13px;font-weight:600">WAZ</span></div>
           ${wal.staked > 0 ? `<div style="font-size:10px;opacity:0.75;margin-top:2px">${t('已锁定')} ${Number(wal.staked).toFixed(2)} WAZ</div>` : ''}
         </div>
         <div style="font-size:18px;opacity:0.85">→</div>
-      </div>
+      </button>
     </div>
   `
 
@@ -1361,8 +1361,8 @@ async function renderBuyerMyHome(app) {
 
   // 我的购物 — 个人交易记录 + 个人资产（去掉发现页内容：限时促销/群组团购/精选/评测/动态/AI 推荐 → 发现 tab）
   const shopGrid = `
-    <div style="font-size:12px;color:#6b7280;font-weight:600;margin:14px 0 6px">🛒 ${t('我的购物')}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+    <div class="hub-section-title">🛒 ${t('我的购物')}</div>
+    <div class="hub-grid">
       ${card('📦', t('我的订单'), toPay > 0 ? toPay + ' ' + t('待付款') : (toReceive > 0 ? toReceive + ' ' + t('待收货') : t('全部完成')), '#orders', (toPay || toReceive) || '', toPay > 0 ? '#dc2626' : (toReceive > 0 ? '#f59e0b' : ''))}
       ${card('🧺', t('购物车'), state.cartCount ? `${state.cartCount} ${t('件')}` : t('空'), '#cart', state.cartCount || '')}
       ${card('❤', t('心愿单'), t('喜欢的商品 · 降价提醒'), '#wishlist')}
@@ -1377,8 +1377,8 @@ async function renderBuyerMyHome(app) {
 
   // 我的市场记录 — buyer 视角的 my-* 入口（不含跟卖：跟卖是卖家行为；不含拍卖：buyer 没有 auction/mine 概念）
   const marketGrid = `
-    <div style="font-size:12px;color:#6b7280;font-weight:600;margin:14px 0 6px">📋 ${t('我的市场记录')}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+    <div class="hub-section-title">📋 ${t('我的市场记录')}</div>
+    <div class="hub-grid">
       ${card('📝', t('我的笔记'), state.user?.mlm_ui_visible !== false ? t('购买体验分享 · 返佣') : t('购买体验分享 · 公益贡献'), '#me/notes')}
       ${card('💬', t('我的求购'), t('我发布的求购单'), '#rfq/mine')}
       ${card('♻️', t('我的二手'), t('我发布的闲置'), '#secondhand/mine')}
@@ -1388,8 +1388,8 @@ async function renderBuyerMyHome(app) {
 
   // 2026-05-24 Skill / Auto-bid / Timeline 都已在 Advanced sub-tab，此处仅留高频 签到
   const aiGrid = `
-    <div style="font-size:12px;color:#6b7280;font-weight:600;margin:14px 0 6px">🎁 ${t('日常')}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+    <div class="hub-section-title">🎁 ${t('日常')}</div>
+    <div class="hub-grid">
       ${card('🎁', t('签到 / 任务'), t('每日 WAZ + 成长奖励'), '#checkin')}
     </div>
   `
@@ -1404,7 +1404,7 @@ async function renderBuyerMyHome(app) {
     <details style="margin:14px 0 10px;background:#fff;border:1px solid #e5e7eb;border-radius:8px">
       <summary style="padding:10px 14px;cursor:pointer;font-size:13px;color:#6b7280;font-weight:600;display:flex;justify-content:space-between;align-items:center">
         <span>🌸 ${t('公益')}</span>
-        <span style="font-size:11px;color:#9ca3af">${rep.badge_tier && rep.badge_tier !== 'none' ? rep.badge_tier + ' · ' : ''}${t('威望')} ${Number(rep.prestige_score||0).toFixed(0)}</span>
+        <span style="font-size:11px;color:#596570">${rep.badge_tier && rep.badge_tier !== 'none' ? rep.badge_tier + ' · ' : ''}${t('威望')} ${Number(rep.prestige_score||0).toFixed(0)}</span>
       </summary>
       <div style="padding:8px;border-top:1px solid #f3f4f6;display:grid;grid-template-columns:1fr 1fr;gap:8px">
         ${card('🌸', t('许愿池'), pendingRepays ? pendingRepays + ' ' + t('待还愿') : t('浏览许愿 / 为他人圆梦'), '#wishes', pendingRepays || '')}
@@ -1501,8 +1501,8 @@ async function renderBuyerMyHome(app) {
 
   // 账户与配置 — 个人配置集中区
   const settingsGrid = `
-    <div style="font-size:12px;color:#6b7280;font-weight:600;margin:14px 0 6px">⚙️ ${t('账户与配置')}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+    <div class="hub-section-title">⚙️ ${t('账户与配置')}</div>
+    <div class="hub-grid">
       ${card('📍', t('收货地址簿'), t('常用地址 · 一键填充'), '#addresses')}
       ${card('🆔', t('实名认证'), t('提升账户可信度'), '#kyc')}
       ${card('🚫', t('我的黑名单'), t('屏蔽不想看的人'), '#blocklist')}
@@ -1512,7 +1512,7 @@ async function renderBuyerMyHome(app) {
   `
 
   // 顺序：我的购物 → 我的市场记录 → Agent 进阶 → 通信 → 信任与协议（条件显示）→ 公益折叠 → 账户与配置
-  app.innerHTML = shell(mySubTabsHTML('dashboard') + header + notePromptPlaceholder('me') + shopGrid + marketGrid + aiGrid + commsGrid + trustGrid + ((state.canArbitrate && !isExternalArb && window.arbTaishCard) ? window.arbTaishCard() : '') + socialGrid + charitySection + settingsGrid, 'me')   // isExternalArb 已在"外部仲裁员·已批准"区渲染仲裁台 → 兜底卡不再重复(走查:同页两张仲裁台卡)
+  app.innerHTML = shell('<section class="me-dashboard me-dashboard--buyer">' + mySubTabsHTML('dashboard') + header + notePromptPlaceholder('me') + shopGrid + marketGrid + aiGrid + commsGrid + trustGrid + ((state.canArbitrate && !isExternalArb && window.arbTaishCard) ? window.arbTaishCard() : '') + socialGrid + charitySection + settingsGrid + '</section>', 'me')   // isExternalArb 已在"外部仲裁员·已批准"区渲染仲裁台 → 兜底卡不再重复(走查:同页两张仲裁台卡)
   hydrateNotePrompt('me')
 }
 
@@ -1521,14 +1521,14 @@ async function renderBuyerMyHome(app) {
 window.mySubTabsHTML = function(active) {
   const tab = (key, icon, label) => {
     const isActive = active === key
-    return `<button onclick="navigate('#me${key === 'dashboard' ? '' : '/' + key}')" style="
+    return `<button class="profile-tab ${isActive ? 'active' : ''}" onclick="navigate('#me${key === 'dashboard' ? '' : '/' + key}')" style="
       flex:1;background:${isActive ? '#4f46e5' : '#fff'};color:${isActive ? '#fff' : '#374151'};
       border:1px solid ${isActive ? '#4f46e5' : '#e5e7eb'};border-radius:99px;
       padding:8px 4px;font-size:12px;font-weight:600;cursor:pointer;
       display:flex;align-items:center;justify-content:center;gap:5px;min-width:0
     ">${icon}<span>${label}</span></button>`
   }
-  return `<div style="display:flex;gap:6px;margin-bottom:14px;position:sticky;top:60px;z-index:5;background:rgba(249,250,251,0.95);backdrop-filter:blur(8px);padding:8px 0">
+  return `<div class="profile-tabs" style="display:flex;gap:6px;margin-bottom:14px;position:sticky;top:60px;z-index:5;background:rgba(249,250,251,0.95);backdrop-filter:blur(8px);padding:8px 0">
     ${tab('dashboard', '🏠', t('面板'))}
     ${tab('settings',  '⚙️', t('设置'))}
     ${tab('advanced',  '🚀', t('高级'))}
