@@ -56,11 +56,15 @@ export async function oauthClients(): Promise<OAuthClient[]> {
 
 // RFC-024 T3 — redirect_uri policy: https OR loopback (any port); reject wildcards, fragments,
 // userinfo, non-http(s) schemes. Same rule at registration AND (via exact-match) at /authorize.
+// A syntactically valid host: DNS name (letters/digits/dot/hyphen), IPv4, or bracketed IPv6.
+// Rejects wildcards (`*.evil`), spaces, and other junk Node's URL leaves in `hostname` (Codex P2).
+const HOST_RE = /^(?:\[[0-9a-fA-F:]+\]|[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*)$/
 export function isRegisterableRedirectUri(uri: unknown): boolean {
   if (typeof uri !== 'string' || uri.length === 0 || uri.length > 2000) return false
   let u: URL
   try { u = new URL(uri) } catch { return false }
   if (u.hash || u.username || u.password) return false                       // no fragment / userinfo
+  if (!HOST_RE.test(u.hostname)) return false                                // no wildcard / malformed host
   if (u.protocol === 'https:') return true
   if (u.protocol === 'http:') return u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]' || u.hostname === '::1'
   return false                                                               // no custom / non-http(s) schemes (v1)

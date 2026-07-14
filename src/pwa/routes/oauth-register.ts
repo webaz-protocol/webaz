@@ -48,7 +48,12 @@ export function registerOAuthRegisterRoutes(app: Express, deps: OAuthRegisterDep
     const err = (status: number, error: string, error_description: string): void =>
       void res.status(status).json({ error, error_description })
 
+    // Per-IP limit (validated CF-Connecting-IP). Residual: a direct-origin attacker bypassing CF can
+    //   rotate the header — same known residual as /mcp & /token (needs cf-origin-guard enforce).
+    // Defense-in-depth for THIS row-creating endpoint (Codex P2): a GLOBAL cap bounds total
+    //   oauth_clients growth regardless of IP spoofing; the 30d never-authorized sweep bounds the rest.
     if (!rateLimitOk(`oauth_register:${clientIp(req)}`, 10, 60_000)) return err(429, 'invalid_request', 'rate limited')
+    if (!rateLimitOk('oauth_register:global', 60, 60_000)) return err(429, 'invalid_request', 'registration temporarily rate limited')
     const b = (req.body || {}) as Record<string, unknown>
 
     // redirect_uris: required, 1..MAX, each https-or-loopback (T3)

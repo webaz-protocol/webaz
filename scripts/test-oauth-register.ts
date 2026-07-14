@@ -27,6 +27,10 @@ ok('1d. fragment REJECTED', !isRegisterableRedirectUri('https://c.example/cb#fra
 ok('1e. userinfo REJECTED', !isRegisterableRedirectUri('https://user:pw@c.example/cb'))
 ok('1f. custom scheme REJECTED (v1)', !isRegisterableRedirectUri('cursor://cb') && !isRegisterableRedirectUri('javascript:alert(1)'))
 ok('1g. garbage / empty / overlong REJECTED', !isRegisterableRedirectUri('not a url') && !isRegisterableRedirectUri('') && !isRegisterableRedirectUri('https://c.example/' + 'a'.repeat(2001)))
+// Codex P2a: wildcard / malformed https host must be rejected (was accepted before HOST_RE)
+ok('1h. wildcard https host REJECTED', !isRegisterableRedirectUri('https://*.evil.example/cb') && !isRegisterableRedirectUri('https://foo.*.example/cb'))
+ok('1i. valid IPv4 / bracketed IPv6 loopback accepted', isRegisterableRedirectUri('http://[::1]:9/cb') && isRegisterableRedirectUri('https://1.2.3.4/cb'))
+ok('1j. subdomain + hyphen hosts accepted (normal DNS)', isRegisterableRedirectUri('https://app.my-connector.example/cb'))
 
 const db = new Database(':memory:')
 initOAuthSchema(db)
@@ -78,6 +82,7 @@ async function main() {
   ok('4d. confidential client (auth_method != none) rejected', (await (await reg(base, { redirect_uris: ['https://c.example/cb'], token_endpoint_auth_method: 'client_secret_basic' })).json() as { error: string }).error === 'invalid_client_metadata')
   ok('4e. wrong grant_types rejected', (await reg(base, { redirect_uris: ['https://c.example/cb'], grant_types: ['implicit'] })).status === 400)
   ok('4f. one bad uri in the array fails the whole registration', (await reg(base, { redirect_uris: ['https://ok.example/cb', 'http://evil.example/cb'] })).status === 400)
+  ok('4g. wildcard host in a registration request → 400', (await reg(base, { redirect_uris: ['https://*.evil.example/cb'] })).status === 400)
   // ── 5. missing client_name defaults, still registers ──
   {
     const r = await reg(base, { redirect_uris: ['https://ok.example/cb'] })
@@ -85,6 +90,21 @@ async function main() {
     ok('5a. no client_name → defaults, still 201', r.status === 201 && j.client_name === 'Unnamed client')
   }
   http.close()
+
+  // ── 5b. Codex P2b: a GLOBAL cap bounds total row growth even if per-IP is bypassed ──
+  {
+    // rateLimitOk that always allows the per-IP key but denies the global key → registration blocked
+    const { registerOAuthRegisterRoutes } = await import('../src/pwa/routes/oauth-register.js')
+    const saved = process.env.WEBAZ_OAUTH; process.env.WEBAZ_OAUTH = '1'
+    const app2 = express(); app2.use(express.json())
+    registerOAuthRegisterRoutes(app2, { rateLimitOk: (k: string) => !k.includes(':global') })
+    if (saved === undefined) delete process.env.WEBAZ_OAUTH; else process.env.WEBAZ_OAUTH = saved
+    const h2 = await new Promise<HttpServer>(r => { const s = app2.listen(0, () => r(s)) })
+    const a2 = h2.address(); const b2 = `http://127.0.0.1:${typeof a2 === 'object' && a2 ? a2.port : 0}`
+    const r = await reg(b2, { redirect_uris: ['https://ok.example/cb'] })
+    ok('5b. global rate cap blocks registration even when per-IP allows (anti IP-rotation)', r.status === 429)
+    h2.close()
+  }
 
   // ── 6. source guards ──
   ok('6a. registration_endpoint advertised in AS metadata', readFileSync('src/pwa/routes/oauth-discovery.ts', 'utf8').includes('registration_endpoint'))
