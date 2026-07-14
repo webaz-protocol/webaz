@@ -44,11 +44,17 @@ class WebAZ:
 
     async def __aenter__(self) -> "WebAZ":
         self._stack = AsyncExitStack()
-        read, write, _ = await self._stack.enter_async_context(
-            streamablehttp_client(self.endpoint, headers=self._headers or None)
-        )
-        self._session = await self._stack.enter_async_context(ClientSession(read, write))
-        await self._session.initialize()
+        try:
+            read, write, _ = await self._stack.enter_async_context(
+                streamablehttp_client(self.endpoint, headers=self._headers or None)
+            )
+            self._session = await self._stack.enter_async_context(ClientSession(read, write))
+            await self._session.initialize()
+        except BaseException:
+            # __aexit__ is NOT called if __aenter__ raises → close what we opened here.
+            await self._stack.aclose()
+            self._stack = self._session = None
+            raise
         return self
 
     async def __aexit__(self, *exc: object) -> None:
@@ -62,9 +68,19 @@ class WebAZ:
         assert self._session is not None, "use `async with WebAZ() as wz:`"
         return [t.name for t in (await self._session.list_tools()).tools]
 
+    # Reserved keys are set by the SDK/transport, never by the caller — a caller-supplied api_key in
+    # kwargs would override the Bearer credential (the server prioritizes explicit args.api_key).
+    _RESERVED = ("api_key", "__isolated__")
+
     async def call(self, tool: str, **args: Any) -> Any:
-        """Call any WebAZ tool; returns the parsed JSON result (WebAZ tools return JSON text)."""
+        """Call any WebAZ tool; returns the parsed JSON result (WebAZ tools return JSON text).
+
+        Authentication is fixed at construction (WebAZ(api_key=...)); passing `api_key` here is
+        rejected so tool arguments cannot silently change which credential is used."""
         assert self._session is not None, "use `async with WebAZ() as wz:`"
+        bad = [k for k in self._RESERVED if k in args]
+        if bad:
+            raise ValueError(f"{bad} not allowed as tool argument(s); set auth via WebAZ(api_key=...)")
         res = await self._session.call_tool(tool, args)
         text = res.content[0].text if res.content else "{}"
         try:
