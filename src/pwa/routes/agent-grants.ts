@@ -106,7 +106,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
         return void res.status(429).json({ error: 'too_many_grant_requests', error_code: 'GRANT_RATE_LIMITED', retry_after_s: 60 })
       }
       const bearer = (req.header('authorization') || '').replace(/^Bearer\s+/i, '')
-      const presentedGrant = bearer.startsWith('gtk_')   // a request that presents no grant bearer isn't "grant-authorized"
+      const presentedGrant = bearer.startsWith('gtk_') || bearer.startsWith('oat_')   // gtk_ direct grant OR oat_ OAuth token (both grant-authorized)
       const r = await verifyGrantToken(bearer, scope)
       // Append-only audit (RFC-020 §3.7 + invariant: every grant-authorized request is audited). Only audit
       // requests that actually presented a grant bearer — a no-token request is pure noise (and an unauth

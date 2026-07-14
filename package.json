@@ -283,7 +283,8 @@
     "test:oauth-discovery": "tsx scripts/test-oauth-discovery.ts",
     "test:oauth-authorize": "tsx scripts/test-oauth-authorize.ts",
     "test:oauth-approve": "tsx scripts/test-oauth-approve.ts",
-    "test:oauth-token": "tsx scripts/test-oauth-token.ts"
+    "test:oauth-token": "tsx scripts/test-oauth-token.ts",
+    "test:oauth-mcp-bearer": "tsx scripts/test-oauth-mcp-bearer.ts"
   },
   "keywords": [
     "mcp",
