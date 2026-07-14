@@ -7,7 +7,8 @@
 window.productCardImg = (p) => {
   const src = window.productThumbSrc(p && p.images)
   if (!src) return getCategoryIcon(p && p.category)
-  return `<img src="${src}" onerror="this.outerHTML='📦'" style="width:100%;height:100%;object-fit:cover" loading="lazy">`
+  // escAttr 必须:productThumbSrc 透传 https:/data:/相对 URL,而 P2P 商品的 images 存卖家可控 URI —— 不转义可从 src 逃逸(XSS)
+  return `<img src="${escAttr(src)}" onerror="this.outerHTML='📦'" style="width:100%;height:100%;object-fit:cover" loading="lazy">`
 }
 
 let _galTouchX = null, _galTouchY = null

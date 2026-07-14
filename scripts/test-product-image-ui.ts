@@ -27,12 +27,15 @@ const has = (h: string, n: string) => h.includes(n)
 // 1. behavioral — productCardImg routes through the shared resolver
 const w: Record<string, any> = {}
 ;(new Function('window', MEDIA))(w)
-;(new Function('window', 'getCategoryIcon', UI))(w, () => '🧲')
+const escAttr = (x: unknown) => String(x || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;')
+;(new Function('window', 'getCategoryIcon', 'escAttr', UI))(w, () => '🧲', escAttr)
 const H = 'd'.repeat(64)
 const withImg = w.productCardImg({ images: `["${H}"]`, category: 'digital' })
 ok('1a. product with hash → <img> via public /thumb', withImg.includes(`/api/manifests/${H}/thumb`) && withImg.startsWith('<img'))
 ok('1b. card img keeps the onerror → 📦 degrade idiom', withImg.includes(`onerror="this.outerHTML='📦'"`))
 ok('1c. no image → category icon fallback', w.productCardImg({ images: '[]', category: 'digital' }) === '🧲')
+const evil = w.productCardImg({ images: ['/x" onerror="alert(document.domain)'], category: 'digital' })
+ok('1d. seller-controlled URI cannot break out of src (escAttr)', !evil.includes('src="/x" onerror="alert') && evil.includes('&quot;'))
 
 // 2. all four missed grid sites now route through productCardImg; none left on icon-only
 ok('2a. discover grids use productCardImg', (DISCOVER.match(/class="product-img">\$\{window\.productCardImg\(p\)\}/g) || []).length === 4)
@@ -43,7 +46,7 @@ const calls: number[][] = []
 const wrapEl = { dataset: { galIdx: '0' }, querySelectorAll: () => [{}, {}, {}] }  // 3 张图
 const doc = { getElementById: () => wrapEl }
 const w2: Record<string, any> = {}
-;(new Function('window', 'getCategoryIcon', 'document', UI))(w2, () => '', doc)
+;(new Function('window', 'getCategoryIcon', 'document', 'escAttr', UI))(w2, () => '', doc, escAttr)
 w2.switchGalleryImage = (pid: string, idx: number) => calls.push([idx])
 w2.galleryTouchStart({ touches: [{ clientX: 200, clientY: 100 }] })
 w2.galleryTouchEnd('p1', { changedTouches: [{ clientX: 100, clientY: 105 }] })   // 左滑 100px → 下一张
