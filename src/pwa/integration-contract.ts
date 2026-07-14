@@ -4,6 +4,7 @@
  * 它只【链接 + 导航】,不复制内容(各维度的真身是各自的 live 端点 / 文档),所以不漂移。
  */
 import { SOFTWARE_VERSION, CONTRACT_VERSION } from '../version.js'
+import { remoteMcpEnabled } from './routes/mcp-remote.js'
 
 const BASE = 'https://webaz.xyz'
 const GH = 'https://github.com/webaz-protocol/webaz/blob/main'
@@ -25,6 +26,8 @@ export function buildIntegrationContract() {
     agent_quickstart: {
       what_is_webaz: 'An agent-native, open commerce protocol: humans and AI agents transact on the same state-machine-governed protocol — and can also help build the protocol itself. Pre-launch: the escrow rail settles simulated test currency; Direct Pay is a conditions-gated, non-custodial rail where real payment happens off-platform between buyer and seller (WebAZ never holds principal, does not guarantee, cannot refund).',
       canonical_start_url: `${BASE}/.well-known/webaz-integration.json`,
+      // RFC-022:远程 MCP 端点 — 仅在真实开启时披露(不广告 404)
+      ...(remoteMcpEnabled() ? { remote_mcp: { url: `${BASE}/mcp`, transport: 'streamable-http (stateless, POST only)', auth: 'anonymous = public reads; Authorization: Bearer <api_key> = authenticated; RISK actions return approve_url (Passkey)' } } : {}),
       read_this_first: [`${BASE}/.well-known/webaz-integration.json (this document)`, `${DOCS}/INTEGRATOR.md`],
       public_readonly_entrypoints: [
         `${BASE}/.well-known/webaz-protocol.json`,

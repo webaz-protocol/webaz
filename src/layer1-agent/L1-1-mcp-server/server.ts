@@ -18,6 +18,7 @@
  *   #6 不滥用(agent 责任制 + Iron-Rule 真人动作)· 生产端点在 src/pwa(NETWORK 共用)
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
@@ -103,6 +104,13 @@ const TELEMETRY_ENABLED = (process.env.WEBAZ_TELEMETRY ?? 'off').toLowerCase() =
 const WEBAZ_API_URL = (process.env.WEBAZ_API_URL ?? 'https://webaz.xyz').replace(/\/+$/, '')
 const WEBAZ_API_KEY = process.env.WEBAZ_API_KEY ?? ''
 
+// RFC-022 凭证隔离上下文(单一权威源)。远程共享端点每请求在此 store 里跑,isIsolated()=true;
+// 任意调用栈深处(apiCall / pwaApi / readEndpoint / resolveMcpApiKey / resolveGrantCredential / handlePair)
+// 都从这里判断,不必逐个 threading args —— 修 Codex round-2 残余 P0(apiCall 直读宿主 WEBAZ_API_KEY 绕过补丁)。
+// AsyncLocalStorage 跨 await 传播且请求间隔离;远程是每请求新建 server(见 mcp-remote.ts),各自独立 async 上下文。
+const isolationALS = new AsyncLocalStorage<boolean>()
+export function isIsolated(): boolean { return isolationALS.getStore() === true }
+
 // F6 (dogfood R2): keyed MCP handlers resolve api_key as  explicit args.api_key  >  env WEBAZ_API_KEY  >
 // '' (→ the existing typed API_KEY_REQUIRED guards). Explicit ALWAYS wins; env never overrides an explicit
 // key. Keyless actions (list/discover/detail/suggest/browse/get_campaign…) gate their public branches
@@ -110,7 +118,10 @@ const WEBAZ_API_KEY = process.env.WEBAZ_API_KEY ?? ''
 // The key is never printed/returned/logged.
 export function resolveMcpApiKey(args: Record<string, unknown>, envKey: string = WEBAZ_API_KEY): string {
   const explicit = typeof args?.api_key === 'string' ? args.api_key.trim() : ''
-  return explicit || envKey
+  // RFC-022 隔离:远程共享端点下禁用宿主 env key 回退 — 匿名远程只得空(→ API_KEY_REQUIRED,真 readonly)。
+  // 权威源 isIsolated()(ALS,覆盖整条 async 栈)+ args.__isolated__ 二道防线。
+  const envFallback = (args?.__isolated__ || isIsolated()) ? '' : envKey
+  return explicit || envFallback
 }
 
 // 模式:显式 WEBAZ_MODE 优先;否则有 api_key → network,无 key → network_readonly(装完即见真网络)。
@@ -161,7 +172,9 @@ function networkMigrationPending(tool: string): Record<string, unknown> {
 // 统一 API helper(P1/P2 迁移工具时使用)。Bearer api_key + 15s 超时 + 错误映射。
 async function apiCall(path: string, opts: { method?: string; body?: unknown; apiKey?: string } = {}): Promise<Record<string, unknown>> {
   const { method = 'GET', body } = opts
-  const key = opts.apiKey || WEBAZ_API_KEY  // 每次调用可覆盖(工具 args.api_key 优先);否则用全局配置 key
+  // 隔离态(远程共享端点)绝不回退到宿主 WEBAZ_API_KEY —— 匿名远程真无 key(修 Codex P0 越权);
+  // 显式传入的 opts.apiKey(=本请求 bearer / args.api_key)始终优先且不受影响。
+  const key = opts.apiKey || (isIsolated() ? '' : WEBAZ_API_KEY)
   const url = WEBAZ_API_URL + (path.startsWith('/') ? path : '/' + path)
   try {
     const resp = await fetch(url, {
@@ -238,7 +251,8 @@ function readGrantPointer(): { grant_id: string; handle: string; capabilities?: 
  * ⚠️ The returned `token` is the RAW bearer — pass it only as an Authorization header; NEVER log it,
  * print it, or return it in a tool response.
  */
-export function resolveGrantCredential(): { grant_id: string; token: string; handle: string; capabilities?: unknown; expires_at?: unknown } | null {
+export function resolveGrantCredential(args?: Record<string, unknown>): { grant_id: string; token: string; handle: string; capabilities?: unknown; expires_at?: unknown } | null {
+  if (args?.__isolated__ || isIsolated()) return null   // RFC-022 隔离:远程端点绝不读宿主存储的 grant(修 Codex P0 越权)
   const ptr = readGrantPointer()
   if (!ptr?.grant_id) return null
   let token = ''
@@ -261,6 +275,16 @@ function readPending(): { pairing_id: string; code_verifier: string } | null {
 function clearPending(): void { try { if (fsExists(PENDING_PATH)) unlinkSync(PENDING_PATH) } catch { /* best effort */ } }
 
 export async function handlePair(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // RFC-022 隔离(修 Codex P0:跨请求 pairing 竞态/劫持)— pairing 把 verifier/grant 写进【宿主】共享文件,
+  // 在无状态远程共享端点下会被并发请求竞争/劫持,且随后任何远程调用方都能用上宿主 grant。远程一律禁 pairing:
+  // 配对是【本地一次性】动作,在你自己机器/PWA 完成,别经共享端点。
+  if (args?.__isolated__ || isIsolated()) {
+    return {
+      _mode: 'network_readonly',
+      error: 'webaz_pair is not available over the remote endpoint — pairing is a one-time LOCAL action. Pair on your own machine (or the PWA), then use that grant locally. The remote endpoint only accepts a per-request Bearer api_key.',
+      error_code: 'PAIRING_LOCAL_ONLY',
+    }
+  }
   // Mode isolation (fail-closed): every webaz_pair action (start / complete / verify) talks to the
   // LIVE webaz.xyz API. In explicit sandbox mode (local-only) we must NOT touch the live network.
   if (!isNetworkMode()) {
@@ -337,7 +361,7 @@ export async function handlePair(args: Record<string, unknown>): Promise<Record<
     // Ask the server for the FULL grant (all authorized scopes/bundle/expiry/status), not just one capability.
     // The SERVER is authoritative: it re-checks active/expiry/revoked/subject-suspension + audits on EVERY call.
     // We resolve the bearer from the secret store and attach it; the raw token is never printed.
-    const cred = resolveGrantCredential()
+    const cred = resolveGrantCredential(args)
     if (!cred) return { status: 'not_paired', error_code: 'NO_GRANT_CREDENTIAL', hint: 'No stored grant. Run webaz_pair action="start", have the human approve, then action="complete".' }
     const resp = await apiCall('/api/agent-grants/verify', { method: 'GET', apiKey: cred.token })
     if (resp.error) {
@@ -355,7 +379,7 @@ export async function handlePair(args: Record<string, unknown>): Promise<Record<
     // The agent asks the human to EXPAND this grant with more SAFE scope / a permission bundle. Uses the
     // stored grant bearer; the server binds the request to (human, grant). Approval is Passkey-gated on the
     // human's side. Only SAFE scopes — risk/never-delegable are structurally rejected.
-    const cred = resolveGrantCredential()
+    const cred = resolveGrantCredential(args)
     if (!cred) return { status: 'not_paired', error_code: 'NO_GRANT_CREDENTIAL', hint: 'No stored grant. Pair first: webaz_pair action="start" → human approves → action="complete".' }
     const bundle = typeof args.bundle === 'string' ? args.bundle : undefined
     const scopes = Array.isArray(args.scopes) ? (args.scopes as unknown[]).map(String).filter(Boolean) : undefined
@@ -381,7 +405,7 @@ export async function handlePair(args: Record<string, unknown>): Promise<Record<
   if (action === 'requests') {
     // Poll THIS grant's own permission requests + their status (pending/approved/rejected) without hitting the
     // target surface. Grant-authed, grant-scoped (you see only your own requests). Server audits every call.
-    const cred = resolveGrantCredential()
+    const cred = resolveGrantCredential(args)
     if (!cred) return { status: 'not_paired', error_code: 'NO_GRANT_CREDENTIAL', hint: 'No stored grant. Pair first: webaz_pair action="start" → human approves → action="complete".' }
     const resp = await apiCall('/api/agent-grants/my-permission-requests', { method: 'GET', apiKey: cred.token })
     if (resp.error) return resp
@@ -1802,7 +1826,8 @@ async function handleFeedback(args: Record<string, unknown>): Promise<Record<str
       severity: args.severity,
       subject: args.subject,
       text,
-      scene: recentCalls.slice(-8),   // 现场证据:脱敏摘要(tool / arg_keys / outcome / mode)
+      scene: isIsolated() ? [] : recentCalls.slice(-8),   // 现场证据:脱敏摘要(tool / arg_keys / outcome / mode)。RFC-022:隔离态(远程共享端点)不读进程级 buffer,防跨请求元数据 bleed(读侧镜像写侧守卫)
+
     },
   })
 }
@@ -2486,7 +2511,7 @@ export async function handleGetAgentOrder(args: Record<string, unknown>): Promis
   // Wraps GET /api/agent/orders(/:id) (safe scope seller_orders_read_minimal). Passes the minimal
   //   projection through UNCHANGED — no field reshaped/added, nothing persisted; PII never enters here.
   if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
-  const cred = resolveGrantCredential()
+  const cred = resolveGrantCredential(args)
   if (!cred) return { error: 'a delegation grant is required — run webaz_pair action="start", have the human approve the fulfillment_agent bundle, then retry.', error_code: 'GRANT_REQUIRED' }
   const orderId = (typeof args.order_id === 'string' && args.order_id) ? args.order_id : ''
   const path = orderId ? `/api/agent/orders/${encodeURIComponent(orderId)}` : '/api/agent/orders'
@@ -2501,7 +2526,7 @@ export async function handleOrderActionRequest(args: Record<string, unknown>): P
   //   Passkey approval). decline is not delegable — the backend returns DECLINE_NOT_DELEGATED and we
   //   pass it through untouched. Client-side forward-allowlist keeps PII off the wire (see below).
   if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
-  const cred = resolveGrantCredential()
+  const cred = resolveGrantCredential(args)
   if (!cred) return { error: 'a delegation grant is required — run webaz_pair action="start", have the human approve the fulfillment_agent bundle, then retry.', error_code: 'GRANT_REQUIRED' }
   const orderId = (typeof args.order_id === 'string' && args.order_id) ? args.order_id : ''
   if (!orderId) return { error: 'order_id is required', error_code: 'ORDER_ID_REQUIRED' }
@@ -2532,7 +2557,7 @@ export async function handleListProduct(args: Record<string, unknown>): Promise<
     //   → status=warehouse, NOT public). Publishing (active) + all other writes stay human/api_key only.
     //   Missing scope → structured PERMISSION_REQUIRED (agent can request it, then retry).
     if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
-    const cred = resolveGrantCredential()
+    const cred = resolveGrantCredential(args)
     if (!cred) return { error: 'api_key required — or pair a delegation grant: webaz_pair action="start", have the human approve the catalog_agent bundle, then retry.', error_code: 'AUTH_REQUIRED' }
     if (action === 'mine') {
       const r = await apiCall('/api/agent/seller/products', { method: 'GET', apiKey: cred.token })
@@ -5060,7 +5085,15 @@ function settleOrder(db: Database.Database, orderId: string) {
 
 // ─── MCP Server 主体 ──────────────────────────────────────────
 
-export async function startMCPServer() {
+// RFC-022:装配与传输解耦 — buildMcpServer 构建完整 Server(工具/资源/提示全注册,无传输),
+// stdio 入口(startMCPServer)与远程入口(src/pwa/routes/mcp-remote.ts)共用同一工具面,零漂移。
+// opts.defaultApiKey = 远程 bearer key 的注入点:等价本地 WEBAZ_API_KEY 默认值,
+// 仅在工具 args 未显式携带 api_key 时生效(优先级不变:args > bearer > env)。
+// opts.isolated(远程共享端点必传 true)= 凭证隔离:禁用宿主环境的三个 ambient 凭证源
+//   —— env WEBAZ_API_KEY 回退、存储的 RFC-020 grant、本地 pairing 文件。远程请求只认自己的 bearer,
+//   匿名远程 = 真 network_readonly,绝不继承跑在 ops 主机上的 grant/key(修 Codex 两个 P0:跨请求越权)。
+//   经每-请求的 args.__isolated__ 传递(无共享 module 状态,并发安全;服务端强制,调用方伪造会被覆盖)。
+export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolean } = {}) {
   const server = new Server(
     // name 是客户端配置引用的 server 标识(勿改);version 走单一来源(旧硬编码 '0.1.0' 已漂移)。
     { name: 'dcp-protocol', version: SOFTWARE_VERSION },
@@ -5242,8 +5275,14 @@ export async function startMCPServer() {
     }
   })
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, (request) => isolationALS.run(opts.isolated === true, async () => {
     const { name, arguments: args = {} } = request.params
+    // RFC-022:凭证隔离标记(服务端强制,先于一切)— 覆盖调用方任何伪造值;stdio(isolated=false)则清除。
+    // 权威源是上面的 isolationALS.run(整条 async 栈可见);此 args 标记为二道防线(defense in depth)。
+    if (opts.isolated) (args as Record<string, unknown>).__isolated__ = true
+    else delete (args as Record<string, unknown>).__isolated__
+    // RFC-022:远程 bearer 注入(见 buildMcpServer 头注)— args 显式 api_key 永远优先
+    if (opts.defaultApiKey && (args as Record<string, unknown>).api_key == null) (args as Record<string, unknown>).api_key = opts.defaultApiKey
     const t0 = Date.now()
     let result: unknown
 
@@ -5307,7 +5346,8 @@ export async function startMCPServer() {
     recordToolCall(name, args, result, Date.now() - t0)
 
     // RFC-004 现场证据:记本次调用的脱敏摘要(只 arg key 名,不含值)。webaz_feedback 自身不入 buffer。
-    if (name !== 'webaz_feedback') {
+    // RFC-022:隔离态(远程共享端点)不写这个进程级 ring buffer —— 防跨请求元数据 bleed(Codex round-2 次要项)。
+    if (name !== 'webaz_feedback' && !isIsolated()) {
       const isErr = !!result && typeof result === 'object' && 'error' in (result as Record<string, unknown>)
       pushRecentCall({
         tool: name,
@@ -5335,8 +5375,13 @@ export async function startMCPServer() {
     return {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     }
-  })
+  }))
 
+  return server
+}
+
+export async function startMCPServer() {
+  const server = buildMcpServer()
   const transport = new StdioServerTransport()
   await server.connect(transport)
   console.error('✅ WebAZ MCP Server 已启动，等待 Agent 连接...')

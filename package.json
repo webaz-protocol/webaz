@@ -276,7 +276,8 @@
     "test:wallet-signer": "tsx scripts/test-wallet-signer.ts",
     "test:cf-origin-guard": "tsx scripts/test-cf-origin-guard.ts",
     "test:gallery-thumb-fallback": "tsx scripts/test-gallery-thumb-fallback.ts",
-    "test:product-image-ui": "tsx scripts/test-product-image-ui.ts"
+    "test:product-image-ui": "tsx scripts/test-product-image-ui.ts",
+    "test:remote-mcp": "tsx scripts/test-remote-mcp.ts"
   },
   "keywords": [
     "mcp",
