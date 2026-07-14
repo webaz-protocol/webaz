@@ -123,35 +123,6 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     if (isTrustedRole(user as Record<string, unknown>)) return void res.status(403).json({ error: '受信角色不可参与交易', error_code: 'TRUSTED_ROLE_NO_TRADE' })
     if (user.role !== 'buyer') return void res.json({ error: '仅买家可下单' })
     // 2026-05-23 P0 audit fix 2.1：agent_attestations spend_cap 强制
-    if (apiKey) {
-      const cap = await dbOne<{ spend_cap_per_order: number | null; spend_cap_daily: number | null }>(`SELECT spend_cap_per_order, spend_cap_daily FROM agent_attestations
-        WHERE api_key = ? AND user_id = ? AND revoked_at IS NULL`, [apiKey, user.id])
-      if (cap) {
-        const estQty = Math.max(1, Math.floor(Number(req.body?.quantity ?? 1)))
-        const estPrice = Number(req.body?.expected_price ?? 0)
-        const estTotal = estPrice * estQty
-        if (cap.spend_cap_per_order != null && estTotal > 0 && estTotal > cap.spend_cap_per_order) {
-          return void res.status(403).json({
-            error: `本笔订单 ${estTotal} WAZ 超过 agent 单笔上限 ${cap.spend_cap_per_order} WAZ（用户设定）`,
-            error_code: 'AGENT_SPEND_CAP_PER_ORDER',
-            spend_cap: cap.spend_cap_per_order,
-          })
-        }
-        if (cap.spend_cap_daily != null) {
-          const todaySpent = (await dbOne<{ t: number }>(`SELECT COALESCE(SUM(total_amount + COALESCE(donation_amount, 0)), 0) as t
-            FROM orders WHERE buyer_id = ? AND created_at > datetime('now', '-24 hours') AND status != 'cancelled'`,
-            [user.id]))!.t
-          if (todaySpent + estTotal > cap.spend_cap_daily) {
-            return void res.status(403).json({
-              error: `24h 累计 ${todaySpent}+${estTotal} 超 agent 日上限 ${cap.spend_cap_daily} WAZ（用户设定）`,
-              error_code: 'AGENT_SPEND_CAP_DAILY',
-              spend_cap: cap.spend_cap_daily, today_spent: todaySpent,
-            })
-          }
-        }
-      }
-    }
-
     const { product_id, shipping_address, notes, session_token, coupon_code, delivery_window, variant_id, expected_price,
       // C-2: 礼物订单字段
       is_gift, gift_recipient_name, gift_recipient_phone, gift_message,
