@@ -1017,10 +1017,10 @@ function roleHome(role) {
 // 不可关闭(这是诚实化整改,不是营销提示)。
 function preLaunchBannerHTML() {
   if (window._protocolPhase && window._protocolPhase !== 'pre_launch') return ''
-  return `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;font-size:12px;color:#92400e;text-align:center;line-height:1.5;margin:8px 12px 12px">
-    ⚠️ <strong>${t('直付(direct pay)已上线,是你与卖家的真实场外付款;WebAZ 非托管——不代持、不担保、不退款 · 平台托管(escrow)尚未上线(模拟测试币)· 价格按 USDC 计价仅供展示 · 邀请制预发布,勿据此投资或向第三方承诺')}</strong>
-    <a href="#welcome" style="margin-left:8px;color:#7c2d12;text-decoration:underline;font-weight:600">${t('详情')}</a>
-  </div>`
+  return `<details style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:8px 14px;font-size:12px;color:#92400e;line-height:1.5;margin:8px 12px 12px">
+    <summary style="cursor:pointer;text-align:center;list-style:none">⚠️ <strong>${t('直付已上线(非托管:不代持·不担保·不退款)· 托管轨=模拟测试币 · USDC 计价仅展示 · 邀请制预发布 · 勿据此投资或承诺')}</strong> <span style="text-decoration:underline;font-weight:600;color:#7c2d12">${t('详情')}</span></summary>
+    <div style="margin-top:6px;text-align:left">${t('直付(direct pay)已上线,是你与卖家的真实场外付款;WebAZ 非托管——不代持、不担保、不退款 · 平台托管(escrow)尚未上线(模拟测试币)· 价格按 USDC 计价仅供展示 · 邀请制预发布,勿据此投资或向第三方承诺')}</div>
+  </details>`
 }
 
 // 账户无任何恢复方式 → 首页顶部持续红色风险横幅。
@@ -4388,9 +4388,9 @@ function renderWelcome(app) {
       </section>
 
       <!-- 区块 1: Buyers -->
-      <section class="w-section">
+      <section class="w-section"><details class="w-fold" open><summary class="w-fold-sum">
         <h2 style="${H2_STYLE}">${T('作为买家<br>你不只是买家', "As a buyer<br>you're more than a buyer")}</h2>
-        <p style="${SUB_STYLE}">${T('真实使用，留下可验证的记录', 'Use for real — leave a verifiable record.')}</p>
+        <p style="${SUB_STYLE}">${T('真实使用，留下可验证的记录', 'Use for real — leave a verifiable record.')}</p></summary>
         <div class="w-cards">
           <div class="w-card">
             <div class="w-card-title">🛍 ${T('真实使用，真实记录', 'Real use, real record')}</div>
@@ -4411,13 +4411,13 @@ function renderWelcome(app) {
             </ul>
           </div>
         </div>
-        <div class="w-cta-wrap"><a class="w-cta" onclick="event.preventDefault();scrollToJoinWithRole('buyer')" href="#">${T('作为买家加入 webazer', 'Join as a buyer')} →</a></div>
+        <div class="w-cta-wrap"><a class="w-cta" onclick="event.preventDefault();scrollToJoinWithRole('buyer')" href="#">${T('作为买家加入 webazer', 'Join as a buyer')} →</a></div></details>
       </section>
 
       <!-- 区块 2: Sellers -->
-      <section class="w-section">
+      <section class="w-section"><details class="w-fold"><summary class="w-fold-sum">
         <h2 style="${H2_STYLE}">${T('作为卖家<br>你的店，你说了算', "As a seller<br>your shop, your rules.")}</h2>
-        <p style="${SUB_STYLE}">${T('webaz 只是协议，你才是主人。', 'webaz is just a protocol. You are the owner.')}</p>
+        <p style="${SUB_STYLE}">${T('webaz 只是协议，你才是主人。', 'webaz is just a protocol. You are the owner.')}</p></summary>
         <div class="w-cards">
           <div class="w-card">
             <div class="w-card-title">🏛 ${T('不被随意封禁', 'No arbitrary bans')}</div>
@@ -4438,13 +4438,13 @@ function renderWelcome(app) {
             </ul>
           </div>
         </div>
-        <div class="w-cta-wrap"><a class="w-cta" onclick="event.preventDefault();scrollToJoinWithRole('seller')" href="#">${T('作为卖家加入 webazer', 'Join as a seller')} →</a></div>
+        <div class="w-cta-wrap"><a class="w-cta" onclick="event.preventDefault();scrollToJoinWithRole('seller')" href="#">${T('作为卖家加入 webazer', 'Join as a seller')} →</a></div></details>
       </section>
 
       <!-- 区块 3: Creators -->
-      <section class="w-section">
+      <section class="w-section"><details class="w-fold"><summary class="w-fold-sum">
         <h2 style="${H2_STYLE}">${T('作为达人<br>我的舞台我做主', 'As a creator<br>my stage, my rules.')}</h2>
-        <p style="${SUB_STYLE}">${T('在任何地方创作，流量归你所有', 'Publish anywhere, own your traffic.')}</p>
+        <p style="${SUB_STYLE}">${T('在任何地方创作，流量归你所有', 'Publish anywhere, own your traffic.')}</p></summary>
         <div class="w-cards">
           <div class="w-card">
             <div class="w-card-title">🎯 ${T('跨平台引流，数据归你', 'Cross-platform traffic, your data')}</div>
@@ -4464,13 +4464,13 @@ function renderWelcome(app) {
             </ul>
           </div>
         </div>
-        <div class="w-cta-wrap"><a class="w-cta" onclick="event.preventDefault();scrollToJoinWithRole('creator')" href="#">${T('作为创作者加入 webazer', 'Join as a creator')} →</a></div>
+        <div class="w-cta-wrap"><a class="w-cta" onclick="event.preventDefault();scrollToJoinWithRole('creator')" href="#">${T('作为创作者加入 webazer', 'Join as a creator')} →</a></div></details>
       </section>
 
       <!-- 区块 4: 10 Meta-Rules -->
-      <section class="w-section" id="meta-rules-section">
+      <section class="w-section" id="meta-rules-section"><details class="w-fold"><summary class="w-fold-sum">
         <h2 style="${H2_STYLE}">${T('webaz 的十条元规则', 'The Ten Meta-Rules of webaz')}</h2>
-        <p style="${SUB_STYLE}">${T('不可推翻，可演化。', 'Inviolable. Evolvable.')}</p>
+        <p style="${SUB_STYLE}">${T('不可推翻，可演化。', 'Inviolable. Evolvable.')}</p></summary>
         <div class="w-rules-frame">
           <div class="w-rules-frame-header">
             <span class="left"><span class="dot"></span>META-RULES.md</span>
@@ -4492,7 +4492,7 @@ function renderWelcome(app) {
             <div class="w-rule-group">${T('── 身份层 ──', '── Identity ──')}</div>
             ${renderRule(10, T('参与者即 webazer。', 'Participants are webazers.'))}
           </div>
-        </div>
+        </div></details>
         <div class="w-cta-wrap" style="margin-top:56px">
           <a class="w-cta" href="#welcome" onclick="event.preventDefault();document.getElementById('w-join-section')?.scrollIntoView({behavior:'smooth',block:'start'})">
             ${T('申请加入创世团', 'Apply to join the Genesis Cohort')} →
@@ -4501,9 +4501,9 @@ function renderWelcome(app) {
       </section>
 
       <!-- 区块 5: A Day -->
-      <section class="w-section">
+      <section class="w-section"><details class="w-fold"><summary class="w-fold-sum">
         <h2 style="${H2_STYLE}">${T('一个 webazer 的一天', "A day in a webazer's life")}</h2>
-        <p style="${SUB_STYLE}">${T('使用、建设、贡献——同一个你，同一件事。', 'Use, build, contribute — same you, same act.')}</p>
+        <p style="${SUB_STYLE}">${T('使用、建设、贡献——同一个你，同一件事。', 'Use, build, contribute — same you, same act.')}</p></summary>
         <div style="max-width:540px;margin:0 auto">
           ${renderTL(
             '09:00',
@@ -4536,7 +4536,7 @@ function renderWelcome(app) {
         </div>
         <div class="w-tl-conclusion">
           ${T('一天结束 · 你既在使用 webaz，也在建设 webaz，也在贡献给 webaz。同一个你，同一件事。', "A day ends · you are using webaz, building webaz, contributing to webaz. Same you, same act.")}
-        </div>
+        </div></details>
       </section>
 
       <!-- 区块 6: Join -->
@@ -4836,7 +4836,7 @@ function _cRiskBadge(level, T) {
   return `<span style="background:${c}1a;color:${c};padding:1px 8px;border-radius:99px;font-size:11px;font-weight:600">${T('风险', 'risk')}:${_cEsc(level)}</span>`
 }
 function _cDuration(d, T) {
-  if (!d || (d.min_minutes == null && d.max_minutes == null)) return ''
+  if (!d || (d.min_minutes == null && d.max_minutes == null) || (!d.min_minutes && !d.max_minutes)) return ''   // 0–0 = 占位估时(estimate_status unknown),不显示
   const lo = d.min_minutes, hi = d.max_minutes
   const span = lo != null && hi != null ? `${lo}–${hi}` : (lo ?? hi)
   return `<span style="font-size:11px;color:#6b7280">⏱ ${T('预计', 'est.')} ${_cEsc(span)} ${T('分钟', 'min')}</span>`
@@ -4989,7 +4989,8 @@ async function renderContributeTasks(app) {
         <p style="color:#52525B;font-size:15px;margin:0;line-height:1.6">${T('面向任何人和他们的 agent 的公开共建任务。只读取公开任务;认领需登录。', 'Open contribution tasks for anyone and their agents. Read-only here; claiming requires login.')}</p>
       </header>
       ${_cBoundaryHTML(UNCOMMITTED_VALUE_BOUNDARY_HINT(), T)}
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;justify-content:space-between"><span style="font-size:12px;color:#71717a">${T('按风险与能力找适合你的任务', 'Find tasks that fit your risk & capability')}</span><button onclick="location.hash='#contribute/tasks/suggest'" style="padding:8px 16px;background:#fff;color:#18181B;border:1px solid #d4d4d8;border-radius:8px;font-size:13px;cursor:pointer;white-space:nowrap">💡 ${T('建议新任务', 'Suggest a task')}</button></div>
+      <details ${['area','risk_level','auto_claimable','agent_capabilities','max_duration_minutes','estimated_context_size','estimated_agent_budget'].some(k => q[k]) ? 'open' : ''} style="margin-bottom:14px"><summary style="cursor:pointer;font-size:13px;color:#6366f1;font-weight:600;list-style:revert">🔎 ${T('筛选', 'Filters')}</summary><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <input id="ct-f-area" placeholder="${T('领域 area', 'area')}" value="${_cEsc(q.area || '')}" style="flex:1;min-width:120px;padding:8px 10px;border:1px solid #d4d4d8;border-radius:8px;font-size:13px">
         <select id="ct-f-risk" style="padding:8px 10px;border:1px solid #d4d4d8;border-radius:8px;font-size:13px">
           <option value="">${T('风险(全部)', 'risk (all)')}</option>
@@ -5010,9 +5011,8 @@ async function renderContributeTasks(app) {
           <option value="">${T('agent 工作量(全部)', 'agent effort (all)')}</option>
           ${['minimal','small','moderate','large','xlarge'].map(b => `<option value="${b}" ${q.estimated_agent_budget === b ? 'selected' : ''}>${b}</option>`).join('')}
         </select>
-        <button onclick="contributeApplyFilters()" style="padding:8px 16px;background:#6366f1;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer">${T('筛选', 'Filter')}</button>
-        <button onclick="location.hash='#contribute/tasks/suggest'" style="padding:8px 16px;background:#fff;color:#18181B;border:1px solid #d4d4d8;border-radius:8px;font-size:13px;cursor:pointer">💡 ${T('建议新任务', 'Suggest a task')}</button>
-      </div>
+        <button onclick="contributeApplyFilters()" style="padding:8px 16px;background:#6366f1;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer">${T('应用筛选', 'Apply filters')}</button>
+      </div></details>
       <div id="ct-list"><div style="color:#a1a1aa;text-align:center;padding:30px">${T('加载中…', 'Loading…')}</div></div>
     `)
 
@@ -9761,8 +9761,8 @@ function productImageGallery(p) {
   // 同步占位 — async 拿 manifest thumbnail 填充
   setTimeout(() => hydrateProductGallery(pid, hashes), 0)
   return `<div id="pg-${pid}" data-hashes='${JSON.stringify(hashes)}' style="margin:0 -16px 12px">
-    <div style="aspect-ratio:4/3;background:#f3f4f6;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center" ontouchstart="galleryTouchStart(event)" ontouchend="galleryTouchEnd('${pid}', event)">
-      <img id="pg-${pid}-main" style="width:100%;height:100%;object-fit:cover;display:none;cursor:zoom-in" onclick="openImageLightbox('${pid}', Number(this.closest('[data-hashes]').dataset.galIdx||0))" onerror="galleryMainImgFail('${pid}')">
+    <div style="aspect-ratio:4/3;background:#fff;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center" ontouchstart="galleryTouchStart(event)" ontouchend="galleryTouchEnd('${pid}', event)">
+      <img id="pg-${pid}-main" style="width:100%;height:100%;object-fit:contain;display:none;cursor:zoom-in" onclick="openImageLightbox('${pid}', Number(this.closest('[data-hashes]').dataset.galIdx||0))" onerror="galleryMainImgFail('${pid}')">
       <div id="pg-${pid}-loading" style="color:#9ca3af;font-size:12px">${t('加载图片…')}</div>
       ${hashes.length > 1 ? `<div style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.55);color:#fff;font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600" id="pg-${pid}-cnt">1 / ${hashes.length}</div>` : ''}
     </div>
@@ -10208,7 +10208,7 @@ async function renderBuyPage(app, productId) {
 
     ${renderCommentSection(p, state._ratings)}
 
-    <details id="reviews-block-${p.id}" style="margin-top:16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px" open>
+    <details id="reviews-block-${p.id}" style="margin-top:16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px" ${reviewsCount > 0 ? 'open' : ''}>
       <summary style="padding:10px 12px;font-size:14px;font-weight:600;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px">
         <span>📺 ${t('评测推荐')} (${reviewsCount})</span>
         ${reviewsCount > 0 ? `<span style="font-size:10px;color:#9ca3af;font-weight:400">${t('按转化贡献排序')}</span>` : ''}
@@ -10486,8 +10486,8 @@ function renderCommentSection(product, ratingsData) {
         <span style="font-size:11px;color:var(--gray-500);white-space:nowrap;margin-top:4px">${t('真实购买 + 公开判例')}</span>
       </div>
 
-      <div class="card" style="padding:0;margin-bottom:14px" id="comment-arb-block">
-        <div style="padding:10px 14px;border-bottom:1px solid #f3f4f6;display:flex;align-items:center;justify-content:space-between">
+      <details class="card" style="padding:0;margin-bottom:14px" id="comment-arb-block">
+        <summary style="padding:10px 14px;border-bottom:1px solid #f3f4f6;display:flex;align-items:center;justify-content:space-between;cursor:pointer;list-style:none">
           <span style="font-size:13px;font-weight:600">📋 ${t('仲裁判例')} <span style="color:var(--gray-500);font-weight:500" id="arb-count-pill">(0)</span></span>
           <span style="position:relative;display:inline-block">
             <button type="button" onclick="toggleArbRulesTip(event)" onblur="setTimeout(()=>{const e=document.getElementById('arb-rules-tip');if(e)e.style.display='none'},150)" aria-label="${t('共建区规则')}"
@@ -10496,9 +10496,9 @@ function renderCommentSection(product, ratingsData) {
               ${t('当事人禁评（已购 / 同类卖家 / 验证员 / 围观）')}
             </span>
           </span>
-        </div>
+        </summary>
         <div id="arb-list">${loading$()}</div>
-      </div>
+      </details>
     </div>
   `
 }
@@ -10517,7 +10517,7 @@ async function loadDisputeCases(productId, salesCount) {
     pill.textContent = rate != null
       ? `(${items.length}, ${t('仲裁率')} ${rate}%)`
       : `(${items.length})`
-    pill.style.color = items.length > 0 ? '#dc2626' : 'var(--gray-500)'
+    pill.style.color = items.length > 0 ? '#dc2626' : 'var(--gray-500)'; const blk = document.getElementById('comment-arb-block'); if (blk && items.length > 0) blk.open = true   // 零判例默认折叠,有判例自动展开
   }
   if (items.length === 0) {
     list.innerHTML = `<div style="text-align:center;color:var(--gray-500);padding:20px 12px;font-size:12px;line-height:1.6">
@@ -10675,7 +10675,7 @@ window.submitDcomReply = async (caseId, commentId) => {
 
 // 评论区规则 tooltip — 点击切换，再次点击或点别处关闭
 window.toggleArbRulesTip = (ev) => {
-  ev.stopPropagation()
+  ev.stopPropagation(); ev.preventDefault()   // 按钮在 <summary> 内:阻止点击 ℹ 触发 details 折叠切换
   const el = document.getElementById('arb-rules-tip')
   if (!el) return
   const showing = el.style.display !== 'none' && el.style.display !== ''
@@ -15490,18 +15490,18 @@ async function renderSeller(app) {
     ${quotaBanner}
     ${pendingOrders.length > 0 ? `<div class="alert alert-warning">📬 ${t('你有')} ${pendingOrders.length} ${t('个订单需要处理')}</div>` : ''}
     <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:12px">
-      <section>
-        <div style="font-weight:700;margin-bottom:8px">📬 ${t('待接单')}</div>
+      <details ${paidOrders.length > 0 ? 'open' : ''}>
+        <summary style="font-weight:700;margin-bottom:8px;cursor:pointer;list-style:revert">📬 ${t('待接单')} (${paidOrders.length})</summary>
         ${acceptHtml}
-      </section>
-      <section>
-        <div style="font-weight:700;margin-bottom:8px">📦 ${t('待发货')}</div>
+      </details>
+      <details ${acceptedOrders.length > 0 ? 'open' : ''}>
+        <summary style="font-weight:700;margin-bottom:8px;cursor:pointer;list-style:revert">📦 ${t('待发货')} (${acceptedOrders.length})</summary>
         ${shipHtml}
-      </section>
-      <section>
-        <div style="font-weight:700;margin-bottom:8px">⚠ ${t('退货 · 争议 · 异常')}</div>
+      </details>
+      <details ${(exceptionOrders.length + exceptionReturns.length) > 0 ? 'open' : ''}>
+        <summary style="font-weight:700;margin-bottom:8px;cursor:pointer;list-style:revert">⚠ ${t('退货 · 争议 · 异常')} (${exceptionOrders.length + exceptionReturns.length})</summary>
         ${exceptionsHtml}
-      </section>
+      </details>
     </div>
     ${insightsBlock}
   ` : ''
