@@ -53,6 +53,9 @@ ok('1k9. legit hosts with ports/paths/query still accepted', [
   'https://example.com/cb', 'https://app.x.example:8443/oauth/cb?v=1', 'http://localhost:53682/callback',
   'http://127.0.0.1/cb', 'http://[::1]:9/cb', 'https://xn--mnchen-3ya.example/cb',
 ].every(x => isRegisterableRedirectUri(x)))
+// Codex round-5 P2: expanded/non-canonical IPv6 loopback literals must be accepted (Node compresses them)
+ok('1k10. expanded IPv6 loopback accepted', ['http://[0:0:0:0:0:0:0:1]/cb', 'https://[0:0:0:0:0:0:0:1]/cb', 'https://[::0001]/cb'].every(x => isRegisterableRedirectUri(x)))
+ok('1k11. non-loopback IPv6 over http still REJECTED (loopback-only)', !isRegisterableRedirectUri('http://[2001:db8::1]/cb'))
 ok('1l. raw space + NUL + DEL REJECTED', !isRegisterableRedirectUri('https://exa mple.com/cb') && !isRegisterableRedirectUri('https://example.com/\u0000') && !isRegisterableRedirectUri('https://example.com/\u007f'))
 
 const db = new Database(':memory:')

@@ -79,8 +79,14 @@ export function isRegisterableRedirectUri(uri: unknown): boolean {
   //   `scheme://authority`. If the parser normalized the host in ANY way (%-decode, `\`→`/`, IDNA,
   //   control-strip, userinfo split), the canonical prefix won't literally match → reject. u.host is
   //   the complete authority (host[:non-default-port]), so the match boundary is exact.
-  const canonical = `${u.protocol}//${u.host}`.toLowerCase()
-  if (!uri.toLowerCase().startsWith(canonical)) return false
+  //   IPv6 literals are exempt: Node canonicalizes them (`[0:0:0:0:0:0:0:1]` → `[::1]`) so the raw
+  //   prefix wouldn't match a legit expanded form (Codex P2 false-positive). They can't be host-
+  //   obfuscated the DNS way — HOST_RE constrains them to `[0-9a-fA-F:]`, ASCII-only blocks the rest,
+  //   and http still requires an exact `[::1]` loopback match below; https allows any host anyway.
+  if (!u.hostname.startsWith('[')) {
+    const canonical = `${u.protocol}//${u.host}`.toLowerCase()
+    if (!uri.toLowerCase().startsWith(canonical)) return false
+  }
   if (u.protocol === 'https:') return true
   if (u.protocol === 'http:') return u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]' || u.hostname === '::1'
   return false                                                               // no custom / non-http(s) schemes (v1)
