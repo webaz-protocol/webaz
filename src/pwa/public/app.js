@@ -553,7 +553,7 @@ async function render(page, params) {
   try { await initShareCtx() } catch (e) { console.warn('[ShareCtx]', e) }
 
   // 未登录时只允许看登录页、找回密钥页、商品、welcome 预发布页、governance-onboarding 公开页
-  if (!state.apiKey && page !== 'login' && page !== 'shop' && page !== 'recover' && page !== 'welcome' && page !== 'governance-onboarding' && page !== 'contribute' && page !== '') {
+  if (!state.apiKey && page !== 'login' && page !== 'shop' && page !== 'recover' && page !== 'welcome' && page !== 'connect' && page !== 'governance-onboarding' && page !== 'contribute' && page !== '') {
     // 保存目标 hash 以便登录/注册后跳回
     if (location.hash && !['#login', '#recover'].includes(location.hash)) {
       sessionStorage.setItem('webaz_intended_hash', location.hash)
@@ -634,7 +634,7 @@ async function render(page, params) {
     case 'seller-trials': return renderSellerTrials(app)
     // 2026-05-24 #991：/welcome 预发布页 — 6 区块协议介绍
     case 'welcome':       return renderWelcome(app)
-    // 2026-06-02 W3.5-B:#governance-onboarding 治理岗位申请页(公开页)
+    case 'connect':       return renderConnect(app)   // P0:一键接入 Agent 页(公开)
     case 'governance-onboarding': return renderGovernanceOnboarding(app)
     // PR9E-1 公开共建页(无需登录):任务板 / 详情 + agent 提示 / 建议任务
     case 'contribute':
