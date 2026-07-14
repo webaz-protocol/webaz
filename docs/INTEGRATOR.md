@@ -18,6 +18,8 @@ WebAZ exposes the **same 42-tool MCP surface** over two transports — pick by w
 | **Anonymous** | ✅ public read-only tools, no account | ✅ (network_readonly) |
 | **Authenticated** | `Authorization: Bearer <api_key>` header | `WEBAZ_API_KEY` env |
 
+**Python** (thin SDK over the Remote endpoint): `pip install webaz` → `async with WebAZ() as wz: await wz.browse()` (anonymous by default; `WebAZ(api_key=...)` to transact). See `sdk/python/`.
+
 **Anonymous read-only quickstart over Remote MCP** (no login):
 ```bash
 # 1) handshake  2) list tools  3) browse the catalog (filters, NO query = list all)
