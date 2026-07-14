@@ -46,6 +46,7 @@ async function main() {
   process.env.WEBAZ_OAUTH = '1'; delete process.env.WEBAZ_MODE; process.env.WEBAZ_OAUTH_DEV_CLIENT = '1'
   const { registerOAuthTokenRoutes } = await import('../src/pwa/routes/oauth-token.js')
   const app = express()
+  app.use(express.json())   // production-like: server.ts mounts the global JSON parser BEFORE the oauth routes
   const rlKeys: string[] = []
   registerOAuthTokenRoutes(app, { rateLimitOk: (k: string) => { rlKeys.push(k); return true } })
   const http = await new Promise<HttpServer>(r => { const s = app.listen(0, () => r(s)) })
@@ -103,6 +104,12 @@ async function main() {
   // ── 5. Codex PR-3 fixes ──
   ok('5a. oversized body → RFC-shaped invalid_request + no-store (not HTML 413)', await (async () => {
     const r = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'a='.padEnd(4096, 'x') })
+    const ct = r.headers.get('content-type') || ''
+    const j = ct.includes('json') ? await r.json() as { error?: string } : {}
+    return r.status === 400 && j.error === 'invalid_request' && (r.headers.get('cache-control') || '').includes('no-store')
+  })())
+  ok('5a2. malformed JSON via the GLOBAL parser → RFC shape + no-store (prod parser order)', await (async () => {
+    const r = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{broken' })
     const ct = r.headers.get('content-type') || ''
     const j = ct.includes('json') ? await r.json() as { error?: string } : {}
     return r.status === 400 && j.error === 'invalid_request' && (r.headers.get('cache-control') || '').includes('no-store')

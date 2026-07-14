@@ -56,8 +56,18 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
   }
   const { rateLimitOk } = deps
 
-  // P2(Codex PR-3):parser 错误也必须守 RFC 6749 错误形状 + no-store —— 显式 2kb 上限(合法兑换请求
-  // 远小于此),parse 失败经错误中间件转 invalid_request JSON,不落 express 默认 HTML 400/413。
+  // P2(Codex PR-3 两轮):parser 错误也必须守 RFC 6749 错误形状 + no-store。两个来源都要接住:
+  //   ① 本路由的 urlencoded parser(显式 2kb 上限);② 生产在本路由注册【之前】挂的全局 express.json()
+  //   —— 它的 parse 错误发生在路由匹配前,route 级 guard 接不到。解法 = path-scoped 4-arg error handler
+  //   (Express 错误处理器按注册序在错误后运行,不管错误来自哪个更早的中间件),统一转 RFC JSON。
+  app.use('/oauth/token', (err: unknown, _req: Request, res: Response, next: (e?: unknown) => void): void => {
+    if (!err) return next()
+    if (res.headersSent) return next(err)
+    res.setHeader('Cache-Control', 'no-store'); res.setHeader('Pragma', 'no-cache')
+    res.status(400).json({ error: 'invalid_request', error_description: 'malformed or oversized request body' })
+  })
+  //   route 级 urlencoded 的错误在栈中发生于本 handler【之后】,error handler 只向后查找 —— 所以
+  //   urlencoded 仍需 wrap guard(错误就地转 RFC JSON),两个来源各有各的接法。
   const tokenBodyParser = express.urlencoded({ extended: false, limit: '2kb' })
   const parseGuard = (req: Request, res: Response, next: (e?: unknown) => void): void => {
     tokenBodyParser(req, res, (e?: unknown) => {
