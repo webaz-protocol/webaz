@@ -185,6 +185,8 @@ try {
   const routeSource = readFileSync(new URL('../src/pwa/routes/direct-pay-pending-accept.ts', import.meta.url), 'utf8')
   const quoteCas = routeSource.indexOf('if (quoted.changes !== 1)')
   ok('31. stale seller re-quote CAS rejects before notification', quoteCas > 0 && routeSource.indexOf('notify(order.buyer_id', quoteCas) > quoteCas)
+  const indexes = (db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all() as Array<{ name: string }>).map(r => r.name)
+  ok('32. rolling-24h cap query has buyer + confirmation-history indexes', indexes.includes('idx_orders_buyer_created_at') && indexes.includes('idx_order_history_order_status_created'))
 } finally { server.close() }
 
 if (fail > 0) { console.error(`\n❌ shipping-quote FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

@@ -94,6 +94,7 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
 const EXTRACTED_SYNC_PREPARES: Record<string, number> = {
   'cart-checkout.ts': 5,
   'agent-spend-cap.ts': 2,
+  'direct-pay-quote-confirm.ts': 2,
   'price-session-consume.ts': 1,
 }
 
