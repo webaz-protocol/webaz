@@ -783,6 +783,7 @@ jobs:
       - run: npm run test:product-image-ui
       - run: npm run test:remote-mcp
       - run: npm run test:oauth-discovery
+      - run: npm run test:oauth-authorize
       - run: npm run test:create-kinds
       - run: npm run test:secondhand-photo-authenticity
       - run: npm run test:secondhand-detail-alignment

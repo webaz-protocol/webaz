@@ -280,7 +280,8 @@
     "test:remote-mcp": "tsx scripts/test-remote-mcp.ts",
     "agent:first-success": "node scripts/agent-first-success.mjs",
     "agent:compat-matrix": "node scripts/agent-compat-matrix.mjs",
-    "test:oauth-discovery": "tsx scripts/test-oauth-discovery.ts"
+    "test:oauth-discovery": "tsx scripts/test-oauth-discovery.ts",
+    "test:oauth-authorize": "tsx scripts/test-oauth-authorize.ts"
   },
   "keywords": [
     "mcp",
