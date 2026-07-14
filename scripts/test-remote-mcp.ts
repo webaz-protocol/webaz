@@ -12,6 +12,24 @@ import { readFileSync } from 'node:fs'
 import express from 'express'
 import type { Server as HttpServer } from 'node:http'
 
+// 必须在 import server.js(经 boot→mcp-remote)之前设置:apiCall/resolveMcpApiKey 的 WEBAZ_API_KEY module const
+// 在 import 时固化。设成非空,才能证明"隔离态 apiCall 不把这个宿主 key 泄漏到出站请求"。
+process.env.WEBAZ_API_KEY = 'wz_HOST_ENV_KEY_MUST_NOT_LEAK'
+
+// fetch spy:拦截出站到 webaz.xyz 的请求,记录每次的 Authorization,并返回空 catalog(不打真网络)。
+// 进程内的 /mcp 握手用 undici 打 127.0.0.1,不经此 spy(只拦 webaz.xyz)。
+const _realFetch = globalThis.fetch
+const outboundAuth: Array<string | null> = []
+globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+  const url = typeof input === 'string' ? input : (input as { url?: string })?.url || String(input)
+  if (url.includes('webaz.xyz')) {
+    const h = new Headers(init?.headers as HeadersInit)
+    outboundAuth.push(h.get('authorization'))
+    return new Response(JSON.stringify({ products: [], found: 0 }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  return _realFetch(input as RequestInfo, init)
+}) as typeof fetch
+
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}`) } }
 const has = (h: string, n: string) => h.includes(n)
@@ -100,7 +118,7 @@ async function main() {
   ok('7b. protocol-status 用 remoteMcpEnabled() gate', has(PU, 'remoteMcpEnabled()') && has(PU, "remote_mcp: 'https://webaz.xyz/mcp'"))
 
   // ── 8. 凭证隔离(修 Codex 两个 P0)— 直接 eval 真实函数,不靠字符串匹配 ──
-  process.env.WEBAZ_MODE = 'network'; process.env.WEBAZ_API_KEY = 'wz_host_env_key_MUST_NOT_LEAK'
+  process.env.WEBAZ_MODE = 'network'
   const L1mod = await import('../src/layer1-agent/L1-1-mcp-server/server.js')
   // 8a-c. resolveMcpApiKey:显式 envKey 参数测隔离逻辑(module const 在 import 时固化,故显式传更确定)
   const HOST = 'wz_host_env_key_MUST_NOT_LEAK'
@@ -115,6 +133,22 @@ async function main() {
   // 8f. 源码守卫:远程路由强制 isolated:true + 拦截器服务端强制标记(覆盖伪造)
   ok('8f. 远程路由强制 isolated:true', has(ROUTE, 'buildMcpServer({ isolated: true'))
   ok('8g. 拦截器服务端强制 __isolated__(覆盖调用方伪造),stdio 清除', has(L1, "if (opts.isolated) (args as Record<string, unknown>).__isolated__ = true") && has(L1, "else delete (args as Record<string, unknown>).__isolated__"))
+  ok('8h. apiCall fallback 走 ALS isIsolated()(单一权威,覆盖所有调用点)', has(L1, "const key = opts.apiKey || (isIsolated() ? '' : WEBAZ_API_KEY)"))
+  ok('8i. recentCalls ring buffer 隔离态不写(防跨请求元数据 bleed)', has(L1, "name !== 'webaz_feedback' && !isIsolated()"))
+
+  // ── 9. 端到端证明:即使宿主设了 WEBAZ_API_KEY,匿名远程的出站请求也不带它(ALS 隔离真生效)──
+  const { base: rbase, http: rhttp } = await boot({ WEBAZ_REMOTE_MCP: '1', WEBAZ_MODE: 'network' })
+  outboundAuth.length = 0
+  // 匿名(无 Bearer)调 webaz_search(公开读 → apiCall → 出站 webaz.xyz)
+  await rpc(rbase, { jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: 'webaz_search', arguments: { query: 'x' } } })
+  ok('9a. 匿名远程:出站请求确有发生(经 fetch spy)', outboundAuth.length >= 1)
+  ok('9b. ★匿名远程出站【不带】宿主 env key(修 P0:apiCall 不泄漏 WEBAZ_API_KEY)', outboundAuth.every(a => a == null))
+  // 关键不变量:即便带 Bearer 的远程请求,出站也【绝不】携带宿主 env key(只会是调用方自己的 bearer 或无 auth)
+  outboundAuth.length = 0
+  await rpc(rbase, { jsonrpc: '2.0', id: 11, method: 'tools/call', params: { name: 'webaz_search', arguments: { query: 'x' } } }, { Authorization: 'Bearer wz_caller_bearer_XYZ' })
+  ok('9c. ★宿主 env key 绝不出现在任何远程出站请求里(匿名或 bearer 都不泄漏宿主身份)',
+    outboundAuth.every(a => a !== 'Bearer wz_HOST_ENV_KEY_MUST_NOT_LEAK'))
+  rhttp.close()
 
   if (fail > 0) { console.error(`\n❌ remote MCP FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ remote MCP: real handshake over Streamable HTTP (stateless) + fail-closed flag + sandbox refuse + 405s + no-CORS + bearer seam\n  ✅ pass ${pass}`)

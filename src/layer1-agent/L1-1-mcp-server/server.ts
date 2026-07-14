@@ -18,6 +18,7 @@
  *   #6 不滥用(agent 责任制 + Iron-Rule 真人动作)· 生产端点在 src/pwa(NETWORK 共用)
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
@@ -103,6 +104,13 @@ const TELEMETRY_ENABLED = (process.env.WEBAZ_TELEMETRY ?? 'off').toLowerCase() =
 const WEBAZ_API_URL = (process.env.WEBAZ_API_URL ?? 'https://webaz.xyz').replace(/\/+$/, '')
 const WEBAZ_API_KEY = process.env.WEBAZ_API_KEY ?? ''
 
+// RFC-022 凭证隔离上下文(单一权威源)。远程共享端点每请求在此 store 里跑,isIsolated()=true;
+// 任意调用栈深处(apiCall / pwaApi / readEndpoint / resolveMcpApiKey / resolveGrantCredential / handlePair)
+// 都从这里判断,不必逐个 threading args —— 修 Codex round-2 残余 P0(apiCall 直读宿主 WEBAZ_API_KEY 绕过补丁)。
+// AsyncLocalStorage 跨 await 传播且请求间隔离;远程是每请求新建 server(见 mcp-remote.ts),各自独立 async 上下文。
+const isolationALS = new AsyncLocalStorage<boolean>()
+export function isIsolated(): boolean { return isolationALS.getStore() === true }
+
 // F6 (dogfood R2): keyed MCP handlers resolve api_key as  explicit args.api_key  >  env WEBAZ_API_KEY  >
 // '' (→ the existing typed API_KEY_REQUIRED guards). Explicit ALWAYS wins; env never overrides an explicit
 // key. Keyless actions (list/discover/detail/suggest/browse/get_campaign…) gate their public branches
@@ -110,8 +118,9 @@ const WEBAZ_API_KEY = process.env.WEBAZ_API_KEY ?? ''
 // The key is never printed/returned/logged.
 export function resolveMcpApiKey(args: Record<string, unknown>, envKey: string = WEBAZ_API_KEY): string {
   const explicit = typeof args?.api_key === 'string' ? args.api_key.trim() : ''
-  // RFC-022 隔离:远程共享端点下禁用宿主 env key 回退 — 匿名远程只得空(→ API_KEY_REQUIRED,真 readonly)
-  const envFallback = args?.__isolated__ ? '' : envKey
+  // RFC-022 隔离:远程共享端点下禁用宿主 env key 回退 — 匿名远程只得空(→ API_KEY_REQUIRED,真 readonly)。
+  // 权威源 isIsolated()(ALS,覆盖整条 async 栈)+ args.__isolated__ 二道防线。
+  const envFallback = (args?.__isolated__ || isIsolated()) ? '' : envKey
   return explicit || envFallback
 }
 
@@ -163,7 +172,9 @@ function networkMigrationPending(tool: string): Record<string, unknown> {
 // 统一 API helper(P1/P2 迁移工具时使用)。Bearer api_key + 15s 超时 + 错误映射。
 async function apiCall(path: string, opts: { method?: string; body?: unknown; apiKey?: string } = {}): Promise<Record<string, unknown>> {
   const { method = 'GET', body } = opts
-  const key = opts.apiKey || WEBAZ_API_KEY  // 每次调用可覆盖(工具 args.api_key 优先);否则用全局配置 key
+  // 隔离态(远程共享端点)绝不回退到宿主 WEBAZ_API_KEY —— 匿名远程真无 key(修 Codex P0 越权);
+  // 显式传入的 opts.apiKey(=本请求 bearer / args.api_key)始终优先且不受影响。
+  const key = opts.apiKey || (isIsolated() ? '' : WEBAZ_API_KEY)
   const url = WEBAZ_API_URL + (path.startsWith('/') ? path : '/' + path)
   try {
     const resp = await fetch(url, {
@@ -241,7 +252,7 @@ function readGrantPointer(): { grant_id: string; handle: string; capabilities?: 
  * print it, or return it in a tool response.
  */
 export function resolveGrantCredential(args?: Record<string, unknown>): { grant_id: string; token: string; handle: string; capabilities?: unknown; expires_at?: unknown } | null {
-  if (args?.__isolated__) return null   // RFC-022 隔离:远程端点绝不读宿主存储的 grant(修 Codex P0 越权)
+  if (args?.__isolated__ || isIsolated()) return null   // RFC-022 隔离:远程端点绝不读宿主存储的 grant(修 Codex P0 越权)
   const ptr = readGrantPointer()
   if (!ptr?.grant_id) return null
   let token = ''
@@ -267,7 +278,7 @@ export async function handlePair(args: Record<string, unknown>): Promise<Record<
   // RFC-022 隔离(修 Codex P0:跨请求 pairing 竞态/劫持)— pairing 把 verifier/grant 写进【宿主】共享文件,
   // 在无状态远程共享端点下会被并发请求竞争/劫持,且随后任何远程调用方都能用上宿主 grant。远程一律禁 pairing:
   // 配对是【本地一次性】动作,在你自己机器/PWA 完成,别经共享端点。
-  if (args?.__isolated__) {
+  if (args?.__isolated__ || isIsolated()) {
     return {
       _mode: 'network_readonly',
       error: 'webaz_pair is not available over the remote endpoint — pairing is a one-time LOCAL action. Pair on your own machine (or the PWA), then use that grant locally. The remote endpoint only accepts a per-request Bearer api_key.',
@@ -5263,9 +5274,10 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     }
   })
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, (request) => isolationALS.run(opts.isolated === true, async () => {
     const { name, arguments: args = {} } = request.params
-    // RFC-022:凭证隔离标记(服务端强制,先于一切)— 覆盖调用方任何伪造值;stdio(isolated=false)则清除
+    // RFC-022:凭证隔离标记(服务端强制,先于一切)— 覆盖调用方任何伪造值;stdio(isolated=false)则清除。
+    // 权威源是上面的 isolationALS.run(整条 async 栈可见);此 args 标记为二道防线(defense in depth)。
     if (opts.isolated) (args as Record<string, unknown>).__isolated__ = true
     else delete (args as Record<string, unknown>).__isolated__
     // RFC-022:远程 bearer 注入(见 buildMcpServer 头注)— args 显式 api_key 永远优先
@@ -5333,7 +5345,8 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     recordToolCall(name, args, result, Date.now() - t0)
 
     // RFC-004 现场证据:记本次调用的脱敏摘要(只 arg key 名,不含值)。webaz_feedback 自身不入 buffer。
-    if (name !== 'webaz_feedback') {
+    // RFC-022:隔离态(远程共享端点)不写这个进程级 ring buffer —— 防跨请求元数据 bleed(Codex round-2 次要项)。
+    if (name !== 'webaz_feedback' && !isIsolated()) {
       const isErr = !!result && typeof result === 'object' && 'error' in (result as Record<string, unknown>)
       pushRecentCall({
         tool: name,
@@ -5361,7 +5374,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     return {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     }
-  })
+  }))
 
   return server
 }
