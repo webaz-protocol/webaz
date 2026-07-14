@@ -4142,11 +4142,11 @@ function renderLogin() {
         <h1 class="login-title" style="font-size:clamp(30px,5vh,40px);margin:0 0 clamp(16px,3vh,28px);font-weight:600;letter-spacing:-0.5px;color:#1d1d1f">WebAZ</h1>
 
         ${window._lang === 'en' ? `
-          <div class="hero-line hero-line-1" style="font-size:clamp(20px,3.4vh,26px);font-weight:600;color:#1d1d1f;line-height:1.25;letter-spacing:-0.3px;margin-bottom:6px">Built &amp; Owned by Everyone</div>
+          <div class="hero-line hero-line-1" style="font-size:clamp(20px,3.4vh,26px);font-weight:600;color:#1d1d1f;line-height:1.25;letter-spacing:-0.3px;margin-bottom:6px">Built by Everyone · Owned Progressively</div>
           <div class="hero-line hero-line-2" style="font-size:clamp(15px,2.4vh,18px);font-weight:500;color:#86868b;line-height:1.35;letter-spacing:-0.1px;margin-bottom:clamp(20px,3.2vh,28px)">Be seen · Be heard · Matter</div>
           <div class="hero-line hero-line-3" style="font-size:clamp(13px,2vh,15px);color:#6366f1;font-weight:500;line-height:1.4;letter-spacing:0.1px">Use <span class="silver-arrow">⇄</span> Build <span class="silver-arrow">⇄</span> Own</div>
         ` : `
-          <div class="hero-line hero-line-1" style="font-size:clamp(20px,3.4vh,26px);font-weight:600;color:#1d1d1f;line-height:1.35;letter-spacing:1px;margin-bottom:6px">属于每一个参与者</div>
+          <div class="hero-line hero-line-1" style="font-size:clamp(20px,3.4vh,26px);font-weight:600;color:#1d1d1f;line-height:1.35;letter-spacing:1px;margin-bottom:6px">由每个参与者共建 · 渐进共有</div>
           <div class="hero-line hero-line-2" style="font-size:clamp(15px,2.4vh,18px);font-weight:500;color:#86868b;line-height:1.4;letter-spacing:1.5px;margin-bottom:clamp(20px,3.2vh,28px)">参与即存在</div>
           <div class="hero-line hero-line-3" style="font-size:clamp(13px,2vh,15px);color:#6366f1;font-weight:500;line-height:1.5;letter-spacing:2px">使用 <span class="silver-arrow">⇄</span> 建设 <span class="silver-arrow">⇄</span> 拥有</div>
         `}
@@ -4192,7 +4192,7 @@ function renderLogin() {
               <path d="M12 3v18M5 21h14"/>
               <path d="M7 8h10l-3 6a3 3 0 0 0 6 0L17 8M7 8l-3 6a3 3 0 0 0 6 0L7 8"/>
             </svg>
-            ${t('DAO 治理')}
+            ${t('渐进去中心化')}
           </div>
         </div>
       </div>
@@ -4603,7 +4603,7 @@ function renderWelcome(app) {
       <!-- Footer -->
       <footer class="w-footer">
         <div>© 2026 webaz</div>
-        <div>${T('开放协议 · Agent 原生 · DAO 治理', 'Open Protocol · Agent-Native · DAO Governance')}</div>
+        <div>${T('开放协议 · Agent 原生 · 渐进去中心化', 'Open Protocol · Agent-Native · Progressive Decentralization')}</div>
         <div style="margin-top:10px">
           <a href="https://github.com/webaz-protocol/webaz/blob/main/docs/META-RULES-FULL.md" target="_blank" rel="noopener">${T('完整元规则', 'Full Meta-Rules')}</a>
           <a href="https://github.com/webaz-protocol/webaz" target="_blank" rel="noopener">GitHub</a>
@@ -4614,7 +4614,7 @@ function renderWelcome(app) {
     </div>
   `
   // 设置 title
-  try { document.title = en ? 'webaz — Built and owned by everyone' : 'webaz — 属于每一个参与者' } catch {}
+  try { document.title = en ? 'webaz — Built by everyone, owned progressively' : 'webaz — 由每个参与者共建' } catch {}
   // 10 元规则 IntersectionObserver fade-in
   const rules = app.querySelectorAll('.w-rule')
   if (rules.length && 'IntersectionObserver' in window) {

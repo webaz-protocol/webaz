@@ -4845,7 +4845,7 @@ const _EN = {
   '邮箱格式无效':                          'Invalid email format',
   '已收到，上线时第一时间通知你':            "Received — we'll notify you at launch",
   // 首屏新文案
-  '属于每一个参与者。':                  'Built & Owned by everyone.',
+  '属于每一个参与者。':                  'Built by everyone · owned progressively.',
   '你的贡献会被看见！':                  'You will be seen & matter!',
   '使用、建设、贡献。':                  'Use it = Build it = Earn from it.',
   '参与共建':                            'Participate',
@@ -6231,6 +6231,7 @@ const _EN = {
   'Agent 原生':                        'Agent-native',
   'DAO 治理':                          'DAO-governed',
   '直付已上线(非托管:不代持·不担保·不退款)· 托管轨=模拟测试币 · USDC 计价仅展示 · 邀请制预发布 · 勿据此投资或承诺': 'Direct Pay is live (non-custodial: no holding · no guarantee · no refunds) · escrow rail = simulated test tokens · USDC prices are display-only · invite-only pre-launch · do not invest or commit to third parties based on this',
+  '渐进去中心化':                       'Progressive decentralization',
 
   // ── 2026-05-24 #me 重设计（方案 C）
   '快捷菜单':                          'Quick menu',
