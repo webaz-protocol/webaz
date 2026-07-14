@@ -24,9 +24,11 @@ import { restorePreShipDirectPayStock } from '../../direct-pay-stock.js'
 import { createNotification } from '../../layer2-business/L2-6-notifications/notification-engine.js'
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 import { toUnits, toDecimal } from '../../money.js'
-import { buildPayableSnapshot, type DirectPayAccountSnapshot } from '../../direct-pay-create.js'
 import { safeRunDirectPayAmlMonitor } from '../../direct-pay-aml-monitor.js'
 import { updateSnapshotShippingQuote } from '../../trade-terms.js'  // S0:询价确认后补记条款快照 shipping 槽(quote_pending→quote,fail-soft)
+import { AgentSpendCapExceeded } from '../../agent-spend-cap.js'
+import { confirmDirectPayShippingQuote } from '../../direct-pay-quote-confirm.js'
+import { hasInvalidPurchaseCredential, readStrictBearerCredential } from '../bearer-auth.js'
 
 export interface DirectPayPendingAcceptDeps {
   db: Database.Database
@@ -35,13 +37,13 @@ export interface DirectPayPendingAcceptDeps {
   getProtocolParam: <T>(key: string, fallback: T) => T
 }
 
-type OrderRow = { id: string; buyer_id: string; seller_id: string; status: string; payment_rail: string; product_id: string; quantity: number; total_amount: number; shipping_quote_required: number | null; shipping_quote_fee: number | null; shipping_quote_est_days: string | null; direct_pay_per_tx_cap_units_snapshot: number | null; direct_pay_account_snapshot: string | null }
+type OrderRow = { id: string; buyer_id: string; seller_id: string; status: string; payment_rail: string; product_id: string; quantity: number; total_amount: number; shipping_quote_required: number | null; shipping_quote_fee: number | null; shipping_quote_est_days: string | null; direct_pay_per_tx_cap_units_snapshot: number | null }
 
 export function registerDirectPayPendingAcceptRoutes(app: Application, deps: DirectPayPendingAcceptDeps): void {
   const { db, auth, errorRes, getProtocolParam } = deps
 
   async function loadPendingOrder(req: Request, res: Response): Promise<OrderRow | null> {
-    const order = await dbOne<OrderRow>('SELECT id, buyer_id, seller_id, status, payment_rail, product_id, quantity, total_amount, shipping_quote_required, shipping_quote_fee, shipping_quote_est_days, direct_pay_per_tx_cap_units_snapshot, direct_pay_account_snapshot FROM orders WHERE id = ?', [req.params.id])
+    const order = await dbOne<OrderRow>('SELECT id, buyer_id, seller_id, status, payment_rail, product_id, quantity, total_amount, shipping_quote_required, shipping_quote_fee, shipping_quote_est_days, direct_pay_per_tx_cap_units_snapshot FROM orders WHERE id = ?', [req.params.id])
     if (!order) { errorRes(res, 404, 'ORDER_NOT_FOUND', '订单不存在'); return null }
     if (order.payment_rail !== 'direct_p2p') { errorRes(res, 409, 'NOT_DIRECT_PAY', '仅直付订单有待接单阶段'); return null }
     if (order.status !== 'pending_accept') { errorRes(res, 409, 'NOT_PENDING_ACCEPT', `当前状态 ${order.status},不在待接单阶段`); return null }
@@ -148,30 +150,24 @@ export function registerDirectPayPendingAcceptRoutes(app: Application, deps: Dir
   // 买家确认报价 → 运费并入 total_amount(整数 units 精确加)+ 快照三列 + 重建 payable 参考换算 → 进付款窗。
   //   CAS:仅 pending_accept 且已报价;总额变更与状态转移同一 db.transaction(要么全生效要么全回滚)。
   app.post('/api/orders/:id/pending-accept/confirm-quote', async (req, res) => {
+    const agentApiKey = readStrictBearerCredential(req.headers.authorization)
+    if (hasInvalidPurchaseCredential(req.headers.authorization, req.body?.api_key, agentApiKey)) return void res.status(401).json({ error: '确认报价必须使用 Authorization: Bearer <api_key>', error_code: 'AUTH_HEADER_REQUIRED' })
     const user = auth(req, res); if (!user) return
     const order = await loadPendingOrder(req, res); if (!order) return
     if (order.buyer_id !== user.id) return void errorRes(res, 403, 'NOT_ORDER_BUYER', '只有订单买家可确认报价')
     if (Number(order.shipping_quote_required) !== 1 || order.shipping_quote_fee == null) return void errorRes(res, 409, 'QUOTE_NOT_SUBMITTED', '卖家尚未报价,不可确认')
-    const feeR = Number(order.shipping_quote_fee)
-    const newTotal = toDecimal(toUnits(Number(order.total_amount)) + toUnits(feeR))
     const windowHours = Math.max(1, Number(getProtocolParam<number>('direct_pay.payment_window_hours', 4)) || 4)
-    // payable 参考换算按新总额重建(display-only;账户快照缺失/坏 JSON → 保持原样,零阻断)
-    let snapJson: string | null = order.direct_pay_account_snapshot
+    let confirmed: { fee: number; total: number; estDays: string | null }
     try {
-      if (snapJson) { const snap = JSON.parse(snapJson) as DirectPayAccountSnapshot; snapJson = JSON.stringify({ ...snap, ...buildPayableSnapshot(newTotal, snap.currency ?? null) }) }
-    } catch { snapJson = order.direct_pay_account_snapshot }
-    try {
-      db.transaction(() => {
-        const u = db.prepare(`UPDATE orders SET total_amount = ?, shipping_fee = ?, shipping_est_days = ?, direct_pay_account_snapshot = ?, direct_pay_window_deadline = ? WHERE id = ? AND status = 'pending_accept' AND shipping_quote_fee IS NOT NULL`)
-          .run(newTotal, feeR, order.shipping_quote_est_days, snapJson, new Date(Date.now() + windowHours * 3600_000).toISOString(), order.id)
-        if (u.changes !== 1) throw new Error('QUOTE_CONFIRM_RACE')
-        const t = transition(db, order.id, 'direct_pay_window', 'sys_protocol', [], `买家确认运费报价(${feeR} USDC,新总额 ${newTotal})→ 进入直付付款窗口`)
-        if (!t.success) throw new Error(t.error || 'TRANSITION_FAILED')
-      })()
-    } catch (e) { return void errorRes(res, 409, 'QUOTE_CONFIRM_FAILED', (e as Error).message) }
+      confirmed = confirmDirectPayShippingQuote(db, { orderId: order.id, buyerId: String(user.id), agentApiKey, windowHours })
+    } catch (e) {
+      if (e instanceof AgentSpendCapExceeded) return void res.status(403).json(e.violation)
+      return void errorRes(res, 409, 'QUOTE_CONFIRM_FAILED', (e as Error).message)
+    }
+    const { fee: feeR, total: newTotal, estDays } = confirmed
     // 总额变更后补跑 AML 监控(fail-soft,绝不回流为失败);条款快照补记运费裁决(quote_pending→quote)
     safeRunDirectPayAmlMonitor(db, { sellerId: order.seller_id, orderId: order.id, nowIso: new Date().toISOString(), getProtocolParam })
-    updateSnapshotShippingQuote(db, order.id, feeR, order.shipping_quote_est_days ?? null)
+    updateSnapshotShippingQuote(db, order.id, feeR, estDays)
     notify(order.seller_id, order.id, 'direct_pay_quote_confirmed', '✅ 买家已确认运费报价',
       `买家已确认新总额 ${newTotal} USDC(含运费 ${feeR}),订单进入付款窗口。买家完成场外付款并标记后你会收到发货提醒。`,
       { templateKey: 'dp_quote_confirmed', params: { total: newTotal, fee: feeR } })
