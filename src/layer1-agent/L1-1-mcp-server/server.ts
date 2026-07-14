@@ -252,7 +252,14 @@ function readGrantPointer(): { grant_id: string; handle: string; capabilities?: 
  * print it, or return it in a tool response.
  */
 export function resolveGrantCredential(args?: Record<string, unknown>): { grant_id: string; token: string; handle: string; capabilities?: unknown; expires_at?: unknown } | null {
-  if (args?.__isolated__ || isIsolated()) return null   // RFC-022 隔离:远程端点绝不读宿主存储的 grant(修 Codex P0 越权)
+  if (args?.__isolated__ || isIsolated()) {
+    // RFC-022 隔离:远程端点绝不读宿主存储的 grant(修 Codex P0 越权)。
+    // RFC-023 PR-4:唯一例外 = 本请求 /mcp Authorization 注入的 grant token(gtk_/oat_);它来自这次请求本身,
+    //   非宿主存储,故不违反隔离。/api 侧 verifyGrantToken 会再做 introspection + scope 校验(此处不信任)。
+    const injected = typeof args?.__grant_bearer__ === 'string' ? args.__grant_bearer__ : ''
+    if (injected) return { grant_id: 'remote', token: injected, handle: 'remote', capabilities: undefined, expires_at: undefined }
+    return null
+  }
   const ptr = readGrantPointer()
   if (!ptr?.grant_id) return null
   let token = ''
@@ -5116,7 +5123,12 @@ function settleOrder(db: Database.Database, orderId: string) {
 //   —— env WEBAZ_API_KEY 回退、存储的 RFC-020 grant、本地 pairing 文件。远程请求只认自己的 bearer,
 //   匿名远程 = 真 network_readonly,绝不继承跑在 ops 主机上的 grant/key(修 Codex 两个 P0:跨请求越权)。
 //   经每-请求的 args.__isolated__ 传递(无共享 module 状态,并发安全;服务端强制,调用方伪造会被覆盖)。
-export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolean } = {}) {
+// opts.grantBearer(RFC-023 PR-4)= 远程 grant 凭证注入点:当 /mcp 的 Authorization 是 grant token
+//   (gtk_ 直接 grant / oat_ OAuth access token)时,把它作为【本请求】的 grant 凭证喂给 grant-wired 工具
+//   (get_agent_order / order_action_request / list_product 草稿),使委托在远程可用 —— 但隔离不变量不破:
+//   resolveGrantCredential 在隔离下【只】认这个 per-request 注入值,绝不读宿主存储的 grant/pairing 文件。
+//   grant token 不当 defaultApiKey(它不是 human api_key;通用工具照旧匿名 network_readonly)。
+export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolean; grantBearer?: string } = {}) {
   const server = new Server(
     // name 是客户端配置引用的 server 标识(勿改);version 走单一来源(旧硬编码 '0.1.0' 已漂移)。
     { name: 'dcp-protocol', version: SOFTWARE_VERSION },
@@ -5304,6 +5316,9 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     // 权威源是上面的 isolationALS.run(整条 async 栈可见);此 args 标记为二道防线(defense in depth)。
     if (opts.isolated) (args as Record<string, unknown>).__isolated__ = true
     else delete (args as Record<string, unknown>).__isolated__
+    // RFC-023 PR-4:远程 grant 凭证注入(见 buildMcpServer 头注)。服务端强制、每请求覆盖调用方伪造值。
+    if (opts.grantBearer) (args as Record<string, unknown>).__grant_bearer__ = opts.grantBearer
+    else delete (args as Record<string, unknown>).__grant_bearer__
     // RFC-022:远程 bearer 注入(见 buildMcpServer 头注)— args 显式 api_key 永远优先
     if (opts.defaultApiKey && (args as Record<string, unknown>).api_key == null) (args as Record<string, unknown>).api_key = opts.defaultApiKey
     const t0 = Date.now()

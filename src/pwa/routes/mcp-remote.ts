@@ -83,10 +83,17 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
     try {
       const authz = String(req.headers.authorization || '')
       const bearer = authz.startsWith('Bearer ') ? authz.slice(7).trim() : ''
+      // RFC-023 PR-4:grant token(gtk_ 直接 grant / oat_ OAuth access token)走 grant 凭证注入,不当 human
+      //   api_key —— 它 audience-bound 到 /mcp 的 grant 面,通用工具照旧匿名。human api_key 走 defaultApiKey。
+      const isGrantBearer = bearer.startsWith('gtk_') || bearer.startsWith('oat_')
       // 每请求独立装配(SDK 无状态模式的标准形态)— 请求间零共享状态。
       // isolated:true = 凭证隔离(RFC-022 §2 T5):远程只认本请求 bearer,绝不继承宿主 env key / 存储 grant /
       //   pairing 文件;匿名远程 = 真 network_readonly。修 Codex 两个 P0(跨请求越权 + pairing 竞态)。
-      const server = buildMcpServer({ isolated: true, ...(bearer ? { defaultApiKey: bearer } : {}) })
+      const server = buildMcpServer({
+        isolated: true,
+        ...(bearer && !isGrantBearer ? { defaultApiKey: bearer } : {}),
+        ...(isGrantBearer ? { grantBearer: bearer } : {}),
+      })
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,        // stateless:不发 session id
         enableJsonResponse: true,             // 纯 JSON 响应(连接器兼容性最大化,不开 SSE)

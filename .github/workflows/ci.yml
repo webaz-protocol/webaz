@@ -785,6 +785,7 @@ jobs:
       - run: npm run test:oauth-discovery
       - run: npm run test:oauth-authorize
       - run: npm run test:oauth-approve
+      - run: npm run test:oauth-mcp-bearer
       - run: npm run test:create-kinds
       - run: npm run test:secondhand-photo-authenticity
       - run: npm run test:secondhand-detail-alignment

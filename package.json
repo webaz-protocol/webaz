@@ -282,7 +282,8 @@
     "agent:compat-matrix": "node scripts/agent-compat-matrix.mjs",
     "test:oauth-discovery": "tsx scripts/test-oauth-discovery.ts",
     "test:oauth-authorize": "tsx scripts/test-oauth-authorize.ts",
-    "test:oauth-approve": "tsx scripts/test-oauth-approve.ts"
+    "test:oauth-approve": "tsx scripts/test-oauth-approve.ts",
+    "test:oauth-mcp-bearer": "tsx scripts/test-oauth-mcp-bearer.ts"
   },
   "keywords": [
     "mcp",
