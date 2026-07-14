@@ -31,6 +31,9 @@ ok('1g. garbage / empty / overlong REJECTED', !isRegisterableRedirectUri('not a 
 ok('1h. wildcard https host REJECTED', !isRegisterableRedirectUri('https://*.evil.example/cb') && !isRegisterableRedirectUri('https://foo.*.example/cb'))
 ok('1i. valid IPv4 / bracketed IPv6 loopback accepted', isRegisterableRedirectUri('http://[::1]:9/cb') && isRegisterableRedirectUri('https://1.2.3.4/cb'))
 ok('1j. subdomain + hyphen hosts accepted (normal DNS)', isRegisterableRedirectUri('https://app.my-connector.example/cb'))
+// Codex round-2: raw control chars (tab/newline/CR) that the URL parser would strip must be rejected up-front
+ok('1k. raw tab/newline/CR in host REJECTED (no parser-strip bypass)', !isRegisterableRedirectUri('https://exa\tmple.com/cb') && !isRegisterableRedirectUri('https://exa\nmple.com/cb') && !isRegisterableRedirectUri('https://example.com/cb\r'))
+ok('1l. raw space + NUL + DEL REJECTED', !isRegisterableRedirectUri('https://exa mple.com/cb') && !isRegisterableRedirectUri('https://example.com/\u0000') && !isRegisterableRedirectUri('https://example.com/\u007f'))
 
 const db = new Database(':memory:')
 initOAuthSchema(db)

@@ -61,6 +61,10 @@ export async function oauthClients(): Promise<OAuthClient[]> {
 const HOST_RE = /^(?:\[[0-9a-fA-F:]+\]|[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*)$/
 export function isRegisterableRedirectUri(uri: unknown): boolean {
   if (typeof uri !== 'string' || uri.length === 0 || uri.length > 2000) return false
+  // Reject raw C0 controls / DEL / whitespace BEFORE parsing (Codex round-2): the WHATWG URL parser
+  //   strips tab/newline, so `https://exa\tmple.com/cb` would normalize to a clean host and slip past
+  //   HOST_RE while the stored/displayed string stays malformed. A legit redirect_uri never has these.
+  if (/[\u0000-\u0020\u007f]/.test(uri)) return false
   let u: URL
   try { u = new URL(uri) } catch { return false }
   if (u.hash || u.username || u.password) return false                       // no fragment / userinfo
