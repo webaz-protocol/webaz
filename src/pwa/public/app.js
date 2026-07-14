@@ -1018,7 +1018,7 @@ function roleHome(role) {
 function preLaunchBannerHTML() {
   if (window._protocolPhase && window._protocolPhase !== 'pre_launch') return ''
   return `<details style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:8px 14px;font-size:12px;color:#92400e;line-height:1.5;margin:8px 12px 12px">
-    <summary style="cursor:pointer;text-align:center;list-style:none">⚠️ <strong>${t('直付已上线(非托管:不代持·不担保·不退款)· 托管轨=模拟测试币 · 邀请制预发布')}</strong> <span style="text-decoration:underline;font-weight:600;color:#7c2d12">${t('详情')}</span></summary>
+    <summary style="cursor:pointer;text-align:center;list-style:none">⚠️ <strong>${t('直付已上线(非托管:不代持·不担保·不退款)· 托管轨=模拟测试币 · USDC 计价仅展示 · 邀请制预发布 · 勿据此投资或承诺')}</strong> <span style="text-decoration:underline;font-weight:600;color:#7c2d12">${t('详情')}</span></summary>
     <div style="margin-top:6px;text-align:left">${t('直付(direct pay)已上线,是你与卖家的真实场外付款;WebAZ 非托管——不代持、不担保、不退款 · 平台托管(escrow)尚未上线(模拟测试币)· 价格按 USDC 计价仅供展示 · 邀请制预发布,勿据此投资或向第三方承诺')}</div>
   </details>`
 }
@@ -4990,7 +4990,7 @@ async function renderContributeTasks(app) {
       </header>
       ${_cBoundaryHTML(UNCOMMITTED_VALUE_BOUNDARY_HINT(), T)}
       <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;justify-content:space-between"><span style="font-size:12px;color:#71717a">${T('按风险与能力找适合你的任务', 'Find tasks that fit your risk & capability')}</span><button onclick="location.hash='#contribute/tasks/suggest'" style="padding:8px 16px;background:#fff;color:#18181B;border:1px solid #d4d4d8;border-radius:8px;font-size:13px;cursor:pointer;white-space:nowrap">💡 ${T('建议新任务', 'Suggest a task')}</button></div>
-      <details ${Object.keys(q).length ? 'open' : ''} style="margin-bottom:14px"><summary style="cursor:pointer;font-size:13px;color:#6366f1;font-weight:600;list-style:revert">🔎 ${T('筛选', 'Filters')}</summary><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <details ${['area','risk_level','auto_claimable','agent_capabilities','max_duration_minutes','estimated_context_size','estimated_agent_budget'].some(k => q[k]) ? 'open' : ''} style="margin-bottom:14px"><summary style="cursor:pointer;font-size:13px;color:#6366f1;font-weight:600;list-style:revert">🔎 ${T('筛选', 'Filters')}</summary><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <input id="ct-f-area" placeholder="${T('领域 area', 'area')}" value="${_cEsc(q.area || '')}" style="flex:1;min-width:120px;padding:8px 10px;border:1px solid #d4d4d8;border-radius:8px;font-size:13px">
         <select id="ct-f-risk" style="padding:8px 10px;border:1px solid #d4d4d8;border-radius:8px;font-size:13px">
           <option value="">${T('风险(全部)', 'risk (all)')}</option>

@@ -6230,7 +6230,7 @@ const _EN = {
   '开放协议':                          'Open protocol',
   'Agent 原生':                        'Agent-native',
   'DAO 治理':                          'DAO-governed',
-  '直付已上线(非托管:不代持·不担保·不退款)· 托管轨=模拟测试币 · 邀请制预发布': 'Direct Pay is live (non-custodial: no holding · no guarantee · no refunds) · escrow rail = simulated test tokens · invite-only pre-launch',
+  '直付已上线(非托管:不代持·不担保·不退款)· 托管轨=模拟测试币 · USDC 计价仅展示 · 邀请制预发布 · 勿据此投资或承诺': 'Direct Pay is live (non-custodial: no holding · no guarantee · no refunds) · escrow rail = simulated test tokens · USDC prices are display-only · invite-only pre-launch · do not invest or commit to third parties based on this',
 
   // ── 2026-05-24 #me 重设计（方案 C）
   '快捷菜单':                          'Quick menu',
