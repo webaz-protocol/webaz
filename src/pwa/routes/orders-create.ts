@@ -33,7 +33,7 @@ import { buildCartMandate, buildPaymentMandate, signMandate } from './ap2-mandat
 import { toUnits, toDecimal, mulQty, mulRate } from '../../money.js'
 import { createDirectPayResponse } from '../../direct-pay-create.js'                    // PR-4c: direct_p2p 建单分叉(生产门+收款指令门+原子建单;本金不入协议)
 import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'; import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from '../../trade-terms.js'; import { gateSaleRegionForCreate } from '../../sale-regions.js'  // PR-2 运费守门 + S0 条款快照 + S1 可售门(意愿/合规先于物流)
-import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam(仅下单事务外的预检查;事务内 escrow/INSERT 保持同步)
+import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'; import { AgentSpendCapExceeded, getAgentSpendCapViolation } from '../../agent-spend-cap.js'  // RFC-016 异步 DB seam(仅下单事务外的预检查;事务内 escrow/INSERT 保持同步)
 
 // 店铺推荐 → 商品三级归因的【懒升级】(sync,跑在下单事务内、getProductShareChain 之前)。
 // 严格门槛(任一不满足则不升级,绝不覆盖已有有效直接归因):
@@ -121,9 +121,8 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     // P0 fix: 受信角色不可下单（铁律）
     if (isTrustedRole(user as Record<string, unknown>)) return void res.status(403).json({ error: '受信角色不可参与交易', error_code: 'TRUSTED_ROLE_NO_TRADE' })
     if (user.role !== 'buyer') return void res.json({ error: '仅买家可下单' })
-
     // 2026-05-23 P0 audit fix 2.1：agent_attestations spend_cap 强制
-    const apiKey = req.headers.authorization?.replace('Bearer ', '')
+    const apiKey = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1]; if (typeof req.body?.api_key === 'string' && !apiKey) return void res.status(401).json({ error: '下单必须使用 Authorization: Bearer <api_key>', error_code: 'AUTH_HEADER_REQUIRED' })
     if (apiKey) {
       const cap = await dbOne<{ spend_cap_per_order: number | null; spend_cap_daily: number | null }>(`SELECT spend_cap_per_order, spend_cap_daily FROM agent_attestations
         WHERE api_key = ? AND user_id = ? AND revoked_at IS NULL`, [apiKey, user.id])
@@ -299,7 +298,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     const totalAmount = toDecimal(totalAmountU)
     const donationAmount = toDecimal(donationAmountU); const shippingFee = toDecimal(_ship.feeU)
     // PR-4c:direct_p2p 分叉 —— 本金不入协议,跳过下方 escrow 预检/事务,改走直付建单(生产门+收款指令门+原子建单,仅锁卖家 fee-stake)。
-    if (String(req.body?.payment_rail || '') === 'direct_p2p') return void createDirectPayResponse(res, db, { generateId, transition, appendOrderEvent, getProtocolParam }, { product, buyerId: user.id as string, reqQty, basePrice, totalAmount, totalAmountU, shippingAddress: String(shipping_address), directReceiveAccountId: (typeof req.body?.direct_receive_account_id === 'string' && req.body.direct_receive_account_id) ? String(req.body.direct_receive_account_id) : undefined, opts: { variantId: variant_id, hasVariants: Number(product.has_variants) === 1, flashActive: !!flashSale, couponCode: coupon_code, buyInsurance: !!buy_insurance, donationPct: donationPctNum, isGift: !!is_gift, anonymous: anonymousFlag === 1, deliveryWindow: !!delivery_window }, shipping: { region: _ship.region, fee: _ship.fee, estDays: _ship.estDays, quoteRequired: _ship.quoteRequired, freeThresholdApplied: _ship.freeThresholdApplied } })
+    if (String(req.body?.payment_rail || '') === 'direct_p2p') return void createDirectPayResponse(res, db, { generateId, transition, appendOrderEvent, getProtocolParam }, { product, buyerId: user.id as string, reqQty, basePrice, totalAmount, totalAmountU, shippingAddress: String(shipping_address), directReceiveAccountId: (typeof req.body?.direct_receive_account_id === 'string' && req.body.direct_receive_account_id) ? String(req.body.direct_receive_account_id) : undefined, agentApiKey: apiKey, opts: { variantId: variant_id, hasVariants: Number(product.has_variants) === 1, flashActive: !!flashSale, couponCode: coupon_code, buyInsurance: !!buy_insurance, donationPct: donationPctNum, isGift: !!is_gift, anonymous: anonymousFlag === 1, deliveryWindow: !!delivery_window }, shipping: { region: _ship.region, fee: _ship.fee, estDays: _ship.estDays, quoteRequired: _ship.quoteRequired, freeThresholdApplied: _ship.freeThresholdApplied } })
     // 友好预检查(读):真正的守恒在下面的同步事务内(applyWalletDelta 绝对值落库)。
     const wallet = await dbOne<{ balance: number }>('SELECT balance FROM wallets WHERE user_id = ?', [user.id])
     if (!wallet) return void res.status(500).json({ error: '钱包记录缺失', error_code: 'WALLET_MISSING' })
@@ -310,6 +309,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     // P0: 整个下单流程原子化 — INSERT order + UPDATE wallet + UPDATE products + transition 任一步抛错全部回滚
     try {
       db.transaction(() => {
+        const spendViolation = getAgentSpendCapViolation(db, apiKey, user.id as string, [totalAmount]); if (spendViolation) throw new AgentSpendCapExceeded(spendViolation)
         // 推土机分享快照：从 buyer.sponsor_path 解析 L1/L2/L3，应用 region 限制
         const buyer = db.prepare("SELECT sponsor_id, sponsor_path, region FROM users WHERE id = ?").get(user.id) as { sponsor_id: string | null; sponsor_path: string | null; region: string | null }
         // 孤儿用户首次绑 sponsor：buyer 无 sponsor + 客户端传 sponsor_hint
@@ -451,9 +451,9 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
             if (ar.success) { notifyTransition(db, orderId, 'paid', 'accepted'); autoAccepted = true }
           }
         }
-      })()
+      }).immediate()
     } catch (e) {
-      const msg = (e as Error).message
+      if (e instanceof AgentSpendCapExceeded) return void res.status(403).json(e.violation); const msg = (e as Error).message
       console.error('[POST /api/orders tx]', msg)
       if (msg === 'VARIANT_STOCK_RACE' || msg === 'PRODUCT_STOCK_RACE') {
         return void res.status(409).json({ error: '库存已被抢光，请重试', error_code: 'STOCK_DEPLETED' })

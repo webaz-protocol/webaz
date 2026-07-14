@@ -18,6 +18,7 @@ interface WriteRule { method: MethodMatch; exact?: string; re?: RegExp; action: 
 /** Ordered write-action rules. Order matters (first match wins). Mirrors the legacy if-chain exactly. */
 export const WRITE_RULES: WriteRule[] = [
   { method: 'POST',     exact: '/api/orders',                                    action: 'place_order' },
+  { method: 'POST',     exact: '/api/cart/checkout',                              action: 'place_order' },
   { method: 'POST_PUT', re: /^\/api\/products(\/[^/]+)?$/,                        action: 'list_product' },
   { method: 'POST',     re: /^\/api\/orders\/[^/]+\/(accept|ship|deliver|pickup|transit)/, action: 'fulfill' },
   { method: 'POST',     re: /^\/api\/orders\/[^/]+\/confirm/,                     action: 'confirm_order' },

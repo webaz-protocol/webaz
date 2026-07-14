@@ -285,6 +285,7 @@
     "test:oauth-approve": "tsx scripts/test-oauth-approve.ts",
     "test:oauth-token": "tsx scripts/test-oauth-token.ts",
     "test:oauth-mcp-bearer": "tsx scripts/test-oauth-mcp-bearer.ts",
+    "test:cart-checkout": "tsx scripts/test-cart-checkout.ts",
     "test:cart-ui-contract": "tsx scripts/test-cart-ui-contract.ts"
   },
   "keywords": [

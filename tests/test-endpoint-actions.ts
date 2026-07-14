@@ -10,6 +10,7 @@ const expect = (n: string, c: boolean, h?: unknown) => { if (c) { pass++ } else 
 function legacy(method: string, path: string): string | null {
   if (method === 'GET') return null
   if (method === 'POST' && path === '/api/orders') return 'place_order'
+  if (method === 'POST' && path === '/api/cart/checkout') return 'place_order'
   if ((method === 'POST' || method === 'PUT') && /^\/api\/products(\/[^/]+)?$/.test(path)) return 'list_product'
   if (method === 'POST' && /^\/api\/orders\/[^/]+\/(accept|ship|deliver|pickup|transit)/.test(path)) return 'fulfill'
   if (method === 'POST' && /^\/api\/orders\/[^/]+\/confirm/.test(path)) return 'confirm_order'
@@ -99,7 +100,7 @@ expect('products PUT→list_product', endpointToAction('PUT', '/api/products/p1'
 expect('wallet DELETE→wallet(WRITE 多方法)', endpointToAction('DELETE', '/api/wallet/x') === 'wallet')
 expect('addresses PATCH→set_address', endpointToAction('PATCH', '/api/addresses/a1') === 'set_address')
 expect('default-address→set_address(非 set_profile)', endpointToAction('POST', '/api/profile/default-address') === 'set_address')
-expect('cart/checkout 非 SAFE→write', endpointToAction('POST', '/api/cart/checkout') === 'write')
+expect('cart/checkout→place_order', endpointToAction('POST', '/api/cart/checkout') === 'place_order')
 expect('未映射写→write(default-deny)', endpointToAction('POST', '/api/some-new-sensitive-write') === 'write')
 expect('SAFE login→null', endpointToAction('POST', '/api/login') === null)
 // Direct Pay (Rail 1) RISK scope:全部写 → direct_pay(WRITE 多方法);GET 不锁
@@ -121,7 +122,7 @@ expect('read 普通→null', endpointToReadAction('/api/products') === null)
 
 // ── capabilityMatrix 自洽 ──
 const cm = capabilityMatrix()
-expect('matrix 含全部命名 action', cm.write_actions.length === 23, cm.write_actions.length)
+expect('matrix 含全部命名 action', cm.write_actions.length === 24, cm.write_actions.length)
 expect('matrix 含 direct_pay', cm.write_actions.some(w => w.action === 'direct_pay'))
 expect('matrix 含 review_claim', cm.write_actions.some(w => w.action === 'review_claim'))
 expect('matrix 有 read_scopes', cm.read_scopes.length === 3)

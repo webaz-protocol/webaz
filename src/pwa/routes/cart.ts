@@ -7,7 +7,7 @@
  *   GET    /api/cart                    我的购物车（含 product + seller 关联）
  *   POST   /api/cart                    加 / 增量（INSERT OR UPDATE，上限 99）
  *   PATCH  /api/cart/:product_id        改数量
- *   POST   /api/cart/checkout           批量下单（按 seller 自动分订单 + 库存原子扣 + escrow 锁）
+ *   POST   /api/cart/checkout           批量下单（每个选中商品独立订单 + 库存原子扣 + escrow 锁）
  *   DELETE /api/cart/:product_id        移除单品
  *
  * 边界：
@@ -23,8 +23,7 @@
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
-import { transition } from '../../layer0-foundation/L0-2-state-machine/engine.js'
-import { notifyTransition } from '../../layer2-business/L2-6-notifications/notification-engine.js'
+import { CartCheckoutError, checkoutSelectedCart } from '../../cart-checkout.js'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
 
 export interface CartDeps {
@@ -79,82 +78,38 @@ export function registerCartRoutes(app: Application, deps: CartDeps): void {
     res.json({ ok: true, qty: q })
   })
 
-  // C-1: 购物车批量下单（按 seller 自动分订单）
+  // C-1: 购物车批量下单（每个选中商品独立订单）
   app.post('/api/cart/checkout', async (req, res) => {
     const user = auth(req, res); if (!user) return
     if (isTrustedRole(user)) return void errorRes(res, 403, 'TRUSTED_ROLE_NO_TRADE', '受信角色无购物功能')
     if (user.role !== 'buyer') return void res.status(403).json({ error: '仅买家可下单' })
-    const { shipping_address, notes } = req.body || {}
+    const agentApiKey = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1]
+    if (typeof req.body?.api_key === 'string' && !agentApiKey) return void res.status(401).json({ error: '下单必须使用 Authorization: Bearer <api_key>', error_code: 'AUTH_HEADER_REQUIRED' })
+    const { shipping_address, notes, product_ids } = req.body || {}
     if (!shipping_address) return void res.status(400).json({ error: '请填写收货地址' })
 
-    const items = await dbAll<{ product_id: string; qty: number; title: string; price: number; stock: number; seller_id: string; has_variants: number; status: string }>(`
-      SELECT c.product_id, c.qty, p.title, p.price, p.stock, p.seller_id, p.has_variants, p.status
-      FROM cart_items c JOIN products p ON p.id = c.product_id
-      WHERE c.user_id = ?
-    `, [user.id])
-    if (items.length === 0) return void res.status(400).json({ error: '购物车为空' })
-
-    const skipped: Array<{ product_id: string; reason: string }> = []
-    const created: Array<{ order_id: string; product_id: string; total: number }> = []
-    let totalNeed = 0
-
-    const ok: typeof items = []
-    for (const it of items) {
-      if (it.status !== 'active') { skipped.push({ product_id: it.product_id, reason: '商品已下架' }); continue }
-      if (it.has_variants) { skipped.push({ product_id: it.product_id, reason: '需在商品详情页选规格下单' }); continue }
-      if (it.stock < it.qty) { skipped.push({ product_id: it.product_id, reason: `库存不足（${it.stock} < ${it.qty}）` }); continue }
-      if (it.seller_id === user.id) { skipped.push({ product_id: it.product_id, reason: '不可购买自己的商品' }); continue }
-      ok.push(it)
-      totalNeed += Number(it.price) * Number(it.qty)
-    }
-
-    if (ok.length === 0) {
-      return void res.status(400).json({ error: '购物车中无可下单商品', skipped })
-    }
-
-    const wallet = await dbOne<{ balance: number }>('SELECT balance FROM wallets WHERE user_id = ?', [user.id])
-    if (!wallet) return void res.status(500).json({ error: '钱包记录缺失' })
-    if (wallet.balance < totalNeed) return void res.status(400).json({ error: `余额不足：需 ${totalNeed.toFixed(2)} WAZ，当前 ${wallet.balance.toFixed(2)}` })
-
+    let checkoutResult
     try {
-      db.transaction(() => {
-        const now = new Date()
-        for (const it of ok) {
-          const total = Number(it.price) * Number(it.qty)
-          const orderId = generateId('ord')
-          db.prepare(`INSERT INTO orders (
-            id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount,
-            status, shipping_address, notes, pay_deadline, accept_deadline, ship_deadline,
-            pickup_deadline, delivery_deadline, confirm_deadline, source
-          ) VALUES (?,?,?,?,?,?,?,?,'created',?,?,?,?,?,?,?,?, 'cart_batch')`).run(
-            orderId, it.product_id, user.id, it.seller_id, it.qty, it.price, total, total,
-            shipping_address, notes || `[批量下单]`,
-            addHours(now, 24), addHours(now, 48), addHours(now, 120),
-            addHours(now, 168), addHours(now, 336), addHours(now, 408),
-          )
-          db.prepare('UPDATE wallets SET balance = balance - ?, escrowed = escrowed + ? WHERE user_id = ?').run(total, total, user.id)
-          // 扣库存（原子）
-          const upd = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?').run(it.qty, it.product_id, it.qty)
-          if (upd.changes !== 1) throw new Error(`STOCK_RACE:${it.product_id}`)
-          checkStockAndMaybeDelist(it.product_id)
-          transition(db, orderId, 'paid', user.id as string, [], '购物车批量支付')
-          notifyTransition(db, orderId, 'created', 'paid')
-          created.push({ order_id: orderId, product_id: it.product_id, total })
-        }
-        // 清空已下单的 cart items
-        const okIds = ok.map(i => i.product_id)
-        const ph = okIds.map(() => '?').join(',')
-        db.prepare(`DELETE FROM cart_items WHERE user_id = ? AND product_id IN (${ph})`).run(user.id, ...okIds)
-      })()
+      checkoutResult = checkoutSelectedCart({
+        db,
+        buyerId: String(user.id),
+        selectedIds: product_ids,
+        shippingAddress: shipping_address,
+        notes,
+        generateId,
+        checkStockAndMaybeDelist,
+        addHours,
+        agentApiKey,
+      })
     } catch (e) {
-      const msg = (e as Error).message
-      if (msg.startsWith('STOCK_RACE:')) {
-        return void res.status(409).json({ error: '库存已被抢光，请重试', error_code: 'STOCK_DEPLETED' })
+      if (e instanceof CartCheckoutError) {
+        return void res.status(e.status).json({ error: e.message, ...(e.errorCode ? { error_code: e.errorCode } : {}), ...(e.skipped ? { skipped: e.skipped } : {}), ...(e.details || {}) })
       }
-      console.error('[POST /cart/checkout]', msg)
+      console.error('[POST /cart/checkout]', e instanceof Error ? e.message : String(e))
       return void res.status(500).json({ error: '下单失败，请重试' })
     }
 
+    const { created, skipped, totalNeed } = checkoutResult
     try { broadcastSystemEvent('cart_checkout', '🧺', `购物车批量下单 ${created.length} 单 · 总 ${totalNeed.toFixed(2)} WAZ`, String(user.id)) } catch {}
 
     res.json({

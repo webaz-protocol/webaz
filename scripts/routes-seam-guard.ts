@@ -51,7 +51,7 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   'anchors.ts': 2,         // touch user-anchor batch attribution (loop INSERTs)
   'shareables.ts': 3,      // DELETE soft-remove tx (status + total_likes + photo_index)
   'shareables-interactions.ts': 7,  // like toggle tx (existing/del/upd×2/ins/upd×2)
-  'cart.ts': 4,            // checkout tx (order insert + wallet deduct + stock + cart clear)
+  'cart.ts': 0,            // checkout transaction lives in src/cart-checkout.ts
   'listings.ts': 5,        // create + offer stake tx (insert + wallet deduct ×2 + listing counter)
   'variants.ts': 10,       // 3 stock-aggregate tx (insert/update + product.stock sync)
   'ratings.ts': 4,         // 2 insert+notify tx (rating/buyer-rating → reputation)

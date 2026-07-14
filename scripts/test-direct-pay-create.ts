@@ -20,6 +20,7 @@ const { initSystemUser, transition, getOrderStatus } = await import('../src/laye
 const { initOrderChainSchema, appendOrderEvent } = await import('../src/layer0-foundation/L0-2-state-machine/order-chain.js')
 const { registerOrdersCreateRoutes } = await import('../src/pwa/routes/orders-create.js')
 const { createDirectPayOrder } = await import('../src/direct-pay-create.js')
+const { initAgentAttestationsSchema } = await import('../src/runtime/webaz-schema-helpers.js')
 const { getActivePaymentInstruction } = await import('../src/direct-receive-payment-instruction.js')
 const { sellerHasProductionBaseBondLocked } = await import('../src/direct-receive-deposits.js')
 const { walletUnits } = await import('../src/ledger.js')
@@ -32,6 +33,7 @@ const db = initDatabase()
 db.pragma('foreign_keys = OFF')
 try { db.exec('ALTER TABLE orders ADD COLUMN settled_fault_at TEXT') } catch { /* boot-ALTER col;缓交配额 SQL 用它排除拒单/违约结算单 */ }
 setSeamDb(db)
+initAgentAttestationsSchema(db)
 initOrderChainSchema(db)
 const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
 initNotificationSchema(db)   // 审计项 B:建单 → 卖家模板通知断言用
@@ -116,14 +118,24 @@ registerOrdersCreateRoutes(app, {
 })
 let server: Server
 const port: number = await new Promise(r => { server = createServer(app); server.listen(0, () => r((server.address() as any).port)) })
-function post(body: Record<string, unknown>, uid?: string): Promise<{ status: number; json: any }> {
+function post(body: Record<string, unknown>, uid?: string, apiKey?: string): Promise<{ status: number; json: any }> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body); const headers: Record<string, string> = { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(payload)) }
     if (uid) headers['x-test-uid'] = uid
+    if (apiKey) headers.authorization = `Bearer ${apiKey}`
     const rq = httpRequest({ host: '127.0.0.1', port, method: 'POST', path: '/api/orders', headers }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve({ status: res.statusCode || 0, json: d ? JSON.parse(d) : null }) } catch { resolve({ status: res.statusCode || 0, json: d }) } }) })
     rq.on('error', reject); rq.write(payload); rq.end()
   })
 }
+
+const bodyKey = await post({ product_id: 'p1', shipping_address: 'addr', api_key: 'cap-key' }, 'buyer1')
+ok('orders route: body api_key cannot authenticate purchase', bodyKey.status === 401 && bodyKey.json?.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(bodyKey))
+db.prepare(`INSERT INTO agent_attestations (id,api_key,user_id,approved_scope,spend_cap_per_order,spend_cap_daily)
+  VALUES ('create-cap','cap-key','buyer1','[]',10,1000)`).run()
+const escrowCapOrders = (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n; const escrowCapStock = pstock()
+const escrowCap = await post({ product_id: 'p1', quantity: 1, shipping_address: 'addr' }, 'buyer1', 'cap-key')
+ok('escrow route: final amount is cap-checked inside the write transaction', escrowCap.status === 403 && escrowCap.json?.error_code === 'AGENT_SPEND_CAP_PER_ORDER', JSON.stringify(escrowCap))
+ok('escrow route: cap rejection leaves order and stock unchanged', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === escrowCapOrders && pstock() === escrowCapStock)
 
 // seller2: no bond, no instruction
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller2','s2','seller','k_s2')").run()
@@ -175,6 +187,11 @@ const rNoInstr = await dp('buyer1')
 ok('direct_p2p KYB approved + sanctions clear, no instruction → 409 NO_PAYMENT_INSTRUCTION', rNoInstr.status === 409 && rNoInstr.json?.error_code === 'NO_PAYMENT_INSTRUCTION', JSON.stringify(rNoInstr))
 // 全部满足 → 200 happy
 seedInstr('seller2')
+const directCapOrders = (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n; const directCapStock = (db.prepare("SELECT stock FROM products WHERE id='p2'").get() as { stock: number }).stock
+const directCap = await post({ product_id: 'p2', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr' }, 'buyer1', 'cap-key')
+ok('direct route: final amount is cap-checked inside the write transaction', directCap.status === 403 && directCap.json?.error_code === 'AGENT_SPEND_CAP_PER_ORDER', JSON.stringify(directCap))
+ok('direct route: cap rejection leaves order and stock unchanged', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === directCapOrders && (db.prepare("SELECT stock FROM products WHERE id='p2'").get() as { stock: number }).stock === directCapStock)
+db.prepare("DELETE FROM agent_attestations WHERE id='create-cap'").run()
 const bBal2 = walletUnits(db, 'buyer1').balance
 const rOk = await post({ product_id: 'p2', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr' }, 'buyer1')
 ok('direct_p2p bond + instruction → 200 direct_pay_window', rOk.status === 200 && rOk.json?.status === 'direct_pay_window', JSON.stringify(rOk))
