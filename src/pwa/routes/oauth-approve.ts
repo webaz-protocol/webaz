@@ -32,10 +32,16 @@ import type { HumanPresence } from '../human-presence.js'
 
 // D5 coarse OAuth scopes → RFC-020 SAFE capabilities (the grant carries capabilities, not raw
 // OAuth scopes; /mcp enforcement stays capability-based — PR-4 maps back at introspection).
+// 每个 coarse OAuth scope 映射到端点【真正强制】的 SAFE capabilities —— 全部已可经 gtk_ pairing bundle
+// 委托(catalog_agent / fulfillment_agent),OAuth 只是同一批 SAFE scope 的另一个授权前门,不新增权限。
+// 覆盖到 /mcp 会 401-挑战的三个工具所需 scope,使「挑战即承诺」成立(Codex PR-5 P1:widen 决策 by Holden):
+//   read        → 公开读 + 你自己的目录读 + 最小化订单读(无买家 PII) → get_agent_order / list_product(mine)
+//   order:draft → 订单草稿 + 提交 accept/ship 请求(仅进人工审批队列,永不执行) → order_action_request
+//   list:draft  → 商品草稿(status=warehouse,发布仍需人) → list_product(create/draft)
 export const OAUTH_SCOPE_CAPABILITIES: Record<string, readonly string[]> = {
-  'read': ['read_public', 'profile_read', 'search'],
-  'order:draft': ['draft_order'],
-  'list:draft': ['list_product_draft'],
+  'read': ['read_public', 'profile_read', 'search', 'seller_products_read', 'seller_orders_read_minimal'],
+  'order:draft': ['draft_order', 'order_action_request'],
+  'list:draft': ['seller_product_draft'],
 }
 
 export const OAUTH_GRANT_TTL_SECONDS = 3600        // grant lives as long as the access token (D2: no refresh)

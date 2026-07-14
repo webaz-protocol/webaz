@@ -8,7 +8,8 @@ https://webaz.xyz/mcp
 
 - **Transport:** MCP Streamable HTTP (stateless, `POST` only).
 - **Anonymous** = public reads (search / leaderboard / price history / open build tasks / browse). No account needed.
-- **`Authorization: Bearer <api_key>`** = act as your account (order, list, fulfil…). Risk actions (pay, ship, arbitrate) still return an `approve_url` you confirm with your Passkey in the browser — the endpoint never bypasses the human gate.
+- **OAuth 2.1** (when live) = click **Connect** in a compliant MCP client — no key handling. You log in with your Passkey, approve SAFE scopes on a consent screen, and the client receives a short-lived, audience-bound access token. See [Connect via OAuth](#connect-via-oauth-21--no-pasted-key).
+- **`Authorization: Bearer <api_key>`** = act as your account (order, list, fulfil…). Risk actions (pay, ship, arbitrate) still return an `approve_url` you confirm with your Passkey in the browser — the endpoint never bypasses the human gate. OAuth never removes this path; both stay valid.
 
 > Reachability first: the goal is that an agent meeting WebAZ for the first time connects and completes a real product search in its first conversation, unaided.
 
@@ -31,6 +32,16 @@ curl -sS https://webaz.xyz/mcp \
 ```
 
 Add `-H 'authorization: Bearer <api_key>'` to authenticate.
+
+## Connect via OAuth 2.1 — no pasted key
+
+When the OAuth surface is live (`WEBAZ_OAUTH=1`), a compliant MCP client (Claude / ChatGPT / Cursor connectors) can connect without you ever handling an api_key:
+
+1. **Discovery.** The client reads [`/.well-known/oauth-protected-resource/mcp`](https://webaz.xyz/.well-known/oauth-protected-resource/mcp) (RFC 9728) and [`/.well-known/oauth-authorization-server`](https://webaz.xyz/.well-known/oauth-authorization-server) (RFC 8414). Calling an account-bound tool anonymously also returns `401` with a `WWW-Authenticate: Bearer resource_metadata="…"` header pointing there, so a compliant client self-starts the flow mid-session.
+2. **Authorize.** Authorization Code + PKCE (`S256` only). You're redirected to webaz.xyz, log in with your **Passkey**, and see a consent screen naming the client, the exact SAFE scopes (`read`, `order:draft`, `list:draft`), and the resource (`https://webaz.xyz/mcp`).
+3. **Token.** The client exchanges the code for a **short-lived, audience-bound, opaque** access token — a credential for the delegation grant your approval minted (revocable anytime from your account; no refresh tokens in v1, the client re-consents on expiry).
+
+Boundaries (identical to every other path): OAuth tokens carry **SAFE scopes only** — read (public + your own catalog + minimal orders, no buyer PII), draft creation, and *submitting* accept/ship requests to your approval queue. Anything beyond that — executing an order action, publishing, paying, arbitrating, or any api_key-only operation — is **not performed by an OAuth token**; it needs your `api_key` or a per-action Passkey approval. No token ever bypasses the human gate. Anonymous browsing needs no OAuth and is unchanged.
 
 ## Get an api_key
 
