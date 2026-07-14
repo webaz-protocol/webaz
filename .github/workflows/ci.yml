@@ -697,6 +697,8 @@ jobs:
       - run: npm run test:invite-code-narrowing
       - run: npm run test:shop-referral-attribution
       - run: npm run test:money-units
+      - run: npm run test:cart-checkout
+      - run: npm run test:cart-ui-contract
       - run: npm run test:direct-pay-ledger
       - run: npm run test:deposit-rails
       - run: npm run test:direct-pay-timeouts

@@ -20,10 +20,12 @@ const { initSystemUser, transition, getOrderStatus } = await import('../src/laye
 const { initOrderChainSchema, appendOrderEvent } = await import('../src/layer0-foundation/L0-2-state-machine/order-chain.js')
 const { registerOrdersCreateRoutes } = await import('../src/pwa/routes/orders-create.js')
 const { createDirectPayOrder } = await import('../src/direct-pay-create.js')
+const { initAgentAttestationsSchema } = await import('../src/runtime/webaz-schema-helpers.js')
 const { getActivePaymentInstruction } = await import('../src/direct-receive-payment-instruction.js')
 const { sellerHasProductionBaseBondLocked } = await import('../src/direct-receive-deposits.js')
 const { walletUnits } = await import('../src/ledger.js')
 const { toUnits } = await import('../src/money.js')
+const { consumePriceSession, PriceSessionConsumeError } = await import('../src/price-session-consume.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -31,7 +33,10 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 const db = initDatabase()
 db.pragma('foreign_keys = OFF')
 try { db.exec('ALTER TABLE orders ADD COLUMN settled_fault_at TEXT') } catch { /* boot-ALTER col;缓交配额 SQL 用它排除拒单/违约结算单 */ }
+try { db.exec('ALTER TABLE orders ADD COLUMN donation_amount REAL DEFAULT 0') } catch { /* server boot migration; agent cap includes donations */ }
+db.exec(`CREATE TABLE IF NOT EXISTS price_sessions (token TEXT PRIMARY KEY, product_id TEXT NOT NULL, user_id TEXT NOT NULL, price REAL NOT NULL, quantity INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT)`)
 setSeamDb(db)
+initAgentAttestationsSchema(db)
 initOrderChainSchema(db)
 const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
 initNotificationSchema(db)   // 审计项 B:建单 → 卖家模板通知断言用
@@ -105,7 +110,7 @@ registerOrdersCreateRoutes(app, {
   db,
   auth: (req: Request, res: Response) => { const uid = req.headers['x-test-uid'] as string | undefined; if (!uid) { res.status(401).json({ error: 'login' }); return null } return { id: uid, role: 'buyer' } },
   isTrustedRole: () => false, generateId: (p: string) => `${p}_${++oc}`, generateRecipientCode: () => 'RC',
-  DONATION_VALID_PCTS: new Set([0, 1, 2, 5]), INTERNAL_AUDITOR_ID: 'audit',
+  DONATION_VALID_PCTS: new Set([0, 0.005, 0.01, 0.02, 0.05]), INTERNAL_AUDITOR_ID: 'audit',
   addHours: (d: Date, h: number) => new Date(d.getTime() + h * 3600_000).toISOString(),
   getActiveFlashSale: () => null, applyCouponToOrder: () => ({ ok: false }),
   getProtocolParam: <T,>(k: string, fb: T): T => (k in cp ? cp[k] as T : fb),
@@ -116,14 +121,52 @@ registerOrdersCreateRoutes(app, {
 })
 let server: Server
 const port: number = await new Promise(r => { server = createServer(app); server.listen(0, () => r((server.address() as any).port)) })
-function post(body: Record<string, unknown>, uid?: string): Promise<{ status: number; json: any }> {
+function post(body: Record<string, unknown>, uid?: string, apiKey?: string, authorization?: string): Promise<{ status: number; json: any }> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body); const headers: Record<string, string> = { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(payload)) }
     if (uid) headers['x-test-uid'] = uid
+    if (authorization) headers.authorization = authorization
+    else if (apiKey) headers.authorization = `Bearer ${apiKey}`
     const rq = httpRequest({ host: '127.0.0.1', port, method: 'POST', path: '/api/orders', headers }, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve({ status: res.statusCode || 0, json: d ? JSON.parse(d) : null }) } catch { resolve({ status: res.statusCode || 0, json: d }) } }) })
     rq.on('error', reject); rq.write(payload); rq.end()
   })
 }
+
+const bodyKey = await post({ product_id: 'p1', shipping_address: 'addr', api_key: 'cap-key' }, 'buyer1')
+ok('orders route: body api_key cannot authenticate purchase', bodyKey.status === 401 && bodyKey.json?.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(bodyKey))
+const mixedKey = await post({ product_id: 'p1', shipping_address: 'addr', api_key: 'cap-key' }, 'buyer1', 'cap-key')
+ok('orders route: body api_key is rejected even with a Bearer credential', mixedKey.status === 401 && mixedKey.json?.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(mixedKey))
+const malformedBodyKey = await post({ product_id: 'p1', shipping_address: 'addr', api_key: { key: 'cap-key' } }, 'buyer1', 'cap-key')
+ok('orders route: non-string body api_key is also rejected', malformedBodyKey.status === 401 && malformedBodyKey.json?.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(malformedBodyKey))
+const rawKey = await post({ product_id: 'p1', shipping_address: 'addr' }, 'buyer1', undefined, 'cap-key')
+ok('orders route: raw Authorization credential cannot bypass Bearer-only cap enforcement', rawKey.status === 401 && rawKey.json?.error_code === 'AUTH_HEADER_REQUIRED', JSON.stringify(rawKey))
+db.prepare(`INSERT INTO agent_attestations (id,api_key,user_id,approved_scope,spend_cap_per_order,spend_cap_daily)
+  VALUES ('create-cap','cap-key','buyer1','[]',10,1000)`).run()
+const escrowCapOrders = (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n; const escrowCapStock = pstock()
+const escrowCap = await post({ product_id: 'p1', quantity: 1, shipping_address: 'addr' }, 'buyer1', 'cap-key')
+ok('escrow route: final amount is cap-checked inside the write transaction', escrowCap.status === 403 && escrowCap.json?.error_code === 'AGENT_SPEND_CAP_PER_ORDER', JSON.stringify(escrowCap))
+ok('escrow route: cap rejection leaves order and stock unchanged', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === escrowCapOrders && pstock() === escrowCapStock)
+db.prepare("UPDATE agent_attestations SET spend_cap_per_order=52 WHERE id='create-cap'").run()
+db.prepare("INSERT INTO price_sessions (token,product_id,user_id,price,quantity,created_at,expires_at) VALUES ('cap-session','p1','buyer1',50,1,?,?)").run(new Date().toISOString(), new Date(Date.now() + 10 * 60_000).toISOString())
+const donationCapOrders = (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n; const donationCapStock = pstock()
+const donationCap = await post({ product_id: 'p1', quantity: 1, shipping_address: 'addr', donation_pct: 0.05, session_token: 'cap-session' }, 'buyer1', 'cap-key')
+ok('escrow route: spend cap includes the additional donation debit', donationCap.status === 403 && donationCap.json?.error_code === 'AGENT_SPEND_CAP_PER_ORDER', JSON.stringify(donationCap))
+ok('escrow route: donation-inclusive cap rejection has no side effects', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === donationCapOrders && pstock() === donationCapStock)
+ok('final cap rejection does not consume the one-time price session', (db.prepare("SELECT used_at FROM price_sessions WHERE token='cap-session'").get() as { used_at: string | null }).used_at === null)
+
+db.prepare("INSERT INTO price_sessions (token,product_id,user_id,price,quantity,created_at,expires_at) VALUES ('rollback-session','p1','buyer1',50,1,?,?)").run(new Date().toISOString(), new Date(Date.now() + 10 * 60_000).toISOString())
+let consumeRollbackThrew = false
+try {
+  db.transaction(() => { consumePriceSession(db, 'rollback-session'); throw new Error('post-consume failure') }).immediate()
+} catch { consumeRollbackThrew = true }
+ok('price session: a later transaction failure rolls consumption back', consumeRollbackThrew
+  && (db.prepare("SELECT used_at FROM price_sessions WHERE token='rollback-session'").get() as { used_at: string | null }).used_at === null)
+db.transaction(() => consumePriceSession(db, 'rollback-session')).immediate()
+ok('price session: a committed transaction consumes the token', (db.prepare("SELECT used_at FROM price_sessions WHERE token='rollback-session'").get() as { used_at: string | null }).used_at !== null)
+let replayRejected = false
+try { db.transaction(() => consumePriceSession(db, 'rollback-session')).immediate() } catch (error) { replayRejected = error instanceof PriceSessionConsumeError }
+ok('price session: a committed token rejects second use', replayRejected)
+db.prepare("UPDATE agent_attestations SET spend_cap_per_order=10 WHERE id='create-cap'").run()
 
 // seller2: no bond, no instruction
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller2','s2','seller','k_s2')").run()
@@ -175,9 +218,17 @@ const rNoInstr = await dp('buyer1')
 ok('direct_p2p KYB approved + sanctions clear, no instruction → 409 NO_PAYMENT_INSTRUCTION', rNoInstr.status === 409 && rNoInstr.json?.error_code === 'NO_PAYMENT_INSTRUCTION', JSON.stringify(rNoInstr))
 // 全部满足 → 200 happy
 seedInstr('seller2')
+db.prepare("INSERT INTO price_sessions (token,product_id,user_id,price,quantity,created_at,expires_at) VALUES ('direct-cap-session','p2','buyer1',50,1,?,?)").run(new Date().toISOString(), new Date(Date.now() + 10 * 60_000).toISOString())
+const directCapOrders = (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n; const directCapStock = (db.prepare("SELECT stock FROM products WHERE id='p2'").get() as { stock: number }).stock
+const directCap = await post({ product_id: 'p2', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr', session_token: 'direct-cap-session' }, 'buyer1', 'cap-key')
+ok('direct route: final amount is cap-checked inside the write transaction', directCap.status === 403 && directCap.json?.error_code === 'AGENT_SPEND_CAP_PER_ORDER', JSON.stringify(directCap))
+ok('direct route: cap rejection leaves order and stock unchanged', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === directCapOrders && (db.prepare("SELECT stock FROM products WHERE id='p2'").get() as { stock: number }).stock === directCapStock)
+ok('direct cap rejection does not consume the price session', (db.prepare("SELECT used_at FROM price_sessions WHERE token='direct-cap-session'").get() as { used_at: string | null }).used_at === null)
+db.prepare("DELETE FROM agent_attestations WHERE id='create-cap'").run()
 const bBal2 = walletUnits(db, 'buyer1').balance
-const rOk = await post({ product_id: 'p2', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr' }, 'buyer1')
+const rOk = await post({ product_id: 'p2', quantity: 1, payment_rail: 'direct_p2p', shipping_address: 'addr', session_token: 'direct-cap-session' }, 'buyer1')
 ok('direct_p2p bond + instruction → 200 direct_pay_window', rOk.status === 200 && rOk.json?.status === 'direct_pay_window', JSON.stringify(rOk))
+ok('successful direct create consumes the price session in its order transaction', (db.prepare("SELECT used_at FROM price_sessions WHERE token='direct-cap-session'").get() as { used_at: string | null }).used_at !== null)
 // 响应契约门:create 成功响应【不】下发卖家收款说明(D1/D2 both-acked 前不得泄露;非仅 UI 软门)
 ok('route happy: create response does NOT leak payment_instruction', rOk.json?.payment_instruction === undefined && rOk.json?.payment_instruction_label === undefined, JSON.stringify(rOk.json))
 ok('route happy: buyer wallet UNCHANGED (no principal/escrow)', walletUnits(db, 'buyer1').balance === bBal2)

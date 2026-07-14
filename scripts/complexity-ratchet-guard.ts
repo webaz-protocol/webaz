@@ -30,7 +30,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 // Lower a ceiling when you trim the file; never raise one.
 const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/server.ts': 8394,
-  'src/pwa/public/app.js': 25817,
+  'src/pwa/public/app.js': 25761,
+  'src/pwa/public/app-cart-actions.js': 121,
   'src/pwa/public/app-edit-product-images.js': 107,
   'src/pwa/public/app-create-product-images.js': 29,
   'src/pwa/public/app-admin.js': 608,
@@ -110,7 +111,10 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-contribution.js': 836,
   'src/pwa/public/app-admin-disputes.js': 55,
   'src/pwa/public/app-ai.js': 2162,
-  'src/pwa/routes/orders-create.ts': 514,
+  'src/pwa/routes/orders-create.ts': 485,
+  'src/cart-checkout.ts': 165,
+  'src/agent-spend-cap.ts': 54,
+  'src/price-session-consume.ts': 9,
 }
 
 // server.ts inline DDL — strict equality. Lower only as DDL moves to schema-init.
