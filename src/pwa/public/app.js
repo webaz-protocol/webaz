@@ -1017,10 +1017,10 @@ function roleHome(role) {
 // 不可关闭(这是诚实化整改,不是营销提示)。
 function preLaunchBannerHTML() {
   if (window._protocolPhase && window._protocolPhase !== 'pre_launch') return ''
-  return `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;font-size:12px;color:#92400e;text-align:center;line-height:1.5;margin:8px 12px 12px">
-    ⚠️ <strong>${t('直付(direct pay)已上线,是你与卖家的真实场外付款;WebAZ 非托管——不代持、不担保、不退款 · 平台托管(escrow)尚未上线(模拟测试币)· 价格按 USDC 计价仅供展示 · 邀请制预发布,勿据此投资或向第三方承诺')}</strong>
-    <a href="#welcome" style="margin-left:8px;color:#7c2d12;text-decoration:underline;font-weight:600">${t('详情')}</a>
-  </div>`
+  return `<details style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:8px 14px;font-size:12px;color:#92400e;line-height:1.5;margin:8px 12px 12px">
+    <summary style="cursor:pointer;text-align:center;list-style:none">⚠️ <strong>${t('直付已上线(非托管:不代持·不担保·不退款)· 托管轨=模拟测试币 · 邀请制预发布')}</strong> <span style="text-decoration:underline;font-weight:600;color:#7c2d12">${t('详情')}</span></summary>
+    <div style="margin-top:6px;text-align:left">${t('直付(direct pay)已上线,是你与卖家的真实场外付款;WebAZ 非托管——不代持、不担保、不退款 · 平台托管(escrow)尚未上线(模拟测试币)· 价格按 USDC 计价仅供展示 · 邀请制预发布,勿据此投资或向第三方承诺')}</div>
+  </details>`
 }
 
 // 账户无任何恢复方式 → 首页顶部持续红色风险横幅。
@@ -4388,9 +4388,9 @@ function renderWelcome(app) {
       </section>
 
       <!-- 区块 1: Buyers -->
-      <section class="w-section">
+      <section class="w-section"><details class="w-fold" open><summary class="w-fold-sum">
         <h2 style="${H2_STYLE}">${T('作为买家<br>你不只是买家', "As a buyer<br>you're more than a buyer")}</h2>
-        <p style="${SUB_STYLE}">${T('真实使用，留下可验证的记录', 'Use for real — leave a verifiable record.')}</p>
+        <p style="${SUB_STYLE}">${T('真实使用，留下可验证的记录', 'Use for real — leave a verifiable record.')}</p></summary>
         <div class="w-cards">
           <div class="w-card">
             <div class="w-card-title">🛍 ${T('真实使用，真实记录', 'Real use, real record')}</div>
@@ -4411,13 +4411,13 @@ function renderWelcome(app) {
             </ul>
           </div>
         </div>
-        <div class="w-cta-wrap"><a class="w-cta" onclick="event.preventDefault();scrollToJoinWithRole('buyer')" href="#">${T('作为买家加入 webazer', 'Join as a buyer')} →</a></div>
+        <div class="w-cta-wrap"><a class="w-cta" onclick="event.preventDefault();scrollToJoinWithRole('buyer')" href="#">${T('作为买家加入 webazer', 'Join as a buyer')} →</a></div></details>
       </section>
 
       <!-- 区块 2: Sellers -->
-      <section class="w-section">
+      <section class="w-section"><details class="w-fold"><summary class="w-fold-sum">
         <h2 style="${H2_STYLE}">${T('作为卖家<br>你的店，你说了算', "As a seller<br>your shop, your rules.")}</h2>
-        <p style="${SUB_STYLE}">${T('webaz 只是协议，你才是主人。', 'webaz is just a protocol. You are the owner.')}</p>
+        <p style="${SUB_STYLE}">${T('webaz 只是协议，你才是主人。', 'webaz is just a protocol. You are the owner.')}</p></summary>
         <div class="w-cards">
           <div class="w-card">
             <div class="w-card-title">🏛 ${T('不被随意封禁', 'No arbitrary bans')}</div>
@@ -4438,13 +4438,13 @@ function renderWelcome(app) {
             </ul>
           </div>
         </div>
-        <div class="w-cta-wrap"><a class="w-cta" onclick="event.preventDefault();scrollToJoinWithRole('seller')" href="#">${T('作为卖家加入 webazer', 'Join as a seller')} →</a></div>
+        <div class="w-cta-wrap"><a class="w-cta" onclick="event.preventDefault();scrollToJoinWithRole('seller')" href="#">${T('作为卖家加入 webazer', 'Join as a seller')} →</a></div></details>
       </section>
 
       <!-- 区块 3: Creators -->
-      <section class="w-section">
+      <section class="w-section"><details class="w-fold"><summary class="w-fold-sum">
         <h2 style="${H2_STYLE}">${T('作为达人<br>我的舞台我做主', 'As a creator<br>my stage, my rules.')}</h2>
-        <p style="${SUB_STYLE}">${T('在任何地方创作，流量归你所有', 'Publish anywhere, own your traffic.')}</p>
+        <p style="${SUB_STYLE}">${T('在任何地方创作，流量归你所有', 'Publish anywhere, own your traffic.')}</p></summary>
         <div class="w-cards">
           <div class="w-card">
             <div class="w-card-title">🎯 ${T('跨平台引流，数据归你', 'Cross-platform traffic, your data')}</div>
@@ -4464,13 +4464,13 @@ function renderWelcome(app) {
             </ul>
           </div>
         </div>
-        <div class="w-cta-wrap"><a class="w-cta" onclick="event.preventDefault();scrollToJoinWithRole('creator')" href="#">${T('作为创作者加入 webazer', 'Join as a creator')} →</a></div>
+        <div class="w-cta-wrap"><a class="w-cta" onclick="event.preventDefault();scrollToJoinWithRole('creator')" href="#">${T('作为创作者加入 webazer', 'Join as a creator')} →</a></div></details>
       </section>
 
       <!-- 区块 4: 10 Meta-Rules -->
-      <section class="w-section" id="meta-rules-section">
+      <section class="w-section" id="meta-rules-section"><details class="w-fold"><summary class="w-fold-sum">
         <h2 style="${H2_STYLE}">${T('webaz 的十条元规则', 'The Ten Meta-Rules of webaz')}</h2>
-        <p style="${SUB_STYLE}">${T('不可推翻，可演化。', 'Inviolable. Evolvable.')}</p>
+        <p style="${SUB_STYLE}">${T('不可推翻，可演化。', 'Inviolable. Evolvable.')}</p></summary>
         <div class="w-rules-frame">
           <div class="w-rules-frame-header">
             <span class="left"><span class="dot"></span>META-RULES.md</span>
@@ -4492,7 +4492,7 @@ function renderWelcome(app) {
             <div class="w-rule-group">${T('── 身份层 ──', '── Identity ──')}</div>
             ${renderRule(10, T('参与者即 webazer。', 'Participants are webazers.'))}
           </div>
-        </div>
+        </div></details>
         <div class="w-cta-wrap" style="margin-top:56px">
           <a class="w-cta" href="#welcome" onclick="event.preventDefault();document.getElementById('w-join-section')?.scrollIntoView({behavior:'smooth',block:'start'})">
             ${T('申请加入创世团', 'Apply to join the Genesis Cohort')} →
@@ -4501,9 +4501,9 @@ function renderWelcome(app) {
       </section>
 
       <!-- 区块 5: A Day -->
-      <section class="w-section">
+      <section class="w-section"><details class="w-fold"><summary class="w-fold-sum">
         <h2 style="${H2_STYLE}">${T('一个 webazer 的一天', "A day in a webazer's life")}</h2>
-        <p style="${SUB_STYLE}">${T('使用、建设、贡献——同一个你，同一件事。', 'Use, build, contribute — same you, same act.')}</p>
+        <p style="${SUB_STYLE}">${T('使用、建设、贡献——同一个你，同一件事。', 'Use, build, contribute — same you, same act.')}</p></summary>
         <div style="max-width:540px;margin:0 auto">
           ${renderTL(
             '09:00',
@@ -4536,7 +4536,7 @@ function renderWelcome(app) {
         </div>
         <div class="w-tl-conclusion">
           ${T('一天结束 · 你既在使用 webaz，也在建设 webaz，也在贡献给 webaz。同一个你，同一件事。', "A day ends · you are using webaz, building webaz, contributing to webaz. Same you, same act.")}
-        </div>
+        </div></details>
       </section>
 
       <!-- 区块 6: Join -->

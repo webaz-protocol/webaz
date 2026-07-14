@@ -536,3 +536,9 @@ body:has(#install-banner) .main { padding-bottom: 150px }
 /* 发现页 6-pill 横滑导航条：隐藏 scrollbar 保留触感滚动 */
 .disc-nav::-webkit-scrollbar { display: none }
 .disc-nav { scrollbar-width: none; -ms-overflow-style: none }
+
+/* welcome 区块折叠(w-fold):summary=标题+副题,折叠态居中显示展开指示;不破坏原排版 */
+.w-fold > summary { list-style: none; cursor: pointer }
+.w-fold > summary::-webkit-details-marker { display: none }
+.w-fold > summary::after { content: '⌄'; display: block; text-align: center; color: #a1a1aa; font-size: 22px; line-height: 1; margin-top: 2px; transition: transform .2s }
+.w-fold[open] > summary::after { transform: rotate(180deg) }
