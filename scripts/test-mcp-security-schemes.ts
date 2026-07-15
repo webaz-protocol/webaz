@@ -53,7 +53,9 @@ async function main(): Promise<void> {
   // future-added one can never silently leak into securitySchemes.
   const FINE_CAPABILITY_NAMES = [...new Set(Object.values(OAUTH_SCOPE_CAPABILITIES).flat())]
 
-  ok('1. all 42 tools carry a non-empty securitySchemes array on the WIRE', tools.length === 42 && tools.every(t => Array.isArray(t.securitySchemes) && t.securitySchemes.length > 0))
+  // The REMOTE wire is the isolated surface: it excludes LOCAL_ONLY tools (webaz_pair), so 41 not 42.
+  ok('1. all 41 remote-visible tools carry a non-empty securitySchemes array on the WIRE (webaz_pair is local-only, hidden)', tools.length === 41 && tools.every(t => Array.isArray(t.securitySchemes) && t.securitySchemes.length > 0))
+  ok('1b. webaz_pair (local-only pairing) is NOT advertised on the remote tools/list', !byName['webaz_pair'])
 
   for (const [name, scopes] of Object.entries(OAUTH)) {
     const ss = byName[name]
@@ -92,6 +94,6 @@ async function main(): Promise<void> {
 
   http.close()
   if (fail > 0) { console.error(`\n❌ mcp securitySchemes FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-  console.log(`✅ mcp securitySchemes: 42/42 on wire · oauth2 ONLY for the 3 grant-reachable (exact scopes) · noauth everywhere else (no false OAuth on api_key-only)\n  ✅ pass ${pass}`)
+  console.log(`✅ mcp securitySchemes: 41/41 on remote wire (webaz_pair local-only, hidden) · oauth2 ONLY for the 3 grant-reachable (exact scopes) · noauth everywhere else (no false OAuth on api_key-only)\n  ✅ pass ${pass}`)
 }
 main().catch(e => { console.error(e); process.exit(1) })

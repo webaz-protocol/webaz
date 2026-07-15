@@ -1817,6 +1817,19 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
 // single ListTools handler returns this SAME surface for stdio AND Remote MCP → zero drift.
 const TOOLS_ANNOTATED = withSecuritySchemes(annotateTools(TOOLS))
 
+// Tools that only make sense on a LOCAL (stdio) transport and must NOT be advertised on the remote
+// shared endpoint. webaz_pair does a one-time LOCAL pairing + local credential-handle storage — over the
+// remote endpoint it can only ever return PAIRING_LOCAL_ONLY (a dead end that misleads remote agents into
+// "authenticate via pairing" when the remote auth path is OAuth). Hide it from the remote tools/list; the
+// CallTool guard still returns PAIRING_LOCAL_ONLY as defense-in-depth if a client calls it by name anyway.
+const LOCAL_ONLY_TOOLS = new Set(['webaz_pair'])
+// The tools/list surface for a given transport: the remote (isolated) endpoint drops LOCAL_ONLY_TOOLS;
+// stdio (isolated=false) exposes the full set. Keyed off opts.isolated, NOT isIsolated() — the ListTools
+// handler runs OUTSIDE the per-call isolationALS scope (that wraps CallTool only).
+function toolsForTransport(isolated: boolean): typeof TOOLS_ANNOTATED {
+  return isolated ? TOOLS_ANNOTATED.filter(t => !LOCAL_ONLY_TOOLS.has(t.name)) : TOOLS_ANNOTATED
+}
+
 // ─── 工具处理函数 ─────────────────────────────────────────────
 
 // RFC-004: webaz_feedback — agent-native "use → build" 反馈(双模;仅 NETWORK 能送达)
@@ -5152,7 +5165,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     { capabilities: { tools: {}, resources: {}, prompts: {} } }
   )
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS_ANNOTATED }))
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: toolsForTransport(opts.isolated === true) }))
 
   // ── MCP Resources：协议 Manifest ─────────────────────────────
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({

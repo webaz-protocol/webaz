@@ -133,6 +133,11 @@ async function main() {
   // 8e. handlePair:隔离态禁 pairing(修跨请求竞态 P0)
   const pairRes = await L1mod.handlePair({ __isolated__: true, action: 'start' })
   ok('8e. isolated → webaz_pair 禁用(PAIRING_LOCAL_ONLY,不触碰宿主 pairing 文件)', pairRes?.error_code === 'PAIRING_LOCAL_ONLY')
+  // PR-A: remote (isolated) tools/list HIDES local-only webaz_pair so remote agents aren't misled into a
+  //   dead-end pairing call. ListTools is transport-aware via opts.isolated (NOT isIsolated() — ListTools
+  //   runs outside the per-call ALS). Functional coverage: test:mcp-security-schemes asserts the remote
+  //   WIRE has 41 tools and no webaz_pair; test:mcp-tool-annotations asserts the LOCAL surface still has 42.
+  ok('8e2. ListTools is transport-aware: hides LOCAL_ONLY webaz_pair on the isolated (remote) surface', has(L1, "LOCAL_ONLY_TOOLS = new Set(['webaz_pair'])") && has(L1, 'toolsForTransport(opts.isolated === true)'))
   // 8f. 源码守卫:远程路由强制 isolated:true + 拦截器服务端强制标记(覆盖伪造)
   ok('8f. 远程路由强制 isolated:true', has(ROUTE, 'buildMcpServer({') && /buildMcpServer\(\{\s*isolated: true/.test(ROUTE))
   ok('8g. 拦截器服务端强制 __isolated__(覆盖调用方伪造),stdio 清除', has(L1, "if (opts.isolated) (args as Record<string, unknown>).__isolated__ = true") && has(L1, "else delete (args as Record<string, unknown>).__isolated__"))
