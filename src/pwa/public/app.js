@@ -5333,7 +5333,7 @@ window.openAuthSheet = (defaultTab) => {
         </div>
         <div class="form-group">
           <label class="form-label">${t('邀请码')} <span style="color:#dc2626">*</span></label>
-          <input class="form-control" id="inp-sponsor" placeholder="${t('陆续开放中，请期待')}" style="font-family:monospace;font-size:13px;width:100%">
+          <input class="form-control" id="inp-sponsor" placeholder="${t('输入验证邮箱的推荐码')}" style="font-family:monospace;font-size:13px;width:100%">
           <div style="font-size:11px;color:#6b7280;margin-top:4px" id="sponsor-hint-msg">${t('邀请码为 6-7 位永久码；没有就联系老用户拿邀请链接')}</div>
         </div>
         <div class="form-group">

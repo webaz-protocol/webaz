@@ -266,6 +266,12 @@ export function registerAuthRegisterRoutes(app: Application, deps: AuthRegisterD
       const msg = (e as Error).message
       console.error('[register-tx]', msg)
       if (msg.startsWith('PLACEMENT_FAILED:')) return void errorRes(res, 409, 'PLACEMENT_FAILED', '注册挂靠失败，请重试或联系支持（未创建账号）')
+      // Email uniqueness race: two concurrent registrations pass the pre-check SELECT, but the second
+      // INSERT trips the DB unique index idx_users_email (server.ts) → clean 409, not a confusing 500.
+      // Emails are normalized to lowercase (normEmail) so the exact-match index catches case variants too.
+      if (/UNIQUE constraint failed:\s*users\.email/i.test(msg)) {
+        return void errorRes(res, 409, 'EMAIL_TAKEN', '该邮箱已注册，请直接登录或用 #recover 找回')
+      }
       return void res.status(500).json({ error: '注册写入失败，请重试' })
     }
     const { placement, effectiveInviter, effectiveSide } = txResult

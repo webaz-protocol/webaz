@@ -169,6 +169,21 @@ async function main(): Promise<void> {
     ok('email subject identifies WebAZ verification code', /WebAZ/.test(email.subject) && /Verification code/i.test(email.subject))
     ok('email text includes bilingual expiry', email.text.includes('10 分钟') && /expires in 10 minutes/i.test(email.text))
     ok('email html escapes attacker-controlled base URL', buildVerificationEmail({ code: '111111', purpose: '<x>', ttlMin: 10, baseUrl: 'https://webaz.xyz/?a=<script>' }).html.includes('&lt;script&gt;'))
+    // referral code (registration): present + clearly distinguished from the verification code
+    {
+      const reg = buildVerificationEmail({ code: '246810', purpose: 'register', ttlMin: 10, baseUrl: 'https://webaz.xyz', referralCode: 'NFTH2E' })
+      ok('register email contains BOTH the verification code and the referral code', reg.text.includes('246810') && reg.text.includes('NFTH2E') && reg.html.includes('246810') && reg.html.includes('NFTH2E'))
+      ok('register email labels the referral code distinctly (推荐码 / Referral code)', reg.text.includes('推荐码') && /Referral code/i.test(reg.text) && reg.html.includes('Referral code'))
+      ok('register email explicitly says referral ≠ verification code', /NOT the (email )?verification code/i.test(reg.text) && /不是.*验证码/.test(reg.text))
+      ok('referral code html-escaped', buildVerificationEmail({ code: '1', purpose: 'register', ttlMin: 10, referralCode: '<b>x' }).html.includes('&lt;b&gt;x'))
+    }
+    // referral code must NOT leak into non-register emails, nor when unset
+    {
+      const wd = buildVerificationEmail({ code: '999999', purpose: 'withdraw_confirm', ttlMin: 10, referralCode: 'NFTH2E' })
+      ok('non-register purpose: referral code NOT injected even if passed', !wd.text.includes('NFTH2E') && !wd.html.includes('NFTH2E'))
+      const noRef = buildVerificationEmail({ code: '888888', purpose: 'register', ttlMin: 10 })
+      ok('register with no referral configured → no referral block', !/推荐码|Referral code/.test(noRef.text) && !/Referral code/.test(noRef.html))
+    }
   }
 
   // server/route wiring guards

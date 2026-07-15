@@ -89,28 +89,48 @@ export function buildVerificationEmail(input: {
   purpose: string
   ttlMin: number
   baseUrl?: string
+  referralCode?: string   // registration only: the invite/referral code to enter in the "邀请码" field
 }): { subject: string; text: string; html: string } {
   const purpose = purposeText(input.purpose)
   const baseUrl = input.baseUrl?.trim() || DEFAULT_BASE_URL
   const subject = 'WebAZ 验证码 / Verification code'
+  // Registration emails carry a SECOND code — the referral/invite code — which MUST be clearly
+  // distinguished from the email verification code so the user never confuses the two. Gated on the
+  // register purpose (defense in depth): a referral code never appears in withdraw/recover/etc. emails.
+  const referral = (input.purpose === 'register' && typeof input.referralCode === 'string') ? input.referralCode.trim() : ''
   const text = [
-    `WebAZ 验证码: ${input.code}`,
+    `WebAZ 邮箱验证码 / Email verification code: ${input.code}`,
     '',
     `用途: ${purpose.zh}`,
     `有效期: ${input.ttlMin} 分钟`,
     '',
-    `Your WebAZ verification code is ${input.code}.`,
+    `Your WebAZ email verification code is ${input.code}.`,
     `Use it to ${purpose.en}. It expires in ${input.ttlMin} minutes.`,
+    ...(referral ? [
+      '',
+      '──────────────────────────────',
+      `注册推荐码 / Referral code: ${referral}`,
+      '注册时请把它填入"邀请码"输入框。这【不是】邮箱验证码,两者不同。',
+      `When registering, enter this in the "Referral code" field. This is NOT the email verification code above.`,
+      '──────────────────────────────',
+    ] : []),
     '',
     'If you did not request this code, you can ignore this email.',
     baseUrl,
   ].join('\n')
   const html = [
     '<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;line-height:1.5;color:#111827">',
-    '<h2 style="margin:0 0 12px">WebAZ verification code</h2>',
+    '<h2 style="margin:0 0 12px">WebAZ email verification code / 邮箱验证码</h2>',
     `<p style="margin:0 0 8px">用途: ${escapeHtml(purpose.zh)} / ${escapeHtml(purpose.en)}</p>`,
     `<p style="font-size:28px;font-weight:700;letter-spacing:4px;margin:16px 0">${escapeHtml(input.code)}</p>`,
     `<p style="margin:0 0 8px">有效期 ${input.ttlMin} 分钟 / Expires in ${input.ttlMin} minutes.</p>`,
+    ...(referral ? [
+      '<div style="margin:20px 0;padding:12px 16px;border:1px dashed #9ca3af;border-radius:8px;background:#f9fafb">',
+      '<p style="margin:0 0 6px;font-size:13px;color:#6b7280">注册推荐码 / Referral code</p>',
+      `<p style="font-size:22px;font-weight:700;letter-spacing:3px;margin:0 0 6px;color:#4f46e5">${escapeHtml(referral)}</p>`,
+      '<p style="margin:0;font-size:12px;color:#6b7280">注册时填入"邀请码"输入框 — 这不是邮箱验证码 / Enter in the "Referral code" field when registering — NOT the verification code above.</p>',
+      '</div>',
+    ] : []),
     '<p style="margin:16px 0 0;color:#6b7280">If you did not request this code, you can ignore this email.</p>',
     `<p style="margin:16px 0 0"><a href="${escapeHtml(baseUrl)}">${escapeHtml(baseUrl)}</a></p>`,
     '</div>',
@@ -123,6 +143,7 @@ export async function deliverVerificationCode(input: {
   code: string
   purpose: string
   ttlMin: number
+  referralCode?: string   // registration only — surfaced as a distinct block in the email
   env?: EmailDeliveryEnv
   fetchImpl?: FetchLike
   logger?: LoggerLike
@@ -146,6 +167,7 @@ export async function deliverVerificationCode(input: {
     purpose: input.purpose,
     ttlMin: input.ttlMin,
     baseUrl,
+    referralCode: input.referralCode,
   })
   const body: Record<string, unknown> = {
     from: env.EMAIL_FROM?.trim() || DEFAULT_FROM,

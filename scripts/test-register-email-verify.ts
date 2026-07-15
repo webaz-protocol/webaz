@@ -10,6 +10,7 @@
  */
 import Database from 'better-sqlite3'
 import express from 'express'
+import { readFileSync } from 'node:fs'
 import { createServer, request as httpRequest, type Server } from 'node:http'
 import type { Response } from 'express'
 import { setSeamDb } from '../src/layer0-foundation/L0-1-database/db.js'
@@ -145,6 +146,15 @@ async function main(): Promise<void> {
     const r = await post('/api/register', { name: 'Erin', role: 'buyer', region: 'china', email: 'erin@example.com', code: FIXED_CODE, sponsor_id: 'INVITE_X' })
     ok('invite gate: with sponsor_id present → gate passes (not INVITE_REQUIRED)', r.json?.error_code !== 'INVITE_REQUIRED', JSON.stringify(r.json)) }
   db.prepare("DELETE FROM system_state WHERE key='require_ref_to_register'").run()
+
+  // Task B: the register tx maps the DB email-unique-index violation (concurrent-registration race,
+  // where two requests both pass the pre-check SELECT) to a clean 409 EMAIL_TAKEN, not a 500.
+  {
+    const src = readFileSync(new URL('../src/pwa/routes/auth-register.ts', import.meta.url), 'utf8')
+    const catchBlock = src.slice(src.indexOf('txResult = registerTx()'))
+    ok('register tx maps email UNIQUE-constraint race → 409 EMAIL_TAKEN (not 500)',
+      catchBlock.includes('users\\.email') && catchBlock.includes('EMAIL_TAKEN') && catchBlock.includes('409'))
+  }
 
   server.close()
 
