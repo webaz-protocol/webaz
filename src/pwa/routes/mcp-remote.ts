@@ -18,6 +18,7 @@ import type { Express, Request, Response } from 'express'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { buildMcpServer } from '../../layer1-agent/L1-1-mcp-server/server.js'
 import { oauthEnabled } from './oauth-discovery.js'
+import { OAUTH_SCOPE_CAPABILITIES } from './oauth-approve.js'
 import { verifyGrantToken, verifyGrantIdentity } from '../../runtime/agent-grant-verifier.js'
 
 export function remoteMcpEnabled(): boolean {
@@ -73,6 +74,18 @@ function scopeForAuthOnlyCall(body: unknown): string {
     return action === 'mine' ? 'seller_products_read' : 'seller_product_draft'        // GET vs POST /api/agent/seller/products
   }
   return ''
+}
+
+// Reverse of OAUTH_SCOPE_CAPABILITIES: a fine grant capability → the COARSE OAuth scope a client requests
+// at /oauth/authorize. An insufficient_scope challenge shown to ChatGPT MUST name the coarse scope
+// (OAUTH_SCOPES: read / order:draft / list:draft) — naming a fine capability would make ChatGPT request a
+// scope the authorize endpoint rejects with invalid_scope. Enforcement still keys off the FINE capability
+// (scopeForAuthOnlyCall → verifyGrantToken); this reverse map is for the challenge's `scope=` param only.
+const FINE_TO_COARSE_SCOPE: Record<string, string> = Object.fromEntries(
+  Object.entries(OAUTH_SCOPE_CAPABILITIES).flatMap(([coarse, caps]) => caps.map(c => [c, coarse])),
+)
+function coarseScopeForAuthOnlyCall(body: unknown): string {
+  return FINE_TO_COARSE_SCOPE[scopeForAuthOnlyCall(body)] ?? ''
 }
 
 // MCP Streamable HTTP transport MUST validate Origin (DNS-rebinding defense, MCP spec). A request with
@@ -218,8 +231,11 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
           if (gv.error_code === 'SCOPE_NOT_GRANTED') {
             // Valid identity, missing THIS tool's scope → insufficient_scope challenge: ChatGPT opens the
             // scope-EXPANSION UI, not a fresh login. Returned as a 200 result._meta (see authChallengeResult).
-            const challenge = `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}", error="insufficient_scope", error_description="your OAuth grant does not carry the required scope ${requiredScope}; request it (webaz_pair action=request), have the human approve, then retry - no re-login needed", scope="${requiredScope}"`
-            return void authChallengeResult(res, bodyId, `insufficient scope — your OAuth grant does not carry "${requiredScope}". Request it (webaz_pair action="request"), have the human approve, then retry. No re-login needed.`, challenge)
+            // The challenge names the COARSE OAuth scope the client requests at authorize (coarseScope),
+            // NOT the fine capability enforced above (requiredScope) — a fine name would be invalid_scope.
+            const coarseScope = coarseScopeForAuthOnlyCall(req.body)
+            const challenge = `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}", error="insufficient_scope", error_description="your OAuth grant does not carry the ${coarseScope} scope this tool needs; request it (webaz_pair action=request), have the human approve, then retry - no re-login needed", scope="${coarseScope}"`
+            return void authChallengeResult(res, bodyId, `insufficient scope — your OAuth grant does not carry the "${coarseScope}" scope this tool needs. Request it (webaz_pair action="request"), have the human approve, then retry. No re-login needed.`, challenge)
           }
           // Invalid / expired / revoked / wrong-audience / inactive token → invalid_token challenge (re-auth).
           const challenge = `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}", error="invalid_token", error_description="your OAuth token is invalid, expired, revoked, or not scoped to this resource; reconnect via OAuth"`
