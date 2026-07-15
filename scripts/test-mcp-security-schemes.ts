@@ -64,6 +64,16 @@ async function main(): Promise<void> {
   ok('5. EXACTLY the 3 grant-reachable tools advertise oauth2 (no false OAuth anywhere else)',
     JSON.stringify(oauthTools) === JSON.stringify(['webaz_get_agent_order', 'webaz_list_product', 'webaz_order_action_request']))
 
+  // Every tool that is NOT one of the 3 must be EXACTLY [{type:'noauth'}] — no stray/bogus scheme
+  // (e.g. [{type:'bogus'}]) may slip through the "non-empty array" check in assertion 1.
+  let noauthExact = true
+  for (const t of tools) {
+    if (OAUTH[t.name]) continue
+    const ss = t.securitySchemes
+    if (!(Array.isArray(ss) && ss.length === 1 && ss[0].type === 'noauth' && ss[0].scopes === undefined)) noauthExact = false
+  }
+  ok('6. every non-grant-reachable tool is EXACTLY one {type:noauth} (no stray/bogus scheme)', noauthExact)
+
   http.close()
   if (fail > 0) { console.error(`\n❌ mcp securitySchemes FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ mcp securitySchemes: 42/42 on wire · oauth2 ONLY for the 3 grant-reachable (exact scopes) · noauth everywhere else (no false OAuth on api_key-only)\n  ✅ pass ${pass}`)
