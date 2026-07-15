@@ -171,6 +171,16 @@ function networkMigrationPending(tool: string): Record<string, unknown> {
   }
 }
 
+// Appended to 401/403 errors so an agent — ESPECIALLY a remote MCP client connected over OAuth — does not
+// misread "please log in" as "run the OAuth flow". Buyer/RISK actions (buy, pay, verify_price, place_order,
+// wallet) are human-gated: they need the human's own api_key, or a Passkey in the webaz.xyz PWA. An MCP
+// OAuth connection only grants the SAFE seller read/draft/submit scopes and can NEVER authorize them — no
+// message-only change to auth semantics; this just tells the agent the correct path instead of looping on OAuth.
+export function authBoundaryHint(status: number): string {
+  if (status !== 401 && status !== 403) return ''
+  return ' — NOTE: buyer/RISK actions (buy, pay, verify_price, place_order, wallet) are human-gated: use your own api_key, or a Passkey in the webaz.xyz PWA. A remote MCP OAuth connection only grants SAFE seller read/draft/submit scopes and cannot authorize them, so retrying via OAuth will not help. / 买家花钱与高风险动作需你本人的 api_key 或 PWA 里的 Passkey,OAuth 委托无法授权,重试 OAuth 无用。'
+}
+
 // 统一 API helper(P1/P2 迁移工具时使用)。Bearer api_key + 15s 超时 + 错误映射。
 async function apiCall(path: string, opts: { method?: string; body?: unknown; apiKey?: string } = {}): Promise<Record<string, unknown>> {
   const { method = 'GET', body } = opts
@@ -197,7 +207,8 @@ async function apiCall(path: string, opts: { method?: string; body?: unknown; ap
         429: '调用过于频繁,请稍后再试',
         503: '服务暂不可用,请稍后重试',
       }
-      return { error: (json?.error as string) ?? map[resp.status] ?? `HTTP ${resp.status}`, error_code: json?.error_code, http_status: resp.status }
+      const baseErr = (json?.error as string) ?? map[resp.status] ?? `HTTP ${resp.status}`
+      return { error: baseErr + authBoundaryHint(resp.status), error_code: json?.error_code, http_status: resp.status }
     }
     return json ?? {}
   } catch (e) {
