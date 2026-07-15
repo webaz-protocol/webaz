@@ -48,7 +48,10 @@ async function main(): Promise<void> {
   }
   const API_KEY_ONLY = ['webaz_place_order', 'webaz_update_order', 'webaz_wallet', 'webaz_notifications', 'webaz_default_address']
   const { OAUTH_SCOPES } = await import('../src/pwa/routes/oauth-discovery.js')
-  const FINE_CAPABILITY_NAMES = ['seller_products_read', 'seller_product_draft', 'seller_orders_read_minimal', 'order_action_request', 'read_public', 'profile_read', 'draft_order']
+  const { OAUTH_SCOPE_CAPABILITIES } = await import('../src/pwa/routes/oauth-approve.js')
+  // Derive the forbidden set EXHAUSTIVELY from the authoritative mapping — every fine capability, so a
+  // future-added one can never silently leak into securitySchemes.
+  const FINE_CAPABILITY_NAMES = [...new Set(Object.values(OAUTH_SCOPE_CAPABILITIES).flat())]
 
   ok('1. all 42 tools carry a non-empty securitySchemes array on the WIRE', tools.length === 42 && tools.every(t => Array.isArray(t.securitySchemes) && t.securitySchemes.length > 0))
 

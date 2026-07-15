@@ -156,6 +156,7 @@ async function main(): Promise<void> {
     { body: AGENT_ORDER_CALL, expectCoarse: 'read', fineCap: 'seller_orders_read_minimal' },
     { body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'webaz_order_action_request', arguments: {} } }, expectCoarse: 'order:draft', fineCap: 'order_action_request' },
     { body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'webaz_list_product', arguments: { action: 'create' } } }, expectCoarse: 'list:draft', fineCap: 'seller_product_draft' },
+    { body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'webaz_list_product', arguments: { action: 'mine' } } }, expectCoarse: 'read', fineCap: 'seller_products_read' },
   ]
   for (const c of SCOPE_CASES) {
     const r = await post(c.body, { bearer: seedOAuth({ caps: ['read_public'] }) })   // valid grant, lacks the fine cap → insufficient_scope
