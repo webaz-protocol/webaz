@@ -50,26 +50,37 @@ async function main(): Promise<void> {
   // 3. count derived from the actual surface; asserted to be 42 right now (not a permanent hardcode)
   ok('3. current tool count == 42 (derived from live tools + map)', tools.length === mapKeys.length && tools.length === 42)
 
-  // 4. representative classification locks — read from the RETURNED descriptors
-  ok('4a. pure read (webaz_search): readOnly=true, destructive=false', a('webaz_search').readOnlyHint === true && a('webaz_search').destructiveHint === false)
-  ok('4b. first-party write (webaz_default_address): readOnly=false, destructive=false, openWorld=false', a('webaz_default_address').readOnlyHint === false && a('webaz_default_address').destructiveHint === false && a('webaz_default_address').openWorldHint === false)
-  ok('4c. public-state write (webaz_place_order): readOnly=false, destructive=true, openWorld=true', a('webaz_place_order').readOnlyHint === false && a('webaz_place_order').destructiveHint === true && a('webaz_place_order').openWorldHint === true)
-  ok('4d. multi-action w/ delete (webaz_list_product): readOnly=false, destructive=true', a('webaz_list_product').readOnlyHint === false && a('webaz_list_product').destructiveHint === true)
-  ok('4e. multi-action irreversible confirm (webaz_update_order): destructive=true', a('webaz_update_order').destructiveHint === true)
-  ok('4f. read-only account tool (webaz_wallet): readOnly=true', a('webaz_wallet').readOnlyHint === true)
-  ok('4g. dispute arbitrate is destructive (webaz_dispute)', a('webaz_dispute').destructiveHint === true)
-  // Round-1 Codex under-classification fixes — locked so they cannot silently regress:
-  ok('4h. webaz_pair destructive=true (sends pairing/permission requests; unlinks pending)', a('webaz_pair').destructiveHint === true)
-  ok('4i. webaz_register destructive=true (irreversible account+wallet creation)', a('webaz_register').destructiveHint === true)
-  ok('4j. webaz_profile destructive=true (add_role has no in-tool removal)', a('webaz_profile').destructiveHint === true)
-  ok('4k. webaz_order_action_request destructive=true (sends accept/ship into human queue)', a('webaz_order_action_request').destructiveHint === true)
-  ok('4l. webaz_mykey readOnly=false + openWorld=true (rate-limit write; queries a supplied handle)', a('webaz_mykey').readOnlyHint === false && a('webaz_mykey').openWorldHint === true)
-  // Round-2 Codex under-classification fixes (delete/irreversible actions):
-  ok('4m. webaz_blocklist destructive=true (unblock DELETEs)', a('webaz_blocklist').destructiveHint === true)
-  ok('4n. webaz_follows destructive=true (unfollow DELETEs)', a('webaz_follows').destructiveHint === true)
-  ok('4o. webaz_nearby destructive=true (clear_location removes geo)', a('webaz_nearby').destructiveHint === true)
-  ok('4p. webaz_like destructive=true (unlike DELETEs / like notifies owner)', a('webaz_like').destructiveHint === true)
-  ok('4q. webaz_notifications destructive=true (mark_read irreversible)', a('webaz_notifications').destructiveHint === true)
+  // 4. classification locks — read from the RETURNED descriptors. Rule: destructive = delete/overwrite/
+  //    fund-move (additive-only inserts are NOT destructive); readOnly = no state write at all;
+  //    openWorld = touches marketplace/other users/orders/public objects (else own-account/static).
+  const eq = (n: string, ro: boolean, d: boolean, ow: boolean): boolean => a(n).readOnlyHint === ro && a(n).destructiveHint === d && a(n).openWorldHint === ow
+  // pure reads
+  ok('4a. webaz_search read (T,F,T)', eq('webaz_search', true, false, true))
+  ok('4b. webaz_wallet own-account read (T,F,F)', eq('webaz_wallet', true, false, false))
+  ok('4c. webaz_info static read (T,F,F)', eq('webaz_info', true, false, false))
+  // instruction-only tools are READ-ONLY (no DB write / no execution)
+  ok('4d. webaz_revoke_key instructions-only (T,F,F)', eq('webaz_revoke_key', true, false, false))
+  ok('4e. webaz_rotate_key instructions-only (T,F,F)', eq('webaz_rotate_key', true, false, false))
+  ok('4f. webaz_share_link read+compute (T,F,F)', eq('webaz_share_link', true, false, false))
+  // additive-only writes are NOT destructive
+  ok('4g. webaz_feedback additive submit (F,F,T)', eq('webaz_feedback', false, false, true))
+  ok('4h. webaz_register additive create (F,F,T)', eq('webaz_register', false, false, true))
+  ok('4i. webaz_order_action_request additive queue submit (F,F,T)', eq('webaz_order_action_request', false, false, true))
+  ok('4j. webaz_mykey rate-limit write only, own account (F,F,F)', eq('webaz_mykey', false, false, false))
+  // overwrite writes ARE destructive (even if business-reversible)
+  ok('4k. webaz_default_address set overwrites own record (F,T,F)', eq('webaz_default_address', false, true, false))
+  ok('4l. webaz_auto_bid set/disable overwrite own config (F,T,F)', eq('webaz_auto_bid', false, true, false))
+  ok('4m. webaz_notifications mark_read overwrite, own inbox (F,T,F)', eq('webaz_notifications', false, true, false))
+  ok('4n. webaz_profile switch_role overwrite (F,T,T)', eq('webaz_profile', false, true, true))
+  // delete / fund-move are destructive
+  ok('4o. webaz_place_order moves funds (F,T,T)', eq('webaz_place_order', false, true, true))
+  ok('4p. webaz_update_order confirm settles (F,T,T)', eq('webaz_update_order', false, true, true))
+  ok('4q. webaz_list_product delete (F,T,T)', eq('webaz_list_product', false, true, true))
+  ok('4r. webaz_blocklist unblock DELETE (F,T,T)', eq('webaz_blocklist', false, true, true))
+  ok('4s. webaz_follows unfollow DELETE (F,T,T)', eq('webaz_follows', false, true, true))
+  ok('4t. webaz_nearby clear/set (F,T,T)', eq('webaz_nearby', false, true, true))
+  ok('4u. webaz_like toggle-remove DELETE (F,T,T)', eq('webaz_like', false, true, true))
+  ok('4v. webaz_dispute arbitrate (F,T,T)', eq('webaz_dispute', false, true, true))
 
   // 5. no-drift: both transports go through buildMcpServer (which we just exercised) → same annotations
   const L1 = readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')

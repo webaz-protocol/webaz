@@ -1,22 +1,26 @@
 /**
- * Standard MCP tool annotations for the shared TOOLS registry (server.ts:562).
+ * Standard MCP tool annotations for the shared TOOLS registry (server.ts).
  *
  * Pure data — this changes NO inputSchema, handler, tool name, or auth/business behavior. It only adds
- * the standard MCP hints (readOnlyHint / destructiveHint / openWorldHint) so conformant clients (incl.
- * OpenAI's Apps SDK, which requires these three) get accurate confirmation metadata. Merged onto the
- * authoritative descriptors by annotateTools() at the single ListTools handler, so stdio and Remote MCP
- * return the SAME annotated surface (zero drift).
+ * the standard MCP hints (readOnlyHint / destructiveHint / openWorldHint) so conformant clients get
+ * accurate confirmation metadata. Merged onto the authoritative descriptors by annotateTools() at the
+ * single ListTools handler, so stdio and Remote MCP return the SAME annotated surface (zero drift).
  *
- * Conservative classification (per real handler control flow, not tool name/description):
- *   - readOnlyHint=false  if ANY action writes state.
- *   - destructiveHint=true if ANY action can delete, revoke, transact/settle, pay, confirm, publish,
- *     send, or otherwise produce an irreversible/consequential effect. Multi-action tools are rated by
- *     their MOST dangerous action — never optimistically by a default read action.
- *   - openWorldHint=true  if ANY action touches shared marketplace / other parties / external objects.
- *     false ONLY for tools whose entire domain is the caller's own private, single-owner record.
+ * Classification is by REAL handler control flow (not tool name), per the official MCP ToolAnnotations
+ * meanings:
+ *   - readOnlyHint=true   ONLY if the handler performs NO state write at all (pure read, or it merely
+ *     returns human instructions and does not touch the DB / execute anything).
+ *   - destructiveHint=true if ANY action DELETES or OVERWRITES existing state, or moves/settles funds
+ *     (pay/settle/confirm) — even if the effect is business-reversible. ADDITIVE-only writes (new rows:
+ *     a new order/listing/message/feedback/campaign, a queued request) are NOT destructive. Multi-action
+ *     tools are rated by their most dangerous action.
+ *   - openWorldHint=true  if the tool interacts with the OPEN marketplace, OTHER users, ORDERS, or
+ *     PUBLIC objects. false for tools confined to the caller's OWN account/private record or purely
+ *     static/local output.
  *
- * This map's key set MUST equal the live TOOLS name set — the test asserts no missing and no extra
- * tools, and annotateTools() throws if a tool has no mapping, so an unannotated tool can never ship.
+ * This is annotations-only: it does NOT add securitySchemes, _meta, or any auth/scope behavior, and it
+ * does not widen any capability. This map's key set MUST equal the live TOOLS name set — the test
+ * asserts no missing/extra, and annotateTools() throws for an unmapped tool.
  */
 export interface McpToolAnnotations {
   readonly readOnlyHint: boolean
@@ -24,51 +28,50 @@ export interface McpToolAnnotations {
   readonly openWorldHint: boolean
 }
 
-// R = pure read · W = has a write action · D = has a delete/revoke/settle/pay/confirm/publish/send/
-// irreversible action. Destructive rationale noted inline.
+// destructive rationale noted inline (delete/overwrite/fund). Additive-only writes are marked W (not D).
 export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
-  webaz_info:                { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
-  webaz_pair:                { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: request/start SEND pairing+permission-expansion requests; complete unlinks pending state
-  webaz_register:            { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: irreversibly creates account + funded wallet (no undo in this tool)
-  webaz_search:              { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
-  webaz_verify_price:        { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: soft, reversible stock reservation via session token
-  webaz_list_product:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: delete = permanent removal (+ delist/trash/publish)
-  webaz_place_order:         { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: places binding order, moves funds (escrow/direct_p2p)
-  webaz_update_order:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: confirm = irreversible fund settlement; dispute freezes funds
-  webaz_get_status:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
-  webaz_wallet:              { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read-only balance/earnings; reflects on-chain + marketplace state
-  webaz_notifications:       { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: mark_read sets read=1 with no in-tool undo (irreversible)
-  webaz_dispute:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: arbitrate = irreversible fund disposition (Iron-Rule)
-  webaz_claim_verify:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: vote is consequential/final; create/apply lock stake
-  webaz_skill:               { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: publish makes a skill public
-  webaz_mykey:               { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: each lookup writes rate-limit state; queries the account named by a SUPPLIED handle+code (not provably the caller's own)
-  webaz_profile:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: add_role permanently appends a role (this tool exposes no remove-role)
-  webaz_revoke_key:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: irreversibly kills api_key, no replacement
-  webaz_rotate_key:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: invalidates the old key (irreversible for it)
-  webaz_referral:            { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
-  webaz_share_link:          { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: generates a referral link (no destructive effect)
-  webaz_blocklist:           { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: unblock issues HTTP DELETE + DELETE FROM user_blocklist
-  webaz_follows:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: unfollow deletes the relationship (DELETE FROM follows)
-  webaz_nearby:              { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: clear_location removes stored geo fields
-  webaz_default_address:     { readOnlyHint: false, destructiveHint: false, openWorldHint: false }, // W: set own default address; closed, single-owner record
-  webaz_shareables:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: delete removes a binding
-  webaz_rfq:                 { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: award creates an order; cancel forfeits 30% deposit
-  webaz_bid:                 { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: binding bid, moves/locks stake
-  webaz_chat:                { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: send delivers a message to another party
-  webaz_price_history:       { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
-  webaz_charity:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: donate/repay move funds; confirm/cancel are consequential
-  webaz_p2p_product:         { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: create publishes a public listing
-  webaz_like:                { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: toggle deletes an existing like; a new like sends the owner a notification
-  webaz_leaderboard:         { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
-  webaz_auction:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: create publishes an auction; bid is binding
-  webaz_auto_bid:            { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: get/set/disable auto-bid config (reversible)
-  webaz_skill_market:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: purchase/read spend WAZ; publish makes public
-  webaz_secondhand:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: buy creates order + escrow (funds); publish makes public
-  webaz_trial:               { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: create_campaign publishes a public campaign
-  webaz_feedback:            { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: submit sends/publishes feedback about a product
-  webaz_contribute:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: suggest/claim/submit publish to the coordination board
-  webaz_get_agent_order:     { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // grant-scoped minimal order read
-  webaz_order_action_request:{ readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: SENDS an accept/ship request into another party's human approval queue (agent can't execute; the send itself is consequential)
+  webaz_info:                { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: static protocol manifest / self-description
+  webaz_pair:                { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: complete/error paths unlink pending pairing state; external consent round-trip
+  webaz_register:            { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): INSERTs a new account/wallet; joins the shared economic graph
+  webaz_search:              { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: open marketplace + external anchors
+  webaz_verify_price:        { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): creates an expiring price/stock session; marketplace price
+  webaz_list_product:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: delete/delist/update overwrite the public catalog
+  webaz_place_order:         { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: moves funds into escrow/direct_p2p
+  webaz_update_order:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: overwrites order state; confirm settles funds
+  webaz_get_status:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: order status (counterparty objects)
+  webaz_wallet:              { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: caller's own balance/earnings; cannot move money
+  webaz_notifications:       { readOnlyHint: false, destructiveHint: true,  openWorldHint: false }, // D: mark_read overwrites read state (no in-tool undo); own inbox
+  webaz_dispute:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: arbitrate is an irreversible fund disposition
+  webaz_claim_verify:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: create/apply lock stake (fund); vote is consequential
+  webaz_skill:               { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: unsubscribe deletes a subscription
+  webaz_mykey:               { readOnlyHint: false, destructiveHint: false, openWorldHint: false }, // W: writes only rate-limit state; caller's own account recovery (redacted hint)
+  webaz_profile:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: switch_role overwrites the active role; views OTHER users
+  webaz_revoke_key:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: returns Passkey/PWA instructions only — no DB write, no execution
+  webaz_rotate_key:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: returns Passkey/PWA instructions only — no DB write, no execution
+  webaz_referral:            { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: caller's own referral status/earnings
+  webaz_share_link:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read+compute: reads to render caller's own referral URL; no write (attribution created elsewhere)
+  webaz_blocklist:           { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: unblock DELETEs; manages relations with OTHER users
+  webaz_follows:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: unfollow DELETEs the relationship (OTHER users)
+  webaz_nearby:              { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: clear_location removes / set_location overwrites geo; discovers others
+  webaz_default_address:     { readOnlyHint: false, destructiveHint: true,  openWorldHint: false }, // D: set OVERWRITES the caller's address; own private record
+  webaz_shareables:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: delete removes a public binding
+  webaz_rfq:                 { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: award→order; cancel overwrites + forfeits 30% deposit
+  webaz_bid:                 { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: patch/cancel overwrite the bid; stake movement
+  webaz_chat:                { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: mark_read/block overwrite state; messaging with OTHER users
+  webaz_price_history:       { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: public price history
+  webaz_charity:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: donate/repay move funds; cancel/confirm overwrite
+  webaz_p2p_product:         { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: patch overwrites the public listing
+  webaz_like:                { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: toggle DELETEs an existing like; public objects
+  webaz_leaderboard:         { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: public rankings
+  webaz_auction:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: cancel overwrites/removes; bid is binding
+  webaz_auto_bid:            { readOnlyHint: false, destructiveHint: true,  openWorldHint: false }, // D: set/disable OVERWRITE the caller's own auto-bid config
+  webaz_skill_market:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: update/delist overwrite; purchase spends funds
+  webaz_secondhand:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: update overwrites listing; buy moves funds (escrow)
+  webaz_trial:               { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: cancel_campaign overwrites/removes a campaign
+  webaz_feedback:            { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): submit INSERTs a new feedback row (no delete/overwrite); shared backlog
+  webaz_contribute:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: claim overwrites task ownership on the public board
+  webaz_get_agent_order:     { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: grant-scoped order read (counterparty objects)
+  webaz_order_action_request:{ readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): submit-only INSERT into the human approval queue; agent cannot execute
 }
 
 interface NamedTool { readonly name: string }
