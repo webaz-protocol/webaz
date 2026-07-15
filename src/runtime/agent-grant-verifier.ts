@@ -95,18 +95,21 @@ async function resolveGrantRowFromBearer(
  * types resolve to the same RFC-020 grant and pass the IDENTICAL active/subject/scope checks, so an
  * OAuth token can never authorize more than the grant the human approved. `nowIso` injectable for tests.
  */
-export async function verifyGrantToken(
+// The token/grant IDENTITY check, scope-agnostic: valid bearer prefix + token resolves (unrevoked,
+// unexpired, aud==/mcp) + grant active + accountable human exists and is not suspended. This is the
+// "is this a usable credential at all" gate — used both by verifyGrantToken (which then adds a scope
+// check) and by the /mcp transport edge (which must reject a PRESENTED-but-invalid oat_ with 401 even on
+// a tool that needs no scope, so a bad credential is never silently downgraded to anonymous).
+type GrantIdentityResult =
+  | { ok: true; row: GrantRow }
+  | { ok: false; status: number; error_code: string; error: string; grant_id?: string; human_id?: string }
+
+export async function verifyGrantIdentity(
   bearer: string | undefined,
-  requiredScope: string,
   nowIso: string = new Date().toISOString(),
-): Promise<GrantVerifyResult> {
-  // Programming guard: an opt-in route must require a SAFE scope. Risk / never-delegable /
-  // unknown can NEVER be satisfied by a grant — fail closed regardless of the token.
-  if (classifyScope(requiredScope) !== 'safe') {
-    return { ok: false, status: 500, error_code: 'SCOPE_NOT_SAFE', error: `requiredScope "${requiredScope}" is not a safe scope; grants can only ever authorize safe scopes` }
-  }
+): Promise<GrantIdentityResult> {
   if (!bearer || !(bearer.startsWith('gtk_') || bearer.startsWith('oat_'))) {
-    return { ok: false, status: 401, error_code: 'GRANT_TOKEN_REQUIRED', error: 'a gtk_* delegation grant or oat_* access token bearer is required for this scope' }
+    return { ok: false, status: 401, error_code: 'GRANT_TOKEN_REQUIRED', error: 'a gtk_* delegation grant or oat_* access token bearer is required' }
   }
   const resolved = await resolveGrantRowFromBearer(bearer, nowIso)
   if (!resolved.ok) return resolved
@@ -114,9 +117,9 @@ export async function verifyGrantToken(
   if (!grantIsActive(row, nowIso)) {
     return { ok: false, status: 403, error_code: 'GRANT_INACTIVE', error: 'delegation grant is revoked, expired, or inactive', grant_id: row.grant_id, human_id: row.human_id }
   }
-  // The grant is only as valid as its accountable human. Mirror auth(): the subject must still
-  // exist and not be suspended (user_moderation.suspended) — else a grant minted before an admin
-  // suspension would outlive it. Fail closed.
+  // The grant is only as valid as its accountable human. Mirror auth(): the subject must still exist and
+  // not be suspended (user_moderation.suspended) — else a grant minted before an admin suspension would
+  // outlive it. Fail closed.
   const subject = await dbOne<{ id: string; suspended: number | null }>(
     'SELECT u.id AS id, m.suspended AS suspended FROM users u LEFT JOIN user_moderation m ON m.user_id = u.id WHERE u.id = ?',
     [row.human_id],
@@ -127,6 +130,22 @@ export async function verifyGrantToken(
   if (subject.suspended) {
     return { ok: false, status: 403, error_code: 'GRANT_SUBJECT_INACTIVE', error: 'grant subject (human) is suspended', grant_id: row.grant_id, human_id: row.human_id }
   }
+  return { ok: true, row }
+}
+
+export async function verifyGrantToken(
+  bearer: string | undefined,
+  requiredScope: string,
+  nowIso: string = new Date().toISOString(),
+): Promise<GrantVerifyResult> {
+  // Programming guard: an opt-in route must require a SAFE scope. Risk / never-delegable /
+  // unknown can NEVER be satisfied by a grant — fail closed regardless of the token.
+  if (classifyScope(requiredScope) !== 'safe') {
+    return { ok: false, status: 500, error_code: 'SCOPE_NOT_SAFE', error: `requiredScope "${requiredScope}" is not a safe scope; grants can only ever authorize safe scopes` }
+  }
+  const identity = await verifyGrantIdentity(bearer, nowIso)
+  if (!identity.ok) return identity
+  const row = identity.row
   const caps = parseCaps(row.capabilities)
   const holds = caps.some(c => c?.capability === requiredScope && classifyScope(String(c.capability)) === 'safe')
   if (!holds) {

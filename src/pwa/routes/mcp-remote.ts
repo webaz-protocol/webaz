@@ -18,7 +18,7 @@ import type { Express, Request, Response } from 'express'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { buildMcpServer } from '../../layer1-agent/L1-1-mcp-server/server.js'
 import { oauthEnabled } from './oauth-discovery.js'
-import { verifyGrantToken } from '../../runtime/agent-grant-verifier.js'
+import { verifyGrantToken, verifyGrantIdentity } from '../../runtime/agent-grant-verifier.js'
 
 export function remoteMcpEnabled(): boolean {
   return process.env.WEBAZ_REMOTE_MCP === '1' && process.env.WEBAZ_MODE !== 'sandbox'
@@ -58,6 +58,11 @@ function isAuthOnlyToolCall(body: unknown): boolean {
 // The exact SAFE grant scope each auth-only tool CALL requires — MUST match the requireAgentGrantScope
 // mounts in agent-grants.ts so the edge's 401-vs-403 split agrees with the tool layer. Used only to
 // tell an INVALID token (401, re-auth) apart from a valid token that merely lacks this scope (403).
+// A presented oat_ is validated only on tools/call (any tool) — NOT on initialize/tools/list, which are
+// anonymous handshake/discovery and must stay reachable during a client's setup phase.
+function isToolCall(body: unknown): boolean {
+  return (body as { method?: unknown } | null)?.method === 'tools/call'
+}
 function scopeForAuthOnlyCall(body: unknown): string {
   const b = body as { params?: { name?: unknown; arguments?: { action?: unknown } } } | null
   const name = b?.params?.name
@@ -154,6 +159,32 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
     return req.ip || 'unknown'
   }
 
+  // OpenAI Apps SDK auth-challenge shape (RFC-023 PR-4). When a tools/call is presented WITHOUT adequate
+  // authorization, ChatGPT expects a tools/call RESULT at HTTP 200 whose result._meta["mcp/www_authenticate"]
+  // carries the RFC 6750 challenge (an array of challenge strings, each with BOTH error and error_description),
+  // together with isError:true — NOT an HTTP 401/403 with a WWW-Authenticate header. ChatGPT reads the
+  // challenge from the result body and only pops the OAuth / scope-expansion UI when this runtime signal is
+  // present AND the tool declares securitySchemes (both halves required; see OpenAI Authentication docs).
+  //   Design note: this REPLACES the earlier RFC 9728 HTTP 401/403 shape for tool-call auth failures (the
+  //   north star is native ChatGPT client integration). Connection-time OAuth still works via the .well-known
+  //   discovery documents. Origin (DNS-rebinding) rejection stays a hard 403 — it is a transport guard, not an
+  //   auth challenge. The challenge is also mirrored to a WWW-Authenticate header for parity/diagnostics.
+  const authChallengeResult = (res: Response, id: number | string | null, humanText: string, challenge: string): void => {
+    // WWW-Authenticate is an HTTP header → MUST be ASCII (res.setHeader throws on non-ASCII, e.g. an em-dash).
+    // Normalize once and use the SAME value for the header and result._meta[0] so they stay byte-identical.
+    const asciiChallenge = challenge.replace(/[^\x20-\x7E]/g, '-')
+    res.setHeader('WWW-Authenticate', asciiChallenge)
+    res.status(200).json({
+      jsonrpc: '2.0',
+      id,
+      result: {
+        content: [{ type: 'text', text: humanText }],
+        isError: true,
+        _meta: { 'mcp/www_authenticate': [asciiChallenge] },
+      },
+    })
+  }
+
   app.post('/mcp', async (req: Request, res: Response) => {
     // 命名空间桶(修 Codex P2):'remote_mcp:' 前缀,与 telemetry/error-report 的裸-IP 桶隔离,不互相消耗
     if (!deps.rateLimitOk('remote_mcp:' + clientIp(req), REMOTE_MCP_RPM, 60_000)) {
@@ -173,42 +204,34 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
       //   挑战(关着时 metadata 404,不能把客户端指向不存在的文档);带任何 Bearer 的请求照旧进工具层
       //   (无效凭证的语义化 error_code 在那里,PR-4)。匿名【读】面完全不受影响(I-2)。
       const bodyId = (req.body as { id?: number | string | null } | null)?.id ?? null
-      if (oauthEnabled() && isAuthOnlyToolCall(req.body)) {
-        if (!bearer) {
-          // Anonymous call to an account-scoped tool → 401 challenge (unchanged; I-1 / I-2 reads untouched).
-          res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`)
-          return void res.status(401).json({
-            jsonrpc: '2.0',
-            error: { code: -32001, message: 'authentication required — this tool acts as an account. A compliant MCP client can connect via OAuth (see the WWW-Authenticate header), or send Authorization: Bearer <api_key>.' },
-            id: bodyId,
-          })
-        }
-        if (bearer.startsWith('oat_')) {
-          // Validate the OAuth access token at the TRANSPORT edge so a compliant client reauthorizes on
-          // the right signal: an invalid / expired / revoked / wrong-audience token → HTTP 401 + the
-          // protected-resource challenge; a VALID token that merely lacks THIS tool's safe scope → HTTP
-          // 403 (do NOT trigger re-login). Only oat_ is handled here — api_key and gtk_ semantics are
-          // untouched (they fall through to dispatch, exactly as before).
-          const gv = await verifyGrantToken(bearer, scopeForAuthOnlyCall(req.body))
-          if (!gv.ok) {
-            if (gv.error_code === 'SCOPE_NOT_GRANTED') {
-              return void res.status(403).json({
-                jsonrpc: '2.0',
-                error: { code: -32003, message: 'insufficient scope — your OAuth grant does not carry the capability this tool needs. Request it (webaz_pair action="request"), have the human approve, then retry. No re-login needed.' },
-                id: bodyId,
-              })
-            }
-            res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`)
-            return void res.status(401).json({
-              jsonrpc: '2.0',
-              error: { code: -32001, message: 'authentication required — your OAuth token is missing, invalid, expired, revoked, or not scoped to this resource. Reconnect via OAuth (see the WWW-Authenticate header).' },
-              id: bodyId,
-            })
+      if (oauthEnabled() && bearer.startsWith('oat_') && isToolCall(req.body)) {
+        // A PRESENTED oat_ is validated at the transport edge — a bad credential is NEVER silently
+        // downgraded to anonymous. Identity is checked for ANY tool (invalid/expired/revoked/wrong-aud →
+        // invalid_token challenge); for an auth-only tool call the required safe scope is also checked (valid
+        // token, missing scope → insufficient_scope scope-EXPANSION, not re-login). Both are returned via
+        // authChallengeResult (HTTP 200 + result._meta["mcp/www_authenticate"] + isError, the OpenAI shape).
+        // Only oat_ is edge-validated — api_key and gtk_ semantics are untouched (fall through to dispatch).
+        const authOnly = isAuthOnlyToolCall(req.body)
+        const requiredScope = authOnly ? scopeForAuthOnlyCall(req.body) : ''
+        const gv = authOnly ? await verifyGrantToken(bearer, requiredScope) : await verifyGrantIdentity(bearer)
+        if (!gv.ok) {
+          if (gv.error_code === 'SCOPE_NOT_GRANTED') {
+            // Valid identity, missing THIS tool's scope → insufficient_scope challenge: ChatGPT opens the
+            // scope-EXPANSION UI, not a fresh login. Returned as a 200 result._meta (see authChallengeResult).
+            const challenge = `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}", error="insufficient_scope", error_description="your OAuth grant does not carry the required scope ${requiredScope}; request it (webaz_pair action=request), have the human approve, then retry - no re-login needed", scope="${requiredScope}"`
+            return void authChallengeResult(res, bodyId, `insufficient scope — your OAuth grant does not carry "${requiredScope}". Request it (webaz_pair action="request"), have the human approve, then retry. No re-login needed.`, challenge)
           }
-          // gv.ok → valid token with sufficient scope; fall through to dispatch (tool layer re-verifies).
+          // Invalid / expired / revoked / wrong-audience / inactive token → invalid_token challenge (re-auth).
+          const challenge = `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}", error="invalid_token", error_description="your OAuth token is invalid, expired, revoked, or not scoped to this resource; reconnect via OAuth"`
+          return void authChallengeResult(res, bodyId, 'authentication required — your OAuth token is invalid, expired, revoked, or not scoped to this resource. Reconnect via OAuth.', challenge)
         }
-        // gtk_ / api_key bearer → unchanged; fall through to dispatch.
+        // gv.ok → valid oat_ (identity ok; scope ok when auth-only) → fall through to dispatch.
+      } else if (oauthEnabled() && !bearer && isAuthOnlyToolCall(req.body)) {
+        // Anonymous call to an account-scoped tool → invalid_token challenge (I-1). Anonymous reads (I-2) untouched.
+        const challenge = `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}", error="invalid_token", error_description="authentication required - this tool acts as an account; connect via OAuth or send Authorization: Bearer api_key"`
+        return void authChallengeResult(res, bodyId, 'authentication required — this tool acts as an account. Connect via OAuth, or send Authorization: Bearer <api_key>.', challenge)
       }
+      // gtk_ / api_key / anonymous-public → fall through to dispatch (unchanged).
       // RFC-023 PR-4:grant token(gtk_ 直接 grant / oat_ OAuth access token)走 grant 凭证注入,不当 human
       //   api_key —— 它 audience-bound 到 /mcp 的 grant 面,通用工具照旧匿名。human api_key 走 defaultApiKey。
       const isGrantBearer = bearer.startsWith('gtk_') || bearer.startsWith('oat_')
@@ -233,9 +256,14 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
     }
   })
 
-  // 无状态传输:没有可恢复的服务端流/会话 → GET(SSE 拉流)与 DELETE(关会话)一律 405
-  const notAllowed = (_req: Request, res: Response) =>
-    void res.status(405).json({ jsonrpc: '2.0', error: { code: -32000, message: 'stateless transport — POST only' }, id: null })
+  // 无状态传输:GET(SSE 拉流)与 DELETE(关会话)一律 405。Origin 校验对所有方法一致(MCP: all incoming
+  // connections)—— 不可信 Origin 在 405 之前先 403(DNS-rebinding 防护适用于每个 /mcp 入口)。
+  const notAllowed = (req: Request, res: Response): void => {
+    if (!mcpOriginAllowed(req)) {
+      return void res.status(403).json({ jsonrpc: '2.0', error: { code: -32000, message: 'forbidden origin — /mcp accepts requests with no browser Origin or an allowlisted Origin only' }, id: null })
+    }
+    return void res.status(405).json({ jsonrpc: '2.0', error: { code: -32000, message: 'stateless transport — POST only' }, id: null })
+  }
   app.get('/mcp', notAllowed)
   app.delete('/mcp', notAllowed)
 }

@@ -3,13 +3,13 @@
  * PR-2 — MCP/OAuth HTTP-edge conformance for /mcp (Streamable HTTP).
  *
  * Drives the REAL registered route over HTTP against a seeded seam DB (real oauth_access_tokens +
- * agent_delegation_grants via verifyGrantToken — not stubbed). Asserts the transport-level status/
- * challenge split:
- *   A. bearer — anonymous protected → 401+challenge; invalid/expired/revoked/wrong-aud oat_ →
- *      401+challenge; VALID token, insufficient scope → 403 (no re-login); valid+scoped → passes edge;
- *      api_key & gtk_ semantics untouched.
- *   B. Origin — no Origin (server-to-server) allowed; allowlisted Origin allowed; hostile/malformed → 403;
- *      applies uniformly to initialize/tools/list/tools/call.
+ * agent_delegation_grants via verifyGrantToken — not stubbed). Asserts:
+ *   A. bearer — a tools/call auth failure (anonymous protected / invalid/expired/revoked/wrong-aud oat_ /
+ *      insufficient scope) returns the OpenAI Apps SDK shape: HTTP 200 + result._meta["mcp/www_authenticate"]
+ *      (array of RFC 6750 challenges, each with error+error_description) + result.isError:true (mirrored to a
+ *      WWW-Authenticate header for parity). valid+scoped → passes edge; api_key & gtk_ semantics untouched.
+ *   B. Origin — no Origin (server-to-server) allowed; allowlisted Origin allowed; hostile/malformed → 403
+ *      (a hard transport reject, NOT an auth challenge); applies uniformly to initialize/tools/list/tools/call.
  *
  * Usage: npm run test:mcp-http-edge
  */
@@ -62,13 +62,15 @@ async function main(): Promise<void> {
   const addr = http.address(); const port = typeof addr === 'object' && addr ? addr.port : 0
   const base = `http://127.0.0.1:${port}`
 
-  const post = async (body: unknown, opts: { origin?: string; bearer?: string } = {}): Promise<{ status: number; wwwAuth: string }> => {
+  const post = async (body: unknown, opts: { origin?: string; bearer?: string } = {}): Promise<{ status: number; wwwAuth: string; body: Record<string, unknown> }> => {
     const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }
     if (opts.origin !== undefined) headers.origin = opts.origin
     if (opts.bearer) headers.authorization = 'Bearer ' + opts.bearer
     const res = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify(body) })
-    return { status: res.status, wwwAuth: res.headers.get('www-authenticate') || '' }
+    const respBody = await res.json().catch(() => ({})) as Record<string, unknown>
+    return { status: res.status, wwwAuth: res.headers.get('www-authenticate') || '', body: respBody }
   }
+  const PUBLIC_CALL = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'webaz_search', arguments: {} } }
 
   // ── B. Origin validation ──
   ok('B1. no Origin (server-to-server) → allowed (tools/list 200)', (await post(TOOLS_LIST)).status === 200)
@@ -92,23 +94,59 @@ async function main(): Promise<void> {
     const acHeaders = [...res.headers.keys()].filter(k => k.toLowerCase().startsWith('access-control-'))
     ok('B11. NO Access-Control-* response header at all (no-CORS posture intact)', acHeaders.length === 0)
   }
+  ok('B12. Origin "null" (opaque/sandboxed origin) → 403', (await post(TOOLS_LIST, { origin: 'null' })).status === 403)
+  ok('B13. correct host with an unapproved port → 403 (exact match)', (await post(TOOLS_LIST, { origin: 'https://webaz.xyz:8443' })).status === 403)
+  {
+    const gHostile = await fetch(`${base}/mcp`, { method: 'GET', headers: { origin: 'https://evil.example' } })
+    ok('B14. GET /mcp hostile Origin → 403 (Origin guard on all methods)', gHostile.status === 403)
+    const gPlain = await fetch(`${base}/mcp`, { method: 'GET' })
+    ok('B15. GET /mcp no Origin → 405 (stateless; Origin allowed, method not)', gPlain.status === 405)
+    const dHostile = await fetch(`${base}/mcp`, { method: 'DELETE', headers: { origin: 'https://evil.example' } })
+    ok('B16. DELETE /mcp hostile Origin → 403', dHostile.status === 403)
+  }
 
   // ── A. bearer / OAuth token validity ──
-  ok('A1. anonymous auth-only tool → 401 + challenge', await (async () => { const r = await post(AGENT_ORDER_CALL); return r.status === 401 && r.wwwAuth.includes(CHALLENGE) })())
-  ok('A2. unknown oat_ → 401 + challenge', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: 'oat_' + 'f'.repeat(32) }); return r.status === 401 && r.wwwAuth.includes(CHALLENGE) })())
-  ok('A3. expired oat_ → 401 + challenge', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ tokExp: past }) }); return r.status === 401 && r.wwwAuth.includes(CHALLENGE) })())
-  ok('A4. revoked oat_ → 401 + challenge', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ tokRevoked: past }) }); return r.status === 401 && r.wwwAuth.includes(CHALLENGE) })())
-  ok('A5. wrong-audience oat_ → 401 + challenge (re-auth, not 403)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ tokAud: 'https://webaz.xyz/other' }) }); return r.status === 401 && r.wwwAuth.includes(CHALLENGE) })())
-  ok('A6. valid oat_, INSUFFICIENT scope → 403 (no challenge, no re-login)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ caps: ['seller_products_read'] }) }); return r.status === 403 && r.wwwAuth === '' })())
-  ok('A7. valid oat_ + sufficient scope → passes edge (not 401/403)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ caps: ['seller_orders_read_minimal'] }) }); return r.status !== 401 && r.status !== 403 })())
-  // A8/A9: gtk_ and api_key are NOT handled by the oat_ edge — must fall through (never edge-401), preserving semantics
-  ok('A8. invalid gtk_ on auth-only tool → NOT edge-401 (gtk_ semantics unchanged, falls through)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: 'gtk_' + 'a'.repeat(32) }); return r.status !== 401 })())
-  ok('A9. api_key bearer on auth-only tool → NOT edge-401 (api_key semantics unchanged)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: 'k_h' }); return r.status !== 401 })())
+  // OpenAI Apps SDK auth-challenge shape: a tools/call auth failure returns HTTP 200 with a RESULT carrying
+  // result._meta["mcp/www_authenticate"] (an ARRAY of RFC 6750 challenges, each with error+error_description)
+  // and result.isError:true — NOT an HTTP 401/403. ChatGPT reads the challenge from the result body. The
+  // same challenge is mirrored to a WWW-Authenticate header for parity. Origin rejection stays a hard 403.
+  const authMeta = (b: Record<string, unknown>): string[] => { const m = (b.result as { _meta?: Record<string, unknown> } | undefined)?._meta?.['mcp/www_authenticate']; return Array.isArray(m) ? m as string[] : [] }
+  const challengeOf = (b: Record<string, unknown>): string => authMeta(b)[0] ?? ''
+  const isErrResult = (b: Record<string, unknown>): boolean => (b.result as { isError?: boolean } | undefined)?.isError === true
+  const isAuthChallenge = (r: { status: number; body: Record<string, unknown> }): boolean => r.status === 200 && isErrResult(r.body) && authMeta(r.body).length === 1 && challengeOf(r.body).includes(CHALLENGE) && challengeOf(r.body).includes('error=') && challengeOf(r.body).includes('error_description=')
+  const passesEdge = (r: { status: number; body: Record<string, unknown> }): boolean => authMeta(r.body).length === 0   // edge synthesized no challenge → dispatched
+  ok('A1. anonymous auth-only tool → 200 result._meta challenge + isError', await (async () => isAuthChallenge(await post(AGENT_ORDER_CALL)))())
+  ok('A2. unknown oat_ → 200 result._meta challenge + isError', await (async () => isAuthChallenge(await post(AGENT_ORDER_CALL, { bearer: 'oat_' + 'f'.repeat(32) })))())
+  ok('A3. expired oat_ → 200 result._meta challenge', await (async () => isAuthChallenge(await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ tokExp: past }) })))())
+  ok('A4. revoked oat_ → 200 result._meta challenge', await (async () => isAuthChallenge(await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ tokRevoked: past }) })))())
+  ok('A5. wrong-audience oat_ → 200 result._meta challenge (invalid_token)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ tokAud: 'https://webaz.xyz/other' }) }); return isAuthChallenge(r) && challengeOf(r.body).includes('error="invalid_token"') })())
+  ok('A6. valid oat_, INSUFFICIENT scope → 200 insufficient_scope + error_description + required scope (scope-expansion, not re-login)', await (async () => {
+    const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ caps: ['seller_products_read'] }) })
+    return isAuthChallenge(r)
+      && challengeOf(r.body).includes('error="insufficient_scope"')
+      && challengeOf(r.body).includes('error_description=')
+      && challengeOf(r.body).includes('scope="seller_orders_read_minimal"')
+  })())
+  ok('A7. valid oat_ + sufficient scope → passes edge (dispatched, no auth challenge)', await (async () => passesEdge(await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ caps: ['seller_orders_read_minimal'] }) })))())
+  // PR-4: a PRESENTED invalid oat_ on ANY tool call (incl. public) → challenge — a bad credential is not silently downgraded to anonymous.
+  ok('A11. invalid oat_ on a PUBLIC tool call (webaz_search) → 200 challenge (bad credential not ignored)', await (async () => isAuthChallenge(await post(PUBLIC_CALL, { bearer: 'oat_' + 'f'.repeat(32) })))())
+  ok('A12. bad oat_ on tools/list (handshake, not a tool call) → reachable, NO auth challenge', await (async () => { const r = await post(TOOLS_LIST, { bearer: 'oat_' + 'f'.repeat(32) }); return r.status === 200 && authMeta(r.body).length === 0 })())
+  ok('A13. valid oat_ on a PUBLIC tool call → passes edge (identity ok, no scope needed)', await (async () => passesEdge(await post(PUBLIC_CALL, { bearer: seedOAuth() })))())
+  // Each challenge is an ARRAY whose [0] EXACTLY equals the mirrored WWW-Authenticate header — no drift.
+  ok('A14. anonymous auth-only: result._meta[0] === WWW-Authenticate header (has challenge)', await (async () => { const r = await post(AGENT_ORDER_CALL); return isAuthChallenge(r) && challengeOf(r.body) === r.wwwAuth })())
+  ok('A15. invalid-oat_: _meta[0] === header (error="invalid_token")', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: 'oat_' + 'f'.repeat(32) }); return isAuthChallenge(r) && challengeOf(r.body) === r.wwwAuth && challengeOf(r.body).includes('error="invalid_token"') })())
+  ok('A16. insufficient_scope: _meta[0] === header (error="insufficient_scope" + required scope)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ caps: ['seller_products_read'] }) }); return isAuthChallenge(r) && challengeOf(r.body) === r.wwwAuth && challengeOf(r.body).includes('scope="seller_orders_read_minimal"') })())
+  // explicit non-tool-call reachability + anonymous public-call success (edge never over-reaches)
+  ok('A17. invalid oat_ on initialize (not a tool call) → reachable, NO auth challenge', await (async () => { const r = await post(INIT, { bearer: 'oat_' + 'f'.repeat(32) }); return r.status === 200 && authMeta(r.body).length === 0 })())
+  ok('A18. anonymous webaz_search (public tool call, no bearer) → 200, NO auth challenge (anonymous read unaffected)', await (async () => { const r = await post(PUBLIC_CALL); return r.status === 200 && authMeta(r.body).length === 0 })())
+  // A8/A9: gtk_ and api_key are NOT handled by the oat_ edge — must fall through (never an edge challenge), preserving semantics
+  ok('A8. invalid gtk_ on auth-only tool → NOT edge-challenged (gtk_ semantics unchanged, falls through)', await (async () => passesEdge(await post(AGENT_ORDER_CALL, { bearer: 'gtk_' + 'a'.repeat(32) })))())
+  ok('A9. api_key bearer on auth-only tool → NOT edge-challenged (api_key semantics unchanged)', await (async () => passesEdge(await post(AGENT_ORDER_CALL, { bearer: 'k_h' })))())
   // A10: anonymous READ tool is never gated (I-2)
   ok('A10. anonymous tools/list (no auth) → 200', (await post(TOOLS_LIST)).status === 200)
 
   http.close()
   if (fail > 0) { console.error(`\n❌ mcp http edge FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-  console.log(`✅ mcp http edge: Origin allowlist (no-Origin/allowed pass · hostile/malformed/lookalike 403) · invalid/expired/revoked/wrong-aud oat_ → 401+challenge · insufficient scope → 403 · valid+scoped passes · gtk_/api_key untouched\n  ✅ pass ${pass}`)
+  console.log(`✅ mcp http edge: Origin allowlist (no-Origin/allowed pass · hostile/malformed/lookalike 403) · tool-call auth failure → 200 result._meta[challenge]+isError (OpenAI shape, error+error_description, _meta[0]===header) · valid+scoped passes · gtk_/api_key untouched\n  ✅ pass ${pass}`)
 }
 main().catch(e => { console.error(e); process.exit(1) })
