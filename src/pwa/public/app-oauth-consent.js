@@ -24,8 +24,8 @@
       <div class="page-header"><h2>${t('🔐 授权连接请求')}</h2></div>
       <div style="font-size:12px;color:#6b7280;padding:0 4px 12px;line-height:1.6">${t('一个 AI 客户端请求通过 OAuth 连接你的 WebAZ 账号。它只会拿到下列受限、短期(1小时)、可随时撤销的权限 —— 不是你的账号或密钥;资金/发布/发货等敏感动作永远需要你的 Passkey 逐次批准。')}</div>
       <div class="card" style="padding:16px">
-        <div style="font-size:12px;color:#6b7280">${t('请求方 client_id(自称,未验证)')}</div>
-        <div style="font-size:16px;font-weight:700;font-family:monospace;margin:2px 0 10px">${escHtml(clientId)}</div>
+        <div id="oauth-client-block"><div style="font-size:12px;color:#6b7280">${t('请求方 client_id(自称,未验证)')}</div>
+        <div style="font-size:16px;font-weight:700;font-family:monospace;margin:2px 0 10px">${escHtml(clientId)}</div></div>
         <div style="font-size:12px;color:#6b7280">${t('访问目标')}</div>
         <div style="font-size:13px;font-family:monospace;margin:2px 0 10px">${escHtml(resource)}</div>
         <div style="font-size:12px;color:#6b7280;margin-bottom:4px">${t('请求的权限')}</div>
@@ -38,6 +38,7 @@
         <button class="btn btn-outline" style="width:100%;margin-top:8px" onclick="oauthConsentDeny(this)">${t('拒绝')}</button>
       </div>
     `, 'me')
+    loadOAuthClientBadge(clientId, redirectUri)
   }
   window.renderOAuthConsent = renderOAuthConsent
 

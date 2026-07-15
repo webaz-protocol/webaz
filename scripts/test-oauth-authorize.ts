@@ -13,6 +13,7 @@ import express from 'express'
 import Database from 'better-sqlite3'
 import type { Server as HttpServer } from 'node:http'
 import { validateAuthorizeRequest, type OAuthClient } from '../src/pwa/routes/oauth-authorize.js'
+import { verifiedConnectorLabel } from '../src/pwa/routes/oauth-verified-connectors.js'
 import { initOAuthSchema } from '../src/runtime/webaz-schema-helpers.js'
 import { setSeamDb } from '../src/layer0-foundation/L0-1-database/db.js'
 
@@ -110,6 +111,45 @@ async function main() {
   }
   http.close()
   delete process.env.WEBAZ_OAUTH_DEV_CLIENT
+
+  // ── 5. verifiedConnectorLabel — badge is trustworthy iff EVERY redirect_uri is one vendor's host ──
+  ok('5a. exact official host → vendor label', verifiedConnectorLabel(['https://claude.ai/cb']) === 'Claude (Anthropic)')
+  ok('5b. subdomain of official host → vendor label', verifiedConnectorLabel(['https://auth.claude.ai/oauth/cb']) === 'Claude (Anthropic)')
+  ok('5c. case-insensitive host', verifiedConnectorLabel(['https://CLAUDE.AI/cb']) === 'Claude (Anthropic)')
+  ok('5d. ChatGPT host', verifiedConnectorLabel(['https://chatgpt.com/cb']) === 'ChatGPT (OpenAI)')
+  ok('5e. all uris same vendor → label', verifiedConnectorLabel(['https://claude.ai/a', 'https://claude.com/b']) === 'Claude (Anthropic)')
+  // ★ security-critical negatives
+  ok('5f. lookalike claude.ai.evil.com → NULL (no suffix-substring bypass)', verifiedConnectorLabel(['https://claude.ai.evil.com/cb']) === null)
+  ok('5g. official + attacker host mixed → NULL (attacker host could receive the code)', verifiedConnectorLabel(['https://claude.ai/cb', 'https://evil.example/cb']) === null)
+  ok('5h. two different vendors → NULL', verifiedConnectorLabel(['https://claude.ai/cb', 'https://chatgpt.com/cb']) === null)
+  ok('5i. non-allowlisted host → NULL', verifiedConnectorLabel(['https://random.example/cb']) === null)
+  ok('5j. loopback dev client → NULL (not a connector)', verifiedConnectorLabel(['http://localhost:8787/cb']) === null)
+  ok('5k. empty list → NULL', verifiedConnectorLabel([]) === null)
+  ok('5l. malformed uri anywhere → NULL', verifiedConnectorLabel(['https://claude.ai/cb', 'not a url']) === null)
+
+  // ── 6. GET /oauth/authorize/client-info — verified is SERVER-derived AND gated on the redirect_uri
+  //        actually belonging to the client (else a crafted URL shows a real vendor ✓ next to an
+  //        attacker redirect). ──
+  {
+    const db = new Database(':memory:'); initOAuthSchema(db); setSeamDb(db)
+    const ins = db.prepare(`INSERT INTO oauth_clients (client_id, name, redirect_uris, status, verified, created_at) VALUES (?,?,?,?,?,?)`)
+    ins.run('vclient', 'Claude', JSON.stringify(['https://claude.ai/cb']), 'active', 0, '2026-07-15T00:00:00.000Z')
+    ins.run('uclient', 'Randobot', JSON.stringify(['https://random.example/cb']), 'active', 0, '2026-07-15T00:00:00.000Z')
+    const { base, http } = await boot({ WEBAZ_OAUTH: '1' })
+    const ci = async (q: string): Promise<Record<string, unknown>> => (await fetch(`${base}/oauth/authorize/client-info?${q}`)).json()
+    const enc = encodeURIComponent
+    const a = await ci('client_id=vclient&redirect_uri=' + enc('https://claude.ai/cb'))
+    ok('6a. official host + matching redirect → verified ✓ + vendor label', a.found === true && a.verified === true && a.verified_label === 'Claude (Anthropic)')
+    const b = await ci('client_id=vclient&redirect_uri=' + enc('https://evil.com/cb'))
+    ok('6b. official-host client + UNREGISTERED redirect → NOT verified (Codex fix)', b.found === true && b.verified === false && b.verified_label === null)
+    const c = await ci('client_id=vclient')
+    ok('6c. no redirect_uri → NOT verified', c.found === true && c.verified === false)
+    const d = await ci('client_id=uclient&redirect_uri=' + enc('https://random.example/cb'))
+    ok('6d. non-official host (registered) → NOT verified', d.found === true && d.verified === false && d.verified_label === null)
+    const e = await fetch(`${base}/oauth/authorize/client-info?client_id=ghost`)
+    ok('6e. unknown client → 404 found:false', e.status === 404)
+    http.close()
+  }
 
   if (fail > 0) { console.error(`\n❌ oauth authorize FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ oauth authorize: PKCE-S256-required · client allowlist · redirect exact-match (no open redirect) · SAFE-scope-only · resource-bound · fail-closed · SPA hand-off\n  ✅ pass ${pass}`)
