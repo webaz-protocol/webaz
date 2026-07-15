@@ -97,6 +97,18 @@ try {
     !JSON.stringify(conn).includes('gtk_int') && !JSON.stringify(conn).includes('key_bob')
     && !JSON.stringify(conn).includes(human) && !/api_key|email|address/i.test(JSON.stringify(conn)))
   ok('3c4 connection_status with NO grant → connected:false + guidance (not a crash/PII)', await (async () => { const c = await mcp.handleConnectionStatus({ __isolated__: true }); return c.connected === false && typeof c.note === 'string' && !JSON.stringify(c).includes('gtk_int') })())
+  // 3c5 — a SHORT account id must STILL be redacted, NEVER returned verbatim (defense-in-depth, Codex).
+  const shortHuman = 'usr_s'   // 5 chars ≤ 8: the overlap branch
+  db.prepare('INSERT INTO users (id, name, role, api_key, handle) VALUES (?,?,?,?,?)').run(shortHuman, 'Sam', 'buyer', 'key_sam', 'sam_s')
+  const sgid = generateId('grt')
+  db.prepare('INSERT INTO agent_delegation_grants (grant_id, human_id, agent_label, capabilities, token_hash, status, expires_at) VALUES (?,?,?,?,?,?,?)')
+    .run(sgid, shortHuman, 'AgentShort', JSON.stringify([{ capability: 'read_public' }]), sha('gtk_short'), 'active', new Date(Date.now() + 3600_000).toISOString())
+  plantCredential(sgid, 'gtk_short', ['read_public'])
+  const connShort = await mcp.handleConnectionStatus({})
+  ok('3c5 SHORT account id is STILL redacted (hint !== full id, id not present verbatim, has ellipsis)',
+    connShort.connected === true && connShort.account_id_hint !== shortHuman
+    && !JSON.stringify(connShort).includes(shortHuman) && String(connShort.account_id_hint).includes('…'))
+  plantCredential(gid, 'gtk_int', ['read_public'])   // restore the primary grant credential for the tests below
 
   // 3d/3e) agent requests MORE scope via the grant bearer, then lists its OWN requests (grant-authed, no human)
   const reqd = await mcp.handlePair({ action: 'request', bundle: 'catalog_agent', reason: 'read my catalog' })

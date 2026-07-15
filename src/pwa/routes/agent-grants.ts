@@ -169,7 +169,9 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const u = await dbOne<{ handle: string | null }>('SELECT handle FROM users WHERE id = ?', [p.human_id])
     const scopes = (safeParseCaps(g?.capabilities) as Array<{ capability?: string }>).map(c => String(c?.capability || '')).filter(Boolean)
     const id = p.human_id
-    const account_id_hint = id.length > 8 ? `${id.slice(0, 4)}…${id.slice(-4)}` : id   // masked — never the full id
+    // Always redact — NEVER return the full id. Long id → prefix…suffix (middle hidden); short id (≤8,
+    // where prefix+suffix would overlap and reveal everything) → 2-char prefix + ellipsis only.
+    const account_id_hint = !id ? '' : id.length > 8 ? `${id.slice(0, 4)}…${id.slice(-4)}` : `${id.slice(0, 2)}…`
     res.json({ connected: true, handle: u?.handle ? `@${u.handle}` : null, account_id_hint, agent_label: p.agent_label, scopes, expires_at: g?.expires_at ?? null })
   })
 
