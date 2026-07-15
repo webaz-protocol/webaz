@@ -1,0 +1,24 @@
+# Build context excludes. Keep src/, docs/, scripts/, tsconfig*, package* — the
+# multi-stage build needs them (build:whitepaper reads scripts/, tsc reads src/,
+# runtime reads docs/). Everything below is rebuilt in-image or must never ship.
+node_modules
+dist
+.git
+.gitignore
+
+# Secrets / local env — never bake into an image layer.
+.env
+.env.*
+
+# Local SQLite dev DB and WAL sidecars (real data lives on the Railway volume).
+*.db
+*.db-shm
+*.db-wal
+
+# Agent/editor/OS artifacts and logs.
+.claude
+.DS_Store
+*.log
+npm-debug.log*
+coverage
+scratchpad
