@@ -43,6 +43,8 @@ When the OAuth surface is live (`WEBAZ_OAUTH=1`), a compliant MCP client (Claude
 
 Boundaries (identical to every other path): OAuth tokens carry **SAFE scopes only** — read (public + your own catalog + minimal orders, no buyer PII), draft creation, and *submitting* accept/ship requests to your approval queue. Anything beyond that — executing an order action, publishing, paying, arbitrating, or any api_key-only operation — is **not performed by an OAuth token**; it needs your `api_key` or a per-action Passkey approval. No token ever bypasses the human gate. Anonymous browsing needs no OAuth and is unchanged.
 
+> **`webaz_pair` is stdio-only.** It performs a one-time **local** pairing (a credential handle stored on your own machine), so over the remote endpoint it could only ever dead-end — it is therefore **not listed on the remote `tools/list`** (a remote agent authenticates via OAuth, not pairing). On the stdio server (`npx -y @seasonkoh/webaz`) it appears normally. If a remote client calls it by name anyway, it returns `PAIRING_LOCAL_ONLY`.
+
 ## Get an api_key
 
 Pre-launch is invite-gated (Sybil resistance). A key requires a **real human** to register with a Passkey — agents cannot self-register; this is the accountability root. Request an invite at [webaz.xyz/#welcome](https://webaz.xyz/#welcome). Browsing and reading need no key.

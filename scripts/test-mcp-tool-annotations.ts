@@ -86,7 +86,7 @@ async function main(): Promise<void> {
   // 5. no-drift: both transports go through buildMcpServer (which we just exercised) → same annotations
   const L1 = readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
   const ROUTE = readFileSync('src/pwa/routes/mcp-remote.ts', 'utf8')
-  ok('5a. single ListTools handler returns the annotated surface', L1.includes('ListToolsRequestSchema') && L1.includes('tools: TOOLS_ANNOTATED'))
+  ok('5a. single ListTools handler returns the annotated surface (transport-aware: full local, remote hides local-only)', L1.includes('ListToolsRequestSchema') && L1.includes('toolsForTransport(opts.isolated === true)') && L1.includes('TOOLS_ANNOTATED.filter(t => !LOCAL_ONLY_TOOLS.has(t.name))'))
   ok('5b. stdio entry uses buildMcpServer', L1.includes('const server = buildMcpServer()'))
   ok('5c. Remote MCP route uses buildMcpServer', /buildMcpServer\(\{/.test(ROUTE))
 
