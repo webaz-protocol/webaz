@@ -18,6 +18,7 @@ import type { Express, Request, Response } from 'express'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { buildMcpServer } from '../../layer1-agent/L1-1-mcp-server/server.js'
 import { oauthEnabled } from './oauth-discovery.js'
+import { verifyGrantToken } from '../../runtime/agent-grant-verifier.js'
 
 export function remoteMcpEnabled(): boolean {
   return process.env.WEBAZ_REMOTE_MCP === '1' && process.env.WEBAZ_MODE !== 'sandbox'
@@ -52,6 +53,38 @@ function isAuthOnlyToolCall(body: unknown): boolean {
     return LIST_PRODUCT_GRANT_ACTIONS.has(action)
   }
   return AUTH_ONLY_TOOLS.has(name)
+}
+
+// The exact SAFE grant scope each auth-only tool CALL requires — MUST match the requireAgentGrantScope
+// mounts in agent-grants.ts so the edge's 401-vs-403 split agrees with the tool layer. Used only to
+// tell an INVALID token (401, re-auth) apart from a valid token that merely lacks this scope (403).
+function scopeForAuthOnlyCall(body: unknown): string {
+  const b = body as { params?: { name?: unknown; arguments?: { action?: unknown } } } | null
+  const name = b?.params?.name
+  if (name === 'webaz_get_agent_order') return 'seller_orders_read_minimal'         // GET /api/agent/orders(/:id)
+  if (name === 'webaz_order_action_request') return 'order_action_request'           // POST /api/agent/orders/:id/action-request
+  if (name === 'webaz_list_product') {
+    const action = typeof b?.params?.arguments?.action === 'string' ? b.params.arguments.action : 'create'  // default create
+    return action === 'mine' ? 'seller_products_read' : 'seller_product_draft'        // GET vs POST /api/agent/seller/products
+  }
+  return ''
+}
+
+// MCP Streamable HTTP transport MUST validate Origin (DNS-rebinding defense, MCP spec). A request with
+// NO Origin header (server-to-server / non-browser agent) is allowed; a PRESENT Origin must EXACT-match
+// the allowlist — no wildcard, no suffix-contains, no forgeable substring — else 403. Minimal WebAZ +
+// OpenAI set, extendable via WEBAZ_MCP_ALLOWED_ORIGINS (comma-separated). This is transport Origin
+// validation only — it adds no Access-Control-* header and does not touch the no-CORS posture (T6).
+const DEFAULT_MCP_ALLOWED_ORIGINS = ['https://webaz.xyz', 'https://chatgpt.com', 'https://chat.openai.com']
+function mcpAllowedOrigins(): Set<string> {
+  const extra = String(process.env.WEBAZ_MCP_ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)
+  return new Set([...DEFAULT_MCP_ALLOWED_ORIGINS, ...extra])
+}
+function mcpOriginAllowed(req: Request): boolean {
+  const origin = req.headers.origin
+  if (origin === undefined) return true                 // no Origin = server-to-server / non-browser → allow
+  if (typeof origin !== 'string') return false          // duplicate/array Origin header → reject
+  return mcpAllowedOrigins().has(origin)                 // exact match only (malformed → not in set → reject)
 }
 
 // 机器可读的 Remote MCP 公告(单一真相源,两个 well-known 清单共用防漂移)。只在端点真开时返回,
@@ -120,6 +153,12 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
     if (!deps.rateLimitOk('remote_mcp:' + clientIp(req), REMOTE_MCP_RPM, 60_000)) {
       return void res.status(429).json({ jsonrpc: '2.0', error: { code: -32000, message: 'rate limited — slow down' }, id: null })
     }
+    // MCP transport Origin validation (DNS-rebinding). Applies uniformly to initialize/tools/list/
+    // tools/call (all POST /mcp). No Origin (server-to-server) passes; a non-allowlisted/malformed
+    // Origin is rejected before any body processing.
+    if (!mcpOriginAllowed(req)) {
+      return void res.status(403).json({ jsonrpc: '2.0', error: { code: -32000, message: 'forbidden origin — /mcp accepts requests with no browser Origin or an allowlisted Origin only' }, id: null })
+    }
     try {
       const authz = String(req.headers.authorization || '')
       const bearer = authz.startsWith('Bearer ') ? authz.slice(7).trim() : ''
@@ -127,13 +166,42 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
       //   metadata,合规 MCP 客户端据此自启 OAuth 流(MCP Authorization spec)。仅 WEBAZ_OAUTH=1 时
       //   挑战(关着时 metadata 404,不能把客户端指向不存在的文档);带任何 Bearer 的请求照旧进工具层
       //   (无效凭证的语义化 error_code 在那里,PR-4)。匿名【读】面完全不受影响(I-2)。
-      if (!bearer && oauthEnabled() && isAuthOnlyToolCall(req.body)) {
-        res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`)
-        return void res.status(401).json({
-          jsonrpc: '2.0',
-          error: { code: -32001, message: 'authentication required — this tool acts as an account. A compliant MCP client can connect via OAuth (see the WWW-Authenticate header), or send Authorization: Bearer <api_key>.' },
-          id: (req.body as { id?: number | string | null } | null)?.id ?? null,
-        })
+      const bodyId = (req.body as { id?: number | string | null } | null)?.id ?? null
+      if (oauthEnabled() && isAuthOnlyToolCall(req.body)) {
+        if (!bearer) {
+          // Anonymous call to an account-scoped tool → 401 challenge (unchanged; I-1 / I-2 reads untouched).
+          res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`)
+          return void res.status(401).json({
+            jsonrpc: '2.0',
+            error: { code: -32001, message: 'authentication required — this tool acts as an account. A compliant MCP client can connect via OAuth (see the WWW-Authenticate header), or send Authorization: Bearer <api_key>.' },
+            id: bodyId,
+          })
+        }
+        if (bearer.startsWith('oat_')) {
+          // Validate the OAuth access token at the TRANSPORT edge so a compliant client reauthorizes on
+          // the right signal: an invalid / expired / revoked / wrong-audience token → HTTP 401 + the
+          // protected-resource challenge; a VALID token that merely lacks THIS tool's safe scope → HTTP
+          // 403 (do NOT trigger re-login). Only oat_ is handled here — api_key and gtk_ semantics are
+          // untouched (they fall through to dispatch, exactly as before).
+          const gv = await verifyGrantToken(bearer, scopeForAuthOnlyCall(req.body))
+          if (!gv.ok) {
+            if (gv.error_code === 'SCOPE_NOT_GRANTED') {
+              return void res.status(403).json({
+                jsonrpc: '2.0',
+                error: { code: -32003, message: 'insufficient scope — your OAuth grant does not carry the capability this tool needs. Request it (webaz_pair action="request"), have the human approve, then retry. No re-login needed.' },
+                id: bodyId,
+              })
+            }
+            res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`)
+            return void res.status(401).json({
+              jsonrpc: '2.0',
+              error: { code: -32001, message: 'authentication required — your OAuth token is missing, invalid, expired, revoked, or not scoped to this resource. Reconnect via OAuth (see the WWW-Authenticate header).' },
+              id: bodyId,
+            })
+          }
+          // gv.ok → valid token with sufficient scope; fall through to dispatch (tool layer re-verifies).
+        }
+        // gtk_ / api_key bearer → unchanged; fall through to dispatch.
       }
       // RFC-023 PR-4:grant token(gtk_ 直接 grant / oat_ OAuth access token)走 grant 凭证注入,不当 human
       //   api_key —— 它 audience-bound 到 /mcp 的 grant 面,通用工具照旧匿名。human api_key 走 defaultApiKey。

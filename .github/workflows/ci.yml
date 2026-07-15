@@ -815,6 +815,7 @@ jobs:
       - run: npm run test:oauth-token
       - run: npm run test:oauth-mcp-bearer
       - run: npm run test:oauth-mcp-challenge
+      - run: npm run test:mcp-http-edge
       - run: npm run test:oauth-register
       - run: npm run test:create-kinds
       - run: npm run test:secondhand-photo-authenticity
