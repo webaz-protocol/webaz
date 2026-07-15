@@ -107,9 +107,25 @@ async function main() {
   ok('4b. non-loopback http rejected', (await reg(base, { redirect_uris: ['http://evil.example/cb'] })).status === 400)
   ok('4c. >5 redirect_uris rejected', (await reg(base, { redirect_uris: Array.from({ length: 6 }, (_, i) => `https://c.example/${i}`) })).status === 400)
   ok('4d. confidential client (auth_method != none) rejected', (await (await reg(base, { redirect_uris: ['https://c.example/cb'], token_endpoint_auth_method: 'client_secret_basic' })).json() as { error: string }).error === 'invalid_client_metadata')
-  ok('4e. wrong grant_types rejected', (await reg(base, { redirect_uris: ['https://c.example/cb'], grant_types: ['implicit'] })).status === 400)
+  ok('4e. wrong grant_types (implicit) rejected', (await reg(base, { redirect_uris: ['https://c.example/cb'], grant_types: ['implicit'] })).status === 400)
   ok('4f. one bad uri in the array fails the whole registration', (await reg(base, { redirect_uris: ['https://ok.example/cb', 'http://evil.example/cb'] })).status === 400)
   ok('4g. wildcard host in a registration request → 400', (await reg(base, { redirect_uris: ['https://*.evil.example/cb'] })).status === 400)
+  // ── 4′. RFC-024 DCR grant_types compat. ChatGPT's DCR sends ["authorization_code","refresh_token"];
+  //        pre-fix the exact-match (length===1) rejected it with 400 invalid_client_metadata. The rule is
+  //        now "must INCLUDE authorization_code; only authorization_code/refresh_token allowed", and the
+  //        response still advertises ONLY the honored ["authorization_code"]. ──
+  ok('4h. omitted grant_types → 201 (defaults to authorization_code)', (await reg(base, { redirect_uris: ['https://c.example/cb'] })).status === 201)
+  ok('4i. explicit ["authorization_code"] → 201', (await reg(base, { redirect_uris: ['https://c.example/cb'], grant_types: ['authorization_code'] })).status === 201)
+  {
+    const r = await reg(base, { redirect_uris: ['https://c.example/cb'], grant_types: ['authorization_code', 'refresh_token'] })
+    const j = await r.json() as Record<string, unknown>
+    ok('4j. ["authorization_code","refresh_token"] → 201 (the ChatGPT DCR shape; pre-fix this 400ed)', r.status === 201)
+    ok('4k. …response advertises ONLY ["authorization_code"] (honest — refresh_token is NOT issued)', JSON.stringify(j.grant_types) === '["authorization_code"]')
+  }
+  ok('4l. ["client_credentials"] → 400 invalid_client_metadata', (await (await reg(base, { redirect_uris: ['https://c.example/cb'], grant_types: ['client_credentials'] })).json() as { error: string }).error === 'invalid_client_metadata')
+  ok('4m. ["refresh_token"] WITHOUT authorization_code → 400 invalid_client_metadata', (await (await reg(base, { redirect_uris: ['https://c.example/cb'], grant_types: ['refresh_token'] })).json() as { error: string }).error === 'invalid_client_metadata')
+  ok('4n. ["authorization_code","client_credentials"] → 400 (mixed unsupported still rejected — no new grant flow)', (await reg(base, { redirect_uris: ['https://c.example/cb'], grant_types: ['authorization_code', 'client_credentials'] })).status === 400)
+  ok('4o. response_types ["token"] (non-code) → 400 invalid_client_metadata', (await (await reg(base, { redirect_uris: ['https://c.example/cb'], response_types: ['token'] })).json() as { error: string }).error === 'invalid_client_metadata')
   // ── 5. missing client_name defaults, still registers ──
   {
     const r = await reg(base, { redirect_uris: ['https://ok.example/cb'] })
@@ -176,7 +192,7 @@ async function main() {
   }
 
   if (fail > 0) { console.error(`\n❌ oauth register FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-  console.log(`✅ oauth register (RFC-024 DCR): redirect policy (https/loopback only) · public-client only · unverified+inert row · IP hashed · oauthClients() DB-backed · registered client passes authorize · fail-closed\n  ✅ pass ${pass}`)
+  console.log(`✅ oauth register (RFC-024 DCR): redirect policy (https/loopback only) · public-client only · grant_types compat (must INCLUDE authorization_code, refresh_token tolerated but not issued, client_credentials/implicit rejected) · unverified+inert row · IP hashed · oauthClients() DB-backed · registered client passes authorize · fail-closed\n  ✅ pass ${pass}`)
 }
 import { readFileSync } from 'node:fs'
 main().catch(e => { console.error(e); process.exit(1) })
