@@ -37,6 +37,7 @@ import { applyWebazRuntimeSchema } from '../../runtime/apply-webaz-runtime-schem
 import { generateCodeVerifier, pkceChallengeS256 } from '../../runtime/agent-pairing.js'  // RFC-020 PR-C1 — PKCE 配对
 import { NETWORK_TOOLS, NETWORK_SELF_AWARE, toolAllowedInNetworkMode, resolveMode } from './network-mode.js'  // RFC-003 网络门(可单测)+ 模式解析(单一真相源)
 import { annotateTools } from './tool-annotations.js'  // 标准 MCP annotations(readOnly/destructive/openWorld)——stdio+Remote 共用
+import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-tool securitySchemes(oauth2 仅 grant-reachable / 余 noauth)
 import { homedir } from 'node:os'
 import { join as pathJoin } from 'node:path'
 import { existsSync as fsExists, mkdirSync, writeFileSync, readFileSync, unlinkSync, chmodSync } from 'node:fs'
@@ -1803,7 +1804,7 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
 
 // Standard MCP annotations merged once at module load (fail-fast if any tool lacks a mapping). The
 // single ListTools handler returns this SAME surface for stdio AND Remote MCP → zero drift.
-const TOOLS_ANNOTATED = annotateTools(TOOLS)
+const TOOLS_ANNOTATED = withSecuritySchemes(annotateTools(TOOLS))
 
 // ─── 工具处理函数 ─────────────────────────────────────────────
 
