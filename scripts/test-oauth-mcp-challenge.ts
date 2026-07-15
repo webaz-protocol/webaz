@@ -149,7 +149,7 @@ async function main() {
   {
     const r3b = await call(base, 'webaz_order_action_request', { Authorization: 'Bearer oat_' + 'a'.repeat(32) })
     const j3b = await r3b.json().catch(() => null)
-    ok('3b. invalid oat_ on auth-only tool → 200 challenge at the edge (bad credential not downgraded)', r3b.status === 200 && (j3b as { result?: { isError?: boolean } } | null)?.result?.isError === true && chArrOf(j3b).length === 1)
+    ok('3b. invalid oat_ on auth-only tool → 200 challenge at the edge (bad credential not downgraded; error+error_description present)', r3b.status === 200 && (j3b as { result?: { isError?: boolean } } | null)?.result?.isError === true && chArrOf(j3b).length === 1 && chArrOf(j3b)[0].includes('error="invalid_token"') && chArrOf(j3b)[0].includes('error_description='))
   }
   // Challenge-is-a-promise: a VALID oat_ passes the edge and its retry lands on the GRANT endpoint
   // (/api/agent/*) carrying the per-request oat_ — never the host env key, never the api_key path.

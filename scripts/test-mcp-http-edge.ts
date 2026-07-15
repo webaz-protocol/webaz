@@ -113,7 +113,7 @@ async function main(): Promise<void> {
   const authMeta = (b: Record<string, unknown>): string[] => { const m = (b.result as { _meta?: Record<string, unknown> } | undefined)?._meta?.['mcp/www_authenticate']; return Array.isArray(m) ? m as string[] : [] }
   const challengeOf = (b: Record<string, unknown>): string => authMeta(b)[0] ?? ''
   const isErrResult = (b: Record<string, unknown>): boolean => (b.result as { isError?: boolean } | undefined)?.isError === true
-  const isAuthChallenge = (r: { status: number; body: Record<string, unknown> }): boolean => r.status === 200 && isErrResult(r.body) && authMeta(r.body).length === 1 && challengeOf(r.body).includes(CHALLENGE)
+  const isAuthChallenge = (r: { status: number; body: Record<string, unknown> }): boolean => r.status === 200 && isErrResult(r.body) && authMeta(r.body).length === 1 && challengeOf(r.body).includes(CHALLENGE) && challengeOf(r.body).includes('error=') && challengeOf(r.body).includes('error_description=')
   const passesEdge = (r: { status: number; body: Record<string, unknown> }): boolean => authMeta(r.body).length === 0   // edge synthesized no challenge → dispatched
   ok('A1. anonymous auth-only tool → 200 result._meta challenge + isError', await (async () => isAuthChallenge(await post(AGENT_ORDER_CALL)))())
   ok('A2. unknown oat_ → 200 result._meta challenge + isError', await (async () => isAuthChallenge(await post(AGENT_ORDER_CALL, { bearer: 'oat_' + 'f'.repeat(32) })))())
