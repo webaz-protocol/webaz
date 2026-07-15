@@ -844,7 +844,7 @@ function renderTypeChips(active, ctx) {
     <div style="display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;padding:2px 0;-webkit-overflow-scrolling:touch">
       ${opts.map(o => `
         <button onclick="setTypeChip('${ctx}','${o.k}')"
-          style="white-space:nowrap;border:1px solid ${active===o.k?'#ea580c':'#e5e7eb'};background:${active===o.k?'#fff7ed':'#fff'};color:${active===o.k?'#ea580c':'#374151'};padding:5px 11px;border-radius:999px;font-size:12px;cursor:pointer;font-weight:${active===o.k?'600':'400'}">
+          style="white-space:nowrap;border:1px solid ${active===o.k?'#c2410c':'#e5e7eb'};background:${active===o.k?'#fff7ed':'#fff'};color:${active===o.k?'#c2410c':'#374151'};padding:5px 11px;border-radius:999px;font-size:12px;cursor:pointer;font-weight:${active===o.k?'600':'400'}">
           <span style="margin-right:3px">${o.icon}</span>${o.label}
         </button>
       `).join('')}
@@ -911,7 +911,7 @@ function renderSortChips(active, ctx) {
       `).join('')}
       ${active === 'random' ? `<button onclick="renderDiscover(document.getElementById('app'))" style="margin-left:4px;border:none;background:transparent;color:#4f46e5;font-size:12px;cursor:pointer">🔄 ${t('换一批')}</button>` : ''}
     </div>
-    ${sortHint ? `<div style="font-size:10px;color:#9ca3af;margin-bottom:10px;padding-left:2px">ℹ️ ${sortHint}</div>` : ''}`
+    ${sortHint ? `<div style="font-size:10px;color:#596570;margin-bottom:10px;padding-left:2px">ℹ️ ${sortHint}</div>` : ''}`
 }
 
 window.setSortChip = (ctx, sort) => {
@@ -1125,37 +1125,6 @@ window.setFeedScope = (k) => {
   renderFeedView()
 }
 
-// 2026-05-24 P1-4：新品发现时段 chip + #987：测评免单 chip（并列，可叠加筛选）
-function renderNewDaysChips(active, trialOnly) {
-  const opts = [
-    { k: '',  label: t('全部') },
-    { k: 1,   label: t('今日') },
-    { k: 3,   label: t('3 天内') },
-    { k: 7,   label: t('7 天内') },
-  ]
-  return `
-    <div style="display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;padding:2px 0;-webkit-overflow-scrolling:touch">
-      ${opts.map(o => `
-        <button onclick="setNewDays('${o.k}')"
-          style="flex:0 0 auto;white-space:nowrap;border:1px solid ${active===o.k?'#0891b2':'#e5e7eb'};background:${active===o.k?'#ecfeff':'#fff'};color:${active===o.k?'#0891b2':'#374151'};padding:5px 11px;border-radius:999px;font-size:12px;cursor:pointer;font-weight:${active===o.k?'600':'400'}">
-          ${o.label}
-        </button>
-      `).join('')}
-      <button onclick="setNewTrialOnly(${!trialOnly})"
-        style="flex:0 0 auto;white-space:nowrap;border:1px solid ${trialOnly?'#9333ea':'#e5e7eb'};background:${trialOnly?'#faf5ff':'#fff'};color:${trialOnly?'#7e22ce':'#374151'};padding:5px 11px;border-radius:999px;font-size:12px;cursor:pointer;font-weight:${trialOnly?'600':'400'}">
-        🎁 ${t('测评免单')}
-      </button>
-    </div>`
-}
-window.setNewDays = (val) => {
-  state._newDays = val === '' ? '' : Number(val)
-  renderNewArrivals(document.getElementById('app'))
-}
-window.setNewTrialOnly = (val) => {
-  state._newTrialOnly = !!val
-  renderNewArrivals(document.getElementById('app'))
-}
-
 async function renderNewArrivals(app) {
   app.innerHTML = shell(loading$(), 'discover')
   const sort = state._newSort || 'newest'
@@ -1180,18 +1149,20 @@ async function renderNewArrivals(app) {
               <div class="product-seller">${repBadge(p.rep_level)}@${escHtml(p.seller_name)}</div>
               ${p.trial_quota_remaining > 0
                 ? `<div style="font-size:11px;color:#9333ea;margin-top:4px;font-weight:600">🎁 ${t('测评免单 剩')} ${p.trial_quota_remaining} ${t('名额')}</div>`
-                : `<div style="font-size:11px;color:#f59e0b;margin-top:4px">🆕 ${t('等待第一位买家')}</div>`}
+                : `<div style="font-size:11px;color:#8a4f00;margin-top:4px">🆕 ${t('等待第一位买家')}</div>`}
             </div>
           </div>`).join('')}
        </div>` + (cursor ? `<div id="new-more" style="text-align:center;margin-top:16px"><button class="btn btn-outline" style="width:auto;padding:8px 24px" onclick="loadMoreDiscover('${qsBase}','new-grid','new-more')">${t('加载更多')}</button></div>` : '')
   app.innerHTML = shell(`
     ${renderSmartBuyHeader('new')}
     ${discoverGoodsTabs('new')}
-    ${pageHotFeedToggle('#discover/new', '#discover/new/feed', { hotIcon: '🆕', hotLabel: t('新品') })}
-    <div style="font-size:12px;color:var(--gray-500);margin-bottom:14px;line-height:1.5">${t('卖家最新上架、尚无成交 — 成为第一位发现者和传播者')}</div>
-    ${renderNewDaysChips(days, trialOnly)}
-    ${renderSortChips(sort, 'new')}
-    ${renderTypeChips(ptype, 'new')}
+    <div class="new-arrivals-controls">
+      <div class="discover-subhead">
+        <div class="discover-view-tabs">${pageHotFeedToggle('#discover/new', '#discover/new/feed', { hotIcon: '🆕', hotLabel: t('新品') })}</div>
+        <div class="discover-context">${t('卖家最新上架、尚无成交 — 成为第一位发现者和传播者')}</div>
+      </div>
+      ${renderNewFilterPanel(days, trialOnly, sort, ptype)}
+    </div>
     <div id="product-list">${grid}</div>
   `, 'discover')
 }
