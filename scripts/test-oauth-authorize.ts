@@ -13,6 +13,7 @@ import express from 'express'
 import Database from 'better-sqlite3'
 import type { Server as HttpServer } from 'node:http'
 import { validateAuthorizeRequest, type OAuthClient } from '../src/pwa/routes/oauth-authorize.js'
+import { verifiedConnectorLabel } from '../src/pwa/routes/oauth-verified-connectors.js'
 import { initOAuthSchema } from '../src/runtime/webaz-schema-helpers.js'
 import { setSeamDb } from '../src/layer0-foundation/L0-1-database/db.js'
 
@@ -110,6 +111,21 @@ async function main() {
   }
   http.close()
   delete process.env.WEBAZ_OAUTH_DEV_CLIENT
+
+  // ── 5. verifiedConnectorLabel — badge is trustworthy iff EVERY redirect_uri is one vendor's host ──
+  ok('5a. exact official host → vendor label', verifiedConnectorLabel(['https://claude.ai/cb']) === 'Claude (Anthropic)')
+  ok('5b. subdomain of official host → vendor label', verifiedConnectorLabel(['https://auth.claude.ai/oauth/cb']) === 'Claude (Anthropic)')
+  ok('5c. case-insensitive host', verifiedConnectorLabel(['https://CLAUDE.AI/cb']) === 'Claude (Anthropic)')
+  ok('5d. ChatGPT host', verifiedConnectorLabel(['https://chatgpt.com/cb']) === 'ChatGPT (OpenAI)')
+  ok('5e. all uris same vendor → label', verifiedConnectorLabel(['https://claude.ai/a', 'https://claude.com/b']) === 'Claude (Anthropic)')
+  // ★ security-critical negatives
+  ok('5f. lookalike claude.ai.evil.com → NULL (no suffix-substring bypass)', verifiedConnectorLabel(['https://claude.ai.evil.com/cb']) === null)
+  ok('5g. official + attacker host mixed → NULL (attacker host could receive the code)', verifiedConnectorLabel(['https://claude.ai/cb', 'https://evil.example/cb']) === null)
+  ok('5h. two different vendors → NULL', verifiedConnectorLabel(['https://claude.ai/cb', 'https://chatgpt.com/cb']) === null)
+  ok('5i. non-allowlisted host → NULL', verifiedConnectorLabel(['https://random.example/cb']) === null)
+  ok('5j. loopback dev client → NULL (not a connector)', verifiedConnectorLabel(['http://localhost:8787/cb']) === null)
+  ok('5k. empty list → NULL', verifiedConnectorLabel([]) === null)
+  ok('5l. malformed uri anywhere → NULL', verifiedConnectorLabel(['https://claude.ai/cb', 'not a url']) === null)
 
   if (fail > 0) { console.error(`\n❌ oauth authorize FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ oauth authorize: PKCE-S256-required · client allowlist · redirect exact-match (no open redirect) · SAFE-scope-only · resource-bound · fail-closed · SPA hand-off\n  ✅ pass ${pass}`)

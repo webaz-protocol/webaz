@@ -21,6 +21,7 @@
 import type { Express, Request, Response } from 'express'
 import { OAUTH_RESOURCE, OAUTH_SCOPES } from './oauth-discovery.js'
 import { dbAll } from '../../layer0-foundation/L0-1-database/db.js'
+import { verifiedConnectorLabel } from './oauth-verified-connectors.js'
 
 export interface OAuthClient {
   client_id: string
@@ -194,5 +195,24 @@ export function registerOAuthAuthorizeRoutes(app: Express): void {
     }
     // Non-redirectable (bad client / unregistered redirect_uri) — render an error page, never redirect.
     return void res.status(400).setHeader('content-type', 'text/html; charset=utf-8').send(errorPage(v.error, v.error_description))
+  })
+
+  // Consent screen fetches this by client_id so the "verified" badge is SERVER-derived. The SPA must
+  // never trust a URL param for verified (an attacker could craft /#oauth-consent?…&verified=1 to fake a
+  // ✓). A client is verified only when EVERY redirect_uri is an official connector host — and approve
+  // still exact-matches the redirect_uri, so a real verified client_id can't be paired with an attacker's.
+  app.get('/oauth/authorize/client-info', async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store')
+    const clientId = typeof req.query.client_id === 'string' ? req.query.client_id : ''
+    const client = clientId ? (await oauthClients()).find(c => c.client_id === clientId) : undefined
+    if (!client) return void res.status(404).json({ found: false })
+    const label = verifiedConnectorLabel(client.redirect_uris)
+    return void res.json({
+      found: true,
+      client_id: client.client_id,
+      name: client.name,
+      verified: client.verified === true || label !== null,
+      verified_label: label,
+    })
   })
 }
