@@ -366,7 +366,8 @@ import { registerOAuthDiscoveryRoutes } from './routes/oauth-discovery.js'
 import { registerOAuthAuthorizeRoutes } from './routes/oauth-authorize.js'
 import { registerOAuthApproveRoutes } from './routes/oauth-approve.js'
 import { registerOAuthTokenRoutes } from './routes/oauth-token.js'
-import { registerOAuthRegisterRoutes } from './routes/oauth-register.js'
+import { registerOAuthRegisterRoutes, startOAuthClientSweepCron } from './routes/oauth-register.js'
+import { mountEdgeOriginGuard } from './routes/edge-origin-guard.js'
 // Agent reputation (#1013 Phase 108) — 2 endpoints
 import { registerAgentReputationRoutes } from './routes/agent-reputation.js'
 // Checkout helpers (#1013 Phase 109) — 2 endpoints
@@ -7730,6 +7731,7 @@ registerWalletWriteRoutes(app, {
   consumeGateToken, issueCode, findActiveCode, maskEmail,
   LARGE_WITHDRAW_THRESHOLD,
 })
+mountEdgeOriginGuard(app)   // cf-origin-guard (dormant until WEBAZ_EDGE_SECRET) — before handlers
 // #1013 Phase 107: 6 public/util endpoints 统一 register（必须在 SPA catch-all 之前；logError/generateManifest 在上方定义）
 registerRemoteMcpRoutes(app, { rateLimitOk })   // RFC-022:WEBAZ_REMOTE_MCP=1 才挂载(fail-closed)+ IP 限流
 registerOAuthDiscoveryRoutes(app)   // RFC-023 PR-1:WEBAZ_OAUTH=1 才挂载(fail-closed)发现面元数据
@@ -8366,6 +8368,8 @@ app.listen(PORT, () => {
   }
   setInterval(cleanWebAuthnExpired, 6 * 60 * 60 * 1000)  // 每 6h 跑一次
   console.log(`🧹 webauthn 过期清理 cron 已启动（每 6h 清 >1d 残留）`)
+
+  startOAuthClientSweepCron()   // RFC-024: expire never-consented DCR clients >30d (see oauth-register.ts)
 
   // task #1093 stage 5: governance auto-deactivate cron
   // Spec docs/ARBITRATION-PLAYBOOK.md §6.2 + GOVERNANCE-ONBOARDING.md §6.2

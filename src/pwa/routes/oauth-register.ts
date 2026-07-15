@@ -101,3 +101,31 @@ export function registerOAuthRegisterRoutes(app: Express, deps: OAuthRegisterDep
 // Hash the registering IP for abuse-audit without storing a raw IP (privacy).
 import { createHash } from 'node:crypto'
 function hashIp(ip: string): string { return createHash('sha256').update('oauth_reg:' + ip).digest('hex').slice(0, 32) }
+
+/**
+ * RFC-024 §T2 — DCR client TTL sweep. `/oauth/register` lets anyone self-register an INERT client
+ * (verified=0, last_authorized_at NULL). Without expiry those rows accumulate unbounded — the global
+ * rate limit caps the registration *rate*, not the cumulative total. This deletes clients that are
+ * unverified AND never consented AND older than 30 days. Such a client has never been through the
+ * Passkey consent that mints its grant/auth-code/token, so it owns no oauth_auth_codes or
+ * oauth_access_tokens rows — the delete is FK-safe. Verified or ever-authorized clients are never
+ * touched. Returns the number of rows swept. Driven by the server boot cron (every 24h).
+ */
+export async function sweepStaleOAuthClients(nowMs: number = Date.now()): Promise<number> {
+  const cutoff = new Date(nowMs - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const r = await dbRun(
+    `DELETE FROM oauth_clients WHERE verified = 0 AND last_authorized_at IS NULL AND created_at < ?`,
+    [cutoff],
+  )
+  return r.changes
+}
+
+/** Start the 24h TTL-sweep cron (server boot wiring, kept out of server.ts to respect its size ceiling). */
+export function startOAuthClientSweepCron(intervalMs = 24 * 60 * 60 * 1000): NodeJS.Timeout {
+  const run = (): void => void sweepStaleOAuthClients()
+    .then(n => { if (n > 0) console.log(`[oauth-cron] swept ${n} never-authorized DCR clients >30d`) })
+    .catch(e => console.error('[oauth-cron]', e))
+  const timer = setInterval(run, intervalMs)
+  console.log('🧹 oauth_clients TTL cron 已启动（每 24h 清 verified=0 且从未 consent 的 >30d DCR client）')
+  return timer
+}
