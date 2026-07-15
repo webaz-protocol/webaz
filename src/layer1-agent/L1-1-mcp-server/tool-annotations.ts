@@ -49,7 +49,7 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_revoke_key:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: returns Passkey/PWA instructions only — no DB write, no execution
   webaz_rotate_key:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: returns Passkey/PWA instructions only — no DB write, no execution
   webaz_referral:            { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: caller's own referral status/earnings
-  webaz_share_link:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read+compute: reads to render caller's own referral URL; no write (attribution created elsewhere)
+  webaz_share_link:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read+compute: no write, but READS an active marketplace product (public object) to render the link
   webaz_blocklist:           { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: unblock DELETEs; manages relations with OTHER users
   webaz_follows:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: unfollow DELETEs the relationship (OTHER users)
   webaz_nearby:              { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: clear_location removes / set_location overwrites geo; discovers others

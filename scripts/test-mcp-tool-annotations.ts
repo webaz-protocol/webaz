@@ -61,7 +61,7 @@ async function main(): Promise<void> {
   // instruction-only tools are READ-ONLY (no DB write / no execution)
   ok('4d. webaz_revoke_key instructions-only (T,F,F)', eq('webaz_revoke_key', true, false, false))
   ok('4e. webaz_rotate_key instructions-only (T,F,F)', eq('webaz_rotate_key', true, false, false))
-  ok('4f. webaz_share_link read+compute (T,F,F)', eq('webaz_share_link', true, false, false))
+  ok('4f. webaz_share_link read+compute, reads a marketplace product (T,F,T)', eq('webaz_share_link', true, false, true))
   // additive-only writes are NOT destructive
   ok('4g. webaz_feedback additive submit (F,F,T)', eq('webaz_feedback', false, false, true))
   ok('4h. webaz_register additive create (F,F,T)', eq('webaz_register', false, false, true))
