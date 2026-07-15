@@ -66,7 +66,7 @@ const METADATA_URL = 'https://webaz.xyz/.well-known/oauth-protected-resource/mcp
 
 // 挑战即承诺:入列 = 该工具在 /mcp 上有真实的 oat_/gtk_ grant 路径(resolveGrantCredential →
 // requireAgentGrantScope 端点 → 成功或 scope 级 PERMISSION_REQUIRED)。
-const GRANT_PATH_TOOLS = ['webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request']
+const GRANT_PATH_TOOLS = ['webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request', 'webaz_connection_status']
 // api_key-only:oat_ 永远满足不了(它只作为 grant 凭证注入,不是 human api_key)→ 401 广告 OAuth = 虚假恢复路径。
 const API_KEY_ONLY_TOOLS = ['webaz_place_order', 'webaz_update_order', 'webaz_wallet', 'webaz_notifications', 'webaz_default_address']
 
@@ -220,6 +220,7 @@ async function main() {
       webaz_get_agent_order: ['seller_orders_read_minimal'],
       webaz_order_action_request: ['order_action_request'],
       webaz_list_product: ['seller_product_draft', 'seller_products_read'],   // create + mine
+      webaz_connection_status: ['read_public'],   // GET /api/agent-grants/connection
     }
     for (const [tool, reqCaps] of Object.entries(TOOL_REQUIRED_CAPS)) {
       for (const c of reqCaps) {

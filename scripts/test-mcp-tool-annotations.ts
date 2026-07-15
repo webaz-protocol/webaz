@@ -48,7 +48,7 @@ async function main(): Promise<void> {
   ok('2. TOOL_ANNOTATIONS keys exactly match live tool names', JSON.stringify(names) === JSON.stringify(mapKeys))
 
   // 3. count derived from the actual surface; asserted to be 42 right now (not a permanent hardcode)
-  ok('3. current tool count == 42 (derived from live tools + map)', tools.length === mapKeys.length && tools.length === 42)
+  ok('3. current tool count == 43 (derived from live tools + map; +webaz_connection_status)', tools.length === mapKeys.length && tools.length === 43)
 
   // 4. classification locks — read from the RETURNED descriptors. Rule: destructive = delete/overwrite/
   //    fund-move (additive-only inserts are NOT destructive); readOnly = no state write at all;
@@ -58,6 +58,7 @@ async function main(): Promise<void> {
   ok('4a. webaz_search read (T,F,T)', eq('webaz_search', true, false, true))
   ok('4b. webaz_wallet own-account read (T,F,F)', eq('webaz_wallet', true, false, false))
   ok('4c. webaz_info static first-party read (T,F,F) [acceptance-pack §2]', eq('webaz_info', true, false, false))
+  ok('4c3. webaz_connection_status own-account identity read (T,F,F)', eq('webaz_connection_status', true, false, false))
   ok('4c2. webaz_pair additive pairing/scope requests (F,F,T) [acceptance-pack §2]', eq('webaz_pair', false, false, true))
   // instruction-only tools are READ-ONLY (no DB write / no execution)
   ok('4d. webaz_revoke_key instructions-only (T,F,F)', eq('webaz_revoke_key', true, false, false))

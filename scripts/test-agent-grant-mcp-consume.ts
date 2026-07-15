@@ -84,6 +84,20 @@ try {
   ok('3b verify response does not leak the raw token', !JSON.stringify(active).includes('gtk_int'))
   ok('3c verify returns the FULL authorized scope list (not just one capability)', Array.isArray((active.grant as any)?.scopes) && (active.grant as any).scopes.includes('read_public') && !!active.local_cache)
 
+  // 3c2/3c3 — webaz_connection_status via the grant (read_public): the OAuth-bound identity, MASKED,
+  //   with the safe scopes + expiry and NO PII / token / api_key / full account id (RFC-023 E-node).
+  db.prepare('UPDATE users SET handle = ? WHERE id = ?').run('bob_b', human)
+  const conn = await mcp.handleConnectionStatus({})
+  ok('3c2 connection_status via grant → connected + @handle + MASKED account id + scopes + expiry',
+    conn.connected === true && conn.handle === '@bob_b'
+    && typeof conn.account_id_hint === 'string' && (conn.account_id_hint as string).includes('…')
+    && Array.isArray(conn.scopes) && (conn.scopes as string[]).includes('read_public')
+    && typeof conn.expires_at === 'string')
+  ok('3c3 connection_status leaks NO raw token / api_key / full account id / email / address (E-node no-PII)',
+    !JSON.stringify(conn).includes('gtk_int') && !JSON.stringify(conn).includes('key_bob')
+    && !JSON.stringify(conn).includes(human) && !/api_key|email|address/i.test(JSON.stringify(conn)))
+  ok('3c4 connection_status with NO grant → connected:false + guidance (not a crash/PII)', await (async () => { const c = await mcp.handleConnectionStatus({ __isolated__: true }); return c.connected === false && typeof c.note === 'string' && !JSON.stringify(c).includes('gtk_int') })())
+
   // 3d/3e) agent requests MORE scope via the grant bearer, then lists its OWN requests (grant-authed, no human)
   const reqd = await mcp.handlePair({ action: 'request', bundle: 'catalog_agent', reason: 'read my catalog' })
   ok('3d request → requested + approval_id + approval_url (safe bundle via grant bearer)', reqd.status === 'requested' && String(reqd.approval_id).startsWith('apr_') && String(reqd.approval_url).includes('/#agent-approvals'))
