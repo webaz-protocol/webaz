@@ -89,7 +89,8 @@ async function main(): Promise<void> {
   }
   {
     const res = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', origin: 'https://webaz.xyz' }, body: JSON.stringify(TOOLS_LIST) })
-    ok('B11. no Access-Control-* response header (no-CORS posture intact)', res.headers.get('access-control-allow-origin') === null)
+    const acHeaders = [...res.headers.keys()].filter(k => k.toLowerCase().startsWith('access-control-'))
+    ok('B11. NO Access-Control-* response header at all (no-CORS posture intact)', acHeaders.length === 0)
   }
 
   // ── A. bearer / OAuth token validity ──
