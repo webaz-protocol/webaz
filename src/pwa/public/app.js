@@ -937,7 +937,7 @@ function discoverNavTabs(active) {
   return `<div class="disc-nav" style="display:flex;gap:4px;margin-bottom:12px;background:rgba(120,120,128,0.12);padding:3px;border-radius:10px;overflow-x:auto;-webkit-overflow-scrolling:touch">
     ${items.map(it => {
       const isActive = active === it.key
-      return `<button onclick="switchDiscoverBanner('${it.hash}')" style="flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:4px;padding:7px 12px;border-radius:8px;background:${isActive ? '#fff' : 'transparent'};border:none;cursor:pointer;font-size:13px;font-weight:${isActive ? 600 : 500};color:${isActive ? '#1f2937' : '#6b7280'};box-shadow:${isActive ? '0 1px 2px rgba(0,0,0,0.06)' : 'none'};transition:all 0.15s;white-space:nowrap">
+      return `<button onclick="switchDiscoverBanner('${it.hash}')" style="flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:4px;padding:7px 12px;border-radius:8px;background:${isActive ? '#fff' : 'transparent'};border:none;cursor:pointer;font-size:13px;font-weight:${isActive ? 600 : 500};color:${isActive ? '#1f2937' : '#4b5563'};box-shadow:${isActive ? '0 1px 2px rgba(0,0,0,0.06)' : 'none'};transition:all 0.15s;white-space:nowrap">
         <span style="font-size:15px;line-height:1">${it.icon}</span><span>${it.label}</span>
       </button>`
     }).join('')}
@@ -9580,7 +9580,7 @@ function pageHotFeedToggle(hotHash, feedHash, opts) {
   const feedIcon  = o.feedIcon  || '📡'
   const feedLabel = o.feedLabel || t('动态')
   const extra = Array.isArray(o.extra) ? o.extra : []
-  const btn = (active, label, icon, hash) => `<button onclick="navigate('${hash}')" style="flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:4px;padding:6px 14px;border-radius:7px;background:${active?'#fff':'transparent'};border:none;cursor:pointer;font-size:12px;font-weight:${active?600:500};color:${active?'#1f2937':'#6b7280'};box-shadow:${active?'0 1px 2px rgba(0,0,0,0.06)':'none'};transition:all 0.15s;white-space:nowrap"><span style="font-size:13px;line-height:1">${icon}</span><span>${label}</span></button>`
+  const btn = (active, label, icon, hash) => `<button onclick="navigate('${hash}')" style="flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:4px;padding:6px 14px;border-radius:7px;background:${active?'#fff':'transparent'};border:none;cursor:pointer;font-size:12px;font-weight:${active?600:500};color:${active?'#1f2937':'#4b5563'};box-shadow:${active?'0 1px 2px rgba(0,0,0,0.06)':'none'};transition:all 0.15s;white-space:nowrap"><span style="font-size:13px;line-height:1">${icon}</span><span>${label}</span></button>`
   const extraButtons = extra.map(x => {
     const active = location.hash === x.hash || location.hash.startsWith(x.hash + '?') || location.hash.startsWith(x.hash + '/')
     return btn(active, x.label, x.icon, x.hash)

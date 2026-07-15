@@ -108,6 +108,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-account.js': 977,
   'src/pwa/public/app-profile.js': 1692,
   'src/pwa/public/app-discover.js': 1296,
+  'src/pwa/public/app-discover-new-filters.js': 39,
   'src/pwa/public/app-contribution.js': 836,
   'src/pwa/public/app-admin-disputes.js': 55,
   'src/pwa/public/app-ai.js': 2162,

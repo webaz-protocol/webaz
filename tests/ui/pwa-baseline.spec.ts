@@ -67,6 +67,7 @@ async function assertClassicScriptsLoaded(page: Page) {
   expect(scripts).toEqual(expect.arrayContaining([
     '/i18n.js',
     '/app-discover.js',
+    '/app-discover-new-filters.js',
     '/app-seller.js',
     '/app.js',
   ]))
@@ -302,6 +303,50 @@ for (const viewport of VIEWPORTS) {
 }
 
 for (const viewport of DASHBOARD_VIEWPORTS) {
+  test(`new arrivals keeps the catalog above the fold at ${viewport.name}`, async ({ page }) => {
+    const guards = installRuntimeGuards(page)
+    await mockBuyerSession(page)
+    await mockBuyerCommerce(page)
+    await page.addInitScript(() => {
+      localStorage.setItem('webaz_key', 'ux-buyer-token')
+      localStorage.setItem('webaz_lang', 'zh')
+    })
+    await page.setViewportSize(viewport)
+    await page.goto('/#discover/new')
+
+    const filters = page.locator('#new-arrivals-filters')
+    await expect(filters).toBeVisible()
+    await expect(filters).not.toHaveAttribute('open', '')
+    await expect(filters.locator('.discover-filter-body')).toBeHidden()
+    await expect(filters.locator('summary')).toContainText('全部')
+    await expect(filters.locator('summary')).toContainText('最新')
+    await expect(filters.locator('summary')).toContainText('零售')
+    expect(await page.locator('.new-arrivals-controls').evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(100)
+    await expect(page.locator('#product-list')).toContainText('Portable ceramic tea set')
+    const firstProduct = page.locator('#product-list .product-card').first()
+    await expect(firstProduct).toBeVisible()
+    expect((await firstProduct.boundingBox())?.y).toBeLessThan(viewport.height)
+
+    await filters.locator('summary').click()
+    await expect(filters).toHaveAttribute('open', '')
+    await expect(filters.locator('.discover-filter-body')).toBeVisible()
+    await expect(filters.locator('.discover-filter-group').nth(0).getByRole('button')).toHaveCount(5)
+    await expect(filters.locator('.discover-filter-group').nth(1).locator('.sort-chip')).toHaveCount(7)
+    await expect(filters.locator('.discover-filter-group').nth(2).getByRole('button')).toHaveCount(4)
+
+    await filters.getByRole('button', { name: '今日', exact: true }).click()
+    await expect(filters).toHaveAttribute('open', '')
+    await expect(filters.locator('summary')).toContainText('今日')
+    await filters.getByRole('button', { name: /测评免单/ }).click()
+    await expect(filters.locator('summary')).toContainText('测评免单')
+    await filters.locator('button[onclick="setTypeChip(\'new\',\'wholesale\')"]').click()
+    await expect(filters).toHaveAttribute('open', '')
+    await expect(filters.locator('summary')).toContainText('批发')
+    await assertNoHorizontalOverflow(page)
+    await assertAxeHasNoSeriousOrCriticalViolations(page)
+    guards.assertClean()
+  })
+
   test(`buyer discovery to checkout journey at ${viewport.name}`, async ({ page }) => {
     const guards = installRuntimeGuards(page)
     await mockBuyerSession(page)
