@@ -187,8 +187,20 @@ const PUsrc2 = PUsrc
   ok('11g. REMOTE-MCP.md 在 PUBLIC_DOCS 白名单(manifest 广告的 docs 链接不能 404)', PUsrc2.includes("'REMOTE-MCP.md'"))
   ok('11h. P2:search 0-命中带 recovery(catalog_sample + next_step),strict 结果仍 found:0', L1.includes("reason: 'strict_no_match'") && L1.includes('catalog_sample:') && L1.includes('next_step:') && L1.includes('found: 0,'))
 
+  // ── 12. auth-boundary hint: a 401/403 (e.g. verify_price/place_order without a key) carries guidance
+  //        that buyer/RISK actions are human-gated and NOT OAuth-delegatable, so a remote agent doesn't
+  //        misread "please log in" and loop on the OAuth flow. Dynamic import (env already fixed above). ──
+  {
+    const { authBoundaryHint } = await import('../src/layer1-agent/L1-1-mcp-server/server.js')
+    const h401 = authBoundaryHint(401)
+    ok('12a. 401 carries the human-gated / not-OAuth-delegatable boundary hint', h401.includes('human-gated') && h401.includes('api_key') && /OAuth/.test(h401))
+    ok('12b. 403 carries the same hint', authBoundaryHint(403).includes('human-gated'))
+    ok('12c. 200/500 carry NO hint (only auth failures get it)', authBoundaryHint(200) === '' && authBoundaryHint(500) === '')
+    ok('12d. apiCall wires the hint onto the mapped error (not dead code)', L1.includes('authBoundaryHint(resp.status)'))
+  }
+
   if (fail > 0) { console.error(`\n❌ remote MCP FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-  console.log(`✅ remote MCP: real handshake over Streamable HTTP (stateless) + fail-closed flag + sandbox refuse + 405s + no-CORS + bearer seam\n  ✅ pass ${pass}`)
+  console.log(`✅ remote MCP: real handshake over Streamable HTTP (stateless) + fail-closed flag + sandbox refuse + 405s + no-CORS + bearer seam + auth-boundary hint\n  ✅ pass ${pass}`)
 }
 
 main().catch(e => { console.error(e); process.exit(1) })
