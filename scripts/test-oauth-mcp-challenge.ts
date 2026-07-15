@@ -180,7 +180,9 @@ async function main() {
   ok('6a. challenge sits AFTER rate limit and BEFORE server assembly', ROUTE.indexOf('deps.rateLimitOk(') < ROUTE.indexOf('isAuthOnlyToolCall(req.body)') && ROUTE.indexOf('isAuthOnlyToolCall(req.body)') < ROUTE.indexOf('buildMcpServer({'))
   // PR-2 refactor: outer gate = oauthEnabled()+isAuthOnlyToolCall (fail-closed); the ANONYMOUS 401
   // challenge is the inner `if (!bearer)` branch (behaviour unchanged — see test:mcp-http-edge A1).
-  ok('6b. challenge gated on oauthEnabled()+isAuthOnlyToolCall (fail-closed) with a no-bearer branch', ROUTE.includes('oauthEnabled() && isAuthOnlyToolCall(req.body)') && ROUTE.includes('if (!bearer)'))
+  // PR-4: the anonymous challenge branch is gated fail-closed on oauthEnabled()+no-bearer+auth-only tool;
+  // a presented oat_ is validated separately (see test:mcp-http-edge). Behaviour unchanged for anonymous.
+  ok('6b. anonymous challenge gated on oauthEnabled() + !bearer + isAuthOnlyToolCall (fail-closed)', ROUTE.includes('oauthEnabled() && !bearer && isAuthOnlyToolCall(req.body)'))
   // 挑战名单 = 恰好那些有 grant 路径的工具(结构锚:多列 = 虚假恢复,漏列 = fail-soft 工具层引导)
   {
     const setSrc = ROUTE.match(/AUTH_ONLY_TOOLS = new Set\(\[([^\]]*)\]/s)?.[1] || ''

@@ -62,13 +62,15 @@ async function main(): Promise<void> {
   const addr = http.address(); const port = typeof addr === 'object' && addr ? addr.port : 0
   const base = `http://127.0.0.1:${port}`
 
-  const post = async (body: unknown, opts: { origin?: string; bearer?: string } = {}): Promise<{ status: number; wwwAuth: string }> => {
+  const post = async (body: unknown, opts: { origin?: string; bearer?: string } = {}): Promise<{ status: number; wwwAuth: string; body: Record<string, unknown> }> => {
     const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }
     if (opts.origin !== undefined) headers.origin = opts.origin
     if (opts.bearer) headers.authorization = 'Bearer ' + opts.bearer
     const res = await fetch(`${base}/mcp`, { method: 'POST', headers, body: JSON.stringify(body) })
-    return { status: res.status, wwwAuth: res.headers.get('www-authenticate') || '' }
+    const respBody = await res.json().catch(() => ({})) as Record<string, unknown>
+    return { status: res.status, wwwAuth: res.headers.get('www-authenticate') || '', body: respBody }
   }
+  const PUBLIC_CALL = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'webaz_search', arguments: {} } }
 
   // ── B. Origin validation ──
   ok('B1. no Origin (server-to-server) → allowed (tools/list 200)', (await post(TOOLS_LIST)).status === 200)
@@ -92,6 +94,16 @@ async function main(): Promise<void> {
     const acHeaders = [...res.headers.keys()].filter(k => k.toLowerCase().startsWith('access-control-'))
     ok('B11. NO Access-Control-* response header at all (no-CORS posture intact)', acHeaders.length === 0)
   }
+  ok('B12. Origin "null" (opaque/sandboxed origin) → 403', (await post(TOOLS_LIST, { origin: 'null' })).status === 403)
+  ok('B13. correct host with an unapproved port → 403 (exact match)', (await post(TOOLS_LIST, { origin: 'https://webaz.xyz:8443' })).status === 403)
+  {
+    const gHostile = await fetch(`${base}/mcp`, { method: 'GET', headers: { origin: 'https://evil.example' } })
+    ok('B14. GET /mcp hostile Origin → 403 (Origin guard on all methods)', gHostile.status === 403)
+    const gPlain = await fetch(`${base}/mcp`, { method: 'GET' })
+    ok('B15. GET /mcp no Origin → 405 (stateless; Origin allowed, method not)', gPlain.status === 405)
+    const dHostile = await fetch(`${base}/mcp`, { method: 'DELETE', headers: { origin: 'https://evil.example' } })
+    ok('B16. DELETE /mcp hostile Origin → 403', dHostile.status === 403)
+  }
 
   // ── A. bearer / OAuth token validity ──
   ok('A1. anonymous auth-only tool → 401 + challenge', await (async () => { const r = await post(AGENT_ORDER_CALL); return r.status === 401 && r.wwwAuth.includes(CHALLENGE) })())
@@ -99,8 +111,18 @@ async function main(): Promise<void> {
   ok('A3. expired oat_ → 401 + challenge', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ tokExp: past }) }); return r.status === 401 && r.wwwAuth.includes(CHALLENGE) })())
   ok('A4. revoked oat_ → 401 + challenge', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ tokRevoked: past }) }); return r.status === 401 && r.wwwAuth.includes(CHALLENGE) })())
   ok('A5. wrong-audience oat_ → 401 + challenge (re-auth, not 403)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ tokAud: 'https://webaz.xyz/other' }) }); return r.status === 401 && r.wwwAuth.includes(CHALLENGE) })())
-  ok('A6. valid oat_, INSUFFICIENT scope → 403 (no challenge, no re-login)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ caps: ['seller_products_read'] }) }); return r.status === 403 && r.wwwAuth === '' })())
+  ok('A6. valid oat_, INSUFFICIENT scope → 403 + insufficient_scope + required scope (scope-expansion, not re-login)', await (async () => {
+    const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ caps: ['seller_products_read'] }) })
+    const data = (r.body?.error as { data?: { error?: string; required_scope?: string } } | undefined)?.data
+    return r.status === 403
+      && r.wwwAuth.includes('error="insufficient_scope"') && r.wwwAuth.includes('scope="seller_orders_read_minimal"')
+      && data?.error === 'insufficient_scope' && data?.required_scope === 'seller_orders_read_minimal'
+  })())
   ok('A7. valid oat_ + sufficient scope → passes edge (not 401/403)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ caps: ['seller_orders_read_minimal'] }) }); return r.status !== 401 && r.status !== 403 })())
+  // PR-4: a PRESENTED invalid oat_ on ANY tool call (incl. public) → 401 — a bad credential is not silently downgraded to anonymous.
+  ok('A11. invalid oat_ on a PUBLIC tool call (webaz_search) → 401 (bad credential not ignored)', await (async () => { const r = await post(PUBLIC_CALL, { bearer: 'oat_' + 'f'.repeat(32) }); return r.status === 401 && r.wwwAuth.includes(CHALLENGE) })())
+  ok('A12. bad oat_ on tools/list (handshake, not a tool call) → NOT 401 (client setup stays reachable)', await (async () => { const r = await post(TOOLS_LIST, { bearer: 'oat_' + 'f'.repeat(32) }); return r.status !== 401 })())
+  ok('A13. valid oat_ on a PUBLIC tool call → passes edge (identity ok, no scope needed)', await (async () => { const r = await post(PUBLIC_CALL, { bearer: seedOAuth() }); return r.status !== 401 && r.status !== 403 })())
   // A8/A9: gtk_ and api_key are NOT handled by the oat_ edge — must fall through (never edge-401), preserving semantics
   ok('A8. invalid gtk_ on auth-only tool → NOT edge-401 (gtk_ semantics unchanged, falls through)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: 'gtk_' + 'a'.repeat(32) }); return r.status !== 401 })())
   ok('A9. api_key bearer on auth-only tool → NOT edge-401 (api_key semantics unchanged)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: 'k_h' }); return r.status !== 401 })())
