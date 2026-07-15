@@ -204,14 +204,19 @@ export function registerOAuthAuthorizeRoutes(app: Express): void {
   app.get('/oauth/authorize/client-info', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store')
     const clientId = typeof req.query.client_id === 'string' ? req.query.client_id : ''
+    const redirectUri = typeof req.query.redirect_uri === 'string' ? req.query.redirect_uri : ''
     const client = clientId ? (await oauthClients()).find(c => c.client_id === clientId) : undefined
     if (!client) return void res.status(404).json({ found: false })
-    const label = verifiedConnectorLabel(client.redirect_uris)
+    // The ✓ must reflect the FULL request being consented to, not just client_id: only verified when the
+    // redirect_uri actually belongs to this client (exact match, as at /authorize). Otherwise a crafted
+    // #oauth-consent URL could show a real vendor's ✓ next to an attacker-chosen redirect_uri.
+    const redirectOk = !!redirectUri && client.redirect_uris.includes(redirectUri)
+    const label = redirectOk ? verifiedConnectorLabel(client.redirect_uris) : null
     return void res.json({
       found: true,
       client_id: client.client_id,
       name: client.name,
-      verified: client.verified === true || label !== null,
+      verified: redirectOk && (client.verified === true || label !== null),
       verified_label: label,
     })
   })

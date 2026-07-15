@@ -127,6 +127,30 @@ async function main() {
   ok('5k. empty list → NULL', verifiedConnectorLabel([]) === null)
   ok('5l. malformed uri anywhere → NULL', verifiedConnectorLabel(['https://claude.ai/cb', 'not a url']) === null)
 
+  // ── 6. GET /oauth/authorize/client-info — verified is SERVER-derived AND gated on the redirect_uri
+  //        actually belonging to the client (else a crafted URL shows a real vendor ✓ next to an
+  //        attacker redirect). ──
+  {
+    const db = new Database(':memory:'); initOAuthSchema(db); setSeamDb(db)
+    const ins = db.prepare(`INSERT INTO oauth_clients (client_id, name, redirect_uris, status, verified, created_at) VALUES (?,?,?,?,?,?)`)
+    ins.run('vclient', 'Claude', JSON.stringify(['https://claude.ai/cb']), 'active', 0, '2026-07-15T00:00:00.000Z')
+    ins.run('uclient', 'Randobot', JSON.stringify(['https://random.example/cb']), 'active', 0, '2026-07-15T00:00:00.000Z')
+    const { base, http } = await boot({ WEBAZ_OAUTH: '1' })
+    const ci = async (q: string): Promise<Record<string, unknown>> => (await fetch(`${base}/oauth/authorize/client-info?${q}`)).json()
+    const enc = encodeURIComponent
+    const a = await ci('client_id=vclient&redirect_uri=' + enc('https://claude.ai/cb'))
+    ok('6a. official host + matching redirect → verified ✓ + vendor label', a.found === true && a.verified === true && a.verified_label === 'Claude (Anthropic)')
+    const b = await ci('client_id=vclient&redirect_uri=' + enc('https://evil.com/cb'))
+    ok('6b. official-host client + UNREGISTERED redirect → NOT verified (Codex fix)', b.found === true && b.verified === false && b.verified_label === null)
+    const c = await ci('client_id=vclient')
+    ok('6c. no redirect_uri → NOT verified', c.found === true && c.verified === false)
+    const d = await ci('client_id=uclient&redirect_uri=' + enc('https://random.example/cb'))
+    ok('6d. non-official host (registered) → NOT verified', d.found === true && d.verified === false && d.verified_label === null)
+    const e = await fetch(`${base}/oauth/authorize/client-info?client_id=ghost`)
+    ok('6e. unknown client → 404 found:false', e.status === 404)
+    http.close()
+  }
+
   if (fail > 0) { console.error(`\n❌ oauth authorize FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ oauth authorize: PKCE-S256-required · client allowlist · redirect exact-match (no open redirect) · SAFE-scope-only · resource-bound · fail-closed · SPA hand-off\n  ✅ pass ${pass}`)
 }

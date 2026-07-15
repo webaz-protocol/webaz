@@ -8,10 +8,11 @@
 // fake a ✓). On any failure or for an unverified client we leave the default "self-declared, unverified"
 // block untouched — introducing no new impersonation surface.
 ;(function () {
-  window.loadOAuthClientBadge = async function loadOAuthClientBadge(clientId) {
+  window.loadOAuthClientBadge = async function loadOAuthClientBadge(clientId, redirectUri) {
     let info
     try {
-      const res = await fetch('/oauth/authorize/client-info?client_id=' + encodeURIComponent(clientId))
+      const qs = 'client_id=' + encodeURIComponent(clientId) + '&redirect_uri=' + encodeURIComponent(redirectUri || '')
+      const res = await fetch('/oauth/authorize/client-info?' + qs)
       if (!res.ok) return
       info = await res.json()
     } catch (e) { return }

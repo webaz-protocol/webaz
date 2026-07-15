@@ -38,7 +38,7 @@
         <button class="btn btn-outline" style="width:100%;margin-top:8px" onclick="oauthConsentDeny(this)">${t('拒绝')}</button>
       </div>
     `, 'me')
-    loadOAuthClientBadge(clientId)
+    loadOAuthClientBadge(clientId, redirectUri)
   }
   window.renderOAuthConsent = renderOAuthConsent
 
