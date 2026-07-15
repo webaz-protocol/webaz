@@ -123,6 +123,15 @@ async function main(): Promise<void> {
   ok('A11. invalid oat_ on a PUBLIC tool call (webaz_search) → 401 (bad credential not ignored)', await (async () => { const r = await post(PUBLIC_CALL, { bearer: 'oat_' + 'f'.repeat(32) }); return r.status === 401 && r.wwwAuth.includes(CHALLENGE) })())
   ok('A12. bad oat_ on tools/list (handshake, not a tool call) → NOT 401 (client setup stays reachable)', await (async () => { const r = await post(TOOLS_LIST, { bearer: 'oat_' + 'f'.repeat(32) }); return r.status !== 401 })())
   ok('A13. valid oat_ on a PUBLIC tool call → passes edge (identity ok, no scope needed)', await (async () => { const r = await post(PUBLIC_CALL, { bearer: seedOAuth() }); return r.status !== 401 && r.status !== 403 })())
+  // _meta["mcp/www_authenticate"] mirrors the WWW-Authenticate header INTO the JSON-RPC body — the OpenAI
+  // Apps SDK reads the challenge from _meta, not the HTTP header (belt-and-suspenders with the header above).
+  const metaChallenge = (b: Record<string, unknown>): string => String((b._meta as Record<string, unknown> | undefined)?.['mcp/www_authenticate'] ?? '')
+  ok('A14. anonymous auth-only 401 carries _meta["mcp/www_authenticate"] with the challenge', await (async () => { const r = await post(AGENT_ORDER_CALL); return r.status === 401 && metaChallenge(r.body).includes(CHALLENGE) })())
+  ok('A15. invalid-oat_ 401 carries _meta with error="invalid_token"', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: 'oat_' + 'f'.repeat(32) }); return r.status === 401 && metaChallenge(r.body).includes('error="invalid_token"') })())
+  ok('A16. insufficient_scope 403 carries _meta with error="insufficient_scope" + required scope', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ caps: ['seller_products_read'] }) }); return r.status === 403 && metaChallenge(r.body).includes('error="insufficient_scope"') && metaChallenge(r.body).includes('scope="seller_orders_read_minimal"') })())
+  // Codex PR-4 Low — explicit non-tool-call reachability + anonymous public-call success (edge never over-reaches)
+  ok('A17. invalid oat_ on initialize (not a tool call) → NOT 401 (handshake stays reachable)', await (async () => { const r = await post(INIT, { bearer: 'oat_' + 'f'.repeat(32) }); return r.status !== 401 })())
+  ok('A18. anonymous webaz_search (public tool call, no bearer) → 200 (anonymous read fully unaffected)', (await post(PUBLIC_CALL)).status === 200)
   // A8/A9: gtk_ and api_key are NOT handled by the oat_ edge — must fall through (never edge-401), preserving semantics
   ok('A8. invalid gtk_ on auth-only tool → NOT edge-401 (gtk_ semantics unchanged, falls through)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: 'gtk_' + 'a'.repeat(32) }); return r.status !== 401 })())
   ok('A9. api_key bearer on auth-only tool → NOT edge-401 (api_key semantics unchanged)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: 'k_h' }); return r.status !== 401 })())

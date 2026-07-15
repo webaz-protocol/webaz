@@ -190,30 +190,38 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
         if (!gv.ok) {
           if (gv.error_code === 'SCOPE_NOT_GRANTED') {
             // Valid identity, missing THIS tool's scope → 403 with RFC 6750 insufficient_scope: ChatGPT
-            // opens the scope-EXPANSION UI, not a fresh login.
-            res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}", error="insufficient_scope", scope="${requiredScope}"`)
+            // opens the scope-EXPANSION UI, not a fresh login. The same challenge is mirrored into
+            // _meta["mcp/www_authenticate"] because the OpenAI Apps SDK reads the challenge from the
+            // JSON-RPC body, not the HTTP header.
+            const challenge = `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}", error="insufficient_scope", scope="${requiredScope}"`
+            res.setHeader('WWW-Authenticate', challenge)
             return void res.status(403).json({
               jsonrpc: '2.0',
               error: { code: -32003, message: `insufficient scope — your OAuth grant does not carry "${requiredScope}". Request it (webaz_pair action="request"), have the human approve, then retry. No re-login needed.`, data: { error: 'insufficient_scope', required_scope: requiredScope } },
               id: bodyId,
+              _meta: { 'mcp/www_authenticate': challenge },
             })
           }
           // Invalid / expired / revoked / wrong-audience / inactive token → 401 + protected-resource challenge.
-          res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}", error="invalid_token"`)
+          const challenge = `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}", error="invalid_token"`
+          res.setHeader('WWW-Authenticate', challenge)
           return void res.status(401).json({
             jsonrpc: '2.0',
             error: { code: -32001, message: 'authentication required — your OAuth token is invalid, expired, revoked, or not scoped to this resource. Reconnect via OAuth (see the WWW-Authenticate header).' },
             id: bodyId,
+            _meta: { 'mcp/www_authenticate': challenge },
           })
         }
         // gv.ok → valid oat_ (identity ok; scope ok when auth-only) → fall through to dispatch.
       } else if (oauthEnabled() && !bearer && isAuthOnlyToolCall(req.body)) {
         // Anonymous call to an account-scoped tool → 401 challenge (I-1). Anonymous reads (I-2) untouched.
-        res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`)
+        const challenge = `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`
+        res.setHeader('WWW-Authenticate', challenge)
         return void res.status(401).json({
           jsonrpc: '2.0',
           error: { code: -32001, message: 'authentication required — this tool acts as an account. A compliant MCP client can connect via OAuth (see the WWW-Authenticate header), or send Authorization: Bearer <api_key>.' },
           id: bodyId,
+          _meta: { 'mcp/www_authenticate': challenge },
         })
       }
       // gtk_ / api_key / anonymous-public → fall through to dispatch (unchanged).
