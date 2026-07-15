@@ -4835,6 +4835,7 @@ const _EN = {
   '需预留':                              'Reserve',
   '确保你的钱包余额 ≥ 此数':              'Ensure your wallet balance ≥ this',
   '陆续开放中，请期待':                    'Rolling out gradually — stay tuned',
+  '输入验证邮箱的推荐码':                  'Enter the referral code from your verification email',
   '上线时第一时间通知你':                  "We'll notify you at launch",
   '找到同路人，开始对话':                  'Find peers, start the conversation',
   // admin public-ideas viewer

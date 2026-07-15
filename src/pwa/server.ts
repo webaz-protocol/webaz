@@ -2240,6 +2240,8 @@ try {
 
 // Phase 9 / Phase 3d-1（D1b）— 注册门控（强制邀请码）：默认开启（需邀请），admin 可切换
 try { db.prepare("INSERT OR IGNORE INTO system_state (key, value) VALUES ('require_ref_to_register', '1')").run() } catch {}
+// 注册验证邮件里附带的平台推荐/邀请码(客户注册时填入"邀请码"框)。admin 可改;设空则邮件不带推荐码。
+try { db.prepare("INSERT OR IGNORE INTO system_state (key, value) VALUES ('registration_referral_code', 'NFTH2E')").run() } catch {}
 // D1b 一次性 migration：把存量库里仍为默认 '0' 的值翻成 '1'（marker 防重翻，admin 之后可自由改回 0 不被覆盖）
 try {
   const d1bDone = db.prepare("SELECT value FROM system_state WHERE key = 'migration_d1b_require_ref'").get() as { value: string } | undefined
@@ -4069,7 +4071,12 @@ function genCode(): string {
 }
 
 async function deliverCode(target: string, code: string, purpose: string) {
-  return deliverVerificationCode({ target, code, purpose, ttlMin: CODE_TTL_MIN })
+  // Registration emails also carry the platform referral/invite code (system_state, admin-configurable;
+  // seeded 'NFTH2E'). Empty/unset → no referral block. Never added to non-register emails (withdraw etc.).
+  const referralCode = purpose === 'register'
+    ? ((db.prepare("SELECT value FROM system_state WHERE key = 'registration_referral_code'").get() as { value: string } | undefined)?.value || '').trim() || undefined
+    : undefined
+  return deliverVerificationCode({ target, code, purpose, ttlMin: CODE_TTL_MIN, referralCode })
 }
 
 async function issueCode(userId: string, channel: string, target: string, purpose: string): Promise<IssueCodeResult> {
