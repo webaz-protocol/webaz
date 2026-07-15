@@ -30,8 +30,8 @@ export interface McpToolAnnotations {
 
 // destructive rationale noted inline (delete/overwrite/fund). Additive-only writes are marked W (not D).
 export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
-  webaz_info:                { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: manifest + fetches live /api/protocol-status (marketplace-wide participant/product/order aggregates)
-  webaz_pair:                { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: complete/error paths unlink pending pairing state; external consent round-trip
+  webaz_info:                { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: first-party protocol manifest / self-description (acceptance-pack §2: static first-party read)
+  webaz_pair:                { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): creates pairing/scope requests for a human account; pending-file cleanup is not a data delete (acceptance-pack §2)
   webaz_register:            { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): INSERTs a new account/wallet; joins the shared economic graph
   webaz_search:              { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: open marketplace + external anchors
   webaz_verify_price:        { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): creates an expiring price/stock session; marketplace price
@@ -44,7 +44,7 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_dispute:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: arbitrate is an irreversible fund disposition
   webaz_claim_verify:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: create/apply lock stake (fund); vote is consequential
   webaz_skill:               { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: unsubscribe deletes a subscription
-  webaz_mykey:               { readOnlyHint: false, destructiveHint: false, openWorldHint: false }, // W: writes only rate-limit state; caller's own account recovery (redacted hint)
+  webaz_mykey:               { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: credential hint / recovery guidance only; the rate-limit counter is anti-abuse infra, not a data write (acceptance-pack §2)
   webaz_profile:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: switch_role overwrites the active role; views OTHER users
   webaz_revoke_key:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: returns Passkey/PWA instructions only — no DB write, no execution
   webaz_rotate_key:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: returns Passkey/PWA instructions only — no DB write, no execution
@@ -64,7 +64,7 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_like:                { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: toggle DELETEs an existing like; public objects
   webaz_leaderboard:         { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: public rankings
   webaz_auction:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: cancel overwrites/removes; bid is binding
-  webaz_auto_bid:            { readOnlyHint: false, destructiveHint: true,  openWorldHint: false }, // D: set/disable OVERWRITE the caller's own auto-bid config
+  webaz_auto_bid:            { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: set/disable OVERWRITE config; enabling changes automated bidding in the open auction market (acceptance-pack §2)
   webaz_skill_market:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: update/delist overwrite; purchase spends funds
   webaz_secondhand:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: update overwrites listing; buy moves funds (escrow)
   webaz_trial:               { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: cancel_campaign overwrites/removes a campaign

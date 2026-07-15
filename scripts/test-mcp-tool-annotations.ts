@@ -57,7 +57,8 @@ async function main(): Promise<void> {
   // pure reads
   ok('4a. webaz_search read (T,F,T)', eq('webaz_search', true, false, true))
   ok('4b. webaz_wallet own-account read (T,F,F)', eq('webaz_wallet', true, false, false))
-  ok('4c. webaz_info read + live protocol-status aggregates (T,F,T)', eq('webaz_info', true, false, true))
+  ok('4c. webaz_info static first-party read (T,F,F) [acceptance-pack §2]', eq('webaz_info', true, false, false))
+  ok('4c2. webaz_pair additive pairing/scope requests (F,F,T) [acceptance-pack §2]', eq('webaz_pair', false, false, true))
   // instruction-only tools are READ-ONLY (no DB write / no execution)
   ok('4d. webaz_revoke_key instructions-only (T,F,F)', eq('webaz_revoke_key', true, false, false))
   ok('4e. webaz_rotate_key instructions-only (T,F,F)', eq('webaz_rotate_key', true, false, false))
@@ -66,10 +67,10 @@ async function main(): Promise<void> {
   ok('4g. webaz_feedback additive submit (F,F,T)', eq('webaz_feedback', false, false, true))
   ok('4h. webaz_register additive create (F,F,T)', eq('webaz_register', false, false, true))
   ok('4i. webaz_order_action_request additive queue submit (F,F,T)', eq('webaz_order_action_request', false, false, true))
-  ok('4j. webaz_mykey rate-limit write only, own account (F,F,F)', eq('webaz_mykey', false, false, false))
+  ok('4j. webaz_mykey credential-hint read only (T,F,F) [acceptance-pack §2]', eq('webaz_mykey', true, false, false))
   // overwrite writes ARE destructive (even if business-reversible)
   ok('4k. webaz_default_address set overwrites own record (F,T,F)', eq('webaz_default_address', false, true, false))
-  ok('4l. webaz_auto_bid set/disable overwrite own config (F,T,F)', eq('webaz_auto_bid', false, true, false))
+  ok('4l. webaz_auto_bid overwrite config, changes market bidding (F,T,T) [acceptance-pack §2]', eq('webaz_auto_bid', false, true, true))
   ok('4m. webaz_notifications mark_read overwrite, own inbox (F,T,F)', eq('webaz_notifications', false, true, false))
   ok('4n. webaz_profile switch_role overwrite (F,T,T)', eq('webaz_profile', false, true, true))
   // delete / fund-move are destructive
