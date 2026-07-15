@@ -280,6 +280,7 @@
     "test:gallery-thumb-fallback": "tsx scripts/test-gallery-thumb-fallback.ts",
     "test:product-image-ui": "tsx scripts/test-product-image-ui.ts",
     "test:remote-mcp": "tsx scripts/test-remote-mcp.ts",
+    "test:mcp-tool-annotations": "tsx scripts/test-mcp-tool-annotations.ts",
     "agent:first-success": "node scripts/agent-first-success.mjs",
     "agent:compat-matrix": "node scripts/agent-compat-matrix.mjs",
     "test:oauth-discovery": "tsx scripts/test-oauth-discovery.ts",
