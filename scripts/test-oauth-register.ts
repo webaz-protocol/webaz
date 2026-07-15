@@ -126,6 +126,8 @@ async function main() {
   ok('4m. ["refresh_token"] WITHOUT authorization_code → 400 invalid_client_metadata', (await (await reg(base, { redirect_uris: ['https://c.example/cb'], grant_types: ['refresh_token'] })).json() as { error: string }).error === 'invalid_client_metadata')
   ok('4n. ["authorization_code","client_credentials"] → 400 (mixed unsupported still rejected — no new grant flow)', (await reg(base, { redirect_uris: ['https://c.example/cb'], grant_types: ['authorization_code', 'client_credentials'] })).status === 400)
   ok('4o. response_types ["token"] (non-code) → 400 invalid_client_metadata', (await (await reg(base, { redirect_uris: ['https://c.example/cb'], response_types: ['token'] })).json() as { error: string }).error === 'invalid_client_metadata')
+  ok('4p. grant_types [] (empty array) → 400 invalid_client_metadata', (await (await reg(base, { redirect_uris: ['https://c.example/cb'], grant_types: [] })).json() as { error: string }).error === 'invalid_client_metadata')
+  ok('4q. grant_types non-array (string) → 400 invalid_client_metadata', (await (await reg(base, { redirect_uris: ['https://c.example/cb'], grant_types: 'authorization_code' })).json() as { error: string }).error === 'invalid_client_metadata')
   // ── 5. missing client_name defaults, still registers ──
   {
     const r = await reg(base, { redirect_uris: ['https://ok.example/cb'] })
