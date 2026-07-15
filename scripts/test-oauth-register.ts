@@ -15,6 +15,7 @@ import type { Server as HttpServer } from 'node:http'
 import { initOAuthSchema } from '../src/runtime/webaz-schema-helpers.js'
 import { setSeamDb } from '../src/layer0-foundation/L0-1-database/db.js'
 import { isRegisterableRedirectUri, oauthClients, validateAuthorizeRequest } from '../src/pwa/routes/oauth-authorize.js'
+import { sweepStaleOAuthClients } from '../src/pwa/routes/oauth-register.js'
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}`) } }
@@ -135,6 +136,44 @@ async function main() {
   // ── 6. source guards ──
   ok('6a. registration_endpoint advertised in AS metadata', readFileSync('src/pwa/routes/oauth-discovery.ts', 'utf8').includes('registration_endpoint'))
   ok('6b. server registers the route (fail-closed dep)', readFileSync('src/pwa/server.ts', 'utf8').includes('registerOAuthRegisterRoutes(app'))
+
+  // ── 7. RFC-024 §T2 TTL sweep: delete ONLY never-consented, unverified, >30d clients ──
+  {
+    const T = Date.parse('2026-07-15T00:00:00.000Z')
+    const iso = (daysAgo: number): string => new Date(T - daysAgo * 86400_000).toISOString()
+    const ins = db.prepare(`INSERT INTO oauth_clients (client_id, name, redirect_uris, status, created_at, verified, last_authorized_at) VALUES (?,?,?,?,?,?,?)`)
+    ins.run('oac_client_sweepA', 'A old inert',     '[]', 'active', iso(40), 0, null)     // → delete
+    ins.run('oac_client_sweepB', 'B new inert',     '[]', 'active', iso(10), 0, null)     // keep: <30d
+    ins.run('oac_client_sweepC', 'C old consented', '[]', 'active', iso(40), 0, iso(5))   // keep: ever authorized
+    ins.run('oac_client_sweepD', 'D old verified',  '[]', 'active', iso(40), 1, null)     // keep: verified
+    const swept = await sweepStaleOAuthClients(T)
+    ok('7a. sweep deletes exactly 1 (only old never-consented unverified client)', swept === 1)
+    const alive = new Set((db.prepare(`SELECT client_id FROM oauth_clients WHERE client_id LIKE 'oac_client_sweep%'`).all() as { client_id: string }[]).map(r => r.client_id))
+    ok('7b. old inert client A deleted', !alive.has('oac_client_sweepA'))
+    ok('7c. recent inert client B kept (<30d)', alive.has('oac_client_sweepB'))
+    ok('7d. ever-consented client C kept (last_authorized_at set)', alive.has('oac_client_sweepC'))
+    ok('7e. verified client D kept (verified=1)', alive.has('oac_client_sweepD'))
+  }
+
+  // ── 8. cf-origin-guard: dormant when unset; blocks direct-origin when active ──
+  {
+    const { requireEdgeOrigin } = await import('../src/pwa/routes/edge-origin-guard.js')
+    const call = (headers: Record<string, string>, secretEnv: string | undefined): { nexted: boolean; status: number } => {
+      const saved = process.env.WEBAZ_EDGE_SECRET
+      if (secretEnv === undefined) delete process.env.WEBAZ_EDGE_SECRET; else process.env.WEBAZ_EDGE_SECRET = secretEnv
+      let nexted = false, status = 0
+      const req = { headers } as unknown as Parameters<typeof requireEdgeOrigin>[0]
+      const res = { status: (s: number) => { status = s; return { json: () => {} } } } as unknown as Parameters<typeof requireEdgeOrigin>[1]
+      requireEdgeOrigin(req, res, () => { nexted = true })
+      if (saved === undefined) delete process.env.WEBAZ_EDGE_SECRET; else process.env.WEBAZ_EDGE_SECRET = saved
+      return { nexted, status }
+    }
+    ok('8a. dormant (no WEBAZ_EDGE_SECRET) → passes through', call({}, undefined).nexted === true)
+    ok('8b. active + correct header → passes', call({ 'x-webaz-edge': 'sekret' }, 'sekret').nexted === true)
+    { const r = call({}, 'sekret'); ok('8c. active + missing header → 403', !r.nexted && r.status === 403) }
+    { const r = call({ 'x-webaz-edge': 'nope' }, 'sekret'); ok('8d. active + wrong header → 403', !r.nexted && r.status === 403) }
+    { const r = call({ 'x-webaz-edge': 'sekre' }, 'sekret'); ok('8e. active + length-mismatch header → 403 (no timingSafeEqual throw)', !r.nexted && r.status === 403) }
+  }
 
   if (fail > 0) { console.error(`\n❌ oauth register FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ oauth register (RFC-024 DCR): redirect policy (https/loopback only) · public-client only · unverified+inert row · IP hashed · oauthClients() DB-backed · registered client passes authorize · fail-closed\n  ✅ pass ${pass}`)
