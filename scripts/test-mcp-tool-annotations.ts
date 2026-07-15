@@ -57,7 +57,7 @@ async function main(): Promise<void> {
   // pure reads
   ok('4a. webaz_search read (T,F,T)', eq('webaz_search', true, false, true))
   ok('4b. webaz_wallet own-account read (T,F,F)', eq('webaz_wallet', true, false, false))
-  ok('4c. webaz_info static read (T,F,F)', eq('webaz_info', true, false, false))
+  ok('4c. webaz_info read + live protocol-status aggregates (T,F,T)', eq('webaz_info', true, false, true))
   // instruction-only tools are READ-ONLY (no DB write / no execution)
   ok('4d. webaz_revoke_key instructions-only (T,F,F)', eq('webaz_revoke_key', true, false, false))
   ok('4e. webaz_rotate_key instructions-only (T,F,F)', eq('webaz_rotate_key', true, false, false))

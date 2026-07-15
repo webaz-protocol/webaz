@@ -30,7 +30,7 @@ export interface McpToolAnnotations {
 
 // destructive rationale noted inline (delete/overwrite/fund). Additive-only writes are marked W (not D).
 export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
-  webaz_info:                { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: static protocol manifest / self-description
+  webaz_info:                { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: manifest + fetches live /api/protocol-status (marketplace-wide participant/product/order aggregates)
   webaz_pair:                { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: complete/error paths unlink pending pairing state; external consent round-trip
   webaz_register:            { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): INSERTs a new account/wallet; joins the shared economic graph
   webaz_search:              { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: open marketplace + external anchors
@@ -48,7 +48,7 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_profile:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: switch_role overwrites the active role; views OTHER users
   webaz_revoke_key:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: returns Passkey/PWA instructions only — no DB write, no execution
   webaz_rotate_key:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: returns Passkey/PWA instructions only — no DB write, no execution
-  webaz_referral:            { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: caller's own referral status/earnings
+  webaz_referral:            { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: queries the caller's L1/L2/L3 downline — OTHER users' objects
   webaz_share_link:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read+compute: no write, but READS an active marketplace product (public object) to render the link
   webaz_blocklist:           { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: unblock DELETEs; manages relations with OTHER users
   webaz_follows:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: unfollow DELETEs the relationship (OTHER users)
