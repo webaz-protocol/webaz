@@ -37,7 +37,7 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_update_order:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: confirm = irreversible fund settlement; dispute freezes funds
   webaz_get_status:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
   webaz_wallet:              { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read-only balance/earnings; reflects on-chain + marketplace state
-  webaz_notifications:       { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: optional mark_read mutates own inbox (reversible)
+  webaz_notifications:       { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: mark_read sets read=1 with no in-tool undo (irreversible)
   webaz_dispute:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: arbitrate = irreversible fund disposition (Iron-Rule)
   webaz_claim_verify:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: vote is consequential/final; create/apply lock stake
   webaz_skill:               { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: publish makes a skill public
@@ -47,9 +47,9 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_rotate_key:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: invalidates the old key (irreversible for it)
   webaz_referral:            { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
   webaz_share_link:          { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: generates a referral link (no destructive effect)
-  webaz_blocklist:           { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: block/unblock (reversible)
-  webaz_follows:             { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: follow/unfollow (reversible)
-  webaz_nearby:              { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: set/clear location (reversible)
+  webaz_blocklist:           { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: unblock issues HTTP DELETE + DELETE FROM user_blocklist
+  webaz_follows:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: unfollow deletes the relationship (DELETE FROM follows)
+  webaz_nearby:              { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: clear_location removes stored geo fields
   webaz_default_address:     { readOnlyHint: false, destructiveHint: false, openWorldHint: false }, // W: set own default address; closed, single-owner record
   webaz_shareables:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: delete removes a binding
   webaz_rfq:                 { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: award creates an order; cancel forfeits 30% deposit
@@ -58,7 +58,7 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_price_history:       { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
   webaz_charity:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: donate/repay move funds; confirm/cancel are consequential
   webaz_p2p_product:         { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: create publishes a public listing
-  webaz_like:                { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: like toggle (reversible)
+  webaz_like:                { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: toggle deletes an existing like; a new like sends the owner a notification
   webaz_leaderboard:         { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
   webaz_auction:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: create publishes an auction; bid is binding
   webaz_auto_bid:            { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: get/set/disable auto-bid config (reversible)

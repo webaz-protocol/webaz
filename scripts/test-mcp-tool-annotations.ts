@@ -64,6 +64,12 @@ async function main(): Promise<void> {
   ok('4j. webaz_profile destructive=true (add_role has no in-tool removal)', a('webaz_profile').destructiveHint === true)
   ok('4k. webaz_order_action_request destructive=true (sends accept/ship into human queue)', a('webaz_order_action_request').destructiveHint === true)
   ok('4l. webaz_mykey readOnly=false + openWorld=true (rate-limit write; queries a supplied handle)', a('webaz_mykey').readOnlyHint === false && a('webaz_mykey').openWorldHint === true)
+  // Round-2 Codex under-classification fixes (delete/irreversible actions):
+  ok('4m. webaz_blocklist destructive=true (unblock DELETEs)', a('webaz_blocklist').destructiveHint === true)
+  ok('4n. webaz_follows destructive=true (unfollow DELETEs)', a('webaz_follows').destructiveHint === true)
+  ok('4o. webaz_nearby destructive=true (clear_location removes geo)', a('webaz_nearby').destructiveHint === true)
+  ok('4p. webaz_like destructive=true (unlike DELETEs / like notifies owner)', a('webaz_like').destructiveHint === true)
+  ok('4q. webaz_notifications destructive=true (mark_read irreversible)', a('webaz_notifications').destructiveHint === true)
 
   // 5. no-drift: both transports go through buildMcpServer (which we just exercised) → same annotations
   const L1 = readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
