@@ -38,7 +38,7 @@ const PROTECTED_RESOURCE_METADATA_URL = 'https://webaz.xyz/.well-known/oauth-pro
 // webaz_rotate_key / webaz_revoke_key / webaz_pair)照旧绝不入列(I-2 匿名读不变是硬不变量)。
 // 漏列 fail-soft:未列出的鉴权工具照旧走工具层的 API_KEY_REQUIRED / GRANT_REQUIRED 带引导 JSON。
 const AUTH_ONLY_TOOLS = new Set([
-  'webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request',
+  'webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request', 'webaz_connection_status',
 ])
 // webaz_list_product 是多 action 工具:只有 grant 路径真支持的 action 才配挑战(承诺即真实)。
 //   mine → seller_products_read;create/draft(缺省即 create)→ seller_product_draft —— 均可由 OAuth scope 铸出。
@@ -68,6 +68,7 @@ function scopeForAuthOnlyCall(body: unknown): string {
   const b = body as { params?: { name?: unknown; arguments?: { action?: unknown } } } | null
   const name = b?.params?.name
   if (name === 'webaz_get_agent_order') return 'seller_orders_read_minimal'         // GET /api/agent/orders(/:id)
+  if (name === 'webaz_connection_status') return 'read_public'                       // GET /api/agent-grants/connection
   if (name === 'webaz_order_action_request') return 'order_action_request'           // POST /api/agent/orders/:id/action-request
   if (name === 'webaz_list_product') {
     const action = typeof b?.params?.arguments?.action === 'string' ? b.params.arguments.action : 'create'  // default create

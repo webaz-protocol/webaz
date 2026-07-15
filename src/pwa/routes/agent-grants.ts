@@ -157,6 +157,24 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     res.json({ grant: p, note: 'Authorized via delegation grant (safe scope read_public). This is a grant principal, not a human session.' })
   })
 
+  // RFC-023 — the OAuth-bound identity for THIS connection (safe scope read_public). Lets a remote agent
+  //   answer "which WebAZ account am I connected as, and with what scopes?" without any api_key. Returns the
+  //   handle + a MASKED account id + the grant's safe scopes + expiry — and NEVER an api_key, token, email,
+  //   address, or any other PII (E-node requirement). Backs webaz_connection_status.
+  app.get('/api/agent-grants/connection', requireAgentGrantScope('read_public'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant
+    if (!p) return void res.status(401).json({ error: 'no grant', error_code: 'GRANT_REQUIRED' })
+    const g = await dbOne<{ capabilities: string; expires_at: string }>(
+      'SELECT capabilities, expires_at FROM agent_delegation_grants WHERE grant_id = ?', [p.grant_id])
+    const u = await dbOne<{ handle: string | null }>('SELECT handle FROM users WHERE id = ?', [p.human_id])
+    const scopes = (safeParseCaps(g?.capabilities) as Array<{ capability?: string }>).map(c => String(c?.capability || '')).filter(Boolean)
+    const id = p.human_id
+    // Always redact — NEVER return the full id. Long id → prefix…suffix (middle hidden); short id (≤8,
+    // where prefix+suffix would overlap and reveal everything) → 2-char prefix + ellipsis only.
+    const account_id_hint = !id ? '' : id.length > 8 ? `${id.slice(0, 4)}…${id.slice(-4)}` : `${id.slice(0, 2)}…`
+    res.json({ connected: true, handle: u?.handle ? `@${u.handle}` : null, account_id_hint, agent_label: p.agent_label, scopes, expires_at: g?.expires_at ?? null })
+  })
+
   // First REAL grant-consumed seller surface (Catalog Agent): read the grant human's OWN catalog. Read-only,
   //   money fields (commission/stake) excluded. A grant that lacks seller_products_read → structured
   //   permission_required (see requireAgentGrantScope) so the agent can request → human approves → retry.

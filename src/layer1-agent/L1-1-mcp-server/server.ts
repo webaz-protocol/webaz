@@ -1812,6 +1812,19 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
       required: ['order_id', 'action'],
     },
   },
+  {
+    name: 'webaz_connection_status',
+    description: `Report which WebAZ account this connection is authorized as — for a remote OAuth-connected agent (safe scope read_public; no api_key, no PII). Answers "who am I connected as, and with what scopes?".
+
+- Connected (an OAuth/delegation grant is present) → { connected: true, handle, account_id_hint (masked), scopes, expires_at }.
+- Not connected → connect via OAuth (a compliant client shows a connect prompt), or for api_key identity use webaz_profile action="view".
+- Read-only. NEVER returns an api_key, token, email, address, or other PII.`,
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
 ]
 
 // Standard MCP annotations merged once at module load (fail-fast if any tool lacks a mapping). The
@@ -2579,6 +2592,16 @@ export async function handleGetAgentOrder(args: Record<string, unknown>): Promis
   const r = await apiCall(path, { method: 'GET', apiKey: cred.token })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks seller_orders_read_minimal. Run webaz_pair action="request" bundle="fulfillment_agent", have the human approve, then retry.' }
   return r
+}
+
+export async function handleConnectionStatus(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // Wraps GET /api/agent-grants/connection (safe scope read_public). Reports the OAuth-bound identity —
+  //   handle + MASKED account id + safe scopes + expiry — with NO api_key / token / PII. Grant-only; an
+  //   api_key request has no grant, so it returns connected:false + guidance (use webaz_profile for that).
+  if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential(args)
+  if (!cred) return { connected: false, note: 'No OAuth/delegation grant on this request. Connect via OAuth (a compliant client shows a connect prompt), or for api_key identity use webaz_profile action="view".' }
+  return apiCall('/api/agent-grants/connection', { method: 'GET', apiKey: cred.token })
 }
 
 export async function handleOrderActionRequest(args: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -5374,6 +5397,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         case 'webaz_update_order':  result = await handleUpdateOrder(args); break
         case 'webaz_get_status':    result = await handleGetStatus(args); break
         case 'webaz_get_agent_order':     result = await handleGetAgentOrder(args); break
+        case 'webaz_connection_status':   result = await handleConnectionStatus(args); break
         case 'webaz_order_action_request': result = await handleOrderActionRequest(args); break
         case 'webaz_feedback':      result = await handleFeedback(args); break
         case 'webaz_contribute':    result = await handleContribute(args); break
