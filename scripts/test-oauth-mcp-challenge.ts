@@ -1,9 +1,9 @@
 #!/usr/bin/env tsx
 /**
- * RFC-023 PR-5 test — /mcp 401 WWW-Authenticate challenge + OAuth discovery advertising.
+ * RFC-023 PR-5 test — /mcp auth challenge (OpenAI Apps SDK shape: 200 + result._meta) + OAuth discovery advertising.
  *
  * Behavioral (real express app + real JSON-RPC over HTTP, fetch spy for webaz.xyz outbound):
- *   - anonymous tools/call on an auth-only tool → 401 + WWW-Authenticate: Bearer resource_metadata="…"
+ *   - anonymous tools/call on an auth-only tool → 200 + result._meta["mcp/www_authenticate"] + isError (header mirrors)
  *     (RFC 9728 pointer) so a compliant MCP client self-starts the OAuth flow;
  *   - challenge-is-a-promise (Codex P1): ONLY tools an oat_ can actually reach get challenged. Every
  *     challenged tool has a real grant path (retry with oat_ → grant endpoint → success or scope-specific
@@ -63,7 +63,6 @@ seedDb.prepare('INSERT INTO oauth_access_tokens (token_hash, grant_id, client_id
 const ROUTE = readFileSync('src/pwa/routes/mcp-remote.ts', 'utf8')
 const GRANTS_ROUTE = readFileSync('src/pwa/routes/agent-grants.ts', 'utf8')
 const METADATA_URL = 'https://webaz.xyz/.well-known/oauth-protected-resource/mcp'
-const EXPECTED_CHALLENGE = `Bearer resource_metadata="${METADATA_URL}"`
 
 // 挑战即承诺:入列 = 该工具在 /mcp 上有真实的 oat_/gtk_ grant 路径(resolveGrantCredential →
 // requireAgentGrantScope 端点 → 成功或 scope 级 PERMISSION_REQUIRED)。
@@ -91,23 +90,30 @@ const rpc = (base: string, body: unknown, headers: Record<string, string> = {}) 
 const call = (base: string, tool: string, headers: Record<string, string> = {}, id: number | string = 7, args: Record<string, unknown> = {}) =>
   rpc(base, { jsonrpc: '2.0', id, method: 'tools/call', params: { name: tool, arguments: args } }, headers)
 
+// The OpenAI Apps SDK challenge lives in result._meta["mcp/www_authenticate"] as an ARRAY of challenge strings.
+const chArrOf = (j: unknown): string[] => { const m = (j as { result?: { _meta?: Record<string, unknown> } } | null)?.result?._meta?.['mcp/www_authenticate']; return Array.isArray(m) ? m as string[] : [] }
+
 async function main() {
   const { base, http } = await boot()
   setSeamDb(seedDb)   // PR-2: point the edge oat_ validator at the seeded DB (after server.js import re-set it)
 
-  // ── 1. OAuth live:匿名打【有 grant 路径的】auth-only 工具 → 401 挑战(合规客户端自启流)──
+  // ── 1. OAuth live:匿名打【有 grant 路径的】auth-only 工具 → OpenAI 挑战形状(HTTP 200 +
+  //      result._meta["mcp/www_authenticate"] 数组 + isError,ChatGPT 据此弹 OAuth UI;头镜像同一挑战)──
   process.env.WEBAZ_OAUTH = '1'
   {
     const r = await call(base, 'webaz_list_product', {}, 42)
-    const j = await r.json().catch(() => null) as { error?: { code?: number; message?: string }; id?: unknown } | null
-    ok('1a. anonymous list_product → HTTP 401', r.status === 401)
-    ok('1b. WWW-Authenticate: Bearer resource_metadata="…/oauth-protected-resource/mcp" (RFC 9728)', r.headers.get('www-authenticate') === EXPECTED_CHALLENGE)
-    ok('1c. JSON-RPC error body + id echoed', !!j?.error?.message && j?.id === 42)
-    ok('1d. body names BOTH recovery paths (OAuth + api_key Bearer)', String(j?.error?.message || '').includes('OAuth') && String(j?.error?.message || '').includes('api_key'))
+    const j = await r.json().catch(() => null) as { result?: { isError?: boolean; content?: Array<{ text?: string }>; _meta?: Record<string, unknown> }; id?: unknown } | null
+    const ch = chArrOf(j)
+    ok('1a. anonymous list_product → HTTP 200 + result.isError + result._meta challenge (OpenAI shape)', r.status === 200 && j?.result?.isError === true && ch.length === 1 && ch[0].includes(METADATA_URL))
+    ok('1b. challenge is RFC 6750 w/ error+error_description; WWW-Authenticate header mirrors it exactly', ch[0]?.includes('error=') === true && ch[0]?.includes('error_description=') === true && r.headers.get('www-authenticate') === ch[0])
+    ok('1c. JSON-RPC result body + id echoed', j?.result !== undefined && j?.id === 42)
+    ok('1d. human text names BOTH recovery paths (OAuth + api_key Bearer)', String(j?.result?.content?.[0]?.text || '').includes('OAuth') && String(j?.result?.content?.[0]?.text || '').includes('api_key'))
   }
   for (const t of GRANT_PATH_TOOLS) {
     const r = await call(base, t)
-    ok(`1e. anonymous ${t} → 401 + challenge header (grant path exists → promise is real)`, r.status === 401 && r.headers.get('www-authenticate') === EXPECTED_CHALLENGE)
+    const j = await r.json().catch(() => null)
+    const ch = chArrOf(j)
+    ok(`1e. anonymous ${t} → 200 challenge (grant path exists → promise is real)`, r.status === 200 && (j as { result?: { isError?: boolean } } | null)?.result?.isError === true && ch.length === 1 && r.headers.get('www-authenticate') === ch[0])
   }
   // Codex P1 回归:api_key-only 工具绝不挑战 —— 完成 OAuth 后重试仍然只能 api_key,401 就是虚假广告。
   // 它们照旧 200 + 工具层 API_KEY_REQUIRED 引导(fail-soft)。
@@ -118,7 +124,8 @@ async function main() {
   // Codex PR-5 P1b:list_product 按 action 分粒度 —— grant 路径支持的 action 才挑战。
   {
     const mine = await call(base, 'webaz_list_product', {}, 71, { action: 'mine' })
-    ok('1g. list_product action=mine → 401 (grant path: seller_products_read)', mine.status === 401 && mine.headers.get('www-authenticate') === EXPECTED_CHALLENGE)
+    const mj = await mine.json().catch(() => null)
+    ok('1g. list_product action=mine → 200 challenge (grant path: seller_products_read)', mine.status === 200 && (mj as { result?: { isError?: boolean } } | null)?.result?.isError === true && chArrOf(mj).length === 1)
     const delist = await call(base, 'webaz_list_product', {}, 72, { action: 'delist', product_id: 'p1' })
     ok('1h. list_product action=delist → NOT challenged (api_key-only, no false OAuth promise)', delist.status === 200 && !delist.headers.get('www-authenticate'))
     const del = await call(base, 'webaz_list_product', {}, 73, { action: 'delete', product_id: 'p1' })
@@ -138,8 +145,12 @@ async function main() {
   // ── 3. Bearer handling. PR-2: api_key/gtk_ still pass to the tool layer; an oat_ is now VALIDATED at
   //      the transport edge (invalid → 401; valid+scoped → dispatch reaches the grant endpoint). ──
   ok('3a. api_key Bearer → passes to tool layer (no 401 challenge)', (await call(base, 'webaz_list_product', { Authorization: 'Bearer wz_caller_key' })).status === 200)
-  // PR-2: an INVALID/unknown oat_ on an auth-only tool → 401 at the edge (was 200 pass-through pre-PR-2).
-  ok('3b. invalid oat_ on auth-only tool → 401 at the edge (PR-2)', (await call(base, 'webaz_order_action_request', { Authorization: 'Bearer oat_' + 'a'.repeat(32) })).status === 401)
+  // PR-4: an INVALID/unknown oat_ on an auth-only tool → OpenAI challenge at the edge (was 401 in PR-2, 200 pass-through pre-PR-2).
+  {
+    const r3b = await call(base, 'webaz_order_action_request', { Authorization: 'Bearer oat_' + 'a'.repeat(32) })
+    const j3b = await r3b.json().catch(() => null)
+    ok('3b. invalid oat_ on auth-only tool → 200 challenge at the edge (bad credential not downgraded; error+error_description present)', r3b.status === 200 && (j3b as { result?: { isError?: boolean } } | null)?.result?.isError === true && chArrOf(j3b).length === 1 && chArrOf(j3b)[0].includes('error="invalid_token"') && chArrOf(j3b)[0].includes('error_description='))
+  }
   // Challenge-is-a-promise: a VALID oat_ passes the edge and its retry lands on the GRANT endpoint
   // (/api/agent/*) carrying the per-request oat_ — never the host env key, never the api_key path.
   {
@@ -180,7 +191,9 @@ async function main() {
   ok('6a. challenge sits AFTER rate limit and BEFORE server assembly', ROUTE.indexOf('deps.rateLimitOk(') < ROUTE.indexOf('isAuthOnlyToolCall(req.body)') && ROUTE.indexOf('isAuthOnlyToolCall(req.body)') < ROUTE.indexOf('buildMcpServer({'))
   // PR-2 refactor: outer gate = oauthEnabled()+isAuthOnlyToolCall (fail-closed); the ANONYMOUS 401
   // challenge is the inner `if (!bearer)` branch (behaviour unchanged — see test:mcp-http-edge A1).
-  ok('6b. challenge gated on oauthEnabled()+isAuthOnlyToolCall (fail-closed) with a no-bearer branch', ROUTE.includes('oauthEnabled() && isAuthOnlyToolCall(req.body)') && ROUTE.includes('if (!bearer)'))
+  // PR-4: the anonymous challenge branch is gated fail-closed on oauthEnabled()+no-bearer+auth-only tool;
+  // a presented oat_ is validated separately (see test:mcp-http-edge). Behaviour unchanged for anonymous.
+  ok('6b. anonymous challenge gated on oauthEnabled() + !bearer + isAuthOnlyToolCall (fail-closed)', ROUTE.includes('oauthEnabled() && !bearer && isAuthOnlyToolCall(req.body)'))
   // 挑战名单 = 恰好那些有 grant 路径的工具(结构锚:多列 = 虚假恢复,漏列 = fail-soft 工具层引导)
   {
     const setSrc = ROUTE.match(/AUTH_ONLY_TOOLS = new Set\(\[([^\]]*)\]/s)?.[1] || ''
@@ -219,6 +232,6 @@ async function main() {
 
   http.close()
   if (fail > 0) { console.error(`\n❌ oauth /mcp challenge FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-  console.log(`✅ oauth /mcp challenge: 401 + WWW-Authenticate resource_metadata (RFC 9728) · challenge-is-a-promise (grant-path tools only, oat_ retry lands on /api/agent/*) · list:draft → seller_product_draft wired · I-2 anonymous read untouched · bearers pass through · fail-closed flag · manifest advertises oauth only when live\n  ✅ pass ${pass}`)
+  console.log(`✅ oauth /mcp challenge: 200 + result._meta["mcp/www_authenticate"]+isError (OpenAI Apps SDK shape, header mirrors) · challenge-is-a-promise (grant-path tools only, oat_ retry lands on /api/agent/*) · list:draft → seller_product_draft wired · I-2 anonymous read untouched · bearers pass through · fail-closed flag · manifest advertises oauth only when live\n  ✅ pass ${pass}`)
 }
 main().catch(e => { console.error(e); process.exit(1) })
