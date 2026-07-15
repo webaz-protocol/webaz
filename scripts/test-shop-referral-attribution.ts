@@ -18,6 +18,7 @@
 import Database from 'better-sqlite3'
 import express from 'express'
 import { createServer, request as httpRequest, type Server } from 'node:http'
+import { computeProductShareChain } from '../src/pwa/internal/product-share-chain.js'
 import type { Request, Response } from 'express'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -79,16 +80,11 @@ function resolveUserRef(raw: string | null | undefined): string | null {
   const h = ref.replace(/^@/, '').toLowerCase()
   return (db.prepare('SELECT id FROM users WHERE handle = ?').get(h) as any)?.id || null
 }
-// mirror of server.ts getProductShareChain (chain walk itself is pre-existing, untouched by this PR)
-function chain(productId: string, buyerId: string, depth = 3): (string | null)[] {
-  const out: (string | null)[] = []; let rec = buyerId; const seen = new Set([buyerId])
-  for (let i = 0; i < depth; i++) {
-    const row = db.prepare("SELECT sharer_id FROM product_share_attribution WHERE product_id = ? AND recipient_id = ? AND expires_at > datetime('now')").get(productId, rec) as any
-    if (!row?.sharer_id || seen.has(row.sharer_id)) { while (out.length < depth) out.push(null); return out }
-    out.push(row.sharer_id); seen.add(row.sharer_id); rec = row.sharer_id
-  }
-  return out
-}
+// Uses the REAL computeProductShareChain (mirror removed — no drift). isAllowedSelfL1 = () => false here
+// so these attribution assertions keep the referrer-as-L1 semantics; self-L1 (Decision A) is covered
+// by scripts/test-product-share-chain.ts.
+const chain = (productId: string, buyerId: string, depth = 3): (string | null)[] =>
+  computeProductShareChain(db, productId, buyerId, depth, () => false)
 
 let server: Server, port = 0
 let authedAs = 'usr_buyer'

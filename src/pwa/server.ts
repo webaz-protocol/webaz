@@ -404,6 +404,7 @@ import { registerAdminOperatorClaimRoutes } from './routes/admin-operator-claims
 import { registerTaskProposalsRoutes } from './routes/task-proposals.js'
 import { participationRecordingActive, matchingRewardsActive } from './pv-kill-switch.js'   // Category C: participation recording (default ON) vs matching-rewards payout (default OFF)
 import { createPvSettlementEngine } from './internal/pv-settlement.js'   // matching-rewards engine EXCISED — no-op stub (see internal/pv-settlement.ts)
+import { computeProductShareChain } from './internal/product-share-chain.js'   // per-product L1/L2/L3 beneficiary chain (Decision A: self-purchase-as-promoter → self L1)
 import { createLocalSeedSigner, type WalletSigner } from './internal/wallet-signer.js'   // Phase 0: hot-wallet custody signer seam (docs/HOT-WALLET-CUSTODY-MIGRATION.md)
 import { createCfOriginGuard } from './cf-origin-guard.js'   // Cloudflare-only origin guard (off by default)
 import { createSlidingWindowLimiter } from './rate-limit.js'
@@ -718,26 +719,10 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_sra_referrer ON shop_referral_attr
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_sra_recipient ON shop_referral_attribution(recipient_id)') } catch {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_sra_expires ON shop_referral_attribution(expires_at)') } catch {}
 
-// 商品分享链反推：buyer 买商品 P 时 → L1=谁分享 P 给 buyer → L2=谁分享 P 给 L1 → ...
-// 与 sponsor_path / placement_path 完全无关。某层断链 → 该层 null（佣金回流协议池）。
+// 商品分享链反推 (L1/L2/L3)：纯读逻辑抽到 ./internal/product-share-chain.ts (可测 + 消除测试镜像漂移)。
+// Decision A (task 2026-07-15)：买家本人若是合格推广者 (isAllowedSponsor) → 自购自享时本人即 L1,上线顺延。
 function getProductShareChain(productId: string, buyerId: string, depth = 3): (string | null)[] {
-  const chain: (string | null)[] = []
-  let recipient = buyerId
-  const seen = new Set<string>([buyerId])  // 防环路
-  for (let i = 0; i < depth; i++) {
-    const row = db.prepare(`
-      SELECT sharer_id FROM product_share_attribution
-      WHERE product_id = ? AND recipient_id = ? AND expires_at > datetime('now')
-    `).get(productId, recipient) as { sharer_id: string } | undefined
-    if (!row || !row.sharer_id || seen.has(row.sharer_id)) {
-      while (chain.length < depth) chain.push(null)
-      return chain
-    }
-    chain.push(row.sharer_id)
-    seen.add(row.sharer_id)
-    recipient = row.sharer_id
-  }
-  return chain
+  return computeProductShareChain(db, productId, buyerId, depth, isAllowedSponsor)
 }
 
 db.exec(`
