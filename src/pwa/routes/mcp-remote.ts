@@ -76,8 +76,14 @@ function scopeForAuthOnlyCall(body: unknown): string {
 // OpenAI set, extendable via WEBAZ_MCP_ALLOWED_ORIGINS (comma-separated). This is transport Origin
 // validation only — it adds no Access-Control-* header and does not touch the no-CORS posture (T6).
 const DEFAULT_MCP_ALLOWED_ORIGINS = ['https://webaz.xyz', 'https://chatgpt.com', 'https://chat.openai.com']
+// A well-formed http(s) Origin is EXACTLY `scheme://host[:port]` — no path/query/fragment/trailing slash
+// (`new URL(s).origin === s`). Configured entries are validated so a malformed value like "not-a-url"
+// can never enter the allowlist (and thus can never match a malformed incoming Origin).
+function isWellFormedOrigin(s: string): boolean {
+  try { const u = new URL(s); return (u.protocol === 'https:' || u.protocol === 'http:') && u.origin === s } catch { return false }
+}
 function mcpAllowedOrigins(): Set<string> {
-  const extra = String(process.env.WEBAZ_MCP_ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)
+  const extra = String(process.env.WEBAZ_MCP_ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(isWellFormedOrigin)
   return new Set([...DEFAULT_MCP_ALLOWED_ORIGINS, ...extra])
 }
 function mcpOriginAllowed(req: Request): boolean {

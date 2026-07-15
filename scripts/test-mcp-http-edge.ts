@@ -78,6 +78,19 @@ async function main(): Promise<void> {
   ok('B5. malformed Origin → 403', (await post(TOOLS_LIST, { origin: 'not-a-url' })).status === 403)
   ok('B6. suffix-lookalike Origin (webaz.xyz.evil.com) → 403 (exact match only)', (await post(TOOLS_LIST, { origin: 'https://webaz.xyz.evil.com' })).status === 403)
   ok('B7. Origin guard applies to tools/call too (hostile → 403)', (await post(AGENT_ORDER_CALL, { origin: 'https://evil.example', bearer: seedOAuth() })).status === 403)
+  const INIT = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 't', version: '0' } } }
+  ok('B8. Origin guard applies to initialize too (hostile → 403)', (await post(INIT, { origin: 'https://evil.example' })).status === 403)
+  {
+    process.env.WEBAZ_MCP_ALLOWED_ORIGINS = 'https://cursor.com'
+    ok('B9. configured allowlist entry (https://cursor.com) → allowed', (await post(TOOLS_LIST, { origin: 'https://cursor.com' })).status === 200)
+    process.env.WEBAZ_MCP_ALLOWED_ORIGINS = 'not-a-url'   // malformed config must NOT allowlist a malformed Origin
+    ok('B10. malformed configured entry does not allowlist a malformed Origin → 403', (await post(TOOLS_LIST, { origin: 'not-a-url' })).status === 403)
+    delete process.env.WEBAZ_MCP_ALLOWED_ORIGINS
+  }
+  {
+    const res = await fetch(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', origin: 'https://webaz.xyz' }, body: JSON.stringify(TOOLS_LIST) })
+    ok('B11. no Access-Control-* response header (no-CORS posture intact)', res.headers.get('access-control-allow-origin') === null)
+  }
 
   // ── A. bearer / OAuth token validity ──
   ok('A1. anonymous auth-only tool → 401 + challenge', await (async () => { const r = await post(AGENT_ORDER_CALL); return r.status === 401 && r.wwwAuth.includes(CHALLENGE) })())
