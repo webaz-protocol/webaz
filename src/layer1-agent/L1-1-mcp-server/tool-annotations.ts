@@ -28,8 +28,8 @@ export interface McpToolAnnotations {
 // irreversible action. Destructive rationale noted inline.
 export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_info:                { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
-  webaz_pair:                { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: creates revocable delegation grant (consent-gated); no destructive action
-  webaz_register:            { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: creates own account (consent-gated)
+  webaz_pair:                { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: request/start SEND pairing+permission-expansion requests; complete unlinks pending state
+  webaz_register:            { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: irreversibly creates account + funded wallet (no undo in this tool)
   webaz_search:              { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
   webaz_verify_price:        { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: soft, reversible stock reservation via session token
   webaz_list_product:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: delete = permanent removal (+ delist/trash/publish)
@@ -41,8 +41,8 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_dispute:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: arbitrate = irreversible fund disposition (Iron-Rule)
   webaz_claim_verify:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: vote is consequential/final; create/apply lock stake
   webaz_skill:               { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: publish makes a skill public
-  webaz_mykey:               { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // own-account recovery hint (read); closed world
-  webaz_profile:             { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: add_role/switch_role (reversible own-account config)
+  webaz_mykey:               { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: each lookup writes rate-limit state; queries the account named by a SUPPLIED handle+code (not provably the caller's own)
+  webaz_profile:             { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: add_role permanently appends a role (this tool exposes no remove-role)
   webaz_revoke_key:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: irreversibly kills api_key, no replacement
   webaz_rotate_key:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: invalidates the old key (irreversible for it)
   webaz_referral:            { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },
@@ -68,7 +68,7 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_feedback:            { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: submit sends/publishes feedback about a product
   webaz_contribute:          { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: suggest/claim/submit publish to the coordination board
   webaz_get_agent_order:     { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // grant-scoped minimal order read
-  webaz_order_action_request:{ readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W: submit-only into the human Passkey queue; agent cannot execute
+  webaz_order_action_request:{ readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: SENDS an accept/ship request into another party's human approval queue (agent can't execute; the send itself is consequential)
 }
 
 interface NamedTool { readonly name: string }

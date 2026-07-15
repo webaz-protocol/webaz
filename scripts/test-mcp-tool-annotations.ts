@@ -58,6 +58,12 @@ async function main(): Promise<void> {
   ok('4e. multi-action irreversible confirm (webaz_update_order): destructive=true', a('webaz_update_order').destructiveHint === true)
   ok('4f. read-only account tool (webaz_wallet): readOnly=true', a('webaz_wallet').readOnlyHint === true)
   ok('4g. dispute arbitrate is destructive (webaz_dispute)', a('webaz_dispute').destructiveHint === true)
+  // Round-1 Codex under-classification fixes — locked so they cannot silently regress:
+  ok('4h. webaz_pair destructive=true (sends pairing/permission requests; unlinks pending)', a('webaz_pair').destructiveHint === true)
+  ok('4i. webaz_register destructive=true (irreversible account+wallet creation)', a('webaz_register').destructiveHint === true)
+  ok('4j. webaz_profile destructive=true (add_role has no in-tool removal)', a('webaz_profile').destructiveHint === true)
+  ok('4k. webaz_order_action_request destructive=true (sends accept/ship into human queue)', a('webaz_order_action_request').destructiveHint === true)
+  ok('4l. webaz_mykey readOnly=false + openWorld=true (rate-limit write; queries a supplied handle)', a('webaz_mykey').readOnlyHint === false && a('webaz_mykey').openWorldHint === true)
 
   // 5. no-drift: both transports go through buildMcpServer (which we just exercised) → same annotations
   const L1 = readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
