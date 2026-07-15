@@ -21,6 +21,10 @@
 import { readFileSync } from 'node:fs'
 import express from 'express'
 import type { Server as HttpServer } from 'node:http'
+import Database from 'better-sqlite3'
+import { createHash, randomBytes } from 'node:crypto'
+import { initOAuthSchema, initAgentDelegationGrantsSchema } from '../src/runtime/webaz-schema-helpers.js'
+import { setSeamDb } from '../src/layer0-foundation/L0-1-database/db.js'
 
 // 必须在 import mcp-remote(→ L1 server.js)之前:WEBAZ_API_KEY/MODE 在 import 时固化为 module const。
 process.env.WEBAZ_API_KEY = 'wz_HOST_ENV_KEY_MUST_NOT_LEAK'
@@ -41,6 +45,20 @@ globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}`) } }
+
+// PR-2: the /mcp edge now validates oat_ tokens (invalid → 401, insufficient scope → 403). Seed a real
+// seam DB so a VALID oat_ passes the edge and reaches the grant endpoint (3c/3d). setSeamDb runs AFTER
+// boot() — server.js's own initDatabase re-points the seam at import time.
+const seedDb = new Database(':memory:')
+initOAuthSchema(seedDb); initAgentDelegationGrantsSchema(seedDb)
+seedDb.exec('CREATE TABLE users (id TEXT PRIMARY KEY, api_key TEXT, permanent_code TEXT, region TEXT)')
+seedDb.exec('CREATE TABLE user_moderation (user_id TEXT PRIMARY KEY, suspended INTEGER, reason TEXT)')
+seedDb.prepare("INSERT INTO users (id, api_key, permanent_code, region) VALUES ('usr_h','k_h','PC','SG')").run()
+const VALID_OAT = 'oat_' + randomBytes(16).toString('hex')
+seedDb.prepare('INSERT INTO agent_delegation_grants (grant_id, human_id, agent_label, capabilities, token_hash, human_confirm_required, status, expires_at) VALUES (?,?,?,?,?,?,?,?)')
+  .run('grt_valid', 'usr_h', 'OAuth', JSON.stringify([{ capability: 'seller_product_draft' }]), null, 0, 'active', '2099-01-01T00:00:00.000Z')
+seedDb.prepare('INSERT INTO oauth_access_tokens (token_hash, grant_id, client_id, scope, aud, expires_at, revoked_at) VALUES (?,?,?,?,?,?,?)')
+  .run(createHash('sha256').update(VALID_OAT).digest('hex'), 'grt_valid', 'c', 'read', 'https://webaz.xyz/mcp', '2099-01-01T00:00:00.000Z', null)
 
 const ROUTE = readFileSync('src/pwa/routes/mcp-remote.ts', 'utf8')
 const GRANTS_ROUTE = readFileSync('src/pwa/routes/agent-grants.ts', 'utf8')
@@ -75,6 +93,7 @@ const call = (base: string, tool: string, headers: Record<string, string> = {}, 
 
 async function main() {
   const { base, http } = await boot()
+  setSeamDb(seedDb)   // PR-2: point the edge oat_ validator at the seeded DB (after server.js import re-set it)
 
   // ── 1. OAuth live:匿名打【有 grant 路径的】auth-only 工具 → 401 挑战(合规客户端自启流)──
   process.env.WEBAZ_OAUTH = '1'
@@ -116,18 +135,19 @@ async function main() {
     ok('2c. anonymous initialize → 200, no challenge (connector handshake unharmed)', i.status === 200 && !i.headers.get('www-authenticate'))
   }
 
-  // ── 3. 任何 Bearer 在场 → 不在 HTTP 层挑战(语义化 error_code 在工具层,PR-4)──
+  // ── 3. Bearer handling. PR-2: api_key/gtk_ still pass to the tool layer; an oat_ is now VALIDATED at
+  //      the transport edge (invalid → 401; valid+scoped → dispatch reaches the grant endpoint). ──
   ok('3a. api_key Bearer → passes to tool layer (no 401 challenge)', (await call(base, 'webaz_list_product', { Authorization: 'Bearer wz_caller_key' })).status === 200)
-  ok('3b. oat_ Bearer → passes to tool layer (introspection there, PR-4)', (await call(base, 'webaz_order_action_request', { Authorization: 'Bearer oat_' + 'a'.repeat(32) })).status !== 401)
-  // Codex P1 回归:401 → OAuth → oat_ 重试必须落在【grant 端点】上(成功或 scope 级 PERMISSION_REQUIRED,
-  // 见 test-oauth-mcp-bearer 5a),而不是死在 "api_key required"。断言出站请求 = /api/agent/* + oat_ 凭证。
+  // PR-2: an INVALID/unknown oat_ on an auth-only tool → 401 at the edge (was 200 pass-through pre-PR-2).
+  ok('3b. invalid oat_ on auth-only tool → 401 at the edge (PR-2)', (await call(base, 'webaz_order_action_request', { Authorization: 'Bearer oat_' + 'a'.repeat(32) })).status === 401)
+  // Challenge-is-a-promise: a VALID oat_ passes the edge and its retry lands on the GRANT endpoint
+  // (/api/agent/*) carrying the per-request oat_ — never the host env key, never the api_key path.
   {
     outbound.length = 0
-    const oat = 'oat_' + 'b'.repeat(32)
-    const r = await call(base, 'webaz_list_product', { Authorization: `Bearer ${oat}` }, 8, { action: 'create', title: 't' })
+    const r = await call(base, 'webaz_list_product', { Authorization: `Bearer ${VALID_OAT}` }, 8, { action: 'create', title: 't' })
     const hit = outbound.find(o => o.url.includes('/api/agent/seller/products'))
-    ok('3c. oat_ retry on challenged list_product → grant endpoint /api/agent/seller/products (not api_key path)', r.status === 200 && !!hit)
-    ok('3d. …outbound carries the per-request oat_ (never the host env key)', hit?.auth === `Bearer ${oat}`)
+    ok('3c. valid oat_ on list_product create → grant endpoint /api/agent/seller/products (not api_key path)', r.status === 200 && !!hit)
+    ok('3d. …outbound carries the per-request oat_ (never the host env key)', hit?.auth === `Bearer ${VALID_OAT}`)
   }
 
   // ── 4. fail-closed:WEBAZ_OAUTH off → 行为与 PR-4 前完全一致(无挑战,无头)──
@@ -158,7 +178,9 @@ async function main() {
 
   // ── 6. 源码守卫 ──
   ok('6a. challenge sits AFTER rate limit and BEFORE server assembly', ROUTE.indexOf('deps.rateLimitOk(') < ROUTE.indexOf('isAuthOnlyToolCall(req.body)') && ROUTE.indexOf('isAuthOnlyToolCall(req.body)') < ROUTE.indexOf('buildMcpServer({'))
-  ok('6b. challenge gated on oauthEnabled() (fail-closed) + no-bearer only', ROUTE.includes('!bearer && oauthEnabled() && isAuthOnlyToolCall'))
+  // PR-2 refactor: outer gate = oauthEnabled()+isAuthOnlyToolCall (fail-closed); the ANONYMOUS 401
+  // challenge is the inner `if (!bearer)` branch (behaviour unchanged — see test:mcp-http-edge A1).
+  ok('6b. challenge gated on oauthEnabled()+isAuthOnlyToolCall (fail-closed) with a no-bearer branch', ROUTE.includes('oauthEnabled() && isAuthOnlyToolCall(req.body)') && ROUTE.includes('if (!bearer)'))
   // 挑战名单 = 恰好那些有 grant 路径的工具(结构锚:多列 = 虚假恢复,漏列 = fail-soft 工具层引导)
   {
     const setSrc = ROUTE.match(/AUTH_ONLY_TOOLS = new Set\(\[([^\]]*)\]/s)?.[1] || ''
