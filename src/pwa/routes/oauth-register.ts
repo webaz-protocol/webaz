@@ -69,10 +69,30 @@ export function registerOAuthRegisterRoutes(app: Express, deps: OAuthRegisterDep
     if (authMethod !== undefined && authMethod !== 'none') {
       return err(400, 'invalid_client_metadata', 'only public clients are supported: token_endpoint_auth_method must be "none"')
     }
-    for (const [field, allowed] of [['grant_types', 'authorization_code'], ['response_types', 'code']] as const) {
-      const val = b[field]
-      if (val !== undefined && !(Array.isArray(val) && val.length === 1 && val[0] === allowed)) {
-        return err(400, 'invalid_client_metadata', `${field}, if present, must be ["${allowed}"]`)
+    // response_types: only "code" (the authorization_code flow) is supported.
+    {
+      const rt = b.response_types
+      if (rt !== undefined && !(Array.isArray(rt) && rt.length === 1 && rt[0] === 'code')) {
+        return err(400, 'invalid_client_metadata', 'response_types, if present, must be ["code"]')
+      }
+    }
+    // grant_types: authorization_code + PKCE is the ONLY grant flow WebAZ honors. Accept a request that
+    // INCLUDES "authorization_code" and may also list the OPTIONAL companion "refresh_token" — this is
+    // exactly what ChatGPT's DCR sends (["authorization_code","refresh_token"]). refresh_token is
+    // tolerated at registration but NOT honored: the token endpoint issues no refresh tokens, and the
+    // success response below advertises only ["authorization_code"] (an honest, narrowed grant set — no
+    // false capability claim). Any OTHER grant type (client_credentials / implicit / password), or a set
+    // that omits authorization_code, is rejected — so no new grant flow is ever admitted and the auth
+    // semantics are unchanged.
+    {
+      const gt = b.grant_types
+      if (gt !== undefined) {
+        if (!Array.isArray(gt) || gt.length === 0 || !gt.every(g => g === 'authorization_code' || g === 'refresh_token')) {
+          return err(400, 'invalid_client_metadata', 'grant_types, if present, may contain only "authorization_code" and optionally "refresh_token"')
+        }
+        if (!gt.includes('authorization_code')) {
+          return err(400, 'invalid_client_metadata', 'grant_types, if present, must include "authorization_code"')
+        }
       }
     }
     const rawName = typeof b.client_name === 'string' ? b.client_name.trim().slice(0, MAX_NAME_LEN) : ''
