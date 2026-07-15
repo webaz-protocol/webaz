@@ -41,7 +41,7 @@ When the OAuth surface is live (`WEBAZ_OAUTH=1`), a compliant MCP client (Claude
 2. **Authorize.** Authorization Code + PKCE (`S256` only). You're redirected to webaz.xyz, log in with your **Passkey**, and see a consent screen naming the client, the exact SAFE scopes (`read`, `order:draft`, `list:draft`), and the resource (`https://webaz.xyz/mcp`).
 3. **Token.** The client exchanges the code for a **short-lived, audience-bound, opaque** access token — a credential for the delegation grant your approval minted (revocable anytime from your account; no refresh tokens in v1, the client re-consents on expiry).
 
-Boundaries (identical to every other path): OAuth tokens carry **SAFE scopes only** — read (public + your own catalog + minimal orders, no buyer PII), draft creation, and *submitting* accept/ship requests to your approval queue. Anything beyond that — executing an order action, publishing, paying, arbitrating, or any api_key-only operation — is **not performed by an OAuth token**; it needs your `api_key` or a per-action Passkey approval. No token ever bypasses the human gate. Anonymous browsing needs no OAuth and is unchanged.
+Boundaries (identical to every other path): OAuth tokens carry **SAFE scopes only** — read (public + your own catalog + minimal orders with no buyer PII + your own connection identity via `webaz_connection_status`), draft creation, and *submitting* accept/ship requests to your approval queue. Anything beyond that — executing an order action, publishing, paying, arbitrating, buyer-side ordering (`webaz_verify_price` / `webaz_place_order`), or any api_key-only operation — is **not performed by an OAuth token**; it needs your `api_key` or a per-action Passkey approval. No token ever bypasses the human gate. Anonymous browsing needs no OAuth and is unchanged. See the [permission matrix](#permission-matrix--how-each-tool-authenticates) for the per-tool breakdown.
 
 > **`webaz_pair` is stdio-only.** It performs a one-time **local** pairing (a credential handle stored on your own machine), so over the remote endpoint it could only ever dead-end — it is therefore **not listed on the remote `tools/list`** (a remote agent authenticates via OAuth, not pairing). On the stdio server (`npx -y @seasonkoh/webaz`) it appears normally. If a remote client calls it by name anyway, it returns `PAIRING_LOCAL_ONLY`.
 
@@ -51,7 +51,20 @@ Pre-launch is invite-gated (Sybil resistance). A key requires a **real human** t
 
 ## What you can do
 
-`tools/list` returns the full surface (38 tools) — `webaz_info` (protocol status), `webaz_search`, `webaz_verify_price`, `webaz_place_order`, `webaz_update_order`, `webaz_get_status`, `webaz_dispute`, `webaz_contribute`, and more. Start with `webaz_info` for the live network state and the anonymous-vs-authenticated boundary, then `webaz_contribute action=list_open` or `webaz_search`.
+`tools/list` returns the whole surface (42 tools over the remote endpoint; `webaz_pair` is stdio-only) — `webaz_info` (protocol status), `webaz_search`, `webaz_connection_status`, `webaz_list_product`, `webaz_get_agent_order`, `webaz_verify_price`, `webaz_place_order`, and more. Start with `webaz_info` for the live network state, then `webaz_search` or `webaz_contribute action=list_open`.
+
+### Permission matrix — how each tool authenticates
+
+Each tool declares a per-tool `securitySchemes` (`oauth2` or `noauth`) so a client knows whether to offer an OAuth **Connect** prompt. That declaration is honest: an `oauth2` tool is genuinely reachable through an OAuth grant; a `noauth` tool is **not** OAuth-delegatable (advertising OAuth there would be a false recovery promise). What an agent can actually do:
+
+| Tier | `securitySchemes` | How the agent authenticates | Tools (examples) |
+|------|-------------------|-----------------------------|------------------|
+| **Public** | `noauth` | nothing — anonymous, read-only | `webaz_info`, `webaz_search`, `webaz_secondhand` (browse), `webaz_leaderboard`, `webaz_price_history`, `webaz_contribute` (`list_open`) |
+| **OAuth — SAFE grant** | `oauth2` | **Connect via OAuth** → Passkey consent → short-lived, audience-bound token. No api_key. | `webaz_connection_status` (`read`), `webaz_list_product` (`mine`/`create`/`draft`), `webaz_get_agent_order` (`read`), `webaz_order_action_request` (submit accept/ship → approval queue) |
+| **Account — api_key** | `noauth` | your own **api_key** — **not** OAuth-delegatable | `webaz_profile` (`view`), `webaz_verify_price`, `webaz_update_order`, `webaz_get_status`, `webaz_notifications`, `webaz_default_address` |
+| **RISK — human-gate** | `noauth` | api_key **plus** a per-action **Passkey** (returns an `approve_url`) | `webaz_place_order`, `webaz_wallet`, pay / refund, `webaz_dispute` (arbitrate), `webaz_rotate_key` / `webaz_revoke_key` |
+
+The line between the last two tiers is the **human-gate iron rule**: a money/state action (buy, pay, ship-execute, wallet, arbitrate, key change) returns an `approve_url` and runs only after the human approves with a live Passkey — **no OAuth token and no api_key ever bypasses it**. OAuth today carries **SAFE read/draft/submit scopes only** (seller catalog + minimal orders with no buyer PII, draft creation, submitting accept/ship requests, and reading your own connection identity). A buyer-side SAFE "prepare an order draft → human approves → server executes" flow is a **separate, future RFC** — it is not offered yet, and `webaz_verify_price` / `webaz_place_order` are **not** OAuth-delegatable today.
 
 ## Boundaries (honest)
 
