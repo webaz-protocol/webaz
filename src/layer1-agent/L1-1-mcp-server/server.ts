@@ -171,14 +171,15 @@ function networkMigrationPending(tool: string): Record<string, unknown> {
   }
 }
 
-// Appended to 401/403 errors so an agent — ESPECIALLY a remote MCP client connected over OAuth — does not
-// misread "please log in" as "run the OAuth flow". Buyer/RISK actions (buy, pay, verify_price, place_order,
-// wallet) are human-gated: they need the human's own api_key, or a Passkey in the webaz.xyz PWA. An MCP
-// OAuth connection only grants the SAFE seller read/draft/submit scopes and can NEVER authorize them — no
-// message-only change to auth semantics; this just tells the agent the correct path instead of looping on OAuth.
+// Appended to 401/403 errors so an agent doesn't misread "please log in". The message is CLASS-NEUTRAL and
+// accurate for EVERY auth failure — it does NOT assert the current tool is money/RISK (the earlier wording
+// mislabelled SAFE reads like webaz_profile as "buyer/RISK"). It states the boundary so the agent picks the
+// right path: a public read needs nothing; an account action can use your api_key OR, for a tool that
+// supports it, an OAuth connection; but money/RISK actions can NEVER be authorized by an OAuth token and
+// need your api_key or a per-action Passkey. Message-only; no auth-semantics change.
 export function authBoundaryHint(status: number): string {
   if (status !== 401 && status !== 403) return ''
-  return ' — NOTE: buyer/RISK actions (buy, pay, verify_price, place_order, wallet) are human-gated: use your own api_key, or a Passkey in the webaz.xyz PWA. A remote MCP OAuth connection only grants SAFE seller read/draft/submit scopes and cannot authorize them, so retrying via OAuth will not help. / 买家花钱与高风险动作需你本人的 api_key 或 PWA 里的 Passkey,OAuth 委托无法授权,重试 OAuth 无用。'
+  return ' — This action needs an account: send your own api_key, or connect via OAuth if the tool supports it (a compliant client shows a connect prompt). Money/RISK actions (buy, pay, place_order, wallet, refund) can NOT be authorized by any OAuth token — they need your api_key or a per-action Passkey in the webaz.xyz PWA. / 此动作需账号:用你的 api_key,或支持的工具经 OAuth 连接;买家花钱/高风险动作(下单/支付/钱包/退款)任何 OAuth 都无法授权,需 api_key 或 PWA 里 Passkey。'
 }
 
 // 统一 API helper(P1/P2 迁移工具时使用)。Bearer api_key + 15s 超时 + 错误映射。
@@ -691,11 +692,11 @@ Returns: structured specs + logistics + after-sales + agent_summary (one-line de
   {
     name: 'webaz_verify_price',
     // was ~647 chars, now ~370 chars
-    description: `Lock price + reserve stock BEFORE webaz_place_order — returns \`session_token\` (10-min TTL, single-use, pass to place_order).
+    description: `Lock the displayed price BEFORE webaz_place_order — returns \`session_token\` (10-min TTL, single-use, pass to place_order). Price-lock ONLY: it checks stock is sufficient right now but does NOT reserve/hold stock — stock is decremented only when webaz_place_order runs.
 
-USE THIS for **EVERY purchase**: (1) defeats flash-sale / hidden-fee race (2) alerts if price drifted (3) protocol only liable for T0 price (4) reduces stock-depletion race on hot items.
+USE THIS for **EVERY purchase**: (1) defeats flash-sale / hidden-fee race (2) alerts if price drifted (3) protocol only liable for T0 price (4) fails fast if the item is already out of stock.
 
-Skipping is allowed but agent then carries price/stock-race risk itself.`,
+Skipping is allowed but the agent then carries price-drift risk itself.`,
     inputSchema: {
       type: 'object',
       properties: {

@@ -192,14 +192,16 @@ const PUsrc2 = PUsrc
   ok('11g. REMOTE-MCP.md 在 PUBLIC_DOCS 白名单(manifest 广告的 docs 链接不能 404)', PUsrc2.includes("'REMOTE-MCP.md'"))
   ok('11h. P2:search 0-命中带 recovery(catalog_sample + next_step),strict 结果仍 found:0', L1.includes("reason: 'strict_no_match'") && L1.includes('catalog_sample:') && L1.includes('next_step:') && L1.includes('found: 0,'))
 
-  // ── 12. auth-boundary hint: a 401/403 (e.g. verify_price/place_order without a key) carries guidance
-  //        that buyer/RISK actions are human-gated and NOT OAuth-delegatable, so a remote agent doesn't
-  //        misread "please log in" and loop on the OAuth flow. Dynamic import (env already fixed above). ──
+  // ── 12. auth-boundary hint: a 401/403 carries CLASS-NEUTRAL, accurate guidance — it offers api_key AND
+  //        OAuth (for a supported tool) as paths, and names money/RISK as the class OAuth can't authorize,
+  //        WITHOUT asserting the current tool is money/RISK (the old wording mislabelled SAFE reads like
+  //        webaz_profile as buyer/RISK). Dynamic import (env already fixed above). ──
   {
     const { authBoundaryHint } = await import('../src/layer1-agent/L1-1-mcp-server/server.js')
     const h401 = authBoundaryHint(401)
-    ok('12a. 401 carries the human-gated / not-OAuth-delegatable boundary hint', h401.includes('human-gated') && h401.includes('api_key') && /OAuth/.test(h401))
-    ok('12b. 403 carries the same hint', authBoundaryHint(403).includes('human-gated'))
+    ok('12a. 401 hint offers BOTH api_key and OAuth-if-supported as paths', h401.includes('api_key') && h401.includes('connect via OAuth if the tool supports it'))
+    ok('12b. 401 hint names money/RISK as the OAuth-unauthorizable class + Passkey path', h401.includes('Money/RISK') && h401.includes('Passkey'))
+    ok('12b2. hint does NOT mislabel the action as buyer/RISK, nor claim OAuth "will not help" (accuracy fix)', !/human-gated|buyer\/RISK actions|will not help/i.test(h401))
     ok('12c. 200/500 carry NO hint (only auth failures get it)', authBoundaryHint(200) === '' && authBoundaryHint(500) === '')
     ok('12d. apiCall wires the hint onto the mapped error (not dead code)', L1.includes('authBoundaryHint(resp.status)'))
   }
