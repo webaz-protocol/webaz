@@ -4,9 +4,14 @@
  * Pure data — no handler/schema/auth/business change. OpenAI reads a per-tool `securitySchemes` array to
  * decide which tools show a tool-level OAuth connect UI vs. run anonymously. Two scheme types are used:
  *   - { type: 'oauth2', scopes: [...] } — the tool is genuinely reachable through the /mcp OAuth grant
- *     path (an oat_ token retry succeeds or returns a scope-specific 403). Declared ONLY for the tools
- *     whose grant path is real; the scopes are the exact safe grant scopes the tool's actions need
- *     (see agent-grants.ts requireAgentGrantScope mounts + mcp-remote.ts scopeForAuthOnlyCall).
+ *     path (an oat_ token retry succeeds or returns a scope-specific challenge). Declared ONLY for the
+ *     tools whose grant path is real. The scopes are the COARSE OAuth scopes the client actually
+ *     requests at /oauth/authorize — the exact vocabulary the authorization server supports
+ *     (OAUTH_SCOPES in oauth-discovery.ts: read / order:draft / list:draft), NOT the internal
+ *     fine-grained grant capabilities. The consent screen maps each coarse scope to the fine SAFE
+ *     capabilities the grant carries (OAUTH_SCOPE_CAPABILITIES in oauth-approve.ts); /mcp enforcement
+ *     stays capability-based. Exposing a fine capability name here would make ChatGPT request a scope
+ *     the authorize endpoint rejects with invalid_scope, breaking the grant-tool OAuth flow.
  *   - { type: 'noauth' } — everything else. This is the fail-SAFE default: a public read is honestly
  *     anonymous, and an api_key-only tool is NOT advertised as OAuth-recoverable (retrying with an oat_
  *     could not succeed, so advertising oauth2 would be a FALSE recovery promise — forbidden).
@@ -15,14 +20,16 @@
  */
 export type McpSecurityScheme = { type: 'noauth' } | { type: 'oauth2'; scopes: readonly string[] }
 
-// The ONLY grant-reachable tools + their exact safe scopes. list_product is a mixed tool: its grant
-// actions (mine → seller_products_read, create/draft → seller_product_draft) are reachable via OAuth;
-// its api_key-only actions still fail closed. Declaring the UNION of the two catalog scopes is accurate
-// for the reachable actions (acceptance-pack §3).
+// The ONLY grant-reachable tools + the COARSE OAuth scopes their actions need (must be a subset of
+// OAUTH_SCOPES = read / order:draft / list:draft — locked by test:mcp-security-schemes). list_product is
+// a mixed tool: its `mine` action needs `read` (→ seller_products_read) and its create/draft actions need
+// `list:draft` (→ seller_product_draft), so it declares BOTH; its api_key-only actions still fail closed.
+// get_agent_order needs `read` (→ seller_orders_read_minimal); order_action_request needs `order:draft`
+// (→ order_action_request). The coarse→fine mapping lives in oauth-approve.ts OAUTH_SCOPE_CAPABILITIES.
 const OAUTH_TOOL_SCOPES: Record<string, readonly string[]> = {
-  webaz_list_product: ['seller_products_read', 'seller_product_draft'],
-  webaz_get_agent_order: ['seller_orders_read_minimal'],
-  webaz_order_action_request: ['order_action_request'],
+  webaz_list_product: ['read', 'list:draft'],
+  webaz_get_agent_order: ['read'],
+  webaz_order_action_request: ['order:draft'],
 }
 
 /** The securitySchemes for a tool: oauth2 (with scopes) iff grant-reachable, else the noauth default. */

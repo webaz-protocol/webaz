@@ -40,12 +40,18 @@ async function main(): Promise<void> {
   const tools = j.result?.tools ?? []
   const byName: Record<string, Scheme[] | undefined> = Object.fromEntries(tools.map(t => [t.name, t.securitySchemes]))
 
+  // COARSE OAuth scopes (what the client requests at /oauth/authorize) — NOT internal fine capabilities.
   const OAUTH: Record<string, string[]> = {
-    webaz_list_product: ['seller_products_read', 'seller_product_draft'],
-    webaz_get_agent_order: ['seller_orders_read_minimal'],
-    webaz_order_action_request: ['order_action_request'],
+    webaz_list_product: ['read', 'list:draft'],
+    webaz_get_agent_order: ['read'],
+    webaz_order_action_request: ['order:draft'],
   }
   const API_KEY_ONLY = ['webaz_place_order', 'webaz_update_order', 'webaz_wallet', 'webaz_notifications', 'webaz_default_address']
+  const { OAUTH_SCOPES } = await import('../src/pwa/routes/oauth-discovery.js')
+  const { OAUTH_SCOPE_CAPABILITIES } = await import('../src/pwa/routes/oauth-approve.js')
+  // Derive the forbidden set EXHAUSTIVELY from the authoritative mapping — every fine capability, so a
+  // future-added one can never silently leak into securitySchemes.
+  const FINE_CAPABILITY_NAMES = [...new Set(Object.values(OAUTH_SCOPE_CAPABILITIES).flat())]
 
   ok('1. all 42 tools carry a non-empty securitySchemes array on the WIRE', tools.length === 42 && tools.every(t => Array.isArray(t.securitySchemes) && t.securitySchemes.length > 0))
 
@@ -63,6 +69,16 @@ async function main(): Promise<void> {
   const oauthTools = tools.filter(t => (t.securitySchemes ?? []).some(s => s.type === 'oauth2')).map(t => t.name).sort()
   ok('5. EXACTLY the 3 grant-reachable tools advertise oauth2 (no false OAuth anywhere else)',
     JSON.stringify(oauthTools) === JSON.stringify(['webaz_get_agent_order', 'webaz_list_product', 'webaz_order_action_request']))
+
+  // PR-6: every advertised oauth2 scope MUST be a coarse OAuth scope the authorize endpoint accepts —
+  // else ChatGPT requests it and gets invalid_scope. And a fine internal capability name must NEVER leak
+  // into securitySchemes (that was the bug).
+  const allOauthScopes = tools.flatMap(t => (t.securitySchemes ?? []).flatMap(s => s.scopes ?? []))
+  ok(`7. every oauth2 scope is a subset of OAUTH_SCOPES [${OAUTH_SCOPES.join(',')}] (authorize accepts it)`,
+    allOauthScopes.length > 0 && allOauthScopes.every(s => (OAUTH_SCOPES as readonly string[]).includes(s)))
+  const wireStr = JSON.stringify(tools.map(t => t.securitySchemes))
+  ok('8. NO fine grant-capability name appears anywhere in securitySchemes (coarse vocabulary only)',
+    FINE_CAPABILITY_NAMES.every(cap => !wireStr.includes(cap)))
 
   // Every tool that is NOT one of the 3 must be EXACTLY [{type:'noauth'}] — no stray/bogus scheme
   // (e.g. [{type:'bogus'}]) may slip through the "non-empty array" check in assertion 1.

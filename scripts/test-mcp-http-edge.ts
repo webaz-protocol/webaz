@@ -20,6 +20,8 @@ import { createHash, randomBytes } from 'node:crypto'
 import { initOAuthSchema, initAgentDelegationGrantsSchema } from '../src/runtime/webaz-schema-helpers.js'
 import { setSeamDb } from '../src/layer0-foundation/L0-1-database/db.js'
 import { registerRemoteMcpRoutes } from '../src/pwa/routes/mcp-remote.js'
+import { OAUTH_SCOPES } from '../src/pwa/routes/oauth-discovery.js'
+import { OAUTH_SCOPE_CAPABILITIES } from '../src/pwa/routes/oauth-approve.js'
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}`) } }
@@ -120,12 +122,13 @@ async function main(): Promise<void> {
   ok('A3. expired oat_ → 200 result._meta challenge', await (async () => isAuthChallenge(await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ tokExp: past }) })))())
   ok('A4. revoked oat_ → 200 result._meta challenge', await (async () => isAuthChallenge(await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ tokRevoked: past }) })))())
   ok('A5. wrong-audience oat_ → 200 result._meta challenge (invalid_token)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ tokAud: 'https://webaz.xyz/other' }) }); return isAuthChallenge(r) && challengeOf(r.body).includes('error="invalid_token"') })())
-  ok('A6. valid oat_, INSUFFICIENT scope → 200 insufficient_scope + error_description + required scope (scope-expansion, not re-login)', await (async () => {
+  ok('A6. valid oat_, INSUFFICIENT scope → 200 insufficient_scope + error_description + COARSE scope="read" (scope-expansion, not re-login)', await (async () => {
     const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ caps: ['seller_products_read'] }) })
     return isAuthChallenge(r)
       && challengeOf(r.body).includes('error="insufficient_scope"')
       && challengeOf(r.body).includes('error_description=')
-      && challengeOf(r.body).includes('scope="seller_orders_read_minimal"')
+      && challengeOf(r.body).includes('scope="read"')                    // coarse OAuth scope, NOT the fine seller_orders_read_minimal
+      && !challengeOf(r.body).includes('seller_orders_read_minimal')     // fine capability name must NOT leak into the challenge
   })())
   ok('A7. valid oat_ + sufficient scope → passes edge (dispatched, no auth challenge)', await (async () => passesEdge(await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ caps: ['seller_orders_read_minimal'] }) })))())
   // PR-4: a PRESENTED invalid oat_ on ANY tool call (incl. public) → challenge — a bad credential is not silently downgraded to anonymous.
@@ -135,7 +138,7 @@ async function main(): Promise<void> {
   // Each challenge is an ARRAY whose [0] EXACTLY equals the mirrored WWW-Authenticate header — no drift.
   ok('A14. anonymous auth-only: result._meta[0] === WWW-Authenticate header (has challenge)', await (async () => { const r = await post(AGENT_ORDER_CALL); return isAuthChallenge(r) && challengeOf(r.body) === r.wwwAuth })())
   ok('A15. invalid-oat_: _meta[0] === header (error="invalid_token")', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: 'oat_' + 'f'.repeat(32) }); return isAuthChallenge(r) && challengeOf(r.body) === r.wwwAuth && challengeOf(r.body).includes('error="invalid_token"') })())
-  ok('A16. insufficient_scope: _meta[0] === header (error="insufficient_scope" + required scope)', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ caps: ['seller_products_read'] }) }); return isAuthChallenge(r) && challengeOf(r.body) === r.wwwAuth && challengeOf(r.body).includes('scope="seller_orders_read_minimal"') })())
+  ok('A16. insufficient_scope: _meta[0] === header (error="insufficient_scope" + coarse scope="read")', await (async () => { const r = await post(AGENT_ORDER_CALL, { bearer: seedOAuth({ caps: ['seller_products_read'] }) }); return isAuthChallenge(r) && challengeOf(r.body) === r.wwwAuth && challengeOf(r.body).includes('scope="read"') })())
   // explicit non-tool-call reachability + anonymous public-call success (edge never over-reaches)
   ok('A17. invalid oat_ on initialize (not a tool call) → reachable, NO auth challenge', await (async () => { const r = await post(INIT, { bearer: 'oat_' + 'f'.repeat(32) }); return r.status === 200 && authMeta(r.body).length === 0 })())
   ok('A18. anonymous webaz_search (public tool call, no bearer) → 200, NO auth challenge (anonymous read unaffected)', await (async () => { const r = await post(PUBLIC_CALL); return r.status === 200 && authMeta(r.body).length === 0 })())
@@ -144,6 +147,27 @@ async function main(): Promise<void> {
   ok('A9. api_key bearer on auth-only tool → NOT edge-challenged (api_key semantics unchanged)', await (async () => passesEdge(await post(AGENT_ORDER_CALL, { bearer: 'k_h' })))())
   // A10: anonymous READ tool is never gated (I-2)
   ok('A10. anonymous tools/list (no auth) → 200', (await post(TOOLS_LIST)).status === 200)
+
+  // ── PR-6. the challenge scope= is the COARSE OAuth scope the authorize endpoint accepts, never a fine
+  //     capability. For each grant tool: scope= ∈ OAUTH_SCOPES, equals the expected coarse scope, carries
+  //     no fine capability name, and maps (via OAUTH_SCOPE_CAPABILITIES) back to the fine cap enforced. ──
+  const scopeParam = (b: Record<string, unknown>): string => { const m = /scope="([^"]*)"/.exec(challengeOf(b)); return m ? m[1] : '' }
+  const SCOPE_CASES: Array<{ body: unknown; expectCoarse: string; fineCap: string }> = [
+    { body: AGENT_ORDER_CALL, expectCoarse: 'read', fineCap: 'seller_orders_read_minimal' },
+    { body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'webaz_order_action_request', arguments: {} } }, expectCoarse: 'order:draft', fineCap: 'order_action_request' },
+    { body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'webaz_list_product', arguments: { action: 'create' } } }, expectCoarse: 'list:draft', fineCap: 'seller_product_draft' },
+    { body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'webaz_list_product', arguments: { action: 'mine' } } }, expectCoarse: 'read', fineCap: 'seller_products_read' },
+  ]
+  for (const c of SCOPE_CASES) {
+    const r = await post(c.body, { bearer: seedOAuth({ caps: ['read_public'] }) })   // valid grant, lacks the fine cap → insufficient_scope
+    const sp = scopeParam(r.body)
+    ok(`A19. ${(c.body as { params: { name: string } }).params.name}: challenge scope="${sp}" is coarse (${c.expectCoarse}), ∈ OAUTH_SCOPES, no fine name, maps to enforced cap`,
+      isAuthChallenge(r)
+      && sp === c.expectCoarse
+      && (OAUTH_SCOPES as readonly string[]).includes(sp)
+      && !challengeOf(r.body).includes(c.fineCap)
+      && (OAUTH_SCOPE_CAPABILITIES[sp] ?? []).includes(c.fineCap))
+  }
 
   http.close()
   if (fail > 0) { console.error(`\n❌ mcp http edge FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
