@@ -290,7 +290,8 @@
     "test:oauth-mcp-challenge": "tsx scripts/test-oauth-mcp-challenge.ts",
     "test:cart-checkout": "tsx scripts/test-cart-checkout.ts",
     "test:cart-ui-contract": "tsx scripts/test-cart-ui-contract.ts",
-    "test:oauth-register": "tsx scripts/test-oauth-register.ts"
+    "test:oauth-register": "tsx scripts/test-oauth-register.ts",
+    "test:product-share-chain": "tsx scripts/test-product-share-chain.ts"
   },
   "keywords": [
     "mcp",
