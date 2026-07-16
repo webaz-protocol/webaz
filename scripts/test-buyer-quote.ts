@@ -51,7 +51,8 @@ db.prepare("INSERT INTO product_variants (id,product_id,sku,options_json,price_o
 
 const auth = (_req: express.Request, res: express.Response) => { res.status(401).json({ error: 'no human auth in this test' }); return null }
 const app = express(); app.use(express.json())
-registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true })
+let PLATFORM_BLOCKLIST = '[]'
+registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true, getProtocolParam: <T>(key: string, fallback: T): T => (key === 'trade.platform_region_blocklist' ? PLATFORM_BLOCKLIST as unknown as T : fallback) })
 const server = app.listen(0)
 process.env.WEBAZ_API_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 const mcp = await import('../src/layer1-agent/L1-1-mcp-server/server.js')
@@ -131,11 +132,8 @@ try {
     const item = (q3.line_items as Array<Record<string, unknown>>).find(l => l.code === 'item_subtotal')!
     ok('D-4 qty=3: subtotal/total/snapshot all use the SAME validated quantity', Number(item.amount_minor) === toUnits(90) && (q3.quantity as Record<string, unknown>).quoted === 3
       && Number(quoteRows().find(r => r.id === q3.quote_id)?.quantity) === 3) }
-  { const row = quoteRows().find(r => r.id === q1.quote_id)!
-    db.prepare('UPDATE order_quotes SET quantity = 5 WHERE id = ?').run(String(row.id))
-    const v = verifyQuoteToken(db, q1.quote_token, 'buyer1')
-    ok('D-5 token-bound quantity lives server-side (row snapshot is the truth; client cannot alter its copy)', v.ok === true && Number((v as { quote: Record<string, unknown> }).quote.quantity) === 5)
-    db.prepare('UPDATE order_quotes SET quantity = 2 WHERE id = ?').run(String(row.id)) }
+  { const v = verifyQuoteToken(db, q1.quote_token, 'buyer1')
+    ok('D-5 verifyQuoteToken returns the SERVER row snapshot (quantity=2 as quoted) — client-side copies are irrelevant; PR-4 consumer will enforce snapshot consistency + one-shot', v.ok === true && Number((v as { quote: Record<string, unknown> }).quote.quantity) === 2 && String((v as { quote: Record<string, unknown> }).quote.total_units) === String(quoteRows().find(r => r.id === q1.quote_id)?.total_units)) }
   // orders-create 侧的真修:源守卫(集成测试属钱路套件;此处锁住绑定存在 + 错误码)
   const OC = (await import('node:fs')).readFileSync('src/pwa/routes/orders-create.ts', 'utf8')
   ok('D-6 orders-create binds session quantity at consumption (PRICE_SESSION_QTY_MISMATCH)', /PRICE_SESSION_QTY_MISMATCH/.test(OC) && /session\.quantity \?\? 1\) !== reqQty/.test(OC))
@@ -165,6 +163,22 @@ try {
       typeof r.error_code === 'string' && r.error_code !== 'PAYMENT_RAIL_DISABLED' && r.quote_token === undefined && JSON.stringify(r.next_steps ?? []).includes('escrow'), JSON.stringify(r).slice(0, 250)) }
   ok('G-4 receive account on escrow → DIRECT_RECEIVE_ACCOUNT_INVALID', (await Q({ product_id: 'prd_s', direct_receive_account_id: 'dra_x' })).error_code === 'DIRECT_RECEIVE_ACCOUNT_INVALID')
 
+  // ══ C+. 与建单的价格平价:限时价覆盖(BLOCKER-1)+ 平台合规 overlay(BLOCKER-2) ══
+  { db.prepare("INSERT INTO flash_sales (id, product_id, seller_id, sale_price, original_price, starts_at, ends_at, is_active, max_qty, sold_count) VALUES ('fs1','prd_low','seller1',20,30,datetime('now','-1 hour'),datetime('now','+1 hour'),1,0,0)").run()
+    const r = await Q({ product_id: 'prd_low', quantity: 1, idempotency_key: 'kflash' })
+    const item = (r.line_items as Array<Record<string, unknown>>).find(l => l.code === 'item_subtotal')!
+    ok('P-1 flash-sale price overrides (20 not 30) — same getActiveFlashSale as order creation', Number(item.amount_minor) === toUnits(20), JSON.stringify(r).slice(0, 250))
+    const rp = await Q({ product_id: 'prd_low', payment_rail: 'direct_p2p' })
+    ok('P-2 direct_p2p + active flash → refused (creation rejects flashActive), NOT silently quoted', typeof rp.error_code === 'string' && rp.quote_token === undefined)
+    db.prepare("DELETE FROM flash_sales WHERE id='fs1'").run() }
+  { PLATFORM_BLOCKLIST = '["SG"]'
+    const r = await Q({ product_id: 'prd_s', quantity: 1 })
+    ok('P-3 platform region blocklist enforced (SG blocked → SHIPPING_NOT_SUPPORTED)', r.error_code === 'SHIPPING_NOT_SUPPORTED', JSON.stringify(r).slice(0, 200))
+    PLATFORM_BLOCKLIST = 'not-json'
+    const r2 = await Q({ product_id: 'prd_s', quantity: 1 })
+    ok('P-4 malformed platform policy → fail-closed (same rule as order creation)', r2.error_code === 'QUOTE_CALCULATION_FAILED')
+    PLATFORM_BLOCKLIST = '[]' }
+
   // ══ H. Token ══
   { const v = verifyQuoteToken(db, q1.quote_token, 'buyer1')
     ok('H-1 token verifies for its subject', v.ok === true) }
@@ -184,7 +198,13 @@ try {
     useCred('grt_q2', 'gtk_q2', ['price_quote'])
     const other = await Q({ product_id: 'prd_s', quantity: 2, idempotency_key: 'k1' })
     ok('I-3 different subject reuses the same client key independently', typeof other.quote_id === 'string' && other.quote_id !== q1.quote_id)
-    ok('I-4 retries created no extra economic objects (only quote snapshots; stock untouched)', stockOf('prd_s') === 20) }
+    ok('I-4 retries created no extra economic objects (only quote snapshots; stock untouched)', stockOf('prd_s') === 20)
+    useCred('grt_q', 'gtk_q', ['price_quote'])
+    for (const [nm, key] of [['email', 'a@b.co'], ['phone', '+65 9123 4567'], ['free text', 'call me later!']] as const) {
+      const before2 = quoteRows().length
+      const r = await Q({ product_id: 'prd_s', idempotency_key: key })
+      ok(`I-5 PII-shaped idempotency_key rejected + unstored (${nm})`, r.error_code === 'IDEMPOTENCY_KEY_INVALID' && quoteRows().length === before2, JSON.stringify(r).slice(0, 150))
+    } }
 } finally { server.close(); clearCred() }
 
 if (fail > 0) { console.error(`\n❌ buyer-quote FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

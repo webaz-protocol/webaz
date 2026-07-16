@@ -9,19 +9,20 @@
  *   - 金额:INTEGER base-units(money.ts,1 WAZ = 1e6);donation 用与 orders-create 同一个 mulRate
  *     (报价必须等于将来创建订单实际收取的值 —— 一致性优先于"纯整数乘法"洁癖,helper 即 RFC-014 口径)。
  *   - 不静默改变条件:任何不满足 → 结构化错误 + next_steps,绝不换轨/换量/换地址。
- *   - direct_p2p 资格:复用 direct-pay-controls 的【同一批导出评估函数】(单一真相源,零 drift);
- *     PR-4/5a 创建订单时全部门再跑一遍 —— quote 不担保资格,响应里如实声明。
+ *   - direct_p2p 资格:复用 direct-pay-controls 的入口控制评估器 + 产品验证(同一导出函数);但建单还有
+ *     报价【不】镜像的每单门(legacy 收款说明存在性/缓交配额/在途单上限/敞口/费用预充等)—— quote 只做
+ *     入口级资格,不担保建单通过,响应里如实声明"final gates re-run at order creation"。
  *   - PII:完整地址只在本进程内部用于配送计算;出口只有 region 标签/摘要句/sha256。
  *   - auth 适配:本模块不做鉴权 —— OAuth route(requireAgentGrantScope('price_quote'))或未来
  *     api_key adapter 解析出 humanId 后调用(共享 Quote Service 形态)。
  */
 import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
-import { toUnits, mulRate, type Units } from '../money.js'
+import { toUnits, mulRate, mulQty, type Units } from '../money.js'
 import { MAX_PER_ORDER } from '../order-limits.js'
 import { effectiveShippingTemplate, resolveShipping } from '../shipping-templates.js'
 import { freeShippingWaives } from '../free-shipping.js'
-import { effectiveSaleRegionsRule, regionAllowedByRule } from '../sale-regions.js'
+import { effectiveSaleRegionsRule, regionAllowedByRule, parsePlatformBlocklist } from '../sale-regions.js'
 import {
   readDirectPayControlsConfig, evaluateDirectPayLaunchControls, coarsenBuyerFacingDirectPayCode,
   sellerDirectPayBreakerTripped, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear,
@@ -30,6 +31,7 @@ import { sellerBaseBondEntrySatisfied } from '../direct-pay-base-bond-entry.js'
 import { productStoreVerified } from '../product-verification.js'
 import { sellerExemptFromPerProduct } from '../store-verification.js'
 import { getAccount } from '../direct-receive-accounts.js'
+import { getActiveFlashSale } from './routes/flash-sales.js'   // BLOCKER-1:报价必须用与建单同一套限时价覆盖
 
 export const QUOTE_TTL_MS = 10 * 60_000        // 与 price_sessions 同 TTL(现行规范 10 分钟)
 export const VALID_DONATION_BPS = new Set([0, 50, 100, 200, 500])   // ↔ orders-create 的 0/0.005/0.01/0.02/0.05
@@ -212,10 +214,15 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
   if (!addrText) return qerr(409, 'DEFAULT_ADDRESS_REQUIRED', 'no default address on file — set one at webaz.xyz (PWA profile) or via webaz_default_address action=set; never paste a full address into chat', { missing_requirements: ['default_address'], next_steps: ['change_address_in_pwa'] })
   const regionTag = (u?.default_address_region || '').trim() || null
 
-  // ── 7. 可售地区 + 运费(与下单同一批纯谓词/模板解析;有模板必须有 region 标签) ──
+  // ── 7. 可售地区(镜像 gateSaleRegionForCreate 全语义:平台合规 overlay 先裁 + 坏配置 fail-closed)+ 运费 ──
+  const parsedBlock = parsePlatformBlocklist(deps.getProtocolParam<string>('trade.platform_region_blocklist', '[]'))
+  if (!parsedBlock.ok) return qerr(503, 'QUOTE_CALCULATION_FAILED', 'platform region policy is malformed — quoting is paused until operations repairs it (same fail-closed rule as order creation)', { retryable: true })
   const rule = effectiveSaleRegionsRule(db, product as { sale_regions?: string | null }, sellerId)
-  if (rule && (!regionTag || !regionAllowedByRule(rule, regionTag))) {
-    return qerr(409, 'SHIPPING_NOT_SUPPORTED', regionTag ? `seller does not sell to region "${regionTag}"` : 'product restricts sale regions and your default address has no region tag', { next_steps: ['choose_another_offer', 'change_address_in_pwa'] })
+  const regionUC = regionTag ? regionTag.toUpperCase() : null
+  if (parsedBlock.list.length > 0 || rule) {
+    if (!regionUC) return qerr(409, 'SHIPPING_NOT_SUPPORTED', 'product restricts sale regions and your default address has no region tag', { next_steps: ['change_address_in_pwa'] })
+    if (parsedBlock.list.includes(regionUC)) return qerr(409, 'SHIPPING_NOT_SUPPORTED', 'platform compliance restricts selling this product to your region', { next_steps: ['choose_another_offer'] })
+    if (rule && !regionAllowedByRule(rule, regionUC)) return qerr(409, 'SHIPPING_NOT_SUPPORTED', `seller does not sell to region "${regionTag}"`, { next_steps: ['choose_another_offer', 'change_address_in_pwa'] })
   }
   const tpl = effectiveShippingTemplate(db, product as { shipping_template?: string | null }, sellerId)
   let shipU: Units = 0
@@ -226,9 +233,11 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
     shipU = toUnits(r.fee)   // 模板存 decimal 费额;边界一次性整数化(与 gateShippingForCreate 同口径)
   }
 
-  // ── 8. 整数分项(单价快照 = 变体覆盖后;donation 用 orders-create 同一 mulRate) ──
-  const unitPriceU = toUnits(Number((variant?.price_override ?? product.price) as number))
-  const itemU = unitPriceU * qty
+  // ── 8. 整数分项(单价快照 = 变体覆盖后 + 与建单同一套限时价覆盖;mulQty 防溢出;donation 同一 mulRate) ──
+  const flashSale = getActiveFlashSale(db, productId, variantId)
+  const effectiveUnitPrice = flashSale ? Number(flashSale.sale_price) : Number((variant?.price_override ?? product.price) as number)
+  const unitPriceU = toUnits(effectiveUnitPrice)
+  const itemU = mulQty(unitPriceU, qty)
   if (tpl && shipU > 0 && freeShippingWaives(db, product as { free_shipping_threshold?: number | null }, sellerId, itemU)) shipU = 0
   const totalU = itemU + shipU
   const donationU = donationBps > 0 ? mulRate(totalU, donationBps / 10000) : 0
@@ -239,6 +248,7 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
   if (rail === 'direct_p2p') {
     if (Number(product.has_variants) === 1 || variantId) return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', 'direct_p2p v1 supports simple products only (no variants). escrow is available as an alternative — NOT auto-switched.', { next_steps: ['use payment_rail=escrow'] })
     if (donationBps > 0 || anonymous) return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', `direct_p2p v1 does not support ${donationBps > 0 ? 'donation' : 'anonymous_recipient'}. escrow supports it — NOT auto-switched.`, { next_steps: ['use payment_rail=escrow', 'drop the unsupported option'] })
+    if (flashSale) return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', 'direct_p2p v1 does not support flash-sale-priced products (order creation rejects flashActive). escrow is available — NOT auto-switched.', { next_steps: ['use payment_rail=escrow'] })
     const cfg = readDirectPayControlsConfig(deps.getProtocolParam)
     const ctrl = evaluateDirectPayLaunchControls(cfg, {
       amountUnits: totalU,
@@ -269,31 +279,54 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
   }
 
   // ── 10. 幂等 + 落库(先查同键) ──
-  const idemKey = typeof input.idempotency_key === 'string' && input.idempotency_key ? input.idempotency_key.slice(0, 80) : null
+  let idemKey: string | null = null
+  if (input.idempotency_key !== undefined && input.idempotency_key !== null) {
+    // H-4:key 会入库,必须 token 形态(A-Za-z0-9_-,≤64)—— 自由文本/邮箱/电话形态一律 400,永不落库
+    if (typeof input.idempotency_key !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(input.idempotency_key)) {
+      return qerr(400, 'IDEMPOTENCY_KEY_INVALID', 'idempotency_key must match [A-Za-z0-9_-]{1,64} (it is stored — no free text/PII shapes)', { retryable: true })
+    }
+    idemKey = input.idempotency_key
+  }
   const intentHash = sha(JSON.stringify({ productId, variantId, qty, rail, donationBps, anonymous, receiveAccountId, src: 'default' }))
   const nowIso = new Date().toISOString()
-  if (idemKey) {
-    const prev = db.prepare('SELECT * FROM order_quotes WHERE human_id = ? AND idempotency_key = ?').get(humanId, idemKey) as Record<string, unknown> | undefined
-    if (prev) {
-      if (String(prev.intent_hash) !== intentHash) return qerr(409, 'IDEMPOTENCY_CONFLICT', 'this idempotency_key was used with a DIFFERENT payload — pick a new key', { retryable: true })
-      if (String(prev.expires_at) > nowIso && !prev.consumed_at) return { ok: true, response: buildResponse(db, prev, null) }
-      db.prepare('DELETE FROM order_quotes WHERE id = ?').run(String(prev.id ?? ''))   // 过期/已消费的同键行让位于新报价
-    }
-  }
   const quoteId = deps.generateId('qte')
   const token = `qtk_${randomBytes(32).toString('hex')}`
   const expiresAt = new Date(Date.now() + QUOTE_TTL_MS).toISOString()
+  // M-7:同键的检查/让位/插入包进单个同步事务(better-sqlite3 事务内无让步,原子);
+  //   撞唯一索引(并发同键)不再报 GENERATION_FAILED,而是回读赢家行按幂等语义返回。
+  type IdemOutcome = { kind: 'replay'; row: Record<string, unknown> } | { kind: 'conflict' } | { kind: 'created' }
+  let outcome: IdemOutcome
+  const insertQuote = db.prepare(`INSERT INTO order_quotes (id, token_hash, human_id, product_id, variant_id, seller_id, quantity, unit_price_units,
+      item_units, shipping_units, donation_bps, donation_units, total_units, payable_units, currency, payment_rail,
+      direct_receive_account_id, dest_region, address_summary_hash, anonymous_recipient, intent_hash, idempotency_key, issued_at, expires_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+  const insertArgs = [quoteId, sha(token), humanId, productId, variantId, sellerId, qty, unitPriceU,
+    itemU, shipU, donationBps, donationU, totalU, payableU, 'WAZ', rail,
+    receiveAccountId, regionTag, sha(addrText), anonymous ? 1 : 0, intentHash, idemKey, nowIso, expiresAt] as const
   try {
-    db.prepare(`INSERT INTO order_quotes (id, token_hash, human_id, product_id, variant_id, seller_id, quantity, unit_price_units,
-        item_units, shipping_units, donation_bps, donation_units, total_units, payable_units, currency, payment_rail,
-        direct_receive_account_id, dest_region, address_summary_hash, anonymous_recipient, intent_hash, idempotency_key, issued_at, expires_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(quoteId, sha(token), humanId, productId, variantId, sellerId, qty, unitPriceU,
-        itemU, shipU, donationBps, donationU, totalU, payableU, 'WAZ', rail,
-        receiveAccountId, regionTag, sha(addrText), anonymous ? 1 : 0, intentHash, idemKey, nowIso, expiresAt)
+    outcome = db.transaction((): IdemOutcome => {
+      if (idemKey) {
+        const prev = db.prepare('SELECT * FROM order_quotes WHERE human_id = ? AND idempotency_key = ?').get(humanId, idemKey) as Record<string, unknown> | undefined
+        if (prev) {
+          if (String(prev.intent_hash) !== intentHash) return { kind: 'conflict' }
+          if (String(prev.expires_at) > nowIso && !prev.consumed_at) return { kind: 'replay', row: prev }
+          db.prepare('DELETE FROM order_quotes WHERE id = ?').run(String(prev.id ?? ''))   // 过期/已消费的同键行让位
+        }
+      }
+      insertQuote.run(...insertArgs)
+      return { kind: 'created' }
+    }).immediate()
   } catch (e) {
+    // 唯一索引撞车(并发同键):回读赢家,按幂等语义处理;其余 = 快照不可用
+    if (idemKey && /UNIQUE/i.test((e as Error).message)) {
+      const winner = db.prepare('SELECT * FROM order_quotes WHERE human_id = ? AND idempotency_key = ?').get(humanId, idemKey) as Record<string, unknown> | undefined
+      if (winner && String(winner.intent_hash) === intentHash) return { ok: true, response: buildResponse(db, winner, null) }
+      return qerr(409, 'IDEMPOTENCY_CONFLICT', 'this idempotency_key was used concurrently with a DIFFERENT payload — pick a new key', { retryable: true })
+    }
     return qerr(503, 'QUOTE_TOKEN_GENERATION_FAILED', 'quote ledger unavailable — retry shortly', { retryable: true })
   }
+  if (outcome.kind === 'conflict') return qerr(409, 'IDEMPOTENCY_CONFLICT', 'this idempotency_key was used with a DIFFERENT payload — pick a new key', { retryable: true })
+  if (outcome.kind === 'replay') return { ok: true, response: buildResponse(db, outcome.row, null) }
   const row = db.prepare('SELECT * FROM order_quotes WHERE id = ?').get(quoteId) as Record<string, unknown>
   try {
     return { ok: true, response: buildResponse(db, row, token) }

@@ -1777,8 +1777,9 @@ export function initAgentPairingSchema(db: Database.Database): void {
 /**
  * order_quotes — RFC-025 PR-3 买家报价快照(server 权威;quote_token 的服务端真相)。
  * 零经济执行:不建单/不扣款/不锁资金/不动库存。token 明文只出现在响应里一次,DB 只存 sha256
- * (token_hash)—— 不可由客户端篡改,可由服务端校验;跨 subject/商品/数量/地址/轨道/金额任何一项
- * 不一致即拒(PR-4 的 draft 消费器用 consumed_at 做一次性)。金额全部 INTEGER base-units(RFC-014,
+ * (token_hash)—— 不可由客户端篡改,可由服务端校验(verifyQuoteToken:subject/过期/已消费)。
+ * 本表行是报价快照的唯一真相;【PR-4 的 draft 消费器】负责按快照校验商品/数量/地址/轨道/金额一致性
+ * 并用 consumed_at 做一次性 —— 本 PR 只提供校验基础,不含消费器。金额全部 INTEGER base-units(RFC-014,
  * 新表零浮点债);currency 恒 'WAZ'(协议结算币,direct_p2p 的实付币种只是账户摘要,无权威汇率)。
  * idempotency:UNIQUE(human_id, idempotency_key) + intent_hash —— 同主体同键同载荷返回同一报价,
  * 同键不同载荷 = IDEMPOTENCY_CONFLICT。address_summary_hash = sha256(默认地址全文):绑定地址内容
