@@ -98,6 +98,12 @@ async function main(): Promise<void> {
     /which WebAZ account am I connected as/i.test(desc['webaz_connection_status']) && /STANDARD, canonical entry point/i.test(desc['webaz_connection_status']))
   ok('6b. webaz_profile description routes connection-status queries to webaz_connection_status', desc['webaz_profile'].includes('webaz_connection_status'))
   ok('6c. webaz_profile explicitly states view is NOT OAuth-reachable (api_key business identity)', /NOT reachable through an OAuth token|api_key business-identity/i.test(desc['webaz_profile']))
+  // 6d — connection_status is a zero-param tool; its inputSchema must match the LOADABLE shape of webaz_info
+  //   exactly ({type:'object',properties:{}} with NO `required`). A stray `required: []` on empty properties
+  //   can make a strict client (ChatGPT connector) drop the tool from its registry.
+  const schemaOf = (n: string): unknown => tools.find(t => t.name === n)?.inputSchema
+  ok('6d. connection_status inputSchema == webaz_info shape (zero-param, no stray `required: []`)',
+    JSON.stringify(schemaOf('webaz_connection_status')) === JSON.stringify(schemaOf('webaz_info')))
 
   await client.close(); await server.close()
 
