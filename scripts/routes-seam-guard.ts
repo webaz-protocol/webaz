@@ -67,7 +67,7 @@ const REMAINING_SYNC_PREPARES: Record<string, number> = {
   // — deferred money-path helpers (consumed synchronously inside order creation) —
   'coupons.ts': 2,         // applyCouponToOrder
   'flash-sales.ts': 1,     // getActiveFlashSale
-  'agent-buy.ts': 12,      // order-create + wallet deduct path(auto_buy 原子核心已包 db.transaction:余额守卫扣款 + 库存 stock>=1 CAS + 建单 + 价格锁,任一 changes!==1 回滚;transition/通知在 tx 后,因 transition 自带事务不可嵌套)
+  'agent-buy.ts': 3,      // order-create + wallet deduct path(auto_buy 原子核心已包 db.transaction:余额守卫扣款 + 库存 stock>=1 CAS + 建单 + 价格锁,任一 changes!==1 回滚;transition/通知在 tx 后,因 transition 自带事务不可嵌套)
   'secondhand.ts': 7,      // order handler: pragma FK-OFF window + CAS + escrow (money path)
   'chat.ts': 4,            // message-send tx (insert msg + bump conv) + mark-read tx (unread + read_at)
   'orders-create.ts': 23,  // 下单原子事务 + 价格锁校验 SELECT + 店铺推荐懒升级;价格锁 consume 已移到受本守卫追踪的 price-session-consume.ts,仍在订单 tx 内

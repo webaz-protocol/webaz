@@ -817,6 +817,7 @@ jobs:
       - run: npm run test:buyer-quote
       - run: npm run test:order-draft
       - run: npm run test:order-submit-approve
+      - run: npm run test:agent-buy-retired
       - run: npm run test:mcp-tool-annotations
       - run: npm run test:oauth-discovery
       - run: npm run test:oauth-authorize

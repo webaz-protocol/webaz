@@ -185,78 +185,19 @@ ${webazFormatted.length > 0 ? JSON.stringify(webazFormatted.map(p => ({
       decision = { recommendation: 'no_match', reason: '无法完成比价分析，请手动选购' }
     }
 
-    let orderId: string | null = null
-    let sessionToken: string | null = null
-    let verifiedPrice: number | null = null
-
-    if (auto_buy && decision.recommendation === 'buy_webaz' && decision.best_product_id) {
-      const product = db.prepare(`SELECT * FROM products WHERE id = ? AND status = 'active'`)
-        .get(decision.best_product_id) as Record<string, unknown> | undefined
-
-      if (product && Number(product.has_variants) === 1) {
-        decision.reason = (decision.reason || '') + ' · 该商品需手动选规格，跳过 auto_buy'
-      } else if (product && (product.stock as number) > 0) {
-        const wallet = db.prepare('SELECT balance FROM wallets WHERE user_id = ?').get(user.id) as { balance: number }
-
-        if (wallet.balance >= (product.price as number)) {
-          const now = new Date()
-          const expiresAt = new Date(now.getTime() + 10 * 60_000)
-          sessionToken = generateId('pst')
-          const oId = generateId('ord')
-          const totalAmount = product.price as number
-          const seller = db.prepare('SELECT id FROM users WHERE id = ?').get(product.seller_id as string) as { id: string }
-
-          // 原子核心:余额扣款(balance>=amount 守卫)+ 库存 CAS(stock>=1)+ 建单 + 价格锁,任一 changes!==1 抛回滚整笔。
-          //   注:transition() 自带 db.transaction,不能嵌套进来(better-sqlite3 禁套娃);故状态推进 + 通知放 tx 提交后,
-          //   与原顺序一致(原本就是 insert(created) → 扣款 → transition(paid))。守卫杜绝并发超卖/超扣 + 半写(Phase 3 pg 安全)。
-          let committed = false
-          try {
-            db.transaction(() => {
-              const deb = db.prepare('UPDATE wallets SET balance = balance - ?, escrowed = escrowed + ? WHERE user_id = ? AND balance >= ?')
-                .run(totalAmount, totalAmount, user.id, totalAmount)
-              if (deb.changes !== 1) throw new Error('AGENTBUY_INSUFFICIENT_BALANCE')
-              const dec = db.prepare('UPDATE products SET stock = stock - 1 WHERE id = ? AND stock >= 1').run(product.id)
-              if (dec.changes !== 1) throw new Error('AGENTBUY_OUT_OF_STOCK')
-              db.prepare(`INSERT INTO price_sessions (token, product_id, user_id, price, quantity, created_at, expires_at) VALUES (?,?,?,?,1,?,?)`)
-                .run(sessionToken, product.id, user.id, product.price, now.toISOString(), expiresAt.toISOString())
-              db.prepare(`INSERT INTO orders (
-                id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount,
-                status, shipping_address, notes, pay_deadline, accept_deadline, ship_deadline,
-                pickup_deadline, delivery_deadline, confirm_deadline
-              ) VALUES (?,?,?,?,1,?,?,?,'created',?,?,?,?,?,?,?,?)`).run(
-                oId, product.id, user.id, seller.id, totalAmount, totalAmount, totalAmount,
-                shipping_address, `[智能下单] ${decision.reason}`,
-                addHours(now, 24), addHours(now, 48), addHours(now, 120),
-                addHours(now, 168), addHours(now, 336), addHours(now, 408)
-              )
-              db.prepare(`UPDATE price_sessions SET used_at = datetime('now') WHERE token = ?`).run(sessionToken)
-              committed = true
-            })()
-          } catch (e) {
-            const m = (e as Error).message
-            if (m !== 'AGENTBUY_INSUFFICIENT_BALANCE' && m !== 'AGENTBUY_OUT_OF_STOCK') throw e
-            // 并发售罄 / 余额已变 → 不下单(auto_bought=false),在 reason 里说明
-            sessionToken = null
-            decision.reason = (decision.reason || '') + (m === 'AGENTBUY_OUT_OF_STOCK' ? ' · auto_buy 跳过：商品已售罄' : ' · auto_buy 跳过：余额不足')
-          }
-
-          if (committed) {
-            // tx 提交后:状态推进 + 通知(transition 自带事务,故置于此)
-            checkStockAndMaybeDelist(String(product.id))
-            transition(db, oId, 'paid', user.id as string, [], '智能下单：模拟支付完成')
-            notifyTransition(db, oId, 'created', 'paid')
-            if (shouldAutoAccept(db, oId)) {
-              const sys = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string } | undefined
-              if (sys) {
-                const ar = transition(db, oId, 'accepted', sys.id, [], '⚡ auto_accept Skill 自动接单')
-                if (ar.success) notifyTransition(db, oId, 'paid', 'accepted')
-              }
-            }
-            verifiedPrice = product.price as number
-            orderId = oId
-          }
-        }
-      }
+    // RFC-025 PR-5b(D-1 定板):auto_buy 即时扣款建单已退役 —— agent 触发的无人批准购买与
+    //   "所有不可逆经济动作由真人最终确认"原则冲突(历史遗留,先于人门原则)。比价/推荐照旧;
+    //   购买走新链:webaz_quote_order → webaz_order_draft → webaz_submit_order_request → 人 Passkey 批准
+    //   (批准才创建订单并入托管),或人直接在 webaz.xyz 下单。唯一前端调用方硬编码 auto_buy:false,零破坏。
+    if (auto_buy) {
+      decision.reason = (decision.reason || '') + ' · auto_buy 已退役:购买需真人 Passkey 批准(quote→draft→submit 链)'
+      return void res.status(410).json({
+        error: 'auto_buy 已退役 —— agent 不能未经真人批准直接扣款下单',
+        error_code: 'AUTO_BUY_RETIRED',
+        retryable: false,
+        recommendation: decision,
+        next_steps: ['webaz_quote_order → webaz_order_draft → webaz_submit_order_request → human Passkey approval', 'or order directly at webaz.xyz'],
+      })
     }
 
     const bestProduct = decision.best_product_id
@@ -274,9 +215,9 @@ ${webazFormatted.length > 0 ? JSON.stringify(webazFormatted.map(p => ({
       best_product: bestProduct,
       reason: decision.reason,
       savings_note: decision.savings_note ?? null,
-      auto_bought: !!orderId,
-      order_id: orderId,
-      verified_price: verifiedPrice,
+      auto_bought: false,   // PR-5b:auto_buy 已退役,永不为 true
+      order_id: null,
+      verified_price: null,
     })
   })
 }
