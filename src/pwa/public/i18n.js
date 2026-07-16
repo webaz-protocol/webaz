@@ -606,8 +606,6 @@ const _EN = {
   '匿名收件': 'Anonymous recipient',
   '已开启(卖家/物流不见你的身份)': 'ON (seller/logistics never see your identity)',
   '(无 handle)': '(no handle)',
-  '草稿': 'Draft',
-  '批准后:服务端按当前市场状态重验此快照(价格/库存/资格/卖家任何变化即拒绝),通过才创建真实订单;条款绝不静默变更': 'On approval: the server re-validates this snapshot against CURRENT market state (any price/stock/eligibility/SELLER change is rejected) and only then creates the real order; terms are never silently changed',
   '草稿有效期至': 'Draft valid until',
   '批准后:服务端按当前市场状态重验此快照(价格/库存/资格/卖家任何变化即拒绝),通过才创建真实订单;条款绝不静默变更': 'On approval: the server re-validates this snapshot against CURRENT market state (any price/stock/eligibility/SELLER change is rejected) and only then creates the real order; terms are never silently changed',
   '一个已连接的 AI agent 在请求授权。【扩权请求】只扩展受限、可撤销的只读/草稿凭证,不动资金;【订单提交】批准会创建真实订单 —— 托管轨将从你的钱包扣款入托管(卡片列出全部条款,任何变化服务端拒绝执行)。投票/仲裁/改密钥永不可委托。': 'A connected AI agent is requesting authorization. SCOPE requests only extend limited, revocable read/draft credentials and move no funds. ORDER SUBMISSIONS, when approved, create a real order - on the escrow rail your wallet is debited into escrow (the card lists every term; any change makes the server refuse execution). Voting/arbitration/key changes are never delegable.',
