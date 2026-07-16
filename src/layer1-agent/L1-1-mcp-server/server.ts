@@ -1846,6 +1846,25 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
       },
     },
   },
+  {
+    name: 'webaz_discover',
+    description: `Buyer discovery over ACTIVE WebAZ listings (RFC-025 PR-2, safe scope buyer_discover; OAuth grant, no api_key). Give a structured intent — category and/or keywords, optional max_price / ship_to_region / quantity — NOT free chat text.
+
+- Results are honest DISCOVERY CANDIDATES (label discovery_candidate): similar/near matches, NEVER passed off as exact matches. For exact lookups (exact title / SKU / URL) use webaz_search instead — it stays strict.
+- Zero results → an honest { no_candidates: true } with guidance (post an RFQ, or browse PWA #discover). Nothing similar is substituted.
+- DISCLOSURE: every discover query is recorded as a structured demand signal linked to your account (category/keywords/budget/region/quantity + result count — no chat text) to inform marketplace supply. If you do not want this recorded, do not call this tool.
+- Read + that disclosed append-only record only: no order, no funds, no PII returned.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', description: 'Listing category key (optional)' },
+        keywords: { type: 'array', items: { type: 'string' }, description: 'Up to 5 short keywords matched against listing titles (optional; at least one of category/keywords required)' },
+        max_price: { type: 'number', description: 'Budget ceiling in WAZ (optional)' },
+        ship_to_region: { type: 'string', description: 'ISO 3166-1 alpha-2 destination country (optional; filters out listings that cannot sell there)' },
+        quantity: { type: 'integer', description: 'Desired quantity (default 1; filters by stock)' },
+      },
+    },
+  },
 ]
 
 // Standard MCP annotations merged once at module load (fail-fast if any tool lacks a mapping). The
@@ -2642,6 +2661,24 @@ export async function handleBuyerOrders(args: Record<string, unknown>): Promise<
   const path = orderId ? `/api/agent/buyer/orders/${encodeURIComponent(orderId)}` : '/api/agent/buyer/orders'
   const r = await apiCall(path, { method: 'GET', apiKey: cred.token })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_orders_read_minimal. Re-connect via OAuth so the grant carries the read scope, then retry.' }
+  return r
+}
+
+export async function handleDiscover(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // RFC-025 PR-2 — wraps POST /api/agent/discover (safe scope buyer_discover). Pure wrapper: forwards
+  //   ONLY the allowlisted structured-intent fields (defense-in-depth against free-text smuggling),
+  //   passes the honest candidates/no_candidates/disclosure response through UNCHANGED.
+  if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential(args)
+  if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
+  const body: Record<string, unknown> = {}
+  if (typeof args.category === 'string') body.category = args.category
+  if (Array.isArray(args.keywords) || typeof args.keywords === 'string') body.keywords = args.keywords
+  if (args.max_price !== undefined) body.max_price = args.max_price
+  if (typeof args.ship_to_region === 'string') body.ship_to_region = args.ship_to_region
+  if (args.quantity !== undefined) body.quantity = args.quantity
+  const r = await apiCall('/api/agent/discover', { method: 'POST', apiKey: cred.token, body })
+  if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_discover. Re-connect via OAuth so the grant carries the read scope, then retry.' }
   return r
 }
 
@@ -5440,6 +5477,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         case 'webaz_get_agent_order':     result = await handleGetAgentOrder(args); break
         case 'webaz_connection_status':   result = await handleConnectionStatus(args); break
         case 'webaz_buyer_orders':        result = await handleBuyerOrders(args); break
+        case 'webaz_discover':            result = await handleDiscover(args); break
         case 'webaz_order_action_request': result = await handleOrderActionRequest(args); break
         case 'webaz_feedback':      result = await handleFeedback(args); break
         case 'webaz_contribute':    result = await handleContribute(args); break

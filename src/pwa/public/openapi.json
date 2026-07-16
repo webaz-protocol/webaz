@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (787 endpoints, 19 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (789 endpoints, 19 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -667,6 +667,13 @@
             "bearerAuth": []
           }
         ]
+      }
+    },
+    "/api/admin/demand-signals": {
+      "get": {
+        "summary": "公开给商家 = 未来独立 gated PR(聚合阈值≥N + 脱敏,永不暴露单买家)。",
+        "tags": [],
+        "security": []
       }
     },
     "/api/admin/direct-receive/aml-flags": {
@@ -2782,6 +2789,18 @@
         "summary": "指纹由 tests/test-contract-fingerprint.ts + docs/CONTRACT-LOCK.json 守住(静默改契约不可 merge)。",
         "tags": [],
         "security": []
+      }
+    },
+    "/api/agent/discover": {
+      "post": {
+        "summary": "allowlist 字段(category/keywords≤5/max_price/ship_to_region/quantity),自由聊天文本进不来。",
+        "tags": [],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "buyer_discover"
       }
     },
     "/api/agent/economic-participation": {

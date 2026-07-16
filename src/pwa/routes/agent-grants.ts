@@ -25,11 +25,13 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
-import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrantAuthLogSchema, initAgentPermissionRequestsSchema } from '../../runtime/webaz-schema-helpers.js'
+import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrantAuthLogSchema, initAgentPermissionRequestsSchema, initDemandSignalsSchema } from '../../runtime/webaz-schema-helpers.js'
 import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveBundle, durationAllowedForScopes, suggestedDurationForScopes, allowedDurationsForScopes, durationToSeconds, riskLevelForScopes, type GrantDuration } from '../../runtime/agent-grant-scopes.js'
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
 import { verifyGrantToken, type GrantPrincipal } from '../../runtime/agent-grant-verifier.js'
 import { minimalSellerOrderView, MINIMAL_ORDER_COLUMNS, minimalBuyerOrderView, BUYER_MINIMAL_ORDER_COLUMNS } from '../agent-order-minimal-view.js'  // RFC-021 §6a / RFC-025 PR-1 最小化订单读投影
+import { effectiveSaleRegionsRule, regionAllowedByRule } from '../../sale-regions.js'  // RFC-025 PR-2 discover 目的地纯谓词(S1/S3 同源)
+import { toUnits } from '../../money.js'  // RFC-014:demand_signals.budget_units 整数化
 import { createOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
 import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 approve→执行(CAS approved + 执行 + executed_at CAS,domain 层)
 import { notifyTransition } from '../../layer2-business/L2-6-notifications/notification-engine.js'  // 执行后通知买卖双方
@@ -81,6 +83,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   initAgentPairingSchema(db)
   initAgentGrantAuthLogSchema(db)
   initAgentPermissionRequestsSchema(db)
+  initDemandSignalsSchema(db)
 
   // Resolve the ACTIVE grant behind a gtk_ bearer (no scope check) — used to bind a permission request to
   // (grant_id, human_id). Returns null on missing/expired/revoked. token_hash lookup mirrors the verifier.
@@ -225,6 +228,64 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       [req.params.id, p.human_id])
     if (!o) return void res.status(404).json({ error: '订单不存在或不属于你', error_code: 'ORDER_NOT_FOUND' })
     res.json({ order: minimalBuyerOrderView(o, db) })
+  })
+
+  // RFC-025 PR-2 — 买家发现(safe scope buyer_discover)。语义:「有结果输出结果,没结果记录,形成商机」。
+  //   诚实纪律(certainty-over-coverage):候选一律标 discovery_candidate,绝不冒充精确命中;0 命中如实
+  //   no_candidates + 引导(RFQ / PWA #discover)。【每次】查询把 allowlist 化的结构化 intent 落一行
+  //   demand_signals(result_count 含 0;0 = 未被满足的需求 = 市场机会情报)—— 该采集在工具 description
+  //   向用户披露,能力名 buyer_discover 显式命名该效果(不是 search)。无执行、无资金;intent 只收
+  //   allowlist 字段(category/keywords≤5/max_price/ship_to_region/quantity),自由聊天文本进不来。
+  app.post('/api/agent/discover', requireAgentGrantScope('buyer_discover'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const b = (req.body ?? {}) as Record<string, unknown>
+    // ── allowlist 化 intent(parse-don't-validate:非法字段直接拒,不猜) ──
+    const category = typeof b.category === 'string' && b.category.trim() ? b.category.trim().slice(0, 40) : null
+    const rawKw = Array.isArray(b.keywords) ? b.keywords : (typeof b.keywords === 'string' && b.keywords.trim() ? [b.keywords] : [])
+    const keywords = rawKw.filter((k): k is string => typeof k === 'string' && !!k.trim()).map(k => k.trim().slice(0, 40)).slice(0, 5)
+    const maxPrice = b.max_price === undefined || b.max_price === null ? null : Number(b.max_price)
+    if (maxPrice !== null && (!Number.isFinite(maxPrice) || maxPrice <= 0 || maxPrice > 1e9)) {
+      return void res.status(400).json({ error: 'max_price must be a positive number', error_code: 'INVALID_MAX_PRICE' })
+    }
+    const region = typeof b.ship_to_region === 'string' && /^[A-Za-z]{2}$/.test(b.ship_to_region.trim()) ? b.ship_to_region.trim().toUpperCase() : null
+    const quantity = b.quantity === undefined ? 1 : Number(b.quantity)
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
+      return void res.status(400).json({ error: 'quantity must be an integer 1..999', error_code: 'INVALID_QUANTITY' })
+    }
+    if (!category && keywords.length === 0) {
+      return void res.status(400).json({ error: 'give at least a category or one keyword', error_code: 'EMPTY_INTENT', next_steps: 'Provide { category } and/or { keywords: [...] } — free chat text is not accepted.' })
+    }
+    // ── 诚实检索:active + 库存够 + 类目/关键词(LIKE, ESCAPE)/预算过滤;绝不模糊兜底冒充命中 ──
+    const where: string[] = ["status = 'active'", 'stock >= ?']
+    const params: unknown[] = [quantity]
+    if (category) { where.push('LOWER(category) = LOWER(?)'); params.push(category) }
+    for (const k of keywords) { where.push("LOWER(title) LIKE '%' || ? || '%' ESCAPE '\\'"); params.push(k.toLowerCase().replace(/[\\%_]/g, m => '\\' + m)) }
+    if (maxPrice !== null) { where.push('price <= ?'); params.push(maxPrice) }
+    const rows = await dbAll<Record<string, unknown>>(
+      `SELECT id, title, price, currency, category, stock, seller_id, sale_regions FROM products WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT 30`, params)
+    // 目的地过滤:复用 S1/S3 的纯谓词(store 级规则回退),不可售目的地的商品如实剔除
+    const matched = (region
+      ? rows.filter(r => { const rule = effectiveSaleRegionsRule(db, r as { sale_regions?: string | null }, String(r.seller_id)); return !rule || regionAllowedByRule(rule, region) })
+      : rows).slice(0, 10)
+    const candidates = matched.map(r => ({
+      label: 'discovery_candidate' as const,   // 诚实标注:相似候选,非精确命中
+      product_id: String(r.id), title: String(r.title), price: Number(r.price),
+      currency: String(r.currency || 'WAZ'), category: r.category == null ? null : String(r.category),
+    }))
+    // ── 需求信号落库(append-only;失败不吞——采集是本端点被授权的显式效果,写不进则如实 503) ──
+    const intent = { category, keywords, max_price: maxPrice, ship_to_region: region, quantity }
+    try {
+      await dbRun('INSERT INTO demand_signals (id, human_id, source, intent_json, category, region, budget_units, result_count) VALUES (?,?,?,?,?,?,?,?)',
+        [generateId('dms'), p.human_id, 'mcp_discover', JSON.stringify(intent), category, region, maxPrice === null ? null : toUnits(maxPrice), candidates.length])
+    } catch (e) {
+      console.error('[discover] demand-signal write failed:', (e as Error).message)
+      return void res.status(503).json({ error: 'demand-signal ledger unavailable; discover is disclosed-as-recorded and will not run unrecorded', error_code: 'DEMAND_SIGNAL_WRITE_FAILED' })
+    }
+    res.json({
+      count: candidates.length, candidates,
+      ...(candidates.length === 0 ? { no_candidates: true, note: 'No matching listings right now — honestly zero, nothing similar is being passed off as a match. Your structured request was recorded as a demand signal (disclosed) so supply can catch up. Consider posting an RFQ at webaz.xyz, or browse PWA #discover.' } : {}),
+      disclosure: 'This structured query (no chat text) was recorded as a demand signal linked to your account, to inform marketplace supply.',
+    })
   })
 
   // RFC-021 PR2 — order-action 请求提交(safe scope order_action_request)。SUBMIT-only:写 pending,【绝不执行】。

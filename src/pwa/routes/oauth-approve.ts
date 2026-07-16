@@ -40,7 +40,7 @@ import type { HumanPresence } from '../human-presence.js'
 //   order:draft → 订单草稿 + 提交 accept/ship 请求(仅进人工审批队列,永不执行) → order_action_request
 //   list:draft  → 商品草稿(status=warehouse,发布仍需人) → list_product(create/draft)
 export const OAUTH_SCOPE_CAPABILITIES: Record<string, readonly string[]> = {
-  'read': ['read_public', 'profile_read', 'search', 'seller_products_read', 'seller_orders_read_minimal', 'buyer_orders_read_minimal'],
+  'read': ['read_public', 'profile_read', 'search', 'seller_products_read', 'seller_orders_read_minimal', 'buyer_orders_read_minimal', 'buyer_discover'],
   'order:draft': ['draft_order', 'order_action_request'],
   'list:draft': ['seller_product_draft'],
 }
