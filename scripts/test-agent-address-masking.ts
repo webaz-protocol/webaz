@@ -33,6 +33,8 @@ const app = express(); app.use(express.json())
 let lastSetBody: Record<string, unknown> | null = null
 app.get('/api/me', (_req, res) => { res.json({ id: 'usr_x', handle: 'masker', default_address_text: FULL_ADDR, default_address_region: 'SG', default_address: { line1: '1 Test St', city: 'Singapore' }, default_address_json: '{"line1":"1 Test St"}', wallet: { balance: 1 } }) })
 app.post('/api/profile/default-address', (req, res) => { lastSetBody = req.body as Record<string, unknown>; res.json({ success: true, stored: true }) })
+let lastOrderBody: Record<string, unknown> | null = null
+app.post('/api/orders', (req, res) => { lastOrderBody = req.body as Record<string, unknown>; res.json({ success: true, order: { id: 'ord_t1', status: 'created', shipping_address: (req.body as Record<string, unknown>).shipping_address } }) })
 const server = app.listen(0)
 process.env.WEBAZ_API_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 
@@ -41,7 +43,7 @@ const mcp = await import('../src/layer1-agent/L1-1-mcp-server/server.js')
 try {
   // ── network read:上游给了全文,handler 必须只回脱敏视图 ──
   { const r = await mcp.handleDefaultAddress({ action: 'read', api_key: 'k_net' })
-    ok('N-1 network read → masked view (has_default + ref + region + summary)', r.has_default === true && r.address_ref === 'default' && r.address_region === 'SG' && typeof r.masked_summary === 'string', JSON.stringify(r).slice(0, 250))
+    ok('N-1 network read → masked view (has_default + region + summary; NO address_ref until PR-4 ships its consumer)', r.has_default === true && !('address_ref' in r) && r.address_region === 'SG' && typeof r.masked_summary === 'string', JSON.stringify(r).slice(0, 250))
     ok('N-2 network read carries NO full-address PII (upstream returned it; handler stripped it)', !PII.test(JSON.stringify(r)), JSON.stringify(r)) }
   // ── set 不变(体验零回退):照旧转发 text/region ──
   { const r = await mcp.handleDefaultAddress({ action: 'set', text: FULL_ADDR, region: 'SG', api_key: 'k_net' })
@@ -51,13 +53,19 @@ try {
     ok('N-4 profile view strips default_address_text / default_address / default_address_json', !('default_address_text' in r) && !('default_address' in r) && !('default_address_json' in r), JSON.stringify(r).slice(0, 250))
     ok('N-5 profile view keeps non-PII identity fields (handle passes through)', r.handle === 'masker')
     ok('N-6 profile view carries NO full-address PII', !/SECRET|1 Test St|91234567/.test(JSON.stringify(r))) }
+  // ── place_order 默认地址兜底(Codex High 修复):省略 → handler 注入全文;工具返回值零全文回流 ──
+  { const r = await mcp.handlePlaceOrder({ product_id: 'prd_x', api_key: 'k_net' })
+    ok('P-1 omitted shipping_address → handler injected the FULL default into the API call', lastOrderBody?.shipping_address === FULL_ADDR, JSON.stringify(lastOrderBody).slice(0, 200))
+    ok('P-2 tool RESULT carries NO address text (echo stripped, marker present)', !PII.test(JSON.stringify(r)) && String((r as Record<string, unknown>).shipping_address_used || '').includes('default'), JSON.stringify(r).slice(0, 250)) }
+  { const r = await mcp.handlePlaceOrder({ product_id: 'prd_x', shipping_address: 'explicit addr 1', api_key: 'k_net' })
+    ok('P-3 explicit shipping_address unchanged (passes through; echo NOT stripped — agent supplied it)', lastOrderBody?.shipping_address === 'explicit addr 1' && JSON.stringify(r).includes('explicit addr 1'), JSON.stringify(r).slice(0, 200)) }
 } finally { server.close() }
 
 // ── sandbox 分支与 network 共用同一纯函数:直测函数 + 源守卫锁调用点(两路径零 drift) ──
 { const v = mcp.maskedDefaultAddressView(FULL_ADDR, 'SG')
-  ok('U-1 masked view (has): ref=default + region + summary, zero text substring', v.has_default === true && v.address_ref === 'default' && v.address_region === 'SG' && !PII.test(JSON.stringify(v)), JSON.stringify(v)) }
+  ok('U-1 masked view (has): region + summary, zero text substring, no dead ref marker', v.has_default === true && !('address_ref' in v) && v.address_region === 'SG' && !PII.test(JSON.stringify(v)), JSON.stringify(v)) }
 { const v = mcp.maskedDefaultAddressView(null, null)
-  ok('U-2 masked view (none): has_default=false, ref null, guidance note', v.has_default === false && v.address_ref === null && typeof v.note === 'string') }
+  ok('U-2 masked view (none): has_default=false + guidance note', v.has_default === false && typeof v.note === 'string') }
 { const v = mcp.maskedDefaultAddressView('   ', 'SG')
   ok('U-3 whitespace-only text = no default', v.has_default === false) }
 
@@ -65,6 +73,8 @@ const src = readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
 ok('G-1 source guard: no `address_text: me.default_address_text` passthrough remains', !/address_text:\s*me\.default_address_text/.test(src))
 ok('G-2 source guard: SANDBOX read branch also routes through maskedDefaultAddressView', /return maskedDefaultAddressView\(u\?\.default_address_text, u\?\.default_address_region\)/.test(src))
 ok('G-3 source guard: tool description states full text is never returned to agents', /FULL address text is NEVER returned to agents/.test(src))
+ok('G-4 source guard: no-default → ADDRESS_REQUIRED on both paths (no silent null order)', (src.match(/ADDRESS_REQUIRED/g) || []).length >= 3)
+ok('G-5 source guard: place_order schema no longer hard-requires shipping_address', /required: \['product_id'\],/.test(src))
 
 if (fail > 0) { console.error(`\n❌ agent-address-masking FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ agent-address-masking: agent 面永不见全文地址(default_address read 双路径共用纯函数 + profile view 剥字段)· set/兜底不变\n  ✅ pass ${pass}`)

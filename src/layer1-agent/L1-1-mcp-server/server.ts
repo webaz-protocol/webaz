@@ -813,7 +813,7 @@ Options:
         quantity: { type: 'number', description: 'Quantity, default 1' },
         payment_rail: { type: 'string', enum: ['escrow', 'direct_p2p'], description: 'Payment rail (default: escrow). "direct_p2p" = live non-custodial direct pay, off-platform; the payable display follows the seller\'s receiving-account currency/instruction (USDC only as the base/reference amount, WebAZ doesn\'t custody/route/validate/restrict currency) — requires direct_receive_account_id; the server runs the direct-pay eligibility gates (you do not). Other rails (onchain_full_stake / psp) are planned but disabled → PAYMENT_RAIL_DISABLED.' },
         direct_receive_account_id: { type: 'string', description: 'For payment_rail="direct_p2p": the seller\'s direct-receive account id to pay. Ignored on escrow.' },
-        shipping_address: { type: 'string', description: 'Shipping address' },
+        shipping_address: { type: 'string', description: 'Shipping address (free text). OMIT to use your saved default — resolved inside the call, never shown to agents. No default saved → ADDRESS_REQUIRED.' },
         notes: { type: 'string', description: 'Note to seller (optional)' },
         session_token: {
           type: 'string',
@@ -835,7 +835,7 @@ Options:
           description: '[B5] Per-order donation pct (0 / 0.5 / 1 / 2 / 5). Computed separately + into charity_fund, posted on order complete.',
         },
       },
-      required: ['product_id', 'shipping_address'],
+      required: ['product_id'],   // RFC-025 PR-2.5: shipping_address optional — omitted → handler resolves your saved default INSIDE the call (never shown to agents); no default saved → ADDRESS_REQUIRED
     },
   },
   {
@@ -1265,7 +1265,7 @@ USE THIS for "what's popular near me / 我附近 / 同城" — geo-aggregated, n
     // was ~370 chars, now ~230 chars
     description: `Read (masked) or set your default shipping address. Used by webaz_search unshippable filter + server-side fallback for webaz_rfq/place_order if omitted.
 
-- read: returns { has_default, address_ref, address_region, masked_summary } — the FULL address text is NEVER returned to agents (it contains name/street/phone). At order time the server resolves your default address itself; manage the full text at webaz.xyz (PWA profile).
+- read: returns { has_default, address_region, masked_summary } — the FULL address text is NEVER returned to agents (it contains name/street/phone). To order with it, omit shipping_address in webaz_place_order (resolved inside the call, not shown); manage the full text at webaz.xyz (PWA profile).
 ⚠️ \`set\` accepts only 2 fields: \`text\` (free-text address, ≤200 chars, required) + \`region\` (optional, for unshippable filter, ≤40 chars). NO structured fields (no recipient/line1/city/country/phone) — agent must concat itself.`,
     inputSchema: {
       type: 'object',
@@ -2931,6 +2931,7 @@ export async function handlePlaceOrder(args: Record<string, unknown>) {
   // RFC-003 P2: network 模式转发到生产 POST /api/orders(前置,绕过本地 db)。
   // 生产端做完整鉴权/库存/session/spend-cap/结算 + direct-pay gate(createDirectPayResponse)。
   if (toolBackend('webaz_place_order') === 'network') {
+    const apiKey = resolveMcpApiKey(args)
     const body: Record<string, unknown> = { product_id: args.product_id, quantity: Number(args.quantity ?? 1) }
     if (args.session_token != null)    body.session_token = args.session_token
     if (args.expected_price != null)   body.expected_price = args.expected_price
@@ -2938,7 +2939,25 @@ export async function handlePlaceOrder(args: Record<string, unknown>) {
     if (args.donation_pct != null)     body.donation_pct = args.donation_pct
     if (args.payment_rail != null)     body.payment_rail = args.payment_rail                       // escrow | direct_p2p (route forks + gates)
     if (args.direct_receive_account_id != null) body.direct_receive_account_id = args.direct_receive_account_id  // seller receiving acct (direct_p2p)
-    return apiCall('/api/orders', { method: 'POST', apiKey: resolveMcpApiKey(args), body })
+    // RFC-025 PR-2.5:shipping_address 省略时,handler 内部取默认地址注入(POST /api/orders 要求该字段,
+    //   服务端【没有】兜底 —— 旧 description 的"fallback"从不存在,Codex 抓实)。全文只在本进程内部流转,
+    //   【绝不】进入工具返回值/模型上下文;注入场景下把 create 响应里的地址回显剥掉(agent 从未见过它)。
+    let injectedDefault = false
+    if (body.shipping_address == null) {
+      const me = await apiCall('/api/me', { apiKey })
+      const text = typeof me.default_address_text === 'string' ? me.default_address_text.trim() : ''
+      if (!text) return { error: 'shipping_address is required — you have no saved default address. Pass shipping_address, or set a default via webaz_default_address action=set / at webaz.xyz.', error_code: 'ADDRESS_REQUIRED' }
+      body.shipping_address = text
+      injectedDefault = true
+    }
+    const r = await apiCall('/api/orders', { method: 'POST', apiKey, body })
+    if (injectedDefault && r && typeof r === 'object') {
+      // 剥掉一切回显的地址全文(order 对象或顶层字段),agent 侧只知道"用了默认地址"。
+      const strip = (o: Record<string, unknown> | undefined) => { if (o && typeof o === 'object') { delete o.shipping_address } }
+      strip(r as Record<string, unknown>); strip((r as Record<string, unknown>).order as Record<string, unknown> | undefined)
+      ;(r as Record<string, unknown>).shipping_address_used = 'default (resolved inside the call; full text not shown to agents)'
+    }
+    return r
   }
   const auth = requireAuth(db, resolveMcpApiKey(args))
   if ('error' in auth) return auth
@@ -2946,6 +2965,14 @@ export async function handlePlaceOrder(args: Record<string, unknown>) {
 
   if (user.role !== 'buyer') {
     return { error: `只有 buyer 角色可以下单，你的角色是：${user.role}` }
+  }
+
+  // RFC-025 PR-2.5:sandbox 路径同款默认地址兜底(与 network 路径语义一致;全文不回流 agent)。
+  if (args.shipping_address == null) {
+    const u0 = db.prepare('SELECT default_address_text FROM users WHERE id = ?').get(user.id) as { default_address_text: string | null } | undefined
+    const text0 = (u0?.default_address_text || '').trim()
+    if (!text0) return { error: 'shipping_address is required — you have no saved default address. Pass shipping_address, or set a default via webaz_default_address action=set.', error_code: 'ADDRESS_REQUIRED' }
+    args = { ...args, shipping_address: text0 }
   }
 
   const product = db
@@ -4434,11 +4461,10 @@ export function maskedDefaultAddressView(text: string | null | undefined, region
   const has = !!(text && String(text).trim())
   return {
     has_default: has,
-    address_ref: has ? 'default' : null,          // PR-4 订单草稿将以 ref 引用;服务端解析全文
     address_region: (region && String(region).trim()) || null,
     masked_summary: has ? `saved address on file${region ? ` (${String(region).trim()})` : ''}` : null,
     note: has
-      ? 'Full address text is never returned to agents. At order time the server resolves your default address itself when shipping_address is omitted; manage the full text at webaz.xyz (PWA profile).'
+      ? 'Full address text is never returned to agents. To use it, omit shipping_address in webaz_place_order — the handler resolves your default inside the call without showing it. Manage the full text at webaz.xyz (PWA profile).'
       : 'No default set. Set one here (action=set) or at webaz.xyz; setting it auto-filters unshippable products in search.',
   }
 }
