@@ -813,7 +813,7 @@ Options:
         quantity: { type: 'number', description: 'Quantity, default 1' },
         payment_rail: { type: 'string', enum: ['escrow', 'direct_p2p'], description: 'Payment rail (default: escrow). "direct_p2p" = live non-custodial direct pay, off-platform; the payable display follows the seller\'s receiving-account currency/instruction (USDC only as the base/reference amount, WebAZ doesn\'t custody/route/validate/restrict currency) — requires direct_receive_account_id; the server runs the direct-pay eligibility gates (you do not). Other rails (onchain_full_stake / psp) are planned but disabled → PAYMENT_RAIL_DISABLED.' },
         direct_receive_account_id: { type: 'string', description: 'For payment_rail="direct_p2p": the seller\'s direct-receive account id to pay. Ignored on escrow.' },
-        shipping_address: { type: 'string', description: 'Shipping address' },
+        shipping_address: { type: 'string', description: 'Shipping address (free text). OMIT to use your saved default — resolved inside the call, never shown to agents. No default saved → ADDRESS_REQUIRED.' },
         notes: { type: 'string', description: 'Note to seller (optional)' },
         session_token: {
           type: 'string',
@@ -835,7 +835,7 @@ Options:
           description: '[B5] Per-order donation pct (0 / 0.5 / 1 / 2 / 5). Computed separately + into charity_fund, posted on order complete.',
         },
       },
-      required: ['product_id', 'shipping_address'],
+      required: ['product_id'],   // RFC-025 PR-2.5: shipping_address optional — omitted → handler resolves your saved default INSIDE the call (never shown to agents); no default saved → ADDRESS_REQUIRED
     },
   },
   {
@@ -1263,8 +1263,9 @@ USE THIS for "what's popular near me / 我附近 / 同城" — geo-aggregated, n
   {
     name: 'webaz_default_address',
     // was ~370 chars, now ~230 chars
-    description: `Read or set default shipping address. Used by webaz_search unshippable filter + fallback for webaz_rfq/place_order if omitted.
+    description: `Read (masked) or set your default shipping address. Used by webaz_search unshippable filter; webaz_rfq falls back to it server-side, webaz_place_order resolves it handler-side when shipping_address is omitted (never shown to agents).
 
+- read: returns { has_default, address_region, masked_summary } — the FULL address text is NEVER returned to agents (it contains name/street/phone). To order with it, omit shipping_address in webaz_place_order (resolved inside the call, not shown); manage the full text at webaz.xyz (PWA profile).
 ⚠️ \`set\` accepts only 2 fields: \`text\` (free-text address, ≤200 chars, required) + \`region\` (optional, for unshippable filter, ≤40 chars). NO structured fields (no recipient/line1/city/country/phone) — agent must concat itself.`,
     inputSchema: {
       type: 'object',
@@ -2930,6 +2931,7 @@ export async function handlePlaceOrder(args: Record<string, unknown>) {
   // RFC-003 P2: network 模式转发到生产 POST /api/orders(前置,绕过本地 db)。
   // 生产端做完整鉴权/库存/session/spend-cap/结算 + direct-pay gate(createDirectPayResponse)。
   if (toolBackend('webaz_place_order') === 'network') {
+    const apiKey = resolveMcpApiKey(args)
     const body: Record<string, unknown> = { product_id: args.product_id, quantity: Number(args.quantity ?? 1) }
     if (args.session_token != null)    body.session_token = args.session_token
     if (args.expected_price != null)   body.expected_price = args.expected_price
@@ -2937,7 +2939,25 @@ export async function handlePlaceOrder(args: Record<string, unknown>) {
     if (args.donation_pct != null)     body.donation_pct = args.donation_pct
     if (args.payment_rail != null)     body.payment_rail = args.payment_rail                       // escrow | direct_p2p (route forks + gates)
     if (args.direct_receive_account_id != null) body.direct_receive_account_id = args.direct_receive_account_id  // seller receiving acct (direct_p2p)
-    return apiCall('/api/orders', { method: 'POST', apiKey: resolveMcpApiKey(args), body })
+    // RFC-025 PR-2.5:shipping_address 省略时,handler 内部取默认地址注入(POST /api/orders 要求该字段,
+    //   服务端【没有】兜底 —— 旧 description 的"fallback"从不存在,Codex 抓实)。全文只在本进程内部流转,
+    //   【绝不】进入工具返回值/模型上下文;注入场景下把 create 响应里的地址回显剥掉(agent 从未见过它)。
+    let injectedDefault = false
+    if (body.shipping_address == null) {
+      const me = await apiCall('/api/me', { apiKey })
+      const text = typeof me.default_address_text === 'string' ? me.default_address_text.trim() : ''
+      if (!text) return { error: 'shipping_address is required — you have no saved default address. Pass shipping_address, or set a default via webaz_default_address action=set / at webaz.xyz.', error_code: 'ADDRESS_REQUIRED' }
+      body.shipping_address = text
+      injectedDefault = true
+    }
+    const r = await apiCall('/api/orders', { method: 'POST', apiKey, body })
+    if (injectedDefault && r && typeof r === 'object') {
+      // 剥掉一切回显的地址全文(order 对象或顶层字段),agent 侧只知道"用了默认地址"。
+      const strip = (o: Record<string, unknown> | undefined) => { if (o && typeof o === 'object') { delete o.shipping_address } }
+      strip(r as Record<string, unknown>); strip((r as Record<string, unknown>).order as Record<string, unknown> | undefined)
+      ;(r as Record<string, unknown>).shipping_address_used = 'default (resolved inside the call; full text not shown to agents)'
+    }
+    return r
   }
   const auth = requireAuth(db, resolveMcpApiKey(args))
   if ('error' in auth) return auth
@@ -2945,6 +2965,16 @@ export async function handlePlaceOrder(args: Record<string, unknown>) {
 
   if (user.role !== 'buyer') {
     return { error: `只有 buyer 角色可以下单，你的角色是：${user.role}` }
+  }
+
+  let injectedDefaultSandbox = false
+  // RFC-025 PR-2.5:sandbox 路径同款默认地址兜底(与 network 路径语义一致;全文不回流 agent)。
+  if (args.shipping_address == null) {
+    const u0 = db.prepare('SELECT default_address_text FROM users WHERE id = ?').get(user.id) as { default_address_text: string | null } | undefined
+    const text0 = (u0?.default_address_text || '').trim()
+    if (!text0) return { error: 'shipping_address is required — you have no saved default address. Pass shipping_address, or set a default via webaz_default_address action=set.', error_code: 'ADDRESS_REQUIRED' }
+    args = { ...args, shipping_address: text0 }
+    injectedDefaultSandbox = true
   }
 
   const product = db
@@ -3115,6 +3145,7 @@ export async function handlePlaceOrder(args: Record<string, unknown>) {
     order_id: orderId,
     product: product.title,
     seller: product.seller_name,
+    ...(injectedDefaultSandbox ? { shipping_address_used: 'default (resolved inside the call; full text not shown to agents)' } : {}),
     quantity,
     total_amount: `${totalAmount} WAZ（已托管，等待交易完成后自动结算）`,
     status: autoAccepted ? 'accepted' : 'paid',
@@ -3907,7 +3938,7 @@ function handleMyKey(args: Record<string, unknown>) {
   }
 }
 
-async function handleProfile(args: Record<string, unknown>) {
+export async function handleProfile(args: Record<string, unknown>) {
   const action = args.action as string
   const apiKey = resolveMcpApiKey(args)
 
@@ -3927,7 +3958,16 @@ async function handleProfile(args: Record<string, unknown>) {
       if (!seg) return { error: `unknown feed: ${args.feed}. options: ${Object.keys(FEED_PATH).join(', ')}` }
       return await apiCall('/api/users/' + encodeURIComponent(String(args.user_id)) + '/' + seg, { apiKey })
     }
-    if (action === 'view')        return await apiCall('/api/me', { apiKey })
+    if (action === 'view') {
+      const me = await apiCall('/api/me', { apiKey })
+      if (me.error) return me
+      // RFC-025 PR-2.5(G-PII-1 同类):/api/me 是人的完整档案面;agent 视图剥掉完整地址(文本+结构化),
+      //   留 region(非 PII,用于可售性判断)。地址存在性/摘要请用 webaz_default_address action=read。
+      delete me.default_address_text
+      delete me.default_address
+      delete me.default_address_json
+      return me
+    }
     if (action === 'add_role')    return await apiCall('/api/profile/add-role', { method: 'POST', apiKey, body: { role: args.role } })
     if (action === 'switch_role') return await apiCall('/api/profile/switch-role', { method: 'POST', apiKey, body: { role: args.role } })
     return { error: `Unknown action: ${action}. Options: view, add_role, switch_role, view_user, feed` }
@@ -4417,7 +4457,22 @@ async function handleNearby(args: Record<string, unknown>) {
   return { error: `unknown action: ${action}` }
 }
 
-async function handleDefaultAddress(args: Record<string, unknown>) {
+// RFC-025 PR-2.5 — agent-facing default-address projection(G-PII-1 修复)。allowlist 构造:
+//   摘要只由 region + 存在性组成,【绝不】截取 text 子串(自由文本里任何位置都可能是姓名/门牌/电话)。
+//   完整地址只在 PWA(人的界面)可见;下单省略 shipping_address 时由 place_order 的 MCP handler 在调用内解析默认地址(全文不回流 agent)。
+export function maskedDefaultAddressView(text: string | null | undefined, region: string | null | undefined): Record<string, unknown> {
+  const has = !!(text && String(text).trim())
+  return {
+    has_default: has,
+    address_region: (region && String(region).trim()) || null,
+    masked_summary: has ? `saved address on file${region ? ` (${String(region).trim()})` : ''}` : null,
+    note: has
+      ? 'Full address text is never returned to agents. To use it, omit shipping_address in webaz_place_order — the handler resolves your default inside the call without showing it. Manage the full text at webaz.xyz (PWA profile).'
+      : 'No default set. Set one here (action=set) or at webaz.xyz; setting it auto-filters unshippable products in search.',
+  }
+}
+
+export async function handleDefaultAddress(args: Record<string, unknown>) {
   // RFC-003 Batch 2:NETWORK 模式 → webaz.xyz 真网络(Bearer api_key);SANDBOX 走本地。
   if (toolBackend('webaz_default_address') === 'network') {
     const apiKey = resolveMcpApiKey(args)
@@ -4426,7 +4481,9 @@ async function handleDefaultAddress(args: Record<string, unknown>) {
     if (act === 'read') {
       const me = await apiCall('/api/me', { apiKey })
       if (me.error) return me
-      return { address_text: me.default_address_text ?? null, address_region: me.default_address_region ?? null }
+      // RFC-025 PR-2.5(G-PII-1):agent 路径【永不】返回完整地址文本(姓名/门牌/电话都在里面)。
+      //   只回存在性 + region + 脱敏摘要;下单时服务端自行兜底默认地址(server 侧解析,agent 无需全文)。
+      return maskedDefaultAddressView(me.default_address_text as string | null | undefined, me.default_address_region as string | null | undefined)
     }
     if (act === 'set') {
       const text = ((args.text as string) || '').trim().slice(0, 200)
@@ -4443,11 +4500,8 @@ async function handleDefaultAddress(args: Record<string, unknown>) {
 
   if (action === 'read') {
     const u = db.prepare("SELECT default_address_text, default_address_region FROM users WHERE id = ?").get(user.id) as { default_address_text: string | null; default_address_region: string | null }
-    return {
-      address_text:   u?.default_address_text   || null,
-      address_region: u?.default_address_region || null,
-      hint: u?.default_address_text ? null : 'No default set. Setting it auto-filters unshippable products in search.',
-    }
+    // RFC-025 PR-2.5(G-PII-1):同 network 路径 —— agent 永不见全文。
+    return maskedDefaultAddressView(u?.default_address_text, u?.default_address_region)
   }
   if (action === 'set') {
     // QA 轮 10.2-B P1 修复：旧版无校验，传不对的字段（recipient/line1/city 等）silently 写 NULL，

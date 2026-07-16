@@ -14,6 +14,7 @@ process.env.WEBAZ_API_KEY = 'k_test_buyer'
 // Ephemeral "PWA" that just echoes the received body — proves the MCP forwards params, without re-implementing gates.
 const app = express(); app.use(express.json())
 let lastBody: Record<string, unknown> = {}
+app.get('/api/me', (_req, res) => { res.json({ id: 'usr_t', default_address_text: 'Rail Test Addr / SG', default_address_region: 'SG' }) })  // RFC-025 PR-2.5: omitted shipping_address → handler resolves default via /api/me before /api/orders
 app.post('/api/orders', (req, res) => { lastBody = req.body; res.json({ ok: true, _received: req.body }) })
 const server = app.listen(0); const port = (server.address() as AddressInfo).port
 process.env.WEBAZ_API_URL = `http://127.0.0.1:${port}`
