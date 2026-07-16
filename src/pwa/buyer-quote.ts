@@ -317,11 +317,14 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
       return { kind: 'created' }
     }).immediate()
   } catch (e) {
-    // 唯一索引撞车(并发同键):回读赢家,按幂等语义处理;其余 = 快照不可用
-    if (idemKey && /UNIQUE/i.test((e as Error).message)) {
+    // 【幂等索引】撞车(并发同键)才走赢家回读 —— id/token_hash 的 UNIQUE 撞车是随机数碰撞级异常,归 GENERATION_FAILED。
+    if (idemKey && /idx_oq_idem|order_quotes\.human_id|order_quotes\.idempotency_key/i.test((e as Error).message)) {
       const winner = db.prepare('SELECT * FROM order_quotes WHERE human_id = ? AND idempotency_key = ?').get(humanId, idemKey) as Record<string, unknown> | undefined
-      if (winner && String(winner.intent_hash) === intentHash) return { ok: true, response: buildResponse(db, winner, null) }
-      return qerr(409, 'IDEMPOTENCY_CONFLICT', 'this idempotency_key was used concurrently with a DIFFERENT payload — pick a new key', { retryable: true })
+      // 赢家必须与事务内 replay 同标准:同载荷 + 未过期 + 未消费;否则按可重试失败处理(重试会让位重建)。
+      if (winner && String(winner.intent_hash) === intentHash && String(winner.expires_at) > nowIso && !winner.consumed_at) {
+        return { ok: true, response: buildResponse(db, winner, null) }
+      }
+      if (winner && String(winner.intent_hash) !== intentHash) return qerr(409, 'IDEMPOTENCY_CONFLICT', 'this idempotency_key was used concurrently with a DIFFERENT payload — pick a new key', { retryable: true })
     }
     return qerr(503, 'QUOTE_TOKEN_GENERATION_FAILED', 'quote ledger unavailable — retry shortly', { retryable: true })
   }

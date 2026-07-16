@@ -212,7 +212,7 @@ async function apiCall(path: string, opts: { method?: string; body?: unknown; ap
       // RFC-025 PR-3(类修,allowlist 版):透传服务端结构化错误契约 —— 此前非 2xx 只留 error/error_code,
       //   机器可执行的恢复指引全被丢弃。只放行【已知恢复字段】(Codex L-9:无限 spread 会把任何路由错误体里
       //   的意外字段/潜在 PII 一并送进模型上下文;allowlist 让边界可审计)。error/error_code/http_status 照旧。
-      const RECOVERY_FIELDS = ['reason', 'retryable', 'missing_requirements', 'next_steps', 'hint', 'next_step', 'approval_url', 'required_scope', 'missing_scopes', 'retry_after_approval', 'request_permission', 'note', 'available_stock', 'max_per_order', 'new_price', 'session_quantity', 'requested_quantity', 'region', 'option'] as const
+      const RECOVERY_FIELDS = ['reason', 'retryable', 'missing_requirements', 'next_steps', 'hint', 'next_step', 'approval_url', 'required_scope', 'missing_scopes', 'retry_after_approval', 'request_permission', 'available_stock', 'stock', 'max_per_order', 'new_price', 'old_price', 'session_quantity', 'requested_quantity', 'region', 'option'] as const   // 'note' 刻意不放行(自由文本面);stock/old_price = 既有 orders-create 错误体消费字段
       const recovery: Record<string, unknown> = {}
       for (const k of RECOVERY_FIELDS) if (json && json[k] !== undefined) recovery[k] = json[k]
       return { ...recovery, error: baseErr + authBoundaryHint(resp.status), error_code: json?.error_code, http_status: resp.status }

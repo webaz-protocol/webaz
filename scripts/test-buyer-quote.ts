@@ -169,7 +169,8 @@ try {
     const item = (r.line_items as Array<Record<string, unknown>>).find(l => l.code === 'item_subtotal')!
     ok('P-1 flash-sale price overrides (20 not 30) — same getActiveFlashSale as order creation', Number(item.amount_minor) === toUnits(20), JSON.stringify(r).slice(0, 250))
     const rp = await Q({ product_id: 'prd_low', payment_rail: 'direct_p2p' })
-    ok('P-2 direct_p2p + active flash → refused (creation rejects flashActive), NOT silently quoted', typeof rp.error_code === 'string' && rp.quote_token === undefined)
+    ok('P-2 direct_p2p + active flash → FLASH-SPECIFIC refusal (before launch controls; creation rejects flashActive), NOT silently quoted',
+      rp.error_code === 'DIRECT_PAY_NOT_ELIGIBLE' && /flash/i.test(String(rp.reason)) && rp.quote_token === undefined, JSON.stringify(rp).slice(0, 200))
     db.prepare("DELETE FROM flash_sales WHERE id='fs1'").run() }
   { PLATFORM_BLOCKLIST = '["SG"]'
     const r = await Q({ product_id: 'prd_s', quantity: 1 })
