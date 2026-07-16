@@ -167,7 +167,7 @@ export function registerWalletWriteRoutes(app: Application, deps: WalletWriteDep
     // WebAuthn gate — #1115 全额对齐铁律:**所有**提现都要真人 Passkey 一次性 token。
     //   资金转出 = 真人在场(spec §4 铁律,与 vote/arbitrate/agent_revoke 同档)。
     //   email-OTP 在 agent 威胁模型下不足(agent 可读监护人收件箱);故弃用旧的"非 Passkey → email 兜底"路径。
-    //   未注册 Passkey 的账户:不能提现,先去「安全」绑 Passkey(pre-launch 0 真用户,推动资金操作 Passkey 化)。
+    //   未注册 Passkey 的账户:不能提现,先去「安全」绑 Passkey(资金操作强制 Passkey)。
     // Codex #100 P1:提现真人 Passkey 是【铁律】,绝不可被任何 protocol param 关闭 → 无条件执行,不读开关。
     //   (旧代码 if (require_human_presence_for_withdraw===1) 让 protocol admin 把它设 0 即可绕过铁律。)
     //   该 param 已锁死 value=min=max=1,仅作展示(见 server.ts DEFAULT_PARAMS + 启动迁移)。

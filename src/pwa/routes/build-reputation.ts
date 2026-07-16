@@ -3,7 +3,7 @@
  *
  *   GET /api/build-reputation/me   贡献者【自查】档案(KPI/等级/来源/provenance/限制+申诉)
  *
- * 不变量 3:仅【自查】,不暴露他人 / 不做公开榜(pre-launch 运营规模隐私)。
+ * 不变量 3:仅【自查】,不暴露他人 / 不做公开榜(运营规模与贡献者隐私)。
  * 不变量 1:build_points 独立池,绝不喂交易侧准入(见 build-reputation-engine 注释)。
  * 注入:db / auth
  */

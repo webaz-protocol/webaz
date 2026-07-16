@@ -8,7 +8,7 @@
  * Visibility scope (never leak restricted/internal to an unauthorized reader):
  *   - 'public'  : INNER JOIN — only metadata-bearing tasks with audience='public' AND status='open'.
  *   - 'member'  : LEFT JOIN — audience IS NULL (old tasks) OR audience='public'; restricted/internal hidden.
- * (An authorized restricted/internal read surface is deferred — there are no such tasks pre-launch.)
+ * (An authorized restricted/internal read surface is deferred; current public reads expose only public tasks.)
  *
  * All value stays uncommitted (RFC-017 I-12); the route wraps every response in the PR5A value_boundary.
  */

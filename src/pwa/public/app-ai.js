@@ -1368,7 +1368,7 @@ async function renderAIDemo(app) {
       <div style="font-size:11px;font-weight:600;color:#374151;margin:14px 0 4px">${t('3. 重启 Claude，把上面任一 demo 提示粘进去')}</div>
       <div style="font-size:11px;color:#8e8e93;line-height:1.5">${t('Claude 会自动调用 webaz_search / webaz_verify_price / webaz_place_order 等 30+ 个 tool。需要 api_key 时先用 webaz_register 注册或登录现有账号。')}</div>
       <div style="margin-top:14px;padding:10px 12px;background:#f0fdf4;border:0.5px solid #bbf7d0;border-radius:8px;font-size:11px;color:#15803d;line-height:1.5">
-        💡 ${t('内部 vs 外部')}：${t('内部走浏览器接 LLM key 适合体验；外部 MCP 适合长跑 / 复杂任务 / 命令行自动化。STDIO(npx)给本地 host,Remote(https://webaz.xyz/mcp)给 ChatGPT/Claude 手机端与云端 Agent。两条路径后端、信誉、escrow 完全共享。')}
+        💡 ${t('内部 vs 外部')}：${t('内部走浏览器接 LLM key 适合体验;外部 MCP 适合长跑 / 复杂任务 / 命令行自动化。STDIO(npx)给本地 host;Remote(https://webaz.xyz/mcp)可作为 ChatGPT 网页版自定义 MCP App / Connector 和兼容云端 Agent 的手动接入地址。两条路径共享同一协议后端与信誉系统。')}
       </div>
     </div>`
 

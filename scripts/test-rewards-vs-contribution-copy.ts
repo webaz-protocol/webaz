@@ -178,11 +178,11 @@ function main(): void {
   ok('#apply-rewards threshold title scoped to share-commission', app.includes('分享分润开通门槛(只适用于分润,不适用于贡献)'))
   ok('promoter page uses 分享分润 wording (no 分享奖励 phrasing)', app.includes('分享分润待开通') && app.includes('已开通分享分润资格') && !app.includes('分享奖励待解锁') && !app.includes('已获得分享奖励资格'))
 
-  // 14) Commission-level reality (pre-launch global clamp max_levels ≤ 1): the UI must not present
+  // 14) Commission-level reality (current global clamp max_levels ≤ 1): the UI must not present
   //     "三级/3-tier/70/20/10" as CURRENT behavior. The apply-rewards disclosure may keep the consent-seed
   //     mirror "(三级佣金 + 积分配对)" but must carry the reality qualifier right below it.
   ok('apply-rewards carries the reality qualifier (clamp=1, 三级=max design, not a promise)',
-    app.includes('现实性说明:佣金层级按地区合规配置生效;当前预发布期全局上限为 1 级(仅 L1)') && /not a promise of future levels/.test(app))
+    app.includes('现实性说明:佣金层级按地区合规配置生效;当前全局上限为 1 级(仅 L1)') && /not a promise of future levels/.test(app))
   ok('Top leaderboard no longer titled 三级佣金', !app.includes('Top 三级佣金') && app.includes('Top 分享佣金'))
   // no unqualified current-claims left: every remaining 三级/3-tier/70/20/10 in UI strings must be either
   // the consent-mirror disclosure line or inside a code comment.

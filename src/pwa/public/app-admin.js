@@ -561,8 +561,8 @@ async function renderAdminSecurity(app) {
     ${isRoot ? `
     <div class="card" style="padding:12px;background:#fffbeb;border:1px solid #fcd34d;margin-bottom:10px">
       <div style="font-size:13px;font-weight:700;color:#92400e">🚧 ${t('创始人 / 引导管理员（Founder Admin · Bootstrap Operator）')}</div>
-      <div style="font-size:12px;color:#78350f;margin-top:4px;line-height:1.6">${t('这是 pre-launch 引导期的【临时治理模式】:更广的只读可见性 + 有限的应急写权限 —— 不是日常全能账号。')}</div>
-      <div style="font-size:11px;color:#78350f;margin-top:6px;line-height:1.6">${t('设计目标:launch 后把创始人权力拆成更窄的角色 —— maintainer / support operator / arbitrator / finance reviewer / security admin(用 regional admin + 权限位逐步收窄)。')}</div>
+      <div style="font-size:12px;color:#78350f;margin-top:4px;line-height:1.6">${t('这是当前的【过渡治理模式】:更广的只读可见性 + 有限的应急写权限 —— 不是日常全能账号。')}</div>
+      <div style="font-size:11px;color:#78350f;margin-top:6px;line-height:1.6">${t('设计目标:把创始人权力持续拆成更窄的角色 —— maintainer / support operator / arbitrator / finance reviewer / security admin(用 regional admin + 权限位逐步收窄)。')}</div>
     </div>` : ''}
 
     <div class="card" style="padding:14px">

@@ -2,7 +2,7 @@
  * Minimal in-memory sliding-window rate limiter for anonymous/public endpoints (no api_key to key on).
  * `createSlidingWindowLimiter(limit, windowMs)` returns `(key) => boolean`: records the call and returns
  * true while the key has ≤ limit hits in the trailing window, false once it exceeds. Per-process (fine for
- * the current single-host pre-launch deployment); a multi-replica deployment would back it with a store.
+ * the current single-host deployment); a multi-replica deployment would back it with a store.
  */
 export function createSlidingWindowLimiter(limit: number, windowMs: number): (key: string) => boolean {
   const hits = new Map<string, number[]>()

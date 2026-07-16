@@ -42,7 +42,7 @@ ok('honest copy: personal-submit vs org/admin governance, no faked independent r
 
 // founder / bootstrap mode (root only): labeled + framed temporary + split roadmap
 ok('founder/bootstrap banner shown for root', /isRoot \? `[\s\S]{0,400}Founder Admin · Bootstrap Operator/.test(fn))
-ok('founder mode framed as TEMPORARY pre-launch governance', /临时治理模式/.test(fn))
+ok('founder mode framed as TRANSITIONAL governance', /过渡治理模式/.test(fn))
 ok('founder mode notes the future split into narrower roles', /maintainer \/ support operator \/ arbitrator \/ finance reviewer \/ security admin/.test(fn))
 
 // safety notes — honest framing (must NOT overclaim full audit coverage; Codex P2)

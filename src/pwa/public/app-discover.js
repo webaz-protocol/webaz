@@ -465,7 +465,7 @@ function renderBuyNoMatchState(query) {
           <div style="margin-top:12px;padding-top:12px;border-top:0.5px solid #f3f4f6">
             <div style="font-size:12px;font-weight:600;color:#1f2937;margin-bottom:6px">${t('为什么上架到 WebAZ')}</div>
             <div style="font-size:12px;color:#3c3c43;line-height:1.7;margin-bottom:12px">
-              ${t('协议费仅 2% · 分享成交拿 commission · 链上稳定币直达 · Agent 自动比价命中')}
+              ${t('协议费仅 2% · 分享成交拿 commission · 买家直付卖家 · Agent 自动比价命中')}
             </div>
             <div style="font-size:12px;font-weight:600;color:#1f2937;margin-bottom:6px">${t('上架只需 3 步')}</div>
             <div style="font-size:12px;color:#3c3c43;line-height:1.7">
@@ -784,7 +784,7 @@ async function renderDiscover(app) {
   `
 
   app.innerHTML = shell(`
-    ${preLaunchBannerHTML()}
+    ${paymentStatusBannerHTML()}
     ${renderSmartBuyHeader('discover')}
     ${discoverGoodsTabs('recommend')}
     ${subTabs}

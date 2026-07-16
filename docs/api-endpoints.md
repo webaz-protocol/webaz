@@ -6,20 +6,20 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 
 | Method | Path | Auth | Admin | Description | Source |
 |---|---|---|---|---|---|
-| GET | `/.well-known/did.json` |  |  | 任何标准 DID resolver(Veramo / SpruceID / KILT / web5 ...)可 GET → 解出 issuer key → 验  | src/pwa/routes/public-utils.ts:409 |
+| GET | `/.well-known/did.json` |  |  | 任何标准 DID resolver(Veramo / SpruceID / KILT / web5 ...)可 GET → 解出 issuer key → 验  | src/pwa/routes/public-utils.ts:408 |
 | GET | `/.well-known/oauth-authorization-server` |  |  | RFC 8414 — Authorization Server Metadata | src/pwa/routes/oauth-discovery.ts:54 |
 | GET | `/.well-known/oauth-protected-resource` |  |  |  | src/pwa/routes/oauth-discovery.ts:50 |
 | GET | `/.well-known/oauth-protected-resource/mcp` |  |  |  | src/pwa/routes/oauth-discovery.ts:51 |
-| GET | `/.well-known/webaz-acp-feed.json` |  |  |  | src/pwa/routes/public-utils.ts:402 |
-| GET | `/.well-known/webaz-capabilities.json` |  |  | 集成方 agent fetch 此端点即知"我要做的写需要声明哪个 scope / 哪些写无需 scope / 哪些读受约束"。 | src/pwa/routes/public-utils.ts:291 |
-| GET | `/.well-known/webaz-economic.json` |  |  |  | src/pwa/routes/public-utils.ts:383 |
-| GET | `/.well-known/webaz-entities.json` |  |  | RFC-011 §① — agent 可读实体字典(订单状态机 doc=code + 保守公开字段 + 可验证标注)。 | src/pwa/routes/public-utils.ts:301 |
-| GET | `/.well-known/webaz-goals.json` |  |  | RFC-011 §① 目标索引 —— intent → action(②)+ endpoint + MCP 工具 + PWA 页(agent 自路由)。 | src/pwa/routes/public-utils.ts:311 |
-| GET | `/.well-known/webaz-integration.json` |  |  | RFC-011 总入口 —— 集成方 agent 一次 fetch 拿到整份契约导航(按旅程组织,指向各维度 live 端点)。 | src/pwa/routes/public-utils.ts:345 |
-| GET | `/.well-known/webaz-launch-pulse.json` |  |  |  | src/pwa/routes/public-utils.ts:279 |
-| GET | `/.well-known/webaz-negative-space.json` |  |  |  | src/pwa/routes/public-utils.ts:391 |
+| GET | `/.well-known/webaz-acp-feed.json` |  |  |  | src/pwa/routes/public-utils.ts:401 |
+| GET | `/.well-known/webaz-capabilities.json` |  |  | 集成方 agent fetch 此端点即知"我要做的写需要声明哪个 scope / 哪些写无需 scope / 哪些读受约束"。 | src/pwa/routes/public-utils.ts:290 |
+| GET | `/.well-known/webaz-economic.json` |  |  |  | src/pwa/routes/public-utils.ts:382 |
+| GET | `/.well-known/webaz-entities.json` |  |  | RFC-011 §① — agent 可读实体字典(订单状态机 doc=code + 保守公开字段 + 可验证标注)。 | src/pwa/routes/public-utils.ts:300 |
+| GET | `/.well-known/webaz-goals.json` |  |  | RFC-011 §① 目标索引 —— intent → action(②)+ endpoint + MCP 工具 + PWA 页(agent 自路由)。 | src/pwa/routes/public-utils.ts:310 |
+| GET | `/.well-known/webaz-integration.json` |  |  | RFC-011 总入口 —— 集成方 agent 一次 fetch 拿到整份契约导航(按旅程组织,指向各维度 live 端点)。 | src/pwa/routes/public-utils.ts:344 |
+| GET | `/.well-known/webaz-launch-pulse.json` |  |  |  | src/pwa/routes/public-utils.ts:278 |
+| GET | `/.well-known/webaz-negative-space.json` |  |  |  | src/pwa/routes/public-utils.ts:390 |
 | GET | `/.well-known/webaz-protocol.json` |  |  |  | src/pwa/routes/public-utils.ts:224 |
-| GET | `/.well-known/webaz-verifiability.json` |  |  | RFC-011 §⑤ 可验证索引 —— "什么可验 + 怎么验"统一表(护照/锚/AP2/订单链),诚实分级。 | src/pwa/routes/public-utils.ts:355 |
+| GET | `/.well-known/webaz-verifiability.json` |  |  | RFC-011 §⑤ 可验证索引 —— "什么可验 + 怎么验"统一表(护照/锚/AP2/订单链),诚实分级。 | src/pwa/routes/public-utils.ts:354 |
 | GET | `/api/addresses` | 🔐 |  |  | src/pwa/routes/addresses.ts:32 |
 | POST | `/api/addresses` | 🔐 |  |  | src/pwa/routes/addresses.ts:40 |
 | DELETE | `/api/addresses/:id` | 🔐 |  |  | src/pwa/routes/addresses.ts:89 |
@@ -115,7 +115,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/governance/applications` | 🔐 | 👑 | GET /api/admin/governance/applications — 列出 pending_onboarding(可筛 quiz_passed +  | src/pwa/routes/governance-onboarding.ts:360 |
 | GET | `/api/admin/governance/auto-deactivations` | 🔐 | 👑 | spec §6.2 公示触发原因(透明 — 元规则 #1) | src/pwa/routes/governance-onboarding.ts:743 |
 | POST | `/api/admin/governance/resolve-appeal` | 🔐 | 👑 | accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由 | src/pwa/routes/governance-onboarding.ts:781 |
-| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:5320 |
+| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:5322 |
 | GET | `/api/admin/health` | 🔐 | 👑 |  | src/pwa/routes/admin-health.ts:33 |
 | GET | `/api/admin/hot-wallet` |  |  | Legacy x-admin-key 入口：仅余额 | src/pwa/routes/admin-wallet-ops.ts:74 |
 | GET | `/api/admin/hot-wallet/status` | 🔐 | 👑 | P2-5: protocol 权限（区域 admin 看不到全局热钱包） | src/pwa/routes/admin-wallet-ops.ts:48 |
@@ -228,18 +228,18 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/agent-grants/permission-requests/:id/reject` | 🔐 |  | POST reject — human-authed. Terminal 'rejected'; nothing is granted. | src/pwa/routes/agent-grants.ts:563 |
 | GET | `/api/agent-grants/verify` |  |  | Audited (acceptance #8: every grant use logs). Never returns the raw token/api_k | src/pwa/routes/agent-grants.ts:419 |
 | GET | `/api/agent-grants/whoami` | 🎫 grant:read_public |  | end-to-end on a brand-new read-only endpoint that touches NO existing route and  | src/pwa/routes/agent-grants.ts:165 |
-| GET | `/api/agent/acp-feed` |  |  |  | src/pwa/routes/public-utils.ts:403 |
+| GET | `/api/agent/acp-feed` |  |  |  | src/pwa/routes/public-utils.ts:402 |
 | GET | `/api/agent/buyer/orders` | 🎫 grant:buyer_orders_read_minimal |  | recipient_code 连取都不取(I6 同强度)。纯只读,零执行、零资金 —— 买家写动作(place_order 等)仍 RISK 硬拒。 | src/pwa/routes/agent-grants.ts:224 |
 | GET | `/api/agent/buyer/orders/:id` | 🎫 grant:buyer_orders_read_minimal |  |  | src/pwa/routes/agent-grants.ts:231 |
-| GET | `/api/agent/capabilities` |  |  |  | src/pwa/routes/public-utils.ts:295 |
-| GET | `/api/agent/changes` |  |  | 指纹由 tests/test-contract-fingerprint.ts + docs/CONTRACT-LOCK.json 守住(静默改契约不可 merg | src/pwa/routes/public-utils.ts:339 |
+| GET | `/api/agent/capabilities` |  |  |  | src/pwa/routes/public-utils.ts:294 |
+| GET | `/api/agent/changes` |  |  | 指纹由 tests/test-contract-fingerprint.ts + docs/CONTRACT-LOCK.json 守住(静默改契约不可 merg | src/pwa/routes/public-utils.ts:338 |
 | POST | `/api/agent/discover` | 🎫 grant:buyer_discover |  | allowlist 字段(category/keywords≤5/max_price/ship_to_region/quantity);文本入口做形状校验(超长 | src/pwa/routes/agent-grants.ts:246 |
-| GET | `/api/agent/economic-participation` |  |  |  | src/pwa/routes/public-utils.ts:384 |
-| GET | `/api/agent/entities` |  |  |  | src/pwa/routes/public-utils.ts:305 |
+| GET | `/api/agent/economic-participation` |  |  |  | src/pwa/routes/public-utils.ts:383 |
+| GET | `/api/agent/entities` |  |  |  | src/pwa/routes/public-utils.ts:304 |
 | GET | `/api/agent/events` | 🔐 |  | 结构性事件 + 哈希链字段(验链防篡改),完整 payload 仍走 party-gated /chain。 | src/pwa/routes/orders-read.ts:162 |
-| GET | `/api/agent/goals` |  |  |  | src/pwa/routes/public-utils.ts:331 |
-| GET | `/api/agent/integration` |  |  |  | src/pwa/routes/public-utils.ts:349 |
-| GET | `/api/agent/negative-space` |  |  |  | src/pwa/routes/public-utils.ts:392 |
+| GET | `/api/agent/goals` |  |  |  | src/pwa/routes/public-utils.ts:330 |
+| GET | `/api/agent/integration` |  |  |  | src/pwa/routes/public-utils.ts:348 |
+| GET | `/api/agent/negative-space` |  |  |  | src/pwa/routes/public-utils.ts:391 |
 | POST | `/api/agent/order-draft` | 🎫 grant:draft_order |  | 草稿不可变(无 update),cancel 终态幂等安全;get/list 仅本人。提交/批准/建单全在 PR-5a。 | src/pwa/routes/agent-grants.ts:334 |
 | GET | `/api/agent/order-drafts` | 🎫 grant:draft_order |  |  | src/pwa/routes/agent-grants.ts:346 |
 | GET | `/api/agent/order-drafts/:id` | 🎫 grant:draft_order |  |  | src/pwa/routes/agent-grants.ts:350 |
@@ -250,7 +250,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/agent/quote` | 🎫 grant:price_quote |  | subject 恒 = grant human(agent 无法传 human_id/代表他人)。 | src/pwa/routes/agent-grants.ts:324 |
 | GET | `/api/agent/seller/products` | 🎫 grant:seller_products_read |  | The consumption (allow AND the permission_required deny) is audited by the middl | src/pwa/routes/agent-grants.ts:192 |
 | POST | `/api/agent/seller/products` | 🎫 grant:seller_product_draft |  |  | src/pwa/routes/agent-grants.ts:376 |
-| GET | `/api/agent/verifiability` |  |  |  | src/pwa/routes/public-utils.ts:359 |
+| GET | `/api/agent/verifiability` |  |  |  | src/pwa/routes/public-utils.ts:358 |
 | GET | `/api/agents/me/reputation` | 🔐 |  |  | src/pwa/routes/agent-reputation.ts:28 |
 | POST | `/api/ai/generate-description` | 🔐 |  | G-1: AI 文案生成（卖家发品辅助） | src/pwa/routes/ai.ts:86 |
 | POST | `/api/ai/price-suggestion` | 🔐 |  | G-2: AI 价格建议 | src/pwa/routes/ai.ts:30 |
@@ -387,10 +387,10 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/disputes/cases/:case_id/comments/:comment_id/reply` | 🔐 |  | W5 子回复 — 任意人可对顶层评论回复多次（不受"一人一案一次"限制） | src/pwa/routes/dispute-cases.ts:213 |
 | POST | `/api/disputes/cases/:case_id/fairness` | 🔐 |  | 公正度投票（👍 / 👎）— 一人一案一票 | src/pwa/routes/dispute-cases.ts:246 |
 | GET | `/api/disputes/cases/by-product/:product_id` |  |  | 公开列表（按商品） | src/pwa/routes/dispute-cases.ts:96 |
-| GET | `/api/editor-picks` |  |  |  | src/pwa/routes/public-utils.ts:446 |
+| GET | `/api/editor-picks` |  |  |  | src/pwa/routes/public-utils.ts:445 |
 | POST | `/api/email-subscriptions` |  |  | 2026-05-26 加 role_preference + note 字段（welcome 表单丰富化） | src/pwa/routes/welcome.ts:162 |
 | POST | `/api/email-subscriptions/unsubscribe` |  |  |  | src/pwa/routes/welcome.ts:212 |
-| POST | `/api/error-report` |  |  |  | src/pwa/routes/public-utils.ts:526 |
+| POST | `/api/error-report` |  |  |  | src/pwa/routes/public-utils.ts:525 |
 | POST | `/api/evidence-requests/:requestId/submit` | 🔐 |  | 当事人提交补充证据响应（仲裁员 request 后用） | src/pwa/routes/evidence.ts:83 |
 | DELETE | `/api/evidence/:id` | 🔐 |  | 撤回证据（仅上传者，争议未结案时） | src/pwa/routes/evidence.ts:58 |
 | GET | `/api/evidence/:id/blob` | 🔐 |  | 下载证据 blob（仅参与方/仲裁员） | src/pwa/routes/evidence.ts:35 |
@@ -419,7 +419,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/follows/feed` | 🔐 |  | Wave D-1: 关注卖家动态 feed — new_product + restock 合并 + 去重 | src/pwa/routes/follows.ts:75 |
 | GET | `/api/follows/me` | 🔐 |  |  | src/pwa/routes/follows.ts:59 |
 | GET | `/api/fx/rates` |  |  |  | src/pwa/routes/fx.ts:19 |
-| GET | `/api/governance/onboarding-stats` |  |  | 无 auth — agent / 用户 / 第三方都可读;不暴露 PII | src/pwa/routes/public-utils.ts:474 |
+| GET | `/api/governance/onboarding-stats` |  |  | 无 auth — agent / 用户 / 第三方都可读;不暴露 PII | src/pwa/routes/public-utils.ts:473 |
 | POST | `/api/governance/onboarding/appeal` | 🔐 |  | 必须:source 行 action='auto_deactivate' + window 内 + 未已 appeal + reason 长度 | src/pwa/routes/governance-onboarding.ts:684 |
 | POST | `/api/governance/onboarding/apply` | 🔐 |  |  | src/pwa/routes/governance-onboarding.ts:78 |
 | POST | `/api/governance/onboarding/case-review` | 🔐 |  | 不立即评分 — maintainer 上岗签字前(阶段 3 #1093)对比 expected_verdict | src/pwa/routes/governance-onboarding.ts:300 |
@@ -444,7 +444,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/import-product` | 🔐 |  |  | src/pwa/routes/import-product.ts:35 |
 | GET | `/api/kyc/me` | 🔐 |  |  | src/pwa/routes/kyc.ts:51 |
 | POST | `/api/kyc/submit` | 🔐 |  |  | src/pwa/routes/kyc.ts:29 |
-| GET | `/api/launch-pulse` |  |  |  | src/pwa/routes/public-utils.ts:283 |
+| GET | `/api/launch-pulse` |  |  |  | src/pwa/routes/public-utils.ts:282 |
 | GET | `/api/leaderboard` |  |  |  | src/pwa/routes/leaderboard.ts:73 |
 | POST | `/api/link-challenges/:id/verify` | 🔐 |  |  | src/pwa/routes/url-claim.ts:33 |
 | GET | `/api/listings` |  |  | 列表搜索（公开） | src/pwa/routes/listings.ts:82 |
@@ -457,7 +457,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/logistics/me/performance` | 🔐 |  | 物流绩效卡 (Wave B-4) | src/pwa/routes/analytics.ts:36 |
 | GET | `/api/logistics/orders` | 🔐 |  |  | src/pwa/routes/logistics.ts:33 |
 | GET | `/api/logistics/return-pickups` | 🔐 |  |  | src/pwa/routes/returns.ts:446 |
-| GET | `/api/manifest` |  |  |  | src/pwa/routes/public-utils.ts:468 |
+| GET | `/api/manifest` |  |  |  | src/pwa/routes/public-utils.ts:467 |
 | POST | `/api/manifests` | 🔐 |  |  | src/pwa/routes/manifests.ts:52 |
 | GET | `/api/manifests/:hash` | 🔐 |  |  | src/pwa/routes/manifests.ts:101 |
 | PATCH | `/api/manifests/:hash/takedown` | 🔐 |  |  | src/pwa/routes/manifests.ts:162 |
@@ -645,7 +645,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/reviews/:type/:id/claims` |  |  |  | src/pwa/routes/reviews.ts:113 |
 | GET | `/api/reviews/recent` |  |  |  | src/pwa/routes/reviews.ts:38 |
 | POST | `/api/rewards/apply` | 🔐 |  | POST /api/rewards/apply — activate (or reconfirm) opt-in + drain escrow | src/pwa/routes/rewards-apply.ts:112 |
-| POST | `/api/rewards/deactivate` | 🔐 |  | POST /api/rewards/deactivate — flip off; subsequent commissions → charity | src/pwa/routes/rewards-apply.ts:219 |
+| POST | `/api/rewards/deactivate` | 🔐 |  | POST /api/rewards/deactivate — flip off; subsequent commissions → charity | src/pwa/routes/rewards-apply.ts:220 |
 | GET | `/api/rewards/status` | 🔐 |  | GET /api/rewards/status — current state + escrow tally | src/pwa/routes/rewards-apply.ts:58 |
 | GET | `/api/rfqs` | 🔐 |  | 卖家 RFQ 看板 | src/pwa/routes/rfqs.ts:166 |
 | POST | `/api/rfqs` | 🔐 |  | 买家：创建 RFQ | src/pwa/routes/rfqs.ts:79 |
@@ -763,7 +763,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/wallet/connect/verify` | 🔐 |  |  | src/pwa/routes/wallet-write.ts:66 |
 | GET | `/api/wallet/deposit-qr` | 🔐 |  | 充值地址 QR — SVG（轻量 + 矢量，移动端扫码体验最佳） | src/pwa/routes/wallet-read.ts:66 |
 | GET | `/api/wallet/deposits` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:175 |
-| GET | `/api/wallet/income` | 🔐 |  | 收入构成：销售 / 分享归因 / PV 记录(pre-launch,若适用) | src/pwa/routes/wallet-read.ts:201 |
+| GET | `/api/wallet/income` | 🔐 |  | 收入构成:销售 / 分享归因 / PV 记录(若适用) | src/pwa/routes/wallet-read.ts:201 |
 | GET | `/api/wallet/rate` |  |  | 公开汇率 | src/pwa/routes/wallet-read.ts:84 |
 | POST | `/api/wallet/topup` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:242 |
 | GET | `/api/wallet/whitelist` | 🔐 |  | 白名单 GET / POST / DELETE | src/pwa/routes/wallet-read.ts:98 |

@@ -169,4 +169,4 @@ PR 3B is split so each PR completes **one trust boundary**:
 - **Identity Claim (later):** Passkey binding sets `accountable_party_ref` on the *fact*, not on the immutable credential.
 - **Assurance Surface (later):** referenced, not built.
 
-> **A serialized credential is still NOT a signature.** Authenticity holds only *inside* the fetch execution; a credential replayed later cannot be re-verified for source authenticity without re-fetching (or a future signing/anchoring step). Storage, ingestion, lifecycle-events, and Passkey claim remain **deferred**; RFC-017 stays **draft / prelaunch-dogfood** (§0/§12 — value is `uncommitted`). **No reward / redemption is claimed at any step.**
+> **A serialized credential is still NOT a signature.** Authenticity holds only *inside* the fetch execution; a credential replayed later cannot be re-verified for source authenticity without re-fetching (or a future signing/anchoring step). Storage, ingestion, lifecycle-events, and Passkey claim remain **deferred**; this RFC-017 slice stays **draft / dogfood** (§0/§12 — value is `uncommitted`). **No reward / redemption is claimed at any step.**

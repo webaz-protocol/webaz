@@ -8,10 +8,9 @@
 
 [![npm](https://img.shields.io/npm/v/@seasonkoh/webaz.svg)](https://www.npmjs.com/package/@seasonkoh/webaz)
 [![MCP Registry](https://img.shields.io/badge/MCP%20Registry-active-blue)](https://registry.modelcontextprotocol.io/v0/servers?search=webaz)
-[![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-orange.svg)](LICENSE) [![Change Date: 2030-05-18](https://img.shields.io/badge/Change%20Date-2030--05--18-blue.svg)](NOTICE) ![Status: Pre-launch](https://img.shields.io/badge/Status-Pre--launch-yellow.svg)
+[![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-orange.svg)](LICENSE) [![Change Date: 2030-05-18](https://img.shields.io/badge/Change%20Date-2030--05--18-blue.svg)](NOTICE) ![Status: Live](https://img.shields.io/badge/Status-Live-brightgreen.svg)
 
-> 🚧 **Pre-launch · 预发布阶段** — v1.0 公示中（起算 2026-05-31）· 极早期（仅创世期账户）· verifier / arbitrator 角色仍在引导 · 经济模型未结算 · 不建议生产使用。
-> 🚧 **Pre-launch stage** — v1.0 public-notice period (started 2026-05-31) · very early (genesis-phase accounts only) · verifier / arbitrator roles still being bootstrapped · economic model un-settled · **not for production use**.
+> ✅ **已公开发布 / Publicly launched** — Direct Pay 已支持买家向卖家进行真实场外付款。WebAZ 记录订单状态和证据,但非托管:不代持本金、不担保、不代为退款。托管轨仍为模拟测试流程,其他支付方式持续接入。
 >
 > 详见 / Details: [`docs/CHARTER.md`](docs/CHARTER.md) · [`docs/META-RULES-FULL.md`](docs/META-RULES-FULL.md) · [`docs/ECONOMIC-MODEL.md`](docs/ECONOMIC-MODEL.md) · [`/api/protocol-status`](https://webaz.xyz/api/protocol-status)
 
@@ -20,7 +19,7 @@
 > 📖 **创始白皮书 / Founding Whitepaper** → [`docs/WHITEPAPER.zh-CN.md`](docs/WHITEPAPER.zh-CN.md) · [`docs/WHITEPAPER.md`](docs/WHITEPAPER.md)
 
 > **试一下 / Try it**：`npx -y @seasonkoh/webaz` —— 接入**任意 MCP 客户端**(Claude Desktop / Claude Code / Codex / Cursor / 自建 agent 皆可;配置见下)。
-> **PWA 演示 / demo**：[webaz.xyz](https://webaz.xyz)
+> **线上 PWA / Live PWA**：[webaz.xyz](https://webaz.xyz)
 
 ---
 
@@ -58,7 +57,7 @@
 ### 信任与合规
 - **claim 验证 + 条件订单**：买家可对推荐理由发起验证，3 verifier 共识仲裁，4 路径结算（pass / fail / no_fault / timeout）+ outlier 处罚（见 [claim-verification](docs/modules/claim-verification.md)）
 - **地区合规分润**：china/us/eu/india = 2 levels；其他 3 levels；UI 按地区动态显示
-- **零门槛上架**：卖家上架免质押，首单成交时从 escrow 自动锁 15% stake（trusted 卖家跳过）
+- **零门槛上架**：卖家上架免质押；卖家质押模式仍属后续钱路能力，当前不作为真实 Direct Pay 的平台托管保证。
 - **争议系统**：双方举证 → 仲裁员裁定 → 败诉方缴 1% 仲裁费（含超时自动判）
 - **链接认领验证**：卖家关联外部链接需通过众包验证码核验，防止他人冒用商品主权
 
@@ -80,7 +79,7 @@
 - **开放任务板**：任意人 / agent 可浏览可认领任务、提交建议（见 `webaz_contribute` · [`docs/PUBLIC-CONTRIBUTOR-ENTRY.md`](docs/PUBLIC-CONTRIBUTOR-ENTRY.md)）
 
 ### 链上 / 安全
-- **链上托管**：USDC on Base Sepolia，充值地址按用户派生，自动扫归集 + 自动执行提现
+- **支付 + 安全**：Direct Pay 由买家向卖家场外直付，WebAZ 不代持本金；WebAuthn / Passkey 保护敏感操作。Base Sepolia / USDC 仍属实验性托管集成，不是当前真实支付轨。
 - **WebAuthn / Passkey** 大额操作闸门
 - **storage.persist()** 申请 + 持久化状态可视
 - **自动执法**：状态机责任归因，超时自动判责（每 5 分钟 cron 扫）
@@ -95,6 +94,8 @@
 ### 方式一：MCP 接入（任意 agent —— agent 原生体验）
 
 MCP server 有三种模式 / The MCP runs in one of three modes：
+
+> **ChatGPT 手动安装**:WebAZ 已提供 Remote MCP 端点 `https://webaz.xyz/mcp`。在 ChatGPT 网页版中,符合条件的用户或工作区管理员可开启 Developer mode,创建自定义 MCP App / Connector,然后填入该 URL。匿名状态可搜索和浏览;允许的登录操作可经 OAuth 或账户凭证连接。可用性和写操作取决于 ChatGPT 套餐及工作区策略;这不等于 WebAZ 已上架 ChatGPT 官方 App Directory。
 
 | 模式 / Mode | 数据源 | 用途 | 如何触发 |
 |---|---|---|---|
@@ -255,9 +256,9 @@ webaz://protocol/manifest
 | 分享佣金 | 10% | 按真实成交分给推荐链 L1/L2/L3（默认 7:2:1），受地区 `max_levels` 上限；无人可领则入三级公池 |
 | 物流方 | 5% | self-fulfill / 面交 = 0 |
 | 协议费 | 2% | 50% 入协议储备池 + 50% 入运营（二手 1%） |
-| 协议基金 | 1% | 公益 / 兜底池；**pre-launch = 0**，有真实 GMV 再经治理开启 ≤ 1% |
+| 协议基金 | 上限 1% | 公益 / 兜底池；**当前费率 = 0**，开启需治理决策且不超过 1% |
 
-卖家上架**零质押**；首单成交时自动从订单 escrow 锁定一笔 stake（当前默认 15%）作买家保护，信誉 ≥ trusted 的卖家跳过（信任奖励）。该比例同为治理可调。
+卖家上架当前为**零质押**。订单质押与平台托管仍是待完成的钱路能力，不应将当前 Direct Pay 理解为 WebAZ 代持资金或提供托管保证。
 
 > **匹配奖励引擎已切除。** PV 匹配奖励引擎已从公开代码移除(#401,no-op stub;完整引擎内部归档,重启需法律/治理放行)。**PV 仅为参与/归因记录,不是收益、不可兑付、不构成任何奖励权益。** 详见 [`docs/REWARD-ENGINES-DECOUPLING.md`](docs/REWARD-ENGINES-DECOUPLING.md) / [`docs/PARTICIPATION-ATTRIBUTION-COMPLIANCE.md`](docs/PARTICIPATION-ATTRIBUTION-COMPLIANCE.md)。
 >

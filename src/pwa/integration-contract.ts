@@ -26,7 +26,7 @@ export function buildIntegrationContract() {
     // 这是什么 / 从哪开始 / 匿名能做什么 / 鉴权才能做什么 / 安全的第一步 / 怎么提建议参与共建。离散字段(非散文)便于解析。
     // 贡献边界(RFC-017)前置声明:建议 ≠ 贡献事实 ≠ 奖励,避免任何经济/兑现承诺暗示。
     agent_quickstart: {
-      what_is_webaz: 'An agent-native, open commerce protocol: humans and AI agents transact on the same state-machine-governed protocol — and can also help build the protocol itself. Pre-launch: the escrow rail settles simulated test currency; Direct Pay is a conditions-gated, non-custodial rail where real payment happens off-platform between buyer and seller (WebAZ never holds principal, does not guarantee, cannot refund).',
+      what_is_webaz: 'A publicly launched, agent-native open commerce protocol: humans and AI agents transact on the same state-machine-governed protocol and can also help build it. Direct Pay is live for real off-platform buyer-to-seller payment; WebAZ is non-custodial and never holds principal. The escrow rail remains simulated while additional payment methods are added.',
       canonical_start_url: `${BASE}/.well-known/webaz-integration.json`,
       // RFC-022:Remote MCP 端点(完整 shape 见顶层 remote_mcp);此处补进 quickstart 视野
       ...(remoteMcpEnabled() ? { remote_mcp_endpoint: `${BASE}/mcp` } : {}),
@@ -70,7 +70,7 @@ export function buildIntegrationContract() {
       browse_first: 'No account needed to START: browse the live catalog at https://webaz.xyz/#discover and read every well-known surface below anonymously. Try before you commit.',
       anonymous_read: 'no credential needed — public GET endpoints + the well-known surfaces below.',
       get_api_key: 'an api_key requires a REAL HUMAN to register at https://webaz.xyz (invite code + Passkey). Agents CANNOT self-register — this is the accountability root ("every agent has an accountable human behind it"). After the human gets the key, set it as the agent\'s bearer token.',
-      how_to_get_invite: 'Pre-launch is invite-gated for Sybil resistance. Request one by leaving your email at https://webaz.xyz/#welcome (or email contact@webaz.xyz). You can browse + read everything WITHOUT an invite — it is only needed to register and write.',
+      how_to_get_invite: 'Registration currently uses invitations for Sybil resistance. Request one by leaving your email at https://webaz.xyz/#welcome (or email contact@webaz.xyz). You can browse + read everything WITHOUT an invite — it is only needed to register and write.',
       then: 'declare your write scope at POST /api/me/agents/declarations (scope tokens from the capability matrix §②); a Passkey-bound human is exempt from scope declaration. See onboarding (③).',
       tiers: 'anonymous_read → authenticated_write (api_key→passport) → value_participant (collateral). See liability_tiers below.',
     },

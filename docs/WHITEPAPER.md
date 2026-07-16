@@ -2,7 +2,7 @@
 
 ## Status
 
-WebAZ is pre-launch and under active development. This paper is a founding statement and protocol direction, not an investment document, not a token paper, and not a promise of income, reward, ownership, or redemption.
+WebAZ is publicly launched and under active development. Direct Pay supports real off-platform payment between buyer and seller; WebAZ is non-custodial and never holds principal. The escrow rail remains simulated while additional payment methods are added. This paper is a founding statement and protocol direction, not an investment document, not a token paper, and not a promise of income, reward, ownership, or redemption.
 
 ## Abstract
 
@@ -158,11 +158,11 @@ A governance system that cannot protect its own principles is only performance. 
 
 ## 10. Current Status
 
-WebAZ is pre-launch and under active development.
+WebAZ is publicly launched and under active development. Real transactions currently use Direct Pay between buyer and seller; the escrow rail remains simulated and additional payment methods are still being added.
 
 The codebase already contains core protocol surfaces: PWA, MCP, marketplace flows, order lifecycle, disputes, contributor entry, task coordination, admin panels, audit trails, and early governance documents.
 
-But WebAZ should not claim production maturity before it has earned it. Metrics, user counts, economic settlement status, decentralization status, and safety guarantees must be stated honestly at the time of release.
+Launch does not mean every planned rail or governance mechanism is complete. Metrics, user counts, payment-rail status, decentralization status, and safety guarantees must continue to be stated honestly.
 
 At this stage, the correct invitation is not:
 

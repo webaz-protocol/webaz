@@ -2,7 +2,7 @@
   "id": "/",
   "name": "WebAZ — Agent-native 去中心化商业协议",
   "short_name": "WebAZ",
-  "description": "买家 Agent 找货、卖家 Agent 上架，链上稳定币结算，2% 纯净协议。",
+  "description": "买家 Agent 找货、卖家 Agent 上架，支持买卖双方 Direct Pay，协议记录订单状态与证据。",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

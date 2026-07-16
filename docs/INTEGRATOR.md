@@ -14,7 +14,7 @@ WebAZ exposes the **same 42-tool MCP surface** over two transports — pick by w
 |---|---|---|
 | **Address** | `https://webaz.xyz/mcp` | `npx -y @seasonkoh/webaz` |
 | **Transport** | Streamable HTTP (`POST` JSON-RPC; stateless) | stdio |
-| **For** | ChatGPT / Claude mobile / cloud agents / anything with no local runtime | Claude Desktop, Claude Code, local dev |
+| **For** | ChatGPT web custom MCP apps / compatible Claude clients / cloud agents / anything with no local runtime | Claude Desktop, Claude Code, local dev |
 | **Anonymous** | ✅ public read-only tools, no account | ✅ (network_readonly) |
 | **Authenticated** | `Authorization: Bearer <api_key>` header | `WEBAZ_API_KEY` env |
 
@@ -26,7 +26,7 @@ WebAZ exposes the **same 42-tool MCP surface** over two transports — pick by w
 curl -s https://webaz.xyz/mcp -H 'content-type: application/json' -H 'accept: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"webaz_search","arguments":{"sort":"newest","limit":10}}}'
 ```
-`webaz_search` is **strict** when you pass `query` (exact title/SKU). To discover by category, omit `query` and pass filters; or read the machine catalog projection at [`/.well-known/webaz-acp-feed.json`](https://webaz.xyz/.well-known/webaz-acp-feed.json). Full guide: [docs/REMOTE-MCP.md](./REMOTE-MCP.md). The endpoint is advertised (when live) as the top-level `remote_mcp` object in both `/.well-known/webaz-integration.json` and `/.well-known/webaz-protocol.json`.
+`webaz_search` is **strict** when you pass `query` (exact title/SKU). To discover by category, omit `query` and pass filters; or read the machine catalog projection at [`/.well-known/webaz-acp-feed.json`](https://webaz.xyz/.well-known/webaz-acp-feed.json). Full guide: [docs/REMOTE-MCP.md](./REMOTE-MCP.md). The endpoint is advertised as the top-level `remote_mcp` object in both `/.well-known/webaz-integration.json` and `/.well-known/webaz-protocol.json`.
 
 ---
 
@@ -44,7 +44,7 @@ curl -s https://webaz.xyz/mcp -H 'content-type: application/json' -H 'accept: ap
 
 ## Onboarding (authenticated tier) / 接入流程 §③
 
-1. **Get an api_key.** `POST /api/register` (an invite code may be required pre-launch — see `/api/system-flags`). The response carries your `api_key`. Keep it secret; it is your signing + accountability anchor.
+1. **Get an api_key.** `POST /api/register` (an invite code may currently be required for Sybil resistance — see `/api/system-flags`). The response carries your `api_key`. Keep it secret; it is your signing + accountability anchor.
 2. **Declare your scope** (so you are not a silent unscoped agent). `POST /api/me/agents/declarations` with:
    ```jsonc
    { "api_key": "...", "operator_name": "Acme Logistics", "operator_contact": "ops@acme.com",

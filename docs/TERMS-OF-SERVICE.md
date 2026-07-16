@@ -1,15 +1,15 @@
 # WebAZ Terms of Service / WebAZ 服务条款
 
-> **Status**: pre-launch draft. Will become binding when (a) you register an account, AND (b) the operator formally opens WebAZ to real users at W8 launch. Pre-launch test accounts: this ToS still applies in spirit but operator reserves right to refine at launch.
+> **Status**: effective for users of the publicly launched WebAZ service. Direct Pay is the current real-payment rail; WebAZ is non-custodial and does not hold transaction principal. The escrow rail remains simulated while additional payment methods are added.
 >
-> **Last updated**: 2026-06-03 (task #1084)
+> **Last updated**: 2026-07-16
 > **Companion docs**: `docs/LEGAL-DISCLOSURES.md` (operator's good-faith legal interpretation) + `docs/CHARTER.md` (project constitution)
 
 ---
 
 ## §1 Acceptance / 接受条款
 
-By registering an account or using WebAZ services after the W8 launch date, you agree to these Terms. If you do not agree, do not use the service.
+By registering an account or using WebAZ services, you agree to these Terms. If you do not agree, do not use the service.
 
 Material changes to these Terms follow `docs/CHARTER.md §6` (RFC + public notice). Continued use after notice period = acceptance of revised Terms.
 
@@ -21,7 +21,7 @@ WebAZ is an **agent-native decentralized commerce protocol** operating under Bus
 - **Software protocol**, not a financial institution / bank / broker
 - **Source-available**, not closed-source
 - **Operator-administered in phase A**, transitioning to community-administered governance (phase D DAO) per `CHARTER §3.3`
-- **Pre-launch / W8 launch**: small-scale, evolving rapidly, operator-discretion-heavy
+- **Publicly launched and evolving**: Direct Pay is live; additional payment rails and progressive governance remain under development
 
 You acknowledge WebAZ is **NOT**:
 - A regulated financial service
@@ -163,7 +163,7 @@ TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE OPERATOR (INCLUDING MAINT
 
 The operator's aggregate liability to you for any claim arising from or related to these Terms shall not exceed the greater of (a) the amount you have paid to the operator (excluding peer-to-peer transactions on WebAZ) in the 12 months preceding the claim, or (b) USD 100.
 
-This limitation is essential to the operator's willingness to provide WebAZ at all, given the pre-launch / phase A state.
+This limitation is essential to the operator's willingness to provide an evolving, non-custodial commerce protocol.
 
 ---
 
