@@ -1897,6 +1897,26 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
       required: ['product_id'],
     },
   },
+  {
+    name: 'webaz_order_draft',
+    description: `Buyer ORDER DRAFT (RFC-025 PR-4, safe scope draft_order; OAuth grant, no api_key). Converts ONE valid quote_token (from webaz_quote_order) into a frozen, immutable draft snapshot — one quote, one draft (single-use, atomic).
+
+- A draft is a SNAPSHOT ONLY: no order exists, nothing is charged, no funds locked, no stock held. Price/stock/eligibility are re-validated at human approval; drift there hard-fails back to a fresh quote — terms are NEVER silently changed.
+- action="create" (quote_token required, optional idempotency_key) | "cancel" (draft_id; terminal, idempotent-safe) | "get" (draft_id) | "list".
+- Drafts expire in 24h; expired/cancelled drafts cannot be submitted.
+- Zero PII: destination stays a region tag + summary; amounts are integer WAZ units copied verbatim from the quote (no recomputation).
+- SUBMITTING for human Passkey approval is RFC-025 PR-5a and is NOT YET AVAILABLE — until then a human orders at webaz.xyz, or an api_key agent uses webaz_place_order. A real order always requires human confirmation.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['create', 'cancel', 'get', 'list'], description: 'create consumes a quote_token; cancel/get take draft_id; list shows your drafts' },
+        quote_token: { type: 'string', description: 'create: the qtk_ token from webaz_quote_order (single-use; consumed atomically)' },
+        draft_id: { type: 'string', description: 'cancel/get: the odr_ draft id' },
+        idempotency_key: { type: 'string', description: 'create (optional): [A-Za-z0-9_-]{1,64}; same key replays the same draft, different draft → IDEMPOTENCY_CONFLICT' },
+      },
+      required: ['action'],
+    },
+  },
 ]
 
 // Standard MCP annotations merged once at module load (fail-fast if any tool lacks a mapping). The
@@ -2727,6 +2747,34 @@ export async function handleQuoteOrder(args: Record<string, unknown>): Promise<R
   }
   const r = await apiCall('/api/agent/quote', { method: 'POST', apiKey: cred.token, body })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks price_quote. Re-connect via OAuth so the grant carries the order:draft scope, then retry.' }
+  return r
+}
+
+export async function handleOrderDraft(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // RFC-025 PR-4 — wraps the /api/agent/order-draft(s) endpoints (safe scope draft_order — the FIRST
+  //   consumer of the capability). Pure wrapper: forwards only allowlisted fields, response unchanged.
+  if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential(args)
+  if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
+  const action = String(args.action || '')
+  let r: Record<string, unknown>
+  if (action === 'create') {
+    const body: Record<string, unknown> = {}
+    if (args.quote_token !== undefined) body.quote_token = args.quote_token
+    if (args.idempotency_key !== undefined) body.idempotency_key = args.idempotency_key
+    r = await apiCall('/api/agent/order-draft', { method: 'POST', apiKey: cred.token, body })
+  } else if (action === 'cancel') {
+    if (typeof args.draft_id !== 'string' || !args.draft_id) return { error: 'draft_id is required for cancel', error_code: 'DRAFT_NOT_FOUND' }
+    r = await apiCall(`/api/agent/order-drafts/${encodeURIComponent(args.draft_id)}/cancel`, { method: 'POST', apiKey: cred.token })
+  } else if (action === 'get') {
+    if (typeof args.draft_id !== 'string' || !args.draft_id) return { error: 'draft_id is required for get', error_code: 'DRAFT_NOT_FOUND' }
+    r = await apiCall(`/api/agent/order-drafts/${encodeURIComponent(args.draft_id)}`, { method: 'GET', apiKey: cred.token })
+  } else if (action === 'list') {
+    r = await apiCall('/api/agent/order-drafts', { method: 'GET', apiKey: cred.token })
+  } else {
+    return { error: `unknown action: ${action}`, error_code: 'BAD_ACTION' }
+  }
+  if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks draft_order. Re-connect via OAuth so the grant carries the order:draft scope, then retry.' }
   return r
 }
 
@@ -5580,6 +5628,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         case 'webaz_buyer_orders':        result = await handleBuyerOrders(args); break
         case 'webaz_discover':            result = await handleDiscover(args); break
         case 'webaz_quote_order':         result = await handleQuoteOrder(args); break
+        case 'webaz_order_draft':         result = await handleOrderDraft(args); break
         case 'webaz_order_action_request': result = await handleOrderActionRequest(args); break
         case 'webaz_feedback':      result = await handleFeedback(args); break
         case 'webaz_contribute':    result = await handleContribute(args); break

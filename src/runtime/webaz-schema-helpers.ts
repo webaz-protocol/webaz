@@ -1820,6 +1820,49 @@ export function initOrderQuotesSchema(db: Database.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_oq_expires ON order_quotes(expires_at)`)
 }
 
+/**
+ * order_drafts — RFC-025 PR-4 订单草稿(激活 RFC-020 以来"授权即死"的 draft_order capability:首个消费者)。
+ * 语义:由【未过期、未消费】的 quote 一次性转化(order_quotes.consumed_at CAS,同事务)——
+ * 草稿 = 冻结的报价快照 + 生命周期(draft|cancelled|expired;submitted 由 PR-5a 置位)。
+ * 零经济执行:不建真实订单行、不扣款、不锁资金、不动库存;价格/库存/资格在 PR-5a 人工 Passkey
+ * 批准时以快照为基准全部重校验(drift = 硬失败 + 重新报价,绝不静默换条件)。
+ * 草稿不可变:无 update 端点,只能 cancel(终态);快照列直接复制 quote 行的整数金额(零重算=零 drift)。
+ * PII:与 order_quotes 同纪律 —— 地址只有 region 标签 + sha256,全文永不入本表。
+ */
+export function initOrderDraftsSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS order_drafts (
+      id               TEXT PRIMARY KEY,              -- odr_xxx
+      buyer_id         TEXT NOT NULL,                 -- = quote.human_id(消费时校验一致)
+      quote_id         TEXT NOT NULL,                 -- 消费的报价(order_quotes.id;一次性)
+      product_id       TEXT NOT NULL,
+      variant_id       TEXT,
+      seller_id        TEXT NOT NULL,
+      quantity         INTEGER NOT NULL,
+      unit_price_units INTEGER NOT NULL,
+      item_units       INTEGER NOT NULL,
+      shipping_units   INTEGER NOT NULL,
+      donation_bps     INTEGER NOT NULL DEFAULT 0,
+      donation_units   INTEGER NOT NULL DEFAULT 0,
+      total_units      INTEGER NOT NULL,
+      payable_units    INTEGER NOT NULL,
+      currency         TEXT NOT NULL DEFAULT 'WAZ',
+      payment_rail     TEXT NOT NULL,
+      direct_receive_account_id TEXT,
+      dest_region      TEXT,
+      address_summary_hash TEXT,
+      anonymous_recipient INTEGER NOT NULL DEFAULT 0,
+      status           TEXT NOT NULL DEFAULT 'draft', -- draft | cancelled | expired(submitted 由 PR-5a 引入)
+      idempotency_key  TEXT,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at       TEXT NOT NULL,                 -- 24h;过期草稿不可提交(PR-5a 拒)
+      cancelled_at     TEXT
+    )
+  `)
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_od_idem ON order_drafts(buyer_id, idempotency_key) WHERE idempotency_key IS NOT NULL`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_od_buyer ON order_drafts(buyer_id, created_at)`)
+}
+
 export function initDemandSignalsSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS demand_signals (

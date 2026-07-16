@@ -286,6 +286,7 @@
     "test:discover-demand-signals": "tsx scripts/test-discover-demand-signals.ts",
     "test:agent-address-masking": "tsx scripts/test-agent-address-masking.ts",
     "test:buyer-quote": "tsx scripts/test-buyer-quote.ts",
+    "test:order-draft": "tsx scripts/test-order-draft.ts",
     "test:mcp-tool-annotations": "tsx scripts/test-mcp-tool-annotations.ts",
     "agent:first-success": "node scripts/agent-first-success.mjs",
     "agent:compat-matrix": "node scripts/agent-compat-matrix.mjs",

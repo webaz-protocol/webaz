@@ -76,6 +76,7 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_buyer_orders:        { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: grant-scoped minimal buyer order read (RFC-025 PR-1; counterparty objects, no PII)
   webaz_discover:            { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): marketplace read + INSERTs a disclosed demand-signal row (RFC-025 PR-2); no delete/overwrite/fund
   webaz_quote_order:         { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): INSERTs an order_quotes snapshot row (RFC-025 PR-3); no order/fund/stock change
+  webaz_order_draft:         { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: cancel overwrites draft status (terminal); create consumes a quote one-shot; no order/fund/stock change
 }
 
 interface NamedTool { readonly name: string }
