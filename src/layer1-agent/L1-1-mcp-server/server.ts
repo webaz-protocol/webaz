@@ -1821,10 +1821,13 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
 - Connected (an OAuth/delegation grant is present) → { connected: true, handle, account_id_hint (masked), scopes, expires_at }.
 - Not connected → connect via OAuth (a compliant client shows a connect prompt). Do NOT fall back to webaz_profile to check connection state — profile is an api_key business-identity call and never reports OAuth connection status.
 - Read-only. NEVER returns an api_key, token, email, address, or other PII.`,
+    // Zero-parameter tool. Schema matches webaz_info EXACTLY ({ type:'object', properties:{} } with NO
+    //   `required` key) — a client (ChatGPT connector) that loads webaz_info must load this too. The prior
+    //   `required: []` (an empty-required on an empty-properties object) is the only structural difference
+    //   from webaz_info and can trip a strict function-schema registrar into dropping the tool.
     inputSchema: {
       type: 'object',
       properties: {},
-      required: [],
     },
   },
 ]
