@@ -48,6 +48,8 @@ export const NETWORK_TOOLS = new Set<string>([
   'webaz_buyer_orders',
   // RFC-025 PR-2 buyer discovery (grant-wired, buyer_discover). Same rule.
   'webaz_discover',
+  // RFC-025 PR-3 buyer quote (grant-wired, price_quote). Same rule.
+  'webaz_quote_order',
   // Batch 1(只读 + 低危自身写):走 webaz.xyz Bearer api_key。
   'webaz_notifications',
   'webaz_nearby',

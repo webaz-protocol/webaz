@@ -25,12 +25,13 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
-import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrantAuthLogSchema, initAgentPermissionRequestsSchema, initDemandSignalsSchema } from '../../runtime/webaz-schema-helpers.js'
+import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrantAuthLogSchema, initAgentPermissionRequestsSchema, initDemandSignalsSchema, initOrderQuotesSchema } from '../../runtime/webaz-schema-helpers.js'
 import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveBundle, durationAllowedForScopes, suggestedDurationForScopes, allowedDurationsForScopes, durationToSeconds, riskLevelForScopes, type GrantDuration } from '../../runtime/agent-grant-scopes.js'
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
 import { verifyGrantToken, type GrantPrincipal } from '../../runtime/agent-grant-verifier.js'
 import { minimalSellerOrderView, MINIMAL_ORDER_COLUMNS, minimalBuyerOrderView, BUYER_MINIMAL_ORDER_COLUMNS } from '../agent-order-minimal-view.js'  // RFC-021 §6a / RFC-025 PR-1 最小化订单读投影
 import { effectiveSaleRegionsRule, regionAllowedByRule } from '../../sale-regions.js'  // RFC-025 PR-2 discover 目的地纯谓词(S1/S3 同源)
+import { computeBuyerQuote } from '../buyer-quote.js'  // RFC-025 PR-3 报价服务(server 权威;route 只做鉴权+转发)
 import { toUnits } from '../../money.js'  // RFC-014:demand_signals.budget_units 整数化
 import { createOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
 import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 approve→执行(CAS approved + 执行 + executed_at CAS,domain 层)
@@ -41,6 +42,8 @@ export interface AgentGrantsDeps {
   auth: (req: Request, res: Response) => Record<string, unknown> | null
   generateId: (prefix: string) => string
   rateLimitOk: (key: string, max?: number, windowMs?: number) => boolean  // throttles the anonymous pair/start
+  // RFC-025 PR-3: quote 服务读协议参数(direct-pay 管控/保险率等)。可选注入 —— 未注入时 quote 用保守缺省。
+  getProtocolParam?: <T>(key: string, fallback: T) => T
   // 人工在场 gate:批准配对必须真人 Passkey/WebAuthn(与 agent_revoke 同机制)。param 关闭时放行。
   requireHumanPresence: (userId: string, purpose: 'agent_pair_approve' | 'agent_permission_approve', token: string | undefined, paramKey: string, validate?: (data: unknown) => boolean) => { ok: boolean; error_code?: string; reason?: string }
   // RFC-020 PR-4: shared product-create handler (single source with the human POST /api/products); used by the
@@ -78,12 +81,14 @@ function consentView(p: Record<string, unknown>): Record<string, unknown> {
 
 export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDeps): void {
   const { db, auth, generateId, rateLimitOk, requireHumanPresence, createProductDraftHandler } = deps
+  const getProtocolParam = deps.getProtocolParam ?? (<T>(_key: string, fallback: T): T => fallback)   // 缺省保守值(direct-pay 管控 fail-closed)
   // PWA runtime self-init (MCP gets the tables via applyWebazRuntimeSchema). Idempotent.
   initAgentDelegationGrantsSchema(db)
   initAgentPairingSchema(db)
   initAgentGrantAuthLogSchema(db)
   initAgentPermissionRequestsSchema(db)
   initDemandSignalsSchema(db)
+  initOrderQuotesSchema(db)
 
   // Resolve the ACTIVE grant behind a gtk_ bearer (no scope check) — used to bind a permission request to
   // (grant_id, human_id). Returns null on missing/expired/revoked. token_hash lookup mirrors the verifier.
@@ -308,6 +313,17 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       ...(candidates.length === 0 ? { no_candidates: true, note: 'No matching listings right now — honestly zero, nothing similar is being passed off as a match. Your structured request was recorded as a demand signal (disclosed) so supply can catch up. Consider posting an RFQ at webaz.xyz, or browse PWA #discover.' } : {}),
       disclosure: 'This query was recorded as-is as a demand signal linked to your account, to inform marketplace supply. Validation enforced: max-40-char product terms; emails, URLs, phone-like digit runs, and non-product punctuation are rejected (400) and never recorded. Inputs that pass are recorded verbatim - do not put personal data in category/keywords.',
     })
+  })
+
+  // RFC-025 PR-3 — 买家报价(safe scope price_quote)。server 权威整数分项 + 有时效 quote_token。
+  //   零经济执行(不建单/不扣款/不锁资金/不动库存);零 PII(默认地址只在服务内部用于配送计算);
+  //   G-QTY-1:validateQuantity 单一规范化数量贯穿全部判断;幂等:同主体同键同载荷 → 同一报价。
+  //   subject 恒 = grant human(agent 无法传 human_id/代表他人)。
+  app.post('/api/agent/quote', requireAgentGrantScope('price_quote'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const r = computeBuyerQuote(db, { generateId, getProtocolParam }, p.human_id, (req.body ?? {}) as Record<string, unknown>)
+    if (!r.ok) return void res.status(r.status).json(r.body)
+    res.json(r.response)
   })
 
   // RFC-021 PR2 — order-action 请求提交(safe scope order_action_request)。SUBMIT-only:写 pending,【绝不执行】。

@@ -1774,6 +1774,51 @@ export function initAgentPairingSchema(db: Database.Database): void {
  * 公开聚合是未来独立 gated PR(聚合阈值≥N,永不暴露单买家)。retention:D-3(180 天原始,后聚合)。
  * budget_units = RFC-014 整数 base-units(新表零浮点债)。
  */
+/**
+ * order_quotes — RFC-025 PR-3 买家报价快照(server 权威;quote_token 的服务端真相)。
+ * 零经济执行:不建单/不扣款/不锁资金/不动库存。token 明文只出现在响应里一次,DB 只存 sha256
+ * (token_hash)—— 不可由客户端篡改,可由服务端校验;跨 subject/商品/数量/地址/轨道/金额任何一项
+ * 不一致即拒(PR-4 的 draft 消费器用 consumed_at 做一次性)。金额全部 INTEGER base-units(RFC-014,
+ * 新表零浮点债);currency 恒 'WAZ'(协议结算币,direct_p2p 的实付币种只是账户摘要,无权威汇率)。
+ * idempotency:UNIQUE(human_id, idempotency_key) + intent_hash —— 同主体同键同载荷返回同一报价,
+ * 同键不同载荷 = IDEMPOTENCY_CONFLICT。address_summary_hash = sha256(默认地址全文):绑定地址内容
+ * 而不存内容(PII 永不入本表)。
+ */
+export function initOrderQuotesSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS order_quotes (
+      id               TEXT PRIMARY KEY,              -- qte_xxx(公开报价 id)
+      token_hash       TEXT NOT NULL UNIQUE,          -- sha256(quote_token 明文);明文绝不落库
+      human_id         TEXT NOT NULL,                 -- OAuth subject(报价只对本人有效)
+      product_id       TEXT NOT NULL,
+      variant_id       TEXT,
+      seller_id        TEXT NOT NULL,
+      quantity         INTEGER NOT NULL,              -- validated_quantity(G-QTY-1 规范化数量)
+      unit_price_units INTEGER NOT NULL,              -- 报价时单价快照(变体覆盖后)
+      item_units       INTEGER NOT NULL,
+      shipping_units   INTEGER NOT NULL,
+      donation_bps     INTEGER NOT NULL DEFAULT 0,
+      donation_units   INTEGER NOT NULL DEFAULT 0,
+      total_units      INTEGER NOT NULL,              -- = item + shipping(与 orders.total_amount 同口径)
+      payable_units    INTEGER NOT NULL,              -- = total + donation(买家实际扣款口径,escrow)
+      currency         TEXT NOT NULL DEFAULT 'WAZ',
+      payment_rail     TEXT NOT NULL,                 -- escrow | direct_p2p
+      direct_receive_account_id TEXT,
+      dest_region      TEXT,                          -- 默认地址 region 标签(非 PII)
+      address_summary_hash TEXT,                      -- sha256(默认地址全文)——绑定内容,不存内容
+      anonymous_recipient INTEGER NOT NULL DEFAULT 0,
+      intent_hash      TEXT NOT NULL,                 -- sha256(canonical 输入)——幂等载荷指纹
+      idempotency_key  TEXT,
+      issued_at        TEXT NOT NULL,
+      expires_at       TEXT NOT NULL,
+      consumed_at      TEXT,                          -- PR-4 draft 消费时置位(一次性)
+      created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_oq_idem ON order_quotes(human_id, idempotency_key) WHERE idempotency_key IS NOT NULL`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_oq_expires ON order_quotes(expires_at)`)
+}
+
 export function initDemandSignalsSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS demand_signals (

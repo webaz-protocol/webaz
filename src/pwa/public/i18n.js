@@ -19,7 +19,7 @@ window._lang = window.resolveInitialLang(localStorage.getItem('webaz_lang'), typ
 const _EN = {
   // OAuth consent (#oauth-consent, RFC-023 PR-2b)
   '读取:公开商品/搜索/你的公开资料,以及你自己的商品目录和最小化订单信息(不含买家地址/联系方式等 PII)': 'Read: public products, search, your public profile, plus your own catalog and minimal order info (no buyer PII such as address/contact)',
-  '起草订单,并向你的人工审批队列提交接单/发货【请求】(仅提交 —— 绝不执行,执行永远需要你的 Passkey)': 'Draft orders and submit accept/ship REQUESTS to your human approval queue (submit only — never executes; execution always needs your Passkey)',
+  '获取报价(用你的默认收货地区计算;不下单/不付款/不动资金)、起草订单,并向你的人工审批队列提交接单/发货【请求】(仅提交 —— 绝不执行,执行永远需要你的 Passkey)': 'Get quotes (computed with your default shipping region; no order, no payment, no funds moved), draft orders, and SUBMIT accept/ship REQUESTS into your human approval queue (submit-only - execution always needs your Passkey)',
   '起草商品上架(仅草稿 —— 发布仍需你的 Passkey)': 'Draft product listings (drafts only — publishing still needs your Passkey)',
   '请先登录以审核授权请求': 'Please sign in to review this authorization request',
   '授权请求参数缺失。请从发起连接的 AI 客户端重新开始。': 'Authorization request parameters are missing. Please restart from the AI client that initiated the connection.',
@@ -105,6 +105,7 @@ const _EN = {
   '买家响应宽限期未过,暂不可申请取消': 'The buyer-response grace period hasn’t elapsed; you can’t request cancellation yet',
   '争议已裁定,不可撤回': 'The dispute has already been ruled and cannot be withdrawn',
   '仅可撤回由货款协商升级的仲裁;履约类争议(货损/货不对版)须经仲裁裁定': 'Only arbitration escalated from payment negotiation can be withdrawn; fulfilment disputes (damage / not-as-described) must be ruled',
+  '锁价会话的数量与本次下单数量不一致,请按实际数量重新验证价格': 'The price-lock session quantity does not match this order quantity - re-run verify-price with the actual quantity',
   '撤回失败,请重试': 'Withdrawal failed, please try again',
   '取消失败,请重试': 'Cancellation failed, please try again',
   '直付完成结算失败,订单未完成,可重试': 'Direct Pay settlement failed; the order was not completed — you can retry',

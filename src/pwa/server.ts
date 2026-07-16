@@ -7364,6 +7364,7 @@ registerWebauthnRoutes(app, {
   gateTtlMs: WEBAUTHN_GATE_TTL_MS,
   invalidateAgentRiskCacheForUser, createProductDraftHandler: makeCreateProductHandler({ db, auth, generateId, checkSellerCanList, getStakeDiscount, VALID_PRODUCT_TYPES, parsePlatformUrl, makeCommitmentHash, makeDescriptionHash, makePriceHash }),  // RFC-020 PR-4: grant-gated warehouse draft reuses the human create logic
   requireHumanPresence,  // #1044 — DELETE passkey 自身需 token
+  getProtocolParam,      // RFC-025 PR-3 — quote 服务读协议参数(direct-pay 管控等)
 })
 
 // consumeGateToken / requireHumanPresence 已抽出到 ./human-presence.ts(PR-F0,behavior-zero,
