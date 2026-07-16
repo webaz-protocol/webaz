@@ -1263,8 +1263,9 @@ USE THIS for "what's popular near me / 我附近 / 同城" — geo-aggregated, n
   {
     name: 'webaz_default_address',
     // was ~370 chars, now ~230 chars
-    description: `Read or set default shipping address. Used by webaz_search unshippable filter + fallback for webaz_rfq/place_order if omitted.
+    description: `Read (masked) or set your default shipping address. Used by webaz_search unshippable filter + server-side fallback for webaz_rfq/place_order if omitted.
 
+- read: returns { has_default, address_ref, address_region, masked_summary } — the FULL address text is NEVER returned to agents (it contains name/street/phone). At order time the server resolves your default address itself; manage the full text at webaz.xyz (PWA profile).
 ⚠️ \`set\` accepts only 2 fields: \`text\` (free-text address, ≤200 chars, required) + \`region\` (optional, for unshippable filter, ≤40 chars). NO structured fields (no recipient/line1/city/country/phone) — agent must concat itself.`,
     inputSchema: {
       type: 'object',
@@ -3907,7 +3908,7 @@ function handleMyKey(args: Record<string, unknown>) {
   }
 }
 
-async function handleProfile(args: Record<string, unknown>) {
+export async function handleProfile(args: Record<string, unknown>) {
   const action = args.action as string
   const apiKey = resolveMcpApiKey(args)
 
@@ -3927,7 +3928,16 @@ async function handleProfile(args: Record<string, unknown>) {
       if (!seg) return { error: `unknown feed: ${args.feed}. options: ${Object.keys(FEED_PATH).join(', ')}` }
       return await apiCall('/api/users/' + encodeURIComponent(String(args.user_id)) + '/' + seg, { apiKey })
     }
-    if (action === 'view')        return await apiCall('/api/me', { apiKey })
+    if (action === 'view') {
+      const me = await apiCall('/api/me', { apiKey })
+      if (me.error) return me
+      // RFC-025 PR-2.5(G-PII-1 同类):/api/me 是人的完整档案面;agent 视图剥掉完整地址(文本+结构化),
+      //   留 region(非 PII,用于可售性判断)。地址存在性/摘要请用 webaz_default_address action=read。
+      delete me.default_address_text
+      delete me.default_address
+      delete me.default_address_json
+      return me
+    }
     if (action === 'add_role')    return await apiCall('/api/profile/add-role', { method: 'POST', apiKey, body: { role: args.role } })
     if (action === 'switch_role') return await apiCall('/api/profile/switch-role', { method: 'POST', apiKey, body: { role: args.role } })
     return { error: `Unknown action: ${action}. Options: view, add_role, switch_role, view_user, feed` }
@@ -4417,7 +4427,23 @@ async function handleNearby(args: Record<string, unknown>) {
   return { error: `unknown action: ${action}` }
 }
 
-async function handleDefaultAddress(args: Record<string, unknown>) {
+// RFC-025 PR-2.5 — agent-facing default-address projection(G-PII-1 修复)。allowlist 构造:
+//   摘要只由 region + 存在性组成,【绝不】截取 text 子串(自由文本里任何位置都可能是姓名/门牌/电话)。
+//   完整地址只在 PWA(人的界面)可见;下单省略 shipping_address 时服务端自行以默认地址兜底,agent 无需全文。
+export function maskedDefaultAddressView(text: string | null | undefined, region: string | null | undefined): Record<string, unknown> {
+  const has = !!(text && String(text).trim())
+  return {
+    has_default: has,
+    address_ref: has ? 'default' : null,          // PR-4 订单草稿将以 ref 引用;服务端解析全文
+    address_region: (region && String(region).trim()) || null,
+    masked_summary: has ? `saved address on file${region ? ` (${String(region).trim()})` : ''}` : null,
+    note: has
+      ? 'Full address text is never returned to agents. At order time the server resolves your default address itself when shipping_address is omitted; manage the full text at webaz.xyz (PWA profile).'
+      : 'No default set. Set one here (action=set) or at webaz.xyz; setting it auto-filters unshippable products in search.',
+  }
+}
+
+export async function handleDefaultAddress(args: Record<string, unknown>) {
   // RFC-003 Batch 2:NETWORK 模式 → webaz.xyz 真网络(Bearer api_key);SANDBOX 走本地。
   if (toolBackend('webaz_default_address') === 'network') {
     const apiKey = resolveMcpApiKey(args)
@@ -4426,7 +4452,9 @@ async function handleDefaultAddress(args: Record<string, unknown>) {
     if (act === 'read') {
       const me = await apiCall('/api/me', { apiKey })
       if (me.error) return me
-      return { address_text: me.default_address_text ?? null, address_region: me.default_address_region ?? null }
+      // RFC-025 PR-2.5(G-PII-1):agent 路径【永不】返回完整地址文本(姓名/门牌/电话都在里面)。
+      //   只回存在性 + region + 脱敏摘要;下单时服务端自行兜底默认地址(server 侧解析,agent 无需全文)。
+      return maskedDefaultAddressView(me.default_address_text as string | null | undefined, me.default_address_region as string | null | undefined)
     }
     if (act === 'set') {
       const text = ((args.text as string) || '').trim().slice(0, 200)
@@ -4443,11 +4471,8 @@ async function handleDefaultAddress(args: Record<string, unknown>) {
 
   if (action === 'read') {
     const u = db.prepare("SELECT default_address_text, default_address_region FROM users WHERE id = ?").get(user.id) as { default_address_text: string | null; default_address_region: string | null }
-    return {
-      address_text:   u?.default_address_text   || null,
-      address_region: u?.default_address_region || null,
-      hint: u?.default_address_text ? null : 'No default set. Setting it auto-filters unshippable products in search.',
-    }
+    // RFC-025 PR-2.5(G-PII-1):同 network 路径 —— agent 永不见全文。
+    return maskedDefaultAddressView(u?.default_address_text, u?.default_address_region)
   }
   if (action === 'set') {
     // QA 轮 10.2-B P1 修复：旧版无校验，传不对的字段（recipient/line1/city 等）silently 写 NULL，
