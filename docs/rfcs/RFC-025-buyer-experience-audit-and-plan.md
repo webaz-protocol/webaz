@@ -183,7 +183,7 @@ Status: report · Date: 2026-07-16
 | 4 | Quote returns landed total pre-commit | verify_price = price only; shipping computed only inside create | PR-3 extracts the shipping+total pipeline into a pre-commit quote |
 | 5 | Idempotent order preparation | No idempotency on `POST /api/orders` (other creation surfaces have their own, e.g. chat's INSERT OR IGNORE) | New draft/submit path carries idempotency keys from day one; legacy POST /api/orders gap documented, fixed opportunistically |
 | 6 | address_ref, PII never to agents | Full address text returned by default_address; raw text on orders | PR-2.5 masks the tool + introduces `address_ref` for the draft path |
-| 7 | Passkey approval reusable | RFC-021 skeleton fully reusable but seller-only | PR-5 adds `kind='order_submit'` + buyer ownership check |
+| 7 | Passkey approval reusable | RFC-021 skeleton fully reusable but seller-only | PR-5a adds `kind='order_submit'` + buyer ownership check |
 | 8 | Tax/multi-currency in quotes | Seller-declared tax; WAZ-only settlement | Quotes display seller-declared terms + trade_terms snapshot; no tax computation (S6 posture unchanged) |
 
 ## 3. Decisions needed from Holden (before or during the series)
@@ -194,11 +194,12 @@ Status: report · Date: 2026-07-16
   (PR-5b)** — a distinct purchase entry path must not ride inside PR-5a.
 - **D-2 (new fine capabilities)**: proposed SAFE additions —
   `buyer_orders_read_minimal`, `buyer_discover`, `price_quote`,
-  `order_submit_request`. All read-only or submit-only, consistent with the SAFE
-  definition. `buyer_discover` is deliberately NOT the existing `search` capability:
+  `order_submit_request`. All read-only, submit-only, or (buyer_discover)
+  an explicitly-disclosed, audited internal write — consistent with the SAFE
+  definition (constraint-bounded, no execution, no funds). `buyer_discover` is deliberately NOT the existing `search` capability:
   discover persistently writes demand_signals tied to the grant subject, so the
   authorization must name that effect explicitly (disclosed in the tool description,
-  audited, retention per D-4). Coarse OAuth scopes unchanged (`read` / `order:draft`).
+  audited, retention per D-3). Coarse OAuth scopes unchanged (`read` / `order:draft`).
 - **D-4 (PR-5 money boundary — RESOLVED, mirrors Appendix A §3.2)**: Passkey
   approval executes the SAME order-creation path that exists today, and escrow
   creation already debits wallet→escrow inside the create tx
@@ -249,7 +250,8 @@ CREATE TABLE order_drafts (
 );
 -- PR-5a reuses agent_permission_requests with kind='order_submit'. params_hash binds the FULL
 -- server-authoritative economic snapshot: {draft_id, product_id, variant_id, quantity, item_units,
--- shipping_units, total_units, payment_rail, ship_to_region, address_ref} — never a subset (a
+-- shipping_units, total_units, payment_rail, ship_to_region, address_ref,
+-- trade_terms_digest = SHA-256(trade_terms_json)} — never a subset (a
 -- draft_id alone would only be safe if draft immutability were separately enforced; bind both:
 -- drafts are immutable after create (cancel-only, no update endpoint) AND the hash carries the snapshot).
 ```
