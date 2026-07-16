@@ -109,6 +109,19 @@ try {
     connShort.connected === true && connShort.account_id_hint !== shortHuman
     && !JSON.stringify(connShort).includes(shortHuman) && String(connShort.account_id_hint).includes('…'))
   plantCredential(gid, 'gtk_int', ['read_public'])   // restore the primary grant credential for the tests below
+  // 3c6 — account switch A→B: a DIFFERENT grant/account → connection_status reflects the NEW subject, not a
+  //   cached/host account. (Real "Use another account" is Passkey-gated at the OAuth layer; this locks the
+  //   data-layer guarantee that identity tracks the PRESENTED grant's subject.)
+  const humanB = generateId('usr')
+  db.prepare('INSERT INTO users (id, name, role, api_key, handle) VALUES (?,?,?,?,?)').run(humanB, 'Beatrice', 'buyer', 'key_bea', 'buyer_b')
+  const gidB = generateId('grt')
+  db.prepare('INSERT INTO agent_delegation_grants (grant_id, human_id, agent_label, capabilities, token_hash, status, expires_at) VALUES (?,?,?,?,?,?,?)')
+    .run(gidB, humanB, 'AgentB', JSON.stringify([{ capability: 'read_public' }]), sha('gtk_b'), 'active', new Date(Date.now() + 3600_000).toISOString())
+  plantCredential(gidB, 'gtk_b', ['read_public'])
+  const connB = await mcp.handleConnectionStatus({})
+  ok('3c6 account switch A→B: connection_status reflects account B (@buyer_b), NOT account A, and leaks no A identity',
+    connB.connected === true && connB.handle === '@buyer_b' && !JSON.stringify(connB).includes(human) && !JSON.stringify(connB).includes('gtk_b'))
+  plantCredential(gid, 'gtk_int', ['read_public'])   // restore A for the tests below
 
   // 3d/3e) agent requests MORE scope via the grant bearer, then lists its OWN requests (grant-authed, no human)
   const reqd = await mcp.handlePair({ action: 'request', bundle: 'catalog_agent', reason: 'read my catalog' })

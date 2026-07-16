@@ -140,6 +140,11 @@ async function main() {
     ok('2b. anonymous tools/list → 200, no challenge', l.status === 200 && !l.headers.get('www-authenticate'))
     const i = await rpc(base, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 't', version: '0' } } })
     ok('2c. anonymous initialize → 200, no challenge (connector handshake unharmed)', i.status === 200 && !i.headers.get('www-authenticate'))
+    // DOCUMENTED behavior: webaz_profile(view) is api_key business identity, NOT the connection-status tool —
+    //   anonymous view returns a plain 200 (no OAuth challenge). Use webaz_connection_status for OAuth identity.
+    const pv = await call(base, 'webaz_profile', {}, 74, { action: 'view' })
+    const pvj = await pv.json().catch(() => null)
+    ok('2d. anonymous webaz_profile(view) → 200, NOT an OAuth challenge (api_key business identity)', pv.status === 200 && !pv.headers.get('www-authenticate') && chArrOf(pvj).length === 0)
   }
 
   // ── 3. Bearer handling. PR-2: api_key/gtk_ still pass to the tool layer; an oat_ is now VALIDATED at

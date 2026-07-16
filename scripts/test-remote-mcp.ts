@@ -206,8 +206,28 @@ const PUsrc2 = PUsrc
     ok('12d. apiCall wires the hint onto the mapped error (not dead code)', L1.includes('authBoundaryHint(resp.status)'))
   }
 
+  // ── 13. webaz_info ↔ remote tools/list transport-boundary consistency: webaz_info.available_tools must
+  //        NOT advertise local-only webaz_pair on the remote endpoint (it's hidden from tools/list), so an
+  //        agent isn't misled. Both are read over the SAME isolated remote transport. ──
+  {
+    const { base: b13, http: h13 } = await boot({ WEBAZ_REMOTE_MCP: '1', WEBAZ_MODE: undefined })   // fresh server (the section-3 one is closed)
+    const info = await rpc(b13, { jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'webaz_info', arguments: {} } })
+    const ij = await info.json().catch(() => null) as { result?: { content?: Array<{ text?: string }> } } | null
+    const txt = (ij?.result?.content || []).map(c => c.text || '').join('')
+    let parsed: { available_tools?: Array<{ name?: string }>; tools_note?: string } | null = null
+    try { parsed = JSON.parse(txt) } catch { parsed = null }
+    const at = (parsed?.available_tools || []).map(t => t.name || '')
+    const tl = await rpc(b13, { jsonrpc: '2.0', id: 21, method: 'tools/list' })
+    const tlj = await tl.json().catch(() => null) as { result?: { tools?: Array<{ name: string }> } } | null
+    const tlnames = new Set((tlj?.result?.tools || []).map(t => t.name))
+    ok('13a. remote webaz_info.available_tools EXCLUDES local-only webaz_pair (no drift)', at.length > 0 && !at.includes('webaz_pair'))
+    ok('13b. remote webaz_info.available_tools == remote tools/list surface (transport-consistent)', at.length === tlnames.size && at.every(n => tlnames.has(n)))
+    ok('13c. webaz_info.tools_note names OAuth for remote + webaz_pair as stdio-only', /OAuth/.test(parsed?.tools_note || '') && /stdio-only/.test(parsed?.tools_note || ''))
+    h13.close()
+  }
+
   if (fail > 0) { console.error(`\n❌ remote MCP FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-  console.log(`✅ remote MCP: real handshake over Streamable HTTP (stateless) + fail-closed flag + sandbox refuse + 405s + no-CORS + bearer seam + auth-boundary hint\n  ✅ pass ${pass}`)
+  console.log(`✅ remote MCP: real handshake over Streamable HTTP (stateless) + fail-closed flag + sandbox refuse + 405s + no-CORS + bearer seam + auth-boundary hint + webaz_info/tools_list transport consistency\n  ✅ pass ${pass}`)
 }
 
 main().catch(e => { console.error(e); process.exit(1) })
