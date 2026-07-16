@@ -1830,6 +1830,22 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
       properties: {},
     },
   },
+  {
+    name: 'webaz_buyer_orders',
+    description: `Grant-wired MINIMAL buyer order read (RFC-025 PR-1, safe scope buyer_orders_read_minimal). Reads YOUR OWN orders as a buyer via an OAuth/delegation grant, NOT an api_key. Returns a minimal projection only — order_id / status / next_actor / deadline / amount / item_ref / payment_rail — with NO shipping address / recipient / contact / notes and no execution.
+
+- order_id given → that one order; omitted → your buyer order list (most recent first).
+- payment_rail (escrow | direct_p2p) tells you the funds semantics of the order; amounts are read-only facts, this tool moves nothing.
+- Seller-side orders are NOT visible here (use webaz_get_agent_order with a fulfillment grant for those).
+- No grant → GRANT_REQUIRED (connect via OAuth; a compliant client shows a connect prompt). Missing scope → structured PERMISSION_REQUIRED (re-connect so the grant carries the read scope, then retry).
+- To ACT on an order (confirm receipt, dispute, cancel …) direct the human to webaz.xyz — buyer actions are not delegated in this tool.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        order_id: { type: 'string', description: 'Order ID. Omit to list your buyer orders (minimal projection).' },
+      },
+    },
+  },
 ]
 
 // Standard MCP annotations merged once at module load (fail-fast if any tool lacks a mapping). The
@@ -2613,6 +2629,20 @@ export async function handleConnectionStatus(args: Record<string, unknown>): Pro
   const cred = resolveGrantCredential(args)
   if (!cred) return { connected: false, note: 'No OAuth/delegation grant on this request. Connect via OAuth (a compliant client shows a connect prompt), or for api_key identity use webaz_profile action="view".' }
   return apiCall('/api/agent-grants/connection', { method: 'GET', apiKey: cred.token })
+}
+
+export async function handleBuyerOrders(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // RFC-025 PR-1 — wraps GET /api/agent/buyer/orders(/:id) (safe scope buyer_orders_read_minimal).
+  //   Same pure-wrapper pattern as handleGetAgentOrder: minimal projection passes through UNCHANGED,
+  //   nothing persisted, PII never enters here (the route SELECTs no PII columns at all).
+  if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential(args)
+  if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
+  const orderId = (typeof args.order_id === 'string' && args.order_id) ? args.order_id : ''
+  const path = orderId ? `/api/agent/buyer/orders/${encodeURIComponent(orderId)}` : '/api/agent/buyer/orders'
+  const r = await apiCall(path, { method: 'GET', apiKey: cred.token })
+  if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_orders_read_minimal. Re-connect via OAuth so the grant carries the read scope, then retry.' }
+  return r
 }
 
 export async function handleOrderActionRequest(args: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -5409,6 +5439,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         case 'webaz_get_status':    result = await handleGetStatus(args); break
         case 'webaz_get_agent_order':     result = await handleGetAgentOrder(args); break
         case 'webaz_connection_status':   result = await handleConnectionStatus(args); break
+        case 'webaz_buyer_orders':        result = await handleBuyerOrders(args); break
         case 'webaz_order_action_request': result = await handleOrderActionRequest(args); break
         case 'webaz_feedback':      result = await handleFeedback(args); break
         case 'webaz_contribute':    result = await handleContribute(args); break

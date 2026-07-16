@@ -1,7 +1,7 @@
 /**
  * RFC-022 — Remote MCP endpoint: POST /mcp (Streamable HTTP, stateless).
  *
- * Agent Reachability First:把 stdio MCP 的同一套 38 工具面暴露给无本地运行时的客户端
+ * Agent Reachability First:把 stdio MCP 的同一套全量工具面暴露给无本地运行时的客户端
  * (ChatGPT/Claude 移动端 connector、云 agent、SDK agent)。传输层换了,信任边界不变:
  *   - 匿名 = network_readonly 语义(公开读);
  *   - Authorization: Bearer <api_key> = 等价本地 WEBAZ_API_KEY(args 显式 key 仍优先);
@@ -39,6 +39,7 @@ const PROTECTED_RESOURCE_METADATA_URL = 'https://webaz.xyz/.well-known/oauth-pro
 // 漏列 fail-soft:未列出的鉴权工具照旧走工具层的 API_KEY_REQUIRED / GRANT_REQUIRED 带引导 JSON。
 const AUTH_ONLY_TOOLS = new Set([
   'webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request', 'webaz_connection_status',
+  'webaz_buyer_orders',   // RFC-025 PR-1 (grant path: GET /api/agent/buyer/orders(/:id))
 ])
 // webaz_list_product 是多 action 工具:只有 grant 路径真支持的 action 才配挑战(承诺即真实)。
 //   mine → seller_products_read;create/draft(缺省即 create)→ seller_product_draft —— 均可由 OAuth scope 铸出。
@@ -68,6 +69,7 @@ function scopeForAuthOnlyCall(body: unknown): string {
   const b = body as { params?: { name?: unknown; arguments?: { action?: unknown } } } | null
   const name = b?.params?.name
   if (name === 'webaz_get_agent_order') return 'seller_orders_read_minimal'         // GET /api/agent/orders(/:id)
+  if (name === 'webaz_buyer_orders') return 'buyer_orders_read_minimal'              // GET /api/agent/buyer/orders(/:id)
   if (name === 'webaz_connection_status') return 'read_public'                       // GET /api/agent-grants/connection
   if (name === 'webaz_order_action_request') return 'order_action_request'           // POST /api/agent/orders/:id/action-request
   if (name === 'webaz_list_product') {
@@ -134,7 +136,7 @@ export function remoteMcpManifest(): Record<string, unknown> | null {
         },
       } : {}),
     },
-    stdio_alternative: 'npx -y @seasonkoh/webaz  (local STDIO transport — same 42-tool surface, for clients that run a local process)',
+    stdio_alternative: 'npx -y @seasonkoh/webaz  (local STDIO transport — same full tool surface, for clients that run a local process)',
     sdks: {
       python: 'pip install webaz  →  async with WebAZ() as wz: await wz.browse()  (thin wrapper over this endpoint; anonymous by default, api_key for writes)',
       typescript_stdio: 'npx -y @seasonkoh/webaz  (STDIO MCP server)',
