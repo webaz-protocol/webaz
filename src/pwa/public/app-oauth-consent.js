@@ -24,6 +24,7 @@
       <div class="page-header"><h2>${t('🔐 授权连接请求')}</h2></div>
       <div style="font-size:12px;color:#6b7280;padding:0 4px 12px;line-height:1.6">${t('一个 AI 客户端请求通过 OAuth 连接你的 WebAZ 账号。它只会拿到下列受限、短期(1小时)、可随时撤销的权限 —— 不是你的账号或密钥;资金/发布/发货等敏感动作永远需要你的 Passkey 逐次批准。')}</div>
       <div class="card" style="padding:16px">
+        <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"><div style="font-size:13px;color:#374151">${t('将以此账号连接:')} <strong>@${escHtml(state.user.handle || state.user.id || '')}</strong></div><button class="btn btn-outline btn-sm" style="white-space:nowrap;flex-shrink:0" onclick="oauthConsentSwitchAccount()">${t('换一个账号')}</button></div>
         <div id="oauth-client-block"><div style="font-size:12px;color:#6b7280">${t('请求方 client_id(自称,未验证)')}</div>
         <div style="font-size:16px;font-weight:700;font-family:monospace;margin:2px 0 10px">${escHtml(clientId)}</div></div>
         <div style="font-size:12px;color:#6b7280">${t('访问目标')}</div>
@@ -73,4 +74,7 @@
     if (r.error || !r.redirect_to) { toast$(r.error || t('操作失败'), 'error'); btn.disabled = false; return }
     window.location.href = r.redirect_to
   }
+
+  // "Use another account": save the OAuth request (it lives in the URL hash) as the post-login destination, then log out → login-as-B → navigateIntended() returns HERE as B; approve mints the grant for B (server re-validates). No OAuth-semantics change.
+  window.oauthConsentSwitchAccount = () => { try { sessionStorage.setItem('webaz_intended_hash', location.hash) } catch { /* */ } if (typeof window.logout === 'function') window.logout(); else location.hash = '#login' }
 })()

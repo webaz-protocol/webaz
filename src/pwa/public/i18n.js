@@ -24,6 +24,8 @@ const _EN = {
   '请先登录以审核授权请求': 'Please sign in to review this authorization request',
   '授权请求参数缺失。请从发起连接的 AI 客户端重新开始。': 'Authorization request parameters are missing. Please restart from the AI client that initiated the connection.',
   '🔐 授权连接请求': '🔐 Authorization request',
+  '将以此账号连接:': 'Connecting as:',
+  '换一个账号': 'Use another account',
   '一个 AI 客户端请求通过 OAuth 连接你的 WebAZ 账号。它只会拿到下列受限、短期(1小时)、可随时撤销的权限 —— 不是你的账号或密钥;资金/发布/发货等敏感动作永远需要你的 Passkey 逐次批准。': 'An AI client is requesting to connect to your WebAZ account via OAuth. It will only receive the limited, short-lived (1 hour), revocable permissions below — never your account or keys; money, publishing, shipping and other sensitive actions always require your Passkey per action.',
   '请求方 client_id(自称,未验证)': 'Requesting client_id (self-declared, unverified)',
   '已验证的连接方': 'Verified connector',
