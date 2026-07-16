@@ -811,6 +811,7 @@ jobs:
       - run: npm run test:product-image-ui
       - run: npm run test:remote-mcp
       - run: npm run test:mcp-security-schemes
+      - run: npm run test:buyer-orders-grant
       - run: npm run test:mcp-tool-annotations
       - run: npm run test:oauth-discovery
       - run: npm run test:oauth-authorize

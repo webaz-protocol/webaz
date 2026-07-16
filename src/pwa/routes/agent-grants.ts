@@ -29,7 +29,7 @@ import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrant
 import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveBundle, durationAllowedForScopes, suggestedDurationForScopes, allowedDurationsForScopes, durationToSeconds, riskLevelForScopes, type GrantDuration } from '../../runtime/agent-grant-scopes.js'
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
 import { verifyGrantToken, type GrantPrincipal } from '../../runtime/agent-grant-verifier.js'
-import { minimalSellerOrderView, MINIMAL_ORDER_COLUMNS } from '../agent-order-minimal-view.js'  // RFC-021 §6a 最小化订单读投影
+import { minimalSellerOrderView, MINIMAL_ORDER_COLUMNS, minimalBuyerOrderView, BUYER_MINIMAL_ORDER_COLUMNS } from '../agent-order-minimal-view.js'  // RFC-021 §6a / RFC-025 PR-1 最小化订单读投影
 import { createOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
 import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 approve→执行(CAS approved + 执行 + executed_at CAS,domain 层)
 import { notifyTransition } from '../../layer2-business/L2-6-notifications/notification-engine.js'  // 执行后通知买卖双方
@@ -205,6 +205,26 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       [req.params.id, p.human_id])
     if (!o) return void res.status(404).json({ error: '订单不存在或不属于你', error_code: 'ORDER_NOT_FOUND' })
     res.json({ order: minimalSellerOrderView(o, db) })
+  })
+
+  // RFC-025 PR-1 — 买家侧最小化订单读(safe scope buyer_orders_read_minimal)。镜像卖家侧的 allowlist 纪律:
+  //   仅读该 agent 之人(买家)的订单;投影只产出 7 字段(order_id/status/next_actor/deadline/amount/item_ref/
+  //   payment_rail),SELECT 只取非 PII 列(BUYER_MINIMAL_ORDER_COLUMNS)—— 地址/收件人/notes/gift_recipient/
+  //   recipient_code 连取都不取(I6 同强度)。纯只读,零执行、零资金 —— 买家写动作(place_order 等)仍 RISK 硬拒。
+  app.get('/api/agent/buyer/orders', requireAgentGrantScope('buyer_orders_read_minimal'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const rows = await dbAll<Record<string, unknown>>(
+      `SELECT ${BUYER_MINIMAL_ORDER_COLUMNS.join(', ')} FROM orders WHERE buyer_id = ? ORDER BY created_at DESC LIMIT 200`,
+      [p.human_id])
+    res.json({ buyer_id: p.human_id, agent_label: p.agent_label, count: rows.length, orders: rows.map(o => minimalBuyerOrderView(o, db)), note: 'RFC-025 minimal buyer order read (safe scope buyer_orders_read_minimal). No address/contact/PII; read-only, no execution.' })
+  })
+  app.get('/api/agent/buyer/orders/:id', requireAgentGrantScope('buyer_orders_read_minimal'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const o = await dbOne<Record<string, unknown>>(
+      `SELECT ${BUYER_MINIMAL_ORDER_COLUMNS.join(', ')} FROM orders WHERE id = ? AND buyer_id = ?`,
+      [req.params.id, p.human_id])
+    if (!o) return void res.status(404).json({ error: '订单不存在或不属于你', error_code: 'ORDER_NOT_FOUND' })
+    res.json({ order: minimalBuyerOrderView(o, db) })
   })
 
   // RFC-021 PR2 — order-action 请求提交(safe scope order_action_request)。SUBMIT-only:写 pending,【绝不执行】。

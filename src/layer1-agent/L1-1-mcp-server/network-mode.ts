@@ -44,6 +44,8 @@ export const NETWORK_TOOLS = new Set<string>([
   // RFC-023 connection identity (grant-wired, read_public). Grants live on webaz.xyz → MUST be here,
   //   or the RFC-003 migration gate returns not_on_network_yet before the handler ever runs.
   'webaz_connection_status',
+  // RFC-025 PR-1 buyer-side minimal order read (grant-wired, buyer_orders_read_minimal). Same rule.
+  'webaz_buyer_orders',
   // Batch 1(只读 + 低危自身写):走 webaz.xyz Bearer api_key。
   'webaz_notifications',
   'webaz_nearby',

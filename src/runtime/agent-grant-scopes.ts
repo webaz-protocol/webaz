@@ -43,6 +43,10 @@ export const SAFE_SCOPES = [
   //     执行始终由人 Passkey 逐笔批准后服务端跑(RFC-021 §5/§6b)。RISK 档 order_accept/order_ship 不动、仍硬拒。
   'seller_orders_read_minimal',
   'order_action_request',
+  // RFC-025 PR-1 — 买家侧最小化订单读(镜像 seller_orders_read_minimal 的 allowlist 纪律):
+  //   只读买家【自己的】订单七键投影(order_id/status/next_actor/deadline/amount/item_ref/payment_rail),
+  //   无地址/收件人/notes/PII,无任何执行。买家写动作(place_order 等)仍在 RISK 档硬拒不动。
+  'buyer_orders_read_minimal',
 ] as const
 
 /**

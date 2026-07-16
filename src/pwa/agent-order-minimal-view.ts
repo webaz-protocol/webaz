@@ -60,3 +60,43 @@ export const MINIMAL_ORDER_COLUMNS = [
   'pickup_deadline', 'delivery_deadline', 'confirm_deadline',
   'ship_to_region',   // PR-B 粗粒度目的地(结构化列,schema 注明"非自由文本地址")→ dest_country
 ] as const
+
+// ─────────────────────────── RFC-025 PR-1 — 买家侧最小投影(buyer_orders_read_minimal) ───────────────────────────
+// 同一 allowlist 纪律的买家镜像:字面七键构造,绝不 spread order 行。买家看的是【自己的】订单,但 agent
+//   经 OAuth grant 读取时仍不给完整地址/收件人/notes —— 地址是人输入给协议的,不回流给 agent(I6 同强度)。
+//   与卖家视图的差异:无 dest_country(买家自知目的地,粗粒度码无增量价值);多 payment_rail(escrow/direct_p2p
+//   决定买家下一步资金语义,非 PII)。next_actor/deadline 与人类订单视图同源(同上,不 drift)。
+
+export interface MinimalBuyerOrderView {
+  order_id: string
+  status: string
+  next_actor: string | null    // 当前责任方(currentResponsible)
+  deadline: string | null      // 当前活跃截止(getActiveDeadline().deadline)
+  amount: number | null        // total_amount(买家自己订单的应付/已付总额)
+  item_ref: string | null      // product_id
+  payment_rail: string | null  // escrow | direct_p2p —— 资金语义提示,非 PII
+}
+
+export function minimalBuyerOrderView(order: Record<string, unknown>, db?: Database.Database): MinimalBuyerOrderView {
+  const status = String(order.status ?? '')
+  const isSelfFulfill = !order.logistics_id
+  const table = (isSelfFulfill ? CURRENT_RESPONSIBLE_SELF_FULFILL : CURRENT_RESPONSIBLE) as Record<string, string>
+  let deadline: string | null = null
+  try { deadline = getActiveDeadline(order as never, db)?.deadline ?? null } catch { deadline = null }
+  return {
+    order_id: String(order.id ?? ''),
+    status,
+    next_actor: table[status] ?? null,
+    deadline,
+    amount: order.total_amount == null ? null : Number(order.total_amount),
+    item_ref: order.product_id == null ? null : String(order.product_id),
+    payment_rail: order.payment_rail == null ? null : String(order.payment_rail),
+  }
+}
+
+/** 买家最小化读只取这些【非 PII】列(shipping_address / notes / gift_recipient_* / recipient_code 连取都不取)。 */
+export const BUYER_MINIMAL_ORDER_COLUMNS = [
+  'id', 'status', 'total_amount', 'product_id', 'logistics_id', 'payment_rail',
+  'pending_accept_deadline', 'pay_deadline', 'accept_deadline', 'ship_deadline',
+  'pickup_deadline', 'delivery_deadline', 'confirm_deadline',
+] as const

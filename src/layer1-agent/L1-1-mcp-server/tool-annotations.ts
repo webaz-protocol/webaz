@@ -73,6 +73,7 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_get_agent_order:     { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: grant-scoped order read (counterparty objects)
   webaz_connection_status:   { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: this connection's own OAuth-bound identity (first-party, no marketplace/other users)
   webaz_order_action_request:{ readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): submit-only INSERT into the human approval queue; agent cannot execute
+  webaz_buyer_orders:        { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: grant-scoped minimal buyer order read (RFC-025 PR-1; counterparty objects, no PII)
 }
 
 interface NamedTool { readonly name: string }
