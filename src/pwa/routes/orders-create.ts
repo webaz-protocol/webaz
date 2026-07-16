@@ -33,7 +33,7 @@ import { buildCartMandate, buildPaymentMandate, signMandate } from './ap2-mandat
 import { toUnits, toDecimal, mulQty, mulRate } from '../../money.js'
 import { createDirectPayResponse } from '../../direct-pay-create.js'                    // PR-4c: direct_p2p 建单分叉(生产门+收款指令门+原子建单;本金不入协议)
 import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'; import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from '../../trade-terms.js'; import { gateSaleRegionForCreate } from '../../sale-regions.js'  // PR-2 运费守门 + S0 条款快照 + S1 可售门(意愿/合规先于物流)
-import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'; import { AgentSpendCapExceeded, getAgentSpendCapViolation } from '../../agent-spend-cap.js'; import { hasInvalidPurchaseCredential, readStrictBearerCredential } from '../bearer-auth.js'; import { consumePriceSession, PriceSessionConsumeError } from '../../price-session-consume.js'  // RFC-016 异步 DB seam(仅下单事务外的预检查;事务内 escrow/INSERT 保持同步)
+import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'; import { AgentSpendCapExceeded, getAgentSpendCapViolation } from '../../agent-spend-cap.js'; import { hasInvalidPurchaseCredential, readStrictBearerCredential } from '../bearer-auth.js'; import { consumePriceSession, PriceSessionConsumeError } from '../../price-session-consume.js'; import { MAX_PER_ORDER } from '../../order-limits.js'  // RFC-016 异步 DB seam(下单事务外预检;事务内同步)+ RFC-025 共享限购常量
 
 // 店铺推荐 → 商品三级归因的【懒升级】(sync,跑在下单事务内、getProductShareChain 之前)。
 // 严格门槛(任一不满足则不升级,绝不覆盖已有有效直接归因):
@@ -140,7 +140,6 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
       return void res.json({ error: 'donation_pct 必须是 0 / 0.005 / 0.01 / 0.02 / 0.05 之一', error_code: 'DONATION_PCT_INVALID' })
     }
     // 数量校验 + 限购
-    const MAX_PER_ORDER = 10
     const reqQty = Math.floor(Number(req.body?.quantity ?? 1))
     if (!Number.isFinite(reqQty) || reqQty < 1) return void res.json({ error: '数量需 ≥ 1', error_code: 'QTY_INVALID' })
     if (reqQty > MAX_PER_ORDER) return void res.json({ error: `单笔订单最多 ${MAX_PER_ORDER} 件（限购）`, error_code: 'QTY_EXCEEDS_LIMIT', max_per_order: MAX_PER_ORDER })
@@ -249,6 +248,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
           hint: '请重新调用 verify-price 获取新价格',
         })
       }
+      if (Number(session.quantity ?? 1) !== reqQty) return void res.status(409).json({ error: `session_token 的数量(${session.quantity})与本次下单数量(${reqQty})不一致，请按实际数量重新调用 verify-price`, error_code: 'PRICE_SESSION_QTY_MISMATCH', session_quantity: Number(session.quantity ?? 1), requested_quantity: reqQty })   // RFC-025 PR-3 G-QTY-1 真修:session 数量此前不绑定(qty=1 会话可被 qty=N 消费)
     }
 
     const basePrice = product.price as number

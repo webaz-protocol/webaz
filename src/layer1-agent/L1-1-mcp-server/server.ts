@@ -209,7 +209,13 @@ async function apiCall(path: string, opts: { method?: string; body?: unknown; ap
         503: '服务暂不可用,请稍后重试',
       }
       const baseErr = (json?.error as string) ?? map[resp.status] ?? `HTTP ${resp.status}`
-      return { error: baseErr + authBoundaryHint(resp.status), error_code: json?.error_code, http_status: resp.status }
+      // RFC-025 PR-3(类修,allowlist 版):透传服务端结构化错误契约 —— 此前非 2xx 只留 error/error_code,
+      //   机器可执行的恢复指引全被丢弃。只放行【已知恢复字段】(Codex L-9:无限 spread 会把任何路由错误体里
+      //   的意外字段/潜在 PII 一并送进模型上下文;allowlist 让边界可审计)。error/error_code/http_status 照旧。
+      const RECOVERY_FIELDS = ['reason', 'retryable', 'missing_requirements', 'next_steps', 'hint', 'next_step', 'approval_url', 'required_scope', 'missing_scopes', 'retry_after_approval', 'request_permission', 'available_stock', 'stock', 'max_per_order', 'new_price', 'old_price', 'session_quantity', 'requested_quantity', 'region', 'option'] as const   // 'note' 刻意不放行(自由文本面);stock/old_price = 既有 orders-create 错误体消费字段
+      const recovery: Record<string, unknown> = {}
+      for (const k of RECOVERY_FIELDS) if (json && json[k] !== undefined) recovery[k] = json[k]
+      return { ...recovery, error: baseErr + authBoundaryHint(resp.status), error_code: json?.error_code, http_status: resp.status }
     }
     return json ?? {}
   } catch (e) {
@@ -1866,6 +1872,31 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
       },
     },
   },
+  {
+    name: 'webaz_quote_order',
+    description: `Server-authoritative buyer QUOTE (RFC-025 PR-3, safe scope price_quote; OAuth grant, no api_key). Returns integer line items + a time-limited quote_token bound to your account. It is a QUOTE ONLY:
+
+- does NOT create an order, does NOT pay, does NOT lock funds, does NOT decrement or reserve stock (stock_reserved is always false — availability is re-checked at real order creation), and cannot be approved into anything by itself.
+- Uses your SAVED DEFAULT address server-side (address_source="default"); the full address is never returned. No default → DEFAULT_ADDRESS_REQUIRED with a safe PWA next step (never paste an address into chat).
+- All amounts are INTEGER base-units (currency WAZ, exponent 6). Never sum line items yourself — total/payable_total are server-asserted.
+- payment_rail: escrow (WebAZ custodies at order time) | direct_p2p (you pay the seller directly; WebAZ holds no funds, no authoritative FX, final eligibility gates re-run at order creation). Ineligible rails FAIL structurally — never auto-switched.
+- quote_token expires (10 min) and is bound to you + product + quantity + address + rail + amounts; tampering/other accounts/expiry all fail. The next step (order DRAFT, RFC-025 PR-4) is NOT YET AVAILABLE — for now a human orders at webaz.xyz, or an api_key agent uses webaz_place_order. A real order still requires human confirmation.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        product_id: { type: 'string', description: 'Active listing id (server re-reads product + seller state)' },
+        variant_id: { type: 'string', description: 'Required when the product has variants' },
+        quantity: { type: 'integer', description: 'Positive safe integer (default 1). Strings/decimals rejected — no implicit conversion.' },
+        payment_rail: { type: 'string', enum: ['escrow', 'direct_p2p'], description: 'Default escrow. Ineligible direct_p2p fails structurally — never auto-switched.' },
+        address_source: { type: 'string', enum: ['default'], description: "Only 'default' in v1 — your saved default address, resolved server-side, never shown." },
+        direct_receive_account_id: { type: 'string', description: 'direct_p2p only: a known ACTIVE receiving account of this seller (no free-text payment instructions).' },
+        anonymous_recipient: { type: 'boolean', description: 'Escrow only (direct_p2p v1 rejects it).' },
+        donation_bps: { type: 'integer', enum: [0, 50, 100, 200, 500], description: 'Integer basis points (0/0.5%/1%/2%/5%), charged IN ADDITION to total. Never auto-set.' },
+        idempotency_key: { type: 'string', description: 'Optional client key: same subject+key+payload within TTL returns the SAME quote; same key with a different payload → IDEMPOTENCY_CONFLICT.' },
+      },
+      required: ['product_id'],
+    },
+  },
 ]
 
 // Standard MCP annotations merged once at module load (fail-fast if any tool lacks a mapping). The
@@ -2680,6 +2711,22 @@ export async function handleDiscover(args: Record<string, unknown>): Promise<Rec
   if (args.quantity !== undefined) body.quantity = args.quantity
   const r = await apiCall('/api/agent/discover', { method: 'POST', apiKey: cred.token, body })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_discover. Re-connect via OAuth so the grant carries the read scope, then retry.' }
+  return r
+}
+
+export async function handleQuoteOrder(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // RFC-025 PR-3 — wraps POST /api/agent/quote (safe scope price_quote). Pure wrapper: forwards ONLY the
+  //   allowlisted quote fields; response (integer line items, masked ids, region-only destination) passes
+  //   through UNCHANGED. Zero economic execution server-side; PII never enters here.
+  if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential(args)
+  if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
+  const body: Record<string, unknown> = {}
+  for (const k of ['product_id', 'variant_id', 'quantity', 'payment_rail', 'address_source', 'direct_receive_account_id', 'anonymous_recipient', 'donation_bps', 'idempotency_key'] as const) {
+    if (args[k] !== undefined) body[k] = args[k]
+  }
+  const r = await apiCall('/api/agent/quote', { method: 'POST', apiKey: cred.token, body })
+  if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks price_quote. Re-connect via OAuth so the grant carries the order:draft scope, then retry.' }
   return r
 }
 
@@ -5532,6 +5579,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         case 'webaz_connection_status':   result = await handleConnectionStatus(args); break
         case 'webaz_buyer_orders':        result = await handleBuyerOrders(args); break
         case 'webaz_discover':            result = await handleDiscover(args); break
+        case 'webaz_quote_order':         result = await handleQuoteOrder(args); break
         case 'webaz_order_action_request': result = await handleOrderActionRequest(args); break
         case 'webaz_feedback':      result = await handleFeedback(args); break
         case 'webaz_contribute':    result = await handleContribute(args); break

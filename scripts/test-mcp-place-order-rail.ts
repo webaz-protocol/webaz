@@ -15,7 +15,8 @@ process.env.WEBAZ_API_KEY = 'k_test_buyer'
 const app = express(); app.use(express.json())
 let lastBody: Record<string, unknown> = {}
 app.get('/api/me', (_req, res) => { res.json({ id: 'usr_t', default_address_text: 'Rail Test Addr / SG', default_address_region: 'SG' }) })  // RFC-025 PR-2.5: omitted shipping_address → handler resolves default via /api/me before /api/orders
-app.post('/api/orders', (req, res) => { lastBody = req.body; res.json({ ok: true, _received: req.body }) })
+let priceChangedMode = false
+app.post('/api/orders', (req, res) => { lastBody = req.body; if (priceChangedMode) return void res.status(409).json({ error: 'price_changed', error_code: 'PRICE_CHANGED', old_price: 30, new_price: 25, stock: 7, hint: 're-run verify-price' }); res.json({ ok: true, _received: req.body }) })
 const server = app.listen(0); const port = (server.address() as AddressInfo).port
 process.env.WEBAZ_API_URL = `http://127.0.0.1:${port}`
 
@@ -49,6 +50,11 @@ try {
   await mcp.handlePlaceOrder({ product_id: 'p1', payment_rail: 'escrow', api_key: 'k' })
   ok('explicit escrow → forwarded (still the legacy custodial path)', lastBody.payment_rail === 'escrow')
 
+  // RFC-025 PR-3(apiCall recovery-allowlist 回归):非 2xx 的既有消费字段(old_price/new_price/stock/hint)必须透传
+  priceChangedMode = true
+  { const r = await mcp.handlePlaceOrder({ product_id: 'p1', shipping_address: 'X addr', api_key: 'k' })
+    ok('PRICE_CHANGED error body fields pass the apiCall recovery allowlist (old_price/new_price/stock/hint)', r.error_code === 'PRICE_CHANGED' && r.old_price === 30 && r.new_price === 25 && r.stock === 7 && r.hint === 're-run verify-price') }
+  priceChangedMode = false
   // (The runtime forwarding tests above already prove the MCP hands off to /api/orders and lets the route gate.)
   // ── schema conformance (static): only live rails selectable; product listings add NO currency field ──
   ok('place_order payment_rail enum = [escrow, direct_p2p] only (onchain/psp NOT selectable)', /payment_rail:\s*\{\s*type:\s*'string',\s*enum:\s*\['escrow',\s*'direct_p2p'\]/.test(SRC))

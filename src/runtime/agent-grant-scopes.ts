@@ -51,6 +51,10 @@ export const SAFE_SCOPES = [
   //   每次结构化查询落一行 demand_signals(工具 description 里向用户披露)。不是 'search' —— search 授权
   //   不涵盖持久化采集,该效果必须由能力名显式命名。无执行、无资金、无 PII 出口(intent allowlist 化)。
   'buyer_discover',
+  // RFC-025 PR-3 — 买家报价(webaz_quote_order)。server 权威整数分项报价 + 有时效 quote_token 快照:
+  //   不建单/不扣款/不锁资金/不动库存/无 Passkey/零不可逆后果 —— 唯一写入 = order_quotes 快照行。
+  //   服务端用默认地址算配送,出口零 PII(region 标签/摘要/sha256)。RISK 档 place_order 不动、仍硬拒。
+  'price_quote',
 ] as const
 
 /**
