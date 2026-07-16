@@ -2578,7 +2578,7 @@
                 "type": "array"
               },
               "order_id": {
-                "type": "null",
+                "const": null,
                 "description": "恒 null(auto_buy 已退役)"
               },
               "auto_bought": {

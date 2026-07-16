@@ -35,13 +35,14 @@ const auth = (req: Request, res: Response) => { const uid = req.headers['x-test-
 // 固定推荐(LLM 非被测组件):两跳都返回可解析 JSON
 const fakeMsg = (payload: unknown) => ({ content: [{ type: 'text', text: JSON.stringify(payload) }] })
 let call = 0
+let fetchCount = 0
 const anthropic = { messages: { create: async () => (++call % 2 === 1
   ? fakeMsg({ title: 'Stand', price_cny: 100, category: 'x', search_terms: ['stand'] })
   : fakeMsg({ recommendation: 'buy_webaz', best_product_id: 'prd_s', reason: 'cheaper', savings_note: null })) } }
 const app = express(); app.use(express.json())
 registerAgentBuyRoutes(app, {
   db, auth, generateId,
-  safeFetch: async () => ({ text: async () => '<html>fake product page</html>' }),
+  safeFetch: async () => { fetchCount++; return { text: async () => '<html>fake product page</html>' } },
   rateLimitOk: () => true, anthropic, AnthropicCtor: function () { return anthropic } as never,
   formatProductForAgent: (r: Record<string, unknown>) => ({ agent_summary: String(r.title), specs: {} }),
   checkStockAndMaybeDelist: () => {}, addHours: (d: Date, h: number) => new Date(d.getTime() + h * 3600_000).toISOString(),
@@ -60,10 +61,10 @@ const econ = () => JSON.stringify({ o: db.prepare('SELECT COUNT(*) c FROM orders
 
 const before = econ()
 try {
-  { const llmBefore = call
+  { const llmBefore = call; const fetchBefore = fetchCount
     const r = await hit({ source_url: 'https://example.com/x', shipping_address: 'X addr', auto_buy: true })
     ok('R-1 auto_buy=true → 410 AUTO_BUY_RETIRED (EARLY: before any fetch/LLM call)', r.status === 410 && r.json.error_code === 'AUTO_BUY_RETIRED', JSON.stringify(r.json).slice(0, 250))
-    ok('R-2 no LLM call was wasted on a retired request', call === llmBefore)
+    ok('R-2 no fetch NOR LLM call wasted on a retired request', call === llmBefore && fetchCount === fetchBefore)
     ok('R-3 next_steps point to the Passkey chain', JSON.stringify(r.json.next_steps ?? []).includes('webaz_quote_order'))
     ok('R-4 ZERO economic change (no order, no debit, no stock move)', econ() === before, econ()) }
   { const r = await hit({ source_url: 'https://example.com/x', auto_buy: true })   // Codex M:无地址也必须 410(旧地址守卫已删)

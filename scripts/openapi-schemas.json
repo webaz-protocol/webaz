@@ -266,7 +266,7 @@
         }
       },
       "responses": {
-        "200": { "type": "object", "properties": { "recommendation": {"enum":["buy_webaz","buy_source","no_match"]}, "best_product": {"type":"object"}, "webaz_products": {"type":"array"}, "order_id": {"type":"null", "description": "恒 null(auto_buy 已退役)"}, "auto_bought": {"type":"boolean", "description": "恒 false"} } },
+        "200": { "type": "object", "properties": { "recommendation": {"enum":["buy_webaz","buy_source","no_match"]}, "best_product": {"type":"object"}, "webaz_products": {"type":"array"}, "order_id": {"const": null, "description": "恒 null(auto_buy 已退役)"}, "auto_bought": {"type":"boolean", "description": "恒 false"} } },
         "410": { "type": "object", "properties": { "error_code": { "const": "AUTO_BUY_RETIRED" }, "next_steps": { "type": "array" } } }
       }
     },

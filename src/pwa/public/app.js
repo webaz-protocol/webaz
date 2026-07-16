@@ -17497,7 +17497,6 @@ window.doAgentBuy = async () => {
   const result = document.getElementById('ab-result')
 
   if (!raw) { result.innerHTML = alert$('error', t('请粘贴商品链接')); return }
-  if (auto && !addr) { result.innerHTML = alert$('error', t('自动下单需填写收货地址')); return }
 
   // 批量识别：粘贴文本中含多个 URL → 走批量分支
   const urls = extractUrls(raw)
