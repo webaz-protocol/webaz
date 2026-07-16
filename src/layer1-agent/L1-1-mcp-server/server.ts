@@ -1107,6 +1107,8 @@ Returns: found / api_key_hint (e.g. "key_7d3d***faa7b") / full_api_key_recovery 
 
 USE THIS for info about a SPECIFIC PERSON (by usr_xxx / permanent code / @handle / name), OR to see someone's listings / notes / activity stream. NOT for product keyword search — use webaz_search.
 
+NOTE: this is the **api_key business-identity** interface — it is NOT how you check a Remote MCP OAuth connection. To answer "which WebAZ account am I connected as / am I bound / my OAuth scopes", use **webaz_connection_status**. \`view\` returns wallet + api_key hint and requires your api_key; it is deliberately NOT reachable through an OAuth token.
+
 Self actions (need api_key):
 - view (profile + wallet + api_key hint) | add_role | switch_role
 
@@ -1814,10 +1816,10 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
   },
   {
     name: 'webaz_connection_status',
-    description: `Report which WebAZ account this connection is authorized as — for a remote OAuth-connected agent (safe scope read_public; no api_key, no PII). Answers "who am I connected as, and with what scopes?".
+    description: `The STANDARD, canonical entry point for Remote MCP account-connection status. **Always use THIS tool (not webaz_profile)** to answer any of: "which WebAZ account am I connected as?", "am I connected / bound / logged in?", "what OAuth scopes do I have?", "when does my connection expire?". For a remote OAuth-connected agent (safe scope read_public; no api_key, no PII).
 
 - Connected (an OAuth/delegation grant is present) → { connected: true, handle, account_id_hint (masked), scopes, expires_at }.
-- Not connected → connect via OAuth (a compliant client shows a connect prompt), or for api_key identity use webaz_profile action="view".
+- Not connected → connect via OAuth (a compliant client shows a connect prompt). Do NOT fall back to webaz_profile to check connection state — profile is an api_key business-identity call and never reports OAuth connection status.
 - Read-only. NEVER returns an api_key, token, email, address, or other PII.`,
     inputSchema: {
       type: 'object',
@@ -2176,7 +2178,13 @@ async function handleInfo() {
       { scenario: '用户想看某商家全部商品(已知 seller_id)',              tool: 'webaz_search seller_id=...',              pwa_page: '#shop/:id',      note: 'strict 精准过滤,sort 可选 trending/newest' },
       { scenario: '用户问什么"最热门 / 排行 / trending"',                tool: 'webaz_leaderboard kind=...',              pwa_page: '(无独立页,各域内置)', note: '8 类:products / value_products / creators / sellers / buyers / verifiers / arbitrators / agents' },
     ],
-    available_tools: TOOLS.map((t) => ({ name: t.name, description: t.description.split('\n')[0] })),
+    // Transport-aware: over the remote endpoint (isolated) webaz_info must NOT advertise LOCAL_ONLY tools
+    //   (webaz_pair) — it is hidden from the remote tools/list (a remote agent authenticates via OAuth, not
+    //   pairing), so listing it here would be a drift that misleads the agent. stdio (local) lists it.
+    available_tools: TOOLS.filter(t => !(isIsolated() && LOCAL_ONLY_TOOLS.has(t.name))).map((t) => ({ name: t.name, description: t.description.split('\n')[0] })),
+    tools_note: isIsolated()
+      ? 'Remote endpoint: authenticate via OAuth (Connect) or Authorization: Bearer <api_key>. webaz_pair is stdio-only and not available here.'
+      : 'Local stdio: use webaz_pair for one-time delegation pairing. The remote endpoint uses OAuth instead.',
     full_manifest: `读取 MCP Resource "${MANIFEST_URI}" 获取完整协议规范（状态机/经济模型/争议系统/Skill 市场/声誉系统）`,
   }
 }

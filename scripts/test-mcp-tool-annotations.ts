@@ -91,6 +91,14 @@ async function main(): Promise<void> {
   ok('5b. stdio entry uses buildMcpServer', L1.includes('const server = buildMcpServer()'))
   ok('5c. Remote MCP route uses buildMcpServer', /buildMcpServer\(\{/.test(ROUTE))
 
+  // 6. connection-status routing: "which account am I connected as?" must route to webaz_connection_status,
+  //    and webaz_profile must NOT be presented as the connection-status tool (it's api_key business identity).
+  const desc = Object.fromEntries(tools.map(t => [t.name, (t.description as string) || ''])) as Record<string, string>
+  ok('6a. connection_status is the STANDARD entry for "which account am I connected as / scopes"',
+    /which WebAZ account am I connected as/i.test(desc['webaz_connection_status']) && /STANDARD, canonical entry point/i.test(desc['webaz_connection_status']))
+  ok('6b. webaz_profile description routes connection-status queries to webaz_connection_status', desc['webaz_profile'].includes('webaz_connection_status'))
+  ok('6c. webaz_profile explicitly states view is NOT OAuth-reachable (api_key business identity)', /NOT reachable through an OAuth token|api_key business-identity/i.test(desc['webaz_profile']))
+
   await client.close(); await server.close()
 
   if (fail > 0) { console.error(`\n❌ mcp tool annotations FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
