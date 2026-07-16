@@ -530,7 +530,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     //   经济快照即执行的,一字不差;执行 = 回环打真实 POST /api/orders(escrow 建单事务内扣款入托管)。
     if ((r.kind ?? 'scope_grant') === 'order_submit') {
       const hp = requireHumanPresence(user.id as string, 'agent_permission_approve', (req.body || {}).webauthn_token as string | undefined, 'require_human_presence_for_agent_permission_approve',
-        (data) => { const d = data as Record<string, unknown> | null; return d != null && typeof d === 'object' && d.request_id === req.params.id && d.draft_id === r.order_id && d.params_hash === r.params_hash })
+        (data) => { const d = data as Record<string, unknown> | null; return d != null && typeof d === 'object' && d.request_id === req.params.id && d.order_id === r.order_id && d.action === 'order_submit' && d.params_hash === r.params_hash })   // 四元组与 PWA aaApprove 一致,order_id 承载 draft_id -- Codex BLOCKER-1
       if (!hp.ok) return void res.status(412).json({ error: hp.reason, error_code: hp.error_code })
       if (!createOrderLoopback) return void res.status(503).json({ error: '批准执行暂不可用(执行通道未配置)', error_code: 'SUBMIT_EXEC_UNAVAILABLE' })
       const er = await approveAndExecuteOrderSubmit(db, { requestId: req.params.id, approverId: user.id as string, nowIso: now, getProtocolParam, generateId, createOrderLoopback })

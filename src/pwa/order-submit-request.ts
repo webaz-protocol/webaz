@@ -41,13 +41,22 @@ export function orderSubmitParamsHash(draft: Record<string, unknown>): string {
 
 /** 审批列表的 order_submit 行摘要(域层做 sync 读,route 文件不加 seam 计数;零 PII:region 标签 only)。 */
 export function submitRowSummary(db: Database.Database, draftId: string): Record<string, unknown> | null {
-  const d = db.prepare('SELECT product_id, variant_id, quantity, total_units, payable_units, donation_units, currency, payment_rail, dest_region, status, expires_at FROM order_drafts WHERE id = ?').get(draftId) as Record<string, unknown> | undefined
+  const d = db.prepare('SELECT product_id, variant_id, seller_id, quantity, unit_price_units, item_units, shipping_units, donation_bps, donation_units, total_units, payable_units, currency, payment_rail, direct_receive_account_id, anonymous_recipient, dest_region, status, expires_at FROM order_drafts WHERE id = ?').get(draftId) as Record<string, unknown> | undefined
   if (!d) return null
   const prod = db.prepare('SELECT title FROM products WHERE id = ?').get(String(d.product_id)) as { title: string } | undefined
+  const maskId = (id: string): string => !id ? '' : id.length > 8 ? `${id.slice(0, 4)}…${id.slice(-4)}` : `${id.slice(0, 2)}…`
   return {
-    draft_id: draftId, product_title: prod?.title ?? null, variant_id: d.variant_id ?? null,
-    quantity: Number(d.quantity), total_units: Number(d.total_units), payable_units: Number(d.payable_units),
-    donation_units: Number(d.donation_units), currency: String(d.currency), payment_rail: String(d.payment_rail),
+    draft_id: draftId, product_id: String(d.product_id),
+    product_title: prod?.title ?? null,
+    product_title_note: 'live listing title for recognition only — the approval binds product_id, not the title',
+    variant_id: d.variant_id ?? null, seller_id_hint: maskId(String(d.seller_id)),
+    quantity: Number(d.quantity), unit_price_units: Number(d.unit_price_units),
+    item_units: Number(d.item_units), shipping_units: Number(d.shipping_units),
+    donation_bps: Number(d.donation_bps), donation_units: Number(d.donation_units),
+    total_units: Number(d.total_units), payable_units: Number(d.payable_units),
+    currency: String(d.currency), payment_rail: String(d.payment_rail),
+    direct_receive_account_id: d.direct_receive_account_id ?? null,
+    anonymous_recipient: Number(d.anonymous_recipient) === 1,
     dest_region: d.dest_region ?? null, draft_status: String(d.status), draft_expires_at: String(d.expires_at),
   }
 }

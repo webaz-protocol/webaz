@@ -154,12 +154,14 @@ try {
   ok('S-4 duplicate submit on same draft → DUPLICATE_SUBMIT_REQUEST', (await SUB({ draft_id: c1.d.draft_id })).error_code === 'DUPLICATE_SUBMIT_REQUEST')
 
   // ══ Passkey 绑定 ══
-  { const bad = await approve(String(c1.srq.request_id), { request_id: c1.srq.request_id, draft_id: c1.d.draft_id, params_hash: 'wrong' })
+  { const bad = await approve(String(c1.srq.request_id), { request_id: c1.srq.request_id, order_id: c1.d.draft_id, action: 'order_submit', params_hash: 'wrong' })
     ok('P-1 wrong params_hash in Passkey binding → 412 (binding validate closure is REAL server code)', bad.status === 412)
-    ok('P-2 nothing executed on binding failure', orderCount() === 0 && bal('buyer1').balance === 500) }
+    ok('P-2 nothing executed on binding failure', orderCount() === 0 && bal('buyer1').balance === 500)
+    const badAct = await approve(String(c1.srq.request_id), { request_id: c1.srq.request_id, order_id: c1.d.draft_id, action: 'accept', params_hash: c1.srq.params_hash })
+    ok('P-3 wrong action in binding → 412 (quad = EXACT PWA aaApprove shape: request_id/order_id/action/params_hash)', badAct.status === 412) }
 
   // ══ 批准成功:真实建单 + 真实扣款 + 真实库存 ══
-  { const r = await approve(String(c1.srq.request_id), { request_id: c1.srq.request_id, draft_id: c1.d.draft_id, params_hash: c1.srq.params_hash })
+  { const r = await approve(String(c1.srq.request_id), { request_id: c1.srq.request_id, order_id: c1.d.draft_id, action: 'order_submit', params_hash: c1.srq.params_hash })
     ok('A-1 approve → executed + order_id', r.status === 200 && r.json.success === true && typeof r.json.order_id === 'string', JSON.stringify(r.json).slice(0, 250))
     const ord = db.prepare('SELECT * FROM orders WHERE id = ?').get(String(r.json.order_id)) as Record<string, unknown>
     ok('A-2 REAL order row (paid, qty 2, total 60 WAZ, buyer1)', !!ord && ord.status === 'paid' && Number(ord.quantity) === 2 && Number(ord.total_amount) === 60 && ord.buyer_id === 'buyer1', String(JSON.stringify(ord) ?? 'NO_ORDER').slice(0, 200))
@@ -169,44 +171,52 @@ try {
     ok('A-5 draft → ordered + order_id linked', draftRow.status === 'ordered' && draftRow.order_id === r.json.order_id)
     ok('A-6 request executed_at set', !!(db.prepare('SELECT executed_at FROM agent_permission_requests WHERE id=?').get(String(c1.srq.request_id)) as { executed_at: string | null }).executed_at)
     ok('A-7 approve response carries NO PII (address never echoed)', !PII.test(JSON.stringify(r.json)))
-    const again = await approve(String(c1.srq.request_id), { request_id: c1.srq.request_id, draft_id: c1.d.draft_id, params_hash: c1.srq.params_hash })
+    const again = await approve(String(c1.srq.request_id), { request_id: c1.srq.request_id, order_id: c1.d.draft_id, action: 'order_submit', params_hash: c1.srq.params_hash })
     ok('A-8 re-approve → already_executed, NO second order/debit', again.json.already_executed === true && orderCount() === 1 && Math.abs(bal('buyer1').balance - 439.4) < 1e-6) }
 
   // ══ drift 硬失败(条款绝不静默变更) ══
   { const c2 = await mkChain(1)
     db.prepare("UPDATE products SET price = 35 WHERE id='prd_s'").run()
-    const r = await approve(String(c2.srq.request_id), { request_id: c2.srq.request_id, draft_id: c2.d.draft_id, params_hash: c2.srq.params_hash })
+    const r = await approve(String(c2.srq.request_id), { request_id: c2.srq.request_id, order_id: c2.d.draft_id, action: 'order_submit', params_hash: c2.srq.params_hash })
     ok('D-1 price changed after draft → DRAFT_DRIFT hard fail, NO order/debit', r.status === 409 && r.json.error_code === 'DRAFT_DRIFT' && orderCount() === 1, JSON.stringify(r.json).slice(0, 200))
     ok('D-2 draft stays draft (retriable after re-quote)', (db.prepare('SELECT status FROM order_drafts WHERE id=?').get(String(c2.d.draft_id)) as { status: string }).status === 'draft')
-    db.prepare("UPDATE products SET price = 30 WHERE id='prd_s'").run() }
+    db.prepare("UPDATE products SET price = 30 WHERE id='prd_s'").run()
+    // BLOCKER-2 回归:卖家漂移(价格不变)也必须拒 —— 商品换主后批准会把钱给错人
+    const cS = await mkChain(1)
+    db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller2','S2','seller','k_s2')").run()
+    db.prepare("INSERT INTO wallets (user_id,balance,staked,escrowed,earned) VALUES ('seller2',500,0,0,0)").run()
+    db.prepare("UPDATE products SET seller_id = 'seller2' WHERE id='prd_s'").run()
+    const rS = await approve(String(cS.srq.request_id), { request_id: cS.srq.request_id, order_id: cS.d.draft_id, action: 'order_submit', params_hash: cS.srq.params_hash })
+    ok('D-2b SELLER changed after draft (price identical) → DRAFT_DRIFT, no order', rS.status === 409 && rS.json.error_code === 'DRAFT_DRIFT' && orderCount() === 1, JSON.stringify(rS.json).slice(0, 200))
+    db.prepare("UPDATE products SET seller_id = 'seller1' WHERE id='prd_s'").run() }
   { const c3 = await mkChain(1)
     db.prepare("UPDATE users SET default_address_text = 'NEW ADDR 99 / Somewhere' WHERE id='buyer1'").run()
-    const r = await approve(String(c3.srq.request_id), { request_id: c3.srq.request_id, draft_id: c3.d.draft_id, params_hash: c3.srq.params_hash })
+    const r = await approve(String(c3.srq.request_id), { request_id: c3.srq.request_id, order_id: c3.d.draft_id, action: 'order_submit', params_hash: c3.srq.params_hash })
     ok('D-3 default address changed after draft → ADDRESS_CHANGED hard fail', r.status === 409 && r.json.error_code === 'ADDRESS_CHANGED' && !PII.test(JSON.stringify(r.json)))
     db.prepare('UPDATE users SET default_address_text = ? WHERE id=?').run(FULL_ADDR, 'buyer1')
     // 直改库篡改快照 → 重算 hash ≠ Passkey 绑定的 → DRAFT_DRIFT
     db.prepare('UPDATE order_drafts SET quantity = 5 WHERE id = ?').run(String(c3.d.draft_id))
-    const r2 = await approve(String(c3.srq.request_id), { request_id: c3.srq.request_id, draft_id: c3.d.draft_id, params_hash: c3.srq.params_hash })
+    const r2 = await approve(String(c3.srq.request_id), { request_id: c3.srq.request_id, order_id: c3.d.draft_id, action: 'order_submit', params_hash: c3.srq.params_hash })
     ok('D-4 direct-DB tamper of the draft → params_hash recheck DRAFT_DRIFT', r2.status === 409 && r2.json.error_code === 'DRAFT_DRIFT')
     db.prepare('UPDATE order_drafts SET quantity = 1 WHERE id = ?').run(String(c3.d.draft_id)) }
 
   // ══ 上游拒绝 → 安全回滚;结果不明 → 冻结 ══
   { const c4 = await mkChain(1)
     db.prepare("UPDATE wallets SET balance = 1 WHERE user_id='buyer1'").run()   // 余额不足 → 上游 200+error
-    const r = await approve(String(c4.srq.request_id), { request_id: c4.srq.request_id, draft_id: c4.d.draft_id, params_hash: c4.srq.params_hash })
+    const r = await approve(String(c4.srq.request_id), { request_id: c4.srq.request_id, order_id: c4.d.draft_id, action: 'order_submit', params_hash: c4.srq.params_hash })
     ok('U-1 upstream reject (insufficient balance) → rejected + draft rolled back to draft', r.status === 409 && (db.prepare('SELECT status FROM order_drafts WHERE id=?').get(String(c4.d.draft_id)) as { status: string }).status === 'draft' && orderCount() === 1, JSON.stringify(r.json).slice(0, 200))
     db.prepare("UPDATE wallets SET balance = 439.4 WHERE user_id='buyer1'").run()
     loopbackMode = 'throw'
-    const r2 = await approve(String(c4.srq.request_id), { request_id: c4.srq.request_id, draft_id: c4.d.draft_id, params_hash: c4.srq.params_hash })
+    const r2 = await approve(String(c4.srq.request_id), { request_id: c4.srq.request_id, order_id: c4.d.draft_id, action: 'order_submit', params_hash: c4.srq.params_hash })
     ok('U-2 ambiguous loopback (throw) → ORDER_CREATE_AMBIGUOUS + draft FROZEN at ordering (no auto-retry duplicates)', r2.json.error_code === 'ORDER_CREATE_AMBIGUOUS' && (db.prepare('SELECT status FROM order_drafts WHERE id=?').get(String(c4.d.draft_id)) as { status: string }).status === 'ordering')
     loopbackMode = 'real'
-    const r3 = await approve(String(c4.srq.request_id), { request_id: c4.srq.request_id, draft_id: c4.d.draft_id, params_hash: c4.srq.params_hash })
+    const r3 = await approve(String(c4.srq.request_id), { request_id: c4.srq.request_id, order_id: c4.d.draft_id, action: 'order_submit', params_hash: c4.srq.params_hash })
     ok('U-3 frozen draft refuses re-execution (human must reconcile)', r3.json.error_code === 'ORDER_CREATE_AMBIGUOUS' && orderCount() === 1) }
 
   // ══ 取消草稿 → 批准拒 ══
   { const c5 = await mkChain(1)
     await D({ action: 'cancel', draft_id: c5.d.draft_id })
-    const r = await approve(String(c5.srq.request_id), { request_id: c5.srq.request_id, draft_id: c5.d.draft_id, params_hash: c5.srq.params_hash })
+    const r = await approve(String(c5.srq.request_id), { request_id: c5.srq.request_id, order_id: c5.d.draft_id, action: 'order_submit', params_hash: c5.srq.params_hash })
     ok('C-1 cancelled draft → DRAFT_NOT_AVAILABLE (approval cannot resurrect it)', r.json.error_code === 'DRAFT_NOT_AVAILABLE' && orderCount() === 1) }
 
   // ══ 提交面守卫:executor 对 agent-bearer 不可达(源守卫,镜像 RFC-021 I1) ══
@@ -214,6 +224,13 @@ try {
   ok('G-1 submit domain does NOT import the executor (I1; prose mentions allowed)', !/from '[^']*order-submit-exec/.test(SRC))
   const MCPSRC = (await import('node:fs')).readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
   ok('G-2 MCP layer never imports the executor', !/order-submit-exec/.test(MCPSRC))
+  // Codex MEDIUM:PII 声明按证据收窄 —— 扫全部持久面(请求行/审计行/执行结果),完整地址不得出现
+  const persisted = JSON.stringify({
+    reqs: db.prepare('SELECT * FROM agent_permission_requests').all(),
+    audit: db.prepare('SELECT * FROM agent_grant_auth_log').all(),
+    drafts: db.prepare('SELECT * FROM order_drafts').all(),
+  })
+  ok('G-3 NO full-address PII in permission requests / grant audit rows / drafts (execution_result incl.)', !PII.test(persisted))
 } finally { server.close(); clearCred() }
 
 if (fail > 0) { console.error(`\n❌ order-submit-approve FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

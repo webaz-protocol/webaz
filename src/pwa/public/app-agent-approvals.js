@@ -22,7 +22,7 @@
     if (!state.user) { app.innerHTML = shell(`<div class="empty">${t('请先登录以审核 agent 授权请求')}</div>`, 'me'); return }
     app.innerHTML = shell(`
       <div class="page-header"><h2>${t('🔔 Agent 授权请求')}</h2></div>
-      <div style="font-size:12px;color:#6b7280;padding:0 4px 12px;line-height:1.6">${t('一个已连接的 AI agent 请求更多【安全只读/草稿】权限。批准只会扩展它已有的委托凭证 —— 仍然作用域受限、可随时撤销,永远动不了资金、投票、仲裁或改密钥。')}</div>
+      <div style="font-size:12px;color:#6b7280;padding:0 4px 12px;line-height:1.6">${t('一个已连接的 AI agent 在请求授权。【扩权请求】只扩展受限、可撤销的只读/草稿凭证,不动资金;【订单提交】批准会创建真实订单 —— 托管轨将从你的钱包扣款入托管(卡片列出全部条款,任何变化服务端拒绝执行)。投票/仲裁/改密钥永不可委托。')}</div>
       <div id="aa-body">${loading$()}</div>
     `, 'me')
     setTimeout(aaHydrate, 30)
@@ -78,7 +78,7 @@
     catch (e) { if (window.dpPromptRegisterPasskey && e && e.code === 'NO_PASSKEY_REGISTERED') { await window.dpPromptRegisterPasskey(e) } else { toast$((e && e.message) || t('Passkey 验证已取消'), 'error') } if (btn) btn.disabled = false; return }
     const r = await POST('/agent-grants/permission-requests/' + encodeURIComponent(id) + '/approve', { webauthn_token: token, duration: window.grantDurationValue('aa-dur-' + id) }).catch(() => null)
     if (!r || r.error) { toast$((r && r.error) || t('批准失败,请重试'), 'error'); if (btn) btn.disabled = false; return }
-    toast$(t('已批准 —— 该 agent 的权限已扩展'))
+    toast$(r.kind === 'order_submit' ? t('已批准 —— 订单已创建') + (r.order_id ? ' ' + r.order_id : '') : t('已批准 —— 该 agent 的权限已扩展'))
     aaHydrate(); hydrateAgentApprovalsBadge()
   }
 

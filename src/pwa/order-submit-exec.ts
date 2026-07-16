@@ -20,7 +20,9 @@
  *   回环【结果不明】(网络/超时/5xx)→ draft 停在 'ordering'(fail-closed:绝不自动重试造重复订单),
  *      响应如实告知去 webaz.xyz 核对订单。
  *
- * I1:本文件只被人类 approve handler(agent-grants.ts)import;agent-bearer 提交路径不 import 它。
+ * I1(准确表述,Codex HIGH):本文件只被 approve handler(agent-grants.ts)import;agent-bearer 提交/MCP 层
+ *   不 import 它。approve 端点经 auth() 可由 api_key bearer 到达(WebAZ 会话模型即 api_key)——真正的
+ *   执行门是【一次性 Passkey gate token】(只有真人能铸,且绑定 request/draft/hash 四元组);无门票不可执行。
  */
 import type Database from 'better-sqlite3'
 import { createHash } from 'node:crypto'
@@ -86,7 +88,8 @@ export async function approveAndExecuteOrderSubmit(db: Database.Database, deps: 
   }, 'preview')
   if (!pv.ok) return fail('DRAFT_DRIFT', 409, `当前市场状态下该报价已不成立(${pv.body.error_code}:${pv.body.reason})—— 请重新报价`)
   const now = pv.response as Record<string, unknown>
-  for (const k of ['unit_price_units', 'item_units', 'shipping_units', 'donation_units', 'total_units', 'payable_units', 'dest_region', 'address_summary_hash'] as const) {
+  // 对比集 = 快照的全部身份+经济字段 -- Codex BLOCKER-2: seller_id 是 preview 现算的真实漂移向量,商品换主后价格不变也必须拒;其余身份字段一并锁死
+  for (const k of ['product_id', 'variant_id', 'seller_id', 'quantity', 'unit_price_units', 'item_units', 'shipping_units', 'donation_bps', 'donation_units', 'total_units', 'payable_units', 'currency', 'payment_rail', 'direct_receive_account_id', 'dest_region', 'address_summary_hash', 'anonymous_recipient'] as const) {
     if (String(now[k] ?? '') !== String(draft[k] ?? '')) {
       return fail('DRAFT_DRIFT', 409, `${k} 已变化(报价 ${String(draft[k])} → 当前 ${String(now[k])})—— 条款绝不静默变更,请重新报价`)
     }
