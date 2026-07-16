@@ -135,7 +135,7 @@ export function cancelOrderDraft(db: Database.Database, humanId: string, draftId
   if (row.status === 'cancelled') return { ok: true, response: { ...draftView(db, row), already_cancelled: true } }   // 幂等安全
   if (String(row.expires_at) <= new Date().toISOString()) return derr(409, 'DRAFT_NOT_CANCELLABLE', 'draft already expired — nothing to cancel (expired drafts cannot be submitted either)')
   if (row.status !== 'draft') return derr(409, 'DRAFT_NOT_CANCELLABLE', `draft status is ${String(row.status)} — only status=draft can be cancelled`)
-  const cas = db.prepare("UPDATE order_drafts SET status = 'cancelled', cancelled_at = datetime('now') WHERE id = ? AND status = 'draft'").run(draftId)
+  const cas = db.prepare("UPDATE order_drafts SET status = 'cancelled', cancelled_at = datetime('now') WHERE id = ? AND status = 'draft' AND expires_at > ?").run(draftId, new Date().toISOString())   // 过期判定进 CAS 谓词(Codex round-2 LOW:边界瞬间不可取消)
   if (cas.changes !== 1) return derr(409, 'DRAFT_NOT_CANCELLABLE', 'draft state changed concurrently — re-read it')
   return { ok: true, response: draftView(db, db.prepare('SELECT * FROM order_drafts WHERE id = ?').get(draftId) as Record<string, unknown>) }
 }
