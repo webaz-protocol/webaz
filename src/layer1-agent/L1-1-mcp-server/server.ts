@@ -1903,7 +1903,7 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
 
 - A draft is a SNAPSHOT ONLY: no order exists, nothing is charged, no funds locked, no stock held. Price/stock/eligibility are re-validated at human approval; drift there hard-fails back to a fresh quote — terms are NEVER silently changed.
 - action="create" (quote_token required, optional idempotency_key) | "cancel" (draft_id; terminal, idempotent-safe) | "get" (draft_id) | "list".
-- Drafts expire in 24h; expired/cancelled drafts cannot be submitted.
+- Drafts expire in 24h: get/list show status=expired (derived — no hidden writes), cancel refuses, and the PR-5a submitter will hard-reject them.
 - Zero PII: destination stays a region tag + summary; amounts are integer WAZ units copied verbatim from the quote (no recomputation).
 - SUBMITTING for human Passkey approval is RFC-025 PR-5a and is NOT YET AVAILABLE — until then a human orders at webaz.xyz, or an api_key agent uses webaz_place_order. A real order always requires human confirmation.`,
     inputSchema: {

@@ -89,7 +89,11 @@ try {
   ok('C-0 fixture quote issued', typeof q1.quote_token === 'string', JSON.stringify(q1).slice(0, 200))
   const d1 = await D({ action: 'create', quote_token: q1.quote_token, idempotency_key: 'dk1' })
   ok('C-1 draft created from quote', typeof d1.draft_id === 'string' && d1.status === 'draft', JSON.stringify(d1).slice(0, 300))
-  ok('C-2 snapshot frozen VERBATIM (integer amounts copied, no recompute)', (d1.total as Record<string, unknown>).amount_minor === toUnits(60) && (d1.payable_total as Record<string, unknown>).amount_minor === toUnits(60) && d1.quantity === 2)
+  { const qr = db.prepare('SELECT * FROM order_quotes WHERE id=?').get(String(d1.quote_id)) as Record<string, unknown>
+    const dr = db.prepare('SELECT * FROM order_drafts WHERE id=?').get(String(d1.draft_id)) as Record<string, unknown>
+    const SNAP = ['product_id','variant_id','seller_id','quantity','unit_price_units','item_units','shipping_units','donation_bps','donation_units','total_units','payable_units','currency','payment_rail','direct_receive_account_id','dest_region','address_summary_hash','anonymous_recipient'] as const
+    ok('C-2 snapshot frozen VERBATIM — EVERY snapshot column equals the quote row (incl. currency)', SNAP.every(k => String(qr[k] ?? '') === String(dr[k] ?? '')), SNAP.map(k => `${k}:${qr[k]}=${dr[k]}`).join(' '))
+    ok('C-2b sanity: totals match fixture (2×30 WAZ)', (d1.total as Record<string, unknown>).amount_minor === toUnits(60) && d1.quantity === 2) }
   ok('C-3 acting_as from server subject + masked ids', d1.acting_as === '@holden_b' && String(d1.account_id_hint).includes('…'))
   ok('C-4 zero PII in draft response', !PII.test(JSON.stringify(d1)), JSON.stringify(d1).slice(0, 300))
   ok('C-5 zero PII in order_drafts row', !PII.test(JSON.stringify(draftRows())))
@@ -130,6 +134,17 @@ try {
     const c2 = await D({ action: 'cancel', draft_id: d1.draft_id })
     ok('L-6 cancel again → idempotent-safe (already_cancelled, no error)', c2.already_cancelled === true) }
   ok('L-7 no update surface exists (immutable draft — source guard)', !/api\/agent\/order-drafts\/[^\n]*\/(update|patch)/.test((await import('node:fs')).readFileSync('src/pwa/routes/agent-grants.ts', 'utf8')))
+
+  // ══ 过期语义(惰性派生)+ schema 级一 quote 一 draft ══
+  { const q4 = await Q({ product_id: 'prd_s', quantity: 1, idempotency_key: 'qk4' })
+    const d4 = await D({ action: 'create', quote_token: q4.quote_token })
+    db.prepare('UPDATE order_drafts SET expires_at = ? WHERE id = ?').run('2020-01-01T00:00:00Z', String(d4.draft_id))
+    const g = await D({ action: 'get', draft_id: d4.draft_id })
+    ok('X-1 expired draft shows status=expired in get (derived, no write)', g.status === 'expired' && (db.prepare('SELECT status FROM order_drafts WHERE id=?').get(String(d4.draft_id)) as { status: string }).status === 'draft')
+    ok('X-2 expired draft cannot be cancelled', (await D({ action: 'cancel', draft_id: d4.draft_id })).error_code === 'DRAFT_NOT_CANCELLABLE') }
+  { let threw = false
+    try { db.prepare("INSERT INTO order_drafts (id, buyer_id, quote_id, product_id, seller_id, quantity, unit_price_units, item_units, shipping_units, total_units, payable_units, payment_rail, expires_at) SELECT 'odr_dup', buyer_id, quote_id, product_id, seller_id, quantity, unit_price_units, item_units, shipping_units, total_units, payable_units, payment_rail, expires_at FROM order_drafts LIMIT 1").run() } catch { threw = true }
+    ok('X-3 one-quote-one-draft is a SCHEMA invariant (UNIQUE(quote_id) blocks even a direct DB writer)', threw) }
 
   // ══ 零经济执行 ══
   ok('E-1 zero economic objects across ALL of the above (orders/stock/wallets unchanged)', econSnapshot() === econBefore, econSnapshot())

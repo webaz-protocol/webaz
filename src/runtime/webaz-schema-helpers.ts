@@ -1826,7 +1826,8 @@ export function initOrderQuotesSchema(db: Database.Database): void {
  * 草稿 = 冻结的报价快照 + 生命周期(draft|cancelled|expired;submitted 由 PR-5a 置位)。
  * 零经济执行:不建真实订单行、不扣款、不锁资金、不动库存;价格/库存/资格在 PR-5a 人工 Passkey
  * 批准时以快照为基准全部重校验(drift = 硬失败 + 重新报价,绝不静默换条件)。
- * 草稿不可变:无 update 端点,只能 cancel(终态);快照列直接复制 quote 行的整数金额(零重算=零 drift)。
+ * 一 quote 一 draft 由 UNIQUE(quote_id) 在 schema 级持久保证;【不可变性是服务层保证】(无 update 端点,
+ * 仅 cancel 终态)—— 直接改库的写者不受此表约束,勿据此做安全推理。快照列复制 quote 行整数金额(零重算)。
  * PII:与 order_quotes 同纪律 —— 地址只有 region 标签 + sha256,全文永不入本表。
  */
 export function initOrderDraftsSchema(db: Database.Database): void {
@@ -1859,6 +1860,7 @@ export function initOrderDraftsSchema(db: Database.Database): void {
       cancelled_at     TEXT
     )
   `)
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_od_quote ON order_drafts(quote_id)`)   // 一 quote 一 draft:schema 级持久保证(不止服务层 CAS)
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_od_idem ON order_drafts(buyer_id, idempotency_key) WHERE idempotency_key IS NOT NULL`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_od_buyer ON order_drafts(buyer_id, created_at)`)
 }

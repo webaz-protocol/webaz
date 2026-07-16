@@ -32,9 +32,12 @@ const maskId = (id: string): string => !id ? '' : id.length > 8 ? `${id.slice(0,
 export function draftView(db: Database.Database, row: Record<string, unknown>): Record<string, unknown> {
   const buyer = db.prepare('SELECT handle FROM users WHERE id = ?').get(String(row.buyer_id)) as { handle: string | null } | undefined
   const prod = db.prepare('SELECT title FROM products WHERE id = ?').get(String(row.product_id)) as { title: string } | undefined
+  // 过期语义(本 PR 惰性派生,不写库):status=draft 且过了 expires_at → 视图/生命周期一律按 expired 对待;
+  //   PR-5a 的提交器将硬拒过期草稿。派生而非 UPDATE = 读路径零写,与"草稿不可变"一致。
+  const effectiveStatus = String(row.status) === 'draft' && String(row.expires_at) <= new Date().toISOString() ? 'expired' : String(row.status)
   return {
     draft_id: String(row.id),
-    status: String(row.status),
+    status: effectiveStatus,
     acting_as: buyer?.handle ? `@${buyer.handle}` : null,
     account_id_hint: maskId(String(row.buyer_id)),
     quote_id: String(row.quote_id),
@@ -42,8 +45,8 @@ export function draftView(db: Database.Database, row: Record<string, unknown>): 
     quantity: Number(row.quantity),
     destination: { address_source: 'default', address_summary: `Default address · ${row.dest_region ? String(row.dest_region) : 'region unset'}`, region: row.dest_region == null ? null : String(row.dest_region) },
     payment_rail: String(row.payment_rail),
-    total: { amount_minor: Number(row.total_units), currency: 'WAZ', currency_exponent: 6 },
-    payable_total: { amount_minor: Number(row.payable_units), currency: 'WAZ', currency_exponent: 6, note: 'total + donation — what an escrow order will debit at creation' },
+    total: { amount_minor: Number(row.total_units), currency: String(row.currency ?? 'WAZ'), currency_exponent: 6 },
+    payable_total: { amount_minor: Number(row.payable_units), currency: String(row.currency ?? 'WAZ'), currency_exponent: 6, note: 'total + donation — what an escrow order will debit at creation' },
     donation_bps: Number(row.donation_bps),
     anonymous_recipient: Number(row.anonymous_recipient) === 1,
     created_at: String(row.created_at),
@@ -107,7 +110,7 @@ export function createOrderDraft(db: Database.Database, deps: DraftDeps, humanId
           direct_receive_account_id, dest_region, address_summary_hash, anonymous_recipient, status, idempotency_key, expires_at)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'draft', ?, ?)`)
         .run(draftId, humanId, String(q.id), String(q.product_id), q.variant_id ?? null, String(q.seller_id), Number(q.quantity), Number(q.unit_price_units),
-          Number(q.item_units), Number(q.shipping_units), Number(q.donation_bps), Number(q.donation_units), Number(q.total_units), Number(q.payable_units), 'WAZ', String(q.payment_rail),
+          Number(q.item_units), Number(q.shipping_units), Number(q.donation_bps), Number(q.donation_units), Number(q.total_units), Number(q.payable_units), String(q.currency ?? 'WAZ'), String(q.payment_rail),
           q.direct_receive_account_id ?? null, q.dest_region ?? null, q.address_summary_hash ?? null, Number(q.anonymous_recipient), idemKey, expiresAt)
       return true
     }).immediate()
@@ -130,6 +133,7 @@ export function cancelOrderDraft(db: Database.Database, humanId: string, draftId
   const row = db.prepare('SELECT * FROM order_drafts WHERE id = ? AND buyer_id = ?').get(draftId, humanId) as Record<string, unknown> | undefined
   if (!row) return derr(404, 'DRAFT_NOT_FOUND', 'no such draft (or not yours)')
   if (row.status === 'cancelled') return { ok: true, response: { ...draftView(db, row), already_cancelled: true } }   // 幂等安全
+  if (String(row.expires_at) <= new Date().toISOString()) return derr(409, 'DRAFT_NOT_CANCELLABLE', 'draft already expired — nothing to cancel (expired drafts cannot be submitted either)')
   if (row.status !== 'draft') return derr(409, 'DRAFT_NOT_CANCELLABLE', `draft status is ${String(row.status)} — only status=draft can be cancelled`)
   const cas = db.prepare("UPDATE order_drafts SET status = 'cancelled', cancelled_at = datetime('now') WHERE id = ? AND status = 'draft'").run(draftId)
   if (cas.changes !== 1) return derr(409, 'DRAFT_NOT_CANCELLABLE', 'draft state changed concurrently — re-read it')
