@@ -1,16 +1,18 @@
 # WebAZ 经济模型公开说明 / Economic Model (Public)
 
-> 版本:2026-05-30 · pre-launch · 0 真实用户
-> Status: pre-launch · 0 real users
+> 更新:2026-07-16 · 已公开发布
+> Status: publicly launched
 >
 > 本文档面向公众,解释协议层金钱如何流转、谁拿走多少、什么情况下会改。
 > 所有数字都是 `protocol_params` 表里的当前默认值,DAO 治理可调。运营状态(GMV / 用户数)按惯例不公开。
+
+> **当前支付边界**:Direct Pay 已支持真实场外付款,本金在买家与卖家之间直接流转,WebAZ 不代持。本文中的 WAZ / escrow 流程是协议的模拟托管经济模型,不是当前真实支付轨。其他支付方式持续接入。
 
 ---
 
 ## 1. 一句话模型 / TL;DR
 
-> **协议本身不赚利差**:卖家收钱、买家付钱、推荐者分佣、争议罚款,所有现金流路径都是参数化的、写在 `protocol_params` 表里、链上事件可审计。
+> **协议本身不赚利差**:Direct Pay 由买家直接付给卖家,WebAZ 不经手本金。协议记录订单状态、授权与证据;佣金和费率规则由 `protocol_params` 参数化管理。
 > 协议运营方(`sys_protocol`)只在以下两种场景拿钱:① 平台费(默认 1-2%);② 风险事件罚没(争议失败方押金 / 失效推荐链尾款回收)。
 > 任何一笔"协议拿的"钱都有去向公告——大部分回流公益基金(`charity_fund`),小部分覆盖基础设施(域名 / 服务器 / CDN)。
 
@@ -22,15 +24,17 @@
 
 | 名称 | 定义 | 1:1 锚 | 流动性 |
 |---|---|---|---|
-| **WAZ** | 协议内部记账单位,显示给用户 | 1 WAZ = 1 USDC | 协议内即时,无延迟 |
-| **USDC**(Base) | 用户充值 / 提现走的链上资产 | 1 USDC = 1 USDC | 链上,需 12 区块确认 |
+| **WAZ** | escrow 模拟轨的内部测试单位 | 1 WAZ ≈ 1 USDC(仅模拟基准) | 仅模拟流程 |
+| **USDC**(Base) | 实验性链上托管集成 | 1 USDC = 1 USDC | 不是当前真实支付轨 |
 | **charity_fund** | 公益基金池,治理决定用途(不可挪用作运营) | 累计 WAZ | 仅经治理流出 |
 
-兑换比例(`waz_usdc_rate`)默认 = 1.0,即 1 USDC 充入直接得 1 WAZ。该参数 DAO 可调,但调整会触发公告期。
+`waz_usdc_rate` 默认 = 1.0 仅作为 escrow 模拟流程的展示基准,不是真实汇率或兑付承诺。Direct Pay 以卖家选定的收款方式和币种完成。
 
 ---
 
-## 3. 订单全流程经济流(100 WAZ 商品为例)
+## 3. Escrow 模拟经济流(100 WAZ 商品为例)
+
+> 本节是 escrow 模型与状态机的测试说明,不代表当前 Direct Pay 的本金流向。Direct Pay 中本金由买家直接付给卖家。
 
 假设买家下单一件 100 WAZ 商品,卖家在 china 区域,推荐链为 L1=Alice, L2=Bob, L3=Carol,三方物流(非自履行 / 非面交)。
 
@@ -70,7 +74,7 @@ LEVEL_RATES = { L1: 70%, L2: 20%, L3: 10% }
 | `protocol_fee_rate_secondhand` | 1% | 2% | 二手订单平台费（RFC-008 硬帽 2%,只减不涨,#112）|
 | `default_commission_rate` | 5% | 50% | 参数表默认值(预留,商品当前未读此参数) |
 | products.commission_rate(列默认) | 10% | 50% | **实际生效的新商品佣金率**(商家上架时可改;下单时快照入 orders.snapshot_commission_rate) |
-| `fund_base_rate` | 0（pre-launch 减免）| 1% | 每订单固定入公益基金（RFC-008 硬帽 1%;pre-launch=0,有真实 GMV 再由治理开启 ≤1%,#112）|
+| `fund_base_rate` | 0(当前费率)| 1% | 开启需治理决策,且 RFC-008 硬帽为 1% |
 | `order_insurance_rate` | 1% | 10% | 买家自选保险费率 |
 | `skill_fee_rate` | 5% | 30% | 技能市场销售费率(独立流转,不入 PV/佣金) |
 | `waz_usdc_rate` | 1.0 | — | 1 USDC 兑换 WAZ |
@@ -82,7 +86,7 @@ LEVEL_RATES = { L1: 70%, L2: 20%, L3: 10% }
 
 ## 5. 推荐(PV)经济池
 
-PV(Personal Volume)是协议的"推荐复利"机制,源于直销但已**去 MLM 化**:
+PV(Personal Volume)在当前系统中是参与记录;分享佣金以真实商品成交为唯一触发条件:
 
 - **L1=70% / L2=20% / L3=10%**,固定不变,仅按真实成交计酬,无升级费、无团队计酬、无静态收益
 - **Region cap**:每个国家依监管设 max_levels(欧盟多为 1,部分亚洲为 3)
@@ -120,7 +124,7 @@ PV(Personal Volume)是协议的"推荐复利"机制,源于直销但已**去 MLM 
 ### 出账规则(治理决定)
 
 - **不能挪作运营**(协议运营靠平台费,基金严格分账)
-- 流出需 DAO 治理投票通过(目前 pre-launch 阶段所有支付都需多签)
+- 流出需按当前治理和审批规则执行;未启用的自动化流转不得被宣称为已生效
 - 实时余额公开:`GET /api/charity/fund/balance`
 
 ---
@@ -139,10 +143,10 @@ PV(Personal Volume)是协议的"推荐复利"机制,源于直销但已**去 MLM 
 - Railway 服务器
 - USDC gas 中继(用户充提 USDC 时,协议代付部分 gas)
 
-### 透明度承诺(pre-launch 已实施)
+### 当前透明度承诺
 
 - 所有 `sys_protocol` → 外部地址的转账写 `audit_logs`,可查
-- 季度公开账目(launch 后启用)
+- 季度公开账目(待报告流程完成后启用)
 
 ---
 
@@ -152,7 +156,7 @@ PV(Personal Volume)是协议的"推荐复利"机制,源于直销但已**去 MLM 
 - ❌ 协议不承诺推荐收益(取决于真实交易,不是邀请人数)
 - ❌ 协议不承诺基金池每年都能分红(基金用途由治理决定,可能全部用于公益项目)
 - ❌ 协议不做投资建议(分享佣金 ≠ 投资回报)
-- ⚠️ pre-launch 阶段所有数据库可能重置;真实用户上线前会单独公告
+- ⚠️ 明确标记为 SANDBOX / 本地开发的数据库可以重置;线上生产网络不得被当作沙盒
 
 ---
 
@@ -160,9 +164,9 @@ PV(Personal Volume)是协议的"推荐复利"机制,源于直销但已**去 MLM 
 
 所有费率/上限都在 `protocol_params` 表,由 admin 调整,改动写入 `protocol_params_log`(append-only)。
 
-- pre-launch 阶段:owner 改(0 真实用户)
-- launch 后阶段:每次改动 24h 公告期 → 投票 → 生效
-- 永远不变的"宪法"参数(L1/L2/L3 比例、MLM 三特征禁令)需多签 + 长公告期
+- 当前阶段:经授权的 operator 调整,所有改动写入 append-only 日志
+- 渐进治理阶段:参数改动按公告期 → 投票 → 生效的流程迁移
+- 宪法级参数和分佣合规边界需多签 + 长公告期
 
 公开端点:
 - `GET /api/governance/params` — 当前所有参数 + 来源
@@ -290,4 +294,4 @@ The binary/PV-pairing reward engine ships **disabled by default** (Category C tw
 
 > **Source of truth**: `src/pwa/server.ts` `DEFAULT_PARAMS` array + `protocol_params` table.
 > **Last reviewed**: 2026-05-30
-> **Owner sign-off**: holden (pre-launch phase)
+> **Owner sign-off**: holden (current operating model)

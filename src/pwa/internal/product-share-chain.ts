@@ -14,7 +14,7 @@
  *
  * Note (redistribution): when the buyer qualifies, the L1 that previously went to the buyer's
  * referrer now goes to the buyer; the referrer moves to L2. Under a region max_levels clamp of 1
- * (pre-launch), only L1 pays out, so a qualifying buyer earns the L1 self-reward and the referrer's
+ * (current conservative global cap), only L1 pays out, so a qualifying buyer earns the L1 self-reward and the referrer's
  * (now L2) share goes to the reserve until the clamp is lifted.
  *
  * Anti-loop: the buyer is seeded into `seen`, so they can appear at most once (as the self-L1), never

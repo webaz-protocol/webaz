@@ -13,9 +13,9 @@ contact_links:
       ⚠️ 请不要在公开 issue 里报告安全漏洞。
       ⚠️ Do NOT report security vulnerabilities in public issues.
       使用 GitHub Security Advisory 私下提交。
-      pre-launch 阶段由 @seasonkoh 一人处理。
+      当前由 @seasonkoh 一人处理。
       Use GitHub Security Advisory privately.
-      Pre-launch: handled by @seasonkoh solo.
+      Currently handled by @seasonkoh solo.
 
   - name: 📜 Meta-rule revision (元规则修订)
     url: https://github.com/webaz-protocol/webaz/discussions/new?category=rfc

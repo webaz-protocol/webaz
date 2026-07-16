@@ -1,5 +1,5 @@
 /**
- * Welcome 域端点（#991 /welcome 预发布页 + #1005 安全加固）
+ * Welcome 域端点(#991 /welcome 公开介绍页 + #1005 安全加固)
  *
  * 由 #1013 Phase 2 从 src/pwa/server.ts 抽出。
  *

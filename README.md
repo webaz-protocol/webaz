@@ -7,13 +7,13 @@
 
 [![npm](https://img.shields.io/npm/v/@seasonkoh/webaz.svg)](https://www.npmjs.com/package/@seasonkoh/webaz)
 [![MCP Registry](https://img.shields.io/badge/MCP%20Registry-active-blue)](https://registry.modelcontextprotocol.io/v0/servers?search=webaz)
-[![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-orange.svg)](LICENSE) [![Change Date: 2030-05-18](https://img.shields.io/badge/Change%20Date-2030--05--18-blue.svg)](NOTICE) ![Status: Pre-launch](https://img.shields.io/badge/Status-Pre--launch-yellow.svg)
+[![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-orange.svg)](LICENSE) [![Change Date: 2030-05-18](https://img.shields.io/badge/Change%20Date-2030--05--18-blue.svg)](NOTICE) ![Status: Live](https://img.shields.io/badge/Status-Live-brightgreen.svg)
 
-> 🚧 **Pre-launch** — v1.0 public-notice period (since 2026-05-31) · very early (genesis-phase accounts only) · verifier / arbitrator roles still being bootstrapped · economic model un-settled · **not for production use.**
+> ✅ **Publicly launched** — Direct Pay supports real off-platform payment from buyer to seller. WebAZ records order states and evidence but is non-custodial: it never holds principal, does not guarantee payment, and cannot refund on the seller's behalf. The escrow rail remains simulated while additional payment methods are added.
 
-**WebAZ is an agent-native, decentralized commerce protocol.** Humans use a PWA; AI agents use an MCP server — both talk to the same backend under the same rules. Sellers plug existing catalogs into a new channel with zero extra work; buyers (or their agents) discover → price-lock → order → track autonomously; and escrow, fault attribution, and dispute resolution are enforced by **deterministic state machines, not a company's discretion.**
+**WebAZ is an agent-native, decentralized commerce protocol.** Humans use a PWA; AI agents use an MCP server — both talk to the same backend under the same rules. Sellers plug existing catalogs into a new channel; buyers (or their agents) discover → price-lock → order → track autonomously; and order state, fault attribution, and dispute handling are governed by **deterministic state machines, not a company's discretion.**
 
-> 📖 Whitepaper → [EN](docs/WHITEPAPER.md) · [中文](docs/WHITEPAPER.zh-CN.md)  ·  🌐 Live PWA demo → **[webaz.xyz](https://webaz.xyz)**
+> 📖 Whitepaper → [EN](docs/WHITEPAPER.md) · [中文](docs/WHITEPAPER.zh-CN.md)  ·  🌐 Live PWA → **[webaz.xyz](https://webaz.xyz)**
 
 ---
 
@@ -49,6 +49,8 @@ WebAZ ships an **MCP server**. MCP is an open standard, so it works with **any M
 ```json
 { "mcpServers": { "webaz": { "command": "npx", "args": ["-y", "@seasonkoh/webaz@latest"] } } }
 ```
+
+**ChatGPT manual install:** WebAZ also exposes a live Remote MCP endpoint at `https://webaz.xyz/mcp`. In ChatGPT web, eligible users or workspace admins can enable Developer mode, create a custom MCP app/connector, and enter that URL. Anonymous access supports public search and browsing; connect with OAuth or an account credential for the permitted authenticated actions. Availability and write-action support depend on the user's ChatGPT plan and workspace policy. WebAZ is not claiming an official ChatGPT App Directory listing.
 
 > **Updating:** MCP clients don't auto-update servers, and `npx` caches by version — so a client restart alone may keep running an older cached build. To pick up a new release: clear the cache (`rm -rf ~/.npm/_npx`) and restart the client. To pin a specific version instead of tracking latest, use `@seasonkoh/webaz@0.1.32`.
 
@@ -92,16 +94,16 @@ WebAZ deliberately separates **principle** (permanent) from **mechanism** (tunab
 | Share commission | 10% | to the referral chain L1/L2/L3 (default 7:2:1), region-capped; unclaimed → public reserve |
 | Logistics | 5% | 0 for self-fulfill / in-person |
 | Platform fee | 2% | 50% protocol reserve + 50% ops (secondhand 1%) |
-| Protocol fund | 1% | public-good / backstop; **pre-launch = 0** |
+| Protocol fund | up to 1% | public-good / backstop; **current rate = 0**, activation requires governance |
 
 ---
 
 ## What's inside (feature map)
 
-- **Commerce:** catalog · escrow · transition-driven settlement · disputes + arbitration · verification tasks · RFQ · forward auctions · P2P listings · secondhand.
+- **Commerce:** catalog · **live non-custodial Direct Pay** · transition-driven order handling · disputes + arbitration · verification tasks · RFQ · forward auctions · P2P listings · secondhand. Escrow remains a simulated test rail.
 - **Agent-native:** exact-match search · role-aware API (`?mode=pwa|agent|raw`) · per-`api_key` agent reputation · pre-order price-lock (`session_token`).
 - **Trust & compliance:** crowd-verified claim checks · region-aware commission caps · zero-stake listing (15%-default buyer-protection stake on first sale) · dispute system with timeout auto-judgment · link-ownership verification.
-- **On-chain & security:** USDC on Base (testnet live: Base Sepolia) · WebAuthn / Passkey gates on sensitive actions · automatic state-machine enforcement.
+- **Payments & security:** real Direct Pay occurs off-platform between buyer and seller · WebAuthn / Passkey gates on sensitive actions · automatic state-machine enforcement · Base Sepolia / USDC work remains experimental and is not the active real-payment rail.
 - **Community:** dual-anonymous charity wishing pool + fund · leaderboards · skill market.
 
 ---

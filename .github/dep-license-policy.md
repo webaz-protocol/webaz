@@ -26,7 +26,7 @@ A single MIT direct dep can pull in dozens of transitives, possibly hiding GPL /
   npx --yes license-checker --production --summary
   ```
 - **launch 前必须跑 full audit**(含全部 transitive),不只是直接依赖
-- **Pre-launch: full audit required** including all transitives, not just direct
+- **Before each public release: full audit required** including all transitives, not just direct
 - CI(W4+)必须扫 production 全树 / CI must scan full production tree
 - 发现传递依赖红区 → 找替代**直接依赖**或锁版本 / Find alternative direct dep or pin version
 

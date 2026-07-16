@@ -1,7 +1,7 @@
 # Security Policy / 安全政策
 
-WebAZ 协议处于 **pre-launch 阶段**(2026-05-31:0 真用户 · verifier+arbitrator 全 fixture · 经济未结算)。
-WebAZ is in **pre-launch stage**. Even so, security issues — especially **Iron-Rule bypasses**(对应元规则 #5 不偏袒 + #4 不撒谎 + #6 不滥用 的技术边界)— remain top priority.
+WebAZ 已公开发布,Direct Pay 已支持真实场外付款;托管轨仍为模拟测试流程。安全问题——尤其是 **Iron-Rule bypasses**(对应元规则 #5 不偏袒 + #4 不撒谎 + #6 不滥用 的技术边界)——始终是最高优先级。
+WebAZ is publicly launched, with Direct Pay supporting real off-platform payment; the escrow rail remains simulated. Security issues — especially **Iron-Rule bypasses** — remain top priority.
 
 > 📚 本文件涉及的"元规则 #N"对应 [`docs/META-RULES-FULL.md`](docs/META-RULES-FULL.md) 的 #1-#10。
 > All "元规则 #N / Rule #N" refs map to `docs/META-RULES-FULL.md`.
@@ -16,7 +16,7 @@ WebAZ is in **pre-launch stage**. Even so, security issues — especially **Iron
 | latest npm release | active | ✅ next minor 内修复 / Within next minor |
 | 历史 git tag / Older tags | unsupported | ❌ 不再回补 / No backports — please upgrade |
 
-We treat the **current `main` branch as the only "supported"** version. Pre-launch means we move fast; please track `main` if you depend on it.
+We treat the **current `main` branch as the only "supported"** version. WebAZ continues to evolve quickly; please track `main` if you depend on it.
 
 ---
 
@@ -81,8 +81,8 @@ Phase A is handled solo by @seasonkoh. Best-effort windows:
 - 看到时间窗 = 这件事我们会优先处理,不是【失约赔偿】 / Means "we prioritize", not "we owe you"
 
 > 🌀 **不可抗力延期条款 / Force majeure extension**(对应元规则 #4 不撒谎 + #10 phase 透明披露):
-> - pre-launch solo 时期:节假日 / 病假 / 旅行 / 其他紧急事件 → 时效**可延长最多 1 倍**(e.g. ack 24h → 48h, fix 72h → 144h)
-> - Pre-launch solo period: holidays / sick leave / travel / urgent events → timeline may extend **up to 2×**
+> - 当前单人安全响应期:节假日 / 病假 / 旅行 / 其他紧急事件 → 时效**可延长最多 1 倍**(e.g. ack 24h → 48h, fix 72h → 144h)
+> - Current solo security-response period: holidays / sick leave / travel / urgent events → timeline may extend **up to 2×**
 > - **延长后必须公开告知 reporter**(advisory 评论或 email 回复),不会静默推迟。
 >   Extensions **must be disclosed to reporter** (advisory comment or email reply); never silent.
 
@@ -237,9 +237,9 @@ Phase A: **no cash, no WAZ bounty** — current choice, not oversight.
 - [`docs/CHARTER.md §3.2`](docs/CHARTER.md) — 决策权与多签矩阵 / Multisig matrix
 - [`.github/ISSUE_TEMPLATE/config.yml`](.github/ISSUE_TEMPLATE/config.yml) — Security Advisory entry
 - [GitHub Security Advisory docs](https://docs.github.com/en/code-security/security-advisories)
-- [`webaz_info` MCP tool](src/layer1-agent/L1-1-mcp-server/server.ts) — pre-launch 状态自报 / pre-launch self-disclosure
+- [`webaz_info` MCP tool](src/layer1-agent/L1-1-mcp-server/server.ts) — 公开网络与支付轨状态自报 / live-network and payment-rail disclosure
 
 ---
 
-**Last reviewed / 最后 review**: 2026-06-01
+**Last reviewed / 最后 review**: 2026-07-16
 **Next review / 下次 review**: phase B trigger 时(per CHARTER §3.3)/ When phase B triggers

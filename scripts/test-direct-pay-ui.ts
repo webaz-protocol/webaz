@@ -19,7 +19,7 @@ const APP = P('app.js')                // hooks live here
 const FEEOPS = P('app-direct-pay-fee-ops.js')   // PR-B: Direct Pay 商户运营 hub + 平台服务费(预充值)账户
 const I18N = P('i18n.js')
 const HTML = P('index.html')
-const WAZ = P('app-prelaunch-waz.js')  // [PRELAUNCH-WAZ-SIM] 模拟币提醒 + 强制显式选 rail
+const WAZ = P('app-escrow-waz-sim.js')  // [ESCROW-WAZ-SIM] 模拟币提醒 + 强制显式选 rail
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -42,16 +42,16 @@ ok('instruction max length enforced client-side (maxlength 500)', /maxlength="50
 // ── 3. buyer checkout: direct_p2p as an OPTIONAL rail; escrow default ──
 ok('checkout renders rail selector', has(APP, 'dpRailSelectorHtml'))
 ok('rail selector defines escrow + direct_p2p radios', /value="escrow"/.test(DP) && /value="direct_p2p"/.test(DP))
-// [PRELAUNCH-WAZ-SIM] escrow 不再硬预选;模拟期(_wazSimulated)不带 checked,强制买家显式选择(真实启用置 false 后恢复 checked)。
-ok('[PRELAUNCH-WAZ-SIM] escrow pre-select gated on !_wazSimulated', /value="escrow"\s+\$\{window\._wazSimulated \? '' : 'checked'\}/.test(DP) && /window\._wazSimulated \? '' : 'escrow'/.test(DP))
+// [ESCROW-WAZ-SIM] escrow 不再硬预选;模拟期(_wazSimulated)不带 checked,强制买家显式选择(真实启用置 false 后恢复 checked)。
+ok('[ESCROW-WAZ-SIM] escrow pre-select gated on !_wazSimulated', /value="escrow"\s+\$\{window\._wazSimulated \? '' : 'checked'\}/.test(DP) && /window\._wazSimulated \? '' : 'escrow'/.test(DP))
 // #28 (permanent, not sim-gated): direct_p2p selected but availability unconfirmed → dpSelectedRail() returns '' (never silently falls back to escrow); the checkout gate blocks on any empty rail so the backend never receives an empty payment_rail that it would create as escrow.
 ok('#28 dpSelectedRail returns empty for direct_p2p-not-available (no silent escrow fallback)', /if \(c === 'direct_p2p'\) return window\._dpDirectAvailable === true \? 'direct_p2p' : ''/.test(DP))
 ok('#28 checkout blocks on empty payment_rail (general, not radio-checked)', /if \(!payment_rail\)/.test(APP) && /dp-rail-block[\s\S]{0,40}open\s*=\s*true/.test(APP))
 // P2 (review): the buy button must NOT closeSheet() inline — that would immediately hide the block prompt + the auto-expanded selector. doBuy closes the sheet itself, only after rail validation passes.
 ok('P2 buy button onclick does not closeSheet inline', /onclick="doBuy\([^"]*\)"/.test(APP) && !/doBuy\([^"]*\);\s*closeSheet\(\)/.test(APP))
 ok('P2 doBuy closes sheet only after rail validation passes (block branch returns first)', /return \}\s*if \(window\.closeSheet\) window\.closeSheet\(\)/.test(APP))
-ok('[PRELAUNCH-WAZ-SIM] app-prelaunch-waz.js loaded before app.js', HTML.indexOf('/app-prelaunch-waz.js') > 0 && HTML.indexOf('/app-prelaunch-waz.js') < HTML.indexOf('/app.js'))
-ok('[PRELAUNCH-WAZ-SIM] app-prelaunch-waz.js defines _wazSimulated flag + escrow notice helpers', /window\._wazSimulated\s*=\s*true/.test(WAZ) && /wazEscrowOrderBanner/.test(WAZ) && /wazEscrowRailNote/.test(WAZ))
+ok('[ESCROW-WAZ-SIM] app-escrow-waz-sim.js loaded before app.js', HTML.indexOf('/app-escrow-waz-sim.js') > 0 && HTML.indexOf('/app-escrow-waz-sim.js') < HTML.indexOf('/app.js'))
+ok('[ESCROW-WAZ-SIM] app-escrow-waz-sim.js defines _wazSimulated flag + escrow notice helpers', /window\._wazSimulated\s*=\s*true/.test(WAZ) && /wazEscrowOrderBanner/.test(WAZ) && /wazEscrowRailNote/.test(WAZ))
 ok('dpSelectedRail defaults to escrow (escrow selected, or non-simulated fallback)', /c === 'escrow' \? 'escrow' : \(window\._wazSimulated \? '' : 'escrow'\)/.test(DP))
 ok('order create payload includes payment_rail', /payment_rail/.test(APP) && /window\.dpSelectedRail/.test(APP))
 ok('direct_p2p create routes to dpAfterCreate', /payment_rail === 'direct_p2p'.*dpAfterCreate/.test(APP))

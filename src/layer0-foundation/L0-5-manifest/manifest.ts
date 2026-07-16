@@ -108,7 +108,7 @@ const ECONOMICS = {
   escrow: {
     description:  '买家付款后资金立即进入协议托管，不经任何人手',
     release_condition: '仅在买家确认收货或仲裁完成后自动释放',
-    currency:     'WAZ（Phase 0 为模拟代币，Phase 2 接入链上稳定币）',
+    currency:     'WAZ（escrow 模拟展示单位；真实交易当前使用 Direct Pay）',
   },
 }
 

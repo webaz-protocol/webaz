@@ -35,7 +35,7 @@ export function buildEconomicParticipation(getParam: ParamGetter) {
       {
         role: 'seller_shop',
         enters_as: 'lists products + fulfills orders',
-        earns: { source: 'sale proceeds minus protocol fee', protocol_fee_rate: num('protocol_fee_rate_shop', 0.02), fee_hard_cap: 0.02, fee_note: 'RFC-008 hard cap 2%, can only decrease; pre-launch may be waived lower.' },
+        earns: { source: 'sale proceeds minus protocol fee', protocol_fee_rate: num('protocol_fee_rate_shop', 0.02), fee_hard_cap: 0.02, fee_note: 'RFC-008 hard cap 2%, can only decrease; the current operating rate may be lower.' },
         collateral: { required: num('require_seller_stake', 0) === 1, param: 'require_seller_stake', model: 'RFC-008 stake_backing per order; bootstrap (=0) → zero forfeit.' },
         liability: { fault_states: ['fault_seller'], penalty_rate: num('fault_penalty_rate', 0.30), penalty_note: 'decoupled from stake rate; staked orders forfeit from stake then free balance; bootstrap orders exempt.', settlement: 'engine.settleFault (conserved)' },
         gate: 'api_key (authenticated_write)',

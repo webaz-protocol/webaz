@@ -122,7 +122,7 @@ export async function getBuildProfile(_db: Database.Database, userId: string): P
     `SELECT COALESCE(claimer_provenance,'unspecified') AS provenance, COUNT(*) AS count
      FROM build_tasks WHERE claimer_id = ? GROUP BY claimer_provenance`, [userId])
 
-  // 限制 / 惩罚(复用现有 agent_strikes;只读 + 申诉入口)。pre-launch 通常为空。
+  // 限制 / 惩罚(复用现有 agent_strikes;只读 + 申诉入口)。无记录时返回空。
   const strikes = await dbAll<Record<string, unknown>>(
     `SELECT id, severity, reason_code, reason_detail, issued_at, expires_at, appeal_status
      FROM agent_strikes WHERE user_id = ?

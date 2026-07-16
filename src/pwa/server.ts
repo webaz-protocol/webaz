@@ -25,6 +25,7 @@ import { initDatabase, generateId } from '../layer0-foundation/L0-1-database/sch
 import { setSeamDb } from '../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
 import { initSystemUser, transition, getOrderStatus, checkTimeouts, settleFault } from '../layer0-foundation/L0-2-state-machine/engine.js'; import { genuineSalePredicate } from '../layer0-foundation/L0-2-state-machine/genuine-sale.js'; import { settleDirectPayFeeAtCompletion } from '../direct-pay-fee-ar.js'  // RFC-018 PR4 genuine-sale SSOT + Direct Pay Rail 1 平台费链下应收(完成时释放遗留模拟 stake + accrue)
 import { endpointToAction, endpointToReadAction } from './endpoint-actions.js'
+import { migrateProtocolToPublicLaunch, seedPublicLaunchConsentV12 } from './public-launch-migrations.js'
 import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYPES, MASS_ACTION_DAILY_CAPS } from './limits.js'
 // #420 P1-2/P1-3/P1-4 — 反滥用阈值单一真相源（governance-adjustable protocol_params）+ 纯决策函数
 import { ANTI_ABUSE_PARAMS, readAntiAbuseThresholds, agentTrustLevel, agentSybilPenalty, agentStrikeSeverity, verifierOutlierBand } from './anti-abuse-thresholds.js'
@@ -812,7 +813,7 @@ const DEFAULT_PARAMS: Array<{ key: string; value: string; type: string; descript
   // Category C:参与记录 vs 奖励兑付,分开两套开关。
   //  · 参与记录默认 ON:PV 是参与/贡献记录(非收益/非兑付/非权益),默认允许记录(只在显式 =0 时关)。
   //  · 匹配奖励引擎已切除(#401):该标志保留但只门控一个 no-op stub,无兑付路径;
-  //    matching_rewards_activation_cleared = 法律/治理放行、matching_rewards_active = 运营开关。pre-launch 均 0。
+  //    matching_rewards_activation_cleared = 法律/治理放行、matching_rewards_active = 运营开关。当前均为 0。
   { key: 'participation_recording_active', value: '1', type: 'number', description: '参与记录开关:PV 生成+聚合(参与记录,非收益/非兑付);默认 1=开。置 0 才停止记录。', category: 'system', min: 0, max: 1 },
   { key: 'matching_rewards_active', value: '0', type: 'number', description: '匹配奖励运营开关(引擎已切除 #401,现仅门控 no-op stub;无兑付);默认 0=关。', category: 'system', min: 0, max: 1 },
   { key: 'matching_rewards_activation_cleared', value: '0', type: 'number', description: '奖励兑付法律/治理放行标志(开启奖励前必须经合规+治理审批置 1);默认 0。', category: 'system', min: 0, max: 1 },
@@ -820,8 +821,8 @@ const DEFAULT_PARAMS: Array<{ key: string; value: string; type: string; descript
   { key: 'protocol_fee_rate_shop', value: '0.02', type: 'number', description: '商家订单平台费率(RFC-008 硬帽 2%,只减不涨;前期可减免)', category: 'fee', min: 0, max: 0.02 },
   { key: 'protocol_fee_rate_secondhand', value: '0.01', type: 'number', description: '二手订单平台费率(RFC-008 硬帽 2%,只减不涨)', category: 'fee', min: 0, max: 0.02 },
   { key: 'default_commission_rate', value: '0.05', type: 'number', description: '新商品默认分享佣金（对齐小红书 5-10%）', category: 'fee', min: 0, max: 0.50 },
-  // RFC-008:fund_base 硬帽 1%;pre-launch 减免到 0(社区基金按真实 GMV 注入,0 GMV 时是无回报的税)。有真实 GMV 再由治理开启(≤1%)。
-  { key: 'fund_base_rate', value: '0', type: 'number', description: '协议基金池基础费率（RFC-008 硬帽 1%;pre-launch 减免=0,有真实 GMV 再由治理开启 ≤1%）', category: 'fee', min: 0, max: 0.01 },
+  // RFC-008:fund_base 硬帽 1%;当前运营费率保持 0。由治理在真实 GMV 与运营条件成熟后决定是否开启(≤1%)。
+  { key: 'fund_base_rate', value: '0', type: 'number', description: '协议基金池基础费率(RFC-008 硬帽 1%;当前费率=0,开启需治理决策且不超过 1%)', category: 'fee', min: 0, max: 0.01 },
   // RFC-008:起步免赔付门槛。0 = bootstrap(新商家零质押、违约免赔付只退款+掉信誉,降进入门槛);1 = 要求卖家质押(下单锁 stake、违约真没收)。上轨道后由治理开启。
   // ⚠️ Codex #111:stake-required 模式(=1)【尚未实现】—— 下单不锁 stake、settleFault 仍按 stake_backing=0 不没收,
   //   开启会给出虚假"真没收"协议语义。故 max 锁 0(不可开启);待 Phase 3 钱路径迁移实现真锁(下单原子锁 balance→staked)再放开。
@@ -961,7 +962,7 @@ try {
   }
 } catch (e) { console.error('[migration #1006]', e) }
 
-// RFC-008 迁移:费帽收紧 + fund_base pre-launch 减免。bounds 是协议护栏 → 无条件强制收窄(幂等)。
+// RFC-008 迁移:费帽收紧 + fund_base 当前费率降为 0。bounds 是协议护栏 → 无条件强制收窄(幂等)。
 //   平台费帽 → 2%(=稳态,只减不涨);fund_base 帽 → 1%;合计封顶 3%。fund_base 值减免到 0(仅原始 0.01、未被治理改过)。
 try {
   const feeCap = db.prepare(`UPDATE protocol_params SET max_value = 0.02, updated_at = datetime('now')
@@ -972,7 +973,7 @@ try {
   if (fbCap.changes > 0) console.log(`[migration RFC-008] fund_base 硬帽收紧 → max 1%`)
   // Codex #112 P1:仅收紧 max_value 不够 —— 历史 value > 新 cap 的行(如曾被治理调到 0.05)在 runtime
   //   getProtocolParam 直接读 value,仍按超帽费率收费,硬帽形同虚设。逐 key 把超帽 value clamp 回 cap,
-  //   并记 protocol_params_log。先于下面 fund_base 的 pre-launch 减免(减免只针对未被治理改过的原始 0.01)。
+  //   并记 protocol_params_log。先于下面 fund_base 当前费率调整(只针对未被治理改过的原始 0.01)。
   const clampFeeValue = (key: string, cap: number) => {
     const cur = db.prepare('SELECT value FROM protocol_params WHERE key = ? AND CAST(value AS REAL) > ?').get(key, cap) as { value: string } | undefined
     if (!cur) return
@@ -987,7 +988,7 @@ try {
   const fb = db.prepare(`UPDATE protocol_params SET value = '0', default_value = '0', updated_at = datetime('now')
     WHERE key = 'fund_base_rate' AND value = '0.01' AND updated_by IS NULL`).run()
   if (fb.changes > 0) {
-    console.log(`[migration RFC-008] fund_base_rate 0.01 → 0 (pre-launch 减免)`)
+    console.log(`[migration RFC-008] fund_base_rate 0.01 → 0 (current operating rate)`)
     try { db.prepare(`INSERT INTO protocol_params_log (id, key, old_value, new_value, changed_by, action)
                        VALUES (?,?,?,?,?,'migrate')`).run(generateId('ppl'), 'fund_base_rate', '0.01', '0', 'migration_RFC-008') } catch {}
   }
@@ -1860,6 +1861,7 @@ for (const stmt of [
   'ALTER TABLE binary_tier_config ADD COLUMN discount_coef REAL DEFAULT 1.0',
 ]) { try { db.exec(stmt) } catch {} }
 try { db.exec("CREATE TABLE IF NOT EXISTS system_state (key TEXT PRIMARY KEY, value TEXT)") } catch {}
+migrateProtocolToPublicLaunch(db)
 
 // 商品类目（PV 乘数 = 资金/PV 解耦核心）
 db.exec(`
@@ -2302,11 +2304,11 @@ try { db.prepare("UPDATE users SET l1_share_override = 1 WHERE id = 'sys_protoco
   try { db.prepare("UPDATE region_config SET max_levels = 0, mlm_ui_visible = 0 WHERE region = ? AND max_levels > 0").run(r) } catch {}
 })
 
-// ─── P0-2 PRE-LAUNCH 全局 clamp:max_levels ≤ 1（2026-06-03 user decision B）───
+// ─── P0-2 当前全局合规 clamp:max_levels ≤ 1（2026-06-03 user decision B）───
 // 上方按辖区分档的 seed(0/1/2/3)是【知识/基础设施】,保留不删。
-// 但 pre-launch 阶段【未请律师】,operator 明确"max_levels ≤ 1 everywhere 是不请律师
+// 当前仍【未取得该结构的专项律师意见】,operator 明确"max_levels ≤ 1 everywhere 是不请律师
 // 也安全的唯一前提"。因此强制把所有地区压到 ≤ 1(0 保持 0,更严不动)。
-// 这是【唯一的 pre-launch 合规闸门】—— 单点可逆:
+// 这是【当前合规闸门】—— 单点可逆:
 //   re-trigger(见 docs/LEGAL-DISCLOSURES.md §7):真实用户 > 100 / GMV > $10k /
 //   首次监管 inquiry / 进入新辖区 / Phase D 上线 —— 届时【请律师背书后】删除本块,
 //   即按上方 seed 的辖区分档自动放开。
@@ -8193,7 +8195,7 @@ db.exec(`
 
 // v1.1 (major) — clarified wording: drops the "共建身份 / Builder Identity" framing that confused users
 // with the contribution system / GitHub claim / build reputation, and states the current commission-level
-// reality boundary (pre-launch global cap = 1 level; "three tiers" = protocol maximum design). v1.0 stays
+// reality boundary (the then-current pre-launch cap = 1 level; "three tiers" = protocol maximum design). v1.0 stays
 // FROZEN (hash-bound, immutable per version); the status + activate endpoints already serve the latest
 // change_class='major' row, so this becomes the shown + consented text with no route-logic change.
 //
@@ -8220,6 +8222,7 @@ db.exec(`
               VALUES (?, ?, 'major', ?, ?, ?, ?)`)
     .run('1.1', hash, effectiveAt, textZh, textEn, 'v1.1 clarification — share-commission opt-in framing (not 共建身份/Builder Identity, not contribution eligibility) + current commission-level reality boundary (pre-launch cap 1 level); v1.0 left frozen')
 })()
+seedPublicLaunchConsentV12(db)
 
 // 4. rewards_applications:申请留痕表(append-only audit;action='activate'|'deactivate'|'auto_downgrade'|'reconfirm')
 db.exec(`

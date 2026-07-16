@@ -409,10 +409,10 @@ api_key 永久 revoke + operator 进观察名单
 ### 14.4 公开面诚实化(回应外部尽调 agent)
 
 - `/.well-known/webaz-protocol.json` + `/api/protocol-status` 公开 manifest:
-  - `network_state`: phase=pre_launch、real_users_on_canonical(实时查 webauthn_credentials 数)、canonical_endpoint、economic_flow、disclaimer(zh+en)
+  - `network_state`: phase=launched、real_users_on_canonical(实时查 webauthn_credentials 数)、canonical_endpoint、economic_flow、disclaimer(zh+en)
   - `issuers.agent_passport[]`: 信任锚地址数组(支持轮换)
   - `roadmap`: 已完成 / 已知未做 / 故意延后 + "we do not commit to deadlines, only to honesty"
-- webaz.xyz 首页 + welcome 顶部加 pre-launch 横幅(不可关闭)
+- webaz.xyz 首页 + welcome 顶部展示已发布的支付轨状态:Direct Pay 真实可用,escrow 仍为模拟
 - MCP 工具描述诚实化:`webaz_info` 加 network_state + MLM 形态披露;`webaz_skill` 明确 NOT executable code;`webaz_register/share_link/referral` 加"AI agent 须显式同意才能拉新"
 
 ### 14.5 新协议参数

@@ -61,7 +61,7 @@ export function registerRewardsApplyRoutes(app: Application, deps: RewardsApplyD
 
     const optIn = (await dbOne<{ rewards_opted_in: number }>("SELECT rewards_opted_in FROM users WHERE id = ?", [userId]))?.rewards_opted_in ?? 0
     const lastAction = (await dbOne<{ action: string; created_at: number }>("SELECT action, created_at FROM rewards_applications WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", [userId]))
-    const currentMajor = await dbOne<{ version: string; hash: string; change_class: string; effective_at: number; text_zh: string; text_en: string }>("SELECT version, hash, change_class, effective_at, text_zh, text_en FROM rewards_consent_texts WHERE change_class='major' ORDER BY effective_at DESC LIMIT 1", [])
+    const currentConsent = await dbOne<{ version: string; hash: string; change_class: string; effective_at: number; text_zh: string; text_en: string }>("SELECT version, hash, change_class, effective_at, text_zh, text_en FROM rewards_consent_texts ORDER BY effective_at DESC LIMIT 1", [])
 
     let state: 'opted_in' | 'never_activated' | 'auto_downgraded' | 'deactivated'
     if (optIn === 1) state = 'opted_in'
@@ -88,11 +88,11 @@ export function registerRewardsApplyRoutes(app: Application, deps: RewardsApplyD
     res.json({
       state,
       opted_in: optIn === 1,
-      consent_version: currentMajor?.version || null,
-      consent_hash: currentMajor?.hash || null,
-      consent_effective_at: currentMajor?.effective_at || null,
-      consent_text_zh: currentMajor?.text_zh || null,
-      consent_text_en: currentMajor?.text_en || null,
+      consent_version: currentConsent?.version || null,
+      consent_hash: currentConsent?.hash || null,
+      consent_effective_at: currentConsent?.effective_at || null,
+      consent_text_zh: currentConsent?.text_zh || null,
+      consent_text_en: currentConsent?.text_en || null,
       eligibility: {
         completed_orders: completedOrders,
         min_completed_orders: minOrders,
@@ -122,11 +122,12 @@ export function registerRewardsApplyRoutes(app: Application, deps: RewardsApplyD
     const optIn = (await dbOne<{ rewards_opted_in: number }>("SELECT rewards_opted_in FROM users WHERE id = ?", [userId]))?.rewards_opted_in ?? 0
     if (optIn === 1) return void errorRes(res, 409, 'ALREADY_OPTED_IN', '已 opted-in,无需重复申请')
 
-    // 2. Verify consent version matches current major
-    const currentMajor = await dbOne<{ version: string; hash: string }>("SELECT version, hash FROM rewards_consent_texts WHERE change_class='major' ORDER BY effective_at DESC LIMIT 1", [])
-    if (!currentMajor) return void errorRes(res, 500, 'NO_CONSENT_TEXT', 'rewards_consent_texts 未 seed,无法申请')
-    if (consent_version !== currentMajor.version) {
-      return void errorRes(res, 400, 'STALE_CONSENT_VERSION', `请重新加载披露页 — current=${currentMajor.version}, you sent=${consent_version}`)
+    // 2. Verify consent version matches the latest effective text. Minor wording updates can become
+    // current without arming the major-version reconfirm / auto-downgrade path.
+    const currentConsent = await dbOne<{ version: string; hash: string }>("SELECT version, hash FROM rewards_consent_texts ORDER BY effective_at DESC LIMIT 1", [])
+    if (!currentConsent) return void errorRes(res, 500, 'NO_CONSENT_TEXT', 'rewards_consent_texts 未 seed,无法申请')
+    if (consent_version !== currentConsent.version) {
+      return void errorRes(res, 400, 'STALE_CONSENT_VERSION', `请重新加载披露页 — current=${currentConsent.version}, you sent=${consent_version}`)
     }
 
     // 3. Anti-induction 8s delay (with upper bound to defeat page_loaded_at=1 bypass)
@@ -179,7 +180,7 @@ export function registerRewardsApplyRoutes(app: Application, deps: RewardsApplyD
 
         db.prepare(`INSERT INTO rewards_applications (user_id, action, consent_version, consent_hash, passkey_sig, verification_method, ip_hash, ua_hash, created_at)
                     VALUES (?, 'activate', ?, ?, ?, ?, ?, ?, ?)`)
-          .run(userId, consent_version, currentMajor.hash,
+          .run(userId, consent_version, currentConsent.hash,
                webauthn_token || null,  // store gate_token id as audit cross-ref to webauthn_gate_tokens
                requirePasskey === 1 ? 'passkey' : 'password',
                sha256_hex(req.ip || '').slice(0, 16),

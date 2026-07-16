@@ -38,7 +38,7 @@ expect('所有 URL 引用非空', JSON.stringify(c).split('"').filter(s => s.sta
 const q = (c as any).agent_quickstart
 expect('含 agent_quickstart 块', !!q && typeof q === 'object')
 expect('quickstart.canonical_start_url 指向 integration.json', /\/\.well-known\/webaz-integration\.json$/.test(q.canonical_start_url))
-expect('quickstart 一句话定位(agent-native + pre-launch 诚实)', /agent-native/i.test(q.what_is_webaz) && /pre-launch|no real money/i.test(q.what_is_webaz))
+expect('quickstart 一句话定位(agent-native + launched + rail boundary)', /agent-native/i.test(q.what_is_webaz) && /publicly launched/i.test(q.what_is_webaz) && /Direct Pay is live/i.test(q.what_is_webaz) && /escrow rail remains simulated/i.test(q.what_is_webaz))
 expect('quickstart.public_readonly_entrypoints 是数组且含 well-known + 公开任务板',
   Array.isArray(q.public_readonly_entrypoints) && q.public_readonly_entrypoints.some((u: string) => /webaz-protocol\.json/.test(u)) && q.public_readonly_entrypoints.some((u: string) => /\/api\/public\/build-tasks/.test(u)))
 expect('quickstart.anonymous_allowed_actions 含只读 + keyless suggest',

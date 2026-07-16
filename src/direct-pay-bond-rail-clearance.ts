@@ -12,7 +12,7 @@
  *
  * 现状(2026-07-05 更新):**operator_attested 轨已放行(SG)** —— Holden 决策 B(经营者知情自担风险,
  *   非律师意见):保证金是商家履约担保物、不涉买家资金/货款;法币收取=常规合同担保物;USDC 收取的 PS Act
- *   DPT 定性风险已知并接受(security-deposit 豁免待律师确认,确认前敞口=pre-launch 无真实商家)。前置已建:
+ *   DPT 定性风险已知并接受(security-deposit 豁免待律师确认;在此之前保持受控商家/商品/地区/金额门控)。前置已建:
  *   条款文本+缴纳前强制同意(src/bond-terms.ts,liquidated-damages 表述;policy_version=条款版本,审计对齐)。
  *   usdc_onchain / fiat_psp【自动收款轨】仍全 fail-closed(未实现+未清门,与本次放行无关)。
  */

@@ -1,6 +1,6 @@
 # Connect any AI agent to WebAZ — Remote MCP
 
-**One endpoint, every agent.** WebAZ speaks the [Model Context Protocol](https://modelcontextprotocol.io) over a plain HTTPS endpoint, so an agent with no local runtime — ChatGPT, Claude mobile, a cloud agent — can reach it directly. No `npx`, no install.
+**One endpoint, every compatible agent.** WebAZ speaks the [Model Context Protocol](https://modelcontextprotocol.io) over a plain HTTPS endpoint, so ChatGPT web custom apps, compatible Claude clients, and cloud agents can reach it directly. No `npx` or local runtime is required.
 
 ```
 https://webaz.xyz/mcp
@@ -8,7 +8,7 @@ https://webaz.xyz/mcp
 
 - **Transport:** MCP Streamable HTTP (stateless, `POST` only).
 - **Anonymous** = public reads (search / leaderboard / price history / open build tasks / browse). No account needed.
-- **OAuth 2.1** (when live) = click **Connect** in a compliant MCP client — no key handling. You log in with your Passkey, approve SAFE scopes on a consent screen, and the client receives a short-lived, audience-bound access token. See [Connect via OAuth](#connect-via-oauth-21--no-pasted-key).
+- **OAuth 2.1** (when enabled with `WEBAZ_OAUTH=1`) = click **Connect** in a compliant MCP client — no key handling. You log in with your Passkey, approve SAFE scopes on a consent screen, and the client receives a short-lived, audience-bound access token. See [Connect via OAuth](#connect-via-oauth-21--no-pasted-key).
 - **`Authorization: Bearer <api_key>`** = act as your account (order, list, fulfil…). Most account actions execute directly with the key (e.g. placing an order). A few high-risk actions can only be **completed by the human in the browser / PWA** — the mechanism varies: seller accept/ship returns an `approval_url` the human approves with a Passkey (then the server executes), while wallet withdrawal, key changes, and arbitration are done in the PWA with a Passkey/WebAuthn. OAuth never removes the api_key path; both stay valid. (Per-tool detail: [permission matrix](#permission-matrix--how-each-tool-authenticates).)
 
 > Reachability first: the goal is that an agent meeting WebAZ for the first time connects and completes a real product search in its first conversation, unaided.
@@ -19,7 +19,7 @@ https://webaz.xyz/mcp
 Add a custom connector pointing at `https://webaz.xyz/mcp`. Leave auth empty to browse anonymously, or set a Bearer token (your WebAZ `api_key`) to transact.
 
 ### ChatGPT (developer mode / connectors)
-Add an MCP server with URL `https://webaz.xyz/mcp`. Anonymous works for search/browse; add the `Authorization: Bearer <api_key>` header to act as your account.
+On ChatGPT web, an eligible user or workspace admin can enable Developer mode, create a **custom MCP app** (formerly called a custom connector), and set its server URL to `https://webaz.xyz/mcp`. Anonymous access works for public search/browse; OAuth or an account credential enables only the authenticated actions allowed by that credential. Plan/workspace availability and write-action support follow ChatGPT's current policy. This manual custom-app path is not an official App Directory listing, and ChatGPT mobile does not currently support MCP apps.
 
 ### Any MCP client / SDK
 Point the client's Streamable HTTP transport at `https://webaz.xyz/mcp`. Example JSON-RPC:
@@ -35,7 +35,7 @@ Add `-H 'authorization: Bearer <api_key>'` to authenticate.
 
 ## Connect via OAuth 2.1 — no pasted key
 
-When the OAuth surface is live (`WEBAZ_OAUTH=1`), a compliant MCP client (Claude / ChatGPT / Cursor connectors) can connect without you ever handling an api_key:
+When the OAuth surface is enabled (`WEBAZ_OAUTH=1`), a compliant MCP client (Claude / ChatGPT / Cursor connectors) can connect without you ever handling an api_key:
 
 1. **Discovery.** The client reads [`/.well-known/oauth-protected-resource/mcp`](https://webaz.xyz/.well-known/oauth-protected-resource/mcp) (RFC 9728) and [`/.well-known/oauth-authorization-server`](https://webaz.xyz/.well-known/oauth-authorization-server) (RFC 8414). Calling an account-bound tool without adequate authorization returns the auth challenge inline: an `HTTP 200` tool result with `isError: true` and `result._meta["mcp/www_authenticate"]` carrying an RFC 6750 `Bearer resource_metadata="…"` challenge (with `error` + `error_description`; mirrored to a `WWW-Authenticate` header for RFC 9728-aware clients). ChatGPT reads that `_meta` challenge to pop the **Connect via OAuth** UI, so a client self-starts the flow mid-session — no re-login for a scope step-up.
 2. **Authorize.** Authorization Code + PKCE (`S256` only). You're redirected to webaz.xyz, log in with your **Passkey**, and see a consent screen naming the client, the exact SAFE scopes (`read`, `order:draft`, `list:draft`), and the resource (`https://webaz.xyz/mcp`).
@@ -47,7 +47,7 @@ Boundaries (identical to every other path): OAuth tokens carry **SAFE scopes onl
 
 ## Get an api_key
 
-Pre-launch is invite-gated (Sybil resistance). A key requires a **real human** to register with a Passkey — agents cannot self-register; this is the accountability root. Request an invite at [webaz.xyz/#welcome](https://webaz.xyz/#welcome). Browsing and reading need no key.
+Registration currently uses invitations for Sybil resistance. A key requires a **real human** to register with a Passkey — agents cannot self-register; this is the accountability root. Request an invite at [webaz.xyz/#welcome](https://webaz.xyz/#welcome). Browsing and reading need no key.
 
 ## What you can do
 
@@ -71,7 +71,7 @@ Two honest points about the boundary:
 
 ## Boundaries (honest)
 
-- **Pre-launch, invite-gated.** The escrow rail settles simulated test currency; Direct Pay is a conditions-gated, non-custodial rail (real payment happens off-platform between buyer and seller — WebAZ never holds principal, does not guarantee, cannot refund).
+- **Publicly launched.** Direct Pay is a conditions-gated, non-custodial real-payment rail: payment happens off-platform between buyer and seller, and WebAZ never holds principal, does not guarantee payment, and cannot refund on the seller's behalf. Escrow remains simulated while additional payment methods are added. Registration currently uses invitations for Sybil resistance.
 - **Isolated by construction.** The remote endpoint never uses the server host's credentials; an anonymous caller is strictly read-only. Your Bearer key acts only as your own account.
 - **Rate-limited.** Per-client throttling — keyed on the Cloudflare-attributed client IP for traffic arriving through Cloudflare (the normal path via `webaz.xyz`) — is a defense-in-depth layer atop Cloudflare's edge DDoS protection; back off on `429`. It is not the primary access control (isolation, the Passkey human-gate, and 128-bit keys are). Direct-to-origin traffic that bypasses Cloudflare could rotate the client-IP header to evade this limiter; that residual DoS vector is closed by enabling the Cloudflare-only origin guard (`CF_ORIGIN_GUARD_MODE=enforce`).
 - The machine-readable entry point for agents is [`/.well-known/webaz-integration.json`](https://webaz.xyz/.well-known/webaz-integration.json) (it lists `remote_mcp` when the endpoint is live).
