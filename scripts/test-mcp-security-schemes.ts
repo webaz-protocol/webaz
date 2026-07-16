@@ -83,6 +83,14 @@ async function main(): Promise<void> {
   ok('8. NO fine grant-capability name appears anywhere in securitySchemes (coarse vocabulary only)',
     FINE_CAPABILITY_NAMES.every(cap => !wireStr.includes(cap)))
 
+  // 9 — EVERY oauth2 grant-reachable tool MUST be in NETWORK_TOOLS. Otherwise the RFC-003 migration gate
+  //   (isNetworkMode && !toolAllowedInNetworkMode → not_on_network_yet) intercepts the authenticated call
+  //   BEFORE the handler runs, so OAuth "succeeds" but the tool returns "not on the network yet". (This is
+  //   exactly the bug that shipped for webaz_connection_status; a direct-handler unit test bypassed the gate.)
+  const { NETWORK_TOOLS } = await import('../src/layer1-agent/L1-1-mcp-server/network-mode.js')
+  ok('9. every oauth2 grant-reachable tool is in NETWORK_TOOLS (else the migration gate blocks dispatch)',
+    oauthTools.length > 0 && oauthTools.every(n => (NETWORK_TOOLS as Set<string>).has(n)))
+
   // Every tool that is NOT one of the 3 must be EXACTLY [{type:'noauth'}] — no stray/bogus scheme
   // (e.g. [{type:'bogus'}]) may slip through the "non-empty array" check in assertion 1.
   let noauthExact = true

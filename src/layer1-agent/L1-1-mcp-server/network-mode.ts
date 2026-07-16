@@ -41,6 +41,9 @@ export const NETWORK_TOOLS = new Set<string>([
   //   Grant-only (no api_key path); grants live on webaz.xyz so they must be network-reachable.
   'webaz_get_agent_order',
   'webaz_order_action_request',
+  // RFC-023 connection identity (grant-wired, read_public). Grants live on webaz.xyz → MUST be here,
+  //   or the RFC-003 migration gate returns not_on_network_yet before the handler ever runs.
+  'webaz_connection_status',
   // Batch 1(只读 + 低危自身写):走 webaz.xyz Bearer api_key。
   'webaz_notifications',
   'webaz_nearby',
