@@ -240,9 +240,28 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     const b = (req.body ?? {}) as Record<string, unknown>
     // ── allowlist 化 intent(parse-don't-validate:非法字段直接拒,不猜) ──
+    // token-shape 校验(Codex PR-2 High):category/keywords 是唯一的文本入口,必须让"无聊天文本/无
+    //   PII 入库"的披露【为真】——只放行商品词形态:任意文字/数字 + 空格 + -+._&,并显式拒绝
+    //   邮箱(@)/URL(://或www.)/电话形态(≥7 连续数字)。绝对防走私不存在(词也能编码信息),
+    //   但结构化 PII(邮箱/电话/门牌/URL)在此形态下进不来,claim 与实现一致。
+    const TOKEN_RE = /^[\p{L}\p{N} \-+._&%]{1,40}$/u   // % 合法("100% cotton"),LIKE 侧已转义为字面量
+    const smells = (s: string): string | null => {
+      if (s.includes('@')) return 'email-like'
+      if (/:\/\/|www\./i.test(s)) return 'url-like'
+      if (/\d{7,}/.test(s.replace(/[ \-.]/g, ''))) return 'phone-like'
+      if (!TOKEN_RE.test(s)) return 'non-token characters'
+      return null
+    }
+    const rejectText = (field: string, why: string) => void res.status(400).json({
+      error: `${field} must be a short product term (letters/digits, no emails/phones/URLs) — rejected: ${why}`,
+      error_code: 'INVALID_INTENT_TEXT',
+      next_steps: 'Send structured shopping terms only; free chat text and personal data are not accepted and never recorded.',
+    })
     const category = typeof b.category === 'string' && b.category.trim() ? b.category.trim().slice(0, 40) : null
+    if (category) { const w = smells(category); if (w) return rejectText('category', w) }
     const rawKw = Array.isArray(b.keywords) ? b.keywords : (typeof b.keywords === 'string' && b.keywords.trim() ? [b.keywords] : [])
     const keywords = rawKw.filter((k): k is string => typeof k === 'string' && !!k.trim()).map(k => k.trim().slice(0, 40)).slice(0, 5)
+    for (const k of keywords) { const w = smells(k); if (w) return rejectText('keywords', w) }
     const maxPrice = b.max_price === undefined || b.max_price === null ? null : Number(b.max_price)
     if (maxPrice !== null && (!Number.isFinite(maxPrice) || maxPrice <= 0 || maxPrice > 1e9)) {
       return void res.status(400).json({ error: 'max_price must be a positive number', error_code: 'INVALID_MAX_PRICE' })

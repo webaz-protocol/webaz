@@ -1852,7 +1852,7 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
 
 - Results are honest DISCOVERY CANDIDATES (label discovery_candidate): similar/near matches, NEVER passed off as exact matches. For exact lookups (exact title / SKU / URL) use webaz_search instead — it stays strict.
 - Zero results → an honest { no_candidates: true } with guidance (post an RFQ, or browse PWA #discover). Nothing similar is substituted.
-- DISCLOSURE: every discover query is recorded as a structured demand signal linked to your account (category/keywords/budget/region/quantity + result count — no chat text) to inform marketplace supply. If you do not want this recorded, do not call this tool.
+- DISCLOSURE: every discover query is recorded as a structured demand signal linked to your account (category/keywords/budget/region/quantity + result count) to inform marketplace supply. Inputs are validated to short product-term shape — free chat text, emails, phone numbers, and URLs are REJECTED (400) and never recorded. If you do not want queries recorded, do not call this tool.
 - Read + that disclosed append-only record only: no order, no funds, no PII returned.`,
     inputSchema: {
       type: 'object',

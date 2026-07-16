@@ -88,11 +88,12 @@ try {
   { const r = await mcp.handleDiscover({ category: 'phone_stand', ship_to_region: 'US', max_price: 50 })   // SG-only 被目的地过滤
     const cands = r.candidates as Array<Record<string, unknown>> | undefined
     ok('D-6 sale_regions destination filter (SG-only listing excluded for US)', Array.isArray(cands) && cands.length === 1 && cands[0].product_id === 'prd_all', JSON.stringify(r).slice(0, 300)) }
-  { const r = await mcp.handleDiscover({ keywords: ['nonexistent-gadget-xyz'] })   // 0 命中
+  { const before = signals()
+    const r = await mcp.handleDiscover({ keywords: ['nonexistent-gadget-xyz'] })   // 0 命中
     ok('D-7 zero hits → honest no_candidates + guidance (RFQ / #discover), nothing similar substituted', r.no_candidates === true && (r.candidates as unknown[]).length === 0 && /RFQ/.test(String(r.note)))
-    const sig = signals()
-    ok('D-8 zero-hit query recorded as demand signal (result_count = 0 = 商机)', sig.length === 3 && sig[2].result_count === 0, JSON.stringify(sig[2] ?? {}).slice(0, 200))
-    const intent = JSON.parse(String(sig[2].intent_json))
+    const added = signals().filter(a => !before.some(bb => bb.id === a.id))
+    ok('D-8 zero-hit query recorded as demand signal (result_count = 0 = 商机)', added.length === 1 && added[0].result_count === 0, JSON.stringify(added).slice(0, 200))
+    const intent = JSON.parse(String(added[0]?.intent_json ?? '{}'))
     ok('D-9 intent_json = allowlist fields ONLY (no free text keys)', JSON.stringify(Object.keys(intent).sort()) === JSON.stringify(['category', 'keywords', 'max_price', 'quantity', 'ship_to_region'])) }
   { const r = await mcp.handleDiscover({ keywords: ['100%'] })   // LIKE 通配转义:字面匹配 '100%',不是"任意"
     const cands = r.candidates as Array<Record<string, unknown>> | undefined
@@ -101,13 +102,42 @@ try {
     ok('D-11 empty intent → EMPTY_INTENT 400 (free chat text not accepted)', r.error_code === 'EMPTY_INTENT') }
 
   useCred('grt_oldread', 'gtk_old', OLD_READ_SET)
-  { const r = await mcp.handleDiscover({ category: 'phone_stand' })
+  { const before13 = signals().length
+    const r = await mcp.handleDiscover({ category: 'phone_stand' })
     ok('D-12 NON-GRANDFATHERING: pre-PR read-snapshot grant does NOT gain buyer_discover', r.error_code === 'PERMISSION_REQUIRED', JSON.stringify(r).slice(0, 200))
-    ok('D-13 denied call records NO signal', signals().length === 5 - 1) }  // 5 次授权调用里 4 次成功落库(D-11 的 400 不落)
+    ok('D-13 denied call records NO signal (explicit before/after)', signals().length === before13) }
 
   // 源守卫:工具 description 必须披露采集(诚实化方法论)
   const src = readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
   ok('D-14 tool description discloses the demand-signal recording', /DISCLOSURE: every discover query is recorded/.test(src))
+
+  // ── 对抗性隐私(Codex PR-2 High/Medium):走私 PII 必须 400 且【零落库】——披露"不收自由文本/PII"必须为真 ──
+  useCred('grt_disc', 'gtk_disc', ['buyer_discover'])
+  for (const [name, payload] of [
+    ['email in keywords', { keywords: ['john.doe@example.com'] }],
+    ['phone in keywords', { keywords: ['+65 9123 4567'] }],
+    ['URL in keywords', { keywords: ['https://evil.example/x'] }],
+    ['email in category', { category: 'contact me a@b.co' }],
+    ['phone-run in category', { category: 'call 91234567 now' }],
+    ['free chat punctuation', { keywords: ['hi, please find me a stand!'] }],
+  ] as const) {
+    const before = signals().length
+    const r = await mcp.handleDiscover(payload as Record<string, unknown>)
+    ok(`D-15 PII smuggle rejected + unrecorded (${name})`, r.error_code === 'INVALID_INTENT_TEXT' && signals().length === before, JSON.stringify(r).slice(0, 150))
+  }
+
+  // ── 失败诚实(Codex PR-2 Low):落库不可用 ⇒ 503 且不带 candidates(披露为记录的绝不无记录运行) ──
+  { db.exec('ALTER TABLE demand_signals RENAME TO demand_signals_hidden')
+    const r = await mcp.handleDiscover({ category: 'phone_stand' })
+    ok('D-16 signal-write failure → 503 DEMAND_SIGNAL_WRITE_FAILED, NO candidates escape', r.error_code === 'DEMAND_SIGNAL_WRITE_FAILED' && r.candidates === undefined, JSON.stringify(r).slice(0, 200))
+    db.exec('ALTER TABLE demand_signals_hidden RENAME TO demand_signals')
+    const r2 = await mcp.handleDiscover({ category: 'phone_stand', max_price: 50 })
+    ok('D-17 recovers after ledger returns (records again)', Array.isArray(r2.candidates) && (r2.candidates as unknown[]).length === 2) }
+
+  // ── admin 隔离(源守卫):raw signals 端点第一行必须是 adminAuth 门 ──
+  const adminSrc = readFileSync('src/pwa/routes/admin-analytics.ts', 'utf8')
+  ok('D-18 /api/admin/demand-signals is adminAuth-gated (guard precedes any query)',
+    /app\.get\('\/api\/admin\/demand-signals', async \(req, res\) => \{\n    if \(!adminAuth\(req, res\)\) return/.test(adminSrc))
 } finally { server.close(); clearCred() }
 
 if (fail > 0) { console.error(`\n❌ discover-demand-signals FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
