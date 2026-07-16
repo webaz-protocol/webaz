@@ -31,7 +31,7 @@
   - **无 dark pattern**(不操纵用户选择 — 元规则 #7)/ **No dark patterns** (no user manipulation — Rule #7)
   - 注:广告与数据政策由协议层硬约束保证,详 `docs/ECONOMIC-MODEL.md`(排序不能花钱买)+ `docs/META-RULES-FULL.md#3` 的代码 enforce 路径 / Note: Ad and data policies are hard-enforced at protocol layer, see `docs/ECONOMIC-MODEL.md` (rankings can't be bought) and `docs/META-RULES-FULL.md#3` enforcement
 - **不是单一公司项目**(虽然 phase A user 主导):路径上是 community-owned 协议(phase D 目标)/ **Not a single-company project**: trajectory is community-owned protocol (phase D goal)
-- **不是技术 toy**(虽然 pre-launch):真协议 / 真经济 / 真治理 / 真伦理底线 / **Not a tech toy**: real protocol / economy / governance / ethics floor
+- **不是技术 toy**:真协议 / 真交易 / 真治理责任 / 真伦理底线 / **Not a tech toy**: real protocol / transactions / governance responsibility / ethics floor
 
 ### 1.3 双重承诺 / Dual Commitments
 

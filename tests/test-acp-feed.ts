@@ -43,8 +43,8 @@ expect('return 字段', p1.accepts_returns === true && p1.return_deadline_in_day
 expect('【诚实】is_eligible_search = true', p1.is_eligible_search === true)
 expect('【诚实】is_eligible_checkout = false(全部)', items.every(i => i.is_eligible_checkout === false))
 expect('【诚实】_disclosures.currency 标明模拟币', /SIMULATED/.test(feed._disclosures.currency) && /ISO 4217/.test(feed._disclosures.currency))
-expect('【诚实】_disclosures.checkout 标明不可经 ACP 购买', /not yet PURCHASABLE via ACP/i.test(feed._disclosures.checkout))
-expect('phase = pre-launch', feed._disclosures.phase === 'pre-launch')
+expect('【诚实】_disclosures.checkout 标明 ACP 不能完成购买,但 WebAZ Direct Pay 可真实付款', /ACP cannot complete the purchase/i.test(feed._disclosures.checkout) && /Direct Pay supports real/i.test(feed._disclosures.checkout))
+expect('phase = launched', feed._disclosures.phase === 'launched')
 expect('spec 引用真 spec + api_version', feed.spec.api_version_observed === '2025-09-12' && /openai\.com\/commerce\/specs\/feed/.test(feed.spec.reference))
 expect('product_count 一致', feed.product_count === items.length)
 

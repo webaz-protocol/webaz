@@ -48,28 +48,37 @@ export async function runAutoDowngradeSweep(deps: AutoDowngradeDeps): Promise<Au
   const deadline = currentMajor.effective_at + graceDays * 86400 * 1000
   if (now < deadline) return { scanned: 0, downgraded: [], skip_reason: `current_major ${currentMajor.version} grace not yet expired (deadline=${deadline})` }
 
-  // Candidates: opted-in users whose LATEST activate-or-reconfirm consent_version
-  // is older than the current major.
-  const candidates = await dbAll<{ user_id: string; last_version: string | null }>(`
+  // Candidates: opted-in users whose latest accepted consent text predates the current major.
+  // A later minor wording refresh satisfies an older major and must never cause a downgrade.
+  const candidates = await dbAll<{ user_id: string; last_version: string | null; last_effective_at: number | null }>(`
     SELECT u.id AS user_id, (
       SELECT consent_version FROM rewards_applications
       WHERE user_id = u.id AND action IN ('activate','reconfirm')
       ORDER BY created_at DESC LIMIT 1
-    ) AS last_version
+    ) AS last_version, (
+      SELECT c.effective_at
+      FROM rewards_applications a
+      LEFT JOIN rewards_consent_texts c ON c.version = a.consent_version
+      WHERE a.user_id = u.id AND a.action IN ('activate','reconfirm')
+      ORDER BY a.created_at DESC LIMIT 1
+    ) AS last_effective_at
     FROM users u WHERE u.rewards_opted_in = 1
   `)
 
   const downgraded: AutoDowngradeResult['downgraded'] = []
   for (const c of candidates) {
-    if (c.last_version === currentMajor.version) continue
+    if ((c.last_effective_at ?? 0) >= currentMajor.effective_at) continue
     db.transaction(() => {
       // Re-verify inside the transaction. Between the SELECT and here, the
       // user may have reconfirmed (PR-2 endpoint inserts a new row with
       // consent_version=current_major). If so, flag stays 1 but our outer
       // check would still flip it — wrongly. The transactional re-read
       // closes this race window.
-      const fresh = db.prepare(`SELECT consent_version FROM rewards_applications WHERE user_id = ? AND action IN ('activate','reconfirm') ORDER BY created_at DESC LIMIT 1`).get(c.user_id) as { consent_version: string | null } | undefined
-      if (fresh?.consent_version === currentMajor.version) return  // user reconfirmed mid-flight
+      const fresh = db.prepare(`SELECT a.consent_version, c.effective_at
+        FROM rewards_applications a LEFT JOIN rewards_consent_texts c ON c.version = a.consent_version
+        WHERE a.user_id = ? AND a.action IN ('activate','reconfirm') ORDER BY a.created_at DESC LIMIT 1`)
+        .get(c.user_id) as { consent_version: string | null; effective_at: number | null } | undefined
+      if ((fresh?.effective_at ?? 0) >= currentMajor.effective_at) return  // user accepted current major or a later minor mid-flight
       const upd = db.prepare(`UPDATE users SET rewards_opted_in = 0 WHERE id = ? AND rewards_opted_in = 1`).run(c.user_id)
       if (upd.changes === 0) return  // race: user already toggled out
       db.prepare(`INSERT INTO rewards_applications (user_id, action, verification_method, created_at) VALUES (?, 'auto_downgrade', 'system_auto', ?)`).run(c.user_id, now)

@@ -106,7 +106,7 @@ export function registerAuthRegisterRoutes(app: Application, deps: AuthRegisterD
     if (!name?.trim()) return void errorRes(res, 400, 'NAME_REQUIRED', '请填写名称')
     if (!validRoles.includes(role)) return void errorRes(res, 400, 'ROLE_NOT_PUBLIC_REGISTERABLE', '角色无效（仅允许 buyer/seller — 受信角色须经内部审批）')
 
-    // #1049 Cloudflare Turnstile anti-sybil — env 缺失则跳过(dev/pre-launch fallback,不阻断)
+    // #1049 Cloudflare Turnstile anti-sybil — env 缺失则跳过(本地 dev fallback,不阻断)
     const turnstileSecret = process.env.TURNSTILE_SECRET_KEY
     if (turnstileSecret) {
       if (!turnstile_token || typeof turnstile_token !== 'string') {

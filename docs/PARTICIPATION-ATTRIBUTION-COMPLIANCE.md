@@ -20,14 +20,14 @@
 
 2. **两套语义独立的系统 / Two semantically independent systems:**
    - **系统 A · 推荐佣金 (commission)** — **零入会费、零购物门槛**,仅按**真实商品成交**分润的联盟营销 / revenue-sharing
-     (类比 淘宝客 / Amazon Associates)。pre-launch 阶段层级**保守收紧**(见下「默认保守」)。
+     (类比 淘宝客 / Amazon Associates)。当前层级**保守收紧**(见下「默认保守」)。
    - **系统 B · 匹配奖励 (matching rewards)** — **默认关闭(disabled by default)**。它由一个 **fail-closed 双闸**门控
      (`matching_rewards_active` + `matching_rewards_activation_cleared` — 运营开关 + **法律 / 治理放行**;缺一即关),
      结算路径**隔离**在 `src/pwa/internal/pv-settlement.ts`,公开 / 开源时**启用(须律师背书)或直接 excise**。
      **它当前不运行,不产生任何兑付。**
 
 3. **默认保守 / Conservative by default.** 运营方对每个辖区采用**最严格**解释;默认配置取最保守档
-   (pre-launch:佣金层级全局 clamp 至 ≤1;匹配奖励全局 OFF)。任何放宽都需**事前法律 / 治理放行**。
+   (当前:佣金层级全局 clamp 至 ≤1;匹配奖励全局 OFF)。任何放宽都需**事前法律 / 治理放行**。
 
 4. **协议层 vs 应用层 / Protocol vs application.** 协议层技术中性;运营某个 instance 的**应用层主体自行承担本地合规责任**
    (审计本地法律、配置区域参数、决定是否取得牌照)。

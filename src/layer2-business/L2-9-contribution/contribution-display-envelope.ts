@@ -30,7 +30,7 @@ export interface UncommittedValueBoundary {
   notice_zh: string
 }
 
-// Frozen constant — there is exactly ONE boundary stance pre-launch; callers must not vary it. The notice
+// Frozen constant — there is exactly ONE current boundary stance; callers must not vary it. The notice
 // is an informational disclaimer ONLY; it intentionally avoids the words amount/currency/yield/payout/
 // reward so a display never restates a "value", and it promises nothing.
 export const UNCOMMITTED_VALUE_BOUNDARY: UncommittedValueBoundary = Object.freeze({

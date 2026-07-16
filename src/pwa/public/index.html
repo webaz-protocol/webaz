@@ -5,17 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>WebAZ — Agent-native decentralized commerce protocol</title>
   <!-- Crawler / agent discoverability (static, no-JS): so a fetch of this page returns real meaning, not an empty shell. -->
-  <meta name="description" content="WebAZ is an open, agent-native decentralized commerce protocol. Orders flow through a state machine; on timeout the protocol auto-rules fault and executes remedy. Two rails: escrow (confirm-to-release + automatic refunds; pre-launch simulated test currency) and Direct Pay — real off-platform payment straight from buyer to seller, non-custodial: WebAZ never holds principal, does not guarantee and cannot refund. Transparent seller reputation, price history and arbitration precedents; AI agents browse, order and fulfill via MCP. Invite-gated pre-launch.">
+  <meta name="description" content="WebAZ is a publicly launched, agent-native decentralized commerce protocol. Direct Pay supports real off-platform buyer-to-seller payment while WebAZ records order states and evidence without holding principal. The escrow rail remains simulated and additional payment methods are being added. AI agents browse, order and fulfill via MCP.">
   <link rel="canonical" href="https://webaz.xyz/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="WebAZ">
   <meta property="og:url" content="https://webaz.xyz/">
   <meta property="og:title" content="WebAZ — Agent-native decentralized commerce protocol">
-  <meta property="og:description" content="State-machine commerce on two rails: escrow (simulated test currency, confirm-to-release + auto-refund) and non-custodial Direct Pay (real off-platform payment; no custody, no guarantee, no refunds from WebAZ). Transparent reputation; AI agents transact via MCP. Pre-launch.">
+  <meta property="og:description" content="WebAZ is live. Direct Pay supports real buyer-to-seller payment with protocol-recorded order states and evidence. Non-custodial: WebAZ never holds principal. Additional payment methods are being added; AI agents transact via MCP.">
   <meta property="og:image" content="https://webaz.xyz/webaz-logo.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="WebAZ — Agent-native decentralized commerce protocol">
-  <meta name="twitter:description" content="State-machine commerce on two rails: escrow (simulated) + non-custodial Direct Pay (real off-platform payment; no custody, no guarantee, no refunds). Transparent reputation. Agents transact via MCP. Pre-launch.">
+  <meta name="twitter:description" content="WebAZ is live. Direct Pay supports real buyer-to-seller payment with protocol-recorded order states and evidence. Non-custodial: WebAZ never holds principal. Agents transact via MCP.">
   <meta name="twitter:image" content="https://webaz.xyz/webaz-logo.png">
   <link rel="stylesheet" href="/style.css">
   <link rel="manifest" href="/manifest.json">
@@ -33,11 +33,11 @@
     <main style="max-width:680px;margin:40px auto;padding:0 20px;font-family:system-ui,sans-serif;line-height:1.7;color:#1f2937">
       <h1>WebAZ — Agent-native decentralized commerce protocol</h1>
       <p>WebAZ is an open, agent-native decentralized commerce protocol. Every order flows through a state machine; if a responsible party times out, the protocol automatically rules fault and executes the remedy.</p>
-      <p><strong>For buyers:</strong> on the escrow rail funds are held and released only after you confirm receipt, with automatic refunds on seller timeout (pre-launch: simulated test currency); on the Direct Pay rail you pay the seller directly off-platform — non-custodial: WebAZ never holds the principal, does not guarantee and cannot refund; risk confirmation + Passkey before payment details are revealed and every step recorded as evidence. Disputes are decided with evidence + neutral arbitration; seller reputation, price history and arbitration precedents are public before you buy.</p>
+      <p><strong>For buyers:</strong> Direct Pay is live: you pay the seller directly off-platform while WebAZ records risk confirmation, Passkey authorization, payment-information snapshots, order states and evidence. WebAZ is non-custodial: it never holds the principal, does not guarantee payment and cannot refund on the seller's behalf. The escrow rail remains a simulated test flow; additional payment methods are being added.</p>
       <p><strong>For AI agents:</strong> browse, compare, order and track fulfillment via the Model Context Protocol (MCP). Protocol state is public at <a href="/.well-known/webaz-protocol.json">/.well-known/webaz-protocol.json</a>; the integration contract is at <a href="/.well-known/webaz-integration.json">/.well-known/webaz-integration.json</a>.</p>
-      <p><strong>Status:</strong> pre-launch — the escrow rail settles simulated test currency only; Direct Pay is live as a conditions-gated, non-custodial off-platform rail (WebAZ never holds principal, does not guarantee, cannot refund).</p>
-      <p><strong>Browse now — no account needed:</strong> <a href="/#discover">/#discover</a> · <strong>Want in?</strong> Pre-launch is invite-gated; request an invite (leave your email) at <a href="/#welcome">/#welcome</a>.</p>
-      <p><strong>Follow the launch:</strong> live protocol pulse (real counts + milestones) at <a href="/.well-known/webaz-launch-pulse.json">/.well-known/webaz-launch-pulse.json</a> — watch it wake up.</p>
+      <p><strong>Status:</strong> publicly launched — Direct Pay supports real, conditions-gated buyer-to-seller payment. Escrow remains simulated while additional payment methods are added.</p>
+      <p><strong>Browse now — no account needed:</strong> <a href="/#discover">/#discover</a> · <strong>Want in?</strong> Registration currently uses invitations for Sybil resistance; request one at <a href="/#welcome">/#welcome</a>.</p>
+      <p><strong>Live protocol activity:</strong> real counts and milestones are published at <a href="/.well-known/webaz-launch-pulse.json">/.well-known/webaz-launch-pulse.json</a>.</p>
       <p style="color:#6b7280;font-size:14px">Source code: <a href="https://github.com/webaz-protocol/webaz">github.com/webaz-protocol/webaz</a> (open source). Machine-readable spec: <a href="/.well-known/webaz-integration.json">/.well-known/webaz-integration.json</a>.</p>
       <p style="color:#6b7280;font-size:14px">This page is an interactive app and needs JavaScript for full functionality.</p>
     </main>
@@ -120,7 +120,7 @@
   <script src="/app-decline-contest-ui.js"></script>
   <script src="/app-decline-contest-ruling.js"></script>
   <script src="/app-contribution-hub.js"></script>
-  <script src="/app-prelaunch-waz.js"></script>
+  <script src="/app-escrow-waz-sim.js"></script>
   <script src="/app-chat-poll.js"></script>
   <script src="/app-poll-governor.js"></script>
   <script src="/app-cart-actions.js"></script>

@@ -101,7 +101,7 @@ Q4:是否第三方有责(物流 / 协议 bug)?
 
 ⚠️ **以下案例 phase A 暂无真实数据**(0 真用户 = 0 真争议)。本节将在 launch 后真实案例积累到 ≥ 5 时填充,留作 onboarding 学习材料。
 
-⚠️ **No real cases in phase A** (0 real users = 0 real disputes). Section will fill post-launch as cases accumulate (≥ 5).
+⚠️ **Public precedent coverage is still limited.** This section will expand as eligible real disputes are resolved and publishable cases accumulate(≥ 5).
 
 phase A 申请者参考 **模拟案例**(下方 §4),phase B+ 之后 onboarding §4.2 引用真实案例。
 

@@ -49,7 +49,7 @@
 **进展 / Progress**: 设计中,无强制时间表 / In design, no hard deadline.
 
 理由 / Why no deadline:
-- pre-launch 阶段不承诺时间表 / Pre-launch doesn't commit to dates
+- 对未完成功能不承诺投机性时间表 / Do not promise speculative dates for unfinished features
 - 跟 community 成长同步;phase B 触发后设计稿可走 RFC 让 community review / Synced with community growth; design goes through RFC for community review after phase B trigger
 
 **设计原则(高层 / High-level principles)** — 详细 brief 留给设计 RFC,不在本守则锁死 / Detailed brief belongs to design RFC, not locked here:
@@ -113,7 +113,7 @@
 ### 做的 / Do
 - ✅ **直说事实** / **State facts directly**: "我们不允许 X" 而不是"建议避免 X"(参元规则 #4 不撒谎)/ "We do not allow X" instead of "We suggest avoiding X" (Rule #4)
 - ✅ **量化具体** / **Quantify**: "协议费 2%" 而不是"低协议费" / "Protocol fee 2%" instead of "Low protocol fee"
-- ✅ **承认局限** / **Acknowledge limits**: "pre-launch / 0 真实用户" 而不是"早期社区" / "pre-launch / 0 real users" instead of "early community"
+- ✅ **承认局限** / **Acknowledge limits**: "Direct Pay 已上线,escrow 仍为模拟" 而不是模糊宣称"所有支付都已完成" / "Direct Pay is live; escrow remains simulated" instead of implying every payment rail is complete
 - ✅ **平等称谓** / **Equal address**: "你是 webazer" 而不是"作为用户你 ..."(元规则 #10)/ "You are a webazer" instead of "As a user ..." (Rule #10)
 - ✅ **代码即权威** / **Code is authority**: "按 settleOrder() 的逻辑 ..." 而不是"通常情况下 ..."(元规则 #2)/ "Per settleOrder() logic ..." instead of "Typically ..." (Rule #2)
 
@@ -146,11 +146,11 @@
 ![npm](https://img.shields.io/npm/v/@seasonkoh/webaz)
 ![CI](https://github.com/webaz-protocol/webaz/workflows/CI/badge.svg)
 ![Contributors](https://img.shields.io/github/contributors/webaz-protocol/webaz)
-![Status](https://img.shields.io/badge/status-pre--launch-orange.svg)
+![Status](https://img.shields.io/badge/status-live-brightgreen.svg)
 ![Made by webazers](https://img.shields.io/badge/made_by-webazers-ea580c)
 ```
 
-**永远显式标 pre-launch / launched 状态**(元规则 #4 不撒谎)/ **Always explicitly mark pre-launch / launched status** (Rule #4)
+**永远显式标注已上线与尚未完成的功能边界**(元规则 #4 不撒谎)/ **Always distinguish live capabilities from unfinished ones** (Rule #4)
 
 ## §8 对外宣传 / Outward Communication
 

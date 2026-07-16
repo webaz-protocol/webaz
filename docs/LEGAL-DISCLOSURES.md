@@ -1,12 +1,12 @@
 # Legal Disclosures / 法律披露
 
-> **Status**: pre-launch, 0 real users, no formal outside legal opinion. This document is the **operator's own best-effort interpretation** of how WebAZ relates to applicable rules across major jurisdictions. It is **NOT legal advice** for users, contributors, or anyone reading it.
+> **Status**: WebAZ is publicly launched with Direct Pay as its current real-payment rail; the escrow rail remains simulated. No formal outside legal opinion has been obtained. This document is the **operator's own best-effort interpretation** of how WebAZ relates to applicable rules across major jurisdictions. It is **NOT legal advice** for users, contributors, or anyone reading it.
 >
-> **状态**:pre-launch,0 真实用户,未获取正式律所书面意见。本文档是**项目运营者基于自有理解的尽量谨慎披露**,不构成对用户 / 贡献者 / 任何读者的**法律意见**。
+> **状态**:WebAZ 已公开发布,Direct Pay 是当前真实支付轨,托管轨仍为模拟测试流程。尚未获取正式律所书面意见。本文档是**项目运营者基于自有理解的尽量谨慎披露**,不构成对用户 / 贡献者 / 任何读者的**法律意见**。
 >
 > Operator reserves the right to obtain formal legal counsel later (see §7); this document will be revised in light of any such opinion.
 
-**Last updated**: 2026-06-03 (task #1084, deferred lawyer route per operator budget decision)
+**Last updated**: 2026-07-16
 **Spec context**: 6 legal questions identified by the operator; paid consultation deferred, not abandoned (the detailed brief is kept privately)
 
 ---
@@ -15,7 +15,7 @@
 
 The 6 legal questions the operator identified cluster into two risk profiles:
 
-| Risk | Questions | Operator approach pre-launch |
+| Risk | Questions | Current operator approach |
 |---|---|---|
 | 🟢 Mostly civil interpretation | Q1 BSL fork, Q2 Change Date, Q3 contributor disclaimer, Q6 AI agent personhood | Document conservatively + ship |
 | 🟠 Criminal / regulatory enforcement floor exists | Q4 cross-jurisdiction arbitration UPL, Q5 MLM laws | Document conservatively + geo-restrict + opt-in only + early consult on first incident |
@@ -172,7 +172,7 @@ In jurisdictions where AI-agent-mediated commerce is novel and case law is spars
 
 ## §6 Jurisdiction matrix / 辖区矩阵
 
-The following table represents the operator's **good-faith pre-launch geo-restriction decisions**. It is subject to change based on regulatory developments and (eventually) formal legal review.
+The following table represents the operator's **current good-faith geo-restriction decisions**. It is subject to change based on regulatory developments and (eventually) formal legal review.
 
 | Jurisdiction | Sensitive ops restricted | Reasoning |
 |---|---|---|

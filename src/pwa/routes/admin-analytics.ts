@@ -319,10 +319,12 @@ export function registerAdminAnalyticsRoutes(app: Application, deps: AdminAnalyt
     let staleConsentOptedIn = 0
     if (currentMajor) {
       staleConsentOptedIn = (await dbOne<{ n: number }>(`SELECT COUNT(*) AS n FROM users u
-        WHERE u.rewards_opted_in = 1 AND (
-          SELECT consent_version FROM rewards_applications
-          WHERE user_id = u.id AND action IN ('activate','reconfirm') ORDER BY created_at DESC LIMIT 1
-        ) IS NOT ?`, [currentMajor.version]))!.n
+        WHERE u.rewards_opted_in = 1 AND COALESCE((
+          SELECT c.effective_at FROM rewards_applications a
+          LEFT JOIN rewards_consent_texts c ON c.version = a.consent_version
+          WHERE a.user_id = u.id AND a.action IN ('activate','reconfirm')
+          ORDER BY a.created_at DESC LIMIT 1
+        ), 0) < ?`, [currentMajor.effective_at]))!.n
     }
     const consentVersions = await dbAll(`SELECT version, change_class, effective_at FROM rewards_consent_texts ORDER BY effective_at DESC LIMIT 10`)
 

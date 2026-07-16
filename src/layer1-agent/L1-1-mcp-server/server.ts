@@ -96,8 +96,7 @@ import { SOFTWARE_VERSION } from '../../version.js'
 // RFC-011 §④:版本单一来源 = package.json(经 src/version.ts)。不再硬编码(旧 '0.1.8' 早漂移到 0.1.19)。
 const SERVER_VERSION = SOFTWARE_VERSION
 const TELEMETRY_URL = process.env.WEBAZ_TELEMETRY_URL ?? 'https://webaz.xyz/api/mcp-telemetry'
-// 2026-06-01: phase A pre-launch 默认 OFF(opt-in)— W8 public launch 时翻回 default ON + 加 README 披露段
-// Phase A pre-launch: telemetry default OFF (opt-in). Flip to default ON at W8 launch + add README disclosure section.
+// Privacy-first telemetry default:OFF (opt-in). A future default change requires an explicit policy + README disclosure update.
 const TELEMETRY_ENABLED = (process.env.WEBAZ_TELEMETRY ?? 'off').toLowerCase() === 'on'
 
 // ─── RFC-003 P0: 三态(network_readonly / network / sandbox)骨架 ─────────────────────
@@ -583,10 +582,10 @@ const TOOLS = [
   {
     name: 'webaz_info',
     description: `Get WebAZ documentation and usage guide. Call this FIRST when onboarding a new agent.
-Returns: protocol overview, available tools, role responsibilities, operation flows, **network_state (pre-launch disclaimer)**, **commission_model (3-tier share, jurisdiction-graded, explicit attribution, opt-in)**.
+Returns: protocol overview, available tools, role responsibilities, operation flows, **network_state (live-network and payment-rail status)**, **commission_model (jurisdiction-graded, explicit attribution, opt-in)**.
 No auth required, no parameters needed.
 
-⚠️ Important: WebAZ is currently **pre-launch** with ~0 real users on the canonical endpoint. All stats / counts returned by this and other tools come from the **local MCP SQLite DB**, not protocol-wide prod state. Read network_state field BEFORE you treat any number as real-economy data.`,
+⚠️ Important: WebAZ is publicly launched and Direct Pay supports real off-platform buyer-to-seller payment. The escrow rail remains simulated while additional payment methods are added. Local live_stats come from this MCP process's SQLite DB; protocol-wide live counts are returned under network_live.`,
     inputSchema: {
       type: 'object',
       properties: {},
@@ -2194,7 +2193,7 @@ async function handleInfo() {
     mcp,   // client MCP version + best-effort npm update check (mcp_version / latest_version / update_available / update_note)
     // 诚实化披露 — 排在 stats / quick_start 之前,让 agent 先建立正确预期。
     // 第三方尽调 agent 抓到过的破绽:live_stats 是本地库数字、引导词推 agent 拉新。
-    // 此处主动披露真实状态(pre-launch / 数据来源),不抗辩;agent 自己判断如何处理。
+    // 此处主动披露真实状态(公开运行 / 支付轨 / 数据来源),不抗辩;agent 自己判断如何处理。
     // 佣金按【功能】中性描述(commission_model),不做"自证不是X"的辩护——正常机制无需自证。
     network_state: {
       // RFC-003 P3：显式声明当前客户端模式，让 agent 一眼分清"真网络 vs 本机沙盒"
@@ -2205,27 +2204,27 @@ async function handleInfo() {
         : MODE === 'network_readonly'
         ? '🟢 NETWORK（只读）：无 api_key。公共读（搜索/榜单/价格史/浏览）打 webaz.xyz 真网络（见 network_live）。要交易（注册/下单/上架等）请设 WEBAZ_API_KEY —— 到 ' + WEBAZ_API_URL + '/#welcome 申请邀请。'
         : '🟡 SANDBOX：所有工具都在本机本地 SQLite 运行，与 webaz.xyz 全网隔离（显式 dev/demo 模式）。任何计数 / 账号 / 订单仅本机有效。不设 WEBAZ_MODE 则默认走真网络只读。',
-      phase: 'pre_launch',
+      phase: 'launched',
       // 真实用户/规模【不在此硬编码】—— 网络模式下 network_live(上方,实时拉 /api/protocol-status)带有 real_users_on_canonical 真值。
       canonical_endpoint: 'https://webaz.xyz',
       economic_flow: 'dual-rail — escrow rail: simulated WAZ (test currency, 1 WAZ ≈ 1 USDC peg is a模拟基准, not a real exchange rate); no fiat/crypto settles through WebAZ custody. Direct Pay rail: real off-platform payment directly between buyer and seller (non-custodial; conditions-gated, fail-closed).',
-      disclaimer: '本协议尚未公开上线(pre-launch)。资金双轨:托管轨仅模拟测试币,无真实资金经 WebAZ 结算;直付轨(Direct Pay)为受条件控制的真实场外付款,本金在买卖双方之间直接流转,不经过 WebAZ。真实用户/规模请以 network_live(本次从 webaz.xyz 实时拉取的 /api/protocol-status,含 real_users_on_canonical)为准;下方 live_stats / 工具示例的所有计数均来自**本机 MCP 服务器的本地 SQLite**(~/.webaz/webaz.db),仅供 dev / demo,不代表协议全网真实状态。请勿据此评估市场规模、做投资决策、或替终端用户承诺任何经济关系。',
+      disclaimer: 'WebAZ 已公开发布。当前真实交易使用直付轨(Direct Pay):买家与卖家直接进行场外付款,本金不经过 WebAZ;托管轨仍为模拟测试流程,其他支付方式持续接入。协议全网数据请以 network_live(本次从 webaz.xyz 实时拉取的 /api/protocol-status)为准;下方 live_stats 来自本机 MCP 的 SQLite,不代表全网规模。',
     },
     description: 'WebAZ is a decentralized commerce protocol. Every transaction flows through a state machine; each state transition needs proof-of-action from the responsible party. Any timeout-without-action: protocol auto-rules default + executes remedy. / WebAZ 是去中心化商业协议;每笔交易通过状态机流转,每次状态转移需对应责任方的操作证明;超时未操作则协议自动判违约并执行处置。',
     // 给【终端用户/买家】的价值主张 —— 陌生 agent / 普通买家先要知道"对我有什么用",而非只读抽象 tagline + 技术 description。
     for_end_user: {
       note: 'What WebAZ does FOR a buyer (why use it): / 这个协议对买家有什么用(为什么用它):',
       value: [
-        'Escrow rail — your money is held by the protocol and only released to the seller after you confirm receipt (or an auto-confirm window); pre-launch this rail settles simulated WAZ test currency only. / 托管轨:钱由协议托管,确认收货(或到自动确认期)才放款给卖家;预发布阶段本轨仅结算模拟测试币。',
         'Direct Pay rail (live, conditions-gated) — you pay the seller directly off-platform; non-custodial: WebAZ never holds the principal, does not guarantee and cannot refund, but records risk confirmation + Passkey + payment-info snapshot + order evidence. / 直付轨(已上线,按条件开放):买家直接付给卖家的真实场外付款;非托管——WebAZ 不代持、不担保、不退款,但记录风险确认+Passkey+收款信息快照+订单证据。',
+        'Escrow rail — currently a simulated WAZ test flow, not a real payment method. Additional real payment methods are being added. / 托管轨当前仍为 WAZ 模拟测试流程,不是真实支付方式;其他真实支付方式持续接入。',
         'Automatic fault ruling — if the seller does not accept / ship / deliver in time, the protocol auto-refunds you on the escrow rail (Direct Pay: reputation fault, no money moves through WebAZ). / 自动判责:卖家不接单/不发货/不送达超时,托管轨协议自动退款(直付轨判信誉责任,资金不经 WebAZ)。',
         'Disputes with evidence + arbitration — open a dispute with proof; a neutral process decides. / 争议可凭证据发起 + 中立仲裁裁决。',
         'Decision-ready transparency — price history, seller reputation, win/loss record and arbitration precedents are public before you buy. / 知情决策:价格历史、卖家信誉、胜诉/败诉记录、仲裁判例,下单前都公开可查。',
         'Agent-native — your AI agent can compare prices, place orders, and track fulfillment for you via the MCP tools. / agent 原生:你的 AI 可经 MCP 工具替你比价、下单、跟踪履约。',
       ],
-      honesty: 'Pre-launch: the escrow rail settles simulated WAZ test currency — don\'t treat balances as real value. Direct Pay is real off-platform payment between buyer and seller (non-custodial; WebAZ never holds principal, no guarantee, no refunds). / 预发布:托管轨仅模拟测试币,余额勿当真实价值;直付轨为买卖双方之间的真实场外付款(非托管——WebAZ 不代持、不担保、不退款)。',
+      honesty: 'WebAZ is launched. Direct Pay is real off-platform payment between buyer and seller (non-custodial; WebAZ never holds principal, no guarantee, no refunds). The escrow rail is still simulated and its WAZ balance is not real value. / WebAZ 已发布;直付轨是买卖双方之间的真实场外付款(非托管——WebAZ 不代持、不担保、不退款);托管轨仍为模拟测试流程,WAZ 余额不是真实价值。',
       try_it: 'Browse without an account at https://webaz.xyz/#discover ; the protocol state is public at https://webaz.xyz/.well-known/webaz-protocol.json',
-      get_access: 'Pre-launch is invite-gated — request an invite at https://webaz.xyz/#welcome (browsing/reading needs no invite). / 上线前邀请制:到 #welcome 申请邀请,浏览/查看无需邀请。',
+      get_access: 'Registration currently uses invitations for Sybil resistance — request one at https://webaz.xyz/#welcome (browsing/reading needs no invite). / 当前注册使用邀请码抵御 Sybil;到 #welcome 申请,浏览/查看无需邀请。',
     },
     // 连接两个场景:用协议(本工具) ↔ 改协议(开发协作)。想改 WebAZ 本身的 agent 从这里进。
     for_contributors: {
@@ -5495,7 +5494,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     },
     {
       name: 'webaz-onboard',
-      description: 'Onboarding for a new agent first connecting to webaz — explains protocol nature / pre-launch state / commission model / registration path / user-authorization boundaries. Read webaz_info first, then run this prompt.',
+      description: 'Onboarding for a new agent first connecting to webaz — explains protocol nature / live-network and payment-rail status / commission model / registration path / user-authorization boundaries. Read webaz_info first, then run this prompt.',
       arguments: [],
     },
     {

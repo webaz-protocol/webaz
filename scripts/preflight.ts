@@ -63,7 +63,7 @@ if (!existsSync(DB_PATH)) {
         off.length ? `OFF: ${off.map(p => p.key).join(', ')}` : undefined)
     }
 
-    // 3d. RFC-008 fee caps (max_value) + pre-launch fund_base
+    // 3d. RFC-008 fee caps (max_value) + current fund_base operating rate
     const feeRows = db.prepare("SELECT key, value, max_value FROM protocol_params WHERE key IN ('protocol_fee_rate_shop','protocol_fee_rate_secondhand','fund_base_rate')").all() as Array<{ key: string; value: string; max_value: number | null }>
     const feeCap: Record<string, number> = { protocol_fee_rate_shop: 0.02, protocol_fee_rate_secondhand: 0.02, fund_base_rate: 0.01 }
     // Codex #259 P2:遍历【期望的 key】而非返回行——任一关键经济参数缺失必须 FAIL,不能少打一项就放行。
@@ -77,13 +77,13 @@ if (!existsSync(DB_PATH)) {
       else check('PASS', `${key} (value=${r.value}, cap=${r.max_value})`)
     }
     const fb = byKey.get('fund_base_rate')
-    if (fb && Number(fb.value) !== 0) check('WARN', 'fund_base_rate = 0 pre-launch', `value=${fb.value} (intended 0 until real GMV)`)
+    if (fb && Number(fb.value) !== 0) check('WARN', 'fund_base_rate current operating rate = 0', `value=${fb.value} (activation requires governance)`)
   } finally {
     db.close()
   }
 }
 
-// ── 4. Static-gate reminder (CI enforces these; listed for a manual pre-launch run) ──
+// ── 4. Static-gate reminder (CI enforces these; listed for a manual release-readiness run) ──
 const STATIC_GATES = 'npm run build && npm run schema:verify && npm run routes:seam-check && npm run contract:verify && npm run license:check && npm run meta-rules:check && npm run params:check && npm run check:api-docs-fresh && npm run pg:verify && npm run guard:complexity && npm run guard:pr-constraints && npm run check:pwa-syntax'   // 2026-07-05 补全:api-docs 漂移(本 session 漏跑 ×4 全靠 CI 拦)/pg 四层 parity/ratchet/pr-constraints/pwa-syntax —— 推 PR 前跑本命令,不靠工作记忆
 
 // ── report ──

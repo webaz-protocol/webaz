@@ -11,14 +11,14 @@
 
 ---
 
-## 系统 A · 推荐佣金 (commission) — 默认运行,但守恒且 pre-launch 收紧
+## 系统 A · 推荐佣金 (commission) — 默认运行,但守恒且当前保守收紧
 
 - **性质**:消费即时确定的联盟佣金分账(zero-fee affiliate revenue-sharing),仅按**真实商品成交**计酬。
 - **资金来源**:订单内的 `commission_pool`(商家自定义比例),**不**凭空印钱。
 - **守恒**:`seller_net + protocol_fee + commission_pool + fund_base = total`,审计全程 sum-check 绿。
 - **结算**:订单 confirm(真实收货)时同步分账,写 `commission_records`。
 - **资格门**:L1 须 verified buyer(真实收货完成)才能领取,否则该份 redirect 进 `commission_reserve`(独立公池,只进不出)。
-- **pre-launch 默认保守**:佣金层级全局 clamp 至 ≤1(放宽需事前法律 / 治理放行)。
+- **当前默认保守**:佣金层级全局 clamp 至 ≤1(放宽需事前法律 / 治理放行)。
 
 ## 系统 B · 匹配奖励 (matching rewards) — 默认关闭、fail-closed、可摘除
 

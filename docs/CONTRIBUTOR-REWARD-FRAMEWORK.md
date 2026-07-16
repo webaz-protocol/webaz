@@ -280,7 +280,7 @@ reward = f(contribution) × g(position) × h(decay) × ...
 ## §5 phase A 当前只做的事 / What phase A actually does
 
 ```
-现在(pre-launch,solo founder)只做:
+现在(已发布,solo founder)只做:
   □ 关系层数据如实记录(二叉树坐标 + 真实推荐,代码已实现)
   □ 贡献层信号持续累积(交易/代码/履职/传播)
   □ 履职数据公示(GOVERNANCE-LEADERBOARD,observation-only,不分配)

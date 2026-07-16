@@ -9122,7 +9122,7 @@
     },
     "/api/wallet/income": {
       "get": {
-        "summary": "收入构成：销售 / 分享归因 / PV 记录(pre-launch,若适用)",
+        "summary": "收入构成:销售 / 分享归因 / PV 记录(若适用)",
         "tags": [
           "wallet"
         ],

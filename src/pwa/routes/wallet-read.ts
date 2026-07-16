@@ -12,7 +12,7 @@
  *   DELETE /api/wallet/whitelist/:id         撤白
  *   GET    /api/wallet/withdrawals           我的提现记录
  *   GET    /api/wallet/deposits              我的充值记录（含确认进度）
- *   GET    /api/wallet/income                收入构成（销售 / 分享归因 / PV 记录 pre-launch 若适用）
+ *   GET    /api/wallet/income                收入构成(销售 / 分享归因 / PV 记录,若适用)
  *   POST   /api/wallet/topup                 P0 测试充值（≤1000/次，上限 5000）
  *
  * 受信角色（admin/verifier）无钱包 — 多处守门
@@ -197,7 +197,7 @@ export function registerWalletReadRoutes(app: Application, deps: WalletReadDeps)
     res.json(enriched)
   })
 
-  // 收入构成：销售 / 分享归因 / PV 记录(pre-launch,若适用)
+  // 收入构成:销售 / 分享归因 / PV 记录(若适用)
   app.get('/api/wallet/income', async (req, res) => {
     const user = auth(req, res); if (!user) return
     const commByLevel = await dbAll<{ level: number; cnt: number; total: number }>(`

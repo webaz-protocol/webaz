@@ -472,12 +472,6 @@ async function bootAuth() {
     if (r && !r.error) state._wazUsdcRate = Number(r.waz_usdc_rate || 1)
   }).catch(() => {})
 
-  // #1047 pre-launch 横幅:拉 phase,决定首页/welcome 是否挂横幅。乐观默认 pre_launch(整改面优先),拉到结果再翻。
-  if (typeof window._protocolPhase === 'undefined') window._protocolPhase = 'pre_launch'
-  fetch('/api/protocol-status').then(r => r.json()).then(r => {
-    if (r && r.network_state) window._protocolPhase = r.network_state.phase || 'pre_launch'
-  }).catch(() => {})
-
   // 桌面图标启动（standalone）+ Persistent Storage Permission（Chromium / 部分 Safari 支持）
   // 2026-06-01 fix: fire-and-forget — 同 persistApiKey(L107),boot 路径也不阻塞
   //   权限弹窗 pending 在某些场景(自动化/incognito/首次)会卡死整个 boot → 永驻"正在恢复登录"
@@ -552,7 +546,7 @@ async function render(page, params) {
   // 只在首次（没有 sponsor_name 时）阻塞等 fetch；后续重渲染走缓存秒过
   try { await initShareCtx() } catch (e) { console.warn('[ShareCtx]', e) }
 
-  // 未登录时只允许看登录页、找回密钥页、商品、welcome 预发布页、governance-onboarding 公开页
+  // 未登录时只允许看登录页、找回密钥页、商品、welcome 公开页、governance-onboarding 公开页
   if (!state.apiKey && page !== 'login' && page !== 'shop' && page !== 'recover' && page !== 'welcome' && page !== 'connect' && page !== 'governance-onboarding' && page !== 'contribute' && page !== '') {
     // 保存目标 hash 以便登录/注册后跳回
     if (location.hash && !['#login', '#recover'].includes(location.hash)) {
@@ -632,7 +626,7 @@ async function render(page, params) {
     // 2026-05-24 #983：测评免单 dashboard
     case 'trials':        return renderBuyerTrials(app)
     case 'seller-trials': return renderSellerTrials(app)
-    // 2026-05-24 #991：/welcome 预发布页 — 6 区块协议介绍
+    // 2026-05-24 #991:/welcome 公开介绍页 — 6 区块协议介绍
     case 'welcome':       return renderWelcome(app)
     case 'connect':       return renderConnect(app)   // P0:一键接入 Agent 页(公开)
     case 'governance-onboarding': return renderGovernanceOnboarding(app)
@@ -1013,14 +1007,12 @@ function roleHome(role) {
   return '#buy'   // buyer default = 智能购买（P10）
 }
 
-// #1047 pre-launch 横幅 — 协议尚未公开上线时挂在首页 / welcome 顶上,与 MCP network_state 披露(#1046)互补
-// 乐观默认 pre_launch(整改面优先);bootAuth 拉到 phase 后 翻为 launched 则隐藏。
-// 不可关闭(这是诚实化整改,不是营销提示)。
-function preLaunchBannerHTML() {
-  if (window._protocolPhase && window._protocolPhase !== 'pre_launch') return ''
-  return `<details style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:8px 14px;font-size:12px;color:#92400e;line-height:1.5;margin:8px 12px 12px">
-    <summary style="cursor:pointer;text-align:center;list-style:none">⚠️ <strong>${t('直付已上线(非托管:不代持·不担保·不退款)· 托管轨=模拟测试币 · USDC 计价仅展示 · 邀请制预发布 · 勿据此投资或承诺')}</strong> <span style="text-decoration:underline;font-weight:600;color:#7c2d12">${t('详情')}</span></summary>
-    <div style="margin-top:6px;text-align:left">${t('直付(direct pay)已上线,是你与卖家的真实场外付款;WebAZ 非托管——不代持、不担保、不退款 · 平台托管(escrow)尚未上线(模拟测试币)· 价格按 USDC 计价仅供展示 · 邀请制预发布,勿据此投资或向第三方承诺')}</div>
+// 公开发布后的支付状态横幅:优先告知用户 Direct Pay 已可进行真实交易,
+// 同时清楚区分仍为模拟的 escrow 轨和待接入的其他支付方式。
+function paymentStatusBannerHTML() {
+  return `<details style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 14px;font-size:12px;color:#065f46;line-height:1.5;margin:8px 12px 12px">
+    <summary style="cursor:pointer;text-align:center;list-style:none">✓ <strong>${t('WebAZ 已发布 · Direct Pay 可进行真实付款 · 其他支付方式持续接入')}</strong> <span style="text-decoration:underline;font-weight:600;color:#047857">${t('详情')}</span></summary>
+    <div style="margin-top:6px;text-align:left">${t('Direct Pay 已上线:买家向卖家进行真实场外付款;WebAZ 记录订单状态与证据,但非托管——不代持本金、不担保、不代为退款 · 托管(escrow)当前仍为模拟测试流程,不是真实支付方式 · 其他支付方式正在持续接入')}</div>
   </details>`
 }
 
@@ -2858,8 +2850,8 @@ async function renderApplyRewards(app) {
         <span style="opacity:0.85">Note: this “share-commission / rewards opt-in” is only a commission / PV / escrow economic-relationship registration — NOT contribution eligibility, and unrelated to the contribution funnel (#contribute/tasks) / My contributions. RFC-002’s consent text may retain older wording; this note governs the UI meaning.</span>
       </div>
       <div style="font-size:11px;color:#7f1d1d;line-height:1.6;margin-top:8px;padding-top:8px;border-top:1px solid #fca5a5;opacity:0.9">
-        ${t('现实性说明:佣金层级按地区合规配置生效;当前预发布期全局上限为 1 级(仅 L1)。"三级(7:2:1)"是协议最大设计,不构成对未来层级的承诺。')}<br>
-        <span style="opacity:0.85">Reality note: commission levels follow per-region compliance config; during pre-launch a global cap of 1 level (L1 only) applies. “Three tiers (7:2:1)” is the protocol’s maximum design — not a promise of future levels.</span>
+        ${t('现实性说明:佣金层级按地区合规配置生效;当前全局上限为 1 级(仅 L1)。"三级(7:2:1)"是协议最大设计,不构成对未来层级的承诺。')}<br>
+        <span style="opacity:0.85">Reality note: commission levels follow per-region compliance config; the current global cap is 1 level (L1 only). “Three tiers (7:2:1)” is the protocol’s maximum design — not a promise of future levels.</span>
       </div>
     </div>
 
@@ -4210,7 +4202,7 @@ function renderLogin() {
   }, 80)
 }
 
-// 2026-05-24 #991：/welcome 预发布页 — 6 区块协议介绍
+// 2026-05-24 #991:/welcome 公开介绍页 — 6 区块协议介绍
 function renderWelcome(app) {
   const en = window._lang === 'en'
   const T = (zh, e) => en ? e : zh
@@ -4223,7 +4215,7 @@ function renderWelcome(app) {
   const H2_STYLE = `font-size:clamp(28px,6.5vw,40px);font-weight:600;color:#18181B;letter-spacing:${en?'-0.02em':'0.03em'};line-height:${en?'1.15':'1.3'};margin:0 0 20px;text-align:center`
   const SUB_STYLE = `font-size:clamp(17px,4vw,22px);color:#52525B;line-height:${en?'1.55':'1.7'};text-align:center;margin:0 auto clamp(48px,7vh,68px);max-width:${en?'60ch':'34em'};letter-spacing:${en?'-0.005em':'0.01em'};font-weight:400`
   app.innerHTML = `
-    ${preLaunchBannerHTML()}
+    ${paymentStatusBannerHTML()}
     <style>
       /* 2026-05-24 协议级品牌视觉 — Zinc palette / Linear / Vercel / Stripe Docs / Anthropic aesthetic */
       /* 2026-05-26 字体品控升级（高级设计师视角）：
@@ -4667,7 +4659,7 @@ function renderWelcome(app) {
           name: 'WebAZ Protocol',
           alternateName: 'WebAZ',
           url: location.origin,
-          description: 'Agent-native decentralized commerce protocol. State-machine transactions; explicit sign-offs at each transition; auto-timeout-default. Pre-launch.',
+          description: 'Publicly launched agent-native decentralized commerce protocol. Direct Pay is live; state-machine transactions record explicit sign-offs and timeout responsibility.',
           sameAs: ['https://github.com/webaz-protocol/webaz'],
         },
         {
@@ -4690,7 +4682,7 @@ async function renderGovernanceOnboarding(app) {
   const T = (zh, e) => en && e ? e : zh
   const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;')
   app.innerHTML = `
-    ${preLaunchBannerHTML()}
+    ${paymentStatusBannerHTML()}
     <div style="max-width:880px;margin:0 auto;padding:24px 16px 80px;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC','Microsoft YaHei UI',sans-serif">
       <header style="text-align:center;margin-bottom:40px">
         <h1 style="font-size:clamp(28px,5vw,36px);margin:0 0 12px;color:#18181B">⚖️ ${T('治理上岗', 'Governance Onboarding')}</h1>
@@ -4977,7 +4969,7 @@ function contributeLangSwitchHTML(T) {
 }
 
 function contributePageShell(T, inner) {
-  return `${preLaunchBannerHTML()}<div style="${CONTRIBUTE_PAGE_STYLE}">${contributeLangSwitchHTML(T)}${inner}</div>`
+  return `${paymentStatusBannerHTML()}<div style="${CONTRIBUTE_PAGE_STYLE}">${contributeLangSwitchHTML(T)}${inner}</div>`
 }
 
 async function renderContributeTasks(app) {
@@ -9310,7 +9302,7 @@ window._mountTurnstileIfEnabled = async () => {
   try {
     const flags = await fetch('/api/system-flags').then(r => r.json())
     const siteKey = flags?.turnstile_site_key
-    if (!siteKey) return    // env 未配置 — 静默跳过(dev/pre-launch 兼容)
+    if (!siteKey) return    // env 未配置 — 静默跳过(本地 dev 兼容)
     if (!window.turnstile) {
       // 动态加载 Cloudflare Turnstile script(一次性)
       await new Promise((resolve, reject) => {
@@ -11272,7 +11264,7 @@ window.doBuy = async (productId, price) => {
   // 数量（默认 1）— 服务端会再校验 stock + MAX_PER_ORDER
   const qtyInp = document.getElementById('inp-qty')
   const quantity = qtyInp ? Math.max(1, Math.min(Number(qtyInp.max) || 1, Math.floor(Number(qtyInp.value) || 1))) : 1
-  const payment_rail = window.dpSelectedRail ? window.dpSelectedRail() : 'escrow'; if (!payment_rail) { const _dp=document.querySelector('input[name="dp-rail"]:checked')?.value==='direct_p2p'; const _m=document.getElementById('buy-msg'); if(_m) _m.innerHTML = alert$('error', _dp ? t('直付暂未就绪或不可用,请稍候重试或改选支付方式') : t('请选择支付方式')); const _b=document.getElementById('dp-rail-block'); if(_b) _b.open=true; return } if (window.closeSheet) window.closeSheet()  // #28 空 rail 一律拦(永不静默落 escrow);[PRELAUNCH-WAZ-SIM] 未选→空;校验通过才关 sheet(块内 return 不关→提示+展开可见,修 P2)
+  const payment_rail = window.dpSelectedRail ? window.dpSelectedRail() : 'escrow'; if (!payment_rail) { const _dp=document.querySelector('input[name="dp-rail"]:checked')?.value==='direct_p2p'; const _m=document.getElementById('buy-msg'); if(_m) _m.innerHTML = alert$('error', _dp ? t('当前商品或地区暂不支持直付,请返回检查商品条件') : t('请选择支付方式')); const _b=document.getElementById('dp-rail-block'); if(_b) _b.open=true; return } if (window.closeSheet) window.closeSheet()  // #28 空 rail 一律拦(永不静默落 escrow);[ESCROW-WAZ-SIM] 未选→空;校验通过才关 sheet(块内 return 不关→提示+展开可见,修 P2)
   const res = await POST('/orders', { product_id: productId, shipping_address: addr, notes, sponsor_hint, coupon_code, delivery_window, variant_id, expected_price, buy_insurance, anonymous_recipient, donation_pct, quantity, payment_rail, ship_to_region: (window.shipSelectedRegion ? window.shipSelectedRegion() : undefined), direct_receive_account_id: (payment_rail === 'direct_p2p' && window.dpSelectedAccountId) ? (window.dpSelectedAccountId() || undefined) : undefined, ...giftPayload })
   if (payment_rail === 'direct_p2p') return void (window.dpAfterCreate && window.dpAfterCreate(res))
   if (res.error_code === 'PRICE_CHANGED') {
@@ -25243,7 +25235,7 @@ async function renderMyNotes(app) {
       <h2 style="font-size:18px;font-weight:700">📝 ${t('我的笔记')}</h2>
       ${draftCount > 0 ? `<button class="btn btn-outline btn-sm" style="font-size:11px;padding:5px 10px" onclick="openDraftsModal()">📋 ${t('草稿')} ${draftCount}</button>` : ''}
     </div>
-    <div style="font-size:11px;color:#6b7280;margin-bottom:14px">${state.user?.mlm_ui_visible !== false ? t('协议按地区层级自动拆分分享返佣(当前预发布期仅 L1)') : t('你所在地区不分多级返佣 — 产生的佣金已自动捐入公益基金')}</div>
+    <div style="font-size:11px;color:#6b7280;margin-bottom:14px">${state.user?.mlm_ui_visible !== false ? t('协议按地区层级自动拆分分享返佣(当前全局上限为 L1)') : t('你所在地区不分多级返佣 — 产生的佣金已自动捐入公益基金')}</div>
     <div class="card" style="padding:14px;margin-bottom:14px;background:linear-gradient(135deg,#fef3c7,#fff7ed)">
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">
         <div><div style="font-size:18px;font-weight:800;color:#92400e">${notes.length}</div><div style="font-size:10px;color:#9ca3af">${t('笔记数')}</div></div>

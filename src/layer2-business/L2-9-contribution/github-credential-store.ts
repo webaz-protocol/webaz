@@ -13,7 +13,7 @@
  * Migration atomicity (Codex #297 follow-up): the WHOLE thing — full-structure detection, empty-table
  * check, DROP of the old/partial tables, and the rebuild — runs in ONE synchronous `.immediate()`
  * transaction. A pre-P2-1 (or half-migrated) shape is recreated ONLY if every present contribution
- * table is empty (the layer has no trigger surface yet → guaranteed empty pre-launch); a NON-empty
+ * table is empty when the layer has no trigger surface; a NON-empty
  * old/partial shape FAILS CLOSED (never drops data), and any error rolls the whole step back, so the
  * schema is never left half-migrated/unwritable. This module does NOT touch the #300 identity tables.
  *

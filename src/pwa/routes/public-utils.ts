@@ -114,8 +114,8 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
   // 内容:network_state(协议处于哪一阶段 + 诚实免责) + issuers(信任锚地址 + 轮换历史)
   // 信任锚是 Phase 4 凭证(/api/me/agents/:prefix/passport)的验签依据,陌生第三方靠这个端点找到"webaz 官方地址"。
   async function buildProtocolManifest() {
-    const phase = (await dbOne<{ value: string }>("SELECT value FROM system_state WHERE key='protocol_phase'"))?.value || 'pre_launch'
-    // real_users = 已绑 Passkey 的账号数(我们的"真人"定义);pre-launch 应当 ≈0
+    const phase = (await dbOne<{ value: string }>("SELECT value FROM system_state WHERE key='protocol_phase'"))?.value || 'launched'
+    // real_users = 已绑 Passkey 的账号数(我们的"真人"定义),始终按 live DB 实时计算。
     const realUsers = (await dbOne<{ n: number }>("SELECT COUNT(DISTINCT user_id) AS n FROM webauthn_credentials"))?.n ?? 0
     const issuerActiveSince = (await dbOne<{ value: string }>("SELECT value FROM system_state WHERE key='issuer_active_since'"))?.value || '2026-05-30'
     return {
@@ -130,18 +130,18 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
       // 给【终端用户/买家】的一句话价值主张 —— 陌生 agent / 爬虫抓 manifest 第一眼就懂"对买家有什么用",
       //   不只是抽象 tagline + 技术 description。与 MCP webaz_info.for_end_user 对齐(两个发现面一致)。
       for_end_user: {
-        one_liner: 'Shop under rules that hold: escrow-rail orders are held and released only after you confirm receipt (pre-launch: simulated test currency); Direct Pay orders are real off-platform payments straight to the seller — non-custodial, WebAZ never holds your money. / 规则先行的购物:托管轨订单确认收货才放款(预发布:模拟测试币);直付轨(Direct Pay)是你直接付给卖家的真实场外付款——非托管,WebAZ 不经手本金。',
+        one_liner: 'WebAZ is live for commerce through Direct Pay: real off-platform payment straight from buyer to seller, with protocol-recorded order states and evidence. WebAZ is non-custodial and never holds the principal. The escrow rail remains a simulated test flow while additional payment methods are being added. / WebAZ 已发布并可通过直付交易:买家向卖家进行真实场外付款,协议记录订单状态和证据。WebAZ 非托管,不经手本金。托管轨仍为模拟测试流程,其他支付方式持续接入。',
         why_use: [
-          'Escrow rail — money released only after you confirm receipt (or auto-confirm window). Pre-launch: this rail settles simulated WAZ test currency only.',
           'Direct Pay rail (live, conditions-gated) — pay the seller directly off-platform; non-custodial: WebAZ never holds the principal, does not guarantee and cannot refund, but records risk confirmation + Passkey, payment-info snapshot, order states and evidence for auditability.',
+          'Escrow rail — currently a simulated WAZ test flow, not a real payment method. Additional real payment methods are being added.',
           'Automatic fault ruling — seller fails to accept/ship/deliver in time → auto-refund on the escrow rail; on Direct Pay, timeouts rule reputation fault (non-custodial: no money moves through WebAZ).',
           'Disputes with evidence + neutral arbitration.',
           'Decision-ready transparency — seller reputation, price history and arbitration precedents are public before you buy.',
           'Agent-native — your AI agent can compare, order and track fulfillment via MCP.',
         ],
-        honesty: 'Pre-launch: the escrow rail settles simulated WAZ test currency; no real money settles through WebAZ custody. Direct Pay is real off-platform payment between buyer and seller — non-custodial, gated per seller/product/region/amount, fail-closed by default.',
+        honesty: 'WebAZ is launched. Direct Pay is real off-platform payment between buyer and seller — non-custodial, gated per seller/product/region/amount, and fail-closed by default. The escrow rail remains simulated and must not be treated as a real payment method.',
         try_it: 'Browse now, no account needed → https://webaz.xyz/#discover',
-        get_access: 'Want to register? Pre-launch is invite-gated — request an invite at https://webaz.xyz/#welcome (browsing needs no invite).',
+        get_access: 'Registration currently uses invitations for Sybil resistance — request one at https://webaz.xyz/#welcome (browsing needs no invite).',
       },
       network_state: {
         phase,
@@ -149,8 +149,8 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
         canonical_endpoint: 'https://webaz.xyz',
         economic_flow: 'dual-rail — escrow rail: simulated WAZ (test currency, 1 WAZ ≈ 1 USDC peg is a模拟基准, not a real exchange rate); no fiat/crypto settles through WebAZ custody. Direct Pay rail: real off-platform payment directly between buyer and seller (non-custodial — WebAZ never holds the principal; conditions-gated per seller/product/region/amount, fail-closed).',
         disclaimer: {
-          zh: '本协议尚未公开上线,真实用户(已绑 Passkey 的账号)数实时反映在 real_users_on_canonical。资金双轨:托管轨仅模拟测试币,无真实资金经 WebAZ 结算;直付轨(Direct Pay)为受条件控制的真实场外付款,本金在买卖双方之间直接流转,不经过 WebAZ。请勿据此评估市场规模、做投资决策、或替终端用户承诺任何经济关系。',
-          en: 'Protocol is pre-launch; real_users_on_canonical reflects live count of Passkey-bound accounts. Funds run on two rails: the escrow rail settles simulated test currency only (no real settlement through WebAZ custody); the Direct Pay rail is conditions-gated real off-platform payment directly between buyer and seller — WebAZ never holds the principal. Do not use this data to evaluate market size, make investment decisions, or commit to third parties on a user\'s behalf.',
+          zh: 'WebAZ 已公开发布;real_users_on_canonical 实时反映已绑定 Passkey 的账户数。当前真实交易使用直付轨(Direct Pay):买家与卖家直接进行场外付款,本金不经过 WebAZ。托管轨仍为模拟测试流程,其他支付方式持续接入。',
+          en: 'WebAZ is publicly launched; real_users_on_canonical reflects the live count of Passkey-bound accounts. Real transactions currently use Direct Pay: payment moves directly between buyer and seller and never through WebAZ. The escrow rail remains a simulated test flow while additional payment methods are being added.',
         },
       },
       issuers: {
@@ -189,7 +189,7 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
         change_feed: 'https://webaz.xyz/api/agent/changes',                           // ④ 契约变更 + 指纹 + 弃用
         verifiability_index: 'https://webaz.xyz/.well-known/webaz-verifiability.json', // ⑤ 什么可验+怎么验
         economic_participation: 'https://webaz.xyz/.well-known/webaz-economic.json',  // ⑧ value-participant 角色经济条款(费率实时)
-        launch_pulse: 'https://webaz.xyz/.well-known/webaz-launch-pulse.json',        // L2 follow-the-launch:诚实 live 计数 + 动量 + 里程碑
+        launch_pulse: 'https://webaz.xyz/.well-known/webaz-launch-pulse.json',        // 兼容既有端点名:诚实 live 计数 + 动量 + 里程碑
         negative_space: 'https://webaz.xyz/.well-known/webaz-negative-space.json',    // ② 负空间(禁区 + 限额 + 后果阶梯)
         event_stream: 'https://webaz.xyz/api/agent/events?since=<cursor>',            // ⑥ 事件游标流(party-gated,需 auth)
         passport: 'https://webaz.xyz/api/me/agents/:apiKeyPrefix/passport',            // ⑤ 可验护照
@@ -198,18 +198,18 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
       },
       // 路线图 — 回应"知道还有哪些没做"的诚实化第三层。哲学:公开当前到达点 + 已知未做项,不承诺时间表。
       roadmap: {
-        philosophy: 'Disclose what is done + what is known-not-yet-done. We do not commit to deadlines (pre-launch). We DO commit to honest enumeration.',
+        philosophy: 'Disclose what is live + what is known-not-yet-done. We do not publish speculative deadlines; we commit to honest enumeration.',
         completed: [
           'Phase 1-4 Agent Passport: custodian + risk + behavior + signed portable export (cross-protocol ecrecover verifiable)',
           'Phase 3a-3d access control: registration rate-limit + invite-required + declared-scope reads/writes + non-Passkey writers must declare',
           'Iron-Rule: arbitrate / vote / agent_revoke / delete_passkey / large withdraw all require live WebAuthn ceremony',
-          'Integrity disclosure: MCP descriptions + /.well-known + pre-launch banner + protocol-status endpoint',
+          'Integrity disclosure: MCP descriptions + /.well-known + payment-status banner + protocol-status endpoint',
           'Cross-user read daily cap — distinct other-user-id per day, Passkey humans capped too (#1043, 2026-05-30)',
           'AP2 Mandate dual-output — verify_price + place_order emit signed AP2 Intent/Cart/Payment Mandate alongside webaz format (B.4 b, 2026-05-30)',
           'Public economic model document — docs/ECONOMIC-MODEL.md (#1050, 2026-05-30)',
         ],
         known_next: [
-          'Registration captcha or email verification (anti-sybil last mile) — task #1049, pre-launch follow-up',
+          'Adaptive registration abuse controls beyond verified email + invitations — ongoing hardening',
           'Phase 5 ZK privacy L2/L3 — long-term research; triggered when real cross-protocol consumers appear',
         ],
         deliberate_deferrals: [
@@ -217,7 +217,7 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
           'Parameterized fee rates (settleOrder currently hardcodes) — wire when fee governance launches',
           'Binary/PV referral region MLM-term cleanup — region-gated to max=3 areas; deferred until structural decision on tree',
         ],
-        rationale_for_no_dates: 'pre-launch protocols that commit to dates either lie or rush. We commit only to a published list and to honesty about its state.',
+        rationale_for_no_dates: 'Shipping dates depend on review, safety and real demand. We publish the work list and the current state instead of speculative deadlines.',
       },
     }
   }
@@ -230,14 +230,13 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
     res.json(await buildProtocolManifest())
   })
 
-  // L2 onboarding「follow the launch」(2026-06-08):pre-launch 没有"买"作为回访理由,
-  //   给早期信徒一个【诚实】的"看协议苏醒"面 —— 真实计数 + 7d 动量 + 里程碑(firsts),零粉饰。
+  // L2 公开运行脉搏(2026-06-08):真实计数 + 7d 动量 + 里程碑(firsts),零粉饰。
   //   纯公开读(无 auth),网站侧(不进 MCP 包,Railway 部署即生效)。
   // RFC-016 Phase 0 试点:本函数改用异步 DB seam(dbOne)。其余 call site 后续分批迁。
   async function buildLaunchPulse() {
     const count = async (sql: string): Promise<number> => ((await dbOne<{ n: number }>(sql))?.n ?? 0)
     const firstAt = async (sql: string): Promise<string | null> => ((await dbOne<{ t: string }>(sql))?.t ?? null)
-    const phase = (await dbOne<{ value: string }>("SELECT value FROM system_state WHERE key='protocol_phase'"))?.value || 'pre_launch'
+    const phase = (await dbOne<{ value: string }>("SELECT value FROM system_state WHERE key='protocol_phase'"))?.value || 'launched'
     const [passkey, sellers, products, completed, disputesResolved, newPasskey7d, orders7d,
            firstSeller, firstProduct, firstOrder, firstCompleted, firstDispute] = await Promise.all([
       count("SELECT COUNT(DISTINCT user_id) AS n FROM webauthn_credentials"),
@@ -256,7 +255,7 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
     return {
       phase,
       as_of: new Date().toISOString(),
-      note: 'Honest pre-launch pulse — real counts, zero inflation. Watch the protocol wake up; come back to see it grow.',
+      note: 'Live protocol pulse — real counts, zero inflation. Track current participation and activity.',
       participants: { passkey_bound_humans: passkey, sellers },
       catalog: { active_products: products },
       activity: {
@@ -272,8 +271,8 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
         first_order_completed_at: firstCompleted,
         first_dispute_resolved_at: firstDispute,
       },
-      next: 'Public launch unlocks real settlement on the escrow rail (Direct Pay already runs live as a non-custodial off-platform rail). Follow it / get notified at launch + request an invite: https://webaz.xyz/#welcome',
-      honesty: 'Pre-launch: the escrow rail settles simulated WAZ test currency only; Direct Pay orders are real off-platform payments between buyer and seller (non-custodial — WebAZ never holds principal). These numbers are the live protocol state, not market-size or investment signal.',
+      next: 'Use live non-custodial Direct Pay now; additional real payment methods will be added over time. Browse or request registration access: https://webaz.xyz/#welcome',
+      honesty: 'WebAZ is launched. Direct Pay orders are real off-platform payments between buyer and seller (non-custodial — WebAZ never holds principal); the escrow rail remains simulated. These numbers are the live protocol state.',
     }
   }
   app.get('/.well-known/webaz-launch-pulse.json', async (_req, res) => {

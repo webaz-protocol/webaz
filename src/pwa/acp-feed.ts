@@ -7,7 +7,7 @@
  *
  * ⚠️ 这【不是】一份严格可被 OpenAI 直接 ingest 的合规商家 feed(Codex #151):
  *   ACP 的严格 product feed 要求 price.currency = ISO 4217 法币,且 target_countries /
- *   store_country 等商家级必填字段。本 feed 价格是 SIMULATED WAZ(pre-launch,非 ISO 4217),
+ *   store_country 等商家级必填字段。本 feed 价格是 escrow 轨的 SIMULATED WAZ 展示单位(非 ISO 4217),
  *   且不发 merchant-level 必填字段 —— 故定位为【ACP-inspired 发现投影】,非【strict ACP ingestion feed】。
  *   非合规点逐条列在 feed 级 `compatibility` 字段,ingester 不应把它当严格 feed 消费。
  *   真正的 strict/export 合规 feed 要等 RFC-015 后续阶段接入法币计价 + ACP checkout 后再建(届时非空才有意义)。
@@ -17,7 +17,7 @@
  * 两个【诚实】硬约束(不可悄悄改):
  *   1. is_eligible_checkout = false (全部) —— ACP /complete 是"卡 + PSP"(见 RFC-015),WebAZ 尚未接;
  *      商品【可经 ACP 发现】,但【不可经 ACP 购买】。真实购买走 WebAZ 自有 checkout + escrow。
- *   2. currency = WAZ —— 协议【模拟】pre-launch 单位,非 ISO 4217 法币,无真实钱。feed 级 _disclosures 标明。
+ *   2. currency = WAZ —— escrow 轨【模拟】展示单位,非 ISO 4217 法币。feed 级 _disclosures 标明;真实交易走 WebAZ Direct Pay。
  *
  * 接线:src/pwa/routes/public-utils.ts → GET /.well-known/webaz-acp-feed.json (+ /api/agent/acp-feed)。
  */
@@ -116,16 +116,16 @@ export function buildAcpProductFeed(db: Database.Database, opts: { limit?: numbe
       is_strict_acp_ingestable: false,
       summary: 'Discovery projection that borrows the ACP product-feed shape. It is intentionally NOT a strict ACP-ingestable feed.',
       non_compliant_points: [
-        'price.currency is SIMULATED WAZ (pre-launch internal unit), not an ISO 4217 fiat currency.',
+        'price.currency is the escrow rail\'s SIMULATED WAZ display unit, not an ISO 4217 fiat currency or the Direct Pay settlement currency.',
         'is_eligible_checkout is false for every item: ACP checkout (card + PSP) is not wired.',
         'Merchant-level required fields (target_countries, store_country) are not emitted.',
       ],
       strict_export: 'A strict/export feed (ISO 4217 + merchant required fields, compliant items only) is deferred to a later RFC-015 phase, after fiat pricing + ACP checkout exist — it would be empty today.',
     },
     _disclosures: {
-      phase: 'pre-launch',
-      currency: "Each item's price.currency is the protocol's SIMULATED pre-launch internal unit, always emitted as WAZ (legacy internal-code rows are normalized to WAZ on read), NOT an ISO 4217 fiat currency. No real money is involved.",
-      checkout: 'is_eligible_checkout is false for every item: ACP checkout is not yet wired. Products are DISCOVERABLE via ACP, not yet PURCHASABLE via ACP. Native WebAZ checkout + escrow + state machine govern real purchases (see RFC-015).',
+      phase: 'launched',
+      currency: "Each item's price.currency is the escrow rail's SIMULATED display unit, always emitted as WAZ (legacy internal-code rows are normalized to WAZ on read), NOT an ISO 4217 fiat currency. Real purchases currently use WebAZ Direct Pay and the seller's selected off-platform payment method.",
+      checkout: 'is_eligible_checkout is false for every item: ACP checkout is not yet wired. Products are DISCOVERABLE via ACP but ACP cannot complete the purchase. Native WebAZ Direct Pay supports real buyer-to-seller payment; the WebAZ state machine records the order and evidence (see RFC-015).',
     },
     product_count: products.length,
     products,

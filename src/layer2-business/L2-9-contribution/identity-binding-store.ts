@@ -19,7 +19,7 @@
  * Migration atomicity (mirrors github-credential-store): the WHOLE step — full-structure detection,
  * empty-table check, DROP and rebuild — runs in ONE synchronous `.immediate()` transaction; an
  * old/partial shape is recreated ONLY if empty (else fail-closed, never drop data); any error rolls
- * the whole step back. The contribution layer has no trigger surface yet → empty pre-launch.
+ * the whole step back. When the contribution layer has no trigger surface, this remains empty.
  *
  * NB: the SQL strings carry NO inline `--` comments (gen-pg-schema strips them → trailing whitespace).
  * FK enforcement relies on the connection's `PRAGMA foreign_keys = ON` (set in schema.ts).
