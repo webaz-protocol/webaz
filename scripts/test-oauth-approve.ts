@@ -86,7 +86,7 @@ async function main() {
     ok('1e. grant: active, human-bound, OAuth-labeled, no bearer', g.human_id === USER && g.status === 'active' && String(g.agent_label).startsWith('OAuth:') && g.token_hash === null)
     const capNames = (JSON.parse(String(g.capabilities)) as { capability: string }[]).map(c => c.capability).sort()
     // read → public reads + own catalog + minimal orders; order:draft → draft_order + order_action_request (widened, Codex PR-5 P1)
-    ok('1f. capabilities = SAFE mapping of read+order:draft', JSON.stringify(capNames) === JSON.stringify(['draft_order', 'order_action_request', 'profile_read', 'read_public', 'search', 'seller_orders_read_minimal', 'seller_products_read']))
+    ok('1f. capabilities = SAFE mapping of read+order:draft', JSON.stringify(capNames) === JSON.stringify(['buyer_orders_read_minimal', 'draft_order', 'order_action_request', 'profile_read', 'read_public', 'search', 'seller_orders_read_minimal', 'seller_products_read']))
     const c = db.prepare('SELECT * FROM oauth_auth_codes').get() as Record<string, unknown>
     ok('1g. code stored HASHED, bound to grant/client/challenge/redirect/resource', c.code_hash === createHash('sha256').update(code).digest('hex') && c.grant_id === g.grant_id && c.client_id === GOOD.client_id && c.code_challenge === CHALLENGE && c.redirect_uri === GOOD.redirect_uri && c.resource === GOOD.resource && c.consumed_at === null)
     ok('1h. code TTL short (≤60s)', new Date(String(c.expires_at)).getTime() - Date.now() <= 60_000)
