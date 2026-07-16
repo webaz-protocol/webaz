@@ -1,12 +1,12 @@
 /**
- * Agent buy — AI 比价 + 可选自动下单 (buyer 唯一智能购物入口)
+ * Agent buy — AI 比价/推荐(auto_buy 已于 RFC-025 PR-5b 退役:410 AUTO_BUY_RETIRED,购买走 quote→draft→submit→Passkey 链)
  *
  * 由 #1013 Phase 115 从 src/pwa/server.ts 抽出。
  *
  * 1 endpoint:
  *   POST /api/agent-buy   仅买家 · 6/min/IP
  *                         safeFetch source → haiku 提关键词 → 搜 WebAZ 同类
- *                         → haiku 比价 → auto_buy=true 且无变体则锁价+创建+modulo paid
+ *                         → haiku 比价(auto_buy 已退役,永不建单/扣款)
  *
  * 跨域注入：auth + db + safeFetch + rateLimitOk + generateId
  *           + anthropic + AnthropicCtor + formatProductForAgent
@@ -43,8 +43,16 @@ export function registerAgentBuyRoutes(app: Application, deps: AgentBuyDeps): vo
     if (user.role !== 'buyer') return void res.json({ error: '仅买家可使用智能下单' })
 
     const { source_url, shipping_address, auto_buy = false, user_api_key } = req.body
+    // RFC-025 PR-5b(D-1):auto_buy 已退役 —— 最前置检查(任何抓取/LLM 调用之前),不浪费两跳模型调用。
+    if (auto_buy) {
+      return void res.status(410).json({
+        error: 'auto_buy 已退役 —— agent 不能未经真人批准直接扣款下单;比价请用 auto_buy:false',
+        error_code: 'AUTO_BUY_RETIRED',
+        retryable: false,
+        next_steps: ['webaz_quote_order → webaz_order_draft → webaz_submit_order_request → human Passkey approval', 'or order directly at webaz.xyz'],
+      })
+    }
     if (!source_url) return void res.json({ error: '请提供商品链接' })
-    if (auto_buy && !shipping_address) return void res.json({ error: '自动下单需提供收货地址' })
     if (!rateLimitOk(req.ip || 'unknown', 6, 60_000)) return void res.status(429).json({ error: '请求过于频繁，请稍后再试' })
 
     let html = ''
@@ -183,21 +191,6 @@ ${webazFormatted.length > 0 ? JSON.stringify(webazFormatted.map(p => ({
       decision = JSON.parse(m[0])
     } catch {
       decision = { recommendation: 'no_match', reason: '无法完成比价分析，请手动选购' }
-    }
-
-    // RFC-025 PR-5b(D-1 定板):auto_buy 即时扣款建单已退役 —— agent 触发的无人批准购买与
-    //   "所有不可逆经济动作由真人最终确认"原则冲突(历史遗留,先于人门原则)。比价/推荐照旧;
-    //   购买走新链:webaz_quote_order → webaz_order_draft → webaz_submit_order_request → 人 Passkey 批准
-    //   (批准才创建订单并入托管),或人直接在 webaz.xyz 下单。唯一前端调用方硬编码 auto_buy:false,零破坏。
-    if (auto_buy) {
-      decision.reason = (decision.reason || '') + ' · auto_buy 已退役:购买需真人 Passkey 批准(quote→draft→submit 链)'
-      return void res.status(410).json({
-        error: 'auto_buy 已退役 —— agent 不能未经真人批准直接扣款下单',
-        error_code: 'AUTO_BUY_RETIRED',
-        retryable: false,
-        recommendation: decision,
-        next_steps: ['webaz_quote_order → webaz_order_draft → webaz_submit_order_request → human Passkey approval', 'or order directly at webaz.xyz'],
-      })
     }
 
     const bestProduct = decision.best_product_id

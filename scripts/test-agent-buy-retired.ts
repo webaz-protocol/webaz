@@ -26,6 +26,7 @@ const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 initUserModerationSchema(db); applyWebazRuntimeSchema(db)
 const { initReputationSchema } = await import('../src/layer4-economics/L4-3-reputation/reputation-engine.js')
 initReputationSchema(db)
+db.exec('CREATE TABLE IF NOT EXISTS price_sessions (token TEXT PRIMARY KEY, product_id TEXT, user_id TEXT, price REAL, quantity INTEGER DEFAULT 1, created_at TEXT, expires_at TEXT, used_at TEXT)')
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('buyer1','B','buyer','k_b'),('seller1','S','seller','k_s')").run()
 db.prepare("INSERT INTO wallets (user_id,balance,staked,escrowed,earned) VALUES ('buyer1',500,0,0,0)").run()
 db.prepare("INSERT INTO products (id,seller_id,title,description,price,currency,stock,category,status) VALUES ('prd_s','seller1','Simple Stand','d',30,'WAZ',20,'x','active')").run()
@@ -55,20 +56,23 @@ const hit = async (body: Record<string, unknown>) => {
   try { json = JSON.parse(txt) as Record<string, unknown> } catch { json = { _raw: txt.slice(0, 200), _status: resp.status } }
   return { status: resp.status, json }
 }
-const econ = () => JSON.stringify({ o: db.prepare('SELECT COUNT(*) c FROM orders').get(), w: db.prepare("SELECT balance,escrowed FROM wallets WHERE user_id='buyer1'").get(), s: db.prepare("SELECT stock FROM products WHERE id='prd_s'").get() })
+const econ = () => JSON.stringify({ o: db.prepare('SELECT COUNT(*) c FROM orders').get(), w: db.prepare("SELECT balance,escrowed FROM wallets WHERE user_id='buyer1'").get(), s: db.prepare("SELECT stock FROM products WHERE id='prd_s'").get(), ps: db.prepare('SELECT COUNT(*) c FROM price_sessions').get(), ev: db.prepare('SELECT COUNT(*) c FROM order_state_history').get() })
 
 const before = econ()
 try {
-  { const r = await hit({ source_url: 'https://example.com/x', shipping_address: 'X addr', auto_buy: true })
-    ok('R-1 auto_buy=true → 410 AUTO_BUY_RETIRED', r.status === 410 && r.json.error_code === 'AUTO_BUY_RETIRED', JSON.stringify(r.json).slice(0, 250))
-    ok('R-2 recommendation still returned (compare value preserved)', !!(r.json.recommendation as Record<string, unknown>)?.recommendation)
+  { const llmBefore = call
+    const r = await hit({ source_url: 'https://example.com/x', shipping_address: 'X addr', auto_buy: true })
+    ok('R-1 auto_buy=true → 410 AUTO_BUY_RETIRED (EARLY: before any fetch/LLM call)', r.status === 410 && r.json.error_code === 'AUTO_BUY_RETIRED', JSON.stringify(r.json).slice(0, 250))
+    ok('R-2 no LLM call was wasted on a retired request', call === llmBefore)
     ok('R-3 next_steps point to the Passkey chain', JSON.stringify(r.json.next_steps ?? []).includes('webaz_quote_order'))
     ok('R-4 ZERO economic change (no order, no debit, no stock move)', econ() === before, econ()) }
+  { const r = await hit({ source_url: 'https://example.com/x', auto_buy: true })   // Codex M:无地址也必须 410(旧地址守卫已删)
+    ok('R-4b auto_buy=true WITHOUT address → still 410 (obsolete address guard removed)', r.status === 410 && r.json.error_code === 'AUTO_BUY_RETIRED', JSON.stringify(r.json).slice(0, 150)) }
   { const r = await hit({ source_url: 'https://example.com/x', auto_buy: false })
     ok('R-5 compare path (auto_buy=false) unchanged — 200 + auto_bought:false', r.status === 200 && r.json.auto_bought === false && r.json.order_id === null, JSON.stringify(r.json).slice(0, 250))
     ok('R-6 still zero economic change', econ() === before) }
   const SRC = readFileSync('src/pwa/routes/agent-buy.ts', 'utf8')
-  ok('G-1 money-path code physically removed (no wallet debit / order INSERT left in agent-buy)', !/UPDATE wallets SET balance/.test(SRC) && !/INSERT INTO orders/.test(SRC))
+  ok('G-1 money-path code physically removed (no wallet debit / order INSERT / stock CAS / price-session write / transition call left)', !/UPDATE wallets SET balance/.test(SRC) && !/INSERT INTO orders/.test(SRC) && !/UPDATE products SET stock/.test(SRC) && !/INSERT INTO price_sessions/.test(SRC) && !/transition\(db/.test(SRC))
   ok('G-2 auto_bought hardwired false in the response', /auto_bought: false/.test(SRC))
 } finally { server.close() }
 

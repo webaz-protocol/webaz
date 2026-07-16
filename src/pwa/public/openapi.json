@@ -2532,7 +2532,7 @@
     },
     "/api/agent-buy": {
       "post": {
-        "summary": "Agent 智能下单 — 外链/搜索词输入 → 自动比价 + 推荐 / 锁价",
+        "summary": "Agent 智能比价 — 外链输入 → 比价 + 推荐(auto_buy 已于 RFC-025 PR-5b 退役:购买需真人 Passkey 逐笔批准)",
         "tags": [
           "agent"
         ],
@@ -2550,12 +2550,13 @@
               "description": "外站链接（淘宝/京东/Amazon 等）"
             },
             "shipping_address": {
-              "type": "string"
+              "type": "string",
+              "description": "可选,用于运费估算"
             },
             "auto_buy": {
               "type": "boolean",
               "default": false,
-              "description": "true 时自动下单，false 时仅返回推荐"
+              "description": "RETIRED — true 一律返回 410 AUTO_BUY_RETIRED(下单走 quote→draft→submit→Passkey 链);false/省略 = 仅比价推荐"
             }
           }
         },
@@ -2577,11 +2578,23 @@
                 "type": "array"
               },
               "order_id": {
-                "type": "string",
-                "description": "仅 auto_bought=true 时"
+                "type": "null",
+                "description": "恒 null(auto_buy 已退役)"
               },
               "auto_bought": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "恒 false"
+              }
+            }
+          },
+          "410": {
+            "type": "object",
+            "properties": {
+              "error_code": {
+                "const": "AUTO_BUY_RETIRED"
+              },
+              "next_steps": {
+                "type": "array"
               }
             }
           }

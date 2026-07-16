@@ -17334,7 +17334,7 @@ async function doBatchBuy(urls, addr, auto) {
         <span>${t('最佳替代')}：${escHtml(res.best_product.title)} · <strong>${window.fmtPrice(res.best_product.price)}</strong></span>
         <button class="btn btn-primary btn-sm" style="width:auto;padding:3px 10px;font-size:11px" onclick="navigate('#order-product/${res.best_product.id}')">${t('下单')}</button>
       </div>` : ''}
-      ${res.auto_bought ? `<div style="margin-top:6px;font-size:12px;color:#16a34a">✅ ${t('已自动下单')} <a href="#order/${res.order_id}" style="color:#16a34a;font-weight:600">${res.order_id}</a></div>` : ''}`
+      `   // RFC-025 PR-5b:auto_bought 恒 false,死分支移除
   }
 }
 
@@ -17492,7 +17492,7 @@ window.stopQrScan = () => {
 window.doAgentBuy = async () => {
   const raw    = document.getElementById('ab-url').value.trim()
   const addr   = document.getElementById('ab-addr').value.trim()
-  const auto   = document.getElementById('ab-auto').checked
+  const auto   = false   // RFC-025 PR-5b:auto_buy 已退役(勾选框已移除;后端 auto_buy:true → 410)
   const btn    = document.getElementById('ab-btn')
   const result = document.getElementById('ab-result')
 
@@ -17548,14 +17548,10 @@ window.doAgentBuy = async () => {
       <div style="font-weight:600;font-size:14px;margin-bottom:4px">${res.best_product.title}</div>
       <div style="font-size:18px;font-weight:700;color:#16a34a;margin-bottom:4px">${window.fmtPrice(res.best_product.price)}</div>
       <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${res.best_product.agent_summary || ''}</div>
-      ${!res.auto_bought ? `<button class="btn btn-primary btn-sm" style="width:auto" onclick="navigate('#order-product/${res.best_product.id}')">${t('查看并下单')}</button>` : ''}
+      <button class="btn btn-primary btn-sm" style="width:auto" onclick="navigate('#order-product/${res.best_product.id}')">${t('查看并下单')}</button>
     </div>` : ''
 
-  const orderCard = res.auto_bought ? `
-    <div class="alert alert-success" style="margin-top:12px">
-      <strong>${t('已自动下单！')}</strong> ${t('订单号')}：<a href="#order/${res.order_id}" style="color:#16a34a;font-weight:600">${res.order_id}</a><br>
-      <span style="font-size:12px">${t('金额')}：${res.verified_price} WAZ ${t('（已从钱包托管）')}</span>
-    </div>` : ''
+  const orderCard = ''   // RFC-025 PR-5b:auto_bought 恒 false,自动下单成功卡死代码移除
 
   const altList = res.webaz_products?.length > 0 ? `
     <div style="margin-top:16px">

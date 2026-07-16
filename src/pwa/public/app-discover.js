@@ -57,19 +57,16 @@ async function renderShop(app, opts = {}) {
         </div>
         <button class="btn btn-outline btn-sm" style="width:auto;padding:4px 10px" onclick="navigate('#shop')">${t('收起')}</button>
       </div>
-      <p style="color:#6b7280;font-size:12px;margin-bottom:10px">${t('粘贴商品链接，AI 自动搜索 WebAZ 更优方案，可一键下单')}</p>
+      <p style="color:#6b7280;font-size:12px;margin-bottom:10px">${t('粘贴商品链接，AI 自动搜索 WebAZ 更优方案并比价;下单需你 Passkey 逐笔批准')}</p>
       <div class="form-group">
         <label class="form-label" style="font-size:12px">${t('商品链接')}</label>
         <input class="form-control" id="ab-url" placeholder="${t('粘贴淘宝 / 京东 / 亚马逊等链接')}" style="font-size:13px">
       </div>
       <div class="form-group">
         <label class="form-label" style="font-size:12px">${t('收货地址')}</label>
-        <input class="form-control" id="ab-addr" placeholder="${t('省市区街道，用于自动下单')}" style="font-size:13px">
+        <input class="form-control" id="ab-addr" placeholder="${t('省市区街道(可选,用于运费估算)')}" style="font-size:13px">
       </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-        <input type="checkbox" id="ab-auto" style="width:16px;height:16px">
-        <label for="ab-auto" style="font-size:12px;cursor:pointer">${t('找到更优方案后自动下单（否则仅展示比价结果）')}</label>
-      </div>
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:12px">${t('自动下单已退役:所有购买都需要你的 Passkey 逐笔批准(比价结果里可一键跳转下单页)')}</div>
       <button class="btn btn-primary" id="ab-btn" onclick="doAgentBuy()">${t('开始分析')}</button>
       <div id="ab-result"></div>
     </div>`
@@ -557,11 +554,7 @@ function renderAgentBuyResultInto(container, res) {
       <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${escHtml(res.best_product.agent_summary || '')}</div>
       ${!res.auto_bought ? `<button class="btn btn-primary btn-sm" style="width:auto" onclick="navigate('#order-product/${res.best_product.id}')">${t('查看并下单')}</button>` : ''}
     </div>` : ''
-  const orderCard = res.auto_bought ? `
-    <div class="alert alert-success" style="margin-top:12px">
-      <strong>${t('已自动下单！')}</strong> ${t('订单号')}：<a href="#order/${res.order_id}" style="color:#16a34a;font-weight:600">${res.order_id}</a><br>
-      <span style="font-size:12px">${t('金额')}：${res.verified_price} WAZ ${t('（已从钱包托管）')}</span>
-    </div>` : ''
+  const orderCard = ''   // RFC-025 PR-5b:auto_bought 恒 false,死分支移除
   const altList = res.webaz_products?.length > 0 ? `
     <div style="margin-top:16px">
       <div style="font-size:12px;color:#9ca3af;margin-bottom:8px">${t('WebAZ 上的相关商品')}</div>
