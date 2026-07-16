@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (790 endpoints, 19 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (794 endpoints, 19 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2847,6 +2847,62 @@
         "summary": "GET /api/agent/negative-space",
         "tags": [],
         "security": []
+      }
+    },
+    "/api/agent/order-draft": {
+      "post": {
+        "summary": "草稿不可变(无 update),cancel 终态幂等安全;get/list 仅本人。提交/批准/建单全在 PR-5a。",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "draft_order"
+      }
+    },
+    "/api/agent/order-drafts": {
+      "get": {
+        "summary": "GET /api/agent/order-drafts",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "draft_order"
+      }
+    },
+    "/api/agent/order-drafts/:id": {
+      "get": {
+        "summary": "GET /api/agent/order-drafts/:id",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "draft_order"
+      }
+    },
+    "/api/agent/order-drafts/:id/cancel": {
+      "post": {
+        "summary": "POST /api/agent/order-drafts/:id/cancel",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "draft_order"
       }
     },
     "/api/agent/orders": {

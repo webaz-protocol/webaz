@@ -25,13 +25,14 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
-import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrantAuthLogSchema, initAgentPermissionRequestsSchema, initDemandSignalsSchema, initOrderQuotesSchema } from '../../runtime/webaz-schema-helpers.js'
+import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrantAuthLogSchema, initAgentPermissionRequestsSchema, initDemandSignalsSchema, initOrderQuotesSchema, initOrderDraftsSchema } from '../../runtime/webaz-schema-helpers.js'
 import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveBundle, durationAllowedForScopes, suggestedDurationForScopes, allowedDurationsForScopes, durationToSeconds, riskLevelForScopes, type GrantDuration } from '../../runtime/agent-grant-scopes.js'
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
 import { verifyGrantToken, type GrantPrincipal } from '../../runtime/agent-grant-verifier.js'
 import { minimalSellerOrderView, MINIMAL_ORDER_COLUMNS, minimalBuyerOrderView, BUYER_MINIMAL_ORDER_COLUMNS } from '../agent-order-minimal-view.js'  // RFC-021 §6a / RFC-025 PR-1 最小化订单读投影
 import { effectiveSaleRegionsRule, regionAllowedByRule } from '../../sale-regions.js'  // RFC-025 PR-2 discover 目的地纯谓词(S1/S3 同源)
 import { computeBuyerQuote } from '../buyer-quote.js'  // RFC-025 PR-3 报价服务(server 权威;route 只做鉴权+转发)
+import { createOrderDraft, cancelOrderDraft, getOrderDraft, listOrderDrafts } from '../order-draft.js'  // RFC-025 PR-4 草稿服务(draft_order 首个消费者)
 import { toUnits } from '../../money.js'  // RFC-014:demand_signals.budget_units 整数化
 import { createOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
 import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 approve→执行(CAS approved + 执行 + executed_at CAS,domain 层)
@@ -89,6 +90,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   initAgentPermissionRequestsSchema(db)
   initDemandSignalsSchema(db)
   initOrderQuotesSchema(db)
+  initOrderDraftsSchema(db)
 
   // Resolve the ACTIVE grant behind a gtk_ bearer (no scope check) — used to bind a permission request to
   // (grant_id, human_id). Returns null on missing/expired/revoked. token_hash lookup mirrors the verifier.
@@ -322,6 +324,32 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   app.post('/api/agent/quote', requireAgentGrantScope('price_quote'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     const r = computeBuyerQuote(db, { generateId, getProtocolParam }, p.human_id, (req.body ?? {}) as Record<string, unknown>)
+    if (!r.ok) return void res.status(r.status).json(r.body)
+    res.json(r.response)
+  })
+
+  // RFC-025 PR-4 — 订单草稿(safe scope draft_order —— RFC-020 以来首个消费者)。零经济执行:
+  //   create = 消费一个本人未过期未消费的 quote_token(consumed_at CAS 与 INSERT 同事务,一次性)→ 冻结快照;
+  //   草稿不可变(无 update),cancel 终态幂等安全;get/list 仅本人。提交/批准/建单全在 PR-5a。
+  app.post('/api/agent/order-draft', requireAgentGrantScope('draft_order'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const r = createOrderDraft(db, { generateId }, p.human_id, (req.body ?? {}) as Record<string, unknown>)
+    if (!r.ok) return void res.status(r.status).json(r.body)
+    res.json(r.response)
+  })
+  app.post('/api/agent/order-drafts/:id/cancel', requireAgentGrantScope('draft_order'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const r = cancelOrderDraft(db, p.human_id, req.params.id)
+    if (!r.ok) return void res.status(r.status).json(r.body)
+    res.json(r.response)
+  })
+  app.get('/api/agent/order-drafts', requireAgentGrantScope('draft_order'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    res.json(listOrderDrafts(db, p.human_id).response)
+  })
+  app.get('/api/agent/order-drafts/:id', requireAgentGrantScope('draft_order'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const r = getOrderDraft(db, p.human_id, req.params.id)
     if (!r.ok) return void res.status(r.status).json(r.body)
     res.json(r.response)
   })

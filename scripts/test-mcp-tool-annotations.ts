@@ -48,7 +48,7 @@ async function main(): Promise<void> {
   ok('2. TOOL_ANNOTATIONS keys exactly match live tool names', JSON.stringify(names) === JSON.stringify(mapKeys))
 
   // 3. count derived from the actual surface; asserted to the current value (not a permanent hardcode)
-  ok('3. current tool count == 46 (derived from live tools + map; +webaz_quote_order RFC-025 PR-3)', tools.length === mapKeys.length && tools.length === 46)
+  ok('3. current tool count == 47 (derived from live tools + map; +webaz_order_draft RFC-025 PR-4)', tools.length === mapKeys.length && tools.length === 47)
 
   // 4. classification locks — read from the RETURNED descriptors. Rule: destructive = delete/overwrite/
   //    fund-move (additive-only inserts are NOT destructive); readOnly = no state write at all;
