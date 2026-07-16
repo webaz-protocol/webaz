@@ -71,6 +71,11 @@ const rowsSnapshot = () => JSON.stringify(db.prepare('SELECT * FROM orders ORDER
 
 mkGrant('grt_buyer', 'buyer1', 'gtk_buyer', ['buyer_orders_read_minimal'])
 mkGrant('grt_noscope', 'buyer1', 'gtk_ns', ['read_public'])
+// 非-grandfathering 钉死:模拟【本 PR 之前】铸出的 OAuth 'read' grant —— capabilities 是铸造时的 JSON 快照
+//   (旧 read 集,不含 buyer_orders_read_minimal)。校验读的是存储快照而非按 coarse scope 动态推导,
+//   所以旧 grant 绝不自动获得新能力 —— 若未来有人把校验改成动态推导,这条立刻红。
+const OLD_READ_SET = ['read_public', 'profile_read', 'search', 'seller_products_read', 'seller_orders_read_minimal']
+mkGrant('grt_oldread', 'buyer1', 'gtk_old', OLD_READ_SET)
 
 const before = rowsSnapshot()
 try {
@@ -81,8 +86,9 @@ try {
   { const r = await mcp.handleBuyerOrders({})   // list
     const orders = r.orders as Array<Record<string, unknown>> | undefined
     ok('B-2 list → exactly buyer1\'s 2 buyer orders (seller-side ord_sell EXCLUDED)', Array.isArray(orders) && orders.length === 2 && !orders.some(o => o.order_id === 'ord_sell'), JSON.stringify(r).slice(0, 300))
-    const keys = orders?.length ? Object.keys(orders[0]).sort().join(',') : ''
-    ok('B-3 each order = exactly 7 minimal keys (incl. payment_rail; no reshape/extra)', keys === 'amount,deadline,item_ref,next_actor,order_id,payment_rail,status', keys)
+    const EXPECT = 'amount,deadline,item_ref,next_actor,order_id,payment_rail,status'
+    ok('B-3 EVERY order = exactly 7 minimal keys (incl. payment_rail; no reshape/extra)',
+      !!orders?.length && orders.every(o => Object.keys(o).sort().join(',') === EXPECT), orders?.map(o => Object.keys(o).sort().join(',')).join(' | '))
     ok('B-4 list output carries NO PII (address/notes/gift/recipient_code all absent)', !PII.test(JSON.stringify(r)))
     const rail = orders?.find(o => o.order_id === 'ord_b1b')?.payment_rail
     ok('B-5 payment_rail passes through (direct_p2p order labeled)', rail === 'direct_p2p', String(rail)) }
@@ -100,7 +106,12 @@ try {
     ok('B-10 missing scope → PERMISSION_REQUIRED passthrough + hint + retry flag',
       r.error_code === 'PERMISSION_REQUIRED' && r.retry_after_approval === true && /buyer_orders_read_minimal/.test(String(r.hint)), JSON.stringify(r).slice(0, 200)) }
 
-  ok('B-11 read-only: zero change to any order row', rowsSnapshot() === before)
+  useCred('grt_oldread', 'gtk_old', OLD_READ_SET)
+  { const r = await mcp.handleBuyerOrders({})
+    ok('B-11 NON-GRANDFATHERING: a pre-PR OAuth read grant (old capability snapshot) does NOT gain buyer read',
+      r.error_code === 'PERMISSION_REQUIRED', JSON.stringify(r).slice(0, 200)) }
+
+  ok('B-12 read-only: zero change to any order row', rowsSnapshot() === before)
 } finally { server.close(); clearCred() }
 
 if (fail > 0) { console.error(`\n❌ buyer-orders-grant FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
