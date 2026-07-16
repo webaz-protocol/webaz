@@ -235,6 +235,14 @@ async function main() {
   }
   ok('6g. docs describe the 401 self-start flow', readFileSync('docs/REMOTE-MCP.md', 'utf8').includes('WWW-Authenticate') && readFileSync('docs/REMOTE-MCP.md', 'utf8').includes('Connect via OAuth'))
   ok('6h. #connect page mentions the OAuth path (bilingual, in-place)', /OAuth/.test(readFileSync('src/pwa/public/app-connect.js', 'utf8')))
+  {
+    // 6i — consent "Use another account": shows the current account + a switch that PRESERVES the OAuth
+    //   request (saves location.hash to webaz_intended_hash) before logout, so the flow resumes on the
+    //   SAME request as the new account. Must not fetch/POST anything or touch OAuth params.
+    const CONSENT = readFileSync('src/pwa/public/app-oauth-consent.js', 'utf8')
+    ok('6i. consent shows current account + a "Use another account" switch', CONSENT.includes('oauthConsentSwitchAccount') && CONSENT.includes('将以此账号连接'))
+    ok('6j. switch PRESERVES the OAuth request (saves location.hash → webaz_intended_hash) then logs out', /webaz_intended_hash'?,\s*location\.hash/.test(CONSENT) && CONSENT.includes('window.logout'))
+  }
 
   http.close()
   if (fail > 0) { console.error(`\n❌ oauth /mcp challenge FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
