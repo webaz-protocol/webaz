@@ -2793,7 +2793,7 @@
     },
     "/api/agent/discover": {
       "post": {
-        "summary": "allowlist 字段(category/keywords≤5/max_price/ship_to_region/quantity),自由聊天文本进不来。",
+        "summary": "allowlist 字段(category/keywords≤5/max_price/ship_to_region/quantity);文本入口做形状校验(超长/邮箱/URL/电话数字连拒收;词形文本无法机械排除 —— 披露如实告知通过即原样记录)。",
         "tags": [],
         "security": [
           {

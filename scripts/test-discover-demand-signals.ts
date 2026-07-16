@@ -128,7 +128,7 @@ try {
   ] as const) {
     const before = signals().length
     const r = await mcp.handleDiscover(payload as Record<string, unknown>)
-    ok(`D-15 PII smuggle rejected + unrecorded (${name})`, r.error_code === 'INVALID_INTENT_TEXT' && signals().length === before, JSON.stringify(r).slice(0, 150))
+    ok(`D-15 PII smuggle rejected as HTTP 400 + unrecorded (${name})`, r.error_code === 'INVALID_INTENT_TEXT' && r.http_status === 400 && signals().length === before, JSON.stringify(r).slice(0, 150))
   }
 
   // ── 失败诚实(Codex PR-2 Low):落库不可用 ⇒ 503 且不带 candidates(披露为记录的绝不无记录运行) ──

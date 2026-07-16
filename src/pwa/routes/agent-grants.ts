@@ -235,7 +235,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   //   no_candidates + 引导(RFQ / PWA #discover)。【每次】查询把 allowlist 化的结构化 intent 落一行
   //   demand_signals(result_count 含 0;0 = 未被满足的需求 = 市场机会情报)—— 该采集在工具 description
   //   向用户披露,能力名 buyer_discover 显式命名该效果(不是 search)。无执行、无资金;intent 只收
-  //   allowlist 字段(category/keywords≤5/max_price/ship_to_region/quantity),自由聊天文本进不来。
+  //   allowlist 字段(category/keywords≤5/max_price/ship_to_region/quantity);文本入口做形状校验(超长/邮箱/URL/电话数字连拒收;词形文本无法机械排除 —— 披露如实告知通过即原样记录)。
   app.post('/api/agent/discover', requireAgentGrantScope('buyer_discover'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     const b = (req.body ?? {}) as Record<string, unknown>
@@ -275,7 +275,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       return void res.status(400).json({ error: 'quantity must be an integer 1..999', error_code: 'INVALID_QUANTITY' })
     }
     if (!category && keywords.length === 0) {
-      return void res.status(400).json({ error: 'give at least a category or one keyword', error_code: 'EMPTY_INTENT', next_steps: 'Provide { category } and/or { keywords: [...] } — free chat text is not accepted.' })
+      return void res.status(400).json({ error: 'give at least a category or one keyword', error_code: 'EMPTY_INTENT', next_steps: 'Provide { category } and/or { keywords: [...] } - short product terms only (shape-validated; passing inputs are recorded as-is).' })
     }
     // ── 诚实检索:active + 库存够 + 类目/关键词(LIKE, ESCAPE)/预算过滤;绝不模糊兜底冒充命中 ──
     const where: string[] = ["status = 'active'", 'stock >= ?']
@@ -306,7 +306,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     res.json({
       count: candidates.length, candidates,
       ...(candidates.length === 0 ? { no_candidates: true, note: 'No matching listings right now — honestly zero, nothing similar is being passed off as a match. Your structured request was recorded as a demand signal (disclosed) so supply can catch up. Consider posting an RFQ at webaz.xyz, or browse PWA #discover.' } : {}),
-      disclosure: 'This validated structured query was recorded as-is as a demand signal linked to your account, to inform marketplace supply. Do not put personal data in category/keywords.',
+      disclosure: 'This query was recorded as-is as a demand signal linked to your account, to inform marketplace supply. Validation enforced: max-40-char product terms; emails, URLs, phone-like digit runs, and non-product punctuation are rejected (400) and never recorded. Inputs that pass are recorded verbatim - do not put personal data in category/keywords.',
     })
   })
 
