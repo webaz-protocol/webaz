@@ -240,27 +240,30 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     const b = (req.body ?? {}) as Record<string, unknown>
     // ── allowlist 化 intent(parse-don't-validate:非法字段直接拒,不猜) ──
-    // token-shape 校验(Codex PR-2 High):category/keywords 是唯一的文本入口,必须让"无聊天文本/无
-    //   PII 入库"的披露【为真】——只放行商品词形态:任意文字/数字 + 空格 + -+._&,并显式拒绝
-    //   邮箱(@)/URL(://或www.)/电话形态(≥7 连续数字)。绝对防走私不存在(词也能编码信息),
-    //   但结构化 PII(邮箱/电话/门牌/URL)在此形态下进不来,claim 与实现一致。
+    // token-shape 校验(Codex PR-2 High,round-2 收紧):category/keywords 是唯一的文本入口。
+    //   校验在【原始串】上做(先验后裁,parse-don't-validate:超长=400,绝不静默截断改意图);
+    //   只放行商品词形态:文字/数字 + 空格 + -+._&%,显式拒绝邮箱(@)/URL(://|www.)/电话形态
+    //   (剥掉全部放行分隔符后 ≥7 连续数字)。诚实边界:词形文本(人名/词写的联系方式)无法机械
+    //   排除 —— 所以披露不承诺"绝无自由文本",承诺的是【已执行的形状校验 + 通过即原样记录,勿放个人数据】。
     const TOKEN_RE = /^[\p{L}\p{N} \-+._&%]{1,40}$/u   // % 合法("100% cotton"),LIKE 侧已转义为字面量
     const smells = (s: string): string | null => {
+      if (s.length > 40) return 'too long (max 40 chars)'
       if (s.includes('@')) return 'email-like'
       if (/:\/\/|www\./i.test(s)) return 'url-like'
-      if (/\d{7,}/.test(s.replace(/[ \-.]/g, ''))) return 'phone-like'
+      if (/\d{7,}/.test(s.replace(/[ \-.+_&%]/g, ''))) return 'phone-like digit run'
       if (!TOKEN_RE.test(s)) return 'non-token characters'
       return null
     }
     const rejectText = (field: string, why: string) => void res.status(400).json({
-      error: `${field} must be a short product term (letters/digits, no emails/phones/URLs) — rejected: ${why}`,
+      error: `${field} must be a short product term (letters/digits, ≤40 chars, no emails/phone-like digit runs/URLs) — rejected: ${why}`,
       error_code: 'INVALID_INTENT_TEXT',
-      next_steps: 'Send structured shopping terms only; free chat text and personal data are not accepted and never recorded.',
+      next_steps: 'Send short structured shopping terms only. Inputs that pass validation are recorded as-is — do not put personal data here.',
     })
-    const category = typeof b.category === 'string' && b.category.trim() ? b.category.trim().slice(0, 40) : null
+    const category = typeof b.category === 'string' && b.category.trim() ? b.category.trim() : null
     if (category) { const w = smells(category); if (w) return rejectText('category', w) }
     const rawKw = Array.isArray(b.keywords) ? b.keywords : (typeof b.keywords === 'string' && b.keywords.trim() ? [b.keywords] : [])
-    const keywords = rawKw.filter((k): k is string => typeof k === 'string' && !!k.trim()).map(k => k.trim().slice(0, 40)).slice(0, 5)
+    if (rawKw.length > 5) return rejectText('keywords', 'more than 5 keywords')
+    const keywords = rawKw.filter((k): k is string => typeof k === 'string' && !!k.trim()).map(k => k.trim())
     for (const k of keywords) { const w = smells(k); if (w) return rejectText('keywords', w) }
     const maxPrice = b.max_price === undefined || b.max_price === null ? null : Number(b.max_price)
     if (maxPrice !== null && (!Number.isFinite(maxPrice) || maxPrice <= 0 || maxPrice > 1e9)) {
@@ -303,7 +306,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     res.json({
       count: candidates.length, candidates,
       ...(candidates.length === 0 ? { no_candidates: true, note: 'No matching listings right now — honestly zero, nothing similar is being passed off as a match. Your structured request was recorded as a demand signal (disclosed) so supply can catch up. Consider posting an RFQ at webaz.xyz, or browse PWA #discover.' } : {}),
-      disclosure: 'This structured query (no chat text) was recorded as a demand signal linked to your account, to inform marketplace supply.',
+      disclosure: 'This validated structured query was recorded as-is as a demand signal linked to your account, to inform marketplace supply. Do not put personal data in category/keywords.',
     })
   })
 

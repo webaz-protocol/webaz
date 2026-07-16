@@ -120,6 +120,11 @@ try {
     ['email in category', { category: 'contact me a@b.co' }],
     ['phone-run in category', { category: 'call 91234567 now' }],
     ['free chat punctuation', { keywords: ['hi, please find me a stand!'] }],
+    // round-2 绕过向量(Codex):超长静默截断 / 分隔符打断电话数字连
+    ['overlength (41ch, marker after cut)', { keywords: ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@'] }],
+    ['phone via underscore separators', { keywords: ['912_3456_7'] }],
+    ['phone via plus separators', { category: '912+3456+7' }],
+    ['more than 5 keywords', { keywords: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'] }],
   ] as const) {
     const before = signals().length
     const r = await mcp.handleDiscover(payload as Record<string, unknown>)
@@ -131,8 +136,9 @@ try {
     const r = await mcp.handleDiscover({ category: 'phone_stand' })
     ok('D-16 signal-write failure → 503 DEMAND_SIGNAL_WRITE_FAILED, NO candidates escape', r.error_code === 'DEMAND_SIGNAL_WRITE_FAILED' && r.candidates === undefined, JSON.stringify(r).slice(0, 200))
     db.exec('ALTER TABLE demand_signals_hidden RENAME TO demand_signals')
+    const before17 = signals().length
     const r2 = await mcp.handleDiscover({ category: 'phone_stand', max_price: 50 })
-    ok('D-17 recovers after ledger returns (records again)', Array.isArray(r2.candidates) && (r2.candidates as unknown[]).length === 2) }
+    ok('D-17 recovers after ledger returns (candidates AND exactly one new signal row)', Array.isArray(r2.candidates) && (r2.candidates as unknown[]).length === 2 && signals().length === before17 + 1) }
 
   // ── admin 隔离(源守卫):raw signals 端点第一行必须是 adminAuth 门 ──
   const adminSrc = readFileSync('src/pwa/routes/admin-analytics.ts', 'utf8')
