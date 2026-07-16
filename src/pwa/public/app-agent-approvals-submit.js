@@ -1,6 +1,8 @@
 // RFC-025 PR-5a — order-submit 审批卡正文(app-agent-approvals.js 在 LOC ceiling 上,故拆出,同 -order.js 先例)。
-//   完整披露(Codex BLOCKER-3):卡片展示 params_hash 绑定的【每一个】经济/身份字段 —— 单价/小计/运费/
-//   捐赠 bps/收款账户/匿名收件/卖家(脱敏)/草稿有效期。人批的 = 执行的:服务端以 hash 绑定的 draft 快照
+//   完整披露(Codex BLOCKER-3):卡片展示全部【人类可核对】的 hash 绑定条款 —— 单价/小计/运费/
+//   捐赠 bps/收款账户/匿名收件/卖家(handle=绑定 seller_id 的公开身份 + 脱敏 id)/draft_id/草稿有效期。
+//   技术绑定(address_summary_hash:sha256 无法人验,地址以「默认地址·region」摘要呈现并由服务端强制)不展示。
+//   人批的 = 执行的:服务端以 hash 绑定的 draft 快照
 //   执行,任何 drift 硬失败,绝不静默换条件。商品标题是【当前】listing 标题(仅助识别;绑定的是 product_id,
 //   卡上如实标注)。零 PII:目的地只有 region 标签。Passkey 四元组沿用通用 data-*:
 //   {request_id, order_id(=draft_id), action='order_submit', params_hash}。
@@ -26,9 +28,9 @@
       row(t('支付轨道'), railLine) +
       (s.direct_receive_account_id ? row(t('卖家收款账户'), '<code>' + escHtml(String(s.direct_receive_account_id)) + '</code>') : '') +
       (s.anonymous_recipient ? row(t('匿名收件'), t('已开启(卖家/物流不见你的身份)')) : '') +
-      row(t('卖家'), '<code>' + escHtml(String(s.seller_id_hint || '')) + '</code>') +
+      row(t('卖家'), escHtml(String(s.seller_handle || t('(无 handle)'))) + ' <code style="font-size:10px">' + escHtml(String(s.seller_id_hint || '')) + '</code>') +
       row(t('收货'), t('默认地址') + (s.dest_region ? ' · ' + escHtml(String(s.dest_region)) : '')) +
-      row(t('草稿有效期至'), escHtml(String(s.draft_expires_at || '')).slice(0, 16)) +
+      row(t('草稿'), '<code style="font-size:10px">' + escHtml(String(s.draft_id || '')) + '</code> · ' + t('有效期至') + ' ' + escHtml(String(s.draft_expires_at || '')).slice(0, 16)) +
       '<div style="font-size:11px;color:#9ca3af;margin-top:4px">' + t('批准后:服务端按当前市场状态重验此快照(价格/库存/资格/卖家任何变化即拒绝),通过才创建真实订单;条款绝不静默变更') + '</div>' +
       (s.draft_status !== 'draft' ? '<div style="font-size:12px;color:#dc2626;margin-top:4px">' + t('注意:草稿状态已变化,批准将被服务端拒绝') + '</div>' : '')
   }

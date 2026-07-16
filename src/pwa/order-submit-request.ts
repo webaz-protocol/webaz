@@ -44,12 +44,14 @@ export function submitRowSummary(db: Database.Database, draftId: string): Record
   const d = db.prepare('SELECT product_id, variant_id, seller_id, quantity, unit_price_units, item_units, shipping_units, donation_bps, donation_units, total_units, payable_units, currency, payment_rail, direct_receive_account_id, anonymous_recipient, dest_region, status, expires_at FROM order_drafts WHERE id = ?').get(draftId) as Record<string, unknown> | undefined
   if (!d) return null
   const prod = db.prepare('SELECT title FROM products WHERE id = ?').get(String(d.product_id)) as { title: string } | undefined
+  const seller = db.prepare('SELECT handle FROM users WHERE id = ?').get(String(d.seller_id)) as { handle: string | null } | undefined
   const maskId = (id: string): string => !id ? '' : id.length > 8 ? `${id.slice(0, 4)}…${id.slice(-4)}` : `${id.slice(0, 2)}…`
   return {
     draft_id: draftId, product_id: String(d.product_id),
     product_title: prod?.title ?? null,
     product_title_note: 'live listing title for recognition only — the approval binds product_id, not the title',
     variant_id: d.variant_id ?? null, seller_id_hint: maskId(String(d.seller_id)),
+    seller_handle: seller?.handle ? `@${seller.handle}` : null,   // hash 绑定 seller_id 的公开可核对投影
     quantity: Number(d.quantity), unit_price_units: Number(d.unit_price_units),
     item_units: Number(d.item_units), shipping_units: Number(d.shipping_units),
     donation_bps: Number(d.donation_bps), donation_units: Number(d.donation_units),
