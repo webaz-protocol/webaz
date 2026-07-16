@@ -1767,6 +1767,31 @@ export function initAgentPairingSchema(db: Database.Database): void {
  * is backed by an accountable human" is checkable. Append-only log; pure idempotent DDL;
  * composition root auto-runs it for MCP. NO money/order/status columns.
  */
+/**
+ * demand_signals — RFC-025 PR-2 需求信号(「有结果输出结果,没结果记录,形成商机」)。
+ * append-only:webaz_discover 的每次结构化查询落一行(result_count 含 0 —— 0 = 未被满足的需求 =
+ * 市场机会情报)。只存 allowlist 化的结构化 intent(intent_json,绝无自由聊天文本);内部/admin 只读,
+ * 公开聚合是未来独立 gated PR(聚合阈值≥N,永不暴露单买家)。retention:D-3(180 天原始,后聚合)。
+ * budget_units = RFC-014 整数 base-units(新表零浮点债)。
+ */
+export function initDemandSignalsSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS demand_signals (
+      id            TEXT PRIMARY KEY,                 -- dms_xxx
+      human_id      TEXT,                             -- grant subject(可空,便于未来匿名聚合导出)
+      source        TEXT NOT NULL,                    -- 'mcp_discover'
+      intent_json   TEXT NOT NULL,                    -- allowlist 化结构化 intent(无自由聊天文本)
+      category      TEXT,
+      region        TEXT,                             -- 2 字母国家码(可空)
+      budget_units  INTEGER,                          -- RFC-014 integer base-units(可空)
+      result_count  INTEGER NOT NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_dms_created ON demand_signals(created_at)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_dms_cat ON demand_signals(category, created_at)`)
+}
+
 export function initAgentGrantAuthLogSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS agent_grant_auth_log (

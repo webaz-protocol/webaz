@@ -47,6 +47,10 @@ export const SAFE_SCOPES = [
   //   只读买家【自己的】订单七键投影(order_id/status/next_actor/deadline/amount/item_ref/payment_rail),
   //   无地址/收件人/notes/PII,无任何执行。买家写动作(place_order 等)仍在 RISK 档硬拒不动。
   'buyer_orders_read_minimal',
+  // RFC-025 PR-2 — 买家发现(webaz_discover)。读活跃商品 + 【被明确披露的、审计过的内部 append-only 写】:
+  //   每次结构化查询落一行 demand_signals(工具 description 里向用户披露)。不是 'search' —— search 授权
+  //   不涵盖持久化采集,该效果必须由能力名显式命名。无执行、无资金、无 PII 出口(intent allowlist 化)。
+  'buyer_discover',
 ] as const
 
 /**

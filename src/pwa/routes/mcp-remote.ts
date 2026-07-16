@@ -40,6 +40,7 @@ const PROTECTED_RESOURCE_METADATA_URL = 'https://webaz.xyz/.well-known/oauth-pro
 const AUTH_ONLY_TOOLS = new Set([
   'webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request', 'webaz_connection_status',
   'webaz_buyer_orders',   // RFC-025 PR-1 (grant path: GET /api/agent/buyer/orders(/:id))
+  'webaz_discover',       // RFC-025 PR-2 (grant path: POST /api/agent/discover)
 ])
 // webaz_list_product 是多 action 工具:只有 grant 路径真支持的 action 才配挑战(承诺即真实)。
 //   mine → seller_products_read;create/draft(缺省即 create)→ seller_product_draft —— 均可由 OAuth scope 铸出。
@@ -70,6 +71,7 @@ function scopeForAuthOnlyCall(body: unknown): string {
   const name = b?.params?.name
   if (name === 'webaz_get_agent_order') return 'seller_orders_read_minimal'         // GET /api/agent/orders(/:id)
   if (name === 'webaz_buyer_orders') return 'buyer_orders_read_minimal'              // GET /api/agent/buyer/orders(/:id)
+  if (name === 'webaz_discover') return 'buyer_discover'                              // POST /api/agent/discover
   if (name === 'webaz_connection_status') return 'read_public'                       // GET /api/agent-grants/connection
   if (name === 'webaz_order_action_request') return 'order_action_request'           // POST /api/agent/orders/:id/action-request
   if (name === 'webaz_list_product') {

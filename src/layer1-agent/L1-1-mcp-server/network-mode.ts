@@ -46,6 +46,8 @@ export const NETWORK_TOOLS = new Set<string>([
   'webaz_connection_status',
   // RFC-025 PR-1 buyer-side minimal order read (grant-wired, buyer_orders_read_minimal). Same rule.
   'webaz_buyer_orders',
+  // RFC-025 PR-2 buyer discovery (grant-wired, buyer_discover). Same rule.
+  'webaz_discover',
   // Batch 1(只读 + 低危自身写):走 webaz.xyz Bearer api_key。
   'webaz_notifications',
   'webaz_nearby',

@@ -31,6 +31,18 @@ export function registerAdminAnalyticsRoutes(app: Application, deps: AdminAnalyt
   // db 已全量走 RFC-016 异步 seam(dbOne/dbAll),不再直接用 deps.db
   const { adminAuth, requireAdmin, requireRootAdmin, getProtocolParam, INTERNAL_AUDITOR_ID } = deps
 
+  // RFC-025 PR-2 — demand_signals 内部只读(admin key)。原始信号(含 human_id)只进这里;
+  //   公开给商家 = 未来独立 gated PR(聚合阈值≥N + 脱敏,永不暴露单买家)。
+  app.get('/api/admin/demand-signals', async (req, res) => {
+    if (!adminAuth(req, res)) return
+    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500)
+    const rows = await dbAll(`SELECT id, human_id, source, intent_json, category, region, budget_units, result_count, created_at
+      FROM demand_signals ORDER BY created_at DESC LIMIT ?`, [limit])
+    const agg = await dbAll(`SELECT category, region, COUNT(*) AS signals, SUM(CASE WHEN result_count = 0 THEN 1 ELSE 0 END) AS unmet
+      FROM demand_signals GROUP BY category, region ORDER BY unmet DESC, signals DESC LIMIT 50`)
+    res.json({ count: rows.length, signals: rows, aggregate: agg, note: 'internal only — public aggregation is a separate gated PR (threshold + anonymization)' })
+  })
+
   app.get('/api/admin/usage', async (req, res) => {
     if (!adminAuth(req, res)) return
 
