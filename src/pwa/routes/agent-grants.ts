@@ -33,7 +33,7 @@ import { minimalSellerOrderView, MINIMAL_ORDER_COLUMNS, minimalBuyerOrderView, B
 import { effectiveSaleRegionsRule, regionAllowedByRule } from '../../sale-regions.js'  // RFC-025 PR-2 discover 目的地纯谓词(S1/S3 同源)
 import { computeBuyerQuote } from '../buyer-quote.js'  // RFC-025 PR-3 报价服务(server 权威;route 只做鉴权+转发)
 import { createOrderDraft, cancelOrderDraft, getOrderDraft, listOrderDrafts } from '../order-draft.js'  // RFC-025 PR-4 草稿服务(draft_order 首个消费者)
-import { createOrderSubmitRequest } from '../order-submit-request.js'  // RFC-025 PR-5a 提交域(SUBMIT-only,绝不执行)
+import { createOrderSubmitRequest, submitRowSummary } from '../order-submit-request.js'  // RFC-025 PR-5a 提交域(SUBMIT-only,绝不执行)
 import { approveAndExecuteOrderSubmit, type CreateOrderLoopback } from '../order-submit-exec.js'  // RFC-025 PR-5a 批准执行域(钱路;仅人类 approve 路径可达)
 import { toUnits } from '../../money.js'  // RFC-014:demand_signals.budget_units 整数化
 import { createOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
@@ -478,20 +478,8 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     res.json({ requests: rows.map(r => {
       const base: Record<string, unknown> = { ...r, requested_scopes: scopeNames(String(r.requested_scopes)), human_summary: bundleSummary(r.permission_bundle as string | null) }
       if (r.kind === 'order_action') { try { base.action_params = r.action_params ? JSON.parse(String(r.action_params)) : {} } catch { base.action_params = {} } }
-      // RFC-025 PR-5a:order_submit 行附经济摘要 —— 人批的就是这些数字(与 params_hash 同源 draft 行;零 PII:
-      //   地址只有 region 标签)。draft 已不存在/不可用 → 摘要缺失,前端提示先刷新。
-      if (r.kind === 'order_submit') {
-        const d = db.prepare('SELECT product_id, variant_id, quantity, total_units, payable_units, donation_units, currency, payment_rail, dest_region, status, expires_at FROM order_drafts WHERE id = ?').get(String(r.order_id)) as Record<string, unknown> | undefined
-        if (d) {
-          const prod = db.prepare('SELECT title FROM products WHERE id = ?').get(String(d.product_id)) as { title: string } | undefined
-          base.submit_summary = {
-            draft_id: String(r.order_id), product_title: prod?.title ?? null, variant_id: d.variant_id ?? null,
-            quantity: Number(d.quantity), total_units: Number(d.total_units), payable_units: Number(d.payable_units),
-            donation_units: Number(d.donation_units), currency: String(d.currency), payment_rail: String(d.payment_rail),
-            dest_region: d.dest_region ?? null, draft_status: String(d.status), draft_expires_at: String(d.expires_at),
-          }
-        }
-      }
+      // RFC-025 PR-5a:order_submit 行附经济摘要(域层 submitRowSummary,route 零新增 seam 计数;零 PII)。
+      if (r.kind === 'order_submit') { const sum = submitRowSummary(db, String(r.order_id)); if (sum) base.submit_summary = sum }
       return base
     }) })
   })
