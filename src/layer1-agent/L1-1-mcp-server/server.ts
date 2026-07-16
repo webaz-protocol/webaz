@@ -4459,7 +4459,7 @@ async function handleNearby(args: Record<string, unknown>) {
 
 // RFC-025 PR-2.5 — agent-facing default-address projection(G-PII-1 修复)。allowlist 构造:
 //   摘要只由 region + 存在性组成,【绝不】截取 text 子串(自由文本里任何位置都可能是姓名/门牌/电话)。
-//   完整地址只在 PWA(人的界面)可见;下单省略 shipping_address 时服务端自行以默认地址兜底,agent 无需全文。
+//   完整地址只在 PWA(人的界面)可见;下单省略 shipping_address 时由 place_order 的 MCP handler 在调用内解析默认地址(全文不回流 agent)。
 export function maskedDefaultAddressView(text: string | null | undefined, region: string | null | undefined): Record<string, unknown> {
   const has = !!(text && String(text).trim())
   return {

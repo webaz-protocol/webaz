@@ -5,7 +5,7 @@
  * 修的类别:MCP agent 面【永不】返回完整地址文本(自由文本里姓名/门牌/电话混在一起,任何子串截取都不安全)。
  * 两个泄漏面同修:webaz_default_address action=read(network+sandbox 双路径共用 maskedDefaultAddressView)
  * 与 webaz_profile action=view(network 透传 /api/me → 剥地址字段;sandbox 本就 allowlist 构造)。
- * set 动作与服务端下单兜底(server.ts 默认地址解析)不变。
+ * set 动作不变;下单默认地址解析发生在 place_order 的 MCP handler 内(P-1..P-4 直接覆盖)。
  *
  * 手法:network 路径 = 假 /api/me 返回全文,证明 handler 端脱敏(WEBAZ_API_URL 必须在 import mcp 前设好 ——
  * 模块加载时读常量);sandbox 分支 = 共用纯函数直测 + 源守卫断言该分支确实调用它(两路径零 drift)。
