@@ -1917,6 +1917,22 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
       required: ['action'],
     },
   },
+  {
+    name: 'webaz_submit_order_request',
+    description: `SUBMIT a buyer order draft into the human's Passkey approval queue (RFC-025 PR-5a, safe scope order_submit_request; OAuth grant, no api_key). SUBMIT-ONLY — this tool executes NOTHING.
+
+- Takes a draft_id (from webaz_order_draft). Returns request_id + approval_url — tell the human to open it and approve with their Passkey.
+- What approval does (server-side, never reachable by agents): re-validates the draft against CURRENT price/stock/region/rail state — ANY drift hard-fails back to a fresh quote (terms are never silently changed) — then creates the REAL order through the same production order path. For escrow that debits the buyer's wallet into escrow at creation; for direct_p2p no protocol funds move (you pay the seller directly).
+- The Passkey is bound to the draft's exact economic snapshot (params_hash): what the human approves is byte-for-byte what executes.
+- One pending submit per draft (DUPLICATE_SUBMIT_REQUEST otherwise); expired/cancelled drafts are rejected; decline is always available to the human in the PWA.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        draft_id: { type: 'string', description: 'The odr_ draft id to submit for approval' },
+      },
+      required: ['draft_id'],
+    },
+  },
 ]
 
 // Standard MCP annotations merged once at module load (fail-fast if any tool lacks a mapping). The
@@ -2775,6 +2791,18 @@ export async function handleOrderDraft(args: Record<string, unknown>): Promise<R
     return { error: `unknown action: ${action}`, error_code: 'BAD_ACTION' }
   }
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks draft_order. Re-connect via OAuth so the grant carries the order:draft scope, then retry.' }
+  return r
+}
+
+export async function handleSubmitOrderRequest(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // RFC-025 PR-5a — wraps POST /api/agent/order-drafts/:id/submit (safe scope order_submit_request).
+  //   SUBMIT-ONLY pure wrapper; execution happens exclusively in the human approve path server-side.
+  if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential(args)
+  if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
+  if (typeof args.draft_id !== 'string' || !args.draft_id) return { error: 'draft_id is required', error_code: 'DRAFT_NOT_FOUND' }
+  const r = await apiCall(`/api/agent/order-drafts/${encodeURIComponent(args.draft_id)}/submit`, { method: 'POST', apiKey: cred.token })
+  if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks order_submit_request. Re-connect via OAuth so the grant carries the order:draft scope, then retry.' }
   return r
 }
 
@@ -5629,6 +5657,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         case 'webaz_discover':            result = await handleDiscover(args); break
         case 'webaz_quote_order':         result = await handleQuoteOrder(args); break
         case 'webaz_order_draft':         result = await handleOrderDraft(args); break
+        case 'webaz_submit_order_request': result = await handleSubmitOrderRequest(args); break
         case 'webaz_order_action_request': result = await handleOrderActionRequest(args); break
         case 'webaz_feedback':      result = await handleFeedback(args); break
         case 'webaz_contribute':    result = await handleContribute(args); break

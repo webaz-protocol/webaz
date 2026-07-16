@@ -40,6 +40,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-agent-pair.js': 127,
   'src/pwa/public/app-agent-approvals.js':            93,
   'src/pwa/public/app-agent-approvals-order.js':      18,
+  'src/pwa/public/app-agent-approvals-submit.js':     28,   // RFC-025 PR-5a 下单审批卡(新文件基线)
   'src/pwa/public/app-grant-duration.js':             20,
   'src/pwa/public/app-agent-appeal.js':               90,
   'src/pwa/public/app-direct-pay.js': 226,

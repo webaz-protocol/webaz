@@ -55,6 +55,10 @@ export const SAFE_SCOPES = [
   //   不建单/不扣款/不锁资金/不动库存/无 Passkey/零不可逆后果 —— 唯一写入 = order_quotes 快照行。
   //   服务端用默认地址算配送,出口零 PII(region 标签/摘要/sha256)。RISK 档 place_order 不动、仍硬拒。
   'price_quote',
+  // RFC-025 PR-5a — 提交订单草稿到人工审批队列(webaz_submit_order_request)。SUBMIT-only(与
+  //   order_action_request 同款语义):只写 pending 请求,【绝不执行】—— 建单+扣款只发生在人 Passkey
+  //   逐笔批准后由服务端执行,执行器对 agent-bearer 不可达。RISK 档 place_order 不动、仍硬拒。
+  'order_submit_request',
 ] as const
 
 /**

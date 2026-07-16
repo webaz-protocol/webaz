@@ -41,7 +41,7 @@ import type { HumanPresence } from '../human-presence.js'
 //   list:draft  → 商品草稿(status=warehouse,发布仍需人) → list_product(create/draft)
 export const OAUTH_SCOPE_CAPABILITIES: Record<string, readonly string[]> = {
   'read': ['read_public', 'profile_read', 'search', 'seller_products_read', 'seller_orders_read_minimal', 'buyer_orders_read_minimal', 'buyer_discover'],
-  'order:draft': ['draft_order', 'order_action_request', 'price_quote'],
+  'order:draft': ['draft_order', 'order_action_request', 'price_quote', 'order_submit_request'],
   'list:draft': ['seller_product_draft'],
 }
 

@@ -112,6 +112,7 @@ import {
 } from './email-delivery.js'
 // @simplewebauthn/server 已迁出到 src/pwa/routes/webauthn.ts (#1013 Phase 1)
 import { registerWebauthnRoutes } from './routes/webauthn.js'
+import { makeCreateOrderLoopback } from './order-loopback.js'
 import { createHumanPresence } from './human-presence.js'
 // welcome 域（#991 /welcome 落地页 + #1005 反 bot）已迁出 (#1013 Phase 2)
 import { registerWelcomeRoutes } from './routes/welcome.js'
@@ -7365,6 +7366,7 @@ registerWebauthnRoutes(app, {
   invalidateAgentRiskCacheForUser, createProductDraftHandler: makeCreateProductHandler({ db, auth, generateId, checkSellerCanList, getStakeDiscount, VALID_PRODUCT_TYPES, parsePlatformUrl, makeCommitmentHash, makeDescriptionHash, makePriceHash }),  // RFC-020 PR-4: grant-gated warehouse draft reuses the human create logic
   requireHumanPresence,  // #1044 — DELETE passkey 自身需 token
   getProtocolParam,      // RFC-025 PR-3 — quote 服务读协议参数(direct-pay 管控等)
+  createOrderLoopback: makeCreateOrderLoopback(() => PORT),   // RFC-025 PR-5a 回环建单(真实 /api/orders,单一执行真相源;见 order-loopback.ts)
 })
 
 // consumeGateToken / requireHumanPresence 已抽出到 ./human-presence.ts(PR-F0,behavior-zero,
