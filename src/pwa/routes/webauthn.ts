@@ -52,6 +52,7 @@ export interface WebauthnDeps {
   //   grant-gated warehouse-draft route. Optional so other registrations of webauthn routes don't break.
   createProductDraftHandler?: (req: Request, res: Response, user: Record<string, unknown>, opts?: { forceStatus?: 'warehouse'; onCreated?: (productId: string) => Promise<void> | void; skipExternalLinkEffects?: boolean }) => Promise<void>
   getProtocolParam?: <T>(key: string, fallback: T) => T   // RFC-025 PR-3: 透传给 agent-grants 的 quote 服务
+  createOrderLoopback?: (apiKey: string, body: Record<string, unknown>) => Promise<{ status: number; json: Record<string, unknown> | null }>   // RFC-025 PR-5a: 透传给批准执行域
 }
 
 export function registerWebauthnRoutes(app: Application, deps: WebauthnDeps): void {
@@ -224,5 +225,5 @@ export function registerWebauthnRoutes(app: Application, deps: WebauthnDeps): vo
   // RFC-020 PR-B — agent delegation grants (issue/read/revoke). Co-registered with the
   // Passkey security routes so the money-dense server.ts stays untouched. Safe scopes
   // only; risk scopes default-hard-reject. Reuses db/auth/generateId from WebauthnDeps.
-  registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk, requireHumanPresence, createProductDraftHandler: deps.createProductDraftHandler, getProtocolParam: deps.getProtocolParam })
+  registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk, requireHumanPresence, createProductDraftHandler: deps.createProductDraftHandler, getProtocolParam: deps.getProtocolParam, createOrderLoopback: deps.createOrderLoopback })
 }

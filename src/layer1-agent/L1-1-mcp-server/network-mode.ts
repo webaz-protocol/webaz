@@ -52,6 +52,8 @@ export const NETWORK_TOOLS = new Set<string>([
   'webaz_quote_order',
   // RFC-025 PR-4 order draft (grant-wired, draft_order). Same rule.
   'webaz_order_draft',
+  // RFC-025 PR-5a order submit request (grant-wired, order_submit_request). Same rule.
+  'webaz_submit_order_request',
   // Batch 1(只读 + 低危自身写):走 webaz.xyz Bearer api_key。
   'webaz_notifications',
   'webaz_nearby',

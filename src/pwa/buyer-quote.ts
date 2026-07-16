@@ -166,7 +166,7 @@ function buildResponse(db: Database.Database, row: Record<string, unknown>, quot
   }
 }
 
-export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanId: string, input: QuoteInput):
+export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanId: string, input: QuoteInput, mode: 'issue' | 'preview' = 'issue'):
   { ok: true; response: Record<string, unknown> } | QuoteError {
   // ── 1. 商品 ──
   const productId = typeof input.product_id === 'string' && input.product_id ? input.product_id : null
@@ -276,6 +276,18 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
     }
   } else if (input.direct_receive_account_id != null) {
     return qerr(400, 'DIRECT_RECEIVE_ACCOUNT_INVALID', 'direct_receive_account_id only applies to payment_rail=direct_p2p', { retryable: true })
+  }
+
+  // ── preview 模式(RFC-025 PR-5a):只计算不落库 —— 批准执行前的 drift 重验用。零副作用,
+  //     返回与快照同名的经济字段,调用方逐列与 draft 对比,任何不一致 = 硬失败重报价。 ──
+  if (mode === 'preview') {
+    return { ok: true, response: {
+      preview: true, product_id: productId, variant_id: variantId, seller_id: sellerId, quantity: qty,
+      unit_price_units: unitPriceU, item_units: itemU, shipping_units: shipU, donation_bps: donationBps,
+      donation_units: donationU, total_units: totalU, payable_units: payableU, currency: 'WAZ',
+      payment_rail: rail, direct_receive_account_id: receiveAccountId, dest_region: regionTag,
+      address_summary_hash: sha(addrText), anonymous_recipient: anonymous ? 1 : 0,
+    } }
   }
 
   // ── 10. 幂等 + 落库(先查同键) ──

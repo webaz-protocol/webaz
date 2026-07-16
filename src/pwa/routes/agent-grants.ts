@@ -33,6 +33,8 @@ import { minimalSellerOrderView, MINIMAL_ORDER_COLUMNS, minimalBuyerOrderView, B
 import { effectiveSaleRegionsRule, regionAllowedByRule } from '../../sale-regions.js'  // RFC-025 PR-2 discover 目的地纯谓词(S1/S3 同源)
 import { computeBuyerQuote } from '../buyer-quote.js'  // RFC-025 PR-3 报价服务(server 权威;route 只做鉴权+转发)
 import { createOrderDraft, cancelOrderDraft, getOrderDraft, listOrderDrafts } from '../order-draft.js'  // RFC-025 PR-4 草稿服务(draft_order 首个消费者)
+import { createOrderSubmitRequest, submitRowSummary } from '../order-submit-request.js'  // RFC-025 PR-5a 提交域(SUBMIT-only,绝不执行)
+import { approveAndExecuteOrderSubmit, type CreateOrderLoopback } from '../order-submit-exec.js'  // RFC-025 PR-5a 批准执行域(钱路;仅人类 approve 路径可达)
 import { toUnits } from '../../money.js'  // RFC-014:demand_signals.budget_units 整数化
 import { createOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
 import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 approve→执行(CAS approved + 执行 + executed_at CAS,domain 层)
@@ -45,6 +47,8 @@ export interface AgentGrantsDeps {
   rateLimitOk: (key: string, max?: number, windowMs?: number) => boolean  // throttles the anonymous pair/start
   // RFC-025 PR-3: quote 服务读协议参数(direct-pay 管控/保险率等)。可选注入 —— 未注入时 quote 用保守缺省。
   getProtocolParam?: <T>(key: string, fallback: T) => T
+  // RFC-025 PR-5a: 批准执行的回环建单调用(进程内打真实 POST /api/orders;单一执行真相源)。未注入 → 提交可用但批准执行返回 SUBMIT_EXEC_UNAVAILABLE(fail-closed)。
+  createOrderLoopback?: CreateOrderLoopback
   // 人工在场 gate:批准配对必须真人 Passkey/WebAuthn(与 agent_revoke 同机制)。param 关闭时放行。
   requireHumanPresence: (userId: string, purpose: 'agent_pair_approve' | 'agent_permission_approve', token: string | undefined, paramKey: string, validate?: (data: unknown) => boolean) => { ok: boolean; error_code?: string; reason?: string }
   // RFC-020 PR-4: shared product-create handler (single source with the human POST /api/products); used by the
@@ -83,6 +87,7 @@ function consentView(p: Record<string, unknown>): Record<string, unknown> {
 export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDeps): void {
   const { db, auth, generateId, rateLimitOk, requireHumanPresence, createProductDraftHandler } = deps
   const getProtocolParam = deps.getProtocolParam ?? (<T>(_key: string, fallback: T): T => fallback)   // 缺省保守值(direct-pay 管控 fail-closed)
+  const createOrderLoopback = deps.createOrderLoopback
   // PWA runtime self-init (MCP gets the tables via applyWebazRuntimeSchema). Idempotent.
   initAgentDelegationGrantsSchema(db)
   initAgentPairingSchema(db)
@@ -354,6 +359,16 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     res.json(r.response)
   })
 
+  // RFC-025 PR-5a — 提交订单草稿到人工审批队列(safe scope order_submit_request)。SUBMIT-only:
+  //   写 pending(kind='order_submit',params_hash 绑全经济快照),【绝不执行】。执行(建单+入escrow)
+  //   只发生在人 Passkey 批准后(下方 /approve 的 order_submit 分支 → order-submit-exec,agent 不可达)。
+  app.post('/api/agent/order-drafts/:id/submit', requireAgentGrantScope('order_submit_request'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const r = createOrderSubmitRequest(db, { draftId: String(req.params.id), grantId: p.grant_id, humanId: p.human_id, agentLabel: p.agent_label ?? 'agent', generateId })
+    if (!r.ok) return void res.status(r.http).json({ error: r.error, error_code: r.error_code })
+    res.json({ success: true, request_id: r.request_id, draft_id: req.params.id, params_hash: r.params_hash, approval_url: '/#agent-approvals', note: 'Pending human Passkey approval. NOT executed — approval creates the order (and for escrow debits wallet→escrow) server-side; nothing happens without the Passkey.' })
+  })
+
   // RFC-021 PR2 — order-action 请求提交(safe scope order_action_request)。SUBMIT-only:写 pending,【绝不执行】。
   //   D2 拒 decline;归属校验 seller 本人;ship 须带 tracking+evidence_ref(I4 提交侧);地址永不入参/入 audit(I6);
   //   同 (order_id,action) 双 pending 被唯一索引拒。执行(accept/ship)在 PR3 经人 Passkey 批准后由服务端跑。
@@ -463,6 +478,8 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     res.json({ requests: rows.map(r => {
       const base: Record<string, unknown> = { ...r, requested_scopes: scopeNames(String(r.requested_scopes)), human_summary: bundleSummary(r.permission_bundle as string | null) }
       if (r.kind === 'order_action') { try { base.action_params = r.action_params ? JSON.parse(String(r.action_params)) : {} } catch { base.action_params = {} } }
+      // RFC-025 PR-5a:order_submit 行附经济摘要(域层 submitRowSummary,route 零新增 seam 计数;零 PII)。
+      if (r.kind === 'order_submit') { const sum = submitRowSummary(db, String(r.order_id)); if (sum) base.submit_summary = sum }
       return base
     }) })
   })
@@ -507,6 +524,18 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       // 执行成功后通知买卖双方(事务外;通知失败不回滚已完成的状态跃迁)
       if (!ar.already_executed && ar.order_status) { try { const fromS = ar.order_status === 'accepted' ? 'paid' : 'accepted'; notifyTransition(db, r.order_id as string, fromS, ar.order_status) } catch { /* */ } }
       return void res.json({ success: true, kind: 'order_action', status: 'executed', order_id: r.order_id, action: r.order_action, order_status: ar.order_status, already_executed: ar.already_executed || false })
+    }
+
+    // RFC-025 PR-5a:order-submit 分流(钱路)。Passkey 绑 (request_id, draft_id, params_hash) —— 人批的
+    //   经济快照即执行的,一字不差;执行 = 回环打真实 POST /api/orders(escrow 建单事务内扣款入托管)。
+    if ((r.kind ?? 'scope_grant') === 'order_submit') {
+      const hp = requireHumanPresence(user.id as string, 'agent_permission_approve', (req.body || {}).webauthn_token as string | undefined, 'require_human_presence_for_agent_permission_approve',
+        (data) => { const d = data as Record<string, unknown> | null; return d != null && typeof d === 'object' && d.request_id === req.params.id && d.order_id === r.order_id && d.action === 'order_submit' && d.params_hash === r.params_hash })   // 四元组与 PWA aaApprove 一致,order_id 承载 draft_id -- Codex BLOCKER-1
+      if (!hp.ok) return void res.status(412).json({ error: hp.reason, error_code: hp.error_code })
+      if (!createOrderLoopback) return void res.status(503).json({ error: '批准执行暂不可用(执行通道未配置)', error_code: 'SUBMIT_EXEC_UNAVAILABLE' })
+      const er = await approveAndExecuteOrderSubmit(db, { requestId: req.params.id, approverId: user.id as string, nowIso: now, getProtocolParam, generateId, createOrderLoopback })
+      if (!er.ok) return void res.status(er.http || 409).json({ error: er.error, error_code: er.error_code, ...(er.ambiguous ? { ambiguous: true } : {}) })
+      return void res.json({ success: true, kind: 'order_submit', status: 'executed', draft_id: r.order_id, order_id: er.order_id, already_executed: er.already_executed || false })
     }
 
     // scope_grant:保留既有两步(下方还有 grant-active 复检 + 原子 tx;非 order-action)。

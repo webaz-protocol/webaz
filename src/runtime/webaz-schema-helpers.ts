@@ -1721,6 +1721,8 @@ export function initAgentPermissionRequestsSchema(db: Database.Database): void {
   // 防双 pending + I5 幂等根基:同一 (order_id, order_action) 至多一条未终结(pending/approved)的 order_action 请求。
   //   rejected/expired/executed 为终态,不占索引 → 允许事后重新提交。
   try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_apr_order_action_active ON agent_permission_requests(order_id, order_action) WHERE kind='order_action' AND status IN ('pending','approved')") } catch { /* */ }
+  // RFC-025 PR-5a:同一草稿同一时间只允许一个活跃提交请求(pending/approved;executed 后可再提交的场景不存在 —— draft 已 ordered)
+  try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_apr_order_submit_active ON agent_permission_requests(order_id) WHERE kind='order_submit' AND status IN ('pending','approved')") } catch { /* */ }
 }
 
 /**
@@ -1861,6 +1863,7 @@ export function initOrderDraftsSchema(db: Database.Database): void {
     )
   `)
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_od_quote ON order_drafts(quote_id)`)   // 一 quote 一 draft:schema 级持久保证(不止服务层 CAS)
+  try { db.exec('ALTER TABLE order_drafts ADD COLUMN order_id TEXT') } catch { /* exists */ }   // PR-5a:批准执行后回链真实订单(status=ordered);ALTER AFTER CREATE 铁律
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_od_idem ON order_drafts(buyer_id, idempotency_key) WHERE idempotency_key IS NOT NULL`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_od_buyer ON order_drafts(buyer_id, created_at)`)
 }

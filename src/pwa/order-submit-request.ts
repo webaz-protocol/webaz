@@ -1,0 +1,90 @@
+/**
+ * RFC-025 PR-5a — order-submit 请求提交域(SUBMIT-only,镜像 RFC-021 order-action-request 的骨架)。
+ *
+ * 语义:把一个【本人、status=draft、未过期】的订单草稿塞进人工审批队列(agent_permission_requests,
+ * kind='order_submit',order_id 列复用为 draft_id)。【绝不执行】—— 建单+扣款只发生在人 Passkey 批准后
+ * 由 order-submit-exec 跑(I1 同款:执行器不被本文件 import,agent-bearer 路径永远够不到执行)。
+ *
+ * params_hash = SHA-256(canonical 全经济快照):draft 的每一个经济字段都进 hash —— 人批的 = 将要执行的,
+ * 一字不差(D-4/审计 doc §4;draft 本身不可变 + UNIQUE(quote_id),双保险)。
+ * 零 PII:快照本就只有 region 标签 + 地址 sha256;action_params 只存 {draft_id}(展示由审批卡按 id 现查)。
+ * 同 draft 唯一 pending:复用 (order_id, order_action) 唯一索引(order_action='order_submit')。
+ */
+import type Database from 'better-sqlite3'
+import { createHash } from 'node:crypto'
+
+const sha = (s: string) => createHash('sha256').update(s).digest('hex')
+
+/** draft 行 → canonical 经济快照 hash(逐字段显式列出;新增经济字段必须进这里,测试锁字段集)。 */
+export function orderSubmitParamsHash(draft: Record<string, unknown>): string {
+  return sha(JSON.stringify({
+    draft_id: String(draft.id),
+    product_id: String(draft.product_id),
+    variant_id: draft.variant_id == null ? null : String(draft.variant_id),
+    seller_id: String(draft.seller_id),
+    quantity: Number(draft.quantity),
+    unit_price_units: Number(draft.unit_price_units),
+    item_units: Number(draft.item_units),
+    shipping_units: Number(draft.shipping_units),
+    donation_bps: Number(draft.donation_bps),
+    donation_units: Number(draft.donation_units),
+    total_units: Number(draft.total_units),
+    payable_units: Number(draft.payable_units),
+    currency: String(draft.currency),
+    payment_rail: String(draft.payment_rail),
+    direct_receive_account_id: draft.direct_receive_account_id == null ? null : String(draft.direct_receive_account_id),
+    dest_region: draft.dest_region == null ? null : String(draft.dest_region),
+    address_summary_hash: draft.address_summary_hash == null ? null : String(draft.address_summary_hash),
+    anonymous_recipient: Number(draft.anonymous_recipient),
+  }))
+}
+
+/** 审批列表的 order_submit 行摘要(域层做 sync 读,route 文件不加 seam 计数;零 PII:region 标签 only)。 */
+export function submitRowSummary(db: Database.Database, draftId: string): Record<string, unknown> | null {
+  const d = db.prepare('SELECT product_id, variant_id, seller_id, quantity, unit_price_units, item_units, shipping_units, donation_bps, donation_units, total_units, payable_units, currency, payment_rail, direct_receive_account_id, anonymous_recipient, dest_region, status, expires_at FROM order_drafts WHERE id = ?').get(draftId) as Record<string, unknown> | undefined
+  if (!d) return null
+  const prod = db.prepare('SELECT title FROM products WHERE id = ?').get(String(d.product_id)) as { title: string } | undefined
+  const seller = db.prepare('SELECT handle FROM users WHERE id = ?').get(String(d.seller_id)) as { handle: string | null } | undefined
+  const maskId = (id: string): string => !id ? '' : id.length > 8 ? `${id.slice(0, 4)}…${id.slice(-4)}` : `${id.slice(0, 2)}…`
+  return {
+    draft_id: draftId, product_id: String(d.product_id),
+    product_title: prod?.title ?? null,
+    product_title_note: 'live listing title for recognition only — the approval binds product_id, not the title',
+    variant_id: d.variant_id ?? null, seller_id_hint: maskId(String(d.seller_id)),
+    seller_handle: seller?.handle ? `@${seller.handle}` : null,   // hash 绑定 seller_id 的公开可核对投影
+    quantity: Number(d.quantity), unit_price_units: Number(d.unit_price_units),
+    item_units: Number(d.item_units), shipping_units: Number(d.shipping_units),
+    donation_bps: Number(d.donation_bps), donation_units: Number(d.donation_units),
+    total_units: Number(d.total_units), payable_units: Number(d.payable_units),
+    currency: String(d.currency), payment_rail: String(d.payment_rail),
+    direct_receive_account_id: d.direct_receive_account_id ?? null,
+    anonymous_recipient: Number(d.anonymous_recipient) === 1,
+    dest_region: d.dest_region ?? null, draft_status: String(d.status), draft_expires_at: String(d.expires_at),
+  }
+}
+
+export interface SubmitResult { ok: true; request_id: string; params_hash: string }
+export interface SubmitError { ok: false; http: number; error: string; error_code: string }
+
+export function createOrderSubmitRequest(db: Database.Database, args: {
+  draftId: string; grantId: string; humanId: string; agentLabel: string; generateId: (p: string) => string
+}): SubmitResult | SubmitError {
+  const { draftId, grantId, humanId, agentLabel, generateId } = args
+  const nowIso = new Date().toISOString()
+  const draft = db.prepare('SELECT * FROM order_drafts WHERE id = ? AND buyer_id = ?').get(draftId, humanId) as Record<string, unknown> | undefined
+  if (!draft) return { ok: false, http: 404, error: '草稿不存在或不属于你', error_code: 'DRAFT_NOT_FOUND' }
+  if (String(draft.status) !== 'draft') return { ok: false, http: 409, error: `草稿状态为 ${String(draft.status)},不可提交`, error_code: 'DRAFT_NOT_AVAILABLE' }
+  if (String(draft.expires_at) <= nowIso) return { ok: false, http: 409, error: '草稿已过期(24h),请重新报价并建草稿', error_code: 'DRAFT_NOT_AVAILABLE' }
+  const paramsHash = orderSubmitParamsHash(draft)
+  const requestId = generateId('apr')
+  try {
+    db.prepare(`INSERT INTO agent_permission_requests
+        (id, human_id, grant_id, agent_label, requested_scopes, risk_level, duration, status, expires_at, kind, order_id, order_action, params_hash, action_params)
+      VALUES (?,?,?,?, '[]', 'high', 'once', 'pending', ?, 'order_submit', ?, 'order_submit', ?, ?)`)
+      .run(requestId, humanId, grantId, agentLabel, new Date(Date.now() + 24 * 3600_000).toISOString(), draftId, paramsHash, JSON.stringify({ draft_id: draftId }))
+  } catch (e) {
+    if (/UNIQUE/i.test((e as Error).message)) return { ok: false, http: 409, error: '该草稿已有待批准的提交请求', error_code: 'DUPLICATE_SUBMIT_REQUEST' }
+    return { ok: false, http: 503, error: '提交暂不可用,请稍后重试', error_code: 'SUBMIT_UNAVAILABLE' }
+  }
+  return { ok: true, request_id: requestId, params_hash: paramsHash }
+}

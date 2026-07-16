@@ -66,7 +66,7 @@ const METADATA_URL = 'https://webaz.xyz/.well-known/oauth-protected-resource/mcp
 
 // 挑战即承诺:入列 = 该工具在 /mcp 上有真实的 oat_/gtk_ grant 路径(resolveGrantCredential →
 // requireAgentGrantScope 端点 → 成功或 scope 级 PERMISSION_REQUIRED)。
-const GRANT_PATH_TOOLS = ['webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request', 'webaz_connection_status', 'webaz_buyer_orders', 'webaz_discover', 'webaz_quote_order', 'webaz_order_draft']
+const GRANT_PATH_TOOLS = ['webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request', 'webaz_connection_status', 'webaz_buyer_orders', 'webaz_discover', 'webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request']
 // api_key-only:oat_ 永远满足不了(它只作为 grant 凭证注入,不是 human api_key)→ 401 广告 OAuth = 虚假恢复路径。
 const API_KEY_ONLY_TOOLS = ['webaz_place_order', 'webaz_update_order', 'webaz_wallet', 'webaz_notifications', 'webaz_default_address']
 
@@ -230,6 +230,7 @@ async function main() {
       webaz_discover: ['buyer_discover'],   // POST /api/agent/discover — RFC-025 PR-2
       webaz_quote_order: ['price_quote'],   // POST /api/agent/quote — RFC-025 PR-3
       webaz_order_draft: ['draft_order'],   // /api/agent/order-draft(s) — RFC-025 PR-4
+      webaz_submit_order_request: ['order_submit_request'],   // POST /api/agent/order-drafts/:id/submit — RFC-025 PR-5a
     }
     for (const [tool, reqCaps] of Object.entries(TOOL_REQUIRED_CAPS)) {
       for (const c of reqCaps) {
