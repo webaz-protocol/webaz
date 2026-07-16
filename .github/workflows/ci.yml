@@ -796,6 +796,7 @@ jobs:
       - run: npm run test:arbitration-entry-frontend
       - run: npm run test:arbitrator-admin-ui
       - run: npm run test:webauthn-arbitrator-purposes
+      - run: npm run test:webauthn-purpose-whitelist
       - run: npm run test:mutual-cancel
       - run: npm run test:mutual-cancel-route
       - run: npm run test:contribution-hub

@@ -191,6 +191,7 @@
     "test:arbitration-entry-frontend": "tsx scripts/test-arbitration-entry-frontend.ts",
     "test:arbitrator-admin-ui": "tsx scripts/test-arbitrator-admin-ui.ts",
     "test:webauthn-arbitrator-purposes": "tsx scripts/test-webauthn-arbitrator-purposes.ts",
+    "test:webauthn-purpose-whitelist": "tsx scripts/test-webauthn-gate-purpose-whitelist.ts",
     "test:mutual-cancel": "tsx scripts/test-mutual-cancel.ts",
     "test:mutual-cancel-route": "tsx scripts/test-mutual-cancel-route.ts",
     "test:contribution-hub": "tsx scripts/test-contribution-hub.ts",
