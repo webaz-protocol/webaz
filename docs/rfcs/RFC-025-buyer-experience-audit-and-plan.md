@@ -23,8 +23,11 @@ Status: report · Date: 2026-07-16
   `verify_price`, `place_order`, `get_status`, `update_order`, `notifications`,
   `chat`, `dispute`, `claim_verify`, `default_address`. `webaz_search` is anonymous.
 - Capability taxonomy (`agent-grant-scopes.ts`): 13 SAFE / 10 RISK / 15 NEVER.
-  All buyer write capabilities (`place_order`, `order_status`, …) sit in **RISK**
-  (hard-rejected in grants). Coarse OAuth scopes: `read` / `order:draft` /
+  Every **executable** buyer order/status/money capability (`place_order`,
+  `order_status`, `wallet`, …) sits in **RISK** (hard-rejected in grants); the sole
+  SAFE buyer-shaped capability, `draft_order`, is dead (below). Note SAFE ≠ read-only —
+  the taxonomy deliberately admits constrained draft/submit-only capabilities
+  (`order_action_request` precedent). Coarse OAuth scopes: `read` / `order:draft` /
   `list:draft` → fine capabilities via `OAUTH_SCOPE_CAPABILITIES` (`oauth-approve.ts:41-45`).
 - **`draft_order` is granted-but-dead — confirmed.** Exactly 3 references
   (`agent-grant-scopes.ts:32` definition, `oauth-approve.ts:43` OAuth mapping,
@@ -39,7 +42,7 @@ Status: report · Date: 2026-07-16
 - Submit: grant-only tool → `POST /api/agent/orders/:id/action-request`
   (`agent-grants.ts:213`) → pending row in **`agent_permission_requests`**
   (`kind='order_action'`, 24h TTL, `params_hash = SHA-256({order_id, action, params})`,
-  unique pending per (order,action)) — never executes (`order-action-request.ts`).
+  unique pending per (order,action)) — never executes (`src/pwa/order-action-request.ts`).
 - Approve: human-authed + **live Passkey** (`agent_permission_approve` purpose)
   bound to `{request_id, order_id, action, params_hash}` (`agent-grants.ts:353-354`)
   → CAS pending→approved → execute → CAS `executed_at` (idempotent)
@@ -77,9 +80,15 @@ Status: report · Date: 2026-07-16
 
 - `price_sessions` (`pwa/server.ts:3114`): token, product, user, price, qty,
   **10-min TTL**, single-use. Created by `POST /api/verify-price`
-  (`checkout-helpers.ts:70-130`). Locks **price+qty only — no stock hold**.
-- Consume is atomic CAS (`price-session-consume.ts`) → 409 `PRICE_SESSION_USED`;
-  price drift → `price_changed` / 409 `PRICE_CHANGED` (separate `expected_price`
+  (`checkout-helpers.ts:70-130`). **Stores price+qty but locks/enforces PRICE only —
+  quantity is recorded yet NOT bound at consumption** (the session lookup checks
+  token+product+user only, `orders-create.ts:235`; a qty-1 session can be consumed
+  by a qty-N order at the session's unit price). No stock hold (the verify-time
+  stock check is observational). → gap **G-QTY-1**, hardening candidate for PR-3.
+- Consume is atomic CAS (`price-session-consume.ts`) → 409 `PRICE_SESSION_USED`
+  (nuance: an EXPIRED session also collapses into `PRICE_SESSION_USED` at the CAS —
+  used vs expired are not distinguished at consumption); price drift →
+  `price_changed` / 409 `PRICE_CHANGED` (separate `expected_price`
   guard, `orders-create.ts:205-215`). **Session token is optional** on order create.
 - Shipping: `gateShippingForCreate` (`shipping-templates.ts:116-140`) resolves
   product→store template, region required when templated (400 `SHIP_REGION_REQUIRED`),
@@ -102,7 +111,8 @@ Status: report · Date: 2026-07-16
 ### 1.6 Existing conflicts & PII gaps (found, not designed-for)
 
 - **G-PII-1**: `webaz_default_address` returns the **full raw address string**
-  (name/street/phone) to the calling agent (`server.ts:4353-4383`,
+  (free-form ≤200 chars — typically name/street/phone, whatever the user stored;
+  zero masking/field filtering) to the calling agent (`server.ts:4353-4383`,
   `/api/me` → `default_address_text`). api_key-only today, but it normalizes
   "agent sees full PII" and `webaz_place_order`'s description even suggests falling
   back to it.
@@ -122,8 +132,17 @@ Status: report · Date: 2026-07-16
   撤诉确认收货, return request/cancel/negotiate/escalate, claim-verification raise
   (10 WAZ stake), mutual-cancel. Passkey is layered only on **direct_p2p risk
   actions** (`directPayActionGate`, purpose `direct_pay_order_action`), verifier
-  `vote`, and `arbitrate` — escrow-path buyer actions (incl. terminal confirm
-  receipt) are api_key-only today.
+  `vote`, and `arbitrate` — escrow-path buyer actions (incl. the terminal,
+  settling confirm receipt) are api_key-only today.
+- **★ LIVE DEFECT (found by this audit's Codex fact-check)**: the
+  `/api/webauthn/auth/start` purpose whitelist (`webauthn.ts:119`) is missing
+  `vote` AND `agent_revoke`, while `claim-verify.ts:454` and
+  `agent-governance.ts:246,263` require gate tokens with exactly those purposes
+  (param-enabled by default). Result: a non-`is_system` verifier cannot mint a
+  vote token (voting ceremony unreachable), and agent_revoke's Passkey path is
+  equally unreachable. Fail-closed (security intact, function broken). Fix is a
+  dedicated small PR **outside this series** — another instance of the
+  "webauthn purpose 白名单每新动作必查" lesson.
 - **Two parallel address systems, not cross-synced**: ① `user_addresses` address
   book (`addresses.ts` full CRUD: id, label, recipient, phone, region, detail,
   is_default, max 20) — **an address_ref target already exists**; ② legacy
@@ -162,7 +181,7 @@ Status: report · Date: 2026-07-16
 | 2 | `draft_order` scope has server implementation | Granted-but-dead (3 refs, 0 consumers) | PR-4 activates it — first consumer |
 | 3 | Canonical Product / Offer model | 1 listing = 1 seller offer; variants exist and carry price/stock | Compare at listing+variant level; canonical layer deferred (audit R4) |
 | 4 | Quote returns landed total pre-commit | verify_price = price only; shipping computed only inside create | PR-3 extracts the shipping+total pipeline into a pre-commit quote |
-| 5 | Idempotent order preparation | No idempotency anywhere on create | New draft/submit path carries idempotency keys from day one; legacy POST /api/orders gap documented, fixed opportunistically |
+| 5 | Idempotent order preparation | No idempotency on `POST /api/orders` (other creation surfaces have their own, e.g. chat's INSERT OR IGNORE) | New draft/submit path carries idempotency keys from day one; legacy POST /api/orders gap documented, fixed opportunistically |
 | 6 | address_ref, PII never to agents | Full address text returned by default_address; raw text on orders | PR-2.5 masks the tool + introduces `address_ref` for the draft path |
 | 7 | Passkey approval reusable | RFC-021 skeleton fully reusable but seller-only | PR-5 adds `kind='order_submit'` + buyer ownership check |
 | 8 | Tax/multi-currency in quotes | Seller-declared tax; WAZ-only settlement | Quotes display seller-declared terms + trade_terms snapshot; no tax computation (S6 posture unchanged) |
@@ -171,13 +190,25 @@ Status: report · Date: 2026-07-16
 
 - **D-1 (`agent-buy` auto_buy)**: conflicts with "human confirms all orders".
   Recommendation: keep the compare/recommend path, retire `auto_buy=true`
-  (or 302-style redirect it into the new draft→submit→Passkey chain). Decide at PR-5.
+  (or redirect it into the new draft→submit→Passkey chain). **Own surgical PR
+  (PR-5b)** — a distinct purchase entry path must not ride inside PR-5a.
 - **D-2 (new fine capabilities)**: proposed SAFE additions —
-  `buyer_orders_read_minimal`, `price_quote`, `order_submit_request`,
-  (discover uses existing `search`). All read-only or submit-only, consistent with
-  the SAFE definition. Coarse OAuth scopes unchanged (`read` / `order:draft`).
+  `buyer_orders_read_minimal`, `buyer_discover`, `price_quote`,
+  `order_submit_request`. All read-only or submit-only, consistent with the SAFE
+  definition. `buyer_discover` is deliberately NOT the existing `search` capability:
+  discover persistently writes demand_signals tied to the grant subject, so the
+  authorization must name that effect explicitly (disclosed in the tool description,
+  audited, retention per D-4). Coarse OAuth scopes unchanged (`read` / `order:draft`).
+- **D-4 (PR-5 money boundary — RESOLVED, mirrors Appendix A §3.2)**: Passkey
+  approval executes the SAME order-creation path that exists today, and escrow
+  creation already debits wallet→escrow inside the create tx
+  (`orders-create.ts:369`). So the approval step both creates AND funds the order:
+  the agent side never touches funds; the money move happens exactly once, behind
+  the human's Passkey — a STRONGER gate than today's api_key `place_order`.
+  PR-5a is therefore a money-path PR and is reviewed as one.
 - **D-3 (demand_signals retention)**: append-only internal table; propose 180-day
   raw retention then aggregate-only. Public aggregation = separate gated PR.
+  (Referenced as retention policy by D-2's `buyer_discover`.)
 
 ## 4. Proposed schemas (sketch — final per-PR)
 
@@ -216,8 +247,11 @@ CREATE TABLE order_drafts (
   status TEXT NOT NULL DEFAULT 'draft',  -- draft|submitted|cancelled|expired
   expires_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
--- PR-5 reuses agent_permission_requests with kind='order_submit'
--- (params_hash binds {draft_id, total_units, payment_rail, address_ref}).
+-- PR-5a reuses agent_permission_requests with kind='order_submit'. params_hash binds the FULL
+-- server-authoritative economic snapshot: {draft_id, product_id, variant_id, quantity, item_units,
+-- shipping_units, total_units, payment_rail, ship_to_region, address_ref} — never a subset (a
+-- draft_id alone would only be safe if draft immutability were separately enforced; bind both:
+-- drafts are immutable after create (cancel-only, no update endpoint) AND the hash carries the snapshot).
 ```
 
 Schema rules baked in: new money columns are INTEGER units (no new RFC-014 debt);
@@ -247,8 +281,10 @@ money.ts/ledger.ts; guards: `routes:seam-check`, `check:api-docs-fresh`,
 
 ### PR-2 `webaz_discover` + `demand_signals` (internal)
 - **Files**: schema helper (+table), new route `/api/agent/discover`
-  (grant `search`), tool def (intent-shaped inputSchema, honest labels,
-  collection disclosure in description), admin read view, tests.
+  (new SAFE capability `buyer_discover` — see D-2; NOT `search`, because the
+  persistent demand-signal write must be explicitly authorized), tool def
+  (intent-shaped inputSchema, honest labels, collection disclosure in
+  description), admin read view, tests.
 - **Acceptance**: 有结果 → `discovery_candidate` 标注输出;没结果 → honest
   `no_candidates` + one `demand_signals` row;绝不相似冒充命中;admin 可见,
   非 admin 不可读 signals。
@@ -282,18 +318,27 @@ money.ts/ledger.ts; guards: `routes:seam-check`, `check:api-docs-fresh`,
   no real order row; idempotent create; cancellable; expires.
 - **Tests**: idempotency-replay, expiry, no-side-effect assertions.
 
-### PR-5 `webaz_submit_order_request` + Passkey approval page
-- **Files**: `order-submit-request.ts` (mirror of order-action-request with buyer
-  ownership), `agent-grants.ts` approve wiring (`kind='order_submit'`),
-  executor calling orders-create internals with server-side re-validation
-  (price/stock/region/rail), PWA approval card (existing #agent-approvals page),
-  webauthn purpose, error codes, i18n, tests. **Includes D-1 agent-buy decision.**
+### PR-5a `webaz_submit_order_request` + Passkey approval page (MONEY-PATH PR)
+- **Files**: `src/pwa/order-submit-request.ts` (mirror of
+  `src/pwa/order-action-request.ts` with buyer ownership), `agent-grants.ts`
+  approve wiring (`kind='order_submit'`), executor calling orders-create internals
+  with server-side re-validation (price/stock/region/rail), PWA approval card
+  (existing #agent-approvals page), webauthn purpose (**add to the
+  `/api/webauthn/auth/start` whitelist — see §1.7 defect**), error codes, i18n, tests.
+- **Money boundary (D-4)**: Passkey approval creates AND funds the order (escrow
+  debit happens inside the existing create tx). Reviewed as a money-path PR:
+  sync tx, balance guards, no fake success, authoritative guards in-tx.
 - **Acceptance**: approval page shows @handle + masked id + item/variant + qty +
-  labeled total + rail + address summary + return/warranty; Passkey binds
-  params_hash; drift at approve ⇒ hard fail + re-quote; execute unreachable to
-  agents; no silent substitution of any term.
+  labeled total + rail + address summary + return/warranty; Passkey binds the full
+  snapshot params_hash (§4); drift at approve ⇒ hard fail + re-quote; execute
+  unreachable to agents; no silent substitution of any term.
 - **Tests**: full chain integration test (quote→draft→submit→approve→order) +
   drift/expiry/duplicate-submit; money-path review pass (no stub of the executor).
+
+### PR-5b `agent-buy` auto_buy retirement (D-1, own surgical PR)
+- Retire or redirect `auto_buy=true` (`agent-buy.ts:192-260`) into the
+  draft→submit→Passkey chain; compare/recommend path unchanged. Separate from
+  PR-5a because it alters a DIFFERENT existing purchase entry path.
 
 ### PR-6 Buyer after-sales action requests + `webaz_prepare_case`
 - **Files**: buyer-side action-request module mirroring `order-action-request.ts`
@@ -306,8 +351,11 @@ money.ts/ledger.ts; guards: `routes:seam-check`, `check:api-docs-fresh`,
   refund plan, closing a dispute; direct_p2p risk actions keep their existing
   Passkey gate (`direct_pay_order_action`).
 - **Acceptance**: agent can prepare and submit *requests* only; every irreversible
-  step requires the human path that exists today; case drafts contain refs, never
-  raw PII/full addresses.
+  step keeps its existing human execution path unchanged (NOTE: today that path is
+  api_key-auth for escrow actions, Passkey only for direct_p2p — "human path" ≠
+  "Passkey path"; upgrading escrow confirm-receipt to Passkey is a separate
+  decision outside this series); case drafts contain refs, never raw PII/full
+  addresses.
 - **Tests**: ownership + prepare-only assertions; no executor import from the
   agent-bearer path (mirrors RFC-021 I1).
 

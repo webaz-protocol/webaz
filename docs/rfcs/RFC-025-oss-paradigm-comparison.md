@@ -52,7 +52,7 @@ designed from our own RFC-021/022/023 precedents, not from OSS.
 
 | Paradigm | What it is | How WebAZ uses it |
 |---|---|---|
-| **Separated state machines** | Order, payment, and shipment run distinct state machines instead of one overloaded status | Confirms our existing order-status machine should NOT absorb quote/draft states — quote and draft get their own tiny lifecycles (`active/expired/consumed`, `draft/submitted/approved/cancelled/expired`), orders stay untouched |
+| **Separated state machines** | Order, payment, and shipment run distinct state machines instead of one overloaded status | Confirms our existing order-status machine should NOT absorb quote/draft states — quote and draft get their own tiny lifecycles (`active/expired/consumed`, `draft/submitted/cancelled/expired` — no `approved` draft state: approval consumes the draft and links the created order id), orders stay untouched |
 | **Order processors pipeline** | Total = ordered pipeline of processors (items → promotions → shipping → taxes), each a pure step | Blueprint for quote computation as a small pure pipeline (base price → variant delta → shipping template → fees), unit-testable per step, single writer of the total |
 
 ### Spree (Ruby)
@@ -67,9 +67,14 @@ designed from our own RFC-021/022/023 precedents, not from OSS.
 1. **Any silent re-pricing.** Saleor/Spree recalculate the cart when prices change.
    WebAZ rule (RFC-025 invariant): terms shown to the human are the terms executed —
    drift ⇒ hard-fail + fresh quote, never silent update.
-2. **Payment capture flows.** All four capture money inside the checkout. WebAZ money
-   moves only through existing rails (escrow settlement / direct_p2p handshake) behind
-   Passkey; the buyer chain stops at *approved order*, it never touches funds.
+2. **Payment capture flows.** All four capture money inside the checkout with their
+   own capture machinery — none of that is ported. In WebAZ the **agent side never
+   touches funds**: quote/draft/submit move no money. Funds move exactly once, inside
+   the human's Passkey approval, which executes the SAME server-side order-creation
+   path that exists today (escrow creation already debits wallet→escrow inside the
+   create tx — `orders-create.ts:369`; direct_p2p stays off-protocol). So PR-5 IS a
+   money-path PR — the money move rides the existing rail unchanged, but behind a
+   Passkey gate that is *stronger* than today's api_key `place_order`.
 3. **Tax engines.** Saleor/Spree compute taxes. WebAZ tax posture is seller-declared
    disclosure (S0–S6 series; S6 real tax rail deferred). Quotes display seller-declared
    values with provenance labels — the server does not compute tax.
@@ -97,7 +102,8 @@ Order confirmed with Holden (2026-07-16), paradigm mapping per PR:
 | 2 | `webaz_discover` + `demand_signals` (internal, append-only) | no OSS analogue (they don't capture unmet demand); Saleor field-error codes for honest `no_candidates`. 语义:有结果输出结果,没结果记录,形成商机 |
 | 3 | Quote (`webaz_quote_order`, extends existing price-session) | Sylius processor pipeline + Spree labeled adjustments + Saleor TTL token |
 | 4 | Draft (activates dead `draft_order` capability) | Medusa Draft Order semantics (exists-before-commitment, idempotent, cancellable) |
-| 5 | Submit + Passkey approval page | Medusa "complete" + Saleor revalidate-at-complete, executed through RFC-021 approve-to-execute (self-built) |
+| 5a | Submit + Passkey approval page (money-path PR — approval creates AND funds, §3.2) | Medusa "complete" + Saleor revalidate-at-complete, executed through RFC-021 approve-to-execute (self-built) |
+| 5b | `agent-buy` auto_buy retirement (D-1, separate surgical PR) | — |
 | 6 | Buyer after-sales action requests + case prep | Spree guarded progression for evidence readiness; reuses unified action-request model |
 | 7+ | Demand-signal public aggregation (gated), watchlist, RFQ hooks | deferred until mechanism + privacy thresholds mature |
 
