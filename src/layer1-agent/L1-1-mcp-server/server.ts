@@ -1263,7 +1263,7 @@ USE THIS for "what's popular near me / 我附近 / 同城" — geo-aggregated, n
   {
     name: 'webaz_default_address',
     // was ~370 chars, now ~230 chars
-    description: `Read (masked) or set your default shipping address. Used by webaz_search unshippable filter + server-side fallback for webaz_rfq/place_order if omitted.
+    description: `Read (masked) or set your default shipping address. Used by webaz_search unshippable filter; webaz_rfq falls back to it server-side, webaz_place_order resolves it handler-side when shipping_address is omitted (never shown to agents).
 
 - read: returns { has_default, address_region, masked_summary } — the FULL address text is NEVER returned to agents (it contains name/street/phone). To order with it, omit shipping_address in webaz_place_order (resolved inside the call, not shown); manage the full text at webaz.xyz (PWA profile).
 ⚠️ \`set\` accepts only 2 fields: \`text\` (free-text address, ≤200 chars, required) + \`region\` (optional, for unshippable filter, ≤40 chars). NO structured fields (no recipient/line1/city/country/phone) — agent must concat itself.`,
@@ -2967,12 +2967,14 @@ export async function handlePlaceOrder(args: Record<string, unknown>) {
     return { error: `只有 buyer 角色可以下单，你的角色是：${user.role}` }
   }
 
+  let injectedDefaultSandbox = false
   // RFC-025 PR-2.5:sandbox 路径同款默认地址兜底(与 network 路径语义一致;全文不回流 agent)。
   if (args.shipping_address == null) {
     const u0 = db.prepare('SELECT default_address_text FROM users WHERE id = ?').get(user.id) as { default_address_text: string | null } | undefined
     const text0 = (u0?.default_address_text || '').trim()
     if (!text0) return { error: 'shipping_address is required — you have no saved default address. Pass shipping_address, or set a default via webaz_default_address action=set.', error_code: 'ADDRESS_REQUIRED' }
     args = { ...args, shipping_address: text0 }
+    injectedDefaultSandbox = true
   }
 
   const product = db
@@ -3143,6 +3145,7 @@ export async function handlePlaceOrder(args: Record<string, unknown>) {
     order_id: orderId,
     product: product.title,
     seller: product.seller_name,
+    ...(injectedDefaultSandbox ? { shipping_address_used: 'default (resolved inside the call; full text not shown to agents)' } : {}),
     quantity,
     total_amount: `${totalAmount} WAZ（已托管，等待交易完成后自动结算）`,
     status: autoAccepted ? 'accepted' : 'paid',

@@ -31,7 +31,10 @@ const FULL_ADDR = 'Jane SECRET / 1 Test St #05-01 / Singapore SG / +65 91234567'
 // ── 假上游(返回全文地址的 /api/me + set 回执)必须先起,URL 在 import mcp 前钉死 ──
 const app = express(); app.use(express.json())
 let lastSetBody: Record<string, unknown> | null = null
-app.get('/api/me', (_req, res) => { res.json({ id: 'usr_x', handle: 'masker', default_address_text: FULL_ADDR, default_address_region: 'SG', default_address: { line1: '1 Test St', city: 'Singapore' }, default_address_json: '{"line1":"1 Test St"}', wallet: { balance: 1 } }) })
+app.get('/api/me', (req, res) => {
+  if (String(req.headers.authorization || '').includes('k_noaddr')) return void res.json({ id: 'usr_n', handle: 'noaddr' })
+  res.json({ id: 'usr_x', handle: 'masker', default_address_text: FULL_ADDR, default_address_region: 'SG', default_address: { line1: '1 Test St', city: 'Singapore' }, default_address_json: '{"line1":"1 Test St"}', wallet: { balance: 1 } })
+})
 app.post('/api/profile/default-address', (req, res) => { lastSetBody = req.body as Record<string, unknown>; res.json({ success: true, stored: true }) })
 let lastOrderBody: Record<string, unknown> | null = null
 app.post('/api/orders', (req, res) => { lastOrderBody = req.body as Record<string, unknown>; res.json({ success: true, order: { id: 'ord_t1', status: 'created', shipping_address: (req.body as Record<string, unknown>).shipping_address } }) })
@@ -54,9 +57,12 @@ try {
     ok('N-5 profile view keeps non-PII identity fields (handle passes through)', r.handle === 'masker')
     ok('N-6 profile view carries NO full-address PII', !/SECRET|1 Test St|91234567/.test(JSON.stringify(r))) }
   // ── place_order 默认地址兜底(Codex High 修复):省略 → handler 注入全文;工具返回值零全文回流 ──
-  { const r = await mcp.handlePlaceOrder({ product_id: 'prd_x', api_key: 'k_net' })
-    ok('P-1 omitted shipping_address → handler injected the FULL default into the API call', lastOrderBody?.shipping_address === FULL_ADDR, JSON.stringify(lastOrderBody).slice(0, 200))
+  { const r = await mcp.handlePlaceOrder({ product_id: 'prd_x', quantity: 2, session_token: 'pst_t', expected_price: 30, payment_rail: 'escrow', api_key: 'k_net' })
+    ok('P-1 omitted shipping_address → handler injected the FULL default into the API call', lastOrderBody?.shipping_address === FULL_ADDR, JSON.stringify(lastOrderBody).slice(0, 250))
+    ok('P-1b injection preserves session_token/expected_price/payment_rail/quantity forwarding', lastOrderBody?.session_token === 'pst_t' && lastOrderBody?.expected_price === 30 && lastOrderBody?.payment_rail === 'escrow' && lastOrderBody?.quantity === 2)
     ok('P-2 tool RESULT carries NO address text (echo stripped, marker present)', !PII.test(JSON.stringify(r)) && String((r as Record<string, unknown>).shipping_address_used || '').includes('default'), JSON.stringify(r).slice(0, 250)) }
+  { const r = await mcp.handlePlaceOrder({ product_id: 'prd_x', api_key: 'k_noaddr' })
+    ok('P-4 omitted + NO saved default → ADDRESS_REQUIRED (no silent null order)', (r as Record<string, unknown>).error_code === 'ADDRESS_REQUIRED', JSON.stringify(r).slice(0, 200)) }
   { const r = await mcp.handlePlaceOrder({ product_id: 'prd_x', shipping_address: 'explicit addr 1', api_key: 'k_net' })
     ok('P-3 explicit shipping_address unchanged (passes through; echo NOT stripped — agent supplied it)', lastOrderBody?.shipping_address === 'explicit addr 1' && JSON.stringify(r).includes('explicit addr 1'), JSON.stringify(r).slice(0, 200)) }
 } finally { server.close() }
