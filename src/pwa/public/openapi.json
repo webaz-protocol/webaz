@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (802 endpoints, 19 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (804 endpoints, 19 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2760,6 +2760,30 @@
         "summary": "GET /api/agent/acp-feed",
         "tags": [],
         "security": []
+      }
+    },
+    "/api/agent/address/change-request": {
+      "post": {
+        "summary": "POST /api/agent/address/change-request",
+        "tags": [],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "address_change_request"
+      }
+    },
+    "/api/agent/address/masked": {
+      "get": {
+        "summary": "RFC-026 PR-5 — 地址:masked 读(region+存在性,绝不截取子串)/ 变更请求(全文进 PII 专表,Passkey 批准才写)",
+        "tags": [],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "address_read_masked"
       }
     },
     "/api/agent/approval-requests": {

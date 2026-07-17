@@ -43,7 +43,8 @@ export const OAUTH_SCOPE_CAPABILITIES: Record<string, readonly string[]> = {
   'read': ['read_public', 'profile_read', 'search', 'seller_products_read', 'seller_orders_read_minimal', 'buyer_orders_read_minimal', 'buyer_discover', 'buyer_case_prepare', 'approval_requests_read', 'buyer_orders_read', 'wallet_read_minimal'],
   'order:draft': ['draft_order', 'order_action_request', 'price_quote', 'order_submit_request'],
   'list:draft': ['seller_product_draft'],
-  'chat:context': ['order_chat_read', 'order_chat_send'],   // RFC-026 PR-4:订单上下文聊天(参与方绑定;反诈/限频生产同路)
+  'chat:context': ['order_chat_read', 'order_chat_send'],
+  'address': ['address_read_masked', 'address_change_request'],   // RFC-026 PR-5:读=region+存在性(无子串);变更=请求制,Passkey 批准才写   // RFC-026 PR-4:订单上下文聊天(参与方绑定;反诈/限频生产同路)
 }
 
 export const OAUTH_GRANT_TTL_SECONDS = 3600        // grant lives as long as the access token (D2: no refresh)
