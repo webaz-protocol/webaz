@@ -62,6 +62,7 @@ export const SAFE_SCOPES = [
   // RFC-025 PR-6 — 售后案件草稿组装(webaz_prepare_case)。纯只读:订单时间线结构字段 + 商品声明锚点
   //   + 证据 ref 列表(零 notes/自由文本/PII)。不提交任何争议/退货,零写入零经济。
   'buyer_case_prepare', 'approval_requests_read',
+  'buyer_orders_read', 'wallet_read_minimal',
 ] as const
 
 /**
