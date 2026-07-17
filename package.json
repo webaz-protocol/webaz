@@ -280,6 +280,7 @@
     "test:cf-origin-guard": "tsx scripts/test-cf-origin-guard.ts",
     "test:gallery-thumb-fallback": "tsx scripts/test-gallery-thumb-fallback.ts",
     "test:product-image-ui": "tsx scripts/test-product-image-ui.ts",
+    "test:products-list-no-seller-cap": "tsx scripts/test-products-list-no-seller-cap.ts",
     "test:remote-mcp": "tsx scripts/test-remote-mcp.ts",
     "test:mcp-security-schemes": "tsx scripts/test-mcp-security-schemes.ts",
     "test:buyer-orders-grant": "tsx scripts/test-buyer-orders-grant.ts",

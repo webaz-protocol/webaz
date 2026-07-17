@@ -19,7 +19,7 @@
  *   5. 7 种 sort：trending/newest/rating/price/random/recommended/seller_win_rate
  *      — 新品页 (has_sales=false) 把 trending/recommended pivot 到卖家维度
  *   6. claim_loss_count ASC 全 sort 最高优先级（被诉商品下沉）
- *   7. 单卖家上限 SELLER_CAP=3 + 温和 jitter（pwa+trending）
+ *   7. 温和 jitter（pwa+trending）
  *   8. 新卖家 slot 保护（trending only，≤90d 卖家强制 2 slot）
  *   9. cursor 用 raw score 最低位（防 jitter 翻页丢候选）
  *
@@ -227,10 +227,8 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       orderBy = ` ORDER BY COALESCE(claim_loss_count, 0) ASC, seller_win_rate DESC, seller_dispute_count DESC, id DESC`
     }
 
-    // 多取候选 buffer 用于 jitter 排序 + 单卖家上限
-    const applySellerCap = !seller_id
-    const SELLER_CAP = 3
-    const buffer = (sort === 'trending' || applySellerCap) ? Math.min(lim * 3, lim + 30) : lim
+    // trending 多取候选用于 jitter 排序；其他排序直接遵守请求 limit
+    const buffer = sort === 'trending' ? Math.min(lim * 3, lim + 30) : lim
     const sql = `SELECT * FROM (${innerSelect} ${baseFrom}) WHERE 1=1 ${cursorClause} ${orderBy} LIMIT ?`
     const finalParams = [...params, ...cursorParams, buffer]
     let candidates: Record<string, unknown>[]
@@ -241,23 +239,8 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       return void res.status(500).json({ error: 'query_failed' })
     }
 
-    // 单卖家 slot 上限
-    let filtered = candidates
-    if (applySellerCap) {
-      const perSeller = new Map<string, number>()
-      filtered = []
-      for (const c of candidates) {
-        const sid = String(c.seller_id)
-        const n = perSeller.get(sid) || 0
-        if (n >= SELLER_CAP) continue
-        perSeller.set(sid, n + 1)
-        filtered.push(c)
-        if (filtered.length >= lim + 10) break
-      }
-    }
-
     // 温和 jitter：仅 trending + pwa
-    let rows = filtered
+    let rows = candidates
     if (sort === 'trending' && mode === 'pwa' && rows.length > 1) {
       const jittered = rows.map(r => ({ r, k: (Number(r.trending_score) || 0) + (Math.random() - 0.5) }))
       jittered.sort((a, b) => b.k - a.k)

@@ -82,11 +82,11 @@ ok('5a. index.html loads app-product-image-ui.js after media/gallery, before app
 ok('5b. app-product-image-ui.js in check:pwa-syntax', has(PKG, 'node --check src/pwa/public/app-product-image-ui.js'))
 ok('5c. app-product-image-ui.js has a LOC ceiling', /'src\/pwa\/public\/app-product-image-ui\.js':/.test(RATCHET))
 
-// 7. Detail lookup must not depend on the capped discovery list. A seller can have more
-// products than GET /products returns after per-seller diversity limits are applied.
+// 7. Detail lookup must not depend on a paginated/filtered discovery list. The requested
+// product may be outside the current page or excluded by the active discovery filters.
 const detailLoad = APPJS.slice(APPJS.indexOf('async function renderBuyPage'), APPJS.indexOf('const shares = sharesData.shareables'))
 ok('7a. product detail fetches the requested product directly', has(detailLoad, 'GET(`/products/${productId}`).catch(() => null)'))
-ok('7b. product detail does not search the capped discovery list', !has(detailLoad, "GET('/products')") && !has(detailLoad, 'products.find('))
+ok('7b. product detail does not search a discovery list', !has(detailLoad, "GET('/products')") && !has(detailLoad, 'products.find('))
 
 if (fail > 0) { console.error(`\n❌ product image UI FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ product image UI: 4 missed grids → real thumbnails + gallery swipe nav (threshold/wrap/no-op)\n  ✅ pass ${pass}`)
