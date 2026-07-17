@@ -36,6 +36,8 @@ const has = (h: string, n: string) => h.includes(n)
 
 const ROUTE = readFileSync('src/pwa/routes/mcp-remote.ts', 'utf8')
 const L1 = readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
+// MCP Token PR-1:0-命中 recovery 指引文案移入投影/摘要单一真相源模块(content 短摘要生成处)
+const MP = readFileSync('src/agent-model-projection.ts', 'utf8')
 const SERVER = readFileSync('src/pwa/server.ts', 'utf8')
 const IC = readFileSync('src/pwa/integration-contract.ts', 'utf8')
 const PU = readFileSync('src/pwa/routes/public-utils.ts', 'utf8')
@@ -188,7 +190,7 @@ async function main() {
 const PUsrc2 = PUsrc
   ok('11d. integration.json 顶层公告 remote_mcp(via builder)', ICsrc.includes('{ remote_mcp: remoteMcpManifest() }'))
   ok('11e. protocol.json 顶层公告 remote_mcp(via builder)', PUsrc.includes('{ remote_mcp: remoteMcpManifest() }'))
-  ok('11f. strict 0-命中指向远程可达浏览(recovery + acp-feed,不只 PWA #discover)', L1.includes('见 recovery') && L1.includes('acp-feed.json'))
+  ok('11f. strict 0-命中指向远程可达浏览(recovery + acp-feed,不只 PWA #discover)', (L1 + MP).includes('见 recovery') && L1.includes('acp-feed.json'))
   ok('11g. REMOTE-MCP.md 在 PUBLIC_DOCS 白名单(manifest 广告的 docs 链接不能 404)', PUsrc2.includes("'REMOTE-MCP.md'"))
   ok('11h. P2:search 0-命中带 recovery(catalog_sample + next_step),strict 结果仍 found:0', L1.includes("reason: 'strict_no_match'") && L1.includes('catalog_sample:') && L1.includes('next_step:') && L1.includes('found: 0,'))
 
