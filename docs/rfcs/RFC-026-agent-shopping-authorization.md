@@ -15,7 +15,7 @@ Secondary gaps: no DB-level draft→order constraint (`orders` had no `draft_id`
 - `orders.draft_id TEXT` + `UNIQUE INDEX ux_orders_draft ON orders(draft_id) WHERE draft_id IS NOT NULL`.
 - Only the Passkey-approve executor's loopback carries `draft_id`; `resolveDraftLink` (src/pwa/order-draft-link.ts) rejects any other caller (ownership + draft must be in `ordering`), and idempotently returns the already-linked order.
 - Both insert paths (escrow `orders-create.ts`, direct_p2p `direct-pay-create.ts`) store the link.
-- Migration: idempotent backfill from `order_drafts.order_id`; rollback = drop the index (column is inert).
+- Migration: idempotent backfill from `order_drafts.order_id`; the two unique indexes are verified fail-closed after creation (boot refuses to run without them); rollback = drop the index (column is inert).
 
 ### 2.2 One purchase intent → at most one ACTIVE approval
 - `agent_permission_requests.intent_hash` = SHA-256 of the economic snapshot **without draft_id** + buyer (`orderSubmitIntentHash`).
@@ -27,7 +27,7 @@ Secondary gaps: no DB-level draft→order constraint (`orders` had no `draft_id`
 `pending` →(atomic CAS, one winner)→ `approved` (≈processing; the draft `draft→ordering` CAS is the exactly-once execution gate) → terminal outcomes:
 - success: `executed_at` + `execution_result{order_id}` (+ draft `ordered` + backlink) — repeat approvals return the same order id;
 - clean reject (drift / address changed / draft dead / upstream 4xx): **`failed` (terminal)** — frees both uniqueness slots; retry = agent resubmits, human approves a fresh card;
-- ambiguous (network/5xx): request stays `approved`, draft frozen at `ordering` — deliberately **keeps occupying the intent slot** so equivalent purchases stay blocked until a human reconciles. Crash-safe: a process crash mid-execution leaves this frozen state; retries never double-order.
+- ambiguous (network/5xx): request stays `approved`, draft frozen at `ordering` — deliberately **keeps occupying the intent slot** so equivalent purchases stay blocked until reconciled. **Reconciliation is implemented and audited**: the frozen card stays visible in `#agent-approvals` (`needs_reconcile`), and a fresh Passkey approval runs the oracle — both order-insert paths write `orders.draft_id` inside their atomic creation transaction, so a row for the draft ⟺ the order committed (backlink completed, that order id returned, never a duplicate) and no row ⟺ it did not (draft restored, execution retried under the `ux_orders_draft` net). A crash between order commit and backlink is healed by the same oracle.
 - Concurrent double-approve: the loser re-reads the row and converges to `already_executed` + the same order id (or the ambiguous freeze), never a second order.
 
 ### 2.4 Duplicate submits return the existing request

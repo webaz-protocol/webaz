@@ -215,16 +215,41 @@ try {
     loopbackMode = 'throw'
     const r2 = await approve(String(srq2.request_id), { request_id: srq2.request_id, order_id: c4.d.draft_id, action: 'order_submit', params_hash: srq2.params_hash })
     ok('U-2 ambiguous loopback (throw) → ORDER_CREATE_AMBIGUOUS + draft FROZEN at ordering (no auto-retry duplicates)', r2.json.error_code === 'ORDER_CREATE_AMBIGUOUS' && (db.prepare('SELECT status FROM order_drafts WHERE id=?').get(String(c4.d.draft_id)) as { status: string }).status === 'ordering')
+    ok('U-2b while frozen the request stays ACTIVE (occupies the intent slot — equivalent purchases blocked until reconciled)', (db.prepare('SELECT status FROM agent_permission_requests WHERE id=?').get(String(srq2.request_id)) as { status: string }).status === 'approved')
+    // R-1(Codex HIGH):冻结行必须出现在审批列表(needs_reconcile)—— 人有路可走
+    const listResp = await fetch(`http://127.0.0.1:${port}/api/agent-grants/permission-requests`, { headers: { 'x-test-uid': 'buyer1' } })
+    const listJson = await listResp.json() as { requests: Array<Record<string, unknown>> }
+    const frozenRow = listJson.requests.find(x => x.id === srq2.request_id)
+    ok('R-1 frozen submit appears in the approvals list flagged needs_reconcile', !!frozenRow && frozenRow.needs_reconcile === true, JSON.stringify(frozenRow ?? listJson.requests.map(x => x.id)).slice(0, 200))
+    // R-2 和解(无订单分支):再次 Passkey 批准 = oracle 核对 → 未建单 → 恢复草稿并安全重试 → 恰一单
     loopbackMode = 'real'
+    const beforeHeal = orderCount()
     const r3 = await approve(String(srq2.request_id), { request_id: srq2.request_id, order_id: c4.d.draft_id, action: 'order_submit', params_hash: srq2.params_hash })
-    ok('U-3 frozen draft refuses re-execution (human must reconcile)', r3.json.error_code === 'ORDER_CREATE_AMBIGUOUS' && orderCount() === 1)
-    ok('U-4 ambiguous keeps the request ACTIVE (occupies the intent slot until reconciled — equivalent purchases stay blocked)', (db.prepare('SELECT status FROM agent_permission_requests WHERE id=?').get(String(srq2.request_id)) as { status: string }).status === 'approved') }
+    ok('U-3 re-approve of a frozen submit = audited reconciliation: no order existed → safe retry → exactly ONE order', r3.json.success === true && typeof r3.json.order_id === 'string' && orderCount() === beforeHeal + 1, JSON.stringify(r3.json).slice(0, 200))
+    ok('U-3b draft completed + request executed after reconciliation', (db.prepare('SELECT status, order_id FROM order_drafts WHERE id=?').get(String(c4.d.draft_id)) as { status: string; order_id: string | null }).status === 'ordered' && !!(db.prepare('SELECT executed_at FROM agent_permission_requests WHERE id=?').get(String(srq2.request_id)) as { executed_at: string | null }).executed_at) }
+
+  // ══ R-3/R-4:崩溃窗口和解(订单已提交但回链缺失)+ draft-link 并发竞态 ══
+  { const c6 = await mkChain(1, 200)
+    db.prepare("UPDATE order_drafts SET status = 'ordering' WHERE id = ?").run(String(c6.d.draft_id))
+    db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, draft_id) VALUES ('ord_crash_win','prd_s','buyer1','seller1',1,30,30,30,'paid',?)").run(String(c6.d.draft_id))
+    const rh = await approve(String(c6.srq.request_id), { request_id: c6.srq.request_id, order_id: c6.d.draft_id, action: 'order_submit', params_hash: c6.srq.params_hash })
+    ok('R-3 crash window (order committed, backlink missing) → reconciliation returns THAT order, completes backlink, no new order', rh.json.already_executed === true && rh.json.order_id === 'ord_crash_win' && (db.prepare('SELECT status, order_id FROM order_drafts WHERE id=?').get(String(c6.d.draft_id)) as { status: string; order_id: string | null }).order_id === 'ord_crash_win', JSON.stringify(rh.json).slice(0, 200))
+    // R-4:两个并发 POST /api/orders 携带同一 'ordering' 草稿 → 恰一单;输家幂等拿同一单
+    const c7 = await mkChain(1, 500)
+    db.prepare("UPDATE order_drafts SET status = 'ordering' WHERE id = ?").run(String(c7.d.draft_id))
+    db.prepare("UPDATE wallets SET balance = 200 WHERE user_id='buyer1'").run()
+    const post = () => fetch(`http://127.0.0.1:${port}/api/orders`, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer k_b' }, body: JSON.stringify({ product_id: 'prd_s', quantity: 1, shipping_address: FULL_ADDR, expected_price: 30, donation_pct: 0.05, draft_id: c7.d.draft_id }) }).then(async r => ({ status: r.status, json: await r.json() as Record<string, unknown> }))
+    const [pa, pb] = await Promise.all([post(), post()])
+    const linkedCount = (db.prepare('SELECT COUNT(*) c FROM orders WHERE draft_id = ?').get(String(c7.d.draft_id)) as { c: number }).c
+    const ids = [pa, pb].map(x => String(x.json.order_id ?? ''))
+    ok('R-4 concurrent draft-linked creates → exactly ONE order for the draft; both callers converge on the same id', linkedCount === 1 && ids[0] === ids[1] && [pa, pb].some(x => x.json.idempotent_reuse === true), JSON.stringify({ pa: pa.json, pb: pb.json }).slice(0, 250)) }
 
   // ══ 取消草稿 → 批准拒 ══
-  { const c5 = await mkChain(1, 100)   // 捐赠≠0 → 与 U 组冻结中的意图不同(冻结占坑是特性)
+  { const c5 = await mkChain(1, 100)
+    const beforeC = orderCount()
     await D({ action: 'cancel', draft_id: c5.d.draft_id })
     const r = await approve(String(c5.srq.request_id), { request_id: c5.srq.request_id, order_id: c5.d.draft_id, action: 'order_submit', params_hash: c5.srq.params_hash })
-    ok('C-1 cancelled draft → DRAFT_NOT_AVAILABLE (approval cannot resurrect it)', r.json.error_code === 'DRAFT_NOT_AVAILABLE' && orderCount() === 1) }
+    ok('C-1 cancelled draft → DRAFT_NOT_AVAILABLE (approval cannot resurrect it)', r.json.error_code === 'DRAFT_NOT_AVAILABLE' && orderCount() === beforeC) }
 
   // ══ RFC-026 PR-1:购买意图级幂等(生产双订单事故回归) ══
   { db.prepare("UPDATE wallets SET balance = 500 WHERE user_id='buyer1'").run()
@@ -234,7 +259,7 @@ try {
     const d2 = await D({ action: 'create', quote_token: q2.quote_token })
     const s2 = await SUB({ draft_id: d2.draft_id })
     ok('I-1 SAME intent via a NEW quote+draft → REUSES the existing request (the production double-order vector)', s2.request_id === a1.srq.request_id && (s2.idempotency as Record<string, unknown>)?.duplicate === true, JSON.stringify(s2).slice(0, 200))
-    ok('I-2 exactly ONE pending order_submit for the intent', (db.prepare("SELECT COUNT(*) c FROM agent_permission_requests WHERE kind='order_submit' AND status='pending'").get() as { c: number }).c === 1)
+    ok('I-2 exactly ONE pending order_submit for THIS intent', (db.prepare("SELECT COUNT(*) c FROM agent_permission_requests WHERE kind='order_submit' AND status='pending' AND intent_hash = (SELECT intent_hash FROM agent_permission_requests WHERE id = ?)").get(String(a1.srq.request_id)) as { c: number }).c === 1)
     // I-3 改数量 = 新意图(合法不同购买),各自成行
     const b1 = await mkChain(4)
     ok('I-3 quantity=4 is a DIFFERENT intent → its own pending request', typeof b1.srq.request_id === 'string' && b1.srq.request_id !== a1.srq.request_id, JSON.stringify(b1.srq).slice(0, 150))
@@ -242,10 +267,11 @@ try {
     const before = orderCount(); const balBefore = bal('buyer1').balance
     const hit = () => approve(String(a1.srq.request_id), { request_id: a1.srq.request_id, order_id: a1.d.draft_id, action: 'order_submit', params_hash: a1.srq.params_hash })
     const [ra, rb] = await Promise.all([hit(), hit()])
-    const succ = [ra, rb].filter(r => r.json.success === true && typeof r.json.order_id === 'string' && !r.json.already_executed)
+    const oks = [ra, rb].filter(r => r.json.success === true && typeof r.json.order_id === 'string')
+    const orderIds = [...new Set(oks.map(r => String(r.json.order_id)))]
     const safe2 = [ra, rb].filter(r => r.json.already_executed === true || r.json.error_code === 'ORDER_CREATE_AMBIGUOUS')
-    ok('I-4 CONCURRENT double approve → exactly ONE order + ONE debit; loser converges to already_executed/ambiguous', orderCount() === before + 1 && succ.length === 1 && succ.length + safe2.length === 2 && Math.abs(balBefore - bal('buyer1').balance - 90) < 1e-6, JSON.stringify({ ra: ra.json, rb: rb.json }).slice(0, 300))
-    const firstOrder = String(succ[0].json.order_id)
+    ok('I-4 CONCURRENT double approve → exactly ONE order + ONE debit; every responder converges on the SAME order id (or safe freeze)', orderCount() === before + 1 && oks.length >= 1 && orderIds.length === 1 && oks.length + safe2.length >= 2 && Math.abs(balBefore - bal('buyer1').balance - 90) < 1e-6, JSON.stringify({ ra: ra.json, rb: rb.json }).slice(0, 300))
+    const firstOrder = orderIds[0]
     ok('I-5 executed order carries the draft_id backlink (orders.draft_id)', (db.prepare('SELECT draft_id FROM orders WHERE id=?').get(firstOrder) as { draft_id: string | null })?.draft_id === String(a1.d.draft_id))
     // I-6 DB 级兜底:同 draft 第二笔订单,直写库也插不进(UNIQUE ux_orders_draft)
     try {

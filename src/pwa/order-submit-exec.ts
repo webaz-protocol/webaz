@@ -79,7 +79,21 @@ export async function approveAndExecuteOrderSubmit(db: Database.Database, deps: 
   const draftId = String(reqRow.order_id)
   const draft = db.prepare('SELECT * FROM order_drafts WHERE id = ? AND buyer_id = ?').get(draftId, approverId) as Record<string, unknown> | undefined
   if (!draft) return failTerminal('DRAFT_NOT_FOUND', 404, '草稿不存在')
-  if (String(draft.status) === 'ordering') return fail('ORDER_CREATE_AMBIGUOUS', 409, '上一次执行结果不明(草稿处于 ordering)。请先到 webaz.xyz 订单页核对是否已建单,避免重复下单。')
+  if (String(draft.status) === 'ordering') {
+    // RFC-026 R1(Codex HIGH):冻结不再是死局 —— 人再次 Passkey 批准 = 审计过的和解操作。
+    // oracle:两条建单路径都在【原子事务内】写 orders.draft_id ⇒ 行存在 ⟺ 订单已建(崩溃窗口补回链);
+    // 行不存在 ⟺ 上次未落单 ⇒ 恢复草稿并继续本次执行(迟到的插入会撞 ux_orders_draft,钱路安全)。
+    const linked = db.prepare('SELECT id FROM orders WHERE draft_id = ?').get(draftId) as { id: string } | undefined
+    if (linked) {
+      db.transaction(() => {
+        db.prepare("UPDATE order_drafts SET status = 'ordered', order_id = ? WHERE id = ? AND status = 'ordering'").run(linked.id, draftId)
+        db.prepare('UPDATE agent_permission_requests SET executed_at = ?, execution_result = ? WHERE id = ? AND executed_at IS NULL').run(nowIso, JSON.stringify({ order_id: linked.id, reconciled: true }), requestId)
+      }).immediate()
+      return { ok: true, already_executed: true, order_id: linked.id }
+    }
+    db.prepare("UPDATE order_drafts SET status = 'draft' WHERE id = ? AND status = 'ordering'").run(draftId)
+    ;(draft as Record<string, unknown>).status = 'draft'
+  }
   if (String(draft.status) === 'ordered') { db.prepare('UPDATE agent_permission_requests SET executed_at = ? WHERE id = ? AND executed_at IS NULL').run(nowIso, requestId); return { ok: true, already_executed: true, order_id: draft.order_id ? String(draft.order_id) : undefined } }
   if (String(draft.status) !== 'draft') return failTerminal('DRAFT_NOT_AVAILABLE', 409, `草稿状态为 ${String(draft.status)},不可执行`)
   if (String(draft.expires_at) <= nowIso) return failTerminal('DRAFT_NOT_AVAILABLE', 409, '草稿已过期,请重新报价')

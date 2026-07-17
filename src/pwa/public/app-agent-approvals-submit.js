@@ -10,7 +10,7 @@
   function waz(u) { return (Number(u || 0) / 1e6).toFixed(2) }
   window.aaOrderSubmitWhat = function (r) {
     var s = r.submit_summary
-    var _dw = window.aaDupWarnHtml ? window.aaDupWarnHtml(r) : ''
+    var _dw = (window.aaReconcileNoteHtml ? window.aaReconcileNoteHtml(r) : '') + (window.aaDupWarnHtml ? window.aaDupWarnHtml(r) : '')
     if (!s) return '<div style="font-size:12px;color:#dc2626">' + t('草稿摘要不可用(可能已取消/过期)—— 请刷新;无法核对条款时请勿批准') + '</div>'
     var railLine = s.payment_rail === 'direct_p2p'
       ? t('直付(WebAZ 不托管资金;你将按卖家收款说明场外支付)')
