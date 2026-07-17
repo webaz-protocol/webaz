@@ -50,6 +50,8 @@ db.prepare(`INSERT INTO evidence (id,order_id,uploader_id,type,description) VALU
 db.prepare(`INSERT INTO evidence (id,order_id,uploader_id,type,description) VALUES ('ev2','ord_1','buyer1','image','photo of ' + '1 SECRET St')`).run()
 db.prepare(`INSERT INTO disputes (id,order_id,initiator_id,reason,status) VALUES ('dsp_1','ord_1','buyer1',?,'open')`).run('never arrived; I live at 1 SECRET St')
 db.prepare(`INSERT INTO orders (id,buyer_id,seller_id,product_id,status,quantity,unit_price,total_amount,escrow_amount,payment_rail,shipping_address) VALUES ('ord_other','buyer2','seller1','prd_s','paid',1,30,30,30,'escrow','9 Other Rd')`).run()
+// ord_bad:残缺 v1 快照({"v":1},readTradeTermsSnapshot 会放行)+ 商品已不存在 + 无争议 → null/unavailable 变体
+db.prepare(`INSERT INTO orders (id,buyer_id,seller_id,product_id,status,quantity,unit_price,total_amount,escrow_amount,payment_rail,shipping_address,trade_terms_snapshot) VALUES ('ord_bad','buyer1','seller1','prd_gone','paid',1,5,5,5,'escrow','x','{"v":1}')`).run()
 
 const auth = (_req: Request, res: Response) => { res.status(401).json({ error: 'no human auth in this test' }); return null }
 const app = express(); app.use(express.json())
@@ -102,8 +104,8 @@ try {
     && Array.isArray(r.evidence_refs) && (r.evidence_refs as unknown[]).length === 2
     && (r.existing_dispute as Record<string, unknown>)?.dispute_id === 'dsp_1'
     && /DELIVERY DISPUTE/.test(String((r.routing_guide as Record<string, unknown>)?.delivery_problem))
-    && /10 WAZ/.test(String((r.routing_guide as Record<string, unknown>)?.claim_problem_order))
-    && /5 WAZ/.test(String((r.routing_guide as Record<string, unknown>)?.claim_problem_listing)), JSON.stringify(r).slice(0, 400))
+    && /10 WAZ.*48h.*3 verifiers/.test(String((r.routing_guide as Record<string, unknown>)?.claim_problem_order))
+    && /5 WAZ.*72h.*3 verifiers/.test(String((r.routing_guide as Record<string, unknown>)?.claim_problem_listing)), JSON.stringify(r).slice(0, 400))
   const ott = r.order_time_terms as Record<string, unknown>
   ok('C-5 SNAPSHOT AUTHORITY: order-time terms from frozen snapshot (return_days=7), NOT the seller-edited product row (14)',
     ott?.source === 'order_snapshot' && ott?.return_days === 7 && ott?.warranty_days === 90 && ott?.import_duty_terms === 'ddp'
@@ -115,6 +117,7 @@ try {
     && keysOf(ott) === K('source', 'captured_at', 'return_days', 'warranty_days', 'handling_hours', 'import_duty_terms', 'note')
     && keysOf(r.current_listing) === K('title', 'commitment_hash', 'description_hash', 'price_hash', 'hashed_at', 'note')
     && keysOf(r.existing_dispute) === K('dispute_id', 'status', 'type', 'at')
+    && keysOf(r.routing_guide) === K('delivery_problem', 'claim_problem_order', 'claim_problem_listing', 'note')
     && keysOf(r) === K('case_draft', 'order', 'timeline', 'order_time_terms', 'current_listing', 'evidence_refs', 'existing_dispute', 'routing_guide', 'detail_note', 'economic_action_executed'), keysOf(r))
   ok('C-7 evidence.type NORMALIZED: PII-laden free-text type → other; allowlisted type passes through',
     (r.evidence_refs as Array<Record<string, unknown>>).map(e => e.type).sort().join(',') === 'image,other')
@@ -122,6 +125,13 @@ try {
   ok('C-9 honest posture flags (no economic action, human submits on the order page)', r.economic_action_executed === false && /Nothing here submits/i.test(JSON.stringify(r.routing_guide)))
   ok('C-10 another buyer\'s order → ORDER_NOT_FOUND', (await C({ order_id: 'ord_other' })).error_code === 'ORDER_NOT_FOUND')
   ok('C-11 unknown order → ORDER_NOT_FOUND', (await C({ order_id: 'ord_nope' })).error_code === 'ORDER_NOT_FOUND')
+  const rb = await C({ order_id: 'ord_bad' })
+  ok('C-13 malformed {"v":1} snapshot + missing product → NO crash; unavailable variant + null sections locked',
+    rb.case_draft === true
+    && (rb.order_time_terms as Record<string, unknown>)?.source === 'unavailable'
+    && keysOf(rb.order_time_terms) === K('source', 'note')
+    && rb.current_listing === null && rb.existing_dispute === null
+    && keysOf(rb) === K('case_draft', 'order', 'timeline', 'order_time_terms', 'current_listing', 'evidence_refs', 'existing_dispute', 'routing_guide', 'detail_note', 'economic_action_executed'), JSON.stringify(rb).slice(0, 300))
   ok('C-12 whole-DB content unchanged (every table hashed; sole exemption agent_grant_auth_log, which MUST have grown — audit is real)',
     dbSnapshot() === before && auditCount() > auditBefore, `audit ${auditBefore}→${auditCount()}`)
 } finally { server.close(); clearCred() }

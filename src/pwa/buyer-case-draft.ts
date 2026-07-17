@@ -42,17 +42,22 @@ export function buildCaseDraft(db: Database.Database, humanId: string, orderId: 
       from: r.from_status == null ? null : String(r.from_status), to: String(r.to_status),
       actor_role: r.actor_role == null ? null : String(r.actor_role), at: String(r.created_at),
     }))
-  // 成交条款权威锚点 = 下单时刻冻结的 trade_terms_snapshot(S0);缺失(pre-S0 订单)如实报 unavailable
+  // 成交条款权威锚点 = 下单时刻冻结的 trade_terms_snapshot(S0);缺失(pre-S0 订单)或结构残缺
+  // (readTradeTermsSnapshot 只验 v===1,嵌套不保证)→ 如实报 unavailable,绝不 crash。
+  // 槽位逐个类型守卫:数字只出 finite number,enum 只出 ddu/ddp —— 快照坏数据也走私不进文本。
   const snap = readTradeTermsSnapshot(order.trade_terms_snapshot)
-  const orderTimeTerms = snap ? {
-    source: 'order_snapshot' as const, captured_at: snap.captured_at,
-    return_days: snap.fulfilment.return_days, warranty_days: snap.fulfilment.warranty_days,
-    handling_hours: snap.fulfilment.handling_hours,
-    import_duty_terms: snap.declarations.import_duty_terms,
+  const fulfil = snap && typeof snap.fulfilment === 'object' && snap.fulfilment !== null ? snap.fulfilment : null
+  const decl = snap && typeof snap.declarations === 'object' && snap.declarations !== null ? snap.declarations : null
+  const numOrNull = (x: unknown): number | null => (typeof x === 'number' && Number.isFinite(x) ? x : null)
+  const orderTimeTerms = fulfil && decl ? {
+    source: 'order_snapshot' as const, captured_at: String(snap!.captured_at ?? ''),
+    return_days: numOrNull(fulfil.return_days), warranty_days: numOrNull(fulfil.warranty_days),
+    handling_hours: numOrNull(fulfil.handling_hours),
+    import_duty_terms: decl.import_duty_terms === 'ddu' || decl.import_duty_terms === 'ddp' ? decl.import_duty_terms : null,
     note: 'Terms FROZEN at order time (seller edits after your order do not apply). Free-text terms (return condition wording, delivery estimates) are on the order page.',
   } : {
     source: 'unavailable' as const,
-    note: 'This order predates order-time terms snapshots — the terms in force are on the order page; current listing values below may have changed since your order.',
+    note: 'No usable order-time terms snapshot for this order — the terms in force are on the order page; current listing values below may have changed since your order.',
   }
   // 当前商品行(标注为当前值 —— 卖家可改;标题=公开 listing 数据,与 webaz_search 同暴露面)
   const prod = db.prepare('SELECT title, commitment_hash, description_hash, price_hash, hashed_at FROM products WHERE id = ?')
