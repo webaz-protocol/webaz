@@ -622,6 +622,7 @@ const _EN = {
   '批准后:服务端按当前市场状态重验此快照(价格/库存/资格任何变化即拒绝),通过才创建真实订单;条款绝不静默变更': 'On approval: the server re-validates this snapshot against CURRENT market state (any price/stock/eligibility change is rejected) and only then creates the real order; terms are never silently changed',
   '用 Passkey 批准': 'Approve with Passkey',
   '检测到相似购买请求': 'Similar purchase requests detected',
+  '在你的【订单】里代你发消息给交易对方(仅限订单双方;无法私信任何其他人;反诈检测与频率限制照常生效,消息会标注为 agent 代发)': 'Send messages to your trade counterparty INSIDE your own orders (order participants only — it cannot DM anyone else; anti-scam checks and rate limits apply unchanged, and messages are marked as agent-sent)',
   '上次执行结果不明': 'The last execution outcome is unknown',
   '上次执行未完成': 'The last execution did not complete',
   '再次用 Passkey 批准即重试;不会重复执行。': 'Approve again with your Passkey to retry — it will never execute twice.',

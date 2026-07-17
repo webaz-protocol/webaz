@@ -15,3 +15,16 @@ export function makeCreateOrderLoopback(portThunk: () => number) {
     return { status: resp.status, json }
   }
 }
+
+/** RFC-026 PR-4 — 通用进程内回环(order-chat 用):打真实 /api/* 路径,反诈/限频/参与方门全走生产同一条路。 */
+export function makeApiLoopback(portThunk: () => number) {
+  return async (apiKey: string, path: string, body: Record<string, unknown>): Promise<{ status: number; json: Record<string, unknown> | null }> => {
+    const resp = await fetch(`http://127.0.0.1:${portThunk()}${path}`, {
+      method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(15_000),
+    })
+    let json: Record<string, unknown> | null = null
+    try { json = await resp.json() as Record<string, unknown> } catch { json = null }
+    return { status: resp.status, json }
+  }
+}
