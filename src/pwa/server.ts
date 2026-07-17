@@ -3492,7 +3492,7 @@ app.use((req, res, next) => {
   // 不限制读 / 心跳 / 公开列表
   if (req.method === 'GET' && /^\/api\/(info|leaderboard|payment-methods|governance|openapi)/.test(req.path)) return next()
   const apiKey = req.headers.authorization?.replace('Bearer ', '')
-  if (!apiKey || apiKey.startsWith('gtk_')) return next()  // 无 key→IP 速率;gtk_* 委托凭证(RFC-020)是独立自守 auth 通道(requireAgentGrantScope/resolveActiveGrantByBearer 管 safe-scope+active/expiry/revoked+audit),非 api_key,不进下面 agent 声明/风控/strike;否则合法 safe-scope grant 写(如 POST /api/agent-grants/permission-requests)被误判 AGENT_SCOPE_UNDECLARED。gtk_* 只命中 grant-aware 路由,别处 auth() 自然 401。
+  if (!apiKey || apiKey.startsWith('gtk_') || apiKey.startsWith('oat_')) return next()  // 无 key→IP 速率;gtk_*(RFC-020 直接 grant)/oat_*(RFC-023 OAuth token)都是委托凭证=独立自守 auth 通道(verifyGrantToken 管 introspection+safe-scope+active/expiry/revoked+aud+audit),非 api_key,不进下面 agent 声明/风控/strike;否则合法 safe-scope grant 写(如 POST /api/agent/quote)被误判 AGENT_SCOPE_UNDECLARED(生产实锤:OAuth 下 quote/submit 全 403,gtk_ 却过——豁免当年只写了 gtk_)。grant 凭证只命中 grant-aware 路由,别处 auth() 自然 401,故此豁免零经济面扩权。
   // 2026-05-23 P1 fix：被封禁用户仍可走以下路径（看自己 agent 状态 + 申诉）
   // - GET /api/me/agents 系列（看强 / 申诉前必查）
   // - POST /api/me/agents/strikes/:id/appeal（申诉权不能被封禁阻断）
