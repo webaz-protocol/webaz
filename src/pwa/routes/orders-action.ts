@@ -161,12 +161,12 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       db.prepare(`INSERT INTO order_state_history (id, order_id, from_status, to_status, actor_id, actor_role, notes)
         VALUES (?,?,?,?,?,?, '面交完成 — 买家确认')`)
         .run(generateId('hst'), req.params.id, order.status, 'completed', user.id, (user as Record<string, unknown>).role || 'buyer')
-      // direct_p2p:取平台费进同一事务 → 取费失败(缺 locked stake)回滚 completed,订单不会 terminal-completed 而费用落空。
-      if (isDirectP2p) settleOrder(req.params.id)
+      settleOrder(req.params.id)
     })
-    try { tx() } catch (e) { return void res.status(isDirectP2p ? 409 : 500).json({ error: (isDirectP2p ? '直付完成结算失败,订单未完成：' : '状态写入失败：') + (e as Error).message, ...(isDirectP2p ? { error_code: 'DIRECT_PAY_SETTLE_FAILED' } : {}) }) }
-    // escrow:沿用原有非原子结算(失败仅记日志,不回滚 completed —— 与既有行为一致,本次不改 escrow)。
-    if (!isDirectP2p) { try { settleOrder(req.params.id) } catch (e) { console.error('[settleOrder in-person]', e) } }
+    try { tx() } catch (e) {
+      const error_code = isDirectP2p ? 'DIRECT_PAY_SETTLE_FAILED' : 'ESCROW_SETTLE_FAILED'
+      return void res.status(409).json({ error: `${isDirectP2p ? '直付' : '托管'}完成结算失败,订单未完成：${(e as Error).message}`, error_code })
+    }
     res.json({ success: true })
   })
 
@@ -581,8 +581,24 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     }
 
     const fromStatus = order.status as string
-    const result = transition(db, req.params.id, toStatus, user.id as string, evidenceIds, notes)
-    if (!result.success) return void res.json({ error: result.error })
+    let newStatus = toStatus
+    if (toStatus === 'confirmed') {
+      try {
+        db.transaction(() => {
+          const r1 = transition(db, req.params.id, 'confirmed', user.id as string, evidenceIds, notes)
+          if (!r1.success) throw new Error(r1.error || 'confirmed transition failed')
+          const r2 = transition(db, req.params.id, 'completed', 'sys_protocol', [], '系统自动结算')
+          if (!r2.success) throw new Error(r2.error || 'completed transition failed')
+          settleOrder(req.params.id)
+        })()
+      } catch (e) {
+        return void res.status(409).json({ error: `托管完成结算失败,订单未完成(仍停在 delivered,可重试):${(e as Error).message}`, error_code: 'ESCROW_SETTLE_FAILED' })
+      }
+    } else {
+      const result = transition(db, req.params.id, toStatus, user.id as string, evidenceIds, notes)
+      if (!result.success) return void res.json({ error: result.error })
+      newStatus = result.newStatus
+    }
 
     // P1-c(b):direct_p2p 首次进 accepted(mark_paid / confirm_received)才生成 ship_deadline —— direct-pay-create 建单不设该列,
     //   缺 ship_deadline 会被共享执行器 SLA【fail-closed】卡住发货。WHERE ship_deadline IS NULL 兜死:仅 null→值 那一次写,
@@ -637,11 +653,7 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     // 确认收货时自动结算
     let settlementBreakdown: Record<string, unknown> | null = null
     if (toStatus === 'confirmed') {
-      const sysUser = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string }
-      // direct_p2p confirm 已在上方【全原子早返回块】处理(delivered→confirmed→completed→settle 同一 tx);此处仅 escrow。
-      transition(db, req.params.id, 'completed', sysUser.id, [], '系统自动结算')
       notifyTransition(db, req.params.id, 'confirmed', 'completed')
-      settleOrder(req.params.id)
       // QA 轮 9.4-retry-v3 P1：post-hoc build breakdown 从 DB，让 agent 看清每分钱去哪
       try {
         const round2 = (n: number) => Math.round(n * 100) / 100
@@ -723,7 +735,7 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
 
     res.json({
       success: true,
-      new_status: result.newStatus,
+      new_status: newStatus,
       ...(settlementBreakdown ? { settlement_breakdown: settlementBreakdown } : {}),
     })
   })

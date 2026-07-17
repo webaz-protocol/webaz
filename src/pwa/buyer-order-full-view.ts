@@ -55,7 +55,7 @@ function agentShipTracking(db: Database.Database, orderId: string): string | nul
 function availableActions(db: Database.Database, o: Record<string, unknown>, humanId: string, returns: Array<Record<string, unknown>>): Array<Record<string, string>> {
   const status = String(o.status ?? ''); const rail = String(o.payment_rail ?? 'escrow'); const orderId = String(o.id)
   const acts: Array<Record<string, string>> = []
-  if (status === 'delivered') acts.push({ action: 'confirm_receipt', executor: 'human_order_page', note: rail === 'direct_p2p' ? 'delivered only; Direct Pay confirm additionally requires disclosure acks + a live Passkey' : 'delivered only; confirming releases escrow to the seller' })
+  if (status === 'delivered') acts.push({ action: 'confirm_receipt', executor: 'human_order_page', note: rail === 'direct_p2p' ? 'delivered only; Direct Pay confirm additionally requires disclosure acks + a live Passkey' : 'delivered only; confirming settles the frozen order total under its distribution rules' })
   const DISPUTE_FROM = ['paid', 'accepted', 'shipped', 'picked_up', 'in_transit', 'delivered', 'delivery_failed']   // delivery_failed→disputed 买家可发(transitions:410)
   if (DISPUTE_FROM.includes(status) || (rail === 'direct_p2p' && ['direct_expired_unconfirmed', 'payment_query'].includes(status))) {
     acts.push({ action: 'open_dispute', executor: 'human_order_page', note: 'evidence required; 48h respond / 120h arbitrate clocks' })

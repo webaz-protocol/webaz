@@ -1699,7 +1699,7 @@ export function initAgentPermissionRequestsSchema(db: Database.Database): void {
       task_context     TEXT,                             -- agent free-text about the task (display only)
       risk_level       TEXT NOT NULL DEFAULT 'low',      -- low | medium | high (derived, not agent-supplied)
       duration         TEXT NOT NULL DEFAULT '7d',       -- once | 1h | 24h | 7d | 30d (capped by risk tier)
-      status           TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected | expired | revoked
+      status           TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | satisfied | failed | rejected | expired | revoked
       created_at       TEXT NOT NULL DEFAULT (datetime('now')),
       expires_at       TEXT NOT NULL,                    -- request TTL (auto-expire if unanswered)
       approved_at      TEXT
@@ -1717,6 +1717,7 @@ export function initAgentPermissionRequestsSchema(db: Database.Database): void {
     "ALTER TABLE agent_permission_requests ADD COLUMN action_params TEXT",                 // JSON:ship 的 {tracking,evidence_ref};accept '{}'
     "ALTER TABLE agent_permission_requests ADD COLUMN executed_at TEXT",                   // I5 幂等 CAS 键 —— PR3 写,PR2 恒 NULL
     "ALTER TABLE agent_permission_requests ADD COLUMN execution_result TEXT",              // I7 执行结果 —— PR3 写
+    "ALTER TABLE agent_permission_requests ADD COLUMN execution_claimed_at TEXT",           // buyer_action 执行租约;与 human approved_at 分离
     "ALTER TABLE agent_permission_requests ADD COLUMN intent_hash TEXT",                   // RFC-026 PR-1 购买意图指纹(经济快照,不含 draft_id —— 等价意图跨 draft 去重)
     "ALTER TABLE orders ADD COLUMN draft_id TEXT",                                         // RFC-026 PR-1 订单↔草稿稳定关联(一 draft 至多一单的 DB 级兜底)
   ]) { try { db.exec(stmt) } catch { /* 列已存在 */ } }
