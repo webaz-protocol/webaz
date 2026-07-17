@@ -278,7 +278,7 @@ async function renderProfile(app) {
 
         <!-- 展开态完整表单 -->
         <div id="addr-form" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid #f3f4f6">
-          <p style="font-size:11px;color:#6b7280;margin-bottom:10px">${t('智能下单按此地址过滤不可派送商品；下单页可临时改。带 * 为必填。')}</p>
+          <p style="font-size:11px;color:#6b7280;margin-bottom:10px">${t('AI找同款按此地址过滤不可派送商品；下单页可临时改。带 * 为必填。')}</p>
 
           <!-- 历史地址（最近 3 条，本地保存）-->
           <div id="addr-history-wrap" style="margin-bottom:14px"></div>

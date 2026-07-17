@@ -59,7 +59,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
             mode: modeRaw = 'pwa', sort: sortRaw, cursor, limit: limitRaw, seller_id,
             product_type: productTypeRaw, fuzzy: fuzzyRaw, since_days: sinceDaysRaw } = req.query
     let mode: 'pwa' | 'agent' | 'raw' = modeRaw === 'agent' ? 'agent' : (modeRaw === 'raw' ? 'raw' : 'pwa')
-    // fuzzy=true → 发现页用，模糊 LIKE；否则用协议级 alias 精确匹配（智能下单页）
+    // fuzzy=true → 发现页用，模糊 LIKE；否则用协议级 alias 精确匹配（AI找同款页）
     const isFuzzy = fuzzyRaw === 'true' || fuzzyRaw === '1'
 
     // product_type 过滤：pwa 默认 retail（不混 B2B/数字/服务）；agent/raw 不默认过滤

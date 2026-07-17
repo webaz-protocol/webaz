@@ -254,6 +254,29 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     guards.assertClean()
   })
 
+  test(`authenticated buyer AI match entry at ${viewport.name}`, async ({ page }) => {
+    const guards = installRuntimeGuards(page)
+    await mockBuyerSession(page)
+    await page.addInitScript(() => {
+      localStorage.setItem('webaz_key', 'ux-buyer-token')
+      localStorage.setItem('webaz_lang', 'zh')
+    })
+    await page.setViewportSize(viewport)
+    await page.goto('/#buy')
+
+    await expect(page.locator('#app .tabbar')).toContainText('AI找同款')
+    await expect(page.locator('#smart-results')).toContainText('先找到同款，再决定是否下单')
+    await expect(page.locator('#sbh-search-inp')).toHaveAttribute('placeholder', '输入商品名 / 粘贴链接 / 口令 / 内容指纹')
+    await expect(page.locator('#app')).not.toContainText('智能下单')
+    await assertNoHorizontalOverflow(page)
+    await assertAxeHasNoSeriousOrCriticalViolations(page)
+
+    await page.evaluate(() => window.toggleLang())
+    await expect(page.locator('#app .tabbar')).toContainText('AI Match')
+    await assertNoHorizontalOverflow(page)
+    guards.assertClean()
+  })
+
   test(`authenticated seller account dashboard at ${viewport.name}`, async ({ page }) => {
     const guards = installRuntimeGuards(page)
     await mockSellerDashboard(page)

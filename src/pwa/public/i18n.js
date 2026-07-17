@@ -1590,7 +1590,7 @@ const _EN = {
   '确认删除这条笔记？不可恢复': 'Delete this note? Cannot be undone',
 
   // ── External links ───────────────────────────────────────────
-  '买家粘贴这些链接时，智能下单会直接匹配到你的商品': 'When buyers paste these links, Smart Order will directly match your product',
+  '买家粘贴这些链接时，AI找同款会直接匹配到你的商品': 'When buyers paste these links, AI Match will directly find your product',
   '粘贴外部链接（需验证）': 'Paste external link (will be verified)',
   '暂无外部链接': 'No external links yet',
   '导入时自动保存': 'Auto-saved on import',
@@ -1612,10 +1612,13 @@ const _EN = {
   '导入时附带': 'Included at import',
 
   // ── Agent Buy ────────────────────────────────────────────────
-  '粘贴任意平台链接，AI 帮你找更优方案': 'Paste any link — AI finds a better deal',
+  '粘贴任意平台链接，AI 帮你找 WebAZ 同款': 'Paste any product link — AI finds its WebAZ match',
   '商品链接': 'Product link',
   '粘贴淘宝 / 京东 / 亚马逊等链接': 'Paste Taobao / JD / Amazon link...',
-  '开始分析': 'Analyze',
+  '开始找同款': 'Find a Match',
+  '正在找同款...': 'Finding matches...',
+  '批量找同款中...': 'Finding matches in batch...',
+  '🔍 开始找同款': '🔍 Find a Match',
   '分析中...': 'Analyzing...',
   '请粘贴商品链接': 'Please paste a product link',
   '✅ 推荐 WebAZ 方案': '✅ Recommended: WebAZ deal',
@@ -1624,7 +1627,7 @@ const _EN = {
   '查看并下单': 'View & order',
   'WebAZ 上的相关商品': 'Related products on WebAZ',
   '原商品': 'Original',
-  '智能下单仅限买家使用': 'Smart Order is for buyers only',
+  'AI找同款仅限买家使用': 'AI Match is for buyers only',
 
   // ── Verify Tasks ─────────────────────────────────────────────
   '🛡️ 验证任务': '🛡️ Verify Tasks',
@@ -1812,7 +1815,7 @@ const _EN = {
 
   // Default address
   '默认配送地址': 'Default shipping address',
-  '智能下单按此地址过滤不可派送商品；下单页可临时改。带 * 为必填。': 'Smart-order filters by this address; can be overridden per order. * = required.',
+  'AI找同款按此地址过滤不可派送商品；下单页可临时改。带 * 为必填。': 'AI Match filters by this address; it can be overridden per order. * = required.',
   '粘贴智能识别': 'Paste & auto-detect',
   '主要联系方式': 'Primary contact',
   '手机/电话': 'Mobile/phone',
@@ -1835,10 +1838,11 @@ const _EN = {
   '已智能填充，请检查必填项并保存': 'Auto-filled — please check required fields and save',
 
   // Smart order / Discover
-  '粘贴商品链接，AI 自动搜索 WebAZ 更优方案并比价;下单需你 Passkey 逐笔批准': 'Paste a link - AI searches WebAZ for a better deal and compares; ordering always needs your per-order Passkey approval',
+  '粘贴商品链接，AI 识别并查找 WebAZ 同款；找到后由你决定是否下单': 'Paste a product link; AI identifies it and finds WebAZ matches, then you decide whether to order',
   '自动下单已退役:所有购买都需要你的 Passkey 逐笔批准(比价结果里可一键跳转下单页)': 'Auto-ordering is retired: every purchase needs your per-order Passkey approval (jump to the order page from the comparison result)',
   '省市区街道(可选,用于运费估算)': 'Region/street (optional, for shipping estimate)',
-  '智能下单': 'Smart Order',
+  'AI找同款': 'AI Match',
+  '输入商品名 / 粘贴链接 / 口令 / 内容指纹': 'Product name / link / creator code / content fingerprint',
   '点击复制，去 TikTok/小红书 引流': 'Click to copy — share on TikTok/Xiaohongshu',
   '口令已复制，去 TikTok / 小红书 口播吧！': 'Anchor copied — go promote it on TikTok / Xiaohongshu!',
   '复制失败，请手动复制': 'Copy failed — please copy manually',
@@ -2323,7 +2327,7 @@ const _EN = {
   '注册解锁全部功能': 'Register to unlock all features',
   '回到原页': 'Back to original',
   '完成 3 步开始使用': 'Complete 3 steps to start',
-  '设置默认配送地址（智能下单需要）': 'Set default shipping address (required for smart-order)',
+  '设置默认配送地址（AI找同款需要）': 'Set default shipping address (used by AI Match)',
   '设置登录密码（备用凭证，可选）': 'Set login password (backup credential, optional)',
   '先去填资料': 'Set up profile first',
   '稍后再说，先逛逛': 'Maybe later — just browse',
@@ -2639,7 +2643,7 @@ const _EN = {
   '成交': 'Completed',
   '信誉分按月 2% 衰减': 'Reputation decays 2%/month',
   '未找到精准匹配': 'No exact match',
-  '智能下单仅匹配标题或外链。该商品可能还未上架。': 'Smart-buy matches title or URL only. This item may not be listed yet.',
+  'AI找同款仅匹配标题或外链。该商品可能还未上架。': 'AI Match uses a product title or URL. This item may not be listed yet.',
   '换个方式搜': 'Try a different search',
   '发现页支持模糊匹配': 'Discover page supports fuzzy match',
   '上架后买家精准搜索时即可命中。': 'Once listed, buyers find you on exact match.',
@@ -2854,9 +2858,9 @@ const _EN = {
   '批发': 'Wholesale',
   '数字': 'Digital',
   '仅剩': 'Only',
-  '智能下单 = 知道要买什么，帮你买': 'Smart Buy = Know what you want, we get it for you',
-  '输入精确商品名 → 找到给你买': 'Type exact product name → we find it',
-  '输入商品标题 → 直达对应商品下单': 'Type product title → jump straight to checkout',
+  '已经知道想买什么？输入商品信息，先找到同款，再决定是否下单。': 'Know what you want? Enter the item details, find a match, then decide whether to order.',
+  '输入完整商品标题 → 精准查找同款': 'Enter the full product title → find an exact match',
+  '粘贴其他平台链接 → 识别并比价': 'Paste a link from another platform → identify and compare',
   '粘贴外部链接（淘宝 / 京东 / Amazon 等）→ 比价 + WebAZ 同款推荐': 'Paste external link (Taobao / JD / Amazon) → price compare + WebAZ alternatives',
   '粘贴外部链接 → WebAZ 同款推荐': 'Paste external link → WebAZ alternatives',
   '输入口令 @xxx → 跳到达人推荐的商品 + 锁定 30 天': 'Type anchor @xxx → jump to recommended product + 30-day attribution',
@@ -5225,7 +5229,6 @@ const _EN = {
   '扫码秒进':                          'QR instant entry',
   '对方用相机扫描即可直达':            'They can scan with the camera to jump directly',
   '批量分析中...':                    'Batch analyzing...',
-  '🔍 开始分析':                       '🔍 Start analyzing',
 
   // ─── 设置 / Onboarding 文案 ─────
   '新用户期':                          'New user period',
@@ -5421,17 +5424,17 @@ const _EN = {
   '分享二维码':                         'Share QR',
   '已复制链接':                         'Link copied',
 
-  // 智能下单剪贴板识别
+  // AI找同款剪贴板识别
   '剪贴板已识别':                       'Clipboard detected',
   '粘贴':                              'Paste',
   '忽略':                              'Dismiss',
   '粘贴链接':                          'Paste link',
   '此浏览器无内置语音 — 请点击输入框后用键盘上的 🎤 键说话': 'No built-in voice input — tap the input then use the 🎤 key on your keyboard',
 
-  // 智能下单 — 扫码 / 拍照搜图分离
+  // AI找同款 — 扫码 / 拍照找同款分离
   '扫码（二维码 / 条码）':              'Scan (QR / barcode)',
-  '拍照搜图':                          'Photo search',
-  '拍照搜图功能即将上线 — 已暂存图片：':  'Photo search coming soon — image cached: ',
+  '拍照找同款':                        'Find a Match by Photo',
+  '拍照找同款功能即将上线 — 已暂存图片：': 'Photo matching is coming soon — image cached: ',
 
   // 扫码 file-picker 回退
   '扫码结果：':                         'Scanned: ',
@@ -6443,14 +6446,14 @@ const _EN = {
   '完整主页 · 笔记 / 测评 / 二手 / 拍卖': 'Full profile · notes / reviews / secondhand / auctions',
   '卖家自动化':                        'Seller automation',
 
-  // ── 智能下单 识别回显 + 友好空态 ──────────────────────────────
+  // ── AI找同款 识别回显 + 友好空态 ──────────────────────────────
   '按商品标题精确匹配':                'Exact match by product title',
   '识别为外部链接 · 正为你比价 WebAZ 同款': 'Detected an external link · comparing WebAZ equivalents',
   '识别为达人口令':                    'Detected a creator code',
   '正在跳转 TA 推荐':                  'opening their recommendations',
   '识别为内容指纹 · 正在打开来源验证': 'Detected a content fingerprint · opening source verification',
   '没找到完全一致的商品':              'No exact match found',
-  '智能下单按商品标题精确匹配，该商品可能还没上架 — 试试下面两种方式。': 'Smart order matches by exact product title; it may not be listed yet — try one of the two options below.',
+  'AI找同款会先按商品标题精确匹配。该商品可能还没上架，可以换个方式搜索。': 'AI Match starts with an exact product-title match. The item may not be listed yet, so try another search method.',
 
   // ── Agent 护照 Phase 2 监护人总览 ─────────────────────────────
   '监护人总览':                        'Custodian overview',
