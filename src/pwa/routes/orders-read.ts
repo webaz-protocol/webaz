@@ -25,7 +25,7 @@ import { getMutualCancelState } from '../../layer3-trust/L3-1-dispute-engine/mut
 import { getCancelRefundState } from '../../direct-pay-cancel-refund.js'  // 直付取消退款握手状态(仅 direct_p2p+accepted 计算,UI 便利字段)
 import { isEligibleArbitrator } from '../arbitrator-lifecycle.js'  // 白名单仲裁员可查【争议中】订单(裁定所需);不看 legacy role==='arbitrator'
 import { getQrImageForOwner } from '../../direct-receive-account-qr.js'  // Rail1 D2:ack 门后按订单快照 qr_ref 取收款码字节((ref,seller_id) 域内)
-import { readTradeTermsSnapshot } from '../../trade-terms.js'  // S0:下单冻结的交易条款(时效/退货/清关/税责),争议书面依据
+import { readTradeTermsSnapshot, effectiveReturnDays } from '../../trade-terms.js'  // S0:下单冻结的交易条款(时效/退货/清关/税责),争议书面依据
 
 export interface OrdersReadDeps {
   db: Database.Database
@@ -270,6 +270,9 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     }
 
     // S0 交易条款快照:parse-don't-validate 后下放(坏 JSON/pre-S0 旧单 → null;原始串不下放)
+    // RFC-026:生效退货窗一并下放 —— 冻结快照治理(与 returns 路由/agent 视图同一 effectiveReturnDays,前端不再读活商品行)
+    const _rw = effectiveReturnDays(order.trade_terms_snapshot, (product as Record<string, unknown> | null)?.return_days)
+    order.effective_return_days = _rw.days; order.effective_return_source = _rw.source
     order.trade_terms = readTradeTermsSnapshot(order.trade_terms_snapshot); delete order.trade_terms_snapshot
     res.json({ ...statusInfo, history, product, dispute, trackingInfo })
   })

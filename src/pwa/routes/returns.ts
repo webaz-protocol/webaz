@@ -31,6 +31,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { recordRepEvent } from '../../layer4-economics/L4-3-reputation/reputation-engine.js'
+import { effectiveReturnDays } from '../../trade-terms.js'
 // RFC-016 Phase 1 — 端点校验读/列表读 + 状态翻转/消息/通知单写 → async seam;
 //   executeReturnRefund 退款 db.transaction(钱+库存)与 escalate 建争议 tx 保持同步(Phase 3 迁 pg)。
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
@@ -129,10 +130,10 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
     const order = await dbOne<{
       id: string; buyer_id: string; seller_id: string; product_id: string;
       status: string; total_amount: number; created_at: string; updated_at: string;
-      return_days: number; product_title: string; payment_rail: string | null;
+      return_days: number; product_title: string; payment_rail: string | null; trade_terms_snapshot: string | null;
     }>(`
       SELECT o.id, o.buyer_id, o.seller_id, o.product_id, o.status, o.total_amount, o.created_at, o.updated_at,
-             o.payment_rail, p.return_days, p.title as product_title
+             o.payment_rail, o.trade_terms_snapshot, p.return_days, p.title as product_title
       FROM orders o JOIN products p ON p.id = o.product_id
       WHERE o.id = ?
     `, [req.params.order_id])
@@ -145,8 +146,11 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
     if (order.status !== 'completed') {
       return void res.status(400).json({ error: '仅订单完成后可申请退货（确认收货后）' })
     }
-    const returnDays = Number(order.return_days || 0)
-    if (returnDays <= 0) return void res.status(400).json({ error: '该商品不支持退货' })
+    // RFC-026:退货窗按【下单时刻冻结的条款快照】治理(S0 不变量:商家事后改设置不影响旧订单,
+    //   既不收紧也不放宽);pre-S0 订单回退现商品行。单一真相源 = effectiveReturnDays(agent 订单视图同函数)。
+    const eff = effectiveReturnDays(order.trade_terms_snapshot, order.return_days)
+    const returnDays = eff.days
+    if (returnDays <= 0) return void res.status(400).json({ error: eff.source === 'order_snapshot' ? '该订单成交时商品未提供退货(按下单时冻结条款)' : '该商品不支持退货' })
     const baseTime = order.updated_at || order.created_at
     const deadlineMs = new Date(baseTime).getTime() + returnDays * 86400 * 1000
     if (Date.now() > deadlineMs) {

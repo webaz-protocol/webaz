@@ -207,6 +207,42 @@ try {
     ok('37. ESCROW regression: accept → refunded + wallet moved + stock restored', dece.status === 200 && dece.json.status === 'refunded'
       && balOf('b1') === bb0 + 50 && stockOf() === se0 + 1, JSON.stringify({ dece: dece.json, bal: balOf('b1'), bb0, stock: stockOf(), se0 }))
   }
+
+  // ══ RFC-026:退货窗按下单时刻冻结快照治理(S0 不变量执行面)══
+  {
+    const mkSnap = (rd: number | null): string => JSON.stringify({ v: 1, captured_at: '2026-07-01T00:00:00Z',
+      shipping: { source: 'none', region: null, fee: null, est_days: null },
+      fulfilment: { handling_hours: null, estimated_days: null, return_days: rd, return_condition: null, warranty_days: null, source_read: true },
+      logistics: { weight_kg: null, package_size: null, origin_country: null, country_of_origin: null, customs_description: null, hs_code: null },
+      declarations: { ship_regions_text: null, sale_regions_rule: null, tax_lines: null, import_duty_terms: null }, accept_mode: null })
+    const mkSnapOrder = (id: string, snap: string | null): void => {
+      db.prepare("INSERT INTO orders (id,product_id,buyer_id,seller_id,quantity,unit_price,total_amount,escrow_amount,status,payment_rail,trade_terms_snapshot,created_at,updated_at) VALUES (?,'p','b1','s1',1,50,50,0,'completed','escrow',?,datetime('now'),datetime('now'))").run(id, snap)
+    }
+    // A. 成交时承诺 7 天,卖家事后把商品改成不可退 → 快照赢,退货仍可发起
+    mkSnapOrder('o_snap_keep', mkSnap(7))
+    db.prepare("UPDATE products SET return_days = 0 WHERE id='p'").run()
+    const ra = await call('POST', '/api/orders/o_snap_keep/return-request', 'b1', { reason: 'quality', refund_amount: 50 })
+    ok('38. FROZEN window survives seller tightening (snapshot 7d beats live 0d) — return accepted', ra.status === 200 && !!ra.json.id, JSON.stringify(ra.json).slice(0, 150))
+    // B. 成交时不可退,卖家事后放宽到 30 天 → 不追溯,按成交条款拒绝
+    mkSnapOrder('o_snap_none', mkSnap(null))
+    db.prepare("UPDATE products SET return_days = 30 WHERE id='p'").run()
+    const rb = await call('POST', '/api/orders/o_snap_none/return-request', 'b1', { reason: 'quality', refund_amount: 50 })
+    ok('39. terms-as-sold: no returns at sale time → later loosening does NOT apply retroactively', rb.status === 400 && /下单时冻结条款/.test(String(rb.json.error)), JSON.stringify(rb.json))
+    // C. pre-S0 无快照 → 现商品行治理(现行为不变)
+    mkSnapOrder('o_no_snap', null)
+    const rc = await call('POST', '/api/orders/o_no_snap/return-request', 'b1', { reason: 'quality', refund_amount: 50 })
+    ok('40. pre-snapshot order falls back to the live listing (30d) — return accepted', rc.status === 200 && !!rc.json.id, JSON.stringify(rc.json).slice(0, 150))
+    // D. 历史/降级快照的 null(无 source_read 标记)不可信 → 回退活行(绝不因采集故障剥夺真实窗口)
+    const legacyNull = mkSnap(null).replace(',"source_read":true', '')
+    mkSnapOrder('o_snap_legacy', legacyNull)
+    const rd2 = await call('POST', '/api/orders/o_snap_legacy/return-request', 'b1', { reason: 'quality', refund_amount: 50 })
+    ok('41. LEGACY null (no source_read marker) falls back to the live listing (30d) — return accepted', rd2.status === 200 && !!rd2.json.id, JSON.stringify(rd2.json).slice(0, 150))
+    // E. 坏 JSON 快照 → 路由级回退活行
+    mkSnapOrder('o_snap_bad', '{"v":1,broken')
+    const re2 = await call('POST', '/api/orders/o_snap_bad/return-request', 'b1', { reason: 'quality', refund_amount: 50 })
+    ok('42. malformed snapshot JSON → live-listing fallback at the ROUTE level — return accepted', re2.status === 200 && !!re2.json.id, JSON.stringify(re2.json).slice(0, 150))
+    db.prepare("UPDATE products SET return_days = 7 WHERE id='p'").run()
+  }
 } finally { server.close() }
 
 if (fail > 0) { console.error(`\n❌ direct-pay-returns FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
