@@ -188,9 +188,9 @@ export const VALID_TRANSITIONS: Record<string, Transition> = {
   },
 
   'paid→cancelled': {
-    allowedRoles: ['buyer'],
+    allowedRoles: ['buyer', 'seller', 'system'],
     requiresEvidence: false,
-    description: '卖家接单前买家可取消（全额退款）'
+    description: '卖家接单前买家可取消;卖家可按买家原因/买家要求记录无责取消（全额退款）'
   },
 
   // ── 卖家发货 ──────────────────────────────────────────────

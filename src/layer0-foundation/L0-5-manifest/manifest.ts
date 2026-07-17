@@ -58,7 +58,7 @@ const STATE_MACHINE = {
     { from: 'created',   to: 'paid',           actor: 'buyer',              deadline: 'pay',      auto_fault: 'cancelled',        evidence: false, description: '买家完成付款，资金进入协议托管' },
     { from: 'created',   to: 'cancelled',      actor: 'buyer/seller/system', deadline: null,      auto_fault: null,               evidence: false, description: '付款前取消订单，无需费用' },
     { from: 'paid',      to: 'accepted',       actor: 'seller',              deadline: 'accept',  auto_fault: 'fault_seller',     evidence: false, description: '卖家接单，承诺按时发货' },
-    { from: 'paid',      to: 'cancelled',      actor: 'buyer',               deadline: null,      auto_fault: null,               evidence: false, description: '接单前买家可取消，全额退款' },
+    { from: 'paid',      to: 'cancelled',      actor: 'buyer/seller/system', deadline: null,      auto_fault: null,               evidence: false, description: '接单前买家可取消;卖家可按买家原因/买家要求记录无责取消，全额退款' },
     { from: 'paid',      to: 'disputed',       actor: 'buyer/seller',        deadline: null,      auto_fault: null,               evidence: true,  description: '付款后发现问题，立即发起争议' },
     { from: 'accepted',  to: 'shipped',        actor: 'seller',              deadline: 'ship',    auto_fault: 'fault_seller',     evidence: true,  evidence_hint: '物流单号截图 + 包裹照片', description: '卖家发货，提交物流凭证' },
     { from: 'accepted',  to: 'disputed',       actor: 'buyer/seller',        deadline: null,      auto_fault: null,               evidence: true,  description: '接单后发现问题' },

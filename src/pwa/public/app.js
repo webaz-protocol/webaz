@@ -12492,7 +12492,7 @@ async function renderOrderDetail(app, orderId) {
       <div class="action-title">${t('完整状态历史')}</div>
       <div class="timeline">${historyHtml || `<div style="color:#6b7280;font-size:13px">${t('暂无记录')}</div>`}</div>
     </div>
-  `, 'orders'); if (order.payment_rail === 'direct_p2p' && isBuyer && order.status !== 'pending_accept' && window.dpHydrateOrderDisclosure) window.dpHydrateOrderDisclosure(order.id)  // direct_p2p 买家:最终 DOM 已就位,#dp-order-instr 必命中(both-acked→收款说明快照;否则 D1/D2 门)。卡片与 hydrate 均 isBuyer 门(端点本就 NOT_ORDER_BUYER,非买家渲染只会得红色报错噪音)。退货/评价 widget 注入各自子容器,不动此框
+  `, 'orders'); if (order.payment_rail === 'direct_p2p' && isBuyer && order.status !== 'pending_accept' && window.dpHydrateOrderDisclosure) window.dpHydrateOrderDisclosure(order.id); if (window.startOrderDetailPoll) window.startOrderDetailPoll(orderId, { ...order, activeDeadline }, history || [])  // direct_p2p 买家:最终 DOM 已就位,#dp-order-instr 必命中(both-acked→收款说明快照;否则 D1/D2 门)。卡片与 hydrate 均 isBuyer 门(端点本就 NOT_ORDER_BUYER,非买家渲染只会得红色报错噪音)。退货/评价 widget 注入各自子容器,不动此框
 
   // Wave B-3: 退货 widget — 异步加载（仅 completed 订单可退）
   // 买家:有退货窗口可申请/查看;卖家:有退货申请时内联查看+处理(accept/reject/received),无申请则隐藏卡
@@ -13479,18 +13479,19 @@ window.handleAction = async (orderId, action, idx, needsEvidence, hasLogisticsSe
 
 // ─── 卖家拒单(decline) + 临时判责举证(contest_decline)─── RFC-007 stage 2/3/5 ───────────────
 // reason code 元数据(与后端 orders-action.ts DECLINE_REASON_CODES / OBJECTIVE_DECLINE_REASONS 对齐)。
-// objective(客观声称)→ 临时判责,需在举证窗口内发起仲裁,不是自动免责;subjective(主观)→ 立即按卖家违约、买家退款。
+// neutral(买家原因/要求)→无责取消;objective(客观声称)→临时判责+举证;subjective(主观)→卖家违约。
 const DECLINE_REASONS = [
   { code: 'stock_consumed_concurrent', objective: true,  zh: '并发售罄(库存被同时下单耗尽)', en: 'Stock consumed by a concurrent order' },
   { code: 'stale_price_snapshot',      objective: true,  zh: '价格快照过期(下单价已失效)',     en: 'Stale price snapshot' },
   { code: 'force_majeure',             objective: true,  zh: '不可抗力',                          en: 'Force majeure' },
+  { code: 'buyer_request',             neutral: true,    zh: '买家原因/买家要求',                 en: 'Buyer reason / buyer request' },
   { code: 'price_regret',              objective: false, zh: '价格反悔(不想按此价卖)',           en: 'Price regret' },
   { code: 'cherry_pick',               objective: false, zh: '挑单(选择性拒单)',                 en: 'Cherry-picking' },
   { code: 'other',                     objective: false, zh: '其他(主观)',                        en: 'Other (subjective)' },
 ]
 function declineReasonOptions() {
   const en = window._lang === 'en'
-  return DECLINE_REASONS.map(r => `<option value="${r.code}" data-objective="${r.objective ? '1' : '0'}">${en ? r.en : r.zh}${r.objective ? ` · ${t('客观')}` : ` · ${t('主观')}`}</option>`).join('')
+  return DECLINE_REASONS.map(r => `<option value="${r.code}" data-objective="${r.objective ? '1' : '0'}" data-neutral="${r.neutral ? '1' : '0'}">${en ? r.en : r.zh}${r.neutral ? ` · ${t('无默认责任')}` : (r.objective ? ` · ${t('客观')}` : ` · ${t('主观')}`)}</option>`).join('')
 }
 // 选中 reason 后的诚实后果提示(主观 vs 客观,绝不把客观拒单说成自动免责)
 window.onDeclineReasonChange = () => {
@@ -13498,8 +13499,11 @@ window.onDeclineReasonChange = () => {
   const note = document.getElementById('decline-consequence')
   if (!sel || !note) return
   const objective = sel.selectedOptions[0]?.dataset?.objective === '1'
+  const neutral = sel.selectedOptions[0]?.dataset?.neutral === '1'
   if (!sel.value) { note.innerHTML = ''; return }
-  note.innerHTML = objective
+  note.innerHTML = neutral
+    ? `<div style="background:#ecfdf5;border:1px solid #86efac;color:#166534;border-radius:8px;padding:10px;font-size:12px;line-height:1.6">ℹ️ ${t('买家原因/买家要求:订单将无责取消并退款,不默认判定任何一方违约。仅在买家对该理由发起申诉后,再按最终裁定确定责任。')}</div>`
+    : objective
     ? `<div style="background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:8px;padding:10px;font-size:12px;line-height:1.6">⚠️ ${t('客观理由:订单将先转入【临时判责·卖家违约】并冻结结算。你需在举证窗口内发起仲裁举证翻案 —— 这不是自动免责;窗口过期未举证将按违约终结、买家退款。')}</div>`
     : `<div style="background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;border-radius:8px;padding:10px;font-size:12px;line-height:1.6">⚠️ ${t('主观理由:将立即按【卖家违约】处理,买家全额退款。此操作不可撤销。')}</div>`
 }
@@ -13537,9 +13541,7 @@ window.submitDecline = async (orderId) => {
   const res = await POST(`/orders/${orderId}/action`, { action: 'decline', decline_reason_code: code, notes })
   if (res.error) { if (msg) msg.innerHTML = alert$('error', res.error); return }
   closeModal()
-  toast$(res.outcome === 'fault_seller_provisional'
-    ? t('已拒单 — 临时判责,请在举证窗口内发起仲裁')
-    : t('已拒单 — 已按卖家违约处理,买家将获退款'), 'success')
+  toast$(res.outcome === 'cancelled_nofault' ? t('已拒单 — 买家原因/买家要求,订单无责取消') : (res.outcome === 'fault_seller_provisional' ? t('已拒单 — 临时判责,请在举证窗口内发起仲裁') : t('已拒单 — 已按卖家违约处理,买家将获退款')), 'success')
   setTimeout(() => renderOrderDetail(document.getElementById('app'), orderId), 1000)
 }
 // 临时判责举证面板:仅卖家、订单 fault_seller + decline_objective_pending=1 + 未结算时显示
@@ -21566,13 +21568,13 @@ async function renderChatDetail(app, id) {
       ${messages.length === 0 ? `<div style="text-align:center;color:#9ca3af;padding:30px 0;font-size:12px">${t('开始第一句问候')}</div>` : messages.map(m => renderChatBubble(m, state.user.id)).join('')}
     </div>
 
-    <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">
-      <button class="btn btn-sm" onclick="toggleChatQuickPanel('${id}')" style="padding:8px 10px;background:#f3f4f6;font-size:18px;border:none;cursor:pointer" title="${t('快捷')}">＋</button>
-      <label style="cursor:pointer;padding:8px 10px;background:#f3f4f6;border-radius:8px;font-size:18px" title="${t('添加图片')}">
+    <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-end;background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:8px;box-shadow:0 8px 24px rgba(15,23,42,.06)">
+      <button class="btn btn-sm" onclick="toggleChatQuickPanel('${id}')" style="width:36px;height:36px;padding:0;background:#f3f4f6;font-size:18px;border:none;cursor:pointer;border-radius:50%" title="${t('快捷')}">＋</button>
+      <label style="cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:#f3f4f6;border-radius:50%;font-size:17px;flex-shrink:0" title="${t('添加图片')}">
         📎<input id="chat-img" type="file" accept="image/*" style="display:none" onchange="window._chatImg=this">
       </label>
-      <textarea id="chat-input" rows="1" placeholder="${t('输入消息（按 Enter 发送）')}" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:8px;resize:none;font-size:13px" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat('${id}')}"></textarea>
-      <button class="btn btn-primary btn-sm" onclick="sendChat('${id}')" style="padding:8px 16px">${t('发送')}</button>
+      <textarea id="chat-input" rows="1" placeholder="${t('输入消息（按 Enter 发送）')}" style="flex:1;min-height:36px;max-height:140px;padding:8px 2px;border:0;outline:0;resize:none;font-size:15px;line-height:1.4;background:transparent" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,140)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat('${id}')}"></textarea>
+      <button class="btn btn-primary btn-sm" onclick="sendChat('${id}')" style="width:52px;height:36px;padding:0;border-radius:14px;flex-shrink:0">${t('发送')}</button>
     </div>
     <div id="chat-quick-panel" style="display:none;margin-top:6px;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px">
       <div style="font-size:11px;color:#6b7280;font-weight:600;margin-bottom:6px">⚡ ${t('快捷消息')}</div>

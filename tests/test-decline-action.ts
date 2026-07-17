@@ -1,6 +1,7 @@
 // RFC-007 stage 2 — 卖家主动拒单(decline)单测(真实 transition + settleFault)。
 // 验证:① seller 现在可显式触发 paid→fault_seller(stage 2 新增权限);② buyer 不可(权限边界);
-//       ③ decline_reason_code/declined_at 落库;④ 拒单后违约结算守恒(买家全退、无印钱)。
+//       ③ decline_reason_code/declined_at 落库;④ 拒单后违约结算守恒(买家全退、无印钱);
+//       ⑤ buyer_request 走无责取消,不默认给任何一方判责。
 import Database from 'better-sqlite3'
 import { transition, settleFault, settleDeclinedNoFault, checkTimeouts } from '../src/layer0-foundation/L0-2-state-machine/engine.js'
 
@@ -221,6 +222,24 @@ async function routeDeclineTests(): Promise<void> {
     expect('decline 正例 → 订单 completed', (db.prepare("SELECT status FROM orders WHERE id='ook'").get() as { status: string }).status === 'completed')
     expect('decline 正例 → 买家至少全额退款(退款+无责残值归买家,≥1000)', bal(db, 'buyer') >= 1000, bal(db, 'buyer'))
     expect('decline 正例 → 守恒(系统总额不变)', systemTotal(db) === before, { before, after: systemTotal(db) })
+  }
+
+  // 中性:买家原因/买家要求 → cancelled_nofault,不经过 fault_seller,无默认责任方
+  {
+    const db = freshDb()
+    db.prepare("INSERT INTO wallets (user_id, balance, staked, escrowed) VALUES ('seller',0,150,0),('buyer',0,0,1000),('sys_protocol',0,0,0)").run()
+    db.prepare("INSERT INTO orders (id,status,buyer_id,seller_id,product_id,total_amount,stake_backing,snapshot_commission_rate) VALUES ('obuyer','paid','buyer','seller','p1',1000,150,0)").run()
+    const before = systemTotal(db)
+    const app = makeServer(db, settleFault)
+    const { status, body } = await post(app, '/api/orders/obuyer/action', { action: 'decline', decline_reason_code: 'buyer_request', notes: 'buyer asked to cancel' })
+    expect('buyer_request → 200 success', status === 200 && body.success === true && body.outcome === 'cancelled_nofault', { status, body })
+    expect('buyer_request → order cancelled', (db.prepare("SELECT status FROM orders WHERE id='obuyer'").get() as { status: string }).status === 'cancelled')
+    expect('buyer_request → no fault_seller history', (db.prepare("SELECT COUNT(*) c FROM order_state_history WHERE order_id='obuyer' AND to_status='fault_seller'").get() as { c: number }).c === 0)
+    expect('buyer_request → buyer fully refunded', bal(db, 'buyer') === 1000, bal(db, 'buyer'))
+    expect('buyer_request → seller stake returned, no forfeit', staked(db, 'seller') === 0 && bal(db, 'seller') === 150, { staked: staked(db, 'seller'), balance: bal(db, 'seller') })
+    expect('buyer_request → stock restored', (db.prepare("SELECT stock FROM products WHERE id='p1'").get() as { stock: number }).stock === 1)
+    expect('buyer_request → settled marker set', !!(db.prepare("SELECT settled_fault_at FROM orders WHERE id='obuyer'").get() as { settled_fault_at: string | null }).settled_fault_at)
+    expect('buyer_request → conservation', systemTotal(db) === before, { before, after: systemTotal(db) })
   }
 }
 

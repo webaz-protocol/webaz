@@ -34,7 +34,7 @@ window.orderErrorLookup = (code) => ({
   CONTEST_WINDOW_CLOSED: t('举证窗口已过期'),
   DECLINE_REASON_INVALID: t('拒单理由无效'),
   DECLINE_WRONG_STATUS: t('当前状态不可拒单'),
-  DECLINE_SETTLEMENT_FAILED: t('拒单结算失败,请重试'),
+  DECLINE_SETTLEMENT_FAILED: t('拒单结算失败,请重试'), NEUTRAL_DECLINE_SETTLEMENT_FAILED: t('无责取消结算未完成,订单未取消,请稍后重试或联系支持'),
   // 直付 RISK 动作门(mark_paid/confirm/confirm_in_person 缺披露/缺 Passkey)。与 dpErrorText 同文案,
   //   保证无论走 dpHandleAction(dpErrorText)还是通用 handleAction(orderErrorText)路径都双语一致。
   DISCLOSURE_NOT_ACKED: t('需先完成两次风险披露确认(D1 + D2)'),
