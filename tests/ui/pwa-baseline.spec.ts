@@ -221,6 +221,7 @@ const BUYER_PRODUCT = {
 async function mockBuyerCommerce(page: Page) {
   await page.route('**/api/products?*', route => route.fulfill({ json: [BUYER_PRODUCT] }))
   await page.route('**/api/products', route => route.fulfill({ json: [BUYER_PRODUCT] }))
+  await page.route('**/api/products/ux-product', route => route.fulfill({ json: BUYER_PRODUCT }))
   await page.route('**/api/shareables/by-product/ux-product', route => route.fulfill({ json: { shareables: [] } }))
   await page.route('**/api/manifests/by-product/ux-product', route => route.fulfill({ json: { manifests: [] } }))
   await page.route('**/api/products/ux-product/claims', route => route.fulfill({ json: { claims: [] } }))

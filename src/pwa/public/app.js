@@ -9941,8 +9941,8 @@ window.addEventListener('hashchange', () => {
 function productIdHtml(id, compact = false) { return `<div class="product-id-line${compact ? ' product-id-line--compact' : ''}"><span>ID</span><code>${escHtml(String(id || ''))}</code><button type="button" class="product-id-copy" title="${t('复制')}" aria-label="${t('复制')} ID" onclick="event.stopPropagation();copyText(this.closest('.product-id-line').querySelector('code').textContent).then(ok=>toast$(ok?t('已复制'):t('复制失败，请手动复制'),ok?'success':'error'))">⧉</button></div>` }
 async function renderBuyPage(app, productId) {
   app.innerHTML = shell(loading$(), 'discover')
-  const [products, sharesData, manifestsData, claimsData, wlCheck, qaData, waitCheck, variantsRes, addrRes, ratingsRes, flashRes] = await Promise.all([
-    GET('/products'),
+  const [product, sharesData, manifestsData, claimsData, wlCheck, qaData, waitCheck, variantsRes, addrRes, ratingsRes, flashRes] = await Promise.all([
+    GET(`/products/${productId}`).catch(() => null),
     GET(`/shareables/by-product/${productId}`).catch(() => ({ shareables: [] })),
     GET(`/manifests/by-product/${productId}`).catch(() => ({ manifests: [] })),
     GET(`/products/${productId}/claims`).catch(() => ({ claims: [] })),
@@ -9955,7 +9955,7 @@ async function renderBuyPage(app, productId) {
     GET(`/products/${productId}/flash-sale`).catch(() => ({ sale: null })),
   ])
   // UX 微调：预拉卖家信誉，让摘要行直接显示数字（不必展开）
-  const _tmpP = products.find(x => x.id === productId)
+  const _tmpP = product
   const sellerMetricsRes = _tmpP ? await GET(`/reputation/${_tmpP.seller_id}`).catch(() => null) : null
   state._sellerMetrics = sellerMetricsRes?.metrics || null
   state._ratings = ratingsRes
@@ -9967,7 +9967,7 @@ async function renderBuyPage(app, productId) {
   state._variants = (variantsRes?.items || []).filter(v => v.is_active)
   state._selectedVariantId = null
   const qaItems = qaData?.items || []
-  const p = products.find(x => x.id === productId)
+  const p = product
   if (!p) return app.innerHTML = shell(`<div class="empty">${t('商品不存在')}</div>`, 'discover')
 
   const shares = sharesData.shareables || []
