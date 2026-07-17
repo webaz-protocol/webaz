@@ -601,7 +601,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
 
     // RFC-025 PR-5a:order-submit 分流(钱路)。Passkey 绑 (request_id, draft_id, params_hash) —— 人批的
     //   经济快照即执行的,一字不差;执行 = 回环打真实 POST /api/orders(escrow 建单事务内扣款入托管)。
-    // RFC-026 PR-5:address_change —— 四元组绑定(order_id 恒空串),执行=写 users 默认地址
+    // RFC-026 PR-5:address_change —— 三元组绑定 {request_id, action, params_hash}(无订单实体,内容由 hash 绑定并在执行时重验),执行=写 users 默认地址
     if ((r.kind ?? 'scope_grant') === 'address_change') {
       const hp = requireHumanPresence(user.id as string, 'agent_permission_approve', (req.body || {}).webauthn_token as string | undefined, 'require_human_presence_for_agent_permission_approve',
         (data) => { const d = data as Record<string, unknown> | null; return d != null && typeof d === 'object' && d.request_id === req.params.id && d.action === 'address_change' && d.params_hash === r.params_hash })

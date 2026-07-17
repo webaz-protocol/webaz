@@ -115,5 +115,3 @@ export function rejectAddressChange(db: Database.Database, requestId: string, hu
     return { ok: false, http: 503, error: '拒绝暂不可用,请重试(内容仍待处理)', error_code: 'ADDRESS_CHANGE_UNAVAILABLE' }
   }
 }
-
-

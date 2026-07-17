@@ -3,7 +3,7 @@
  * RFC-026 PR-5 — webaz_address(masked 读 + Passkey 门变更请求)。用法:npm run test:address-agent
  *
  * 真实 route + 真 oat_。覆盖:scope 双门/非-grandfathering · masked 读绝无子串 · 变更请求零直写 +
- * PII 只进专表(action_params/审计零全文)· 人工列表附全文(human-authed)· Passkey 四元组批准
+ * PII 只进专表(action_params/审计零全文)· 人工列表附全文(human-authed)· Passkey 三元组批准
  * 才写 users · 同 hash 幂等/异 hash 冲突 · 拒绝清 PII · 提交后 agent 仍只有 masked · drift 拒执行。
  */
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -107,7 +107,7 @@ try {
   ok('A-7 same content again → idempotent reuse of the SAME request', c2.request_id === c1.request_id && (c2.idempotency as Record<string, unknown>)?.duplicate === true)
   const c3 = await A({ action: 'change_request', address_text: NEW_ADDR + ' unit B', region: 'SG' })
   ok('A-8 DIFFERENT content while one is pending → explicit conflict with the existing request id', c3.error_code === 'ADDRESS_CHANGE_PENDING' && c3.existing_request_id === c1.request_id, JSON.stringify(c3).slice(0, 200))
-  // Passkey 四元组:错 hash 412;对 hash 执行写 users
+  // Passkey 三元组 {request_id, action, params_hash}:错 hash 412;对 hash 执行写 users
   { const bad = await approve(String(c1.request_id), { request_id: c1.request_id, action: 'address_change', params_hash: 'wrong' })
     ok('A-9 wrong params_hash in the Passkey binding → 412, users untouched', bad.status === 412 && userAddr().t === OLD_ADDR)
     const good = await approve(String(c1.request_id), { request_id: c1.request_id, action: 'address_change', params_hash: c1.params_hash })
@@ -145,6 +145,17 @@ try {
     const { initAgentPermissionRequestsSchema } = await import('../src/runtime/webaz-schema-helpers.js') as unknown as { initAgentPermissionRequestsSchema: (d: unknown) => void }
     initAgentPermissionRequestsSchema(db)   // 重跑 boot 段 = TTL 清理
     ok('A-18 boot-time retention purge deletes expired-pending PII (no submit needed)', (db.prepare("SELECT COUNT(*) c FROM address_change_requests WHERE request_id='apr_exp_addr'").get() as { c: number }).c === 0) }
+  { // A-18b/c:boot 清理的 executed 与孤儿分支
+    db.prepare("INSERT INTO address_change_requests (request_id, human_id, address_text, region) VALUES ('apr_orphan','buyer1','Orphan 3 GHOSTSECRET Way Singapore','SG')").run()
+    const { initAgentPermissionRequestsSchema: initAgain } = await import('../src/runtime/webaz-schema-helpers.js') as unknown as { initAgentPermissionRequestsSchema: (d: unknown) => void }
+    initAgain(db)
+    ok('A-18b boot purge also removes ORPHAN staging rows (no apr row)', (db.prepare("SELECT COUNT(*) c FROM address_change_requests WHERE request_id='apr_orphan'").get() as { c: number }).c === 0)
+    ok('A-18c no executed request retains staging content anywhere', (db.prepare("SELECT COUNT(*) c FROM address_change_requests acr WHERE EXISTS (SELECT 1 FROM agent_permission_requests p WHERE p.id = acr.request_id AND p.executed_at IS NOT NULL)").get() as { c: number }).c === 0) }
+  { // 源级事务结构守卫:approve/reject 的终结与 PII 清除必须同处一个 db.transaction(fail-closed 的结构性证明)
+    const SRC = (await import('node:fs')).readFileSync('src/pwa/address-agent.ts', 'utf8')
+    const approveTx = /db\.transaction\(\(\) => \{[\s\S]*?users SET default_address_text[\s\S]*?DELETE FROM address_change_requests[\s\S]*?\}\)\.immediate\(\)/.test(SRC)
+    const rejectTx = /db\.transaction\(\(\) => \{[\s\S]*?status = 'rejected'[\s\S]*?DELETE FROM address_change_requests[\s\S]*?\}\)\.immediate\(\)/.test(SRC)
+    ok('A-19 SOURCE GUARD: users-write+purge and reject+purge each live inside ONE db.transaction (fail-closed by construction)', approveTx && rejectTx) }
   ok('A-15 validation: short text / bad region rejected', (await A({ action: 'change_request', address_text: 'short', region: 'SG' })).error_code === 'ADDRESS_TEXT_INVALID' && (await A({ action: 'change_request', address_text: NEW_ADDR, region: 'Singapore' })).error_code === 'ADDRESS_REGION_INVALID')
 } finally { server.close(); clearCred() }
 
