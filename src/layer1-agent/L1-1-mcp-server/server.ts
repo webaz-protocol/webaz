@@ -1948,6 +1948,23 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
       required: ['order_id'],
     },
   },
+  {
+    name: 'webaz_approval_requests',
+    description: `Read the status of YOUR OWN approval requests (RFC-026 PR-2, safe scope approval_requests_read; OAuth grant, no api_key). READ-ONLY — answers "is my request still pending / approved / executed / failed / a duplicate, and which page should the human open" WITHOUT re-submitting anything.
+
+- action="list" → your latest requests (newest first, max 50): request_id, action_type, status, timestamps, deep-link approval_url, executed_order_id.
+- action="get" (request_id) → one request in full, incl. the zero-PII economic summary for order submits.
+- status meanings: pending (open the approval_url) | needs_reconcile (order submit: last outcome unknown — a fresh Passkey approval reconciles safely) | execution_failed / approved_retryable (order action: execution did not complete, failure_reason carries the code — a fresh Passkey approval retries) | executed (executed_order_id is the REAL order) | failed (terminal; retry = submit a fresh request) | rejected | expired.
+- NEVER re-submit a quote/draft/submit chain just to check status — use this tool instead.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['list', 'get'], description: 'list = latest 50 of your requests; get = one request in full' },
+        request_id: { type: 'string', description: 'The apr_ request id (required for action="get")' },
+      },
+      required: ['action'],
+    },
+  },
 ]
 
 // Standard MCP annotations merged once at module load (fail-fast if any tool lacks a mapping). The
@@ -2830,6 +2847,26 @@ export async function handlePrepareCase(args: Record<string, unknown>): Promise<
   if (typeof args.order_id !== 'string' || !args.order_id) return { error: 'order_id is required', error_code: 'ORDER_NOT_FOUND' }
   const r = await apiCall(`/api/agent/buyer/orders/${encodeURIComponent(args.order_id)}/case-draft`, { method: 'GET', apiKey: cred.token })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_case_prepare. Re-connect via OAuth so the grant carries the read scope, then retry.' }
+  return r
+}
+
+export async function handleApprovalRequests(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // RFC-026 PR-2 — wraps GET /api/agent/approval-requests(/:id) (safe scope approval_requests_read).
+  //   Pure read-only wrapper; own-subject only server-side; zero PII in the projection.
+  if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential(args)
+  if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
+  const action = String(args.action || '')
+  let r: Record<string, unknown>
+  if (action === 'list') {
+    r = await apiCall('/api/agent/approval-requests', { method: 'GET', apiKey: cred.token })
+  } else if (action === 'get') {
+    if (typeof args.request_id !== 'string' || !args.request_id) return { error: 'request_id is required for get', error_code: 'REQUEST_NOT_FOUND' }
+    r = await apiCall(`/api/agent/approval-requests/${encodeURIComponent(args.request_id)}`, { method: 'GET', apiKey: cred.token })
+  } else {
+    return { error: `unknown action: ${action}`, error_code: 'BAD_ACTION' }
+  }
+  if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks approval_requests_read. Re-connect via OAuth so the grant carries the read scope, then retry.' }
   return r
 }
 
@@ -5686,6 +5723,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         case 'webaz_order_draft':         result = await handleOrderDraft(args); break
         case 'webaz_submit_order_request': result = await handleSubmitOrderRequest(args); break
         case 'webaz_prepare_case':        result = await handlePrepareCase(args); break
+        case 'webaz_approval_requests':   result = await handleApprovalRequests(args); break
         case 'webaz_order_action_request': result = await handleOrderActionRequest(args); break
         case 'webaz_feedback':      result = await handleFeedback(args); break
         case 'webaz_contribute':    result = await handleContribute(args); break

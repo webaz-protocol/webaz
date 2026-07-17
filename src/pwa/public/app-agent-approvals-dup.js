@@ -14,6 +14,7 @@
   }
   // 冻结态(上次执行结果不明)的和解提示:再次 Passkey 批准 = 服务端核对是否已建单(已建→补记返回订单号;未建→安全重试)
   window.aaReconcileNoteHtml = function (r) {
+    if (r.retry_available) return '<div style="font-size:12px;line-height:1.7;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:8px">🔁 <b>' + t('上次执行未完成') + '</b>' + (r.last_error ? '(' + escHtml(String(r.last_error)) + ')' : '') + '。' + t('再次用 Passkey 批准即重试;不会重复执行。') + '</div>'
     if (!r.needs_reconcile) return ''
     return '<div style="font-size:12px;line-height:1.7;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:8px">⏸ <b>' + t('上次执行结果不明') + '</b>。' + t('再次用 Passkey 批准即安全核对:若订单已创建会直接返回订单号,不会重复下单;若未创建则重新执行。') + '</div>'
   }

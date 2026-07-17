@@ -36,6 +36,7 @@ import { createOrderDraft, cancelOrderDraft, getOrderDraft, listOrderDrafts } fr
 import { createOrderSubmitRequest, submitRowSummary } from '../order-submit-request.js'  // RFC-025 PR-5a 提交域(SUBMIT-only,绝不执行)
 import { approveAndExecuteOrderSubmit, type CreateOrderLoopback } from '../order-submit-exec.js'  // RFC-025 PR-5a 批准执行域(钱路;仅人类 approve 路径可达)
 import { buildCaseDraft } from '../buyer-case-draft.js'  // RFC-025 PR-6 售后案件草稿(纯只读组装)
+import { listApprovalRequests, getApprovalRequest } from '../approval-requests-read.js'  // RFC-026 PR-2 审批状态只读投影
 import { toUnits } from '../../money.js'  // RFC-014:demand_signals.budget_units 整数化
 import { createOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
 import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 approve→执行(CAS approved + 执行 + executed_at CAS,domain 层)
@@ -365,6 +366,18 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   //   只发生在人 Passkey 批准后(下方 /approve 的 order_submit 分支 → order-submit-exec,agent 不可达)。
   // RFC-025 PR-6 — 售后案件草稿组装(safe scope buyer_case_prepare)。纯只读:时间线结构字段 +
   //   商品声明锚点 + 证据 ref(零自由文本/PII);零写入零经济;提交类售后动作全部指向人路径。
+  // RFC-026 PR-2 — 审批状态只读(safe scope approval_requests_read;只看本人;零 PII)
+  app.get('/api/agent/approval-requests', requireAgentGrantScope('approval_requests_read'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    res.json(listApprovalRequests(db, p.human_id))
+  })
+  app.get('/api/agent/approval-requests/:id', requireAgentGrantScope('approval_requests_read'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const r = getApprovalRequest(db, p.human_id, req.params.id)
+    if (!r.ok) return void res.status(r.status).json(r.body)
+    res.json(r.response)
+  })
+
   app.get('/api/agent/buyer/orders/:id/case-draft', requireAgentGrantScope('buyer_case_prepare'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     const r = buildCaseDraft(db, p.human_id, req.params.id)
@@ -376,7 +389,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     const r = createOrderSubmitRequest(db, { draftId: String(req.params.id), grantId: p.grant_id, humanId: p.human_id, agentLabel: p.agent_label ?? 'agent', generateId })
     if (!r.ok) return void res.status(r.http).json({ error: r.error, error_code: r.error_code })
-    res.json({ success: true, request_id: r.request_id, draft_id: req.params.id, params_hash: r.params_hash, approval_url: '/#agent-approvals', idempotency: { params_hash: r.params_hash, duplicate: !!r.duplicate, reused_existing_request: !!r.duplicate }, note: r.duplicate ? 'An equivalent submit request is already awaiting Passkey approval — REUSED it (no second request was created). Do NOT re-quote or re-draft to retry; ask the human to open the approval page.' : 'Pending human Passkey approval. NOT executed — approval creates the order (and for escrow debits wallet→escrow) server-side; nothing happens without the Passkey.' })
+    res.json({ success: true, request_id: r.request_id, draft_id: req.params.id, params_hash: r.params_hash, approval_url: `/#agent-approvals/${r.request_id}`, idempotency: { params_hash: r.params_hash, duplicate: !!r.duplicate, reused_existing_request: !!r.duplicate }, note: r.duplicate ? 'An equivalent submit request is already awaiting Passkey approval — REUSED it (no second request was created). Do NOT re-quote or re-draft to retry; ask the human to open the approval page.' : 'Pending human Passkey approval. NOT executed — approval creates the order (and for escrow debits wallet→escrow) server-side; nothing happens without the Passkey.' })
   })
 
   // RFC-021 PR2 — order-action 请求提交(safe scope order_action_request)。SUBMIT-only:写 pending,【绝不执行】。
@@ -388,7 +401,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const orderId = String(req.params.orderId)
     const r = createOrderActionRequest(db, { orderId, action: String(b.action ?? ''), rawParams: b.action_params, grantId: p.grant_id, humanId: p.human_id, agentLabel: p.agent_label, generateId })
     if (!r.ok) return void res.status(r.http || 400).json({ error: r.error, error_code: r.error_code })
-    res.json({ success: true, request_id: r.request_id, order_id: orderId, action: b.action, params_hash: r.params_hash, approval_url: '/#agent-approvals', note: 'Pending human Passkey approval. NOT executed — execution (accept/ship) lands in RFC-021 PR3.' })
+    res.json({ success: true, request_id: r.request_id, order_id: orderId, action: b.action, params_hash: r.params_hash, approval_url: `/#agent-approvals/${r.request_id}`, note: 'Pending human Passkey approval. NOT executed — execution (accept/ship) lands in RFC-021 PR3.' })
   })
 
   // POST create a DRAFT product via a delegation grant (Catalog Agent, safe scope seller_product_draft). The
@@ -481,7 +494,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   app.get('/api/agent-grants/permission-requests', async (req, res) => {
     const user = auth(req, res); if (!user) return
     const rows = await dbAll<Record<string, unknown>>(
-      "SELECT id, agent_label, requested_scopes, permission_bundle, reason, task_context, risk_level, duration, created_at, expires_at, kind, order_id, order_action, params_hash, action_params, status FROM agent_permission_requests WHERE human_id = ? AND ((status = 'pending' AND expires_at > ?) OR (kind = 'order_submit' AND status = 'approved' AND executed_at IS NULL)) ORDER BY created_at DESC LIMIT 100",
+      "SELECT id, agent_label, requested_scopes, permission_bundle, reason, task_context, risk_level, duration, created_at, expires_at, kind, order_id, order_action, params_hash, action_params, status, execution_result FROM agent_permission_requests WHERE human_id = ? AND ((status = 'pending' AND expires_at > ?) OR (kind IN ('order_submit','order_action') AND status = 'approved' AND executed_at IS NULL)) ORDER BY created_at DESC LIMIT 100",
       [user.id, new Date().toISOString()])  // RFC-026 R1:approved+未执行的 order_submit(执行结果不明冻结)也列出 —— 人再次 Passkey 批准即触发服务端和解(oracle 核对补回链或安全重试),这是冻结态唯一的解锁路径
     // order_action:额外返回 kind/order_id/order_action/params_hash/action_params(action_params 经 PR2 sanitize,
     //   只含 tracking/evidence_ref,【无地址/PII】)。前端据此绑 Passkey purpose_data {request_id, order_id, action, params_hash}。
@@ -490,7 +503,9 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       if (r.kind === 'order_action') { try { base.action_params = r.action_params ? JSON.parse(String(r.action_params)) : {} } catch { base.action_params = {} } }
       // RFC-025 PR-5a:order_submit 行附经济摘要(域层 submitRowSummary,route 零新增 seam 计数;零 PII)。
       if (r.kind === 'order_submit') { const sum = submitRowSummary(db, String(r.order_id)); if (sum) base.submit_summary = sum; if (r.status === 'approved') base.needs_reconcile = true }
-      delete base.status
+      // RFC-026 PR-2(Codex HIGH):order_action 执行失败保持 approved 可重试 —— 必须回到列表让人重批,不许悄悄搁浅;只回短错误码
+      if (r.kind === 'order_action' && r.status === 'approved') { base.retry_available = true; try { const er = r.execution_result ? JSON.parse(String(r.execution_result)) as { ok?: boolean; error_code?: string } : null; if (er && er.ok === false) base.last_error = String(er.error_code ?? 'EXECUTE_FAILED') } catch { /* 无注解 */ } }
+      delete base.status; delete base.execution_result
       return base
     }) })
   })

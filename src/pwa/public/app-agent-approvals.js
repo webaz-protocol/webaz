@@ -32,7 +32,7 @@
   async function aaHydrate() {
     const box = document.getElementById('aa-body'); if (!box) return
     const r = await GET('/agent-grants/permission-requests').catch(() => null)
-    if (!r || r.error) { box.innerHTML = `<div class="card" style="padding:16px;color:#991b1b">${escHtml((r && r.error) || t('无法读取授权请求,请重试。'))}</div>`; return }
+    if (!r || r.error) { box.innerHTML = `<div class="card" style="padding:16px;color:#991b1b">${escHtml((r && r.error) || t('无法读取授权请求,请重试。'))} <button class="btn btn-outline" style="margin-top:8px" onclick="location.reload()">${t('重试')}</button></div>`; return }
     const reqs = Array.isArray(r.requests) ? r.requests : []
     if (reqs.length === 0) {
       box.innerHTML = `<div class="empty" style="padding:40px 16px;text-align:center">
@@ -42,7 +42,7 @@
       </div>`
       return
     }
-    if (window.aaMarkSimilarSubmits) window.aaMarkSimilarSubmits(reqs); box.innerHTML = reqs.map(aaCard).join('')  // RFC-026 PR-1 相似购买标记(逻辑在 -submit.js)
+    if (window.aaMarkSimilarSubmits) window.aaMarkSimilarSubmits(reqs); box.innerHTML = reqs.map(aaCard).join(''); if (window.aaApplyDeepLink) window.aaApplyDeepLink(box)  // RFC-026 PR-1/2 相似标记+深链接(逻辑在 -dup.js)
   }
 
   function aaCard(r) {

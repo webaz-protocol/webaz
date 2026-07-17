@@ -83,7 +83,9 @@ for (const file of SCAN_FILES) {
       //   (见 admin-direct-receive-deposits.ts)。注册行用 wrapper、8 行窗口内看不到 require*,故显式识别 → 标 ROOT+auth。
       if (/\bgatedIngress\(\s*['"]/.test(lines[j])) { isAdmin = true; needsAuth = true }
       const gm = lines[j].match(/requireAgentGrantScope\(\s*['"]([^'"]+)['"]/)   // RFC-020 delegation-grant gate
-      if (gm) { needsGrant = true; grantScope = gm[1] }
+      // FIRST match wins:守卫永远紧贴注册行;last-match 会在短 handler 时被【下一条路由】的 scope 覆盖
+      //   (RFC-026 PR-2 Codex BLOCKER:/:id 被标成 buyer_case_prepare)。
+      if (gm && grantScope === null) { needsGrant = true; grantScope = gm[1] }
     }
     endpoints.push({ method, path: apiPath, file: rel, line: i + 1, needs_auth: needsAuth, is_admin: isAdmin, needs_grant: needsGrant, grant_scope: grantScope, comment })
   }

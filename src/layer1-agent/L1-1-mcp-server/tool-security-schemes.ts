@@ -37,6 +37,7 @@ const OAUTH_TOOL_SCOPES: Record<string, readonly string[]> = {
   webaz_order_draft: ['order:draft'],   // RFC-025 PR-4 (→ draft_order)
   webaz_submit_order_request: ['order:draft'],   // RFC-025 PR-5a (→ order_submit_request)
   webaz_prepare_case: ['read'],   // RFC-025 PR-6 (→ buyer_case_prepare)
+  webaz_approval_requests: ['read'],   // RFC-026 PR-2 (→ approval_requests_read)
 }
 
 /** The securitySchemes for a tool: oauth2 (with scopes) iff grant-reachable, else the noauth default. */
