@@ -1995,6 +1995,24 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
     },
   },
   {
+    name: 'webaz_buyer_action_request',
+    description: `Submit an after-sales ACTION REQUEST on one of YOUR orders (RFC-026 PR-6, safe scope buyer_action_request under the aftersales:request OAuth scope). SUBMIT-ONLY — nothing executes without the human's Passkey; on approval the server re-validates against current state and runs the REAL order route (any drift hard-fails).
+
+- action="confirm_receipt" (escrow rail, delivered only): approval RELEASES the escrow to the seller and settles the order. Direct Pay confirm is human-only (its own disclosure acks + live Passkey on the order page).
+- action="cancel" (Direct Pay only, unpaid window/negotiation/expired-grace): zero funds move.
+- action="request_return" (completed + inside the FROZEN return window; reason enum quality/wrong_item/damaged/no_longer_needed/other): files a return request — the seller still decides.
+- The response carries the server-computed economic_effect the human will see. One active request per (order, action); same content = idempotent reuse; changed consequences = explicit conflict with the existing id. Disputes/refund handshakes stay human-only for now.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        order_id: { type: 'string', description: 'Your order id' },
+        action: { type: 'string', enum: ['confirm_receipt', 'cancel', 'request_return'], description: 'The requested action' },
+        reason: { type: 'string', enum: ['quality', 'wrong_item', 'damaged', 'no_longer_needed', 'other'], description: 'request_return only' },
+      },
+      required: ['order_id', 'action'],
+    },
+  },
+  {
     name: 'webaz_address',
     description: `Your default shipping address over OAuth (RFC-026 PR-5, safe scopes address_read_masked / address_change_request under the address scope). Agents NEVER see the full address — no substrings, no hints.
 
@@ -2921,6 +2939,20 @@ export async function handlePrepareCase(args: Record<string, unknown>): Promise<
   if (typeof args.order_id !== 'string' || !args.order_id) return { error: 'order_id is required', error_code: 'ORDER_NOT_FOUND' }
   const r = await apiCall(`/api/agent/buyer/orders/${encodeURIComponent(args.order_id)}/case-draft`, { method: 'GET', apiKey: cred.token })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_case_prepare. Re-connect via OAuth so the grant carries the read scope, then retry.' }
+  return r
+}
+
+export async function handleBuyerActionRequest(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // RFC-026 PR-6 — wraps POST /api/agent/orders/:id/buyer-action-request (buyer_action_request).
+  //   SUBMIT-only; execution happens exclusively in the human Passkey approve path server-side.
+  if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential(args)
+  if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
+  if (typeof args.order_id !== 'string' || !args.order_id) return { error: 'order_id is required', error_code: 'ORDER_NOT_FOUND' }
+  const body: Record<string, unknown> = { action: args.action }
+  if (args.reason !== undefined) body.reason = args.reason
+  const r = await apiCall(`/api/agent/orders/${encodeURIComponent(args.order_id)}/buyer-action-request`, { method: 'POST', apiKey: cred.token, body })
+  if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_action_request. Re-connect via OAuth so the grant carries the aftersales:request scope, then retry.' }
   return r
 }
 
@@ -5930,6 +5962,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         case 'webaz_submit_order_request': result = await handleSubmitOrderRequest(args); break
         case 'webaz_prepare_case':        result = await handlePrepareCase(args); break
         case 'webaz_approval_requests':   result = await handleApprovalRequests(args); break
+        case 'webaz_buyer_action_request': result = await handleBuyerActionRequest(args); break
         case 'webaz_address':             result = await handleAddressAgent(args); break
         case 'webaz_order_chat':          result = await handleOrderChat(args); break
         case 'webaz_wallet_view':         result = await handleWalletView(args); break

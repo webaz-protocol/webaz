@@ -66,7 +66,7 @@ const METADATA_URL = 'https://webaz.xyz/.well-known/oauth-protected-resource/mcp
 
 // 挑战即承诺:入列 = 该工具在 /mcp 上有真实的 oat_/gtk_ grant 路径(resolveGrantCredential →
 // requireAgentGrantScope 端点 → 成功或 scope 级 PERMISSION_REQUIRED)。
-const GRANT_PATH_TOOLS = ['webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request', 'webaz_connection_status', 'webaz_buyer_orders', 'webaz_discover', 'webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request', 'webaz_prepare_case', 'webaz_approval_requests', 'webaz_wallet_view', 'webaz_order_chat', 'webaz_address']
+const GRANT_PATH_TOOLS = ['webaz_list_product', 'webaz_get_agent_order', 'webaz_order_action_request', 'webaz_connection_status', 'webaz_buyer_orders', 'webaz_discover', 'webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request', 'webaz_prepare_case', 'webaz_approval_requests', 'webaz_wallet_view', 'webaz_order_chat', 'webaz_address', 'webaz_buyer_action_request']
 // api_key-only:oat_ 永远满足不了(它只作为 grant 凭证注入,不是 human api_key)→ 401 广告 OAuth = 虚假恢复路径。
 const API_KEY_ONLY_TOOLS = ['webaz_place_order', 'webaz_update_order', 'webaz_wallet', 'webaz_notifications', 'webaz_default_address']
 
@@ -236,6 +236,7 @@ async function main() {
       webaz_wallet_view: ['wallet_read_minimal'],   // GET /api/agent/wallet — RFC-026 PR-3
       webaz_order_chat: ['order_chat_read'],   // /api/agent/orders/:id/chat — RFC-026 PR-4
       webaz_address: ['address_read_masked'],   // /api/agent/address/* — RFC-026 PR-5
+      webaz_buyer_action_request: ['buyer_action_request'],   // POST /api/agent/orders/:id/buyer-action-request — RFC-026 PR-6
     }
     for (const [tool, reqCaps] of Object.entries(TOOL_REQUIRED_CAPS)) {
       for (const c of reqCaps) {

@@ -57,6 +57,7 @@ async function main(): Promise<void> {
     webaz_wallet_view: ['read'],   // RFC-026 PR-3
     webaz_order_chat: ['chat:context'],   // RFC-026 PR-4
     webaz_address: ['address'],   // RFC-026 PR-5
+    webaz_buyer_action_request: ['aftersales:request'],   // RFC-026 PR-6
   }
   const API_KEY_ONLY = ['webaz_place_order', 'webaz_update_order', 'webaz_wallet', 'webaz_notifications', 'webaz_default_address']
   const { OAUTH_SCOPES } = await import('../src/pwa/routes/oauth-discovery.js')
@@ -66,7 +67,7 @@ async function main(): Promise<void> {
   const FINE_CAPABILITY_NAMES = [...new Set(Object.values(OAUTH_SCOPE_CAPABILITIES).flat())]
 
   // The REMOTE wire is the isolated surface: it excludes LOCAL_ONLY tools (webaz_pair), so excludes webaz_pair.
-  ok('1. all 53 remote-visible tools carry a non-empty securitySchemes array on the WIRE (webaz_pair local-only hidden)', tools.length === 53 && tools.every(t => Array.isArray(t.securitySchemes) && t.securitySchemes.length > 0))
+  ok('1. all 54 remote-visible tools carry a non-empty securitySchemes array on the WIRE (webaz_pair local-only hidden)', tools.length === 54 && tools.every(t => Array.isArray(t.securitySchemes) && t.securitySchemes.length > 0))
   ok('1b. webaz_pair (local-only pairing) is NOT advertised on the remote tools/list', !byName['webaz_pair'])
 
   for (const [name, scopes] of Object.entries(OAUTH)) {
@@ -81,8 +82,8 @@ async function main(): Promise<void> {
   ok('4b. webaz_info (anonymous read) → noauth', byName['webaz_info']?.[0]?.type === 'noauth')
 
   const oauthTools = tools.filter(t => (t.securitySchemes ?? []).some(s => s.type === 'oauth2')).map(t => t.name).sort()
-  ok('5. EXACTLY the 15 grant-reachable tools advertise oauth2 (no false OAuth anywhere else)',
-    JSON.stringify(oauthTools) === JSON.stringify(['webaz_address', 'webaz_approval_requests', 'webaz_buyer_orders', 'webaz_connection_status', 'webaz_discover', 'webaz_get_agent_order', 'webaz_list_product', 'webaz_order_action_request', 'webaz_order_chat', 'webaz_order_draft', 'webaz_prepare_case', 'webaz_quote_order', 'webaz_submit_order_request', 'webaz_upload_product_image', 'webaz_wallet_view']))
+  ok('5. EXACTLY the 16 grant-reachable tools advertise oauth2 (no false OAuth anywhere else)',
+    JSON.stringify(oauthTools) === JSON.stringify(['webaz_address', 'webaz_approval_requests', 'webaz_buyer_action_request', 'webaz_buyer_orders', 'webaz_connection_status', 'webaz_discover', 'webaz_get_agent_order', 'webaz_list_product', 'webaz_order_action_request', 'webaz_order_chat', 'webaz_order_draft', 'webaz_prepare_case', 'webaz_quote_order', 'webaz_submit_order_request', 'webaz_upload_product_image', 'webaz_wallet_view']))
 
   // PR-6: every advertised oauth2 scope MUST be a coarse OAuth scope the authorize endpoint accepts —
   // else ChatGPT requests it and gets invalid_scope. And a fine internal capability name must NEVER leak

@@ -1749,6 +1749,8 @@ export function initAgentPermissionRequestsSchema(db: Database.Database): void {
     created_at   TEXT DEFAULT (datetime('now'))
   )`)
   try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_apr_address_change_active ON agent_permission_requests(human_id) WHERE kind='address_change' AND status IN ('pending','approved') AND executed_at IS NULL") } catch { /* */ }
+  // RFC-026 PR-6:买家动作请求 —— 每 (order, action) 至多一条活跃(与 order_action 索引同范式)
+  try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_apr_buyer_action_active ON agent_permission_requests(order_id, order_action) WHERE kind='buyer_action' AND status IN ('pending','approved') AND executed_at IS NULL") } catch { /* */ }
   // PII 保留期硬保证(每次 boot 执行):终态/过期/孤儿的待确认地址一律清除 —— staging 表绝不当地址历史库
   try { db.exec("DELETE FROM address_change_requests WHERE request_id IN (SELECT id FROM agent_permission_requests WHERE kind='address_change' AND (executed_at IS NOT NULL OR status IN ('rejected','expired','failed') OR (status='pending' AND expires_at <= datetime('now')))) OR request_id NOT IN (SELECT id FROM agent_permission_requests)") } catch { /* 可重复;失败下次 boot 再清 */ }
   // RFC-026 PR-1:一张草稿至多产出一笔订单(状态机 CAS 之外的 DB 级不可绕过兜底);历史订单幂等回填自 order_drafts 回链。

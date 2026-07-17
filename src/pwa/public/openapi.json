@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (806 endpoints, 19 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (807 endpoints, 19 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -3034,6 +3034,20 @@
           }
         ],
         "x-webaz-grant-scope": "seller_orders_read_minimal"
+      }
+    },
+    "/api/agent/orders/:id/buyer-action-request": {
+      "post": {
+        "summary": "RFC-026 PR-6 — 买家动作请求(confirm_receipt/cancel/request_return;提交-审批-回环执行)",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "buyer_action_request"
       }
     },
     "/api/agent/orders/:id/chat": {
