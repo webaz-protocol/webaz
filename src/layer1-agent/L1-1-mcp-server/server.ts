@@ -1954,7 +1954,7 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
 
 - action="list" → your latest requests (newest first, max 50): request_id, action_type, status, timestamps, deep-link approval_url, executed_order_id.
 - action="get" (request_id) → one request in full, incl. the zero-PII economic summary for order submits.
-- status meanings: pending (open the approval_url) | needs_reconcile (last execution outcome unknown — the human re-approves with a Passkey to reconcile safely) | executed (executed_order_id is the REAL order) | failed (terminal; retry = submit a fresh request) | rejected | expired.
+- status meanings: pending (open the approval_url) | needs_reconcile (order submit: last outcome unknown — a fresh Passkey approval reconciles safely) | execution_failed / approved_retryable (order action: execution did not complete, failure_reason carries the code — a fresh Passkey approval retries) | executed (executed_order_id is the REAL order) | failed (terminal; retry = submit a fresh request) | rejected | expired.
 - NEVER re-submit a quote/draft/submit chain just to check status — use this tool instead.`,
     inputSchema: {
       type: 'object',

@@ -5,7 +5,7 @@
   window.aaApplyDeepLink = function (box) {
     var target = (location.hash.split('/')[1] || '').trim()
     if (!target || !box) return
-    var card = box.querySelector('[data-aa-id="' + ((window.CSS && CSS.escape) ? CSS.escape(target) : target) + '"]')
+    var card = null; box.querySelectorAll('[data-aa-id]').forEach(function (el) { if (!card && el.getAttribute('data-aa-id') === target) card = el })  // dataset 精确比对:URL 片段绝不进 selector 语法
     if (card) { card.style.outline = '2px solid #4f46e5'; card.style.outlineOffset = '2px'; setTimeout(function () { card.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, 60); return }
     var note = document.createElement('div')
     note.className = 'card'; note.style.cssText = 'padding:12px;margin-bottom:12px;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a'

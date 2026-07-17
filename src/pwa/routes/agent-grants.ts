@@ -494,7 +494,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   app.get('/api/agent-grants/permission-requests', async (req, res) => {
     const user = auth(req, res); if (!user) return
     const rows = await dbAll<Record<string, unknown>>(
-      "SELECT id, agent_label, requested_scopes, permission_bundle, reason, task_context, risk_level, duration, created_at, expires_at, kind, order_id, order_action, params_hash, action_params, status FROM agent_permission_requests WHERE human_id = ? AND ((status = 'pending' AND expires_at > ?) OR (kind = 'order_submit' AND status = 'approved' AND executed_at IS NULL)) ORDER BY created_at DESC LIMIT 100",
+      "SELECT id, agent_label, requested_scopes, permission_bundle, reason, task_context, risk_level, duration, created_at, expires_at, kind, order_id, order_action, params_hash, action_params, status, execution_result FROM agent_permission_requests WHERE human_id = ? AND ((status = 'pending' AND expires_at > ?) OR (kind IN ('order_submit','order_action') AND status = 'approved' AND executed_at IS NULL)) ORDER BY created_at DESC LIMIT 100",
       [user.id, new Date().toISOString()])  // RFC-026 R1:approved+未执行的 order_submit(执行结果不明冻结)也列出 —— 人再次 Passkey 批准即触发服务端和解(oracle 核对补回链或安全重试),这是冻结态唯一的解锁路径
     // order_action:额外返回 kind/order_id/order_action/params_hash/action_params(action_params 经 PR2 sanitize,
     //   只含 tracking/evidence_ref,【无地址/PII】)。前端据此绑 Passkey purpose_data {request_id, order_id, action, params_hash}。
@@ -503,7 +503,9 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       if (r.kind === 'order_action') { try { base.action_params = r.action_params ? JSON.parse(String(r.action_params)) : {} } catch { base.action_params = {} } }
       // RFC-025 PR-5a:order_submit 行附经济摘要(域层 submitRowSummary,route 零新增 seam 计数;零 PII)。
       if (r.kind === 'order_submit') { const sum = submitRowSummary(db, String(r.order_id)); if (sum) base.submit_summary = sum; if (r.status === 'approved') base.needs_reconcile = true }
-      delete base.status
+      // RFC-026 PR-2(Codex HIGH):order_action 执行失败保持 approved 可重试 —— 必须回到列表让人重批,不许悄悄搁浅;只回短错误码
+      if (r.kind === 'order_action' && r.status === 'approved') { base.retry_available = true; try { const er = r.execution_result ? JSON.parse(String(r.execution_result)) as { ok?: boolean; error_code?: string } : null; if (er && er.ok === false) base.last_error = String(er.error_code ?? 'EXECUTE_FAILED') } catch { /* 无注解 */ } }
+      delete base.status; delete base.execution_result
       return base
     }) })
   })

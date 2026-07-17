@@ -15,11 +15,24 @@ import { submitRowSummary } from './order-submit-request.js'
 
 const COLS = 'id, agent_label, status, risk_level, created_at, expires_at, kind, order_id, order_action, params_hash, intent_hash, executed_at, execution_result'
 
+/** 失败注解只回 error_code(服务端写的短码;绝不透传自由文本)。 */
+function failureCode(r: Record<string, unknown>): string | null {
+  try { const er = r.execution_result ? JSON.parse(String(r.execution_result)) as { ok?: boolean; error_code?: string } : null; return er && er.ok === false ? String(er.error_code ?? 'EXECUTE_FAILED') : null } catch { return null }
+}
+
 function statusView(r: Record<string, unknown>, nowIso: string): string {
   if (r.executed_at) return 'executed'
   const s = String(r.status)
   if (s === 'pending') return String(r.expires_at) <= nowIso ? 'expired' : 'pending'
-  if (s === 'approved') return r.kind === 'order_submit' ? 'needs_reconcile' : 'approved'
+  if (s === 'approved') {
+    if (r.kind === 'order_submit') return 'needs_reconcile'
+    if (r.kind === 'order_action') {
+      // RFC-021 语义:执行失败【不】置 executed_at,请求保持 approved 可重试,失败注解在 execution_result
+      try { const er = r.execution_result ? JSON.parse(String(r.execution_result)) as { ok?: boolean } : null; if (er && er.ok === false) return 'execution_failed' } catch { /* 非 JSON 当无注解 */ }
+      return 'approved_retryable'
+    }
+    return 'approved'
+  }
   return s   // failed | rejected | expired
 }
 
@@ -33,13 +46,14 @@ function project(db: Database.Database, r: Record<string, unknown>, nowIso: stri
     action_type: r.kind === 'order_submit' ? 'order_create' : r.kind === 'order_action' ? String(r.order_action ?? '') : 'scope_grant',
     status: view,
     created_at: String(r.created_at), expires_at: String(r.expires_at),
-    approval_url: view === 'pending' || view === 'needs_reconcile' ? `/#agent-approvals/${String(r.id)}` : null,
+    approval_url: view === 'pending' || view === 'needs_reconcile' || view === 'execution_failed' || view === 'approved_retryable' ? `/#agent-approvals/${String(r.id)}` : null,
     executed_order_id: executedOrderId,
     params_hash: r.params_hash ?? null,
     intent_fingerprint: r.intent_hash ?? null,
     human_confirmation_required: true,
     ...(view === 'needs_reconcile' ? { note: 'Last execution outcome unknown — the human re-approves with a Passkey to reconcile safely (existing order returned, or execution retried; never a duplicate).' } : {}),
     ...(view === 'failed' ? { note: 'Terminal clean failure (terms drifted / draft unavailable / upstream reject). Retry = submit a fresh request; the human approves a fresh card.' } : {}),
+    ...(view === 'execution_failed' || view === 'approved_retryable' ? { failure_reason: failureCode(r), note: 'Execution did not complete — the request stays approved and the human can re-approve with a Passkey to retry (never a duplicate).' } : {}),
   }
   if (full && r.kind === 'order_submit') {
     const sum = submitRowSummary(db, String(r.order_id))

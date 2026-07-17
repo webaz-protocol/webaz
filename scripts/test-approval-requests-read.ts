@@ -42,10 +42,10 @@ const mkDraft = (id: string): void => {
     VALUES (?, ?, 'buyer1', 'prd_a', NULL, 'seller1', 1, 30000000, 30000000, 0, 0, 0, 30000000, 30000000, 'WAZ', 'escrow', NULL, 'SG', ?, 0, 'draft', ?)`).run(id, 'q_' + id, sha('addr SECRET St 91234567'), FUTURE)
 }
 for (const d of ['odr_p', 'odr_x', 'odr_e', 'odr_f', 'odr_r', 'odr_t']) mkDraft(d)
-const mkApr = (id: string, human: string, draftId: string, status: string, expires: string, executed: string | null, result: string | null): void => {
+const mkApr = (id: string, human: string, draftId: string, status: string, expires: string, executed: string | null, result: string | null, kind = 'order_submit', action = 'order_submit'): void => {
   db.prepare(`INSERT INTO agent_permission_requests (id, human_id, grant_id, agent_label, requested_scopes, risk_level, duration, status, expires_at, kind, order_id, order_action, params_hash, intent_hash, action_params, executed_at, execution_result)
-    VALUES (?, ?, 'grt_src', 'CA', '[]', 'high', 'once', ?, ?, 'order_submit', ?, 'order_submit', ?, ?, '{}', ?, ?)`)
-    .run(id, human, status, expires, draftId, 'ph_' + id, 'ih_' + id, executed, result)
+    VALUES (?, ?, 'grt_src', 'CA', '[]', 'high', 'once', ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)`)
+    .run(id, human, status, expires, kind, draftId, action, 'ph_' + id, 'ih_' + id, executed, result)
 }
 mkApr('apr_pending', 'buyer1', 'odr_p', 'pending', FUTURE, null, null)
 mkApr('apr_expired', 'buyer1', 'odr_e', 'pending', PAST, null, null)
@@ -53,8 +53,16 @@ mkApr('apr_executed', 'buyer1', 'odr_x', 'approved', FUTURE, new Date().toISOStr
 mkApr('apr_failed', 'buyer1', 'odr_f', 'failed', FUTURE, null, null)
 mkApr('apr_frozen', 'buyer1', 'odr_r', 'approved', FUTURE, null, null)
 mkApr('apr_theirs', 'other1', 'odr_t', 'pending', FUTURE, null, null)
+// RFC-021 order_action 双态(Codex MEDIUM:失败注解 {ok:false} 保持 approved 可重试)
+mkApr('apr_act_failed', 'buyer1', 'ord_act1', 'approved', FUTURE, null, JSON.stringify({ ok: false, error_code: 'TRACKING_REQUIRED' }), 'order_action', 'ship')
+mkApr('apr_act_mid', 'buyer1', 'ord_act2', 'approved', FUTURE, null, null, 'order_action', 'accept')
 
-const auth = (_req: Request, res: Response) => { res.status(401).json({ error: 'no human auth in this test' }); return null }
+const auth = (req: Request, res: Response) => {
+  const uid = req.headers['x-test-uid'] as string | undefined
+  const row = uid ? db.prepare('SELECT * FROM users WHERE id = ?').get(uid) as Record<string, unknown> | undefined : undefined
+  if (!row) { res.status(401).json({ error: 'login' }); return null }
+  return row
+}
 const app = express(); app.use(express.json())
 registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true })
 const server = app.listen(0)
@@ -96,8 +104,8 @@ try {
   useCred('grt_ar', 'oat_ar_full', ['approval_requests_read'])
   const L = await C({ action: 'list' })
   const reqs = L.requests as Array<Record<string, unknown>>
-  ok('A-3 list over a REAL oat_ bearer: exactly the 5 OWN requests (the other human\'s row invisible)',
-    Array.isArray(reqs) && reqs.length === 5 && !reqs.some(r => r.request_id === 'apr_theirs'), JSON.stringify(L).slice(0, 300))
+  ok('A-3 list over a REAL oat_ bearer: exactly the 7 OWN requests (the other human\'s row invisible)',
+    Array.isArray(reqs) && reqs.length === 7 && !reqs.some(r => r.request_id === 'apr_theirs'), JSON.stringify(L).slice(0, 300))
   const by = Object.fromEntries(reqs.map(r => [String(r.request_id), r]))
   ok('A-4 status derivation: pending / expired(lazy) / executed(+order id) / failed(+note) / needs_reconcile(+note)',
     by.apr_pending?.status === 'pending' && by.apr_expired?.status === 'expired'
@@ -107,6 +115,15 @@ try {
   ok('A-5 deep-link approval_url ONLY on actionable states (pending/needs_reconcile), exact format',
     by.apr_pending?.approval_url === '/#agent-approvals/apr_pending' && by.apr_frozen?.approval_url === '/#agent-approvals/apr_frozen'
     && by.apr_executed?.approval_url === null && by.apr_failed?.approval_url === null && by.apr_expired?.approval_url === null)
+  ok('A-4b order_action honesty: failed execution → execution_failed + failure_reason + actionable url; mid-flight → approved_retryable + url',
+    by.apr_act_failed?.status === 'execution_failed' && by.apr_act_failed?.failure_reason === 'TRACKING_REQUIRED' && by.apr_act_failed?.approval_url === '/#agent-approvals/apr_act_failed'
+    && by.apr_act_mid?.status === 'approved_retryable' && by.apr_act_mid?.approval_url === '/#agent-approvals/apr_act_mid', JSON.stringify({ f: by.apr_act_failed, m: by.apr_act_mid }))
+  // 人工审批列表:失败的 order_action 必须回列表可重批(不许搁浅);冻结 submit 带 needs_reconcile
+  { const hres = await fetch(`${process.env.WEBAZ_API_URL}/api/agent-grants/permission-requests`, { headers: { 'x-test-uid': 'buyer1' } })
+    const hj = await hres.json() as { requests: Array<Record<string, unknown>> }
+    const hby = Object.fromEntries(hj.requests.map(x => [String(x.id), x]))
+    ok('A-4c HUMAN approvals list surfaces the failed order_action for retry (retry_available + last_error code) and the frozen submit (needs_reconcile)',
+      hby.apr_act_failed?.retry_available === true && hby.apr_act_failed?.last_error === 'TRACKING_REQUIRED' && hby.apr_frozen?.needs_reconcile === true, JSON.stringify({ f: hby.apr_act_failed, z: hby.apr_frozen }).slice(0, 250)) }
   const G = await C({ action: 'get', request_id: 'apr_pending' })
   ok('A-6 get: full economic summary attached (zero-PII submitRowSummary) + economic_effect honesty',
     (G.submit_summary as Record<string, unknown>)?.payable_units === 30000000 && (G.economic_effect as Record<string, unknown>)?.moves_funds === true, JSON.stringify(G).slice(0, 300))

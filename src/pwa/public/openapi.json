@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (796 endpoints, 19 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (798 endpoints, 19 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2762,6 +2762,30 @@
         "security": []
       }
     },
+    "/api/agent/approval-requests": {
+      "get": {
+        "summary": "RFC-026 PR-2 — 审批状态只读(safe scope approval_requests_read;只看本人;零 PII)",
+        "tags": [],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "approval_requests_read"
+      }
+    },
+    "/api/agent/approval-requests/:id": {
+      "get": {
+        "summary": "GET /api/agent/approval-requests/:id",
+        "tags": [],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "approval_requests_read"
+      }
+    },
     "/api/agent/buyer/orders": {
       "get": {
         "summary": "recipient_code 连取都不取(I6 同强度)。纯只读,零执行、零资金 —— 买家写动作(place_order 等)仍 RISK 硬拒。",
@@ -2792,7 +2816,7 @@
     },
     "/api/agent/buyer/orders/:id/case-draft": {
       "get": {
-        "summary": "商品声明锚点 + 证据 ref(零自由文本/PII);零写入零经济;提交类售后动作全部指向人路径。",
+        "summary": "GET /api/agent/buyer/orders/:id/case-draft",
         "tags": [
           "order"
         ],
@@ -2801,7 +2825,7 @@
             "grantBearer": []
           }
         ],
-        "x-webaz-grant-scope": "order_submit_request"
+        "x-webaz-grant-scope": "buyer_case_prepare"
       }
     },
     "/api/agent/capabilities": {
