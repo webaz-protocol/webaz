@@ -47,6 +47,7 @@ const AUTH_ONLY_TOOLS = new Set([
   'webaz_prepare_case',           // RFC-025 PR-6 (grant path: GET /api/agent/buyer/orders/:id/case-draft)
   'webaz_approval_requests',      // RFC-026 PR-2 (grant path: GET /api/agent/approval-requests(/:id))
   'webaz_wallet_view',            // RFC-026 PR-3 (grant path: GET /api/agent/wallet; read-only forever)
+  'webaz_order_chat',             // RFC-026 PR-4 (grant path: /api/agent/orders/:id/chat)
 ])
 // webaz_list_product 是多 action 工具:只有 grant 路径真支持的 action 才配挑战(承诺即真实)。
 //   mine → seller_products_read;create/draft(缺省即 create)→ seller_product_draft —— 均可由 OAuth scope 铸出。
@@ -84,6 +85,7 @@ function scopeForAuthOnlyCall(body: unknown): string {
   if (name === 'webaz_prepare_case') return 'buyer_case_prepare'                      // GET /api/agent/buyer/orders/:id/case-draft
   if (name === 'webaz_approval_requests') return 'approval_requests_read'             // GET /api/agent/approval-requests(/:id)
   if (name === 'webaz_wallet_view') return 'wallet_read_minimal'                      // GET /api/agent/wallet
+  if (name === 'webaz_order_chat') return 'order_chat_read'                           // /api/agent/orders/:id/chat(send 由路由细分 order_chat_send)
   if (name === 'webaz_connection_status') return 'read_public'                       // GET /api/agent-grants/connection
   if (name === 'webaz_order_action_request') return 'order_action_request'           // POST /api/agent/orders/:id/action-request
   if (name === 'webaz_list_product') {

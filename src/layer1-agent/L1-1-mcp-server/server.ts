@@ -1967,6 +1967,25 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
     },
   },
   {
+    name: 'webaz_order_chat',
+    description: `Chat with the counterparty INSIDE one of YOUR orders (RFC-026 PR-4, safe scopes order_chat_read / order_chat_send under the chat:context OAuth scope). CONTEXT-BOUND: order participants only — there is NO free-form DM surface; you cannot message anyone outside your own order.
+
+- action="list" (order_id) → the order conversation: sender is 'you'/'counterparty' (no raw ids), bodies verbatim, anti-scam flags preserved, agent-sent messages marked (sent_by_agent + agent_label).
+- action="send" (order_id, body ≤2000 chars, optional idempotency_key) → sends through the PRODUCTION chat path: anti-scam detection, per-minute rate limits and block status all apply unchanged; the message is attributed to the human account and marked as agent-sent with a content hash (full audit chain via the grant log).
+- Idempotency: the same idempotency_key returns the original message (same-body only; a different body is an explicit conflict). Exactly-once holds while the reservation resolves; ONLY if the service crashes at the exact send/claim boundary can a retry >10 minutes later resend — before any long-delayed retry, verify with action=list.
+- Chat moves no funds and changes no order state. Agent sends share the human account chat rate budget (60/min). Never paste addresses, payment credentials or codes into chat.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['list', 'send'], description: 'list = read the order conversation; send = send one message' },
+        order_id: { type: 'string', description: 'Your order id (you must be buyer or seller)' },
+        body: { type: 'string', description: 'Message text (send; 1..2000 chars)' },
+        idempotency_key: { type: 'string', description: 'Optional [A-Za-z0-9_-]{1,64} — same key within 10min returns the original message (no double send)' },
+      },
+      required: ['action', 'order_id'],
+    },
+  },
+  {
     name: 'webaz_wallet_view',
     description: `Your wallet, READ-ONLY (RFC-026 PR-3, safe scope wallet_read_minimal; OAuth grant, no api_key): available balance, amount held in escrow, and recent refund landings (per-order refund detail lives in webaz_buyer_orders full=true → refund_status).
 
@@ -2857,6 +2876,28 @@ export async function handlePrepareCase(args: Record<string, unknown>): Promise<
   if (typeof args.order_id !== 'string' || !args.order_id) return { error: 'order_id is required', error_code: 'ORDER_NOT_FOUND' }
   const r = await apiCall(`/api/agent/buyer/orders/${encodeURIComponent(args.order_id)}/case-draft`, { method: 'GET', apiKey: cred.token })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_case_prepare. Re-connect via OAuth so the grant carries the read scope, then retry.' }
+  return r
+}
+
+export async function handleOrderChat(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // RFC-026 PR-4 — wraps /api/agent/orders/:id/chat (order_chat_read / order_chat_send). Context-bound
+  //   participant chat; send goes through the production anti-scam/rate-limit path server-side.
+  if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential(args)
+  if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
+  if (typeof args.order_id !== 'string' || !args.order_id) return { error: 'order_id is required', error_code: 'ORDER_NOT_FOUND' }
+  const action = String(args.action || '')
+  let r: Record<string, unknown>
+  if (action === 'list') {
+    r = await apiCall(`/api/agent/orders/${encodeURIComponent(args.order_id)}/chat`, { method: 'GET', apiKey: cred.token })
+  } else if (action === 'send') {
+    const body: Record<string, unknown> = { body: args.body }
+    if (args.idempotency_key !== undefined) body.idempotency_key = args.idempotency_key
+    r = await apiCall(`/api/agent/orders/${encodeURIComponent(args.order_id)}/chat`, { method: 'POST', apiKey: cred.token, body })
+  } else {
+    return { error: `unknown action: ${action}`, error_code: 'BAD_ACTION' }
+  }
+  if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: `Your grant lacks ${action === 'send' ? 'order_chat_send' : 'order_chat_read'}. Re-connect via OAuth so the grant carries the chat:context scope, then retry.` }
   return r
 }
 
@@ -5745,6 +5786,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         case 'webaz_submit_order_request': result = await handleSubmitOrderRequest(args); break
         case 'webaz_prepare_case':        result = await handlePrepareCase(args); break
         case 'webaz_approval_requests':   result = await handleApprovalRequests(args); break
+        case 'webaz_order_chat':          result = await handleOrderChat(args); break
         case 'webaz_wallet_view':         result = await handleWalletView(args); break
         case 'webaz_order_action_request': result = await handleOrderActionRequest(args); break
         case 'webaz_feedback':      result = await handleFeedback(args); break

@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (800 endpoints, 19 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (802 endpoints, 19 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -3010,6 +3010,32 @@
           }
         ],
         "x-webaz-grant-scope": "seller_orders_read_minimal"
+      }
+    },
+    "/api/agent/orders/:id/chat": {
+      "get": {
+        "summary": "RFC-026 PR-4 — 订单上下文聊天(仅订单双方;发送回环走生产反诈/限频;无自由私信)",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "order_chat_read"
+      },
+      "post": {
+        "summary": "POST /api/agent/orders/:id/chat",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "order_chat_send"
       }
     },
     "/api/agent/orders/:orderId/action-request": {

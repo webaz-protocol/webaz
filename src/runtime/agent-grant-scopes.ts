@@ -63,6 +63,7 @@ export const SAFE_SCOPES = [
   //   + 证据 ref 列表(零 notes/自由文本/PII)。不提交任何争议/退货,零写入零经济。
   'buyer_case_prepare', 'approval_requests_read',
   'buyer_orders_read', 'wallet_read_minimal',
+  'order_chat_read', 'order_chat_send',
 ] as const
 
 /**

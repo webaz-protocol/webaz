@@ -1729,6 +1729,16 @@ export function initAgentPermissionRequestsSchema(db: Database.Database): void {
   //   活跃(未终结未执行)提交请求 —— 重新报价换 draft 也绕不过;执行完成(executed_at)后指纹释放=合法再购。
   //   legacy 行 intent_hash IS NULL 不入索引(24h 自然过期,不做回填 —— 迁移零风险,回滚=drop index)。
   try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_apr_intent_active ON agent_permission_requests(human_id, intent_hash) WHERE kind='order_submit' AND status IN ('pending','approved') AND executed_at IS NULL AND intent_hash IS NOT NULL") } catch { /* */ }
+  // RFC-026 PR-4:agent 聊天幂等预留(grant 命名空间 + body 哈希绑定;UNIQUE = 并发同键恰一发)
+  db.exec(`CREATE TABLE IF NOT EXISTS agent_chat_idem (
+    grant_id    TEXT NOT NULL,
+    idem_key    TEXT NOT NULL,
+    body_sha    TEXT NOT NULL,
+    owner       TEXT NOT NULL,               -- 本次尝试的租约 token:回收/落账全部 owner-scoped CAS,并发回收恰一胜者
+    message_id  TEXT,
+    created_at  TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (grant_id, idem_key)
+  )`)
   // RFC-026 PR-1:一张草稿至多产出一笔订单(状态机 CAS 之外的 DB 级不可绕过兜底);历史订单幂等回填自 order_drafts 回链。
   try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_draft ON orders(draft_id) WHERE draft_id IS NOT NULL") } catch { /* */ }
   const hasTable = (t: string): boolean => !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(t)

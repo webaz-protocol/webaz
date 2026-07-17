@@ -60,6 +60,8 @@ export const NETWORK_TOOLS = new Set<string>([
   'webaz_approval_requests',
   // RFC-026 PR-3 wallet minimal read (grant-wired, wallet_read_minimal; READ-ONLY forever). Same rule.
   'webaz_wallet_view',
+  // RFC-026 PR-4 order-context chat (grant-wired, order_chat_read/send). Same rule.
+  'webaz_order_chat',
   // Batch 1(只读 + 低危自身写):走 webaz.xyz Bearer api_key。
   'webaz_notifications',
   'webaz_nearby',
