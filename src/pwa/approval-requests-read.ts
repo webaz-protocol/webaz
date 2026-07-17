@@ -1,0 +1,64 @@
+/**
+ * RFC-026 PR-2 — 审批请求只读投影(safe scope approval_requests_read)。
+ *
+ * 让 agent 能回答:审批还在吗 / 批了吗 / 生成了哪张订单 / 是不是重复 / 失败了吗 / 该打开哪个页面 ——
+ * 而不必再次调用提交工具去猜。只读本人(human_id 绑定);零 PII(投影字段全是状态/时间/哈希/ID,
+ * order_submit 的经济摘要复用 submitRowSummary —— 目的地只有 region 标签)。
+ *
+ * status_view 派生(对 agent 诚实,不暴露内部态机细节):
+ *   executed(executed_at 落了,带 executed_order_id)/ pending / needs_reconcile(order_submit
+ *   approved+未执行 = 上次执行结果不明,人再次 Passkey 批准即服务端和解)/ failed(干净失败终态,
+ *   重试 = 重新提交)/ rejected / expired(含 pending 超时的惰性派生,不写库)。
+ */
+import type Database from 'better-sqlite3'
+import { submitRowSummary } from './order-submit-request.js'
+
+const COLS = 'id, agent_label, status, risk_level, created_at, expires_at, kind, order_id, order_action, params_hash, intent_hash, executed_at, execution_result'
+
+function statusView(r: Record<string, unknown>, nowIso: string): string {
+  if (r.executed_at) return 'executed'
+  const s = String(r.status)
+  if (s === 'pending') return String(r.expires_at) <= nowIso ? 'expired' : 'pending'
+  if (s === 'approved') return r.kind === 'order_submit' ? 'needs_reconcile' : 'approved'
+  return s   // failed | rejected | expired
+}
+
+function project(db: Database.Database, r: Record<string, unknown>, nowIso: string, full: boolean): Record<string, unknown> {
+  const view = statusView(r, nowIso)
+  let executedOrderId: string | null = null
+  try { const er = r.execution_result ? JSON.parse(String(r.execution_result)) as { order_id?: string } : null; executedOrderId = er?.order_id ?? null } catch { /* 非 JSON 结果不回显 */ }
+  const out: Record<string, unknown> = {
+    request_id: String(r.id),
+    kind: String(r.kind ?? 'scope'),
+    action_type: r.kind === 'order_submit' ? 'order_create' : r.kind === 'order_action' ? String(r.order_action ?? '') : 'scope_grant',
+    status: view,
+    created_at: String(r.created_at), expires_at: String(r.expires_at),
+    approval_url: view === 'pending' || view === 'needs_reconcile' ? `/#agent-approvals/${String(r.id)}` : null,
+    executed_order_id: executedOrderId,
+    params_hash: r.params_hash ?? null,
+    intent_fingerprint: r.intent_hash ?? null,
+    human_confirmation_required: true,
+    ...(view === 'needs_reconcile' ? { note: 'Last execution outcome unknown — the human re-approves with a Passkey to reconcile safely (existing order returned, or execution retried; never a duplicate).' } : {}),
+    ...(view === 'failed' ? { note: 'Terminal clean failure (terms drifted / draft unavailable / upstream reject). Retry = submit a fresh request; the human approves a fresh card.' } : {}),
+  }
+  if (full && r.kind === 'order_submit') {
+    const sum = submitRowSummary(db, String(r.order_id))
+    if (sum) out.submit_summary = sum
+    out.economic_effect = { moves_funds: true, note: 'approval creates the REAL order; escrow rail debits wallet→escrow at creation' }
+  }
+  return out
+}
+
+export function listApprovalRequests(db: Database.Database, humanId: string): Record<string, unknown> {
+  const nowIso = new Date().toISOString()
+  const rows = db.prepare(`SELECT ${COLS} FROM agent_permission_requests WHERE human_id = ? ORDER BY created_at DESC LIMIT 50`).all(humanId) as Array<Record<string, unknown>>
+  return { requests: rows.map(r => project(db, r, nowIso, false)), note: 'Your own approval requests only (newest first, max 50). Use action=get for the full economic summary of one request.' }
+}
+
+export function getApprovalRequest(db: Database.Database, humanId: string, requestId: unknown):
+  { ok: true; response: Record<string, unknown> } | { ok: false; status: number; body: Record<string, unknown> } {
+  if (typeof requestId !== 'string' || !requestId) return { ok: false, status: 400, body: { error_code: 'REQUEST_NOT_FOUND', reason: 'request_id is required', retryable: true } }
+  const r = db.prepare(`SELECT ${COLS} FROM agent_permission_requests WHERE id = ? AND human_id = ?`).get(requestId, humanId) as Record<string, unknown> | undefined
+  if (!r) return { ok: false, status: 404, body: { error_code: 'REQUEST_NOT_FOUND', reason: 'no such approval request (or not yours)', retryable: false } }
+  return { ok: true, response: project(db, r, new Date().toISOString(), true) }
+}
