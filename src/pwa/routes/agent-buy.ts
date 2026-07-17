@@ -40,7 +40,7 @@ export function registerAgentBuyRoutes(app: Application, deps: AgentBuyDeps): vo
 
   app.post('/api/agent-buy', async (req, res) => {
     const user = auth(req, res); if (!user) return
-    if (user.role !== 'buyer') return void res.json({ error: '仅买家可使用智能下单' })
+    if (user.role !== 'buyer') return void res.json({ error: 'AI找同款仅限买家使用' })
 
     const { source_url, shipping_address, auto_buy = false, user_api_key } = req.body
     // RFC-025 PR-5b(D-1):auto_buy 已退役 —— 最前置检查(任何抓取/LLM 调用之前),不浪费两跳模型调用。

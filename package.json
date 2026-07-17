@@ -289,6 +289,7 @@
     "test:order-draft": "tsx scripts/test-order-draft.ts",
     "test:order-submit-approve": "tsx scripts/test-order-submit-approve.ts",
     "test:agent-buy-retired": "tsx scripts/test-agent-buy-retired.ts",
+    "test:ai-find-same-name": "tsx scripts/test-ai-find-same-name.ts",
     "test:prepare-case": "tsx scripts/test-prepare-case.ts",
     "test:oat-scope-gate": "tsx scripts/test-oat-scope-gate.ts",
     "test:approval-requests-read": "tsx scripts/test-approval-requests-read.ts",

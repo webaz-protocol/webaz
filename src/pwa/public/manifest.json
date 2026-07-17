@@ -20,9 +20,9 @@
   ],
   "shortcuts": [
     {
-      "name": "智能下单",
-      "short_name": "下单",
-      "description": "意图驱动 Agent 搜索",
+      "name": "AI找同款",
+      "short_name": "找同款",
+      "description": "输入商品名或粘贴链接，查找 WebAZ 同款",
       "url": "/#buy",
       "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
     },

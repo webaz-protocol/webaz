@@ -55,7 +55,7 @@ const GROWTH_TASK_CATALOG: GrowthTaskDef[] = [
     evaluate: c => c.completed_orders >= 1 },
   { id: 'default_address', chapter: 1,
     title_zh: '设置默认配送地址', title_en: 'Set default shipping address',
-    desc_zh: '智能下单将按地址过滤可派送商品', desc_en: 'Smart-order filters by your address',
+    desc_zh: 'AI找同款将按地址过滤可派送商品', desc_en: 'AI Match filters by your address',
     cta: { label_zh: '去填写', label_en: 'Set up', href: '#profile' },
     evaluate: c => !!c.default_address_line1 },
   { id: 'profile_bio', chapter: 1,

@@ -42,8 +42,8 @@ async function renderShop(app, opts = {}) {
     <div onclick="navigate('#shop/agent')" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:12px;padding:14px 16px;margin-bottom:16px;cursor:pointer;display:flex;align-items:center;gap:12px">
       <span style="font-size:28px">🤖</span>
       <div>
-        <div style="color:#fff;font-weight:600;font-size:14px">${t('智能下单')}</div>
-        <div style="color:rgba(255,255,255,0.8);font-size:12px">${t('粘贴任意平台链接，AI 帮你找更优方案')}</div>
+        <div style="color:#fff;font-weight:600;font-size:14px">${t('AI找同款')}</div>
+        <div style="color:rgba(255,255,255,0.8);font-size:12px">${t('粘贴任意平台链接，AI 帮你找 WebAZ 同款')}</div>
       </div>
       <span style="margin-left:auto;color:rgba(255,255,255,0.7);font-size:18px">›</span>
     </div>`
@@ -53,11 +53,11 @@ async function renderShop(app, opts = {}) {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:8px">
           <span style="font-size:22px">🤖</span>
-          <strong style="font-size:15px">${t('智能下单')}</strong>
+          <strong style="font-size:15px">${t('AI找同款')}</strong>
         </div>
         <button class="btn btn-outline btn-sm" style="width:auto;padding:4px 10px" onclick="navigate('#shop')">${t('收起')}</button>
       </div>
-      <p style="color:#6b7280;font-size:12px;margin-bottom:10px">${t('粘贴商品链接，AI 自动搜索 WebAZ 更优方案并比价;下单需你 Passkey 逐笔批准')}</p>
+      <p style="color:#6b7280;font-size:12px;margin-bottom:10px">${t('粘贴商品链接，AI 识别并查找 WebAZ 同款；找到后由你决定是否下单')}</p>
       <div class="form-group">
         <label class="form-label" style="font-size:12px">${t('商品链接')}</label>
         <input class="form-control" id="ab-url" placeholder="${t('粘贴淘宝 / 京东 / 亚马逊等链接')}" style="font-size:13px">
@@ -67,7 +67,7 @@ async function renderShop(app, opts = {}) {
         <input class="form-control" id="ab-addr" placeholder="${t('省市区街道(可选,用于运费估算)')}" style="font-size:13px">
       </div>
       <div style="font-size:11px;color:#9ca3af;margin-bottom:12px">${t('自动下单已退役:所有购买都需要你的 Passkey 逐笔批准(比价结果里可一键跳转下单页)')}</div>
-      <button class="btn btn-primary" id="ab-btn" onclick="doAgentBuy()">${t('开始分析')}</button>
+      <button class="btn btn-primary" id="ab-btn" onclick="doAgentBuy()">${t('开始找同款')}</button>
       <div id="ab-result"></div>
     </div>`
 
@@ -94,16 +94,16 @@ async function renderShop(app, opts = {}) {
   `, activeTab)
 }
 
-// ─── P10：智能购买 / 发现好物 / 新品发现 ─────────────────────
+// ─── P10：AI找同款 / 发现好物 / 新品发现 ─────────────────────
 
-// 统一头部：输入框（左侧扫码 + 粘贴气泡 + 右侧清空 ×）+ 主搜索按钮 + 拍照搜图
+// 统一头部：输入框（左侧扫码 + 粘贴气泡 + 右侧清空 ×）+ 主搜索按钮 + 拍照找同款
 // active='discover'/'new'/'nearby' → 发现页群组，placeholder 提示"模糊匹配"，预填上次搜索词
-// active='buy' (default) → 智能下单页，placeholder 提示"精确匹配"
+// active='buy' (default) → AI找同款页，placeholder 提示可识别的输入
 function renderSmartBuyHeader(active) {
   // 2026-05-24 #975：6 子页 + #buy 各自独立 scope（state key + placeholder + 输入 name）
   // autocomplete=off + 每个 scope 的 input name 唯一，阻断浏览器跨页 autofill / 历史合并
   const SCOPE = {
-    buy:       { ph: '精确匹配：商品标题 / 外链 / 口令 / hash',         key: null,           name: 'webaz-q-buy' },
+    buy:       { ph: '输入商品名 / 粘贴链接 / 口令 / 内容指纹',         key: null,           name: 'webaz-q-buy' },
     discover:  { ph: '模糊搜索：标题 / 描述 / 类目 ｜ 精准匹配',          key: '_discoverQ',   name: 'webaz-q-discover' },
     new:       { ph: '搜新品：未成交的最新上架（标题 / 描述）',           key: '_newQ',        name: 'webaz-q-new' },
     nearby:    { ph: '在你 11km 雷达内搜：top 热门商品标题',              key: '_nearbyQ',     name: 'webaz-q-nearby' },
@@ -142,14 +142,14 @@ function renderSmartBuyHeader(active) {
           <button type="button" class="search-clear" onclick="clearSbhInput()" aria-label="${t('清空')}">×</button>
         </div>
         <button class="btn btn-primary btn-sm" style="width:auto;padding:10px 14px;display:inline-flex;align-items:center;justify-content:center" onclick="smartHeaderSearch()" title="${t('搜索')}">${SVG_SEARCH}</button>
-        <button class="btn btn-outline btn-sm" style="width:auto;padding:10px 12px;display:inline-flex;align-items:center;justify-content:center" onclick="startVisualSearch()" title="${t('拍照搜图')}">${SVG_CAMERA}</button>
+        <button class="btn btn-outline btn-sm" style="width:auto;padding:10px 12px;display:inline-flex;align-items:center;justify-content:center" onclick="startVisualSearch()" title="${t('拍照找同款')}">${SVG_CAMERA}</button>
         <input type="file" id="sbh-visual-file" accept="image/*" capture="environment" style="display:none" onchange="onVisualSearchPick(event)">
       </div>
       ${isDiscover && prefill ? `<div style="margin-top:6px;font-size:11px;color:var(--gray-500);display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span>🔎 ${t('正在筛选')}: <strong style="color:var(--gray-700)">${escHtml(prefill)}</strong>${state._discoverMatchMode === 'fuzzy' ? ` <span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:99px;font-size:10px;font-weight:600;margin-left:4px">${t('模糊匹配')}</span>` : state._discoverMatchMode === 'strict' ? ` <span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:99px;font-size:10px;font-weight:600;margin-left:4px">${t('精确匹配')}</span>` : ''}</span><button onclick="clearDiscoverQuery()" style="background:none;border:none;color:var(--primary);font-size:11px;cursor:pointer;padding:0">${t('清除筛选')}</button></div>` : ''}
     </div>`
 }
 
-// 拍照搜图 — 调原生相机或相册选图；后端 /api/ai/image-search 尚未实现，先把图片预填到 input 并提示
+// 拍照找同款 — 调原生相机或相册选图；后端 /api/ai/image-search 尚未实现，先把图片预填到 input 并提示
 window.startVisualSearch = () => {
   const f = document.getElementById('sbh-visual-file')
   if (f) f.click()
@@ -161,7 +161,7 @@ window.onVisualSearchPick = async (e) => {
   if (!file) return
   // P0 占位：图像搜索后端待接入；先告知用户
   // 后续可改为 POST /api/ai/image-search (multipart) → 返回 candidates，渲染到 smart-results
-  toast$(t('拍照搜图功能即将上线 — 已暂存图片：') + file.name)
+  toast$(t('拍照找同款功能即将上线 — 已暂存图片：') + file.name)
 }
 
 // 剪贴板智能识别：输入框 focus 时尝试读 clipboard；命中则在输入框上方浮出"粘贴链接"按钮（iOS 风格）
@@ -273,7 +273,7 @@ window.switchDiscoverBanner = (hash) => {
   location.hash = hash
 }
 
-// 从智能下单 "无精确匹配" → 一键带 query 跳发现页并触发模糊搜索
+// 从 AI找同款 "无精确匹配" → 一键带 query 跳发现页并触发模糊搜索
 window.goDiscoverWithQuery = (q) => {
   state._discoverQ = String(q || '').trim()
   navigate('#discover')
@@ -307,7 +307,7 @@ window.smartHeaderSearch = () => {
     }
     return
   }
-  // 智能下单 (#buy) → 协议级精确匹配
+  // AI找同款 (#buy) → 协议级精确匹配
   if (h === '#buy' || h === '#' || h === '') {
     smartSearchExec(raw)
     return
@@ -323,7 +323,7 @@ window.smartHeaderSearch = () => {
   navigate('#buy')
 }
 
-// M7.1：智能下单 = 意图驱动 (intent-driven) 购买入口
+// M7.1：AI找同款 = 意图驱动 (intent-driven) 找货入口
 // 删除 filter 面板（filter 是浏览工具，与 intent-driven 冲突）
 // 删除批量粘贴 details（批量场景去 MCP / agent SDK）
 // 页面只展示：搜索框 + 空状态引导 / 搜索结果
@@ -397,10 +397,11 @@ function renderBuyEmptyState() {
   return `
     <div style="margin-top:20px">
       <div class="card" style="background:linear-gradient(135deg,#eef2ff 0%,#faf5ff 100%);border-color:#c7d2fe;padding:18px">
-        <div style="font-size:15px;font-weight:700;color:#4338ca;margin-bottom:10px">🎯 ${t('智能下单 = 知道要买什么，帮你买')}</div>
+        <div style="font-size:15px;font-weight:700;color:#4338ca;margin-bottom:6px">🔍 ${t('AI找同款')}</div>
+        <div style="font-size:12px;color:#4b5563;line-height:1.6;margin-bottom:10px">${t('已经知道想买什么？输入商品信息，先找到同款，再决定是否下单。')}</div>
         <div style="font-size:12px;color:#4b5563;line-height:1.8;margin-bottom:12px">
-          · ${t('输入商品标题 → 直达对应商品下单')}<br>
-          · ${t('粘贴外部链接 → WebAZ 同款推荐')}<br>
+          · ${t('输入完整商品标题 → 精准查找同款')}<br>
+          · ${t('粘贴其他平台链接 → 识别并比价')}<br>
           · ${t('输入口令 @xxx → 跳到达人推荐的商品')}<br>
           · ${t('输入 P2P 内容 hash → 验证内容来源')}
         </div>
@@ -436,7 +437,7 @@ function renderBuyNoMatchState(query) {
       <!-- 1. 诚实告知（回显输入 + 友好解释）-->
       <div style="padding:14px 16px;background:#fff;border:0.5px solid #e5e7eb;border-radius:12px">
         <div style="font-size:15px;font-weight:600;color:#1f2937;margin-bottom:4px">${t('没找到完全一致的商品')}</div>
-        <div style="font-size:12px;color:#8e8e93;line-height:1.5">${t('智能下单按商品标题精确匹配，该商品可能还没上架 — 试试下面两种方式。')}</div>
+        <div style="font-size:12px;color:#8e8e93;line-height:1.5">${t('AI找同款会先按商品标题精确匹配。该商品可能还没上架，可以换个方式搜索。')}</div>
       </div>
 
       <!-- 2. 模糊搜索（次要 CTA） -->

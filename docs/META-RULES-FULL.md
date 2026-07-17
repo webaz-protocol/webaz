@@ -273,9 +273,9 @@ Let users make **genuine choices**; don't use dark patterns / hidden options / e
 - ❌ "默认勾选续费"(隐藏 + 默认陷阱)= 操纵 / "Auto-renew checked by default" (hidden + trap) = manipulation
 - ✅ "推荐 3 个选项,标注 Most popular,有 Skip 按钮"(透明 + 易拒)= 引导 / "Recommend 3 options, label Most popular, have Skip button" (transparent + easily declined) = guidance
 
-这个区分**很重要** — 否则 #7 会被读成【任何推荐都是操纵】,跟 webaz 智能下单 / 发现页等【需要】合理引导的场景冲突。
+这个区分**很重要** — 否则 #7 会被读成【任何推荐都是操纵】,跟 WebAZ AI找同款 / 发现页等【需要】合理引导的场景冲突。
 
-This distinction matters: without it, #7 would be read as "any recommendation = manipulation", conflicting with WebAZ's smart-buy / discover pages that **need** reasonable guidance.
+This distinction matters: without it, #7 would be read as "any recommendation = manipulation", conflicting with WebAZ's AI Match / discover pages that **need** reasonable guidance.
 
 **反例 / Reverse examples**:
 

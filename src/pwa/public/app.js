@@ -1104,9 +1104,9 @@ function shell(content, activeTab, opts) {
       { id: 'me',            icon: '👤', label: t('我的'), badge: true },  // 通知未读数 → 此 tab 红点
     ]
   } else if (role === 'buyer') {
-    // 买家：订单挪进我的页（保留"我的订单"tile）；求购挪进发现页 sections；底部 5 格 = 下单 / 发现 / 消息 / 分享 / 我的
+    // 买家：订单挪进我的页（保留"我的订单"tile）；求购挪进发现页 sections；底部 5 格 = 找同款 / 发现 / 消息 / 分享 / 我的
     tabs = [
-      { id: 'buy',           icon: '🛒', label: t('智能下单') },
+      { id: 'buy',           icon: '🔎', label: t('AI找同款') },
       { id: 'discover',      icon: '🔍', label: t('发现') },
       { id: 'chats',         icon: '💬', label: t('消息'), chatsBadge: true },
       { id: 'promoter',      icon: '📡', label: t('分享中心') },
@@ -1115,7 +1115,7 @@ function shell(content, activeTab, opts) {
   } else {
     // 未登录或未识别角色：基础导航
     tabs = [
-      { id: 'buy',           icon: '🛒', label: t('智能下单') },
+      { id: 'buy',           icon: '🔎', label: t('AI找同款') },
       { id: 'discover',      icon: '🔍', label: t('发现好物') },
       { id: 'orders',        icon: '📦', label: t('订单') },
     ]
@@ -8274,7 +8274,7 @@ window.initiateFollowSell = (productId, listingId, title) => {
   alert(t('当前角色不支持跟卖（受信角色不参与交易）'))
 }
 
-// 智能下单上架 CTA 统一入口：自动处理 anon / 受信 / buyer 升级 / seller 切换
+// AI找同款上架 CTA 统一入口：自动处理 anon / 受信 / buyer 升级 / seller 切换
 // 直达卖家「商品」sub-tab，展开手工上架表单 + 预填标题
 window.clearSellerListingIntent = () => { window._sellerAddPrefill = null; try { sessionStorage.removeItem('webaz_seller_add_prefill') } catch {} }
 window.goCreateListingFromBuy = (prefillTitle) => {
@@ -15218,7 +15218,7 @@ async function renderSeller(app) {
       <details style="margin-top:10px" onToggle="onLinksToggle(this,'${p.id}')">
         <summary style="font-size:12px;color:#6366f1;cursor:pointer;list-style:none">🔗 ${t('外部链接')} <span id="lnk-count-${p.id}"></span></summary>
         <div id="lnk-panel-${p.id}" style="margin-top:10px">
-          <div style="font-size:12px;color:#9ca3af;margin-bottom:6px">${t('买家粘贴这些链接时，智能下单会直接匹配到你的商品')}</div>
+          <div style="font-size:12px;color:#9ca3af;margin-bottom:6px">${t('买家粘贴这些链接时，AI找同款会直接匹配到你的商品')}</div>
           <div id="lnk-list-${p.id}">${loading$()}</div>
           <div style="display:flex;gap:6px;margin-top:8px">
             <input class="form-control" id="lnk-inp-${p.id}" placeholder="${t('粘贴外链 / 分享文本（含「」标题更精准）')}" style="font-size:12px;flex:1">
@@ -15711,7 +15711,7 @@ async function renderSeller(app) {
   `, sellerSubTab === 'marketing' ? 'seller-marketing' : 'seller')
   if (sellerSubTab === 'settings') { window.dpHydrateInstruction && window.dpHydrateInstruction(); window.dpHydrateSellerReadiness && window.dpHydrateSellerReadiness(); window.dpHydrateSellerFee && window.dpHydrateSellerFee(); window.dpHydrateSalesReport && window.dpHydrateSalesReport(); window.dpHydrateFeeRequest && window.dpHydrateFeeRequest(); window.dpHydrateSellerDeferral && window.dpHydrateSellerDeferral(); window.dpHydrateSellerProductVerify && window.dpHydrateSellerProductVerify(); window.dpHydrateSellerStoreVerify && window.dpHydrateSellerStoreVerify(); window.draHydrateAccounts && window.draHydrateAccounts(); window.shipHydrateSellerSettings && window.shipHydrateSellerSettings(); window.bondHydrateSeller && window.bondHydrateSeller() }
 
-  // 智能下单"我也要上架"跳过来时：自动切到商品 tab + 展开手工上架表单 + 预填标题
+  // AI找同款"我也要上架"跳过来时：自动切到商品 tab + 展开手工上架表单 + 预填标题
   // hashchange 可能多次触发 renderSeller — 用 window cache 保证每次重渲都能应用
   // 只在 doAddProduct 成功后清空缓存
   try {
@@ -16640,7 +16640,7 @@ async function renderEditProduct(app, productId) {
 
     <div class="card" style="margin-top:16px">
       <div style="font-weight:600;margin-bottom:12px">🔗 ${t('外部链接')}</div>
-      <div style="font-size:12px;color:#6b7280;margin-bottom:10px">${t('买家粘贴这些链接时，智能下单会直接匹配到你的商品')}</div>
+      <div style="font-size:12px;color:#6b7280;margin-bottom:10px">${t('买家粘贴这些链接时，AI找同款会直接匹配到你的商品')}</div>
       <div id="ep-links-list">
         ${links.length === 0
           ? `<div style="font-size:12px;color:#9ca3af">${t('暂无外部链接')}</div>`
@@ -16803,7 +16803,7 @@ window.doConfirmVerifyTask = async (taskId, productId) => {
   }
 }
 
-// ─── 智能下单（Agent Buy）─────────────────────────────────────
+// ─── AI找同款（legacy API: Agent Buy）────────────────────────
 // P10：路由 #agent-buy / #shop/agent 已合并到 #buy；旧 URL redirect。
 
 async function renderAgentBuy(_app) {
@@ -17473,10 +17473,10 @@ window.doAgentBuy = async () => {
   const urls = extractUrls(raw)
   if (urls.length > 1) {
     btn.disabled = true
-    btn.textContent = t('批量分析中...')
+    btn.textContent = t('批量找同款中...')
     await doBatchBuy(urls, addr, auto)
     btn.disabled = false
-    btn.textContent = t('🔍 开始分析')
+    btn.textContent = t('🔍 开始找同款')
     // 刷新历史 chips 区
     const hSection = document.getElementById('paste-history-section')
     const fresh = renderPasteHistory()
@@ -17489,7 +17489,7 @@ window.doAgentBuy = async () => {
   const url = urls[0] || raw
 
   btn.disabled = true
-  btn.textContent = t('分析中...')
+  btn.textContent = t('正在找同款...')
   result.innerHTML = loading$()
 
   const res = await POST('/agent-buy', {
@@ -17499,7 +17499,7 @@ window.doAgentBuy = async () => {
   })
 
   btn.disabled = false
-  btn.textContent = t('开始分析')
+  btn.textContent = t('开始找同款')
 
   if (res.error) { result.innerHTML = alert$('error', res.error); return }
 
@@ -20561,7 +20561,7 @@ window.refreshOfferFreshness = async (offerId, listingId) => {
 async function renderListingCreate(app) {
   if (!state.user) { location.hash = '#login'; return }
   if (state.user.role !== 'seller') { app.innerHTML = `<div style="padding:24px">${alert$('warn', t('仅卖家可创建商品身份'))}</div>`; return }
-  // 从商品详情页 / 智能下单"我也要上架"跳过来时带 prefill（孤儿商品场景）
+  // 从商品详情页 / AI找同款"我也要上架"跳过来时带 prefill（孤儿商品场景）
   // 路由器可能多次重渲该页（hashchange 触发链），用 window 缓存避免第二次渲染丢值
   let prefill = window._listingPrefill || null
   if (!prefill) {
