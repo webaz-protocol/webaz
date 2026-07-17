@@ -78,6 +78,7 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_quote_order:         { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): INSERTs an order_quotes snapshot row (RFC-025 PR-3); no order/fund/stock change
   webaz_order_draft:         { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: cancel overwrites draft status (terminal); create consumes a quote one-shot; no order/fund/stock change
   webaz_submit_order_request:{ readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): submit-only INSERT into the human approval queue (RFC-025 PR-5a); agent cannot execute
+  webaz_prepare_case:        { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: after-sales case-draft assembly (RFC-025 PR-6); zero writes, zero PII
 }
 
 interface NamedTool { readonly name: string }

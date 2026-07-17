@@ -59,6 +59,9 @@ export const SAFE_SCOPES = [
   //   order_action_request 同款语义):只写 pending 请求,【绝不执行】—— 建单+扣款只发生在人 Passkey
   //   逐笔批准后由服务端执行,执行器对 agent-bearer 不可达。RISK 档 place_order 不动、仍硬拒。
   'order_submit_request',
+  // RFC-025 PR-6 — 售后案件草稿组装(webaz_prepare_case)。纯只读:订单时间线结构字段 + 商品声明锚点
+  //   + 证据 ref 列表(零 notes/自由文本/PII)。不提交任何争议/退货,零写入零经济。
+  'buyer_case_prepare',
 ] as const
 
 /**

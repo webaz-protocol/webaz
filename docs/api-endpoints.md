@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (795 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (796 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -212,45 +212,46 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/withdrawals` |  |  |  | src/pwa/routes/admin-wallet-ops.ts:88 |
 | POST | `/api/admin/withdrawals/:id/approve` |  |  |  | src/pwa/routes/admin-wallet-ops.ts:98 |
 | POST | `/api/agent-buy` | 🔐 |  |  | src/pwa/routes/agent-buy.ts:41 |
-| GET | `/api/agent-grants` | 🔐 |  | "Connected agents" UI shows so a human can spot stale/unused or busy agents befo | src/pwa/routes/agent-grants.ts:764 |
-| POST | `/api/agent-grants` | 🔐 |  | agent delegation"的安全叙事。零消费方(前端/MCP/测试均不用),故降级为不可用,统一走 pairing。 | src/pwa/routes/agent-grants.ts:753 |
-| POST | `/api/agent-grants/:grant_id/revoke` | 🔐 |  | ── Revoke (online, one-click). ── | src/pwa/routes/agent-grants.ts:789 |
-| GET | `/api/agent-grants/connection` | 🎫 grant:read_public |  | address, or any other PII (E-node requirement). Backs webaz_connection_status. | src/pwa/routes/agent-grants.ts:179 |
-| GET | `/api/agent-grants/my-permission-requests` |  |  | grant_id: an agent sees ONLY its own requests, never the human's other agents'.  | src/pwa/routes/agent-grants.ts:490 |
-| POST | `/api/agent-grants/pair/:pairing_id/retrieve` |  |  | (pair 4) Agent retrieves the credential ONCE via PKCE verifier — UNAUTHENTICATED | src/pwa/routes/agent-grants.ts:716 |
-| GET | `/api/agent-grants/pair/:user_code` | 🔐 |  | (pair 2) Human reviews the server-generated consent — human-authenticated. | src/pwa/routes/agent-grants.ts:648 |
-| POST | `/api/agent-grants/pair/:user_code/approve` | 🔐 |  | (pair 3) Human approves — human-authenticated. Issues the grant (token_hash fill | src/pwa/routes/agent-grants.ts:657 |
-| POST | `/api/agent-grants/pair/:user_code/reject` | 🔐 |  | 拒绝是保护性动作,无需 Passkey(不签发任何凭证)。幂等:仅 pending 可拒。 | src/pwa/routes/agent-grants.ts:705 |
-| POST | `/api/agent-grants/pair/start` |  |  | (pair 1) Agent starts a pairing — UNAUTHENTICATED (agent has no credential yet). | src/pwa/routes/agent-grants.ts:607 |
-| GET | `/api/agent-grants/permission-requests` | 🔐 |  | GET list this human's PENDING permission requests (for #agent-approvals). Human- | src/pwa/routes/agent-grants.ts:471 |
-| POST | `/api/agent-grants/permission-requests` |  |  | NOT grantable (they need a per-action live Passkey, not a persistent grant) → st | src/pwa/routes/agent-grants.ts:447 |
-| POST | `/api/agent-grants/permission-requests/:id/approve` | 🔐 |  | POST approve — human-authed + live Passkey; expands the bound grant (union scope | src/pwa/routes/agent-grants.ts:505 |
-| POST | `/api/agent-grants/permission-requests/:id/reject` | 🔐 |  | POST reject — human-authed. Terminal 'rejected'; nothing is granted. | src/pwa/routes/agent-grants.ts:592 |
-| GET | `/api/agent-grants/verify` |  |  | Audited (acceptance #8: every grant use logs). Never returns the raw token/api_k | src/pwa/routes/agent-grants.ts:434 |
-| GET | `/api/agent-grants/whoami` | 🎫 grant:read_public |  | end-to-end on a brand-new read-only endpoint that touches NO existing route and  | src/pwa/routes/agent-grants.ts:170 |
+| GET | `/api/agent-grants` | 🔐 |  | "Connected agents" UI shows so a human can spot stale/unused or busy agents befo | src/pwa/routes/agent-grants.ts:774 |
+| POST | `/api/agent-grants` | 🔐 |  | agent delegation"的安全叙事。零消费方(前端/MCP/测试均不用),故降级为不可用,统一走 pairing。 | src/pwa/routes/agent-grants.ts:763 |
+| POST | `/api/agent-grants/:grant_id/revoke` | 🔐 |  | ── Revoke (online, one-click). ── | src/pwa/routes/agent-grants.ts:799 |
+| GET | `/api/agent-grants/connection` | 🎫 grant:read_public |  | address, or any other PII (E-node requirement). Backs webaz_connection_status. | src/pwa/routes/agent-grants.ts:180 |
+| GET | `/api/agent-grants/my-permission-requests` |  |  | grant_id: an agent sees ONLY its own requests, never the human's other agents'.  | src/pwa/routes/agent-grants.ts:500 |
+| POST | `/api/agent-grants/pair/:pairing_id/retrieve` |  |  | (pair 4) Agent retrieves the credential ONCE via PKCE verifier — UNAUTHENTICATED | src/pwa/routes/agent-grants.ts:726 |
+| GET | `/api/agent-grants/pair/:user_code` | 🔐 |  | (pair 2) Human reviews the server-generated consent — human-authenticated. | src/pwa/routes/agent-grants.ts:658 |
+| POST | `/api/agent-grants/pair/:user_code/approve` | 🔐 |  | (pair 3) Human approves — human-authenticated. Issues the grant (token_hash fill | src/pwa/routes/agent-grants.ts:667 |
+| POST | `/api/agent-grants/pair/:user_code/reject` | 🔐 |  | 拒绝是保护性动作,无需 Passkey(不签发任何凭证)。幂等:仅 pending 可拒。 | src/pwa/routes/agent-grants.ts:715 |
+| POST | `/api/agent-grants/pair/start` |  |  | (pair 1) Agent starts a pairing — UNAUTHENTICATED (agent has no credential yet). | src/pwa/routes/agent-grants.ts:617 |
+| GET | `/api/agent-grants/permission-requests` | 🔐 |  | GET list this human's PENDING permission requests (for #agent-approvals). Human- | src/pwa/routes/agent-grants.ts:481 |
+| POST | `/api/agent-grants/permission-requests` |  |  | NOT grantable (they need a per-action live Passkey, not a persistent grant) → st | src/pwa/routes/agent-grants.ts:457 |
+| POST | `/api/agent-grants/permission-requests/:id/approve` | 🔐 |  | POST approve — human-authed + live Passkey; expands the bound grant (union scope | src/pwa/routes/agent-grants.ts:515 |
+| POST | `/api/agent-grants/permission-requests/:id/reject` | 🔐 |  | POST reject — human-authed. Terminal 'rejected'; nothing is granted. | src/pwa/routes/agent-grants.ts:602 |
+| GET | `/api/agent-grants/verify` |  |  | Audited (acceptance #8: every grant use logs). Never returns the raw token/api_k | src/pwa/routes/agent-grants.ts:444 |
+| GET | `/api/agent-grants/whoami` | 🎫 grant:read_public |  | end-to-end on a brand-new read-only endpoint that touches NO existing route and  | src/pwa/routes/agent-grants.ts:171 |
 | GET | `/api/agent/acp-feed` |  |  |  | src/pwa/routes/public-utils.ts:402 |
-| GET | `/api/agent/buyer/orders` | 🎫 grant:buyer_orders_read_minimal |  | recipient_code 连取都不取(I6 同强度)。纯只读,零执行、零资金 —— 买家写动作(place_order 等)仍 RISK 硬拒。 | src/pwa/routes/agent-grants.ts:229 |
-| GET | `/api/agent/buyer/orders/:id` | 🎫 grant:buyer_orders_read_minimal |  |  | src/pwa/routes/agent-grants.ts:236 |
+| GET | `/api/agent/buyer/orders` | 🎫 grant:buyer_orders_read_minimal |  | recipient_code 连取都不取(I6 同强度)。纯只读,零执行、零资金 —— 买家写动作(place_order 等)仍 RISK 硬拒。 | src/pwa/routes/agent-grants.ts:230 |
+| GET | `/api/agent/buyer/orders/:id` | 🎫 grant:buyer_orders_read_minimal |  |  | src/pwa/routes/agent-grants.ts:237 |
+| GET | `/api/agent/buyer/orders/:id/case-draft` | 🎫 grant:order_submit_request |  | 商品声明锚点 + 证据 ref(零自由文本/PII);零写入零经济;提交类售后动作全部指向人路径。 | src/pwa/routes/agent-grants.ts:368 |
 | GET | `/api/agent/capabilities` |  |  |  | src/pwa/routes/public-utils.ts:294 |
 | GET | `/api/agent/changes` |  |  | 指纹由 tests/test-contract-fingerprint.ts + docs/CONTRACT-LOCK.json 守住(静默改契约不可 merg | src/pwa/routes/public-utils.ts:338 |
-| POST | `/api/agent/discover` | 🎫 grant:buyer_discover |  | allowlist 字段(category/keywords≤5/max_price/ship_to_region/quantity);文本入口做形状校验(超长 | src/pwa/routes/agent-grants.ts:251 |
+| POST | `/api/agent/discover` | 🎫 grant:buyer_discover |  | allowlist 字段(category/keywords≤5/max_price/ship_to_region/quantity);文本入口做形状校验(超长 | src/pwa/routes/agent-grants.ts:252 |
 | GET | `/api/agent/economic-participation` |  |  |  | src/pwa/routes/public-utils.ts:383 |
 | GET | `/api/agent/entities` |  |  |  | src/pwa/routes/public-utils.ts:304 |
 | GET | `/api/agent/events` | 🔐 |  | 结构性事件 + 哈希链字段(验链防篡改),完整 payload 仍走 party-gated /chain。 | src/pwa/routes/orders-read.ts:162 |
 | GET | `/api/agent/goals` |  |  |  | src/pwa/routes/public-utils.ts:330 |
 | GET | `/api/agent/integration` |  |  |  | src/pwa/routes/public-utils.ts:348 |
 | GET | `/api/agent/negative-space` |  |  |  | src/pwa/routes/public-utils.ts:391 |
-| POST | `/api/agent/order-draft` | 🎫 grant:draft_order |  | 草稿不可变(无 update),cancel 终态幂等安全;get/list 仅本人。提交/批准/建单全在 PR-5a。 | src/pwa/routes/agent-grants.ts:339 |
-| GET | `/api/agent/order-drafts` | 🎫 grant:draft_order |  |  | src/pwa/routes/agent-grants.ts:351 |
-| GET | `/api/agent/order-drafts/:id` | 🎫 grant:draft_order |  |  | src/pwa/routes/agent-grants.ts:355 |
-| POST | `/api/agent/order-drafts/:id/cancel` | 🎫 grant:draft_order |  |  | src/pwa/routes/agent-grants.ts:345 |
-| POST | `/api/agent/order-drafts/:id/submit` | 🎫 grant:order_submit_request |  | 只发生在人 Passkey 批准后(下方 /approve 的 order_submit 分支 → order-submit-exec,agent 不可达)。 | src/pwa/routes/agent-grants.ts:365 |
-| GET | `/api/agent/orders` | 🎫 grant:seller_orders_read_minimal |  | 纯只读,无任何执行(order_action_request 在 PR2/PR3 才有提交/执行)。 | src/pwa/routes/agent-grants.ts:209 |
-| GET | `/api/agent/orders/:id` | 🎫 grant:seller_orders_read_minimal |  |  | src/pwa/routes/agent-grants.ts:216 |
-| POST | `/api/agent/orders/:orderId/action-request` | 🎫 grant:order_action_request |  | 同 (order_id,action) 双 pending 被唯一索引拒。执行(accept/ship)在 PR3 经人 Passkey 批准后由服务端跑。 | src/pwa/routes/agent-grants.ts:375 |
-| POST | `/api/agent/quote` | 🎫 grant:price_quote |  | subject 恒 = grant human(agent 无法传 human_id/代表他人)。 | src/pwa/routes/agent-grants.ts:329 |
-| GET | `/api/agent/seller/products` | 🎫 grant:seller_products_read |  | The consumption (allow AND the permission_required deny) is audited by the middl | src/pwa/routes/agent-grants.ts:197 |
-| POST | `/api/agent/seller/products` | 🎫 grant:seller_product_draft |  |  | src/pwa/routes/agent-grants.ts:391 |
+| POST | `/api/agent/order-draft` | 🎫 grant:draft_order |  | 草稿不可变(无 update),cancel 终态幂等安全;get/list 仅本人。提交/批准/建单全在 PR-5a。 | src/pwa/routes/agent-grants.ts:340 |
+| GET | `/api/agent/order-drafts` | 🎫 grant:draft_order |  |  | src/pwa/routes/agent-grants.ts:352 |
+| GET | `/api/agent/order-drafts/:id` | 🎫 grant:draft_order |  |  | src/pwa/routes/agent-grants.ts:356 |
+| POST | `/api/agent/order-drafts/:id/cancel` | 🎫 grant:draft_order |  |  | src/pwa/routes/agent-grants.ts:346 |
+| POST | `/api/agent/order-drafts/:id/submit` | 🎫 grant:order_submit_request |  |  | src/pwa/routes/agent-grants.ts:375 |
+| GET | `/api/agent/orders` | 🎫 grant:seller_orders_read_minimal |  | 纯只读,无任何执行(order_action_request 在 PR2/PR3 才有提交/执行)。 | src/pwa/routes/agent-grants.ts:210 |
+| GET | `/api/agent/orders/:id` | 🎫 grant:seller_orders_read_minimal |  |  | src/pwa/routes/agent-grants.ts:217 |
+| POST | `/api/agent/orders/:orderId/action-request` | 🎫 grant:order_action_request |  | 同 (order_id,action) 双 pending 被唯一索引拒。执行(accept/ship)在 PR3 经人 Passkey 批准后由服务端跑。 | src/pwa/routes/agent-grants.ts:385 |
+| POST | `/api/agent/quote` | 🎫 grant:price_quote |  | subject 恒 = grant human(agent 无法传 human_id/代表他人)。 | src/pwa/routes/agent-grants.ts:330 |
+| GET | `/api/agent/seller/products` | 🎫 grant:seller_products_read |  | The consumption (allow AND the permission_required deny) is audited by the middl | src/pwa/routes/agent-grants.ts:198 |
+| POST | `/api/agent/seller/products` | 🎫 grant:seller_product_draft |  |  | src/pwa/routes/agent-grants.ts:401 |
 | GET | `/api/agent/verifiability` |  |  |  | src/pwa/routes/public-utils.ts:358 |
 | GET | `/api/agents/me/reputation` | 🔐 |  |  | src/pwa/routes/agent-reputation.ts:28 |
 | POST | `/api/ai/generate-description` | 🔐 |  | G-1: AI 文案生成（卖家发品辅助） | src/pwa/routes/ai.ts:86 |

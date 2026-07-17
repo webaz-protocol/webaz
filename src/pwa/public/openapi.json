@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (795 endpoints, 19 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (796 endpoints, 19 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2790,6 +2790,20 @@
         "x-webaz-grant-scope": "buyer_orders_read_minimal"
       }
     },
+    "/api/agent/buyer/orders/:id/case-draft": {
+      "get": {
+        "summary": "商品声明锚点 + 证据 ref(零自由文本/PII);零写入零经济;提交类售后动作全部指向人路径。",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "order_submit_request"
+      }
+    },
     "/api/agent/capabilities": {
       "get": {
         "summary": "GET /api/agent/capabilities",
@@ -2920,7 +2934,7 @@
     },
     "/api/agent/order-drafts/:id/submit": {
       "post": {
-        "summary": "只发生在人 Passkey 批准后(下方 /approve 的 order_submit 分支 → order-submit-exec,agent 不可达)。",
+        "summary": "POST /api/agent/order-drafts/:id/submit",
         "tags": [
           "order"
         ],
