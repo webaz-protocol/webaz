@@ -76,12 +76,21 @@ export function approveAddressChange(db: Database.Database, requestId: string, a
   const acr = db.prepare('SELECT address_text, region FROM address_change_requests WHERE request_id = ? AND human_id = ?').get(requestId, approverId) as { address_text: string; region: string } | undefined
   if (!acr) return { ok: false, http: 409, error: '待确认内容缺失(可能已被拒绝清除)', error_code: 'ADDRESS_CHANGE_NOT_FOUND' }
   if (addressChangeParamsHash(acr.address_text, acr.region) !== String(r.params_hash)) return { ok: false, http: 409, error: '内容与 Passkey 绑定不一致,拒绝执行', error_code: 'ADDRESS_CHANGE_DRIFT' }
-  const claim = db.prepare("UPDATE agent_permission_requests SET status = 'approved', approved_at = ? WHERE id = ? AND status = 'pending' AND expires_at > ?").run(nowIso, requestId, nowIso)
-  if (claim.changes !== 1) return { ok: false, http: 409, error: '请求已过期或已处理', error_code: 'ADDRESS_CHANGE_NOT_PENDING' }
-  db.transaction(() => {
-    db.prepare('UPDATE users SET default_address_text = ?, default_address_region = ? WHERE id = ?').run(acr.address_text, acr.region, approverId)
-    db.prepare("UPDATE agent_permission_requests SET executed_at = ?, execution_result = ? WHERE id = ? AND executed_at IS NULL").run(nowIso, JSON.stringify({ ok: true, address_sha256: sha(acr.address_text), region: acr.region }), requestId)
-  }).immediate()
+  // BLOCKER 修:claim + users 写 + executed_at + 专表清除 = 【同一原子事务】;claim 同时接受
+  // approved+未执行(上次崩在边界的搁浅态)—— 人再批一次即恢复,绝无死锁。执行后专表即清
+  //   (canonical 副本只留 users,staging 表不做地址历史库)。
+  try {
+    db.transaction(() => {
+      const claim = db.prepare("UPDATE agent_permission_requests SET status = 'approved', approved_at = ? WHERE id = ? AND executed_at IS NULL AND ((status = 'pending' AND expires_at > ?) OR status = 'approved')").run(nowIso, requestId, nowIso)
+      if (claim.changes !== 1) throw new Error('NOT_PENDING')
+      db.prepare('UPDATE users SET default_address_text = ?, default_address_region = ? WHERE id = ?').run(acr.address_text, acr.region, approverId)
+      db.prepare("UPDATE agent_permission_requests SET executed_at = ?, execution_result = ? WHERE id = ? AND executed_at IS NULL").run(nowIso, JSON.stringify({ ok: true, address_sha256: sha(acr.address_text), region: acr.region }), requestId)
+      db.prepare('DELETE FROM address_change_requests WHERE request_id = ?').run(requestId)
+    }).immediate()
+  } catch (e) {
+    if ((e as Error).message === 'NOT_PENDING') return { ok: false, http: 409, error: '请求已过期或已处理', error_code: 'ADDRESS_CHANGE_NOT_PENDING' }
+    return { ok: false, http: 503, error: '执行暂不可用,请重试(内容与状态未变)', error_code: 'ADDRESS_CHANGE_UNAVAILABLE' }
+  }
   return { ok: true, region: acr.region }
 }
 
@@ -91,7 +100,20 @@ export function addressChangeContentForHuman(db: Database.Database, requestId: s
   return r ?? null
 }
 
-/** 拒绝时清 PII(路由 reject 分支调用)。 */
-export function purgeAddressChangeContent(db: Database.Database, requestId: string): void {
-  try { db.prepare('DELETE FROM address_change_requests WHERE request_id = ?').run(requestId) } catch { /* best effort */ }
+/** 拒绝(address_change 专用):状态终结 + PII 清除【同一事务,fail-closed】—— 删不掉就不终结,可重试。 */
+export function rejectAddressChange(db: Database.Database, requestId: string, humanId: string):
+  { ok: true } | { ok: false; http: number; error: string; error_code: string } {
+  try {
+    db.transaction(() => {
+      const upd = db.prepare("UPDATE agent_permission_requests SET status = 'rejected' WHERE id = ? AND human_id = ? AND kind = 'address_change' AND status = 'pending'").run(requestId, humanId)
+      if (upd.changes !== 1) throw new Error('NOT_PENDING')
+      db.prepare('DELETE FROM address_change_requests WHERE request_id = ?').run(requestId)
+    }).immediate()
+    return { ok: true }
+  } catch (e) {
+    if ((e as Error).message === 'NOT_PENDING') return { ok: false, http: 409, error: 'permission_request_not_pending', error_code: 'ADDRESS_CHANGE_NOT_PENDING' }
+    return { ok: false, http: 503, error: '拒绝暂不可用,请重试(内容仍待处理)', error_code: 'ADDRESS_CHANGE_UNAVAILABLE' }
+  }
 }
+
+

@@ -128,6 +128,23 @@ try {
     db.prepare("UPDATE address_change_requests SET address_text = 'TAMPERED 666 Evil Rd' WHERE request_id = ?").run(String(c5.request_id))
     const dr = await approve(String(c5.request_id), { request_id: c5.request_id, action: 'address_change', params_hash: c5.params_hash })
     ok('A-14 tampered pending content → ADDRESS_CHANGE_DRIFT, users untouched', dr.json.error_code === 'ADDRESS_CHANGE_DRIFT' && userAddr().t === NEW_ADDR) }
+  // drift 案例收尾:拒绝 c5(fail-closed 同事务清 PII,同时释放每人一活跃坑位)
+  { const c5row = db.prepare("SELECT id FROM agent_permission_requests WHERE kind='address_change' AND status='pending' LIMIT 1").get() as { id: string } | undefined
+    if (c5row) { const rj = await fetch(`http://127.0.0.1:${port}/api/agent-grants/permission-requests/${encodeURIComponent(c5row.id)}/reject`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-test-uid': 'buyer1' }, body: '{}' })
+      ok('A-13b reject is ATOMIC fail-closed for address kind (terminal + purge together)', (await rj.json() as { success?: boolean }).success === true && (db.prepare('SELECT COUNT(*) c FROM address_change_requests WHERE request_id = ?').get(c5row.id) as { c: number }).c === 0) } }
+  // ══ Codex round-1:搁浅恢复 / 执行清 PII / boot 保留期清理 ══
+  { const c6 = await A({ action: 'change_request', address_text: 'Recovery 5 Comeback Ave Singapore ok', region: 'SG' })
+    // 模拟崩溃边界:手工置 approved+未执行(claim 后写入前)→ 再批一次必须能恢复执行
+    db.prepare("UPDATE agent_permission_requests SET status='approved' WHERE id = ?").run(String(c6.request_id))
+    const rec = await approve(String(c6.request_id), { request_id: c6.request_id, action: 'address_change', params_hash: c6.params_hash })
+    ok('A-16 approved+unexecuted (crash boundary) RECOVERS on re-approval — no stranding', rec.status === 200 && rec.json.status === 'executed' && userAddr().t === 'Recovery 5 Comeback Ave Singapore ok', JSON.stringify(rec.json))
+    ok('A-17 execution PURGES the staging row in the same tx (canonical copy lives in users only)', (db.prepare('SELECT COUNT(*) c FROM address_change_requests WHERE request_id = ?').get(String(c6.request_id)) as { c: number }).c === 0) }
+  { // 过期 pending 无后续提交:boot 级清理兜底
+    db.prepare("INSERT INTO agent_permission_requests (id, human_id, grant_id, agent_label, requested_scopes, risk_level, duration, status, expires_at, kind, order_id, order_action, params_hash, action_params) VALUES ('apr_exp_addr','buyer1','g','A','[]','high','once','pending', datetime('now','-1 hour'), 'address_change','','address_change','ph','{}')").run()
+    db.prepare("INSERT INTO address_change_requests (request_id, human_id, address_text, region) VALUES ('apr_exp_addr','buyer1','Expired 1 STALESECRET Rd Singapore','SG')").run()
+    const { initAgentPermissionRequestsSchema } = await import('../src/runtime/webaz-schema-helpers.js') as unknown as { initAgentPermissionRequestsSchema: (d: unknown) => void }
+    initAgentPermissionRequestsSchema(db)   // 重跑 boot 段 = TTL 清理
+    ok('A-18 boot-time retention purge deletes expired-pending PII (no submit needed)', (db.prepare("SELECT COUNT(*) c FROM address_change_requests WHERE request_id='apr_exp_addr'").get() as { c: number }).c === 0) }
   ok('A-15 validation: short text / bad region rejected', (await A({ action: 'change_request', address_text: 'short', region: 'SG' })).error_code === 'ADDRESS_TEXT_INVALID' && (await A({ action: 'change_request', address_text: NEW_ADDR, region: 'Singapore' })).error_code === 'ADDRESS_REGION_INVALID')
 } finally { server.close(); clearCred() }
 

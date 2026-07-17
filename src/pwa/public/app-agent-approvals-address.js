@@ -1,6 +1,6 @@
 // RFC-026 PR-5 — 地址变更审批卡正文(主文件顶格,拆出同 -order/-submit 先例)。
-//   人在这里看到【完整新地址】(human-authed list 附带,agent 面永远拿不到),Passkey 四元组
-//   {request_id, order_id:'', action:'address_change', params_hash} 绑定内容哈希 —— 批的=写入的,一字不差。
+//   人在这里看到【完整新地址】(human-authed list 附带,agent 面永远拿不到),Passkey 三元组
+//   {request_id, action:'address_change', params_hash} 绑定内容哈希(无订单实体,order_id 不参与绑定) —— 批的=写入的,一字不差。
 (function () {
   window.aaAddressWhat = function (r) {
     var ac = r.address_change
