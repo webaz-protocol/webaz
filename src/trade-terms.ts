@@ -111,3 +111,18 @@ export function readTradeTermsSnapshot(raw: unknown): TradeTermsSnapshot | null 
   if (typeof raw !== 'string' || !raw) return null
   try { const s = JSON.parse(raw) as TradeTermsSnapshot; return s && s.v === 1 ? s : null } catch { return null }
 }
+
+/**
+ * 生效退货天数(RFC-026 归一,S0 不变量的执行面):快照存在且结构可用 → 【精确按快照】
+ * (terms-as-sold:商家事后改设置对旧订单既不收紧也不放宽);pre-S0/残缺快照 → 回退现商品行。
+ * returns 路由与 agent 订单全量视图共用此函数 —— 单一真相源,防谓词漂移。
+ */
+export function effectiveReturnDays(snapshotRaw: unknown, liveProductReturnDays: unknown): { days: number; source: 'order_snapshot' | 'live_listing' } {
+  const snap = readTradeTermsSnapshot(snapshotRaw)
+  const f = snap && typeof snap.fulfilment === 'object' && snap.fulfilment !== null ? snap.fulfilment : null
+  if (f && (typeof f.return_days === 'number' || f.return_days === null)) {
+    return { days: typeof f.return_days === 'number' && Number.isFinite(f.return_days) ? f.return_days : 0, source: 'order_snapshot' }
+  }
+  const live = Number(liveProductReturnDays || 0)
+  return { days: Number.isFinite(live) ? live : 0, source: 'live_listing' }
+}

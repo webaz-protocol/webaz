@@ -16,6 +16,7 @@ import type Database from 'better-sqlite3'
 import { minimalBuyerOrderView, BUYER_MINIMAL_ORDER_COLUMNS } from './agent-order-minimal-view.js'
 import { readTradeTermsSnapshot } from '../trade-terms.js'
 import { getMutualCancelState } from '../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'
+import { effectiveReturnDays } from '../trade-terms.js'
 
 const numOrNull = (x: unknown): number | null => (typeof x === 'number' && Number.isFinite(x) ? x : null)
 
@@ -68,11 +69,12 @@ function availableActions(db: Database.Database, o: Record<string, unknown>, hum
   }
   if (status === 'completed') {
     const prod = db.prepare('SELECT return_days FROM products WHERE id = ?').get(String(o.product_id)) as { return_days: number | null } | undefined
-    const rd = Number(prod?.return_days || 0)
+    const eff = effectiveReturnDays(o.trade_terms_snapshot, prod?.return_days)
+    const rd = eff.days
     const baseTime = String(o.updated_at || o.created_at || '')
     const within = rd > 0 && baseTime !== '' && Date.now() <= new Date(baseTime).getTime() + rd * 86400 * 1000
     const activeRR = returns.some(r => ['pending', 'accepted', 'accepted_pickup_pending', 'picked_up', 'await_refund', 'refund_marked'].includes(String(r.status)))
-    if (within && !activeRR) acts.push({ action: 'request_return', executor: 'human_order_page', note: `route-enforced window: CURRENT listing return_days=${rd} from ${baseTime.slice(0, 10)} (the frozen snapshot above is the promise anchor for disputes; the return route is governed by the live listing — recorded upstream gap)` })
+    if (within && !activeRR) acts.push({ action: 'request_return', executor: 'human_order_page', note: `window: return_days=${rd} (${eff.source === 'order_snapshot' ? 'FROZEN at order time — seller edits do not apply' : 'pre-snapshot order: live listing terms'}) from ${baseTime.slice(0, 10)}` })
   }
   // 路由权威门 = direct_p2p 且 refund_marked(direct-pay-returns.ts):escrow 退款走托管释放,无此人工确认动作
   if (rail === 'direct_p2p' && returns.some(r => String(r.status) === 'refund_marked')) acts.push({ action: 'confirm_refund_received', executor: 'human_order_page', note: 'seller marked the off-platform refund sent — your Passkey confirmation closes the return (Direct Pay only)' })
