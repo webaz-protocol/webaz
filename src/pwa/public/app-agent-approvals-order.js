@@ -8,7 +8,7 @@
     var trackingLine = (r.order_action === 'ship' && ap.tracking)
       ? '<div style="font-size:12px;color:#6b7280;margin-top:4px">' + t('物流单号') + ': <code>' + escHtml(String(ap.tracking)) + '</code></div>'
       : ''
-    return '' +
+    return (window.aaReconcileNoteHtml ? window.aaReconcileNoteHtml(r) : '') +  // RFC-026 PR-2:失败重试说明(retry_available 行)
       '<div style="font-size:13px;color:#374151;line-height:1.7">⚡ ' + t('对订单') +
         ' <code style="font-size:12px">' + escHtml(String(r.order_id || '')) + '</code> ' + t('执行') +
         ' <b style="color:#6b21a8">' + escHtml(actionLabel) + '</b></div>' +
