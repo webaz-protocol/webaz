@@ -81,6 +81,25 @@ try {
   // ── publish stays human: the draft is NOT active ──
   ok('draft is NOT active (publishing is never delegated to a grant)', row?.status !== 'active')
 
+  // ── seller grant can tidy its OWN warehouse draft, but only while it stays a draft ──
+  const updated = await j(`/api/agent/seller/products/${pid}/draft`, { method: 'PATCH', bearer: 'gtk_alice', body: { title: 'Widget 2-pack', price: 17, specs: { package_quantity: 2 }, origin_claims: { agent_sourcing: { source_platform: 'pdd', evidence_status: 'agent_observed_unverified_human_review_required' } } } })
+  const updatedRow = db.prepare('SELECT title, price, specs, origin_claims, status FROM products WHERE id=?').get(pid) as { title: string; price: number; specs: string; origin_claims: string; status: string }
+  ok('seller_product_draft grant → update own warehouse draft succeeds', updated.status === 200 && updated.body.success === true && updatedRow.title === 'Widget 2-pack' && Number(updatedRow.price) === 17 && updatedRow.status === 'warehouse')
+  ok('draft update persists source/package review metadata', updatedRow.specs.includes('package_quantity') && updatedRow.origin_claims.includes('agent_observed_unverified_human_review_required'))
+
+  db.prepare("UPDATE products SET status='active' WHERE id=?").run(pid)
+  const activeEdit = await j(`/api/agent/seller/products/${pid}/draft`, { method: 'PATCH', bearer: 'gtk_alice', body: { title: 'Should not edit active' } })
+  ok('grant cannot update active product → DRAFT_UPDATE_ONLY', activeEdit.status === 409 && activeEdit.body.error_code === 'DRAFT_UPDATE_ONLY')
+  db.prepare("UPDATE products SET status='warehouse' WHERE id=?").run(pid)
+
+  // ── small product image manifest can be attached to own warehouse draft ──
+  const tinyPng = 'data:image/png;base64,iVBORw0KGgo='
+  const imgHash = createHash('sha256').update(Buffer.from('iVBORw0KGgo=', 'base64')).digest('hex')
+  const imageAttach = await j(`/api/agent/seller/products/${pid}/images`, { method: 'POST', bearer: 'gtk_alice', body: { hash: imgHash, content_type: 'image/png', byte_size: Buffer.from('iVBORw0KGgo=', 'base64').length, thumbnail_data_uri: tinyPng, title: 'cover' } })
+  const imgRow = db.prepare('SELECT images FROM products WHERE id=?').get(pid) as { images: string }
+  const manifest = db.prepare('SELECT owner_id, related_product_id, thumbnail_data_uri FROM manifest_registry WHERE hash=?').get(imgHash) as { owner_id: string; related_product_id: string; thumbnail_data_uri: string } | undefined
+  ok('grant can attach image manifest to own warehouse draft', imageAttach.status === 200 && imageAttach.body.success === true && imgRow.images.includes(imgHash) && manifest?.owner_id === 'alice' && manifest.related_product_id === pid)
+
   // ── lightweight signal: a notification was sent to the human ──
   const notif = db.prepare("SELECT type, title, user_id FROM notifications WHERE user_id='alice' AND type='agent_product_draft' ORDER BY rowid DESC LIMIT 1").get() as { type: string; title: string; user_id: string } | undefined
   ok('lightweight signal: notification queued for the human to review + publish', !!notif && notif.user_id === 'alice')

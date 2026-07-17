@@ -48,7 +48,7 @@ async function main(): Promise<void> {
   ok('2. TOOL_ANNOTATIONS keys exactly match live tool names', JSON.stringify(names) === JSON.stringify(mapKeys))
 
   // 3. count derived from the actual surface; asserted to the current value (not a permanent hardcode)
-  ok('3. current tool count == 53 (derived from live tools + map; +webaz_address RFC-026 PR-5)', tools.length === mapKeys.length && tools.length === 53)
+  ok('3. current tool count == 54 (derived from live tools + map; +webaz_upload_product_image)', tools.length === mapKeys.length && tools.length === 54)
 
   // 4. classification locks — read from the RETURNED descriptors. Rule: destructive = delete/overwrite/
   //    fund-move (additive-only inserts are NOT destructive); readOnly = no DOMAIN state write (the
@@ -80,6 +80,7 @@ async function main(): Promise<void> {
   ok('4o. webaz_place_order moves funds (F,T,T)', eq('webaz_place_order', false, true, true))
   ok('4p. webaz_update_order confirm settles (F,T,T)', eq('webaz_update_order', false, true, true))
   ok('4q. webaz_list_product delete (F,T,T)', eq('webaz_list_product', false, true, true))
+  ok('4q2. webaz_upload_product_image overwrites own draft gallery (F,T,F)', eq('webaz_upload_product_image', false, true, false))
   ok('4r. webaz_blocklist unblock DELETE (F,T,T)', eq('webaz_blocklist', false, true, true))
   ok('4s. webaz_follows unfollow DELETE (F,T,T)', eq('webaz_follows', false, true, true))
   ok('4t. webaz_nearby clear/set (F,T,T)', eq('webaz_nearby', false, true, true))

@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (804 endpoints, 19 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (806 endpoints, 19 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -3101,6 +3101,30 @@
       },
       "post": {
         "summary": "POST /api/agent/seller/products",
+        "tags": [],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "seller_product_draft"
+      }
+    },
+    "/api/agent/seller/products/:id/draft": {
+      "patch": {
+        "summary": "PATCH /api/agent/seller/products/:id/draft",
+        "tags": [],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "seller_product_draft"
+      }
+    },
+    "/api/agent/seller/products/:id/images": {
+      "post": {
+        "summary": "POST /api/agent/seller/products/:id/images",
         "tags": [],
         "security": [
           {

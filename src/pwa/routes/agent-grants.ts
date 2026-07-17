@@ -45,6 +45,7 @@ import { toUnits } from '../../money.js'  // RFC-014:demand_signals.budget_units
 import { createOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
 import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 approve→执行(CAS approved + 执行 + executed_at CAS,domain 层)
 import { notifyTransition } from '../../layer2-business/L2-6-notifications/notification-engine.js'  // 执行后通知买卖双方
+import { invalidateProductVerification } from '../../product-verification.js'
 
 export interface AgentGrantsDeps {
   db: Database.Database
@@ -66,6 +67,9 @@ export interface AgentGrantsDeps {
 // Bounds on a pairing request (anti-bloat for the anonymous start endpoint).
 const MAX_CAPABILITIES = 12
 const MAX_CONSTRAINTS_JSON = 2000
+const AGENT_THUMB_MAX_BYTES = 12000
+const AGENT_THUMB_DATA_URI_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/
+const AGENT_PRODUCT_IMAGE_LIMIT = 9
 
 // Thrown inside the approve transaction when the grant is no longer active (revoked/expired in the race
 // window) — rolls the whole tx back so the request claim + expansion + audit are all-or-nothing.
@@ -484,6 +488,107 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
           } catch (e) { console.error('[agent-grant draft notify]', (e as Error).message) }
         },
       })
+    })
+
+    app.patch('/api/agent/seller/products/:id/draft', requireAgentGrantScope('seller_product_draft'), async (req, res) => {
+      const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+      const human = await dbOne<{ id: string; role: string }>('SELECT id, role FROM users WHERE id = ?', [p.human_id])
+      if (!human || human.role !== 'seller') return void res.status(403).json({ error: 'the grant owner is not a seller — product drafts need a seller account', error_code: 'NOT_A_SELLER' })
+      const product = await dbOne<{ id: string; status: string; seller_id: string; images: string | null }>('SELECT id, status, seller_id, images FROM products WHERE id = ? AND seller_id = ?', [req.params.id, p.human_id])
+      if (!product) return void res.status(404).json({ error: 'product not found or not owned by grant owner', error_code: 'PRODUCT_NOT_OWNED' })
+      if (product.status !== 'warehouse') return void res.status(409).json({ error: 'delegation grants may only update warehouse drafts; publishing or editing active products stays human/api_key only', error_code: 'DRAFT_UPDATE_ONLY' })
+
+      const allowed = new Set(['title','description','price','stock','category','specs','brand','model','handling_hours','ship_regions','estimated_days','fragile','return_days','return_condition','warranty_days','low_stock_threshold','auto_delist_on_zero','i18n_titles','i18n_descs','origin_claims','image_hashes','source_price'])
+      const body = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {}
+      const unknown = Object.keys(body).filter(k => !allowed.has(k))
+      if (unknown.length) return void res.status(400).json({ error: `unsupported draft update fields: ${unknown.join(', ')}`, error_code: 'UNSUPPORTED_DRAFT_FIELDS', unsupported_fields: unknown })
+      if (Object.prototype.hasOwnProperty.call(body, 'source_url') || Object.prototype.hasOwnProperty.call(body, 'external_title') || Object.prototype.hasOwnProperty.call(body, 'additional_links')) {
+        return void res.status(400).json({ error: 'source link claims must be reviewed in the PWA; grant draft updates may store evidence in specs/origin_claims only', error_code: 'SOURCE_LINK_REVIEW_REQUIRED' })
+      }
+
+      if (body.image_hashes !== undefined) {
+        if (!Array.isArray(body.image_hashes)) return void res.status(400).json({ error: 'image_hashes must be an array', error_code: 'INVALID_IMAGE_HASHES' })
+        if (body.image_hashes.length > AGENT_PRODUCT_IMAGE_LIMIT) return void res.status(400).json({ error: 'product images are limited to 9', error_code: 'TOO_MANY_IMAGES' })
+        for (const h of body.image_hashes) if (typeof h !== 'string' || !/^[a-f0-9]{64}$/i.test(h)) return void res.status(400).json({ error: 'image_hashes must contain 64-hex hashes', error_code: 'INVALID_IMAGE_HASHES' })
+      }
+      if (body.origin_claims !== undefined) {
+        if (body.origin_claims !== null && typeof body.origin_claims !== 'object') return void res.status(400).json({ error: 'origin_claims must be an object or null', error_code: 'INVALID_ORIGIN_CLAIMS' })
+        const json = body.origin_claims == null ? '' : JSON.stringify(body.origin_claims)
+        if (json.length > 4096) return void res.status(400).json({ error: 'origin_claims exceeds 4KB', error_code: 'INVALID_ORIGIN_CLAIMS' })
+      }
+
+      const columnFor: Record<string, string> = {
+        image_hashes: 'images',
+        auto_delist_on_zero: 'auto_delist_on_zero',
+        low_stock_threshold: 'low_stock_threshold',
+      }
+      const jsonFields = new Set(['specs', 'estimated_days', 'i18n_titles', 'i18n_descs', 'origin_claims'])
+      const numericFields = new Set(['price', 'stock', 'handling_hours', 'return_days', 'warranty_days', 'low_stock_threshold', 'source_price'])
+      const boolFields = new Set(['fragile', 'auto_delist_on_zero'])
+      const sets: string[] = []
+      const vals: unknown[] = []
+      for (const [k, v] of Object.entries(body)) {
+        const col = columnFor[k] || k
+        sets.push(`${col}=?`)
+        if (k === 'image_hashes') vals.push((v as string[]).length ? JSON.stringify((v as string[]).map(h => h.toLowerCase())) : null)
+        else if (jsonFields.has(k)) vals.push(v == null ? null : (typeof v === 'string' ? v : JSON.stringify(v)))
+        else if (numericFields.has(k)) vals.push(v == null || v === '' ? null : Number(v))
+        else if (boolFields.has(k)) vals.push(v ? 1 : 0)
+        else vals.push(v)
+      }
+      if (!sets.length) return void res.status(400).json({ error: 'no draft fields supplied', error_code: 'EMPTY_DRAFT_UPDATE' })
+      vals.push(req.params.id, p.human_id)
+      await dbRun(`UPDATE products SET ${sets.join(', ')}, updated_at=datetime('now') WHERE id=? AND seller_id=? AND status='warehouse'`, vals)
+      try { invalidateProductVerification(db, String(req.params.id)) } catch (e) { console.error('[agent-draft verify invalidate]', (e as Error).message) }
+      res.json({ success: true, product_id: req.params.id, status: 'warehouse' })
+    })
+
+    app.post('/api/agent/seller/products/:id/images', requireAgentGrantScope('seller_product_draft'), async (req, res) => {
+      const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+      const human = await dbOne<{ id: string; role: string }>('SELECT id, role FROM users WHERE id = ?', [p.human_id])
+      if (!human || human.role !== 'seller') return void res.status(403).json({ error: 'the grant owner is not a seller — product drafts need a seller account', error_code: 'NOT_A_SELLER' })
+      const product = await dbOne<{ id: string; status: string; seller_id: string; images: string | null }>('SELECT id, status, seller_id, images FROM products WHERE id = ? AND seller_id = ?', [req.params.id, p.human_id])
+      if (!product) return void res.status(404).json({ error: 'product not found or not owned by grant owner', error_code: 'PRODUCT_NOT_OWNED' })
+      if (product.status !== 'warehouse') return void res.status(409).json({ error: 'delegation grants may only attach images to warehouse drafts; active products require human/api_key review', error_code: 'DRAFT_UPDATE_ONLY' })
+
+      const b = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {}
+      const hash = typeof b.hash === 'string' ? b.hash.toLowerCase() : ''
+      const contentType = typeof b.content_type === 'string' ? b.content_type.toLowerCase() : ''
+      const byteSize = Number(b.byte_size || 0)
+      const thumbnailDataUri = typeof b.thumbnail_data_uri === 'string' ? b.thumbnail_data_uri : ''
+      const title = typeof b.title === 'string' ? b.title.slice(0, 120) : null
+      const description = typeof b.description === 'string' ? b.description.slice(0, 500) : null
+      if (!/^[a-f0-9]{64}$/.test(hash)) return void res.status(400).json({ error: 'hash must be 64 hex chars', error_code: 'INVALID_IMAGE_HASH' })
+      if (!['image/jpeg','image/png','image/webp'].includes(contentType)) return void res.status(400).json({ error: 'content_type must be image/jpeg, image/png, or image/webp', error_code: 'UNSUPPORTED_IMAGE_TYPE' })
+      if (!Number.isFinite(byteSize) || byteSize <= 0 || byteSize > 5 * 1024 * 1024) return void res.status(400).json({ error: 'byte_size must be between 1 byte and 5MB', error_code: 'IMAGE_TOO_LARGE' })
+      if (!thumbnailDataUri || thumbnailDataUri.length > AGENT_THUMB_MAX_BYTES || !AGENT_THUMB_DATA_URI_RE.test(thumbnailDataUri)) {
+        return void res.status(400).json({ error: 'thumbnail_data_uri must be a small raster data URI (jpeg/png/webp)', error_code: 'INVALID_THUMBNAIL' })
+      }
+
+      let existing: string[] = []
+      if (product.images) { try { const parsed = JSON.parse(product.images); if (Array.isArray(parsed)) existing = parsed.filter(x => typeof x === 'string') } catch {} }
+      const nextImages = existing.includes(hash) ? existing : [...existing, hash]
+      if (nextImages.length > AGENT_PRODUCT_IMAGE_LIMIT) return void res.status(400).json({ error: 'product images are limited to 9', error_code: 'TOO_MANY_IMAGES' })
+      const prior = await dbOne<{ owner_id: string; related_product_id: string | null; status: string }>('SELECT owner_id, related_product_id, status FROM manifest_registry WHERE hash = ?', [hash])
+      if (prior && prior.owner_id !== p.human_id) return void res.status(409).json({ error: 'image hash already belongs to another owner', error_code: 'IMAGE_HASH_OWNER_CONFLICT' })
+      if (prior && prior.related_product_id && prior.related_product_id !== req.params.id) return void res.status(409).json({ error: 'image hash is already linked to another product', error_code: 'IMAGE_HASH_PRODUCT_CONFLICT' })
+
+      try {
+        await dbRun(`INSERT INTO manifest_registry (hash, owner_id, content_type, byte_size, title, description, thumbnail_data_uri, signature, signed_at, related_product_id)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(hash) DO UPDATE SET
+                      thumbnail_data_uri=excluded.thumbnail_data_uri,
+                      related_product_id=COALESCE(manifest_registry.related_product_id, excluded.related_product_id)`,
+          [hash, p.human_id, contentType, byteSize, title, description, thumbnailDataUri, `agent-grant:${p.grant_id}`, new Date().toISOString(), req.params.id])
+        await dbRun(`INSERT OR REPLACE INTO peer_directory (peer_id, manifest_hash, is_owner, pin_intent, last_heartbeat)
+                    VALUES (?,?,1,1,datetime('now'))`, [p.human_id, hash])
+        await dbRun(`UPDATE products SET images=?, updated_at=datetime('now') WHERE id=? AND seller_id=? AND status='warehouse'`,
+          [JSON.stringify(nextImages), req.params.id, p.human_id])
+        try { invalidateProductVerification(db, String(req.params.id)) } catch (e) { console.error('[agent-draft image verify invalidate]', (e as Error).message) }
+        res.json({ success: true, product_id: req.params.id, hash, image_hashes: nextImages, status: 'warehouse' })
+      } catch (e) {
+        res.status(500).json({ error: 'image manifest registration failed: ' + (e as Error).message, error_code: 'IMAGE_MANIFEST_FAILED' })
+      }
     })
   }
 

@@ -32,6 +32,7 @@ export const NETWORK_TOOLS = new Set<string>([
   'webaz_verify_price',
   'webaz_place_order',
   'webaz_list_product',
+  'webaz_upload_product_image',
   'webaz_update_order',
   'webaz_search',
   'webaz_get_status',

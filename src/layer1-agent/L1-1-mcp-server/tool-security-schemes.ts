@@ -28,6 +28,7 @@ export type McpSecurityScheme = { type: 'noauth' } | { type: 'oauth2'; scopes: r
 // (→ order_action_request). The coarse→fine mapping lives in oauth-approve.ts OAUTH_SCOPE_CAPABILITIES.
 const OAUTH_TOOL_SCOPES: Record<string, readonly string[]> = {
   webaz_list_product: ['read', 'list:draft'],
+  webaz_upload_product_image: ['list:draft'],
   webaz_get_agent_order: ['read'],
   webaz_connection_status: ['read'],
   webaz_order_action_request: ['order:draft'],

@@ -752,6 +752,19 @@ Actions: create (title/description/price) | mine | update (product_id + changed 
           type: 'number',
           description: 'External reference price (optional, display only; exclusive-price auth needs PWA link-claim)',
         },
+        source_platform: { type: 'string', description: 'Agent sourcing evidence: external platform name (e.g. 拼多多/1688/Taobao). Stored as reviewable draft metadata, not a verified link claim.' },
+        source_url: { type: 'string', description: 'External sourcing URL for human review. In grant draft mode this is stored as evidence metadata only, not as a verified product link claim.' },
+        source_title: { type: 'string', description: 'External source title observed by the agent.' },
+        source_seller: { type: 'string', description: 'External source seller/shop name observed by the agent.' },
+        source_checked_at: { type: 'string', description: 'ISO timestamp when the agent checked the source.' },
+        source_evidence_note: { type: 'string', description: 'Short sourcing evidence note for human review before publishing.' },
+        package_unit_spec: { type: 'string', description: 'Bundle listing: single unit spec, e.g. 670g.' },
+        package_quantity: { type: 'number', description: 'Bundle listing: number of units in the bundle.' },
+        package_total_spec: { type: 'string', description: 'Bundle listing: total spec, e.g. 1340g.' },
+        purchase_unit_price: { type: 'number', description: 'Agent sourcing: observed purchase price per unit.' },
+        purchase_total_cost: { type: 'number', description: 'Agent sourcing: observed total purchase cost for the bundle.' },
+        listing_pricing_note: { type: 'string', description: 'Agent pricing rationale for human review.' },
+        pre_acceptance_checklist: { type: 'array', items: { type: 'string' }, description: 'Manual acceptance checklist before the seller accepts/procures a third-party sourced order.' },
         ship_regions: { type: 'string', description: 'Ship region, default "all"' },
         handling_hours: { type: 'number', description: 'Handling time (hours), default 24' },
         estimated_days: {
@@ -787,6 +800,21 @@ Actions: create (title/description/price) | mine | update (product_id + changed 
         },
       },
       required: [],
+    },
+  },
+  {
+    name: 'webaz_upload_product_image',
+    description: `Catalog Agent helper: attach a small product thumbnail manifest to one of the seller's own warehouse drafts, then update product image_hashes. Requires a paired Catalog Agent grant (seller_product_draft) or a future api_key path. This never publishes the product and never edits active listings.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        product_id: { type: 'string', description: 'Warehouse draft product id to attach the image to.' },
+        image_url: { type: 'string', description: 'Optional image URL. The MCP will download it and use it directly only if it is already small enough for the thumbnail manifest.' },
+        thumbnail_data_uri: { type: 'string', description: 'Preferred: small data:image/(jpeg|png|webp);base64 thumbnail data URI (≤ about 12KB string).' },
+        title: { type: 'string', description: 'Optional manifest title.' },
+        description: { type: 'string', description: 'Optional manifest description/evidence note.' },
+      },
+      required: ['product_id'],
     },
   },
   {
@@ -2995,6 +3023,31 @@ export async function handleOrderActionRequest(args: Record<string, unknown>): P
   return r
 }
 
+function catalogDraftBody(args: Record<string, unknown>, fields: string[]): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  for (const k of fields) if (args[k] !== undefined) body[k] = args[k]
+  const sourceKeys = ['source_platform','source_url','source_title','source_seller','source_checked_at','source_evidence_note']
+  const packageKeys = ['package_unit_spec','package_quantity','package_total_spec','purchase_unit_price','purchase_total_cost','listing_pricing_note','pre_acceptance_checklist']
+  const sourceEvidence: Record<string, unknown> = {}
+  const packageEvidence: Record<string, unknown> = {}
+  for (const k of sourceKeys) if (args[k] !== undefined) sourceEvidence[k] = args[k]
+  for (const k of packageKeys) if (args[k] !== undefined) packageEvidence[k] = args[k]
+  if (Object.keys(sourceEvidence).length || Object.keys(packageEvidence).length) {
+    const specs = body.specs && typeof body.specs === 'object' && !Array.isArray(body.specs) ? { ...(body.specs as Record<string, unknown>) } : {}
+    if (Object.keys(sourceEvidence).length) specs.agent_source_evidence = sourceEvidence
+    if (Object.keys(packageEvidence).length) specs.agent_package_evidence = packageEvidence
+    body.specs = specs
+    const origin = body.origin_claims && typeof body.origin_claims === 'object' && !Array.isArray(body.origin_claims) ? { ...(body.origin_claims as Record<string, unknown>) } : {}
+    origin.agent_sourcing = {
+      ...sourceEvidence,
+      ...packageEvidence,
+      evidence_status: 'agent_observed_unverified_human_review_required',
+    }
+    body.origin_claims = origin
+  }
+  return body
+}
+
 export async function handleListProduct(args: Record<string, unknown>): Promise<Record<string, unknown>> {
   // Wave 3 audit P0: 加 action 分发 — agent 卖家能完整管理目录（不止 create）
   const action = (args.action as string) || 'create'
@@ -3014,15 +3067,24 @@ export async function handleListProduct(args: Record<string, unknown>): Promise<
       return { found: r.count, products: r.products, seller_id: r.seller_id, via: 'delegation_grant', note: 'Read via your delegation grant (safe scope seller_products_read). Creating a DRAFT: action="create" (goes to your warehouse for you to review + publish).' }
     }
     if (action === 'create' || action === 'draft') {
-      const createFields = ['title', 'description', 'price', 'stock', 'category', 'specs', 'brand', 'model', 'source_url', 'source_price', 'external_title', 'weight_kg', 'ship_regions', 'handling_hours', 'estimated_days', 'fragile', 'return_days', 'return_condition', 'warranty_days', 'commission_rate', 'product_type', 'aliases', 'image_hashes', 'additional_links']
-      const body: Record<string, unknown> = {}
-      for (const k of createFields) if (args[k] !== undefined) body[k] = args[k]
+      const createFields = ['title', 'description', 'price', 'stock', 'category', 'specs', 'brand', 'model', 'source_url', 'source_price', 'external_title', 'weight_kg', 'ship_regions', 'handling_hours', 'estimated_days', 'fragile', 'return_days', 'return_condition', 'warranty_days', 'commission_rate', 'product_type', 'aliases', 'image_hashes', 'additional_links', 'origin_claims', 'low_stock_threshold', 'auto_delist_on_zero', 'i18n_titles', 'i18n_descs']
+      const body = catalogDraftBody(args, createFields)
       const r = await apiCall('/api/agent/seller/products', { method: 'POST', apiKey: cred.token, body })
       if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks seller_product_draft. Run webaz_pair action="request" bundle="catalog_agent", have the human approve, then retry.' }
       if (r.error) return r
       return { ...r, via: 'delegation_grant', note: 'Created as a DRAFT (status=warehouse — NOT public/sellable). Publishing stays with the human: they review it in 我的商品 → 仓库 and publish (a notification was sent). A grant can never publish.' }
     }
-    return { error_code: 'GRANT_WRITE_NOT_ENABLED', note: `action="${action}" is not available via a delegation grant — a grant can READ (action="mine") and create DRAFTS (action="create" → warehouse). Publishing, updating, delisting, and deleting stay human/api_key only. Provide a seller api_key for those.` }
+    if (action === 'update') {
+      const pid = args.product_id as string
+      if (!pid) return { error: 'product_id required for action=update', error_code: 'PRODUCT_ID_REQUIRED' }
+      const updatable = ['title','description','price','stock','category','specs','brand','model','handling_hours','ship_regions','estimated_days','fragile','return_days','return_condition','warranty_days','low_stock_threshold','auto_delist_on_zero','i18n_titles','i18n_descs','origin_claims','image_hashes','source_price']
+      const body = catalogDraftBody(args, updatable)
+      const r = await apiCall(`/api/agent/seller/products/${encodeURIComponent(pid)}/draft`, { method: 'PATCH', apiKey: cred.token, body })
+      if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks seller_product_draft. Run webaz_pair action="request" bundle="catalog_agent", have the human approve, then retry.' }
+      if (r.error) return r
+      return { ...r, via: 'delegation_grant', note: 'Updated a warehouse DRAFT only. Publishing/active listing edits still require the human/api_key path.' }
+    }
+    return { error_code: 'GRANT_WRITE_NOT_ENABLED', note: `action="${action}" is not available via a delegation grant. A grant can READ (mine), create DRAFTS, and update its own warehouse drafts only. Publishing, delisting, relisting, trashing, deleting, and active-product edits stay human/api_key only.` }
   }
 
   // RFC-003 P2b: NETWORK 模式 — 卖家目录管理全部转发生产端点（单一真相源）
@@ -3035,8 +3097,7 @@ export async function handleListProduct(args: Record<string, unknown>): Promise<
     }
     if (action === 'create') {
       const createFields = ['title','description','price','stock','category','specs','brand','model','source_url','source_price','external_title','weight_kg','ship_regions','handling_hours','estimated_days','fragile','return_days','return_condition','warranty_days','commission_rate','product_type','aliases','image_hashes']
-      const body: Record<string, unknown> = {}
-      for (const k of createFields) if (args[k] !== undefined) body[k] = args[k]
+      const body = catalogDraftBody(args, createFields)
       const created = await apiCall('/api/products', { method: 'POST', apiKey, body })
       if ('error' in created) return created
       const newId = (created.product_id ?? created.id) as string | undefined
@@ -3052,8 +3113,7 @@ export async function handleListProduct(args: Record<string, unknown>): Promise<
     if (!pid) return { error: `product_id required for action=${action}` }
     if (action === 'update') {
       const updatable = ['title','description','price','stock','specs','brand','model','handling_hours','ship_regions','estimated_days','fragile','return_days','return_condition','warranty_days','low_stock_threshold','auto_delist_on_zero','i18n_titles','i18n_descs','origin_claims','image_hashes']
-      const body: Record<string, unknown> = {}
-      for (const k of updatable) if (args[k] !== undefined) body[k] = args[k]
+      const body = catalogDraftBody(args, updatable)
       return apiCall(`/api/products/${encodeURIComponent(pid)}`, { method: 'PUT', apiKey, body })
     }
     if (action === 'delist') return apiCall(`/api/products/${encodeURIComponent(pid)}/status`, { method: 'PATCH', apiKey, body: { status: 'warehouse' } })
@@ -3199,6 +3259,53 @@ export async function handleListProduct(args: Record<string, unknown>): Promise<
     status: 'active（买家现在可以搜索到这件商品）',
     ...(extraResult ? { extra_fields_applied: !('error' in extraResult), extra_result: extraResult } : {}),
   }
+}
+
+export async function handleUploadProductImage(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (!isNetworkMode()) return { error: 'product image upload requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential(args)
+  if (!cred) return { error: 'a Catalog Agent delegation grant is required — pair/approve catalog_agent, then retry.', error_code: 'GRANT_REQUIRED' }
+  const productId = typeof args.product_id === 'string' ? args.product_id : ''
+  if (!productId) return { error: 'product_id is required', error_code: 'PRODUCT_ID_REQUIRED' }
+
+  let dataUri = typeof args.thumbnail_data_uri === 'string' ? args.thumbnail_data_uri : ''
+  let contentType = ''
+  let bytes: Buffer | null = null
+  if (dataUri) {
+    const m = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(dataUri)
+    if (!m) return { error: 'thumbnail_data_uri must be data:image/(jpeg|png|webp);base64,...', error_code: 'INVALID_THUMBNAIL' }
+    contentType = `image/${m[1]}`
+    bytes = Buffer.from(m[2], 'base64')
+  } else if (typeof args.image_url === 'string' && /^https?:\/\//i.test(args.image_url)) {
+    const resp = await fetch(args.image_url, { signal: AbortSignal.timeout(12_000) })
+    if (!resp.ok) return { error: `image_url download failed: HTTP ${resp.status}`, error_code: 'IMAGE_DOWNLOAD_FAILED' }
+    contentType = String(resp.headers.get('content-type') || '').split(';')[0].toLowerCase()
+    if (contentType === 'image/jpg') contentType = 'image/jpeg'
+    if (!['image/jpeg','image/png','image/webp'].includes(contentType)) return { error: 'image_url must return jpeg/png/webp', error_code: 'UNSUPPORTED_IMAGE_TYPE' }
+    bytes = Buffer.from(await resp.arrayBuffer())
+    dataUri = `data:${contentType};base64,${bytes.toString('base64')}`
+  } else {
+    return { error: 'provide thumbnail_data_uri, or a small jpeg/png/webp image_url', error_code: 'IMAGE_REQUIRED' }
+  }
+  if (!bytes || bytes.length <= 0) return { error: 'image bytes are empty', error_code: 'INVALID_IMAGE' }
+  if (bytes.length > 5 * 1024 * 1024) return { error: 'image bytes exceed 5MB', error_code: 'IMAGE_TOO_LARGE' }
+  if (dataUri.length > 12000) return { error: 'thumbnail is too large for the current manifest thumbnail limit; provide a smaller thumbnail_data_uri', error_code: 'THUMBNAIL_TOO_LARGE' }
+  const hash = createHash('sha256').update(bytes).digest('hex')
+  const r = await apiCall(`/api/agent/seller/products/${encodeURIComponent(productId)}/images`, {
+    method: 'POST',
+    apiKey: cred.token,
+    body: {
+      hash,
+      content_type: contentType,
+      byte_size: bytes.length,
+      thumbnail_data_uri: dataUri,
+      title: args.title,
+      description: args.description,
+    },
+  })
+  if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks seller_product_draft. Run webaz_pair action="request" bundle="catalog_agent", have the human approve, then retry.' }
+  if (r.error) return r
+  return { ...r, via: 'delegation_grant', note: 'Attached image to a warehouse draft only. Publishing still stays with the human.' }
 }
 
 export async function handlePlaceOrder(args: Record<string, unknown>) {
@@ -5810,6 +5917,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         case 'webaz_search':        result = await handleSearch(args); break
         case 'webaz_verify_price':  result = await handleVerifyPrice(args); break
         case 'webaz_list_product':  result = await handleListProduct(args); break
+        case 'webaz_upload_product_image': result = await handleUploadProductImage(args); break
         case 'webaz_place_order':   result = await handlePlaceOrder(args); break
         case 'webaz_update_order':  result = await handleUpdateOrder(args); break
         case 'webaz_get_status':    result = await handleGetStatus(args); break
