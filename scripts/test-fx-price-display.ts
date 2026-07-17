@@ -79,7 +79,7 @@ ok('4b. app-discover: no ${p.price}/${it.price}/${e.price} WAZ left', !DISC.incl
 // 5. PRESERVED — reward/coupon/commission/escrow are NOT product prices → must stay WAZ
 ok('5a. shop check-in reward stays WAZ', SHOP.includes('reward} WAZ') || SHOP.includes('每日 +0.5 WAZ'))
 ok('5b. shop coupon stays WAZ', SHOP.includes('discount_value} WAZ') || SHOP.includes('min_order_amount} WAZ'))
-ok('5c. discover escrow "已从钱包托管" stays WAZ', DISC.includes('已从钱包托管') && DISC.includes('verified_price} WAZ'))
+ok('5c. discover auto-order card removed (RFC-025 PR-5b) — the WAZ-display-sensitive string is gone, not converted', !DISC.includes('已从钱包托管') && !DISC.includes('verified_price} WAZ'))
 ok('5d. discover L1 commission stays WAZ', DISC.includes('L1 佣金') && DISC.includes('l1} WAZ'))
 
 // 6. P2-2 — machine-readable price matches the human USDC display (no WAZ drift for agents/SEO)
