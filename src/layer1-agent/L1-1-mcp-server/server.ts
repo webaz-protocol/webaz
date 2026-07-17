@@ -1879,7 +1879,7 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
 - Uses your SAVED DEFAULT address server-side (address_source="default"); the full address is never returned. No default → DEFAULT_ADDRESS_REQUIRED with a safe PWA next step (never paste an address into chat).
 - All amounts are INTEGER base-units (currency WAZ, exponent 6). Never sum line items yourself — total/payable_total are server-asserted.
 - payment_rail: escrow (WebAZ custodies at order time) | direct_p2p (you pay the seller directly; WebAZ holds no funds, no authoritative FX, final eligibility gates re-run at order creation). Ineligible rails FAIL structurally — never auto-switched.
-- quote_token expires (10 min) and is bound to you + product + quantity + address + rail + amounts; tampering/other accounts/expiry all fail. The next step (order DRAFT, RFC-025 PR-4) is NOT YET AVAILABLE — for now a human orders at webaz.xyz, or an api_key agent uses webaz_place_order. A real order still requires human confirmation.`,
+- quote_token expires (10 min) and is bound to you + product + quantity + address + rail + amounts; tampering/other accounts/expiry all fail. Next step: webaz_order_draft (action=create, quote_token) turns this quote into an order draft — one quote, one draft. A real order still requires human Passkey approval (webaz_submit_order_request).`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1904,7 +1904,7 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
 - action="create" (quote_token required, optional idempotency_key) | "cancel" (draft_id; terminal, idempotent-safe) | "get" (draft_id) | "list".
 - Drafts expire in 24h: get/list show status=expired (derived — no hidden writes), cancel refuses, and the PR-5a submitter will hard-reject them.
 - Zero PII: destination stays a region tag + summary; amounts are integer WAZ units copied verbatim from the quote (no recomputation).
-- SUBMITTING for human Passkey approval is RFC-025 PR-5a and is NOT YET AVAILABLE — until then a human orders at webaz.xyz, or an api_key agent uses webaz_place_order. A real order always requires human confirmation.`,
+- Next step: webaz_submit_order_request (draft_id) puts the draft into the human's Passkey approval queue — approval re-validates against current state and creates the REAL order server-side. The agent never executes; a real order always requires human Passkey approval.`,
     inputSchema: {
       type: 'object',
       properties: {

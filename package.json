@@ -290,6 +290,7 @@
     "test:order-submit-approve": "tsx scripts/test-order-submit-approve.ts",
     "test:agent-buy-retired": "tsx scripts/test-agent-buy-retired.ts",
     "test:prepare-case": "tsx scripts/test-prepare-case.ts",
+    "test:oat-scope-gate": "tsx scripts/test-oat-scope-gate.ts",
     "test:mcp-tool-annotations": "tsx scripts/test-mcp-tool-annotations.ts",
     "agent:first-success": "node scripts/agent-first-success.mjs",
     "agent:compat-matrix": "node scripts/agent-compat-matrix.mjs",
