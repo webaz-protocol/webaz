@@ -38,7 +38,7 @@ function projectMessages(db: Database.Database, convId: string, humanId: string)
     let flags: unknown = []
     try { flags = m.flag_reasons ? JSON.parse(String(m.flag_reasons)) : [] } catch { flags = [] }
     let agentMeta: Record<string, unknown> | null = null
-    try { const meta = m.meta ? JSON.parse(String(m.meta)) as Record<string, unknown> : null; agentMeta = (meta?.agent as Record<string, unknown>) ?? null } catch { agentMeta = null }
+    try { const meta = m.meta ? JSON.parse(String(m.meta)) as Record<string, unknown> : null; const a = meta?.agent as Record<string, unknown> | undefined; agentMeta = a && typeof a.grant_id === 'string' && typeof a.body_sha256 === 'string' ? a : null } catch { agentMeta = null }   // shape 校验:畸形/历史数据不冒充 agent 归因
     return {
       message_id: String(m.id),
       sender: m.sender_id === humanId ? 'you' : 'counterparty',
@@ -71,15 +71,20 @@ export async function sendOrderChat(db: Database.Database, deps: { apiLoopback: 
   const idem = typeof idempotencyKey === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(idempotencyKey) ? idempotencyKey : null
   const party = orderParty(db, humanId, orderId)
   if (!party.ok) return party
-  // 幂等:同键 10 分钟窗口命中 → 返回原消息,绝不重发
+  // 幂等(Codex HIGH):DB 级预留 —— grant 命名空间 + body 哈希绑定;UNIQUE(grant,key) 抗并发同键。
+  const bodySha = sha(text)
   if (idem) {
-    const conv0 = convFor(db, humanId, orderId)
-    if (conv0) {
-      const recent = db.prepare("SELECT id, meta FROM messages WHERE conversation_id = ? AND sender_id = ? AND created_at > datetime('now','-10 minutes') ORDER BY created_at DESC LIMIT 20")
-        .all(String(conv0.id), humanId) as Array<{ id: string; meta: string | null }>
-      for (const m of recent) {
-        try { const a = m.meta ? (JSON.parse(m.meta) as { agent?: { idempotency_key?: string } }).agent : null; if (a?.idempotency_key === idem) return { ok: true, response: { order_id: orderId, message_id: m.id, duplicate: true, reused_existing_message: true } } } catch { /* */ }
-      }
+    try {
+      db.prepare('INSERT INTO agent_chat_idem (grant_id, idem_key, body_sha, message_id) VALUES (?,?,?,NULL)').run(grantId, idem, bodySha)
+    } catch (e) {
+      if (!/UNIQUE|PRIMARY/i.test((e as Error).message)) return { ok: false, status: 503, body: { error_code: 'CHAT_UNAVAILABLE', reason: 'idempotency store unavailable', retryable: true } }
+      const prev = db.prepare('SELECT body_sha, message_id, created_at FROM agent_chat_idem WHERE grant_id = ? AND idem_key = ?').get(grantId, idem) as { body_sha: string; message_id: string | null; created_at: string } | undefined
+      if (prev && prev.body_sha !== bodySha) return { ok: false, status: 409, body: { error_code: 'IDEMPOTENCY_CONFLICT', reason: 'this idempotency_key was already used with a DIFFERENT body — pick a new key', retryable: false } }
+      if (prev?.message_id) return { ok: true, response: { order_id: orderId, message_id: prev.message_id, duplicate: true, reused_existing_message: true } }
+      // 同键同体、消息未落(对手在飞/曾崩溃):>10 分钟视为死预留可重占,否则如实退避
+      const stale = prev && db.prepare("SELECT 1 x WHERE ? < datetime('now','-10 minutes')").get(prev.created_at)
+      if (!stale) return { ok: false, status: 409, body: { error_code: 'SEND_IN_FLIGHT', reason: 'an identical send with this key is in flight — retry shortly to fetch its message id', retryable: true } }
+      db.prepare("UPDATE agent_chat_idem SET created_at = datetime('now'), message_id = NULL WHERE grant_id = ? AND idem_key = ?").run(grantId, idem)
     }
   }
   const u = db.prepare('SELECT api_key FROM users WHERE id = ?').get(humanId) as { api_key: string } | undefined
@@ -94,14 +99,17 @@ export async function sendOrderChat(db: Database.Database, deps: { apiLoopback: 
   const msgId = msg && typeof msg.id === 'string' ? msg.id : null
   if (sd.status === 429) return { ok: false, status: 429, body: { error_code: 'CHAT_RATE_LIMITED', reason: 'sending too fast — retry shortly', retryable: true } }
   if (!msgId) return { ok: false, status: 409, body: { error_code: 'CHAT_SEND_REJECTED', reason: String(sd.json?.error ?? 'send rejected'), retryable: false } }
-  // agent 归因后置标注(spec sent_by_agent 等价;grant 审计日志已另记调用)
+  // agent 归因后置标注(spec sent_by_agent 等价;失败如实上报,不假装已标注 —— Codex MEDIUM)
+  let marked = false
   try {
-    const row = db.prepare('SELECT meta FROM messages WHERE id = ?').get(msgId) as { meta: string | null } | undefined
+    const row = db.prepare('SELECT meta FROM messages WHERE id = ? AND sender_id = ?').get(msgId, humanId) as { meta: string | null } | undefined
     let meta: Record<string, unknown> = {}
     try { meta = row?.meta ? JSON.parse(row.meta) as Record<string, unknown> : {} } catch { meta = {} }
-    meta.agent = { grant_id: grantId, label: agentLabel, body_sha256: sha(text), ...(idem ? { idempotency_key: idem } : {}) }
-    db.prepare('UPDATE messages SET meta = ? WHERE id = ?').run(JSON.stringify(meta), msgId)
-  } catch { /* 标注 best-effort;审计日志仍在 */ }
+    meta.agent = { grant_id: grantId, label: agentLabel, body_sha256: bodySha, ...(idem ? { idempotency_key: idem } : {}) }
+    const upd = db.prepare('UPDATE messages SET meta = ? WHERE id = ? AND sender_id = ?').run(JSON.stringify(meta), msgId, humanId)
+    marked = upd.changes === 1
+  } catch { marked = false }
+  if (idem) { try { db.prepare('UPDATE agent_chat_idem SET message_id = ? WHERE grant_id = ? AND idem_key = ?').run(msgId, grantId, idem) } catch { /* 预留兑现 best-effort;同键重试会走 in-flight→stale 路径 */ } }
   const flagged = msg ? Number(msg.flagged) === 1 : false
-  return { ok: true, response: { order_id: orderId, message_id: msgId, sent: true, sent_by_agent: true, flagged, ...(flagged ? { note: 'anti-scam flagged this message — it is delivered with a warning to the counterparty' } : {}), duplicate: false } }
+  return { ok: true, response: { order_id: orderId, message_id: msgId, sent: true, sent_by_agent: marked, ...(marked ? {} : { note_attribution: 'agent attribution annotation FAILED to persist — the message went out unmarked; the grant audit log still records this call' }), flagged, ...(flagged ? { note: 'anti-scam flagged this message — it is delivered with a warning to the counterparty' } : {}), duplicate: false } }
 }

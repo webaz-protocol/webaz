@@ -118,8 +118,47 @@ try {
     (await CH({ action: 'list', order_id: 'ord_nope' })).error_code === 'ORDER_NOT_FOUND'
     && (await CH({ action: 'zap', order_id: 'ord_chat' })).error_code === 'BAD_ACTION'
     && (await CH({ action: 'send', order_id: 'ord_chat', body: 'x'.repeat(2001) })).error_code === 'CHAT_BODY_INVALID')
+  // ══ Codex round-1 盲区 ══
+  // 对手方人类消息:不被标 agent;sender=counterparty
+  { const conv = db.prepare("SELECT id FROM conversations WHERE kind='order' AND context_id='ord_chat'").get() as { id: string }
+    db.prepare("INSERT INTO messages (id, conversation_id, sender_id, body) VALUES ('m_human', ?, 'seller1', 'human reply from seller')").run(conv.id) }
+  ok('C-12 counterparty HUMAN message: sender=counterparty, NOT marked agent', await CH({ action: 'list', order_id: 'ord_chat' }).then(r => {
+    const ms = r.messages as Array<Record<string, unknown>>
+    const h = ms.find(x => x.body === 'human reply from seller')
+    return !!h && h.sender === 'counterparty' && h.sent_by_agent === false && !('agent_label' in h)
+  }))
+  // 同键不同 body → 显式冲突(不静默吞)
+  const cf = await CH({ action: 'send', order_id: 'ord_chat', body: 'DIFFERENT body', idempotency_key: 'k_hello_1' })
+  ok('C-13 same key + DIFFERENT body → IDEMPOTENCY_CONFLICT (never silently returns the old message)', cf.error_code === 'IDEMPOTENCY_CONFLICT')
+  // 跨 grant 同键 = 独立命名空间
+  { db.prepare("INSERT INTO agent_delegation_grants (grant_id, human_id, agent_label, capabilities, token_hash, status, expires_at) VALUES ('grt_chat2','buyer1','OAuth: second',?,NULL,'active',?)")
+      .run(JSON.stringify(['order_chat_read','order_chat_send'].map(c => ({ capability: c }))), FUTURE)
+    db.prepare("INSERT INTO oauth_access_tokens (token_hash, grant_id, client_id, scope, aud, expires_at) VALUES (?,?,?,?,?,?)")
+      .run(sha('oat_chat_second'), 'grt_chat2', 'cli_t', 'read chat:context', 'https://webaz.xyz/mcp', FUTURE)
+    useCred('grt_chat2', 'oat_chat_second', ['order_chat_read','order_chat_send'])
+    const s4 = await CH({ action: 'send', order_id: 'ord_chat', body: 'from second agent', idempotency_key: 'k_hello_1' })
+    ok('C-14 same key under a DIFFERENT grant = separate namespace (sends normally)', s4.sent === true && typeof s4.message_id === 'string' && s4.message_id !== s1.message_id, JSON.stringify(s4).slice(0, 150))
+    useCred('grt_chat', 'oat_chat_full', ['order_chat_read','order_chat_send']) }
+  // 并发同键 → 恰一条消息(赢家发出,输家拿 in-flight/duplicate,绝无双发)
+  { const before = msgCount()
+    const hit = () => CH({ action: 'send', order_id: 'ord_chat', body: 'concurrent once', idempotency_key: 'k_conc_1' })
+    const [ra, rb] = await Promise.all([hit(), hit()])
+    const sent = [ra, rb].filter(r => r.sent === true)
+    const safe = [ra, rb].filter(r => r.duplicate === true || r.error_code === 'SEND_IN_FLIGHT')
+    ok('C-15 CONCURRENT same-key sends → exactly ONE message; loser converges to duplicate/in-flight', msgCount() === before + 1 && sent.length === 1 && sent.length + safe.length === 2, JSON.stringify({ ra, rb }).slice(0, 250)) }
+  // 屏蔽会话:发送被生产路径拒;读(参与方)仍可见历史 —— 与人类行为一致
+  { db.prepare("UPDATE conversations SET status='blocked' WHERE kind='order' AND context_id='ord_chat'").run()
+    const sb = await CH({ action: 'send', order_id: 'ord_chat', body: 'should not send' })
+    const lb = await CH({ action: 'list', order_id: 'ord_chat' })
+    ok('C-16 blocked conversation: send REFUSED by the production route; participant read still sees history (matches human behavior)', sb.error_code === 'CHAT_SEND_REJECTED' && Array.isArray(lb.messages) && (lb.messages as unknown[]).length > 0 && lb.conversation_status === 'blocked', JSON.stringify(sb).slice(0, 120))
+    db.prepare("UPDATE conversations SET status='active' WHERE kind='order' AND context_id='ord_chat'").run() }
+  // 畸形 meta.agent 不冒充归因
+  { db.prepare("UPDATE messages SET meta='{\"agent\":\"junk\"}' WHERE id='m_human'").run()
+    const lm = await CH({ action: 'list', order_id: 'ord_chat' })
+    const h = (lm.messages as Array<Record<string, unknown>>).find(x => x.body === 'human reply from seller')
+    ok('C-17 malformed meta.agent (wrong shape) is NOT presented as agent attribution', !!h && h.sent_by_agent === false) }
   // 资金/订单零变化
-  ok('C-11 chat moves NO funds and changes NO order state', Math.abs(balOf('buyer1').balance - balB.balance) < 1e-9 && Math.abs(balOf('buyer1').escrowed - balB.escrowed) < 1e-9
+  ok('C-18 chat moves NO funds and changes NO order state', Math.abs(balOf('buyer1').balance - balB.balance) < 1e-9 && Math.abs(balOf('buyer1').escrowed - balB.escrowed) < 1e-9
     && (db.prepare("SELECT status FROM orders WHERE id='ord_chat'").get() as { status: string }).status === 'paid')
 } finally { server.close(); clearCred() }
 

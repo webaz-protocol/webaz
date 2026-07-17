@@ -21597,6 +21597,7 @@ async function renderChatDetail(app, id) {
 function renderChatBubble(m, myId) {
   const isMe = m.sender_id === myId
   const flagBanner = m.flagged ? fraudBanner(m.flag_reasons) : ''
+  let agentBadge = ''; try { const _a = m.meta ? JSON.parse(m.meta).agent : null; if (_a && typeof _a.grant_id === 'string') agentBadge = `<div style="font-size:10px;color:#6d28d9;margin-bottom:2px">🤖 ${t('agent 代发')}${_a.label ? ' · ' + escHtml(String(_a.label)) : ''}</div>` } catch {}  // RFC-026 PR-4:代发标注对双方可见
   let attachments = []
   try { attachments = m.attachments ? JSON.parse(m.attachments) : [] } catch {}
   // 只渲染合法 image/* dataURL（额外的 XSS 防御）
@@ -21635,7 +21636,7 @@ function renderChatBubble(m, myId) {
   return `
     <div style="display:flex;justify-content:${isMe ? 'flex-end' : 'flex-start'};margin-bottom:8px">
       <div style="max-width:75%">
-        ${flagBanner}
+        ${agentBadge}${flagBanner}
         ${cardHtml}
         ${cardHtml && textBubble ? '<div style="height:4px"></div>' : ''}
         ${textBubble}
