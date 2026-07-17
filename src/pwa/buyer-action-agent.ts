@@ -10,10 +10,10 @@
  * open_dispute / refund 系列因证据框架与 dp 握手依赖顺延(不造死能力)。
  *
  * params_hash = SHA-256(canonical{order_id, action, 经济后果快照}):提交时服务端算后果
- * (confirm=释放金额+卖家;return=默认退款额;cancel=零资金语义),批准执行前重算重验 —— 状态/金额
- * 任何漂移硬拒。恰一次:每 (order, action) 一条活跃请求(部分唯一索引);干净失败 'failed' 终态释放坑;
- * 执行恢复走【天然 oracle】(订单已 confirmed/completed、已 cancelled、return_requests 行已存在 →
- * already_executed),崩溃边界重批即收敛,绝无重复经济动作。
+ * (confirm=冻结订单总额+分账规则;return=默认退款额;cancel=零资金语义),批准执行前重算重验 —— 状态/金额
+ * 任何漂移硬拒。恰一次:每 (order, action) 一条活跃请求(部分唯一索引)+独占执行租约;干净失败
+ * 'failed' 终态释放坑。恢复严格区分 executed_at(本请求执行)与 already_satisfied(目标已由别处满足);
+ * confirmed 半完成态要求人工核对结算,绝不由订单状态伪造 executed_at。
  */
 import type Database from 'better-sqlite3'
 import { createHash } from 'node:crypto'
@@ -23,6 +23,7 @@ import type { ApiLoopback } from './order-chat-agent.js'
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
 export const BUYER_ACTIONS = ['confirm_receipt', 'cancel', 'request_return'] as const
 const RETURN_REASONS = new Set(['quality', 'wrong_item', 'damaged', 'no_longer_needed', 'other'])
+const EXECUTION_LEASE_MS = 60_000
 
 interface Consequence { snapshot: Record<string, unknown>; summary: Record<string, unknown> }
 
@@ -35,7 +36,7 @@ function evaluate(db: Database.Database, humanId: string, orderId: string, actio
   if (action === 'confirm_receipt') {
     if (rail === 'direct_p2p') return { ok: false, http: 409, error: '直付确认收货需人本人完成披露确认+现场 Passkey(订单页)—— 不可经 agent 请求', error_code: 'DP_CONFIRM_HUMAN_ONLY' }
     if (status !== 'delivered') return { ok: false, http: 409, error: `仅 delivered 可确认收货(当前 ${status})`, error_code: 'ORDER_NOT_DELIVERED' }
-    return { ok: true, c: { snapshot: { order_id: orderId, action, seller_id: String(o.seller_id), release_amount: Number(o.escrow_amount), rail }, summary: { moves_funds: true, releases_escrow: Number(o.escrow_amount), to_seller_hint: String(o.seller_id).slice(0, 4) + '…', note: 'confirming releases the escrow to the seller and settles the order' } } }
+    return { ok: true, c: { snapshot: { order_id: orderId, action, settlement_total: Number(o.total_amount), rail }, summary: { moves_funds: true, settlement_total: Number(o.total_amount), distribution: 'frozen_order_settlement_rules', note: 'confirming settles the frozen order total under its distribution rules; it is not an all-to-seller transfer' } } }
   }
   if (action === 'cancel') {
     if (rail !== 'direct_p2p' || !['direct_pay_window', 'payment_query', 'direct_expired_unconfirmed'].includes(status)) {
@@ -106,28 +107,51 @@ export function buyerActionSummary(db: Database.Database, requestId: string): Re
 /** Passkey 批准执行:重验(同谓词重算 hash 必须一致)→ 回环真实路由 → oracle 恢复。 */
 export async function approveBuyerAction(db: Database.Database, deps: {
   requestId: string; approverId: string; nowIso: string; apiLoopback: ApiLoopback
-}): Promise<{ ok: boolean; http?: number; error?: string; error_code?: string; executed?: string; already_executed?: boolean }> {
+}): Promise<{ ok: boolean; http?: number; error?: string; error_code?: string; executed?: string; already_executed?: boolean; already_satisfied?: boolean }> {
   const { requestId, approverId, nowIso, apiLoopback } = deps
   const fail = (error_code: string, http: number, error: string) => ({ ok: false, error_code, http, error })
   const failTerminal = (error_code: string, http: number, error: string) => {
-    db.prepare("UPDATE agent_permission_requests SET status = 'failed' WHERE id = ? AND executed_at IS NULL").run(requestId)
+    db.prepare("UPDATE agent_permission_requests SET status = 'failed', execution_claimed_at = NULL WHERE id = ? AND executed_at IS NULL").run(requestId)
     return fail(error_code, http, error)
   }
   const r = db.prepare("SELECT * FROM agent_permission_requests WHERE id = ? AND kind = 'buyer_action'").get(requestId) as Record<string, unknown> | undefined
   if (!r) return fail('BUYER_ACTION_NOT_FOUND', 404, '请求不存在')
   if (r.human_id !== approverId) return fail('NOT_YOUR_REQUEST', 403, '不是你的请求')
   const orderId = String(r.order_id); const action = String(r.order_action)
-  // 天然 oracle:目标状态已达成 → already_executed(崩溃边界收敛,绝不重复经济动作)
+  // 先分清“本请求已执行”和“订单动作已由别处满足”:后者绝不伪造 executed_at。
   const o = db.prepare('SELECT status FROM orders WHERE id = ?').get(orderId) as { status: string } | undefined
-  const oracleDone = (action === 'confirm_receipt' && o && ['confirmed', 'completed'].includes(o.status))
+  if (r.executed_at) return { ok: true, already_executed: true, executed: action }
+  if (r.status === 'satisfied') return { ok: true, already_satisfied: true, executed: action }
+  if (!['pending', 'approved'].includes(String(r.status))) return fail('BUYER_ACTION_NOT_PENDING', 409, '请求已过期或已处理')
+  if (action === 'confirm_receipt' && o?.status === 'confirmed') {
+    db.prepare("UPDATE agent_permission_requests SET status = 'approved', execution_result = ? WHERE id = ? AND executed_at IS NULL")
+      .run(JSON.stringify({ ok: false, error_code: 'BUYER_ACTION_RECONCILIATION_REQUIRED' }), requestId)
+    return fail('BUYER_ACTION_RECONCILIATION_REQUIRED', 409, '订单已确认但结算完成状态无法证明,请先核对并修复结算')
+  }
+  const oracleDone = (action === 'confirm_receipt' && o?.status === 'completed')
     || (action === 'cancel' && o && o.status === 'cancelled')
     || (action === 'request_return' && !!db.prepare('SELECT id FROM return_requests WHERE order_id = ? LIMIT 1').get(orderId))
-  if (r.executed_at || oracleDone) {
-    db.prepare('UPDATE agent_permission_requests SET executed_at = COALESCE(executed_at, ?) WHERE id = ?').run(nowIso, requestId)
-    return { ok: true, already_executed: true, executed: action }
+  if (oracleDone) {
+    db.prepare("UPDATE agent_permission_requests SET status = 'satisfied', execution_result = ?, execution_claimed_at = NULL WHERE id = ? AND executed_at IS NULL")
+      .run(JSON.stringify({ ok: true, already_satisfied: true, action }), requestId)
+    return { ok: true, already_satisfied: true, executed: action }
   }
-  const claim = db.prepare("UPDATE agent_permission_requests SET status = 'approved', approved_at = ? WHERE id = ? AND executed_at IS NULL AND ((status = 'pending' AND expires_at > ?) OR status = 'approved')").run(nowIso, requestId, nowIso)
-  if (claim.changes !== 1) return fail('BUYER_ACTION_NOT_PENDING', 409, '请求已过期或已处理')
+  const nowMs = Date.parse(nowIso)
+  if (!Number.isFinite(nowMs)) return fail('BUYER_ACTION_UNAVAILABLE', 503, '执行时钟不可用')
+  const leaseBefore = new Date(nowMs - EXECUTION_LEASE_MS).toISOString()
+  const claim = db.prepare(`UPDATE agent_permission_requests
+    SET status = 'approved', approved_at = COALESCE(approved_at, ?), execution_claimed_at = ?
+    WHERE id = ? AND executed_at IS NULL AND (
+      (status = 'pending' AND expires_at > ?)
+      OR (status = 'approved' AND (execution_claimed_at IS NULL OR execution_claimed_at <= ?))
+    )`).run(nowIso, nowIso, requestId, nowIso, leaseBefore)
+  if (claim.changes !== 1) {
+    const fresh = db.prepare('SELECT status, executed_at, execution_claimed_at FROM agent_permission_requests WHERE id = ?').get(requestId) as { status: string; executed_at: string | null; execution_claimed_at: string | null } | undefined
+    if (fresh?.status === 'approved' && !fresh.executed_at && fresh.execution_claimed_at && fresh.execution_claimed_at > leaseBefore) {
+      return fail('BUYER_ACTION_IN_PROGRESS', 409, '该请求正在执行,请等待结果后再试')
+    }
+    return fail('BUYER_ACTION_NOT_PENDING', 409, '请求已过期或已处理')
+  }
   // 同谓词重验:当前状态重算后果快照,与 Passkey 绑定的 hash 一字不差
   let snap: Record<string, unknown> = {}
   try { snap = r.action_params ? JSON.parse(String(r.action_params)) as Record<string, unknown> : {} } catch { snap = {} }
@@ -146,6 +170,6 @@ export async function approveBuyerAction(db: Database.Database, deps: {
     if (lb.status >= 500) return { ok: false, http: 502, error: '执行结果不明(上游 5xx)—— 保持可重批,先核对再执行。', error_code: 'BUYER_ACTION_AMBIGUOUS' }
     return failTerminal(String(lb.json?.error_code || 'BUYER_ACTION_REJECTED'), 409, `执行被拒绝(${String(lb.json?.error_code || lb.json?.error || `HTTP_${lb.status}`)})—— 请求已终结,可修正后重新提交`)
   }
-  db.prepare('UPDATE agent_permission_requests SET executed_at = ?, execution_result = ? WHERE id = ? AND executed_at IS NULL').run(nowIso, JSON.stringify({ ok: true, action }), requestId)
+  db.prepare('UPDATE agent_permission_requests SET executed_at = ?, execution_result = ?, execution_claimed_at = NULL WHERE id = ? AND executed_at IS NULL').run(nowIso, JSON.stringify({ ok: true, action }), requestId)
   return { ok: true, executed: action }
 }

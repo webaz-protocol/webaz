@@ -633,7 +633,7 @@ CREATE TABLE IF NOT EXISTS agent_permission_requests (
       created_at       TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'UTC'), 'YYYY-MM-DD HH24:MI:SS')),
       expires_at       TEXT NOT NULL,
       approved_at      TEXT
-    , kind TEXT DEFAULT 'scope_grant', order_id TEXT, order_action TEXT, params_hash TEXT, action_params TEXT, executed_at TEXT, execution_result TEXT, intent_hash TEXT);
+    , kind TEXT DEFAULT 'scope_grant', order_id TEXT, order_action TEXT, params_hash TEXT, action_params TEXT, executed_at TEXT, execution_result TEXT, execution_claimed_at TEXT, intent_hash TEXT);
 
 CREATE TABLE IF NOT EXISTS agent_chat_idem (
     grant_id    TEXT NOT NULL,
