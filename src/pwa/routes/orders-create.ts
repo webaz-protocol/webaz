@@ -32,8 +32,8 @@ import { buildCartMandate, buildPaymentMandate, signMandate } from './ap2-mandat
 // RFC-014 PR3 — 金额走整数 base-units;钱包写绝对值(防 REAL 浮点加法 dust)。
 import { toUnits, toDecimal, mulQty, mulRate } from '../../money.js'
 import { createDirectPayResponse } from '../../direct-pay-create.js'                    // PR-4c: direct_p2p 建单分叉(生产门+收款指令门+原子建单;本金不入协议)
-import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'; import { resolveDraftLink } from '../order-draft-link.js'; import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from '../../trade-terms.js'; import { gateSaleRegionForCreate } from '../../sale-regions.js'  // PR-2 运费守门 + S0 条款快照 + S1 可售门(意愿/合规先于物流)
-import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'; import { AgentSpendCapExceeded, getAgentSpendCapViolation } from '../../agent-spend-cap.js'; import { hasInvalidPurchaseCredential, readStrictBearerCredential } from '../bearer-auth.js'; import { consumePriceSession, PriceSessionConsumeError } from '../../price-session-consume.js'; import { MAX_PER_ORDER } from '../../order-limits.js'  // RFC-016 异步 DB seam(下单事务外预检;事务内同步)+ RFC-025 共享限购常量
+import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'; import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from '../../trade-terms.js'; import { gateSaleRegionForCreate } from '../../sale-regions.js'  // PR-2 运费守门 + S0 条款快照 + S1 可售门(意愿/合规先于物流)
+import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'; import { AgentSpendCapExceeded, getAgentSpendCapViolation } from '../../agent-spend-cap.js'; import { hasInvalidPurchaseCredential, readStrictBearerCredential } from '../bearer-auth.js'; import { consumePriceSession, PriceSessionConsumeError } from '../../price-session-consume.js'; import { MAX_PER_ORDER } from '../../order-limits.js'; import { resolveDraftLink } from '../order-draft-link.js'; import { resolveBuyerAddressSnapshot } from '../address-book.js'  // RFC-016 异步 DB seam(下单事务外预检;事务内同步)+ RFC-025 共享限购常量
 
 // 店铺推荐 → 商品三级归因的【懒升级】(sync,跑在下单事务内、getProductShareChain 之前)。
 // 严格门槛(任一不满足则不升级,绝不覆盖已有有效直接归因):
@@ -123,7 +123,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     if (isTrustedRole(user as Record<string, unknown>)) return void res.status(403).json({ error: '受信角色不可参与交易', error_code: 'TRUSTED_ROLE_NO_TRADE' })
     if (user.role !== 'buyer') return void res.json({ error: '仅买家可下单' })
     // 2026-05-23 P0 audit fix 2.1：agent_attestations spend_cap 强制
-    const { product_id, shipping_address, notes, session_token, coupon_code, delivery_window, variant_id, expected_price,
+    const { product_id, shipping_address, address_id, ship_to_region, notes, session_token, coupon_code, delivery_window, variant_id, expected_price,
       // C-2: 礼物订单字段
       is_gift, gift_recipient_name, gift_recipient_phone, gift_message,
       // C-3: 订单保险
@@ -132,10 +132,10 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
       anonymous_recipient,
       // B5 主动捐赠
       donation_pct } = req.body
-    if (!product_id || !shipping_address) return void res.json({ error: '请提供商品ID和收货地址' }); const _dl = resolveDraftLink(db, req.body?.draft_id, user.id as string); if (_dl.kind === 'invalid') return void res.status(409).json({ error: _dl.error, error_code: 'DRAFT_LINK_INVALID' }); if (_dl.kind === 'existing') return void res.json({ success: true, order_id: _dl.orderId, idempotent_reuse: true })  // RFC-026 PR-1:一 draft 一单
-    const anonymousFlag = anonymous_recipient ? 1 : 0
-    const recipientCode = anonymousFlag === 1 ? generateRecipientCode() : null
-    const donationPctNum = Number(donation_pct || 0)
+    if (!product_id) return void res.json({ error: '请提供商品ID' })
+    const _dl = resolveDraftLink(db, req.body?.draft_id, user.id as string); if (_dl.kind === 'invalid') return void res.status(409).json({ error: _dl.error, error_code: 'DRAFT_LINK_INVALID' }); if (_dl.kind === 'existing') return void res.json({ success: true, order_id: _dl.orderId, idempotent_reuse: true })  // RFC-026 PR-1:一 draft 一单
+    const _addr = resolveBuyerAddressSnapshot(db, user.id as string, { addressId: address_id, shippingAddress: shipping_address, shipToRegion: ship_to_region }); if (!_addr.ok) return void res.status(_addr.status).json({ error: _addr.error, error_code: _addr.error_code }); const { shippingAddress, shipToRegion: shippingRegion } = _addr.value
+    const anonymousFlag = anonymous_recipient ? 1 : 0, recipientCode = anonymousFlag === 1 ? generateRecipientCode() : null, donationPctNum = Number(donation_pct || 0)
     if (!DONATION_VALID_PCTS.has(donationPctNum)) {
       return void res.json({ error: 'donation_pct 必须是 0 / 0.005 / 0.01 / 0.02 / 0.05 之一', error_code: 'DONATION_PCT_INVALID' })
     }
@@ -258,7 +258,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     const subtotalU = mulQty(basePriceU, reqQty)
     const priceAfterCouponU = Math.max(0, subtotalU - toUnits(couponDiscount))
     const insuranceRate = getProtocolParam<number>('order_insurance_rate', 0.01)
-    const insurancePremiumU = buy_insurance ? mulRate(priceAfterCouponU, insuranceRate) : 0; if (!gateSaleRegionForCreate(db, res, product as { sale_regions?: string | null }, String(product.seller_uid), req.body?.ship_to_region, getProtocolParam)) return; const _ship = gateShippingForCreate(db, res, product as { shipping_template?: string | null; shipping_quote_ok?: number | null }, String(product.seller_uid), req.body?.ship_to_region, String(req.body?.payment_rail || '') === 'direct_p2p' ? 'direct_p2p' : 'escrow', priceAfterCouponU); if (!_ship) return  // PR-2 运费模板:有模板必选地区且须命中(400/409 已写);无模板=原行为
+    const insurancePremiumU = buy_insurance ? mulRate(priceAfterCouponU, insuranceRate) : 0; if (!gateSaleRegionForCreate(db, res, product as { sale_regions?: string | null }, String(product.seller_uid), shippingRegion, getProtocolParam)) return; const _ship = gateShippingForCreate(db, res, product as { shipping_template?: string | null; shipping_quote_ok?: number | null }, String(product.seller_uid), shippingRegion, String(req.body?.payment_rail || '') === 'direct_p2p' ? 'direct_p2p' : 'escrow', priceAfterCouponU); if (!_ship) return  // PR-2 运费模板:有模板必选地区且须命中(400/409 已写);无模板=原行为
     const totalAmountU = Math.max(0, priceAfterCouponU + insurancePremiumU + _ship.feeU)   // 运费并入总额(与保险费同惯例;快照 orders.shipping_fee)
     // B5 主动捐赠 — 按订单总额 × 比例算（额外扣款，进 charity_fund）
     const donationAmountU = donationPctNum > 0 ? mulRate(totalAmountU, donationPctNum) : 0
@@ -268,7 +268,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     const totalAmount = toDecimal(totalAmountU)
     const donationAmount = toDecimal(donationAmountU); const shippingFee = toDecimal(_ship.feeU)
     // PR-4c:direct_p2p 分叉 —— 本金不入协议,跳过下方 escrow 预检/事务,改走直付建单(生产门+收款指令门+原子建单,仅锁卖家 fee-stake)。
-    if (String(req.body?.payment_rail || '') === 'direct_p2p') return void createDirectPayResponse(res, db, { generateId, transition, appendOrderEvent, getProtocolParam }, { product, buyerId: user.id as string, reqQty, basePrice, totalAmount, totalAmountU, shippingAddress: String(shipping_address), directReceiveAccountId: (typeof req.body?.direct_receive_account_id === 'string' && req.body.direct_receive_account_id) ? String(req.body.direct_receive_account_id) : undefined, agentApiKey: apiKey, draftId: _dl.kind === 'link' ? _dl.draftId : undefined, consumePriceSession: () => consumePriceSession(db, typeof session_token === 'string' ? session_token : undefined), opts: { variantId: variant_id, hasVariants: Number(product.has_variants) === 1, flashActive: !!flashSale, couponCode: coupon_code, buyInsurance: !!buy_insurance, donationPct: donationPctNum, isGift: !!is_gift, anonymous: anonymousFlag === 1, deliveryWindow: !!delivery_window }, shipping: { region: _ship.region, fee: _ship.fee, estDays: _ship.estDays, quoteRequired: _ship.quoteRequired, freeThresholdApplied: _ship.freeThresholdApplied } })
+    if (String(req.body?.payment_rail || '') === 'direct_p2p') return void createDirectPayResponse(res, db, { generateId, transition, appendOrderEvent, getProtocolParam }, { product, buyerId: user.id as string, reqQty, basePrice, totalAmount, totalAmountU, shippingAddress, directReceiveAccountId: (typeof req.body?.direct_receive_account_id === 'string' && req.body.direct_receive_account_id) ? String(req.body.direct_receive_account_id) : undefined, agentApiKey: apiKey, draftId: _dl.kind === 'link' ? _dl.draftId : undefined, consumePriceSession: () => consumePriceSession(db, typeof session_token === 'string' ? session_token : undefined), opts: { variantId: variant_id, hasVariants: Number(product.has_variants) === 1, flashActive: !!flashSale, couponCode: coupon_code, buyInsurance: !!buy_insurance, donationPct: donationPctNum, isGift: !!is_gift, anonymous: anonymousFlag === 1, deliveryWindow: !!delivery_window }, shipping: { region: _ship.region, fee: _ship.fee, estDays: _ship.estDays, quoteRequired: _ship.quoteRequired, freeThresholdApplied: _ship.freeThresholdApplied } })
     // 友好预检查(读):真正的守恒在下面的同步事务内(applyWalletDelta 绝对值落库)。
     const wallet = await dbOne<{ balance: number }>('SELECT balance FROM wallets WHERE user_id = ?', [user.id])
     if (!wallet) return void res.status(500).json({ error: '钱包记录缺失', error_code: 'WALLET_MISSING' })
@@ -337,7 +337,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
           anonymous_recipient, recipient_code, donation_amount, stake_backing, ship_to_region, shipping_fee, shipping_est_days, draft_id
         ) VALUES (?,?,?,?,?,?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
           orderId, product.id, user.id, product.seller_uid, reqQty, basePrice, totalAmount, totalAmount,
-          shipping_address, notes || null,
+          shippingAddress, notes || null,
           addHours(now, 24), addHours(now, 48), addHours(now, 120),
           addHours(now, 168), addHours(now, 336), addHours(now, 408),
           l1, l2, l3, snapshotRate, buyerRegionSnapshot, contentHashSnapshot,

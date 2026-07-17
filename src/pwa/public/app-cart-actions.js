@@ -90,16 +90,16 @@
 
   window.cartCheckout = async () => {
     if (cartBusy) return
-    const addr = document.getElementById('cart-addr').value.trim()
+    const addr = document.getElementById('cart-addr').value.trim(), address_id = document.getElementById('cart-address-id')?.value?.trim() || ''
     const msg = document.getElementById('cart-msg')
-    if (!addr) { msg.innerHTML = alert$('error', t('请填写收货地址')); return }
+    if (!addr && !address_id) { msg.innerHTML = alert$('error', t('请填写收货地址')); return }
     const items = selectedCheckoutItems()
     if (items.length === 0) { msg.innerHTML = alert$('error', t('未选中任何商品')); return }
     setBusy(true)
     msg.innerHTML = loading$()
     let result
     try {
-      result = await POST('/cart/checkout', { shipping_address: addr, items })
+      result = await POST('/cart/checkout', { ...(address_id ? { address_id } : { shipping_address: addr }), items })
     } catch (_) {
       setBusy(false)
       msg.innerHTML = alert$('error', t('操作失败，请重试'))

@@ -234,7 +234,7 @@ async function renderAddresses(app) {
 }
 
 window.openAddressModal = async (id) => {
-  let cur = { label: '', recipient: '', phone: '', region: '', detail: '', is_default: false }
+  let cur = { label: '', recipient: '', phone: '', region: 'SG', detail: '', is_default: false }
   if (id) {
     const r = await GET('/addresses')
     cur = (r?.items || []).find(x => x.id === id) || cur
@@ -249,8 +249,8 @@ window.openAddressModal = async (id) => {
         <div class="form-group"><label class="form-label">${t('标签')} *</label><input class="form-control" id="adr-label" maxlength="30" value="${escHtml(cur.label)}" placeholder="${t('家 / 公司 / 父母家')}"></div>
         <div class="form-group"><label class="form-label">${t('收件人')} *</label><input class="form-control" id="adr-recipient" maxlength="60" value="${escHtml(cur.recipient)}"></div>
         <div class="form-group"><label class="form-label">${t('电话')}</label><input class="form-control" id="adr-phone" maxlength="30" value="${escHtml(cur.phone || '')}"></div>
-        <div class="form-group"><label class="form-label">${t('省/市/区')}</label><input class="form-control" id="adr-region" maxlength="60" value="${escHtml(cur.region || '')}"></div>
-        <div class="form-group"><label class="form-label">${t('详细地址')} *</label><input class="form-control" id="adr-detail" maxlength="200" value="${escHtml(cur.detail)}"></div>
+        <div class="form-group"><label class="form-label">${t('国家/地区')}</label><input class="form-control" id="adr-region" maxlength="60" value="${escHtml(cur.region || 'SG')}" placeholder="${t('如：SG / CN / US')}"></div>
+        <div class="form-group"><label class="form-label">${t('详细地址')} *</label><input class="form-control" id="adr-detail" maxlength="200" value="${escHtml(cur.detail)}" placeholder="${t('街道、楼栋、单元号、邮编')}"></div>
         ${!id ? `<label style="font-size:12px;color:#6b7280;display:flex;align-items:center;gap:4px;margin-bottom:8px"><input type="checkbox" id="adr-default" ${cur.is_default ? 'checked' : ''}> ${t('设为默认地址')}</label>` : ''}
         <div id="adr-msg" style="margin:8px 0"></div>
         <div style="display:flex;gap:8px">
@@ -297,11 +297,11 @@ window.submitAddress = async (id) => {
   if (h.startsWith('#order-product/')) {
     // 下单页：仅刷新地址数据 + 重渲染本页（保持折叠态）
     try {
-      const r = await GET('/addresses')
-      state._addresses = r?.items || []
-      const pid = h.split('/')[1]
-      if (pid) renderBuyPage(document.getElementById('app'), pid)
+      const r = await GET('/addresses'); state._addresses = r?.items || []
+      const pid = h.split('/')[1]; if (pid) renderBuyPage(document.getElementById('app'), pid)
     } catch {}
+  } else if (h.startsWith('#cart')) {
+    try { const r = await GET('/addresses'); state._addresses = r?.items || []; renderCart(document.getElementById('app')) } catch {}
   } else if (h.startsWith('#addresses') || !h) {
     renderAddresses(document.getElementById('app'))
   } else {
