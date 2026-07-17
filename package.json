@@ -1,6 +1,6 @@
 {
   "name": "@seasonkoh/webaz",
-  "version": "0.1.32",
+  "version": "0.1.33",
   "description": "Publicly launched agent-native decentralized commerce protocol. Humans and AI agents transact through the same rules; Direct Pay supports real buyer-to-seller payment.",
   "main": "dist/mcp.js",
   "bin": {
