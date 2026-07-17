@@ -1,15 +1,19 @@
-# WebAZ Open-Source First Tasks (16) / 开源首批 Agent-ready 任务清单
+# WebAZ Open-Source First Tasks (20) / 开源首批 Agent-ready 任务清单
 
 > Purpose: the first public task pool when the repo opens (code-public). Load into the
 > `webaz_contribute` task board. Shape: **5 × 30–60 min · 5 × 2–4 h · 3 × tests/audit · 2 × small RFC**
-> + **1 flagship feature** (T16, OAuth identity linking — high-audit, maintainer-led; see note below).
+> + **1 flagship feature** (T16, OAuth identity linking — high-audit, maintainer-led; see note below)
+> + **4 ChatGPT / Apps SDK connector readiness tasks** (T17–T20, docs/tests/package only).
 > Tasks **T1–T15** all "use an **existing** protocol capability to verify / transform / document / wrap" —
 > **never the core logic itself**. **T16 is the deliberate exception**: it implements a new auth/identity
 > capability (per [RFC-019](rfcs/RFC-019-github-oauth-identity-linking.md)) and therefore is **NOT** a
 > low-risk entry task — it is **high-risk, human-in-the-loop, not auto-claimable, maintainer-led**, with the
-> iron-rule / Passkey / human-presence core protected in `forbidden_paths`.
+> iron-rule / Passkey / human-presence core protected in `forbidden_paths`. **T17–T20 are not protocol
+> redesign work**: they document and test ChatGPT Developer Mode / Remote MCP / OAuth connector readiness
+> while keeping WebAZ protocol semantics vendor-neutral.
 >
-> Status: **draft for maintainer review** → after review, load into `webaz_contribute`.
+> Status: **living public seed authority**. Keep this file and `scripts/seed-open-source-tasks.ts` in sync
+> before adding or reseeding public task-board entries.
 > The p2p canonicalization rule (§B) is confirmed against source and baked into T6/T8/T11.
 
 ---
@@ -27,6 +31,9 @@ core itself**.
 - `reward_eligibility: eligible`; `economic_value: uncommitted` (records contribution; **no amount promised**).
 - Submit = DCO sign-off; **`done` ≠ merge** — a human maintainer reviews/merges.
 - PRs MUST target the canonical WebAZ repo.
+- Connector-readiness tasks must distinguish **private Developer Mode validation** from **public directory
+  approval**. Do not claim OpenAI approval, mobile availability, or public listing until independently
+  verified.
 - Big-company employees: personal time only; follow your employer's open-source/IP policy; **never** submit
   a prior employer's code / internal designs / confidential info.
 - `task_type` is from the `webaz_contribute` enum: `docs | i18n | tests | sdk_example | ui | code | api |
@@ -341,6 +348,87 @@ prices. A produced `content_hash` must round-trip through the protocol's signatu
 - **verification_commands**: new schema/adapter/engine/route tests green **and** the existing identity-claim suite still green; `npm run build`; `npm run check:api-docs-fresh`
 - **expected_output**: the RFC-019 milestones as separate PRs (M2–M7), each independently CI-green
 - **dependencies**: RFC-019 (M1, this PR's companion doc)
+
+---
+
+## §J ChatGPT / Apps SDK connector readiness track (4 · public docs/tests · no protocol changes)
+
+These tasks support the "ChatGPT as the first reference client" work without making WebAZ vendor-specific.
+They are deliberately limited to runbooks, read-only conformance probes, compatibility tests, and submission
+packaging. They must not change WebAZ commerce semantics, OAuth issuance semantics, Passkey gates, order
+settlement, or MCP tool authorization.
+
+### T17 — ChatGPT Developer Mode WebAZ connector smoke-test runbook
+- **task_type**: docs · **risk**: low
+- **summary**: Document the exact browser-side Developer Mode setup and smoke sequence for
+  `https://webaz.xyz/mcp`: add the connector by server URL, complete OAuth, run anonymous tools, then run
+  grant-scoped tools. Classify mobile/client limitations separately from WebAZ server blockers.
+- **allowed_paths**: `docs/runbooks/chatgpt-developer-mode-smoke.md` (new)
+- **forbidden_paths**: any code; OAuth/auth core; money/order/settlement paths
+- **acceptance_criteria**:
+  - covers connector creation via server URL, OAuth login, anonymous tool smoke, grant-scoped tool smoke,
+    and expected failure classes
+  - explicitly distinguishes WebAZ-owned blockers from ChatGPT client/platform limitations
+  - does not claim public directory approval or mobile support unless verified
+- **verification_commands**: human follows the runbook in ChatGPT Developer Mode and records observed
+  pass/fail evidence
+- **expected_output**: one runbook for private Developer Mode validation
+- **dependencies**: deployed Remote MCP + OAuth endpoints
+
+### T18 — Apps SDK / Remote MCP conformance regression script
+- **task_type**: tests · **risk**: medium
+- **summary**: Add a read-only smoke script that checks `/mcp` `tools/list`, tool annotations,
+  `securitySchemes`, OAuth challenge shape, Origin allowlist behavior, and that api_key-only tools are not
+  advertised as OAuth-reachable.
+- **allowed_paths**: `scripts/smoke/chatgpt-mcp-conformance.*`, `docs/runbooks/chatgpt-mcp-conformance.md`
+- **forbidden_paths**: `src/pwa/routes/mcp-remote.ts`; `src/layer1-agent/L1-1-mcp-server/server.ts`;
+  auth/OAuth core changes; money/order/settlement paths
+- **prohibited_actions**: read-only probes only; do not create orders, grants, approvals, or state-changing
+  tool calls
+- **acceptance_criteria**:
+  - script asserts tools are discoverable with annotations and `securitySchemes`
+  - grant-reachable tools use OAuth scopes supported by authorization metadata
+  - api_key-only / RISK tools are not advertised as OAuth-reachable
+  - invalid bearer and insufficient-scope challenges have the OpenAI Apps SDK-compatible shape
+- **verification_commands**: `node scripts/smoke/chatgpt-mcp-conformance.js --base https://webaz.xyz`
+- **expected_output**: read-only conformance script + short runbook
+- **dependencies**: deployed Remote MCP
+
+### T19 — OAuth DCR + scope compatibility test pack for ChatGPT connector
+- **task_type**: tests · **risk**: medium
+- **summary**: Add a test pack for Dynamic Client Registration and OAuth scope vocabulary used by ChatGPT
+  Developer Mode: `grant_types` compatibility, PKCE metadata, redirect URI handling, and coarse OAuth scopes
+  mapping to internal grant capabilities.
+- **allowed_paths**: `scripts/__tests__/oauth-dcr-compat.*`, `docs/runbooks/oauth-dcr-compat.md`
+- **forbidden_paths**: OAuth token issuance semantics; Passkey/human-presence core; agent grant capability
+  mapping semantics; money/order/settlement paths
+- **acceptance_criteria**:
+  - covers omitted `grant_types`, `authorization_code`, `authorization_code` plus refresh-token requests,
+    and unsupported grant requests
+  - registered metadata is honest about actually supported grants
+  - `securitySchemes` and challenge scopes are subsets of OAuth `scopes_supported`
+  - coarse scopes still map to fine-grained internal capabilities without widening RISK tools
+- **verification_commands**: `npm run test:oauth-dcr-compat` (or documented equivalent)
+- **expected_output**: compatibility test pack and documented expected metadata
+- **dependencies**: Remote MCP OAuth metadata + DCR endpoints
+
+### T20 — Public plugin submission package checklist (OpenAI Apps SDK)
+- **task_type**: docs · **risk**: medium
+- **summary**: Prepare the non-code submission package for a future OpenAI public plugin/app review:
+  description, safety notes, demo prompts, screenshots, privacy/data-use statement, unsupported-surface notes,
+  and evidence that WebAZ protocol semantics stay vendor-neutral.
+- **allowed_paths**: `docs/openai-plugin-submission-checklist.md`,
+  `docs/runbooks/openai-plugin-review-evidence.md`
+- **forbidden_paths**: MCP/OAuth protocol code; money/order/settlement/auth core; any claim that OpenAI has
+  approved the plugin before approval exists
+- **acceptance_criteria**:
+  - checklist separates private Developer Mode success from public directory approval
+  - lists exact demo prompts and screenshots required for review
+  - documents data access, destructive-tool policy, and user-authorization boundaries
+  - records mobile limitations as ChatGPT client/platform observations, not WebAZ failures
+- **verification_commands**: human review against current OpenAI Apps SDK publish guidance
+- **expected_output**: submission checklist + evidence package outline
+- **dependencies**: T17 evidence helpful but not blocking
 
 ---
 

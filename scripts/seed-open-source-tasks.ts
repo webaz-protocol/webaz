@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Seed the public `webaz_contribute` task board with the OPEN-SOURCE-FIRST-TASKS (16).
+ * Seed the public `webaz_contribute` task board with the OPEN-SOURCE-FIRST-TASKS (20).
  *
  * Operator/admin tool — run ONCE at launch (Genesis Step 9), AFTER:
  *   (a) the public repo exists + is public, and
@@ -14,7 +14,7 @@
  * machine-readable source the board is seeded from.
  *
  * Admin seed DIRECT-INSERTS the build_tasks row (with audience='public' metadata) — it legitimately runs
- * above the per-user CREATE_RATE_PER_DAY anti-spam guard in createBuildTask (16 > 10/day). It is otherwise
+ * above the per-user CREATE_RATE_PER_DAY anti-spam guard in createBuildTask (20 > 10/day). It is otherwise
  * identical to the engine's insert (id, title, area, description, rfc_ref, status='open', created_by) +
  * logTaskEvent('created') + insertBuildTaskAgentMetadata.
  *
@@ -53,7 +53,7 @@ const GLOBAL_PROHIBITED = [
 const DOD = 'All acceptance_criteria met; DCO sign-off present; PR targets the canonical WebAZ repo. done != merge — a human maintainer reviews and merges.'
 
 type Seed = {
-  ref: string                 // T1..T16 (used for idempotency note + dependency wiring)
+  ref: string                 // T1..T20 (used for idempotency note + dependency wiring)
   title: string
   area: string
   description: string         // = the doc's summary
@@ -226,6 +226,45 @@ const TASKS: Seed[] = [
       acceptance_criteria: ['bind commits ONLY behind the Passkey ceremony — OAuth success alone never binds', 'GitHub ownership proven by server-side GET /user (numeric id), never client-asserted', 'Gist fallback intact; existing bindings unaffected; both paths produce identical bindings', 'PKCE + single-use session-bound state (CSRF); access token used once then discarded; fail-closed (503) when OAuth creds unset', 'double-bind still blocked; rebind = revoke event + fresh proof + Passkey (append-only)'],
       verification_commands: ['new schema/adapter/engine/route tests green AND the existing identity-claim suite still green', 'npm run build', 'npm run check:api-docs-fresh'],
       expected_results: 'RFC-019 milestones M2–M7 as separate, independently-green PRs', deliverables: ['oauth_link_states schema + store', 'github-oauth-adapter', 'oauth/* routes (Passkey-gated)', 'PWA Connect-GitHub UI', 'docs/runbook'] }) },
+
+  // ── §J ChatGPT / Apps SDK connector readiness track (4 · public docs/tests · no protocol changes) ──
+  { ref: 'T17', title: 'ChatGPT Developer Mode WebAZ connector smoke-test runbook', area: 'mcp',
+    description: 'Document the exact browser-side Developer Mode setup and smoke sequence for https://webaz.xyz/mcp: add connector, complete OAuth, run anonymous tools, then grant-scoped tools, and classify mobile/client limitations separately.',
+    meta: base({ task_type: 'docs', ...lowAuto, source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T17',
+      allowed_paths: ['docs/runbooks/chatgpt-developer-mode-smoke.md'],
+      forbidden_paths: ['any code', 'OAuth/auth core', 'money/order/settlement paths'],
+      required_capabilities: ['markdown', 'mcp', 'oauth'],
+      acceptance_criteria: ['runbook covers connector creation via server URL, OAuth login, anonymous tool smoke, grant-scoped tool smoke, and expected failure classes', 'explicitly distinguishes WebAZ blockers from ChatGPT client/platform limitations', 'does not claim public directory approval or mobile support unless verified'],
+      verification_commands: ['human follows runbook in ChatGPT Developer Mode and records observed pass/fail evidence'],
+      expected_results: 'one runbook for private Developer Mode validation', deliverables: ['docs/runbooks/chatgpt-developer-mode-smoke.md'] }) },
+  { ref: 'T18', title: 'Apps SDK / Remote MCP conformance regression script', area: 'mcp',
+    description: 'Add a read-only smoke script that checks /mcp tools/list, tool annotations, securitySchemes, OAuth challenge shape, Origin allowlist behavior, and that api_key-only tools are not advertised as OAuth-reachable.',
+    meta: base({ ...B, task_type: 'tests', ...medSup, risk_level: 'medium', contribution_type: 'tests', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T18',
+      allowed_paths: ['scripts/smoke/chatgpt-mcp-conformance.*', 'docs/runbooks/chatgpt-mcp-conformance.md'],
+      forbidden_paths: ['src/pwa/routes/mcp-remote.ts', 'src/layer1-agent/L1-1-mcp-server/server.ts', 'auth/OAuth core changes', 'money/order/settlement paths'],
+      prohibited_actions: [...GLOBAL_PROHIBITED, 'Read-only probes only; do not create orders, grants, approvals, or state-changing tool calls'],
+      required_capabilities: ['testing', 'http-api', 'mcp'],
+      acceptance_criteria: ['script asserts tools are discoverable with annotations and securitySchemes', 'grant-reachable tools use OAuth scopes supported by authorization metadata', 'api_key-only/RISK tools are not advertised as OAuth-reachable', 'invalid bearer and insufficient-scope challenges have the OpenAI Apps SDK-compatible shape'],
+      verification_commands: ['node scripts/smoke/chatgpt-mcp-conformance.js --base https://webaz.xyz'],
+      expected_results: 'read-only conformance script + short runbook', deliverables: ['scripts/smoke/chatgpt-mcp-conformance.*', 'docs/runbooks/chatgpt-mcp-conformance.md'] }) },
+  { ref: 'T19', title: 'OAuth DCR + scope compatibility test pack for ChatGPT connector', area: 'oauth',
+    description: 'Add a test pack for Dynamic Client Registration and OAuth scope vocabulary used by ChatGPT Developer Mode: grant_types compatibility, PKCE metadata, redirect URI handling, and coarse OAuth scopes mapping to internal grant capabilities.',
+    meta: base({ ...B, task_type: 'tests', ...medSup, risk_level: 'medium', contribution_type: 'tests', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T19',
+      allowed_paths: ['scripts/__tests__/oauth-dcr-compat.*', 'docs/runbooks/oauth-dcr-compat.md'],
+      forbidden_paths: ['OAuth token issuance semantics', 'Passkey/human-presence core', 'agent grant capability mapping semantics', 'money/order/settlement paths'],
+      required_capabilities: ['testing', 'oauth', 'mcp'],
+      acceptance_criteria: ['covers omitted grant_types, authorization_code, authorization_code plus refresh_token, and unsupported grant requests', 'registered metadata is honest about actually supported grants', 'securitySchemes and challenge scopes are subsets of OAuth scopes_supported', 'coarse scopes still map to fine-grained internal capabilities without widening RISK tools'],
+      verification_commands: ['npm run test:oauth-dcr-compat (or documented equivalent)'],
+      expected_results: 'compatibility test pack and documented expected metadata', deliverables: ['OAuth DCR/scope tests', 'docs/runbooks/oauth-dcr-compat.md'] }) },
+  { ref: 'T20', title: 'Public plugin submission package checklist (OpenAI Apps SDK)', area: 'distribution',
+    description: 'Prepare the non-code submission package for a future OpenAI public plugin/app review: description, safety notes, demo prompts, screenshots, privacy/data-use statement, unsupported-surface notes, and evidence that WebAZ protocol semantics stay vendor-neutral.',
+    meta: base({ ...B, task_type: 'docs', ...medSup, risk_level: 'medium', contribution_type: 'maintenance', source_ref: 'docs/OPEN-SOURCE-FIRST-TASKS.md#T20',
+      allowed_paths: ['docs/openai-plugin-submission-checklist.md', 'docs/runbooks/openai-plugin-review-evidence.md'],
+      forbidden_paths: ['MCP/OAuth protocol code', 'money/order/settlement/auth core', 'any claim that OpenAI has approved the plugin before approval exists'],
+      required_capabilities: ['technical-writing', 'apps-sdk', 'privacy-review'],
+      acceptance_criteria: ['checklist separates private Developer Mode success from public directory approval', 'lists exact demo prompts and screenshots required for review', 'documents data access, destructive-tool policy, and user-authorization boundaries', 'records mobile limitations as ChatGPT client/platform observations, not WebAZ failures'],
+      verification_commands: ['human review against current OpenAI Apps SDK publish guidance'],
+      expected_results: 'submission checklist + evidence package outline', deliverables: ['docs/openai-plugin-submission-checklist.md', 'docs/runbooks/openai-plugin-review-evidence.md'] }) },
 ]
 
 function parseArgs(argv: string[]) {
