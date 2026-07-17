@@ -212,7 +212,7 @@ try {
   {
     const mkSnap = (rd: number | null): string => JSON.stringify({ v: 1, captured_at: '2026-07-01T00:00:00Z',
       shipping: { source: 'none', region: null, fee: null, est_days: null },
-      fulfilment: { handling_hours: null, estimated_days: null, return_days: rd, return_condition: null, warranty_days: null },
+      fulfilment: { handling_hours: null, estimated_days: null, return_days: rd, return_condition: null, warranty_days: null, source_read: true },
       logistics: { weight_kg: null, package_size: null, origin_country: null, country_of_origin: null, customs_description: null, hs_code: null },
       declarations: { ship_regions_text: null, sale_regions_rule: null, tax_lines: null, import_duty_terms: null }, accept_mode: null })
     const mkSnapOrder = (id: string, snap: string | null): void => {
@@ -232,6 +232,15 @@ try {
     mkSnapOrder('o_no_snap', null)
     const rc = await call('POST', '/api/orders/o_no_snap/return-request', 'b1', { reason: 'quality', refund_amount: 50 })
     ok('40. pre-snapshot order falls back to the live listing (30d) — return accepted', rc.status === 200 && !!rc.json.id, JSON.stringify(rc.json).slice(0, 150))
+    // D. 历史/降级快照的 null(无 source_read 标记)不可信 → 回退活行(绝不因采集故障剥夺真实窗口)
+    const legacyNull = mkSnap(null).replace(',"source_read":true', '')
+    mkSnapOrder('o_snap_legacy', legacyNull)
+    const rd2 = await call('POST', '/api/orders/o_snap_legacy/return-request', 'b1', { reason: 'quality', refund_amount: 50 })
+    ok('41. LEGACY null (no source_read marker) falls back to the live listing (30d) — return accepted', rd2.status === 200 && !!rd2.json.id, JSON.stringify(rd2.json).slice(0, 150))
+    // E. 坏 JSON 快照 → 路由级回退活行
+    mkSnapOrder('o_snap_bad', '{"v":1,broken')
+    const re2 = await call('POST', '/api/orders/o_snap_bad/return-request', 'b1', { reason: 'quality', refund_amount: 50 })
+    ok('42. malformed snapshot JSON → live-listing fallback at the ROUTE level — return accepted', re2.status === 200 && !!re2.json.id, JSON.stringify(re2.json).slice(0, 150))
     db.prepare("UPDATE products SET return_days = 7 WHERE id='p'").run()
   }
 } finally { server.close() }

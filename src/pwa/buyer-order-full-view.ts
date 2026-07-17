@@ -47,7 +47,7 @@ function agentShipTracking(db: Database.Database, orderId: string): string | nul
  *   open_dispute = 状态机允许集原样(paid/accepted/shipped/picked_up/in_transit/delivered,
  *     dp 另有 direct_expired_unconfirmed/payment_query);
  *   dp 买家取消 = orders-action 权威门同谓词(direct_pay_window / payment_query / direct_expired_unconfirmed);
- *   request_return = returns 路由同谓词(completed + 现商品 return_days>0 + 窗口内 + 无活跃请求);
+ *   request_return = returns 路由同谓词(completed + effectiveReturnDays 冻结窗>0 + 窗口内 + 无活跃请求);
  *   disputed 收口 = orders-read 同谓词(最近一次 from delivered + 买家为发起人 + 争议未裁定 → 撤诉确认收货;
  *     from payment_query → 撤回仲裁)+ 协商取消直接复用 getMutualCancelState 域 helper。
  * escrow 的 paid/accepted 没有买家单方取消 —— 不广告(双方合意走 disputed 里的协商取消)。

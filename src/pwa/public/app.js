@@ -12459,7 +12459,7 @@ async function renderOrderDetail(app, orderId) {
       <div id="trial-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${(isBuyer && order.status === 'completed' && Number(product?.return_days || 0) > 0) ? `
+    ${(isBuyer && order.status === 'completed' && Number(order.effective_return_days ?? product?.return_days ?? 0) > 0) ? `
     <div class="card" id="ret-card-${order.id}">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">↩ ${t('退货')}</div>
       <div id="ret-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
@@ -12496,7 +12496,7 @@ async function renderOrderDetail(app, orderId) {
 
   // Wave B-3: 退货 widget — 异步加载（仅 completed 订单可退）
   // 买家:有退货窗口可申请/查看;卖家:有退货申请时内联查看+处理(accept/reject/received),无申请则隐藏卡
-  if (((isBuyer && Number(product?.return_days || 0) > 0) || isSeller) && order.status === 'completed') {
+  if (((isBuyer && Number(order.effective_return_days ?? product?.return_days ?? 0) > 0) || isSeller) && order.status === 'completed') {   // RFC-026 冻结退货窗(服务端生效值优先)
     try { await renderReturnWidgetForOrder(order, product) } catch (e) { console.error(e) }
   }
   // Wave C-3: 评价 widget
@@ -12948,7 +12948,7 @@ async function renderReturnWidgetForOrder(order, product) {
     const card = area.closest('.card'); if (card) card.style.display = 'none'
     return
   }
-  const returnDays = Number(product?.return_days || 0)
+  const returnDays = Number(order.effective_return_days ?? product?.return_days ?? 0)   // RFC-026 冻结退货窗
   const baseTime = order.updated_at || order.created_at
   const deadline = new Date(baseTime).getTime() + returnDays * 86400 * 1000
   const remainMs = deadline - Date.now()

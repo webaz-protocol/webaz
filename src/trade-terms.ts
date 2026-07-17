@@ -29,6 +29,7 @@ export interface TradeTermsSnapshot {
     return_days: number | null
     return_condition: string | null
     warranty_days: number | null
+    source_read?: boolean   // RFC-026:true=商品行确实被读到(null 字段=权威 SQL NULL);缺失=历史快照/降级采集,null 不可信
   }
   logistics: {
     weight_kg: number | null
@@ -74,6 +75,7 @@ export function buildTradeTermsSnapshot(db: Database.Database, args: {
     fulfilment: {
       handling_hours: numOrNull(p?.handling_hours), estimated_days: strOrNull(p?.estimated_days),
       return_days: numOrNull(p?.return_days), return_condition: strOrNull(p?.return_condition), warranty_days: numOrNull(p?.warranty_days),
+      ...(p !== undefined ? { source_read: true } : {}),   // 降级采集(catch/缺行)不打标 → null 不当权威用
     },
     logistics: {
       weight_kg: numOrNull(p?.weight_kg), package_size: strOrNull(p?.package_size),
@@ -120,8 +122,13 @@ export function readTradeTermsSnapshot(raw: unknown): TradeTermsSnapshot | null 
 export function effectiveReturnDays(snapshotRaw: unknown, liveProductReturnDays: unknown): { days: number; source: 'order_snapshot' | 'live_listing' } {
   const snap = readTradeTermsSnapshot(snapshotRaw)
   const f = snap && typeof snap.fulfilment === 'object' && snap.fulfilment !== null ? snap.fulfilment : null
-  if (f && (typeof f.return_days === 'number' || f.return_days === null)) {
-    return { days: typeof f.return_days === 'number' && Number.isFinite(f.return_days) ? f.return_days : 0, source: 'order_snapshot' }
+  if (f && typeof f.return_days === 'number' && Number.isFinite(f.return_days)) {
+    return { days: f.return_days, source: 'order_snapshot' }
+  }
+  // null 双义消解(Codex BLOCKER):source_read=true 的 null = 权威"成交时不可退"→ 0;
+  // 历史快照/降级采集的 null 不可信 → 回退活行(宁可对真不可退的旧单放宽,绝不因采集故障剥夺真实窗口)。
+  if (f && f.return_days === null && f.source_read === true) {
+    return { days: 0, source: 'order_snapshot' }
   }
   const live = Number(liveProductReturnDays || 0)
   return { days: Number.isFinite(live) ? live : 0, source: 'live_listing' }
