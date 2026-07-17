@@ -1934,11 +1934,11 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
   },
   {
     name: 'webaz_prepare_case',
-    description: `Assemble an after-sales CASE DRAFT for one of YOUR orders (RFC-025 PR-6, safe scope buyer_case_prepare; OAuth grant, no api_key). READ-ONLY preparation — it submits NOTHING and changes NOTHING.
+    description: `Assemble an after-sales CASE DRAFT for one of YOUR orders (RFC-025 PR-6, safe scope buyer_case_prepare; OAuth grant, no api_key). READ-ONLY preparation — it submits nothing and writes no domain state (like every grant-authenticated call, an authorization audit log entry is recorded).
 
-- Returns server-side facts: the order's status timeline (structural fields only), the seller's ORIGINAL listing claims (title, commitment/description/price hashes, return/warranty terms — the anchors a claim-verification case can prove drift against), evidence refs (ids/types only), and any existing dispute.
-- Routing guide included: delivery problems (not received / lost / damaged) → delivery dispute; "the listing lied" problems (counterfeit / spec / not-new / warranty) → claim verification.
-- Free-text details (notes, evidence descriptions) may contain personal data and are NOT returned — the human views them on the order page.
+- Returns server-side facts: the order's status timeline (structural fields only), the terms FROZEN at order time (orders keep a snapshot — seller edits after your order do not apply), the CURRENT listing anchors (title + content hashes, explicitly labeled as current, possibly edited since), evidence refs (ids + normalized types only), and any existing dispute.
+- Routing guide included: delivery problems (not received / lost / damaged) → delivery dispute; broken ORDER terms → order claim verification (10 WAZ stake); a lying LISTING (counterfeit / spec / origin) → product claim verification (5 WAZ stake).
+- No buyer personal data: addresses, free-text notes, evidence descriptions and seller free-text terms are NOT returned — the human views them on the order page. The only seller text returned is the public listing title.
 - SUBMITTING a dispute/return/escalation, confirming receipt, accepting a refund, or closing a case are HUMAN actions on the order page at webaz.xyz (direct_p2p risk actions additionally require a Passkey). This tool only helps organize the facts first.`,
     inputSchema: {
       type: 'object',
