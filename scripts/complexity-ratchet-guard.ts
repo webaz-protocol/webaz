@@ -45,6 +45,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-agent-approvals-dup.js':        26,   // RFC-026 PR-1 相似购买警告(新文件基线)
   'src/pwa/public/app-agent-approvals-link.js':       18,   // RFC-026 PR-2 审批深链接(新文件基线)
   'src/pwa/public/app-agent-approvals-address.js':    17,   // RFC-026 PR-5 地址变更审批卡(新文件基线)
+  'src/pwa/public/app-agent-approvals-buyer.js':      21,   // RFC-026 PR-6 买家动作审批卡(新文件基线)
   'src/pwa/public/app-grant-duration.js':             20,
   'src/pwa/public/app-agent-appeal.js':               90,
   'src/pwa/public/app-direct-pay.js': 226,

@@ -65,6 +65,8 @@ export const NETWORK_TOOLS = new Set<string>([
   'webaz_order_chat',
   // RFC-026 PR-5 address masked read + change request (grant-wired). Same rule.
   'webaz_address',
+  // RFC-026 PR-6 buyer after-sales action requests (grant-wired, buyer_action_request). Same rule.
+  'webaz_buyer_action_request',
   // Batch 1(只读 + 低危自身写):走 webaz.xyz Bearer api_key。
   'webaz_notifications',
   'webaz_nearby',

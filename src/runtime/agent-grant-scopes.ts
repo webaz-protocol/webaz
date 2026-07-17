@@ -65,6 +65,7 @@ export const SAFE_SCOPES = [
   'buyer_orders_read', 'wallet_read_minimal',
   'order_chat_read', 'order_chat_send',
   'address_read_masked', 'address_change_request',
+  'buyer_action_request',
 ] as const
 
 /**

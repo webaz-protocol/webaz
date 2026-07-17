@@ -824,6 +824,7 @@ jobs:
       - run: npm run test:buyer-order-full
       - run: npm run test:order-chat-grant
       - run: npm run test:address-agent
+      - run: npm run test:buyer-action-agent
       - run: npm run test:mcp-tool-annotations
       - run: npm run test:oauth-discovery
       - run: npm run test:oauth-authorize
