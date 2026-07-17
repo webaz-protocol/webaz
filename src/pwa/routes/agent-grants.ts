@@ -35,6 +35,7 @@ import { computeBuyerQuote } from '../buyer-quote.js'  // RFC-025 PR-3 报价服
 import { createOrderDraft, cancelOrderDraft, getOrderDraft, listOrderDrafts } from '../order-draft.js'  // RFC-025 PR-4 草稿服务(draft_order 首个消费者)
 import { createOrderSubmitRequest, submitRowSummary } from '../order-submit-request.js'  // RFC-025 PR-5a 提交域(SUBMIT-only,绝不执行)
 import { approveAndExecuteOrderSubmit, type CreateOrderLoopback } from '../order-submit-exec.js'  // RFC-025 PR-5a 批准执行域(钱路;仅人类 approve 路径可达)
+import { buildCaseDraft } from '../buyer-case-draft.js'  // RFC-025 PR-6 售后案件草稿(纯只读组装)
 import { toUnits } from '../../money.js'  // RFC-014:demand_signals.budget_units 整数化
 import { createOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
 import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 approve→执行(CAS approved + 执行 + executed_at CAS,domain 层)
@@ -362,6 +363,15 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   // RFC-025 PR-5a — 提交订单草稿到人工审批队列(safe scope order_submit_request)。SUBMIT-only:
   //   写 pending(kind='order_submit',params_hash 绑全经济快照),【绝不执行】。执行(建单+入escrow)
   //   只发生在人 Passkey 批准后(下方 /approve 的 order_submit 分支 → order-submit-exec,agent 不可达)。
+  // RFC-025 PR-6 — 售后案件草稿组装(safe scope buyer_case_prepare)。纯只读:时间线结构字段 +
+  //   商品声明锚点 + 证据 ref(零自由文本/PII);零写入零经济;提交类售后动作全部指向人路径。
+  app.get('/api/agent/buyer/orders/:id/case-draft', requireAgentGrantScope('buyer_case_prepare'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const r = buildCaseDraft(db, p.human_id, req.params.id)
+    if (!r.ok) return void res.status(r.status).json(r.body)
+    res.json(r.response)
+  })
+
   app.post('/api/agent/order-drafts/:id/submit', requireAgentGrantScope('order_submit_request'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     const r = createOrderSubmitRequest(db, { draftId: String(req.params.id), grantId: p.grant_id, humanId: p.human_id, agentLabel: p.agent_label ?? 'agent', generateId })

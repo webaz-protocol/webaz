@@ -48,10 +48,12 @@ async function main(): Promise<void> {
   ok('2. TOOL_ANNOTATIONS keys exactly match live tool names', JSON.stringify(names) === JSON.stringify(mapKeys))
 
   // 3. count derived from the actual surface; asserted to the current value (not a permanent hardcode)
-  ok('3. current tool count == 48 (derived from live tools + map; +webaz_submit_order_request RFC-025 PR-5a)', tools.length === mapKeys.length && tools.length === 48)
+  ok('3. current tool count == 49 (derived from live tools + map; +webaz_prepare_case RFC-025 PR-6)', tools.length === mapKeys.length && tools.length === 49)
 
   // 4. classification locks — read from the RETURNED descriptors. Rule: destructive = delete/overwrite/
-  //    fund-move (additive-only inserts are NOT destructive); readOnly = no state write at all;
+  //    fund-move (additive-only inserts are NOT destructive); readOnly = no DOMAIN state write (the
+  //    append-only agent_grant_auth_log authorization audit fires for EVERY grant-authenticated call,
+  //    read or write, and is exempt from this classification — RFC-020 §3.7 invariant);
   //    openWorld = touches marketplace/other users/orders/public objects (else own-account/static).
   const eq = (n: string, ro: boolean, d: boolean, ow: boolean): boolean => a(n).readOnlyHint === ro && a(n).destructiveHint === d && a(n).openWorldHint === ow
   // pure reads

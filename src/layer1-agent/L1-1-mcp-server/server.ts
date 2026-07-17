@@ -1932,6 +1932,22 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
       required: ['draft_id'],
     },
   },
+  {
+    name: 'webaz_prepare_case',
+    description: `Assemble an after-sales CASE DRAFT for one of YOUR orders (RFC-025 PR-6, safe scope buyer_case_prepare; OAuth grant, no api_key). READ-ONLY preparation — it submits nothing and writes no domain state (like every grant-authenticated call, an authorization audit log entry is recorded).
+
+- Returns server-side facts: the order's status timeline (structural fields only), the terms FROZEN at order time (orders keep a snapshot — seller edits after your order do not apply), the CURRENT listing anchors (title + content hashes, explicitly labeled as current, possibly edited since), evidence refs (ids + normalized types only), and any existing dispute.
+- Routing guide included: delivery problems (not received / lost / damaged) → delivery dispute (48h respond / 120h arbitrate); broken ORDER terms → order claim verification (10 WAZ stake, 48h deadline, 3 verifiers); a lying LISTING (counterfeit / spec / origin) → product claim verification (5 WAZ stake, 72h deadline, 3 verifiers).
+- No buyer personal data: addresses, free-text notes, evidence descriptions and seller free-text terms are NOT returned — the human views them on the order page. The only seller text returned is the public listing title.
+- SUBMITTING a dispute/return/escalation, confirming receipt, accepting a refund, or closing a case are HUMAN actions on the order page at webaz.xyz (direct_p2p risk actions additionally require a Passkey). This tool only helps organize the facts first.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        order_id: { type: 'string', description: 'One of your buyer orders (see webaz_buyer_orders)' },
+      },
+      required: ['order_id'],
+    },
+  },
 ]
 
 // Standard MCP annotations merged once at module load (fail-fast if any tool lacks a mapping). The
@@ -2802,6 +2818,18 @@ export async function handleSubmitOrderRequest(args: Record<string, unknown>): P
   if (typeof args.draft_id !== 'string' || !args.draft_id) return { error: 'draft_id is required', error_code: 'DRAFT_NOT_FOUND' }
   const r = await apiCall(`/api/agent/order-drafts/${encodeURIComponent(args.draft_id)}/submit`, { method: 'POST', apiKey: cred.token })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks order_submit_request. Re-connect via OAuth so the grant carries the order:draft scope, then retry.' }
+  return r
+}
+
+export async function handlePrepareCase(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // RFC-025 PR-6 — wraps GET /api/agent/buyer/orders/:id/case-draft (safe scope buyer_case_prepare).
+  //   Pure read-only wrapper; response (structural timeline + claim anchors + refs, zero PII) unchanged.
+  if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential(args)
+  if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
+  if (typeof args.order_id !== 'string' || !args.order_id) return { error: 'order_id is required', error_code: 'ORDER_NOT_FOUND' }
+  const r = await apiCall(`/api/agent/buyer/orders/${encodeURIComponent(args.order_id)}/case-draft`, { method: 'GET', apiKey: cred.token })
+  if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_case_prepare. Re-connect via OAuth so the grant carries the read scope, then retry.' }
   return r
 }
 
@@ -5657,6 +5685,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         case 'webaz_quote_order':         result = await handleQuoteOrder(args); break
         case 'webaz_order_draft':         result = await handleOrderDraft(args); break
         case 'webaz_submit_order_request': result = await handleSubmitOrderRequest(args); break
+        case 'webaz_prepare_case':        result = await handlePrepareCase(args); break
         case 'webaz_order_action_request': result = await handleOrderActionRequest(args); break
         case 'webaz_feedback':      result = await handleFeedback(args); break
         case 'webaz_contribute':    result = await handleContribute(args); break
