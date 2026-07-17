@@ -7283,6 +7283,13 @@ const _EN = {
   '你的平台服务费预充值 {amount} USDC 已确认入账,直付新单额度已恢复。': 'Your platform service-fee prepay of {amount} USDC is confirmed and credited; your Direct Pay order allowance is restored.',
   '预充值申请未通过': 'Prepay request declined',
   '你的平台服务费预充值申请未通过{note}。请核对付款凭据后重新提交,或联系平台。': 'Your platform service-fee prepay request was declined{note}. Please verify your payment evidence and resubmit, or contact the platform.',
+  '收件人 / 电话 / 街道门牌 / 邮编': 'Recipient / phone / street / postal code',
+  '可选择地址簿或手动填写': 'Pick from address book or enter manually',
+  '手动填写地址': 'Manual address',
+  '如：SG / CN / US': 'e.g. SG / CN / US',
+  '街道、楼栋、单元号、邮编': 'Street, building, unit, postal code',
+  '新加坡可留空': 'Optional for Singapore',
+  '新加坡地址只需国家/地区、详细地址和邮编;跨国地址可补省/州与城市。': 'For Singapore, country/region plus detailed address and postal code is enough; cross-border addresses can add state/province and city.',
 }
 
 window.t = (zh) => window._lang === 'en' ? (_EN[zh] || zh) : zh

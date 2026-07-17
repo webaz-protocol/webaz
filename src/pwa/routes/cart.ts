@@ -26,6 +26,7 @@ import type Database from 'better-sqlite3'
 import { CartCheckoutError, checkoutSelectedCart } from '../../cart-checkout.js'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
 import { hasInvalidPurchaseCredential, readStrictBearerCredential } from '../bearer-auth.js'
+import { resolveBuyerAddressSnapshot } from '../address-book.js'
 
 export interface CartDeps {
   db: Database.Database
@@ -86,8 +87,9 @@ export function registerCartRoutes(app: Application, deps: CartDeps): void {
     const user = auth(req, res); if (!user) return
     if (isTrustedRole(user)) return void errorRes(res, 403, 'TRUSTED_ROLE_NO_TRADE', '受信角色无购物功能')
     if (user.role !== 'buyer') return void res.status(403).json({ error: '仅买家可下单' })
-    const { shipping_address, notes, items } = req.body || {}
-    if (!shipping_address) return void res.status(400).json({ error: '请填写收货地址' })
+    const { shipping_address, address_id, ship_to_region, notes, items } = req.body || {}
+    const addr = resolveBuyerAddressSnapshot(db, String(user.id), { addressId: address_id, shippingAddress: shipping_address, shipToRegion: ship_to_region })
+    if (!addr.ok) return void res.status(addr.status).json({ error: addr.error, error_code: addr.error_code })
 
     let checkoutResult
     try {
@@ -95,7 +97,7 @@ export function registerCartRoutes(app: Application, deps: CartDeps): void {
         db,
         buyerId: String(user.id),
         selectedItems: items,
-        shippingAddress: shipping_address,
+        shippingAddress: addr.value.shippingAddress,
         notes,
         generateId,
         checkStockAndMaybeDelist,

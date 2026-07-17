@@ -32,7 +32,9 @@ ok('selection derives rows only from checked cart entries', /querySelectorAll\('
 ok('checkout intent binds product id, quantity and unit price', /selectedCheckoutItems[\s\S]*product_id:[\s\S]*qty:[\s\S]*unit_price:/.test(selection))
 ok('cart rows expose the confirmed quantity and unit price', /data-qty=/.test(app) && /data-unit-price=/.test(app))
 ok('checkout refuses an empty local selection', /selectedCheckoutItems\(\)[\s\S]*items\.length === 0/.test(checkout))
-ok('checkout posts selected item intents with the address', /POST\('\/cart\/checkout',\s*\{\s*shipping_address:\s*addr,\s*items\s*\}\)/.test(checkout))
+ok('checkout posts selected item intents with address_id or legacy address fallback',
+  /POST\('\/cart\/checkout',\s*\{\s*\.\.\.\(address_id \? \{ address_id \} : \{ shipping_address: addr \}\),\s*items\s*\}\)/.test(checkout))
+ok('checkout accepts address book id before requiring manual address', /if \(!addr && !address_id\)/.test(checkout))
 ok('bulk removal deletes each selected product independently', /for \(const pid of ids\)[\s\S]*DELETE\(`\/cart\/\$\{encodeURIComponent\(pid\)\}`\)/.test(removeChecked))
 ok('bulk removal never calls the retired cart/remove endpoint', !(app + cart).includes('/cart/remove'))
 ok('bulk removal always releases busy state after refresh/network failure', /finally\s*\{\s*setBusy\(false\)\s*\}/.test(removeChecked))

@@ -34,10 +34,11 @@
       "security": [{"bearerAuth": []}],
       "requestBody": {
         "type": "object",
-        "required": ["product_id", "shipping_address"],
+        "required": ["product_id"],
         "properties": {
           "product_id": { "type": "string" },
-          "shipping_address": { "type": "string", "description": "完整收货地址" },
+          "address_id": { "type": "string", "description": "地址簿中的收货地址 ID；优先于 shipping_address" },
+          "shipping_address": { "type": "string", "description": "兼容旧调用的完整收货地址；未传 address_id 时使用" },
           "quantity": { "type": "integer", "default": 1 },
           "variant_id": { "type": "string", "description": "SKU 规格 ID（可选）" },
           "notes": { "type": "string", "description": "买家备注" },
@@ -64,9 +65,10 @@
       "security": [{"bearerAuth": []}],
       "requestBody": {
         "type": "object",
-        "required": ["shipping_address", "items"],
+        "required": ["items"],
         "properties": {
-          "shipping_address": { "type": "string", "description": "完整收货地址" },
+          "address_id": { "type": "string", "description": "地址簿中的收货地址 ID；优先于 shipping_address" },
+          "shipping_address": { "type": "string", "description": "兼容旧调用的完整收货地址；未传 address_id 时使用" },
           "items": {
             "type": "array", "minItems": 1, "maxItems": 500,
             "items": {

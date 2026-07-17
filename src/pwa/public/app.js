@@ -10315,6 +10315,7 @@ window.openBuySheet = function(productId) {
     const defaultAddr = (state._addresses || []).find(a => a.is_default) || (state._addresses || [])[0]
     const hasDefault = !!defaultAddr
     const summary = hasDefault ? buildAddrString(defaultAddr) : ''
+    const selectedAddressId = hasDefault ? String(defaultAddr.id || '') : ''
     const max = buyMaxFor(prod)
     const variants = state._variants || []
     const firstImg = window.productThumbSrc(prod.images)
@@ -10349,7 +10350,8 @@ window.openBuySheet = function(productId) {
           <button type="button" onclick="toggleOrderAddrEdit(true)" style="font-size:12px;color:#3659c9;white-space:nowrap;background:none;border:0;cursor:pointer">✏️ ${t('修改')}</button>
         </div>
         <div id="addr-expanded" style="${hasDefault ? 'display:none;' : ''}">
-          <input class="form-control" id="inp-addr" placeholder="${t('省市区 详细地址')}" value="${summary ? escHtml(summary) : ''}">
+          <input type="hidden" id="inp-address-id" value="${escHtml(selectedAddressId)}">
+          <input class="form-control" id="inp-addr" placeholder="${t('收件人 / 电话 / 街道门牌 / 邮编')}" value="${summary ? escHtml(summary) : ''}" oninput="orderAddressManualEdit()">
           ${hasDefault ? `<div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
             <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 10px" onclick="toggleOrderAddrEdit(false)">${t('收起')}</button>
           </div>` : ''}
@@ -11228,9 +11230,10 @@ window.qtyClamp = (max) => {
 
 window.doBuy = async (productId, price) => {
   const addr = document.getElementById('inp-addr').value.trim()
+  const address_id = document.getElementById('inp-address-id')?.value?.trim() || ''
   const notes = document.getElementById('inp-notes').value.trim()
   const coupon_code = document.getElementById('inp-coupon')?.value?.trim() || null
-  if (!addr) { document.getElementById('buy-msg').innerHTML = alert$('error', t('请填写收货地址')); return }
+  if (!addr && !address_id) { document.getElementById('buy-msg').innerHTML = alert$('error', t('请填写收货地址')); return }
   // 推土机：孤儿用户首次绑 sponsor（cookie hint 30 天内有效）
   const hint = readShareHint()
   const sponsor_hint = hint?.sponsor_id || null
@@ -11265,7 +11268,7 @@ window.doBuy = async (productId, price) => {
   const qtyInp = document.getElementById('inp-qty')
   const quantity = qtyInp ? Math.max(1, Math.min(Number(qtyInp.max) || 1, Math.floor(Number(qtyInp.value) || 1))) : 1
   const payment_rail = window.dpSelectedRail ? window.dpSelectedRail() : 'escrow'; if (!payment_rail) { const _dp=document.querySelector('input[name="dp-rail"]:checked')?.value==='direct_p2p'; const _m=document.getElementById('buy-msg'); if(_m) _m.innerHTML = alert$('error', _dp ? t('当前商品或地区暂不支持直付,请返回检查商品条件') : t('请选择支付方式')); const _b=document.getElementById('dp-rail-block'); if(_b) _b.open=true; return } if (window.closeSheet) window.closeSheet()  // #28 空 rail 一律拦(永不静默落 escrow);[ESCROW-WAZ-SIM] 未选→空;校验通过才关 sheet(块内 return 不关→提示+展开可见,修 P2)
-  const res = await POST('/orders', { product_id: productId, shipping_address: addr, notes, sponsor_hint, coupon_code, delivery_window, variant_id, expected_price, buy_insurance, anonymous_recipient, donation_pct, quantity, payment_rail, ship_to_region: (window.shipSelectedRegion ? window.shipSelectedRegion() : undefined), direct_receive_account_id: (payment_rail === 'direct_p2p' && window.dpSelectedAccountId) ? (window.dpSelectedAccountId() || undefined) : undefined, ...giftPayload })
+  const res = await POST('/orders', { product_id: productId, ...(address_id ? { address_id } : { shipping_address: addr }), notes, sponsor_hint, coupon_code, delivery_window, variant_id, expected_price, buy_insurance, anonymous_recipient, donation_pct, quantity, payment_rail, ship_to_region: (window.shipSelectedRegion ? window.shipSelectedRegion() : undefined), direct_receive_account_id: (payment_rail === 'direct_p2p' && window.dpSelectedAccountId) ? (window.dpSelectedAccountId() || undefined) : undefined, ...giftPayload })
   if (payment_rail === 'direct_p2p') return void (window.dpAfterCreate && window.dpAfterCreate(res))
   if (res.error_code === 'PRICE_CHANGED') {
     document.getElementById('buy-msg').innerHTML = alert$('error', `${t('价格已变动')}：${window.fmtPrice(res.old_price)} → ${window.fmtPrice(res.new_price)} · ${t('请刷新页面')}`)
@@ -11315,8 +11318,14 @@ async function refreshCartBadge() {
 async function renderCart(app) {
   if (!state.user) { renderLogin(); return }
   app.innerHTML = shell(loading$(), 'buy')   // 购物车归属智能购买流
-  const data = await GET('/cart')
+  const [data, addrRes] = await Promise.all([
+    GET('/cart'),
+    state.user?.role === 'buyer' ? GET('/addresses').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
+  ])
   const items = data.items || []
+  state._addresses = addrRes?.items || []
+  const defaultAddr = state._addresses.find(a => a.is_default) || state._addresses[0]
+  const cartAddrSummary = defaultAddr ? buildAddrString(defaultAddr) : ''
 
   // 全选 + 单选状态默认全选
   const selectAllBar = items.length > 0 ? `
@@ -11371,8 +11380,16 @@ async function renderCart(app) {
     ${items.length > 0 ? `
       <div class="card" style="position:sticky;bottom:80px;background:#fff;box-shadow:0 -2px 8px rgba(0,0,0,0.05);margin-top:12px">
         <div class="form-group">
-          <label class="form-label" style="font-size:12px">${t('收货地址')}</label>
-          <input class="form-control" id="cart-addr" placeholder="${t('省市区 详细地址')}" style="font-size:13px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <label class="form-label" style="font-size:12px;margin:0">${t('收货地址')}${defaultAddr ? ` <span style="font-size:10px;color:#087a5a;font-weight:500">· ${escHtml(defaultAddr.label || t('默认'))}</span>` : ''}</label>
+            <div style="display:flex;gap:6px">
+              ${state._addresses.length > 0 ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px;width:auto" onclick="openAddressPicker('cart')">📍 ${t('地址簿')} (${state._addresses.length})</button>` : ''}
+              <button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px;width:auto" onclick="openAddressModal()">+ ${t('新建')}</button>
+            </div>
+          </div>
+          <input type="hidden" id="cart-address-id" value="${defaultAddr ? escHtml(defaultAddr.id || '') : ''}">
+          <div id="cart-addr-summary-text" style="font-size:12px;color:#6b7280;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(cartAddrSummary)}">${cartAddrSummary ? escHtml(cartAddrSummary) : t('可选择地址簿或手动填写')}</div>
+          <input class="form-control" id="cart-addr" placeholder="${t('收件人 / 电话 / 街道门牌 / 邮编')}" value="${escHtml(cartAddrSummary)}" oninput="cartAddressManualEdit()" style="font-size:13px">
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <span style="font-size:13px;color:#6b7280">${t('已选合计')}</span>
@@ -13120,54 +13137,6 @@ window.selectVariantOption = (dim, val, basePrice) => {
     buyBtn.disabled = Number(match.stock) <= 0
     buyBtn.innerHTML = `${t('立即下单')} · ${window.fmtPrice(price)}`
   }
-}
-
-// Wave C-2: 地址 → 单行字符串
-function buildAddrString(a) {
-  if (!a) return ''
-  const parts = []
-  if (a.region) parts.push(a.region)
-  parts.push(a.detail)
-  parts.push(a.recipient)
-  if (a.phone) parts.push(a.phone)
-  return parts.join(' · ')
-}
-
-window.openAddressPicker = () => {
-  const items = state._addresses || []
-  const rows = items.map(it => `
-    <div class="card" style="padding:10px 12px;margin-bottom:6px;cursor:pointer${it.is_default ? ';border:1px solid #6366f1;background:#eef2ff' : ''}" onclick="pickAddress('${it.id}')">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <div style="font-size:13px;font-weight:600">${escHtml(it.label)}${it.is_default ? ` <span style="font-size:10px;color:#6366f1">${t('默认')}</span>` : ''}</div>
-        <div style="font-size:11px;color:#9ca3af">${escHtml(it.recipient)}${it.phone ? ' · ' + escHtml(it.phone) : ''}</div>
-      </div>
-      <div style="font-size:12px;color:#6b7280">${it.region ? escHtml(it.region) + ' · ' : ''}${escHtml(it.detail)}</div>
-    </div>
-  `).join('')
-  const html = `
-    <div class="js-modal" style="background:rgba(0,0,0,0.6);position:fixed;inset:0;z-index:1000;display:flex;align-items:flex-end;justify-content:center" onclick="this.remove()">
-      <div style="background:#fff;width:100%;max-width:560px;border-radius:16px 16px 0 0;padding:16px;max-height:70vh;overflow-y:auto" onclick="event.stopPropagation()">
-        <h2 style="font-size:15px;font-weight:700;margin-bottom:10px">📍 ${t('选择收货地址')}</h2>
-        ${rows}
-        <a href="#addresses" style="display:block;text-align:center;padding:10px;font-size:12px;color:#6366f1">+ ${t('管理地址簿')}</a>
-      </div>
-    </div>
-  `
-  const div = document.createElement('div')
-  div.innerHTML = html
-  document.body.appendChild(div.firstElementChild)
-}
-
-window.pickAddress = (id) => {
-  const a = (state._addresses || []).find(x => x.id === id)
-  if (!a) return
-  const inp = document.getElementById('inp-addr')
-  const txt = buildAddrString(a)
-  if (inp) inp.value = txt
-  const summary = document.getElementById('addr-summary-text')
-  if (summary) { summary.textContent = txt; summary.title = txt }
-  toggleOrderAddrEdit(false)
-  document.querySelector('.js-modal')?.remove()
 }
 
 // 下单页地址折叠 / 展开

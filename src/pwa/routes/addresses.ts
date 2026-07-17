@@ -17,6 +17,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { syncAddressBookDefaultToLegacy } from '../address-book.js'
 
 export interface AddressesDeps {
   db: Database.Database
@@ -54,13 +55,14 @@ export function registerAddressesRoutes(app: Application, deps: AddressesDeps): 
       }
       db.prepare(`INSERT INTO user_addresses (id, user_id, label, recipient, phone, region, detail, is_default) VALUES (?,?,?,?,?,?,?,?)`)
         .run(id, user.id, String(label), String(recipient), phone ? String(phone) : null, region ? String(region) : null, String(detail), (is_default || cnt === 0) ? 1 : 0)
+      syncAddressBookDefaultToLegacy(db, String(user.id))
     })()
     res.json({ success: true, id })
   })
 
   app.patch('/api/addresses/:id', async (req, res) => {
     const user = auth(req, res); if (!user) return
-    const row = await dbOne<{ user_id: string }>('SELECT user_id FROM user_addresses WHERE id = ?', [req.params.id])
+    const row = await dbOne<{ user_id: string; is_default: number }>('SELECT user_id, is_default FROM user_addresses WHERE id = ?', [req.params.id])
     if (!row) return void res.status(404).json({ error: '地址不存在' })
     if (row.user_id !== user.id) return void res.status(403).json({ error: '无权限' })
     const { label, recipient, phone, region, detail, is_default } = req.body || {}
@@ -82,6 +84,7 @@ export function registerAddressesRoutes(app: Application, deps: AddressesDeps): 
         db.prepare('UPDATE user_addresses SET is_default = 0 WHERE user_id = ?').run(user.id)
         db.prepare('UPDATE user_addresses SET is_default = 1 WHERE id = ?').run(req.params.id)
       }
+      if (is_default || row.is_default === 1) syncAddressBookDefaultToLegacy(db, String(user.id))
     })()
     res.json({ success: true })
   })
@@ -98,6 +101,7 @@ export function registerAddressesRoutes(app: Application, deps: AddressesDeps): 
         const next = db.prepare('SELECT id FROM user_addresses WHERE user_id = ? ORDER BY created_at DESC LIMIT 1').get(user.id) as { id: string } | undefined
         if (next) db.prepare('UPDATE user_addresses SET is_default = 1 WHERE id = ?').run(next.id)
       }
+      if (row.is_default) syncAddressBookDefaultToLegacy(db, String(user.id))
     })()
     res.json({ success: true })
   })

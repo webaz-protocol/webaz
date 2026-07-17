@@ -13,7 +13,7 @@ process.env.HOME = mkdtempSync(join(tmpdir(), 'webaz-cart-checkout-'))
 
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')
-const { initAgentAttestationsSchema, initCartItemsSchema } = await import('../src/runtime/webaz-schema-helpers.js')
+const { initAgentAttestationsSchema, initCartItemsSchema, initUserAddressesSchema } = await import('../src/runtime/webaz-schema-helpers.js')
 const { initOrderChainSchema } = await import('../src/layer0-foundation/L0-2-state-machine/order-chain.js')
 const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
 const { registerCartRoutes } = await import('../src/pwa/routes/cart.js')
@@ -30,6 +30,7 @@ const db = initDatabase()
 db.pragma('foreign_keys = OFF')
 setSeamDb(db)
 initCartItemsSchema(db)
+initUserAddressesSchema(db)
 initAgentAttestationsSchema(db)
 initOrderChainSchema(db)
 initNotificationSchema(db)
@@ -39,6 +40,7 @@ try { db.exec('ALTER TABLE orders ADD COLUMN donation_amount REAL DEFAULT 0') } 
 
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('buyer','Buyer','buyer','buyer-key'),('other-buyer','Other buyer','buyer','other-key'),('seller','Seller','seller','seller-key'),('seller-2','Seller 2','seller','seller-2-key')").run()
 db.prepare("INSERT INTO wallets (user_id,balance,escrowed) VALUES ('buyer',100,0),('other-buyer',100,0),('seller',0,0),('seller-2',0,0)").run()
+db.prepare("INSERT INTO user_addresses (id,user_id,label,recipient,phone,region,detail,is_default) VALUES ('addr-buyer','buyer','Home','Jane','91234567','SG','1 Test St #05-01 123456',1),('addr-other','other-buyer','Other','Bob','81234567','SG','9 Other Rd',1)").run()
 
 const seedProduct = (id: string, price: number, stock: number, hasVariants = 0, sellerId = 'seller'): void => {
   db.prepare('INSERT INTO products (id,seller_id,title,description,price,stock,status,has_variants) VALUES (?,?,?,?,?,?,\'active\',?)')
@@ -101,7 +103,7 @@ const selected = (productIds: string[]) => ({
 try {
   const openapi = JSON.parse(readFileSync(new URL('./openapi-schemas.json', import.meta.url), 'utf8'))
   const checkoutSchema = openapi.endpoints?.['POST /api/cart/checkout']?.requestBody
-  ok('OpenAPI requires shipping_address and items', checkoutSchema?.required?.includes('shipping_address') && checkoutSchema.required.includes('items'))
+  ok('OpenAPI requires items but allows address_id or shipping_address', !checkoutSchema?.required?.includes('shipping_address') && checkoutSchema?.required?.includes('items') && checkoutSchema?.properties?.address_id?.type === 'string')
   ok('OpenAPI selection bounds match runtime', checkoutSchema?.properties?.items?.minItems === 1 && checkoutSchema.properties.items.maxItems === 500)
 
   const bodyKey = await checkout({ ...selected(['not-needed']), api_key: 'capped-key' })
@@ -143,6 +145,25 @@ try {
     && row<{ stock: number }>('SELECT stock FROM products WHERE id=\'chosen-other-seller\'')?.stock === 4
     && row<{ balance: number; escrowed: number }>("SELECT balance, escrowed FROM wallets WHERE user_id='buyer'")?.balance === 75
     && row<{ balance: number; escrowed: number }>("SELECT balance, escrowed FROM wallets WHERE user_id='buyer'")?.escrowed === 25)
+
+  seedProduct('address-id-item', 2, 4)
+  seedCart('address-id-item')
+  const addressIdOrder = await checkout({ ...selected(['address-id-item']), shipping_address: undefined, address_id: 'addr-buyer' })
+  const addressIdStored = row<{ shipping_address: string }>("SELECT shipping_address FROM orders WHERE product_id='address-id-item'")
+  ok('cart checkout accepts buyer address_id and snapshots the address text', addressIdOrder.status === 200 && /1 Test St/.test(addressIdStored?.shipping_address || ''), JSON.stringify({ addressIdOrder, addressIdStored }))
+
+  seedProduct('foreign-address-item', 2, 4)
+  seedCart('foreign-address-item')
+  const foreignAddressBefore = state(['foreign-address-item'])
+  const foreignAddress = await checkout({ ...selected(['foreign-address-item']), shipping_address: undefined, address_id: 'addr-other' })
+  ok('cart checkout rejects another buyer address_id', foreignAddress.status === 404 && foreignAddress.json.error_code === 'ADDRESS_NOT_FOUND', JSON.stringify(foreignAddress))
+  ok('foreign address rejection has no side effects', state(['foreign-address-item']) === foreignAddressBefore)
+
+  seedProduct('default-address-item', 2, 4)
+  seedCart('default-address-item')
+  const defaultAddressOrder = await checkout({ items: selected(['default-address-item']).items })
+  const defaultAddressStored = row<{ shipping_address: string }>("SELECT shipping_address FROM orders WHERE product_id='default-address-item'")
+  ok('cart checkout falls back to buyer default address when address omitted', defaultAddressOrder.status === 200 && /1 Test St/.test(defaultAddressStored?.shipping_address || ''), JSON.stringify({ defaultAddressOrder, defaultAddressStored }))
 
   seedProduct('replay-once', 1, 2)
   seedCart('replay-once')
