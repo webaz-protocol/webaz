@@ -36,6 +36,7 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_search:              { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: open marketplace + external anchors
   webaz_verify_price:        { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): creates an expiring price/stock session; marketplace price
   webaz_list_product:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: delete/delist/update overwrite the public catalog
+  webaz_upload_product_image:{ readOnlyHint: false, destructiveHint: true,  openWorldHint: false }, // D: overwrites own warehouse-draft image list; never publishes
   webaz_place_order:         { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: moves funds into escrow/direct_p2p
   webaz_update_order:        { readOnlyHint: false, destructiveHint: true,  openWorldHint: true },  // D: overwrites order state; confirm settles funds
   webaz_get_status:          { readOnlyHint: true,  destructiveHint: false, openWorldHint: true },  // read: order status (counterparty objects)
