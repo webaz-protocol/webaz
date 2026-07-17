@@ -21,7 +21,7 @@ import type { Express, Request, Response } from 'express'
 const BASE = 'https://webaz.xyz'
 export const OAUTH_RESOURCE = `${BASE}/mcp`
 // v1 coarse SAFE scopes (D5) — mapped onto capability-matrix SAFE actions in PR-2/PR-4.
-export const OAUTH_SCOPES = ['read', 'order:draft', 'list:draft', 'chat:context'] as const   // RFC-026 PR-4:上下文绑定聊天(仅订单参与方,无自由私信)
+export const OAUTH_SCOPES = ['read', 'order:draft', 'list:draft', 'chat:context', 'address'] as const   // RFC-026 PR-5:address = masked 读 + 变更【请求】(写永远要 Passkey)   // RFC-026 PR-4:上下文绑定聊天(仅订单参与方,无自由私信)
 
 export function oauthEnabled(): boolean {
   return process.env.WEBAZ_OAUTH === '1' && process.env.WEBAZ_MODE !== 'sandbox'

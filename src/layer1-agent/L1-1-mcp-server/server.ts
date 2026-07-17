@@ -211,7 +211,7 @@ async function apiCall(path: string, opts: { method?: string; body?: unknown; ap
       // RFC-025 PR-3(类修,allowlist 版):透传服务端结构化错误契约 —— 此前非 2xx 只留 error/error_code,
       //   机器可执行的恢复指引全被丢弃。只放行【已知恢复字段】(Codex L-9:无限 spread 会把任何路由错误体里
       //   的意外字段/潜在 PII 一并送进模型上下文;allowlist 让边界可审计)。error/error_code/http_status 照旧。
-      const RECOVERY_FIELDS = ['reason', 'retryable', 'missing_requirements', 'next_steps', 'hint', 'next_step', 'approval_url', 'required_scope', 'missing_scopes', 'retry_after_approval', 'request_permission', 'available_stock', 'stock', 'max_per_order', 'new_price', 'old_price', 'session_quantity', 'requested_quantity', 'region', 'option'] as const   // 'note' 刻意不放行(自由文本面);stock/old_price = 既有 orders-create 错误体消费字段
+      const RECOVERY_FIELDS = ['reason', 'retryable', 'missing_requirements', 'next_steps', 'hint', 'next_step', 'approval_url', 'required_scope', 'missing_scopes', 'retry_after_approval', 'request_permission', 'existing_request_id', 'duplicate', 'available_stock', 'stock', 'max_per_order', 'new_price', 'old_price', 'session_quantity', 'requested_quantity', 'region', 'option'] as const   // 'note' 刻意不放行(自由文本面);stock/old_price = 既有 orders-create 错误体消费字段
       const recovery: Record<string, unknown> = {}
       for (const k of RECOVERY_FIELDS) if (json && json[k] !== undefined) recovery[k] = json[k]
       return { ...recovery, error: baseErr + authBoundaryHint(resp.status), error_code: json?.error_code, http_status: resp.status }
@@ -1967,6 +1967,23 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
     },
   },
   {
+    name: 'webaz_address',
+    description: `Your default shipping address over OAuth (RFC-026 PR-5, safe scopes address_read_masked / address_change_request under the address scope). Agents NEVER see the full address — no substrings, no hints.
+
+- action="masked_read" → { has_default, address_region, masked_summary } only. Orders resolve the real address SERVER-side.
+- action="change_request" (address_text 10..500 chars, region 2-letter code) → files a change REQUEST: the human reviews the FULL new address in the PWA and confirms with a Passkey before anything is written. The address you submit is NOT echoed back and cannot be re-read by any agent. One active change request per account (same content = idempotent reuse; different content = explicit conflict pointing to the existing request).
+- Only submit an address the human explicitly gave you in this conversation — never fabricate or guess one.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['masked_read', 'change_request'], description: 'masked_read = masked status; change_request = file a Passkey-gated change request' },
+        address_text: { type: 'string', description: 'change_request: the FULL new address exactly as the human gave it (10..500 chars; write-only — never echoed)' },
+        region: { type: 'string', description: 'change_request: 2-letter country/region code, e.g. SG' },
+      },
+      required: ['action'],
+    },
+  },
+  {
     name: 'webaz_order_chat',
     description: `Chat with the counterparty INSIDE one of YOUR orders (RFC-026 PR-4, safe scopes order_chat_read / order_chat_send under the chat:context OAuth scope). CONTEXT-BOUND: order participants only — there is NO free-form DM surface; you cannot message anyone outside your own order.
 
@@ -2876,6 +2893,25 @@ export async function handlePrepareCase(args: Record<string, unknown>): Promise<
   if (typeof args.order_id !== 'string' || !args.order_id) return { error: 'order_id is required', error_code: 'ORDER_NOT_FOUND' }
   const r = await apiCall(`/api/agent/buyer/orders/${encodeURIComponent(args.order_id)}/case-draft`, { method: 'GET', apiKey: cred.token })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_case_prepare. Re-connect via OAuth so the grant carries the read scope, then retry.' }
+  return r
+}
+
+export async function handleAddressAgent(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // RFC-026 PR-5 — wraps /api/agent/address/* (address_read_masked / address_change_request).
+  //   masked read only; change = request-only (Passkey writes); the submitted address is never echoed.
+  if (!isNetworkMode()) return { error: 'a delegation grant requires NETWORK mode (grants live on webaz.xyz)', error_code: 'GRANT_REQUIRES_NETWORK' }
+  const cred = resolveGrantCredential(args)
+  if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
+  const action = String(args.action || '')
+  let r: Record<string, unknown>
+  if (action === 'masked_read') {
+    r = await apiCall('/api/agent/address/masked', { method: 'GET', apiKey: cred.token })
+  } else if (action === 'change_request') {
+    r = await apiCall('/api/agent/address/change-request', { method: 'POST', apiKey: cred.token, body: { address_text: args.address_text, region: args.region } })
+  } else {
+    return { error: `unknown action: ${action}`, error_code: 'BAD_ACTION' }
+  }
+  if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: `Your grant lacks ${action === 'change_request' ? 'address_change_request' : 'address_read_masked'}. Re-connect via OAuth so the grant carries the address scope, then retry.` }
   return r
 }
 
@@ -5786,6 +5822,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         case 'webaz_submit_order_request': result = await handleSubmitOrderRequest(args); break
         case 'webaz_prepare_case':        result = await handlePrepareCase(args); break
         case 'webaz_approval_requests':   result = await handleApprovalRequests(args); break
+        case 'webaz_address':             result = await handleAddressAgent(args); break
         case 'webaz_order_chat':          result = await handleOrderChat(args); break
         case 'webaz_wallet_view':         result = await handleWalletView(args); break
         case 'webaz_order_action_request': result = await handleOrderActionRequest(args); break

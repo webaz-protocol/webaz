@@ -40,6 +40,7 @@ const OAUTH_TOOL_SCOPES: Record<string, readonly string[]> = {
   webaz_approval_requests: ['read'],   // RFC-026 PR-2 (→ approval_requests_read)
   webaz_wallet_view: ['read'],   // RFC-026 PR-3 (→ wallet_read_minimal; read-only forever)
   webaz_order_chat: ['chat:context'],   // RFC-026 PR-4 (→ order_chat_read/send)
+  webaz_address: ['address'],   // RFC-026 PR-5 (→ address_read_masked/change_request)
 }
 
 /** The securitySchemes for a tool: oauth2 (with scopes) iff grant-reachable, else the noauth default. */

@@ -40,6 +40,7 @@ import { listApprovalRequests, getApprovalRequest } from '../approval-requests-r
 import { buildBuyerOrderFull } from '../buyer-order-full-view.js'  // RFC-026 PR-3 订单全量只读
 import { walletAgentView } from '../wallet-agent-view.js'  // RFC-026 PR-3 钱包最小只读(永远只读)
 import { readOrderChat, sendOrderChat, type ApiLoopback } from '../order-chat-agent.js'  // RFC-026 PR-4 订单上下文聊天(回环走生产反诈/限频)
+import { maskedAddressAgentView, createAddressChangeRequest, approveAddressChange, purgeAddressChangeContent, addressChangeContentForHuman } from '../address-agent.js'  // RFC-026 PR-5 地址双路径(PII 专表隔离)
 import { toUnits } from '../../money.js'  // RFC-014:demand_signals.budget_units 整数化
 import { createOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
 import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 approve→执行(CAS approved + 执行 + executed_at CAS,domain 层)
@@ -370,6 +371,19 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   //   只发生在人 Passkey 批准后(下方 /approve 的 order_submit 分支 → order-submit-exec,agent 不可达)。
   // RFC-025 PR-6 — 售后案件草稿组装(safe scope buyer_case_prepare)。纯只读:时间线结构字段 +
   //   商品声明锚点 + 证据 ref(零自由文本/PII);零写入零经济;提交类售后动作全部指向人路径。
+  // RFC-026 PR-5 — 地址:masked 读(region+存在性,绝不截取子串)/ 变更请求(全文进 PII 专表,Passkey 批准才写)
+  app.get('/api/agent/address/masked', requireAgentGrantScope('address_read_masked'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    res.json(maskedAddressAgentView(db, p.human_id))
+  })
+  app.post('/api/agent/address/change-request', requireAgentGrantScope('address_change_request'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const b = (req.body ?? {}) as Record<string, unknown>
+    const r = createAddressChangeRequest(db, { humanId: p.human_id, grantId: p.grant_id, agentLabel: p.agent_label ?? 'agent', addressText: b.address_text, region: b.region, generateId })
+    if (!r.ok) return void res.status(r.http).json({ error: r.error, error_code: r.error_code, ...(r.existing_request_id ? { existing_request_id: r.existing_request_id, approval_url: `/#agent-approvals/${r.existing_request_id}` } : {}) })
+    res.json({ success: true, request_id: r.request_id, params_hash: r.params_hash, approval_url: `/#agent-approvals/${r.request_id}`, idempotency: { duplicate: !!r.duplicate, reused_existing_request: !!r.duplicate }, human_confirmation_required: true, note: 'Pending human Passkey approval — the human reviews the FULL address in the PWA; nothing is written until then. This tool will NOT echo the address back.' })
+  })
+
   // RFC-026 PR-4 — 订单上下文聊天(仅订单双方;发送回环走生产反诈/限频;无自由私信)
   app.get('/api/agent/orders/:id/chat', requireAgentGrantScope('order_chat_read'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
@@ -536,6 +550,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       // RFC-025 PR-5a:order_submit 行附经济摘要(域层 submitRowSummary,route 零新增 seam 计数;零 PII)。
       if (r.kind === 'order_submit') { const sum = submitRowSummary(db, String(r.order_id)); if (sum) base.submit_summary = sum; if (r.status === 'approved') base.needs_reconcile = true }
       // RFC-026 PR-2(Codex HIGH):order_action 执行失败保持 approved 可重试 —— 必须回到列表让人重批,不许悄悄搁浅;只回短错误码
+      if (r.kind === 'address_change') { const acr = addressChangeContentForHuman(db, String(r.id)); if (acr) base.address_change = acr }
       if (r.kind === 'order_action' && r.status === 'approved') { base.retry_available = true; try { const er = r.execution_result ? JSON.parse(String(r.execution_result)) as { ok?: boolean; error_code?: string } : null; if (er && er.ok === false) base.last_error = String(er.error_code ?? 'EXECUTE_FAILED') } catch { /* 无注解 */ } }
       delete base.status; delete base.execution_result
       return base
@@ -586,6 +601,16 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
 
     // RFC-025 PR-5a:order-submit 分流(钱路)。Passkey 绑 (request_id, draft_id, params_hash) —— 人批的
     //   经济快照即执行的,一字不差;执行 = 回环打真实 POST /api/orders(escrow 建单事务内扣款入托管)。
+    // RFC-026 PR-5:address_change —— 四元组绑定(order_id 恒空串),执行=写 users 默认地址
+    if ((r.kind ?? 'scope_grant') === 'address_change') {
+      const hp = requireHumanPresence(user.id as string, 'agent_permission_approve', (req.body || {}).webauthn_token as string | undefined, 'require_human_presence_for_agent_permission_approve',
+        (data) => { const d = data as Record<string, unknown> | null; return d != null && typeof d === 'object' && d.request_id === req.params.id && d.action === 'address_change' && d.params_hash === r.params_hash })
+      if (!hp.ok) return void res.status(412).json({ error: hp.reason, error_code: hp.error_code })
+      const ar = approveAddressChange(db, req.params.id, user.id as string, now)
+      if (!ar.ok) return void res.status(ar.http).json({ error: ar.error, error_code: ar.error_code })
+      return void res.json({ success: true, kind: 'address_change', status: 'executed', region: ar.region, already_executed: ar.already_executed || false })
+    }
+
     if ((r.kind ?? 'scope_grant') === 'order_submit') {
       const hp = requireHumanPresence(user.id as string, 'agent_permission_approve', (req.body || {}).webauthn_token as string | undefined, 'require_human_presence_for_agent_permission_approve',
         (data) => { const d = data as Record<string, unknown> | null; return d != null && typeof d === 'object' && d.request_id === req.params.id && d.order_id === r.order_id && d.action === 'order_submit' && d.params_hash === r.params_hash })   // 四元组与 PWA aaApprove 一致,order_id 承载 draft_id -- Codex BLOCKER-1
@@ -655,6 +680,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     if (r.status !== 'pending') return void res.status(409).json({ error: 'permission_request_not_pending', status: r.status })
     const rj = await dbRun("UPDATE agent_permission_requests SET status='rejected' WHERE id=? AND status='pending'", [req.params.id])
     if (!rj || rj.changes !== 1) return void res.status(409).json({ error: 'permission_request_not_pending' })
+    purgeAddressChangeContent(db, req.params.id)   // RFC-026 PR-5:地址变更被拒 → 立即清 PII 专表内容
     res.json({ success: true, status: 'rejected' })
   })
 

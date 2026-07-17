@@ -82,6 +82,7 @@ export const TOOL_ANNOTATIONS: Record<string, McpToolAnnotations> = {
   webaz_approval_requests:   { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: own approval-request status/deep links (RFC-026 PR-2); own-account only, no domain writes (grant-path audit exempt)
   webaz_wallet_view:         { readOnlyHint: true,  destructiveHint: false, openWorldHint: false }, // read: own wallet balances/refund landings (RFC-026 PR-3); OAuth wallet surface is read-only forever (grant-path audit exempt)
   webaz_order_chat:          { readOnlyHint: false, destructiveHint: false, openWorldHint: true },  // W (additive): context-bound order chat (RFC-026 PR-4); send = production anti-scam path, no funds/state change
+  webaz_address:             { readOnlyHint: false, destructiveHint: false, openWorldHint: false }, // W (additive): masked read + Passkey-gated change REQUEST (RFC-026 PR-5); full address never readable by agents
 }
 
 interface NamedTool { readonly name: string }

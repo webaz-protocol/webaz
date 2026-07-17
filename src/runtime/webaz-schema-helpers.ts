@@ -1739,6 +1739,16 @@ export function initAgentPermissionRequestsSchema(db: Database.Database): void {
     created_at  TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (grant_id, idem_key)
   )`)
+  // RFC-026 PR-5:地址变更待确认内容(PII 专表 —— 全文只进这里,绝不入 action_params/审计/agent 面;
+  //   人在 PWA 审批卡看全文,Passkey 批准才写 users;拒绝即清 PII)
+  db.exec(`CREATE TABLE IF NOT EXISTS address_change_requests (
+    request_id   TEXT PRIMARY KEY,
+    human_id     TEXT NOT NULL,
+    address_text TEXT NOT NULL,
+    region       TEXT NOT NULL,
+    created_at   TEXT DEFAULT (datetime('now'))
+  )`)
+  try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_apr_address_change_active ON agent_permission_requests(human_id) WHERE kind='address_change' AND status IN ('pending','approved') AND executed_at IS NULL") } catch { /* */ }
   // RFC-026 PR-1:一张草稿至多产出一笔订单(状态机 CAS 之外的 DB 级不可绕过兜底);历史订单幂等回填自 order_drafts 回链。
   try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_draft ON orders(draft_id) WHERE draft_id IS NOT NULL") } catch { /* */ }
   const hasTable = (t: string): boolean => !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(t)

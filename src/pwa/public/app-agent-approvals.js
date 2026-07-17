@@ -49,7 +49,7 @@
     const risk = RISK[r.risk_level] || RISK.low
     const scopes = Array.isArray(r.requested_scopes) ? r.requested_scopes : []
     // Prefer the human-readable bundle summary; otherwise show the individual safe-scope chips.
-    const what = r.kind === 'order_action' ? (window.aaOrderWhat ? window.aaOrderWhat(r) : '') : r.kind === 'order_submit' ? (window.aaOrderSubmitWhat ? window.aaOrderSubmitWhat(r) : '') : r.human_summary
+    const what = r.kind === 'order_action' ? (window.aaOrderWhat ? window.aaOrderWhat(r) : '') : r.kind === 'order_submit' ? (window.aaOrderSubmitWhat ? window.aaOrderSubmitWhat(r) : '') : r.kind === 'address_change' ? (window.aaAddressWhat ? window.aaAddressWhat(r) : '') : r.human_summary
       ? `<div style="font-size:13px;color:#374151;line-height:1.7">${escHtml(r.human_summary)}</div>`
       : `<div style="margin-top:2px">${scopes.map(s => `<span style="display:inline-block;font-size:11px;color:#4f46e5;background:#eef2ff;padding:2px 8px;border-radius:4px;margin:2px 4px 2px 0">${escHtml(String(s))}</span>`).join('') || `<span style="font-size:12px;color:#9ca3af">${t('(无 —— 仅基础只读)')}</span>`}</div>`
     return `<div class="card" style="margin-bottom:12px;padding:16px;border:1px solid #e5e7eb" data-aa-id="${escHtml(String(r.id))}" data-aa-order-id="${escHtml(String(r.order_id||''))}" data-aa-action="${escHtml(String(r.order_action||''))}" data-aa-hash="${escHtml(String(r.params_hash||''))}">
