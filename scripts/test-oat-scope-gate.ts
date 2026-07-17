@@ -11,15 +11,21 @@
  * 同时锁死安全边界不因修复而扩权:oat_ 打非 grant 路由(POST /api/orders)仍 401,api_key 通道的
  *   default-deny 问责门原样保留。
  */
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { createServer } from 'node:net'
 import Database from 'better-sqlite3'
 
 const tmpHome = mkdtempSync(join(tmpdir(), 'webaz-oat-'))
-const PORT = 3000 + Math.floor(Math.random() * 30000)
+// 端口先 bind(0)拿 OS 分配再释放 —— 消随机撞已占端口的 flake(Codex LOW-2;释放到 spawn 间的窗口极小)
+const PORT = await new Promise<number>((resolve, reject) => {
+  const srv = createServer(); srv.listen(0, '127.0.0.1', () => {
+    const port = (srv.address() as { port: number }).port; srv.close(() => resolve(port))
+  }); srv.on('error', reject)
+})
 const BASE = `http://127.0.0.1:${PORT}`
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -143,8 +149,12 @@ try {
     g13.status === 401 && g13.j.error_code !== 'AGENT_SCOPE_UNDECLARED', JSON.stringify(g13))
   // G-14 整个套件零经济写
   ok('G-14 zero orders created across the whole suite', ordersCount() === ordersBefore)
+  // G-15 审计不因豁免而丢:grant 层 agent_grant_auth_log 对 allow 与 deny 都有归因行(RFC-020 §3.7)
+  const audit = db.prepare("SELECT outcome, COUNT(*) n FROM agent_grant_auth_log WHERE human_id = 'u_oat' GROUP BY outcome").all() as Array<{ outcome: string; n: number }>
+  const byOutcome = Object.fromEntries(audit.map(a => [a.outcome, a.n]))
+  ok('G-15 grant-layer audit rows exist for BOTH allow and deny with grant/human attribution', (byOutcome.allow ?? 0) >= 4 && (byOutcome.deny ?? 0) >= 4, JSON.stringify(byOutcome))
   db.close()
-} finally { await stopChild() }
+} finally { await stopChild(); try { rmSync(tmpHome, { recursive: true, force: true }) } catch { /* best effort */ } }
 
 if (fail > 0) { console.error(`\n❌ oat-scope-gate FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ oat-scope-gate: oat_ 委托凭证通道豁免 — quote/submit 达业务层 · scope 门/问责门原样 · 钱路零扩权\n  ✅ pass ${pass}`)
