@@ -58,6 +58,8 @@ export const NETWORK_TOOLS = new Set<string>([
   'webaz_prepare_case',
   // RFC-026 PR-2 approval-request status read (grant-wired, approval_requests_read). Same rule.
   'webaz_approval_requests',
+  // RFC-026 PR-3 wallet minimal read (grant-wired, wallet_read_minimal; READ-ONLY forever). Same rule.
+  'webaz_wallet_view',
   // Batch 1(只读 + 低危自身写):走 webaz.xyz Bearer api_key。
   'webaz_notifications',
   'webaz_nearby',

@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (798 endpoints, 19 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (800 endpoints, 19 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2828,6 +2828,20 @@
         "x-webaz-grant-scope": "buyer_case_prepare"
       }
     },
+    "/api/agent/buyer/orders/:id/full": {
+      "get": {
+        "summary": "RFC-026 PR-3 — 订单全量只读(safe scope buyer_orders_read;时间线/条款快照/物流/截止/退款/动作面;零 PII)",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "buyer_orders_read"
+      }
+    },
     "/api/agent/capabilities": {
       "get": {
         "summary": "GET /api/agent/capabilities",
@@ -3051,6 +3065,20 @@
         "summary": "GET /api/agent/verifiability",
         "tags": [],
         "security": []
+      }
+    },
+    "/api/agent/wallet": {
+      "get": {
+        "summary": "RFC-026 PR-3 — 钱包最小只读(safe scope wallet_read_minimal;OAuth 钱包面永远只读)",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "wallet_read_minimal"
       }
     },
     "/api/agents/me/reputation": {

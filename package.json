@@ -292,6 +292,7 @@
     "test:prepare-case": "tsx scripts/test-prepare-case.ts",
     "test:oat-scope-gate": "tsx scripts/test-oat-scope-gate.ts",
     "test:approval-requests-read": "tsx scripts/test-approval-requests-read.ts",
+    "test:buyer-order-full": "tsx scripts/test-buyer-order-full.ts",
     "test:mcp-tool-annotations": "tsx scripts/test-mcp-tool-annotations.ts",
     "agent:first-success": "node scripts/agent-first-success.mjs",
     "agent:compat-matrix": "node scripts/agent-compat-matrix.mjs",

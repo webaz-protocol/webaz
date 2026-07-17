@@ -37,6 +37,8 @@ import { createOrderSubmitRequest, submitRowSummary } from '../order-submit-requ
 import { approveAndExecuteOrderSubmit, type CreateOrderLoopback } from '../order-submit-exec.js'  // RFC-025 PR-5a 批准执行域(钱路;仅人类 approve 路径可达)
 import { buildCaseDraft } from '../buyer-case-draft.js'  // RFC-025 PR-6 售后案件草稿(纯只读组装)
 import { listApprovalRequests, getApprovalRequest } from '../approval-requests-read.js'  // RFC-026 PR-2 审批状态只读投影
+import { buildBuyerOrderFull } from '../buyer-order-full-view.js'  // RFC-026 PR-3 订单全量只读
+import { walletAgentView } from '../wallet-agent-view.js'  // RFC-026 PR-3 钱包最小只读(永远只读)
 import { toUnits } from '../../money.js'  // RFC-014:demand_signals.budget_units 整数化
 import { createOrderActionRequest } from '../order-action-request.js'  // RFC-021 PR2 order-action 请求 domain(sync tx 在 domain 层,不增 route seam)
 import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 approve→执行(CAS approved + 执行 + executed_at CAS,domain 层)
@@ -366,6 +368,19 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   //   只发生在人 Passkey 批准后(下方 /approve 的 order_submit 分支 → order-submit-exec,agent 不可达)。
   // RFC-025 PR-6 — 售后案件草稿组装(safe scope buyer_case_prepare)。纯只读:时间线结构字段 +
   //   商品声明锚点 + 证据 ref(零自由文本/PII);零写入零经济;提交类售后动作全部指向人路径。
+  // RFC-026 PR-3 — 订单全量只读(safe scope buyer_orders_read;时间线/条款快照/物流/截止/退款/动作面;零 PII)
+  app.get('/api/agent/buyer/orders/:id/full', requireAgentGrantScope('buyer_orders_read'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    const r = buildBuyerOrderFull(db, p.human_id, req.params.id)
+    if (!r.ok) return void res.status(r.status).json(r.body)
+    res.json(r.response)
+  })
+  // RFC-026 PR-3 — 钱包最小只读(safe scope wallet_read_minimal;OAuth 钱包面永远只读)
+  app.get('/api/agent/wallet', requireAgentGrantScope('wallet_read_minimal'), async (req, res) => {
+    const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    res.json(walletAgentView(db, p.human_id))
+  })
+
   // RFC-026 PR-2 — 审批状态只读(safe scope approval_requests_read;只看本人;零 PII)
   app.get('/api/agent/approval-requests', requireAgentGrantScope('approval_requests_read'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
