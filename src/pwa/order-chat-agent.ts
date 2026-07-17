@@ -7,8 +7,8 @@
  * 全部生产同一条路,零复刻。发送后把 agent 归因(grant/label/幂等键/内容哈希)后置标注进
  * messages.meta.agent —— 即 spec 的 sent_by_agent 等价标记,配合 grant 审计日志构成完整审计链。
  *
- * 幂等:idempotency_key 在近 10 分钟窗口内查 meta.agent.idempotency_key,命中 → 返回原消息
- * (duplicate:true),绝不重发。读投影:sender 只回 'you'/'counterparty'(不回裸 user id),
+ * 幂等:agent_chat_idem 预留表(PK grant+key,body 哈希绑定,owner 租约)—— 同键同体返回原消息,
+ * 同键异体显式冲突;干净失败立即释放键;并发回收 owner-CAS 恰一胜者。读投影:sender 只回 'you'/'counterparty'(不回裸 user id),
  * body/flag 原样透传(聊天正文本就是双方互见的自由文本;反诈标记保留)。
  */
 import type Database from 'better-sqlite3'
@@ -71,20 +71,23 @@ export async function sendOrderChat(db: Database.Database, deps: { apiLoopback: 
   const idem = typeof idempotencyKey === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(idempotencyKey) ? idempotencyKey : null
   const party = orderParty(db, humanId, orderId)
   if (!party.ok) return party
-  // 幂等(Codex HIGH):DB 级预留 —— grant 命名空间 + body 哈希绑定;UNIQUE(grant,key) 抗并发同键。
+  // 幂等(Codex round-2 收敛):owner-lease —— 每次尝试持随机租约 token,回收/释放/落账全部
+  // owner-scoped CAS:并发 stale 回收恰一胜者;干净失败立即释放键(不毒 10 分钟);落账丢租约时
+  // 如实上报不确定性(契约同步写明:崩溃在发送/落账边界时,>10 分钟后的重试可能重发 —— 先 list 核对)。
   const bodySha = sha(text)
+  const owner = sha(`${grantId}:${idem ?? ''}:${Date.now()}:${Math.random()}`).slice(0, 24)
+  const releaseIdem = (): void => { if (idem) { try { db.prepare('DELETE FROM agent_chat_idem WHERE grant_id = ? AND idem_key = ? AND owner = ? AND message_id IS NULL').run(grantId, idem, owner) } catch { /* */ } } }
   if (idem) {
     try {
-      db.prepare('INSERT INTO agent_chat_idem (grant_id, idem_key, body_sha, message_id) VALUES (?,?,?,NULL)').run(grantId, idem, bodySha)
+      db.prepare('INSERT INTO agent_chat_idem (grant_id, idem_key, body_sha, owner, message_id) VALUES (?,?,?,?,NULL)').run(grantId, idem, bodySha, owner)
     } catch (e) {
       if (!/UNIQUE|PRIMARY/i.test((e as Error).message)) return { ok: false, status: 503, body: { error_code: 'CHAT_UNAVAILABLE', reason: 'idempotency store unavailable', retryable: true } }
       const prev = db.prepare('SELECT body_sha, message_id, created_at FROM agent_chat_idem WHERE grant_id = ? AND idem_key = ?').get(grantId, idem) as { body_sha: string; message_id: string | null; created_at: string } | undefined
       if (prev && prev.body_sha !== bodySha) return { ok: false, status: 409, body: { error_code: 'IDEMPOTENCY_CONFLICT', reason: 'this idempotency_key was already used with a DIFFERENT body — pick a new key', retryable: false } }
       if (prev?.message_id) return { ok: true, response: { order_id: orderId, message_id: prev.message_id, duplicate: true, reused_existing_message: true } }
-      // 同键同体、消息未落(对手在飞/曾崩溃):>10 分钟视为死预留可重占,否则如实退避
-      const stale = prev && db.prepare("SELECT 1 x WHERE ? < datetime('now','-10 minutes')").get(prev.created_at)
-      if (!stale) return { ok: false, status: 409, body: { error_code: 'SEND_IN_FLIGHT', reason: 'an identical send with this key is in flight — retry shortly to fetch its message id', retryable: true } }
-      db.prepare("UPDATE agent_chat_idem SET created_at = datetime('now'), message_id = NULL WHERE grant_id = ? AND idem_key = ?").run(grantId, idem)
+      // 死预留(>10min 未落账)回收 = CAS 抢租约:恰一个并发回收者胜出,其余 SEND_IN_FLIGHT
+      const claim = db.prepare("UPDATE agent_chat_idem SET owner = ?, created_at = datetime('now') WHERE grant_id = ? AND idem_key = ? AND message_id IS NULL AND created_at < datetime('now','-10 minutes')").run(owner, grantId, idem)
+      if (claim.changes !== 1) return { ok: false, status: 409, body: { error_code: 'SEND_IN_FLIGHT', reason: 'an identical send with this key is in flight — retry shortly to fetch its message id (or use action=list)', retryable: true } }
     }
   }
   const u = db.prepare('SELECT api_key FROM users WHERE id = ?').get(humanId) as { api_key: string } | undefined
@@ -92,13 +95,13 @@ export async function sendOrderChat(db: Database.Database, deps: { apiLoopback: 
   // 回环①:find-or-create 会话(真实参与方门)
   const st = await apiLoopback(u.api_key, '/api/conversations/start', { kind: 'order', context_id: orderId, recipient_id: party.peerId })
   const convId = st.json && typeof st.json.id === 'string' ? st.json.id : null
-  if (!convId) return { ok: false, status: 409, body: { error_code: 'CHAT_UNAVAILABLE', reason: String(st.json?.error ?? 'conversation unavailable'), retryable: true } }
+  if (!convId) { releaseIdem(); return { ok: false, status: 409, body: { error_code: 'CHAT_UNAVAILABLE', reason: String(st.json?.error ?? 'conversation unavailable'), retryable: true } } }
   // 回环②:真实发送(反诈/限频/屏蔽全生产同路)
   const sd = await apiLoopback(u.api_key, `/api/conversations/${encodeURIComponent(convId)}/messages`, { body: text })
   const msg = (sd.json?.message as Record<string, unknown> | undefined) ?? (typeof sd.json?.id === 'string' ? sd.json : undefined)
   const msgId = msg && typeof msg.id === 'string' ? msg.id : null
-  if (sd.status === 429) return { ok: false, status: 429, body: { error_code: 'CHAT_RATE_LIMITED', reason: 'sending too fast — retry shortly', retryable: true } }
-  if (!msgId) return { ok: false, status: 409, body: { error_code: 'CHAT_SEND_REJECTED', reason: String(sd.json?.error ?? 'send rejected'), retryable: false } }
+  if (sd.status === 429) { releaseIdem(); return { ok: false, status: 429, body: { error_code: 'CHAT_RATE_LIMITED', reason: 'sending too fast — retry shortly', retryable: true } } }
+  if (!msgId) { releaseIdem(); return { ok: false, status: 409, body: { error_code: 'CHAT_SEND_REJECTED', reason: String(sd.json?.error ?? 'send rejected'), retryable: false } } }
   // agent 归因后置标注(spec sent_by_agent 等价;失败如实上报,不假装已标注 —— Codex MEDIUM)
   let marked = false
   try {
@@ -109,7 +112,8 @@ export async function sendOrderChat(db: Database.Database, deps: { apiLoopback: 
     const upd = db.prepare('UPDATE messages SET meta = ? WHERE id = ? AND sender_id = ?').run(JSON.stringify(meta), msgId, humanId)
     marked = upd.changes === 1
   } catch { marked = false }
-  if (idem) { try { db.prepare('UPDATE agent_chat_idem SET message_id = ? WHERE grant_id = ? AND idem_key = ?').run(msgId, grantId, idem) } catch { /* 预留兑现 best-effort;同键重试会走 in-flight→stale 路径 */ } }
+  let idemClaimed = !idem
+  if (idem) { try { idemClaimed = db.prepare('UPDATE agent_chat_idem SET message_id = ? WHERE grant_id = ? AND idem_key = ? AND owner = ?').run(msgId, grantId, idem, owner).changes === 1 } catch { idemClaimed = false } }
   const flagged = msg ? Number(msg.flagged) === 1 : false
-  return { ok: true, response: { order_id: orderId, message_id: msgId, sent: true, sent_by_agent: marked, ...(marked ? {} : { note_attribution: 'agent attribution annotation FAILED to persist — the message went out unmarked; the grant audit log still records this call' }), flagged, ...(flagged ? { note: 'anti-scam flagged this message — it is delivered with a warning to the counterparty' } : {}), duplicate: false } }
+  return { ok: true, response: { order_id: orderId, message_id: msgId, sent: true, sent_by_agent: marked, ...(marked ? {} : { note_attribution: 'agent attribution annotation FAILED to persist — the message went out unmarked; the grant audit log still records this call' }), ...(idemClaimed ? {} : { note_idempotency: 'the send SUCCEEDED but the idempotency claim could not persist — do NOT blind-retry this key; verify with action=list first' }), flagged, ...(flagged ? { note: 'anti-scam flagged this message — it is delivered with a warning to the counterparty' } : {}), duplicate: false } }
 }

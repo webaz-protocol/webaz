@@ -157,6 +157,22 @@ try {
     const lm = await CH({ action: 'list', order_id: 'ord_chat' })
     const h = (lm.messages as Array<Record<string, unknown>>).find(x => x.body === 'human reply from seller')
     ok('C-17 malformed meta.agent (wrong shape) is NOT presented as agent attribution', !!h && h.sent_by_agent === false) }
+  // 并发 stale 回收:恰一胜者(owner-CAS)
+  { db.prepare("INSERT INTO agent_chat_idem (grant_id, idem_key, body_sha, owner, message_id, created_at) VALUES ('grt_chat','k_stale', ?, 'dead_owner', NULL, datetime('now','-20 minutes'))").run(sha('stale body once'))
+    const before = msgCount()
+    const hit = () => CH({ action: 'send', order_id: 'ord_chat', body: 'stale body once', idempotency_key: 'k_stale' })
+    const [ra, rb] = await Promise.all([hit(), hit()])
+    const sent = [ra, rb].filter(r => r.sent === true)
+    ok('C-19 CONCURRENT stale reclamation → exactly ONE reclaims and sends (owner-CAS); loser gets in-flight/duplicate', msgCount() === before + 1 && sent.length === 1, JSON.stringify({ ra, rb }).slice(0, 250)) }
+  // 干净失败立即释放键(不毒 10 分钟)
+  { db.prepare("UPDATE conversations SET status='blocked' WHERE kind='order' AND context_id='ord_chat'").run()
+    const f1 = await CH({ action: 'send', order_id: 'ord_chat', body: 'poison probe', idempotency_key: 'k_poison' })
+    db.prepare("UPDATE conversations SET status='active' WHERE kind='order' AND context_id='ord_chat'").run()
+    const f2 = await CH({ action: 'send', order_id: 'ord_chat', body: 'poison probe', idempotency_key: 'k_poison' })
+    ok('C-20 clean failure RELEASES the key immediately — instant retry succeeds (no 10min poisoning)', f1.error_code === 'CHAT_SEND_REJECTED' && f2.sent === true, JSON.stringify({ f1, f2 }).slice(0, 200)) }
+  // 人类徽标源码 shape 守卫:必须同时要求 grant_id + body_sha256
+  { const APP = (await import('node:fs')).readFileSync('src/pwa/public/app.js', 'utf8')
+    ok('C-21 human badge requires grant_id AND body_sha256 (junk meta stays badge-less)', /typeof _a\.grant_id === 'string' && typeof _a\.body_sha256 === 'string'/.test(APP)) }
   // 资金/订单零变化
   ok('C-18 chat moves NO funds and changes NO order state', Math.abs(balOf('buyer1').balance - balB.balance) < 1e-9 && Math.abs(balOf('buyer1').escrowed - balB.escrowed) < 1e-9
     && (db.prepare("SELECT status FROM orders WHERE id='ord_chat'").get() as { status: string }).status === 'paid')

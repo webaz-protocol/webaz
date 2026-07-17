@@ -1972,7 +1972,7 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
 
 - action="list" (order_id) → the order conversation: sender is 'you'/'counterparty' (no raw ids), bodies verbatim, anti-scam flags preserved, agent-sent messages marked (sent_by_agent + agent_label).
 - action="send" (order_id, body ≤2000 chars, optional idempotency_key) → sends through the PRODUCTION chat path: anti-scam detection, per-minute rate limits and block status all apply unchanged; the message is attributed to the human account and marked as agent-sent with a content hash (full audit chain via the grant log).
-- Idempotency: the same idempotency_key within 10 minutes returns the original message — never a double send.
+- Idempotency: the same idempotency_key returns the original message (same-body only; a different body is an explicit conflict). Exactly-once holds while the reservation resolves; ONLY if the service crashes at the exact send/claim boundary can a retry >10 minutes later resend — before any long-delayed retry, verify with action=list.
 - Chat moves no funds and changes no order state. Agent sends share the human account chat rate budget (60/min). Never paste addresses, payment credentials or codes into chat.`,
     inputSchema: {
       type: 'object',

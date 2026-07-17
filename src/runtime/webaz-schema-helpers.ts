@@ -1734,6 +1734,7 @@ export function initAgentPermissionRequestsSchema(db: Database.Database): void {
     grant_id    TEXT NOT NULL,
     idem_key    TEXT NOT NULL,
     body_sha    TEXT NOT NULL,
+    owner       TEXT NOT NULL,               -- 本次尝试的租约 token:回收/落账全部 owner-scoped CAS,并发回收恰一胜者
     message_id  TEXT,
     created_at  TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (grant_id, idem_key)
