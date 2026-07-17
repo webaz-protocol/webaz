@@ -223,26 +223,31 @@ try {
     ok('R-1 frozen submit appears in the approvals list flagged needs_reconcile', !!frozenRow && frozenRow.needs_reconcile === true, JSON.stringify(frozenRow ?? listJson.requests.map(x => x.id)).slice(0, 200))
     // R-2 和解(无订单分支):再次 Passkey 批准 = oracle 核对 → 未建单 → 恢复草稿并安全重试 → 恰一单
     loopbackMode = 'real'
-    const beforeHeal = orderCount()
+    const beforeHeal = orderCount(); const balH = bal('buyer1'); const stkH = stock()
     const r3 = await approve(String(srq2.request_id), { request_id: srq2.request_id, order_id: c4.d.draft_id, action: 'order_submit', params_hash: srq2.params_hash })
     ok('U-3 re-approve of a frozen submit = audited reconciliation: no order existed → safe retry → exactly ONE order', r3.json.success === true && typeof r3.json.order_id === 'string' && orderCount() === beforeHeal + 1, JSON.stringify(r3.json).slice(0, 200))
+    ok('U-3c reconciliation retry moved money EXACTLY once (balance -30, escrow +30, stock -1)', Math.abs(balH.balance - bal('buyer1').balance - 30) < 1e-6 && Math.abs(bal('buyer1').escrowed - balH.escrowed - 30) < 1e-6 && stock() === stkH - 1, JSON.stringify({ before: balH, after: bal('buyer1') }))
     ok('U-3b draft completed + request executed after reconciliation', (db.prepare('SELECT status, order_id FROM order_drafts WHERE id=?').get(String(c4.d.draft_id)) as { status: string; order_id: string | null }).status === 'ordered' && !!(db.prepare('SELECT executed_at FROM agent_permission_requests WHERE id=?').get(String(srq2.request_id)) as { executed_at: string | null }).executed_at) }
 
   // ══ R-3/R-4:崩溃窗口和解(订单已提交但回链缺失)+ draft-link 并发竞态 ══
   { const c6 = await mkChain(1, 200)
     db.prepare("UPDATE order_drafts SET status = 'ordering' WHERE id = ?").run(String(c6.d.draft_id))
     db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, draft_id) VALUES ('ord_crash_win','prd_s','buyer1','seller1',1,30,30,30,'paid',?)").run(String(c6.d.draft_id))
+    const balC = bal('buyer1'); const stkC = stock()
     const rh = await approve(String(c6.srq.request_id), { request_id: c6.srq.request_id, order_id: c6.d.draft_id, action: 'order_submit', params_hash: c6.srq.params_hash })
     ok('R-3 crash window (order committed, backlink missing) → reconciliation returns THAT order, completes backlink, no new order', rh.json.already_executed === true && rh.json.order_id === 'ord_crash_win' && (db.prepare('SELECT status, order_id FROM order_drafts WHERE id=?').get(String(c6.d.draft_id)) as { status: string; order_id: string | null }).order_id === 'ord_crash_win', JSON.stringify(rh.json).slice(0, 200))
+    ok('R-3b backlink-heal moves ZERO money and ZERO stock (pure bookkeeping)', Math.abs(bal('buyer1').balance - balC.balance) < 1e-6 && Math.abs(bal('buyer1').escrowed - balC.escrowed) < 1e-6 && stock() === stkC)
     // R-4:两个并发 POST /api/orders 携带同一 'ordering' 草稿 → 恰一单;输家幂等拿同一单
     const c7 = await mkChain(1, 500)
     db.prepare("UPDATE order_drafts SET status = 'ordering' WHERE id = ?").run(String(c7.d.draft_id))
     db.prepare("UPDATE wallets SET balance = 200 WHERE user_id='buyer1'").run()
     const post = () => fetch(`http://127.0.0.1:${port}/api/orders`, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer k_b' }, body: JSON.stringify({ product_id: 'prd_s', quantity: 1, shipping_address: FULL_ADDR, expected_price: 30, donation_pct: 0.05, draft_id: c7.d.draft_id }) }).then(async r => ({ status: r.status, json: await r.json() as Record<string, unknown> }))
+    const balR = bal('buyer1'); const stkR = stock()
     const [pa, pb] = await Promise.all([post(), post()])
     const linkedCount = (db.prepare('SELECT COUNT(*) c FROM orders WHERE draft_id = ?').get(String(c7.d.draft_id)) as { c: number }).c
     const ids = [pa, pb].map(x => String(x.json.order_id ?? ''))
-    ok('R-4 concurrent draft-linked creates → exactly ONE order for the draft; both callers converge on the same id', linkedCount === 1 && ids[0] === ids[1] && [pa, pb].some(x => x.json.idempotent_reuse === true), JSON.stringify({ pa: pa.json, pb: pb.json }).slice(0, 250)) }
+    ok('R-4 concurrent draft-linked creates → exactly ONE order for the draft; both callers converge on the same id', linkedCount === 1 && ids[0] === ids[1] && [pa, pb].some(x => x.json.idempotent_reuse === true), JSON.stringify({ pa: pa.json, pb: pb.json }).slice(0, 250))
+    ok('R-4b exactly ONE debit across the concurrent pair (balance -31.5 = 30 escrow + 1.5 donation; escrow +30; stock -1)', Math.abs(balR.balance - bal('buyer1').balance - 31.5) < 1e-6 && Math.abs(bal('buyer1').escrowed - balR.escrowed - 30) < 1e-6 && stock() === stkR - 1, JSON.stringify({ before: balR, after: bal('buyer1') })) }
 
   // ══ 取消草稿 → 批准拒 ══
   { const c5 = await mkChain(1, 100)

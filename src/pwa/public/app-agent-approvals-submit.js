@@ -32,6 +32,6 @@
       row(t('收货'), t('默认地址') + (s.dest_region ? ' · ' + escHtml(String(s.dest_region)) : '')) +
       row(t('草稿'), '<code style="font-size:10px">' + escHtml(String(s.draft_id || '')) + '</code> · ' + t('有效期至') + ' ' + escHtml(String(s.draft_expires_at || '')).slice(0, 16)) +
       '<div style="font-size:11px;color:#9ca3af;margin-top:4px">' + t('批准后:服务端按当前市场状态重验此快照(价格/库存/资格/卖家任何变化即拒绝),通过才创建真实订单;条款绝不静默变更') + '</div>' +
-      (s.draft_status !== 'draft' ? '<div style="font-size:12px;color:#dc2626;margin-top:4px">' + t('注意:草稿状态已变化,批准将被服务端拒绝') + '</div>' : '')
+      (s.draft_status !== 'draft' && !r.needs_reconcile ? '<div style="font-size:12px;color:#dc2626;margin-top:4px">' + t('注意:草稿状态已变化,批准将被服务端拒绝') + '</div>' : '')
   }
 })()
