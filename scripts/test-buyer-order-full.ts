@@ -61,10 +61,15 @@ const mkOrd = (id: string, st: string, rail: string, prod = 'prd_ret', upd: stri
 }
 mkOrd('ord_c', 'completed', 'escrow'); mkOrd('ord_cx', 'completed', 'escrow', 'prd_ret', OLD)
 mkOrd('ord_s', 'shipped', 'escrow'); mkOrd('ord_p', 'paid', 'escrow'); mkOrd('ord_dpw', 'direct_pay_window', 'direct_p2p')
-mkOrd('ord_dsp', 'disputed', 'escrow'); mkOrd('ord_rm', 'completed', 'escrow')
+mkOrd('ord_dsp', 'disputed', 'escrow'); mkOrd('ord_rm', 'completed', 'direct_p2p'); mkOrd('ord_rme', 'completed', 'escrow')
+mkOrd('ord_pq', 'payment_query', 'direct_p2p'); mkOrd('ord_df', 'delivery_failed', 'escrow'); mkOrd('ord_dsp2', 'disputed', 'escrow')
 db.prepare("INSERT INTO order_state_history (id,order_id,from_status,to_status,actor_id,actor_role) VALUES ('hd1','ord_dsp','delivered','disputed','buyer1','buyer')").run()
 db.prepare("INSERT INTO disputes (id,order_id,initiator_id,defendant_id,reason,status) VALUES ('dsp_f','ord_dsp','buyer1','seller1','not as described','open')").run()
 db.prepare("INSERT INTO return_requests (id,order_id,buyer_id,seller_id,product_id,reason,refund_amount,status) VALUES ('rr2','ord_rm','buyer1','seller1','prd_ret','quality',30,'refund_marked')").run()
+db.prepare("INSERT INTO return_requests (id,order_id,buyer_id,seller_id,product_id,reason,refund_amount,status) VALUES ('rr3','ord_rme','buyer1','seller1','prd_ret','quality',30,'refund_marked')").run()
+// 非发起人争议(卖家发起)→ 买家无撤诉动作
+db.prepare("INSERT INTO order_state_history (id,order_id,from_status,to_status,actor_id,actor_role) VALUES ('hd2','ord_dsp2','delivered','disputed','seller1','seller')").run()
+db.prepare("INSERT INTO disputes (id,order_id,initiator_id,defendant_id,reason,status) VALUES ('dsp_s','ord_dsp2','seller1','buyer1','buyer not responding','open')").run()
 
 const auth = (_req: Request, res: Response) => { res.status(401).json({ error: 'login' }); return null }
 const app = express(); app.use(express.json())
@@ -131,7 +136,11 @@ try {
   { const pd = await actsOf('ord_p'); ok('F-8e paid escrow: dispute yes, NO buyer cancel (escrow has no unilateral cancel), NO confirm', pd.includes('open_dispute') && !pd.includes('request_cancel') && !pd.includes('confirm_receipt'), JSON.stringify(pd)) }
   { const dw = await actsOf('ord_dpw'); ok('F-8f direct_pay_window: pay+mark_paid и cancel advertised (orders-action same predicate)', dw.includes('pay_seller_offplatform_then_mark_paid') && dw.includes('request_cancel'), JSON.stringify(dw)) }
   { const dp = await actsOf('ord_dsp'); ok('F-8g disputed from delivered by THIS buyer → withdraw+confirm offered + mutual-cancel propose (domain helper)', dp.includes('withdraw_dispute_confirm_receipt') && dp.includes('mutual_cancel_propose'), JSON.stringify(dp)) }
-  { const rm = await actsOf('ord_rm'); ok('F-8h refund_marked return → confirm_refund_received; active request blocks a second return', rm.includes('confirm_refund_received') && !rm.includes('request_return'), JSON.stringify(rm)) }
+  { const rm = await actsOf('ord_rm'); ok('F-8h refund_marked on DIRECT rail → confirm_refund_received (route gate = direct_p2p only); active request blocks a second return', rm.includes('confirm_refund_received') && !rm.includes('request_return'), JSON.stringify(rm)) }
+  { const rme = await actsOf('ord_rme'); ok('F-8i refund_marked on ESCROW rail → NOT advertised (escrow refunds release from escrow, no manual confirm route)', !rme.includes('confirm_refund_received'), JSON.stringify(rme)) }
+  { const pq = await actsOf('ord_pq'); ok('F-8j payment_query (dp): cancel + dispute advertised', pq.includes('request_cancel') && pq.includes('open_dispute'), JSON.stringify(pq)) }
+  { const df = await actsOf('ord_df'); ok('F-8k delivery_failed: buyer dispute advertised (transitions allow-set completeness)', df.includes('open_dispute'), JSON.stringify(df)) }
+  { const d2 = await actsOf('ord_dsp2'); ok('F-8l seller-initiated dispute → buyer gets NO withdraw action (initiator predicate)', !d2.includes('withdraw_dispute_confirm_receipt'), JSON.stringify(d2)) }
   ok('F-9 ZERO PII in the full view (address/phone/notes markers absent)', !PII.test(JSON.stringify(F)), JSON.stringify(F).slice(0, 200))
   const FB = await O({ order_id: 'ord_bad', full: true })
   ok('F-10 malformed {"v":1} snapshot → unavailable, NO crash', (FB.order_time_terms as Record<string, unknown>)?.source === 'unavailable' && (FB.order as Record<string, unknown>)?.order_id === 'ord_bad')

@@ -55,7 +55,7 @@ function availableActions(db: Database.Database, o: Record<string, unknown>, hum
   const status = String(o.status ?? ''); const rail = String(o.payment_rail ?? 'escrow'); const orderId = String(o.id)
   const acts: Array<Record<string, string>> = []
   if (status === 'delivered') acts.push({ action: 'confirm_receipt', executor: 'human_order_page', note: rail === 'direct_p2p' ? 'delivered only; Direct Pay confirm additionally requires disclosure acks + a live Passkey' : 'delivered only; confirming releases escrow to the seller' })
-  const DISPUTE_FROM = ['paid', 'accepted', 'shipped', 'picked_up', 'in_transit', 'delivered']
+  const DISPUTE_FROM = ['paid', 'accepted', 'shipped', 'picked_up', 'in_transit', 'delivered', 'delivery_failed']   // delivery_failed→disputed 买家可发(transitions:410)
   if (DISPUTE_FROM.includes(status) || (rail === 'direct_p2p' && ['direct_expired_unconfirmed', 'payment_query'].includes(status))) {
     acts.push({ action: 'open_dispute', executor: 'human_order_page', note: 'evidence required; 48h respond / 120h arbitrate clocks' })
   }
@@ -74,7 +74,8 @@ function availableActions(db: Database.Database, o: Record<string, unknown>, hum
     const activeRR = returns.some(r => ['pending', 'accepted', 'accepted_pickup_pending', 'picked_up', 'await_refund', 'refund_marked'].includes(String(r.status)))
     if (within && !activeRR) acts.push({ action: 'request_return', executor: 'human_order_page', note: `route-enforced window: CURRENT listing return_days=${rd} from ${baseTime.slice(0, 10)} (the frozen snapshot above is the promise anchor for disputes; the return route is governed by the live listing — recorded upstream gap)` })
   }
-  if (returns.some(r => String(r.status) === 'refund_marked')) acts.push({ action: 'confirm_refund_received', executor: 'human_order_page', note: 'seller marked the refund sent — confirming closes the return (Direct Pay: off-platform, Passkey confirm)' })
+  // 路由权威门 = direct_p2p 且 refund_marked(direct-pay-returns.ts):escrow 退款走托管释放,无此人工确认动作
+  if (rail === 'direct_p2p' && returns.some(r => String(r.status) === 'refund_marked')) acts.push({ action: 'confirm_refund_received', executor: 'human_order_page', note: 'seller marked the off-platform refund sent — your Passkey confirmation closes the return (Direct Pay only)' })
   if (status === 'disputed') {
     const froms = (db.prepare("SELECT from_status FROM order_state_history WHERE order_id = ? AND to_status = 'disputed' ORDER BY created_at, id").all(orderId) as Array<{ from_status: string | null }>).map(r => String(r.from_status ?? ''))
     const lastFrom = froms[froms.length - 1]
