@@ -25,5 +25,5 @@ window.startChatPoll = (id, initialMsgs) => {
     if (atBottom) box.scrollTop = box.scrollHeight                               // 原本贴底就继续贴底,否则不打扰阅读位置
     POST('/conversations/' + encodeURIComponent(id) + '/read').catch(() => {})   // fire-and-forget:用 .catch 而非 try/catch(POST 返回 Promise,异步 reject 包不住)
   }
-  window._chatPollTimer = setInterval(tickFn, 4000); window._chatPollNow = tickFn
+  window._chatPollTimer = setInterval(tickFn, 4000); window._chatPollNow = tickFn; if (!window._chatPollVisBound) { window._chatPollVisBound = true; document.addEventListener('visibilitychange', () => { if (!document.hidden && window._chatPollNow) window._chatPollNow() }) }
 }

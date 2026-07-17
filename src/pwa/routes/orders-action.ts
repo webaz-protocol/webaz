@@ -27,7 +27,7 @@ import type { OrderStatus } from '../../layer0-foundation/L0-2-state-machine/tra
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 import { createNotification, notifyDeclineContestCase } from '../../layer2-business/L2-6-notifications/notification-engine.js'
 import { executeSellerOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 共享执行器(api_key 路径 strictTracking=false)
-import { settleUndeliverableEscrow } from '../../layer0-foundation/L0-2-state-machine/engine.js'   // PR-B3b:退货确认成本扣除结算(直连域 helper,与 releaseFeeStake 等同模式)
+import { settleDeclinedNoFault, settleUndeliverableEscrow } from '../../layer0-foundation/L0-2-state-machine/engine.js'   // PR-B3b:退货确认成本扣除结算(直连域 helper,与 releaseFeeStake 等同模式)
 import { toUnits } from '../../money.js'   // PR-B3b:卖家申报退程运费 → 整数 base-units
 import { releaseFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:取消/超时释放任何遗留模拟质押(AR 订单无 stake → no-op)
 import { restorePreShipDirectPayStock } from '../../direct-pay-stock.js'   // D3 库存回补唯一入口(pre-ship 放行;已出库拒绝)
@@ -76,15 +76,16 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
   }
 
   // RFC-007 stage 2：卖家主动拒单 reason_code 白名单。
-  //   classification(客观无责 vs 主观有责)是 stage 3 auto-verify 的事;stage 2 仅捕获 + 一律走违约结算。
+  //   中性(buyer_request)→无责取消;客观声称→临时判责+举证;主观→违约结算。
   //   objective-claimed(stage 3 将尝试确定性核验):stock_consumed_concurrent / stale_price_snapshot / force_majeure
   //   subjective(stage 3 直接判 fault):price_regret / cherry_pick / other
   const DECLINE_REASON_CODES = new Set([
     'stock_consumed_concurrent', 'stale_price_snapshot', 'force_majeure',
-    'price_regret', 'cherry_pick', 'other',
+    'buyer_request', 'price_regret', 'cherry_pick', 'other',
   ])
   // 客观-声称理由:链下事实(外部已售/损毁),协议无确定性信号可自动核验 → 临时判责 + 举证窗口(stage 5 仲裁)。
   const OBJECTIVE_DECLINE_REASONS = new Set(['stock_consumed_concurrent', 'stale_price_snapshot', 'force_majeure'])
+  const NEUTRAL_DECLINE_REASONS = new Set(['buyer_request'])
 
   // C-4: 卖家批量发货
   app.post('/api/orders/batch-ship', async (req, res) => {
@@ -301,12 +302,31 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       if (!DECLINE_REASON_CODES.has(reasonCode)) {
         return void res.status(400).json({ error: `decline_reason_code 无效,需为: ${[...DECLINE_REASON_CODES].join(' / ')}`, error_code: 'DECLINE_REASON_INVALID' })
       }
+      const isNeutralClaim = NEUTRAL_DECLINE_REASONS.has(reasonCode)
       const isObjectiveClaim = OBJECTIVE_DECLINE_REASONS.has(reasonCode)
       // 客观-声称 + 举证窗口 > 0 → 临时判责(不结算);否则(主观 或 窗口=0)→ 立即违约结算
       const windowHours = Number((db.prepare("SELECT value FROM protocol_params WHERE key = 'decline_contest_window_hours'").get() as { value: string } | undefined)?.value ?? 24)
       const provisional = isObjectiveClaim && windowHours > 0
+      const markDeclined = db.prepare("UPDATE orders SET decline_reason_code = ?, declined_at = datetime('now') WHERE id = ?")
 
-      db.prepare("UPDATE orders SET decline_reason_code = ?, declined_at = datetime('now') WHERE id = ?").run(reasonCode, req.params.id)
+      if (isNeutralClaim) {
+        let transitionError = ''
+        try {
+          db.transaction(() => {
+            markDeclined.run(reasonCode, req.params.id)
+            const r0 = transition(db, req.params.id, 'cancelled', uid, [], `卖家按买家原因/买家要求无责取消 reason=${reasonCode}${notes ? '：' + notes : ''}`)
+            if (!r0.success) { transitionError = r0.error || '状态机拒绝'; throw new Error('neutral decline transition failed') }
+            settleDeclinedNoFault(db, req.params.id)
+          })()
+        } catch (e) {
+          if (transitionError) return void res.json({ error: transitionError })
+          console.error('[decline settleDeclinedNoFault]', e)
+          return void res.status(500).json({ error: '无责取消结算未完成,订单未取消,请稍后重试或联系支持', error_code: 'NEUTRAL_DECLINE_SETTLEMENT_FAILED', outcome: 'cancelled_nofault' })
+        }
+        notifyTransition(db, req.params.id, 'paid', 'cancelled')
+        return void res.json({ success: true, outcome: 'cancelled_nofault', decline_reason_code: reasonCode, note: '买家原因/买家要求拒单 → 无默认责任方,订单无责取消,买家全额退款。' })
+      }
+      markDeclined.run(reasonCode, req.params.id)
       const r1 = transition(db, req.params.id, 'fault_seller', uid, [], `卖家主动拒单 reason=${reasonCode}${provisional ? '(临时判责·待举证)' : ''}${notes ? '：' + notes : ''}`)
       if (!r1.success) {
         db.prepare("UPDATE orders SET decline_reason_code = NULL, declined_at = NULL WHERE id = ?").run(req.params.id)

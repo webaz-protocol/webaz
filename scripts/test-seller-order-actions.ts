@@ -28,7 +28,7 @@ function main(): void {
   // decline modal requires a reason code + posts the correct body
   const dm = app.slice(app.indexOf('window.openDeclineModal'), app.indexOf('function sellerDeclineContestPanel'))
   ok('decline modal: reason-code select present', /id="decline-reason"/.test(dm))
-  for (const code of ['stock_consumed_concurrent', 'stale_price_snapshot', 'force_majeure', 'price_regret', 'cherry_pick', 'other']) {
+  for (const code of ['stock_consumed_concurrent', 'stale_price_snapshot', 'force_majeure', 'buyer_request', 'price_regret', 'cherry_pick', 'other']) {
     ok(`decline reason offered: ${code}`, app.includes(`code: '${code}'`))
   }
   ok('submitDecline requires a reason (guards empty)', /if \(!code\) \{[\s\S]{0,80}请选择拒单理由/.test(dm))
@@ -37,6 +37,8 @@ function main(): void {
   // objective vs subjective consequence copy — objective must NOT read as auto-exemption
   ok('objective reason copy = provisional + must contest (NOT auto-exemption)',
     /客观理由:[\s\S]{0,200}临时判责[\s\S]{0,200}举证窗口[\s\S]{0,80}这不是自动免责/.test(app))
+  ok('neutral buyer_request copy = no default fault + contest decides liability',
+    /买家原因\/买家要求:[\s\S]{0,80}无责取消[\s\S]{0,80}不默认判定任何一方违约[\s\S]{0,120}最终裁定确定责任/.test(app))
   ok('subjective reason copy = immediate seller-fault + buyer refund', /主观理由:[\s\S]{0,80}卖家违约[\s\S]{0,40}买家全额退款/.test(app))
 
   // B — provisional-fault contest panel
@@ -95,7 +97,7 @@ function main(): void {
   }
 
   if (fail === 0) {
-    console.log(`\n✅ seller order actions: paid → accept + decline(modal); 6 reason codes; objective→provisional+contest (not auto-exemption) / subjective→fault+refund; contest panel gated on provisional-seller-fault with honest copy; seller self-fulfill pickup/transit/deliver exposed in order detail with confirmations; dashboard splits accept/ship/exceptions; MCP Seller bullet documents decline + contest_decline + self-fulfill; i18n parity\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)
+    console.log(`\n✅ seller order actions: paid → accept + decline(modal); 7 reason codes; buyer_request→neutral no-fault / objective→provisional+contest (not auto-exemption) / subjective→fault+refund; contest panel gated on provisional-seller-fault with honest copy; seller self-fulfill pickup/transit/deliver exposed in order detail with confirmations; dashboard splits accept/ship/exceptions; MCP Seller bullet documents decline + contest_decline + self-fulfill; i18n parity\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)
   } else {
     console.error(`\n❌ seller order actions FAILED\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}\n${fails.join('\n')}`)
     process.exit(1)
