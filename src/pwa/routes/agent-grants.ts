@@ -29,7 +29,9 @@ import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrant
 import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveBundle, durationAllowedForScopes, suggestedDurationForScopes, allowedDurationsForScopes, durationToSeconds, riskLevelForScopes, type GrantDuration } from '../../runtime/agent-grant-scopes.js'
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
 import { verifyGrantToken, type GrantPrincipal } from '../../runtime/agent-grant-verifier.js'
-import { minimalSellerOrderView, MINIMAL_ORDER_COLUMNS, minimalBuyerOrderView, BUYER_MINIMAL_ORDER_COLUMNS } from '../agent-order-minimal-view.js'  // RFC-021 §6a / RFC-025 PR-1 最小化订单读投影
+import { minimalSellerOrderView, MINIMAL_ORDER_COLUMNS, minimalBuyerOrderView, BUYER_MINIMAL_ORDER_COLUMNS,
+         BUYER_ACTIVE_STATUSES, buyerOrdersSummary, encodeBuyerOrdersCursor, decodeBuyerOrdersCursor } from '../agent-order-minimal-view.js'  // RFC-021 §6a / RFC-025 PR-1 最小化订单读投影 + MCP Token PR-1 分页/汇总
+import { SCHEMA_ORDER_STATUS } from '../../agent-model-projection.js'  // MCP Token PR-1: webaz.order_status.model.v1
 import { effectiveSaleRegionsRule, regionAllowedByRule } from '../../sale-regions.js'  // RFC-025 PR-2 discover 目的地纯谓词(S1/S3 同源)
 import { computeBuyerQuote } from '../buyer-quote.js'  // RFC-025 PR-3 报价服务(server 权威;route 只做鉴权+转发)
 import { createOrderDraft, cancelOrderDraft, getOrderDraft, listOrderDrafts } from '../order-draft.js'  // RFC-025 PR-4 草稿服务(draft_order 首个消费者)
@@ -240,10 +242,36 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   //   recipient_code 连取都不取(I6 同强度)。纯只读,零执行、零资金 —— 买家写动作(place_order 等)仍 RISK 硬拒。
   app.get('/api/agent/buyer/orders', requireAgentGrantScope('buyer_orders_read_minimal'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
+    // MCP Token PR-1(webaz.order_status.model.v1):默认分页(limit 10,cap 50;此前一次 LIMIT 200)+
+    //   全账户 summary 聚合 + 【活跃订单优先】排序(活跃态从状态机责任表推导),cursor = keyset(tier,created_at,id)。
+    //   模型无需从全量历史里自己找目标单:先读 summary,再按需翻页/查单。投影仍是 7 键 allowlist,零 PII 不变。
+    let lim = Number(req.query.limit); if (!Number.isFinite(lim) || lim <= 0) lim = 10; if (lim > 50) lim = 50
+    const curRaw = typeof req.query.cursor === 'string' && req.query.cursor ? req.query.cursor : null
+    const cur = curRaw ? decodeBuyerOrdersCursor(curRaw) : null
+    if (curRaw && !cur) return void res.status(400).json({ error: 'bad cursor', error_code: 'BAD_CURSOR', retryable: true, hint: 'restart from the first page (omit cursor)' })
+    const sumRows = await dbAll<{ status: string; c: number }>('SELECT status, COUNT(*) AS c FROM orders WHERE buyer_id = ? GROUP BY status', [p.human_id])
+    const summary = buyerOrdersSummary(sumRows)
+    const tierExpr = `CASE WHEN status IN (${BUYER_ACTIVE_STATUSES.map(() => '?').join(',')}) THEN 0 ELSE 1 END`
+    const params: unknown[] = [...BUYER_ACTIVE_STATUSES, p.human_id]
+    let cursorClause = ''
+    if (cur) {
+      cursorClause = ` AND (${tierExpr} > ? OR (${tierExpr} = ? AND (created_at < ? OR (created_at = ? AND id < ?))))`
+      params.push(...BUYER_ACTIVE_STATUSES, cur.t, ...BUYER_ACTIVE_STATUSES, cur.t, cur.c, cur.c, cur.i)
+    }
     const rows = await dbAll<Record<string, unknown>>(
-      `SELECT ${BUYER_MINIMAL_ORDER_COLUMNS.join(', ')} FROM orders WHERE buyer_id = ? ORDER BY created_at DESC LIMIT 200`,
-      [p.human_id])
-    res.json({ buyer_id: p.human_id, agent_label: p.agent_label, count: rows.length, orders: rows.map(o => minimalBuyerOrderView(o, db)), note: 'RFC-025 minimal buyer order read (safe scope buyer_orders_read_minimal). No address/contact/PII; read-only, no execution.' })
+      `SELECT ${BUYER_MINIMAL_ORDER_COLUMNS.join(', ')}, created_at, ${tierExpr} AS _tier FROM orders WHERE buyer_id = ?${cursorClause} ORDER BY _tier ASC, created_at DESC, id DESC LIMIT ?`,
+      [...params, lim])
+    const last = rows.length === lim ? rows[rows.length - 1] : null
+    res.json({
+      schema_version: SCHEMA_ORDER_STATUS,
+      buyer_id: p.human_id, agent_label: p.agent_label,
+      summary,
+      count: rows.length,
+      total_count: summary.total,
+      ...(last ? { next_cursor: encodeBuyerOrdersCursor(Number(last._tier), String(last.created_at), String(last.id)) } : {}),
+      orders: rows.map(o => minimalBuyerOrderView(o, db)),
+      note: 'minimal buyer order read — active orders first, then recent history; cursor pages older orders. No address/contact/PII; read-only.',
+    })
   })
   app.get('/api/agent/buyer/orders/:id', requireAgentGrantScope('buyer_orders_read_minimal'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!

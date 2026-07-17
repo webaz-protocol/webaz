@@ -30,6 +30,7 @@ import type Database from 'better-sqlite3'
 import { createHmac } from 'crypto'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
 import { genuineSalePredicate } from '../../layer0-foundation/L0-2-state-machine/genuine-sale.js'  // RFC-018 PR4: 真实成交(排除全额退货)
+import { SCHEMA_PRODUCT_SEARCH, projectProductModel, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1: agent 模式 Model Projection
 
 export interface ProductsListDeps {
   db: Database.Database
@@ -359,63 +360,20 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       return void res.json(payload)
     }
 
-    // agent 模式：富信息 + 元数据
+    // agent 模式(MCP Token PR-1):Model Projection —— 模型只看决策字段。
+    //   此前这里 spread 整个 products 行(~99 列,含 hash/迁移/回填/commission_rate/source_* 等内部字段,
+    //   单件 ~3.2KB);现改为 allowlist 投影(单一真相源 src/agent-model-projection.ts,≤ ~350B/件)。
+    //   排序公式与 metrics 属服务端内部(排序已在 SQL/上方完成,模型无需复算);完整字段面后续 PR 走
+    //   UI Projection / result_handle 按需取。i18n 标题与 agent_summary 仍经 formatProductForAgent 单源生成。
     res.json({
-      mode, sort, limit: lim, cursor: nextCursor,
+      schema_version: SCHEMA_PRODUCT_SEARCH,
+      mode, sort, limit: lim,
       count: rows.length,
+      next_cursor: nextCursor,
+      sellers: sellersIndex(rows),
       products: rows.map(r => {
-        const formatted = formatProductForAgent(r)
-        const completion = Number(r.completion_count) || 0
-        const dispute = Number(r.dispute_loss_count) || 0
-        const sharer = Number(r.unique_sharer_count) || 0
-        const rep = Number(r.rep_points) || 0
-        // 与 SQL TRENDING_SCORE_EXPR 阶梯保持一致
-        const ageDaysSinceSold = r.last_sold_at
-          ? (Date.now() - new Date(String(r.last_sold_at).replace(' ', 'T') + 'Z').getTime()) / 86400_000
-          : null
-        let freshness = 0
-        if (ageDaysSinceSold !== null) {
-          if (ageDaysSinceSold < 30)      freshness = 10
-          else if (ageDaysSinceSold < 90) freshness = 10 * (1 - (ageDaysSinceSold - 30) / 60)
-          else if (ageDaysSinceSold < 180) freshness = -5
-          else                             freshness = -15
-        }
-        const ageDaysSinceFirst = r.first_sold_at
-          ? (Date.now() - new Date(String(r.first_sold_at).replace(' ', 'T') + 'Z').getTime()) / 86400_000
-          : null
-        const firstSaleBoost = ageDaysSinceFirst !== null && ageDaysSinceFirst < 14 ? 5 : 0
-        // 季节性：与 SQL CASE 同步
-        const seasonalCsv = r.seasonal_months as string | null
-        let seasonalPenalty = 0
-        if (seasonalCsv) {
-          const currentMonth = new Date().getUTCMonth() + 1
-          const activeMonths = seasonalCsv.split(',').map(s => Number(s.trim())).filter(n => n >= 1 && n <= 12)
-          if (activeMonths.length && !activeMonths.includes(currentMonth)) seasonalPenalty = -10
-        }
-        const score = Number(r.trending_score) || 0
-        return {
-          ...formatted,
-          sales_count: Number(r.sales_count) || 0,
-          metrics: {
-            completion_count: completion,
-            dispute_loss_count: dispute,
-            unique_sharer_count: sharer,
-            last_sold_at: r.last_sold_at || null,
-            first_sold_at: r.first_sold_at || null,
-            rep_points: rep,
-            rep_level: r.rep_level || 'new',
-          },
-          score,
-          score_breakdown: {
-            completion: Math.round(completion * 0.5 * 100) / 100,
-            rep: Math.round(rep * 0.1 * 100) / 100,
-            unique_sharer: Math.round(sharer * 2.0 * 100) / 100,
-            freshness: Math.round(freshness * 100) / 100,
-            first_sale_boost: firstSaleBoost,
-            seasonal_penalty: seasonalPenalty,
-            dispute_penalty: Math.round(-dispute * 5.0 * 100) / 100,
-          },
-        }
+        const f = formatProductForAgent(r, req)
+        return projectProductModel({ ...r, title: f.title, estimated_days: f.estimated_days, agent_summary: f.agent_summary })
       }),
     })
   })

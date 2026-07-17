@@ -19,6 +19,7 @@
 import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
 import { toUnits, mulRate, mulQty, type Units } from '../money.js'
+import { SCHEMA_ORDER_QUOTE } from '../agent-model-projection.js'  // MCP Token PR-1: webaz.order_quote.model.v1
 import { MAX_PER_ORDER } from '../order-limits.js'
 import { effectiveShippingTemplate, resolveShipping } from '../shipping-templates.js'
 import { freeShippingWaives } from '../free-shipping.js'
@@ -114,16 +115,17 @@ function buildResponse(db: Database.Database, row: Record<string, unknown>, quot
   const lineItems = [
     line('item_subtotal', itemU, true, false, true),
     line('shipping', shipU, true, false, true),
-    line('protocol_fee', 0, true, false, true, 'no buyer-side protocol fee at order time (escrow commission settles seller-side; direct_p2p platform fee is seller-prepaid)'),
-    line('discount', 0, true, false, true, 'no coupon/flash input in quote v1'),
-    line('donation', donU, false, false, false, 'charged IN ADDITION to total (goes to charity_fund; same mulRate as order creation)'),
-    line('estimated_tax', 0, false, true, false, 'import duty/tax is seller-declared disclosure (S0-S6); WebAZ does not compute or collect tax — see trade_terms'),
+    line('protocol_fee', 0, true, false, true, 'no buyer-side protocol fee at order time'),
+    line('discount', 0, true, false, true, 'no coupon input in quote v1'),
+    line('donation', donU, false, false, false, 'charged IN ADDITION to total → charity_fund'),
+    line('estimated_tax', 0, false, true, false, 'seller-declared disclosure; WebAZ does not compute/collect tax — see trade_terms'),
   ]
   // 总额一致性(服务器断言,agent 永不自行求和)
   const sumIncluded = lineItems.filter(l => l.included_in_total).reduce((a, l) => a + l.amount_minor, 0)
   if (sumIncluded !== totalU || totalU + donU !== payableU) throw new Error('QUOTE_CALCULATION_FAILED: line-item/total invariant broke')
   const acc = row.direct_receive_account_id ? getAccount(db, String(row.direct_receive_account_id)) : null
   return {
+    schema_version: SCHEMA_ORDER_QUOTE,   // MCP Token PR-1:版本化投影标识(结构不变,字段即契约)
     quote_id: String(row.id),
     acting_as: buyer?.handle ? `@${buyer.handle}` : null,
     account_id_hint: maskId(String(row.human_id)),
@@ -149,20 +151,20 @@ function buildResponse(db: Database.Database, row: Record<string, unknown>, quot
       conversion_note: 'WebAZ has NO authoritative FX; the WAZ amounts below are the protocol-recorded amounts, actual payment follows the seller account currency/instructions.',
     } : {
       rail: 'escrow', custodied_by_webaz: true, payable_currency: 'WAZ',
-      note: 'Funds move ONLY at order creation (wallet→escrow, needs sufficient balance) — this quote charges nothing. Refund/release/partial-refund via the existing dispute/return flows.',
+      note: 'Funds move ONLY at order creation (wallet→escrow) — this quote charges nothing.',
     },
     line_items: lineItems,
     total: { amount_minor: totalU, currency: 'WAZ', currency_exponent: 6 },
     payable_total: { amount_minor: payableU, currency: 'WAZ', currency_exponent: 6, note: 'total + donation (what an escrow order will debit at creation)' },
-    trade_terms: prod ? { return_days: prod.return_days ?? null, warranty_days: prod.warranty_days ?? null, import_duty_terms: prod.import_duty_terms ?? null, note: 'seller-declared disclosure; WebAZ does not compute/collect tax' } : null,
+    trade_terms: prod ? { return_days: prod.return_days ?? null, warranty_days: prod.warranty_days ?? null, import_duty_terms: prod.import_duty_terms ?? null, note: 'seller-declared' } : null,
     shipping: { supported: true, handling_hours: prod?.handling_hours ?? null, estimated_days: prod?.estimated_days ?? null },
     ...(quoteToken ? { quote_token: quoteToken } : { quote_token_note: 'idempotent replay — the token was issued once with the original response and is not re-shown' }),
     issued_at: String(row.issued_at),
     expires_at: String(row.expires_at),
     stock_reserved: false,
     economic_action_executed: false,
-    stock_note: 'quote does NOT reserve stock or guarantee availability at confirmation — stock is re-checked and decremented only at real order creation',
-    next_action: 'order draft (RFC-025 PR-4, not yet available). Until then a human orders at webaz.xyz, or an api_key agent uses webaz_place_order.',
+    stock_note: 'stock NOT reserved — re-checked at real order creation',
+    next_action: 'webaz_order_draft(quote_token) → webaz_submit_order_request → human Passkey approval creates the real order',
   }
 }
 
