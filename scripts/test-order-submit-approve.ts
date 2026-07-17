@@ -151,7 +151,8 @@ try {
   useCred('grt_full', 'gtk_full', ['price_quote', 'draft_order', 'order_submit_request'])
   const c1 = await mkChain(2, 100)   // 2×30 + donation 1% —— total 60, donation 0.6, payable 60.6
   ok('S-3 submit → pending request + approval_url + params_hash; NOTHING executed', typeof c1.srq.request_id === 'string' && String(c1.srq.approval_url).includes('#agent-approvals') && orderCount() === 0 && bal('buyer1').balance === 500, JSON.stringify(c1.srq).slice(0, 250))
-  ok('S-4 duplicate submit on same draft → DUPLICATE_SUBMIT_REQUEST', (await SUB({ draft_id: c1.d.draft_id })).error_code === 'DUPLICATE_SUBMIT_REQUEST')
+  { const dup = await SUB({ draft_id: c1.d.draft_id })
+    ok('S-4 duplicate submit on same draft → REUSES existing request (id echoed, duplicate flagged, no 2nd row)', dup.request_id === c1.srq.request_id && (dup.idempotency as Record<string, unknown>)?.duplicate === true && (db.prepare("SELECT COUNT(*) c FROM agent_permission_requests WHERE kind='order_submit'").get() as { c: number }).c === 1, JSON.stringify(dup).slice(0, 200)) }
 
   // ══ Passkey 绑定 ══
   { const bad = await approve(String(c1.srq.request_id), { request_id: c1.srq.request_id, order_id: c1.d.draft_id, action: 'order_submit', params_hash: 'wrong' })
@@ -194,11 +195,13 @@ try {
     const r = await approve(String(c3.srq.request_id), { request_id: c3.srq.request_id, order_id: c3.d.draft_id, action: 'order_submit', params_hash: c3.srq.params_hash })
     ok('D-3 default address changed after draft → ADDRESS_CHANGED hard fail', r.status === 409 && r.json.error_code === 'ADDRESS_CHANGED' && !PII.test(JSON.stringify(r.json)))
     db.prepare('UPDATE users SET default_address_text = ? WHERE id=?').run(FULL_ADDR, 'buyer1')
-    // 直改库篡改快照 → 重算 hash ≠ Passkey 绑定的 → DRAFT_DRIFT
-    db.prepare('UPDATE order_drafts SET quantity = 5 WHERE id = ?').run(String(c3.d.draft_id))
-    const r2 = await approve(String(c3.srq.request_id), { request_id: c3.srq.request_id, order_id: c3.d.draft_id, action: 'order_submit', params_hash: c3.srq.params_hash })
+    ok('D-3b clean failure sends the request TERMINAL (failed) — frees the per-draft/per-intent slots', (db.prepare('SELECT status FROM agent_permission_requests WHERE id=?').get(String(c3.srq.request_id)) as { status: string }).status === 'failed')
+    // 直改库篡改快照 → 重算 hash ≠ Passkey 绑定的 → DRAFT_DRIFT(新链:上一请求已终态)
+    const c3b = await mkChain(1)
+    db.prepare('UPDATE order_drafts SET quantity = 5 WHERE id = ?').run(String(c3b.d.draft_id))
+    const r2 = await approve(String(c3b.srq.request_id), { request_id: c3b.srq.request_id, order_id: c3b.d.draft_id, action: 'order_submit', params_hash: c3b.srq.params_hash })
     ok('D-4 direct-DB tamper of the draft → params_hash recheck DRAFT_DRIFT', r2.status === 409 && r2.json.error_code === 'DRAFT_DRIFT')
-    db.prepare('UPDATE order_drafts SET quantity = 1 WHERE id = ?').run(String(c3.d.draft_id)) }
+    db.prepare('UPDATE order_drafts SET quantity = 1 WHERE id = ?').run(String(c3b.d.draft_id)) }
 
   // ══ 上游拒绝 → 安全回滚;结果不明 → 冻结 ══
   { const c4 = await mkChain(1)
@@ -206,18 +209,100 @@ try {
     const r = await approve(String(c4.srq.request_id), { request_id: c4.srq.request_id, order_id: c4.d.draft_id, action: 'order_submit', params_hash: c4.srq.params_hash })
     ok('U-1 upstream reject (insufficient balance) → rejected + draft rolled back to draft', r.status === 409 && (db.prepare('SELECT status FROM order_drafts WHERE id=?').get(String(c4.d.draft_id)) as { status: string }).status === 'draft' && orderCount() === 1, JSON.stringify(r.json).slice(0, 200))
     db.prepare("UPDATE wallets SET balance = 439.4 WHERE user_id='buyer1'").run()
+    // 干净失败已终态 → 重试 = 重新提交同一(已回滚)草稿,得到【新】请求(旧的不再占坑)
+    const srq2 = await SUB({ draft_id: c4.d.draft_id })
+    ok('U-1b retry after clean reject = FRESH request (old one terminal, slot freed)', typeof srq2.request_id === 'string' && srq2.request_id !== c4.srq.request_id && !(srq2.idempotency as Record<string, unknown>)?.duplicate, JSON.stringify(srq2).slice(0, 200))
     loopbackMode = 'throw'
-    const r2 = await approve(String(c4.srq.request_id), { request_id: c4.srq.request_id, order_id: c4.d.draft_id, action: 'order_submit', params_hash: c4.srq.params_hash })
+    const r2 = await approve(String(srq2.request_id), { request_id: srq2.request_id, order_id: c4.d.draft_id, action: 'order_submit', params_hash: srq2.params_hash })
     ok('U-2 ambiguous loopback (throw) → ORDER_CREATE_AMBIGUOUS + draft FROZEN at ordering (no auto-retry duplicates)', r2.json.error_code === 'ORDER_CREATE_AMBIGUOUS' && (db.prepare('SELECT status FROM order_drafts WHERE id=?').get(String(c4.d.draft_id)) as { status: string }).status === 'ordering')
+    ok('U-2b while frozen the request stays ACTIVE (occupies the intent slot — equivalent purchases blocked until reconciled)', (db.prepare('SELECT status FROM agent_permission_requests WHERE id=?').get(String(srq2.request_id)) as { status: string }).status === 'approved')
+    // R-1(Codex HIGH):冻结行必须出现在审批列表(needs_reconcile)—— 人有路可走
+    const listResp = await fetch(`http://127.0.0.1:${port}/api/agent-grants/permission-requests`, { headers: { 'x-test-uid': 'buyer1' } })
+    const listJson = await listResp.json() as { requests: Array<Record<string, unknown>> }
+    const frozenRow = listJson.requests.find(x => x.id === srq2.request_id)
+    ok('R-1 frozen submit appears in the approvals list flagged needs_reconcile', !!frozenRow && frozenRow.needs_reconcile === true, JSON.stringify(frozenRow ?? listJson.requests.map(x => x.id)).slice(0, 200))
+    // R-2 和解(无订单分支):再次 Passkey 批准 = oracle 核对 → 未建单 → 恢复草稿并安全重试 → 恰一单
     loopbackMode = 'real'
-    const r3 = await approve(String(c4.srq.request_id), { request_id: c4.srq.request_id, order_id: c4.d.draft_id, action: 'order_submit', params_hash: c4.srq.params_hash })
-    ok('U-3 frozen draft refuses re-execution (human must reconcile)', r3.json.error_code === 'ORDER_CREATE_AMBIGUOUS' && orderCount() === 1) }
+    const beforeHeal = orderCount(); const balH = bal('buyer1'); const stkH = stock()
+    const r3 = await approve(String(srq2.request_id), { request_id: srq2.request_id, order_id: c4.d.draft_id, action: 'order_submit', params_hash: srq2.params_hash })
+    ok('U-3 re-approve of a frozen submit = audited reconciliation: no order existed → safe retry → exactly ONE order', r3.json.success === true && typeof r3.json.order_id === 'string' && orderCount() === beforeHeal + 1, JSON.stringify(r3.json).slice(0, 200))
+    ok('U-3c reconciliation retry moved money EXACTLY once (balance -30, escrow +30, stock -1)', Math.abs(balH.balance - bal('buyer1').balance - 30) < 1e-6 && Math.abs(bal('buyer1').escrowed - balH.escrowed - 30) < 1e-6 && stock() === stkH - 1, JSON.stringify({ before: balH, after: bal('buyer1') }))
+    ok('U-3b draft completed + request executed after reconciliation', (db.prepare('SELECT status, order_id FROM order_drafts WHERE id=?').get(String(c4.d.draft_id)) as { status: string; order_id: string | null }).status === 'ordered' && !!(db.prepare('SELECT executed_at FROM agent_permission_requests WHERE id=?').get(String(srq2.request_id)) as { executed_at: string | null }).executed_at) }
+
+  // ══ R-3/R-4:崩溃窗口和解(订单已提交但回链缺失)+ draft-link 并发竞态 ══
+  { const c6 = await mkChain(1, 200)
+    db.prepare("UPDATE order_drafts SET status = 'ordering' WHERE id = ?").run(String(c6.d.draft_id))
+    db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, draft_id) VALUES ('ord_crash_win','prd_s','buyer1','seller1',1,30,30,30,'paid',?)").run(String(c6.d.draft_id))
+    const balC = bal('buyer1'); const stkC = stock()
+    const rh = await approve(String(c6.srq.request_id), { request_id: c6.srq.request_id, order_id: c6.d.draft_id, action: 'order_submit', params_hash: c6.srq.params_hash })
+    ok('R-3 crash window (order committed, backlink missing) → reconciliation returns THAT order, completes backlink, no new order', rh.json.already_executed === true && rh.json.order_id === 'ord_crash_win' && (db.prepare('SELECT status, order_id FROM order_drafts WHERE id=?').get(String(c6.d.draft_id)) as { status: string; order_id: string | null }).order_id === 'ord_crash_win', JSON.stringify(rh.json).slice(0, 200))
+    ok('R-3b backlink-heal moves ZERO money and ZERO stock (pure bookkeeping)', Math.abs(bal('buyer1').balance - balC.balance) < 1e-6 && Math.abs(bal('buyer1').escrowed - balC.escrowed) < 1e-6 && stock() === stkC)
+    // R-4:两个并发 POST /api/orders 携带同一 'ordering' 草稿 → 恰一单;输家幂等拿同一单
+    const c7 = await mkChain(1, 500)
+    db.prepare("UPDATE order_drafts SET status = 'ordering' WHERE id = ?").run(String(c7.d.draft_id))
+    db.prepare("UPDATE wallets SET balance = 200 WHERE user_id='buyer1'").run()
+    const post = () => fetch(`http://127.0.0.1:${port}/api/orders`, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer k_b' }, body: JSON.stringify({ product_id: 'prd_s', quantity: 1, shipping_address: FULL_ADDR, expected_price: 30, donation_pct: 0.05, draft_id: c7.d.draft_id }) }).then(async r => ({ status: r.status, json: await r.json() as Record<string, unknown> }))
+    const balR = bal('buyer1'); const stkR = stock()
+    const [pa, pb] = await Promise.all([post(), post()])
+    const linkedCount = (db.prepare('SELECT COUNT(*) c FROM orders WHERE draft_id = ?').get(String(c7.d.draft_id)) as { c: number }).c
+    const ids = [pa, pb].map(x => String(x.json.order_id ?? ''))
+    ok('R-4 concurrent draft-linked creates → exactly ONE order for the draft; both callers converge on the same id', linkedCount === 1 && ids[0] === ids[1] && [pa, pb].some(x => x.json.idempotent_reuse === true), JSON.stringify({ pa: pa.json, pb: pb.json }).slice(0, 250))
+    ok('R-4b exactly ONE debit across the concurrent pair (balance -31.5 = 30 escrow + 1.5 donation; escrow +30; stock -1)', Math.abs(balR.balance - bal('buyer1').balance - 31.5) < 1e-6 && Math.abs(bal('buyer1').escrowed - balR.escrowed - 30) < 1e-6 && stock() === stkR - 1, JSON.stringify({ before: balR, after: bal('buyer1') })) }
 
   // ══ 取消草稿 → 批准拒 ══
-  { const c5 = await mkChain(1)
+  { const c5 = await mkChain(1, 100)
+    const beforeC = orderCount()
     await D({ action: 'cancel', draft_id: c5.d.draft_id })
     const r = await approve(String(c5.srq.request_id), { request_id: c5.srq.request_id, order_id: c5.d.draft_id, action: 'order_submit', params_hash: c5.srq.params_hash })
-    ok('C-1 cancelled draft → DRAFT_NOT_AVAILABLE (approval cannot resurrect it)', r.json.error_code === 'DRAFT_NOT_AVAILABLE' && orderCount() === 1) }
+    ok('C-1 cancelled draft → DRAFT_NOT_AVAILABLE (approval cannot resurrect it)', r.json.error_code === 'DRAFT_NOT_AVAILABLE' && orderCount() === beforeC) }
+
+  // ══ RFC-026 PR-1:购买意图级幂等(生产双订单事故回归) ══
+  { db.prepare("UPDATE wallets SET balance = 500 WHERE user_id='buyer1'").run()
+    // I-1 同一意图跨 draft:重新报价+新草稿(事故向量:超时重试)→ 重用第一条请求,绝不第二张审批卡
+    const a1 = await mkChain(3)
+    const q2 = await Q({ product_id: 'prd_s', quantity: 3 })
+    const d2 = await D({ action: 'create', quote_token: q2.quote_token })
+    const s2 = await SUB({ draft_id: d2.draft_id })
+    ok('I-1 SAME intent via a NEW quote+draft → REUSES the existing request (the production double-order vector)', s2.request_id === a1.srq.request_id && (s2.idempotency as Record<string, unknown>)?.duplicate === true, JSON.stringify(s2).slice(0, 200))
+    ok('I-2 exactly ONE pending order_submit for THIS intent', (db.prepare("SELECT COUNT(*) c FROM agent_permission_requests WHERE kind='order_submit' AND status='pending' AND intent_hash = (SELECT intent_hash FROM agent_permission_requests WHERE id = ?)").get(String(a1.srq.request_id)) as { c: number }).c === 1)
+    // I-3 改数量 = 新意图(合法不同购买),各自成行
+    const b1 = await mkChain(4)
+    ok('I-3 quantity=4 is a DIFFERENT intent → its own pending request', typeof b1.srq.request_id === 'string' && b1.srq.request_id !== a1.srq.request_id, JSON.stringify(b1.srq).slice(0, 150))
+    // I-4 并发双批准同一请求 → 恰一单;输家拿 already_executed / ambiguous,绝不第二单
+    const before = orderCount(); const balBefore = bal('buyer1').balance
+    const hit = () => approve(String(a1.srq.request_id), { request_id: a1.srq.request_id, order_id: a1.d.draft_id, action: 'order_submit', params_hash: a1.srq.params_hash })
+    const [ra, rb] = await Promise.all([hit(), hit()])
+    const oks = [ra, rb].filter(r => r.json.success === true && typeof r.json.order_id === 'string')
+    const orderIds = [...new Set(oks.map(r => String(r.json.order_id)))]
+    const safe2 = [ra, rb].filter(r => r.json.already_executed === true || r.json.error_code === 'ORDER_CREATE_AMBIGUOUS')
+    ok('I-4 CONCURRENT double approve → exactly ONE order + ONE debit; every responder converges on the SAME order id (or safe freeze)', orderCount() === before + 1 && oks.length >= 1 && orderIds.length === 1 && oks.length + safe2.length >= 2 && Math.abs(balBefore - bal('buyer1').balance - 90) < 1e-6, JSON.stringify({ ra: ra.json, rb: rb.json }).slice(0, 300))
+    const firstOrder = orderIds[0]
+    ok('I-5 executed order carries the draft_id backlink (orders.draft_id)', (db.prepare('SELECT draft_id FROM orders WHERE id=?').get(firstOrder) as { draft_id: string | null })?.draft_id === String(a1.d.draft_id))
+    // I-6 DB 级兜底:同 draft 第二笔订单,直写库也插不进(UNIQUE ux_orders_draft)
+    try {
+      db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, draft_id) VALUES ('ord_dup_probe','prd_s','buyer1','seller1',1,30,30,30,'created',?)").run(String(a1.d.draft_id))
+      ok('I-6 DB-level UNIQUE(orders.draft_id) blocks a 2nd order for the SAME draft even via direct write', false, 'direct INSERT unexpectedly succeeded')
+    } catch (e) { ok('I-6 DB-level UNIQUE(orders.draft_id) blocks a 2nd order for the SAME draft even via direct write', /UNIQUE/i.test((e as Error).message), (e as Error).message) }
+    // I-7 执行完成 → 意图坑释放 = 明确再次购买合法(新请求→新订单)
+    const s3 = await SUB({ draft_id: d2.draft_id })
+    ok('I-7 after execution the intent slot FREES → explicit re-buy = FRESH request', typeof s3.request_id === 'string' && s3.request_id !== a1.srq.request_id && !(s3.idempotency as Record<string, unknown>)?.duplicate, JSON.stringify(s3).slice(0, 200))
+    const r5 = await approve(String(s3.request_id), { request_id: s3.request_id, order_id: d2.draft_id, action: 'order_submit', params_hash: s3.params_hash })
+    ok('I-8 re-buy approval creates a SECOND real order (buying twice = two explicit human approvals)', r5.json.success === true && typeof r5.json.order_id === 'string' && r5.json.order_id !== firstOrder && orderCount() === before + 2, JSON.stringify(r5.json).slice(0, 150))
+    // I-9 并发双提交同一 draft → 收敛到同一请求行
+    const q9 = await Q({ product_id: 'prd_s', quantity: 5 })
+    const d9 = await D({ action: 'create', quote_token: q9.quote_token })
+    const [x1, x2] = await Promise.all([SUB({ draft_id: d9.draft_id }), SUB({ draft_id: d9.draft_id })])
+    ok('I-9 CONCURRENT double submit on one draft → both get the SAME request id, one row total', x1.request_id === x2.request_id && (db.prepare("SELECT COUNT(*) c FROM agent_permission_requests WHERE kind='order_submit' AND order_id=? AND status IN ('pending','approved')").get(String(d9.draft_id)) as { c: number }).c === 1, JSON.stringify({ x1, x2 }).slice(0, 200)) }
+
+  // ══ oat_ OAuth bearer 真实链路(#385 教训:测试禁止只用 gtk_ 模拟 OAuth) ══
+  { db.prepare("INSERT INTO agent_delegation_grants (grant_id, human_id, agent_label, capabilities, token_hash, status, expires_at) VALUES ('grt_oauth','buyer1','OAuth: e2e',?,NULL,'active',?)")
+      .run(JSON.stringify(['price_quote', 'draft_order', 'order_submit_request'].map(c => ({ capability: c }))), new Date(Date.now() + 3600_000).toISOString())
+    db.prepare("INSERT INTO oauth_access_tokens (token_hash, grant_id, client_id, scope, aud, expires_at) VALUES (?,?,?,?,?,?)")
+      .run(sha('oat_e2e_submit_bearer'), 'grt_oauth', 'cli_e2e', 'read order:draft', 'https://webaz.xyz/mcp', new Date(Date.now() + 3600_000).toISOString())
+    useCred('grt_oauth', 'oat_e2e_submit_bearer', ['price_quote', 'draft_order', 'order_submit_request'])
+    const co = await mkChain(6)
+    ok('O-1 full quote→draft→submit chain over a REAL oat_ bearer (oauth_access_tokens introspection path)', typeof co.srq.request_id === 'string' && String(co.srq.approval_url).includes('#agent-approvals'), JSON.stringify(co.srq).slice(0, 200))
+    useCred('grt_full', 'gtk_full', ['price_quote', 'draft_order', 'order_submit_request']) }
 
   // ══ 提交面守卫:executor 对 agent-bearer 不可达(源守卫,镜像 RFC-021 I1) ══
   const SRC = (await import('node:fs')).readFileSync('src/pwa/order-submit-request.ts', 'utf8')

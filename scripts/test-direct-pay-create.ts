@@ -34,6 +34,7 @@ const db = initDatabase()
 db.pragma('foreign_keys = OFF')
 try { db.exec('ALTER TABLE orders ADD COLUMN settled_fault_at TEXT') } catch { /* boot-ALTER col;缓交配额 SQL 用它排除拒单/违约结算单 */ }
 try { db.exec('ALTER TABLE orders ADD COLUMN donation_amount REAL DEFAULT 0') } catch { /* server boot migration; agent cap includes donations */ }
+try { db.exec('ALTER TABLE orders ADD COLUMN draft_id TEXT') } catch { /* RFC-026 PR-1:生产由 initAgentPermissionRequestsSchema 加;本测试用裸 initDatabase,补上以匹配 */ }
 db.exec(`CREATE TABLE IF NOT EXISTS price_sessions (token TEXT PRIMARY KEY, product_id TEXT NOT NULL, user_id TEXT NOT NULL, price REAL NOT NULL, quantity INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT)`)
 setSeamDb(db)
 initAgentAttestationsSchema(db)

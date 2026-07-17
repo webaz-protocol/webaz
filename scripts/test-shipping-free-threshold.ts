@@ -24,6 +24,7 @@ let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db); initSystemUser(db); initOrderChainSchema(db)
+try { db.exec('ALTER TABLE orders ADD COLUMN draft_id TEXT') } catch { /* RFC-026 PR-1:生产由 runtime helper 加;裸 initDatabase fixture 补上以匹配 */ }
 db.prepare("INSERT INTO users (id,name,role,api_key,store_free_shipping_threshold) VALUES ('b1','b','buyer','kb',NULL),('s1','s','seller','ks',NULL),('s2','s2','seller','k2',200)").run()
 
 // ── ① 写入校验(营销域) ──

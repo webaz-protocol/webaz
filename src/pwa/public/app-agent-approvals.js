@@ -42,7 +42,7 @@
       </div>`
       return
     }
-    box.innerHTML = reqs.map(aaCard).join('')
+    if (window.aaMarkSimilarSubmits) window.aaMarkSimilarSubmits(reqs); box.innerHTML = reqs.map(aaCard).join('')  // RFC-026 PR-1 相似购买标记(逻辑在 -submit.js)
   }
 
   function aaCard(r) {
