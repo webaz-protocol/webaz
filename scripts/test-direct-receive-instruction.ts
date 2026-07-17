@@ -26,6 +26,7 @@ let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
 const db = initDatabase()
+try { db.exec('ALTER TABLE orders ADD COLUMN draft_id TEXT') } catch { /* RFC-026 PR-1:生产由 runtime helper 加;裸 initDatabase fixture 补上以匹配 */ }
 db.pragma('foreign_keys = OFF')
 setSeamDb(db)
 initOrderChainSchema(db)

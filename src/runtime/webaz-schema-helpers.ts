@@ -1731,10 +1731,16 @@ export function initAgentPermissionRequestsSchema(db: Database.Database): void {
   try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_apr_intent_active ON agent_permission_requests(human_id, intent_hash) WHERE kind='order_submit' AND status IN ('pending','approved') AND executed_at IS NULL AND intent_hash IS NOT NULL") } catch { /* */ }
   // RFC-026 PR-1:一张草稿至多产出一笔订单(状态机 CAS 之外的 DB 级不可绕过兜底);历史订单幂等回填自 order_drafts 回链。
   try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_draft ON orders(draft_id) WHERE draft_id IS NOT NULL") } catch { /* */ }
-  try { db.exec("UPDATE orders SET draft_id = (SELECT od.id FROM order_drafts od WHERE od.order_id = orders.id) WHERE draft_id IS NULL AND EXISTS (SELECT 1 FROM order_drafts od2 WHERE od2.order_id = orders.id)") } catch (e) { console.error('[rfc026] orders.draft_id backfill failed (non-fatal, retried next boot):', (e as Error).message) }
+  const hasTable = (t: string): boolean => !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(t)
+  if (hasTable('orders') && hasTable('order_drafts')) {
+    try { db.exec("UPDATE orders SET draft_id = (SELECT od.id FROM order_drafts od WHERE od.order_id = orders.id) WHERE draft_id IS NULL AND EXISTS (SELECT 1 FROM order_drafts od2 WHERE od2.order_id = orders.id)") } catch (e) { console.error('[rfc026] orders.draft_id backfill failed (non-fatal, retried next boot):', (e as Error).message) }
+  }
   // fail-closed(Codex MEDIUM):P0 保护如果没建成,宁可 boot 失败也不能带病运行 —— try/catch 只为幂等吞
-  //   "already exists",这里显式验证两条唯一索引真实存在;缺失说明上面的静默失败是真故障。
-  for (const ix of ['ux_apr_intent_active', 'ux_orders_draft']) {
+  //   "already exists",这里显式验证唯一索引真实存在;缺失说明上面的静默失败是真故障。
+  //   只对【存在对应表】的库强制:部分 fixture(如 contribution 套件)不建 orders 表,P0 保护对它们无意义。
+  const requiredIx = [['ux_apr_intent_active', 'agent_permission_requests'], ['ux_orders_draft', 'orders']] as const
+  for (const [ix, tbl] of requiredIx) {
+    if (!hasTable(tbl)) continue
     const row = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name = ?").get(ix)
     if (!row) throw new Error(`[rfc026] P0 unique index missing after migration: ${ix} — refusing to boot without duplicate-order protection`)
   }

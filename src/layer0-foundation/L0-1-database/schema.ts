@@ -62,6 +62,7 @@ export function initDatabase(): Database.Database {
       product_id      TEXT NOT NULL REFERENCES products(id),
       buyer_id        TEXT NOT NULL REFERENCES users(id),
       seller_id       TEXT NOT NULL REFERENCES users(id),
+      draft_id        TEXT,                        -- RFC-026 PR-1:订单↔草稿关联(一 draft 一单;老库由 runtime helper ALTER 补,双向幂等)
       logistics_id    TEXT REFERENCES users(id),   -- 接单的物流方
       promoter_id     TEXT REFERENCES users(id),   -- 带来流量的推荐人（可为空）
 
