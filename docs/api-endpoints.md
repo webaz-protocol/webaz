@@ -20,10 +20,10 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/.well-known/webaz-negative-space.json` |  |  |  | src/pwa/routes/public-utils.ts:390 |
 | GET | `/.well-known/webaz-protocol.json` |  |  |  | src/pwa/routes/public-utils.ts:224 |
 | GET | `/.well-known/webaz-verifiability.json` |  |  | RFC-011 §⑤ 可验证索引 —— "什么可验 + 怎么验"统一表(护照/锚/AP2/订单链),诚实分级。 | src/pwa/routes/public-utils.ts:354 |
-| GET | `/api/addresses` | 🔐 |  |  | src/pwa/routes/addresses.ts:32 |
-| POST | `/api/addresses` | 🔐 |  |  | src/pwa/routes/addresses.ts:40 |
-| DELETE | `/api/addresses/:id` | 🔐 |  |  | src/pwa/routes/addresses.ts:89 |
-| PATCH | `/api/addresses/:id` | 🔐 |  |  | src/pwa/routes/addresses.ts:61 |
+| GET | `/api/addresses` | 🔐 |  |  | src/pwa/routes/addresses.ts:33 |
+| POST | `/api/addresses` | 🔐 |  |  | src/pwa/routes/addresses.ts:41 |
+| DELETE | `/api/addresses/:id` | 🔐 |  |  | src/pwa/routes/addresses.ts:92 |
+| PATCH | `/api/addresses/:id` | 🔐 |  |  | src/pwa/routes/addresses.ts:63 |
 | POST | `/api/admin/_dev/recompute-value-badges` | 🔐 |  |  | src/pwa/routes/admin-ops.ts:122 |
 | GET | `/api/admin/admins` | 🔐 | 👑 | GET 全部 admin 列表 | src/pwa/routes/admin-admins.ts:39 |
 | POST | `/api/admin/admins` | 🔐 | 👑 | POST 创建 admin（仅 root） | src/pwa/routes/admin-admins.ts:63 |
@@ -302,11 +302,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/build-tasks/:id/claim` | 🔐 |  | task → claim respects auto_claimable. Success appends value_boundary + canonical | src/pwa/routes/build-tasks.ts:64 |
 | POST | `/api/build-tasks/:id/release` | 🔐 |  |  | src/pwa/routes/build-tasks.ts:94 |
 | POST | `/api/build-tasks/:id/submit` | 🔐 |  |  | src/pwa/routes/build-tasks.ts:76 |
-| GET | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:44 |
-| POST | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:59 |
-| DELETE | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:125 |
-| PATCH | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:74 |
-| POST | `/api/cart/checkout` | 🔐 |  | C-1: 购物车批量下单（每个选中商品独立订单） | src/pwa/routes/cart.ts:83 |
+| GET | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:45 |
+| POST | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:60 |
+| DELETE | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:127 |
+| PATCH | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:75 |
+| POST | `/api/cart/checkout` | 🔐 |  | C-1: 购物车批量下单（每个选中商品独立订单） | src/pwa/routes/cart.ts:84 |
 | GET | `/api/charity/fund` |  |  | GET 基金概况 + 最近流水 | src/pwa/routes/charity.ts:696 |
 | POST | `/api/charity/fund/donate` | 🔐 |  | 任何人捐款给慈善基金 | src/pwa/routes/charity.ts:654 |
 | GET | `/api/charity/leaderboard` |  |  | 慈善排行 | src/pwa/routes/charity.ts:843 |
@@ -598,7 +598,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/products/:product_id/waitlist/count` | 🔐 |  | seller 查 waitlist count（决定备多少货） | src/pwa/routes/waitlist.ts:78 |
 | POST | `/api/products/extract-aliases` | 🔐 |  | M7.2-5: 从外部原文提取候选 alias | src/pwa/routes/products-aliases.ts:36 |
 | GET | `/api/profile` | 🔐 |  |  | src/pwa/routes/auth-read.ts:48 |
-| PATCH | `/api/profile` | 🔐 |  | 通用 profile patch（search_anchor / bio / feed_visible） | src/pwa/routes/profile-prefs.ts:82 |
+| PATCH | `/api/profile` | 🔐 |  | 通用 profile patch（search_anchor / bio / feed_visible） | src/pwa/routes/profile-prefs.ts:99 |
 | POST | `/api/profile/add-role` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:41 |
 | POST | `/api/profile/bind-email` | 🔐 |  | 绑定邮箱 — 步骤 1：发码 | src/pwa/routes/profile-credentials.ts:87 |
 | POST | `/api/profile/bind-placement` | 🔐 |  |  | src/pwa/routes/profile-placement.ts:55 |
@@ -607,7 +607,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/profile/clear-location` | 🔐 |  |  | src/pwa/routes/profile-location.ts:56 |
 | POST | `/api/profile/confirm-email` | 🔐 |  | 绑定邮箱 — 步骤 2：确认验证码 | src/pwa/routes/profile-credentials.ts:109 |
 | POST | `/api/profile/default-address` | 🔐 |  | 默认地址（结构化 + 兼容旧 text/region） | src/pwa/routes/profile-prefs.ts:31 |
-| PATCH | `/api/profile/feed-visible` | 🔐 |  | 隐私开关（旧 API，向后兼容；新代码用 PATCH /api/profile） | src/pwa/routes/profile-prefs.ts:74 |
+| PATCH | `/api/profile/feed-visible` | 🔐 |  | 隐私开关（旧 API，向后兼容；新代码用 PATCH /api/profile） | src/pwa/routes/profile-prefs.ts:91 |
 | POST | `/api/profile/placement-pref` | 🔐 |  |  | src/pwa/routes/profile-placement.ts:88 |
 | GET | `/api/profile/placement-status` | 🔐 |  |  | src/pwa/routes/profile-placement.ts:40 |
 | POST | `/api/profile/region` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:97 |

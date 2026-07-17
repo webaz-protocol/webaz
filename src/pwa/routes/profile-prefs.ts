@@ -55,8 +55,9 @@ export function registerProfilePrefsRoutes(app: Application, deps: ProfilePrefsD
     const missing = []
     if (!line1)     missing.push('地址行 1')
     if (!country)   missing.push('国家/地区')
-    if (!state)     missing.push('省/州')
-    if (!city)      missing.push('城市')
+    const sgAddress = ['SG', 'SINGAPORE', '新加坡'].includes(country.toUpperCase())
+    if (!sgAddress && !state) missing.push('省/州')
+    if (!sgAddress && !city) missing.push('城市')
     if (!recipient) missing.push('收件人姓名')
     if (!phone1)    missing.push('主要联系方式')
     if (missing.length > 0) {
@@ -66,8 +67,24 @@ export function registerProfilePrefsRoutes(app: Application, deps: ProfilePrefsD
     const structured = { line1, line2, country, state, city, recipient_name: recipient, phone1, phone2, postal_code: postal }
     const text = [recipient, `${country} ${state} ${city}`.trim(), line1, line2, postal, phone1].filter(Boolean).join(' / ').slice(0, 200)
     await dbRun("UPDATE users SET default_address_text = ?, default_address_region = ?, default_address_json = ?, updated_at = datetime('now') WHERE id = ?",
-      [text || null, state || null, JSON.stringify(structured), user.id])
-    res.json({ ok: true, address: structured, derived_text: text, derived_region: state })
+      [text || null, state || country || null, JSON.stringify(structured), user.id])
+    try {
+      const addressId = `adr_profile_${String(user.id)}`
+      const detail = [line1, line2, postal].filter(Boolean).join(' · ')
+      await dbRun('UPDATE user_addresses SET is_default = 0 WHERE user_id = ?', [user.id])
+      await dbRun(`
+        INSERT INTO user_addresses (id, user_id, label, recipient, phone, region, detail, is_default)
+        VALUES (?, ?, '默认', ?, ?, ?, ?, 1)
+        ON CONFLICT(id) DO UPDATE SET
+          recipient = excluded.recipient,
+          phone = excluded.phone,
+          region = excluded.region,
+          detail = excluded.detail,
+          is_default = 1,
+          updated_at = datetime('now')
+      `, [addressId, user.id, recipient, phone1 || null, state || country || null, detail])
+    } catch { /* 地址簿迁移兼容:旧库缺表时不阻断默认地址保存 */ }
+    res.json({ ok: true, address: structured, derived_text: text, derived_region: state || country || null })
   })
 
   // 隐私开关（旧 API，向后兼容；新代码用 PATCH /api/profile）

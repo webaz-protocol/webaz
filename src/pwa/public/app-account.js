@@ -306,15 +306,15 @@ async function renderProfile(app) {
         <div style="margin-bottom:10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
           <div>
             <div style="font-size:13px;color:#374151;margin-bottom:6px">${t('国家/地区')} <span style="color:#dc2626">*</span></div>
-            <input class="form-control" id="addr-country-inp" style="font-size:13px" maxlength="40" value="${escHtml(a.country || '中国')}" placeholder="${t('如：中国')}">
+            <input class="form-control" id="addr-country-inp" style="font-size:13px" maxlength="40" value="${escHtml(a.country || 'SG')}" placeholder="${t('如：SG / CN / US')}">
           </div>
           <div>
-            <div style="font-size:13px;color:#374151;margin-bottom:6px">${t('省/州')} <span style="color:#dc2626">*</span></div>
-            <input class="form-control" id="addr-state-inp" style="font-size:13px" maxlength="40" value="${escHtml(a.state || '')}" placeholder="${t('如：上海/广东')}">
+            <div style="font-size:13px;color:#374151;margin-bottom:6px">${t('省/州')}</div>
+            <input class="form-control" id="addr-state-inp" style="font-size:13px" maxlength="40" value="${escHtml(a.state || '')}" placeholder="${t('新加坡可留空')}">
           </div>
           <div>
-            <div style="font-size:13px;color:#374151;margin-bottom:6px">${t('城市')} <span style="color:#dc2626">*</span></div>
-            <input class="form-control" id="addr-city-inp" style="font-size:13px" maxlength="40" value="${escHtml(a.city || '')}" placeholder="${t('如：浦东新区')}">
+            <div style="font-size:13px;color:#374151;margin-bottom:6px">${t('城市')}</div>
+            <input class="form-control" id="addr-city-inp" style="font-size:13px" maxlength="40" value="${escHtml(a.city || '')}" placeholder="${t('新加坡可留空')}">
           </div>
         </div>
         <div style="margin-bottom:10px">
@@ -330,7 +330,7 @@ async function renderProfile(app) {
           <input class="form-control" id="addr-postal-inp" style="font-size:13px" maxlength="20" value="${escHtml(a.postal_code || '')}" placeholder="${t('如：201203（可选）')}">
         </div>
         `})()}
-          <p style="font-size:11px;color:#9ca3af;margin-bottom:8px">${t('「省/州」用于配送过滤匹配，需要与商品「发货地」一致（如「全国」或包含你的省份）')}</p>
+          <p style="font-size:11px;color:#9ca3af;margin-bottom:8px">${t('新加坡地址只需国家/地区、详细地址和邮编;跨国地址可补省/州与城市。')}</p>
           <div style="display:flex;gap:8px">
             <button class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="saveDefaultAddress()">${t('保存')}</button>
             <button class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="toggleAddressEdit(false)">${t('取消')}</button>
