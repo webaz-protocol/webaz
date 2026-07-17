@@ -6,10 +6,10 @@
  * settleOrder 为 spy(结算数学由 settlement 套件覆盖;本套件被测组件 = 请求/审批/执行框架):断言
  * 【真实状态机跃迁】+ settle 恰一次调用。覆盖:scope 门/非-grandfathering · dp confirm 人专属拒 ·
  * 经济后果快照与 Passkey 四元组 · 同谓词重验 drift 硬拒(终态 failed 释放坑)· 回环真实执行
- * (confirm→completed / cancel→cancelled / return→return_requests 行)· 天然 oracle 恢复 ·
- * 每(order,action)一活跃 + 幂等重用/后果变化冲突 · 零 PII。
+ * (confirm→completed / cancel→cancelled / return→return_requests 行)· escrow 故障全回滚 ·
+ * executed/satisfied 分离 · 并发独占租约/过期回收 · 零 PII。
  */
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -32,6 +32,7 @@ const { registerReturnsRoutes } = await import('../src/pwa/routes/returns.js')
 const { initUserModerationSchema, initWebauthnSchema } = await import('../src/runtime/webaz-schema-helpers.js')
 const { applyWebazRuntimeSchema } = await import('../src/runtime/apply-webaz-runtime-schema.js')
 const { makeApiLoopback } = await import('../src/pwa/order-loopback.js')
+const { approveBuyerAction } = await import('../src/pwa/buyer-action-agent.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -76,16 +77,22 @@ const SNAP = JSON.stringify({ v: 1, captured_at: NOW,
 db.prepare("INSERT INTO users (id,name,handle,role,api_key) VALUES ('buyer1','B','h_b','buyer','k_b'),('seller1','S','h_s','seller','k_s')").run()
 db.prepare("INSERT INTO wallets (user_id,balance,staked,escrowed,earned) VALUES ('buyer1',100,0,30,0),('seller1',100,0,0,0)").run()
 db.prepare("INSERT INTO products (id,seller_id,title,description,price,currency,stock,category,status,return_days) VALUES ('prd_b','seller1','Act Prod SECRETFREE','d',30,'WAZ',5,'x','active',14)").run()
-const mkOrd = (id: string, st: string, rail: string, extra: Record<string, unknown> = {}): void => {
+const mkOrd = (id: string, st: string, rail: string): void => {
   db.prepare("INSERT INTO orders (id,buyer_id,seller_id,product_id,status,quantity,unit_price,total_amount,escrow_amount,payment_rail,shipping_address,notes,updated_at,trade_terms_snapshot,confirm_deadline) VALUES (?,'buyer1','seller1','prd_b',?,1,30,30,?,?,'9 SECRET Rd','note SECRET',?,?,?)")
     .run(id, st, rail === 'escrow' ? 30 : 0, rail, NOW, SNAP, new Date(Date.now() + 86400_000).toISOString())
-  void extra
 }
 mkOrd('ord_del', 'delivered', 'escrow'); mkOrd('ord_dpc', 'delivered', 'direct_p2p')
 mkOrd('ord_win', 'direct_pay_window', 'direct_p2p'); mkOrd('ord_cmp', 'completed', 'escrow')
 mkOrd('ord_del2', 'delivered', 'escrow')
+mkOrd('ord_fail', 'delivered', 'escrow'); mkOrd('ord_ip_fail', 'accepted', 'escrow')
+mkOrd('ord_conc', 'delivered', 'escrow'); mkOrd('ord_sat', 'delivered', 'escrow')
+mkOrd('ord_partial', 'delivered', 'escrow'); mkOrd('ord_snap', 'delivered', 'escrow')
+db.prepare("UPDATE orders SET fulfillment_mode = 'in_person' WHERE id = 'ord_ip_fail'").run()
+db.prepare("UPDATE orders SET escrow_amount = 5 WHERE id = 'ord_snap'").run()
 
 let settleCalls: string[] = []
+const settleFailures = new Set<string>()
+db.exec('CREATE TABLE settlement_test_log (order_id TEXT PRIMARY KEY)')
 const auth = (req: Request, res: Response) => {
   const uid = req.headers['x-test-uid'] as string | undefined
   const m = /^Bearer\s+(.+)$/.exec(String(req.headers.authorization || ''))
@@ -98,7 +105,7 @@ const app = express(); app.use(express.json())
 const noop = () => {}
 registerOrdersActionRoutes(app, {
   db, auth, isTrustedRole: () => false, generateId, transition, notifyTransition: noop,
-  settleOrder: (oid: string) => { settleCalls.push(oid) }, settleFault: noop, detectFraud: () => [],
+  settleOrder: (oid: string) => { settleCalls.push(oid); db.transaction(() => { db.prepare('INSERT INTO settlement_test_log(order_id) VALUES (?)').run(oid); if (settleFailures.has(oid)) throw new Error('injected settlement failure') })() }, settleFault: noop, detectFraud: () => [],
   createDispute: () => ({ success: true }), createDeclineContestDispute: () => ({ success: true }),
   checkTimeouts: noop, recordViolationReputation: noop, broadcastSystemEvent: noop,
   consumeGateToken: () => ({ ok: true }), appendOrderEvent,
@@ -155,38 +162,88 @@ try {
   ok('B-3 direct_p2p confirm → DP_CONFIRM_HUMAN_ONLY (its D-gates are human-only)', (await B({ order_id: 'ord_dpc', action: 'confirm_receipt' })).error_code === 'DP_CONFIRM_HUMAN_ONLY')
   // confirm_receipt:提交 → 后果快照 → Passkey → 真实路由执行(状态机 delivered→confirmed→completed + settle 恰一次)
   const c1 = await B({ order_id: 'ord_del', action: 'confirm_receipt' })
-  ok('B-4 confirm request filed: pending + server-computed economic_effect (releases_escrow=30) + deep link + NOTHING executed',
-    c1.success === true && (c1.economic_effect as Record<string, unknown>)?.releases_escrow === 30 && ordStatus('ord_del') === 'delivered' && settleCalls.length === 0, JSON.stringify(c1).slice(0, 250))
+  ok('B-4 confirm request filed: pending + frozen settlement_total=30 + distribution rule + NOTHING executed',
+    c1.success === true && (c1.economic_effect as Record<string, unknown>)?.settlement_total === 30 && (c1.economic_effect as Record<string, unknown>)?.distribution === 'frozen_order_settlement_rules' && ordStatus('ord_del') === 'delivered' && settleCalls.length === 0, JSON.stringify(c1).slice(0, 250))
   { const bad = await approve(String(c1.request_id), { request_id: c1.request_id, order_id: 'ord_del', action: 'confirm_receipt', params_hash: 'wrong' })
     ok('B-5 wrong params_hash → 412, nothing executed', bad.status === 412 && ordStatus('ord_del') === 'delivered') }
   { const good = await approve(String(c1.request_id), { request_id: c1.request_id, order_id: 'ord_del', action: 'confirm_receipt', params_hash: c1.params_hash })
     ok('B-6 Passkey approve → REAL route executes: delivered→completed via the state machine + settle called EXACTLY once', good.status === 200 && good.json.status === 'executed' && ordStatus('ord_del') === 'completed' && settleCalls.filter(x => x === 'ord_del').length === 1, JSON.stringify(good.json))
     const again = await approve(String(c1.request_id), { request_id: c1.request_id, order_id: 'ord_del', action: 'confirm_receipt', params_hash: c1.params_hash })
-    ok('B-7 re-approve → already_executed via the NATURAL ORACLE (order completed), settle NOT called again', again.json.already_executed === true && settleCalls.filter(x => x === 'ord_del').length === 1) }
+    ok('B-7 re-approve → executed_at proves this request already executed; settle NOT called again', again.json.already_executed === true && settleCalls.filter(x => x === 'ord_del').length === 1) }
+
+  // settlement failure must roll back BOTH state transitions, including the in-person escrow path.
+  { const c = await B({ order_id: 'ord_fail', action: 'confirm_receipt' }); settleFailures.add('ord_fail')
+    const g = await approve(String(c.request_id), { request_id: c.request_id, order_id: 'ord_fail', action: 'confirm_receipt', params_hash: c.params_hash })
+    const history = (db.prepare("SELECT COUNT(*) c FROM order_state_history WHERE order_id = 'ord_fail' AND to_status IN ('confirmed','completed')").get() as { c: number }).c
+    const settlement = (db.prepare("SELECT COUNT(*) c FROM settlement_test_log WHERE order_id = 'ord_fail'").get() as { c: number }).c
+    ok('B-8 escrow settle failure → 409 + order/history/nested settlement write all roll back (retry-safe)', g.status === 409 && g.json.error_code === 'ESCROW_SETTLE_FAILED' && ordStatus('ord_fail') === 'delivered' && history === 0 && settlement === 0, JSON.stringify(g.json))
+    settleFailures.delete('ord_fail') }
+  { settleFailures.add('ord_ip_fail')
+    const resp = await fetch(`http://127.0.0.1:${port}/api/orders/ord_ip_fail/confirm-in-person`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-test-uid': 'buyer1' }, body: '{}' })
+    const body = await resp.json() as Record<string, unknown>
+    const settlement = (db.prepare("SELECT COUNT(*) c FROM settlement_test_log WHERE order_id = 'ord_ip_fail'").get() as { c: number }).c
+    ok('B-9 in-person escrow settle failure → completed+nested settlement writes roll back to accepted', resp.status === 409 && body.error_code === 'ESCROW_SETTLE_FAILED' && ordStatus('ord_ip_fail') === 'accepted' && settlement === 0, JSON.stringify(body))
+    settleFailures.delete('ord_ip_fail') }
+
+  // The approval snapshot binds the frozen order total, not a mutable/current escrow balance or an all-to-seller claim.
+  { const c = await B({ order_id: 'ord_snap', action: 'confirm_receipt' })
+    const row = db.prepare('SELECT action_params FROM agent_permission_requests WHERE id = ?').get(String(c.request_id)) as { action_params: string }
+    const snap = JSON.parse(row.action_params) as Record<string, unknown>
+    const ui = readFileSync('src/pwa/public/app-agent-approvals-buyer.js', 'utf8')
+    ok('B-10 economic snapshot uses total_amount=30 despite escrow_amount=5; seller id/old release key absent', snap.settlement_total === 30 && !('release_amount' in snap) && !('seller_id' in snap))
+    ok('B-11 approval UI says frozen-rule distribution, never all-to-seller', /snap\.settlement_total/.test(ui) && /按订单冻结规则分账/.test(ui) && !/snap\.release_amount/.test(ui)) }
+
+  // Order-state oracle distinguishes already-executed from merely already-satisfied and never fabricates executed_at.
+  { const c = await B({ order_id: 'ord_sat', action: 'confirm_receipt' }); db.prepare("UPDATE orders SET status = 'completed' WHERE id = 'ord_sat'").run()
+    const g = await approve(String(c.request_id), { request_id: c.request_id, order_id: 'ord_sat', action: 'confirm_receipt', params_hash: c.params_hash })
+    const rr = db.prepare('SELECT status, executed_at FROM agent_permission_requests WHERE id = ?').get(String(c.request_id)) as { status: string; executed_at: string | null }
+    const again = await approve(String(c.request_id), { request_id: c.request_id, order_id: 'ord_sat', action: 'confirm_receipt', params_hash: c.params_hash })
+    ok('B-12 completed oracle → idempotent already_satisfied, executed_at stays NULL', g.status === 200 && g.json.status === 'already_satisfied' && g.json.already_satisfied === true && again.json.already_satisfied === true && rr.status === 'satisfied' && rr.executed_at == null, JSON.stringify({ g: g.json, rr })) }
+  { const c = await B({ order_id: 'ord_partial', action: 'confirm_receipt' }); db.prepare("UPDATE orders SET status = 'confirmed' WHERE id = 'ord_partial'").run()
+    const g = await approve(String(c.request_id), { request_id: c.request_id, order_id: 'ord_partial', action: 'confirm_receipt', params_hash: c.params_hash })
+    const rr = db.prepare('SELECT status, executed_at FROM agent_permission_requests WHERE id = ?').get(String(c.request_id)) as { status: string; executed_at: string | null }
+    ok('B-13 confirmed-without-completed oracle → reconciliation required, never executed', g.status === 409 && g.json.error_code === 'BUYER_ACTION_RECONCILIATION_REQUIRED' && rr.status === 'approved' && rr.executed_at == null, JSON.stringify(g.json)) }
+
+  // A held execution lease excludes a second approver; ambiguous outcomes become retryable only after lease expiry.
+  { const c = await B({ order_id: 'ord_conc', action: 'confirm_receipt' })
+    let release!: (v: { status: number; json: Record<string, unknown> | null }) => void
+    const heldLoopback = async () => await new Promise<{ status: number; json: Record<string, unknown> | null }>(resolve => { release = resolve })
+    const first = approveBuyerAction(db, { requestId: String(c.request_id), approverId: 'buyer1', nowIso: NOW, apiLoopback: heldLoopback })
+    await new Promise(resolve => setImmediate(resolve))
+    const second = await approveBuyerAction(db, { requestId: String(c.request_id), approverId: 'buyer1', nowIso: new Date(new Date(NOW).getTime() + 1000).toISOString(), apiLoopback: async () => ({ status: 200, json: { success: true } }) })
+    ok('B-14 concurrent second approve is excluded by execution lease', second.error_code === 'BUYER_ACTION_IN_PROGRESS')
+    release({ status: 503, json: { error: 'injected ambiguous upstream' } })
+    const firstResult = await first
+    const rr = db.prepare('SELECT status, executed_at, execution_claimed_at FROM agent_permission_requests WHERE id = ?').get(String(c.request_id)) as { status: string; executed_at: string | null; execution_claimed_at: string | null }
+    ok('B-15 ambiguous first execution stays approved+unexecuted with lease (no immediate double attempt)', firstResult.error_code === 'BUYER_ACTION_AMBIGUOUS' && rr.status === 'approved' && rr.executed_at == null && rr.execution_claimed_at === NOW)
+    const retryAt = new Date(new Date(NOW).getTime() + 61_000).toISOString()
+    const retry = await approveBuyerAction(db, { requestId: String(c.request_id), approverId: 'buyer1', nowIso: retryAt, apiLoopback: async () => ({ status: 503, json: { error: 'still ambiguous' } }) })
+    const retried = db.prepare('SELECT approved_at, execution_claimed_at FROM agent_permission_requests WHERE id = ?').get(String(c.request_id)) as { approved_at: string; execution_claimed_at: string }
+    ok('B-16 expired lease is reclaimable while original human approval time stays immutable', retry.error_code === 'BUYER_ACTION_AMBIGUOUS' && retried.approved_at === NOW && retried.execution_claimed_at === retryAt) }
   // drift:提交后状态变化 → 同谓词重验硬拒 + 终态 failed 释放坑
   { const c2 = await B({ order_id: 'ord_del2', action: 'confirm_receipt' })
     db.prepare("UPDATE orders SET status = 'disputed' WHERE id = 'ord_del2'").run()
     const dr = await approve(String(c2.request_id), { request_id: c2.request_id, order_id: 'ord_del2', action: 'confirm_receipt', params_hash: c2.params_hash })
-    ok('B-8 state drift after submit → BUYER_ACTION_DRIFT, terminal failed, nothing executed', dr.json.error_code === 'BUYER_ACTION_DRIFT' && (db.prepare('SELECT status FROM agent_permission_requests WHERE id = ?').get(String(c2.request_id)) as { status: string }).status === 'failed' && ordStatus('ord_del2') === 'disputed')
+    ok('B-17 state drift after submit → BUYER_ACTION_DRIFT, terminal failed, nothing executed', dr.json.error_code === 'BUYER_ACTION_DRIFT' && (db.prepare('SELECT status FROM agent_permission_requests WHERE id = ?').get(String(c2.request_id)) as { status: string }).status === 'failed' && ordStatus('ord_del2') === 'disputed')
     db.prepare("UPDATE orders SET status = 'delivered' WHERE id = 'ord_del2'").run()
     const c2b = await B({ order_id: 'ord_del2', action: 'confirm_receipt' })
-    ok('B-9 terminal failed FREES the slot → fresh submit succeeds', c2b.success === true && c2b.request_id !== c2.request_id) }
+    ok('B-18 terminal failed FREES the slot → fresh submit succeeds', c2b.success === true && c2b.request_id !== c2.request_id) }
   // cancel(dp 窗口)
   { const c3 = await B({ order_id: 'ord_win', action: 'cancel' })
-    ok('B-10 dp-window cancel request: zero-funds effect declared', c3.success === true && (c3.economic_effect as Record<string, unknown>)?.moves_funds === false, JSON.stringify(c3).slice(0, 200))
+    ok('B-19 dp-window cancel request: zero-funds effect declared', c3.success === true && (c3.economic_effect as Record<string, unknown>)?.moves_funds === false, JSON.stringify(c3).slice(0, 200))
     const g = await approve(String(c3.request_id), { request_id: c3.request_id, order_id: 'ord_win', action: 'cancel', params_hash: c3.params_hash })
-    ok('B-11 approve → REAL route cancels (state machine → cancelled)', g.status === 200 && ordStatus('ord_win') === 'cancelled', JSON.stringify(g.json)) }
+    ok('B-20 approve → REAL route cancels (state machine → cancelled)', g.status === 200 && ordStatus('ord_win') === 'cancelled', JSON.stringify(g.json)) }
   // request_return(completed + 冻结窗)
   { const c4 = await B({ order_id: 'ord_cmp', action: 'request_return', reason: 'quality' })
-    ok('B-12 return request filed with enum reason + default refund declared', c4.success === true && (c4.economic_effect as Record<string, unknown>)?.moves_funds === false, JSON.stringify(c4).slice(0, 200))
+    ok('B-21 return request filed with enum reason + default refund declared', c4.success === true && (c4.economic_effect as Record<string, unknown>)?.moves_funds === false, JSON.stringify(c4).slice(0, 200))
     const g = await approve(String(c4.request_id), { request_id: c4.request_id, order_id: 'ord_cmp', action: 'request_return', params_hash: c4.params_hash })
     const rr = db.prepare("SELECT id, status, reason FROM return_requests WHERE order_id = 'ord_cmp'").get() as Record<string, unknown> | undefined
-    ok('B-13 approve → REAL returns route files the return (row exists, reason enum verbatim)', g.status === 200 && !!rr && rr.reason === 'quality', JSON.stringify({ g: g.json, rr }))
+    ok('B-22 approve → REAL returns route files the return (row exists, reason enum verbatim)', g.status === 200 && !!rr && rr.reason === 'quality', JSON.stringify({ g: g.json, rr }))
     const c5 = await B({ order_id: 'ord_cmp', action: 'request_return', reason: 'quality' })
-    ok('B-14 active return blocks a second request (route-true predicate)', c5.error_code === 'RETURN_ALREADY_ACTIVE') }
-  ok('B-15 invalid reason / bad action rejected', (await B({ order_id: 'ord_cmp', action: 'request_return', reason: 'hate it' })).error_code === 'RETURN_REASON_INVALID' && (await B({ order_id: 'ord_cmp', action: 'zap' })).error_code === 'BAD_ACTION')
-  ok('B-16 ZERO PII across all tool responses (address/notes markers absent)', !PII.test(JSON.stringify([c1])), '')
+    ok('B-23 active return blocks a second request (route-true predicate)', c5.error_code === 'RETURN_ALREADY_ACTIVE') }
+  ok('B-24 invalid reason / bad action rejected', (await B({ order_id: 'ord_cmp', action: 'request_return', reason: 'hate it' })).error_code === 'RETURN_REASON_INVALID' && (await B({ order_id: 'ord_cmp', action: 'zap' })).error_code === 'BAD_ACTION')
+  ok('B-25 ZERO PII across all tool responses (address/notes markers absent)', !PII.test(JSON.stringify([c1])), '')
 } finally { server.close(); clearCred() }
 
 if (fail > 0) { console.error(`\n❌ buyer-action-agent FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-console.log(`✅ buyer-action-agent: 买家动作请求 — 后果快照+四元组 · 同谓词重验 · 回环真实执行 · oracle 恢复 · 终态释放坑 · 零 PII\n  ✅ pass ${pass}`)
+console.log(`✅ buyer-action-agent: 原子 escrow 完成 · 独占执行租约 · executed/satisfied 分离 · 准确经济快照 · 零 PII\n  ✅ pass ${pass}`)

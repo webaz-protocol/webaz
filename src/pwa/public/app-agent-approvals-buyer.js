@@ -7,7 +7,7 @@
     var s = r.buyer_action
     if (!s) return '<div style="font-size:12px;color:#dc2626">' + t('动作摘要不可用 —— 请刷新;无法核对时请勿批准') + '</div>'
     var snap = s.snapshot || {}
-    var head = s.action === 'confirm_receipt' ? ('✅ ' + t('确认收货并释放托管') + ' <b style="color:#b45309">' + waz(snap.release_amount) + ' WAZ</b> → ' + t('卖家'))
+    var head = s.action === 'confirm_receipt' ? ('✅ ' + t('确认收货并结算订单') + ' <b style="color:#b45309">' + waz(snap.settlement_total) + ' WAZ</b> · ' + t('按订单冻结规则分账'))
       : s.action === 'cancel' ? ('🚫 ' + t('取消直付订单(未付款,零资金移动)'))
       : ('↩️ ' + t('申请退货') + '(' + escHtml(String(snap.reason || '')) + ',' + t('默认退款') + ' ' + waz(snap.refund_amount) + ')')
     return '' +

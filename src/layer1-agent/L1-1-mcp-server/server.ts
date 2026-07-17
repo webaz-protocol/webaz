@@ -1998,7 +1998,7 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
     name: 'webaz_buyer_action_request',
     description: `Submit an after-sales ACTION REQUEST on one of YOUR orders (RFC-026 PR-6, safe scope buyer_action_request under the aftersales:request OAuth scope). SUBMIT-ONLY — nothing executes without the human's Passkey; on approval the server re-validates against current state and runs the REAL order route (any drift hard-fails).
 
-- action="confirm_receipt" (escrow rail, delivered only): approval RELEASES the escrow to the seller and settles the order. Direct Pay confirm is human-only (its own disclosure acks + live Passkey on the order page).
+- action="confirm_receipt" (escrow rail, delivered only): approval settles the frozen order total under its distribution rules; it is not an all-to-seller transfer. Direct Pay confirm is human-only (its own disclosure acks + live Passkey on the order page).
 - action="cancel" (Direct Pay only, unpaid window/negotiation/expired-grace): zero funds move.
 - action="request_return" (completed + inside the FROZEN return window; reason enum quality/wrong_item/damaged/no_longer_needed/other): files a return request — the seller still decides.
 - The response carries the server-computed economic_effect the human will see. One active request per (order, action); same content = idempotent reuse; changed consequences = explicit conflict with the existing id. Disputes/refund handshakes stay human-only for now.`,

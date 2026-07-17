@@ -725,7 +725,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       if (!deps.apiLoopback) return void res.status(503).json({ error: '执行通道未配置', error_code: 'BUYER_ACTION_UNAVAILABLE' })
       const br = await approveBuyerAction(db, { requestId: req.params.id, approverId: user.id as string, nowIso: now, apiLoopback: deps.apiLoopback })
       if (!br.ok) return void res.status(br.http || 409).json({ error: br.error, error_code: br.error_code })
-      return void res.json({ success: true, kind: 'buyer_action', status: 'executed', order_id: r.order_id, action: r.order_action, already_executed: br.already_executed || false })
+      return void res.json({ success: true, kind: 'buyer_action', status: br.already_satisfied ? 'already_satisfied' : 'executed', order_id: r.order_id, action: r.order_action, already_executed: br.already_executed || false, already_satisfied: br.already_satisfied || false })
     }
 
     // RFC-026 PR-5:address_change —— 三元组绑定 {request_id, action, params_hash}(无订单实体,内容由 hash 绑定并在执行时重验),执行=写 users 默认地址
