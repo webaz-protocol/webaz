@@ -32,7 +32,7 @@ import { buildCartMandate, buildPaymentMandate, signMandate } from './ap2-mandat
 // RFC-014 PR3 — 金额走整数 base-units;钱包写绝对值(防 REAL 浮点加法 dust)。
 import { toUnits, toDecimal, mulQty, mulRate } from '../../money.js'
 import { createDirectPayResponse } from '../../direct-pay-create.js'                    // PR-4c: direct_p2p 建单分叉(生产门+收款指令门+原子建单;本金不入协议)
-import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'; import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from '../../trade-terms.js'; import { gateSaleRegionForCreate } from '../../sale-regions.js'  // PR-2 运费守门 + S0 条款快照 + S1 可售门(意愿/合规先于物流)
+import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'; import { resolveDraftLink } from '../order-draft-link.js'; import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from '../../trade-terms.js'; import { gateSaleRegionForCreate } from '../../sale-regions.js'  // PR-2 运费守门 + S0 条款快照 + S1 可售门(意愿/合规先于物流)
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'; import { AgentSpendCapExceeded, getAgentSpendCapViolation } from '../../agent-spend-cap.js'; import { hasInvalidPurchaseCredential, readStrictBearerCredential } from '../bearer-auth.js'; import { consumePriceSession, PriceSessionConsumeError } from '../../price-session-consume.js'; import { MAX_PER_ORDER } from '../../order-limits.js'  // RFC-016 异步 DB seam(下单事务外预检;事务内同步)+ RFC-025 共享限购常量
 
 // 店铺推荐 → 商品三级归因的【懒升级】(sync,跑在下单事务内、getProductShareChain 之前)。
@@ -132,7 +132,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
       anonymous_recipient,
       // B5 主动捐赠
       donation_pct } = req.body
-    if (!product_id || !shipping_address) return void res.json({ error: '请提供商品ID和收货地址' })
+    if (!product_id || !shipping_address) return void res.json({ error: '请提供商品ID和收货地址' }); const _dl = resolveDraftLink(db, req.body?.draft_id, user.id as string); if (_dl.kind === 'invalid') return void res.status(409).json({ error: _dl.error, error_code: 'DRAFT_LINK_INVALID' }); if (_dl.kind === 'existing') return void res.json({ success: true, order_id: _dl.orderId, idempotent_reuse: true })  // RFC-026 PR-1:一 draft 一单
     const anonymousFlag = anonymous_recipient ? 1 : 0
     const recipientCode = anonymousFlag === 1 ? generateRecipientCode() : null
     const donationPctNum = Number(donation_pct || 0)
@@ -268,7 +268,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     const totalAmount = toDecimal(totalAmountU)
     const donationAmount = toDecimal(donationAmountU); const shippingFee = toDecimal(_ship.feeU)
     // PR-4c:direct_p2p 分叉 —— 本金不入协议,跳过下方 escrow 预检/事务,改走直付建单(生产门+收款指令门+原子建单,仅锁卖家 fee-stake)。
-    if (String(req.body?.payment_rail || '') === 'direct_p2p') return void createDirectPayResponse(res, db, { generateId, transition, appendOrderEvent, getProtocolParam }, { product, buyerId: user.id as string, reqQty, basePrice, totalAmount, totalAmountU, shippingAddress: String(shipping_address), directReceiveAccountId: (typeof req.body?.direct_receive_account_id === 'string' && req.body.direct_receive_account_id) ? String(req.body.direct_receive_account_id) : undefined, agentApiKey: apiKey, consumePriceSession: () => consumePriceSession(db, typeof session_token === 'string' ? session_token : undefined), opts: { variantId: variant_id, hasVariants: Number(product.has_variants) === 1, flashActive: !!flashSale, couponCode: coupon_code, buyInsurance: !!buy_insurance, donationPct: donationPctNum, isGift: !!is_gift, anonymous: anonymousFlag === 1, deliveryWindow: !!delivery_window }, shipping: { region: _ship.region, fee: _ship.fee, estDays: _ship.estDays, quoteRequired: _ship.quoteRequired, freeThresholdApplied: _ship.freeThresholdApplied } })
+    if (String(req.body?.payment_rail || '') === 'direct_p2p') return void createDirectPayResponse(res, db, { generateId, transition, appendOrderEvent, getProtocolParam }, { product, buyerId: user.id as string, reqQty, basePrice, totalAmount, totalAmountU, shippingAddress: String(shipping_address), directReceiveAccountId: (typeof req.body?.direct_receive_account_id === 'string' && req.body.direct_receive_account_id) ? String(req.body.direct_receive_account_id) : undefined, agentApiKey: apiKey, draftId: _dl.kind === 'link' ? _dl.draftId : undefined, consumePriceSession: () => consumePriceSession(db, typeof session_token === 'string' ? session_token : undefined), opts: { variantId: variant_id, hasVariants: Number(product.has_variants) === 1, flashActive: !!flashSale, couponCode: coupon_code, buyInsurance: !!buy_insurance, donationPct: donationPctNum, isGift: !!is_gift, anonymous: anonymousFlag === 1, deliveryWindow: !!delivery_window }, shipping: { region: _ship.region, fee: _ship.fee, estDays: _ship.estDays, quoteRequired: _ship.quoteRequired, freeThresholdApplied: _ship.freeThresholdApplied } })
     // 友好预检查(读):真正的守恒在下面的同步事务内(applyWalletDelta 绝对值落库)。
     const wallet = await dbOne<{ balance: number }>('SELECT balance FROM wallets WHERE user_id = ?', [user.id])
     if (!wallet) return void res.status(500).json({ error: '钱包记录缺失', error_code: 'WALLET_MISSING' })
@@ -334,8 +334,8 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
           l1_uid, l2_uid, l3_uid, snapshot_commission_rate, buyer_region, content_hash_at_order,
           delivery_window, variant_id, variant_options_snapshot,
           gift_recipient_name, gift_recipient_phone, gift_message, insurance_premium,
-          anonymous_recipient, recipient_code, donation_amount, stake_backing, ship_to_region, shipping_fee, shipping_est_days
-        ) VALUES (?,?,?,?,?,?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+          anonymous_recipient, recipient_code, donation_amount, stake_backing, ship_to_region, shipping_fee, shipping_est_days, draft_id
+        ) VALUES (?,?,?,?,?,?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
           orderId, product.id, user.id, product.seller_uid, reqQty, basePrice, totalAmount, totalAmount,
           shipping_address, notes || null,
           addHours(now, 24), addHours(now, 48), addHours(now, 120),
@@ -345,7 +345,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
           variant ? variant.id : null,
           variant ? variant.options_json : null,
           giftRecipientName, giftRecipientPhone, giftMessage, insurancePremium,
-          anonymousFlag, recipientCode, donationAmount, stakeBacking, _ship.region, _ship.feeU > 0 || _ship.region ? shippingFee : null, _ship.estDays,
+          anonymousFlag, recipientCode, donationAmount, stakeBacking, _ship.region, _ship.feeU > 0 || _ship.region ? shippingFee : null, _ship.estDays, _dl.kind === 'link' ? _dl.draftId : null,
         ); writeTradeTermsSnapshot(db, orderId, buildTradeTermsSnapshot(db, { productId: String(product.id), sellerId: String(product.seller_uid), shipping: { source: _ship.region ? 'template' : 'none', region: _ship.region ?? null, fee: _ship.region ? shippingFee : null, estDays: _ship.estDays ?? null, freeThresholdApplied: _ship.freeThresholdApplied }, acceptModeEffective: _acceptModeAuto ? 'auto' : null }))   // S0 条款快照:冻结下单时效/退货/清关/税责声明(fail-soft,非计价输入)
         // 协议层：写 genesis 事件 — order 创建（必然是 buyer 自己）
         try {

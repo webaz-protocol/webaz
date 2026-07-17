@@ -8,14 +8,14 @@
 //   {request_id, order_id(=draft_id), action='order_submit', params_hash}。
 (function () {
   function waz(u) { return (Number(u || 0) / 1e6).toFixed(2) }
-  function row(label, val) { return '<div style="font-size:12px;color:#6b7280">' + label + ': ' + val + '</div>' }
   window.aaOrderSubmitWhat = function (r) {
     var s = r.submit_summary
+    var _dw = window.aaDupWarnHtml ? window.aaDupWarnHtml(r) : ''
     if (!s) return '<div style="font-size:12px;color:#dc2626">' + t('草稿摘要不可用(可能已取消/过期)—— 请刷新;无法核对条款时请勿批准') + '</div>'
     var railLine = s.payment_rail === 'direct_p2p'
       ? t('直付(WebAZ 不托管资金;你将按卖家收款说明场外支付)')
       : t('托管(批准后立即从你的钱包扣款入托管)')
-    return '' +
+    return _dw +
       '<div style="font-size:13px;color:#374151;line-height:1.8">🛒 ' + t('创建订单') + ': <b>' + escHtml(String(s.product_title || s.product_id)) + '</b>' +
         ' <span style="font-size:10px;color:#9ca3af">(' + t('当前标题,仅供识别;绑定的是商品 ID') + ' <code>' + escHtml(String(s.product_id)) + '</code>)</span>' +
         (s.variant_id ? ' <span style="font-size:11px;color:#6b7280">' + t('规格') + ': ' + escHtml(String(s.variant_id)) + '</span>' : '') +
