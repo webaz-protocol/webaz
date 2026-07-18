@@ -120,7 +120,7 @@ try {
 
   // ── [S] URL/路径形态拒绝(Codex R1-1:'/' 只为类目键放行,域名/路径形态零落库)────────────
   const before2 = (db.prepare('SELECT COUNT(*) c FROM demand_signals').get() as { c: number }).c
-  for (const bad of ['x.com/page', '//host/path', 'a/b/c/d', '/lead', 'trail/', 'account/login', 'host/path']) {
+  for (const bad of ['x.com/page', '//host/path', 'a/b/c/d', '/lead', 'trail/']) {   // 真 URL/路径形态(scheme/host/多段/首尾斜杠/点+斜杠)
     const rb = await call({ keywords: [bad] })
     ok(`S-1 路径形态 "${bad}" → 400 拒收`, rb.error_code === 'INVALID_INTENT_TEXT', JSON.stringify(rb).slice(0, 120))
   }
@@ -128,9 +128,10 @@ try {
   ok('S-2 全部路径形态零落库', after2 === before2, `before=${before2} after=${after2}`)
   const s3 = await resolveCategory('家庭清洁/纸品')
   ok('S-3 canonical 单斜杠键仍放行(形状门与注册表零矛盾)', s3.status === 'canonical')
-  for (const good of ['1/2 inch', 'A/B']) {
+  // 合法复合商品词(单内部斜杠、无点、非 URL)必须放行 —— 只拒 URL 不拒任意斜杠(Codex R3-2)
+  for (const good of ['1/2 inch', 'A/B', 'wet/dry', 'salt/pepper', 'shampoo/conditioner', 'account/login']) {
     const rg = await call({ keywords: [good] })
-    ok(`S-4 合法商品词 "${good}" 放行(数字/单字符段不算路径)`, rg.error_code === undefined, JSON.stringify(rg).slice(0, 100))
+    ok(`S-4 合法复合词 "${good}" 放行(非 URL,单内部斜杠)`, rg.error_code === undefined, JSON.stringify(rg).slice(0, 100))
   }
   const kmCarry = await call({ category: '收纳', keywords: ['盒'], keyword_match: 'any' })
   const kmCalls = (kmCarry.recommended_next_calls ?? []) as Array<{ arguments: Record<string, unknown> }>
@@ -149,6 +150,10 @@ try {
   const unc = (unk.recommended_next_call ?? {}) as { arguments?: Record<string, unknown> }
   ok('P-3 未知(带 keywords)→ next_call 保留 max_price 等全部约束', unc.arguments?.max_price === 15
     && unc.arguments?.keyword_match === 'any', JSON.stringify(unc))
+  // Codex R3-1:调用方显式 keyword_match:'all' 时,UNKNOWN recovery 的 forced 'any' 必须胜出(否则重试仍 all,可能又 0)
+  const unkAll = await call({ category: 'zzz-nope', keywords: ['抽纸', '纸巾'], keyword_match: 'all' })
+  const uncAll = (unkAll.recommended_next_call ?? {}) as { arguments?: Record<string, unknown> }
+  ok('P-3b 未知 + 显式 all → recovery 强制 any 胜出(不被调用方 all 覆盖)', uncAll.arguments?.keyword_match === 'any', JSON.stringify(uncAll))
   const replay2 = await call(unc.arguments as Record<string, unknown>)
   ok('P-4 未知分支重放成功且预算生效(15 内恰 1 件)', Number(replay2.count) === 1, JSON.stringify(replay2).slice(0, 140))
   const unk2 = await call({ category: 'zzz-nope' })

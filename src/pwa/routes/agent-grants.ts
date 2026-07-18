@@ -316,15 +316,16 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       if (s.length > 40) return 'too long (max 40 chars)'
       if (s.includes('@')) return 'email-like'
       if (/:\/\/|www\./i.test(s)) return 'url-like'
-      // '/' 只为 canonical 类目键(如 家庭清洁/纸品)放行:恰一个、不首尾、不与点共存 —— 域名/路径
-      // 形态(x.com/page、//host、a/b/c/d)一律拒,守住"URL 绝不入台账"的披露承诺(Codex R1-1)
+      // '/' 为 canonical 类目键(家庭清洁/纸品)与复合商品词(1/2 inch、wet/dry、salt/pepper)放行。
+      // 只拒【真 URL/路径】形态:双斜杠(//host)/ 三段以上(a/b/c)/ 首尾斜杠 / 点+斜杠(x.com/page)——
+      // 这些正是 "URL 绝不入台账" 披露覆盖的对象。单个内部斜杠连接两个无点 token【不是 URL】(无 scheme/
+      // host/TLD),是合法复合词 → 放行(Codex R2 曾要求拒 word/word,R3 证其误伤 wet/dry;原则化收口:
+      // 只拒 URL,不拒任意斜杠 —— 披露承诺的是"拒 URL",account/login 非 URL,记录它不违反披露)。
       if (s.includes('/')) {
         if (s.includes('//')) return 'path-like (double slash)'
         if ((s.match(/\//g) ?? []).length > 1) return 'path-like (multiple slashes)'
         if (s.startsWith('/') || s.endsWith('/')) return 'path-like (leading/trailing slash)'
         if (s.includes('.')) return 'url-like (dot + slash)'
-        const seg = s.split('/')
-        if (seg.length === 2 && seg.every(x => /^[A-Za-z]{2,}$/.test(x.trim()))) return 'path-like (word/word)'
       }
       if (/\d{7,}/.test(s.replace(/[ \-.+_&%/]/g, ''))) return 'phone-like digit run'
       if (!TOKEN_RE.test(s)) return 'non-token characters'
@@ -368,9 +369,12 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     if (category) {
       const rc = await resolveCategory(category)
       // 通用约束保留器(Codex R1-2:可重放的 next_call 绝不丢买家约束)
+      // carry:调用方显式 keyword_match 先铺底,extra 后覆盖 —— 这样 UNKNOWN 分支 extra 里 forced 的
+      //   keyword_match:'any'(recovery 建议)能压过调用方的 'all'(Codex R3-1);AMBIGUOUS 的 extra 不含
+      //   keyword_match → 保留调用方显式值(Codex R2-1)。约束(region/price/qty)与 extra 无键冲突。
       const carry = (extra: Record<string, unknown>): Record<string, unknown> => ({
-        ...extra,
         ...(kwMatchRaw !== undefined ? { keyword_match: keywordMatch } : {}),
+        ...extra,
         ...(region ? { ship_to_region: region } : {}),
         ...(maxPrice !== null ? { max_price: maxPrice } : {}),
         ...(quantity !== 1 ? { quantity } : {}),
