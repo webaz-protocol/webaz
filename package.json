@@ -292,6 +292,7 @@
     "test:mcp-definition-budget": "tsx scripts/test-mcp-definition-budget.ts",
     "test:mcp-quote-approval-ui": "tsx scripts/test-mcp-quote-approval-ui.ts",
     "test:mcp-order-timeline-ui": "tsx scripts/test-mcp-order-timeline-ui.ts",
+    "test:mcp-apps-standard": "tsx scripts/test-mcp-apps-standard.ts",
     "test:discover-demand-signals": "tsx scripts/test-discover-demand-signals.ts",
     "test:agent-address-masking": "tsx scripts/test-agent-address-masking.ts",
     "test:buyer-quote": "tsx scripts/test-buyer-quote.ts",
