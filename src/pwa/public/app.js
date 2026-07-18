@@ -10292,20 +10292,16 @@ async function renderBuyPage(app, productId) {
 // 下单半屏 sheet — 把规格/地址/数量/备注/优惠/保险/礼物/配送窗 全部收纳
 // 高级选项默认收起，主路径只有规格+地址+数量+CTA 三段
 window.openBuySheet = function(productId) {
-  const p = (window._buyPagePO || {}).p
-  if (!p || p.id !== productId) {
-    // 兜底：从详情页 state 取 — 实际 renderBuyPage 已 setup 全部 state
-    // 直接读 state._variants / _addresses / _flashSale
-  }
-  // p 不在 window，直接调用本页的 state — renderBuyPage 已把所有上下文写入 state
-  // 重新从 products 列表查 — 但已经存在 dom 里。简化：从 GET /products/:id 兜底
   ;(async () => {
     let prod = null
     try {
-      const r = await GET(`/products`)
-      prod = (r || []).find(x => x.id === productId)
+      // 直查详情端点(active 或本人可见,否则 404)。绝不能扫 GET /products 列表 —— 默认 trending
+      // 排序带曝光 jitter + limit 截断,在售商品随机掉出首屏时会被误报"已下架"
+      // (2026-07-18 生产间歇性误报根因)。
+      const r = await GET(`/products/${productId}`)
+      if (r && !r.error && r.id === productId) prod = r
     } catch {}
-    if (!prod) { toast$(t('商品已下架'), 'error'); return }
+    if (!prod) { toast$(t('商品当前不可购买或已下架'), 'error'); return }
     const livePrice = state._flashSale ? state._flashSale.sale_price : prod.price
     const defaultAddr = (state._addresses || []).find(a => a.is_default) || (state._addresses || [])[0]
     const hasDefault = !!defaultAddr

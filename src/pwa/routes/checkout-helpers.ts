@@ -79,9 +79,12 @@ export function registerCheckoutHelpersRoutes(app: Application, deps: CheckoutHe
       FROM products p
       JOIN users u ON p.seller_id = u.id
       LEFT JOIN reputation_scores rs ON rs.user_id = p.seller_id
-      WHERE p.id = ? AND p.status = 'active'
+      WHERE p.id = ?
     `, [product_id])
-    if (!product) return void res.json({ error: '商品不存在或已下架' })
+    // 状态门与老行为等价(非 active 一律拒)。warehouse 草稿私有 → 与"不存在"合并回答,
+    // 不做存在性 oracle(Codex R1-2);paused/已下架曾公开 → 如实分流
+    if (!product || product.status === 'warehouse') return void res.json({ error: '商品不存在或已下架' })
+    if (product.status !== 'active') return void res.json({ error: product.status === 'paused' ? '商品暂时不可购买' : '商品已下架' })
 
     const qty = Number(quantity)
     if ((product.stock as number) < qty) {

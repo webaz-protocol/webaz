@@ -311,9 +311,9 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/build-tasks/:id/submit` | 🔐 |  |  | src/pwa/routes/build-tasks.ts:76 |
 | GET | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:45 |
 | POST | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:60 |
-| DELETE | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:127 |
-| PATCH | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:75 |
-| POST | `/api/cart/checkout` | 🔐 |  | C-1: 购物车批量下单（每个选中商品独立订单） | src/pwa/routes/cart.ts:84 |
+| DELETE | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:129 |
+| PATCH | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:77 |
+| POST | `/api/cart/checkout` | 🔐 |  | C-1: 购物车批量下单（每个选中商品独立订单） | src/pwa/routes/cart.ts:86 |
 | GET | `/api/charity/fund` |  |  | GET 基金概况 + 最近流水 | src/pwa/routes/charity.ts:696 |
 | POST | `/api/charity/fund/donate` | 🔐 |  | 任何人捐款给慈善基金 | src/pwa/routes/charity.ts:654 |
 | GET | `/api/charity/leaderboard` |  |  | 慈善排行 | src/pwa/routes/charity.ts:843 |

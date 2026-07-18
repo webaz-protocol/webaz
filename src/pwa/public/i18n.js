@@ -5875,6 +5875,8 @@ const _EN = {
   '高级选项（备注 / 优惠码 / 保险 / 礼物 / 配送窗）': 'Advanced (note / coupon / insurance / gift / delivery)',
   '确认下单':                          'Confirm order',
   '商品已下架':                        'Item delisted',
+  '商品当前不可购买或已下架':          'Item currently unavailable or delisted',
+  '商品暂时不可购买':                  'Item temporarily unavailable',
   '登录后下单':                        'Log in to order',
   '卖家信誉':                          'Seller reputation',
   '履约':                              'Fulfill',

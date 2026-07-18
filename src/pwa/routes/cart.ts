@@ -63,8 +63,10 @@ export function registerCartRoutes(app: Application, deps: CartDeps): void {
     const q = Math.max(1, Math.min(99, Number(qty) || 1))
     if (!product_id) return void res.json({ error: 'product_id 必填' })
     const product = await dbOne<{ id: string; status: string }>("SELECT id, status FROM products WHERE id = ?", [product_id])
-    if (!product) return void res.json({ error: '商品不存在' })
-    if (product.status !== 'active') return void res.json({ error: '商品已下架' })
+    // warehouse 草稿是私有的:与"不存在"合并回答,不给任意猜 id 的调用方做存在性 oracle(Codex R1-2);
+    // paused/已下架曾公开(存在性本就已知)→ 如实分流
+    if (!product || product.status === 'warehouse') return void res.json({ error: '商品不存在或已下架' })
+    if (product.status !== 'active') return void res.json({ error: product.status === 'paused' ? '商品暂时不可购买' : '商品已下架' })
     await dbRun(`
       INSERT INTO cart_items (user_id, product_id, qty) VALUES (?, ?, ?)
       ON CONFLICT(user_id, product_id) DO UPDATE SET qty = MIN(99, cart_items.qty + ?)
