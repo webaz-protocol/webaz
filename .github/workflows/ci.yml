@@ -813,6 +813,7 @@ jobs:
       - run: npm run test:mcp-security-schemes
       - run: npm run test:buyer-orders-grant
       - run: npm run test:mcp-model-projection
+      - run: npm run test:mcp-result-handle
       - run: npm run test:discover-demand-signals
       - run: npm run test:agent-address-masking
       - run: npm run test:buyer-quote

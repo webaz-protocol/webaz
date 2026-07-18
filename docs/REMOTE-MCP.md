@@ -63,6 +63,8 @@ Three core buyer tools return **`structuredContent`** (MCP structured tool resul
 | `webaz_buyer_orders` | `webaz.order_status.model.v1` — whole-account `summary`, active-orders-first page (default 10, max 50), `next_cursor`, 7-key minimal orders (zero PII, unchanged contract) |
 | `webaz_quote_order` | `webaz.order_quote.model.v1` — integer line items, masked ids, region-only destination |
 
+Two incremental surfaces (PR-2): `webaz_search` issues a **`result_handle`** (10-min TTL) — pass it back with `selected_ids` (≤5) to get live detail projections (`webaz.product_detail.model.v1`: description/specs/terms). Handles store only the id selection set; details are always re-read live with the same visibility predicates (deactivated items come back as `unavailable_ids` — never cached data, never a permission bypass). `webaz_buyer_orders` with `full` accepts **`updated_since`** — unchanged orders return a tiny `up_to_date` response; changed orders return only newer timeline entries (`incremental` marker).
+
 Semantics: **`content[0].text` is a 1–2 sentence degradation summary** for hosts that do not read `structuredContent`; the full decision data lives in `structuredContent` only (no JSON-in-text duplication). Null / empty fields are stripped before serialization. **Error results keep the complete structured error JSON in `content[0].text`** (so text-only clients retain `error_code` + recovery fields), and mirror it in `structuredContent`. Internal DB fields (content hashes, migration/backfill columns, commission rates, sourcing data, ranking internals) never enter the model surface. All other tools currently keep their existing JSON-in-text form.
 
 ### Permission matrix — how each tool authenticates
