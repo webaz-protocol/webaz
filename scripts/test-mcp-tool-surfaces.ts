@@ -101,13 +101,17 @@ console.log(`  [tools/list bytes] full=${fullB}B (~${Math.ceil(fullB / 4)} tok) 
   ok('U-1 ui://widget/webaz-products.html advertised (text/html+skybridge)', !!uiRes && uiRes.mimeType === 'text/html+skybridge')
   const widget = await c.readResource({ uri: 'ui://widget/webaz-products.html' })
   const html = (widget.contents as Array<{ text: string }>)[0].text
-  ok('U-2 widget self-contained (reads window.openai.toolOutput; zero external request capability: no URL literals, no fetch/XHR/WS/beacon/import, no src/href attributes)',
+  // 词元存在即禁(Codex round-2:与空白/属性赋值/括号访问形式无关 —— document['write'] 也含 write 词元)。
+  // 残余边界(诚实声明):字符串拼接构造('wr'+'ite')不可静态锁 —— widget 是一方代码,由 review+审计守。
+  const REQUEST_TOKENS = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|import|src|href|location)\b/
+  const SINK_TOKENS = /\b(innerHTML|outerHTML|insertAdjacentHTML|write|writeln|eval|Function)\b/
+  ok('U-2 widget self-contained (reads window.openai.toolOutput; zero request-capability TOKENS present in any form)',
     html.includes('window.openai') && html.includes('toolOutput')
-    && !/["'\`](https?:)?\/\//.test(html) && !/(fetch\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon|import\(|src=|href=)/.test(html))
+    && !/["'\`](https?:)?\/\//.test(html) && !REQUEST_TOKENS.test(html))
   ok('U-2b widget handles ALL THREE structuredContent shapes (search page / detail / zero-hit recovery)',
     html.includes('webaz.product_detail.model.v1') && html.includes('catalog_sample') && html.includes('next_cursor'))
-  ok('U-2c widget has NO executable/HTML sinks (innerHTML/outerHTML/insertAdjacentHTML/document.write/eval/new Function) and economic entry returns to the conversation flow',
-    !/(innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function)/.test(html) && html.includes('sendFollowupTurn') && html.includes('Passkey'))
+  ok('U-2c widget has NO executable/HTML sink TOKENS in any form (incl bracket access) and economic entry returns to the conversation flow',
+    !SINK_TOKENS.test(html) && html.includes('sendFollowupTurn') && html.includes('Passkey'))
   const widgetMeta = ((widget.contents as Array<{ _meta?: Record<string, unknown> }>)[0]._meta ?? {}) as Record<string, unknown>
   const listMeta = ((uiRes ?? {}) as { _meta?: Record<string, unknown> })._meta ?? {}
   const csp = (widgetMeta['openai/widgetCSP'] ?? {}) as Record<string, unknown>
