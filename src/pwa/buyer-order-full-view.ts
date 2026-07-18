@@ -142,7 +142,13 @@ export function buildBuyerOrderFull(db: Database.Database, humanId: string, orde
     let mcC = '', mcR = '', dspC = '', dspR = ''
     try { const mc = db.prepare("SELECT MAX(created_at) AS c, MAX(COALESCE(resolved_at, '')) AS r FROM mutual_cancel_proposals WHERE order_id = ?").get(orderId) as { c: string | null; r: string | null }; mcC = norm(mc.c); mcR = norm(mc.r) } catch { /* 表未建(功能面未启)→ 无贡献 */ }
     try { const dsp = db.prepare("SELECT MAX(created_at) AS c, MAX(COALESCE(resolved_at, '')) AS r FROM disputes WHERE order_id = ?").get(orderId) as { c: string | null; r: string | null }; dspC = norm(dsp.c); dspR = norm(dsp.r) } catch { /* 同上 */ }
-    const latest = [norm(o.updated_at), norm(hist.m), norm(rr.c), norm(rr.r), norm(trk.m), mcC, mcR, dspC, dspR].reduce((a, b) => (b > a ? b : a), '')
+    // pre-snapshot 订单(无冻结条款)的退货资格读的是【现商品行】(effectiveReturnDays 降级路径)——
+    //   卖家改条款走 products-update(必触 products.updated_at)→ 该场景把商品行也纳入锚(Codex round-3 HIGH)。
+    let prodU = ''
+    if (o.trade_terms_snapshot == null) {
+      try { const pu = db.prepare('SELECT updated_at FROM products WHERE id = ?').get(String(o.product_id ?? '')) as { updated_at: string | null } | undefined; prodU = norm(pu?.updated_at) } catch { /* 无贡献 */ }
+    }
+    const latest = [norm(o.updated_at), norm(hist.m), norm(rr.c), norm(rr.r), norm(trk.m), mcC, mcR, dspC, dspR, prodU].reduce((a, b) => (b > a ? b : a), '')
     if (latest < sinceRaw) {
       return { ok: true, response: { order_id: orderId, up_to_date: true, status: String(o.status ?? ''), updated_at: o.updated_at ?? null, note: 'no STORED-state changes since updated_since (order row / timeline / returns / tracking / mutual-cancel / disputes) — full view omitted. Time-derived eligibility (e.g. return-window expiry) is only re-evaluated on a full read: fetch without updated_since before acting.' } }
     }

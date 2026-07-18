@@ -162,7 +162,7 @@ try {
   ok('H-10 poisoned item_ids (non-array JSON) → RESULT_HANDLE_INVALID, no 500', d8.error_code === 'RESULT_HANDLE_INVALID', JSON.stringify(d8).slice(0, 150))
 
   // H-11 specs 超限封顶:巨型 specs → specs 省略 + specs_truncated,预算仍守住
-  db.prepare("UPDATE products SET specs = ? WHERE id = ?").run(JSON.stringify({ 大字段: '规格爆炸'.repeat(600) }), sid3[2])
+  db.prepare("UPDATE products SET specs = ? WHERE id = ?").run(JSON.stringify({ k: '规'.repeat(400) }), sid3[2])   // ~410 字符(旧字符实现放行)但 ~1200 UTF-8 字节 → 必须触发字节封顶
   const s4 = scOf(await call({ sort: 'newest', limit: 5 }))
   const d9 = scOf(await call({ result_handle: String(s4.result_handle), selected_ids: [sid3[2]] }))
   const d9p = (d9.products as Array<Record<string, unknown>>)[0]
@@ -193,6 +193,8 @@ try {
   ok('U-4 malformed updated_since → UPDATED_SINCE_INVALID (structured, retryable)', u4.error_code === 'UPDATED_SINCE_INVALID')
   const u4b = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: '2026-99-99T99:99:99Z' })
   ok('U-4b shape-valid but SEMANTICALLY invalid timestamp → UPDATED_SINCE_INVALID (real Date parse)', u4b.error_code === 'UPDATED_SINCE_INVALID', JSON.stringify(u4b).slice(0, 120))
+  const u4c = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: '2026-02-30T12:00:00Z' })
+  ok('U-4c NONEXISTENT civil date (2026-02-30, Date-normalizable) → UPDATED_SINCE_INVALID (UTC roundtrip lock)', u4c.error_code === 'UPDATED_SINCE_INVALID', JSON.stringify(u4c).slice(0, 120))
 
   // U-6 同秒边界:与 since 同一秒的事件【绝不丢】(up_to_date 用严格 <;timeline 过滤 >=)
   const sameSec = new Date().toISOString().slice(0, 19)
@@ -231,6 +233,13 @@ try {
   db.prepare("DELETE FROM mutual_cancel_proposals WHERE id = 'mcp_u1'").run()
   const u12 = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: new Date(Date.now() + 3600_000).toISOString() })
   ok('U-12 after clearing anchors, future updated_since is up_to_date again (anchors are live MAX reads)', u12.up_to_date === true, JSON.stringify(u12).slice(0, 120))
+
+  // U-13 pre-snapshot 订单:卖家改现商品行(products.updated_at)不得 up_to_date
+  db.prepare("UPDATE orders SET trade_terms_snapshot = NULL, updated_at = datetime('now','-1 days') WHERE id = 'ord_u1'").run()
+  db.prepare("UPDATE products SET return_days = 14, updated_at = datetime('now') WHERE id = 'prd_h1'").run()
+  const u13 = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: new Date(Date.now() - 120_000).toISOString() })
+  ok('U-13 pre-snapshot order + live listing term change → NOT up_to_date (product row anchored)', u13.up_to_date === undefined, JSON.stringify(u13).slice(0, 120))
+  db.prepare("UPDATE products SET updated_at = datetime('now','-3 days') WHERE id = 'prd_h1'").run()
 
   // H-12 限流(公共端点资源滥用护栏):RPM=1 → 立即 429 结构化;恢复默认后可用
   process.env.WEBAZ_RESULT_FETCH_RPM = '1'
