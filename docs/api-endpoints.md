@@ -564,7 +564,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/pin-receipts` | 🔐 |  |  | src/pwa/routes/pin-receipts.ts:29 |
 | GET | `/api/pin-receipts/mine` | 🔐 |  |  | src/pwa/routes/pin-receipts.ts:53 |
 | POST | `/api/product-share/touch` | 🔐 |  | 商品分享归因落库（前端登录后首次进入带 share_id 时调用） | src/pwa/routes/share-redirects.ts:129 |
-| GET | `/api/products` |  |  |  | src/pwa/routes/products-list.ts:62 |
+| GET | `/api/products` |  |  |  | src/pwa/routes/products-list.ts:63 |
 | POST | `/api/products` | 🔐 |  |  | src/pwa/routes/products-create.ts:307 |
 | DELETE | `/api/products/:id` | 🔐 |  | 硬删（仅 deleted 状态 + 无进行中订单） | src/pwa/routes/products-crud.ts:71 |
 | GET | `/api/products/:id` |  |  | 卖家可查看自己的非上架商品（编辑页用），其他人只能看 active | src/pwa/routes/products-crud.ts:33 |
@@ -604,7 +604,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/products/:product_id/waitlist/check` | 🔐 |  |  | src/pwa/routes/waitlist.ts:71 |
 | GET | `/api/products/:product_id/waitlist/count` | 🔐 |  | seller 查 waitlist count（决定备多少货） | src/pwa/routes/waitlist.ts:78 |
 | POST | `/api/products/extract-aliases` | 🔐 |  | M7.2-5: 从外部原文提取候选 alias | src/pwa/routes/products-aliases.ts:36 |
-| POST | `/api/products/result-fetch` |  |  | 资源滥用护栏(Codex M-4):无鉴权端点按 IP 限流(默认 60 req/min,WEBAZ_RESULT_FETCH_RPM 可调)。 | src/pwa/routes/products-list.ts:408 |
+| POST | `/api/products/result-fetch` |  |  | 资源滥用护栏(Codex M-4):无鉴权端点按 IP 限流(默认 60 req/min,WEBAZ_RESULT_FETCH_RPM 可调)。 | src/pwa/routes/products-list.ts:413 |
 | GET | `/api/profile` | 🔐 |  |  | src/pwa/routes/auth-read.ts:48 |
 | PATCH | `/api/profile` | 🔐 |  | 通用 profile patch（search_anchor / bio / feed_visible） | src/pwa/routes/profile-prefs.ts:99 |
 | POST | `/api/profile/add-role` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:41 |

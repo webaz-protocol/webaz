@@ -11,7 +11,8 @@
  */
 import { SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL, SCHEMA_ORDER_STATUS, SCHEMA_ORDER_QUOTE } from '../../agent-model-projection.js'
 
-const money = { type: 'object', description: 'integer money: amount_minor / currency / currency_exponent / display' }
+const productMoney = { type: 'object', description: 'product price: amount_minor / currency USDC / display (display line only; fx table gives display-only local conversions)' }
+const protocolMoney = { type: 'object', description: 'protocol-recorded integer money: amount_minor / currency / currency_exponent / display' }
 const err = {
   error: { type: 'string', description: 'present ONLY on failure (with error_code + structured recovery fields)' },
   error_code: { type: 'string' },
@@ -26,13 +27,14 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
       count: { type: 'number', description: 'products returned in this page' },
       next_cursor: { type: 'string', description: 'present when more results exist — pass back as cursor' },
       sellers: { type: 'object', description: 'deduped seller summaries keyed by seller id (products[].seller_ref)' },
+      fx: { type: 'object', description: 'USD-base display-only conversion rates ({rates, as_of}) for "≈ local currency" hints — NEVER a settlement path' },
       products: {
         type: 'array',
         items: {
           type: 'object',
           properties: {
             id: { type: 'string' }, title: { type: 'string' },
-            price: money,
+            price: productMoney,
             stock_status: { type: 'string', enum: ['in_stock', 'low_stock', 'out_of_stock'] },
             handling_hours: { type: 'number' }, return_days: { type: 'number' }, warranty_days: { type: 'number' },
             seller_ref: { type: 'string' }, sales_count: { type: 'number' },
@@ -68,7 +70,7 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
       schema_version: { type: 'string', const: SCHEMA_ORDER_QUOTE },
       quote_id: { type: 'string' }, quote_token: { type: 'string', description: 'single-use, 10-min TTL — pass to webaz_order_draft' },
       line_items: { type: 'array', description: 'integer money lines: item_subtotal / shipping / protocol_fee / discount / donation / estimated_tax' },
-      total: money, payable_total: money,
+      total: protocolMoney, payable_total: protocolMoney,
       payment: { type: 'object', description: 'rail semantics (escrow custodied vs direct_p2p off-protocol)' },
       destination: { type: 'object', description: 'region tag + summary only — full address never returned' },
       expires_at: { type: 'string' },
