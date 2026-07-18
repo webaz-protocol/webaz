@@ -118,7 +118,7 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
       c.appendChild(el('div','meta',(seller.name||'')+' · 已售 '+(p.sales_count||0)))
       var m=el('div','more')
       m.appendChild(el('div',null,p.summary||''))
-      m.appendChild(el('div','meta','退货 '+(p.return_days!=null?p.return_days+'天':'—')+' · 保修 '+(p.warranty_days!=null?p.warranty_days+'天':'—')+' · 发货 '+(p.handling_hours!=null?p.handling_hours+'h':'—')))
+      m.appendChild(el('div','meta','退货 '+(p.return_days!=null?p.return_days+'天':'—')+' · 保修 '+(p.warranty_days!=null?p.warranty_days+'天':'—')+' · 发货 '+(p.handling_hours!=null?p.handling_hours+'h':'—')+' · 预计送达 '+(p.estimated_days!=null?String(p.estimated_days):'—')))
       c.appendChild(m)
       var row=el('div','row')
       var ex=el('button',null,'展开')
@@ -160,5 +160,106 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
     root.appendChild(el('div','note','报价不会扣款 · 草稿不锁库存 · 正式下单需你在 webaz.xyz 用 Passkey 批准 · ≈ 法币换算仅显示参考,非结算'))
   }
   render()
+})();
+</script></body></html>`
+
+// QuoteAndApproval:渲染 quote / draft / approval 三形态(webaz.order_quote|order_draft|order_approval .model.v1)。
+// 经济动作永远回到会话流/Passkey:创建草稿与提交审批 = callTool(低风险 SUBMIT 面);正式建单只发生在
+// webaz.xyz 的 Passkey 批准。重复购买保护:duplicate_warning 渲染为显式警告卡,绝不静默二次创建。
+export const QUOTE_APPROVAL_WIDGET_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;background:transparent}
+.box{border:1px solid #d6dae2;border-radius:12px;padding:14px 16px;max-width:420px;background:#fff}
+.h{font-size:14px;font-weight:700;margin-bottom:8px}
+.price{color:#0a7d4f;font-weight:800;font-size:20px}
+.fiat{color:#5b6472;font-size:13px}
+.row{display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:#374151}
+.sec{border-top:1px dashed #d6dae2;margin-top:8px;padding-top:8px}
+.meta{font-size:11px;color:#5b6472}
+.warn{background:#fff7e0;border:1px solid #e5c268;border-radius:10px;padding:10px 12px;font-size:12px;color:#7a5200;margin-top:10px}
+.btn{display:block;width:100%;margin-top:10px;border:1px solid #93a3f5;background:#eef2ff;border-radius:10px;padding:8px;font-size:13px;font-weight:600;cursor:pointer;color:#2b3a8f}
+.toggle{font-size:11px;color:#5b6472;cursor:pointer;text-decoration:underline;margin-top:6px;display:inline-block}
+.hide{display:none}
+.disc{font-size:11px;color:#7a5200;margin-top:10px;line-height:1.5}
+.ok{color:#0a7d4f}
+</style></head><body>
+<div id="root">WebAZ QuoteAndApproval — loading…</div>
+<script>
+(function(){
+  'use strict'
+  var oai = window.openai || {}
+  var out = oai.toolOutput || null
+  var root = document.getElementById('root')
+  function el(t,c,x){ var n=document.createElement(t); if(c)n.className=c; if(x!=null)n.textContent=String(x); return n }
+  function row(box,k,v){ var r=el('div','row'); r.appendChild(el('span',null,k)); r.appendChild(el('span',null,v)); box.appendChild(r) }
+  function toggler(box,label,build){ var tg=el('span','toggle',label); var body=el('div','sec hide'); build(body); tg.addEventListener('click',function(){ body.classList.toggle('hide') }); box.appendChild(tg); box.appendChild(body) }
+  function fiatLine(box,fe){ if(!fe)return; var f=el('div','fiat',fe.display+(fe.stale?'(近似汇率)':'')); box.appendChild(f) }
+  function disclosures(box,list){ var d=el('div','disc',(list||[]).join(' · ')); box.appendChild(d) }
+  if(!out||!out.schema_version){ root.textContent='WebAZ: no structured payload visible to this widget.'; return }
+  root.textContent=''
+  var box=el('div','box'); root.appendChild(box)
+  var sv=String(out.schema_version)
+
+  if(sv==='webaz.order_quote.model.v1'){
+    box.appendChild(el('div','h','报价 · '+((out.product&&out.product.title)||'')+' ×'+(out.quantity||1)))
+    box.appendChild(el('div','price',(out.price&&out.price.display)||''))
+    fiatLine(box,out.fiat_estimate)
+    var a=out.amounts||{}
+    toggler(box,'展开费用明细',function(b){ row(b,'商品金额',(a.item/1000000).toFixed(2)+' USDC'); row(b,'运费',(a.shipping/1000000).toFixed(2)+' USDC'); row(b,'其他费用',(a.other/1000000).toFixed(2)+' USDC'); row(b,'总价',(out.price.amount_minor/1000000).toFixed(2)+' USDC') })
+    var s=out.shipping||{}
+    row(box,'配送',(out.destination&&out.destination.summary)||'')
+    row(box,'发货时限',s.handling_hours!=null?s.handling_hours+'h':'—')
+    row(box,'预计送达',s.estimated_days!=null?String(s.estimated_days):'—')
+    toggler(box,'展开退货与保修',function(b){ row(b,'退货期',out.return_days!=null?out.return_days+'天':'—'); row(b,'保修',out.warranty_days!=null?out.warranty_days+'天':'—') })
+    row(box,'支付轨道',String(out.payment_rail||'escrow'))
+    toggler(box,'展开风险与轨道说明',function(b){ b.appendChild(el('div','meta',out.rail_note||'')) })
+    if(out.fiat_estimate) toggler(box,'查看汇率时间',function(b){ b.appendChild(el('div','meta','1 USD ≈ '+out.fiat_estimate.rate+' '+out.fiat_estimate.currency+' @ '+(out.fiat_estimate.as_of||'')+(out.fiat_estimate.stale?'(近似)':''))) })
+    row(box,'报价到期',String(out.expires_at||''))
+    row(box,'库存','未锁定(下单时重新校验)')
+    if(out.quote_token&&typeof oai.callTool==='function'){
+      var b1=el('button','btn','创建订单草稿(不扣款)')
+      b1.addEventListener('click',function(){ oai.callTool('webaz_order_draft',{action:'create',quote_token:out.quote_token}) })
+      box.appendChild(b1)
+    }
+    disclosures(box,out.disclosures)
+  } else if(sv==='webaz.order_draft.model.v1'){
+    if(Array.isArray(out.drafts)){ box.appendChild(el('div','h','订单草稿列表')); out.drafts.forEach(function(d){ row(box,String(d.draft_id).slice(0,10)+'…',d.status+' · '+((d.price&&d.price.display)||'')) }); return }
+    box.appendChild(el('div','h','订单草稿 · '+String(out.draft_id||'').slice(0,10)+'…'))
+    row(box,'状态',String(out.status||''))
+    row(box,'商品',((out.product&&out.product.title)||'')+' ×'+(out.quantity||1))
+    box.appendChild(el('div','price',(out.price&&out.price.display)||''))
+    fiatLine(box,out.fiat_estimate)
+    row(box,'配送',(out.destination&&out.destination.summary)||'')
+    row(box,'支付轨道',String(out.payment_rail||''))
+    toggler(box,'展开轨道说明',function(b){ b.appendChild(el('div','meta',out.rail_note||'')) })
+    row(box,'过期时间',String(out.expires_at||''))
+    if(String(out.status)==='draft'&&typeof oai.callTool==='function'){
+      var b2=el('button','btn','提交 Passkey 审批(不会直接执行)')
+      b2.addEventListener('click',function(){ oai.callTool('webaz_submit_order_request',{draft_id:out.draft_id}) })
+      box.appendChild(b2)
+    }
+    disclosures(box,out.disclosures)
+  } else if(sv==='webaz.order_approval.model.v1'){
+    box.appendChild(el('div','h','待 Passkey 审批'))
+    row(box,'请求',String(out.request_id||''))
+    row(box,'操作','创建正式订单')
+    row(box,'资金','批准后才会移动(Passkey 必需)')
+    row(box,'状态','待批准')
+    if(out.duplicate_warning){
+      var w=el('div','warn'); w.appendChild(el('b',null,'检测到相似购买请求'))
+      w.appendChild(el('div',null,out.duplicate_warning.note||''))
+      ;(out.duplicate_warning.options||[]).forEach(function(o){ w.appendChild(el('div','meta','· '+o)) })
+      box.appendChild(w)
+    }
+    var openBtn=el('button','btn','打开审批页面(webaz.xyz · Passkey)')
+    openBtn.addEventListener('click',function(){
+      if(typeof oai.openExternal==='function') oai.openExternal({href:'https://webaz.xyz/'+String(out.approval_url||'').replace(/^\\//,'')})
+      else if(typeof oai.sendFollowupTurn==='function') oai.sendFollowupTurn({prompt:'请给我审批页面链接'})
+    })
+    box.appendChild(openBtn)
+    box.appendChild(el('div','meta ok','批准成功后:唯一正式订单号可经 webaz_approval_requests 查询(executed_order_id)'))
+    disclosures(box,out.disclosures)
+  } else {
+    box.textContent='未知投影版本:'+sv
+  }
 })();
 </script></body></html>`

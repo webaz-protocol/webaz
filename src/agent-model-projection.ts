@@ -143,10 +143,9 @@ export function summarizeBuyerOrders(r: Record<string, unknown>): string {
 }
 
 export function summarizeQuoteResult(r: Record<string, unknown>): string {
-  const payable = (r.payable_total ?? {}) as Record<string, unknown>
-  const amt = Number(payable.amount_minor)
-  const disp = Number.isFinite(amt) ? `${amt / 1_000_000} WAZ` : 'n/a'
-  const rail = ((r.payment ?? {}) as Record<string, unknown>).rail ?? 'escrow'
+  const price = (r.price ?? r.payable_total ?? {}) as Record<string, unknown>
+  const disp = typeof price.display === 'string' ? price.display : fmtUsdcMinor(price.amount_minor) || 'n/a'
+  const rail = r.payment_rail ?? ((r.payment ?? {}) as Record<string, unknown>).rail ?? 'escrow'
   const tok = typeof r.quote_token === 'string' ? ` quote_token=${r.quote_token} (single-use → webaz_order_draft).` : ''
   return `Quote ${String(r.quote_id ?? '')}: payable ${disp} (${String(rail)} rail), expires ${String(r.expires_at ?? '')}.${tok} Quote only — nothing charged, no stock held. / 仅报价:不扣款、不锁库存。`
 }
@@ -190,4 +189,131 @@ export function projectProductDetail(p: Record<string, unknown>): Record<string,
     return_condition: p.return_condition == null ? null : capBytes(String(p.return_condition), 200).text,
     fragile: p.fragile == null ? null : !!p.fragile,
   }
+}
+
+// ─── MCP UI PR-5 — QuoteAndApproval 消费者投影(WAZ is never a consumer-facing currency)────────
+// quote/draft/approval 三形态的紧凑消费者面(≤350/300/250 tok):USDC 主价 + dest_region 推导的
+// 法币估算(带 ≈/estimated/stale,绝不表述为已锁定结算金额)+ 支付轨道诚信文案。协议记账
+// (line_items/units/WAZ)保留在路由响应与审批执行层 —— 投影只重塑消费者可见面,不动经济语义。
+
+export const SCHEMA_ORDER_DRAFT = 'webaz.order_draft.model.v1'
+export const SCHEMA_ORDER_APPROVAL = 'webaz.order_approval.model.v1'
+
+const FIAT_SYMBOL: Record<string, string> = { USD: '$', SGD: 'S$', CNY: '¥', EUR: '€', INR: '₹', IDR: 'Rp', MYR: 'RM', PHP: '₱', VND: '₫', THB: '฿' }
+
+export function fmtUsdcMinor(minor: unknown): string {
+  const n = Number(minor)
+  if (!Number.isFinite(n)) return ''
+  const v = n / 1_000_000
+  return `${Number.isInteger(v) ? v : v.toFixed(2)} USDC`
+}
+
+export interface FxView { rates?: Record<string, number>; as_of?: string; stale?: boolean }
+
+/** 法币估算(display-only):region → 币种;USD 区或无汇率 → 省略(仍显示 USDC,绝不伪造法币)。 */
+export function fiatEstimate(payableMinor: unknown, region: unknown, fx: FxView | null | undefined, regionToCcy: (r: string | null | undefined) => string): Record<string, unknown> | null {
+  const n = Number(payableMinor)
+  if (!Number.isFinite(n) || !fx?.rates) return null
+  const ccy = regionToCcy(region == null ? null : String(region))
+  const rate = Number(fx.rates[ccy])
+  if (ccy === 'USD' || !Number.isFinite(rate) || rate <= 0) return null
+  return {
+    currency: ccy,
+    display: `≈ ${FIAT_SYMBOL[ccy] ?? ccy}${((n / 1_000_000) * rate).toFixed(2)}`,
+    rate, as_of: fx.as_of ?? null, stale: fx.stale === true, estimated: true,
+    note: fx.stale === true ? '按近似(非实时)参考汇率估算,非结算金额' : '按当前参考汇率估算,非结算金额',
+  }
+}
+
+/** 支付轨道诚信文案(消费者面必须诚实:模拟托管≠真实 USDC 托管;直付=WebAZ 不托管本金)。 */
+export function railHonesty(rail: unknown): string {
+  return String(rail) === 'direct_p2p'
+    ? '买家直接向卖家付款;WebAZ 不托管本金;实际付款方式和币种以确认页面为准'
+    : '支付轨道:模拟托管测试 —— 本流程不代表真实 USDC 或法币结算'
+}
+
+const lineAmt = (r: Record<string, unknown>, code: string): number => {
+  const li = Array.isArray(r.line_items) ? r.line_items as Array<Record<string, unknown>> : []
+  return Number(li.find(l => l.code === code)?.amount_minor) || 0
+}
+
+/** quote 路由响应 → 消费者投影(目标 ≤350 tok)。 */
+export function projectQuoteConsumer(r: Record<string, unknown>, fx: FxView | null, regionToCcy: (x: string | null | undefined) => string): Record<string, unknown> {
+  const prod = (r.product ?? {}) as Record<string, unknown>
+  const dest = (r.destination ?? {}) as Record<string, unknown>
+  const pay = (r.payment ?? {}) as Record<string, unknown>
+  const ship = (r.shipping ?? {}) as Record<string, unknown>
+  const terms = (r.trade_terms ?? {}) as Record<string, unknown>
+  const qty = Number(((r.quantity ?? {}) as Record<string, unknown>).quoted) || 1
+  const payable = Number(((r.payable_total ?? {}) as Record<string, unknown>).amount_minor)
+  const item = lineAmt(r, 'item_subtotal'), shipping = lineAmt(r, 'shipping')
+  const other = Math.max(0, payable - item - shipping)
+  return {
+    schema_version: SCHEMA_ORDER_QUOTE,
+    quote_id: r.quote_id,
+    ...(typeof r.quote_token === 'string' ? { quote_token: r.quote_token } : { quote_token_note: 'idempotent replay — token issued once with the original response' }),
+    product: { id: prod.product_id, title: prod.title },
+    quantity: qty,
+    price: { amount_minor: payable, currency: 'USDC', currency_exponent: 6, display: fmtUsdcMinor(payable) },
+    ...(fiatEstimate(payable, dest.region, fx, regionToCcy) ? { fiat_estimate: fiatEstimate(payable, dest.region, fx, regionToCcy) } : {}),
+    amounts: { item, shipping, other },
+    destination: { region: dest.region ?? null, summary: dest.address_summary ?? null },
+    shipping: { supported: ship.supported !== false, handling_hours: ship.handling_hours ?? null, estimated_days: ship.estimated_days ?? null },
+    return_days: terms.return_days ?? null, warranty_days: terms.warranty_days ?? null,
+    payment_rail: pay.rail ?? 'escrow', rail_note: railHonesty(pay.rail),
+    stock_reserved: false, economic_action_executed: false,
+    expires_at: r.expires_at,
+    available_actions: ['create_draft'],
+    disclosures: ['此报价不会扣款', '此报价不会锁定库存', '只有通过 Passkey 批准后才会创建正式订单'],
+  }
+}
+
+/** draftView → 消费者投影(目标 ≤300 tok)。 */
+export function projectDraftConsumer(d: Record<string, unknown>, fx: FxView | null, regionToCcy: (x: string | null | undefined) => string): Record<string, unknown> {
+  const prod = (d.product ?? {}) as Record<string, unknown>
+  const dest = (d.destination ?? {}) as Record<string, unknown>
+  const payable = Number(((d.payable_total ?? d.total ?? {}) as Record<string, unknown>).amount_minor)
+  const status = String(d.status ?? '')
+  return {
+    schema_version: SCHEMA_ORDER_DRAFT,
+    draft_id: d.draft_id, status,
+    ...(d.idempotent_replay ? { idempotent_replay: true } : {}), ...(d.already_cancelled ? { already_cancelled: true } : {}),
+    product: { id: prod.product_id, title: prod.title },
+    quantity: d.quantity,
+    price: { amount_minor: payable, currency: 'USDC', currency_exponent: 6, display: fmtUsdcMinor(payable) },
+    ...(fiatEstimate(payable, dest.region, fx, regionToCcy) ? { fiat_estimate: fiatEstimate(payable, dest.region, fx, regionToCcy) } : {}),
+    destination: { region: dest.region ?? null, summary: dest.address_summary ?? null },
+    payment_rail: d.payment_rail ?? 'escrow', rail_note: railHonesty(d.payment_rail),
+    stock_reserved: false, economic_action_executed: false,
+    expires_at: d.expires_at,
+    available_actions: status === 'draft' ? ['submit_request'] : [],
+    disclosures: ['草稿不会扣款、不锁库存,24 小时过期', '提交后需真人 Passkey 批准才创建正式订单'],
+  }
+}
+
+/** submit 路由响应 → 审批消费者投影(目标 ≤250 tok;重复购买保护字段透传成显式警告)。 */
+export function projectSubmitConsumer(r: Record<string, unknown>): Record<string, unknown> {
+  const idem = (r.idempotency ?? {}) as Record<string, unknown>
+  const dup = idem.duplicate === true
+  return {
+    schema_version: SCHEMA_ORDER_APPROVAL,
+    request_id: r.request_id, draft_id: r.draft_id,
+    action_type: 'order_create', status: 'pending_approval',
+    passkey_required: true, moves_funds_on_approval: true,
+    approval_url: r.approval_url,
+    ...(dup ? { duplicate: true, duplicate_warning: { note: '检测到相似购买请求 —— 已复用现有待审批请求,未创建第二个审批/订单', existing_request_id: r.request_id, options: ['打开已有审批', '取消本次', '如确需再买一份,请明确说明后重新报价'] } } : {}),
+    available_actions: ['open_approval', 'check_status_via_webaz_approval_requests'],
+    disclosures: ['提交不会执行 —— 只有真人 Passkey 批准才创建唯一正式订单(重试/重复批准返回同一订单)'],
+  }
+}
+
+export function summarizeDraftResult(r: Record<string, unknown>): string {
+  if (Array.isArray(r.drafts)) return `${Number(r.count) || (r.drafts as unknown[]).length} draft(s): ${(r.drafts as Array<Record<string, unknown>>).map(d => `${d.draft_id}=${d.status}`).join(', ')}. Details in structuredContent.`
+  const p = (r.price ?? {}) as Record<string, unknown>
+  return `Draft ${r.draft_id} (${r.status}): ${(r.product as Record<string, unknown>)?.title ?? ''} ×${r.quantity} ${p.display ?? ''}. Not charged, no stock held; expires ${r.expires_at}. Next: webaz_submit_order_request(draft_id). / 草稿不扣款不锁库存。`
+}
+
+export function summarizeSubmitResult(r: Record<string, unknown>): string {
+  const dup = r.duplicate === true ? ' REUSED an existing pending request (similar-purchase protection — no second approval/order created).' : ''
+  return `Approval request ${r.request_id} pending human Passkey.${dup} Open: ${r.approval_url} — submit does NOT execute; only the Passkey approval creates the single real order. / 提交不执行,Passkey 批准才建单。`
 }

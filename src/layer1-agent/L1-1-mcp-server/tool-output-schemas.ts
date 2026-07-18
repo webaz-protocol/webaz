@@ -9,7 +9,7 @@
  * 每个 schema 同时容纳成功形状与结构化错误形状(error/error_code)—— 工具声明 outputSchema 后,
  * 成功与失败路径都返回 structuredContent(MCP 规范:声明了 outputSchema 的工具必须返回结构化结果)。
  */
-import { SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL, SCHEMA_ORDER_STATUS, SCHEMA_ORDER_QUOTE } from '../../agent-model-projection.js'
+import { SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL, SCHEMA_ORDER_STATUS, SCHEMA_ORDER_QUOTE, SCHEMA_ORDER_DRAFT, SCHEMA_ORDER_APPROVAL } from '../../agent-model-projection.js'
 
 const productMoney = { type: 'object', description: 'product price: amount_minor / currency USDC / display (display line only; fx table gives display-only local conversions)' }
 const protocolMoney = { type: 'object', description: 'protocol-recorded integer money: amount_minor / currency / currency_exponent / display' }
@@ -65,17 +65,51 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
   },
   webaz_quote_order: {
     type: 'object',
-    description: `${SCHEMA_ORDER_QUOTE} — server-authoritative quote: integer line items, masked ids, region-only destination. Quote only — nothing charged, no stock held`,
+    description: `${SCHEMA_ORDER_QUOTE} — consumer quote projection: USDC price + display-only fiat estimate, region-only destination, rail-honesty note. Quote only — nothing charged, no stock held`,
     properties: {
       schema_version: { type: 'string', const: SCHEMA_ORDER_QUOTE },
       quote_id: { type: 'string' }, quote_token: { type: 'string', description: 'single-use, 10-min TTL — pass to webaz_order_draft' },
-      line_items: { type: 'array', description: 'integer money lines: item_subtotal / shipping / protocol_fee / discount / donation / estimated_tax' },
-      total: protocolMoney, payable_total: protocolMoney,
-      payment: { type: 'object', description: 'rail semantics (escrow custodied vs direct_p2p off-protocol)' },
-      destination: { type: 'object', description: 'region tag + summary only — full address never returned' },
+      product: { type: 'object', description: '{id, title}' }, quantity: { type: 'number' },
+      price: productMoney,
+      fiat_estimate: { type: 'object', description: 'display-only local-fiat estimate {currency, display ≈…, rate, as_of, stale, estimated:true} — NEVER a locked settlement amount; omitted when unavailable (USDC still shown)' },
+      amounts: { type: 'object', description: 'integer minor breakdown {item, shipping, other}' },
+      destination: { type: 'object', description: 'region tag + masked summary only — full address never returned' },
+      shipping: { type: 'object' }, return_days: { type: 'number' }, warranty_days: { type: 'number' },
+      payment_rail: { type: 'string' }, rail_note: { type: 'string', description: 'honesty note: simulated escrow ≠ real USDC custody; direct_p2p = WebAZ holds no principal' },
       expires_at: { type: 'string' },
       stock_reserved: { type: 'boolean', const: false },
       economic_action_executed: { type: 'boolean', const: false },
+      available_actions: { type: 'array' }, disclosures: { type: 'array' },
+      ...err,
+    },
+  },
+  webaz_order_draft: {
+    type: 'object',
+    description: `${SCHEMA_ORDER_DRAFT} — consumer draft projection (single or {count,drafts[]}): frozen snapshot, nothing charged, no stock held, 24h expiry`,
+    properties: {
+      schema_version: { type: 'string', const: SCHEMA_ORDER_DRAFT },
+      draft_id: { type: 'string' }, status: { type: 'string' },
+      product: { type: 'object' }, quantity: { type: 'number' },
+      price: productMoney,
+      fiat_estimate: { type: 'object', description: 'display-only ≈ local fiat (see quote schema)' },
+      destination: { type: 'object' }, payment_rail: { type: 'string' }, rail_note: { type: 'string' },
+      expires_at: { type: 'string' },
+      drafts: { type: 'array', description: 'list form: compact draft projections' }, count: { type: 'number' },
+      available_actions: { type: 'array' }, disclosures: { type: 'array' },
+      ...err,
+    },
+  },
+  webaz_submit_order_request: {
+    type: 'object',
+    description: `${SCHEMA_ORDER_APPROVAL} — approval submit projection: pending human Passkey; submit NEVER executes; duplicate-purchase protection surfaces an explicit warning`,
+    properties: {
+      schema_version: { type: 'string', const: SCHEMA_ORDER_APPROVAL },
+      request_id: { type: 'string' }, draft_id: { type: 'string' },
+      action_type: { type: 'string', const: 'order_create' }, status: { type: 'string', const: 'pending_approval' },
+      passkey_required: { type: 'boolean', const: true }, moves_funds_on_approval: { type: 'boolean' },
+      approval_url: { type: 'string' },
+      duplicate: { type: 'boolean' }, duplicate_warning: { type: 'object', description: 'similar-purchase protection: existing request REUSED, no second approval/order' },
+      available_actions: { type: 'array' }, disclosures: { type: 'array' },
       ...err,
     },
   },
