@@ -294,6 +294,7 @@
     "test:mcp-order-timeline-ui": "tsx scripts/test-mcp-order-timeline-ui.ts",
     "test:mcp-apps-standard": "tsx scripts/test-mcp-apps-standard.ts",
     "test:agent-category-contract": "tsx scripts/test-agent-category-contract.ts",
+    "test:discover-recovery-browse": "tsx scripts/test-discover-recovery-browse.ts",
     "test:discover-demand-signals": "tsx scripts/test-discover-demand-signals.ts",
     "test:agent-address-masking": "tsx scripts/test-agent-address-masking.ts",
     "test:buyer-quote": "tsx scripts/test-buyer-quote.ts",

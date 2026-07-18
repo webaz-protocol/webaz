@@ -822,6 +822,7 @@ jobs:
       - run: npm run test:mcp-order-timeline-ui
       - run: npm run test:mcp-apps-standard
       - run: npm run test:agent-category-contract
+      - run: npm run test:discover-recovery-browse
       - run: npm run test:discover-demand-signals
       - run: npm run test:agent-address-masking
       - run: npm run test:buyer-quote

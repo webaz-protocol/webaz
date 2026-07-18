@@ -99,11 +99,30 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     // #977：新品发现 (has_sales=false) trending/recommended 转用卖家维度
     const isNewArrivalsCtx = has_sales === 'false'
 
+    // 调用契约 PR-C — 无约束全目录浏览守卫(agent 模式):审计根因之一是 0 命中被导向"无 query
+    //   浏览 limit 50/100/200"。有效约束 = query / 精确匹配 / category / 价格 / 退货 / 发货 / 卖家 /
+    //   ship_to / result_handle。全无有效约束(纯浏览)时,agent 模式硬性限量 ≤8,超出即 400 且给机器
+    //   可执行出路。命中/过滤路径不受影响。raw/pwa 面不加此门(pwa 是人浏览,raw 是高信任 agent)。
+    const hasQuery = typeof q === 'string' && q.trim().length > 0
+    const hasFilter = !!category || max_price != null || min_return_days != null || max_handling_hours != null
+      || !!seller_id || (typeof ship_to === 'string' && ship_to.trim().length > 0) || has_sales === 'true' || has_sales === 'false'
+    const isDetailFetch = typeof req.query.result_handle === 'string' && req.query.result_handle
+    const unbounded = mode === 'agent' && !hasQuery && !hasFilter && !isDetailFetch
+
     // limit
     const cap = PRODUCT_LIMITS[mode]
     let lim = Math.floor(Number(limitRaw))   // 非整数 limit 直进 SQL LIMIT 会炸 → 取整(Codex round-1 MEDIUM)
     if (!Number.isFinite(lim) || lim <= 0) lim = mode === 'pwa' ? 30 : (mode === 'raw' ? 100 : 50)
+    if (unbounded && lim > 8) {
+      return void res.status(400).json({
+        error: 'unbounded catalog browse — an agent must not scan the whole catalog. Give a constraint (category / keywords via webaz_discover, or a filter), or request a small sample (limit ≤ 8).',
+        error_code: 'UNBOUNDED_CATALOG_BROWSE',
+        recommended_next_call: { tool: 'webaz_discover', description: 'structured discovery with a category key and/or keywords', category_vocabulary: 'GET https://webaz.xyz/api/agent/categories' },
+        sample_browse: { tool: 'webaz_search', arguments: { mode: 'agent', sort: 'newest', limit: 8 }, description: 'if you truly want a catalog sample, cap at 8' },
+      })
+    }
     if (lim > cap) lim = cap
+    if (unbounded && lim > 8) lim = 8   // 纯浏览(无约束)硬顶 8,即便 cap 更高
 
     // 内层 SELECT：把 score 计算出来，外层用它过滤 + 排序
     // recommend_count = 已购买的买家中 4 星+ 评价的去重数（一个买家只能推荐一次）
