@@ -8,6 +8,11 @@ const VIEWPORTS = [
 ] as const
 
 const DASHBOARD_VIEWPORTS = [VIEWPORTS[0], VIEWPORTS[2]] as const
+const SELLER_WORKBENCH_VIEWPORTS = [
+  VIEWPORTS[0],
+  { name: 'wide-mobile', width: 590, height: 932 },
+  VIEWPORTS[2],
+] as const
 
 type RuntimeGuards = {
   assertClean: () => void
@@ -470,7 +475,7 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
   })
 }
 
-for (const viewport of DASHBOARD_VIEWPORTS) {
+for (const viewport of SELLER_WORKBENCH_VIEWPORTS) {
   test(`authenticated seller workbench at ${viewport.name}`, async ({ page }) => {
     const guards = installRuntimeGuards(page)
     await mockSellerDashboard(page)
@@ -491,11 +496,35 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     await expect(page.locator('a.seller-order-link[href="#order/ux-order-paid"]')).toBeVisible()
     await expect(page.locator('#seller-task-exceptions')).toContainText('Portable lamp')
     const columns = await page.locator('.seller-kpi-grid').evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length)
-    expect(columns).toBe(viewport.name === 'mobile' ? 2 : 5)
-    if (viewport.name === 'mobile') {
+    const isPhone = viewport.width <= 600
+    expect(columns).toBe(isPhone ? 2 : 5)
+    if (isPhone) {
       await expect(page.locator('#agent-fab')).toBeHidden()
       await expect(page.locator('#feedback-fab')).toBeHidden()
     }
+    const alignment = await page.locator('.seller-workbench').evaluate(root => {
+      const rect = (selector: string) => {
+        const node = root.querySelector(selector)
+        if (!node) return null
+        const box = node.getBoundingClientRect()
+        return { left: box.left, right: box.right, width: box.width }
+      }
+      return {
+        nav: rect('.seller-subnav'),
+        kpis: rect('.seller-kpi-grid'),
+        tasks: rect('.seller-task-stack'),
+        accept: rect('#seller-task-accept'),
+        ship: rect('#seller-task-ship'),
+        exceptions: rect('#seller-task-exceptions'),
+      }
+    })
+    expect(alignment.nav).not.toBeNull()
+    for (const section of [alignment.kpis, alignment.tasks, alignment.accept, alignment.ship, alignment.exceptions]) {
+      expect(section).not.toBeNull()
+      expect(Math.abs(section!.left - alignment.nav!.left)).toBeLessThanOrEqual(1)
+      expect(Math.abs(section!.right - alignment.nav!.right)).toBeLessThanOrEqual(1)
+    }
+    await assertNoHorizontalOverflow(page)
     await assertAxeHasNoSeriousOrCriticalViolations(page)
     await page.locator('.seller-subtab').filter({ hasText: /营销|Marketing/ }).click()
     await expect(page).toHaveURL(/#seller\/marketing$/)

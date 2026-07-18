@@ -40,7 +40,7 @@ import { annotateTools } from './tool-annotations.js'  // 标准 MCP annotations
 import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-tool securitySchemes(oauth2 仅 grant-reachable / 余 noauth)
 import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
 import { filterToolsBySurface, type ToolSurface } from './tool-surfaces.js'
-import { PRODUCT_RESULTS_WIDGET_HTML, QUOTE_APPROVAL_WIDGET_HTML, ORDER_TIMELINE_WIDGET_HTML } from './ui-widgets.js'  // MCP UI PR-4:ProductResults 组件
+import { PRODUCT_RESULTS_WIDGET_HTML, QUOTE_APPROVAL_WIDGET_HTML, ORDER_TIMELINE_WIDGET_HTML, PRODUCT_RESULTS_WIDGET_MCP_HTML, QUOTE_APPROVAL_WIDGET_MCP_HTML, ORDER_TIMELINE_WIDGET_MCP_HTML } from './ui-widgets.js'  // MCP UI PR-4..6 + PR-A:legacy + 标准双轨组件
 import { getUsdRates, regionToCurrency } from '../../fx-rates.js'  // USDC 显示换算(display-only)  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
 import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult, summarizeDraftResult, summarizeSubmitResult, summarizeOrderTimeline,
          projectQuoteConsumer, projectDraftConsumer, projectSubmitConsumer, projectOrderTimelineConsumer,
@@ -704,10 +704,12 @@ Returns: structuredContent (webaz.product_search.model.v1) — per-product decis
         cursor: { type: 'string', description: 'Pagination cursor (from previous next_cursor)' },
       },
     },
-    // MCP UI PR-4:ChatGPT Apps 渐进增强 —— 支持 ui:// 的宿主用 ProductResults 组件渲染
-    // structuredContent(搜索页/0命中/详情三形态);其余宿主照旧 structuredContent+摘要降级。
+    // MCP UI PR-4/PR-A:MCP Apps 渐进增强 —— 标准键(SEP-1865)+ ChatGPT legacy 键双轨;
+    // 其余宿主照旧 structuredContent+摘要降级。visibility 含 'app':组件翻页/详情按钮 callTool 本工具。
     _meta: {
+      ui: { resourceUri: 'ui://widget/webaz-products-mcp.html', visibility: ['model', 'app'] },
       'openai/outputTemplate': 'ui://widget/webaz-products.html',
+      'openai/widgetAccessible': true,
       'openai/toolInvocation/invoking': 'Searching WebAZ…',
       'openai/toolInvocation/invoked': 'WebAZ results ready',
     },
@@ -1898,8 +1900,11 @@ No grant → GRANT_REQUIRED (webaz_pair action=start). Missing scope → structu
         updated_since: { type: 'string', description: 'With full: incremental read — unchanged order returns a tiny up_to_date response; otherwise timeline contains only entries newer than this ISO timestamp.' },
       },
     },
+    // PR-A:visibility 含 'app' —— OrderTimeline 组件的刷新/列表点入/查看完整时间线均 callTool 本工具(纯读)。
     _meta: {
+      ui: { resourceUri: 'ui://widget/webaz-order-timeline-mcp.html', visibility: ['model', 'app'] },
       'openai/outputTemplate': 'ui://widget/webaz-order-timeline.html',
+      'openai/widgetAccessible': true,
       'openai/toolInvocation/invoking': 'Loading WebAZ order timeline…',
       'openai/toolInvocation/invoked': 'WebAZ order timeline ready',
     },
@@ -1944,7 +1949,10 @@ quote_token: 10-min, single-use, bound to you+product+quantity+address+rail+amou
       },
       required: ['product_id'],
     },
+    // PR-A:quote 结果由 QuoteAndApproval 组件渲染,但组件从不 callTool 本工具(报价入口走会话流)——
+    // visibility 只留 'model',不授 'app'(遵守"当前不被 widget 调用的工具不因本 PR 获得 app 权限")。
     _meta: {
+      ui: { resourceUri: 'ui://widget/webaz-quote-approval-mcp.html', visibility: ['model'] },
       'openai/outputTemplate': 'ui://widget/webaz-quote-approval.html',
       'openai/toolInvocation/invoking': 'Preparing WebAZ order flow…',
       'openai/toolInvocation/invoked': 'WebAZ order flow ready',
@@ -1966,8 +1974,12 @@ Next: webaz_submit_order_request(draft_id) → the human's Passkey approval re-v
       },
       required: ['action'],
     },
+    // PR-A:visibility 含 'app' —— QuoteAndApproval 组件"创建订单草稿"按钮 callTool 本工具
+    // (不扣款/不锁库存/quote_token 单次消费幂等;终局仍 Passkey)。
     _meta: {
+      ui: { resourceUri: 'ui://widget/webaz-quote-approval-mcp.html', visibility: ['model', 'app'] },
       'openai/outputTemplate': 'ui://widget/webaz-quote-approval.html',
+      'openai/widgetAccessible': true,
       'openai/toolInvocation/invoking': 'Preparing WebAZ order flow…',
       'openai/toolInvocation/invoked': 'WebAZ order flow ready',
     },
@@ -1987,8 +1999,12 @@ Next: webaz_submit_order_request(draft_id) → the human's Passkey approval re-v
       },
       required: ['draft_id'],
     },
+    // PR-A:visibility 含 'app' —— 组件"提交 Passkey 审批"按钮 callTool 本工具(SUBMIT-ONLY:只创建
+    // 审批请求,幂等 + 重复购买保护;真实订单只能由人的 Passkey 批准创建,对 agent/widget 不可达)。
     _meta: {
+      ui: { resourceUri: 'ui://widget/webaz-quote-approval-mcp.html', visibility: ['model', 'app'] },
       'openai/outputTemplate': 'ui://widget/webaz-quote-approval.html',
+      'openai/widgetAccessible': true,
       'openai/toolInvocation/invoking': 'Preparing WebAZ order flow…',
       'openai/toolInvocation/invoked': 'WebAZ order flow ready',
     },
@@ -5884,6 +5900,30 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         mimeType:    'text/html+skybridge',
         _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' },
       },
+      // ── PR-A:标准 MCP Apps 资源(SEP-1865;text/html;profile=mcp-app)——与 legacy skybridge 资源
+      //    URI 分离防宿主缓存/MIME 歧义;同一 render 体,boot 用标准 ui/* postMessage 桥。CSP deny-by-
+      //    default(四空数组);刻意省略 ui.domain(组件无固定 CORS 来源需求,由宿主给默认沙箱 origin)。
+      {
+        uri:         'ui://widget/webaz-products-mcp.html',
+        name:        'WebAZ ProductResults (MCP Apps)',
+        description: 'Standard MCP Apps variant of the ProductResults component (same render body; ui/* postMessage bridge). Self-contained, no external requests.',
+        mimeType:    'text/html;profile=mcp-app',
+        _meta: { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } },
+      },
+      {
+        uri:         'ui://widget/webaz-quote-approval-mcp.html',
+        name:        'WebAZ QuoteAndApproval (MCP Apps)',
+        description: 'Standard MCP Apps variant of the QuoteAndApproval component (same render body; ui/* postMessage bridge). Economic execution stays behind the webaz.xyz Passkey.',
+        mimeType:    'text/html;profile=mcp-app',
+        _meta: { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } },
+      },
+      {
+        uri:         'ui://widget/webaz-order-timeline-mcp.html',
+        name:        'WebAZ OrderTimeline (MCP Apps)',
+        description: 'Standard MCP Apps variant of the OrderTimeline component (same render body; ui/* postMessage bridge). High-risk actions stay on the webaz.xyz order page (Passkey).',
+        mimeType:    'text/html;profile=mcp-app',
+        _meta: { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } },
+      },
       {
         uri:         GUIDE_INFO_URI,
         name:        'WebAZ full onboarding guide (long form)',
@@ -5905,6 +5945,16 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     if (request.params.uri === 'ui://widget/webaz-products.html') {
       return { contents: [{ uri: 'ui://widget/webaz-products.html', mimeType: 'text/html+skybridge', text: PRODUCT_RESULTS_WIDGET_HTML,
         _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' } }] }
+    }
+    // PR-A:标准 MCP Apps 资源(profile=mcp-app;ui.csp deny-by-default;无 ui.domain)
+    const STANDARD_WIDGETS: Record<string, string> = {
+      'ui://widget/webaz-products-mcp.html': PRODUCT_RESULTS_WIDGET_MCP_HTML,
+      'ui://widget/webaz-quote-approval-mcp.html': QUOTE_APPROVAL_WIDGET_MCP_HTML,
+      'ui://widget/webaz-order-timeline-mcp.html': ORDER_TIMELINE_WIDGET_MCP_HTML,
+    }
+    if (STANDARD_WIDGETS[request.params.uri]) {
+      return { contents: [{ uri: request.params.uri, mimeType: 'text/html;profile=mcp-app', text: STANDARD_WIDGETS[request.params.uri],
+        _meta: { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } } }] }
     }
     if (request.params.uri === GUIDE_INFO_URI) {
       return { contents: [{ uri: GUIDE_INFO_URI, mimeType: 'application/json', text: JSON.stringify(await buildInfoFull(), null, 2) }] }
