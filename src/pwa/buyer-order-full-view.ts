@@ -172,8 +172,9 @@ export function buildBuyerOrderFull(db: Database.Database, humanId: string, orde
   const rail = String(o.payment_rail ?? 'escrow')
   const tracking = agentShipTracking(db, orderId)
 
+  const prodTitle = (() => { try { const p2 = db.prepare('SELECT title FROM products WHERE id = ?').get(String(o.product_id ?? '')) as { title: string } | undefined; return p2?.title ?? null } catch { return null } })()
   return { ok: true, response: {
-    order: { ...base, quantity: numOrNull(Number(o.quantity)), created_at: String(o.created_at ?? '') },
+    order: { ...base, quantity: numOrNull(Number(o.quantity)), created_at: String(o.created_at ?? ''), product_title: prodTitle },
     ...(sinceRaw ? { incremental: { since: sinceRaw, timeline_new: timeline.length, note: 'timeline below contains ONLY entries newer than updated_since' } } : {}),
     timeline,
     order_time_terms: orderTimeTerms(o.trade_terms_snapshot),

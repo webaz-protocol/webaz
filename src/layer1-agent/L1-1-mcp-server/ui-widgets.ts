@@ -264,3 +264,90 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;backgr
   }
 })();
 </script></body></html>`
+
+// OrderTimeline:渲染 webaz.order_timeline.model.v1(单订单履约时间线)与 webaz.order_status.model.v1
+// (列表/最小单/up_to_date)。deadline 在组件端按【观看者本地时区】渲染;刷新走 callTool(增量语义由
+// 服务端 updated_since 承担);联系商家回会话流(上下文绑定订单聊天,无自由私信);高风险动作回订单页。
+export const ORDER_TIMELINE_WIDGET_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;background:transparent}
+.box{border:1px solid #d6dae2;border-radius:12px;padding:14px 16px;max-width:430px;background:#fff}
+.h{font-size:14px;font-weight:700;margin-bottom:4px}
+.price{color:#0a7d4f;font-weight:800;font-size:18px}
+.fiat{color:#5b6472;font-size:12px}
+.badge{display:inline-block;font-size:10px;border-radius:99px;padding:2px 8px;background:#fff3e0;color:#a15c00;margin:6px 0}
+.st{font-size:13px;font-weight:700;color:#2b3a8f}
+.row{display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:#374151}
+.tl{border-left:2px solid #d6dae2;margin:10px 0 4px 6px;padding-left:12px}
+.tl div{font-size:11px;color:#5b6472;padding:3px 0;position:relative}
+.tl div:before{content:'';position:absolute;left:-17px;top:8px;width:8px;height:8px;border-radius:99px;background:#93a3f5}
+.warn{background:#fff7e0;border:1px solid #e5c268;border-radius:10px;padding:8px 10px;font-size:11px;color:#7a5200;margin-top:8px}
+.rowbtn{display:flex;gap:6px;margin-top:10px}
+.rowbtn button{flex:1;border:1px solid #93a3f5;background:#eef2ff;border-radius:10px;padding:6px;font-size:12px;font-weight:600;cursor:pointer;color:#2b3a8f}
+.meta{font-size:11px;color:#5b6472}
+</style></head><body>
+<div id="root">WebAZ OrderTimeline — loading…</div>
+<script>
+(function(){
+  'use strict'
+  var oai = window.openai || {}
+  var out = oai.toolOutput || null
+  var root = document.getElementById('root')
+  function el(t,c,x){ var n=document.createElement(t); if(c)n.className=c; if(x!=null)n.textContent=String(x); return n }
+  function row(box,k,v){ var r=el('div','row'); r.appendChild(el('span',null,k)); r.appendChild(el('span',null,v)); box.appendChild(r) }
+  function localTime(iso){ try { return new Date(String(iso).replace(' ','T')+(String(iso).includes('Z')||String(iso).includes('+')?'':'Z')).toLocaleString() } catch(e){ return String(iso) } }
+  if(!out||!out.schema_version){ root.textContent='WebAZ: no structured payload visible to this widget.'; return }
+  root.textContent=''
+  var box=el('div','box'); root.appendChild(box)
+  var sv=String(out.schema_version)
+
+  if(sv==='webaz.order_status.model.v1'){
+    if(out.up_to_date){ box.appendChild(el('div','h','订单 '+out.order_id+' 无新变化')); box.appendChild(el('div','meta','状态:'+(out.status||'')+' · 增量刷新:自 updated_since 起无存储态变化')); return }
+    box.appendChild(el('div','h','买家订单'))
+    var s=out.summary||{}
+    box.appendChild(el('div','meta','共 '+(s.total||0)+' 单 · 活跃 '+(s.active||0)+' · 争议 '+(s.disputed||0)))
+    ;(out.orders||[]).forEach(function(o){
+      var r=el('div','row'); r.appendChild(el('span',null,String(o.order_id).slice(0,12)+'…')); r.appendChild(el('span',null,String(o.status)))
+      if(typeof oai.callTool==='function'){ r.style.cursor='pointer'; r.addEventListener('click',function(){ oai.callTool('webaz_buyer_orders',{order_id:o.order_id,full:true}) }) }
+      box.appendChild(r)
+    })
+    return
+  }
+
+  if(sv!=='webaz.order_timeline.model.v1'){ box.textContent='未知投影版本:'+sv; return }
+  box.appendChild(el('div','h',(out.product&&out.product.title)||String(out.order_id||'')))
+  box.appendChild(el('div','price',(out.price&&out.price.display)||''))
+  if(out.fiat_estimate) box.appendChild(el('div','fiat',out.fiat_estimate.display+(out.fiat_estimate.stale?'(近似汇率)':'')))
+  box.appendChild(el('div','badge',String(out.rail_badge||'')))
+  box.appendChild(el('div','st',(out.status&&out.status.label)||''))
+  if(out.next_actor) row(box,'下一责任方',String(out.next_actor))
+  if(out.deadline&&out.deadline.iso) row(box,'截止时间',localTime(out.deadline.iso))
+  var lg=out.logistics||{}
+  if(lg.tracking) row(box,'物流单号',String(lg.tracking))
+  var tl=el('div','tl')
+  ;(out.timeline||[]).forEach(function(t){ tl.appendChild(el('div',null,localTime(t.at)+' · '+((t.to_status&&t.to_status.label)||'')+(t.actor?'('+t.actor+')':''))) })
+  box.appendChild(tl)
+  if(out.refund){
+    var w=el('div','warn')
+    w.appendChild(el('b',null,'退款/退货'))
+    ;(out.refund.requests||[]).forEach(function(x){ w.appendChild(el('div',null,String(x.status)+' · '+((x.amount&&x.amount.display)||'')+' · '+String(x.created_at||''))) })
+    w.appendChild(el('div','meta',String(out.refund.note||'')))
+    box.appendChild(w)
+  }
+  var btns=el('div','rowbtn')
+  if(typeof oai.callTool==='function'){
+    var rf=el('button',null,'刷新')
+    rf.addEventListener('click',function(){ oai.callTool('webaz_buyer_orders',{order_id:out.order_id,full:true}) })   // 增量语义在服务端 updated_since;此处全读保证动作面新鲜
+    btns.appendChild(rf)
+  }
+  var chat=el('button',null,'联系商家')
+  chat.addEventListener('click',function(){
+    if(typeof oai.sendFollowupTurn==='function') oai.sendFollowupTurn({prompt:'请用 webaz_order_chat 读取订单 '+out.order_id+' 的对话'})
+  })
+  btns.appendChild(chat)
+  var open=el('button',null,'订单页(webaz.xyz)')
+  open.addEventListener('click',function(){ if(typeof oai.openExternal==='function') oai.openExternal({href:'https://webaz.xyz/#order/'+String(out.order_id||'')}) })
+  btns.appendChild(open)
+  box.appendChild(btns)
+  box.appendChild(el('div','meta',String(out.actions_note||'')))
+})();
+</script></body></html>`
