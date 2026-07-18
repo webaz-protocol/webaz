@@ -2077,7 +2077,9 @@ export function buildToolEnvelope(name: string, result: unknown): { content: Arr
     // 全工具 minify(pretty-print 缩进每响应多付 10-30% token,对模型可读性零增益)。结构不变,只有空白差异。
     return { content: [{ type: 'text', text: JSON.stringify(result) }] }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)   // throw null/undefined 也安全(Codex round-2 M-2)
+    // throw null/undefined 安全;敌意值(Symbol.toPrimitive 再抛)连 String() 都会炸 → 嵌套兜底(Codex round-3)
+    let msg = 'unserializable thrown value'
+    try { msg = e instanceof Error ? e.message : String(e) } catch { /* 保底文案 */ }
     return { content: [{ type: 'text', text: JSON.stringify({ error: `serialization failed: ${msg}` }) }], isError: true as const }
   }
 }

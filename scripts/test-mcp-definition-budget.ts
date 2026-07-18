@@ -3,7 +3,7 @@
  * MCP Token PR-7 — 定义/响应预算 ratchet 守卫。
  *   用法:npm run test:mcp-definition-budget
  *
- * ceilings 只降不升(与 complexity-ratchet 同哲学):tools/list 面级字节、单工具描述/定义上限、
+ * 面级字节【有界余量预算】(收紧靠 review 纪律,与 complexity-ratchet 同哲学):tools/list 面级字节、单工具描述/定义上限、
  * 全局 minify 源锁、search 默认页源锁、响应字节遥测在位。防止 token 优化被后续 PR 静默侵蚀。
  */
 import { mkdtempSync } from 'node:fs'
@@ -87,6 +87,9 @@ ok('B-6 response_bytes telemetry recorded per call (mcp_tool_calls.response_byte
   ok('B-9 circular result → structured isError envelope (no throw, telemetry path survives)', e1.isError === true && /serialization failed/.test(e1.content[0].text), e1.content[0].text.slice(0, 100))
   const e2 = buildToolEnvelope('webaz_get_status', { toJSON() { throw null } })
   ok('B-10 non-Error throw (null) from toJSON → still a structured isError envelope', e2.isError === true && /serialization failed/.test(e2.content[0].text), e2.content[0].text.slice(0, 100))
+  const hostile = { toJSON() { throw { [Symbol.toPrimitive]() { throw new Error('hostile') }, toString() { throw new Error('hostile') } } } }
+  const e3 = buildToolEnvelope('webaz_get_status', hostile)
+  ok('B-11 HOSTILE thrown value (String() itself throws) → still a structured isError envelope (nested fallback)', e3.isError === true && /unserializable thrown value/.test(e3.content[0].text), e3.content[0].text.slice(0, 100))
 }
 
 if (fail > 0) { console.error(`\n❌ mcp-definition-budget FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
