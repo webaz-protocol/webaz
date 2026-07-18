@@ -2629,26 +2629,21 @@ function extractCandidateAliases(text: string): Array<{ type: string; value: str
 
   return candidates
 }
-
-// 找到所有可能匹配用户输入的 product_id 集合
-// 三层匹配：① title 完全相等 ② external_title 完全相等 ③ alias 子串/token 出现在用户文本中
+// 找到所有可能匹配用户输入的 product_id 集合：ID/title/external_title/alias。
 function findProductsByAlias(userInput: string): Set<string> {
   const text = String(userInput || '').trim()
   const matched = new Set<string>()
   if (!text) return matched
-
-  // ① product.title 完全相等
+  // ① product ID / title 完全相等
   try {
-    const rows = db.prepare(`SELECT id FROM products WHERE title = ? AND status = 'active'`).all(text) as Array<{ id: string }>
+    const rows = db.prepare(`SELECT id FROM products WHERE (id = ? OR title = ?) AND status = 'active'`).all(text, text) as Array<{ id: string }>
     rows.forEach(r => matched.add(r.id))
   } catch {}
-
   // ② external_title 完全相等（product_external_links）
   try {
     const rows = db.prepare(`SELECT DISTINCT product_id FROM product_external_links WHERE external_title = ?`).all(text) as Array<{ product_id: string }>
     rows.forEach(r => matched.add(r.product_id))
   } catch {}
-
   // ③ alias 包含判定 — 只取 active + alias_value 长度 ≤ text 长度（必要条件）
   // 性能：MVP 阶段全表扫；大表后切 FTS5
   try {
@@ -2915,12 +2910,17 @@ function searchByExternalLink(opts: {
   platform?: string | null
   external_id?: string | null
   external_title?: string | null
-}): { matched_by: 'external_id' | 'external_title_exact' | 'product_title_exact' | 'none'; products: Record<string, unknown>[] } {
+}): { matched_by: 'product_id_exact' | 'external_id' | 'external_title_exact' | 'product_title_exact' | 'none'; products: Record<string, unknown>[] } {
   const cols = `p.id, p.title, p.description, p.price, p.stock, p.category, p.seller_id,
     p.specs, p.brand, p.model, p.handling_hours, p.return_days, p.warranty_days, p.ship_regions, p.fragile,
     p.estimated_days, p.return_condition, p.created_at, u.name as seller_name,
     pel.platform as link_platform, pel.external_id as link_external_id, pel.external_title as link_external_title, pel.url as link_url`
   const verifiedPredicate = `pel.verified = 1 AND (pel.revoked IS NULL OR pel.revoked = 0)`
+  // Level 0: product IDs remain exact lookup keys even when omitted from buyer-facing chrome.
+  if (opts.external_title) {
+    const byId = db.prepare(`SELECT p.id, p.title, p.description, p.price, p.stock, p.category, p.seller_id, p.specs, p.brand, p.model, p.handling_hours, p.return_days, p.warranty_days, p.ship_regions, p.fragile, p.estimated_days, p.return_condition, p.created_at, u.name as seller_name FROM products p JOIN users u ON p.seller_id = u.id WHERE p.id = ? AND p.status = 'active' LIMIT 1`).all(opts.external_title.trim()) as Record<string, unknown>[]
+    if (byId.length) return { matched_by: 'product_id_exact', products: byId }
+  }
 
   // Level 1: (platform, external_id) 完全相等
   if (opts.platform && opts.external_id) {
@@ -2934,10 +2934,7 @@ function searchByExternalLink(opts: {
     if (rows.length) return { matched_by: 'external_id', products: rows }
   }
 
-  // Level 2 & 3: 字符串绝对相等（Unicode NFKC 正规化后字面比较）。
-  // NFKC 只统一字符的"视觉等价形式"（半角↔全角、组合↔合成），不剥任何字符，
-  // 因此仍是精准匹配——只是"看起来一样"的字符串确实会被判等。
-  // 规则：商品标题必须与外链标题一致，所以两个字段都查。
+  // Level 2 & 3: NFKC 后仍保持字面完全相等；外链标题和商品标题都查。
   if (opts.external_title) {
     const norm = (s: string | null | undefined) => (s ?? '').normalize('NFKC').trim()
     const wanted = norm(opts.external_title)
@@ -2953,7 +2950,6 @@ function searchByExternalLink(opts: {
       if (linkedMatch.length) return { matched_by: 'external_title_exact', products: linkedMatch.slice(0, 20) }
 
       // Level 3: products.title 完全相等（手工上架无外链时的精准匹配入口）
-      const productCols = cols.split('JOIN product_external_links')[0]  // drop the pel cols
       const allProducts = db.prepare(`
         SELECT p.id, p.title, p.description, p.price, p.stock, p.category, p.seller_id,
                p.specs, p.brand, p.model, p.handling_hours, p.return_days, p.warranty_days,
@@ -7120,6 +7116,8 @@ function getSellerMetrics(userId: string): {
   on_time_rate: number | null
   dispute_win_rate: number | null
   dispute_count: number
+  dispute_won_count: number
+  dispute_lost_count: number
   open_dispute_count: number
   refund_rate: number | null
 } {
@@ -7144,6 +7142,8 @@ function getSellerMetrics(userId: string): {
     on_time_rate:     !isNew && completed > 0        ? +Math.min(1, onTimeEvents / completed).toFixed(3) : null,
     dispute_win_rate: disputeTotal > 0               ? +(won / disputeTotal).toFixed(3) : null,
     dispute_count:    disputeTotal,
+    dispute_won_count: won,
+    dispute_lost_count: lost,
     open_dispute_count: openDisputes,
     refund_rate:      !isNew && completed > 0        ? +(refunds / completed).toFixed(3) : null,
   }
