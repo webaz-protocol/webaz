@@ -82,7 +82,20 @@ console.log(`  [tools/list bytes] full=${fullB}B (~${Math.ceil(fullB / 4)} tok) 
   ok('I-5 resources/list advertises webaz://guide/info alongside the protocol manifest', uris.includes('webaz://guide/info') && uris.some(u => u.includes('manifest')), uris.join(','))
   const guide = await c.readResource({ uri: 'webaz://guide/info' })
   const guideJ = JSON.parse((guide.contents as Array<{ text: string }>)[0].text) as Record<string, unknown>
-  ok('I-6 guide resource returns the SAME long form (zero content deletion — visibility moved, not removed)', !!guideJ.available_tools && !!guideJ.for_end_user && !!guideJ.commission_model)
+  // 深度同一性:两条路径都出自 buildInfoFull();归一已知动态字段(实时统计/时间戳/更新检查)后逐字节相等
+  const normalize = (o: Record<string, unknown>): Record<string, unknown> => {
+    const c2 = JSON.parse(JSON.stringify(o)) as Record<string, unknown>
+    delete c2.live_stats; delete c2.mcp; delete c2.network_state
+    delete c2._mode; delete c2._sandbox_note   // CallTool 包装戳(资源路径无)
+    const ec = c2.economics as Record<string, unknown> | undefined
+    if (ec) delete ec.charity_fund
+    return c2
+  }
+  ok('I-6 guide resource ≡ {full:true} long form (deep compare after normalizing dynamic fields — zero content deletion)',
+    JSON.stringify(normalize(guideJ)) === JSON.stringify(normalize(fullJ)),
+    `guideKeys=${Object.keys(guideJ).sort().join(',')} fullKeys=${Object.keys(fullJ).sort().join(',')}`)
+  ok('I-7 long form retains EVERY moved section (roles/economics/search_routing/tools_note included)',
+    ['available_tools', 'for_end_user', 'for_contributors', 'commission_model', 'roles', 'search_routing', 'tools_note'].every(k => k in guideJ), Object.keys(guideJ).sort().join(','))
 }
 
 if (fail > 0) { console.error(`\n❌ mcp-tool-surfaces FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

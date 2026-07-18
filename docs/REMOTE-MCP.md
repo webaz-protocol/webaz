@@ -51,7 +51,7 @@ Registration currently uses invitations for Sybil resistance. A key requires a *
 
 ## What you can do
 
-`tools/list` returns the whole surface (54 tools over the remote endpoint; `webaz_pair` is stdio-only) — `webaz_info` (protocol status), `webaz_search`, `webaz_connection_status`, `webaz_list_product`, `webaz_get_agent_order`, `webaz_verify_price`, `webaz_place_order`, and more. Start with `webaz_info` for the live network state, then `webaz_search` or `webaz_contribute action=list_open`.
+`tools/list` is surface-scoped (buyer 21 by default; `?surface=full` → all 54 remote tools; `webaz_pair` is stdio-only — see Tool surfaces below) — `webaz_info` (protocol status), `webaz_search`, `webaz_connection_status`, `webaz_list_product`, `webaz_get_agent_order`, `webaz_verify_price`, `webaz_place_order`, and more. Start with `webaz_info` for the live network state, then `webaz_search` or `webaz_contribute action=list_open`.
 
 ### Tool surfaces — smaller tools/list by default (PR-3)
 

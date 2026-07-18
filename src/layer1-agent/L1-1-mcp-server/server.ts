@@ -1965,7 +1965,7 @@ Next: webaz_submit_order_request(draft_id) → the human's Passkey approval re-v
   {
     name: 'webaz_prepare_case',
     description: `Assemble an after-sales CASE DRAFT for one of YOUR orders (safe scope buyer_case_prepare; OAuth grant). READ-ONLY — submits nothing, writes no domain state.
-Returns server facts: structural status timeline; terms FROZEN at order time (later seller edits do not apply); CURRENT listing anchors (labeled, possibly edited since); evidence refs (ids + normalized types); any existing dispute. Routing: delivery problems → delivery dispute (48h/120h); broken ORDER terms → order claim (10 WAZ stake); lying LISTING → product claim (5 WAZ stake).
+Returns server facts: structural status timeline; terms FROZEN at order time (later seller edits do not apply); CURRENT listing anchors (labeled, possibly edited since); evidence refs (ids + normalized types); any existing dispute. Routing: delivery problems → delivery dispute (48h respond / 120h arbitrate); broken ORDER terms → order claim (10 WAZ stake, 48h deadline, 3 verifiers); lying LISTING → product claim (5 WAZ stake, 72h deadline, 3 verifiers).
 No buyer PII / free text — the human sees those on the order page. Submitting disputes/returns/escalations, confirming receipt, refunds and closures are HUMAN actions at webaz.xyz (direct_p2p risk actions need a Passkey); this tool only organizes facts first.`,
     inputSchema: {
       type: 'object',

@@ -117,9 +117,13 @@ async function main() {
       snames.size === 23 && snames.has('webaz_list_product') && snames.has('webaz_get_agent_order') && !snames.has('webaz_dispute') && !snames.has('webaz_contribute'), String(snames.size))
     // surface 只裁可见性,不裁授权:buyer 默认面上按名调用面外工具照常分发(错误也是业务错误而非"未知工具")
     const ct = await rpc(base, { jsonrpc: '2.0', id: 24, method: 'tools/call', params: { name: 'webaz_leaderboard', arguments: {} } })
-    const cj = await ct.json().catch(() => null) as { result?: { content?: Array<{ text?: string }> } } | null
+    const cj = await ct.json().catch(() => null) as { result?: { content?: Array<{ text?: string }> }; error?: unknown } | null
     const ctext = (cj?.result?.content || []).map(c => c.text || '').join('')
-    ok('4f. call-through: out-of-surface tool still dispatches (visibility ≠ authorization)', !/未知工具/.test(ctext), ctext.slice(0, 120))
+    let cparsed: Record<string, unknown> | null = null
+    try { cparsed = JSON.parse(ctext) } catch { cparsed = null }
+    ok('4f. call-through: out-of-surface tool returns its REAL business payload (200, no JSON-RPC error, leaderboard shape, not unknown-tool)',
+      ct.status === 200 && !cj?.error && !!cparsed && !/未知工具|Unknown tool/i.test(ctext)
+      && ('_mode' in (cparsed ?? {})) && !('error' in (cparsed ?? {})) , ctext.slice(0, 160))
   }
   {
     const g = await fetch(`${base}/mcp`)
