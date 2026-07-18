@@ -182,6 +182,17 @@ try {
   const tools = (await c.listTools()).tools as Array<{ name: string; _meta?: Record<string, unknown> }>
   ok('W-4s. 三工具描述符都挂 quote-approval outputTemplate', ['webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request'].every(n => tools.find(t => t.name === n)?._meta?.['openai/outputTemplate'] === 'ui://widget/webaz-quote-approval.html'))
 
+  // ── H-4 锁:投影器失败(敌意 getter)→ PROJECTION_FAILED 降级,原始协议对象零外泄 ──
+  {
+    const { projectForTool } = await import('../src/layer1-agent/L1-1-mcp-server/server.js') as unknown as { projectForTool: (n: string, r: unknown) => Promise<unknown> }
+    const hostile = { quote_id: 'qte_x', get line_items(): never { throw new Error('boom') }, secret_protocol_field: 'WAZ_INTERNAL' }
+    const out = await projectForTool('webaz_quote_order', hostile) as Record<string, unknown>
+    const oj = JSON.stringify(out)
+    ok('H-4 projector failure → structured PROJECTION_FAILED degrade (retryable + verify-first hint), raw protocol object NEVER leaked',
+      out.error_code === 'PROJECTION_FAILED' && out.retryable === true && /verify with the corresponding read tool/.test(String(out.hint))
+      && !oj.includes('WAZ_INTERNAL') && !oj.includes('line_items'), oj.slice(0, 180))
+  }
+
   // ── 7. 直付非托管说明(rail_note 分支)──
   const { railHonesty } = await import('../src/agent-model-projection.js')
   ok('7. Direct Pay 非托管说明(不托管本金 + 以确认页为准)', /不托管本金/.test(railHonesty('direct_p2p')) && /确认页面为准/.test(railHonesty('direct_p2p')))

@@ -2085,6 +2085,19 @@ Chat moves no funds, changes no order state. Never paste addresses, payment cred
 // single ListTools handler returns this SAME surface for stdio AND Remote MCP → zero drift.
 const TOOLS_ANNOTATED = withSecuritySchemes(withOutputSchemas(annotateTools(TOOLS)))
 
+/** MCP UI PR-5(可测导出):消费者投影边界。投影器抛错(含敌意 getter)→ 结构化 PROJECTION_FAILED
+ * 降级(经 buildToolEnvelope 错误路径出 isError + 完整错误 JSON),原始协议对象永不外泄。 */
+export async function projectForTool(name: string, result: unknown): Promise<unknown> {
+  const entry = STRUCTURED_RESULT_TOOLS[name]
+  if (!entry?.project || !result || typeof result !== 'object' || Array.isArray(result) || ('error' in (result as Record<string, unknown>))) return result
+  try { return await entry.project(result as Record<string, unknown>) } catch (e) {
+    let msg = 'unserializable failure'
+    try { msg = e instanceof Error ? e.message : String(e) } catch { /* 保底 */ }
+    return { error: `consumer projection failed: ${msg}`, error_code: 'PROJECTION_FAILED', retryable: true,
+      hint: 'the protocol operation itself may have succeeded — verify with the corresponding read tool (webaz_order_draft get / webaz_approval_requests) before repeating any submit' }
+  }
+}
+
 /** MCP Token PR-7:信封构造(可测导出)。任何投影/摘要/序列化失败 —— 含 throw null/undefined 等
  * 非 Error 值(getter/toJSON 可抛任意值)—— 都产出结构化 isError 信封,绝不向上抛、绝不吞遥测。 */
 export function buildToolEnvelope(name: string, result: unknown): { content: Array<{ type: 'text'; text: string }>; structuredContent?: Record<string, unknown>; isError?: true } {
@@ -6142,13 +6155,10 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     //   错误结果:text = minified 完整错误 JSON —— 纯文本客户端保留全部结构化 recovery 字段,不降级成一句话。
     //   其余工具维持原 JSON-in-text(后续 PR 分批迁移,不在本 PR 一刀切)。
     const latencyMs = Date.now() - t0   // handler-only 口径(与历史一致:不含投影/序列化耗时)
-    // MCP UI PR-5(Codex H-1):消费者投影在 wrapper 边界完成(async,fx 由投影器自取)——
-    //   handler 返回值【绝不被改动】(协议契约纯净),投影失败安全回退原结果。
-    let projected = result
-    const entry0 = STRUCTURED_RESULT_TOOLS[name]
-    if (entry0?.project && result && typeof result === 'object' && !Array.isArray(result) && !('error' in (result as Record<string, unknown>))) {
-      try { projected = await entry0.project(result as Record<string, unknown>) } catch { projected = result }
-    }
+    // MCP UI PR-5(Codex H-1/H-4):消费者投影在 wrapper 边界完成(async,fx 由投影器自取)——
+    //   handler 返回值【绝不被改动】;投影失败 → 安全降级错误信封,绝不把原始协议对象(WAZ/line_items)
+    //   吐上消费者面。fx 缺失不是失败(投影器内部 fail-soft 出 USDC-only)。
+    const projected = await projectForTool(name, result)
     const envelope = buildToolEnvelope(name, projected)
     // §18 遥测:模型可见【UTF-8 字节】(text + structuredContent;.length 是 UTF-16 码元,中文会严重低估)
     let responseBytes: number | null = null
