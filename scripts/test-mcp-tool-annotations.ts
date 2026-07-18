@@ -91,7 +91,7 @@ async function main(): Promise<void> {
   // 5. no-drift: both transports go through buildMcpServer (which we just exercised) → same annotations
   const L1 = readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
   const ROUTE = readFileSync('src/pwa/routes/mcp-remote.ts', 'utf8')
-  ok('5a. single ListTools handler returns the annotated surface (transport-aware: full local, remote hides local-only)', L1.includes('ListToolsRequestSchema') && L1.includes('toolsForTransport(opts.isolated === true)') && L1.includes('TOOLS_ANNOTATED.filter(t => !LOCAL_ONLY_TOOLS.has(t.name))'))
+  ok('5a. single ListTools handler returns the annotated surface (transport-aware: full local, remote hides local-only)', L1.includes('ListToolsRequestSchema') && L1.includes("toolsForTransport(opts.isolated === true, opts.surface ?? 'full')") && L1.includes('TOOLS_ANNOTATED.filter(t => !LOCAL_ONLY_TOOLS.has(t.name))'))
   ok('5b. stdio entry uses buildMcpServer', L1.includes('const server = buildMcpServer()'))
   ok('5c. Remote MCP route uses buildMcpServer', /buildMcpServer\(\{/.test(ROUTE))
 
@@ -106,8 +106,11 @@ async function main(): Promise<void> {
   //   exactly ({type:'object',properties:{}} with NO `required`). A stray `required: []` on empty properties
   //   can make a strict client (ChatGPT connector) drop the tool from its registry.
   const schemaOf = (n: string): unknown => tools.find(t => t.name === n)?.inputSchema
-  ok('6d. connection_status inputSchema == webaz_info shape (zero-param, no stray `required: []`)',
-    JSON.stringify(schemaOf('webaz_connection_status')) === JSON.stringify(schemaOf('webaz_info')))
+  // PR-3:webaz_info 增加可选 full 参数(长表兜底)→ 不再与 connection_status 同形;各自锁形状。
+  ok('6d. connection_status = zero-param (no stray `required: []`); webaz_info = single optional `full`',
+    JSON.stringify(schemaOf('webaz_connection_status')) === JSON.stringify({ type: 'object', properties: {} })
+    && Object.keys((schemaOf('webaz_info') as { properties: Record<string, unknown> }).properties).join(',') === 'full'
+    && !('required' in (schemaOf('webaz_info') as Record<string, unknown>)))
 
   await client.close(); await server.close()
 

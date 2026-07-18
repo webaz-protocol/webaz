@@ -31,7 +31,7 @@ async function main(): Promise<void> {
   const http = await new Promise<HttpServer>(r => { const s = app.listen(0, () => r(s)) })
   const addr = http.address(); const port = typeof addr === 'object' && addr ? addr.port : 0
 
-  const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
+  const res = await fetch(`http://127.0.0.1:${port}/mcp?surface=full`, {   // PR-3:本测试审计【全量】面(匿名默认已是 buyer 面)
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),

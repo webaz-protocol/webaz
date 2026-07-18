@@ -59,8 +59,8 @@ async function boot(env: Record<string, string | undefined>, rlCap?: number): Pr
   return { base: `http://127.0.0.1:${port}`, http }
 }
 
-const rpc = (base: string, body: unknown, headers: Record<string, string> = {}) =>
-  fetch(`${base}/mcp`, {
+const rpc = (base: string, body: unknown, headers: Record<string, string> = {}, q = '') =>
+  fetch(`${base}/mcp${q}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...headers },
     body: JSON.stringify(body),
@@ -95,13 +95,31 @@ async function main() {
     ok('3e. stateless: no session id issued', !r.headers.get('mcp-session-id'))
   }
   {
-    const r = await rpc(base, { jsonrpc: '2.0', id: 2, method: 'tools/list' })
+    // MCP Token PR-3:匿名默认 = buyer 面(21 工具);?surface=full 恢复全量(54)。
+    const r = await rpc(base, { jsonrpc: '2.0', id: 2, method: 'tools/list' }, {}, '?surface=full')
     const j = await r.json().catch(() => null) as { result?: { tools?: Array<{ name: string }> } } | null
     const tools = j?.result?.tools || []
     ok('4a. tools/list works statelessly (no prior initialize in-request)', r.status === 200 && tools.length >= 38)
     const names = new Set(tools.map(t => t.name))
-    ok('4b. tool surface identical to stdio (spot: info/search/place_order/contribute)',
+    ok('4b. FULL surface identical to stdio (spot: info/search/place_order/contribute)',
       names.has('webaz_info') && names.has('webaz_search') && names.has('webaz_place_order') && names.has('webaz_contribute'))
+    const rb = await rpc(base, { jsonrpc: '2.0', id: 22, method: 'tools/list' })
+    const bj = await rb.json().catch(() => null) as { result?: { tools?: Array<{ name: string }> } } | null
+    const bnames = new Set((bj?.result?.tools || []).map(t => t.name))
+    ok('4c. anonymous DEFAULT = buyer surface (21 tools; core shopping chain present)',
+      bnames.size === 21 && bnames.has('webaz_search') && bnames.has('webaz_quote_order') && bnames.has('webaz_buyer_orders'), String(bnames.size))
+    ok('4d. buyer surface EXCLUDES seller/arbitration/governance tools (list_product/dispute/claim_verify/contribute/charity/leaderboard)',
+      ['webaz_list_product', 'webaz_dispute', 'webaz_claim_verify', 'webaz_contribute', 'webaz_charity', 'webaz_leaderboard'].every(n => !bnames.has(n)))
+    const rs = await rpc(base, { jsonrpc: '2.0', id: 23, method: 'tools/list' }, {}, '?surface=seller')
+    const sj = await rs.json().catch(() => null) as { result?: { tools?: Array<{ name: string }> } } | null
+    const snames = new Set((sj?.result?.tools || []).map(t => t.name))
+    ok('4e. seller surface = 23 (listing/fulfilment/account ops; no arbitration/governance)',
+      snames.size === 23 && snames.has('webaz_list_product') && snames.has('webaz_get_agent_order') && !snames.has('webaz_dispute') && !snames.has('webaz_contribute'), String(snames.size))
+    // surface 只裁可见性,不裁授权:buyer 默认面上按名调用面外工具照常分发(错误也是业务错误而非"未知工具")
+    const ct = await rpc(base, { jsonrpc: '2.0', id: 24, method: 'tools/call', params: { name: 'webaz_leaderboard', arguments: {} } })
+    const cj = await ct.json().catch(() => null) as { result?: { content?: Array<{ text?: string }> } } | null
+    const ctext = (cj?.result?.content || []).map(c => c.text || '').join('')
+    ok('4f. call-through: out-of-surface tool still dispatches (visibility ≠ authorization)', !/未知工具/.test(ctext), ctext.slice(0, 120))
   }
   {
     const g = await fetch(`${base}/mcp`)
@@ -139,7 +157,7 @@ async function main() {
   //   dead-end pairing call. ListTools is transport-aware via opts.isolated (NOT isIsolated() — ListTools
   //   runs outside the per-call ALS). Functional coverage: test:mcp-security-schemes asserts the remote
   //   WIRE has 41 tools and no webaz_pair; test:mcp-tool-annotations asserts the LOCAL surface still has 42.
-  ok('8e2. ListTools is transport-aware: hides LOCAL_ONLY webaz_pair on the isolated (remote) surface', has(L1, "LOCAL_ONLY_TOOLS = new Set(['webaz_pair'])") && has(L1, 'toolsForTransport(opts.isolated === true)'))
+  ok('8e2. ListTools is transport-aware: hides LOCAL_ONLY webaz_pair on the isolated (remote) surface', has(L1, "LOCAL_ONLY_TOOLS = new Set(['webaz_pair'])") && has(L1, "toolsForTransport(opts.isolated === true, opts.surface ?? 'full')"))
   // 8f. 源码守卫:远程路由强制 isolated:true + 拦截器服务端强制标记(覆盖伪造)
   ok('8f. 远程路由强制 isolated:true', has(ROUTE, 'buildMcpServer({') && /buildMcpServer\(\{\s*isolated: true/.test(ROUTE))
   ok('8g. 拦截器服务端强制 __isolated__(覆盖调用方伪造),stdio 清除', has(L1, "if (opts.isolated) (args as Record<string, unknown>).__isolated__ = true") && has(L1, "else delete (args as Record<string, unknown>).__isolated__"))
@@ -213,18 +231,26 @@ const PUsrc2 = PUsrc
   //        agent isn't misled. Both are read over the SAME isolated remote transport. ──
   {
     const { base: b13, http: h13 } = await boot({ WEBAZ_REMOTE_MCP: '1', WEBAZ_MODE: undefined })   // fresh server (the section-3 one is closed)
-    const info = await rpc(b13, { jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'webaz_info', arguments: {} } })
+    const info = await rpc(b13, { jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'webaz_info', arguments: { full: true } } })   // PR-3:available_tools 只在 full 长表(默认瘦身)
     const ij = await info.json().catch(() => null) as { result?: { content?: Array<{ text?: string }> } } | null
     const txt = (ij?.result?.content || []).map(c => c.text || '').join('')
     let parsed: { available_tools?: Array<{ name?: string }>; tools_note?: string } | null = null
     try { parsed = JSON.parse(txt) } catch { parsed = null }
     const at = (parsed?.available_tools || []).map(t => t.name || '')
-    const tl = await rpc(b13, { jsonrpc: '2.0', id: 21, method: 'tools/list' })
+    const tl = await rpc(b13, { jsonrpc: '2.0', id: 21, method: 'tools/list' }, {}, '?surface=full')
     const tlj = await tl.json().catch(() => null) as { result?: { tools?: Array<{ name: string }> } } | null
     const tlnames = new Set((tlj?.result?.tools || []).map(t => t.name))
     ok('13a. remote webaz_info.available_tools EXCLUDES local-only webaz_pair (no drift)', at.length > 0 && !at.includes('webaz_pair'))
     ok('13b. remote webaz_info.available_tools == remote tools/list surface (transport-consistent)', at.length === tlnames.size && at.every(n => tlnames.has(n)))
-    ok('13c. webaz_info.tools_note names OAuth for remote + webaz_pair as stdio-only', /OAuth/.test(parsed?.tools_note || '') && /stdio-only/.test(parsed?.tools_note || ''))
+    ok('13c. FULL webaz_info.tools_note names OAuth for remote + webaz_pair as stdio-only', /OAuth/.test(parsed?.tools_note || '') && /stdio-only/.test(parsed?.tools_note || ''))
+    const slim = await rpc(b13, { jsonrpc: '2.0', id: 25, method: 'tools/call', params: { name: 'webaz_info', arguments: {} } })
+    const slimJ = await slim.json().catch(() => null) as { result?: { content?: Array<{ text?: string }> } } | null
+    const slimTxt = (slimJ?.result?.content || []).map(c => c.text || '').join('')
+    let slimP: Record<string, unknown> | null = null
+    try { slimP = JSON.parse(slimTxt) } catch { slimP = null }
+    ok('13d. DEFAULT webaz_info is SLIM: no available_tools/for_end_user/commission_model, has full_guide pointer + network_state',
+      !!slimP && !('available_tools' in slimP) && !('for_end_user' in slimP) && !('commission_model' in slimP) && !!slimP.full_guide && !!slimP.network_state, slimTxt.slice(0, 200))
+    ok('13e. slim webaz_info ≤6KB (was ~35KB in production)', slimTxt.length <= 6000, `len=${slimTxt.length}`)
     h13.close()
   }
 
