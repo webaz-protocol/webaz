@@ -45,6 +45,8 @@ export function initMcpToolCallsSchema(db: Database.Database): void {
 `)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_mcp_tc_ts   ON mcp_tool_calls(ts)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_mcp_tc_tool ON mcp_tool_calls(tool_name, ts)`)
+  // MCP Token PR-7:响应字节遥测(§18)—— 模型可见载荷大小,聚合出真实 token 成本画像(无 PII)
+  try { db.exec('ALTER TABLE mcp_tool_calls ADD COLUMN response_bytes INTEGER') } catch { /* already present */ }
 }
 
 // ─── 笔记图片 hash 索引表（审计修 C-1）─────────────────────────────

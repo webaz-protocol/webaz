@@ -520,6 +520,7 @@ db.exec(`
     error_msg  TEXT
   )
 `)
+try { db.exec('ALTER TABLE mcp_tool_calls ADD COLUMN response_bytes INTEGER') } catch { /* already present */ }
 // 索引命名与 runtime bridge(apply-webaz-runtime-schema)统一 —— 两组合根曾各自命名(idx_mcp_tool_calls_* vs idx_mcp_tc_*)
 //   → 同库跑过两根就出现同列重复索引,且 pg 产物逐列/索引 parity 因根不同而漂移。老名幂等清除。
 db.exec(`DROP INDEX IF EXISTS idx_mcp_tool_calls_ts`); db.exec(`DROP INDEX IF EXISTS idx_mcp_tool_calls_tool`)
@@ -6026,20 +6027,6 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
       result = { error: `执行出错：${(err as Error).message}` }
     }
 
-    recordToolCall(name, args, result, Date.now() - t0)
-
-    // RFC-004 现场证据:记本次调用的脱敏摘要(只 arg key 名,不含值)。webaz_feedback 自身不入 buffer。
-    // RFC-022:隔离态(远程共享端点)不写这个进程级 ring buffer —— 防跨请求元数据 bleed(Codex round-2 次要项)。
-    if (name !== 'webaz_feedback' && !isIsolated()) {
-      const isErr = !!result && typeof result === 'object' && 'error' in (result as Record<string, unknown>)
-      pushRecentCall({
-        tool: name,
-        arg_keys: Object.keys(args || {}).filter(k => k !== 'api_key'),
-        outcome: isErr ? 'error' : 'ok',
-        mode: toolBackend(name),
-        ts: new Date().toISOString(),
-      })
-    }
 
     // RFC-003 P0: 给每个工具结果盖模式戳(诚实可见,防把 sandbox 当 live 网络)
     // P3: handler 可自行预设 _mode(如 register 在 network 模式返回引导,不是 sandbox 结果)→ 不覆盖。
@@ -6060,6 +6047,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     //   错误结果:text = minified 完整错误 JSON —— 纯文本客户端保留全部结构化 recovery 字段,不降级成一句话。
     //   其余工具维持原 JSON-in-text(后续 PR 分批迁移,不在本 PR 一刀切)。
     const summarize = STRUCTURED_RESULT_TOOLS[name]
+    let envelope: { content: Array<{ type: 'text'; text: string }>; structuredContent?: Record<string, unknown>; isError?: true }
     if (summarize && result && typeof result === 'object' && !Array.isArray(result)) {
       // buyer_orders 豁免 null 剥离:RFC-025 的 7 键最小投影契约含【有语义的 null 占位】(deadline/next_actor
       // 可为 null),wire 上也必须保持恰 7 键(Codex round-1 BLOCKER-2)。search/quote 无 null 契约,照剥。
@@ -6067,11 +6055,28 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
       const isErr = 'error' in clean
       const text = isErr ? JSON.stringify(clean) : summarize(clean)
       // 错误结果按 MCP 规范标 isError(声明了 outputSchema 的工具,协议客户端应看到显式失败而非"成功的错误对象")
-      return { content: [{ type: 'text', text }], structuredContent: clean, ...(isErr ? { isError: true } : {}) }
+      envelope = { content: [{ type: 'text', text }], structuredContent: clean, ...(isErr ? { isError: true as const } : {}) }
+    } else {
+      // MCP Token PR-7:全工具 minify(此前 JSON.stringify(result, null, 2) —— pretty-print 缩进本身
+      // 每响应多付 10-30% token,对模型可读性零增益)。结构不变,只有空白差异。
+      envelope = { content: [{ type: 'text', text: JSON.stringify(result) }] }
     }
-    return {
-      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+    // §18 遥测:模型可见字节(text + structuredContent)—— 建完信封后记录,聚合出真实 token 成本画像。
+    const responseBytes = envelope.content[0].text.length + (envelope.structuredContent ? JSON.stringify(envelope.structuredContent).length : 0)
+    recordToolCall(name, args, result, Date.now() - t0, responseBytes)
+    // RFC-004 现场证据:记本次调用的脱敏摘要(只 arg key 名,不含值)。webaz_feedback 自身不入 buffer。
+    // RFC-022:隔离态(远程共享端点)不写这个进程级 ring buffer —— 防跨请求元数据 bleed。
+    if (name !== 'webaz_feedback' && !isIsolated()) {
+      const isErr2 = !!result && typeof result === 'object' && 'error' in (result as Record<string, unknown>)
+      pushRecentCall({
+        tool: name,
+        arg_keys: Object.keys(args || {}).filter(k => k !== 'api_key'),
+        outcome: isErr2 ? 'error' : 'ok',
+        mode: toolBackend(name),
+        ts: new Date().toISOString(),
+      })
     }
+    return envelope
   }))
 
   return server
@@ -6096,6 +6101,7 @@ function recordToolCall(
   args: Record<string, unknown>,
   result: unknown,
   latencyMs: number,
+  responseBytes: number | null = null,
 ): void {
   let userId: string | null = null
   try {
@@ -6115,9 +6121,9 @@ function recordToolCall(
     // errorMsg 单独走 sendTelemetry → 服务端聚合，DB 只留汇总指标
     const userIdHash = userId ? createHash('sha256').update(userId).digest('hex').slice(0, 16) : null
     db.prepare(
-      `INSERT INTO mcp_tool_calls (tool_name, user_id_hash, outcome, latency_ms)
-       VALUES (?, ?, ?, ?)`,
-    ).run(tool, userIdHash, isError ? 'error' : 'success', latencyMs)
+      `INSERT INTO mcp_tool_calls (tool_name, user_id_hash, outcome, latency_ms, response_bytes)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run(tool, userIdHash, isError ? 'error' : 'success', latencyMs, responseBytes)
 
     sendTelemetry({
       tool_name: tool,
