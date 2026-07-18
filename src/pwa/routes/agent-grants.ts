@@ -316,6 +316,14 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       if (s.length > 40) return 'too long (max 40 chars)'
       if (s.includes('@')) return 'email-like'
       if (/:\/\/|www\./i.test(s)) return 'url-like'
+      // '/' 只为 canonical 类目键(如 家庭清洁/纸品)放行:恰一个、不首尾、不与点共存 —— 域名/路径
+      // 形态(x.com/page、//host、a/b/c/d)一律拒,守住"URL 绝不入台账"的披露承诺(Codex R1-1)
+      if (s.includes('/')) {
+        if (s.includes('//')) return 'path-like (double slash)'
+        if ((s.match(/\//g) ?? []).length > 1) return 'path-like (multiple slashes)'
+        if (s.startsWith('/') || s.endsWith('/')) return 'path-like (leading/trailing slash)'
+        if (s.includes('.')) return 'url-like (dot + slash)'
+      }
       if (/\d{7,}/.test(s.replace(/[ \-.+_&%/]/g, ''))) return 'phone-like digit run'
       if (!TOKEN_RE.test(s)) return 'non-token characters'
       return null
@@ -357,12 +365,21 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     let categoryCorrected: { submitted: string; canonical: string } | null = null
     if (category) {
       const rc = await resolveCategory(category)
+      // 通用约束保留器(Codex R1-2:可重放的 next_call 绝不丢买家约束)
+      const carry = (extra: Record<string, unknown>): Record<string, unknown> => ({
+        ...extra,
+        ...(region ? { ship_to_region: region } : {}),
+        ...(maxPrice !== null ? { max_price: maxPrice } : {}),
+        ...(quantity !== 1 ? { quantity } : {}),
+      })
       if (rc.status === 'ambiguous') {
+        // 逐选项可重放调用(结构化,agent/用户自选 —— 服务端不替任何一项背书,无假占位符)
         return void res.status(400).json({
           error: `category "${category}" maps to multiple registry categories — pick one`,
           error_code: 'CATEGORY_AMBIGUOUS', submitted: category, options: rc.options,
+          selection_required: true,
           suggested_question: `你要找的更接近哪一类:${rc.options.join(' / ')}?`,
-          recommended_next_call: { tool: 'webaz_discover', arguments: { category: `<pick one of: ${rc.options.join(' | ')}>`, ...(keywords.length ? { keywords } : {}), ...(region ? { ship_to_region: region } : {}) } },
+          recommended_next_calls: rc.options.map(o => ({ tool: 'webaz_discover', arguments: carry({ category: o, ...(keywords.length ? { keywords } : {}) }) })),
         })
       }
       if (rc.status === 'unknown') {
@@ -372,7 +389,11 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
           error_code: 'UNKNOWN_CATEGORY', submitted: category,
           ...(rc.alias_hints.length ? { alias_hints: rc.alias_hints } : {}),
           category_table: table.map(t => ({ key: t.key, en: t.en, active_count: t.active_count })),
-          recommended_next_call: { tool: 'webaz_discover', arguments: { ...(keywords.length ? { keywords, keyword_match: 'any' } : {}), ...(region ? { ship_to_region: region } : {}), ...(quantity !== 1 ? { quantity } : {}) } },
+          // 有 keywords → 保留全部约束、去 category 转 any 的可重放调用;
+          // 纯 category 请求 → 无可执行重试(空 intent 会 EMPTY_INTENT),让 agent 从表中自选
+          ...(keywords.length
+            ? { recommended_next_call: { tool: 'webaz_discover', arguments: carry({ keywords, keyword_match: 'any' }) } }
+            : { selection_required: true }),
         })
       }
       categoryResolved = rc.key

@@ -90,8 +90,9 @@ try {
     && (d1.category_resolved as Record<string, unknown>)?.canonical === '家庭清洁/纸品'
     && (d1.category_resolved as Record<string, unknown>)?.submitted === 'household', JSON.stringify(d1).slice(0, 200))
   const d2 = await call({ category: '收纳' })
-  ok('D-2 多义 → CATEGORY_AMBIGUOUS + options + suggested_question + next_call', d2.error_code === 'CATEGORY_AMBIGUOUS'
-    && Array.isArray(d2.options) && (d2.options as string[]).length === 4 && !!d2.suggested_question && !!d2.recommended_next_call, JSON.stringify(d2).slice(0, 200))
+  ok('D-2 多义 → CATEGORY_AMBIGUOUS + options + suggested_question + 逐选项调用数组', d2.error_code === 'CATEGORY_AMBIGUOUS'
+    && Array.isArray(d2.options) && (d2.options as string[]).length === 4 && !!d2.suggested_question
+    && Array.isArray(d2.recommended_next_calls) && d2.selection_required === true, JSON.stringify(d2).slice(0, 200))
   const before = (db.prepare('SELECT COUNT(*) c FROM demand_signals').get() as { c: number }).c
   const d3 = await call({ category: 'zzz-nope', keywords: ['抽纸'] })
   const after = (db.prepare('SELECT COUNT(*) c FROM demand_signals').get() as { c: number }).c
@@ -117,8 +118,37 @@ try {
   ok('K-6 逐词计数在【同约束】下(类目+预算保留;"抽纸"=1 非 2)', Number(k5.count) === 0
     && h5.find(h => h.keyword === '抽纸')?.hits === 1, JSON.stringify(h5))
 
+  // ── [S] URL/路径形态拒绝(Codex R1-1:'/' 只为类目键放行,域名/路径形态零落库)────────────
+  const before2 = (db.prepare('SELECT COUNT(*) c FROM demand_signals').get() as { c: number }).c
+  for (const bad of ['x.com/page', '//host/path', 'a/b/c/d', '/lead', 'trail/']) {
+    const rb = await call({ keywords: [bad] })
+    ok(`S-1 路径形态 "${bad}" → 400 拒收`, rb.error_code === 'INVALID_INTENT_TEXT', JSON.stringify(rb).slice(0, 120))
+  }
+  const after2 = (db.prepare('SELECT COUNT(*) c FROM demand_signals').get() as { c: number }).c
+  ok('S-2 全部路径形态零落库', after2 === before2, `before=${before2} after=${after2}`)
+  const s3 = await resolveCategory('家庭清洁/纸品')
+  ok('S-3 canonical 单斜杠键仍放行(形状门与注册表零矛盾)', s3.status === 'canonical')
+
+  // ── [P] next_call 可重放性(Codex R1-2:不丢约束、无假占位符、逐字重放必须成功)──────────
+  const amb = await call({ category: '收纳', keywords: ['盒'], max_price: 50, ship_to_region: 'SG' })
+  const ncs = (amb.recommended_next_calls ?? []) as Array<{ tool: string; arguments: Record<string, unknown> }>
+  ok('P-1 多义 → 逐选项结构化调用数组 + selection_required(无假占位符)', amb.selection_required === true
+    && ncs.length === 4 && ncs.every(c => typeof c.arguments.category === 'string' && !String(c.arguments.category).includes('<')
+      && c.arguments.max_price === 50 && c.arguments.ship_to_region === 'SG'), JSON.stringify(ncs).slice(0, 220))
+  const replay = await call(ncs[0].arguments)
+  ok('P-2 多义选项逐字重放成功(200,非 400)', replay.error_code === undefined && replay.count !== undefined, JSON.stringify(replay).slice(0, 120))
+  const unk = await call({ category: 'zzz-nope', keywords: ['抽纸'], max_price: 15 })
+  const unc = (unk.recommended_next_call ?? {}) as { arguments?: Record<string, unknown> }
+  ok('P-3 未知(带 keywords)→ next_call 保留 max_price 等全部约束', unc.arguments?.max_price === 15
+    && unc.arguments?.keyword_match === 'any', JSON.stringify(unc))
+  const replay2 = await call(unc.arguments as Record<string, unknown>)
+  ok('P-4 未知分支重放成功且预算生效(15 内恰 1 件)', Number(replay2.count) === 1, JSON.stringify(replay2).slice(0, 140))
+  const unk2 = await call({ category: 'zzz-nope' })
+  ok('P-5 纯 category 未知 → 无假可执行重试,selection_required 让 agent 从表自选', unk2.error_code === 'UNKNOWN_CATEGORY'
+    && unk2.recommended_next_call === undefined && unk2.selection_required === true, JSON.stringify(unk2).slice(0, 160))
+
   // ── [L] 台账语义 ──────────────────────────────────────────────────────────────────────────
-  const last = db.prepare("SELECT intent_json, category FROM demand_signals ORDER BY created_at DESC, rowid DESC LIMIT 1").get() as { intent_json: string; category: string }
+  const last = db.prepare("SELECT intent_json, category FROM demand_signals WHERE category = '家庭清洁/纸品' ORDER BY rowid DESC LIMIT 1").get() as { intent_json: string; category: string }
   const li = JSON.parse(last.intent_json) as Record<string, unknown>
   ok('L-1 intent_json 记录 keyword_match + canonical category 列', li.keyword_match !== undefined && last.category === '家庭清洁/纸品', JSON.stringify(last).slice(0, 200))
   const aliasRow = db.prepare("SELECT intent_json FROM demand_signals WHERE intent_json LIKE '%category_submitted%' LIMIT 1").get() as { intent_json: string } | undefined
