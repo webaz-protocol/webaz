@@ -26,7 +26,7 @@ export interface SearchDeps {
   extractTitleFromText: (text: string) => string | null
   parsePlatformUrl: (url: string) => { platform: string; external_id: string | null } | null
   searchByExternalLink: (args: { platform?: string; external_id?: string | null; external_title?: string | null }) =>
-    { matched_by: string; products: unknown[] }
+    { matched_by: 'product_id_exact' | 'external_id' | 'external_title_exact' | 'product_title_exact' | 'none'; products: unknown[] }
   detectShareCommandFormat: (text: string) => { hint: string } | null
   formatProductForAgent: (row: Record<string, unknown>) => Record<string, unknown>
 }
