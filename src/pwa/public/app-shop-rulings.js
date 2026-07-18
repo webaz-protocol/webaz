@@ -3,20 +3,19 @@
   const esc = (value) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
   const tr = (value) => typeof window.t === 'function' ? window.t(value) : value
   const sellerHref = (sellerId, tab = '') => `#shop/${encodeURIComponent(String(sellerId || ''))}${tab ? `?tab=${tab}` : ''}`
-  const outcome = (winner) => winner === 'seller' ? tr('卖家胜') : winner === 'buyer' ? tr('买家胜') : tr('部分责任')
-  const outcomeClass = (winner) => winner === 'seller' ? 'shop-ruling-row--win' : winner === 'buyer' ? 'shop-ruling-row--loss' : 'shop-ruling-row--split'
-
+  const outcome = (winner) => winner === 'seller' ? tr('卖家胜') : winner === 'buyer' ? tr('买家胜') : winner === 'split' ? tr('部分责任') : winner === 'dismissed' ? tr('裁决已撤销') : tr('裁决结果')
+  const outcomeClass = (winner) => winner === 'seller' ? 'shop-ruling-row--win' : winner === 'buyer' ? 'shop-ruling-row--loss' : winner === 'split' ? 'shop-ruling-row--split' : winner === 'dismissed' ? 'shop-ruling-row--dismissed' : 'shop-ruling-row--neutral'
   function summaryChip(summary, sellerId) {
     const wins = Math.max(0, Number(summary?.seller_wins) || 0)
     const losses = Math.max(0, Number(summary?.seller_losses) || 0)
-    const split = Math.max(0, Number(summary?.split) || 0)
-    const decisive = wins + losses
-    if (!Number(summary?.total) || !decisive) return split ? `<span class="seller-ruling-split-chip">${esc(tr('部分责任'))} ${split}</span>` : ''
+    const split = Math.max(0, Number(summary?.split) || 0), dismissed = Math.max(0, Number(summary?.dismissed) || 0)
+    const decisive = wins + losses, neutral = [split && `${tr('部分责任')} ${split}`, dismissed && `${tr('裁决已撤销')} ${dismissed}`].filter(Boolean).join('，')
+    if (!Number(summary?.total)) return ''
+    const label = `${tr('公开裁决')}：${tr('卖家胜')} ${wins}，${tr('买家胜')} ${losses}${neutral ? `，${neutral}` : ''}`
+    if (!decisive) return `<button type="button" class="seller-ruling-neutral-chip" aria-label="${esc(label)}" title="${esc(label)}" onclick="navigate('${sellerHref(sellerId, 'rulings')}')">⚖ ${esc(neutral || tr('裁决结果'))}</button>`
     const winShare = Math.round((wins / decisive) * 100)
-    const label = `${tr('公开裁决')}：${tr('卖家胜')} ${wins}，${tr('买家胜')} ${losses}${split ? `，${tr('部分责任')} ${split}` : ''}`
-    return `<button type="button" class="seller-rulings-chip${split ? ' seller-rulings-chip--split' : ''}" style="--seller-win-share:${winShare}%" aria-label="${esc(label)}" title="${esc(label)}" onclick="navigate('${sellerHref(sellerId, 'rulings')}')"><span class="seller-rulings-label">⚖ ${esc(tr('裁决'))}</span><span class="seller-rulings-win">${esc(tr('胜'))} ${wins}</span><span class="seller-rulings-loss">${esc(tr('负'))} ${losses}</span>${split ? `<span class="seller-rulings-split">${esc(tr('部分责任'))} ${split}</span>` : ''}</button>`
+    return `<button type="button" class="seller-rulings-chip${neutral ? ' seller-rulings-chip--split' : ''}" style="--seller-win-share:${winShare}%" aria-label="${esc(label)}" title="${esc(label)}" onclick="navigate('${sellerHref(sellerId, 'rulings')}')"><span class="seller-rulings-label">⚖ ${esc(tr('裁决'))}</span><span class="seller-rulings-win">${esc(tr('胜'))} ${wins}</span><span class="seller-rulings-loss">${esc(tr('负'))} ${losses}</span>${neutral ? `<span class="seller-rulings-split">${esc(neutral)}</span>` : ''}</button>`
   }
-
   function summaryHtml(summary) {
     const total = Math.max(0, Number(summary?.total) || 0)
     if (!total) return ''
@@ -24,6 +23,7 @@
       <span class="shop-ruling-stat shop-ruling-stat--win">${esc(tr('卖家胜'))} ${Number(summary.seller_wins) || 0}</span>
       <span class="shop-ruling-stat shop-ruling-stat--loss">${esc(tr('买家胜'))} ${Number(summary.seller_losses) || 0}</span>
       ${Number(summary.split) ? `<span class="shop-ruling-stat shop-ruling-stat--split">${esc(tr('部分责任'))} ${Number(summary.split)}</span>` : ''}
+      ${Number(summary.dismissed) ? `<span class="shop-ruling-stat shop-ruling-stat--split">${esc(tr('裁决已撤销'))} ${Number(summary.dismissed)}</span>` : ''}
     </div>`
   }
 

@@ -234,7 +234,7 @@ async function mockBuyerCommerce(page: Page) {
   await page.route('**/api/products/ux-product/ratings?limit=5', route => route.fulfill({ json: { items: [], agg: { cnt: 12, avg_stars: 4.8 } } }))
   await page.route('**/api/products/ux-product/flash-sale', route => route.fulfill({ json: { sale: null } }))
   await page.route('**/api/reputation/ux-seller', route => route.fulfill({ json: { metrics: { is_new_seller: false, sample_size: 32, fulfillment_rate: .97, on_time_rate: .94, dispute_count: 0, refund_rate: .02 } } }))
-  await page.route('**/api/disputes/cases?seller_id=ux-seller&limit=5', route => route.fulfill({ json: { summary: { total: 2, seller_wins: 1, seller_losses: 1, split: 0 }, items: [] } }))
+  await page.route('**/api/disputes/cases?seller_id=ux-seller&limit=5', route => route.fulfill({ json: { summary: { total: 1, seller_wins: 0, seller_losses: 0, split: 0, dismissed: 1 }, items: [] } }))
   await page.route('**/api/disputes/cases/by-product/ux-product', route => route.fulfill({ json: { items: [] } }))
   await page.route('**/api/products/ux-product/external-links', route => route.fulfill({ json: { links: [] } }))
   await page.route('**/api/products/ux-product/shipping-options*', route => route.fulfill({ json: { sellable: { ok: true, reason: 'ok' }, shipping_templates: [], tax_included_lines: [] } }))
@@ -249,11 +249,12 @@ async function mockPublicShop(page: Page) {
     recent_ratings: [], is_following: false,
   } }))
   await page.route('**/api/disputes/cases?seller_id=ux-seller&limit=50', route => route.fulfill({ json: {
-    summary: { total: 3, seller_wins: 1, seller_losses: 1, split: 1 },
+    summary: { total: 4, seller_wins: 1, seller_losses: 1, split: 1, dismissed: 1 },
     items: [
       { id: 'case-win', product_title: 'Portable ceramic tea set', winner: 'seller', resolution: 'Release to seller', published_at: '2026-07-16T08:00:00Z' },
       { id: 'case-loss', product_title: 'Portable ceramic tea set', winner: 'buyer', resolution: 'Buyer remedy', published_at: '2026-07-15T08:00:00Z' },
       { id: 'case-split', product_title: 'Portable ceramic tea set', winner: 'split', resolution: 'Shared responsibility', published_at: '2026-07-14T08:00:00Z' },
+      { id: 'case-dismissed', product_title: 'Portable ceramic tea set', winner: 'dismissed', resolution: 'Withdrawn', published_at: '2026-07-13T08:00:00Z' },
     ],
   } }))
 }
@@ -326,6 +327,8 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     await expect(page.locator('.shop-ruling-summary')).toContainText(/卖家胜 1|Seller wins 1/)
     await expect(page.locator('.shop-ruling-summary')).toContainText(/买家胜 1|Buyer wins 1/)
     await expect(page.locator('.shop-ruling-summary')).toContainText(/部分责任 1|Partial fault 1/)
+    await expect(page.locator('.shop-ruling-summary')).toContainText(/裁决已撤销 1|Dismissed 1/)
+    await expect(page.locator('.shop-ruling-row--dismissed')).toContainText(/裁决已撤销|Dismissed/)
     await expect(page.locator('.shop-ruling-list')).toHaveCount(1)
     await expect(page.locator('#app main')).not.toContainText('PRIVATE BUYER')
     await assertNoHorizontalOverflow(page)
@@ -430,9 +433,9 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     await product.click()
     await expect(page.locator('.buyer-product-hero')).toContainText('Portable ceramic tea set')
     await expect(page.locator('.buyer-product-hero .product-id-line')).toHaveCount(0)
-    const rulingsChip = page.locator('.buyer-product-hero .seller-rulings-chip')
+    const rulingsChip = page.locator('.buyer-product-hero .seller-ruling-neutral-chip')
     await expect(rulingsChip).toBeVisible()
-    await expect(rulingsChip).toContainText(/胜 1|Wins 1/)
+    await expect(rulingsChip).toContainText(/裁决已撤销 1|Dismissed 1/)
     await rulingsChip.click()
     await expect(page).toHaveURL(/#shop\/ux-seller\?tab=rulings$/)
     await expect(page.locator('.shop-section-tab[aria-current="page"]')).toContainText(/公开裁决|Public rulings/)

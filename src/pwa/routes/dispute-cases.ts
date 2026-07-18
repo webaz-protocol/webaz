@@ -101,16 +101,17 @@ export function registerDisputeCasesRoutes(app: Application, deps: DisputeCasesD
     const categoryWhereSql = categoryWhere.length ? `WHERE ${categoryWhere.join(' AND ')}` : ''
     const categoryCounts = await dbAll<{ category_tag: string; n: number }>(`SELECT category_tag, COUNT(*) as n FROM dispute_cases ${categoryWhereSql} GROUP BY category_tag ORDER BY n DESC`, categoryArgs)
     const summary = sellerId
-      ? await dbOne<{ total: number; seller_wins: number; seller_losses: number; split: number }>(`
+      ? await dbOne<{ total: number; seller_wins: number; seller_losses: number; split: number; dismissed: number }>(`
           SELECT COUNT(*) as total,
             SUM(CASE WHEN winner = 'seller' THEN 1 ELSE 0 END) as seller_wins,
             SUM(CASE WHEN winner = 'buyer' THEN 1 ELSE 0 END) as seller_losses,
-            SUM(CASE WHEN winner = 'split' THEN 1 ELSE 0 END) as split
+            SUM(CASE WHEN winner = 'split' THEN 1 ELSE 0 END) as split,
+            SUM(CASE WHEN winner = 'dismissed' THEN 1 ELSE 0 END) as dismissed
           FROM dispute_cases ${whereSql}
         `, args)
       : null
     res.json({ items: rows, category_counts: categoryCounts, total: rows.length, query: q, sort,
-      summary: summary && { total: Number(summary.total) || 0, seller_wins: Number(summary.seller_wins) || 0, seller_losses: Number(summary.seller_losses) || 0, split: Number(summary.split) || 0 } })
+      summary: summary && { total: Number(summary.total) || 0, seller_wins: Number(summary.seller_wins) || 0, seller_losses: Number(summary.seller_losses) || 0, split: Number(summary.split) || 0, dismissed: Number(summary.dismissed) || 0 } })
   })
 
   // 公开列表（按商品）

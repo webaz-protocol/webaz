@@ -2097,6 +2097,8 @@ const _EN = {
   '公开裁决':                          'Public rulings',
   '公开裁决汇总':                      'Public ruling summary',
   '部分责任':                          'Partial fault',
+  '裁决已撤销':                        'Dismissed',
+  '裁决结果':                          'Ruling outcome',
   '店铺内容':                          'Shop content',
   '该卖家暂无公开裁决':                 'This seller has no public rulings',
   '公开裁决暂时无法加载':               'Public rulings are temporarily unavailable',

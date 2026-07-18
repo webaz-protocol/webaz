@@ -34,6 +34,7 @@ ok('product delegates seller rulings to the public-rulings projection', publicCh
 ok('public chip uses a green-red proportion and an accessible destination', RULINGS.includes('--seller-win-share:${winShare}%') && RULINGS.includes('aria-label=') && RULINGS.includes("sellerHref(sellerId, 'rulings')"))
 ok('public chip does not disclose open cases or use the obsolete disputes tab', !RULINGS.includes('open_dispute_count') && !RULINGS.includes('tab=disputes'))
 ok('split responsibility is presented as neutral rather than a seller loss', RULINGS.includes('seller-rulings-split') && RULINGS.includes('shop-ruling-row--split') && CSS.includes('.seller-rulings-split'))
+ok('dismissed rulings stay neutral and keep a seller-rulings destination', RULINGS.includes("winner === 'dismissed'") && RULINGS.includes('seller-ruling-neutral-chip') && CSS.includes('.shop-ruling-row--dismissed'))
 ok('item-level case count is neutral, not a false seller-loss signal', APP.includes("t('本商品公开判例')") && !APP.includes("pill.style.color = items.length > 0 ? '#dc2626'"))
 
 const heroStart = APP.indexOf('<div class="buyer-product-page">')

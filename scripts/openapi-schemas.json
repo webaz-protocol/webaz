@@ -1,10 +1,21 @@
 {
   "_meta": {
     "description": "手动维护的 endpoint schema 覆盖（top 核心 path）— gen-openapi.ts 读取并合并到自动生成 inventory",
-    "covered_endpoints": 19,
-    "last_updated": "2026-07-14"
+    "covered_endpoints": 20,
+    "last_updated": "2026-07-18"
   },
   "endpoints": {
+    "GET /api/disputes/cases": {
+      "summary": "公开终局裁决列表（可按卖家筛选；不返回当事人或未脱敏案情）",
+      "tags": ["dispute"],
+      "parameters": [
+        { "name": "seller_id", "in": "query", "schema": {"type":"string", "maxLength": 128}, "description": "公开卖家 ID；仅筛选已公开、已脱敏的终局裁决" },
+        { "name": "category", "in": "query", "schema": {"type":"string"} },
+        { "name": "winner", "in": "query", "schema": {"enum":["seller","buyer","split","dismissed"]} },
+        { "name": "limit", "in": "query", "schema": {"type":"integer", "default": 20, "minimum": 5, "maximum": 50} }
+      ]
+    },
+
     "POST /api/register": {
       "summary": "注册新账户（buyer/seller/logistics/verifier/arbitrator）",
       "tags": ["auth"],
