@@ -137,8 +137,8 @@ try {
   }))
   ok('selected skipped item is reported and remains in the cart', ((partial.json.skipped as Array<{ product_id: string }> | undefined) || []).some(skip => skip.product_id === 'selected-skip')
     && !!row('SELECT 1 FROM cart_items WHERE user_id=\'buyer\' AND product_id=\'selected-skip\''))
-  // 状态文案分流回归锁(2026-07-18 生产误报复盘):warehouse=尚未上架 / paused=暂时不可购买,
-  // 绝不把草稿/暂停说成"已下架"
+  // 状态文案分流回归锁(2026-07-18 生产误报复盘):购物车内商品必然公开过 → warehouse=被收回,
+  // 归"已下架";paused 单独如实说明,绝不含糊
   seedProduct('skip-warehouse', 10, 5)
   seedProduct('skip-paused', 10, 5)
   db.prepare("UPDATE products SET status='warehouse' WHERE id='skip-warehouse'").run()
@@ -146,9 +146,9 @@ try {
   seedCart('skip-warehouse'); seedCart('skip-paused')
   const statusSplit = await checkout(selected(['skip-warehouse', 'skip-paused']))
   const splitSkips = (statusSplit.json.skipped as Array<{ product_id: string; reason: string }> | undefined) || []
-  ok('warehouse item skipped with honest 尚未上架 reason (never 已下架)',
-    splitSkips.some(s => s.product_id === 'skip-warehouse' && s.reason === '商品尚未上架'), JSON.stringify(splitSkips))
-  ok('paused item skipped with 暂时不可购买 reason (never 已下架)',
+  ok('retracted (warehouse) cart item skipped as 已下架',
+    splitSkips.some(s => s.product_id === 'skip-warehouse' && s.reason === '商品已下架'), JSON.stringify(splitSkips))
+  ok('paused cart item skipped with 暂时不可购买 reason (never 已下架)',
     splitSkips.some(s => s.product_id === 'skip-paused' && s.reason === '商品暂时不可购买'), JSON.stringify(splitSkips))
   db.prepare("DELETE FROM cart_items WHERE user_id='buyer' AND product_id IN ('skip-warehouse','skip-paused')").run()
 

@@ -5876,7 +5876,6 @@ const _EN = {
   '确认下单':                          'Confirm order',
   '商品已下架':                        'Item delisted',
   '商品当前不可购买或已下架':          'Item currently unavailable or delisted',
-  '商品尚未上架':                      'Item not published yet',
   '商品暂时不可购买':                  'Item temporarily unavailable',
   '登录后下单':                        'Log in to order',
   '卖家信誉':                          'Seller reputation',

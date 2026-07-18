@@ -104,10 +104,7 @@ export function checkoutSelectedCart(args: CheckoutSelectedCartArgs): CartChecko
     const orderable: OrderableCartItem[] = []
     let totalNeedU: Units = 0
     for (const item of selectedIds.map(id => itemById.get(id)!)) {
-      if (item.status !== 'active') {
-        const reason = item.status === 'warehouse' ? '商品尚未上架' : item.status === 'paused' ? '商品暂时不可购买' : '商品已下架'
-        skipped.push({ product_id: item.product_id, reason }); continue
-      }
+      if (item.status !== 'active') { skipped.push({ product_id: item.product_id, reason: item.status === 'paused' ? '商品暂时不可购买' : '商品已下架' }); continue }
       if (item.has_variants) { skipped.push({ product_id: item.product_id, reason: '需在商品详情页选规格下单' }); continue }
       if (item.stock < item.qty) { skipped.push({ product_id: item.product_id, reason: `库存不足（${item.stock} < ${item.qty}）` }); continue }
       if (item.seller_id === buyerId) { skipped.push({ product_id: item.product_id, reason: '不可购买自己的商品' }); continue }
