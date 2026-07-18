@@ -320,3 +320,61 @@ export function summarizeSubmitResult(r: Record<string, unknown>): string {
   const dup = r.duplicate === true ? ' REUSED an existing pending request (similar-purchase protection — no second approval/order created).' : ''
   return `Approval request ${r.request_id} pending human Passkey.${dup} Open: ${r.approval_url} — submit does NOT execute; only the Passkey approval creates the single real order. / 提交不执行,Passkey 批准才建单。`
 }
+
+// ─── MCP UI PR-6 — OrderTimeline 消费者投影(webaz.order_timeline.model.v1)─────────────────────
+// full 视图 → 履约时间线消费者面:状态标签走 ORDER_STATE_MEANINGS 单源;USDC 主价 + fiat_estimate
+// (诚实标注:无下单时法币快照,估算按当前参考汇率);退款 rail-aware(直付=协议记录责任结果,
+// 本金未由 WebAZ 托管,实际退款需买卖双方完成);deadline 只给 iso,本地时区显示由组件端完成。
+import { ORDER_STATE_MEANINGS } from './layer0-foundation/L0-2-state-machine/transitions.js'
+
+export const SCHEMA_ORDER_TIMELINE = 'webaz.order_timeline.model.v1'
+
+export function statusView(code: unknown): Record<string, unknown> {
+  const c = String(code ?? '')
+  const m = (ORDER_STATE_MEANINGS as Record<string, { zh: string; en: string }>)[c]
+  return { code: c, label: m?.zh ?? c, label_en: m?.en ?? c }
+}
+
+export function projectOrderTimelineConsumer(r: Record<string, unknown>, fx: FxView | null, regionToCcy: (x: string | null | undefined) => string): Record<string, unknown> {
+  const o = (r.order ?? {}) as Record<string, unknown>
+  const logi = (r.logistics ?? {}) as Record<string, unknown>
+  const refund = (r.refund_status ?? {}) as Record<string, unknown>
+  const rail = String(o.payment_rail ?? 'escrow')
+  const amountMinor = Number(o.amount) ? Math.round(Number(o.amount) * 1_000_000) : null
+  const returns = Array.isArray(refund.return_requests) ? refund.return_requests as Array<Record<string, unknown>> : []
+  const railBadge = rail === 'direct_p2p' ? '直付(WebAZ 不托管本金)' : '模拟托管测试订单 — 不代表真实 USDC 或法币托管'
+  return {
+    schema_version: SCHEMA_ORDER_TIMELINE,
+    order_id: o.order_id,
+    // 卖家可控字符串必封顶:防超预算 + 防超长文本注入模型可见面
+    product: { id: o.item_ref, title: typeof (o as Record<string, unknown>).product_title === 'string' ? capBytes(String((o as Record<string, unknown>).product_title), 200).text : null },
+    quantity: o.quantity ?? null,
+    price: { amount_minor: amountMinor, currency: 'USDC', currency_exponent: 6, display: fmtUsdcMinor(amountMinor) },
+    ...(fiatEstimate(amountMinor, logi.dest_region, fx, regionToCcy) ? { fiat_estimate: fiatEstimate(amountMinor, logi.dest_region, fx, regionToCcy) } : {}),
+    status: statusView(o.status),
+    next_actor: o.next_actor ?? null,
+    deadline: o.deadline ? { iso: o.deadline, note: 'render in the viewer local timezone' } : null,
+    payment_rail: rail, rail_badge: railBadge,
+    ...(r.incremental ? { incremental: r.incremental } : {}),
+    timeline: (Array.isArray(r.timeline) ? r.timeline as Array<Record<string, unknown>> : []).map(t => ({
+      from: t.from ?? null, to_status: statusView(t.to), actor: t.actor_role ?? null, at: t.at,
+    })),
+    logistics: { dest_region: logi.dest_region ?? null, tracking: logi.tracking ?? null, shipping_est_days: logi.shipping_est_days ?? null },
+    // 无退货时字段缺席(非 null):buyer_orders 豁免 stripEmpty,null 会被 schema 校验型宿主拒收
+    ...(returns.length ? { refund: {
+      requests: returns.map(x => ({ status: x.status, amount: { display: fmtUsdcMinor(Number(x.refund_amount) ? Math.round(Number(x.refund_amount) * 1_000_000) : null) }, created_at: x.created_at, resolved_at: x.resolved_at ?? null })),
+      is_real_funds_flow: false,
+      note: rail === 'direct_p2p'
+        ? '协议已记录责任结果;本金未由 WebAZ 托管;实际退款需由买卖双方完成'
+        : '模拟托管轨:退款按争议/退货结果从模拟托管释放,不代表真实 USDC 或法币资金流',
+    } } : {}),
+    available_actions: Array.isArray(r.available_actions) ? (r.available_actions as Array<Record<string, unknown>>).map(a => ({ action: a.action, executor: a.executor })) : [],
+    actions_note: '服务器权威动作面 — 人类动作在 webaz.xyz 订单页完成(高风险动作需 Passkey)',
+  }
+}
+
+export function summarizeOrderTimeline(r: Record<string, unknown>): string {
+  const st = (r.status ?? {}) as Record<string, unknown>
+  const p = (r.price ?? {}) as Record<string, unknown>
+  return `Order ${r.order_id}: ${st.label ?? st.code} (${p.display ?? ''}${r.next_actor ? `, next: ${r.next_actor}` : ''}). Timeline ${Array.isArray(r.timeline) ? (r.timeline as unknown[]).length : 0} event(s). Details in structuredContent. / 订单 ${st.label ?? ''}。`
+}

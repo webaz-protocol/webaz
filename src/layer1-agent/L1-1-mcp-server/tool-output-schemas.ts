@@ -9,7 +9,7 @@
  * 每个 schema 同时容纳成功形状与结构化错误形状(error/error_code)—— 工具声明 outputSchema 后,
  * 成功与失败路径都返回 structuredContent(MCP 规范:声明了 outputSchema 的工具必须返回结构化结果)。
  */
-import { SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL, SCHEMA_ORDER_STATUS, SCHEMA_ORDER_QUOTE, SCHEMA_ORDER_DRAFT, SCHEMA_ORDER_APPROVAL } from '../../agent-model-projection.js'
+import { SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL, SCHEMA_ORDER_STATUS, SCHEMA_ORDER_QUOTE, SCHEMA_ORDER_DRAFT, SCHEMA_ORDER_APPROVAL, SCHEMA_ORDER_TIMELINE } from '../../agent-model-projection.js'
 
 const productMoney = { type: 'object', description: 'product price: amount_minor / currency USDC / display (display line only; fx table gives display-only local conversions)' }
 const protocolMoney = { type: 'object', description: 'protocol-recorded integer money: amount_minor / currency / currency_exponent / display' }
@@ -50,9 +50,12 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
   },
   webaz_buyer_orders: {
     type: 'object',
-    description: `${SCHEMA_ORDER_STATUS} — buyer orders: account summary + active-first page of 7-key minimal orders (zero PII)`,
+    description: `${SCHEMA_ORDER_STATUS} (list/minimal/up_to_date) OR ${SCHEMA_ORDER_TIMELINE} (full single-order timeline: status labels, USDC price + display-only fiat estimate, rail-honest refund state, server-authoritative actions) — zero PII`,
     properties: {
-      schema_version: { type: 'string', const: SCHEMA_ORDER_STATUS },
+      schema_version: { type: 'string', enum: [SCHEMA_ORDER_STATUS, SCHEMA_ORDER_TIMELINE] },
+      timeline: { type: 'array', description: 'full form: {from, to_status{code,label}, actor, at} events' },
+      refund: { type: 'object', description: 'rail-honest refund state; ABSENT when the order has no return requests (direct_p2p: WebAZ holds no principal — protocol records outcomes only)' },
+      rail_badge: { type: 'string' }, status: { description: 'timeline form: {code, label, label_en} object; up_to_date form: raw status code string' },
       summary: { type: 'object', description: 'whole-account counts: total / active / awaiting_you / disputed / completed / cancelled / other_terminal' },
       count: { type: 'number' }, total_count: { type: 'number' },
       next_cursor: { type: 'string', description: 'present when older orders exist — pass back as cursor' },

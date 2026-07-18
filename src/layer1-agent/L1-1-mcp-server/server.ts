@@ -40,10 +40,10 @@ import { annotateTools } from './tool-annotations.js'  // 标准 MCP annotations
 import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-tool securitySchemes(oauth2 仅 grant-reachable / 余 noauth)
 import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
 import { filterToolsBySurface, type ToolSurface } from './tool-surfaces.js'
-import { PRODUCT_RESULTS_WIDGET_HTML, QUOTE_APPROVAL_WIDGET_HTML } from './ui-widgets.js'  // MCP UI PR-4:ProductResults 组件
+import { PRODUCT_RESULTS_WIDGET_HTML, QUOTE_APPROVAL_WIDGET_HTML, ORDER_TIMELINE_WIDGET_HTML } from './ui-widgets.js'  // MCP UI PR-4:ProductResults 组件
 import { getUsdRates, regionToCurrency } from '../../fx-rates.js'  // USDC 显示换算(display-only)  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
-import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult, summarizeDraftResult, summarizeSubmitResult,
-         projectQuoteConsumer, projectDraftConsumer, projectSubmitConsumer,
+import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult, summarizeDraftResult, summarizeSubmitResult, summarizeOrderTimeline,
+         projectQuoteConsumer, projectDraftConsumer, projectSubmitConsumer, projectOrderTimelineConsumer,
          SCHEMA_PRODUCT_SEARCH, projectProductModel, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1:Model Projection 单一真相源
 import { homedir } from 'node:os'
 import { join as pathJoin } from 'node:path'
@@ -1898,6 +1898,11 @@ No grant → GRANT_REQUIRED (webaz_pair action=start). Missing scope → structu
         updated_since: { type: 'string', description: 'With full: incremental read — unchanged order returns a tiny up_to_date response; otherwise timeline contains only entries newer than this ISO timestamp.' },
       },
     },
+    _meta: {
+      'openai/outputTemplate': 'ui://widget/webaz-order-timeline.html',
+      'openai/toolInvocation/invoking': 'Loading WebAZ order timeline…',
+      'openai/toolInvocation/invoked': 'WebAZ order timeline ready',
+    },
   },
   {
     name: 'webaz_discover',
@@ -2128,7 +2133,9 @@ export function buildToolEnvelope(name: string, result: unknown): { content: Arr
 // (USDC/法币估算/诚信文案)只发生在 wrapper 的 structuredContent 层 —— 模型/组件看到的才是投影。
 const STRUCTURED_RESULT_TOOLS: Record<string, { summarize: (r: Record<string, unknown>) => string; project?: (r: Record<string, unknown>) => Promise<Record<string, unknown>> }> = {
   webaz_search: { summarize: summarizeSearchResult },
-  webaz_buyer_orders: { summarize: summarizeBuyerOrders },
+  webaz_buyer_orders: { summarize: r => r.schema_version === 'webaz.order_timeline.model.v1' ? summarizeOrderTimeline(r) : summarizeBuyerOrders(r),
+    // PR-6:仅 full 视图(带 timeline)投影为消费者时间线;列表(7 键契约)/最小单/up_to_date 原样透传
+    project: async r => Array.isArray(r.timeline) && r.order ? projectOrderTimelineConsumer(r, await fxView(), regionToCurrency) : r },
   webaz_quote_order: { summarize: summarizeQuoteResult, project: async r => r.quote_id ? projectQuoteConsumer(r, await fxView(), regionToCurrency) : r },
   webaz_order_draft: { summarize: summarizeDraftResult, project: async r => {
     if (Array.isArray(r.drafts)) { const fx = await fxView(); return { schema_version: 'webaz.order_draft.model.v1', count: r.count, drafts: (r.drafts as Array<Record<string, unknown>>).map(d => projectDraftConsumer(d, fx, regionToCurrency)) } }
@@ -5871,6 +5878,13 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' },
       },
       {
+        uri:         'ui://widget/webaz-order-timeline.html',
+        name:        'WebAZ OrderTimeline widget',
+        description: 'MCP App component rendering the buyer order timeline (webaz.order_timeline.model.v1) and order list/up_to_date shapes: status labels, deadlines in the viewer timezone, rail-honest refund state, server-authoritative actions. High-risk actions stay on the webaz.xyz order page (Passkey).',
+        mimeType:    'text/html+skybridge',
+        _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' },
+      },
+      {
         uri:         GUIDE_INFO_URI,
         name:        'WebAZ full onboarding guide (long form)',
         description: 'The long-form webaz_info payload: end-user/contributor guides, roles, commission model, economics params, search routing, per-tool digests. Read on demand — the default webaz_info reply is a compact overview.',
@@ -5880,6 +5894,10 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
   }))
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    if (request.params.uri === 'ui://widget/webaz-order-timeline.html') {
+      return { contents: [{ uri: 'ui://widget/webaz-order-timeline.html', mimeType: 'text/html+skybridge', text: ORDER_TIMELINE_WIDGET_HTML,
+        _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' } }] }
+    }
     if (request.params.uri === 'ui://widget/webaz-quote-approval.html') {
       return { contents: [{ uri: 'ui://widget/webaz-quote-approval.html', mimeType: 'text/html+skybridge', text: QUOTE_APPROVAL_WIDGET_HTML,
         _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' } }] }

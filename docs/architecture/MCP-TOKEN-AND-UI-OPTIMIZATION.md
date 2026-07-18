@@ -1,15 +1,15 @@
 # MCP Token & UI Optimization — Architecture
 
-> Series: PR-1 #401 · PR-2 #402 · PR-3 #403 · PR-7 #404 (all production-verified on webaz.xyz) ·
-> **PR-4 (this PR): ProductResults MCP App component** — spike verdict from live host tests:
-> ChatGPT renders ui:// widgets, Claude falls back to text; standard fields remain the primary path.
-> QuoteAndApproval / OrderTimeline are PR-5/6 (planned).
+> Series: PR-1 #401 · PR-2 #402 · PR-3 #403 · PR-7 #404 · PR-4 #406 · USDC #407 · PR-5 #409
+> (all production-verified on webaz.xyz) · **PR-6 (this PR): OrderTimeline** — series complete.
+> Spike verdict from live host tests: ChatGPT renders ui:// widgets, Claude falls back to text;
+> standard fields remain the primary path.
 
 ## 1. The three-layer data model
 
 ```
 Model Projection  (webaz.*.model.v1)   — what the LANGUAGE MODEL sees: decision fields only
-UI Projection     (PR-4 ProductResults live; PR-5/6 planned) — component-rendered data (widget reads structuredContent; images deferred)
+UI Projection     (PR-4 ProductResults · PR-5 QuoteAndApproval · PR-6 OrderTimeline) — component-rendered data (widget reads structuredContent; images deferred)
 Backend Internal  (never leaves the server) — full rows, hashes, migration/backfill columns,
                                               commission_rate, sourcing data, full addresses, keys
 ```
@@ -111,5 +111,25 @@ single file, textContent-only (seller-controlled strings), zero external request
 (image CSP for external sources unverified; a future UI-projection layer will carry PWA
 hash-addressed thumbnails).
 
-**PR-5/6 (planned): QuoteAndApproval / OrderTimeline** — same discipline; OrderTimeline will use the
-`updated_since` incremental reads from PR-2.
+**PR-5 (shipped): QuoteAndApproval** rides `webaz_quote_order` / `webaz_order_draft` /
+`webaz_submit_order_request` → `ui://widget/webaz-quote-approval.html`. Key architecture: consumer
+projections happen at the **wrapper boundary** (`projectForTool`, a testable seam in `server.ts`) —
+handlers keep returning the full protocol contract, so legacy suites are untouched; projector failure
+degrades to a structured `PROJECTION_FAILED` envelope, never a raw protocol leak. Projections
+(`webaz.order_quote/order_draft/order_approval.model.v1`) price in USDC + display-only fiat estimate;
+**WAZ is never a consumer-facing currency**; rail-honesty wording is rail-aware (simulated escrow ≠
+real USDC custody; Direct Pay = WebAZ holds no principal); duplicate-purchase warning surfaces before
+any second approval.
+
+**PR-6 (this PR): OrderTimeline** rides `webaz_buyer_orders` → `ui://widget/webaz-order-timeline.html`.
+The full view projects to `webaz.order_timeline.model.v1` (shape-dispatched in the same wrapper seam;
+the list 7-key contract, minimal view, and `up_to_date` incremental responses pass through the wrapper
+unprojected — the minimal single-order response gained a top-level `schema_version`, additive,
+registered as contract v29; its 7-key `order` projection is unchanged).
+Status labels come from the single truth source `ORDER_STATE_MEANINGS`; refund block wording is
+rail-aware (Direct Pay: the protocol records the responsibility outcome — WebAZ held no principal, the
+actual refund is completed between the parties; simulated escrow: release from simulated escrow, not a
+real funds flow); deadlines ship as ISO + a render-in-viewer-timezone note (the widget renders local
+time; the model never guesses timezones). Refresh uses `callTool` full reads; `updated_since`
+incremental reads from PR-2 keep polling cheap; contact-seller is conversation-flow only
+(`sendFollowupTurn` bound to `webaz_order_chat` + the order id — no free-form messaging surface).
