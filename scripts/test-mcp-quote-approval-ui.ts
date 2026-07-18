@@ -122,7 +122,8 @@ try {
   const qr1 = await callSC('webaz_quote_order', { product_id: 'prd_q', quantity: 1, idempotency_key: 'replaykey1' })
   const qr2 = await callSC('webaz_quote_order', { product_id: 'prd_q', quantity: 1, idempotency_key: 'replaykey1' })
   ok('R-1 replay:无 quote_token 时 available_actions 为空 + replay 标记 + 恢复指引(原 token/过期重报)',
-    !!qr1.quote_token && qr2.quote_token === undefined && qr2.replay === true && qr2.available_actions === undefined && /original quote_token/.test(String(qr2.quote_token_note))   // stripEmpty:wire 上空动作面=字段缺席, JSON.stringify(qr2).slice(0, 180))
+    // stripEmpty:wire 上空动作面 = 字段缺席
+    !!qr1.quote_token && qr2.quote_token === undefined && qr2.replay === true && qr2.available_actions === undefined && /original quote_token/.test(String(qr2.quote_token_note)), JSON.stringify(qr2).slice(0, 180))
 
   // ── 8. 无默认地址 → 安全失败 ──
   useCred('grt_na', 'buyer_noaddr', 'gtk_na')
