@@ -22,7 +22,7 @@
 
 | Host | Remote MCP | OAuth | structuredContent | MCP Apps | Interactive UI | Deep Link | Full Flow | Evidence |
 |---|---|---|---|---|---|---|---|---|
-| ChatGPT Web/Desktop | ✅ Streamable HTTP | ✅ PKCE;偏好 CIMD,支持 DCR | ✅ 模型可读 | ✅(openai/* 遗留键 + 标准键双轨) | ✅ callTool/openExternal | ✅ openExternal→系统浏览器 | **FULL** | HUMAN VISUAL(渲染)+ DOC |
+| ChatGPT Web/Desktop | ✅ Streamable HTTP | ✅ PKCE;偏好 CIMD,支持 DCR | ✅ 模型可读 | ✅(openai/* 遗留键 + 标准键双轨) | ✅ callTool/openExternal | ✅ openExternal→系统浏览器 | **FULL\***(两项残留点验:单订单时间线模式、联系商家按钮 G3)| HUMAN VISUAL(渲染)+ DOC |
 | claude.ai / Claude Desktop | ✅ Streamable HTTP | ✅ PKCE + DCR + CIMD | ⚠️ 文档未列(NOT VERIFIED) | ✅ **标准键**(2026-01-26 GA,全 plan)| ✅(UI 发起工具调用需用户确认)| ✅ | **TEXT/TOOLS 今天;PR-A 后或 FULL** | HUMAN VISUAL(纯文本)+ DOC |
 | Claude Code (CLI) | ✅ HTTP/stdio/WS | ✅ PKCE + DCR + CIMD(loopback)| ⚠️ 社区报告被忽略(COMMUNITY)| ❌ 终端不渲染 | ❌ | ✅ 文本链接 | **TOOLS-ONLY** | DOC + COMMUNITY |
 | VS Code / Copilot | ✅ Streamable HTTP | ✅ 自动 OAuth 流 | ✅(1.103+,2025-06-18 spec)| ✅ **stable**(2026-01/02,标准键)| ✅ | ✅ | **PR-A 后或 FULL;未实测** | DOC;NOT VERIFIED live |
@@ -93,12 +93,12 @@ Host Adapters                                  ✅ 不存在(也不需要,见 §
 |---|---|---|---|
 | A1 | 组件必须依赖 `openai/outputTemplate` 才能工作 | **MED,成立** | `src/layer1-agent/L1-1-mcp-server/server.ts` 工具描述符 `_meta` 块(webaz_search / quote / draft / submit / buyer_orders 五处)。修复边界=PR-A:同一 `_meta` 内**追加**标准 `ui.resourceUri`/`ui.visibility`,遗留键保留(ChatGPT 双轨已文档化)|
 | A2 | 标准 `_meta.ui.resourceUri` 缺失 | **MED,成立**(全仓 `ui.resourceUri`/`mcpui`/`io.modelcontextprotocol` 零命中,CODE)| 同 A1;资源侧同时补 `_meta.ui.csp/ui.domain`(camelCase 域数组)与 MIME `text/html;profile=mcp-app`(以**新增资源或内容协商**方式,不动现有 skybridge 资源,防回归 ChatGPT)|
-| A3 | ChatGPT 专属字段混入业务逻辑 | **none** | `grep -r "openai/" src/` 仅命中 `L1-1-mcp-server/server.ts`;pwa 层命中均为 Anthropic API model id(AI 描述生成)与 OAuth 同意页"已验证连接方"徽章清单(`oauth-verified-connectors.ts:21-22`,展示信任 UX,非状态机)|
+| A3 | ChatGPT 专属字段混入业务逻辑 | **none** | `openai/` 字面量在 **TypeScript 源**中仅命中 `L1-1-mcp-server/server.ts`(MCP 层);`src/pwa/public/app-ai.js:185,200` 另有两处命中,是前端 AI 助手的 Groq OpenAI-兼容 endpoint 与 OpenRouter model id,与 MCP host 元数据无关。pwa 层其余 host 词命中均为 Anthropic API model id(AI 描述生成)与 OAuth 同意页"已验证连接方"徽章清单(`oauth-verified-connectors.ts:21-22`,展示信任 UX,非状态机)|
 | A4 | OAuth 流写死某个 Host | **none** | RFC-023/024 通用;claude.ai 固定回调 `https://claude.ai/api/mcp/auth_callback` 应能通过 ASCII canonical-prefix 校验(**未与 claude.ai 实连验证,NOT VERIFIED**);CIMD 未支持是**增强项**非违规(ChatGPT 偏好 CIMD 但支持 DCR)|
 | A5 | deep link 写死某个客户端 | **LOW** | widget 内 `openExternal` 是 `window.openai` API(Apps 桥固有);文本降级路径始终是裸 `https://webaz.xyz/...` URL,universal。修复边界=PR-A 的桥抽象顺带覆盖 |
 | A6 | UI 无法在不支持 MCP Apps 的环境降级 | **none** | structuredContent + 文本摘要是主路径,widget 纯增强(HUMAN VISUAL:Claude 文本可用)|
 | A7 | Model Projection 和 UI Projection 混在一起 | **LOW(观察项,非缺陷)** | 当前 widget 读 `toolOutput` = structuredContent,即 UI 投影 ≡ Model 投影。字段全部消费者安全(零 PII/零 WAZ),无泄露;代价是"给 UI 加字段=给模型加 token"。暂不拆分;若未来 UI 需要富字段(图片等),用 ChatGPT 已支持的 widget-only `_meta`(`toolResponseMetadata`)承载,不动 Model Projection |
-| A8 | 组件按钮直接调用生产高风险动作 | **none** | CODE:三组件 `callTool` 目标仅 `webaz_search`(翻页/详情)与 `webaz_buyer_orders`(读);经济动作一律 `openExternal` → webaz.xyz Passkey;approval 无 widget 内执行面。LOCAL TEST 有词元级回归锁(request/sink token bans)|
+| A8 | 组件按钮直接调用生产高风险动作 | **部分成立(LOW,Codex R1 纠正)** | CODE(`ui-widgets.ts:93,129,220,237,313,323,352`):widget `callTool` 目标共 4 个 —— `webaz_search`(翻页/详情)与 `webaz_buyer_orders`(读)之外,QuoteAndApproval 还直接调用 **`webaz_order_draft`(create)与 `webaz_submit_order_request`** 两个工作流写操作。**终局仍 Passkey-gated**:draft 不扣款不锁库存,submit 只创建审批请求(幂等 + 重复购买保护),真实订单只能由 Passkey 批准创建;widget 无任何触达资金/订单执行的路径。词元级回归锁只禁外联请求与 DOM sink,**不构成"只读调用"证明** —— PR-A 的 visibility 映射必须逐工具落表(见 PR-A 范围)|
 | A9 | Host 名称参与订单状态机 | **none** | grep 零命中(layer0 状态机无 host 词)|
 | A10 | 为不同 Host 复制商品/报价/订单逻辑 | **none** | 单一 handler + wrapper 投影 seam(PR-5 架构)|
 
@@ -108,7 +108,7 @@ Host Adapters                                  ✅ 不存在(也不需要,见 §
 
 1. **协议层(唯一需要新代码的地方)**:MCP Apps 的标准协商就是 initialize 时 `capabilities.extensions['io.modelcontextprotocol/ui']`(含 mimeTypes)。服务端**读**这个即可知道宿主是否渲染 UI —— 但因 `_meta.ui.*` 对不渲染的宿主是无害噪音(几百字节),**v1 可以无条件双发,连协商都不必做**;协商读取 + `clientInfo` 遥测作为 PR-C 观察项(为后续决策收集真实宿主分布)。
 2. **widget 内(已存在,扩一层)**:现有 `typeof oai.callTool === 'function'` 探测模式是对的;PR-A 把它抽象成 3 方法小桥(`getToolOutput/callTool/openLink/sendMessage`),优先探 `window.openai`,否则探标准 `ui/*` postMessage 桥。**能力优先于品牌**:桥里不出现任何 host 名。
-3. **不做的**:User-Agent 猜测;`if host === 'chatgpt'` 式分支;每 host 一套组件。OpenClaw/Hermes 不需要任何适配器 —— 它们消费的就是标准工具+文本+链接,今天已经工作(bridge/TOOLS-ONLY 模式)。
+3. **不做的**:User-Agent 猜测;`if host === 'chatgpt'` 式分支;每 host 一套组件。OpenClaw/Hermes 不需要任何适配器 —— 它们消费的就是标准工具+文本+链接,**按 DOC 架构推断即可工作(实连 NOT VERIFIED,见 §13)**。
 
 `hostSpecificOutputTemplate` 一项:保留 `openai/*` 遗留键即是它的全部实现,无需字段建模。
 
@@ -120,8 +120,8 @@ Host Adapters                                  ✅ 不存在(也不需要,见 §
 
 | Host | 判定 | 说明 |
 |---|---|---|
-| ChatGPT | **FULL** | 全链 HUMAN VISUAL(OrderTimeline 单订单模式点验中);Passkey 经 openExternal 出站、回站后"刷新"callTool 拉新状态(无回调依赖)|
-| claude.ai / Desktop | **PARTIAL(TEXT+TOOLS)** | 工具链全通(OAuth DCR + structuredContent 送达),UI 不渲染;Passkey 深链在聊天中可点;PR-A 后有望 FULL(需 HUMAN VISUAL 复验)|
+| ChatGPT | **FULL\*** | 主链 HUMAN VISUAL;**未点验残留:OrderTimeline 单订单模式、联系商家按钮(G3)、widget 发起的 draft/submit 按钮(openai/widgetAccessible 未设置,ChatGPT 文档要求 widget 可调工具显式标记 —— 按钮可能静默失败,NOT VERIFIED,列 PR-A 验收)**;Passkey 经 openExternal 出站、回站后"刷新"callTool 拉新状态(无回调依赖)|
+| claude.ai / Desktop | **PARTIAL(TEXT+TOOLS)** | 工具经文本可用(HUMAN VISUAL spike);**OAuth 回调过校验与 structuredContent 是否喂模型均 NOT VERIFIED(G4),"工具链全通"是 DOC 推断非实测**;Passkey 深链在聊天中可点;PR-A 后有望 FULL(需 HUMAN VISUAL 复验)|
 | Claude Code | **TOOLS-ONLY** | structuredContent 消费不确定(COMMUNITY 报忽略)→ 依赖一行摘要,详情字段可能丢失(§8);交易仍可完成(摘要含 approval_url/quote_token 等最小可行动字段,CODE)|
 | VS Code / Copilot | **NOT VERIFIED(推断 PARTIAL→FULL after PR-A)** | 未实测 |
 | Goose | **NOT VERIFIED(推断 TOOLS+实验 UI)** | 未实测 |
@@ -177,7 +177,7 @@ Host Adapters                                  ✅ 不存在(也不需要,见 §
   - G7:CIMD(Client ID Metadata Documents)未支持;ChatGPT/claude.ai 均偏好但都兼容 DCR → 可缓。
   - G8:initialize 能力协商读取 + clientInfo 遥测(为适配决策收集真实分布)→ PR-C。
 - **P3(等待/不做)**
-  - G9:OpenClaw/Hermes 专属适配 —— 不做;它们的正确消费面就是工具+文本+深链,已成立。
+  - G9:OpenClaw/Hermes 专属适配 —— 不做;它们的正确消费面就是工具+文本+深链(DOC 推断,实连 NOT VERIFIED —— 该推断成立与否不改变"不建适配器"的结论,因为无论如何无 UI 面可适配)。
   - G10:MIME 迁移收敛(skybridge → profile=mcp-app 单轨)—— 等 ChatGPT 双轨稳定与 PR-A 实测后再定。
 
 ## 11. Minimal Adapter Proposal(仅设计)
@@ -196,7 +196,7 @@ Host Adapters                                  ✅ 不存在(也不需要,见 §
 | **PR-B:Generic fallback 强化** | summarize* 在预算内补 §八缺口字段(标题/法币/deadline/rail)| PR-A 后(不冲突可并行)| G6;仅当确认目标宿主确实忽略 structuredContent 才做全量,否则只补摘要 |
 | **PR-C:能力协商遥测** | initialize extensions + clientInfo 只读记录 | 无 | G8;为 P2/P3 决策供数 |
 | **PR-D:CIMD 支持** | oauth-register 增加 client_id=URL 元数据文档路径 | 需求触发 | G7;DCR 已工作,不紧急 |
-| ~~PR-E OpenClaw 适配~~ / ~~PR-F Hermes 适配~~ | **不建**(审计结论:无需适配,文本+深链模式已成立)| — | G9 |
+| ~~PR-E OpenClaw 适配~~ / ~~PR-F Hermes 适配~~ | **不建**(审计结论:无 UI 面可适配;文本+深链是其固有消费形态 — DOC 推断,实连未测)| — | G9 |
 
 ## 13. Test Matrix(每 Host 的验证路径)
 
