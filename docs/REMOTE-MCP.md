@@ -51,7 +51,19 @@ Registration currently uses invitations for Sybil resistance. A key requires a *
 
 ## What you can do
 
-`tools/list` returns the whole surface (53 tools over the remote endpoint; `webaz_pair` is stdio-only) — `webaz_info` (protocol status), `webaz_search`, `webaz_connection_status`, `webaz_list_product`, `webaz_get_agent_order`, `webaz_verify_price`, `webaz_place_order`, and more. Start with `webaz_info` for the live network state, then `webaz_search` or `webaz_contribute action=list_open`.
+`tools/list` returns the whole surface (54 tools over the remote endpoint; `webaz_pair` is stdio-only) — `webaz_info` (protocol status), `webaz_search`, `webaz_connection_status`, `webaz_list_product`, `webaz_get_agent_order`, `webaz_verify_price`, `webaz_place_order`, and more. Start with `webaz_info` for the live network state, then `webaz_search` or `webaz_contribute action=list_open`.
+
+### Structured results — Token-lean model projection (v1)
+
+Three core buyer tools return **`structuredContent`** (MCP structured tool results) with a versioned model projection, and advertise a matching **`outputSchema`** on `tools/list`:
+
+| Tool | `structuredContent` schema |
+|---|---|
+| `webaz_search` | `webaz.product_search.model.v1` — per-product decision fields (price / stock_status / logistics / after-sales / seller_ref / sales_count / `decision_flags` / one-line summary), deduped `sellers` map, `next_cursor` paging (default page = 5) |
+| `webaz_buyer_orders` | `webaz.order_status.model.v1` — whole-account `summary`, active-orders-first page (default 10, max 50), `next_cursor`, 7-key minimal orders (zero PII, unchanged contract) |
+| `webaz_quote_order` | `webaz.order_quote.model.v1` — integer line items, masked ids, region-only destination |
+
+Semantics: **`content[0].text` is a 1–2 sentence degradation summary** for hosts that do not read `structuredContent`; the full decision data lives in `structuredContent` only (no JSON-in-text duplication). Null / empty fields are stripped before serialization. **Error results keep the complete structured error JSON in `content[0].text`** (so text-only clients retain `error_code` + recovery fields), and mirror it in `structuredContent`. Internal DB fields (content hashes, migration/backfill columns, commission rates, sourcing data, ranking internals) never enter the model surface. All other tools currently keep their existing JSON-in-text form.
 
 ### Permission matrix — how each tool authenticates
 

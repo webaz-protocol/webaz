@@ -38,6 +38,9 @@ import { generateCodeVerifier, pkceChallengeS256 } from '../../runtime/agent-pai
 import { NETWORK_TOOLS, NETWORK_SELF_AWARE, toolAllowedInNetworkMode, resolveMode } from './network-mode.js'  // RFC-003 网络门(可单测)+ 模式解析(单一真相源)
 import { annotateTools } from './tool-annotations.js'  // 标准 MCP annotations(readOnly/destructive/openWorld)——stdio+Remote 共用
 import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-tool securitySchemes(oauth2 仅 grant-reachable / 余 noauth)
+import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
+import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult,
+         SCHEMA_PRODUCT_SEARCH, projectProductModel, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1:Model Projection 单一真相源
 import { homedir } from 'node:os'
 import { join as pathJoin } from 'node:path'
 import { existsSync as fsExists, mkdirSync, writeFileSync, readFileSync, unlinkSync, chmodSync } from 'node:fs'
@@ -665,7 +668,7 @@ USE THIS when:
 
 【External-link paste】Prefer LLM-parse into \`external_link\` { platform, external_id?, external_title } (title = verbatim text inside 「」). If unparseable, drop raw into \`paste_text\` (server does light regex). Match: L1 external_id exact → L2 external_title exact → else \`matched_by:'none'\`. **No fuzzy fallback, no keyword degradation, no similar-product guessing.** matched_by='none' = tell user honestly "no exact match"; trust premise is precise not "looks similar".
 
-Returns: structured specs + logistics + after-sales + agent_summary (one-line decision hint). Paste-link hits webaz.xyz prod data, not local webaz.db.`,
+Returns: structuredContent (webaz.product_search.model.v1) — per-product decision fields + decision_flags + one-line summary, deduped sellers map, next_cursor for paging; content = short text summary. Paste-link hits webaz.xyz prod data, not local webaz.db.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -685,7 +688,7 @@ Returns: structured specs + logistics + after-sales + agent_summary (one-line de
             canonical_url:  { type: 'string', description: 'Canonical URL (optional)' },
           },
         },
-        limit: { type: 'number', description: 'Result limit, default 10; agent mode up to 200' },
+        limit: { type: 'number', description: 'Result limit, default 5 (page); up to 200 per page. Use cursor for more.' },
         sort: { type: 'string', enum: ['trending', 'newest', 'rating', 'price_asc', 'price_desc', 'random'], description: 'Sort: trending=composite (default) / newest / rating / price_asc / price_desc / random' },
         has_sales: { type: 'string', enum: ['true', 'false'], description: 'true=only sold; false=only new' },
         ship_to: { type: 'string', description: 'Ship-to (province/city); auto-filters unshippable' },
@@ -1878,6 +1881,8 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
       properties: {
         order_id: { type: 'string', description: 'Order ID. Omit to list your buyer orders (minimal projection).' },
         full: { type: 'boolean', description: 'With order_id: return the FULL view (timeline/terms/logistics/deadlines/refunds/available_actions; needs buyer_orders_read)' },
+        limit: { type: 'number', description: 'List page size, default 10 (max 50). The list returns a whole-account summary + active orders first.' },
+        cursor: { type: 'string', description: 'Pagination cursor from a previous next_cursor (older orders).' },
       },
     },
   },
@@ -2060,7 +2065,14 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
 
 // Standard MCP annotations merged once at module load (fail-fast if any tool lacks a mapping). The
 // single ListTools handler returns this SAME surface for stdio AND Remote MCP → zero drift.
-const TOOLS_ANNOTATED = withSecuritySchemes(annotateTools(TOOLS))
+const TOOLS_ANNOTATED = withSecuritySchemes(withOutputSchemas(annotateTools(TOOLS)))
+
+// MCP Token PR-1:声明了 outputSchema 的三工具 → structuredContent + 短摘要 content(见 CallTool 包装尾部)。
+const STRUCTURED_RESULT_TOOLS: Record<string, (r: Record<string, unknown>) => string> = {
+  webaz_search: summarizeSearchResult,
+  webaz_buyer_orders: summarizeBuyerOrders,
+  webaz_quote_order: summarizeQuoteResult,
+}
 
 // Tools that only make sense on a LOCAL (stdio) transport and must NOT be advertised on the remote
 // shared endpoint. webaz_pair does a one-time LOCAL pairing + local credential-handle storage — over the
@@ -2540,11 +2552,23 @@ async function handleSearch(args: Record<string, unknown>) {
         error?: string
       }
       if (data.error) return data
+      // MCP Token PR-1:外链匹配结果同样走 Model Projection(此前 23 列全量行直通,含完整 description)。
+      // extracted 只回白名单形状字段:platform + 校验过 shape 的 external_id。绝不回显 title/url ——
+      // 解析失败时上游会把【整段用户粘贴原文】当 title、url 原样透传(可携 PII/token),不得进模型上下文
+      // (Codex round-1 HIGH-2)。匹配透明度由 matched_by 承担。
+      const rawProducts = (data.products ?? []) as Array<Record<string, unknown>>
+      const ex = (data.extracted ?? {}) as Record<string, unknown>
       return {
-        ...data,
-        hint: data.products?.length
-          ? `通过 ${data.matched_by} 匹配到 ${data.products.length} 件商品。下单前用 webaz_verify_price 锁价。`
-          : '未找到关联商品。可改用 query 参数做关键词搜索。',
+        schema_version: SCHEMA_PRODUCT_SEARCH,
+        matched_by: data.matched_by,
+        extracted: {
+          ...(typeof ex.platform === 'string' && /^[a-z0-9_]{1,16}$/.test(ex.platform) ? { platform: ex.platform } : {}),
+          ...(typeof ex.external_id === 'string' && /^[\w.-]{1,64}$/.test(ex.external_id) ? { external_id: ex.external_id } : {}),
+        },
+        count: rawProducts.length,
+        sellers: sellersIndex(rawProducts),
+        products: rawProducts.map(p => projectProductModel(p)),
+        ...(rawProducts.length ? { hint: '下单前用 webaz_verify_price 锁价。' } : { hint: '未找到关联商品。可改用 query 参数做关键词搜索。' }),
       }
     } catch (e) {
       return { error: `链接搜索网络错误：${(e as Error).message}` }
@@ -2558,8 +2582,9 @@ async function handleSearch(args: Record<string, unknown>) {
   const maxHandlingHours = args.max_handling_hours as number | undefined
   const hasSales = args.has_sales as 'true' | 'false' | undefined
   const sellerId = args.seller_id as string | undefined
-  let limit = Number(args.limit ?? 10)
-  if (!Number.isFinite(limit) || limit < 1) limit = 10
+  // MCP Token PR-1:默认 5 件(此前 10;agent 单页上限仍 200 需显式请求)—— 大结果走 next_cursor 翻页。
+  let limit = Math.floor(Number(args.limit ?? 5))
+  if (!Number.isFinite(limit) || limit < 1) limit = 5
   if (limit > 200) limit = 200
   const sortMode = (args.sort as string | undefined) ?? 'trending'
 
@@ -2575,11 +2600,13 @@ async function handleSearch(args: Record<string, unknown>) {
     if (hasSales)               qs.set('has_sales', String(hasSales))
     if (sellerId)               qs.set('seller_id', String(sellerId))
     if (args.sort)              qs.set('sort', String(args.sort))
+    if (typeof args.cursor === 'string' && args.cursor) qs.set('cursor', args.cursor)   // MCP Token PR-1:cursor 真透传(此前 schema 宣传但从未接线)
     const r = await apiCall('/api/products?' + qs.toString())
     if ('error' in r) return r
     const products = (r.products as unknown[]) ?? []
     if (products.length) {
-      return { ...r, found: products.length, hint: `网络上匹配到 ${products.length} 件商品。下单前用 webaz_verify_price 锁价。` }
+      // 路由 agent 模式已产出 Model Projection 信封(schema_version/sellers/products/next_cursor)——原样透传。
+      return { ...r, found: products.length }
     }
     // ★ P2 可恢复建议(北极星:陌生 agent 首次自然语言搜 strict 返 0 时,给可动的下一步而非死路)。
     //   strict 结果保持 0/[](不破 strict-match 不变量);recovery.catalog_sample 是【明确标注的目录样本,
@@ -2605,7 +2632,6 @@ async function handleSearch(args: Record<string, unknown>) {
     return {
       ...r,
       found: 0,
-      hint: '网络上未找到精确匹配商品(协议级 strict 匹配,只按完整标题/SKU 命中)。见 recovery:目录样本 + 可执行的浏览 next_step。 / No exact match (strict). See recovery: a catalog sample + an actionable browse next_step.',
       ...(recovery ? { recovery } : {}),
     }
   }
@@ -2674,7 +2700,7 @@ async function handleSearch(args: Record<string, unknown>) {
     const hint = query
       ? `精准匹配 0 命中(query='${String(query).slice(0, 40)}')。webaz_search 是协议精准接口,不做模糊降级。要做模糊搜索请引导用户访问 https://webaz.xyz/#discover ,在搜索框输入关键词浏览 — 这是用户主动操作,不是 agent 代办。`
       : '没有找到匹配的商品'
-    return { found: 0, message: hint, products: [], matched_by: 'strict_no_match' }
+    return { schema_version: SCHEMA_PRODUCT_SEARCH, found: 0, count: 0, message: hint, products: [], matched_by: 'strict_no_match' }
   }
 
   type SortedProduct = Record<string, unknown> & { _boost: number; _rep_level: string; _rep_points: number; _score: number; _freshness: number; _first_sale_boost: number }
@@ -2705,57 +2731,19 @@ async function handleSearch(args: Record<string, unknown>) {
     ? enriched.sort((a, b) => b._score - a._score || b._boost - a._boost).slice(0, limit)
     : enriched.slice(0, limit)
 
+  // MCP Token PR-1:本地(sandbox)路径与网络路径同源投影 —— 排序仍按上方 trending 公式,
+  //   但 score/score_breakdown/metrics 属服务端内部,不再进入模型上下文。
   return {
+    schema_version: SCHEMA_PRODUCT_SEARCH,
     found: sorted.length,
-    products: sorted.map((p) => {
-      const levelMeta = { new:'', trusted:'⭐', quality:'🌟', star:'💫', legend:'🔥' }
-      const badge = levelMeta[p._rep_level as keyof typeof levelMeta] ?? ''
-      const parsed = parseProductForAgent(p)
-      return {
-        id: p.id,
-        title: p.title,
-        price: p.price,
-        price_display: `${p.price} WAZ`,
-        stock: p.stock,
-        category: p.category,
-        specs: parsed.specs,
-        agent_summary: parsed.agent_summary,
-        logistics: {
-          handling_hours: p.handling_hours ?? 24,
-          estimated_days: parsed.estimated_days,
-          ship_regions: p.ship_regions ?? '全国',
-          fragile: !!p.fragile,
-        },
-        after_sales: {
-          return_days: p.return_days ?? 7,
-          return_condition: p.return_condition ?? '',
-          warranty_days: p.warranty_days ?? 0,
-        },
-        seller: badge ? `${badge} ${p.seller_name}` : p.seller_name,
-        seller_id: p.seller_id,
-        seller_reputation: p._rep_level !== 'new'
-          ? `${badge} ${['','可信','优质','明星','传奇'][['new','trusted','quality','star','legend'].indexOf(p._rep_level)]}（${p._rep_points}分）`
-          : undefined,
-        // Tier 7 + 里程碑 5：agent-friendly 排序指标
-        metrics: {
-          completion_count: Number(p.completion_count) || 0,
-          dispute_loss_count: Number(p.dispute_loss_count) || 0,
-          unique_sharer_count: Number(p.unique_sharer_count) || 0,
-          last_sold_at: p.last_sold_at || null,
-          first_sold_at: p.first_sold_at || null,
-          rep_points: p._rep_points,
-          rep_level: p._rep_level,
-        },
-        score: Math.round((p._score as number) * 100) / 100,
-        score_breakdown: {
-          freshness: Math.round((p._freshness as number) * 100) / 100,
-          first_sale_boost: p._first_sale_boost,
-        },
-      }
-    }),
+    count: sorted.length,
     sort: sortMode,
     limit,
-    hint: 'agent 模式：products 已附带 metrics + score（含阶梯新鲜度 + 14d 首单 boost），可基于自身策略二次排序',
+    sellers: sellersIndex(sorted.map(p => ({ seller_id: p.seller_id, seller_name: p.seller_name, rep_level: p._rep_level, rep_points: p._rep_points }))),
+    products: sorted.map((p) => {
+      const parsed = parseProductForAgent(p)
+      return projectProductModel({ ...p, estimated_days: parsed.estimated_days, agent_summary: parsed.agent_summary, sales_count: Number(p.completion_count) || 0 })
+    }),
   }
 }
 
@@ -2850,7 +2838,10 @@ export async function handleBuyerOrders(args: Record<string, unknown>): Promise<
   if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
   const orderId = (typeof args.order_id === 'string' && args.order_id) ? args.order_id : ''
   const wantFull = args.full === true && !!orderId   // RFC-026 PR-3:全量视图(时间线/条款/物流/截止/退款/动作面),需 buyer_orders_read
-  const path = wantFull ? `/api/agent/buyer/orders/${encodeURIComponent(orderId)}/full` : orderId ? `/api/agent/buyer/orders/${encodeURIComponent(orderId)}` : '/api/agent/buyer/orders'
+  const listQs = new URLSearchParams()   // MCP Token PR-1:列表分页参数透传(默认服务端 10/上限 50)
+  if (args.limit !== undefined) listQs.set('limit', String(args.limit))
+  if (typeof args.cursor === 'string' && args.cursor) listQs.set('cursor', args.cursor)
+  const path = wantFull ? `/api/agent/buyer/orders/${encodeURIComponent(orderId)}/full` : orderId ? `/api/agent/buyer/orders/${encodeURIComponent(orderId)}` : '/api/agent/buyer/orders' + (listQs.toString() ? `?${listQs.toString()}` : '')
   const r = await apiCall(path, { method: 'GET', apiKey: cred.token })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: wantFull ? 'Your grant lacks buyer_orders_read (the FULL order view). Re-connect via OAuth so the grant carries the read scope, then retry — or call without full for the minimal view.' : 'Your grant lacks buyer_orders_read_minimal. Re-connect via OAuth so the grant carries the read scope, then retry.' }
   return r
@@ -6033,6 +6024,20 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
       }
     }
 
+    // MCP Token PR-1:三条核心购物读链路(search / buyer_orders / quote)返回 structuredContent
+    //   (webaz.*.model.v1 最小投影,null/空字段序列化前剥离)+ content 短降级摘要。
+    //   错误结果:text = minified 完整错误 JSON —— 纯文本客户端保留全部结构化 recovery 字段,不降级成一句话。
+    //   其余工具维持原 JSON-in-text(后续 PR 分批迁移,不在本 PR 一刀切)。
+    const summarize = STRUCTURED_RESULT_TOOLS[name]
+    if (summarize && result && typeof result === 'object' && !Array.isArray(result)) {
+      // buyer_orders 豁免 null 剥离:RFC-025 的 7 键最小投影契约含【有语义的 null 占位】(deadline/next_actor
+      // 可为 null),wire 上也必须保持恰 7 键(Codex round-1 BLOCKER-2)。search/quote 无 null 契约,照剥。
+      const clean = (name === 'webaz_buyer_orders' ? result : stripEmpty(result)) as Record<string, unknown>
+      const isErr = 'error' in clean
+      const text = isErr ? JSON.stringify(clean) : summarize(clean)
+      // 错误结果按 MCP 规范标 isError(声明了 outputSchema 的工具,协议客户端应看到显式失败而非"成功的错误对象")
+      return { content: [{ type: 'text', text }], structuredContent: clean, ...(isErr ? { isError: true } : {}) }
+    }
     return {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     }

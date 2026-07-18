@@ -100,3 +100,38 @@ export const BUYER_MINIMAL_ORDER_COLUMNS = [
   'pending_accept_deadline', 'pay_deadline', 'accept_deadline', 'ship_deadline',
   'pickup_deadline', 'delivery_deadline', 'confirm_deadline',
 ] as const
+
+// ─── MCP Token PR-1 — 买家订单列表分页 + 汇总(webaz.order_status.model.v1)────────────────────
+// 活跃态【从状态机责任表推导】(CURRENT_RESPONSIBLE 有责任方 = 未收口)+ confirmed(结算过渡态),
+// 不另列硬编码状态清单 —— 状态机演进时此处自动跟随,零漂移。
+
+export const BUYER_ACTIVE_STATUSES: readonly string[] = [...Object.keys(CURRENT_RESPONSIBLE), 'confirmed']
+
+/** 全账户订单汇总(输入 = GROUP BY status 聚合行;awaiting_you 按责任表 = buyer 推导)。 */
+export function buyerOrdersSummary(rows: Array<{ status: string; c: number }>): Record<string, number> {
+  const s = { total: 0, active: 0, awaiting_you: 0, disputed: 0, completed: 0, cancelled: 0, other_terminal: 0 }
+  for (const r of rows) {
+    const n = Number(r.c) || 0
+    s.total += n
+    if (r.status === 'disputed') { s.disputed += n; s.active += n; continue }
+    if (BUYER_ACTIVE_STATUSES.includes(r.status)) {
+      s.active += n
+      if ((CURRENT_RESPONSIBLE as Record<string, string>)[r.status] === 'buyer') s.awaiting_you += n
+    } else if (r.status === 'completed') s.completed += n
+    else if (r.status === 'cancelled') s.cancelled += n
+    else s.other_terminal += n
+  }
+  return s
+}
+
+/** 分页游标:{tier(0=活跃/1=终态), created_at, id} —— 不透明 base64url,keyset 语义(活跃优先,再按时间倒序)。 */
+export function encodeBuyerOrdersCursor(tier: number, createdAt: string, id: string): string {
+  return Buffer.from(JSON.stringify({ t: tier, c: createdAt, i: id })).toString('base64url')
+}
+export function decodeBuyerOrdersCursor(cur: string): { t: number; c: string; i: string } | null {
+  try {
+    const j = JSON.parse(Buffer.from(cur, 'base64url').toString('utf8')) as { t?: unknown; c?: unknown; i?: unknown }
+    if ((j.t !== 0 && j.t !== 1) || typeof j.c !== 'string' || typeof j.i !== 'string') return null
+    return { t: j.t, c: j.c, i: j.i }
+  } catch { return null }
+}
