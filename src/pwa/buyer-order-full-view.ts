@@ -99,19 +99,35 @@ function availableActions(db: Database.Database, o: Record<string, unknown>, hum
   return acts
 }
 
-export function buildBuyerOrderFull(db: Database.Database, humanId: string, orderId: unknown):
+export function buildBuyerOrderFull(db: Database.Database, humanId: string, orderId: unknown, updatedSince?: unknown):
   { ok: true; response: Record<string, unknown> } | { ok: false; status: number; body: Record<string, unknown> } {
   if (typeof orderId !== 'string' || !orderId) return { ok: false, status: 400, body: { error_code: 'ORDER_NOT_FOUND', reason: 'order_id is required', retryable: true } }
   const cols = [...BUYER_MINIMAL_ORDER_COLUMNS, 'created_at', 'updated_at', 'quantity', 'ship_to_region', 'shipping_fee', 'shipping_est_days', 'trade_terms_snapshot', 'direct_pay_window_deadline'].join(', ')
   const o = db.prepare(`SELECT ${cols} FROM orders WHERE id = ? AND buyer_id = ?`).get(orderId, humanId) as Record<string, unknown> | undefined
   if (!o) return { ok: false, status: 404, body: { error_code: 'ORDER_NOT_FOUND', reason: 'no such order (or not yours)', retryable: false } }
 
+  // MCP Token PR-2:updated_since 增量读 —— 无变化时返回极小 up_to_date 响应,有变化时 timeline 只回
+  //   新条目(agent/组件轮询不再每次重传整单)。比较锚 = orders.updated_at 与时间线最新条目;
+  //   时间格式宽容(ISO 'T' 或 SQLite 空格),秒级截断比较。权限/投影不变:仍是本人 + allowlist。
+  const sinceRaw = typeof updatedSince === 'string' && updatedSince ? updatedSince.replace('T', ' ').slice(0, 19) : null
+  if (typeof updatedSince === 'string' && updatedSince && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(sinceRaw))) {
+    return { ok: false, status: 400, body: { error_code: 'UPDATED_SINCE_INVALID', reason: 'updated_since must be an ISO timestamp (e.g. 2026-07-18T09:00:00Z)', retryable: true } }
+  }
+  const norm = (t: unknown): string => t == null ? '' : String(t).replace('T', ' ').slice(0, 19)
+  if (sinceRaw) {
+    const newest = db.prepare('SELECT MAX(created_at) AS m FROM order_state_history WHERE order_id = ?').get(orderId) as { m: string | null }
+    if (norm(o.updated_at) <= sinceRaw && (newest.m == null || norm(newest.m) <= sinceRaw)) {
+      return { ok: true, response: { order_id: orderId, up_to_date: true, status: String(o.status ?? ''), updated_at: o.updated_at ?? null, note: 'no changes since updated_since — full view omitted' } }
+    }
+  }
+
   const base = minimalBuyerOrderView(o, db)
-  const timeline = (db.prepare('SELECT from_status, to_status, actor_role, created_at FROM order_state_history WHERE order_id = ? ORDER BY created_at, id LIMIT 100')
+  const timelineAll = (db.prepare('SELECT from_status, to_status, actor_role, created_at FROM order_state_history WHERE order_id = ? ORDER BY created_at, id LIMIT 100')
     .all(orderId) as Array<Record<string, unknown>>).map(r => ({
       from: r.from_status == null ? null : String(r.from_status), to: String(r.to_status),
       actor_role: r.actor_role == null ? null : String(r.actor_role), at: String(r.created_at),
     }))
+  const timeline = sinceRaw ? timelineAll.filter(t => norm(t.at) > sinceRaw) : timelineAll
   const returns = (db.prepare('SELECT status, refund_amount, created_at, resolved_at FROM return_requests WHERE order_id = ? ORDER BY created_at DESC LIMIT 10')
     .all(orderId) as Array<Record<string, unknown>>).map(r => ({
       status: String(r.status), refund_amount: r.refund_amount == null ? null : Number(r.refund_amount),
@@ -123,6 +139,7 @@ export function buildBuyerOrderFull(db: Database.Database, humanId: string, orde
 
   return { ok: true, response: {
     order: { ...base, quantity: numOrNull(Number(o.quantity)), created_at: String(o.created_at ?? '') },
+    ...(sinceRaw ? { incremental: { since: sinceRaw, timeline_new: timeline.length, note: 'timeline below contains ONLY entries newer than updated_since' } } : {}),
     timeline,
     order_time_terms: orderTimeTerms(o.trade_terms_snapshot),
     logistics: {

@@ -444,7 +444,8 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   // RFC-026 PR-3 — 订单全量只读(safe scope buyer_orders_read;时间线/条款快照/物流/截止/退款/动作面;零 PII)
   app.get('/api/agent/buyer/orders/:id/full', requireAgentGrantScope('buyer_orders_read'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
-    const r = buildBuyerOrderFull(db, p.human_id, req.params.id)
+    // MCP Token PR-2:updated_since 增量读(无变化 → 极小 up_to_date;有变化 → timeline 只回新条目)
+    const r = buildBuyerOrderFull(db, p.human_id, req.params.id, typeof req.query.updated_since === 'string' ? req.query.updated_since : undefined)
     if (!r.ok) return void res.status(r.status).json(r.body)
     res.json(r.response)
   })

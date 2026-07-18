@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (807 endpoints, 19 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (808 endpoints, 19 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -7284,6 +7284,13 @@
             "bearerAuth": []
           }
         ]
+      }
+    },
+    "/api/products/result-fetch": {
+      "post": {
+        "summary": "下架/删除的商品按 id 诚实返回 unavailable,绝不吐缓存陈货,也绝无权限绕过面(仅公共在售数据)。",
+        "tags": [],
+        "security": []
       }
     },
     "/api/profile": {

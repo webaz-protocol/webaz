@@ -2099,3 +2099,23 @@ export function initOAuthSchema(db: Database.Database): void {
     try { db.exec(`ALTER TABLE oauth_clients ADD COLUMN ${col} ${ddl}`) } catch { /* already present */ }
   }
 }
+
+// ─── MCP Token PR-2 — result_handle 选择集缓存(webaz.*.model.v1 按需详情/翻页复用)────────────
+// 设计不变量:handle 行【只存 id 选择集 + 查询上下文】,绝不存数据载荷 —— 取详情永远按 id 活读
+// 数据库并重跑与首次响应完全相同的可见性谓词(active 等)。因此 handle 数学上不可能成为权限绕过
+// 或陈旧数据通道(任务书 §八 要求 7);subject 为 NULL 仅限纯公共数据工具(webaz_search 匿名面)。
+export function initMcpResultCacheSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mcp_result_cache (
+      handle_id  TEXT PRIMARY KEY,                       -- res_<32hex>(128bit CSPRNG,不可猜测/不连续)
+      subject    TEXT,                                   -- 绑定主体(grant human_id;匿名公共查询 = NULL)
+      tool       TEXT NOT NULL,                          -- 签发工具(读取时强校验,防跨工具复用)
+      item_ids   TEXT NOT NULL,                          -- JSON string[](选择集,无载荷)
+      context    TEXT,                                   -- JSON 查询上下文(审计/调试;无 PII —— 只收结构化过滤器)
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL                           -- 短 TTL(签发方 +10min);过期 → 结构化错误引导重查
+    )
+  `)
+  // boot 清扫(与 address staging 同范式):过期句柄不留存 —— 表永远只含活跃小行
+  db.exec("DELETE FROM mcp_result_cache WHERE expires_at <= datetime('now')")
+}

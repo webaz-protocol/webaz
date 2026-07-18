@@ -123,6 +123,9 @@ export function summarizeSearchResult(r: Record<string, unknown>): string {
 }
 
 export function summarizeBuyerOrders(r: Record<string, unknown>): string {
+  if (r.up_to_date) {
+    return `Order ${String(r.order_id)} unchanged (status ${String(r.status)}) since your updated_since — nothing new. / 无新变化。`
+  }
   if (r.order) {
     const o = r.order as Record<string, unknown>
     return `Order ${o.order_id}: ${o.status}${o.next_actor ? `, next actor ${o.next_actor}` : ''}. / 订单状态 ${o.status}。`
@@ -145,4 +148,28 @@ export function summarizeQuoteResult(r: Record<string, unknown>): string {
   const rail = ((r.payment ?? {}) as Record<string, unknown>).rail ?? 'escrow'
   const tok = typeof r.quote_token === 'string' ? ` quote_token=${r.quote_token} (single-use → webaz_order_draft).` : ''
   return `Quote ${String(r.quote_id ?? '')}: payable ${disp} (${String(rail)} rail), expires ${String(r.expires_at ?? '')}.${tok} Quote only — nothing charged, no stock held. / 仅报价:不扣款、不锁库存。`
+}
+
+// ─── MCP Token PR-2 — 按需商品详情投影(webaz.product_detail.model.v1)───────────────────────
+// 只经 result_handle 选择集到达(≤5 件/次):比搜索页多 description 摘要/specs/条款,仍是字面键
+// allowlist —— 内部字段(hash/回填/commission/source_*)在任何输入行下都构造性不可达。
+
+export const SCHEMA_PRODUCT_DETAIL = 'webaz.product_detail.model.v1'
+export const DETAIL_DESC_MAX = 600
+
+export function projectProductDetail(p: Record<string, unknown>): Record<string, unknown> {
+  const base = projectProductModel(p)
+  const desc = typeof p.description === 'string' ? p.description : ''
+  let specs: unknown = null
+  if (typeof p.specs === 'string' && p.specs) { try { specs = JSON.parse(p.specs) } catch { specs = null } }
+  else if (p.specs && typeof p.specs === 'object') specs = p.specs
+  return {
+    ...base,
+    description: desc ? desc.slice(0, DETAIL_DESC_MAX) : null,
+    description_truncated: desc.length > DETAIL_DESC_MAX,
+    specs,
+    ship_regions: p.ship_regions == null ? null : String(p.ship_regions),
+    return_condition: p.return_condition == null ? null : String(p.return_condition).slice(0, 200),
+    fragile: p.fragile == null ? null : !!p.fragile,
+  }
 }
