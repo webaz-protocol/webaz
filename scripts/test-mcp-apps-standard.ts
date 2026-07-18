@@ -97,6 +97,7 @@ try {
       ct0.mimeType === 'text/html;profile=mcp-app'
       && html.includes('ui/initialize') && html.includes('ui/notifications/tool-result')
       && html.includes("'ui/open-link'") && html.includes("role:'user'")
+      && html.includes("content:{type:'text'") && !html.includes('content:[{')   // 2026-01-26 冻结版:单 ContentBlock
       && !REQUEST_TOKENS.test(html) && !SINK_TOKENS.test(html) && !html.includes(' WAZ')
       && !!(ct0._meta as Record<string, unknown>)?.ui)
   }
@@ -145,11 +146,12 @@ try {
       removeEventListener: (_t: string, fn: (e: never) => void) => { const i = listeners.indexOf(fn as never); if (i >= 0) listeners.splice(i, 1) },
     }
     if (withOpenai) win.openai = { toolOutput: { schema_version: 'legacy.shape' }, callTool: () => {} }
-    const ctx = { window: win, setTimeout, Promise, renderBody: (...a: unknown[]) => { renders.push(a) } }
+    const ctx: Record<string, unknown> = { window: win, setTimeout, Promise, URL, renderBody: (...a: unknown[]) => { renders.push(a) } }
     vm.createContext(ctx)
-    vm.runInContext(`${__WIDGET_BRIDGE_STANDARD_JS}\n${__WIDGET_BOOT_STANDARD_JS}`, ctx)
+    // COMPAT_LINK 一并注入:标准 facade 的 openExternal 依赖 safeWebazHref(与 quote/timeline 标准资源同构)
+    vm.runInContext(`${__WIDGET_COMPAT_JS}\n${__WIDGET_BRIDGE_STANDARD_JS}\n${__WIDGET_BOOT_STANDARD_JS}`, ctx)
     const dispatch = (e: { source: unknown; origin: string; data: unknown }) => { listeners.slice().forEach(fn => fn(e)) }
-    return { posted, listeners, renders, parent, win, dispatch }
+    return { posted, listeners, renders, parent, win, dispatch, ctx }
   }
   const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -171,6 +173,32 @@ try {
   h1.dispatch({ source: { not: 'parent' }, origin: 'https://host-a.example', data: { jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: { schema_version: 'evil2' } } } })
   await sleep(10)
   ok('B-1d. pinned-origin 外 + 非 parent source 消息全被忽略', h1.renders.length === 1)
+
+  // B-4(Codex R1-3):真实 facade 线上行为 —— __facade 是 boot 脚本顶层 var → vm context 属性可达
+  const fac1 = h1.ctx.__facade as { callTool: (n: string, a: unknown) => void; sendFollowUpMessage: (o: { prompt: string }) => void; openExternal: (o: { href: string }) => void }
+  ok('B-4a. 握手后 facade 就位', !!fac1 && typeof fac1.callTool === 'function')
+  fac1.callTool('webaz_search', { cursor: 'c1' })
+  await sleep(10)
+  const tc = h1.posted.find(m => m.method === 'tools/call') as Msg
+  ok('B-4b. facade.callTool → 线上 tools/call {name,arguments}', !!tc && (tc.params as Record<string, unknown>)?.name === 'webaz_search')
+  // 宿主对同一执行【既回 response 又发 tool-result 通知】(规范要求通知统一必发)→ 只渲染一次(通知路径)
+  h1.dispatch({ source: h1.parent, origin: 'https://host-a.example', data: { jsonrpc: '2.0', id: tc.id, result: { content: [], structuredContent: { schema_version: 'r2' } } } })
+  h1.dispatch({ source: h1.parent, origin: 'https://host-a.example', data: { jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [], structuredContent: { schema_version: 'r2' } } } })
+  await sleep(10)
+  ok('B-4c. response+通知双到达 → 恰一次新渲染(单渲染源=通知)', h1.renders.length === 2, `renders=${h1.renders.length}`)
+  fac1.sendFollowUpMessage({ prompt: '你好' })
+  await sleep(10)
+  const um = h1.posted.find(m => m.method === 'ui/message') as Msg
+  const ump = (um?.params ?? {}) as Record<string, unknown>
+  ok('B-4d. ui/message 冻结版 wire shape(role:user + content 单 ContentBlock 非数组)',
+    ump.role === 'user' && !Array.isArray(ump.content) && (ump.content as Record<string, unknown>)?.type === 'text'
+    && (ump.content as Record<string, unknown>)?.text === '你好', JSON.stringify(um).slice(0, 160))
+  fac1.openExternal({ href: 'javascript:alert(1)' })
+  fac1.openExternal({ href: 'https://webaz.xyz/#order/o1' })
+  await sleep(10)
+  const links = h1.posted.filter(m => m.method === 'ui/open-link')
+  ok('B-4e. facade.openExternal:非法拒发,合法 → ui/open-link {url}', links.length === 1
+    && ((links[0].params as Record<string, unknown>)?.url) === 'https://webaz.xyz/#order/o1', JSON.stringify(links))
 
   // B-2 超时降级 window.openai(单桥:降级后标准监听已拆)
   const h2 = makeCtx(true)

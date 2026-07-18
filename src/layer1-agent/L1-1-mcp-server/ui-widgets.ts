@@ -72,7 +72,7 @@ const WIDGET_BRIDGE_STANDARD_JS = `
       },
       callTool:function(n,a){ return request('tools/call',{name:n,arguments:a||{}}) },
       openLink:function(url){ return request('ui/open-link',{url:url}) },
-      sendMessage:function(text){ return request('ui/message',{role:'user',content:[{type:'text',text:String(text)}]}) },
+      sendMessage:function(text){ return request('ui/message',{role:'user',content:{type:'text',text:String(text)}}) },   // 2026-01-26 冻结版:content = 单 ContentBlock(Codex R1-1)
     }
   }
 `
@@ -82,7 +82,9 @@ const WIDGET_BOOT_STANDARD_JS = `
   var __br=makeStandardBridge(__onToolResult)
   __br.connect(600).then(function(){
     __facade={
-      callTool:function(n,a){ __br.callTool(n,a).then(function(r){ __onToolResult(r) }).catch(function(){}) },
+      // 单渲染源(Codex R1-2):规范要求宿主对【一切】完成的工具执行统一发 ui/notifications/tool-result
+      // (含 view 发起的),渲染只走通知路径 —— response 不重复渲染,消除双渲染/乱序覆盖。
+      callTool:function(n,a){ __br.callTool(n,a).catch(function(){}) },
       openExternal:function(o){ var u=o&&o.href; var h=(typeof safeWebazHref==='function')?safeWebazHref(u):null; if(h) __br.openLink(h).catch(function(){}) },
       sendFollowUpMessage:function(o){ __br.sendMessage((o&&o.prompt)||'').catch(function(){}) },
     }
