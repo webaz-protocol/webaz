@@ -123,7 +123,9 @@ any second approval.
 
 **PR-6 (this PR): OrderTimeline** rides `webaz_buyer_orders` → `ui://widget/webaz-order-timeline.html`.
 The full view projects to `webaz.order_timeline.model.v1` (shape-dispatched in the same wrapper seam;
-the list 7-key contract, minimal view, and `up_to_date` incremental responses pass through unchanged).
+the list 7-key contract, minimal view, and `up_to_date` incremental responses pass through the wrapper
+unprojected — the minimal single-order response gained a top-level `schema_version`, additive,
+registered as contract v29; its 7-key `order` projection is unchanged).
 Status labels come from the single truth source `ORDER_STATE_MEANINGS`; refund block wording is
 rail-aware (Direct Pay: the protocol records the responsibility outcome — WebAZ held no principal, the
 actual refund is completed between the parties; simulated escrow: release from simulated escrow, not a
