@@ -40,7 +40,7 @@ import { annotateTools } from './tool-annotations.js'  // 标准 MCP annotations
 import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-tool securitySchemes(oauth2 仅 grant-reachable / 余 noauth)
 import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
 import { filterToolsBySurface, type ToolSurface } from './tool-surfaces.js'  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
-import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult,
+import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult, summarizeUiSpike,
          SCHEMA_PRODUCT_SEARCH, projectProductModel, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1:Model Projection 单一真相源
 import { homedir } from 'node:os'
 import { join as pathJoin } from 'node:path'
@@ -2099,6 +2099,7 @@ const STRUCTURED_RESULT_TOOLS: Record<string, (r: Record<string, unknown>) => st
   webaz_search: summarizeSearchResult,
   webaz_buyer_orders: summarizeBuyerOrders,
   webaz_quote_order: summarizeQuoteResult,
+  webaz_ui_spike: summarizeUiSpike,   // spike:必须发 structuredContent,widget 才有 window.openai.toolOutput
 }
 
 // Tools that only make sense on a LOCAL (stdio) transport and must NOT be advertised on the remote
@@ -2834,12 +2835,16 @@ async function handleUiSpike(): Promise<Record<string, unknown>> {
   // UI 渲染 spike:极小载荷(公开在售商品 3 件)。宿主若支持 MCP Apps/outputTemplate,则由
   // ui://widget/webaz-spike.html 渲染卡片(widget 读 window.openai.toolOutput = structuredContent);
   // 不支持的宿主看 text 降级。零 auth、零写、零经济语义 —— 纯宿主能力探测。
-  let items: Array<Record<string, unknown>> = []
+  let items: Array<Record<string, unknown>> = [
+    { id: 'prd_demo_1', title: 'Demo Magsafe Stand', price_display: '7.06 WAZ', demo: true },
+    { id: 'prd_demo_2', title: 'Demo Ring Holder', price_display: '4.20 WAZ', demo: true },
+  ]
   if (isNetworkMode()) {
     const r = await apiCall('/api/products?mode=agent&limit=3&sort=newest').catch(() => ({} as Record<string, unknown>))
-    items = ((r.products as Array<Record<string, unknown>> | undefined) ?? []).map(p => ({
+    const live = ((r.products as Array<Record<string, unknown>> | undefined) ?? []).map(p => ({
       id: String(p.id ?? ''), title: String(p.title ?? ''), price_display: String((p.price as Record<string, unknown> | undefined)?.display ?? ''),
     }))
+    if (live.length) items = live
   }
   return {
     schema_version: 'webaz.ui_spike.v0',

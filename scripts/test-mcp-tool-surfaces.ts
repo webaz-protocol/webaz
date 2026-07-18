@@ -105,6 +105,16 @@ console.log(`  [tools/list bytes] full=${fullB}B (~${Math.ceil(fullB / 4)} tok) 
     html.includes('window.openai') && html.includes('toolOutput') && !/https?:\/\//.test(html))
 }
 {
+  const [ct2, st2] = InMemoryTransport.createLinkedPair()
+  await mcp.buildMcpServer({}).connect(st2)
+  const c2 = new Client({ name: 'spike-wire', version: '0' }, { capabilities: {} })
+  await c2.connect(ct2)
+  const sp = await c2.callTool({ name: 'webaz_ui_spike', arguments: {} }) as Record<string, unknown>
+  const spSc = sp.structuredContent as Record<string, unknown> | undefined
+  ok('U-0 webaz_ui_spike emits structuredContent.items on the WIRE (widget toolOutput payload actually exists)',
+    !!spSc && Array.isArray(spSc.items) && (spSc.items as unknown[]).length >= 2, JSON.stringify(spSc).slice(0, 150))
+}
+{
   const L1src = (await import('node:fs')).readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
   ok('U-3 webaz_ui_spike descriptor carries openai/outputTemplate meta (host rendering hook)',
     L1src.includes("'openai/outputTemplate': 'ui://widget/webaz-spike.html'"))
