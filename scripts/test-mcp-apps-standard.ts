@@ -111,6 +111,19 @@ try {
       && (needLink ? html.includes('safeWebazHref') : !html.includes('safeWebazHref')))
   }
 
+  // ── [T2] 主题双轨(PR-0 深色修复):6 个资源全部带 token 化主题 + 三层信号 + 按钮显式字色 ──
+  for (const u of [...LEGACY, ...STD]) {
+    const rr = await c.readResource({ uri: u })
+    const html = (rr.contents as Array<{ text: string }>)[0].text
+    ok(`T2. ${u.slice(12)} 主题 token + prefers-color-scheme + data-theme 双向 + 按钮显式字色`,
+      html.includes('color-scheme:light dark')
+      && html.includes('@media (prefers-color-scheme: dark)')
+      && html.includes(':root[data-theme="dark"]') && html.includes(':root[data-theme="light"]')
+      && html.includes('button{color:var(--btn-ink)}')
+      && html.includes("document.documentElement.setAttribute('data-theme'")
+      && html.includes('color:var(--ink)') && !/body\{[^}]*color:#/.test(html))
+  }
+
   // ── [C] compat 函数矩阵(vm,真实代码)──────────────────────────────────────────────────
   const compat = vm.runInNewContext(`${__WIDGET_COMPAT_JS}; ({safeWebazHref:safeWebazHref, sendFollowUpCompat:sendFollowUpCompat, canFollowUp:canFollowUp, onceGuard:onceGuard})`, { setTimeout, URL }) as {
     safeWebazHref: (h: unknown) => string | null

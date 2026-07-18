@@ -18,6 +18,39 @@
  *   - 两个资源共享同一 render 体(同一份组件业务代码),只有 boot 不同。
  */
 
+// ─── 共享主题 tokens(PR-0 深色修复)──────────────────────────────────────────────────────────
+// 生产事故(2026-07-18 截图):ChatGPT 深色主题下 UA 把 form 控件按 color-scheme:dark 渲染成浅色字,
+// 而我们只写了浅色背景没写字色 → 排序按钮白底白字不可见;.note/.meta 深灰字打在深色页面上不可辨。
+// 修法:全部颜色 token 化 + 三层主题信号(prefers-color-scheme 媒体查询为默认;宿主可经
+// window.openai.theme / 标准桥宿主上下文盖 data-theme,两方向都赢);按钮显式 color 永不依赖 UA。
+const WIDGET_THEME_CSS = `
+:root{color-scheme:light dark;
+ --bg:#fff;--line:#d6dae2;--ink:#1c2330;--sub:#5b6472;--ok:#0a7d4f;--warn:#a15c00;--price:#0a7d4f;
+ --chip-bg:#eef1f6;--chip-warn-bg:#fff3e0;--btn-bg:#f7f8fa;--btn-ink:#1c2330;
+ --accent-bg:#eef2ff;--accent-line:#93a3f5;--accent-ink:#2b3a8f;
+ --warnbox-bg:#fff7e0;--warnbox-line:#e5c268;--warnbox-ink:#7a5200;--row-ink:#374151}
+@media (prefers-color-scheme: dark){:root{
+ --bg:#1d232e;--line:#3a4150;--ink:#e8ebf0;--sub:#a3adbb;--ok:#4cc38a;--warn:#e0a458;--price:#4cc38a;
+ --chip-bg:#2a3140;--chip-warn-bg:#3d3322;--btn-bg:#262d3a;--btn-ink:#e8ebf0;
+ --accent-bg:#232b45;--accent-line:#5b6bd6;--accent-ink:#aab6ff;
+ --warnbox-bg:#332b18;--warnbox-line:#6b5a2a;--warnbox-ink:#e5c268;--row-ink:#c6cdd8}}
+:root[data-theme="dark"]{
+ --bg:#1d232e;--line:#3a4150;--ink:#e8ebf0;--sub:#a3adbb;--ok:#4cc38a;--warn:#e0a458;--price:#4cc38a;
+ --chip-bg:#2a3140;--chip-warn-bg:#3d3322;--btn-bg:#262d3a;--btn-ink:#e8ebf0;
+ --accent-bg:#232b45;--accent-line:#5b6bd6;--accent-ink:#aab6ff;
+ --warnbox-bg:#332b18;--warnbox-line:#6b5a2a;--warnbox-ink:#e5c268;--row-ink:#c6cdd8}
+:root[data-theme="light"]{
+ --bg:#fff;--line:#d6dae2;--ink:#1c2330;--sub:#5b6472;--ok:#0a7d4f;--warn:#a15c00;--price:#0a7d4f;
+ --chip-bg:#eef1f6;--chip-warn-bg:#fff3e0;--btn-bg:#f7f8fa;--btn-ink:#1c2330;
+ --accent-bg:#eef2ff;--accent-line:#93a3f5;--accent-ink:#2b3a8f;
+ --warnbox-bg:#fff7e0;--warnbox-line:#e5c268;--warnbox-ink:#7a5200;--row-ink:#374151}
+button{color:var(--btn-ink)}
+`
+// 宿主主题探测(能力探测,零 host 名):ChatGPT 暴露只读 window.openai.theme('light'|'dark')。
+const WIDGET_THEME_JS = `
+  try{ var __th = window.openai && window.openai.theme; if(__th==='dark'||__th==='light') document.documentElement.setAttribute('data-theme', __th) }catch(e){}
+`
+
 // ─── 共享运行时片段(注入两轨)────────────────────────────────────────────────────────────────
 
 // compat 分两片按需注入:CORE(会话流兼容 + 防重)所有组件都要;LINK(deep-link 安全)只给有
@@ -100,11 +133,12 @@ function buildWidgetHtml(opts: { style: string; loading: string; bodyJs: string;
   const compat = WIDGET_COMPAT_CORE_JS + (opts.link ? WIDGET_COMPAT_LINK_JS : '')
   const bridge = opts.standard ? WIDGET_BRIDGE_STANDARD_JS : ''
   const boot = opts.standard ? WIDGET_BOOT_STANDARD_JS : WIDGET_BOOT_LEGACY_JS
-  return `<!doctype html><html><head><meta charset="utf-8"><style>${opts.style}</style></head><body>
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${WIDGET_THEME_CSS}${opts.style}</style></head><body>
 <div id="root">${opts.loading}</div>
 <script>
 (function(){
   'use strict'
+${WIDGET_THEME_JS}
 ${compat}
 ${bridge}
 ${opts.bodyJs}
@@ -119,23 +153,22 @@ ${boot}
 // ③按需详情(webaz.product_detail.model.v1)。
 
 const PRODUCT_RESULTS_STYLE = `
-:root{--line:#d6dae2;--ink:#1c2330;--sub:#5b6472;--ok:#0a7d4f;--warn:#a15c00;--bg:#fff}
 body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);background:transparent}
 .bar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
-.bar button{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer}
-.bar button.on{background:#eef2ff;border-color:#93a3f5}
+.bar button{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer}
+.bar button.on{background:var(--accent-bg);border-color:var(--accent-line);color:var(--accent-ink)}
 .grid{display:flex;gap:10px;flex-wrap:wrap}
 .card{border:1px solid var(--line);border-radius:12px;padding:12px 14px;width:210px;background:var(--bg);display:flex;flex-direction:column;gap:6px}
 .card b{font-size:13px;line-height:1.35;display:block;min-height:2.6em}
-.price{color:var(--ok);font-weight:700;font-size:15px}
+.price{color:var(--price);font-weight:700;font-size:15px}
 .chips{display:flex;gap:4px;flex-wrap:wrap}
-.chip{font-size:10px;border-radius:6px;padding:1px 6px;background:#eef1f6;color:var(--sub)}
-.chip.warn{background:#fff3e0;color:var(--warn)}
+.chip{font-size:10px;border-radius:6px;padding:1px 6px;background:var(--chip-bg);color:var(--sub)}
+.chip.warn{background:var(--chip-warn-bg);color:var(--warn)}
 .meta{font-size:11px;color:var(--sub)}
 .card .more{font-size:11px;color:var(--sub);display:none;border-top:1px dashed var(--line);padding-top:6px}
 .card.open .more{display:block}
 .row{display:flex;gap:6px;margin-top:auto}
-.row button{flex:1;border:1px solid var(--line);background:#f7f8fa;border-radius:8px;padding:4px 6px;font-size:11px;cursor:pointer}
+.row button{flex:1;border:1px solid var(--line);background:var(--btn-bg);color:var(--btn-ink);border-radius:8px;padding:4px 6px;font-size:11px;cursor:pointer}
 .cmp{margin-top:12px;border-top:1px solid var(--line);padding-top:8px;font-size:12px;display:none}
 .cmp table{border-collapse:collapse;width:100%}
 .cmp td,.cmp th{border:1px solid var(--line);padding:3px 6px;text-align:left;font-size:11px}
@@ -271,20 +304,20 @@ function renderBody(oai, out){
 // 的 Passkey 批准。duplicate_warning 渲染为显式警告卡,绝不静默二次创建。
 
 const QUOTE_APPROVAL_STYLE = `
-body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;background:transparent}
-.box{border:1px solid #d6dae2;border-radius:12px;padding:14px 16px;max-width:420px;background:#fff}
+body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:var(--ink);background:transparent}
+.box{border:1px solid var(--line);border-radius:12px;padding:14px 16px;max-width:420px;background:var(--bg)}
 .h{font-size:14px;font-weight:700;margin-bottom:8px}
-.price{color:#0a7d4f;font-weight:800;font-size:20px}
-.fiat{color:#5b6472;font-size:13px}
-.row{display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:#374151}
-.sec{border-top:1px dashed #d6dae2;margin-top:8px;padding-top:8px}
-.meta{font-size:11px;color:#5b6472}
-.warn{background:#fff7e0;border:1px solid #e5c268;border-radius:10px;padding:10px 12px;font-size:12px;color:#7a5200;margin-top:10px}
-.btn{display:block;width:100%;margin-top:10px;border:1px solid #93a3f5;background:#eef2ff;border-radius:10px;padding:8px;font-size:13px;font-weight:600;cursor:pointer;color:#2b3a8f}
-.toggle{font-size:11px;color:#5b6472;cursor:pointer;text-decoration:underline;margin-top:6px;display:inline-block}
+.price{color:var(--price);font-weight:800;font-size:20px}
+.fiat{color:var(--sub);font-size:13px}
+.row{display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:var(--row-ink)}
+.sec{border-top:1px dashed var(--line);margin-top:8px;padding-top:8px}
+.meta{font-size:11px;color:var(--sub)}
+.warn{background:var(--warnbox-bg);border:1px solid var(--warnbox-line);border-radius:10px;padding:10px 12px;font-size:12px;color:var(--warnbox-ink);margin-top:10px}
+.btn{display:block;width:100%;margin-top:10px;border:1px solid var(--accent-line);background:var(--accent-bg);border-radius:10px;padding:8px;font-size:13px;font-weight:600;cursor:pointer;color:var(--accent-ink)}
+.toggle{font-size:11px;color:var(--sub);cursor:pointer;text-decoration:underline;margin-top:6px;display:inline-block}
 .hide{display:none}
-.disc{font-size:11px;color:#7a5200;margin-top:10px;line-height:1.5}
-.ok{color:#0a7d4f}`
+.disc{font-size:11px;color:var(--warnbox-ink);margin-top:10px;line-height:1.5}
+.ok{color:var(--ok)}`
 
 const QUOTE_APPROVAL_BODY_JS = `
 function renderBody(oai, out){
@@ -371,21 +404,21 @@ function renderBody(oai, out){
 // 绑定订单聊天,无自由私信;无订单上下文不启用);高风险动作回订单页。
 
 const ORDER_TIMELINE_STYLE = `
-body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;background:transparent}
-.box{border:1px solid #d6dae2;border-radius:12px;padding:14px 16px;max-width:430px;background:#fff}
+body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:var(--ink);background:transparent}
+.box{border:1px solid var(--line);border-radius:12px;padding:14px 16px;max-width:430px;background:var(--bg)}
 .h{font-size:14px;font-weight:700;margin-bottom:4px}
-.price{color:#0a7d4f;font-weight:800;font-size:18px}
-.fiat{color:#5b6472;font-size:12px}
-.badge{display:inline-block;font-size:10px;border-radius:99px;padding:2px 8px;background:#fff3e0;color:#a15c00;margin:6px 0}
-.st{font-size:13px;font-weight:700;color:#2b3a8f}
-.row{display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:#374151}
-.tl{border-left:2px solid #d6dae2;margin:10px 0 4px 6px;padding-left:12px}
-.tl div{font-size:11px;color:#5b6472;padding:3px 0;position:relative}
-.tl div:before{content:'';position:absolute;left:-17px;top:8px;width:8px;height:8px;border-radius:99px;background:#93a3f5}
-.warn{background:#fff7e0;border:1px solid #e5c268;border-radius:10px;padding:8px 10px;font-size:11px;color:#7a5200;margin-top:8px}
+.price{color:var(--price);font-weight:800;font-size:18px}
+.fiat{color:var(--sub);font-size:12px}
+.badge{display:inline-block;font-size:10px;border-radius:99px;padding:2px 8px;background:var(--chip-warn-bg);color:var(--warn);margin:6px 0}
+.st{font-size:13px;font-weight:700;color:var(--accent-ink)}
+.row{display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:var(--row-ink)}
+.tl{border-left:2px solid var(--line);margin:10px 0 4px 6px;padding-left:12px}
+.tl div{font-size:11px;color:var(--sub);padding:3px 0;position:relative}
+.tl div:before{content:'';position:absolute;left:-17px;top:8px;width:8px;height:8px;border-radius:99px;background:var(--accent-line)}
+.warn{background:var(--warnbox-bg);border:1px solid var(--warnbox-line);border-radius:10px;padding:8px 10px;font-size:11px;color:var(--warnbox-ink);margin-top:8px}
 .rowbtn{display:flex;gap:6px;margin-top:10px}
-.rowbtn button{flex:1;border:1px solid #93a3f5;background:#eef2ff;border-radius:10px;padding:6px;font-size:12px;font-weight:600;cursor:pointer;color:#2b3a8f}
-.meta{font-size:11px;color:#5b6472}`
+.rowbtn button{flex:1;border:1px solid var(--accent-line);background:var(--accent-bg);border-radius:10px;padding:6px;font-size:12px;font-weight:600;cursor:pointer;color:var(--accent-ink)}
+.meta{font-size:11px;color:var(--sub)}`
 
 const ORDER_TIMELINE_BODY_JS = `
 function renderBody(oai, out){
