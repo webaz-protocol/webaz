@@ -4644,6 +4644,7 @@ const _EN = {
   '客服回复':                          'Support reply',
   '待受理':                            'Open',
   '处理中':                            'In progress',
+  '近 90 天仍在处理的争议':             'Disputes still in progress during the last 90 days',
   '用户反馈':                          'User feedback',
   '工单 / bug / 申诉':                  'Tickets / bugs / complaints',
   '暂无反馈':                          'No feedback',
@@ -6508,6 +6509,12 @@ const _EN = {
   '预计时效':                          'Estimated delivery',
   '品牌':                              'Brand',
   '型号':                              'Model',
+  '商品信息':                          'Product details',
+  '通过商品 ID 精确匹配到':             'Matched exactly by product ID',
+  '卖家裁决':                          'Seller rulings',
+  '裁决':                              'Rulings',
+  '胜':                                'Wins',
+  '负':                                'Losses',
   '英文标题(跨境)':                    'English title (cross-border)',
 
   // ── 公开发布后支付状态横幅 ──────────────────────────────

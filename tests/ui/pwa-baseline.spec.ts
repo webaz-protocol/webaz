@@ -384,7 +384,7 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     await assertAxeHasNoSeriousOrCriticalViolations(page)
     await product.click()
     await expect(page.locator('.buyer-product-hero')).toContainText('Portable ceramic tea set')
-    await expect(page.locator('.buyer-product-hero .product-id-line code')).toHaveText('ux-product')
+    await expect(page.locator('.buyer-product-hero .product-id-line')).toHaveCount(0)
     await expect(page.locator('#btn-openBuy')).toBeVisible()
     await assertAxeHasNoSeriousOrCriticalViolations(page)
 	    await page.locator('#btn-openBuy').click()

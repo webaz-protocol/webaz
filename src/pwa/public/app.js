@@ -9911,7 +9911,7 @@ function renderSellerMetrics(m) {
     <div style="font-size:11px;color:#6b7280;margin-bottom:6px">${t('基于近期')} <strong>${m.sample_size}</strong> ${t('单已完成订单统计')} · <span style="color:#9ca3af">${t('信誉分按月 2% 衰减')}</span></div>
     ${bar(t('履约率'), m.fulfillment_rate, t('完成 ÷ 完成+取消+超时'), true)}
     ${bar(t('准时发货率'), m.on_time_rate, t('准时发货 ÷ 完成单'), true)}
-    ${m.dispute_count > 0 ? bar(t('争议胜诉率'), m.dispute_win_rate, `${m.dispute_count} ${t('次争议')}`, true) : `<div style="font-size:12px;color:#9ca3af;margin:6px 0">${t('争议胜诉率')}：${t('暂无争议')}</div>`}
+    ${m.dispute_count > 0 ? `<div class="seller-ruling-counts"><span>⚖ ${t('裁决')}</span><strong class="seller-ruling-counts-win">${t('胜')} ${m.dispute_won_count}</strong><strong class="seller-ruling-counts-loss">${t('负')} ${m.dispute_lost_count}</strong></div>` + bar(t('争议胜诉率'), m.dispute_win_rate, `${m.dispute_count} ${t('次争议')}`, true) : `<div style="font-size:12px;color:#9ca3af;margin:6px 0">${t('争议胜诉率')}：${t('暂无争议')}</div>`}
     ${bar(t('退款率'), m.refund_rate, t('退款单 ÷ 完成单'), false)}
   </div>`
 }
@@ -10101,7 +10101,7 @@ async function renderBuyPage(app, productId) {
 	    <div class="card buyer-product-hero">
 	      ${trustBadge}
 	      ${productImageGallery(p)}
-      <h2 class="buyer-product-title" style="font-size:18px;font-weight:700;margin-bottom:6px">${escHtml(p.title)}</h2>${window.extLinksBarHtml ? window.extLinksBarHtml(productId) : ''}${productIdHtml(p.id)}
+      ${window.productDetailIdentityHtml(p)}${window.extLinksBarHtml ? window.extLinksBarHtml(productId) : ''}
       ${state._flashSale ? `
       <div style="background:linear-gradient(135deg,#dc2626,#f59e0b);color:#fff;border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
         <div>
@@ -10131,8 +10131,6 @@ async function renderBuyPage(app, productId) {
         const claims = claimsData?.claims || []
         const claimsResolved = claims.filter(c => c.status === 'resolved').length
         const claimsOpen = claims.filter(c => c.status === 'open').length
-        const sellerDisputes = state._sellerMetrics?.dispute_count || 0
-        const sellerOpenDisputes = state._sellerMetrics?.open_dispute_count || 0
         const chip = (icon, label, color, bg, onclick, count) => `
           <button onclick="${onclick}" style="display:inline-flex;align-items:center;gap:4px;background:${bg};color:${color};border:1px solid ${color};padding:5px 10px;border-radius:99px;font-size:11px;font-weight:600;cursor:pointer">
             <span>${icon}</span>
@@ -10146,12 +10144,9 @@ async function renderBuyPage(app, productId) {
         const claimChip = claimsResolved + claimsOpen > 0
           ? chip('✓', t('已验证'), '#059669', '#d1fae5', `document.getElementById('claims-block-${p.id}')?.scrollIntoView({behavior:'smooth',block:'start'})`, claimsResolved)
           : (_canClaim ? chip('+', t('发起验证'), '#3659c9', '#edf1ff', `openProductClaimForm('${p.id}')`) : '')
-        const disputeChip = sellerDisputes > 0
-          ? chip('⚖', t('仲裁'), sellerOpenDisputes > 0 ? '#dc2626' : '#92400e', sellerOpenDisputes > 0 ? '#fee2e2' : '#fef3c7', `navigate('#shop/${p.seller_id}?tab=disputes')`, sellerDisputes)
-          : ''
         return `
         <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
-          ${reviewChip}${claimChip}${disputeChip}
+          ${reviewChip}${claimChip}${window.sellerRulingsHtml(state._sellerMetrics, p.seller_id)}
           ${claimsOpen > 0 ? `<span style="display:inline-flex;align-items:center;gap:3px;background:#fef3c7;color:#92400e;font-size:10px;padding:4px 8px;border-radius:99px">⏳ ${claimsOpen} ${t('待验证')}</span>` : ''}
         </div>`
       })()}

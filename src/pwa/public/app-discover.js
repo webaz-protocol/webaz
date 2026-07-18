@@ -31,7 +31,7 @@ async function renderShop(app, opts = {}) {
           <div class="product-card" onclick="navigate('#order-product/${p.id}')">
             <div class="product-img">${window.productCardImg(p)}</div>
             <div class="product-body">
-              <div class="product-name">${escHtml(p.title)}</div>
+              <div class="product-name">${window.productCardTitleHtml(p)}</div>${window.productCardMetaHtml(p)}
               <div class="product-price">${window.fmtPrice(p.price)}</div>
               <div class="product-seller">${repBadge(p.rep_level)}@${escHtml(p.seller_name)}</div>
             </div>
@@ -938,7 +938,7 @@ function productCardHtml(p, showSales) {
   return `<a class="product-card buyer-product-card" href="#order-product/${p.id}">
     <div class="product-img">${window.productCardImg(p)}</div>
     <div class="product-body">
-      <div class="product-name">${escHtml(p.title)}${typeBadge}</div>
+      <div class="product-name">${window.productCardTitleHtml(p)}${typeBadge}</div>${window.productCardMetaHtml(p)}
       <div class="product-price">${window.fmtPrice(p.price)}</div>
       <div class="product-seller">${t('卖家')}：@${escHtml(p.seller_name)}</div>
       ${p.seller_created_at ? `<div style="font-size:10px;color:#596570;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t('入驻时长')}：${joinDuration(p.seller_created_at)}</div>` : ''}
@@ -1138,7 +1138,7 @@ async function renderNewArrivals(app) {
           <div class="product-card" onclick="navigate('#order-product/${p.id}')">
             <div class="product-img">${window.productCardImg(p)}</div>
             <div class="product-body">
-              <div class="product-name">${escHtml(p.title)}</div>
+              <div class="product-name">${window.productCardTitleHtml(p)}</div>${window.productCardMetaHtml(p)}
               <div class="product-price">${window.fmtPrice(p.price)}</div>
               <div class="product-seller">${repBadge(p.rep_level)}@${escHtml(p.seller_name)}</div>
               ${p.trial_quota_remaining > 0
@@ -1213,7 +1213,7 @@ function renderSearchResults(products, banner, q) {
           <div class="product-card" onclick="navigate('#order-product/${p.id}')">
             <div class="product-img">${window.productCardImg(p)}</div>
             <div class="product-body">
-              <div class="product-name">${escHtml(p.title)}</div>
+              <div class="product-name">${window.productCardTitleHtml(p)}</div>${window.productCardMetaHtml(p)}
               <div class="product-price">${window.fmtPrice(p.price)}</div>
               <div class="product-seller">${repBadge(p.rep_level)}@${escHtml(p.seller_name)}</div>
             </div>
@@ -1237,6 +1237,7 @@ window.doSearch = async () => {
   if (m === 'external_id')               banner = `<div class="alert alert-success" style="margin-bottom:12px">✓ ${t('通过')} ${plat} ${t('商品 ID 精确匹配到')} ${products.length} ${t('件')}</div>`
   else if (m === 'external_title_exact') banner = `<div class="alert alert-success" style="margin-bottom:12px">✓ ${t('通过外链标题完全匹配到')} ${products.length} ${t('件')}</div>`
   else if (m === 'product_title_exact')  banner = `<div class="alert alert-success" style="margin-bottom:12px">✓ ${t('通过商品标题完全匹配到')} ${products.length} ${t('件')}</div>`
+  else if (m === 'product_id_exact')     banner = `<div class="alert alert-success" style="margin-bottom:12px">✓ ${t('通过商品 ID 精确匹配到')} ${products.length} ${t('件')}</div>`
   else if (resp.unsupported_format)      banner = `<div class="alert alert-warn" style="margin-bottom:12px">⚠️ ${resp.hint}</div>`
   else                                    banner = `<div class="alert" style="margin-bottom:12px">${t('精准搜索未命中（需一字不差）。可改用「模糊」按钮做部分匹配。')}</div>`
   renderSearchResults(products, banner, q)

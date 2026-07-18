@@ -53,7 +53,7 @@ ok('3f-backend. mirrors product-detail visibility (active OR seller), else 404 (
 ok('3e. existing owner-only /links (bare array) left intact for the seller workbench', /app\.get\('\/api\/products\/:id\/links'[\s\S]*?res\.json\(links\)/.test(LINKS))
 
 // 4. wiring: detail page hook + load order + i18n + Guard B (check:pwa-syntax + LOC_CEILINGS)
-ok('4-hook. renderBuyPage hooks extLinksBarHtml after the title', has(APP, "</h2>${window.extLinksBarHtml ? window.extLinksBarHtml(productId) : ''}"))
+ok('4-hook. renderBuyPage hooks extLinksBarHtml after the buyer identity block', has(APP, "${window.productDetailIdentityHtml(p)}${window.extLinksBarHtml ? window.extLinksBarHtml(productId) : ''}"))
 ok('4-load. index.html loads app-external-links.js before app.js', HTML.indexOf('/app-external-links.js') > 0 && HTML.indexOf('/app-external-links.js') < HTML.indexOf('/app.js'))
 ok('4-i18n. i18n EN entry: 前往源平台查看详情', has(I18N, "'前往源平台查看详情':"))
 ok('4-syntax. app-external-links.js in check:pwa-syntax', has(PKG, 'node --check src/pwa/public/app-external-links.js'))
