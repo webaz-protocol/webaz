@@ -68,6 +68,7 @@ async function assertClassicScriptsLoaded(page: Page) {
     '/i18n.js',
     '/app-discover.js',
     '/app-discover-new-filters.js',
+    '/app-shop-rulings.js',
     '/app-seller.js',
     '/app.js',
   ]))
@@ -233,10 +234,28 @@ async function mockBuyerCommerce(page: Page) {
   await page.route('**/api/products/ux-product/ratings?limit=5', route => route.fulfill({ json: { items: [], agg: { cnt: 12, avg_stars: 4.8 } } }))
   await page.route('**/api/products/ux-product/flash-sale', route => route.fulfill({ json: { sale: null } }))
   await page.route('**/api/reputation/ux-seller', route => route.fulfill({ json: { metrics: { is_new_seller: false, sample_size: 32, fulfillment_rate: .97, on_time_rate: .94, dispute_count: 0, refund_rate: .02 } } }))
+  await page.route('**/api/disputes/cases?seller_id=ux-seller&limit=5', route => route.fulfill({ json: { summary: { total: 2, seller_wins: 1, seller_losses: 1, split: 0 }, items: [] } }))
   await page.route('**/api/disputes/cases/by-product/ux-product', route => route.fulfill({ json: { items: [] } }))
   await page.route('**/api/products/ux-product/external-links', route => route.fulfill({ json: { links: [] } }))
   await page.route('**/api/products/ux-product/shipping-options*', route => route.fulfill({ json: { sellable: { ok: true, reason: 'ok' }, shipping_templates: [], tax_included_lines: [] } }))
   await page.route('**/api/checkout/tax-preview?*', route => route.fulfill({ json: { is_cross_border: false } }))
+}
+
+async function mockPublicShop(page: Page) {
+  await page.route('**/api/shops/ux-seller', route => route.fulfill({ json: {
+    seller: { id: 'ux-seller', name: 'Verified Studio', handle: 'verified-studio', bio: 'Handmade essentials.', shop_intro: 'Small-batch home goods.', shop_banner_url: '' },
+    stats: { products: 1, followers: 12, completed_orders: 32, rating_avg: 4.8, rating_count: 12 },
+    products: [{ id: 'ux-product', title: 'Portable ceramic tea set', price: 48, stock: 8, images: '', category: '茶具', sales_count: 18 }],
+    recent_ratings: [], is_following: false,
+  } }))
+  await page.route('**/api/disputes/cases?seller_id=ux-seller&limit=50', route => route.fulfill({ json: {
+    summary: { total: 3, seller_wins: 1, seller_losses: 1, split: 1 },
+    items: [
+      { id: 'case-win', product_title: 'Portable ceramic tea set', winner: 'seller', resolution: 'Release to seller', published_at: '2026-07-16T08:00:00Z' },
+      { id: 'case-loss', product_title: 'Portable ceramic tea set', winner: 'buyer', resolution: 'Buyer remedy', published_at: '2026-07-15T08:00:00Z' },
+      { id: 'case-split', product_title: 'Portable ceramic tea set', winner: 'split', resolution: 'Shared responsibility', published_at: '2026-07-14T08:00:00Z' },
+    ],
+  } }))
 }
 
 for (const viewport of DASHBOARD_VIEWPORTS) {
@@ -294,6 +313,30 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
   })
 }
 
+for (const viewport of DASHBOARD_VIEWPORTS) {
+  test(`public seller rulings at ${viewport.name}`, async ({ page }) => {
+    const guards = installRuntimeGuards(page)
+    await mockBuyerSession(page)
+    await mockPublicShop(page)
+    await page.addInitScript(() => localStorage.setItem('webaz_key', 'ux-buyer-token'))
+    await page.setViewportSize(viewport)
+    await page.goto('/#shop/ux-seller?tab=rulings')
+
+    await expect(page.locator('.shop-section-tab[aria-current="page"]')).toContainText(/公开裁决|Public rulings/)
+    await expect(page.locator('.shop-ruling-summary')).toContainText(/卖家胜 1|Seller wins 1/)
+    await expect(page.locator('.shop-ruling-summary')).toContainText(/买家胜 1|Buyer wins 1/)
+    await expect(page.locator('.shop-ruling-summary')).toContainText(/部分责任 1|Partial fault 1/)
+    await expect(page.locator('.shop-ruling-list')).toHaveCount(1)
+    await expect(page.locator('#app main')).not.toContainText('PRIVATE BUYER')
+    await assertNoHorizontalOverflow(page)
+    await assertAxeHasNoSeriousOrCriticalViolations(page)
+    await page.locator('.shop-section-tab').first().click()
+    await expect(page).toHaveURL(/#shop\/ux-seller$/)
+    await expect(page.locator('#app main')).toContainText('Portable ceramic tea set')
+    guards.assertClean()
+  })
+}
+
 for (const viewport of VIEWPORTS) {
   test(`public welcome baseline at ${viewport.name}`, async ({ page }) => {
     const guards = installRuntimeGuards(page)
@@ -331,6 +374,7 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     const guards = installRuntimeGuards(page)
     await mockBuyerSession(page)
     await mockBuyerCommerce(page)
+    await mockPublicShop(page)
     await page.addInitScript(() => {
       localStorage.setItem('webaz_key', 'ux-buyer-token')
       localStorage.setItem('webaz_lang', 'zh')
@@ -375,6 +419,7 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     const guards = installRuntimeGuards(page)
     await mockBuyerSession(page)
     await mockBuyerCommerce(page)
+    await mockPublicShop(page)
     await page.addInitScript(() => localStorage.setItem('webaz_key', 'ux-buyer-token'))
     await page.setViewportSize(viewport)
     await page.goto('/#discover')
@@ -385,6 +430,14 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     await product.click()
     await expect(page.locator('.buyer-product-hero')).toContainText('Portable ceramic tea set')
     await expect(page.locator('.buyer-product-hero .product-id-line')).toHaveCount(0)
+    const rulingsChip = page.locator('.buyer-product-hero .seller-rulings-chip')
+    await expect(rulingsChip).toBeVisible()
+    await expect(rulingsChip).toContainText(/胜 1|Wins 1/)
+    await rulingsChip.click()
+    await expect(page).toHaveURL(/#shop\/ux-seller\?tab=rulings$/)
+    await expect(page.locator('.shop-section-tab[aria-current="page"]')).toContainText(/公开裁决|Public rulings/)
+    await page.goBack()
+    await expect(page.locator('.buyer-product-hero')).toContainText('Portable ceramic tea set')
     await expect(page.locator('#btn-openBuy')).toBeVisible()
     await assertAxeHasNoSeriousOrCriticalViolations(page)
 	    await page.locator('#btn-openBuy').click()

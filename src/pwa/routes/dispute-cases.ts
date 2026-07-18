@@ -4,7 +4,7 @@
  * 由 #1013 Phase 8 从 src/pwa/server.ts 抽出。
  *
  * 6 endpoints + 1 inner helper:
- *   GET  /api/disputes/cases                          — 公开列表（全网）
+ *   GET  /api/disputes/cases                          — 公开列表（全网 / 可按 seller_id 过滤）
  *   GET  /api/disputes/cases/by-product/:product_id   — 按商品的判例
  *   GET  /api/disputes/cases/:case_id                 — 案件详情（含评论 + 身份标签）
  *   POST /api/disputes/cases/:case_id/comment         — 评论（含 PII 脱敏 + LLM 审核）
@@ -49,11 +49,12 @@ export function registerDisputeCasesRoutes(app: Application, deps: DisputeCasesD
     return { ok: false, reason: '账号需 ≥ 3 天 或 完成 ≥ 1 单 或 lifetime_score ≥ 5 才能公开发言（防小号刷量）' }
   }
 
-  // 公开列表（全网）— 判例库总览
+  // 公开列表（全网 / 可按 seller_id 过滤）— 判例库总览
   app.get('/api/disputes/cases', async (req, res) => {
     const limit = Math.min(50, Math.max(5, Number(req.query.limit) || 20))
     const category = req.query.category ? String(req.query.category) : null
     const winner = req.query.winner ? String(req.query.winner) : null
+    const sellerId = req.query.seller_id ? String(req.query.seller_id).trim().slice(0, 128) : null
     // 2026-05-22 A1：全文搜索 — ruling_text + buyer_argument + seller_argument + product_title
     const q = req.query.q ? String(req.query.q).trim().slice(0, 80) : null
     // 排序选项 — newest（默认） / discussed（评论多）/ fair（公平评价高）
@@ -62,6 +63,7 @@ export function registerDisputeCasesRoutes(app: Application, deps: DisputeCasesD
     const args: unknown[] = []
     if (category) { where.push('category_tag = ?'); args.push(category) }
     if (winner) { where.push('winner = ?'); args.push(winner) }
+    if (sellerId) { where.push('seller_id = ?'); args.push(sellerId) }
     if (q) {
       where.push(`(
         ruling_text LIKE ? OR buyer_argument LIKE ? OR seller_argument LIKE ? OR resolution LIKE ?
@@ -84,12 +86,31 @@ export function registerDisputeCasesRoutes(app: Application, deps: DisputeCasesD
       ORDER BY ${orderSql}
       LIMIT ?
     `, [...args, limit])
-    // 类目统计（侧栏过滤用）— 受 q 影响（搜索时只显匹配 q 的类目计数）
-    const catCountWhere = q ? `WHERE (ruling_text LIKE ? OR buyer_argument LIKE ? OR seller_argument LIKE ? OR resolution LIKE ?
-      OR EXISTS (SELECT 1 FROM products p WHERE p.id = dispute_cases.product_id AND p.title LIKE ?))` : ''
-    const catCountArgs = q ? Array(5).fill('%' + q.replace(/[%_]/g, '\\$&') + '%') : []
-    const categoryCounts = await dbAll<{ category_tag: string; n: number }>(`SELECT category_tag, COUNT(*) as n FROM dispute_cases ${catCountWhere} GROUP BY category_tag ORDER BY n DESC`, catCountArgs)
-    res.json({ items: rows, category_counts: categoryCounts, total: rows.length, query: q, sort })
+    // 类目统计保留全网库既有的筛选语义，只叠加卖家隔离，避免店铺页混入其他卖家的计数。
+    const categoryWhere: string[] = []
+    const categoryArgs: unknown[] = []
+    if (sellerId) { categoryWhere.push('seller_id = ?'); categoryArgs.push(sellerId) }
+    if (q) {
+      categoryWhere.push(`(
+        ruling_text LIKE ? OR buyer_argument LIKE ? OR seller_argument LIKE ? OR resolution LIKE ?
+        OR EXISTS (SELECT 1 FROM products p WHERE p.id = dispute_cases.product_id AND p.title LIKE ?)
+      )`)
+      const pat = '%' + q.replace(/[%_]/g, '\\$&') + '%'
+      categoryArgs.push(pat, pat, pat, pat, pat)
+    }
+    const categoryWhereSql = categoryWhere.length ? `WHERE ${categoryWhere.join(' AND ')}` : ''
+    const categoryCounts = await dbAll<{ category_tag: string; n: number }>(`SELECT category_tag, COUNT(*) as n FROM dispute_cases ${categoryWhereSql} GROUP BY category_tag ORDER BY n DESC`, categoryArgs)
+    const summary = sellerId
+      ? await dbOne<{ total: number; seller_wins: number; seller_losses: number; split: number }>(`
+          SELECT COUNT(*) as total,
+            SUM(CASE WHEN winner = 'seller' THEN 1 ELSE 0 END) as seller_wins,
+            SUM(CASE WHEN winner = 'buyer' THEN 1 ELSE 0 END) as seller_losses,
+            SUM(CASE WHEN winner = 'split' THEN 1 ELSE 0 END) as split
+          FROM dispute_cases ${whereSql}
+        `, args)
+      : null
+    res.json({ items: rows, category_counts: categoryCounts, total: rows.length, query: q, sort,
+      summary: summary && { total: Number(summary.total) || 0, seller_wins: Number(summary.seller_wins) || 0, seller_losses: Number(summary.seller_losses) || 0, split: Number(summary.split) || 0 } })
   })
 
   // 公开列表（按商品）

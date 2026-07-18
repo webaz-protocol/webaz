@@ -4761,7 +4761,7 @@
     },
     "/api/disputes/cases": {
       "get": {
-        "summary": "公开列表（全网）— 判例库总览",
+        "summary": "公开列表（全网 / 可按 seller_id 过滤）— 判例库总览",
         "tags": [
           "dispute"
         ],
