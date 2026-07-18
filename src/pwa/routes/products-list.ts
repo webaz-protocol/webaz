@@ -32,6 +32,7 @@ import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js
 import { randomBytes } from 'crypto'
 import { genuineSalePredicate } from '../../layer0-foundation/L0-2-state-machine/genuine-sale.js'  // RFC-018 PR4: 真实成交(排除全额退货)
 import { SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL, projectProductModel, projectProductDetail, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1/2: agent 模式 Model Projection + 按需详情
+import { getUsdRates } from '../../fx-rates.js'  // USDC→本地法币显示换算(display-only,绝非结算路径)
 
 export interface ProductsListDeps {
   db: Database.Database
@@ -385,11 +386,15 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
           [resultHandle, null, 'webaz_search', JSON.stringify(rows.map(r => String(r.id))), JSON.stringify({ sort, category: category ?? null, q: q ? 'set' : null }), ])
       } catch (e) { resultHandle = null; console.warn('[result-handle] issue failed:', (e as Error).message) }   // 缓存面故障不阻断搜索本体,但留可观测日志(Codex L-2)
     }
+    // USDC 显示换算表(与 /api/fx/rates 同源;fail-soft 省略)—— 模型/组件据此给出"≈ 本地法币"对照
+    let fx: Record<string, unknown> | null = null
+    try { const snap = await getUsdRates(); fx = { base: snap.base, rates: snap.rates, as_of: snap.as_of, note: 'display-only conversion — never a settlement path' } } catch { fx = null }
     res.json({
       schema_version: SCHEMA_PRODUCT_SEARCH,
       mode, sort, limit: lim,
       count: rows.length,
       next_cursor: nextCursor,
+      ...(fx ? { fx } : {}),
       ...(resultHandle ? { result_handle: resultHandle, result_handle_expires_in_s: 600 } : {}),
       sellers: sellersIndex(rows),
       products: rows.map(r => {
@@ -460,9 +465,12 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
         )`,
       selected_ids as string[])
     const liveIds = new Set(liveRows.map(r => String(r.id)))
+    let fxD: Record<string, unknown> | null = null
+    try { const snap = await getUsdRates(); fxD = { base: snap.base, rates: snap.rates, as_of: snap.as_of, note: 'display-only conversion — never a settlement path' } } catch { fxD = null }
     res.json({
       schema_version: SCHEMA_PRODUCT_DETAIL,
       count: liveRows.length,
+      ...(fxD ? { fx: fxD } : {}),
       sellers: sellersIndex(liveRows),
       products: liveRows.map(r => {
         const f = formatProductForAgent(r, req)

@@ -70,7 +70,8 @@ export function projectProductModel(p: Record<string, unknown>): Record<string, 
   return {
     id: String(p.id ?? ''),
     title: String(p.title ?? '').slice(0, 90),
-    price: { amount_minor: amountMinor, currency: 'WAZ', currency_exponent: 6, display: `${price} WAZ` },
+    // 显示线 = USDC(与 PWA priceCurrency 一致,1:1 对齐,display-only —— 绝非结算/托管承诺;协议记账仍 WAZ)
+    price: { amount_minor: amountMinor, currency: 'USDC', currency_exponent: 6, display: `${price} USDC` },
     stock_status: stock <= 0 ? 'out_of_stock' : stock <= 3 ? 'low_stock' : 'in_stock',
     category: p.category == null ? null : String(p.category),
     handling_hours: p.handling_hours == null ? null : Number(p.handling_hours),
@@ -105,7 +106,7 @@ const displayRange = (products: Array<Record<string, unknown>>): string => {
   const nums = products.map(p => Number((p.price as Record<string, unknown> | undefined)?.display ? String((p.price as Record<string, unknown>).display).split(' ')[0] : NaN)).filter(Number.isFinite)
   if (!nums.length) return ''
   const lo = Math.min(...nums), hi = Math.max(...nums)
-  return lo === hi ? ` (${lo} WAZ)` : ` (${lo}–${hi} WAZ)`
+  return lo === hi ? ` (${lo} USDC)` : ` (${lo}–${hi} USDC)`
 }
 
 // 降级摘要契约(Codex round-1 BLOCKER-1):text 必须携带【可行动最小集】—— 只读 content 的纯文本

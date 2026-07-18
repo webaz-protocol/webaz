@@ -110,6 +110,8 @@ console.log(`  [tools/list bytes] full=${fullB}B (~${Math.ceil(fullB / 4)} tok) 
     && !/["'\`](https?:)?\/\//.test(html) && !REQUEST_TOKENS.test(html))
   ok('U-2b widget handles ALL THREE structuredContent shapes (search page / detail / zero-hit recovery)',
     html.includes('webaz.product_detail.model.v1') && html.includes('catalog_sample') && html.includes('next_cursor'))
+  ok('U-2e widget renders local-fiat ≈ line from the fx display table (USDC pricing line)',
+    html.includes('out.fx') && html.includes('≈'))
   ok('U-2c widget has NO executable/HTML sink TOKENS in any form (incl bracket access) and economic entry returns to the conversation flow',
     !SINK_TOKENS.test(html) && html.includes('sendFollowupTurn') && html.includes('Passkey'))
   const widgetMeta = ((widget.contents as Array<{ _meta?: Record<string, unknown> }>)[0]._meta ?? {}) as Record<string, unknown>

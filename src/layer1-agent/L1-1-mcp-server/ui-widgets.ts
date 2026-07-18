@@ -103,6 +103,13 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
       var c=el('div','card')
       c.appendChild(el('b',null,p.title||p.id))
       c.appendChild(el('div','price',(p.price&&p.price.display)||''))
+      var fx=out.fx&&out.fx.rates
+      if(fx&&p.price&&p.price.amount_minor!=null){
+        var usd=p.price.amount_minor/1000000, approx=[]
+        if(fx.SGD) approx.push('S$'+(usd*fx.SGD).toFixed(2))
+        if(fx.CNY) approx.push('¥'+(usd*fx.CNY).toFixed(2))
+        if(approx.length) c.appendChild(el('div','meta','≈ '+approx.join(' · ')))
+      }
       var chips=el('div','chips')
       if(p.stock_status&&p.stock_status!=='in_stock') chips.appendChild(el('span','chip warn',p.stock_status==='low_stock'?'库存少':'缺货'))
       ;(p.decision_flags||[]).forEach(function(f){ chips.appendChild(el('span','chip'+(f.severity==='warning'?' warn':''),f.label||f.code)) })

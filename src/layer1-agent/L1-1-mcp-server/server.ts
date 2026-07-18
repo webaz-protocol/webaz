@@ -40,7 +40,8 @@ import { annotateTools } from './tool-annotations.js'  // 标准 MCP annotations
 import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-tool securitySchemes(oauth2 仅 grant-reachable / 余 noauth)
 import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
 import { filterToolsBySurface, type ToolSurface } from './tool-surfaces.js'
-import { PRODUCT_RESULTS_WIDGET_HTML } from './ui-widgets.js'  // MCP UI PR-4:ProductResults 组件  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
+import { PRODUCT_RESULTS_WIDGET_HTML } from './ui-widgets.js'  // MCP UI PR-4:ProductResults 组件
+import { getUsdRates } from '../../fx-rates.js'  // USDC 显示换算(display-only)  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
 import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult,
          SCHEMA_PRODUCT_SEARCH, projectProductModel, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1:Model Projection 单一真相源
 import { homedir } from 'node:os'
@@ -2667,7 +2668,7 @@ async function handleSearch(args: Record<string, unknown>) {
         note: 'These are NOT query matches — webaz_search is strict (exact title/SKU). This is a small catalog sample so you can proceed. / 以下【不是】搜索匹配结果,而是目录样本,供你继续。',
         next_step: { tool: 'webaz_search', arguments: browseArgs, description: 'browse the catalog with filters and NO query' },
         acp_feed: 'https://webaz.xyz/.well-known/webaz-acp-feed.json',
-        catalog_sample: sample.map(p => ({ id: p.id, title: p.title, price: p.price, category: p.category })),
+        catalog_sample: sample.map(p => ({ id: p.id, title: p.title, price: p.price, price_display: `${p.price} USDC`, category: p.category })),
       }
     }
     return {
@@ -2774,12 +2775,15 @@ async function handleSearch(args: Record<string, unknown>) {
 
   // MCP Token PR-1:本地(sandbox)路径与网络路径同源投影 —— 排序仍按上方 trending 公式,
   //   但 score/score_breakdown/metrics 属服务端内部,不再进入模型上下文。
+  let fxL: Record<string, unknown> | null = null
+  try { const snap = await getUsdRates(); fxL = { base: snap.base, rates: snap.rates, as_of: snap.as_of, note: 'display-only conversion — never a settlement path' } } catch { fxL = null }
   return {
     schema_version: SCHEMA_PRODUCT_SEARCH,
     found: sorted.length,
     count: sorted.length,
     sort: sortMode,
     limit,
+    ...(fxL ? { fx: fxL } : {}),
     sellers: sellersIndex(sorted.map(p => ({ seller_id: p.seller_id, seller_name: p.seller_name, rep_level: p._rep_level, rep_points: p._rep_points }))),
     products: sorted.map((p) => {
       const parsed = parseProductForAgent(p)

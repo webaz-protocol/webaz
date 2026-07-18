@@ -194,6 +194,13 @@ try {
   ok('S-8 decision_flags are server-asserted facts (NO_SALES_HISTORY expected on fresh catalog)', /NO_SALES_HISTORY/.test(scJson))
   ok('S-9 next_cursor present on page 1 (more results exist)', typeof sc?.next_cursor === 'string' && (sc?.next_cursor as string).length > 0)
 
+  // USDC 显示线(Holden 指令):商品价 display=USDC + fx 换算表(display-only,绝非结算)
+  const p0 = (sc?.products as Array<Record<string, unknown>>)[0]
+  ok('S-14 product price displays USDC (never WAZ) + envelope fx table with display-only note',
+    (p0.price as Record<string, unknown>).currency === 'USDC' && String((p0.price as Record<string, unknown>).display).endsWith(' USDC')
+    && !scJson.includes(' WAZ') && Number(((sc?.fx as Record<string, unknown>)?.rates as Record<string, unknown>)?.SGD) > 0
+    && /display-only/.test(String((sc?.fx as Record<string, unknown>)?.note)), scJson.slice(0, 200))
+
   // 真翻页:page2 与 page1 不重叠(newest 排序走 keyset)
   const p1 = await client.callTool({ name: 'webaz_search', arguments: { sort: 'newest', limit: 5 } }) as Record<string, unknown>
   const p1sc = p1.structuredContent as Record<string, unknown>

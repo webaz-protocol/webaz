@@ -11,7 +11,7 @@
  */
 import { SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL, SCHEMA_ORDER_STATUS, SCHEMA_ORDER_QUOTE } from '../../agent-model-projection.js'
 
-const money = { type: 'object', description: 'integer money: amount_minor / currency / currency_exponent / display' }
+const money = { type: 'object', description: 'integer money: amount_minor / currency / currency_exponent / display (product prices display as USDC; fx table gives display-only local conversions)' }
 const err = {
   error: { type: 'string', description: 'present ONLY on failure (with error_code + structured recovery fields)' },
   error_code: { type: 'string' },
@@ -26,6 +26,7 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
       count: { type: 'number', description: 'products returned in this page' },
       next_cursor: { type: 'string', description: 'present when more results exist — pass back as cursor' },
       sellers: { type: 'object', description: 'deduped seller summaries keyed by seller id (products[].seller_ref)' },
+      fx: { type: 'object', description: 'USD-base display-only conversion rates ({rates, as_of}) for "≈ local currency" hints — NEVER a settlement path' },
       products: {
         type: 'array',
         items: {
