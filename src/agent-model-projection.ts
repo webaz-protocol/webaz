@@ -346,7 +346,8 @@ export function projectOrderTimelineConsumer(r: Record<string, unknown>, fx: FxV
   return {
     schema_version: SCHEMA_ORDER_TIMELINE,
     order_id: o.order_id,
-    product: { id: o.item_ref, title: (o as Record<string, unknown>).product_title ?? null },
+    // 卖家可控字符串必封顶:防超预算 + 防超长文本注入模型可见面
+    product: { id: o.item_ref, title: typeof (o as Record<string, unknown>).product_title === 'string' ? capBytes(String((o as Record<string, unknown>).product_title), 200).text : null },
     quantity: o.quantity ?? null,
     price: { amount_minor: amountMinor, currency: 'USDC', currency_exponent: 6, display: fmtUsdcMinor(amountMinor) },
     ...(fiatEstimate(amountMinor, logi.dest_region, fx, regionToCcy) ? { fiat_estimate: fiatEstimate(amountMinor, logi.dest_region, fx, regionToCcy) } : {}),
@@ -359,13 +360,14 @@ export function projectOrderTimelineConsumer(r: Record<string, unknown>, fx: FxV
       from: t.from ?? null, to_status: statusView(t.to), actor: t.actor_role ?? null, at: t.at,
     })),
     logistics: { dest_region: logi.dest_region ?? null, tracking: logi.tracking ?? null, shipping_est_days: logi.shipping_est_days ?? null },
-    refund: returns.length ? {
+    // 无退货时字段缺席(非 null):buyer_orders 豁免 stripEmpty,null 会被 schema 校验型宿主拒收
+    ...(returns.length ? { refund: {
       requests: returns.map(x => ({ status: x.status, amount: { display: fmtUsdcMinor(Number(x.refund_amount) ? Math.round(Number(x.refund_amount) * 1_000_000) : null) }, created_at: x.created_at, resolved_at: x.resolved_at ?? null })),
-      is_real_funds_flow: rail !== 'direct_p2p' ? false : false,
+      is_real_funds_flow: false,
       note: rail === 'direct_p2p'
         ? '协议已记录责任结果;本金未由 WebAZ 托管;实际退款需由买卖双方完成'
         : '模拟托管轨:退款按争议/退货结果从模拟托管释放,不代表真实 USDC 或法币资金流',
-    } : null,
+    } } : {}),
     available_actions: Array.isArray(r.available_actions) ? (r.available_actions as Array<Record<string, unknown>>).map(a => ({ action: a.action, executor: a.executor })) : [],
     actions_note: '服务器权威动作面 — 人类动作在 webaz.xyz 订单页完成(高风险动作需 Passkey)',
   }

@@ -54,8 +54,8 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
     properties: {
       schema_version: { type: 'string', enum: [SCHEMA_ORDER_STATUS, SCHEMA_ORDER_TIMELINE] },
       timeline: { type: 'array', description: 'full form: {from, to_status{code,label}, actor, at} events' },
-      refund: { type: 'object', description: 'rail-honest refund state (direct_p2p: WebAZ holds no principal — protocol records outcomes only)' },
-      rail_badge: { type: 'string' }, status: { type: 'object', description: 'full form: {code, label, label_en}' },
+      refund: { type: 'object', description: 'rail-honest refund state; ABSENT when the order has no return requests (direct_p2p: WebAZ holds no principal — protocol records outcomes only)' },
+      rail_badge: { type: 'string' }, status: { description: 'timeline form: {code, label, label_en} object; up_to_date form: raw status code string' },
       summary: { type: 'object', description: 'whole-account counts: total / active / awaiting_you / disputed / completed / cancelled / other_terminal' },
       count: { type: 'number' }, total_count: { type: 'number' },
       next_cursor: { type: 'string', description: 'present when older orders exist — pass back as cursor' },

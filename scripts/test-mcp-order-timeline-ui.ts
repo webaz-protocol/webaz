@@ -45,6 +45,11 @@ db.prepare("INSERT INTO order_state_history (order_id, from_status, to_status, a
 db.prepare(`INSERT INTO orders (id,buyer_id,seller_id,product_id,status,quantity,unit_price,total_amount,escrow_amount,payment_rail,ship_to_region,shipping_address,created_at,updated_at)
   VALUES ('ord_dp','buyer1','seller1','prd_t','completed',1,11.5,11.5,0,'direct_p2p','SG','9 SECRET Rd', datetime('now','-5 days'), datetime('now','-1 days'))`).run()
 db.prepare(`INSERT INTO return_requests (id, order_id, buyer_id, seller_id, product_id, reason, refund_amount, status, created_at) VALUES ('rr_t1','ord_dp','buyer1','seller1','prd_t','quality',11.5,'refund_marked', datetime('now','-2 hours'))`).run()
+// R1-3 fixture:卖家可控超长标题(CJK 混排,UTF-8 字节远超封顶)
+const LONG_TITLE = '超长标题注入测试'.repeat(30) + 'X'.repeat(120)
+db.prepare("INSERT INTO products (id,seller_id,title,description,price,currency,stock,category,status,return_days) VALUES ('prd_long','seller1',?,'d',3,'WAZ',5,'phone_stand','active',7)").run(LONG_TITLE)
+db.prepare(`INSERT INTO orders (id,buyer_id,seller_id,product_id,status,quantity,unit_price,total_amount,escrow_amount,payment_rail,ship_to_region,shipping_address,created_at,updated_at)
+  VALUES ('ord_long','buyer1','seller1','prd_long','paid',1,3,3,3,'escrow','SG','9 SECRET Rd', datetime('now','-1 days'), datetime('now','-1 hours'))`).run()
 
 const auth = (_req: express.Request, res: express.Response) => { res.status(401).json({ error: 'no human auth' }); return null }
 const app = express(); app.use(express.json())
@@ -94,6 +99,12 @@ try {
   ok('16. 单订单时间线 ≤2000B(≈500 tok)', t1j.length <= 2000, `bytes=${t1j.length}`)
   ok('15. 文本降级带状态标签 + 订单号', /ord_t1/.test(t1text) && String((t1.status as Record<string, unknown>).label).length > 0 && t1text.includes(String((t1.status as Record<string, unknown>).label)), t1text.slice(0, 120))
   ok('13s. deadline 只给 iso(本地时区渲染留给组件)', (t1.deadline as Record<string, unknown>)?.iso !== undefined && !('display_local' in ((t1.deadline ?? {}) as Record<string, unknown>)))
+  ok('R1-2. 无退货 → refund 字段缺席(非 null;schema 校验型宿主不拒收)', !('refund' in t1))
+
+  // R1-3:卖家可控标题封顶(UTF-8 字节)
+  const { sc: tl } = await call({ order_id: 'ord_long', full: true })
+  const tlTitle = String(((tl.product ?? {}) as Record<string, unknown>).title ?? '')
+  ok('R1-3. 超长卖家标题被封顶 ≤200B(UTF-8)且非空', Buffer.byteLength(tlTitle, 'utf8') <= 200 && tlTitle.length > 0, `bytes=${Buffer.byteLength(tlTitle, 'utf8')}`)
 
   // 5/6:dp 单退款 rail-aware 措辞
   const { sc: t2 } = await call({ order_id: 'ord_dp', full: true })
@@ -109,6 +120,11 @@ try {
   const EXPECT7 = 'amount,deadline,item_ref,next_actor,order_id,payment_rail,status'
   ok('14b. 列表仍是 order_status.model.v1 + 每单恰 7 键(契约不动)', ls.schema_version === 'webaz.order_status.model.v1'
     && (ls.orders as Array<Record<string, unknown>>).every(o => Object.keys(o).sort().join(',') === EXPECT7))
+
+  // R1-1:minimal 单订单形态(order 键)透传不投影
+  const { sc: mo } = await call({ order_id: 'ord_t1' })
+  ok('R1-1a. minimal 单订单 = order_status.model.v1 + order 恰 7 键(不投影成时间线)', mo.schema_version === 'webaz.order_status.model.v1'
+    && Object.keys((mo.order ?? {}) as Record<string, unknown>).sort().join(',') === EXPECT7 && mo.timeline === undefined, JSON.stringify(mo).slice(0, 160))
 
   // 11:非参与方 404
   useCred('grt_tl2', 'buyer2', 'gtk_tl2')
@@ -127,8 +143,12 @@ try {
   const SINK_TOKENS = /\b(innerHTML|outerHTML|insertAdjacentHTML|write|writeln|eval|Function)\b/
   ok('W-1. 组件自包含 + 零请求词元 + 零 sink + 零 WAZ + 双形态', html.includes('toolOutput') && !REQUEST_TOKENS.test(html) && !SINK_TOKENS.test(html)
     && !html.includes(' WAZ') && html.includes('order_timeline.model.v1') && html.includes('order_status.model.v1'))
-  ok('10. 联系商家 = 会话流 + 订单上下文绑定(webaz_order_chat + order_id;无自由私信面)', html.includes('webaz_order_chat') && html.includes('sendFollowupTurn'))
-  ok('13. 组件端本地时区渲染(toLocaleString)+ 刷新走 callTool + openExternal 锁 webaz.xyz', html.includes('toLocaleString') && html.includes("callTool('webaz_buyer_orders'") && html.includes("'https://webaz.xyz/#order/'"))
+  ok('10. 联系商家 = 会话流 + 订单号内插进提示词(webaz_order_chat 绑定;无自由私信面)',
+    html.includes("读取订单 '+out.order_id+' 的对话") && html.includes('webaz_order_chat') && html.includes('sendFollowupTurn'))
+  ok('13. 组件端本地时区渲染(toLocaleString)+ 刷新走 callTool', html.includes('toLocaleString') && html.includes("callTool('webaz_buyer_orders'"))
+  ok('R1-4. openExternal 唯一调用点且字面锁 webaz.xyz 前缀', (html.match(/openExternal\(\{href:/g) ?? []).length === 1
+    && html.includes("openExternal({href:'https://webaz.xyz/#order/'"), `sites=${(html.match(/openExternal\(\{href:/g) ?? []).length}`)
+  ok('R1-1b. 组件带 minimal 单订单分支(查看完整时间线入口)', html.includes('查看完整时间线') && html.includes('out.order'))
   const tools = (await c.listTools()).tools as Array<{ name: string; _meta?: Record<string, unknown> }>
   ok('T-1. webaz_buyer_orders 描述符挂 order-timeline outputTemplate', tools.find(t => t.name === 'webaz_buyer_orders')?._meta?.['openai/outputTemplate'] === 'ui://widget/webaz-order-timeline.html')
 } finally { server.close() }

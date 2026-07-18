@@ -279,7 +279,9 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       `SELECT ${BUYER_MINIMAL_ORDER_COLUMNS.join(', ')} FROM orders WHERE id = ? AND buyer_id = ?`,
       [req.params.id, p.human_id])
     if (!o) return void res.status(404).json({ error: '订单不存在或不属于你', error_code: 'ORDER_NOT_FOUND' })
-    res.json({ order: minimalBuyerOrderView(o, db) })
+    // MCP UI PR-6:补齐 shape family 一致性(additive)—— 列表/up_to_date 均带 schema_version,
+    //   minimal 单订单缺失会让按 schema_version 分发的消费方(widget)判为无结构负载。order 7 键投影不变。
+    res.json({ schema_version: SCHEMA_ORDER_STATUS, order: minimalBuyerOrderView(o, db) })
   })
 
   // RFC-025 PR-2 — 买家发现(safe scope buyer_discover)。语义:「有结果输出结果,没结果记录,形成商机」。

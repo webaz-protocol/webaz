@@ -302,6 +302,19 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;backgr
 
   if(sv==='webaz.order_status.model.v1'){
     if(out.up_to_date){ box.appendChild(el('div','h','订单 '+out.order_id+' 无新变化')); box.appendChild(el('div','meta','状态:'+(out.status||'')+' · 增量刷新:自 updated_since 起无存储态变化')); return }
+    if(out.order){
+      var mo=out.order
+      box.appendChild(el('div','h','订单 '+String(mo.order_id||'')))
+      row(box,'状态',String(mo.status||''))
+      if(mo.next_actor) row(box,'下一责任方',String(mo.next_actor))
+      if(mo.deadline) row(box,'截止时间',localTime(mo.deadline))
+      if(typeof oai.callTool==='function'){
+        var mb=el('div','rowbtn'); var mf=el('button',null,'查看完整时间线')
+        mf.addEventListener('click',function(){ oai.callTool('webaz_buyer_orders',{order_id:mo.order_id,full:true}) })
+        mb.appendChild(mf); box.appendChild(mb)
+      }
+      return
+    }
     box.appendChild(el('div','h','买家订单'))
     var s=out.summary||{}
     box.appendChild(el('div','meta','共 '+(s.total||0)+' 单 · 活跃 '+(s.active||0)+' · 争议 '+(s.disputed||0)))
