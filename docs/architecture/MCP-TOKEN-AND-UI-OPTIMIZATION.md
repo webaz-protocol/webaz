@@ -91,7 +91,7 @@ loss forbidden.
 | `test-mcp-model-projection` (36) | forbidden-internal-fields, PII, null-strip, page defaults, cursor disjointness, byte budgets, −60% acceptance vs legacy baseline |
 | `test-mcp-result-handle` (34) | handle lifecycle, live-predicate re-run, TTL, caps (UTF-8 bytes), updated_since anchors, rate limit |
 | `test-mcp-tool-surfaces` (17) | surface membership/counts, buyer ≤50% of full bytes, info slim/full/resource deep-identity |
-| `test-mcp-definition-budget` (10) | surface byte ceilings (ratchet: lower-only), per-tool desc ≤2600 chars / def ≤7KB, global minify source lock, telemetry presence |
+| `test-mcp-definition-budget` (12) | surface UTF-8 byte budgets (bounded headroom ≤9% — silent ceiling inflation trips; tightening-only by review discipline), per-tool desc ≤2600 chars / def ≤7KB, minify locks, exact-byte telemetry lock, serialization-failure robustness |
 
 Current measurements (local): buyer 37,988B · seller 39,021B · full 101,728B; search5 −81%;
 quote ≤3,000B; orders page ≤2,800B.

@@ -32,15 +32,16 @@ const listVia = async (opts: Record<string, unknown>): Promise<Array<{ name: str
   return (await c.listTools()).tools as Array<{ name: string; description?: string }>
 }
 
-// ── 面级 UTF-8 字节 ceiling —— 自执行 ratchet(Codex PR-7 M-1):ceiling 必须贴住实测
-//   (actual ≤ ceiling ≤ actual×1.12)。膨胀 >ceiling 必红;想偷偷抬 ceiling 而不真瘦身 → 余量检查红。
-const CEILINGS = { buyer: 42_000, seller: 43_000, full: 108_000 }
+// ── 面级 UTF-8 字节【有界余量预算】(诚实定性:任何仓内常量都可被 PR 编辑,"只降不升"最终靠
+//   review 纪律,与 complexity-ratchet 同哲学)。守卫职责:①膨胀 > ceiling 必红;②ceiling 距实测
+//   余量 ≤9% —— 静默抬顶(不真瘦身)会立刻撞余量检查,改动必须显式且可 review。
+const CEILINGS = { buyer: 41_000, seller: 42_500, full: 106_000 }
 const utf8 = (v: unknown): number => Buffer.byteLength(JSON.stringify(v), 'utf8')
 for (const surface of ['buyer', 'seller', 'full'] as const) {
   const tools = await listVia({ isolated: true, surface })
   const bytes = utf8(tools)
-  ok(`B-1 ${surface} tools/list ≤ ${CEILINGS[surface]}B UTF-8 AND ceiling ≤ actual×1.12 (self-enforcing ratchet)`,
-    bytes <= CEILINGS[surface] && CEILINGS[surface] <= Math.ceil(bytes * 1.12), `bytes=${bytes} ceiling=${CEILINGS[surface]}`)
+  ok(`B-1 ${surface} tools/list ≤ ${CEILINGS[surface]}B UTF-8 AND ceiling ≤ actual×1.09 (bounded-headroom budget)`,
+    bytes <= CEILINGS[surface] && CEILINGS[surface] <= Math.ceil(bytes * 1.09), `bytes=${bytes} ceiling=${CEILINGS[surface]}`)
   console.log(`  [budget] surface=${surface} tools=${tools.length} utf8=${bytes}B (~${Math.ceil(bytes / 4)} tok, headroom ${(100 * (CEILINGS[surface] / bytes - 1)).toFixed(1)}%)`)
 }
 
@@ -76,6 +77,16 @@ ok('B-6 response_bytes telemetry recorded per call (mcp_tool_calls.response_byte
   const row = db2.prepare("SELECT response_bytes FROM mcp_tool_calls WHERE tool_name = 'webaz_get_status' ORDER BY id DESC LIMIT 1").get() as { response_bytes: number | null } | undefined
   ok('B-8 telemetry row = EXACT UTF-8 byte count of the wire text (measurement correctness, not just >0)',
     !!row && Number(row.response_bytes) === Buffer.byteLength(texts[0], 'utf8'), `db=${row?.response_bytes} expected=${Buffer.byteLength(texts[0], 'utf8')}`)
+}
+
+// ── 行为锁:信封构造对不可序列化/恶意 throw 的鲁棒性(遥测永不被吞)──
+{
+  const { buildToolEnvelope } = await import('../src/layer1-agent/L1-1-mcp-server/server.js') as unknown as { buildToolEnvelope: (n: string, r: unknown) => { content: Array<{ text: string }>; isError?: boolean } }
+  const circular: Record<string, unknown> = {}; circular.self = circular
+  const e1 = buildToolEnvelope('webaz_get_status', circular)
+  ok('B-9 circular result → structured isError envelope (no throw, telemetry path survives)', e1.isError === true && /serialization failed/.test(e1.content[0].text), e1.content[0].text.slice(0, 100))
+  const e2 = buildToolEnvelope('webaz_get_status', { toJSON() { throw null } })
+  ok('B-10 non-Error throw (null) from toJSON → still a structured isError envelope', e2.isError === true && /serialization failed/.test(e2.content[0].text), e2.content[0].text.slice(0, 100))
 }
 
 if (fail > 0) { console.error(`\n❌ mcp-definition-budget FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
