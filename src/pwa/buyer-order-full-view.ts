@@ -99,19 +99,70 @@ function availableActions(db: Database.Database, o: Record<string, unknown>, hum
   return acts
 }
 
-export function buildBuyerOrderFull(db: Database.Database, humanId: string, orderId: unknown):
+export function buildBuyerOrderFull(db: Database.Database, humanId: string, orderId: unknown, updatedSince?: unknown):
   { ok: true; response: Record<string, unknown> } | { ok: false; status: number; body: Record<string, unknown> } {
   if (typeof orderId !== 'string' || !orderId) return { ok: false, status: 400, body: { error_code: 'ORDER_NOT_FOUND', reason: 'order_id is required', retryable: true } }
   const cols = [...BUYER_MINIMAL_ORDER_COLUMNS, 'created_at', 'updated_at', 'quantity', 'ship_to_region', 'shipping_fee', 'shipping_est_days', 'trade_terms_snapshot', 'direct_pay_window_deadline'].join(', ')
   const o = db.prepare(`SELECT ${cols} FROM orders WHERE id = ? AND buyer_id = ?`).get(orderId, humanId) as Record<string, unknown> | undefined
   if (!o) return { ok: false, status: 404, body: { error_code: 'ORDER_NOT_FOUND', reason: 'no such order (or not yours)', retryable: false } }
 
+  // MCP Token PR-2:updated_since 增量读 —— 无变化时返回极小 up_to_date 响应,有变化时 timeline 只回
+  //   新条目。锚点覆盖全视图的【每一个可变来源】(Codex H-2):orders.updated_at + 状态史 + 退货请求
+  //   (created/resolved)+ agent 发货追踪(approval executed_at);deadline 列的写入总是伴随状态转移
+  //   (原子块纪律)→ 由状态史锚覆盖。同秒边界(Codex M-1):up_to_date 用严格 <,timeline 过滤用 >=
+  //   —— 与 trending 翻页同一取舍:可重复,绝不丢。时间戳做【语义级】校验(Codex M-2):Date 真解析,
+  //   无时区标记按 UTC 处理,规格化到 UTC 秒级再比较。权限/投影不变:仍是本人 + allowlist。
+  let sinceRaw: string | null = null
+  if (typeof updatedSince === 'string' && updatedSince) {
+    // 语义级校验(Codex round-2 M-1):Date 解析会把 2026-02-30 归一成 3 月 2 日 —— 先按民用日期字段
+    //   做 UTC 回环校验(年月日时分秒逐项相等),不存在的日期直接拒绝;再按整串(含时区)取真实时刻。
+    const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/.exec(updatedSince)
+    const civilOk = (() => {
+      if (!m) return false
+      const [y, mo, d2, hh, mi, ss] = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6])]
+      const t = new Date(Date.UTC(y, mo - 1, d2, hh, mi, ss))
+      return t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d2 && t.getUTCHours() === hh && t.getUTCMinutes() === mi && t.getUTCSeconds() === ss
+    })()
+    const withTz = m && !m[7] ? updatedSince.replace(' ', 'T') + 'Z' : updatedSince.replace(' ', 'T')
+    const d = new Date(withTz)
+    if (!civilOk || Number.isNaN(d.getTime())) {
+      return { ok: false, status: 400, body: { error_code: 'UPDATED_SINCE_INVALID', reason: 'updated_since must be a valid ISO-8601 timestamp (e.g. 2026-07-18T09:00:00Z; no timezone = UTC; nonexistent civil dates rejected)', retryable: true } }
+    }
+    sinceRaw = d.toISOString().slice(0, 19).replace('T', ' ')
+  }
+  const norm = (t: unknown): string => t == null ? '' : String(t).replace('T', ' ').slice(0, 19)
+  if (sinceRaw) {
+    // 锚点 = 全视图【每一个存储态可变来源】(Codex round-1 H-2 + round-2 HIGH):订单行 / 状态史 /
+    //   退货(created+resolved)/ agent 发货追踪(executed_at)/ 协商取消提案(created+resolved)/
+    //   争议(created+resolved)。时间派生的资格变化(退货窗随钟表关闭)与 pre-snapshot 订单的现商品
+    //   条款属【非存储态】,不在 up_to_date 契约内 —— note 与 REMOTE-MCP.md 明示:要执行动作前用全读。
+    const hist = db.prepare('SELECT MAX(created_at) AS m FROM order_state_history WHERE order_id = ?').get(orderId) as { m: string | null }
+    const rr = db.prepare("SELECT MAX(created_at) AS c, MAX(COALESCE(resolved_at, '')) AS r FROM return_requests WHERE order_id = ?").get(orderId) as { c: string | null; r: string | null }
+    const trk = db.prepare("SELECT MAX(executed_at) AS m FROM agent_permission_requests WHERE kind = 'order_action' AND order_id = ? AND executed_at IS NOT NULL").get(orderId) as { m: string | null }
+    let mcC = '', mcR = '', dspC = '', dspR = ''
+    try { const mc = db.prepare("SELECT MAX(created_at) AS c, MAX(COALESCE(resolved_at, '')) AS r FROM mutual_cancel_proposals WHERE order_id = ?").get(orderId) as { c: string | null; r: string | null }; mcC = norm(mc.c); mcR = norm(mc.r) } catch { /* 表未建(功能面未启)→ 无贡献 */ }
+    try { const dsp = db.prepare("SELECT MAX(created_at) AS c, MAX(COALESCE(resolved_at, '')) AS r FROM disputes WHERE order_id = ?").get(orderId) as { c: string | null; r: string | null }; dspC = norm(dsp.c); dspR = norm(dsp.r) } catch { /* 同上 */ }
+    // 退货资格读【现商品行】的每一种情形都把商品行纳锚(Codex round-4 HIGH:不能只看 NULL 快照 ——
+    //   坏 JSON/缺 fulfilment/降级采集 null 等同样走 live 路径)。判定与消费方同源:直接问
+    //   effectiveReturnDays().source === 'live_listing',绝不自行复刻降级规则。
+    let prodU = ''
+    try {
+      const pu = db.prepare('SELECT return_days, updated_at FROM products WHERE id = ?').get(String(o.product_id ?? '')) as { return_days: number | null; updated_at: string | null } | undefined
+      if (pu && effectiveReturnDays(o.trade_terms_snapshot, pu.return_days).source === 'live_listing') prodU = norm(pu.updated_at)
+    } catch { /* 无贡献 */ }
+    const latest = [norm(o.updated_at), norm(hist.m), norm(rr.c), norm(rr.r), norm(trk.m), mcC, mcR, dspC, dspR, prodU].reduce((a, b) => (b > a ? b : a), '')
+    if (latest < sinceRaw) {
+      return { ok: true, response: { order_id: orderId, up_to_date: true, status: String(o.status ?? ''), updated_at: o.updated_at ?? null, note: 'no STORED-state changes since updated_since (order row / timeline / returns / tracking / mutual-cancel / disputes) — full view omitted. Time-derived eligibility (e.g. return-window expiry) is only re-evaluated on a full read: fetch without updated_since before acting.' } }
+    }
+  }
+
   const base = minimalBuyerOrderView(o, db)
-  const timeline = (db.prepare('SELECT from_status, to_status, actor_role, created_at FROM order_state_history WHERE order_id = ? ORDER BY created_at, id LIMIT 100')
+  const timelineAll = (db.prepare('SELECT from_status, to_status, actor_role, created_at FROM order_state_history WHERE order_id = ? ORDER BY created_at, id LIMIT 100')
     .all(orderId) as Array<Record<string, unknown>>).map(r => ({
       from: r.from_status == null ? null : String(r.from_status), to: String(r.to_status),
       actor_role: r.actor_role == null ? null : String(r.actor_role), at: String(r.created_at),
     }))
+  const timeline = sinceRaw ? timelineAll.filter(t => norm(t.at) >= sinceRaw) : timelineAll   // >=:同秒事件可重不丢
   const returns = (db.prepare('SELECT status, refund_amount, created_at, resolved_at FROM return_requests WHERE order_id = ? ORDER BY created_at DESC LIMIT 10')
     .all(orderId) as Array<Record<string, unknown>>).map(r => ({
       status: String(r.status), refund_amount: r.refund_amount == null ? null : Number(r.refund_amount),
@@ -123,6 +174,7 @@ export function buildBuyerOrderFull(db: Database.Database, humanId: string, orde
 
   return { ok: true, response: {
     order: { ...base, quantity: numOrNull(Number(o.quantity)), created_at: String(o.created_at ?? '') },
+    ...(sinceRaw ? { incremental: { since: sinceRaw, timeline_new: timeline.length, note: 'timeline below contains ONLY entries newer than updated_since' } } : {}),
     timeline,
     order_time_terms: orderTimeTerms(o.trade_terms_snapshot),
     logistics: {

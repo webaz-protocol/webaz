@@ -689,6 +689,8 @@ Returns: structuredContent (webaz.product_search.model.v1) — per-product decis
           },
         },
         limit: { type: 'number', description: 'Result limit, default 5 (page); up to 200 per page. Use cursor for more.' },
+        result_handle: { type: 'string', description: 'Detail-fetch mode: a result_handle from a previous search page (10-min TTL). With selected_ids, returns full detail projections (description/specs/terms) for up to 5 chosen products — live re-read, never cached data.' },
+        selected_ids: { type: 'array', items: { type: 'string' }, description: 'With result_handle: 1..5 product ids chosen FROM that result page.' },
         sort: { type: 'string', enum: ['trending', 'newest', 'rating', 'price_asc', 'price_desc', 'random'], description: 'Sort: trending=composite (default) / newest / rating / price_asc / price_desc / random' },
         has_sales: { type: 'string', enum: ['true', 'false'], description: 'true=only sold; false=only new' },
         ship_to: { type: 'string', description: 'Ship-to (province/city); auto-filters unshippable' },
@@ -1883,6 +1885,7 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
         full: { type: 'boolean', description: 'With order_id: return the FULL view (timeline/terms/logistics/deadlines/refunds/available_actions; needs buyer_orders_read)' },
         limit: { type: 'number', description: 'List page size, default 10 (max 50). The list returns a whole-account summary + active orders first.' },
         cursor: { type: 'string', description: 'Pagination cursor from a previous next_cursor (older orders).' },
+        updated_since: { type: 'string', description: 'With full: incremental read — unchanged order returns a tiny up_to_date response; otherwise timeline contains only entries newer than this ISO timestamp.' },
       },
     },
   },
@@ -2531,6 +2534,15 @@ function parseProductForAgent(p: Record<string, unknown>) {
 }
 
 async function handleSearch(args: Record<string, unknown>) {
+  // MCP Token PR-2:result_handle 按需详情 —— 选择集句柄 + ≤5 个 id → 服务端活读详情投影
+  //   (webaz.product_detail.model.v1)。句柄只在网络路径签发/兑付;数据永远按 id 现读 + 重跑
+  //   active 谓词,不存在缓存陈货或权限绕过面。
+  if (args.result_handle !== undefined) {
+    if (toolBackend('webaz_search') !== 'network') {
+      return { error: 'result_handle detail fetch is a network-mode surface (handles are issued by webaz.xyz search)', error_code: 'RESULT_HANDLE_INVALID' }
+    }
+    return await apiCall('/api/products/result-fetch', { method: 'POST', body: { result_handle: args.result_handle, selected_ids: args.selected_ids } })
+  }
   // 外链/粘贴文本模式 → relay 到 webaz.xyz/api/search-by-link（生产数据有索引）
   if (args.paste_text || args.external_link) {
     const apiUrl = process.env.WEBAZ_API_URL ?? 'https://webaz.xyz'
@@ -2841,7 +2853,8 @@ export async function handleBuyerOrders(args: Record<string, unknown>): Promise<
   const listQs = new URLSearchParams()   // MCP Token PR-1:列表分页参数透传(默认服务端 10/上限 50)
   if (args.limit !== undefined) listQs.set('limit', String(args.limit))
   if (typeof args.cursor === 'string' && args.cursor) listQs.set('cursor', args.cursor)
-  const path = wantFull ? `/api/agent/buyer/orders/${encodeURIComponent(orderId)}/full` : orderId ? `/api/agent/buyer/orders/${encodeURIComponent(orderId)}` : '/api/agent/buyer/orders' + (listQs.toString() ? `?${listQs.toString()}` : '')
+  const fullQs = wantFull && typeof args.updated_since === 'string' && args.updated_since ? `?updated_since=${encodeURIComponent(args.updated_since)}` : ''   // MCP Token PR-2 增量读
+  const path = wantFull ? `/api/agent/buyer/orders/${encodeURIComponent(orderId)}/full${fullQs}` : orderId ? `/api/agent/buyer/orders/${encodeURIComponent(orderId)}` : '/api/agent/buyer/orders' + (listQs.toString() ? `?${listQs.toString()}` : '')
   const r = await apiCall(path, { method: 'GET', apiKey: cred.token })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: wantFull ? 'Your grant lacks buyer_orders_read (the FULL order view). Re-connect via OAuth so the grant carries the read scope, then retry — or call without full for the minimal view.' : 'Your grant lacks buyer_orders_read_minimal. Re-connect via OAuth so the grant carries the read scope, then retry.' }
   return r

@@ -285,6 +285,7 @@
     "test:mcp-security-schemes": "tsx scripts/test-mcp-security-schemes.ts",
     "test:buyer-orders-grant": "tsx scripts/test-buyer-orders-grant.ts",
     "test:mcp-model-projection": "tsx scripts/test-mcp-model-projection.ts",
+    "test:mcp-result-handle": "tsx scripts/test-mcp-result-handle.ts",
     "test:discover-demand-signals": "tsx scripts/test-discover-demand-signals.ts",
     "test:agent-address-masking": "tsx scripts/test-agent-address-masking.ts",
     "test:buyer-quote": "tsx scripts/test-buyer-quote.ts",

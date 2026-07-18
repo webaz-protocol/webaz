@@ -28,9 +28,10 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { createHmac } from 'crypto'
-import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { randomBytes } from 'crypto'
 import { genuineSalePredicate } from '../../layer0-foundation/L0-2-state-machine/genuine-sale.js'  // RFC-018 PR4: 真实成交(排除全额退货)
-import { SCHEMA_PRODUCT_SEARCH, projectProductModel, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1: agent 模式 Model Projection
+import { SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL, projectProductModel, projectProductDetail, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1/2: agent 模式 Model Projection + 按需详情
 
 export interface ProductsListDeps {
   db: Database.Database
@@ -47,6 +48,9 @@ export interface ProductsListDeps {
   MASTER_SEED: string
   formatProductForAgent: (p: Record<string, unknown>, req?: Request) => Record<string, unknown>
 }
+
+// result-fetch 每 IP 限流桶(进程内;单实例部署下足够,Codex M-4)
+const resultFetchRate = new Map<string, { count: number; resetAt: number }>()
 
 export function registerProductsListRoutes(app: Application, deps: ProductsListDeps): void {
   // db 已走 RFC-016 异步 seam(dbOne/dbAll),不再直接用 deps.db
@@ -371,16 +375,100 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     //   单件 ~3.2KB);现改为 allowlist 投影(单一真相源 src/agent-model-projection.ts,≤ ~350B/件)。
     //   排序公式与 metrics 属服务端内部(排序已在 SQL/上方完成,模型无需复算);完整字段面后续 PR 走
     //   UI Projection / result_handle 按需取。i18n 标题与 agent_summary 仍经 formatProductForAgent 单源生成。
+    // MCP Token PR-2:签发 result_handle —— 只存本页 id 选择集(零载荷),10 分钟 TTL。
+    //   详情经 /api/products/result-fetch 按 id 活读(重跑 active 可见性谓词),句柄绝不携带数据本身。
+    let resultHandle: string | null = null
+    if (rows.length) {
+      resultHandle = 'res_' + randomBytes(16).toString('hex')
+      try {
+        await dbRun("INSERT INTO mcp_result_cache (handle_id, subject, tool, item_ids, context, expires_at) VALUES (?,?,?,?,?, datetime('now','+10 minutes'))",
+          [resultHandle, null, 'webaz_search', JSON.stringify(rows.map(r => String(r.id))), JSON.stringify({ sort, category: category ?? null, q: q ? 'set' : null }), ])
+      } catch (e) { resultHandle = null; console.warn('[result-handle] issue failed:', (e as Error).message) }   // 缓存面故障不阻断搜索本体,但留可观测日志(Codex L-2)
+    }
     res.json({
       schema_version: SCHEMA_PRODUCT_SEARCH,
       mode, sort, limit: lim,
       count: rows.length,
       next_cursor: nextCursor,
+      ...(resultHandle ? { result_handle: resultHandle, result_handle_expires_in_s: 600 } : {}),
       sellers: sellersIndex(rows),
       products: rows.map(r => {
         const f = formatProductForAgent(r, req)
         return projectProductModel({ ...r, title: f.title, estimated_days: f.estimated_days, agent_summary: f.agent_summary })
       }),
+    })
+  })
+
+  // ─── MCP Token PR-2:按需商品详情(result_handle + selected_ids ≤5)────────────────────────
+  //   句柄只证明"这些 id 出现在你最近一次搜索结果里";数据一律活读并【重跑与搜索完全相同的公共可见性
+  //   谓词】(active + 有库存 + 卖家未暂停 + 无 revoked-未-verified 外链)—— 任一谓词失效的商品诚实
+  //   返回 unavailable,绝不吐缓存陈货,也绝无权限绕过面。blocklist 是登录观察者的个性化过滤,句柄
+  //   为匿名公共面(subject=NULL),不适用 —— 见 REMOTE-MCP.md 同一措辞。
+  //   资源滥用护栏(Codex M-4):无鉴权端点按 IP 限流(默认 60 req/min,WEBAZ_RESULT_FETCH_RPM 可调)。
+  app.post('/api/products/result-fetch', async (req, res) => {
+    const rpm = Math.max(1, Number(process.env.WEBAZ_RESULT_FETCH_RPM) || 60)
+    // 不信任 X-Forwarded-For(可伪造→桶逃逸,Codex round-2 M-2):只认 Cloudflare 权威头,否则退回
+    //   socket 地址(代理后=共享桶,只会更严不会更松)。清扫后仍超硬上限 → 整表重置(有界内存优先)。
+    const ip = String(req.headers['cf-connecting-ip'] ?? req.socket.remoteAddress ?? 'unknown')
+    const now = Date.now()
+    const slot = resultFetchRate.get(ip)
+    if (!slot || now >= slot.resetAt) resultFetchRate.set(ip, { count: 1, resetAt: now + 60_000 })
+    else if (++slot.count > rpm) {
+      return void res.status(429).json({ error: 'rate limited', error_code: 'RATE_LIMITED', retryable: true, retry_after_s: Math.ceil((slot.resetAt - now) / 1000) })
+    }
+    if (resultFetchRate.size > 10_000) {
+      for (const [k, v] of resultFetchRate) if (now >= v.resetAt) resultFetchRate.delete(k)
+      if (resultFetchRate.size > 50_000) resultFetchRate.clear()
+    }
+    const { result_handle, selected_ids } = (req.body ?? {}) as { result_handle?: unknown; selected_ids?: unknown }
+    if (typeof result_handle !== 'string' || !/^res_[0-9a-f]{32}$/.test(result_handle)) {
+      return void res.status(400).json({ error: 'result_handle required', error_code: 'RESULT_HANDLE_INVALID', retryable: false, next_steps: [{ action: 'search_again', tool: 'webaz_search' }] })
+    }
+    if (!Array.isArray(selected_ids) || selected_ids.length < 1 || selected_ids.length > 5 || !selected_ids.every(x => typeof x === 'string')) {
+      return void res.status(400).json({ error: 'selected_ids must be 1..5 product ids from the handle result', error_code: 'SELECTED_IDS_INVALID', retryable: true })
+    }
+    const h = await dbOne<{ tool: string; item_ids: string; expires_at: string }>('SELECT tool, item_ids, expires_at FROM mcp_result_cache WHERE handle_id = ?', [result_handle])
+    if (!h || h.tool !== 'webaz_search') {
+      return void res.status(404).json({ error: 'unknown result_handle', error_code: 'RESULT_HANDLE_INVALID', retryable: false, next_steps: [{ action: 'search_again', tool: 'webaz_search' }] })
+    }
+    if (String(h.expires_at) <= new Date().toISOString().slice(0, 19).replace('T', ' ')) {
+      return void res.status(410).json({ error: 'result_handle expired (10-min TTL)', error_code: 'RESULT_HANDLE_EXPIRED', retryable: false, next_steps: [{ action: 'search_again', tool: 'webaz_search' }] })
+    }
+    // fail-closed 形状校验(Codex L-1):item_ids 非 string[](表被其他写者污染)→ 按无效句柄处理,绝不 500
+    let allowed: string[] | null = null
+    try { const parsed = JSON.parse(h.item_ids) as unknown; if (Array.isArray(parsed) && parsed.every(x => typeof x === 'string')) allowed = parsed } catch { allowed = null }
+    if (!allowed) {
+      return void res.status(404).json({ error: 'result_handle unusable', error_code: 'RESULT_HANDLE_INVALID', retryable: false, next_steps: [{ action: 'search_again', tool: 'webaz_search' }] })
+    }
+    const outside = (selected_ids as string[]).filter(id => !allowed!.includes(id))
+    if (outside.length) {
+      return void res.status(400).json({ error: 'selected_ids must come from the SAME search result the handle was issued for', error_code: 'SELECTED_IDS_NOT_IN_HANDLE', retryable: true, hint: 'ids outside the handle set are rejected — search again for other products' })
+    }
+    const ph = (selected_ids as string[]).map(() => '?').join(',')
+    // 与 /api/products 搜索完全同源的公共可见性谓词(Codex H-1):active + stock>0 + 卖家未暂停 + 外链治理
+    const liveRows = await dbAll<Record<string, unknown>>(
+      `SELECT p.*, u.name as seller_name, u.created_at as seller_created_at,
+        COALESCE((SELECT total_points FROM reputation_scores WHERE user_id = p.seller_id), 0) as rep_points,
+        COALESCE((SELECT level FROM reputation_scores WHERE user_id = p.seller_id), 'new') as rep_level,
+        (SELECT COUNT(1) FROM orders o WHERE o.product_id = p.id AND ${genuineSalePredicate('o')}) as sales_count
+       FROM products p JOIN users u ON p.seller_id = u.id
+       WHERE p.id IN (${ph}) AND p.status = 'active' AND p.stock > 0
+        AND COALESCE(u.listing_paused, 0) = 0
+        AND NOT (
+          EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.revoked = 1)
+          AND NOT EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.verified = 1 AND (pel.revoked IS NULL OR pel.revoked = 0))
+        )`,
+      selected_ids as string[])
+    const liveIds = new Set(liveRows.map(r => String(r.id)))
+    res.json({
+      schema_version: SCHEMA_PRODUCT_DETAIL,
+      count: liveRows.length,
+      sellers: sellersIndex(liveRows),
+      products: liveRows.map(r => {
+        const f = formatProductForAgent(r, req)
+        return projectProductDetail({ ...r, title: f.title, description: f.description, specs: f.specs, estimated_days: f.estimated_days, agent_summary: f.agent_summary })
+      }),
+      ...(selected_ids.length !== liveRows.length ? { unavailable_ids: (selected_ids as string[]).filter(id => !liveIds.has(id)), unavailable_note: 'no longer active/available — live re-check, cached data is never served' } : {}),
     })
   })
 }
