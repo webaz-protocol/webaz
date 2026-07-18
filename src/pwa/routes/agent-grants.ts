@@ -49,6 +49,7 @@ import { createOrderActionRequest } from '../order-action-request.js'  // RFC-02
 import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 approve→执行(CAS approved + 执行 + executed_at CAS,domain 层)
 import { notifyTransition } from '../../layer2-business/L2-6-notifications/notification-engine.js'  // 执行后通知买卖双方
 import { invalidateProductVerification } from '../../product-verification.js'
+import { resolveCategory, buildCategoryTable } from '../agent-categories.js'  // 调用契约 P0 PR-AB:canonical 类目注册表
 
 export interface AgentGrantsDeps {
   db: Database.Database
@@ -290,6 +291,17 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   //   demand_signals(result_count 含 0;0 = 未被满足的需求 = 市场机会情报)—— 该采集在工具 description
   //   向用户披露,能力名 buyer_discover 显式命名该效果(不是 search)。无执行、无资金;intent 只收
   //   allowlist 字段(category/keywords≤5/max_price/ship_to_region/quantity);文本入口做形状校验(超长/邮箱/URL/电话数字连拒收;词形文本无法机械排除 —— 披露如实告知通过即原样记录)。
+  // 调用契约 P0 PR-AB — 类目词表(公开只读,无鉴权:类目本就经在售列表公开)。双通道之一
+  //   (另一通道 = MCP 资源 webaz://guide/categories):不同宿主对 Resource 读取支持不一,HTTP 端点保底。
+  //   注册表键零商品也不消失(canonical registry);uncurated = 在售但未收录的卖家自由类目。
+  app.get('/api/agent/categories', async (_req, res) => {
+    res.json({
+      schema_version: 'webaz.category_table.v1',
+      categories: await buildCategoryTable(),
+      usage: 'discover 的 category 参数只接受这里的 key(等值匹配);同义词/别名请用 keywords + keyword_match:"any" 搜标题。',
+    })
+  })
+
   app.post('/api/agent/discover', requireAgentGrantScope('buyer_discover'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     const b = (req.body ?? {}) as Record<string, unknown>
@@ -299,12 +311,23 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     //   只放行商品词形态:文字/数字 + 空格 + -+._&%,显式拒绝邮箱(@)/URL(://|www.)/电话形态
     //   (剥掉全部放行分隔符后 ≥7 连续数字)。诚实边界:词形文本(人名/词写的联系方式)无法机械
     //   排除 —— 所以披露不承诺"绝无自由文本",承诺的是【已执行的形状校验 + 通过即原样记录,勿放个人数据】。
-    const TOKEN_RE = /^[\p{L}\p{N} \-+._&%]{1,40}$/u   // % 合法("100% cotton"),LIKE 侧已转义为字面量
+    const TOKEN_RE = /^[\p{L}\p{N} \-+._&%/]{1,40}$/u   // % 合法("100% cotton");/ 合法(canonical 类目键如 家庭清洁/纸品);LIKE 侧已转义;url-like 仍由 ://|www. 显式拒
     const smells = (s: string): string | null => {
       if (s.length > 40) return 'too long (max 40 chars)'
       if (s.includes('@')) return 'email-like'
       if (/:\/\/|www\./i.test(s)) return 'url-like'
-      if (/\d{7,}/.test(s.replace(/[ \-.+_&%]/g, ''))) return 'phone-like digit run'
+      // '/' 为 canonical 类目键(家庭清洁/纸品)与复合商品词(1/2 inch、wet/dry、salt/pepper)放行。
+      // 只拒【真 URL/路径】形态:双斜杠(//host)/ 三段以上(a/b/c)/ 首尾斜杠 / 点+斜杠(x.com/page)——
+      // 这些正是 "URL 绝不入台账" 披露覆盖的对象。单个内部斜杠连接两个无点 token【不是 URL】(无 scheme/
+      // host/TLD),是合法复合词 → 放行(Codex R2 曾要求拒 word/word,R3 证其误伤 wet/dry;原则化收口:
+      // 只拒 URL,不拒任意斜杠 —— 披露承诺的是"拒 URL",account/login 非 URL,记录它不违反披露)。
+      if (s.includes('/')) {
+        if (s.includes('//')) return 'path-like (double slash)'
+        if ((s.match(/\//g) ?? []).length > 1) return 'path-like (multiple slashes)'
+        if (s.startsWith('/') || s.endsWith('/')) return 'path-like (leading/trailing slash)'
+        if (s.includes('.')) return 'url-like (dot + slash)'
+      }
+      if (/\d{7,}/.test(s.replace(/[ \-.+_&%/]/g, ''))) return 'phone-like digit run'
       if (!TOKEN_RE.test(s)) return 'non-token characters'
       return null
     }
@@ -331,11 +354,68 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     if (!category && keywords.length === 0) {
       return void res.status(400).json({ error: 'give at least a category or one keyword', error_code: 'EMPTY_INTENT', next_steps: 'Provide { category } and/or { keywords: [...] } - short product terms only (shape-validated; passing inputs are recorded as-is).' })
     }
+    // ── keyword_match 契约(P0 PR-AB):默认 all(合取,兼容现语义)= 复合必要属性;any(析取)=
+    //    同义词/别名扩展。审计实锤:同义词组被 AND 合取杀成 0 是 discover 假阴性主因之一。 ──
+    const kwMatchRaw = b.keyword_match
+    if (kwMatchRaw !== undefined && kwMatchRaw !== 'any' && kwMatchRaw !== 'all') {
+      return void res.status(400).json({ error: "keyword_match must be 'any' or 'all'", error_code: 'INVALID_KEYWORD_MATCH' })
+    }
+    const keywordMatch: 'any' | 'all' = kwMatchRaw === 'any' ? 'any' : 'all'
+    // ── 类目五态解析(canonical registry;审计实锤:类目枚举从未发布 → "household" 猜词必 0)──
+    //    canonical/live 直通;alias 唯一 → 修正为 canonical 并继续(响应回显);多义/未知 → 400 带
+    //    机器可执行出路。400 在 demand-signal 落库之前返回:无效 intent 不是需求信号。
+    let categoryResolved: string | null = null
+    let categoryCorrected: { submitted: string; canonical: string } | null = null
+    if (category) {
+      const rc = await resolveCategory(category)
+      // 通用约束保留器(Codex R1-2:可重放的 next_call 绝不丢买家约束)
+      // carry:调用方显式 keyword_match 先铺底,extra 后覆盖 —— 这样 UNKNOWN 分支 extra 里 forced 的
+      //   keyword_match:'any'(recovery 建议)能压过调用方的 'all'(Codex R3-1);AMBIGUOUS 的 extra 不含
+      //   keyword_match → 保留调用方显式值(Codex R2-1)。约束(region/price/qty)与 extra 无键冲突。
+      const carry = (extra: Record<string, unknown>): Record<string, unknown> => ({
+        ...(kwMatchRaw !== undefined ? { keyword_match: keywordMatch } : {}),
+        ...extra,
+        ...(region ? { ship_to_region: region } : {}),
+        ...(maxPrice !== null ? { max_price: maxPrice } : {}),
+        ...(quantity !== 1 ? { quantity } : {}),
+      })
+      if (rc.status === 'ambiguous') {
+        // 逐选项可重放调用(结构化,agent/用户自选 —— 服务端不替任何一项背书,无假占位符)
+        return void res.status(400).json({
+          error: `category "${category}" maps to multiple registry categories — pick one`,
+          error_code: 'CATEGORY_AMBIGUOUS', submitted: category, options: rc.options,
+          selection_required: true,
+          suggested_question: `你要找的更接近哪一类:${rc.options.join(' / ')}?`,
+          recommended_next_calls: rc.options.map(o => ({ tool: 'webaz_discover', arguments: carry({ category: o, ...(keywords.length ? { keywords } : {}) }) })),
+        })
+      }
+      if (rc.status === 'unknown') {
+        const table = (await buildCategoryTable()).slice(0, 30)
+        return void res.status(400).json({
+          error: `unknown category "${category}" — categories are registry keys (see category_table); keywords search titles instead`,
+          error_code: 'UNKNOWN_CATEGORY', submitted: category,
+          ...(rc.alias_hints.length ? { alias_hints: rc.alias_hints } : {}),
+          category_table: table.map(t => ({ key: t.key, en: t.en, active_count: t.active_count })),
+          // 有 keywords → 保留全部约束、去 category 转 any 的可重放调用;
+          // 纯 category 请求 → 无可执行重试(空 intent 会 EMPTY_INTENT),让 agent 从表中自选
+          ...(keywords.length
+            ? { recommended_next_call: { tool: 'webaz_discover', arguments: carry({ keywords, keyword_match: 'any' }) } }
+            : { selection_required: true }),
+        })
+      }
+      categoryResolved = rc.key
+      if (rc.status === 'alias') categoryCorrected = { submitted: category, canonical: rc.key }
+    }
     // ── 诚实检索:active + 库存够 + 类目/关键词(LIKE, ESCAPE)/预算过滤;绝不模糊兜底冒充命中 ──
+    const esc = (k: string): string => k.toLowerCase().replace(/[\\%_]/g, m => '\\' + m)
+    const KW_CLAUSE = "LOWER(title) LIKE '%' || ? || '%' ESCAPE '\\'"
     const where: string[] = ["status = 'active'", 'stock >= ?']
     const params: unknown[] = [quantity]
-    if (category) { where.push('LOWER(category) = LOWER(?)'); params.push(category) }
-    for (const k of keywords) { where.push("LOWER(title) LIKE '%' || ? || '%' ESCAPE '\\'"); params.push(k.toLowerCase().replace(/[\\%_]/g, m => '\\' + m)) }
+    if (categoryResolved) { where.push('LOWER(category) = LOWER(?)'); params.push(categoryResolved) }
+    if (keywords.length) {
+      if (keywordMatch === 'all') { for (const k of keywords) { where.push(KW_CLAUSE); params.push(esc(k)) } }
+      else { where.push(`(${keywords.map(() => KW_CLAUSE).join(' OR ')})`); params.push(...keywords.map(esc)) }
+    }
     if (maxPrice !== null) { where.push('price <= ?'); params.push(maxPrice) }
     const rows = await dbAll<Record<string, unknown>>(
       `SELECT id, title, price, currency, category, stock, seller_id, sale_regions FROM products WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT 30`, params)
@@ -348,18 +428,39 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       product_id: String(r.id), title: String(r.title), price: Number(r.price),
       currency: String(r.currency || 'WAZ'), category: r.category == null ? null : String(r.category),
     }))
+    // ── 逐词命中诊断(P0 PR-AB):0 命中且多词时,同约束(类目/预算/库存/目的地)下逐词单独计数,
+    //    让 agent 一眼看出是哪个词杀掉了结果(all 合取假阴性的机器可读证据)。 ──
+    let perKeywordHits: Array<{ keyword: string; hits: number }> | undefined
+    if (matched.length === 0 && keywords.length > 0) {
+      perKeywordHits = []
+      for (const k of keywords) {
+        const w2: string[] = ["status = 'active'", 'stock >= ?', KW_CLAUSE]
+        const p2: unknown[] = [quantity, esc(k)]
+        if (categoryResolved) { w2.splice(2, 0, 'LOWER(category) = LOWER(?)'); p2.splice(1, 0, categoryResolved) }
+        if (maxPrice !== null) { w2.push('price <= ?'); p2.push(maxPrice) }
+        const r2 = await dbAll<Record<string, unknown>>(
+          `SELECT id, seller_id, sale_regions FROM products WHERE ${w2.join(' AND ')} LIMIT 30`, p2)
+        const hit = region
+          ? r2.filter(r => { const rule = effectiveSaleRegionsRule(db, r as { sale_regions?: string | null }, String(r.seller_id)); return !rule || regionAllowedByRule(rule, region) }).length
+          : r2.length
+        perKeywordHits.push({ keyword: k, hits: hit })
+      }
+    }
     // ── 需求信号落库(append-only;失败不吞——采集是本端点被授权的显式效果,写不进则如实 503) ──
-    const intent = { category, keywords, max_price: maxPrice, ship_to_region: region, quantity }
+    const intent = { category: categoryResolved, ...(categoryCorrected ? { category_submitted: categoryCorrected.submitted } : {}), keywords, keyword_match: keywordMatch, max_price: maxPrice, ship_to_region: region, quantity }
     try {
       await dbRun('INSERT INTO demand_signals (id, human_id, source, intent_json, category, region, budget_units, result_count) VALUES (?,?,?,?,?,?,?,?)',
-        [generateId('dms'), p.human_id, 'mcp_discover', JSON.stringify(intent), category, region, maxPrice === null ? null : toUnits(maxPrice), candidates.length])
+        [generateId('dms'), p.human_id, 'mcp_discover', JSON.stringify(intent), categoryResolved, region, maxPrice === null ? null : toUnits(maxPrice), candidates.length])
     } catch (e) {
       console.error('[discover] demand-signal write failed:', (e as Error).message)
       return void res.status(503).json({ error: 'demand-signal ledger unavailable; discover is disclosed-as-recorded and will not run unrecorded', error_code: 'DEMAND_SIGNAL_WRITE_FAILED' })
     }
     res.json({
       count: candidates.length, candidates,
-      ...(candidates.length === 0 ? { no_candidates: true, note: 'No matching listings right now — honestly zero, nothing similar is being passed off as a match. Your structured request was recorded as a demand signal (disclosed) so supply can catch up. Consider posting an RFQ at webaz.xyz, or browse PWA #discover.' } : {}),
+      match_semantics: keywordMatch,
+      ...(categoryCorrected ? { category_resolved: categoryCorrected } : {}),
+      ...(perKeywordHits ? { per_keyword_hits: perKeywordHits } : {}),
+      ...(candidates.length === 0 ? { no_candidates: true, note: 'No matching listings under THESE constraints — honestly zero, nothing similar is passed off as a match. Check per_keyword_hits: a keyword with 0 hits under keyword_match:"all" is what zeroed the set — drop it or retry with keyword_match:"any". Category keys: GET /api/agent/categories. Your structured request was recorded as a demand signal (disclosed). Consider an RFQ at webaz.xyz, or browse PWA #discover.' } : {}),
       disclosure: 'This query was recorded as-is as a demand signal linked to your account, to inform marketplace supply. Validation enforced: max-40-char product terms; emails, URLs, phone-like digit runs, and non-product punctuation are rejected (400) and never recorded. Inputs that pass are recorded verbatim - do not put personal data in category/keywords.',
     })
   })

@@ -41,6 +41,7 @@ import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-
 import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
 import { filterToolsBySurface, type ToolSurface } from './tool-surfaces.js'
 import { PRODUCT_RESULTS_WIDGET_HTML, QUOTE_APPROVAL_WIDGET_HTML, ORDER_TIMELINE_WIDGET_HTML, PRODUCT_RESULTS_WIDGET_MCP_HTML, QUOTE_APPROVAL_WIDGET_MCP_HTML, ORDER_TIMELINE_WIDGET_MCP_HTML } from './ui-widgets.js'  // MCP UI PR-4..6 + PR-A:legacy + 标准双轨组件
+import { CANONICAL_CATEGORIES } from '../../pwa/agent-categories.js'  // P0 PR-AB:资源降级用静态注册表
 import { getUsdRates, regionToCurrency } from '../../fx-rates.js'  // USDC 显示换算(display-only)  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
 import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult, summarizeDraftResult, summarizeSubmitResult, summarizeOrderTimeline,
          projectQuoteConsumer, projectDraftConsumer, projectSubmitConsumer, projectOrderTimelineConsumer,
@@ -218,7 +219,7 @@ async function apiCall(path: string, opts: { method?: string; body?: unknown; ap
       // RFC-025 PR-3(类修,allowlist 版):透传服务端结构化错误契约 —— 此前非 2xx 只留 error/error_code,
       //   机器可执行的恢复指引全被丢弃。只放行【已知恢复字段】(Codex L-9:无限 spread 会把任何路由错误体里
       //   的意外字段/潜在 PII 一并送进模型上下文;allowlist 让边界可审计)。error/error_code/http_status 照旧。
-      const RECOVERY_FIELDS = ['reason', 'retryable', 'missing_requirements', 'next_steps', 'hint', 'next_step', 'approval_url', 'required_scope', 'missing_scopes', 'retry_after_approval', 'request_permission', 'existing_request_id', 'duplicate', 'available_stock', 'stock', 'max_per_order', 'new_price', 'old_price', 'session_quantity', 'requested_quantity', 'region', 'option'] as const   // 'note' 刻意不放行(自由文本面);stock/old_price = 既有 orders-create 错误体消费字段
+      const RECOVERY_FIELDS = ['reason', 'retryable', 'missing_requirements', 'next_steps', 'hint', 'next_step', 'approval_url', 'required_scope', 'missing_scopes', 'retry_after_approval', 'request_permission', 'existing_request_id', 'duplicate', 'available_stock', 'stock', 'max_per_order', 'new_price', 'old_price', 'session_quantity', 'requested_quantity', 'region', 'option', 'options', 'suggested_question', 'submitted', 'category_table', 'alias_hints', 'recommended_next_call', 'recommended_next_calls', 'selection_required', 'match_semantics', 'per_keyword_hits'] as const   // P0 PR-AB:类目契约错误体机器可执行字段   // 'note' 刻意不放行(自由文本面);stock/old_price = 既有 orders-create 错误体消费字段
       const recovery: Record<string, unknown> = {}
       for (const k of RECOVERY_FIELDS) if (json && json[k] !== undefined) recovery[k] = json[k]
       return { ...recovery, error: baseErr + authBoundaryHint(resp.status), error_code: json?.error_code, http_status: resp.status }
@@ -1913,15 +1914,18 @@ No grant → GRANT_REQUIRED (webaz_pair action=start). Missing scope → structu
     name: 'webaz_discover',
     description: `Buyer discovery over ACTIVE WebAZ listings (RFC-025 PR-2, safe scope buyer_discover; OAuth grant, no api_key). Give a structured intent — category and/or keywords, optional max_price / ship_to_region / quantity — NOT free chat text.
 
-- Results are honest DISCOVERY CANDIDATES (label discovery_candidate): similar/near matches, NEVER passed off as exact matches. For exact lookups (exact title / SKU / URL) use webaz_search instead — it stays strict.
-- Zero results → an honest { no_candidates: true } with guidance (post an RFQ, or browse PWA #discover). Nothing similar is substituted.
-- DISCLOSURE: every discover query is recorded as a structured demand signal linked to your account (category/keywords/budget/region/quantity + result count) to inform marketplace supply. Text inputs are validated to short product-term shape (<=40 chars; emails, URLs, phone-like digit runs, and non-product punctuation are REJECTED with 400 and never recorded). Inputs that PASS validation are recorded as-is — do NOT put names, contact details, or any personal data in category/keywords. If you do not want queries recorded, do not call this tool.
+⚠️ MATCHING CONTRACT:
+- category = REGISTRY KEY, equality-matched (not a search word). Keys: resource webaz://guide/categories or GET /api/agent/categories. Unknown key → 400 UNKNOWN_CATEGORY (full table + machine-executable recommended_next_call); unique alias (e.g. "household") auto-corrects (echoed as category_resolved); ambiguous alias → 400 CATEGORY_AMBIGUOUS + options.
+- keywords substring-match listing TITLES. Default keyword_match:"all" = conjunctive (compound required attributes). Synonyms/aliases MUST use "any" — under "all" they zero each other out. Zero results carry per_keyword_hits showing which keyword killed the set.
+- Results are honest DISCOVERY CANDIDATES (label discovery_candidate), never exact matches. Exact title/SKU/URL → webaz_search (strict).
+- DISCLOSURE: every VALID query is recorded as a structured demand signal linked to your account (intent + result count) to inform supply; 400-rejected inputs are never recorded. Product-term shape enforced (<=40 chars; emails/URLs/phone-like digit runs rejected); passing inputs recorded as-is — NO personal data in category/keywords. If you do not want queries recorded, do not call this tool.
 - Read + that disclosed append-only record only: no order, no funds, no PII returned.`,
     inputSchema: {
       type: 'object',
       properties: {
-        category: { type: 'string', description: 'Listing category key (optional)' },
-        keywords: { type: 'array', items: { type: 'string' }, description: 'Up to 5 short keywords matched against listing titles (optional; at least one of category/keywords required)' },
+        category: { type: 'string', description: 'Registry category KEY (equality-matched; see webaz://guide/categories or GET /api/agent/categories). Unique aliases auto-correct; unknown keys 400 with the table.' },
+        keywords: { type: 'array', items: { type: 'string' }, description: 'Up to 5 short keywords, substring-matched against listing TITLES (at least one of category/keywords required)' },
+        keyword_match: { type: 'string', enum: ['any', 'all'], description: "Default 'all' (conjunctive — compound required attributes). Use 'any' for synonym/alias expansion; synonyms under 'all' zero each other out." },
         max_price: { type: 'number', description: 'Budget ceiling in WAZ (optional)' },
         ship_to_region: { type: 'string', description: 'ISO 3166-1 alpha-2 destination country (optional; filters out listings that cannot sell there)' },
         quantity: { type: 'integer', description: 'Desired quantity (default 1; filters by stock)' },
@@ -2979,6 +2983,7 @@ export async function handleDiscover(args: Record<string, unknown>): Promise<Rec
   const body: Record<string, unknown> = {}
   if (typeof args.category === 'string') body.category = args.category
   if (Array.isArray(args.keywords) || typeof args.keywords === 'string') body.keywords = args.keywords
+  if (args.keyword_match !== undefined) body.keyword_match = args.keyword_match   // 原样转发,校验权在服务端(非法值须得到 400 而非被静默吞)
   if (args.max_price !== undefined) body.max_price = args.max_price
   if (typeof args.ship_to_region === 'string') body.ship_to_region = args.ship_to_region
   if (args.quantity !== undefined) body.quantity = args.quantity
@@ -5924,6 +5929,14 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         mimeType:    'text/html;profile=mcp-app',
         _meta: { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } },
       },
+      // 调用契约 P0 PR-AB:类目词表(canonical registry + 动态 count/samples)。双通道之二
+      //   (HTTP 保底通道 = GET /api/agent/categories,宿主不支持 Resource 读取时用)。
+      {
+        uri:         'webaz://guide/categories',
+        name:        'WebAZ category registry (for webaz_discover)',
+        description: 'Canonical category keys (equality-matched by webaz_discover), aliases, live active counts and sample titles. Unknown category → 400 UNKNOWN_CATEGORY with this table inline. Same data at GET https://webaz.xyz/api/agent/categories.',
+        mimeType:    'application/json',
+      },
       {
         uri:         GUIDE_INFO_URI,
         name:        'WebAZ full onboarding guide (long form)',
@@ -5955,6 +5968,14 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     if (STANDARD_WIDGETS[request.params.uri]) {
       return { contents: [{ uri: request.params.uri, mimeType: 'text/html;profile=mcp-app', text: STANDARD_WIDGETS[request.params.uri],
         _meta: { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } } }] }
+    }
+    if (request.params.uri === 'webaz://guide/categories') {
+      // NETWORK 模式经 API(与 HTTP 通道同源);失败降级为静态注册表(counts 缺席,如实标注)
+      const r = await apiCall('/api/agent/categories').catch(() => null)
+      const payload = r && !(r as Record<string, unknown>).error
+        ? r
+        : { schema_version: 'webaz.category_table.v1', categories: CANONICAL_CATEGORIES.map(c => ({ key: c.key, en: c.en, aliases: c.aliases })), note: 'static registry (live counts unavailable in this mode)' }
+      return { contents: [{ uri: 'webaz://guide/categories', mimeType: 'application/json', text: JSON.stringify(payload, null, 2) }] }
     }
     if (request.params.uri === GUIDE_INFO_URI) {
       return { contents: [{ uri: GUIDE_INFO_URI, mimeType: 'application/json', text: JSON.stringify(await buildInfoFull(), null, 2) }] }

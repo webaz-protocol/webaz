@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (808 endpoints, 20 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (809 endpoints, 20 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2873,6 +2873,13 @@
         "security": []
       }
     },
+    "/api/agent/categories": {
+      "get": {
+        "summary": "注册表键零商品也不消失(canonical registry);uncurated = 在售但未收录的卖家自由类目。",
+        "tags": [],
+        "security": []
+      }
+    },
     "/api/agent/changes": {
       "get": {
         "summary": "指纹由 tests/test-contract-fingerprint.ts + docs/CONTRACT-LOCK.json 守住(静默改契约不可 merge)。",
@@ -2882,7 +2889,7 @@
     },
     "/api/agent/discover": {
       "post": {
-        "summary": "allowlist 字段(category/keywords≤5/max_price/ship_to_region/quantity);文本入口做形状校验(超长/邮箱/URL/电话数字连拒收;词形文本无法机械排除 —— 披露如实告知通过即原样记录)。",
+        "summary": "POST /api/agent/discover",
         "tags": [],
         "security": [
           {

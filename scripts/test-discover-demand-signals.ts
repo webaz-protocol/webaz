@@ -94,7 +94,7 @@ try {
     const added = signals().filter(a => !before.some(bb => bb.id === a.id))
     ok('D-8 zero-hit query recorded as demand signal (result_count = 0 = 商机)', added.length === 1 && added[0].result_count === 0, JSON.stringify(added).slice(0, 200))
     const intent = JSON.parse(String(added[0]?.intent_json ?? '{}'))
-    ok('D-9 intent_json = allowlist fields ONLY (no free text keys)', JSON.stringify(Object.keys(intent).sort()) === JSON.stringify(['category', 'keywords', 'max_price', 'quantity', 'ship_to_region'])) }
+    ok('D-9 intent_json = allowlist fields ONLY (no free text keys)', JSON.stringify(Object.keys(intent).sort()) === JSON.stringify(['category', 'keyword_match', 'keywords', 'max_price', 'quantity', 'ship_to_region'])) }
   { const r = await mcp.handleDiscover({ keywords: ['100%'] })   // LIKE 通配转义:字面匹配 '100%',不是"任意"
     const cands = r.candidates as Array<Record<string, unknown>> | undefined
     ok('D-10 LIKE wildcard escaped: "100%" matches literally (1 hit), not everything', Array.isArray(cands) && cands.length === 1 && cands[0].product_id === 'prd_pct', JSON.stringify(r).slice(0, 200)) }
@@ -109,7 +109,7 @@ try {
 
   // 源守卫:工具 description 必须披露采集(诚实化方法论)
   const src = readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
-  ok('D-14 tool description discloses the demand-signal recording', /DISCLOSURE: every discover query is recorded/.test(src))
+  ok('D-14 tool description discloses the demand-signal recording', /DISCLOSURE: every VALID query is recorded/.test(src))
 
   // ── 对抗性隐私(Codex PR-2 High/Medium):走私 PII 必须 400 且【零落库】——披露"不收自由文本/PII"必须为真 ──
   useCred('grt_disc', 'gtk_disc', ['buyer_discover'])

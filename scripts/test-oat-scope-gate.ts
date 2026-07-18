@@ -133,7 +133,9 @@ try {
   const g8 = await call('POST', '/api/agent/order-drafts/odr_nonexistent/submit', OAT_READ, {})
   ok('G-8 oat_ WITHOUT order_submit_request → PERMISSION_REQUIRED', g8.j.error_code === 'PERMISSION_REQUIRED', JSON.stringify(g8))
   // G-9/G-10 discover:有能力达业务层(诚实 no_candidates/candidates),无能力 scope 门拒
-  const g9 = await call('POST', '/api/agent/discover', OAT_FULL, { keywords: ['widget'], category: 'x' })
+  // keywords-only 探针(PR-AB 后 category 需为注册表键/别名,否则 UNKNOWN_CATEGORY 400 在解析层拦下 ——
+  //   那也在 scope 门之后,但本测意在"scope 放行到业务层",用纯 keywords 直达业务层返 no_candidates)
+  const g9 = await call('POST', '/api/agent/discover', OAT_FULL, { keywords: ['widget'] })
   ok('G-9 oat_ with buyer_discover reaches discover BUSINESS layer (candidates/no_candidates)',
     g9.status === 200 && (g9.j.no_candidates !== undefined || g9.j.candidates !== undefined), JSON.stringify(g9).slice(0, 200))
   const g10 = await call('POST', '/api/agent/discover', OAT_READ, { keywords: ['widget'] })
