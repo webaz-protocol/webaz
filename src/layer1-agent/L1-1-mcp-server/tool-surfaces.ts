@@ -27,6 +27,7 @@ export const BUYER_SURFACE_TOOLS: ReadonlySet<string> = new Set([
   'webaz_buyer_orders', 'webaz_buyer_action_request', 'webaz_approval_requests',
   'webaz_prepare_case', 'webaz_order_chat', 'webaz_wallet_view',
   'webaz_address', 'webaz_default_address', 'webaz_notifications',
+  'webaz_ui_spike',   // EXPERIMENTAL 渲染探测(spike 结束即移除)
 ])
 
 // 卖家面:上架/履约/账户运营 + 通用商务读(23)
@@ -39,6 +40,7 @@ export const SELLER_SURFACE_TOOLS: ReadonlySet<string> = new Set([
   'webaz_wallet', 'webaz_wallet_view',
   'webaz_mykey', 'webaz_profile', 'webaz_rotate_key', 'webaz_revoke_key',
   'webaz_trial', 'webaz_shareables', 'webaz_share_link',
+  'webaz_ui_spike',   // EXPERIMENTAL 渲染探测
 ])
 
 const VALID_SURFACES = new Set<string>(['buyer', 'seller', 'full'])

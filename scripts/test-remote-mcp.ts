@@ -106,15 +106,15 @@ async function main() {
     const rb = await rpc(base, { jsonrpc: '2.0', id: 22, method: 'tools/list' })
     const bj = await rb.json().catch(() => null) as { result?: { tools?: Array<{ name: string }> } } | null
     const bnames = new Set((bj?.result?.tools || []).map(t => t.name))
-    ok('4c. anonymous DEFAULT = buyer surface (21 tools; core shopping chain present)',
-      bnames.size === 21 && bnames.has('webaz_search') && bnames.has('webaz_quote_order') && bnames.has('webaz_buyer_orders'), String(bnames.size))
+    ok('4c. anonymous DEFAULT = buyer surface (22 tools incl EXPERIMENTAL ui_spike; core shopping chain present)',
+      bnames.size === 22 && bnames.has('webaz_search') && bnames.has('webaz_quote_order') && bnames.has('webaz_buyer_orders'), String(bnames.size))
     ok('4d. buyer surface EXCLUDES seller/arbitration/governance tools (list_product/dispute/claim_verify/contribute/charity/leaderboard)',
       ['webaz_list_product', 'webaz_dispute', 'webaz_claim_verify', 'webaz_contribute', 'webaz_charity', 'webaz_leaderboard'].every(n => !bnames.has(n)))
     const rs = await rpc(base, { jsonrpc: '2.0', id: 23, method: 'tools/list' }, {}, '?surface=seller')
     const sj = await rs.json().catch(() => null) as { result?: { tools?: Array<{ name: string }> } } | null
     const snames = new Set((sj?.result?.tools || []).map(t => t.name))
-    ok('4e. seller surface = 23 (listing/fulfilment/account ops; no arbitration/governance)',
-      snames.size === 23 && snames.has('webaz_list_product') && snames.has('webaz_get_agent_order') && !snames.has('webaz_dispute') && !snames.has('webaz_contribute'), String(snames.size))
+    ok('4e. seller surface = 24 (listing/fulfilment/account ops; no arbitration/governance)',
+      snames.size === 24 && snames.has('webaz_list_product') && snames.has('webaz_get_agent_order') && !snames.has('webaz_dispute') && !snames.has('webaz_contribute'), String(snames.size))
     // surface 只裁可见性,不裁授权:buyer 默认面上按名调用面外工具照常分发(错误也是业务错误而非"未知工具")
     // 确定性业务证明:非法 kind 触发 handleLeaderboard 自己的枚举校验文案 —— 只有真 handler 被分发才会出现,
     //   与上游 /leaderboard 可达性无关,也不可能混淆为 unknown-tool(任何语言)。

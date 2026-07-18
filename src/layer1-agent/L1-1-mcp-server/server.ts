@@ -598,6 +598,16 @@ Default reply is COMPACT (overview / network+payment-rail honesty / live stats /
     },
   },
   {
+    name: 'webaz_ui_spike',
+    description: `EXPERIMENTAL (may be removed): MCP Apps rendering spike. Returns 3 live products as a tiny structured payload; hosts that support MCP Apps / openai outputTemplate render ui://widget/webaz-spike.html as product cards, others show the text fallback. Read-only, public data only, no auth.`,
+    inputSchema: { type: 'object', properties: {} },
+    _meta: {
+      'openai/outputTemplate': 'ui://widget/webaz-spike.html',
+      'openai/toolInvocation/invoking': 'Loading WebAZ product cards…',
+      'openai/toolInvocation/invoked': 'WebAZ product cards ready',
+    },
+  },
+  {
     name: 'webaz_pair',
     description: `Pair this agent with a human's WebAZ account via a Passkey-approved, scoped, short-lived **delegation grant** (RFC-020) — NOT by pasting a permanent api_key. Two steps:
 1. action="start" → returns an approve_url + short user_code. The human opens it at webaz.xyz (logged in) and approves the server-shown consent (safe scopes only).
@@ -2297,6 +2307,33 @@ async function checkMcpVersion(): Promise<Record<string, unknown>> {
 
 const GUIDE_INFO_URI = 'webaz://guide/info'
 
+// UI spike widget:自包含单文件(CSP 内不可外联);读 window.openai.toolOutput(= structuredContent)。
+const UI_SPIKE_WIDGET_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+body{font-family:system-ui,sans-serif;margin:0;padding:12px;background:transparent}
+.grid{display:flex;gap:10px;flex-wrap:wrap}
+.card{border:1px solid #d0d4dc;border-radius:10px;padding:12px 14px;min-width:150px;background:#fff}
+.card b{display:block;margin-bottom:6px;font-size:14px}
+.price{color:#0a7d4f;font-weight:600}
+.badge{font-size:11px;color:#667;margin-top:10px}
+</style></head><body>
+<div id="root">WebAZ UI spike — loading…</div>
+<script>
+(function(){
+  var out = (window.openai && window.openai.toolOutput) || null;
+  var root = document.getElementById('root');
+  if (!out || !out.items || !out.items.length) { root.textContent = 'WebAZ UI spike: no structured payload visible to the widget.'; return; }
+  var grid = document.createElement('div'); grid.className = 'grid';
+  out.items.forEach(function(it){
+    var c = document.createElement('div'); c.className = 'card';
+    var t = document.createElement('b'); t.textContent = it.title || it.id; c.appendChild(t);
+    var p = document.createElement('div'); p.className = 'price'; p.textContent = it.price_display || ''; c.appendChild(p);
+    grid.appendChild(c);
+  });
+  root.textContent = ''; root.appendChild(grid);
+  var b = document.createElement('div'); b.className = 'badge'; b.textContent = '✅ MCP Apps rendering works on this host (webaz_ui_spike)'; root.appendChild(b);
+})();
+</script></body></html>`
+
 async function buildInfoFull() {
   const summary = getManifestSummary()
   const mcp = await checkMcpVersion()
@@ -2790,6 +2827,24 @@ async function handleInfo(args: Record<string, unknown> = {}) {
     ...slim,
     tools_note: 'your tools/list IS the tool catalog — not duplicated here',
     full_guide: { resource: GUIDE_INFO_URI, or_call: 'webaz_info {"full":true}', contains: 'for_end_user / for_contributors / roles / commission_model / economics / search_routing / per-tool digests' },
+  }
+}
+
+async function handleUiSpike(): Promise<Record<string, unknown>> {
+  // UI 渲染 spike:极小载荷(公开在售商品 3 件)。宿主若支持 MCP Apps/outputTemplate,则由
+  // ui://widget/webaz-spike.html 渲染卡片(widget 读 window.openai.toolOutput = structuredContent);
+  // 不支持的宿主看 text 降级。零 auth、零写、零经济语义 —— 纯宿主能力探测。
+  let items: Array<Record<string, unknown>> = []
+  if (isNetworkMode()) {
+    const r = await apiCall('/api/products?mode=agent&limit=3&sort=newest').catch(() => ({} as Record<string, unknown>))
+    items = ((r.products as Array<Record<string, unknown>> | undefined) ?? []).map(p => ({
+      id: String(p.id ?? ''), title: String(p.title ?? ''), price_display: String((p.price as Record<string, unknown> | undefined)?.display ?? ''),
+    }))
+  }
+  return {
+    schema_version: 'webaz.ui_spike.v0',
+    experiment: 'MCP Apps rendering probe — if you see PRODUCT CARDS, this host renders ui:// widgets; if you only see this text, it does not.',
+    items,
   }
 }
 
@@ -5795,6 +5850,12 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         mimeType:    'application/json',
       },
       {
+        uri:         'ui://widget/webaz-spike.html',
+        name:        'WebAZ UI spike widget (experimental)',
+        description: 'Product-card widget for the webaz_ui_spike rendering probe. Self-contained HTML; reads the tool structuredContent via window.openai.toolOutput.',
+        mimeType:    'text/html+skybridge',
+      },
+      {
         uri:         GUIDE_INFO_URI,
         name:        'WebAZ full onboarding guide (long form)',
         description: 'The long-form webaz_info payload: end-user/contributor guides, roles, commission model, economics params, search routing, per-tool digests. Read on demand — the default webaz_info reply is a compact overview.',
@@ -5804,6 +5865,9 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
   }))
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    if (request.params.uri === 'ui://widget/webaz-spike.html') {
+      return { contents: [{ uri: 'ui://widget/webaz-spike.html', mimeType: 'text/html+skybridge', text: UI_SPIKE_WIDGET_HTML }] }
+    }
     if (request.params.uri === GUIDE_INFO_URI) {
       return { contents: [{ uri: GUIDE_INFO_URI, mimeType: 'application/json', text: JSON.stringify(await buildInfoFull(), null, 2) }] }
     }
@@ -5994,6 +6058,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         case 'webaz_pair':          result = await handlePair(args); break
         case 'webaz_register':      result = handleRegister(args); break
         case 'webaz_search':        result = await handleSearch(args); break
+        case 'webaz_ui_spike':      result = await handleUiSpike(); break
         case 'webaz_verify_price':  result = await handleVerifyPrice(args); break
         case 'webaz_list_product':  result = await handleListProduct(args); break
         case 'webaz_upload_product_image': result = await handleUploadProductImage(args); break

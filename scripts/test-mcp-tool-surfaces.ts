@@ -30,9 +30,9 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 const allNames = new Set(Object.keys(TOOL_ANNOTATIONS))
 ok('T-1 every buyer-surface member is a REAL tool (typo → silent shrink forbidden)', [...BUYER_SURFACE_TOOLS].every(n => allNames.has(n)), [...BUYER_SURFACE_TOOLS].filter(n => !allNames.has(n)).join(','))
 ok('T-2 every seller-surface member is a REAL tool', [...SELLER_SURFACE_TOOLS].every(n => allNames.has(n)))
-ok('T-3 buyer surface count lock = 21 (core shopping chain complete)',
-  BUYER_SURFACE_TOOLS.size === 21 && ['webaz_search', 'webaz_discover', 'webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request', 'webaz_buyer_orders', 'webaz_approval_requests', 'webaz_buyer_action_request', 'webaz_order_chat', 'webaz_wallet_view', 'webaz_prepare_case'].every(n => BUYER_SURFACE_TOOLS.has(n)))
-ok('T-4 seller surface count lock = 23 + no arbitration/governance', SELLER_SURFACE_TOOLS.size === 23 && !SELLER_SURFACE_TOOLS.has('webaz_dispute') && !SELLER_SURFACE_TOOLS.has('webaz_contribute'))
+ok('T-3 buyer surface count lock = 22 (core shopping chain + EXPERIMENTAL ui_spike)',
+  BUYER_SURFACE_TOOLS.size === 22 && ['webaz_search', 'webaz_discover', 'webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request', 'webaz_buyer_orders', 'webaz_approval_requests', 'webaz_buyer_action_request', 'webaz_order_chat', 'webaz_wallet_view', 'webaz_prepare_case'].every(n => BUYER_SURFACE_TOOLS.has(n)))
+ok('T-4 seller surface count lock = 24 + no arbitration/governance', SELLER_SURFACE_TOOLS.size === 24 && !SELLER_SURFACE_TOOLS.has('webaz_dispute') && !SELLER_SURFACE_TOOLS.has('webaz_contribute'))
 ok('T-5 resolveSurface precedence: explicit > api_key(full) > default buyer; invalid → fallback',
   resolveSurface('seller', 'api_key') === 'seller' && resolveSurface(undefined, 'api_key') === 'full'
   && resolveSurface(undefined, 'grant') === 'buyer' && resolveSurface(undefined, 'none') === 'buyer' && resolveSurface('hax', 'none') === 'buyer')
@@ -50,10 +50,10 @@ const stdio = await listVia({})
 const full = await listVia({ isolated: true, surface: 'full' })
 const buyer = await listVia({ isolated: true, surface: 'buyer' })
 const seller = await listVia({ isolated: true, surface: 'seller' })
-ok('T-6 stdio (no surface) = full local set (55)', stdio.length === 55, String(stdio.length))
-ok('T-7 remote full = 54 (webaz_pair hidden)', full.length === 54, String(full.length))
-ok('T-8 remote buyer = exact buyer set', buyer.length === 21 && buyer.every(t => BUYER_SURFACE_TOOLS.has(t.name)))
-ok('T-9 remote seller = exact seller set', seller.length === 23 && seller.every(t => SELLER_SURFACE_TOOLS.has(t.name)))
+ok('T-6 stdio (no surface) = full local set (56)', stdio.length === 56, String(stdio.length))
+ok('T-7 remote full = 55 (webaz_pair hidden)', full.length === 55, String(full.length))
+ok('T-8 remote buyer = exact buyer set', buyer.length === 22 && buyer.every(t => BUYER_SURFACE_TOOLS.has(t.name)))
+ok('T-9 remote seller = exact seller set', seller.length === 24 && seller.every(t => SELLER_SURFACE_TOOLS.has(t.name)))
 
 const bytesOf = (t: unknown[]): number => JSON.stringify(t).length
 const fullB = bytesOf(full), buyerB = bytesOf(buyer)
@@ -96,6 +96,18 @@ console.log(`  [tools/list bytes] full=${fullB}B (~${Math.ceil(fullB / 4)} tok) 
     `guideKeys=${Object.keys(guideJ).sort().join(',')} fullKeys=${Object.keys(fullJ).sort().join(',')}`)
   ok('I-7 long form retains EVERY moved section (roles/economics/search_routing/tools_note included)',
     ['available_tools', 'for_end_user', 'for_contributors', 'commission_model', 'roles', 'economics', 'search_routing', 'tools_note'].every(k => k in guideJ), Object.keys(guideJ).sort().join(','))
+  // UI spike(实验):资源在列、widget 自包含读 toolOutput、工具描述符 _meta 带 outputTemplate(raw wire 面)
+  const uiRes = res.resources.find(r => r.uri === 'ui://widget/webaz-spike.html')
+  ok('U-1 ui://widget/webaz-spike.html advertised (text/html+skybridge)', !!uiRes && uiRes.mimeType === 'text/html+skybridge')
+  const widget = await c.readResource({ uri: 'ui://widget/webaz-spike.html' })
+  const html = (widget.contents as Array<{ text: string }>)[0].text
+  ok('U-2 widget is self-contained HTML reading window.openai.toolOutput (with text fallback)',
+    html.includes('window.openai') && html.includes('toolOutput') && !/https?:\/\//.test(html))
+}
+{
+  const L1src = (await import('node:fs')).readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
+  ok('U-3 webaz_ui_spike descriptor carries openai/outputTemplate meta (host rendering hook)',
+    L1src.includes("'openai/outputTemplate': 'ui://widget/webaz-spike.html'"))
 }
 
 if (fail > 0) { console.error(`\n❌ mcp-tool-surfaces FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

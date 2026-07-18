@@ -65,6 +65,8 @@ Registration currently uses invitations for Sybil resistance. A key requires a *
 
 **Surface affects tools/list visibility ONLY — never authorization.** Any known tool called by name still dispatches, and every call-time gate (OAuth scope, api_key, Passkey) is unchanged. **Migration:** clients that relied on the old full anonymous list should add `?surface=full` to their connector URL (existing connectors with a cached manifest keep working — calls by name are unaffected). stdio (`npx -y @seasonkoh/webaz`) always exposes the full local set.
 
+**Experimental:** `webaz_ui_spike` (present on every surface) is a temporary MCP-Apps rendering probe — hosts that support `ui://` widgets render product cards from `ui://widget/webaz-spike.html`; others see a text fallback. It will be removed after the host-capability spike.
+
 `webaz_info` now returns a **compact overview** by default (production was ~35KB); the long-form guides live in MCP resource `webaz://guide/info` or `webaz_info {"full":true}` — content moved, nothing deleted.
 
 ### Structured results — Token-lean model projection (v1)
