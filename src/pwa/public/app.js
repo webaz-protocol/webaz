@@ -1098,7 +1098,7 @@ function shell(content, activeTab, opts) {
     // 卖家：钱包挪顶部 navbar 右侧；底部腾给消息（chats 私信 + 订单聊天 + RFQ 沟通）
     tabs = [
       { id: 'seller',        target: 'seller/dashboard', icon: '🏪', label: t('店铺') },
-      { id: 'seller-marketing', target: 'seller/marketing', icon: '📣', label: t('营销') },
+      { id: 'rfqs',            target: 'rfqs',              icon: '💎', label: t('抢单') },
       { id: 'chats',         icon: '💬', label: t('消息'), chatsBadge: true },
       { id: 'orders',        icon: '📦', label: t('订单') },
       { id: 'me',            icon: '👤', label: t('我的'), badge: true },  // 通知未读数 → 此 tab 红点
@@ -15371,7 +15371,7 @@ async function renderSeller(app) {
     <nav class="seller-subnav" aria-label="${t('卖家后台')}">
       ${subTabBtn('dashboard', '📊 ' + t('看板'))}
       ${subTabBtn('products', '📦 ' + t('商品'))}
-      <button class="seller-subtab" onclick="navigate('#rfqs')">💎 ${t('抢单')}</button>
+      ${subTabBtn('marketing', '📣 ' + t('营销'))}
       ${subTabBtn('skills', '⚡ ' + t('Skill'))}
       ${subTabBtn('settings', '⚙️ ' + t('经营设置'))}
     </nav>
