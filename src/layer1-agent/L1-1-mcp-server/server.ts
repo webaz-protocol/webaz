@@ -39,6 +39,7 @@ import { NETWORK_TOOLS, NETWORK_SELF_AWARE, toolAllowedInNetworkMode, resolveMod
 import { annotateTools } from './tool-annotations.js'  // 标准 MCP annotations(readOnly/destructive/openWorld)——stdio+Remote 共用
 import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-tool securitySchemes(oauth2 仅 grant-reachable / 余 noauth)
 import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
+import { filterToolsBySurface, type ToolSurface } from './tool-surfaces.js'  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
 import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult,
          SCHEMA_PRODUCT_SEARCH, projectProductModel, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1:Model Projection 单一真相源
 import { homedir } from 'node:os'
@@ -584,14 +585,15 @@ function mcpResolveUserRef(raw: string | null | undefined): string | null {
 const TOOLS = [
   {
     name: 'webaz_info',
-    description: `Get WebAZ documentation and usage guide. Call this FIRST when onboarding a new agent.
-Returns: protocol overview, available tools, role responsibilities, operation flows, **network_state (live-network and payment-rail status)**, **commission_model (jurisdiction-graded, explicit attribution, opt-in)**.
-No auth required, no parameters needed.
+    description: `Get WebAZ overview + live network_state. Call FIRST when onboarding. No auth.
+Default reply is COMPACT (overview / network+payment-rail honesty / live stats / quick start). Long-form guides (roles, commission model, economics, per-tool digests) live in MCP resource webaz://guide/info or via {"full":true}.
 
-⚠️ Important: WebAZ is publicly launched and Direct Pay supports real off-platform buyer-to-seller payment. The escrow rail remains simulated while additional payment methods are added. Local live_stats come from this MCP process's SQLite DB; protocol-wide live counts are returned under network_live.`,
+⚠️ WebAZ is publicly launched; Direct Pay = real off-platform buyer→seller payment; escrow rail remains simulated. Local live_stats = this process's SQLite; protocol-wide counts under network_live.`,
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        full: { type: 'boolean', description: 'true = long-form payload (same content as resource webaz://guide/info)' },
+      },
     },
   },
   {
@@ -1821,12 +1823,9 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
   },
   {
     name: 'webaz_get_agent_order',
-    description: `Grant-wired MINIMAL order read for a fulfillment agent (safe scope seller_orders_read_minimal). Reads the seller's OWN orders via a paired delegation grant (webaz_pair — fulfillment_agent bundle), NOT an api_key. Returns a minimal projection only — order_id / status / next_actor / deadline / amount / item_ref / dest_country — with NO buyer address / contact / PII and no execution.
-
-- order_id given → that one order; omitted → the seller's order list.
-- dest_country: coarse ISO-3166 alpha-2 country code of the destination (derived from the structured ship_to_region) for deliverability / accept judgment — NEVER street / unit / postal / sub-national. NULL when the order carries no valid 2-letter region code (e.g. the product declares no sale_regions / shipping rule, so the buyer sent none); to guarantee it, the seller declares sale_regions with ISO alpha-2 codes.
-- No grant paired → GRANT_REQUIRED (run webaz_pair action="start"). Missing scope → structured PERMISSION_REQUIRED (request via webaz_pair action="request" bundle="fulfillment_agent", have the human approve, then retry).
-- To ACT on an order (accept/ship), use webaz_order_action_request (submit → human Passkey approves → server executes).`,
+    description: `Grant-wired MINIMAL order read for a fulfillment agent (seller_orders_read_minimal; paired delegation grant via webaz_pair, NOT api_key). 7-key projection — order_id/status/next_actor/deadline/amount/item_ref/dest_country — NO buyer address/contact/PII, no execution.
+order_id → one order; omitted → the seller's list. dest_country = coarse ISO-3166 alpha-2 ONLY (from structured ship_to_region; NEVER street/unit/postal/sub-national; NULL when no valid 2-letter code — sellers declare sale_regions to guarantee it).
+No grant → GRANT_REQUIRED (webaz_pair action=start). Missing scope → structured PERMISSION_REQUIRED (request bundle fulfillment_agent, human approves, retry). To ACT (accept/ship) use webaz_order_action_request: submit → human Passkey approves → server executes.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1910,13 +1909,10 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
   },
   {
     name: 'webaz_quote_order',
-    description: `Server-authoritative buyer QUOTE (RFC-025 PR-3, safe scope price_quote; OAuth grant, no api_key). Returns integer line items + a time-limited quote_token bound to your account. It is a QUOTE ONLY:
-
-- does NOT create an order, does NOT pay, does NOT lock funds, does NOT decrement or reserve stock (stock_reserved is always false — availability is re-checked at real order creation), and cannot be approved into anything by itself.
-- Uses your SAVED DEFAULT address server-side (address_source="default"); the full address is never returned. No default → DEFAULT_ADDRESS_REQUIRED with a safe PWA next step (never paste an address into chat).
-- All amounts are INTEGER base-units (currency WAZ, exponent 6). Never sum line items yourself — total/payable_total are server-asserted.
-- payment_rail: escrow (WebAZ custodies at order time) | direct_p2p (you pay the seller directly; WebAZ holds no funds, no authoritative FX, final eligibility gates re-run at order creation). Ineligible rails FAIL structurally — never auto-switched.
-- quote_token expires (10 min) and is bound to you + product + quantity + address + rail + amounts; tampering/other accounts/expiry all fail. Next step: webaz_order_draft (action=create, quote_token) turns this quote into an order draft — one quote, one draft. A real order still requires human Passkey approval (webaz_submit_order_request).`,
+    description: `Server-authoritative buyer QUOTE (safe scope price_quote; OAuth grant). Integer line items + a time-limited quote_token bound to your account. QUOTE ONLY: creates no order, pays nothing, locks no funds, reserves no stock (stock_reserved always false; availability re-checked at real order creation), and cannot be approved into anything by itself.
+Uses your SAVED default address server-side; the full address is never returned. No default → DEFAULT_ADDRESS_REQUIRED with a safe PWA next step (never paste an address into chat).
+Amounts are INTEGER base-units (WAZ, exponent 6) — never sum lines yourself, total/payable_total are server-asserted. payment_rail: escrow (WebAZ custodies at order time) | direct_p2p (you pay the seller DIRECTLY; WebAZ holds no funds, no authoritative FX). Ineligible rails FAIL structurally — never auto-switched.
+quote_token: 10-min, single-use, bound to you+product+quantity+address+rail+amounts (tampering/other accounts/expiry all fail). Next: webaz_order_draft(quote_token) → webaz_submit_order_request → human Passkey approval creates the real order.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1935,13 +1931,10 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
   },
   {
     name: 'webaz_order_draft',
-    description: `Buyer ORDER DRAFT (RFC-025 PR-4, safe scope draft_order; OAuth grant, no api_key). Converts ONE valid quote_token (from webaz_quote_order) into a frozen, immutable draft snapshot — one quote, one draft (single-use, atomic).
-
-- A draft is a SNAPSHOT ONLY: no order exists, nothing is charged, no funds locked, no stock held. Price/stock/eligibility are re-validated at human approval; drift there hard-fails back to a fresh quote — terms are NEVER silently changed.
-- action="create" (quote_token required, optional idempotency_key) | "cancel" (draft_id; terminal, idempotent-safe) | "get" (draft_id) | "list".
-- Drafts expire in 24h: get/list show status=expired (derived — no hidden writes), cancel refuses, and the PR-5a submitter will hard-reject them.
-- Zero PII: destination stays a region tag + summary; amounts are integer WAZ units copied verbatim from the quote (no recomputation).
-- Next step: webaz_submit_order_request (draft_id) puts the draft into the human's Passkey approval queue — approval re-validates against current state and creates the REAL order server-side. The agent never executes; a real order always requires human Passkey approval.`,
+    description: `Buyer ORDER DRAFT (safe scope draft_order; OAuth grant). Converts ONE valid quote_token into a frozen immutable snapshot — one quote, one draft (single-use, atomic).
+A draft is a SNAPSHOT ONLY: no order, nothing charged, no funds locked, no stock held. Everything re-validates at human approval; drift hard-fails back to a fresh quote — terms are NEVER silently changed.
+action = create (quote_token, optional idempotency_key) | cancel (draft_id; terminal) | get (draft_id) | list. Drafts expire in 24h (derived status, no hidden writes; the submitter hard-rejects expired). Zero PII: destination stays a region tag + summary; amounts copied verbatim from the quote.
+Next: webaz_submit_order_request(draft_id) → the human's Passkey approval re-validates and creates the REAL order server-side. The agent never executes.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1971,12 +1964,9 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
   },
   {
     name: 'webaz_prepare_case',
-    description: `Assemble an after-sales CASE DRAFT for one of YOUR orders (RFC-025 PR-6, safe scope buyer_case_prepare; OAuth grant, no api_key). READ-ONLY preparation — it submits nothing and writes no domain state (like every grant-authenticated call, an authorization audit log entry is recorded).
-
-- Returns server-side facts: the order's status timeline (structural fields only), the terms FROZEN at order time (orders keep a snapshot — seller edits after your order do not apply), the CURRENT listing anchors (title + content hashes, explicitly labeled as current, possibly edited since), evidence refs (ids + normalized types only), and any existing dispute.
-- Routing guide included: delivery problems (not received / lost / damaged) → delivery dispute (48h respond / 120h arbitrate); broken ORDER terms → order claim verification (10 WAZ stake, 48h deadline, 3 verifiers); a lying LISTING (counterfeit / spec / origin) → product claim verification (5 WAZ stake, 72h deadline, 3 verifiers).
-- No buyer personal data: addresses, free-text notes, evidence descriptions and seller free-text terms are NOT returned — the human views them on the order page. The only seller text returned is the public listing title.
-- SUBMITTING a dispute/return/escalation, confirming receipt, accepting a refund, or closing a case are HUMAN actions on the order page at webaz.xyz (direct_p2p risk actions additionally require a Passkey). This tool only helps organize the facts first.`,
+    description: `Assemble an after-sales CASE DRAFT for one of YOUR orders (safe scope buyer_case_prepare; OAuth grant). READ-ONLY — submits nothing, writes no domain state.
+Returns server facts: structural status timeline; terms FROZEN at order time (later seller edits do not apply); CURRENT listing anchors (labeled, possibly edited since); evidence refs (ids + normalized types); any existing dispute. Routing: delivery problems → delivery dispute (48h/120h); broken ORDER terms → order claim (10 WAZ stake); lying LISTING → product claim (5 WAZ stake).
+No buyer PII / free text — the human sees those on the order page. Submitting disputes/returns/escalations, confirming receipt, refunds and closures are HUMAN actions at webaz.xyz (direct_p2p risk actions need a Passkey); this tool only organizes facts first.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -2039,12 +2029,11 @@ Coordinates + records only — NO merge/reward; acceptance (done) = human mainta
   },
   {
     name: 'webaz_order_chat',
-    description: `Chat with the counterparty INSIDE one of YOUR orders (RFC-026 PR-4, safe scopes order_chat_read / order_chat_send under the chat:context OAuth scope). CONTEXT-BOUND: order participants only — there is NO free-form DM surface; you cannot message anyone outside your own order.
-
-- action="list" (order_id) → the order conversation: sender is 'you'/'counterparty' (no raw ids), bodies verbatim, anti-scam flags preserved, agent-sent messages marked (sent_by_agent + agent_label).
-- action="send" (order_id, body ≤2000 chars, optional idempotency_key) → sends through the PRODUCTION chat path: anti-scam detection, per-minute rate limits and block status all apply unchanged; the message is attributed to the human account and marked as agent-sent with a content hash (full audit chain via the grant log).
-- Idempotency: the same idempotency_key returns the original message (same-body only; a different body is an explicit conflict). Exactly-once holds while the reservation resolves; ONLY if the service crashes at the exact send/claim boundary can a retry >10 minutes later resend — before any long-delayed retry, verify with action=list.
-- Chat moves no funds and changes no order state. Agent sends share the human account chat rate budget (60/min). Never paste addresses, payment credentials or codes into chat.`,
+    description: `Chat with the counterparty INSIDE one of YOUR orders (chat:context OAuth scope). CONTEXT-BOUND: order participants only — no free-form DM surface, nobody outside your order.
+list (order_id) → conversation: sender = you/counterparty (no raw ids), bodies verbatim, anti-scam flags kept, agent messages marked (sent_by_agent + agent_label).
+send (order_id, body ≤2000, optional idempotency_key) → PRODUCTION chat path: anti-scam, block status and the shared human rate budget (60/min) unchanged; attributed to the human account, marked agent-sent with a content hash (grant audit log).
+Idempotency: same key → the original message (same body only; different body = explicit conflict). At-least-once boundary: only a crash at the send/claim edge lets a >10min retry resend — verify with list before long-delayed retries.
+Chat moves no funds, changes no order state. Never paste addresses, payment credentials or codes into chat.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -2086,8 +2075,10 @@ const LOCAL_ONLY_TOOLS = new Set(['webaz_pair'])
 // The tools/list surface for a given transport: the remote (isolated) endpoint drops LOCAL_ONLY_TOOLS;
 // stdio (isolated=false) exposes the full set. Keyed off opts.isolated, NOT isIsolated() — the ListTools
 // handler runs OUTSIDE the per-call isolationALS scope (that wraps CallTool only).
-function toolsForTransport(isolated: boolean): typeof TOOLS_ANNOTATED {
-  return isolated ? TOOLS_ANNOTATED.filter(t => !LOCAL_ONLY_TOOLS.has(t.name)) : TOOLS_ANNOTATED
+function toolsForTransport(isolated: boolean, surface: ToolSurface = 'full'): typeof TOOLS_ANNOTATED {
+  const base = isolated ? TOOLS_ANNOTATED.filter(t => !LOCAL_ONLY_TOOLS.has(t.name)) : TOOLS_ANNOTATED
+  // MCP Token PR-3:surface 只裁 tools/list 可见性(定义 token/选择难度);CallTool 分发与授权不变。
+  return filterToolsBySurface(base, surface)
 }
 
 // ─── 工具处理函数 ─────────────────────────────────────────────
@@ -2279,7 +2270,9 @@ async function checkMcpVersion(): Promise<Record<string, unknown>> {
   } catch (e) { return { mcp_version: current, update_check: `unavailable (${(e as Error).message})` } }
 }
 
-async function handleInfo() {
+const GUIDE_INFO_URI = 'webaz://guide/info'
+
+async function buildInfoFull() {
   const summary = getManifestSummary()
   const mcp = await checkMcpVersion()
   // RFC-003 Batch 0:NETWORK 模式下,best-effort 拉 webaz.xyz 的 live 协议状态,
@@ -2756,6 +2749,22 @@ async function handleSearch(args: Record<string, unknown>) {
       const parsed = parseProductForAgent(p)
       return projectProductModel({ ...p, estimated_days: parsed.estimated_days, agent_summary: parsed.agent_summary, sales_count: Number(p.completion_count) || 0 })
     }),
+  }
+}
+
+
+// MCP Token PR-3:webaz_info 默认瘦身(生产实测旧响应 ~35KB ≈9-15k token,且被描述引导为 onboarding
+// 必调)。available_tools 与客户端手里的 tools/list 完全冗余 → 移除;长篇指南(角色/佣金/路由/双端引导)
+// 外移到 MCP Resource(webaz://guide/info)与 {full:true} 兜底 —— 内容零删除,只改默认可见面。
+async function handleInfo(args: Record<string, unknown> = {}) {
+  const full = await buildInfoFull() as Record<string, unknown>
+  if (args.full === true) return full
+  const { available_tools: _at, search_routing: _sr, for_end_user: _fe, for_contributors: _fc,
+          commission_model: _cm, roles: _ro, economics: _ec, tools_note: _tn, ...slim } = full
+  return {
+    ...slim,
+    tools_note: 'your tools/list IS the tool catalog — not duplicated here',
+    full_guide: { resource: GUIDE_INFO_URI, or_call: 'webaz_info {"full":true}', contains: 'for_end_user / for_contributors / roles / commission_model / economics / search_routing / per-tool digests' },
   }
 }
 
@@ -5742,14 +5751,14 @@ function settleOrder(db: Database.Database, orderId: string) {
 //   (get_agent_order / order_action_request / list_product 草稿),使委托在远程可用 —— 但隔离不变量不破:
 //   resolveGrantCredential 在隔离下【只】认这个 per-request 注入值,绝不读宿主存储的 grant/pairing 文件。
 //   grant token 不当 defaultApiKey(它不是 human api_key;通用工具照旧匿名 network_readonly)。
-export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolean; grantBearer?: string } = {}) {
+export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolean; grantBearer?: string; surface?: ToolSurface } = {}) {
   const server = new Server(
     // name 是客户端配置引用的 server 标识(勿改);version 走单一来源(旧硬编码 '0.1.0' 已漂移)。
     { name: 'dcp-protocol', version: SOFTWARE_VERSION },
     { capabilities: { tools: {}, resources: {}, prompts: {} } }
   )
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: toolsForTransport(opts.isolated === true) }))
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: toolsForTransport(opts.isolated === true, opts.surface ?? 'full') }))
 
   // ── MCP Resources：协议 Manifest ─────────────────────────────
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
@@ -5760,10 +5769,19 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         description: 'Full WebAZ machine-readable spec. Covers: state machine, economic model, roles, dispute system, Skill market, reputation, agent operating guide. Reading this is enough for an AI agent to participate in the protocol — no extra docs needed.',
         mimeType:    'application/json',
       },
+      {
+        uri:         GUIDE_INFO_URI,
+        name:        'WebAZ full onboarding guide (long form)',
+        description: 'The long-form webaz_info payload: end-user/contributor guides, roles, commission model, economics params, search routing, per-tool digests. Read on demand — the default webaz_info reply is a compact overview.',
+        mimeType:    'application/json',
+      },
     ],
   }))
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    if (request.params.uri === GUIDE_INFO_URI) {
+      return { contents: [{ uri: GUIDE_INFO_URI, mimeType: 'application/json', text: JSON.stringify(await buildInfoFull(), null, 2) }] }
+    }
     if (request.params.uri !== MANIFEST_URI) {
       throw new Error(`未知资源：${request.params.uri}`)
     }
@@ -5947,7 +5965,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         handled = true
       }
       if (!handled) switch (name) {
-        case 'webaz_info':          result = await handleInfo(); break
+        case 'webaz_info':          result = await handleInfo(args); break
         case 'webaz_pair':          result = await handlePair(args); break
         case 'webaz_register':      result = handleRegister(args); break
         case 'webaz_search':        result = await handleSearch(args); break
