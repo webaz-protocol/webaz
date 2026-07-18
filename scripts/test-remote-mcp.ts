@@ -116,14 +116,15 @@ async function main() {
     ok('4e. seller surface = 23 (listing/fulfilment/account ops; no arbitration/governance)',
       snames.size === 23 && snames.has('webaz_list_product') && snames.has('webaz_get_agent_order') && !snames.has('webaz_dispute') && !snames.has('webaz_contribute'), String(snames.size))
     // surface 只裁可见性,不裁授权:buyer 默认面上按名调用面外工具照常分发(错误也是业务错误而非"未知工具")
-    const ct = await rpc(base, { jsonrpc: '2.0', id: 24, method: 'tools/call', params: { name: 'webaz_leaderboard', arguments: {} } })
+    // 确定性业务证明:非法 kind 触发 handleLeaderboard 自己的枚举校验文案 —— 只有真 handler 被分发才会出现,
+    //   与上游 /leaderboard 可达性无关,也不可能混淆为 unknown-tool(任何语言)。
+    const ct = await rpc(base, { jsonrpc: '2.0', id: 24, method: 'tools/call', params: { name: 'webaz_leaderboard', arguments: { kind: 'bogus_kind' } } })
     const cj = await ct.json().catch(() => null) as { result?: { content?: Array<{ text?: string }> }; error?: unknown } | null
     const ctext = (cj?.result?.content || []).map(c => c.text || '').join('')
     let cparsed: Record<string, unknown> | null = null
     try { cparsed = JSON.parse(ctext) } catch { cparsed = null }
-    ok('4f. call-through: out-of-surface tool returns its REAL business payload (200, no JSON-RPC error, leaderboard shape, not unknown-tool)',
-      ct.status === 200 && !cj?.error && !!cparsed && !/未知工具|Unknown tool/i.test(ctext)
-      && ('_mode' in (cparsed ?? {})) && !('error' in (cparsed ?? {})) , ctext.slice(0, 160))
+    ok('4f. call-through: out-of-surface tool reaches its REAL handler (leaderboard kind-enum validation fires; 200, no JSON-RPC error, not unknown-tool)',
+      ct.status === 200 && !cj?.error && !!cparsed && /kind 必须是/.test(String(cparsed?.error ?? '')) && !/未知工具|Unknown tool/i.test(String(cparsed?.error ?? '').replace(/kind 必须是.*/, '')), ctext.slice(0, 160))
   }
   {
     const g = await fetch(`${base}/mcp`)

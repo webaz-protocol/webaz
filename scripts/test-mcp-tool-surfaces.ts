@@ -95,7 +95,7 @@ console.log(`  [tools/list bytes] full=${fullB}B (~${Math.ceil(fullB / 4)} tok) 
     JSON.stringify(normalize(guideJ)) === JSON.stringify(normalize(fullJ)),
     `guideKeys=${Object.keys(guideJ).sort().join(',')} fullKeys=${Object.keys(fullJ).sort().join(',')}`)
   ok('I-7 long form retains EVERY moved section (roles/economics/search_routing/tools_note included)',
-    ['available_tools', 'for_end_user', 'for_contributors', 'commission_model', 'roles', 'search_routing', 'tools_note'].every(k => k in guideJ), Object.keys(guideJ).sort().join(','))
+    ['available_tools', 'for_end_user', 'for_contributors', 'commission_model', 'roles', 'economics', 'search_routing', 'tools_note'].every(k => k in guideJ), Object.keys(guideJ).sort().join(','))
 }
 
 if (fail > 0) { console.error(`\n❌ mcp-tool-surfaces FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
