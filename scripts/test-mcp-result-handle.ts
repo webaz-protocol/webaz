@@ -113,6 +113,8 @@ try {
   const perItem = Math.round(d1j.length / dp.length)
   ok('H-2d detail budget ≤1600B/item', perItem <= 1600, `perItem=${perItem}`)
   ok('H-2e detail summary text carries the ids (text-only clients keep working)', ids.slice(0, 2).every(id => String((d1r.content as Array<{ text: string }>)[0].text).includes(id)))
+  ok('H-2f detail envelope carries the fx display table (stale-flagged, display-only note)',
+    !!(d1.fx as Record<string, unknown>)?.rates && typeof (d1.fx as Record<string, unknown>)?.stale === 'boolean' && /display-only/.test(String((d1.fx as Record<string, unknown>)?.note)), JSON.stringify(d1.fx ?? null))
 
   // H-3 越集 id 拒绝
   const notInSet = ['prd_h1', 'prd_h2', 'prd_h3', 'prd_h4', 'prd_h5', 'prd_h6'].find(x => !ids.includes(x))!

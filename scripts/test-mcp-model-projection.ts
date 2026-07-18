@@ -57,6 +57,7 @@ if (process.env.MODEL_PROJ_PHASE === 'sandbox') {
     && Array.isArray(r.products) && (r.products as unknown[]).length === 5   // 默认 5 件(种了 6)
     && !FORBIDDEN.test(j)
     && !/"description"/.test(j)                                              // 完整描述不进模型
+    && !!(r.fx as Record<string, unknown> | undefined)?.rates && typeof (r.fx as Record<string, unknown>)?.stale === 'boolean'   // sandbox 路径同样带 stale 标注的 fx
   if (!okAll) { console.error('sandbox local-path projection FAILED: ' + j.slice(0, 400)); process.exit(1) }
   console.log('sandbox-ok bytes=' + j.length)
   process.exit(0)
@@ -199,7 +200,8 @@ try {
   ok('S-14 product price displays USDC (never WAZ) + envelope fx table with display-only note',
     (p0.price as Record<string, unknown>).currency === 'USDC' && String((p0.price as Record<string, unknown>).display).endsWith(' USDC')
     && !scJson.includes(' WAZ') && Number(((sc?.fx as Record<string, unknown>)?.rates as Record<string, unknown>)?.SGD) > 0
-    && /display-only/.test(String((sc?.fx as Record<string, unknown>)?.note)), scJson.slice(0, 200))
+    && /display-only/.test(String((sc?.fx as Record<string, unknown>)?.note))
+    && typeof (sc?.fx as Record<string, unknown>)?.stale === 'boolean', scJson.slice(0, 200))
 
   // 真翻页:page2 与 page1 不重叠(newest 排序走 keyset)
   const p1 = await client.callTool({ name: 'webaz_search', arguments: { sort: 'newest', limit: 5 } }) as Record<string, unknown>
@@ -226,6 +228,9 @@ try {
   const zsc = zr.structuredContent as Record<string, unknown>
   const ztext = (zr.content as Array<{ text: string }>)[0]?.text ?? ''
   ok('S-13 strict 0-hit keeps recovery object in structuredContent + short summary', (zsc.found === 0) && !!zsc.recovery && ztext.length <= 300, JSON.stringify(zsc).slice(0, 200))
+  const zsample = (((zsc.recovery ?? {}) as Record<string, unknown>).catalog_sample as Array<Record<string, unknown>> | undefined) ?? []
+  ok('S-13b zero-hit catalog sample prices display USDC (no WAZ on any product surface)',
+    zsample.length > 0 && zsample.every(x => String(x.price_display ?? '').endsWith(' USDC')), JSON.stringify(zsample).slice(0, 150))
 
   // ── [orders] summary + 分页 + 7 键 + 零 PII(handler 级 + wire 级)─────────────────────────
   const r1 = await H.handleBuyerOrders({})

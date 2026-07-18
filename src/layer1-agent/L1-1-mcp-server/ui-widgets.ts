@@ -71,7 +71,7 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
     if(rec.catalog_sample&&rec.catalog_sample.length){
       root.appendChild(el('div','note','以下是目录样本(非搜索结果):'))
       var g0=el('div','grid')
-      rec.catalog_sample.forEach(function(p){ var c=el('div','card'); c.appendChild(el('b',null,p.title||p.id)); c.appendChild(el('div','price',(p.price!=null?p.price+' WAZ':''))); g0.appendChild(c) })
+      rec.catalog_sample.forEach(function(p){ var c=el('div','card'); c.appendChild(el('b',null,p.title||p.id)); c.appendChild(el('div','price',p.price_display||(p.price!=null?p.price+' USDC':''))); g0.appendChild(c) })
       root.appendChild(g0)
     }
     return
@@ -108,7 +108,7 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
         var usd=p.price.amount_minor/1000000, approx=[]
         if(fx.SGD) approx.push('S$'+(usd*fx.SGD).toFixed(2))
         if(fx.CNY) approx.push('¥'+(usd*fx.CNY).toFixed(2))
-        if(approx.length) c.appendChild(el('div','meta','≈ '+approx.join(' · ')))
+        if(approx.length) c.appendChild(el('div','meta','≈ '+approx.join(' · ')+(out.fx.stale?'(近似汇率)':'')))
       }
       var chips=el('div','chips')
       if(p.stock_status&&p.stock_status!=='in_stock') chips.appendChild(el('span','chip warn',p.stock_status==='low_stock'?'库存少':'缺货'))
@@ -157,7 +157,7 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
       })
       cmp.appendChild(t); root.appendChild(cmp)
     }
-    root.appendChild(el('div','note','报价不会扣款 · 草稿不锁库存 · 正式下单需你在 webaz.xyz 用 Passkey 批准'))
+    root.appendChild(el('div','note','报价不会扣款 · 草稿不锁库存 · 正式下单需你在 webaz.xyz 用 Passkey 批准 · ≈ 法币换算仅显示参考,非结算'))
   }
   render()
 })();

@@ -388,7 +388,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     }
     // USDC 显示换算表(与 /api/fx/rates 同源;fail-soft 省略)—— 模型/组件据此给出"≈ 本地法币"对照
     let fx: Record<string, unknown> | null = null
-    try { const snap = await getUsdRates(); fx = { base: snap.base, rates: snap.rates, as_of: snap.as_of, note: 'display-only conversion — never a settlement path' } } catch { fx = null }
+    try { const snap = await getUsdRates(); fx = { base: snap.base, rates: snap.rates, as_of: snap.as_of, stale: snap.stale, note: 'display-only conversion — never a settlement path' } } catch { fx = null }
     res.json({
       schema_version: SCHEMA_PRODUCT_SEARCH,
       mode, sort, limit: lim,
@@ -466,7 +466,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       selected_ids as string[])
     const liveIds = new Set(liveRows.map(r => String(r.id)))
     let fxD: Record<string, unknown> | null = null
-    try { const snap = await getUsdRates(); fxD = { base: snap.base, rates: snap.rates, as_of: snap.as_of, note: 'display-only conversion — never a settlement path' } } catch { fxD = null }
+    try { const snap = await getUsdRates(); fxD = { base: snap.base, rates: snap.rates, as_of: snap.as_of, stale: snap.stale, note: 'display-only conversion — never a settlement path' } } catch { fxD = null }
     res.json({
       schema_version: SCHEMA_PRODUCT_DETAIL,
       count: liveRows.length,

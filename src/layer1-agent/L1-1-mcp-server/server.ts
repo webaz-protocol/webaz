@@ -2776,7 +2776,7 @@ async function handleSearch(args: Record<string, unknown>) {
   // MCP Token PR-1:本地(sandbox)路径与网络路径同源投影 —— 排序仍按上方 trending 公式,
   //   但 score/score_breakdown/metrics 属服务端内部,不再进入模型上下文。
   let fxL: Record<string, unknown> | null = null
-  try { const snap = await getUsdRates(); fxL = { base: snap.base, rates: snap.rates, as_of: snap.as_of, note: 'display-only conversion — never a settlement path' } } catch { fxL = null }
+  try { const snap = await getUsdRates(); fxL = { base: snap.base, rates: snap.rates, as_of: snap.as_of, stale: snap.stale, note: 'display-only conversion — never a settlement path' } } catch { fxL = null }
   return {
     schema_version: SCHEMA_PRODUCT_SEARCH,
     found: sorted.length,
