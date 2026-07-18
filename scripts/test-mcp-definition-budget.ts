@@ -35,7 +35,9 @@ const listVia = async (opts: Record<string, unknown>): Promise<Array<{ name: str
 // ── 面级 UTF-8 字节【有界余量预算】(诚实定性:任何仓内常量都可被 PR 编辑,"只降不升"最终靠
 //   review 纪律,与 complexity-ratchet 同哲学)。守卫职责:①膨胀 > ceiling 必红;②ceiling 距实测
 //   余量 ≤9% —— 静默抬顶(不真瘦身)会立刻撞余量检查,改动必须显式且可 review。
-const CEILINGS = { buyer: 41_000, seller: 42_500, full: 106_000 }
+// PR-5 显式抬顶(可 review 的正当增长):draft/submit 两个 outputSchema + QuoteAndApproval
+// outputTemplate 元数据 ≈ +2.5KB(buyer 41,764 / full 106,199 实测)。余量仍 ≤9%。
+const CEILINGS = { buyer: 44_000, seller: 42_500, full: 110_000 }
 const utf8 = (v: unknown): number => Buffer.byteLength(JSON.stringify(v), 'utf8')
 for (const surface of ['buyer', 'seller', 'full'] as const) {
   const tools = await listVia({ isolated: true, surface })

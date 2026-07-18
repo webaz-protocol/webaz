@@ -40,9 +40,10 @@ import { annotateTools } from './tool-annotations.js'  // 标准 MCP annotations
 import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-tool securitySchemes(oauth2 仅 grant-reachable / 余 noauth)
 import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
 import { filterToolsBySurface, type ToolSurface } from './tool-surfaces.js'
-import { PRODUCT_RESULTS_WIDGET_HTML } from './ui-widgets.js'  // MCP UI PR-4:ProductResults 组件
-import { getUsdRates } from '../../fx-rates.js'  // USDC 显示换算(display-only)  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
-import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult,
+import { PRODUCT_RESULTS_WIDGET_HTML, QUOTE_APPROVAL_WIDGET_HTML } from './ui-widgets.js'  // MCP UI PR-4:ProductResults 组件
+import { getUsdRates, regionToCurrency } from '../../fx-rates.js'  // USDC 显示换算(display-only)  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
+import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult, summarizeDraftResult, summarizeSubmitResult,
+         projectQuoteConsumer, projectDraftConsumer, projectSubmitConsumer,
          SCHEMA_PRODUCT_SEARCH, projectProductModel, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1:Model Projection 单一真相源
 import { homedir } from 'node:os'
 import { join as pathJoin } from 'node:path'
@@ -1938,6 +1939,11 @@ quote_token: 10-min, single-use, bound to you+product+quantity+address+rail+amou
       },
       required: ['product_id'],
     },
+    _meta: {
+      'openai/outputTemplate': 'ui://widget/webaz-quote-approval.html',
+      'openai/toolInvocation/invoking': 'Preparing WebAZ order flow…',
+      'openai/toolInvocation/invoked': 'WebAZ order flow ready',
+    },
   },
   {
     name: 'webaz_order_draft',
@@ -1955,6 +1961,11 @@ Next: webaz_submit_order_request(draft_id) → the human's Passkey approval re-v
       },
       required: ['action'],
     },
+    _meta: {
+      'openai/outputTemplate': 'ui://widget/webaz-quote-approval.html',
+      'openai/toolInvocation/invoking': 'Preparing WebAZ order flow…',
+      'openai/toolInvocation/invoked': 'WebAZ order flow ready',
+    },
   },
   {
     name: 'webaz_submit_order_request',
@@ -1970,6 +1981,11 @@ Next: webaz_submit_order_request(draft_id) → the human's Passkey approval re-v
         draft_id: { type: 'string', description: 'The odr_ draft id to submit for approval' },
       },
       required: ['draft_id'],
+    },
+    _meta: {
+      'openai/outputTemplate': 'ui://widget/webaz-quote-approval.html',
+      'openai/toolInvocation/invoking': 'Preparing WebAZ order flow…',
+      'openai/toolInvocation/invoked': 'WebAZ order flow ready',
     },
   },
   {
@@ -2069,12 +2085,26 @@ Chat moves no funds, changes no order state. Never paste addresses, payment cred
 // single ListTools handler returns this SAME surface for stdio AND Remote MCP → zero drift.
 const TOOLS_ANNOTATED = withSecuritySchemes(withOutputSchemas(annotateTools(TOOLS)))
 
+/** MCP UI PR-5(可测导出):消费者投影边界。投影器抛错(含敌意 getter)→ 结构化 PROJECTION_FAILED
+ * 降级(经 buildToolEnvelope 错误路径出 isError + 完整错误 JSON),原始协议对象永不外泄。 */
+export async function projectForTool(name: string, result: unknown): Promise<unknown> {
+  const entry = STRUCTURED_RESULT_TOOLS[name]
+  if (!entry?.project || !result || typeof result !== 'object' || Array.isArray(result) || ('error' in (result as Record<string, unknown>))) return result
+  try { return await entry.project(result as Record<string, unknown>) } catch (e) {
+    let msg = 'unserializable failure'
+    try { msg = e instanceof Error ? e.message : String(e) } catch { /* 保底 */ }
+    return { error: `consumer projection failed: ${msg}`, error_code: 'PROJECTION_FAILED', retryable: true,
+      hint: 'the protocol operation itself may have succeeded — verify with the corresponding read tool (webaz_order_draft get / webaz_approval_requests) before repeating any submit' }
+  }
+}
+
 /** MCP Token PR-7:信封构造(可测导出)。任何投影/摘要/序列化失败 —— 含 throw null/undefined 等
  * 非 Error 值(getter/toJSON 可抛任意值)—— 都产出结构化 isError 信封,绝不向上抛、绝不吞遥测。 */
 export function buildToolEnvelope(name: string, result: unknown): { content: Array<{ type: 'text'; text: string }>; structuredContent?: Record<string, unknown>; isError?: true } {
-  const summarize = STRUCTURED_RESULT_TOOLS[name]
+  const entry = STRUCTURED_RESULT_TOOLS[name]
+  const summarize = entry?.summarize
   try {
-    if (summarize && result && typeof result === 'object' && !Array.isArray(result)) {
+    if (entry && result && typeof result === 'object' && !Array.isArray(result)) {
       // buyer_orders 豁免 null 剥离:RFC-025 的 7 键最小投影契约含【有语义的 null 占位】(deadline/next_actor
       // 可为 null),wire 上也必须保持恰 7 键。search/quote 无 null 契约,照剥。
       const clean = (name === 'webaz_buyer_orders' ? result : stripEmpty(result)) as Record<string, unknown>
@@ -2094,10 +2124,17 @@ export function buildToolEnvelope(name: string, result: unknown): { content: Arr
 }
 
 // MCP Token PR-1:声明了 outputSchema 的三工具 → structuredContent + 短摘要 content(见 CallTool 包装尾部)。
-const STRUCTURED_RESULT_TOOLS: Record<string, (r: Record<string, unknown>) => string> = {
-  webaz_search: summarizeSearchResult,
-  webaz_buyer_orders: summarizeBuyerOrders,
-  webaz_quote_order: summarizeQuoteResult,
+// MCP UI PR-5 架构:handler 保持【协议契约全量响应】(存量套件与直连消费者不破);消费者投影
+// (USDC/法币估算/诚信文案)只发生在 wrapper 的 structuredContent 层 —— 模型/组件看到的才是投影。
+const STRUCTURED_RESULT_TOOLS: Record<string, { summarize: (r: Record<string, unknown>) => string; project?: (r: Record<string, unknown>) => Promise<Record<string, unknown>> }> = {
+  webaz_search: { summarize: summarizeSearchResult },
+  webaz_buyer_orders: { summarize: summarizeBuyerOrders },
+  webaz_quote_order: { summarize: summarizeQuoteResult, project: async r => r.quote_id ? projectQuoteConsumer(r, await fxView(), regionToCurrency) : r },
+  webaz_order_draft: { summarize: summarizeDraftResult, project: async r => {
+    if (Array.isArray(r.drafts)) { const fx = await fxView(); return { schema_version: 'webaz.order_draft.model.v1', count: r.count, drafts: (r.drafts as Array<Record<string, unknown>>).map(d => projectDraftConsumer(d, fx, regionToCurrency)) } }
+    return r.draft_id ? projectDraftConsumer(r, await fxView(), regionToCurrency) : r
+  } },
+  webaz_submit_order_request: { summarize: summarizeSubmitResult, project: async r => r.request_id ? projectSubmitConsumer(r) : r },
 }
 
 // Tools that only make sense on a LOCAL (stdio) transport and must NOT be advertised on the remote
@@ -2925,6 +2962,11 @@ export async function handleDiscover(args: Record<string, unknown>): Promise<Rec
   const r = await apiCall('/api/agent/discover', { method: 'POST', apiKey: cred.token, body })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_discover. Re-connect via OAuth so the grant carries the read scope, then retry.' }
   return r
+}
+
+// MCP UI PR-5:消费者投影用的 fx 视图(fail-soft null;display-only)
+async function fxView(): Promise<{ rates?: Record<string, number>; as_of?: string; stale?: boolean } | null> {
+  try { const s = await getUsdRates(); return { rates: s.rates, as_of: s.as_of, stale: s.stale } } catch { return null }
 }
 
 export async function handleQuoteOrder(args: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -5822,6 +5864,13 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         },
       },
       {
+        uri:         'ui://widget/webaz-quote-approval.html',
+        name:        'WebAZ QuoteAndApproval widget',
+        description: 'MCP App component rendering quote → draft → Passkey-approval states (webaz.order_quote/order_draft/order_approval .model.v1) with USDC pricing, fiat estimates, rail-honesty notes and duplicate-purchase warnings. Economic execution stays behind the webaz.xyz Passkey.',
+        mimeType:    'text/html+skybridge',
+        _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' },
+      },
+      {
         uri:         GUIDE_INFO_URI,
         name:        'WebAZ full onboarding guide (long form)',
         description: 'The long-form webaz_info payload: end-user/contributor guides, roles, commission model, economics params, search routing, per-tool digests. Read on demand — the default webaz_info reply is a compact overview.',
@@ -5831,6 +5880,10 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
   }))
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    if (request.params.uri === 'ui://widget/webaz-quote-approval.html') {
+      return { contents: [{ uri: 'ui://widget/webaz-quote-approval.html', mimeType: 'text/html+skybridge', text: QUOTE_APPROVAL_WIDGET_HTML,
+        _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' } }] }
+    }
     if (request.params.uri === 'ui://widget/webaz-products.html') {
       return { contents: [{ uri: 'ui://widget/webaz-products.html', mimeType: 'text/html+skybridge', text: PRODUCT_RESULTS_WIDGET_HTML,
         _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' } }] }
@@ -6102,7 +6155,11 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     //   错误结果:text = minified 完整错误 JSON —— 纯文本客户端保留全部结构化 recovery 字段,不降级成一句话。
     //   其余工具维持原 JSON-in-text(后续 PR 分批迁移,不在本 PR 一刀切)。
     const latencyMs = Date.now() - t0   // handler-only 口径(与历史一致:不含投影/序列化耗时)
-    const envelope = buildToolEnvelope(name, result)
+    // MCP UI PR-5(Codex H-1/H-4):消费者投影在 wrapper 边界完成(async,fx 由投影器自取)——
+    //   handler 返回值【绝不被改动】;投影失败 → 安全降级错误信封,绝不把原始协议对象(WAZ/line_items)
+    //   吐上消费者面。fx 缺失不是失败(投影器内部 fail-soft 出 USDC-only)。
+    const projected = await projectForTool(name, result)
+    const envelope = buildToolEnvelope(name, projected)
     // §18 遥测:模型可见【UTF-8 字节】(text + structuredContent;.length 是 UTF-16 码元,中文会严重低估)
     let responseBytes: number | null = null
     try { responseBytes = Buffer.byteLength(envelope.content[0].text, 'utf8') + (envelope.structuredContent ? Buffer.byteLength(JSON.stringify(envelope.structuredContent), 'utf8') : 0) } catch { responseBytes = null }

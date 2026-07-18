@@ -14,6 +14,9 @@
 export const REGION_CURRENCY: Record<string, string> = {
   china: 'CNY', us: 'USD', eu: 'EUR', india: 'INR', singapore: 'SGD',
   global_north: 'USD', global: 'USD',
+  // ISO 3166-1 alpha-2(quote/order 的 dest_region 口径;MCP UI PR-5 起消费者法币估算走这里)
+  sg: 'SGD', cn: 'CNY', in: 'INR', id: 'IDR', my: 'MYR', ph: 'PHP', vn: 'VND', th: 'THB',
+  de: 'EUR', fr: 'EUR', it: 'EUR', es: 'EUR', nl: 'EUR',
 }
 export const SUPPORTED_CURRENCIES = ['USD', 'CNY', 'EUR', 'INR', 'SGD', 'IDR', 'MYR', 'PHP', 'VND', 'THB'] as const
 export type Currency = typeof SUPPORTED_CURRENCIES[number]
