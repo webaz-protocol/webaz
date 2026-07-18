@@ -53,6 +53,8 @@ jobs:
       - run: npm run check:api-docs-fresh
       # tsc does not parse the plain-JS PWA bundle; a stray escape there breaks the whole app.js at runtime.
       - run: npm run check:pwa-syntax
+      # Public seller-rulings must stay seller-scoped and redacted.
+      - run: npm run test:public-seller-rulings
 
   pwa-ui-baseline:
     name: PWA UI baseline (Playwright + axe)

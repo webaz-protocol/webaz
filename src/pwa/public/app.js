@@ -10478,7 +10478,7 @@ function renderCommentSection(product, ratingsData) {
 
       <details class="card" style="padding:0;margin-bottom:14px" id="comment-arb-block">
         <summary style="padding:10px 14px;border-bottom:1px solid #f3f4f6;display:flex;align-items:center;justify-content:space-between;cursor:pointer;list-style:none">
-          <span style="font-size:13px;font-weight:600">📋 ${t('仲裁判例')} <span style="color:var(--gray-500);font-weight:500" id="arb-count-pill">(0)</span></span>
+          <span style="font-size:13px;font-weight:600">📋 ${t('本商品公开判例')} <span style="color:var(--gray-500);font-weight:500" id="arb-count-pill">(0)</span></span>
           <span title="${t('当事人禁评（已购 / 同类卖家 / 验证员 / 围观）')}" aria-label="${t('共建区规则')}" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#f3f4f6;color:#596570;font-size:13px;border:1px solid #e5e7eb;line-height:1">ⓘ</span>
         </summary>
         <div style="padding:7px 14px;background:#f9fafb;color:#596570;font-size:10px">${t('当事人禁评（已购 / 同类卖家 / 验证员 / 围观）')}</div>
@@ -10502,7 +10502,7 @@ async function loadDisputeCases(productId, salesCount) {
     pill.textContent = rate != null
       ? `(${items.length}, ${t('仲裁率')} ${rate}%)`
       : `(${items.length})`
-    pill.style.color = items.length > 0 ? '#dc2626' : 'var(--gray-500)'; const blk = document.getElementById('comment-arb-block'); if (blk && items.length > 0) blk.open = true   // 零判例默认折叠,有判例自动展开
+    pill.style.color = 'var(--gray-600)'; const blk = document.getElementById('comment-arb-block'); if (blk && items.length > 0) blk.open = true   // 零判例默认折叠,有判例自动展开
   }
   if (items.length === 0) {
     list.innerHTML = `<div style="text-align:center;color:var(--gray-500);padding:20px 12px;font-size:12px;line-height:1.6">
