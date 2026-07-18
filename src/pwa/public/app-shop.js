@@ -683,10 +683,7 @@ async function renderCompare(app, ids) {
   const idList = (ids || '').split(',').filter(Boolean).slice(0, 4)
   if (idList.length < 2) { app.innerHTML = shell(`<div class="empty">${t('至少 2 件商品才能对比')}</div>`, 'discover'); return }
   app.innerHTML = shell(loading$(), 'discover')
-  // 逐件直查详情端点(active 或本人可见)。不扫 GET /products 列表 —— trending jitter + limit
-  // 截断会把在售商品随机漏掉,误报"不存在或已下架"(与 openBuySheet 同根因,2026-07-18)。
-  // 可见性口径 = 商品详情页(per-id):比公开列表宽(列表还排除零库存/卖家暂停/外链治理),
-  // 与直接访问商品页一致,无新增暴露;若日后收紧 per-id 治理谓词,此处自动跟随。
+  // 逐件直查详情端点,不扫 jitter+limit 的列表(openBuySheet 同根因);可见性口径=商品详情页(per-id)
   const items = (await Promise.all(idList.map(id => GET(`/products/${id}`).catch(() => null))))
     .filter(p => p && !p.error && p.id)
   if (items.length < 2) { app.innerHTML = shell(alert$('error', t('部分商品不存在或已下架')), 'discover'); return }
