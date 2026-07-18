@@ -64,7 +64,11 @@ export function registerCartRoutes(app: Application, deps: CartDeps): void {
     if (!product_id) return void res.json({ error: 'product_id 必填' })
     const product = await dbOne<{ id: string; status: string }>("SELECT id, status FROM products WHERE id = ?", [product_id])
     if (!product) return void res.json({ error: '商品不存在' })
-    if (product.status !== 'active') return void res.json({ error: '商品已下架' })
+    // 文案分状态如实:warehouse=从未/暂未公开(草稿),paused=暂停,其余才是真"已下架"
+    if (product.status !== 'active') {
+      const msg = product.status === 'warehouse' ? '商品尚未上架' : product.status === 'paused' ? '商品暂时不可购买' : '商品已下架'
+      return void res.json({ error: msg })
+    }
     await dbRun(`
       INSERT INTO cart_items (user_id, product_id, qty) VALUES (?, ?, ?)
       ON CONFLICT(user_id, product_id) DO UPDATE SET qty = MIN(99, cart_items.qty + ?)
