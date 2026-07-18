@@ -109,7 +109,7 @@ try {
 
   // 源守卫:工具 description 必须披露采集(诚实化方法论)
   const src = readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
-  ok('D-14 tool description discloses the demand-signal recording', /DISCLOSURE: every VALID discover query is recorded/.test(src))
+  ok('D-14 tool description discloses the demand-signal recording', /DISCLOSURE: every VALID query is recorded/.test(src))
 
   // ── 对抗性隐私(Codex PR-2 High/Medium):走私 PII 必须 400 且【零落库】——披露"不收自由文本/PII"必须为真 ──
   useCred('grt_disc', 'gtk_disc', ['buyer_discover'])

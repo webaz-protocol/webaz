@@ -323,6 +323,8 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
         if ((s.match(/\//g) ?? []).length > 1) return 'path-like (multiple slashes)'
         if (s.startsWith('/') || s.endsWith('/')) return 'path-like (leading/trailing slash)'
         if (s.includes('.')) return 'url-like (dot + slash)'
+        const seg = s.split('/')
+        if (seg.length === 2 && seg.every(x => /^[A-Za-z]{2,}$/.test(x.trim()))) return 'path-like (word/word)'
       }
       if (/\d{7,}/.test(s.replace(/[ \-.+_&%/]/g, ''))) return 'phone-like digit run'
       if (!TOKEN_RE.test(s)) return 'non-token characters'
@@ -368,6 +370,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       // 通用约束保留器(Codex R1-2:可重放的 next_call 绝不丢买家约束)
       const carry = (extra: Record<string, unknown>): Record<string, unknown> => ({
         ...extra,
+        ...(kwMatchRaw !== undefined ? { keyword_match: keywordMatch } : {}),
         ...(region ? { ship_to_region: region } : {}),
         ...(maxPrice !== null ? { max_price: maxPrice } : {}),
         ...(quantity !== 1 ? { quantity } : {}),

@@ -120,7 +120,7 @@ try {
 
   // ── [S] URL/路径形态拒绝(Codex R1-1:'/' 只为类目键放行,域名/路径形态零落库)────────────
   const before2 = (db.prepare('SELECT COUNT(*) c FROM demand_signals').get() as { c: number }).c
-  for (const bad of ['x.com/page', '//host/path', 'a/b/c/d', '/lead', 'trail/']) {
+  for (const bad of ['x.com/page', '//host/path', 'a/b/c/d', '/lead', 'trail/', 'account/login', 'host/path']) {
     const rb = await call({ keywords: [bad] })
     ok(`S-1 路径形态 "${bad}" → 400 拒收`, rb.error_code === 'INVALID_INTENT_TEXT', JSON.stringify(rb).slice(0, 120))
   }
@@ -128,6 +128,14 @@ try {
   ok('S-2 全部路径形态零落库', after2 === before2, `before=${before2} after=${after2}`)
   const s3 = await resolveCategory('家庭清洁/纸品')
   ok('S-3 canonical 单斜杠键仍放行(形状门与注册表零矛盾)', s3.status === 'canonical')
+  for (const good of ['1/2 inch', 'A/B']) {
+    const rg = await call({ keywords: [good] })
+    ok(`S-4 合法商品词 "${good}" 放行(数字/单字符段不算路径)`, rg.error_code === undefined, JSON.stringify(rg).slice(0, 100))
+  }
+  const kmCarry = await call({ category: '收纳', keywords: ['盒'], keyword_match: 'any' })
+  const kmCalls = (kmCarry.recommended_next_calls ?? []) as Array<{ arguments: Record<string, unknown> }>
+  ok('S-5 多义重放调用携带显式 keyword_match(语义不被替换回默认 all)', kmCalls.length === 4
+    && kmCalls.every(c => c.arguments.keyword_match === 'any'), JSON.stringify(kmCalls[0] ?? {}))
 
   // ── [P] next_call 可重放性(Codex R1-2:不丢约束、无假占位符、逐字重放必须成功)──────────
   const amb = await call({ category: '收纳', keywords: ['盒'], max_price: 50, ship_to_region: 'SG' })
