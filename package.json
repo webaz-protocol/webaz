@@ -287,6 +287,7 @@
     "test:mcp-model-projection": "tsx scripts/test-mcp-model-projection.ts",
     "test:mcp-result-handle": "tsx scripts/test-mcp-result-handle.ts",
     "test:mcp-tool-surfaces": "tsx scripts/test-mcp-tool-surfaces.ts",
+    "test:mcp-definition-budget": "tsx scripts/test-mcp-definition-budget.ts",
     "test:discover-demand-signals": "tsx scripts/test-discover-demand-signals.ts",
     "test:agent-address-masking": "tsx scripts/test-agent-address-masking.ts",
     "test:buyer-quote": "tsx scripts/test-buyer-quote.ts",
