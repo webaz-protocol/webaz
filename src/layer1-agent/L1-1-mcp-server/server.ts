@@ -2092,7 +2092,6 @@ export function buildToolEnvelope(name: string, result: unknown): { content: Arr
   const summarize = entry?.summarize
   try {
     if (entry && result && typeof result === 'object' && !Array.isArray(result)) {
-      if (entry.project && !('error' in (result as Record<string, unknown>))) result = entry.project(result as Record<string, unknown>)
       // buyer_orders 豁免 null 剥离:RFC-025 的 7 键最小投影契约含【有语义的 null 占位】(deadline/next_actor
       // 可为 null),wire 上也必须保持恰 7 键。search/quote 无 null 契约,照剥。
       const clean = (name === 'webaz_buyer_orders' ? result : stripEmpty(result)) as Record<string, unknown>
@@ -2114,14 +2113,15 @@ export function buildToolEnvelope(name: string, result: unknown): { content: Arr
 // MCP Token PR-1:声明了 outputSchema 的三工具 → structuredContent + 短摘要 content(见 CallTool 包装尾部)。
 // MCP UI PR-5 架构:handler 保持【协议契约全量响应】(存量套件与直连消费者不破);消费者投影
 // (USDC/法币估算/诚信文案)只发生在 wrapper 的 structuredContent 层 —— 模型/组件看到的才是投影。
-const STRUCTURED_RESULT_TOOLS: Record<string, { summarize: (r: Record<string, unknown>) => string; project?: (r: Record<string, unknown>) => Record<string, unknown> }> = {
+const STRUCTURED_RESULT_TOOLS: Record<string, { summarize: (r: Record<string, unknown>) => string; project?: (r: Record<string, unknown>) => Promise<Record<string, unknown>> }> = {
   webaz_search: { summarize: summarizeSearchResult },
   webaz_buyer_orders: { summarize: summarizeBuyerOrders },
-  webaz_quote_order: { summarize: summarizeQuoteResult, project: r => r.quote_id ? projectQuoteConsumer(r, (r.__fx ?? null) as never, regionToCurrency) : r },
-  webaz_order_draft: { summarize: summarizeDraftResult, project: r => Array.isArray(r.drafts)
-    ? { schema_version: 'webaz.order_draft.model.v1', count: r.count, drafts: (r.drafts as Array<Record<string, unknown>>).map(d => projectDraftConsumer(d, (r.__fx ?? null) as never, regionToCurrency)) }
-    : (r.draft_id ? projectDraftConsumer(r, (r.__fx ?? null) as never, regionToCurrency) : r) },
-  webaz_submit_order_request: { summarize: summarizeSubmitResult, project: r => r.request_id ? projectSubmitConsumer(r) : r },
+  webaz_quote_order: { summarize: summarizeQuoteResult, project: async r => r.quote_id ? projectQuoteConsumer(r, await fxView(), regionToCurrency) : r },
+  webaz_order_draft: { summarize: summarizeDraftResult, project: async r => {
+    if (Array.isArray(r.drafts)) { const fx = await fxView(); return { schema_version: 'webaz.order_draft.model.v1', count: r.count, drafts: (r.drafts as Array<Record<string, unknown>>).map(d => projectDraftConsumer(d, fx, regionToCurrency)) } }
+    return r.draft_id ? projectDraftConsumer(r, await fxView(), regionToCurrency) : r
+  } },
+  webaz_submit_order_request: { summarize: summarizeSubmitResult, project: async r => r.request_id ? projectSubmitConsumer(r) : r },
 }
 
 // Tools that only make sense on a LOCAL (stdio) transport and must NOT be advertised on the remote
@@ -2969,7 +2969,6 @@ export async function handleQuoteOrder(args: Record<string, unknown>): Promise<R
   }
   const r = await apiCall('/api/agent/quote', { method: 'POST', apiKey: cred.token, body })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks price_quote. Re-connect via OAuth so the grant carries the order:draft scope, then retry.' }
-  if (r.quote_id) (r as Record<string, unknown>).__fx = await fxView()   // fx 附件供 wrapper 层消费者投影(handler 保持协议契约)
   return r
 }
 
@@ -2998,7 +2997,6 @@ export async function handleOrderDraft(args: Record<string, unknown>): Promise<R
     return { error: `unknown action: ${action}`, error_code: 'BAD_ACTION' }
   }
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks draft_order. Re-connect via OAuth so the grant carries the order:draft scope, then retry.' }
-  if (Array.isArray(r.drafts) || r.draft_id) (r as Record<string, unknown>).__fx = await fxView()
   return r
 }
 
@@ -6144,7 +6142,14 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     //   错误结果:text = minified 完整错误 JSON —— 纯文本客户端保留全部结构化 recovery 字段,不降级成一句话。
     //   其余工具维持原 JSON-in-text(后续 PR 分批迁移,不在本 PR 一刀切)。
     const latencyMs = Date.now() - t0   // handler-only 口径(与历史一致:不含投影/序列化耗时)
-    const envelope = buildToolEnvelope(name, result)
+    // MCP UI PR-5(Codex H-1):消费者投影在 wrapper 边界完成(async,fx 由投影器自取)——
+    //   handler 返回值【绝不被改动】(协议契约纯净),投影失败安全回退原结果。
+    let projected = result
+    const entry0 = STRUCTURED_RESULT_TOOLS[name]
+    if (entry0?.project && result && typeof result === 'object' && !Array.isArray(result) && !('error' in (result as Record<string, unknown>))) {
+      try { projected = await entry0.project(result as Record<string, unknown>) } catch { projected = result }
+    }
+    const envelope = buildToolEnvelope(name, projected)
     // §18 遥测:模型可见【UTF-8 字节】(text + structuredContent;.length 是 UTF-16 码元,中文会严重低估)
     let responseBytes: number | null = null
     try { responseBytes = Buffer.byteLength(envelope.content[0].text, 'utf8') + (envelope.structuredContent ? Buffer.byteLength(JSON.stringify(envelope.structuredContent), 'utf8') : 0) } catch { responseBytes = null }

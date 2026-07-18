@@ -242,7 +242,8 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;backgr
     box.appendChild(el('div','h','待 Passkey 审批'))
     row(box,'请求',String(out.request_id||''))
     row(box,'操作','创建正式订单')
-    row(box,'资金','批准后才会移动(Passkey 必需)')
+    row(box,'批准后','创建唯一正式订单(Passkey 必需)');
+    box.appendChild(el('div','meta',String(out.on_approval||'资金行为随所披露的支付轨道:托管=建单时钱包→托管;直付=WebAZ 不托管本金')))
     row(box,'状态','待批准')
     if(out.duplicate_warning){
       var w=el('div','warn'); w.appendChild(el('b',null,'检测到相似购买请求'))

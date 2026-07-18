@@ -205,6 +205,7 @@ export function fmtUsdcMinor(minor: unknown): string {
   const n = Number(minor)
   if (!Number.isFinite(n)) return ''
   const v = n / 1_000_000
+  if (v > 0 && v < 0.01) return `${v.toFixed(6).replace(/0+$/, '')} USDC`   // 亚分金额不得显示成 0.00(Codex LOW)
   return `${Number.isInteger(v) ? v : v.toFixed(2)} USDC`
 }
 
@@ -251,7 +252,7 @@ export function projectQuoteConsumer(r: Record<string, unknown>, fx: FxView | nu
   return {
     schema_version: SCHEMA_ORDER_QUOTE,
     quote_id: r.quote_id,
-    ...(typeof r.quote_token === 'string' ? { quote_token: r.quote_token } : { quote_token_note: 'idempotent replay — token issued once with the original response' }),
+    ...(typeof r.quote_token === 'string' ? { quote_token: r.quote_token } : { quote_token_note: 'idempotent replay — the single-use token was issued ONLY with the original response: reuse that original quote_token, or wait for expiry (~10 min) and quote again', replay: true }),
     product: { id: prod.product_id, title: prod.title },
     quantity: qty,
     price: { amount_minor: payable, currency: 'USDC', currency_exponent: 6, display: fmtUsdcMinor(payable) },
@@ -263,7 +264,7 @@ export function projectQuoteConsumer(r: Record<string, unknown>, fx: FxView | nu
     payment_rail: pay.rail ?? 'escrow', rail_note: railHonesty(pay.rail),
     stock_reserved: false, economic_action_executed: false,
     expires_at: r.expires_at,
-    available_actions: ['create_draft'],
+    available_actions: typeof r.quote_token === 'string' ? ['create_draft'] : [],   // replay 无 token → 无可执行动作(诚实动作面,Codex H-2)
     disclosures: ['此报价不会扣款', '此报价不会锁定库存', '只有通过 Passkey 批准后才会创建正式订单'],
   }
 }
@@ -299,7 +300,9 @@ export function projectSubmitConsumer(r: Record<string, unknown>): Record<string
     schema_version: SCHEMA_ORDER_APPROVAL,
     request_id: r.request_id, draft_id: r.draft_id,
     action_type: 'order_create', status: 'pending_approval',
-    passkey_required: true, moves_funds_on_approval: true,
+    passkey_required: true,
+    // rail-aware 中性措辞(Codex H-3):submit 响应不携轨道,绝不硬编码"资金会移动"——直付下 WebAZ 不托管本金
+    on_approval: 'creates the single real order; payment behavior follows the disclosed rail (escrow: wallet→escrow debit at creation; direct_p2p: WebAZ holds no principal — buyer pays the seller directly)',
     approval_url: r.approval_url,
     ...(dup ? { duplicate: true, duplicate_warning: { note: '检测到相似购买请求 —— 已复用现有待审批请求,未创建第二个审批/订单', existing_request_id: r.request_id, options: ['打开已有审批', '取消本次', '如确需再买一份,请明确说明后重新报价'] } } : {}),
     available_actions: ['open_approval', 'check_status_via_webaz_approval_requests'],

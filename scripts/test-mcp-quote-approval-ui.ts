@@ -42,6 +42,8 @@ db.prepare("INSERT INTO users (id,name,handle,role,api_key,default_address_text,
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('buyer_noaddr','N','buyer','k_n'),('seller1','S','seller','k_s')").run()
 db.prepare(`INSERT INTO products (id,seller_id,title,description,price,currency,stock,category,status,shipping_template,has_variants,return_days,warranty_days,handling_hours)
   VALUES ('prd_q','seller1','QA Stand','d',11.5,'WAZ',9,'phone_stand','active',?,0,7,90,72)`).run(JSON.stringify([{ region: 'SG', fee: 0, est_days: '10-14' }]))
+db.prepare(`INSERT INTO products (id,seller_id,title,description,price,currency,stock,category,status,shipping_template,has_variants,return_days,warranty_days,handling_hours)
+  VALUES ('prd_us','seller1','US Stand','d',5,'WAZ',9,'phone_stand','active',?,0,7,0,24)`).run(JSON.stringify([{ region: 'US', fee: 0, est_days: '5-9' }]))
 
 const auth = (_req: express.Request, res: express.Response) => { res.status(401).json({ error: 'no human auth' }); return null }
 const app = express(); app.use(express.json())
@@ -100,12 +102,27 @@ try {
   ok('9/10. 报价不扣款不锁库存(标志 + DB 零变化)', q.stock_reserved === false && q.economic_action_executed === false && walletSnap() === before.wallet && stockOf() === before.stock)
   ok('19a. Quote 投影 ≤1400B(≈350 tok)', qj.length <= 1400, `bytes=${qj.length}`)
   ok('20a. Quote 零 PII', !PII.test(qj))
-  ok('Q-line. 费用/配送/条款面齐备(amounts/destination.summary/shipping/return_days/expires)', !!q.amounts && !!(q.destination as Record<string, unknown>)?.summary && !!q.shipping && q.return_days === 7 && !!q.expires_at)
+  const am = (q.amounts ?? {}) as Record<string, number>
+  ok('Q-line. amounts 对账(item=11.5M/shipping=0/other=payable-item-shipping)+ 配送/条款面齐备',
+    am.item === 11_500_000 && am.shipping === 0 && am.other === Number((q.price as Record<string, unknown>).amount_minor) - am.item - am.shipping
+    && !!(q.destination as Record<string, unknown>)?.summary && !!q.shipping && q.return_days === 7 && !!q.expires_at, JSON.stringify(am))
+
+  // ── H-1 锁:handler 契约纯净(直连拿到协议全量形状,无 __fx 私字段;投影只在 wire 层)──
+  const hq = await mcp.handleQuoteOrder({ product_id: 'prd_q', quantity: 1 })
+  ok('H-pure. handler 返回协议全量形状(line_items/total 在;__fx 与消费者投影字段不在)',
+    !('__fx' in hq) && Array.isArray(hq.line_items) && !!hq.total && hq.amounts === undefined && hq.fiat_estimate === undefined, Object.keys(hq).sort().join(',').slice(0, 200))
 
   // ── 4. 法币不可得(USD 区)→ 省略估算,仍 USDC,绝不伪造 ──
   useCred('grt_us', 'buyer_us', 'gtk_us')
-  const qUs = await callSC('webaz_quote_order', { product_id: 'prd_q', quantity: 1 })
-  ok('4. USD 区 → fiat_estimate 省略(不伪造法币),USDC 照常', qUs.error_code === undefined ? (qUs.fiat_estimate === undefined && (qUs.price as Record<string, unknown>)?.currency === 'USDC') : true, JSON.stringify(qUs).slice(0, 160))
+  const qUs = await callSC('webaz_quote_order', { product_id: 'prd_us', quantity: 1 })
+  ok('4. USD 区成功报价 → fiat_estimate 省略(绝不伪造法币),USDC 照常', qUs.error === undefined && !!qUs.quote_id && qUs.fiat_estimate === undefined && (qUs.price as Record<string, unknown>)?.currency === 'USDC', JSON.stringify(qUs).slice(0, 160))
+
+  // ── H-2 锁:幂等 replay 无 token → 空动作面 + 具体恢复指引(诚实动作面)──
+  useCred('grt_qa', 'buyer1', 'gtk_qa')
+  const qr1 = await callSC('webaz_quote_order', { product_id: 'prd_q', quantity: 1, idempotency_key: 'replaykey1' })
+  const qr2 = await callSC('webaz_quote_order', { product_id: 'prd_q', quantity: 1, idempotency_key: 'replaykey1' })
+  ok('R-1 replay:无 quote_token 时 available_actions 为空 + replay 标记 + 恢复指引(原 token/过期重报)',
+    !!qr1.quote_token && qr2.quote_token === undefined && qr2.replay === true && qr2.available_actions === undefined && /original quote_token/.test(String(qr2.quote_token_note))   // stripEmpty:wire 上空动作面=字段缺席, JSON.stringify(qr2).slice(0, 180))
 
   // ── 8. 无默认地址 → 安全失败 ──
   useCred('grt_na', 'buyer_noaddr', 'gtk_na')
@@ -125,7 +142,7 @@ try {
   // ── Submit/Approval 投影(12,15,19c)──
   const s1 = await callSC('webaz_submit_order_request', { draft_id: d.draft_id })
   const sj = JSON.stringify(s1)
-  ok('A-1 approval 投影(request_id/passkey_required/moves_funds_on_approval/approval_url/pending)', s1.schema_version === 'webaz.order_approval.model.v1' && !!s1.request_id && s1.passkey_required === true && s1.moves_funds_on_approval === true && String(s1.approval_url).includes('agent-approvals') && s1.status === 'pending_approval', sj.slice(0, 200))
+  ok('A-1 approval 投影(request_id/passkey_required/rail-aware on_approval 中性措辞/approval_url/pending)', s1.schema_version === 'webaz.order_approval.model.v1' && !!s1.request_id && s1.passkey_required === true && /follows the disclosed rail/.test(String(s1.on_approval)) && /holds no principal/.test(String(s1.on_approval)) && String(s1.approval_url).includes('agent-approvals') && s1.status === 'pending_approval', sj.slice(0, 200))
   ok('12. 提交不执行(orders 表零行,资金库存零变化)', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === 0 && walletSnap() === before.wallet && stockOf() === before.stock)
   ok('19c. Approval 投影 ≤1000B(≈250 tok)', sj.length <= 1000, `bytes=${sj.length}`)
   const s2 = await callSC('webaz_submit_order_request', { draft_id: d.draft_id })
@@ -160,7 +177,7 @@ try {
   const REQUEST_TOKENS = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|src)\b/
   const SINK_TOKENS = /\b(innerHTML|outerHTML|insertAdjacentHTML|write|writeln|eval|Function)\b/
   ok('17/18b. 组件自包含 + 零请求能力词元 + 零可执行 sink + 零 WAZ', html.includes('toolOutput') && !REQUEST_TOKENS.test(html) && !SINK_TOKENS.test(html) && !html.includes(' WAZ'))
-  ok('W-3s. 组件覆盖三形态 + 重复警告 + Passkey 边界(经济动作回审批流)', html.includes('order_quote.model.v1') && html.includes('order_draft.model.v1') && html.includes('order_approval.model.v1') && html.includes('duplicate_warning') && html.includes('Passkey') && html.includes('不会直接执行'))
+  ok('W-3s. 组件覆盖三形态 + 重复警告 + Passkey 边界 + openExternal 锁死 webaz.xyz 前缀', html.includes('order_quote.model.v1') && html.includes('order_draft.model.v1') && html.includes('order_approval.model.v1') && html.includes('duplicate_warning') && html.includes('Passkey') && html.includes('不会直接执行') && html.includes("'https://webaz.xyz/'"))
   const tools = (await c.listTools()).tools as Array<{ name: string; _meta?: Record<string, unknown> }>
   ok('W-4s. 三工具描述符都挂 quote-approval outputTemplate', ['webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request'].every(n => tools.find(t => t.name === n)?._meta?.['openai/outputTemplate'] === 'ui://widget/webaz-quote-approval.html'))
 
