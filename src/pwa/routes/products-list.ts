@@ -100,25 +100,29 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     const isNewArrivalsCtx = has_sales === 'false'
 
     // 调用契约 PR-C — 无约束全目录浏览守卫(agent 模式):审计根因之一是 0 命中被导向"无 query
-    //   浏览 limit 50/100/200"。有效约束 = query / 精确匹配 / category / 价格 / 退货 / 发货 / 卖家 /
-    //   ship_to / result_handle。全无有效约束(纯浏览)时,agent 模式硬性限量 ≤8,超出即 400 且给机器
-    //   可执行出路。命中/过滤路径不受影响。raw/pwa 面不加此门(pwa 是人浏览,raw 是高信任 agent)。
+    //   浏览 limit 50/100/200"。有效约束 = query/精确匹配 · category · 价格 · 退货 · 发货 · 卖家 ·
+    //   ship_to · has_sales · product_type · since_days · has_trial(此路由后段真正应用的全部过滤)。
+    //   全无约束(纯浏览)时 agent 模式:单页硬顶 8 且【禁止 cursor 翻页】—— 否则 8 件一翻可枚举全目录
+    //   (Codex R1-2)。result_handle 不是本 GET 路由的能力(详情走 POST /result-fetch),不作豁免
+    //   (Codex R1-1)。命中/过滤路径与 raw/pwa 面不受影响。
     const hasQuery = typeof q === 'string' && q.trim().length > 0
+    const sinceDaysValid = typeof sinceDaysRaw === 'string' && Number.isFinite(Number(sinceDaysRaw)) && Number(sinceDaysRaw) > 0
     const hasFilter = !!category || max_price != null || min_return_days != null || max_handling_hours != null
-      || !!seller_id || (typeof ship_to === 'string' && ship_to.trim().length > 0) || has_sales === 'true' || has_sales === 'false'
-    const isDetailFetch = typeof req.query.result_handle === 'string' && req.query.result_handle
-    const unbounded = mode === 'agent' && !hasQuery && !hasFilter && !isDetailFetch
+      || !!seller_id || (typeof ship_to === 'string' && ship_to.trim().length > 0)
+      || has_sales === 'true' || has_sales === 'false' || productTypeFilter != null
+      || sinceDaysValid || req.query.has_trial === 'true'
+    const unbounded = mode === 'agent' && !hasQuery && !hasFilter
 
     // limit
     const cap = PRODUCT_LIMITS[mode]
     let lim = Math.floor(Number(limitRaw))   // 非整数 limit 直进 SQL LIMIT 会炸 → 取整(Codex round-1 MEDIUM)
     if (!Number.isFinite(lim) || lim <= 0) lim = mode === 'pwa' ? 30 : (mode === 'raw' ? 100 : 50)
-    if (unbounded && lim > 8) {
+    if (unbounded && (lim > 8 || (typeof cursor === 'string' && cursor))) {
       return void res.status(400).json({
-        error: 'unbounded catalog browse — an agent must not scan the whole catalog. Give a constraint (category / keywords via webaz_discover, or a filter), or request a small sample (limit ≤ 8).',
+        error: 'unbounded catalog browse — an agent must not scan the whole catalog (no big limit, no cursor pagination of an unconstrained browse). Give a constraint (category / keywords via webaz_discover, or a filter), or request a single small sample (limit ≤ 8, no cursor).',
         error_code: 'UNBOUNDED_CATALOG_BROWSE',
         recommended_next_call: { tool: 'webaz_discover', description: 'structured discovery with a category key and/or keywords', category_vocabulary: 'GET https://webaz.xyz/api/agent/categories' },
-        sample_browse: { tool: 'webaz_search', arguments: { mode: 'agent', sort: 'newest', limit: 8 }, description: 'if you truly want a catalog sample, cap at 8' },
+        sample_browse: { tool: 'webaz_search', arguments: { mode: 'agent', sort: 'newest', limit: 8 }, description: 'if you truly want a one-shot catalog sample, cap at 8 (no cursor)' },
       })
     }
     if (lim > cap) lim = cap

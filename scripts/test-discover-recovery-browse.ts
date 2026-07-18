@@ -85,6 +85,13 @@ try {
   const cns = ((complex.recovery ?? {}) as Record<string, unknown>).next_step as Record<string, unknown> | undefined
   ok('REC-4 复杂 query 不伪造关键词 → 导词表(无 keywords 字段)', cns?.tool === 'webaz_discover'
     && (cns?.arguments as Record<string, unknown> | undefined)?.keywords === undefined && typeof cns?.category_vocabulary === 'string', JSON.stringify(complex).slice(0, 260))
+  // REC-5(Codex R1-4):短词分类器与 discover 校验同源 —— URL/路径形态的 query 不得被转成会被 discover 400 的 keyword
+  for (const bad of ['x.com/page', 'a/b/c', '/term', 'term/']) {
+    const rb = await mcp.handleSearch({ query: bad })
+    const bns = ((rb.recovery ?? {}) as Record<string, unknown>).next_step as Record<string, unknown> | undefined
+    ok(`REC-5 URL/路径 query "${bad}" 不生成可执行 keyword(导词表,防自相矛盾 400)`,
+      (bns?.arguments as Record<string, unknown> | undefined)?.keywords === undefined, JSON.stringify(bns).slice(0, 140))
+  }
 
   // ── [UB] 无约束浏览守卫(直打 /api/products agent 模式)──────────────────────────────────────
   const ub1 = await getJson('/api/products?mode=agent&limit=50')
@@ -100,6 +107,17 @@ try {
   ok('UB-5 有价格过滤不触发守卫', ub5.status === 200)
   const ub6 = await getJson('/api/products?mode=raw&limit=100', { authorization: 'Bearer k_s' })
   ok('UB-6 raw 面(高信任 agent)不受无约束守卫限制', ub6.status === 200, JSON.stringify(ub6.j).slice(0, 120))
+  // Codex R1-1:result_handle 不是本 GET 路由能力,不得作守卫豁免(伪 handle 曾可绕过扫全目录)
+  const ub7 = await getJson('/api/products?mode=agent&limit=200&result_handle=x')
+  ok('UB-7 伪 result_handle 不豁免守卫(仍 400)', ub7.status === 400 && ub7.j.error_code === 'UNBOUNDED_CATALOG_BROWSE', JSON.stringify(ub7.j).slice(0, 120))
+  // Codex R1-2:无约束 + cursor 翻页 → 400(8 件一翻可枚举全目录)
+  const ub8 = await getJson('/api/products?mode=agent&limit=8&cursor=eyJ4IjoxfQ')
+  ok('UB-8 无约束 + cursor → 400(禁翻页枚举)', ub8.status === 400 && ub8.j.error_code === 'UNBOUNDED_CATALOG_BROWSE', JSON.stringify(ub8.j).slice(0, 120))
+  // Codex R1-3:product_type / since_days / has_trial 也是有效约束,不得误判 400
+  const ub9 = await getJson('/api/products?mode=agent&product_type=retail&limit=50')
+  ok('UB-9 product_type 约束不触发守卫', ub9.status === 200, JSON.stringify(ub9.j).slice(0, 120))
+  const ub10 = await getJson('/api/products?mode=agent&since_days=7&limit=50')
+  ok('UB-10 since_days 约束不触发守卫', ub10.status === 200, JSON.stringify(ub10.j).slice(0, 120))
 } finally { server.close() }
 
 if (fail > 0) { console.error(`\n❌ discover-recovery-browse FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

@@ -49,7 +49,7 @@ import { createOrderActionRequest } from '../order-action-request.js'  // RFC-02
 import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 approve→执行(CAS approved + 执行 + executed_at CAS,domain 层)
 import { notifyTransition } from '../../layer2-business/L2-6-notifications/notification-engine.js'  // 执行后通知买卖双方
 import { invalidateProductVerification } from '../../product-verification.js'
-import { resolveCategory, buildCategoryTable } from '../agent-categories.js'  // 调用契约 P0 PR-AB:canonical 类目注册表
+import { resolveCategory, buildCategoryTable, productTermSmell } from '../agent-categories.js'  // 调用契约 P0 PR-AB:canonical 类目注册表 + 商品词校验单源
 
 export interface AgentGrantsDeps {
   db: Database.Database
@@ -311,26 +311,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     //   只放行商品词形态:文字/数字 + 空格 + -+._&%,显式拒绝邮箱(@)/URL(://|www.)/电话形态
     //   (剥掉全部放行分隔符后 ≥7 连续数字)。诚实边界:词形文本(人名/词写的联系方式)无法机械
     //   排除 —— 所以披露不承诺"绝无自由文本",承诺的是【已执行的形状校验 + 通过即原样记录,勿放个人数据】。
-    const TOKEN_RE = /^[\p{L}\p{N} \-+._&%/]{1,40}$/u   // % 合法("100% cotton");/ 合法(canonical 类目键如 家庭清洁/纸品);LIKE 侧已转义;url-like 仍由 ://|www. 显式拒
-    const smells = (s: string): string | null => {
-      if (s.length > 40) return 'too long (max 40 chars)'
-      if (s.includes('@')) return 'email-like'
-      if (/:\/\/|www\./i.test(s)) return 'url-like'
-      // '/' 为 canonical 类目键(家庭清洁/纸品)与复合商品词(1/2 inch、wet/dry、salt/pepper)放行。
-      // 只拒【真 URL/路径】形态:双斜杠(//host)/ 三段以上(a/b/c)/ 首尾斜杠 / 点+斜杠(x.com/page)——
-      // 这些正是 "URL 绝不入台账" 披露覆盖的对象。单个内部斜杠连接两个无点 token【不是 URL】(无 scheme/
-      // host/TLD),是合法复合词 → 放行(Codex R2 曾要求拒 word/word,R3 证其误伤 wet/dry;原则化收口:
-      // 只拒 URL,不拒任意斜杠 —— 披露承诺的是"拒 URL",account/login 非 URL,记录它不违反披露)。
-      if (s.includes('/')) {
-        if (s.includes('//')) return 'path-like (double slash)'
-        if ((s.match(/\//g) ?? []).length > 1) return 'path-like (multiple slashes)'
-        if (s.startsWith('/') || s.endsWith('/')) return 'path-like (leading/trailing slash)'
-        if (s.includes('.')) return 'url-like (dot + slash)'
-      }
-      if (/\d{7,}/.test(s.replace(/[ \-.+_&%/]/g, ''))) return 'phone-like digit run'
-      if (!TOKEN_RE.test(s)) return 'non-token characters'
-      return null
-    }
+    const smells = productTermSmell   // 商品词形态校验单一真相源(agent-categories.ts;与 search recovery 短词分类器共用)
     const rejectText = (field: string, why: string) => void res.status(400).json({
       error: `${field} must be a short product term (letters/digits, ≤40 chars, no emails/phone-like digit runs/URLs) — rejected: ${why}`,
       error_code: 'INVALID_INTENT_TEXT',

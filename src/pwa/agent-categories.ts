@@ -15,6 +15,25 @@
  */
 import { dbAll, dbOne } from '../layer0-foundation/L0-1-database/db.js'
 
+// 商品词形态校验(单一真相源;discover 文本入口 + search recovery 短词分类器共用 —— 防两处规则漂移)。
+//   放行:文字/数字 + 空格 + -+._&%/;% 合法(100% cotton);单内部斜杠合法(1/2 inch、canonical 类目键)。
+//   拒:>40 字符 / 邮箱(@)/ URL(://|www.)/ 真路径形态(//、多斜杠、首尾斜杠、点+斜杠)/ 长数字串(电话)。
+const PRODUCT_TERM_RE = /^[\p{L}\p{N} \-+._&%/]{1,40}$/u
+export function productTermSmell(s: string): string | null {
+  if (s.length > 40) return 'too long (max 40 chars)'
+  if (s.includes('@')) return 'email-like'
+  if (/:\/\/|www\./i.test(s)) return 'url-like'
+  if (s.includes('/')) {
+    if (s.includes('//')) return 'path-like (double slash)'
+    if ((s.match(/\//g) ?? []).length > 1) return 'path-like (multiple slashes)'
+    if (s.startsWith('/') || s.endsWith('/')) return 'path-like (leading/trailing slash)'
+    if (s.includes('.')) return 'url-like (dot + slash)'
+  }
+  if (/\d{7,}/.test(s.replace(/[ \-.+_&%/]/g, ''))) return 'phone-like digit run'
+  if (!PRODUCT_TERM_RE.test(s)) return 'non-token characters'
+  return null
+}
+
 export interface CanonicalCategory { key: string; en: string; aliases: string[] }
 
 // 种子 = 生产在售类目全集(2026-07-18 只读采样)+ 人工 alias;'test' 类目刻意不收录。

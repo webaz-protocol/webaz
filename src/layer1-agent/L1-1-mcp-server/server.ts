@@ -41,7 +41,7 @@ import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-
 import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
 import { filterToolsBySurface, type ToolSurface } from './tool-surfaces.js'
 import { PRODUCT_RESULTS_WIDGET_HTML, QUOTE_APPROVAL_WIDGET_HTML, ORDER_TIMELINE_WIDGET_HTML, PRODUCT_RESULTS_WIDGET_MCP_HTML, QUOTE_APPROVAL_WIDGET_MCP_HTML, ORDER_TIMELINE_WIDGET_MCP_HTML } from './ui-widgets.js'  // MCP UI PR-4..6 + PR-A:legacy + 标准双轨组件
-import { CANONICAL_CATEGORIES } from '../../pwa/agent-categories.js'  // P0 PR-AB:资源降级用静态注册表
+import { CANONICAL_CATEGORIES, productTermSmell } from '../../pwa/agent-categories.js'  // P0 PR-AB:静态注册表 + 商品词校验单源(recovery 短词分类器共用)
 import { getUsdRates, regionToCurrency } from '../../fx-rates.js'  // USDC 显示换算(display-only)  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
 import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult, summarizeDraftResult, summarizeSubmitResult, summarizeOrderTimeline,
          projectQuoteConsumer, projectDraftConsumer, projectSubmitConsumer, projectOrderTimelineConsumer,
@@ -2721,9 +2721,8 @@ export async function handleSearch(args: Record<string, unknown>) {
     let recovery: Record<string, unknown> | undefined
     if (query) {
       const q = String(query).trim()
-      // 短商品词形态:≤40 字符、≤4 词、仅商品词字符(与 discover TOKEN 形态一致)、无 URL/邮箱/长数字串
-      const shortTerm = q.length > 0 && q.length <= 40 && q.split(/\s+/).length <= 4
-        && /^[\p{L}\p{N} \-+._&%/]+$/u.test(q) && !/@|:\/\/|www\./i.test(q) && !/\d{7,}/.test(q.replace(/[ \-.+_&%/]/g, ''))
+      // 短商品词:≤4 词 + 过 discover 同一 productTermSmell(单源;保证转出的 keyword 不会反被 discover 400)
+      const shortTerm = q.length > 0 && q.split(/\s+/).length <= 4 && productTermSmell(q) === null
       const catBrowse: Record<string, unknown> = { sort: 'newest', limit: 8 }
       if (category) catBrowse.category = category
       if (maxPrice != null) catBrowse.max_price = maxPrice
