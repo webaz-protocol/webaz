@@ -762,16 +762,17 @@ window.shareCompareUrl = async (ids) => {
   catch { toast$(t('复制失败'), 'error') }
 }
 
-// Wave E-1: 商家店铺主页
 async function renderShopPage(app, identifier) {
   if (!identifier) { navigate('#discover'); return }
   app.innerHTML = shell(loading$(), 'discover')
   const r = await GET(`/shops/${encodeURIComponent(identifier)}`)
   if (r.error) { app.innerHTML = shell(alert$('error', r.error), 'discover'); return }
   const { seller, stats, products, recent_ratings, is_following } = r
+  const requestedTab = String(state._urlQuery?.tab || '')
+  const shopTab = requestedTab === 'rulings' || requestedTab === 'disputes' ? 'rulings' : 'products'
   const isOwnShop = state.user?.id === seller.id
   const ratingDisplay = stats.rating_avg != null
-    ? `⭐ ${Number(stats.rating_avg).toFixed(1)} <span style="font-size:11px;color:#9ca3af">(${stats.rating_count})</span>`
+    ? `⭐ ${Number(stats.rating_avg).toFixed(1)} <span style="font-size:11px;color:#64748b">(${stats.rating_count})</span>`
     : `<span style="font-size:11px;color:#9ca3af">${t('暂无评价')}</span>`
   const banner = seller.shop_banner_url
     ? `<div style="height:140px;background:url('${escHtml(seller.shop_banner_url)}') center/cover;border-radius:8px;margin-bottom:12px"></div>`
@@ -779,7 +780,6 @@ async function renderShopPage(app, identifier) {
   const followBtn = state.user && !isOwnShop && state.user.role === 'buyer'
     ? `<button class="btn btn-${is_following ? 'gray' : 'primary'} btn-sm" style="width:auto" id="shop-follow-btn" data-following="${is_following ? '1' : '0'}" onclick="toggleShopFollow('${seller.id}', this)">${is_following ? '✓ ' + t('已关注') : '+ ' + t('关注')}</button>`
     : ''
-  // 推荐店铺:只锚定推荐关系/二叉树位置/店铺来源 —— 不是全店佣金权;商品分润仍要求推荐人真实成交过同款
   const shopReferralBtn = state.user?.permanent_code
     ? `<button class="btn btn-outline btn-sm" style="width:auto;font-size:11px" title="${t('店铺推荐只锚定推荐关系;只有你真实成交过的同款商品,后续成交才可能形成商品推荐关系')}" onclick="copyShopReferralLink('${seller.id}')">🔗 ${t('推荐店铺')}</button>`
     : ''
@@ -823,7 +823,7 @@ async function renderShopPage(app, identifier) {
         <div style="flex:1;min-width:0">
           <div style="font-size:18px;font-weight:700">${escHtml(seller.name || seller.handle)}</div>
           <div style="font-size:12px;color:#6b7280">@${escHtml(seller.handle || '')} · ${ratingDisplay}</div>
-          <a href="#u/${seller.id}" style="font-size:12px;color:#6366f1;text-decoration:none;display:inline-block;margin-top:4px">${t('完整主页 · 笔记 / 测评 / 二手 / 拍卖')} →</a>
+          <a href="#u/${seller.id}" style="font-size:12px;color:#4338ca;text-decoration:none;display:inline-block;margin-top:4px">${t('完整主页 · 笔记 / 测评 / 二手 / 拍卖')} →</a>
           ${seller.bio ? `<div style="font-size:13px;color:#374151;margin-top:6px">${escHtml(seller.bio)}</div>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
@@ -839,10 +839,10 @@ async function renderShopPage(app, identifier) {
       </div>
     </div>
     ${seller.shop_intro ? `<div class="card" style="padding:12px;margin-bottom:12px;font-size:13px;color:#374151;white-space:pre-wrap">${escHtml(seller.shop_intro)}</div>` : ''}
-    <div style="font-size:13px;font-weight:600;margin:14px 0 8px">📦 ${t('店内商品')}</div>
-    <div style="display:grid;gap:6px">${productCards}</div>
-    ${ratingItems}
+    ${window.shopRulingsTabsHtml ? window.shopRulingsTabsHtml(seller, shopTab) : ''}
+    ${shopTab === 'rulings' ? `<div id="shop-rulings-content">${loading$()}</div>` : `<div style="font-size:13px;font-weight:600;margin:14px 0 8px">📦 ${t('店内商品')}</div><div style="display:grid;gap:6px">${productCards}</div>${ratingItems}`}
   `, 'discover')
+  if (shopTab === 'rulings') window.hydrateShopRulings?.(seller.id)
 }
 
 // 复制店铺推荐链接 — /?ref=CODE#shop/<seller>(target URL 形态:ref 在 query,目标页在 hash,服务端可见 ref)。

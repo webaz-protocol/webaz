@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (808 endpoints, 19 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (808 endpoints, 20 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -4761,11 +4761,51 @@
     },
     "/api/disputes/cases": {
       "get": {
-        "summary": "公开列表（全网）— 判例库总览",
+        "summary": "公开终局裁决列表（可按卖家筛选；不返回当事人或未脱敏案情）",
         "tags": [
           "dispute"
         ],
-        "security": []
+        "security": [],
+        "parameters": [
+          {
+            "name": "seller_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "description": "公开卖家 ID；仅筛选已公开、已脱敏的终局裁决"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "winner",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "seller",
+                "buyer",
+                "split",
+                "dismissed"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 5,
+              "maximum": 50
+            }
+          }
+        ]
       }
     },
     "/api/disputes/cases/:case_id": {

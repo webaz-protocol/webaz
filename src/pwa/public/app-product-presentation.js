@@ -52,19 +52,5 @@
     </div>`
   }
 
-  window.sellerRulingsHtml = (metrics, sellerId) => {
-    const wins = Math.max(0, Number(metrics?.dispute_won_count) || 0)
-    const losses = Math.max(0, Number(metrics?.dispute_lost_count) || 0)
-    const open = Math.max(0, Number(metrics?.open_dispute_count) || 0)
-    const total = wins + losses
-    const href = `#shop/${encodeURIComponent(String(sellerId || ''))}?tab=disputes`
-    const parts = []
-    if (total) {
-      const winShare = Math.round((wins / total) * 100)
-      const label = `${tr('卖家裁决')}：${tr('胜')} ${wins}，${tr('负')} ${losses}`
-      parts.push(`<button type="button" class="seller-rulings-chip" style="--seller-win-share:${winShare}%" data-ruling-wins="${wins}" data-ruling-losses="${losses}" aria-label="${esc(label)}" title="${esc(label)}" onclick="navigate('${href}')"><span class="seller-rulings-label">⚖ ${esc(tr('裁决'))}</span><span class="seller-rulings-win">${esc(tr('胜'))} ${wins}</span><span class="seller-rulings-loss">${esc(tr('负'))} ${losses}</span></button>`)
-    }
-    if (open) parts.push(`<span class="seller-open-dispute-chip" title="${esc(tr('近 90 天仍在处理的争议'))}">⏳ ${esc(tr('处理中'))} ${open}</span>`)
-    return parts.join('')
-  }
+  window.sellerRulingsHtml = (_metrics, sellerId) => window.publicSellerRulingsHtml ? window.publicSellerRulingsHtml(sellerId) : ''
 })()
