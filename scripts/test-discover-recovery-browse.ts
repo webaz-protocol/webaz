@@ -110,14 +110,19 @@ try {
   // Codex R1-1:result_handle 不是本 GET 路由能力,不得作守卫豁免(伪 handle 曾可绕过扫全目录)
   const ub7 = await getJson('/api/products?mode=agent&limit=200&result_handle=x')
   ok('UB-7 伪 result_handle 不豁免守卫(仍 400)', ub7.status === 400 && ub7.j.error_code === 'UNBOUNDED_CATALOG_BROWSE', JSON.stringify(ub7.j).slice(0, 120))
-  // Codex R1-2:无约束 + cursor 翻页 → 400(8 件一翻可枚举全目录)
+  // 无约束 + cursor + limit≤8 → 放行:目录公开、每页 ≤8 token 有界,游标分页无害(与 model-projection
+  //   锁定的游标分页完整性契约一致;守卫防的是单次大响应,非公开数据枚举)。limit>8 仍拒(见 UB-1)。
   const ub8 = await getJson('/api/products?mode=agent&limit=8&cursor=eyJ4IjoxfQ')
-  ok('UB-8 无约束 + cursor → 400(禁翻页枚举)', ub8.status === 400 && ub8.j.error_code === 'UNBOUNDED_CATALOG_BROWSE', JSON.stringify(ub8.j).slice(0, 120))
+  ok('UB-8 无约束 + cursor + limit≤8 → 放行(每页有界,游标分页公开目录无害)', ub8.status === 200, JSON.stringify(ub8.j).slice(0, 120))
   // Codex R1-3:product_type / since_days / has_trial 也是有效约束,不得误判 400
   const ub9 = await getJson('/api/products?mode=agent&product_type=retail&limit=50')
   ok('UB-9 product_type 约束不触发守卫', ub9.status === 200, JSON.stringify(ub9.j).slice(0, 120))
   const ub10 = await getJson('/api/products?mode=agent&since_days=7&limit=50')
-  ok('UB-10 since_days 约束不触发守卫', ub10.status === 200, JSON.stringify(ub10.j).slice(0, 120))
+  ok('UB-10 since_days(≤365)有效约束不触发守卫', ub10.status === 200, JSON.stringify(ub10.j).slice(0, 120))
+  // Codex R2-1:since_days 超 SQL 生效范围(366)不施加过滤 → 不得当作约束绕过守卫
+  const ub11 = await getJson('/api/products?mode=agent&since_days=366&limit=200')
+  ok('UB-11 since_days=366(SQL 不生效)仍触发 UNBOUNDED_CATALOG_BROWSE', ub11.status === 400
+    && ub11.j.error_code === 'UNBOUNDED_CATALOG_BROWSE', JSON.stringify(ub11.j).slice(0, 120))
 } finally { server.close() }
 
 if (fail > 0) { console.error(`\n❌ discover-recovery-browse FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
