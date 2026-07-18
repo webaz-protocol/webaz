@@ -816,6 +816,7 @@ jobs:
       - run: npm run test:mcp-result-handle
       - run: npm run test:mcp-tool-surfaces
       - run: npm run test:mcp-definition-budget
+      - run: npm run test:mcp-quote-approval-ui
       - run: npm run test:discover-demand-signals
       - run: npm run test:agent-address-masking
       - run: npm run test:buyer-quote

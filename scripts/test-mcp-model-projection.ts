@@ -174,8 +174,8 @@ try {
   const { tools } = await client.listTools()
   const byName = Object.fromEntries(tools.map(t => [t.name, t])) as Record<string, { outputSchema?: Record<string, unknown> }>
   const osOf = (n: string): Record<string, unknown> => (byName[n]?.outputSchema ?? {}) as Record<string, unknown>
-  ok('W-1 exactly the 3 core tools carry outputSchema (search/buyer_orders/quote_order; others unchanged)',
-    tools.filter(t => t.outputSchema).map(t => t.name).sort().join(',') === 'webaz_buyer_orders,webaz_quote_order,webaz_search')
+  ok('W-1 exactly the 5 shopping-chain tools carry outputSchema (search/buyer_orders/quote/draft/submit)',
+    tools.filter(t => t.outputSchema).map(t => t.name).sort().join(',') === 'webaz_buyer_orders,webaz_order_draft,webaz_quote_order,webaz_search,webaz_submit_order_request')
   ok('W-2 outputSchema carries versioned schema ids (webaz.*.model.v1)',
     JSON.stringify(osOf('webaz_search')).includes('webaz.product_search.model.v1')
     && JSON.stringify(osOf('webaz_buyer_orders')).includes('webaz.order_status.model.v1')
@@ -262,7 +262,7 @@ try {
 
   // ── [quote] schema_version + 整数金额 + 预算(handler 级 + wire 级)───────────────────────
   const q = await H.handleQuoteOrder({ product_id: 'prd_1', quantity: 1 })
-  ok('Q-1 quote carries schema_version + single-use token + integer money', q.schema_version === 'webaz.order_quote.model.v1' && String(q.quote_token ?? '').startsWith('qtk_') && Number.isInteger((q.total as Record<string, unknown>)?.amount_minor), JSON.stringify(q).slice(0, 200))
+  ok('Q-1 quote (handler = protocol contract) keeps schema_version + token + integer money', q.schema_version === 'webaz.order_quote.model.v1' && String(q.quote_token ?? '').startsWith('qtk_') && Number.isInteger((q.total as Record<string, unknown>)?.amount_minor), JSON.stringify(q).slice(0, 200))
   ok('Q-2 quote keeps address masked (region only, full address never present)', !PII.test(JSON.stringify(q)))
   const qw = await client.callTool({ name: 'webaz_quote_order', arguments: { product_id: 'prd_2', quantity: 1 } }) as Record<string, unknown>
   const qsc = qw.structuredContent as Record<string, unknown> | undefined
