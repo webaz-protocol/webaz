@@ -146,8 +146,11 @@ try {
   ok('10. 联系商家 = 会话流 + 订单号内插进提示词(webaz_order_chat 绑定;无自由私信面)',
     html.includes("读取订单 '+out.order_id+' 的对话") && html.includes('webaz_order_chat') && html.includes('sendFollowupTurn'))
   ok('13. 组件端本地时区渲染(toLocaleString)+ 刷新走 callTool', html.includes('toLocaleString') && html.includes("callTool('webaz_buyer_orders'"))
-  ok('R1-4. openExternal 唯一调用点且字面锁 webaz.xyz 前缀', (html.match(/openExternal\(\{href:/g) ?? []).length === 1
-    && html.includes("openExternal({href:'https://webaz.xyz/#order/'"), `sites=${(html.match(/openExternal\(\{href:/g) ?? []).length}`)
+  // PR-A 起 openExternal 唯一调用点在 openWebaz 内部,且入参必须先过 safeWebazHref(URL 解析
+  // origin === 'https://webaz.xyz' 且无 userinfo);deep link 调用点仍是字面 webaz.xyz 前缀构造。
+  ok('R1-4. openExternal 单一调用点在 safeWebazHref 守卫后 + deep link 字面前缀', (html.match(/openExternal\(\{href:/g) ?? []).length === 1
+    && html.includes('var h=safeWebazHref(href); if(!h) return false')
+    && html.includes("openWebaz(oai,'https://webaz.xyz/#order/'"), `sites=${(html.match(/openExternal\(\{href:/g) ?? []).length}`)
   ok('R1-1b. 组件带 minimal 单订单分支(查看完整时间线入口)', html.includes('查看完整时间线') && html.includes('out.order'))
   const tools = (await c.listTools()).tools as Array<{ name: string; _meta?: Record<string, unknown> }>
   ok('T-1. webaz_buyer_orders 描述符挂 order-timeline outputTemplate', tools.find(t => t.name === 'webaz_buyer_orders')?._meta?.['openai/outputTemplate'] === 'ui://widget/webaz-order-timeline.html')

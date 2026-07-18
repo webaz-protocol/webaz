@@ -1,17 +1,124 @@
 /**
- * MCP UI PR-4 — MCP App widgets(ChatGPT Apps 渐进增强;Claude/纯文本宿主走 structuredContent+摘要降级)。
+ * MCP UI PR-4..6 + PR-A — MCP App widgets(双轨:ChatGPT legacy skybridge + 标准 MCP Apps)。
  *
- * 纪律(spike 定稿):自包含单文件(宿主 CSP 内零外联);一切文本经 textContent(卖家可控标题,
- * 绝不 innerHTML);本地交互(展开/排序/选择/比较)零模型调用;跨 MCP 的动作只走宿主提供的
- * window.openai.callTool / sendFollowupTurn 且逐个能力探测,缺失即优雅降级为提示文案;
- * 经济动作(报价→草稿→提交)永远回到会话流(最终 Passkey 在 webaz.xyz),widget 绝不直达钱路。
- * v1 无商品图(widget CSP 对外源图片未验证;图片面待 UI Projection 层)。
+ * 纪律(spike 定稿 + PR-A):自包含单文件(宿主 CSP 内零外联);一切文本经 textContent(卖家可控标题,
+ * 绝不 innerHTML);本地交互(展开/排序/选择/比较)零模型调用;跨 MCP 动作只走宿主桥且逐个能力探测,
+ * 缺失即优雅降级为提示文案;经济动作(报价→草稿→提交)只提交审批请求,正式建单永远发生在
+ * webaz.xyz 的 Passkey(widget 绝不直达钱路)。v1 无商品图(CSP deny-by-default,图片面另开任务)。
+ *
+ * PR-A 双轨(capability-driven,零 host 名判断):
+ *   - legacy HTML(*.html,text/html+skybridge):window.openai 直连 —— 与 PR-4..6 生产行为一致,
+ *     仅两处外科变更:①sendFollowUpCompat(sendFollowUpMessage 优先、sendFollowupTurn 降级、单发)
+ *     ②openWebaz(URL 解析后 https + 精确主机 webaz.xyz + 默认端口 + 无 userinfo 才放行)。
+ *   - standard HTML(*-mcp.html,text/html;profile=mcp-app):标准 ui/* postMessage JSON-RPC 桥
+ *     (SEP-1865 spec 2026-01-26:ui/initialize 三步握手 → ui/notifications/tool-result 携带
+ *     CallToolResult 渲染;tools/call / ui/open-link {url} / ui/message {role:'user',content});
+ *     握手超时则降级 window.openai(覆盖"宿主用标准键指到本资源但只提供 openai 桥"的过渡态),
+ *     两者皆无 → 只读渲染。单桥原则:握手成败一次定桥,绝不双桥同听。
+ *   - 两个资源共享同一 render 体(同一份组件业务代码),只有 boot 不同。
  */
 
-// ProductResults:渲染 webaz_search 的三种 structuredContent 形态
-//   ①搜索/浏览页(webaz.product_search.model.v1:products+sellers+next_cursor+result_handle)
-//   ②0 命中(found:0 + recovery.catalog_sample)③按需详情(webaz.product_detail.model.v1)。
-export const PRODUCT_RESULTS_WIDGET_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+// ─── 共享运行时片段(注入两轨)────────────────────────────────────────────────────────────────
+
+// compat 分两片按需注入:CORE(会话流兼容 + 防重)所有组件都要;LINK(deep-link 安全)只给有
+// openExternal 面的组件 —— ProductResults 保持"零 URL/零 href 词元"的最强自包含锁不被稀释。
+const WIDGET_COMPAT_CORE_JS = `
+  function canFollowUp(oai){ return !!oai&&(typeof oai.sendFollowUpMessage==='function'||typeof oai.sendFollowupTurn==='function') }
+  function sendFollowUpCompat(oai,text){
+    if(!oai) return false
+    if(typeof oai.sendFollowUpMessage==='function'){ oai.sendFollowUpMessage({prompt:text}); return true }
+    if(typeof oai.sendFollowupTurn==='function'){ oai.sendFollowupTurn({prompt:text}); return true }
+    return false
+  }
+  function onceGuard(fn,ms){ var busy=false; return function(){ if(busy)return; busy=true; try{ fn.apply(null,arguments) }finally{ setTimeout(function(){busy=false},ms||1500) } } }
+`
+// openExternal 安全:仅放行 https + 精确主机 webaz.xyz + 默认端口 + 无 userinfo(URL 解析后逐字段
+// 比较,拒 javascript:/data:/协议相对/用户名注入);deep link 只由调用点从服务端权威字段构造。
+const WIDGET_COMPAT_LINK_JS = `
+  function safeWebazHref(h){ try{ var u=new URL(String(h)); if(u.protocol==='https:'&&u.hostname==='webaz.xyz'&&u.port===''&&u.username===''&&u.password==='') return u.href }catch(e){} return null }
+  function openWebaz(oai,href){ var h=safeWebazHref(href); if(!h) return false; if(oai&&typeof oai.openExternal==='function'){ oai.openExternal({href:h}); return true } return false }
+`
+
+// legacy boot:与 PR-4..6 生产行为逐语义一致(window.openai 同步读 toolOutput)。
+const WIDGET_BOOT_LEGACY_JS = `
+  var __oai = window.openai || {}
+  renderBody(__oai, __oai.toolOutput || null)
+`
+
+// standard boot:SEP-1865 ui/* 桥。握手成功 → 标准 facade(oai 形状兼容 render 体);
+// 超时/失败 → window.openai;再无 → 只读(空 facade,能力探测全 false)。
+const WIDGET_BRIDGE_STANDARD_JS = `
+  function makeStandardBridge(onToolResult){
+    var pending={}, seq=0, hostOrigin=null, closed=false
+    function post(msg){ try{ window.parent.postMessage(msg, hostOrigin||'*') }catch(e){} }
+    function onMsg(e){
+      if(closed) return
+      if(e.source!==window.parent) return
+      var m=e.data
+      if(!m||typeof m!=='object'||m.jsonrpc!=='2.0') return
+      if(hostOrigin===null) hostOrigin=e.origin
+      else if(e.origin!==hostOrigin) return
+      if(m.id!=null&&pending[m.id]){ var p=pending[m.id]; delete pending[m.id]; if(m.error)p.rej(m.error); else p.res(m.result); return }
+      if(m.method==='ui/notifications/tool-result'&&m.params) onToolResult(m.params)
+    }
+    function request(method,params){ return new Promise(function(res,rej){ var id=++seq; pending[id]={res:res,rej:rej}; post({jsonrpc:'2.0',id:id,method:method,params:params}) }) }
+    window.addEventListener('message',onMsg)
+    return {
+      connect:function(timeoutMs){
+        var to=new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('bridge timeout')) },timeoutMs) })
+        return Promise.race([request('ui/initialize',{appInfo:{name:'webaz-widget',version:'1.0'},appCapabilities:{},protocolVersion:'2026-01-26'}),to])
+          .then(function(r){ post({jsonrpc:'2.0',method:'ui/notifications/initialized',params:{}}); return r })
+          .catch(function(err){ closed=true; window.removeEventListener('message',onMsg); throw err })
+      },
+      callTool:function(n,a){ return request('tools/call',{name:n,arguments:a||{}}) },
+      openLink:function(url){ return request('ui/open-link',{url:url}) },
+      sendMessage:function(text){ return request('ui/message',{role:'user',content:{type:'text',text:String(text)}}) },   // 2026-01-26 冻结版:content = 单 ContentBlock(Codex R1-1)
+    }
+  }
+`
+const WIDGET_BOOT_STANDARD_JS = `
+  var __facade=null
+  function __onToolResult(r){ if(r&&r.structuredContent) renderBody(__facade, r.structuredContent) }
+  var __br=makeStandardBridge(__onToolResult)
+  __br.connect(600).then(function(){
+    __facade={
+      // 单渲染源(Codex R1-2):规范要求宿主对【一切】完成的工具执行统一发 ui/notifications/tool-result
+      // (含 view 发起的),渲染只走通知路径 —— response 不重复渲染,消除双渲染/乱序覆盖。
+      callTool:function(n,a){ __br.callTool(n,a).catch(function(){}) },
+      openExternal:function(o){ var u=o&&o.href; var h=(typeof safeWebazHref==='function')?safeWebazHref(u):null; if(h) __br.openLink(h).catch(function(){}) },
+      sendFollowUpMessage:function(o){ __br.sendMessage((o&&o.prompt)||'').catch(function(){}) },
+    }
+    // 初始数据经 ui/notifications/tool-result 到达(握手完成前宿主不得发送)—— 保持 loading 文案等待。
+  }).catch(function(){
+    var w=window.openai
+    if(w){ __facade=w; renderBody(w, w.toolOutput||null) }
+    else { renderBody({}, null) }
+  })
+`
+
+function buildWidgetHtml(opts: { style: string; loading: string; bodyJs: string; standard: boolean; link: boolean }): string {
+  const compat = WIDGET_COMPAT_CORE_JS + (opts.link ? WIDGET_COMPAT_LINK_JS : '')
+  const bridge = opts.standard ? WIDGET_BRIDGE_STANDARD_JS : ''
+  const boot = opts.standard ? WIDGET_BOOT_STANDARD_JS : WIDGET_BOOT_LEGACY_JS
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${opts.style}</style></head><body>
+<div id="root">${opts.loading}</div>
+<script>
+(function(){
+  'use strict'
+${compat}
+${bridge}
+${opts.bodyJs}
+${boot}
+})();
+</script></body></html>`
+}
+
+// ─── ProductResults ───────────────────────────────────────────────────────────────────────────
+// 渲染 webaz_search 的三种 structuredContent 形态:①搜索/浏览页(webaz.product_search.model.v1:
+// products+sellers+next_cursor+result_handle)②0 命中(found:0 + recovery.catalog_sample)
+// ③按需详情(webaz.product_detail.model.v1)。
+
+const PRODUCT_RESULTS_STYLE = `
 :root{--line:#d6dae2;--ink:#1c2330;--sub:#5b6472;--ok:#0a7d4f;--warn:#a15c00;--bg:#fff}
 body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);background:transparent}
 .bar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
@@ -32,14 +139,11 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
 .cmp{margin-top:12px;border-top:1px solid var(--line);padding-top:8px;font-size:12px;display:none}
 .cmp table{border-collapse:collapse;width:100%}
 .cmp td,.cmp th{border:1px solid var(--line);padding:3px 6px;text-align:left;font-size:11px}
-.note{font-size:11px;color:var(--sub);margin-top:10px}
-</style></head><body>
-<div id="root">WebAZ ProductResults — loading…</div>
-<script>
-(function(){
-  'use strict'
-  var oai = window.openai || {}
-  var out = oai.toolOutput || null
+.note{font-size:11px;color:var(--sub);margin-top:10px}`
+
+const PRODUCT_RESULTS_BODY_JS = `
+function renderBody(oai, out){
+  oai = oai || {}
   var root = document.getElementById('root')
   function el(tag, cls, text){ var n=document.createElement(tag); if(cls)n.className=cls; if(text!=null)n.textContent=String(text); return n }
   if(!out){ root.textContent='WebAZ: no structured payload visible to this widget.'; return }
@@ -90,7 +194,7 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
     })
     if(out.next_cursor&&typeof oai.callTool==='function'){
       var more=el('button',null,'下一页')
-      more.addEventListener('click',function(){ oai.callTool('webaz_search',{cursor:out.next_cursor,limit:5}) })
+      more.addEventListener('click',onceGuard(function(){ oai.callTool('webaz_search',{cursor:out.next_cursor,limit:5}) }))
       bar.appendChild(more)
     }
     root.appendChild(bar)
@@ -126,15 +230,14 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
       row.appendChild(ex)
       if(out.result_handle&&typeof oai.callTool==='function'){
         var dt=el('button',null,'详情')
-        dt.addEventListener('click',function(){ oai.callTool('webaz_search',{result_handle:out.result_handle,selected_ids:[p.id]}) })
+        dt.addEventListener('click',onceGuard(function(){ oai.callTool('webaz_search',{result_handle:out.result_handle,selected_ids:[p.id]}) }))
         row.appendChild(dt)
       }
       var q=el('button',null,'报价')
-      q.addEventListener('click',function(){
+      q.addEventListener('click',onceGuard(function(){
         // 经济链路回会话流:报价→草稿→提交→Passkey(widget 绝不直达钱路)
-        if(typeof oai.sendFollowupTurn==='function') oai.sendFollowupTurn({prompt:'请用 webaz_quote_order 给商品 '+p.id+' 报价'})
-        else alert('请在对话里说:给 '+p.id+' 报价')
-      })
+        if(!sendFollowUpCompat(oai,'请用 webaz_quote_order 给商品 '+p.id+' 报价')) q.textContent='请在对话里说:给 '+p.id+' 报价'
+      }))
       row.appendChild(q)
       var sel=el('button',null,state.selected[p.id]?'已选✓':'比较')
       sel.addEventListener('click',function(){ state.selected[p.id]=!state.selected[p.id]; render() })   // 本地选择
@@ -160,13 +263,14 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
     root.appendChild(el('div','note','报价不会扣款 · 草稿不锁库存 · 正式下单需你在 webaz.xyz 用 Passkey 批准 · ≈ 法币换算仅显示参考,非结算'))
   }
   render()
-})();
-</script></body></html>`
+}`
 
-// QuoteAndApproval:渲染 quote / draft / approval 三形态(webaz.order_quote|order_draft|order_approval .model.v1)。
-// 经济动作永远回到会话流/Passkey:创建草稿与提交审批 = callTool(低风险 SUBMIT 面);正式建单只发生在
-// webaz.xyz 的 Passkey 批准。重复购买保护:duplicate_warning 渲染为显式警告卡,绝不静默二次创建。
-export const QUOTE_APPROVAL_WIDGET_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+// ─── QuoteAndApproval ─────────────────────────────────────────────────────────────────────────
+// 渲染 quote / draft / approval 三形态(webaz.order_quote|order_draft|order_approval .model.v1)。
+// 创建草稿与提交审批 = callTool(不扣款/不锁库存/幂等 + 重复购买保护);正式建单只发生在 webaz.xyz
+// 的 Passkey 批准。duplicate_warning 渲染为显式警告卡,绝不静默二次创建。
+
+const QUOTE_APPROVAL_STYLE = `
 body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;background:transparent}
 .box{border:1px solid #d6dae2;border-radius:12px;padding:14px 16px;max-width:420px;background:#fff}
 .h{font-size:14px;font-weight:700;margin-bottom:8px}
@@ -180,22 +284,19 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;backgr
 .toggle{font-size:11px;color:#5b6472;cursor:pointer;text-decoration:underline;margin-top:6px;display:inline-block}
 .hide{display:none}
 .disc{font-size:11px;color:#7a5200;margin-top:10px;line-height:1.5}
-.ok{color:#0a7d4f}
-</style></head><body>
-<div id="root">WebAZ QuoteAndApproval — loading…</div>
-<script>
-(function(){
-  'use strict'
-  var oai = window.openai || {}
-  var out = oai.toolOutput || null
+.ok{color:#0a7d4f}`
+
+const QUOTE_APPROVAL_BODY_JS = `
+function renderBody(oai, out){
+  oai = oai || {}
   var root = document.getElementById('root')
   function el(t,c,x){ var n=document.createElement(t); if(c)n.className=c; if(x!=null)n.textContent=String(x); return n }
   function row(box,k,v){ var r=el('div','row'); r.appendChild(el('span',null,k)); r.appendChild(el('span',null,v)); box.appendChild(r) }
   function toggler(box,label,build){ var tg=el('span','toggle',label); var body=el('div','sec hide'); build(body); tg.addEventListener('click',function(){ body.classList.toggle('hide') }); box.appendChild(tg); box.appendChild(body) }
   function fiatLine(box,fe){ if(!fe)return; var f=el('div','fiat',fe.display+(fe.stale?'(近似汇率)':'')); box.appendChild(f) }
   function disclosures(box,list){ var d=el('div','disc',(list||[]).join(' · ')); box.appendChild(d) }
-  if(!out||!out.schema_version){ root.textContent='WebAZ: no structured payload visible to this widget.'; return }
   root.textContent=''
+  if(!out||!out.schema_version){ root.textContent='WebAZ: no structured payload visible to this widget.'; return }
   var box=el('div','box'); root.appendChild(box)
   var sv=String(out.schema_version)
 
@@ -217,7 +318,7 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;backgr
     row(box,'库存','未锁定(下单时重新校验)')
     if(out.quote_token&&typeof oai.callTool==='function'){
       var b1=el('button','btn','创建订单草稿(不扣款)')
-      b1.addEventListener('click',function(){ oai.callTool('webaz_order_draft',{action:'create',quote_token:out.quote_token}) })
+      b1.addEventListener('click',onceGuard(function(){ b1.disabled=true; oai.callTool('webaz_order_draft',{action:'create',quote_token:out.quote_token}) }))
       box.appendChild(b1)
     }
     disclosures(box,out.disclosures)
@@ -234,7 +335,7 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;backgr
     row(box,'过期时间',String(out.expires_at||''))
     if(String(out.status)==='draft'&&typeof oai.callTool==='function'){
       var b2=el('button','btn','提交 Passkey 审批(不会直接执行)')
-      b2.addEventListener('click',function(){ oai.callTool('webaz_submit_order_request',{draft_id:out.draft_id}) })
+      b2.addEventListener('click',onceGuard(function(){ b2.disabled=true; oai.callTool('webaz_submit_order_request',{draft_id:out.draft_id}) }))
       box.appendChild(b2)
     }
     disclosures(box,out.disclosures)
@@ -252,23 +353,24 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;backgr
       box.appendChild(w)
     }
     var openBtn=el('button','btn','打开审批页面(webaz.xyz · Passkey)')
-    openBtn.addEventListener('click',function(){
-      if(typeof oai.openExternal==='function') oai.openExternal({href:'https://webaz.xyz/'+String(out.approval_url||'').replace(/^\\//,'')})
-      else if(typeof oai.sendFollowupTurn==='function') oai.sendFollowupTurn({prompt:'请给我审批页面链接'})
-    })
+    openBtn.addEventListener('click',onceGuard(function(){
+      // approval_url = 服务端权威字段;openWebaz 内部做 origin 校验
+      if(!openWebaz(oai,'https://webaz.xyz/'+String(out.approval_url||'').replace(/^\\//,''))) sendFollowUpCompat(oai,'请给我审批页面链接')
+    }))
     box.appendChild(openBtn)
     box.appendChild(el('div','meta ok','批准成功后:唯一正式订单号可经 webaz_approval_requests 查询(executed_order_id)'))
     disclosures(box,out.disclosures)
   } else {
     box.textContent='未知投影版本:'+sv
   }
-})();
-</script></body></html>`
+}`
 
-// OrderTimeline:渲染 webaz.order_timeline.model.v1(单订单履约时间线)与 webaz.order_status.model.v1
-// (列表/最小单/up_to_date)。deadline 在组件端按【观看者本地时区】渲染;刷新走 callTool(增量语义由
-// 服务端 updated_since 承担);联系商家回会话流(上下文绑定订单聊天,无自由私信);高风险动作回订单页。
-export const ORDER_TIMELINE_WIDGET_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+// ─── OrderTimeline ────────────────────────────────────────────────────────────────────────────
+// 渲染 webaz.order_timeline.model.v1(单订单履约时间线)与 webaz.order_status.model.v1(列表/最小单/
+// up_to_date)。deadline 在组件端按【观看者本地时区】渲染;刷新走 callTool;联系商家回会话流(上下文
+// 绑定订单聊天,无自由私信;无订单上下文不启用);高风险动作回订单页。
+
+const ORDER_TIMELINE_STYLE = `
 body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;background:transparent}
 .box{border:1px solid #d6dae2;border-radius:12px;padding:14px 16px;max-width:430px;background:#fff}
 .h{font-size:14px;font-weight:700;margin-bottom:4px}
@@ -283,20 +385,17 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;backgr
 .warn{background:#fff7e0;border:1px solid #e5c268;border-radius:10px;padding:8px 10px;font-size:11px;color:#7a5200;margin-top:8px}
 .rowbtn{display:flex;gap:6px;margin-top:10px}
 .rowbtn button{flex:1;border:1px solid #93a3f5;background:#eef2ff;border-radius:10px;padding:6px;font-size:12px;font-weight:600;cursor:pointer;color:#2b3a8f}
-.meta{font-size:11px;color:#5b6472}
-</style></head><body>
-<div id="root">WebAZ OrderTimeline — loading…</div>
-<script>
-(function(){
-  'use strict'
-  var oai = window.openai || {}
-  var out = oai.toolOutput || null
+.meta{font-size:11px;color:#5b6472}`
+
+const ORDER_TIMELINE_BODY_JS = `
+function renderBody(oai, out){
+  oai = oai || {}
   var root = document.getElementById('root')
   function el(t,c,x){ var n=document.createElement(t); if(c)n.className=c; if(x!=null)n.textContent=String(x); return n }
   function row(box,k,v){ var r=el('div','row'); r.appendChild(el('span',null,k)); r.appendChild(el('span',null,v)); box.appendChild(r) }
   function localTime(iso){ try { return new Date(String(iso).replace(' ','T')+(String(iso).includes('Z')||String(iso).includes('+')?'':'Z')).toLocaleString() } catch(e){ return String(iso) } }
-  if(!out||!out.schema_version){ root.textContent='WebAZ: no structured payload visible to this widget.'; return }
   root.textContent=''
+  if(!out||!out.schema_version){ root.textContent='WebAZ: no structured payload visible to this widget.'; return }
   var box=el('div','box'); root.appendChild(box)
   var sv=String(out.schema_version)
 
@@ -310,7 +409,7 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;backgr
       if(mo.deadline) row(box,'截止时间',localTime(mo.deadline))
       if(typeof oai.callTool==='function'){
         var mb=el('div','rowbtn'); var mf=el('button',null,'查看完整时间线')
-        mf.addEventListener('click',function(){ oai.callTool('webaz_buyer_orders',{order_id:mo.order_id,full:true}) })
+        mf.addEventListener('click',onceGuard(function(){ oai.callTool('webaz_buyer_orders',{order_id:mo.order_id,full:true}) }))
         mb.appendChild(mf); box.appendChild(mb)
       }
       return
@@ -320,7 +419,7 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;backgr
     box.appendChild(el('div','meta','共 '+(s.total||0)+' 单 · 活跃 '+(s.active||0)+' · 争议 '+(s.disputed||0)))
     ;(out.orders||[]).forEach(function(o){
       var r=el('div','row'); r.appendChild(el('span',null,String(o.order_id).slice(0,12)+'…')); r.appendChild(el('span',null,String(o.status)))
-      if(typeof oai.callTool==='function'){ r.style.cursor='pointer'; r.addEventListener('click',function(){ oai.callTool('webaz_buyer_orders',{order_id:o.order_id,full:true}) }) }
+      if(typeof oai.callTool==='function'){ r.style.cursor='pointer'; r.addEventListener('click',onceGuard(function(){ oai.callTool('webaz_buyer_orders',{order_id:o.order_id,full:true}) })) }
       box.appendChild(r)
     })
     return
@@ -349,18 +448,33 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:#1c2330;backgr
   var btns=el('div','rowbtn')
   if(typeof oai.callTool==='function'){
     var rf=el('button',null,'刷新')
-    rf.addEventListener('click',function(){ oai.callTool('webaz_buyer_orders',{order_id:out.order_id,full:true}) })   // 增量语义在服务端 updated_since;此处全读保证动作面新鲜
+    rf.addEventListener('click',onceGuard(function(){ oai.callTool('webaz_buyer_orders',{order_id:out.order_id,full:true}) }))   // 增量语义在服务端 updated_since;此处全读保证动作面新鲜
     btns.appendChild(rf)
   }
-  var chat=el('button',null,'联系商家')
-  chat.addEventListener('click',function(){
-    if(typeof oai.sendFollowupTurn==='function') oai.sendFollowupTurn({prompt:'请用 webaz_order_chat 读取订单 '+out.order_id+' 的对话'})
-  })
-  btns.appendChild(chat)
+  if(out.order_id&&canFollowUp(oai)){
+    var chat=el('button',null,'联系商家')
+    chat.addEventListener('click',onceGuard(function(){ sendFollowUpCompat(oai,'请用 webaz_order_chat 读取订单 '+out.order_id+' 的对话') },2000))
+    btns.appendChild(chat)
+  }
   var open=el('button',null,'订单页(webaz.xyz)')
-  open.addEventListener('click',function(){ if(typeof oai.openExternal==='function') oai.openExternal({href:'https://webaz.xyz/#order/'+String(out.order_id||'')}) })
+  open.addEventListener('click',onceGuard(function(){ openWebaz(oai,'https://webaz.xyz/#order/'+encodeURIComponent(String(out.order_id||''))) }))
   btns.appendChild(open)
   box.appendChild(btns)
   box.appendChild(el('div','meta',String(out.actions_note||'')))
-})();
-</script></body></html>`
+}`
+
+// ─── 导出:每组件 legacy(skybridge)+ standard(profile=mcp-app)双 HTML,共享同一 render 体 ──
+
+export const PRODUCT_RESULTS_WIDGET_HTML = buildWidgetHtml({ style: PRODUCT_RESULTS_STYLE, loading: 'WebAZ ProductResults — loading…', bodyJs: PRODUCT_RESULTS_BODY_JS, standard: false, link: false })
+export const PRODUCT_RESULTS_WIDGET_MCP_HTML = buildWidgetHtml({ style: PRODUCT_RESULTS_STYLE, loading: 'WebAZ ProductResults — loading…', bodyJs: PRODUCT_RESULTS_BODY_JS, standard: true, link: false })
+
+export const QUOTE_APPROVAL_WIDGET_HTML = buildWidgetHtml({ style: QUOTE_APPROVAL_STYLE, loading: 'WebAZ QuoteAndApproval — loading…', bodyJs: QUOTE_APPROVAL_BODY_JS, standard: false, link: true })
+export const QUOTE_APPROVAL_WIDGET_MCP_HTML = buildWidgetHtml({ style: QUOTE_APPROVAL_STYLE, loading: 'WebAZ QuoteAndApproval — loading…', bodyJs: QUOTE_APPROVAL_BODY_JS, standard: true, link: true })
+
+export const ORDER_TIMELINE_WIDGET_HTML = buildWidgetHtml({ style: ORDER_TIMELINE_STYLE, loading: 'WebAZ OrderTimeline — loading…', bodyJs: ORDER_TIMELINE_BODY_JS, standard: false, link: true })
+export const ORDER_TIMELINE_WIDGET_MCP_HTML = buildWidgetHtml({ style: ORDER_TIMELINE_STYLE, loading: 'WebAZ OrderTimeline — loading…', bodyJs: ORDER_TIMELINE_BODY_JS, standard: true, link: true })
+
+// 测试专用导出(scripts/test-mcp-apps-standard.ts 在 node:vm 里驱动真实桥逻辑)—— 非运行时 API。
+export const __WIDGET_COMPAT_JS = WIDGET_COMPAT_CORE_JS + WIDGET_COMPAT_LINK_JS
+export const __WIDGET_BRIDGE_STANDARD_JS = WIDGET_BRIDGE_STANDARD_JS
+export const __WIDGET_BOOT_STANDARD_JS = WIDGET_BOOT_STANDARD_JS
