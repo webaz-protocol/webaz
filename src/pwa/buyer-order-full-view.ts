@@ -107,17 +107,28 @@ export function buildBuyerOrderFull(db: Database.Database, humanId: string, orde
   if (!o) return { ok: false, status: 404, body: { error_code: 'ORDER_NOT_FOUND', reason: 'no such order (or not yours)', retryable: false } }
 
   // MCP Token PR-2:updated_since 增量读 —— 无变化时返回极小 up_to_date 响应,有变化时 timeline 只回
-  //   新条目(agent/组件轮询不再每次重传整单)。比较锚 = orders.updated_at 与时间线最新条目;
-  //   时间格式宽容(ISO 'T' 或 SQLite 空格),秒级截断比较。权限/投影不变:仍是本人 + allowlist。
-  const sinceRaw = typeof updatedSince === 'string' && updatedSince ? updatedSince.replace('T', ' ').slice(0, 19) : null
-  if (typeof updatedSince === 'string' && updatedSince && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(sinceRaw))) {
-    return { ok: false, status: 400, body: { error_code: 'UPDATED_SINCE_INVALID', reason: 'updated_since must be an ISO timestamp (e.g. 2026-07-18T09:00:00Z)', retryable: true } }
+  //   新条目。锚点覆盖全视图的【每一个可变来源】(Codex H-2):orders.updated_at + 状态史 + 退货请求
+  //   (created/resolved)+ agent 发货追踪(approval executed_at);deadline 列的写入总是伴随状态转移
+  //   (原子块纪律)→ 由状态史锚覆盖。同秒边界(Codex M-1):up_to_date 用严格 <,timeline 过滤用 >=
+  //   —— 与 trending 翻页同一取舍:可重复,绝不丢。时间戳做【语义级】校验(Codex M-2):Date 真解析,
+  //   无时区标记按 UTC 处理,规格化到 UTC 秒级再比较。权限/投影不变:仍是本人 + allowlist。
+  let sinceRaw: string | null = null
+  if (typeof updatedSince === 'string' && updatedSince) {
+    const withTz = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(updatedSince) ? updatedSince : updatedSince.replace(' ', 'T') + 'Z'
+    const d = new Date(withTz)
+    if (Number.isNaN(d.getTime())) {
+      return { ok: false, status: 400, body: { error_code: 'UPDATED_SINCE_INVALID', reason: 'updated_since must be a valid ISO-8601 timestamp (e.g. 2026-07-18T09:00:00Z; no timezone = UTC)', retryable: true } }
+    }
+    sinceRaw = d.toISOString().slice(0, 19).replace('T', ' ')
   }
   const norm = (t: unknown): string => t == null ? '' : String(t).replace('T', ' ').slice(0, 19)
   if (sinceRaw) {
-    const newest = db.prepare('SELECT MAX(created_at) AS m FROM order_state_history WHERE order_id = ?').get(orderId) as { m: string | null }
-    if (norm(o.updated_at) <= sinceRaw && (newest.m == null || norm(newest.m) <= sinceRaw)) {
-      return { ok: true, response: { order_id: orderId, up_to_date: true, status: String(o.status ?? ''), updated_at: o.updated_at ?? null, note: 'no changes since updated_since — full view omitted' } }
+    const hist = db.prepare('SELECT MAX(created_at) AS m FROM order_state_history WHERE order_id = ?').get(orderId) as { m: string | null }
+    const rr = db.prepare("SELECT MAX(created_at) AS c, MAX(COALESCE(resolved_at, '')) AS r FROM return_requests WHERE order_id = ?").get(orderId) as { c: string | null; r: string | null }
+    const trk = db.prepare("SELECT MAX(executed_at) AS m FROM agent_permission_requests WHERE kind = 'order_action' AND order_id = ? AND executed_at IS NOT NULL").get(orderId) as { m: string | null }
+    const latest = [norm(o.updated_at), norm(hist.m), norm(rr.c), norm(rr.r), norm(trk.m)].reduce((a, b) => (b > a ? b : a), '')
+    if (latest < sinceRaw) {
+      return { ok: true, response: { order_id: orderId, up_to_date: true, status: String(o.status ?? ''), updated_at: o.updated_at ?? null, note: 'no changes since updated_since (order row / timeline / returns / agent tracking all unchanged) — full view omitted' } }
     }
   }
 
@@ -127,7 +138,7 @@ export function buildBuyerOrderFull(db: Database.Database, humanId: string, orde
       from: r.from_status == null ? null : String(r.from_status), to: String(r.to_status),
       actor_role: r.actor_role == null ? null : String(r.actor_role), at: String(r.created_at),
     }))
-  const timeline = sinceRaw ? timelineAll.filter(t => norm(t.at) > sinceRaw) : timelineAll
+  const timeline = sinceRaw ? timelineAll.filter(t => norm(t.at) >= sinceRaw) : timelineAll   // >=:同秒事件可重不丢
   const returns = (db.prepare('SELECT status, refund_amount, created_at, resolved_at FROM return_requests WHERE order_id = ? ORDER BY created_at DESC LIMIT 10')
     .all(orderId) as Array<Record<string, unknown>>).map(r => ({
       status: String(r.status), refund_amount: r.refund_amount == null ? null : Number(r.refund_amount),

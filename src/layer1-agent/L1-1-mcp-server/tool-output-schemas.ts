@@ -9,7 +9,7 @@
  * 每个 schema 同时容纳成功形状与结构化错误形状(error/error_code)—— 工具声明 outputSchema 后,
  * 成功与失败路径都返回 structuredContent(MCP 规范:声明了 outputSchema 的工具必须返回结构化结果)。
  */
-import { SCHEMA_PRODUCT_SEARCH, SCHEMA_ORDER_STATUS, SCHEMA_ORDER_QUOTE } from '../../agent-model-projection.js'
+import { SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL, SCHEMA_ORDER_STATUS, SCHEMA_ORDER_QUOTE } from '../../agent-model-projection.js'
 
 const money = { type: 'object', description: 'integer money: amount_minor / currency / currency_exponent / display' }
 const err = {
@@ -20,9 +20,9 @@ const err = {
 export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
   webaz_search: {
     type: 'object',
-    description: `${SCHEMA_PRODUCT_SEARCH} — model projection: decision fields only (no raw DB rows, no internal hashes/scores, no images)`,
+    description: `${SCHEMA_PRODUCT_SEARCH} (search/browse) OR ${SCHEMA_PRODUCT_DETAIL} (detail-fetch via result_handle) — model projection: decision fields only (no raw DB rows, no internal hashes/scores, no images)`,
     properties: {
-      schema_version: { type: 'string', const: SCHEMA_PRODUCT_SEARCH },
+      schema_version: { type: 'string', enum: [SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL] },
       count: { type: 'number', description: 'products returned in this page' },
       next_cursor: { type: 'string', description: 'present when more results exist — pass back as cursor' },
       sellers: { type: 'object', description: 'deduped seller summaries keyed by seller id (products[].seller_ref)' },

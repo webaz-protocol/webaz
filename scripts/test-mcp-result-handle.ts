@@ -21,6 +21,7 @@ process.env.WEBAZ_MODE = 'network'; delete process.env.WEBAZ_API_KEY
 const { initDatabase, generateId } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')
 const { registerAgentGrantsRoutes } = await import('../src/pwa/routes/agent-grants.js')
+const { OUTPUT_SCHEMAS } = await import('../src/layer1-agent/L1-1-mcp-server/tool-output-schemas.js')
 const { registerProductsListRoutes } = await import('../src/pwa/routes/products-list.js')
 const { initUserModerationSchema, initWebauthnSchema, initMcpResultCacheSchema } = await import('../src/runtime/webaz-schema-helpers.js')
 const { applyWebazRuntimeSchema } = await import('../src/runtime/apply-webaz-runtime-schema.js')
@@ -138,6 +139,36 @@ try {
   const d6 = scOf(await call({ result_handle: h2, selected_ids: [sid[0], sid[1]] }))
   ok('H-6 deactivated-after-issue product → unavailable_ids (live re-check, no stale cache)', (d6.count === 1) && Array.isArray(d6.unavailable_ids) && (d6.unavailable_ids as string[])[0] === sid[0], JSON.stringify(d6).slice(0, 200))
 
+  // H-6b/H-6c 其余公共可见性谓词同样活跑(Codex H-1):库存归零 / 外链 revoked-未-verified → unavailable
+  const s3 = scOf(await call({ sort: 'newest', limit: 5 }))
+  const h3 = String(s3.result_handle); const sid3 = (s3.products as Array<Record<string, unknown>>).map(p => String(p.id))
+  db.prepare("UPDATE products SET stock = 0 WHERE id = ?").run(sid3[0])
+  const pelCols = (db.prepare("PRAGMA table_info(product_external_links)").all() as Array<{ name: string; notnull: number; dflt_value: unknown }>)
+  const pelExtra = pelCols.filter(c => c.notnull === 1 && c.dflt_value == null && !['id', 'product_id', 'verified', 'revoked'].includes(c.name)).map(c => c.name)
+  db.prepare(`INSERT INTO product_external_links (id, product_id, verified, revoked${pelExtra.map(c => ', ' + c).join('')}) VALUES ('pel_rvk', ?, 0, 1${pelExtra.map(() => ", 'x'").join('')})`).run(sid3[1])
+  const d7 = scOf(await call({ result_handle: h3, selected_ids: [sid3[0], sid3[1], sid3[2]] }))
+  ok('H-6b/H-6c stock-zero + revoked-link products → unavailable (same predicates as search, live)',
+    d7.count === 1 && Array.isArray(d7.unavailable_ids) && (d7.unavailable_ids as string[]).sort().join(',') === [sid3[0], sid3[1]].sort().join(','), JSON.stringify(d7).slice(0, 250))
+  db.prepare("UPDATE products SET stock = 9 WHERE id = ?").run(sid3[0]); db.prepare("DELETE FROM product_external_links WHERE id = 'pel_rvk'").run()
+
+  // H-9 结构化输出符合 tools/list 广告的 outputSchema(联合 schema_version)
+  const schemaEnum = ((OUTPUT_SCHEMAS.webaz_search as Record<string, Record<string, Record<string, unknown>>>).properties.schema_version.enum ?? []) as string[]
+  ok('H-9 search + detail schema_version both admitted by the advertised outputSchema enum',
+    schemaEnum.includes(String(s3.schema_version)) && schemaEnum.includes('webaz.product_detail.model.v1') && schemaEnum.length === 2, JSON.stringify(schemaEnum))
+
+  // H-10 污染的 item_ids 行 → fail-closed 结构化错误,绝不 500
+  db.prepare("INSERT INTO mcp_result_cache (handle_id, subject, tool, item_ids, expires_at) VALUES ('res_" + 'f'.repeat(32) + "', NULL, 'webaz_search', '{}', datetime('now','+10 minutes'))").run()
+  const d8 = scOf(await call({ result_handle: 'res_' + 'f'.repeat(32), selected_ids: ['x'] }))
+  ok('H-10 poisoned item_ids (non-array JSON) → RESULT_HANDLE_INVALID, no 500', d8.error_code === 'RESULT_HANDLE_INVALID', JSON.stringify(d8).slice(0, 150))
+
+  // H-11 specs 超限封顶:巨型 specs → specs 省略 + specs_truncated,预算仍守住
+  db.prepare("UPDATE products SET specs = ? WHERE id = ?").run(JSON.stringify({ 大字段: '规格爆炸'.repeat(600) }), sid3[2])
+  const s4 = scOf(await call({ sort: 'newest', limit: 5 }))
+  const d9 = scOf(await call({ result_handle: String(s4.result_handle), selected_ids: [sid3[2]] }))
+  const d9p = (d9.products as Array<Record<string, unknown>>)[0]
+  ok('H-11 oversized seller specs → omitted + specs_truncated flag, per-item budget holds',
+    d9p.specs === undefined && d9p.specs_truncated === true && JSON.stringify(d9).length <= 1600 + 400, `len=${JSON.stringify(d9).length}`)
+
   // H-8 boot 清扫
   db.prepare("INSERT INTO mcp_result_cache (handle_id, subject, tool, item_ids, expires_at) VALUES ('res_dead', NULL, 'webaz_search', '[]', datetime('now','-1 hours'))").run()
   initMcpResultCacheSchema(db)
@@ -153,6 +184,29 @@ try {
   ok('U-3 updated_since between events → ONLY newer timeline entries + incremental marker', Array.isArray(u3.timeline) && (u3.timeline as unknown[]).length === 1 && !!(u3.incremental as Record<string, unknown>)?.timeline_new, JSON.stringify(u3.incremental ?? {}))
   const u4 = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: 'not-a-timestamp' })
   ok('U-4 malformed updated_since → UPDATED_SINCE_INVALID (structured, retryable)', u4.error_code === 'UPDATED_SINCE_INVALID')
+  const u4b = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: '2026-99-99T99:99:99Z' })
+  ok('U-4b shape-valid but SEMANTICALLY invalid timestamp → UPDATED_SINCE_INVALID (real Date parse)', u4b.error_code === 'UPDATED_SINCE_INVALID', JSON.stringify(u4b).slice(0, 120))
+
+  // U-6 同秒边界:与 since 同一秒的事件【绝不丢】(up_to_date 用严格 <;timeline 过滤 >=)
+  const sameSec = new Date().toISOString().slice(0, 19)
+  db.prepare("INSERT INTO order_state_history (order_id, from_status, to_status, actor_id, actor_role, created_at) VALUES ('ord_u1','accepted','shipped','seller1','seller', ?)").run(sameSec.replace('T', ' '))
+  const u6 = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: sameSec + 'Z' })
+  ok('U-6 same-second event is NOT hidden behind up_to_date and IS included (dup-allowed, loss-forbidden)',
+    u6.up_to_date === undefined && Array.isArray(u6.timeline) && (u6.timeline as Array<Record<string, unknown>>).some(t => String(t.to) === 'shipped'), JSON.stringify(u6).slice(0, 200))
+
+  // U-8 退货变化被锚点覆盖(Codex H-2):orders.updated_at 未动但新退货行 → 不得 up_to_date
+  db.prepare(`INSERT INTO return_requests (id, order_id, buyer_id, seller_id, product_id, reason, refund_amount, status, created_at) VALUES ('rr_u1','ord_u1','buyer1','seller1','prd_h1','quality',10,'pending', datetime('now'))`).run()
+  const u8since = new Date(Date.now() - 120_000).toISOString()
+  db.prepare("UPDATE orders SET updated_at = datetime('now','-1 days') WHERE id = 'ord_u1'").run()
+  const u8 = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: u8since })
+  ok('U-8 new return request (order row untouched) → NOT up_to_date, refund_status carries it',
+    u8.up_to_date === undefined && JSON.stringify(u8.refund_status ?? {}).includes('pending'), JSON.stringify(u8).slice(0, 200))
+
+  // H-12 限流(公共端点资源滥用护栏):RPM=1 → 立即 429 结构化;恢复默认后可用
+  process.env.WEBAZ_RESULT_FETCH_RPM = '1'
+  const rl = scOf(await call({ result_handle: String(s4.result_handle), selected_ids: [sid3[2]] }))
+  ok('H-12 per-IP rate limit → structured RATE_LIMITED (retryable)', rl.error_code === 'RATE_LIMITED', JSON.stringify(rl).slice(0, 120))
+  delete process.env.WEBAZ_RESULT_FETCH_RPM
   ok('U-5 no PII in any incremental form', !/SECRET/.test(JSON.stringify([u1, u2, u3])))
 } finally { server.close() }
 

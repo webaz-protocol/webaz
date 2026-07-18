@@ -49,6 +49,9 @@ export interface ProductsListDeps {
   formatProductForAgent: (p: Record<string, unknown>, req?: Request) => Record<string, unknown>
 }
 
+// result-fetch 每 IP 限流桶(进程内;单实例部署下足够,Codex M-4)
+const resultFetchRate = new Map<string, { count: number; resetAt: number }>()
+
 export function registerProductsListRoutes(app: Application, deps: ProductsListDeps): void {
   // db 已走 RFC-016 异步 seam(dbOne/dbAll),不再直接用 deps.db
   const { getUser, VALID_PRODUCT_TYPES, RAW_MODE_MIN_TRUST, getAgentTrustCached,
@@ -380,7 +383,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       try {
         await dbRun("INSERT INTO mcp_result_cache (handle_id, subject, tool, item_ids, context, expires_at) VALUES (?,?,?,?,?, datetime('now','+10 minutes'))",
           [resultHandle, null, 'webaz_search', JSON.stringify(rows.map(r => String(r.id))), JSON.stringify({ sort, category: category ?? null, q: q ? 'set' : null }), ])
-      } catch { resultHandle = null }   // 缓存面故障不阻断搜索本体
+      } catch (e) { resultHandle = null; console.warn('[result-handle] issue failed:', (e as Error).message) }   // 缓存面故障不阻断搜索本体,但留可观测日志(Codex L-2)
     }
     res.json({
       schema_version: SCHEMA_PRODUCT_SEARCH,
@@ -397,9 +400,21 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
   })
 
   // ─── MCP Token PR-2:按需商品详情(result_handle + selected_ids ≤5)────────────────────────
-  //   句柄只证明"这些 id 出现在你最近一次搜索结果里";数据一律活读 + 重跑 active 谓词 ——
-  //   下架/删除的商品按 id 诚实返回 unavailable,绝不吐缓存陈货,也绝无权限绕过面(仅公共在售数据)。
+  //   句柄只证明"这些 id 出现在你最近一次搜索结果里";数据一律活读并【重跑与搜索完全相同的公共可见性
+  //   谓词】(active + 有库存 + 卖家未暂停 + 无 revoked-未-verified 外链)—— 任一谓词失效的商品诚实
+  //   返回 unavailable,绝不吐缓存陈货,也绝无权限绕过面。blocklist 是登录观察者的个性化过滤,句柄
+  //   为匿名公共面(subject=NULL),不适用 —— 见 REMOTE-MCP.md 同一措辞。
+  //   资源滥用护栏(Codex M-4):无鉴权端点按 IP 限流(默认 60 req/min,WEBAZ_RESULT_FETCH_RPM 可调)。
   app.post('/api/products/result-fetch', async (req, res) => {
+    const rpm = Math.max(1, Number(process.env.WEBAZ_RESULT_FETCH_RPM) || 60)
+    const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? 'unknown').split(',')[0].trim()
+    const now = Date.now()
+    const slot = resultFetchRate.get(ip)
+    if (!slot || now >= slot.resetAt) resultFetchRate.set(ip, { count: 1, resetAt: now + 60_000 })
+    else if (++slot.count > rpm) {
+      return void res.status(429).json({ error: 'rate limited', error_code: 'RATE_LIMITED', retryable: true, retry_after_s: Math.ceil((slot.resetAt - now) / 1000) })
+    }
+    if (resultFetchRate.size > 10_000) { for (const [k, v] of resultFetchRate) if (now >= v.resetAt) resultFetchRate.delete(k) }
     const { result_handle, selected_ids } = (req.body ?? {}) as { result_handle?: unknown; selected_ids?: unknown }
     if (typeof result_handle !== 'string' || !/^res_[0-9a-f]{32}$/.test(result_handle)) {
       return void res.status(400).json({ error: 'result_handle required', error_code: 'RESULT_HANDLE_INVALID', retryable: false, next_steps: [{ action: 'search_again', tool: 'webaz_search' }] })
@@ -414,20 +429,30 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     if (String(h.expires_at) <= new Date().toISOString().slice(0, 19).replace('T', ' ')) {
       return void res.status(410).json({ error: 'result_handle expired (10-min TTL)', error_code: 'RESULT_HANDLE_EXPIRED', retryable: false, next_steps: [{ action: 'search_again', tool: 'webaz_search' }] })
     }
-    let allowed: string[] = []
-    try { allowed = JSON.parse(h.item_ids) as string[] } catch { allowed = [] }
-    const outside = (selected_ids as string[]).filter(id => !allowed.includes(id))
+    // fail-closed 形状校验(Codex L-1):item_ids 非 string[](表被其他写者污染)→ 按无效句柄处理,绝不 500
+    let allowed: string[] | null = null
+    try { const parsed = JSON.parse(h.item_ids) as unknown; if (Array.isArray(parsed) && parsed.every(x => typeof x === 'string')) allowed = parsed } catch { allowed = null }
+    if (!allowed) {
+      return void res.status(404).json({ error: 'result_handle unusable', error_code: 'RESULT_HANDLE_INVALID', retryable: false, next_steps: [{ action: 'search_again', tool: 'webaz_search' }] })
+    }
+    const outside = (selected_ids as string[]).filter(id => !allowed!.includes(id))
     if (outside.length) {
       return void res.status(400).json({ error: 'selected_ids must come from the SAME search result the handle was issued for', error_code: 'SELECTED_IDS_NOT_IN_HANDLE', retryable: true, hint: 'ids outside the handle set are rejected — search again for other products' })
     }
     const ph = (selected_ids as string[]).map(() => '?').join(',')
+    // 与 /api/products 搜索完全同源的公共可见性谓词(Codex H-1):active + stock>0 + 卖家未暂停 + 外链治理
     const liveRows = await dbAll<Record<string, unknown>>(
       `SELECT p.*, u.name as seller_name, u.created_at as seller_created_at,
         COALESCE((SELECT total_points FROM reputation_scores WHERE user_id = p.seller_id), 0) as rep_points,
         COALESCE((SELECT level FROM reputation_scores WHERE user_id = p.seller_id), 'new') as rep_level,
         (SELECT COUNT(1) FROM orders o WHERE o.product_id = p.id AND ${genuineSalePredicate('o')}) as sales_count
        FROM products p JOIN users u ON p.seller_id = u.id
-       WHERE p.id IN (${ph}) AND p.status = 'active' AND COALESCE(u.listing_paused, 0) = 0`,
+       WHERE p.id IN (${ph}) AND p.status = 'active' AND p.stock > 0
+        AND COALESCE(u.listing_paused, 0) = 0
+        AND NOT (
+          EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.revoked = 1)
+          AND NOT EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.verified = 1 AND (pel.revoked IS NULL OR pel.revoked = 0))
+        )`,
       selected_ids as string[])
     const liveIds = new Set(liveRows.map(r => String(r.id)))
     res.json({

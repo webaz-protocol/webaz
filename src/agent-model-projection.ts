@@ -157,18 +157,27 @@ export function summarizeQuoteResult(r: Record<string, unknown>): string {
 export const SCHEMA_PRODUCT_DETAIL = 'webaz.product_detail.model.v1'
 export const DETAIL_DESC_MAX = 600
 
+export const DETAIL_SPECS_MAX = 800
+
 export function projectProductDetail(p: Record<string, unknown>): Record<string, unknown> {
   const base = projectProductModel(p)
   const desc = typeof p.description === 'string' ? p.description : ''
   let specs: unknown = null
   if (typeof p.specs === 'string' && p.specs) { try { specs = JSON.parse(p.specs) } catch { specs = null } }
   else if (p.specs && typeof p.specs === 'object') specs = p.specs
+  // 卖家可控字段全部封顶(Codex M-3):超大/深嵌套 specs 不得击穿"紧凑详情"承诺 —— 超限即整体省略
+  //   并打 specs_truncated(完整规格在 PWA 商品页;后续 UI Projection 层承接)。
+  let specsTruncated = false
+  if (specs != null) {
+    try { if (JSON.stringify(specs).length > DETAIL_SPECS_MAX) { specs = null; specsTruncated = true } } catch { specs = null; specsTruncated = true }
+  }
   return {
     ...base,
     description: desc ? desc.slice(0, DETAIL_DESC_MAX) : null,
     description_truncated: desc.length > DETAIL_DESC_MAX,
     specs,
-    ship_regions: p.ship_regions == null ? null : String(p.ship_regions),
+    ...(specsTruncated ? { specs_truncated: true } : {}),
+    ship_regions: p.ship_regions == null ? null : String(p.ship_regions).slice(0, 200),
     return_condition: p.return_condition == null ? null : String(p.return_condition).slice(0, 200),
     fragile: p.fragile == null ? null : !!p.fragile,
   }

@@ -2102,7 +2102,8 @@ export function initOAuthSchema(db: Database.Database): void {
 
 // ─── MCP Token PR-2 — result_handle 选择集缓存(webaz.*.model.v1 按需详情/翻页复用)────────────
 // 设计不变量:handle 行【只存 id 选择集 + 查询上下文】,绝不存数据载荷 —— 取详情永远按 id 活读
-// 数据库并重跑与首次响应完全相同的可见性谓词(active 等)。因此 handle 数学上不可能成为权限绕过
+// 数据库并重跑与搜索完全相同的【公共可见性谓词】(active + 有库存 + 卖家未暂停 + 外链治理;
+// blocklist 属登录观察者个性化过滤,不适用于匿名公共句柄面)。因此 handle 数学上不可能成为权限绕过
 // 或陈旧数据通道(任务书 §八 要求 7);subject 为 NULL 仅限纯公共数据工具(webaz_search 匿名面)。
 export function initMcpResultCacheSchema(db: Database.Database): void {
   db.exec(`
