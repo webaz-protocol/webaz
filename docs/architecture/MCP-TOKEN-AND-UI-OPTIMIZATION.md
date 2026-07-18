@@ -1,6 +1,6 @@
 # MCP Token & UI Optimization — Architecture
 
-> Series: PR-1 #401 · PR-2 #402 · PR-3 #403 · PR-7 (this PR). All production-verified on webaz.xyz.
+> Series: PR-1 #401 · PR-2 #402 · PR-3 #403 (all production-verified on webaz.xyz) · PR-7 (this PR, verification pending deploy).
 > UI components (ProductResults / QuoteAndApproval / OrderTimeline) are PR-4..6 — pending a host-support
 > spike (MCP Apps rendering must be verified on real ChatGPT/Claude clients before we build).
 
@@ -63,7 +63,8 @@ null placeholders on the wire.
 ## 4. Security boundaries (unchanged, now test-locked)
 
 - **Passkey iron rule untouched**: every economic execution still flows submit → human Passkey →
-  server executes exactly once. This series changed READ projections and serialization only.
+  server executes exactly once. This series changed read projections, serialization, and size-only
+  telemetry (no economic writes, no content recording).
 - **PII**: allowlist construction; addresses/contacts/keys never SELECTed on agent paths; paste-path
   `extracted` reduced to shape-checked `{platform, external_id}` (raw pastes can carry PII/tokens).
 - **result_handle is not a permission channel**: handles store only id selection sets; every fetch

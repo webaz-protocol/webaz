@@ -6046,24 +6046,31 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     //   (webaz.*.model.v1 最小投影,null/空字段序列化前剥离)+ content 短降级摘要。
     //   错误结果:text = minified 完整错误 JSON —— 纯文本客户端保留全部结构化 recovery 字段,不降级成一句话。
     //   其余工具维持原 JSON-in-text(后续 PR 分批迁移,不在本 PR 一刀切)。
+    const latencyMs = Date.now() - t0   // handler-only 口径(与历史一致:不含投影/序列化耗时)
     const summarize = STRUCTURED_RESULT_TOOLS[name]
     let envelope: { content: Array<{ type: 'text'; text: string }>; structuredContent?: Record<string, unknown>; isError?: true }
-    if (summarize && result && typeof result === 'object' && !Array.isArray(result)) {
-      // buyer_orders 豁免 null 剥离:RFC-025 的 7 键最小投影契约含【有语义的 null 占位】(deadline/next_actor
-      // 可为 null),wire 上也必须保持恰 7 键(Codex round-1 BLOCKER-2)。search/quote 无 null 契约,照剥。
-      const clean = (name === 'webaz_buyer_orders' ? result : stripEmpty(result)) as Record<string, unknown>
-      const isErr = 'error' in clean
-      const text = isErr ? JSON.stringify(clean) : summarize(clean)
-      // 错误结果按 MCP 规范标 isError(声明了 outputSchema 的工具,协议客户端应看到显式失败而非"成功的错误对象")
-      envelope = { content: [{ type: 'text', text }], structuredContent: clean, ...(isErr ? { isError: true as const } : {}) }
-    } else {
-      // MCP Token PR-7:全工具 minify(此前 JSON.stringify(result, null, 2) —— pretty-print 缩进本身
-      // 每响应多付 10-30% token,对模型可读性零增益)。结构不变,只有空白差异。
-      envelope = { content: [{ type: 'text', text: JSON.stringify(result) }] }
+    try {
+      if (summarize && result && typeof result === 'object' && !Array.isArray(result)) {
+        // buyer_orders 豁免 null 剥离:RFC-025 的 7 键最小投影契约含【有语义的 null 占位】(deadline/next_actor
+        // 可为 null),wire 上也必须保持恰 7 键(Codex round-1 BLOCKER-2)。search/quote 无 null 契约,照剥。
+        const clean = (name === 'webaz_buyer_orders' ? result : stripEmpty(result)) as Record<string, unknown>
+        const isErr = 'error' in clean
+        const text = isErr ? JSON.stringify(clean) : summarize(clean)
+        // 错误结果按 MCP 规范标 isError(声明了 outputSchema 的工具,协议客户端应看到显式失败而非"成功的错误对象")
+        envelope = { content: [{ type: 'text', text }], structuredContent: clean, ...(isErr ? { isError: true as const } : {}) }
+      } else {
+        // MCP Token PR-7:全工具 minify(此前 JSON.stringify(result, null, 2) —— pretty-print 缩进本身
+        // 每响应多付 10-30% token,对模型可读性零增益)。结构不变,只有空白差异。
+        envelope = { content: [{ type: 'text', text: JSON.stringify(result) }] }
+      }
+    } catch (e) {
+      // 序列化/投影意外失败(circular/bigint 等)也不得吞掉遥测与响应(Codex PR-7 M-2)
+      envelope = { content: [{ type: 'text', text: JSON.stringify({ error: `serialization failed: ${(e as Error).message}` }) }], isError: true as const }
     }
-    // §18 遥测:模型可见字节(text + structuredContent)—— 建完信封后记录,聚合出真实 token 成本画像。
-    const responseBytes = envelope.content[0].text.length + (envelope.structuredContent ? JSON.stringify(envelope.structuredContent).length : 0)
-    recordToolCall(name, args, result, Date.now() - t0, responseBytes)
+    // §18 遥测:模型可见【UTF-8 字节】(text + structuredContent;.length 是 UTF-16 码元,中文会严重低估)
+    let responseBytes: number | null = null
+    try { responseBytes = Buffer.byteLength(envelope.content[0].text, 'utf8') + (envelope.structuredContent ? Buffer.byteLength(JSON.stringify(envelope.structuredContent), 'utf8') : 0) } catch { responseBytes = null }
+    recordToolCall(name, args, result, latencyMs, responseBytes)
     // RFC-004 现场证据:记本次调用的脱敏摘要(只 arg key 名,不含值)。webaz_feedback 自身不入 buffer。
     // RFC-022:隔离态(远程共享端点)不写这个进程级 ring buffer —— 防跨请求元数据 bleed。
     if (name !== 'webaz_feedback' && !isIsolated()) {
