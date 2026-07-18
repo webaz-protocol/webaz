@@ -101,21 +101,33 @@ console.log(`  [tools/list bytes] full=${fullB}B (~${Math.ceil(fullB / 4)} tok) 
   ok('U-1 ui://widget/webaz-products.html advertised (text/html+skybridge)', !!uiRes && uiRes.mimeType === 'text/html+skybridge')
   const widget = await c.readResource({ uri: 'ui://widget/webaz-products.html' })
   const html = (widget.contents as Array<{ text: string }>)[0].text
-  ok('U-2 widget self-contained (reads window.openai.toolOutput; zero external URLs)',
-    html.includes('window.openai') && html.includes('toolOutput') && !/https?:\/\//.test(html))
+  ok('U-2 widget self-contained (reads window.openai.toolOutput; zero external request capability: no URL literals, no fetch/XHR/WS/beacon/import, no src/href attributes)',
+    html.includes('window.openai') && html.includes('toolOutput')
+    && !/["'\`](https?:)?\/\//.test(html) && !/(fetch\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon|import\(|src=|href=)/.test(html))
   ok('U-2b widget handles ALL THREE structuredContent shapes (search page / detail / zero-hit recovery)',
     html.includes('webaz.product_detail.model.v1') && html.includes('catalog_sample') && html.includes('next_cursor'))
-  ok('U-2c widget never uses innerHTML (seller-controlled titles → textContent only) and economic entry returns to the conversation flow',
-    !html.includes('innerHTML') && html.includes('sendFollowupTurn') && html.includes('Passkey'))
+  ok('U-2c widget has NO executable/HTML sinks (innerHTML/outerHTML/insertAdjacentHTML/document.write/eval/new Function) and economic entry returns to the conversation flow',
+    !/(innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function)/.test(html) && html.includes('sendFollowupTurn') && html.includes('Passkey'))
   const widgetMeta = ((widget.contents as Array<{ _meta?: Record<string, unknown> }>)[0]._meta ?? {}) as Record<string, unknown>
-  ok('U-2d widget declares CSP (empty domain sets — zero external requests) + unique widget domain (ChatGPT app-submission requirement)',
-    JSON.stringify((widgetMeta['openai/widgetCSP'] as Record<string, unknown>)?.connect_domains) === '[]' && widgetMeta['openai/widgetDomain'] === 'https://webaz.xyz')
+  const listMeta = ((uiRes ?? {}) as { _meta?: Record<string, unknown> })._meta ?? {}
+  const csp = (widgetMeta['openai/widgetCSP'] ?? {}) as Record<string, unknown>
+  ok('U-2d widget CSP declares BOTH empty domain sets + unique domain, IDENTICAL on resources/list and resources/read',
+    JSON.stringify(csp.connect_domains) === '[]' && JSON.stringify(csp.resource_domains) === '[]'
+    && widgetMeta['openai/widgetDomain'] === 'https://webaz.xyz'
+    && JSON.stringify(listMeta) === JSON.stringify(widgetMeta))
 }
 {
-  const L1src = (await import('node:fs')).readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
-  ok('U-3 webaz_search descriptor carries openai/outputTemplate → ui://widget/webaz-products.html (search IS the rendered tool)',
-    L1src.includes("'openai/outputTemplate': 'ui://widget/webaz-products.html'"))
-  ok('U-4 spike tool fully retired (no webaz_ui_spike anywhere in the registry)', !L1src.includes('webaz_ui_spike'))
+  // U-3 走 WIRE:in-memory client 拿到的 webaz_search 描述符必须携带 outputTemplate _meta(非源码 grep)
+  const searchTool = full.find(t => t.name === 'webaz_search') as (Record<string, unknown> & { _meta?: Record<string, unknown> }) | undefined
+  ok('U-3 webaz_search WIRE descriptor carries openai/outputTemplate → ui://widget/webaz-products.html',
+    searchTool?._meta?.['openai/outputTemplate'] === 'ui://widget/webaz-products.html', JSON.stringify(searchTool?._meta ?? null))
+  // U-4 残留扫全部注册面文件(不只 server.ts)+ 权威文档
+  const fs2 = await import('node:fs')
+  const residue = ['src/layer1-agent/L1-1-mcp-server/server.ts', 'src/layer1-agent/L1-1-mcp-server/tool-annotations.ts',
+    'src/layer1-agent/L1-1-mcp-server/tool-surfaces.ts', 'src/layer1-agent/L1-1-mcp-server/network-mode.ts',
+    'src/layer1-agent/L1-1-mcp-server/tool-security-schemes.ts', 'src/agent-model-projection.ts', 'docs/REMOTE-MCP.md']
+    .filter(f => fs2.readFileSync(f, 'utf8').includes('webaz_ui_spike'))
+  ok('U-4 spike fully retired across ALL registry surfaces + docs (zero residue)', residue.length === 0, residue.join(','))
 }
 
 if (fail > 0) { console.error(`\n❌ mcp-tool-surfaces FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
