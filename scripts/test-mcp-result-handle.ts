@@ -239,6 +239,16 @@ try {
   db.prepare("UPDATE products SET return_days = 14, updated_at = datetime('now') WHERE id = 'prd_h1'").run()
   const u13 = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: new Date(Date.now() - 120_000).toISOString() })
   ok('U-13 pre-snapshot order + live listing term change → NOT up_to_date (product row anchored)', u13.up_to_date === undefined, JSON.stringify(u13).slice(0, 120))
+  // U-13b 降级快照(坏 JSON)同样走 live 路径 → 商品行仍纳锚(判定与 effectiveReturnDays 同源)
+  db.prepare("UPDATE orders SET trade_terms_snapshot = '{not json' WHERE id = 'ord_u1'").run()
+  db.prepare("UPDATE products SET updated_at = datetime('now') WHERE id = 'prd_h1'").run()
+  const u13b = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: new Date(Date.now() - 120_000).toISOString() })
+  ok('U-13b DEGRADED snapshot (bad JSON → live fallback) + product change → NOT up_to_date', u13b.up_to_date === undefined, JSON.stringify(u13b).slice(0, 120))
+  // U-13c 权威快照(source_read null=不可退)不读 live → 商品行变化不打扰 up_to_date
+  db.prepare(`UPDATE orders SET trade_terms_snapshot = '{"v":1,"fulfilment":{"return_days":7}}' WHERE id = 'ord_u1'`).run()
+  db.prepare("UPDATE order_state_history SET created_at = datetime('now','-2 days') WHERE order_id = 'ord_u1'").run()   // 钉死其余锚,只留商品行churn
+  const u13c = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: new Date(Date.now() - 120_000).toISOString() })
+  ok('U-13c AUTHORITATIVE snapshot order ignores product-row churn → up_to_date preserved', u13c.up_to_date === true, JSON.stringify(u13c).slice(0, 120))
   db.prepare("UPDATE products SET updated_at = datetime('now','-3 days') WHERE id = 'prd_h1'").run()
 
   // H-12 限流(公共端点资源滥用护栏):RPM=1 → 立即 429 结构化;恢复默认后可用
