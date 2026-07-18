@@ -1,14 +1,15 @@
 # MCP Token & UI Optimization — Architecture
 
-> Series: PR-1 #401 · PR-2 #402 · PR-3 #403 (all production-verified on webaz.xyz) · PR-7 (this PR, verification pending deploy).
-> UI components (ProductResults / QuoteAndApproval / OrderTimeline) are PR-4..6 — pending a host-support
-> spike (MCP Apps rendering must be verified on real ChatGPT/Claude clients before we build).
+> Series: PR-1 #401 · PR-2 #402 · PR-3 #403 · PR-7 #404 (all production-verified on webaz.xyz) ·
+> **PR-4 (this PR): ProductResults MCP App component** — spike verdict from live host tests:
+> ChatGPT renders ui:// widgets, Claude falls back to text; standard fields remain the primary path.
+> QuoteAndApproval / OrderTimeline are PR-5/6 (planned).
 
 ## 1. The three-layer data model
 
 ```
 Model Projection  (webaz.*.model.v1)   — what the LANGUAGE MODEL sees: decision fields only
-UI Projection     (planned, PR-4..6)   — what components fetch on demand (images, full specs)
+UI Projection     (PR-4 ProductResults live; PR-5/6 planned) — component-rendered data (widget reads structuredContent; images deferred)
 Backend Internal  (never leaves the server) — full rows, hashes, migration/backfill columns,
                                               commission_rate, sourcing data, full addresses, keys
 ```
@@ -96,10 +97,19 @@ loss forbidden.
 Current measurements (local): buyer 37,988B · seller 39,021B · full 101,728B; search5 −81%;
 quote ≤3,000B; orders page ≤2,800B.
 
-## 7. Planned (PR-4..6): UI projection & components
+## 7. UI components
 
-Data tool → model picks → render tool (`result_handle` + `selected_ids`) → MCP App component.
-Images come from the PWA hash-addressed thumbnail endpoints (search responses deliberately carry no
-image URLs). `_meta` will NOT carry UI payloads until per-host model-visibility is verified —
-component-fetch tools are the primary path. Local interactions (expand/carousel/sort/compare) never
-call the model; economic actions always return to the Passkey flow.
+**PR-4 (shipped): ProductResults** rides `webaz_search` via `openai/outputTemplate` →
+`ui://widget/webaz-products.html` (text/html+skybridge; widget CSP declared with EMPTY domain sets +
+`openai/widgetDomain`). It renders all three structuredContent shapes (search page / zero-hit
+recovery / on-demand detail) with LOCAL sort/expand/select/compare (zero model calls); paging and
+detail use `window.openai.callTool` (public reads only — result_handle detail re-runs the public
+predicates from PR-2); the quote entry returns to the conversation flow (`sendFollowupTurn`) and
+every economic action still ends at the webaz.xyz Passkey. Hosts without Apps support (verified:
+Claude) get the unchanged structuredContent + actionable summary. Widget discipline: self-contained
+single file, textContent-only (seller-controlled strings), zero external requests, no images in v1
+(image CSP for external sources unverified; a future UI-projection layer will carry PWA
+hash-addressed thumbnails).
+
+**PR-5/6 (planned): QuoteAndApproval / OrderTimeline** — same discipline; OrderTimeline will use the
+`updated_since` incremental reads from PR-2.

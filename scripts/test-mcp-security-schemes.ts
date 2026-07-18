@@ -67,7 +67,7 @@ async function main(): Promise<void> {
   const FINE_CAPABILITY_NAMES = [...new Set(Object.values(OAUTH_SCOPE_CAPABILITIES).flat())]
 
   // The REMOTE wire is the isolated surface: it excludes LOCAL_ONLY tools (webaz_pair), so excludes webaz_pair.
-  ok('1. all 55 remote-visible tools carry a non-empty securitySchemes array on the WIRE (webaz_pair local-only hidden)', tools.length === 55 && tools.every(t => Array.isArray(t.securitySchemes) && t.securitySchemes.length > 0))
+  ok('1. all 54 remote-visible tools carry a non-empty securitySchemes array on the WIRE (webaz_pair local-only hidden)', tools.length === 54 && tools.every(t => Array.isArray(t.securitySchemes) && t.securitySchemes.length > 0))
   ok('1b. webaz_pair (local-only pairing) is NOT advertised on the remote tools/list', !byName['webaz_pair'])
 
   for (const [name, scopes] of Object.entries(OAUTH)) {

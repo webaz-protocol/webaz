@@ -51,7 +51,7 @@ Registration currently uses invitations for Sybil resistance. A key requires a *
 
 ## What you can do
 
-`tools/list` is surface-scoped (buyer 22 by default incl the temporary `webaz_ui_spike` probe; `?surface=full` → all 55 remote tools; `webaz_pair` is stdio-only — see Tool surfaces below) — `webaz_info` (protocol status), `webaz_search`, `webaz_connection_status`, `webaz_list_product`, `webaz_get_agent_order`, `webaz_verify_price`, `webaz_place_order`, and more. Start with `webaz_info` for the live network state, then `webaz_search` or `webaz_contribute action=list_open`.
+`tools/list` is surface-scoped (buyer 21 by default; `?surface=full` → all 54 remote tools; `webaz_pair` is stdio-only — see Tool surfaces below) — `webaz_info` (protocol status), `webaz_search`, `webaz_connection_status`, `webaz_list_product`, `webaz_get_agent_order`, `webaz_verify_price`, `webaz_place_order`, and more. Start with `webaz_info` for the live network state, then `webaz_search` or `webaz_contribute action=list_open`.
 
 ### Tool surfaces — smaller tools/list by default (PR-3)
 
@@ -59,13 +59,13 @@ Registration currently uses invitations for Sybil resistance. A key requires a *
 
 | Surface | Tools | How you get it |
 |---|---|---|
-| `buyer` (22) | the core shopping chain: info/register/connection_status · search/discover/price_history · verify_price/place_order/get_status · quote→draft→submit · buyer_orders/buyer_action/approvals/prepare_case · order_chat/wallet_view/address/default_address/notifications | **default** for anonymous and OAuth/delegation connections |
-| `seller` (24) | listing/fulfilment/account ops (list_product, upload_product_image, p2p_product, get_agent_order, order_action_request, update_order, wallet, mykey/profile/keys, trial, shareables, share_link …) | `/mcp?surface=seller` |
-| `full` (55) | everything (adds RFQ/secondhand/auction, dispute/claim_verify, contribute/charity/leaderboard, skills …) | `/mcp?surface=full`, or automatically when connecting with an api_key bearer |
+| `buyer` (21) | the core shopping chain: info/register/connection_status · search/discover/price_history · verify_price/place_order/get_status · quote→draft→submit · buyer_orders/buyer_action/approvals/prepare_case · order_chat/wallet_view/address/default_address/notifications | **default** for anonymous and OAuth/delegation connections |
+| `seller` (23) | listing/fulfilment/account ops (list_product, upload_product_image, p2p_product, get_agent_order, order_action_request, update_order, wallet, mykey/profile/keys, trial, shareables, share_link …) | `/mcp?surface=seller` |
+| `full` (54) | everything (adds RFQ/secondhand/auction, dispute/claim_verify, contribute/charity/leaderboard, skills …) | `/mcp?surface=full`, or automatically when connecting with an api_key bearer |
 
 **Surface affects tools/list visibility ONLY — never authorization.** Any known tool called by name still dispatches, and every call-time gate (OAuth scope, api_key, Passkey) is unchanged. **Migration:** clients that relied on the old full anonymous list should add `?surface=full` to their connector URL (existing connectors with a cached manifest keep working — calls by name are unaffected). stdio (`npx -y @seasonkoh/webaz`) always exposes the full local set.
 
-**Experimental:** `webaz_ui_spike` (present on every surface) is a temporary MCP-Apps rendering probe — hosts that support `ui://` widgets render product cards from `ui://widget/webaz-spike.html`; others see a text fallback. It will be removed after the host-capability spike.
+**MCP App (ChatGPT progressive enhancement):** `webaz_search` declares `openai/outputTemplate` → `ui://widget/webaz-products.html` — hosts that render MCP Apps (verified: ChatGPT) show the **ProductResults** component (cards, local sort/expand/compare — local interactions never call the model; the quote entry returns to the conversation flow and every economic action still ends at the webaz.xyz Passkey). Hosts without Apps support (verified: Claude) see the standard structuredContent + actionable summary — the standard fields remain the primary path.
 
 `webaz_info` now returns a **compact overview** by default (production was ~35KB); the long-form guides live in MCP resource `webaz://guide/info` or `webaz_info {"full":true}` — content moved, nothing deleted.
 
