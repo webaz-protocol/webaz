@@ -96,7 +96,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
 
     // limit
     const cap = PRODUCT_LIMITS[mode]
-    let lim = Number(limitRaw)
+    let lim = Math.floor(Number(limitRaw))   // 非整数 limit 直进 SQL LIMIT 会炸 → 取整(Codex round-1 MEDIUM)
     if (!Number.isFinite(lim) || lim <= 0) lim = mode === 'pwa' ? 30 : (mode === 'raw' ? 100 : 50)
     if (lim > cap) lim = cap
 
@@ -229,6 +229,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     }
 
     // trending 多取候选用于 jitter 排序；其他排序直接遵守请求 limit
+    let cursorAnchorRows: Record<string, unknown>[] | null = null
     const buffer = sort === 'trending' ? Math.min(lim * 3, lim + 30) : lim
     const sql = `SELECT * FROM (${innerSelect} ${baseFrom}) WHERE 1=1 ${cursorClause} ${orderBy} LIMIT ?`
     const finalParams = [...params, ...cursorParams, buffer]
@@ -271,13 +272,18 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
         const newSet = new Set(newSellerCandidates.map(r => String(r.id)))
         const others = rows.filter(r => !newSet.has(String(r.id)))
         const keepHead = others.slice(0, lim - newSellerCandidates.length)
+        // cursor 锚点只认【原序中真正展示了的头部】(keepHead):注入的新卖家条目分数可能远低于被挤掉的
+        // 条目,若锚到它,下一页 score < 注入分 会把被挤掉的商品永久跳过(Codex round-1 HIGH-1)。
+        // 锚在 keepHead 最低位 → 被挤掉的条目落到下一页;注入条目在后页重复出现(可重复,绝不丢)。
+        cursorAnchorRows = keepHead
         rows = [...keepHead, ...newSellerCandidates]
       }
     }
 
     rows = rows.slice(0, lim)
+    if (!cursorAnchorRows || cursorAnchorRows.length === 0) cursorAnchorRows = rows
 
-    // 下一页 cursor — 基于 rows 中 raw score 最低位（防 jitter 翻页丢候选）
+    // 下一页 cursor — 基于原序展示集中 raw score 最低位（防 jitter/slot 注入翻页丢候选）
     let nextCursor: string | null = null
     const hasMore = (
       (sort === 'trending' || sort === 'newest')
@@ -285,8 +291,8 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       && (candidates.length >= buffer || rows.length === lim)
     )
     if (hasMore) {
-      let anchor = rows[0]
-      for (const r of rows) {
+      let anchor = cursorAnchorRows[0]
+      for (const r of cursorAnchorRows) {
         const aScore = Number(anchor.trending_score) || 0
         const rScore = Number(r.trending_score) || 0
         if (sort === 'trending') {

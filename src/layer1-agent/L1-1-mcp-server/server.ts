@@ -2553,11 +2553,18 @@ async function handleSearch(args: Record<string, unknown>) {
       }
       if (data.error) return data
       // MCP Token PR-1:外链匹配结果同样走 Model Projection(此前 23 列全量行直通,含完整 description)。
+      // extracted 只回白名单形状字段:platform + 校验过 shape 的 external_id。绝不回显 title/url ——
+      // 解析失败时上游会把【整段用户粘贴原文】当 title、url 原样透传(可携 PII/token),不得进模型上下文
+      // (Codex round-1 HIGH-2)。匹配透明度由 matched_by 承担。
       const rawProducts = (data.products ?? []) as Array<Record<string, unknown>>
+      const ex = (data.extracted ?? {}) as Record<string, unknown>
       return {
         schema_version: SCHEMA_PRODUCT_SEARCH,
         matched_by: data.matched_by,
-        extracted: data.extracted,
+        extracted: {
+          ...(typeof ex.platform === 'string' && /^[a-z0-9_]{1,16}$/.test(ex.platform) ? { platform: ex.platform } : {}),
+          ...(typeof ex.external_id === 'string' && /^[\w.-]{1,64}$/.test(ex.external_id) ? { external_id: ex.external_id } : {}),
+        },
         count: rawProducts.length,
         sellers: sellersIndex(rawProducts),
         products: rawProducts.map(p => projectProductModel(p)),
@@ -2576,7 +2583,7 @@ async function handleSearch(args: Record<string, unknown>) {
   const hasSales = args.has_sales as 'true' | 'false' | undefined
   const sellerId = args.seller_id as string | undefined
   // MCP Token PR-1:默认 5 件(此前 10;agent 单页上限仍 200 需显式请求)—— 大结果走 next_cursor 翻页。
-  let limit = Number(args.limit ?? 5)
+  let limit = Math.floor(Number(args.limit ?? 5))
   if (!Number.isFinite(limit) || limit < 1) limit = 5
   if (limit > 200) limit = 200
   const sortMode = (args.sort as string | undefined) ?? 'trending'
@@ -6023,9 +6030,13 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     //   其余工具维持原 JSON-in-text(后续 PR 分批迁移,不在本 PR 一刀切)。
     const summarize = STRUCTURED_RESULT_TOOLS[name]
     if (summarize && result && typeof result === 'object' && !Array.isArray(result)) {
-      const clean = stripEmpty(result) as Record<string, unknown>
-      const text = 'error' in clean ? JSON.stringify(clean) : summarize(clean)
-      return { content: [{ type: 'text', text }], structuredContent: clean }
+      // buyer_orders 豁免 null 剥离:RFC-025 的 7 键最小投影契约含【有语义的 null 占位】(deadline/next_actor
+      // 可为 null),wire 上也必须保持恰 7 键(Codex round-1 BLOCKER-2)。search/quote 无 null 契约,照剥。
+      const clean = (name === 'webaz_buyer_orders' ? result : stripEmpty(result)) as Record<string, unknown>
+      const isErr = 'error' in clean
+      const text = isErr ? JSON.stringify(clean) : summarize(clean)
+      // 错误结果按 MCP 规范标 isError(声明了 outputSchema 的工具,协议客户端应看到显式失败而非"成功的错误对象")
+      return { content: [{ type: 'text', text }], structuredContent: clean, ...(isErr ? { isError: true } : {}) }
     }
     return {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],

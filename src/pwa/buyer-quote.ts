@@ -115,7 +115,7 @@ function buildResponse(db: Database.Database, row: Record<string, unknown>, quot
   const lineItems = [
     line('item_subtotal', itemU, true, false, true),
     line('shipping', shipU, true, false, true),
-    line('protocol_fee', 0, true, false, true, 'no buyer-side protocol fee at order time'),
+    line('protocol_fee', 0, true, false, true, 'no buyer-side protocol fee at order time (escrow commission settles seller-side; direct_p2p platform fee is seller-prepaid)'),
     line('discount', 0, true, false, true, 'no coupon input in quote v1'),
     line('donation', donU, false, false, false, 'charged IN ADDITION to total → charity_fund'),
     line('estimated_tax', 0, false, true, false, 'seller-declared disclosure; WebAZ does not compute/collect tax — see trade_terms'),
@@ -151,7 +151,7 @@ function buildResponse(db: Database.Database, row: Record<string, unknown>, quot
       conversion_note: 'WebAZ has NO authoritative FX; the WAZ amounts below are the protocol-recorded amounts, actual payment follows the seller account currency/instructions.',
     } : {
       rail: 'escrow', custodied_by_webaz: true, payable_currency: 'WAZ',
-      note: 'Funds move ONLY at order creation (wallet→escrow) — this quote charges nothing.',
+      note: 'Funds move ONLY at order creation (wallet→escrow, needs sufficient balance) — this quote charges nothing. Refund/release/partial-refund via the existing dispute/return flows.',
     },
     line_items: lineItems,
     total: { amount_minor: totalU, currency: 'WAZ', currency_exponent: 6 },

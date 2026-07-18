@@ -245,7 +245,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     // MCP Token PR-1(webaz.order_status.model.v1):默认分页(limit 10,cap 50;此前一次 LIMIT 200)+
     //   全账户 summary 聚合 + 【活跃订单优先】排序(活跃态从状态机责任表推导),cursor = keyset(tier,created_at,id)。
     //   模型无需从全量历史里自己找目标单:先读 summary,再按需翻页/查单。投影仍是 7 键 allowlist,零 PII 不变。
-    let lim = Number(req.query.limit); if (!Number.isFinite(lim) || lim <= 0) lim = 10; if (lim > 50) lim = 50
+    let lim = Math.floor(Number(req.query.limit)); if (!Number.isFinite(lim) || lim <= 0) lim = 10; if (lim > 50) lim = 50
     const curRaw = typeof req.query.cursor === 'string' && req.query.cursor ? req.query.cursor : null
     const cur = curRaw ? decodeBuyerOrdersCursor(curRaw) : null
     if (curRaw && !cur) return void res.status(400).json({ error: 'bad cursor', error_code: 'BAD_CURSOR', retryable: true, hint: 'restart from the first page (omit cursor)' })

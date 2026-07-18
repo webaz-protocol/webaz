@@ -122,7 +122,7 @@ registerProductsListRoutes(app, {
   RAW_MODE_MIN_TRUST: 30, getAgentTrustCached: () => null,
   VALID_SORTS: new Set(['trending', 'newest', 'rating', 'price_asc', 'price_desc', 'random', 'recommended', 'seller_win_rate']),
   PRODUCT_LIMITS: { pwa: 30, agent: 200, raw: 500 },
-  TRENDING_SCORE_EXPR: '0',
+  TRENDING_SCORE_EXPR: 'p.price',
   findProductsByAlias: () => new Set<string>(),
   decodeProductCursor: (c: string) => { try { const [s, id] = Buffer.from(c, 'base64url').toString().split(':'); return { score: Number(s), id } } catch { return null } },
   encodeProductCursor: (score: number, id: string) => Buffer.from(`${score}:${id}`).toString('base64url'),
@@ -185,7 +185,7 @@ try {
   const stext = (sr.content as Array<{ text: string }>)[0]?.text ?? ''
   const scJson = JSON.stringify(sc ?? {})
   ok('S-1 search (wire) returns structuredContent with schema_version', sc?.schema_version === 'webaz.product_search.model.v1', scJson.slice(0, 200))
-  ok('S-2 search content = short degradation summary, NOT the JSON blob', stext.length > 0 && stext.length <= 300 && !stext.trimStart().startsWith('{'), `len=${stext.length}`)
+  ok('S-2 search content = short ACTIONABLE summary (ids + next_cursor present, not the JSON blob)', stext.length > 0 && stext.length <= 480 && !stext.trimStart().startsWith('{') && /prd_/.test(stext) && (!sc?.next_cursor || stext.includes(String(sc.next_cursor))), `len=${stext.length} ${stext}`)
   ok('S-3 default page = 5 products (7 seeded)', Array.isArray(sc?.products) && (sc?.products as unknown[]).length === 5)
   ok('S-4 NO internal/DB fields reach the model (hashes/migration/backfill/commission/source/score)', !FORBIDDEN.test(scJson), scJson.slice(0, 300))
   ok('S-5 full description does NOT reach the model', !/LONG internal description/.test(scJson))
@@ -242,8 +242,9 @@ try {
   const wr = await client.callTool({ name: 'webaz_buyer_orders', arguments: {} }) as Record<string, unknown>
   const wsc = wr.structuredContent as Record<string, unknown> | undefined
   const wtext = (wr.content as Array<{ text: string }>)[0]?.text ?? ''
-  ok('O-9 buyer_orders (wire) → structuredContent + short summary content', !!wsc && wsc.schema_version === 'webaz.order_status.model.v1' && wtext.length <= 300 && !wtext.trimStart().startsWith('{'), wtext)
-  ok('O-10 null deadlines stripped on the wire (completed orders carry no deadline key)', !/":null/.test(JSON.stringify(wsc)))
+  ok('O-9 buyer_orders (wire) → structuredContent + short ACTIONABLE summary (order ids present)', !!wsc && wsc.schema_version === 'webaz.order_status.model.v1' && wtext.length <= 800 && !wtext.trimStart().startsWith('{') && /ord_/.test(wtext), wtext)
+  ok('O-10 wire orders keep EXACTLY the 7-key minimal contract (null placeholders preserved — buyer_orders is exempt from null-stripping)',
+    Array.isArray(wsc?.orders) && (wsc?.orders as Array<Record<string, unknown>>).every(o => Object.keys(o).sort().join(',') === EXPECT7))
   const ordersBytes = JSON.stringify(wsc).length + wtext.length
   ok('O-11 orders list model-visible bytes within budget (≤2800B ≈ 700 tokens)', budgetOk('orders list (10)', ordersBytes, 2800), `bytes=${ordersBytes}`)
 
@@ -254,16 +255,46 @@ try {
   const qw = await client.callTool({ name: 'webaz_quote_order', arguments: { product_id: 'prd_2', quantity: 1 } }) as Record<string, unknown>
   const qsc = qw.structuredContent as Record<string, unknown> | undefined
   const qtext = (qw.content as Array<{ text: string }>)[0]?.text ?? ''
-  ok('Q-3 quote (wire) → structuredContent + short summary (mentions no-charge semantics)', !!qsc && /不扣款|nothing charged/i.test(qtext) && qtext.length <= 320, qtext)
+  ok('Q-3 quote (wire) → short summary carries quote_token + no-charge semantics (text-only clients can continue to draft)', !!qsc && /不扣款|nothing charged/i.test(qtext) && /qtk_/.test(qtext) && qtext.length <= 480, qtext)
   const quoteBytes = JSON.stringify(qsc).length + qtext.length
-  ok('Q-4 quote model-visible bytes within budget (≤2600B ≈ 650 tokens — 诚实资金语义说明保留,不为预算裁安全文案)', budgetOk('quote', quoteBytes, 2600), `bytes=${quoteBytes}`)
+  ok('Q-4 quote model-visible bytes within budget (≤3000B ≈ 750 tokens — 托管/退款披露与 quote_token 可行动摘要为审计要求保留,不为预算裁安全文案)', budgetOk('quote', quoteBytes, 3000), `bytes=${quoteBytes}`)
 
   // ── [error path] 声明了 outputSchema 的工具,错误也走 structuredContent + 完整错误 text ────
   const er = await client.callTool({ name: 'webaz_quote_order', arguments: { product_id: 'prd_missing' } }) as Record<string, unknown>
   const esc = er.structuredContent as Record<string, unknown> | undefined
   const etext = (er.content as Array<{ text: string }>)[0]?.text ?? ''
-  ok('E-1 error result: structuredContent carries error_code AND text keeps the full structured error JSON (recovery fields survive for text-only clients)',
-    !!esc && typeof esc.error_code === 'string' && etext.trimStart().startsWith('{') && etext.includes(String(esc.error_code)), etext.slice(0, 200))
+  ok('E-1 error result: isError:true + structuredContent carries error_code AND text keeps the full structured error JSON (recovery fields survive for text-only clients)',
+    er.isError === true && !!esc && typeof esc.error_code === 'string' && etext.trimStart().startsWith('{') && etext.includes(String(esc.error_code)), etext.slice(0, 200))
+
+  // ── [paste] extracted 白名单:原始粘贴文本/URL(可携 PII/token)绝不回显进模型上下文 ────────
+  app.post('/api/search-by-link', (_req, res) => { res.json({ matched_by: 'none', products: [], extracted: { platform: 'taobao', external_id: 'abc-123', external_title: 'Jane SECRET +65 91234567 raw paste', url: 'https://x.example/?token=SECRETTOKEN' } }) })
+  const pr = await client.callTool({ name: 'webaz_search', arguments: { paste_text: 'Jane SECRET +65 91234567 https://x.example/?token=SECRETTOKEN' } }) as Record<string, unknown>
+  const prAll = JSON.stringify(pr)
+  const prx = ((pr.structuredContent ?? {}) as Record<string, unknown>).extracted as Record<string, unknown>
+  ok('P-1 paste path: extracted reduced to shape-checked {platform, external_id}; raw title/url/PII never reach the model',
+    prx?.platform === 'taobao' && prx?.external_id === 'abc-123' && !/SECRET|91234567|x\.example|SECRETTOKEN|external_title/.test(prAll), prAll.slice(0, 300))
+
+  // ── [limits] 非整数 limit 不得炸 SQL(floor 收整)────────────────────────────────────────────
+  const f1 = await H.handleBuyerOrders({ limit: 2.5 })
+  ok('F-1 fractional buyer_orders limit → floored page (no SQL error)', !f1.error && (f1.orders as unknown[]).length === 2, JSON.stringify(f1).slice(0, 150))
+  const f2 = await client.callTool({ name: 'webaz_search', arguments: { limit: 2.5, sort: 'newest' } }) as Record<string, unknown>
+  ok('F-2 fractional search limit → floored page (no query_failed)', !((f2.structuredContent ?? {}) as Record<string, unknown>).error, JSON.stringify(f2.structuredContent).slice(0, 150))
+
+  // ── [trending 注入翻页] 新卖家 slot 注入后 cursor 不得永久跳品(锚=原序展示集 keepHead)──────
+  db.prepare("INSERT INTO users (id,name,role,api_key,created_at) VALUES ('seller2','FreshSeller','seller','k_s2', datetime('now'))").run()
+  insP.run('prd_8', 'seller2', 'Fresh Seller Stand 8', 'd', 1, 'WAZ', 15, 'phone_stand', 'active', 7, 0, 24)
+  const seen = new Set<string>()
+  let cur: string | null = null
+  for (let i = 0; i < 6; i++) {
+    const pg = await client.callTool({ name: 'webaz_search', arguments: { sort: 'trending', limit: 3, ...(cur ? { cursor: cur } : {}) } }) as Record<string, unknown>
+    const pgsc = pg.structuredContent as Record<string, unknown>
+    for (const it of (pgsc.products as Array<Record<string, unknown>> ?? [])) seen.add(String(it.id))
+    cur = typeof pgsc.next_cursor === 'string' ? pgsc.next_cursor : null
+    if (!cur) break
+  }
+  ok('T-1 trending pages with new-seller slot injection cover ALL 8 products (duplicates allowed, permanent loss forbidden)', seen.size === 8, `seen=${[...seen].sort().join(',')}`)
+
+  console.log(`  [tools/list] total serialized: ${JSON.stringify(tools).length}B (outputSchema on ${tools.filter(t => t.outputSchema).length} tools)`)
 
   // ── [sandbox 子进程] 本地路径投影 ──────────────────────────────────────────────────────────
   const sb = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/test-mcp-model-projection.ts'], { env: { ...process.env, MODEL_PROJ_PHASE: 'sandbox', WEBAZ_API_URL: '' }, encoding: 'utf8', timeout: 120_000 })

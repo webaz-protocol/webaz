@@ -108,13 +108,18 @@ const displayRange = (products: Array<Record<string, unknown>>): string => {
   return lo === hi ? ` (${lo} WAZ)` : ` (${lo}–${hi} WAZ)`
 }
 
+// 降级摘要契约(Codex round-1 BLOCKER-1):text 必须携带【可行动最小集】—— 只读 content 的纯文本
+// 客户端要能继续走 search→verify/place 与 quote→draft→submit,所以 id / next_cursor / quote_token
+// 必须出现在摘要里;其余细节仍只在 structuredContent(不复制整个 JSON)。
+
 export function summarizeSearchResult(r: Record<string, unknown>): string {
   const products = Array.isArray(r.products) ? r.products as Array<Record<string, unknown>> : []
   if (!products.length) {
     return 'No exact match (strict match by full title/SKU — by design). See structuredContent.recovery for a labeled catalog sample + next step. / 精确匹配 0 命中,详见 recovery。'
   }
-  const more = r.next_cursor ? '; more via cursor' : ''
-  return `Found ${products.length} product(s)${displayRange(products)}${more}. Details in structuredContent. / 找到 ${products.length} 件商品,明细见结构化结果。`
+  const items = products.map(p => `${String(p.id)} ${String((p.price as Record<string, unknown> | undefined)?.display ?? '')}`.trim()).join(' | ')
+  const more = r.next_cursor ? ` next_cursor=${String(r.next_cursor)}` : ''
+  return `Found ${products.length}${displayRange(products)}: ${items}.${more} Details in structuredContent. / 明细见结构化结果。`
 }
 
 export function summarizeBuyerOrders(r: Record<string, unknown>): string {
@@ -123,12 +128,14 @@ export function summarizeBuyerOrders(r: Record<string, unknown>): string {
     return `Order ${o.order_id}: ${o.status}${o.next_actor ? `, next actor ${o.next_actor}` : ''}. / 订单状态 ${o.status}。`
   }
   const s = (r.summary ?? {}) as Record<string, unknown>
+  const orders = Array.isArray(r.orders) ? r.orders as Array<Record<string, unknown>> : []
   const total = Number(s.total ?? r.count) || 0
   const parts = [`${Number(s.active) || 0} active`]
   if (Number(s.awaiting_you)) parts.push(`${Number(s.awaiting_you)} awaiting you`)
   if (Number(s.disputed)) parts.push(`${Number(s.disputed)} disputed`)
-  const more = r.next_cursor ? '; more via cursor' : ''
-  return `${total} buyer order(s): ${parts.join(', ')}${more}. Details in structuredContent. / 共 ${total} 单,明细见结构化结果。`
+  const list = orders.map(o => `${String(o.order_id)}=${String(o.status)}`).join(', ')
+  const more = r.next_cursor ? ` next_cursor=${String(r.next_cursor)}` : ''
+  return `${total} buyer order(s) (${parts.join(', ')}): ${list}.${more} Details in structuredContent. / 明细见结构化结果。`
 }
 
 export function summarizeQuoteResult(r: Record<string, unknown>): string {
@@ -136,5 +143,6 @@ export function summarizeQuoteResult(r: Record<string, unknown>): string {
   const amt = Number(payable.amount_minor)
   const disp = Number.isFinite(amt) ? `${amt / 1_000_000} WAZ` : 'n/a'
   const rail = ((r.payment ?? {}) as Record<string, unknown>).rail ?? 'escrow'
-  return `Quote issued: payable ${disp} (${String(rail)} rail), expires ${String(r.expires_at ?? '')}. Quote only — nothing charged, no stock held. / 报价 ${disp},仅报价:不扣款、不锁库存。`
+  const tok = typeof r.quote_token === 'string' ? ` quote_token=${r.quote_token} (single-use → webaz_order_draft).` : ''
+  return `Quote ${String(r.quote_id ?? '')}: payable ${disp} (${String(rail)} rail), expires ${String(r.expires_at ?? '')}.${tok} Quote only — nothing charged, no stock held. / 仅报价:不扣款、不锁库存。`
 }
