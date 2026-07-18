@@ -108,7 +108,7 @@ try {
   const d1j = JSON.stringify(d1)
   const dp = (d1.products as Array<Record<string, unknown>>) ?? []
   ok('H-2a detail fetch → webaz.product_detail.model.v1, 2 items, live data', d1.schema_version === 'webaz.product_detail.model.v1' && dp.length === 2, d1j.slice(0, 200))
-  ok('H-2b description truncated at 600 + flag; specs surfaced', dp.every(p => String(p.description).length <= 600 && p.description_truncated === true) && !!dp[0].specs)
+  ok('H-2b description byte-capped (≤900B UTF-8) + flag; specs surfaced', dp.every(p => Buffer.byteLength(String(p.description), 'utf8') <= 900 && p.description_truncated === true) && !!dp[0].specs)
   ok('H-2c NO internal fields in detail projection', !FORBIDDEN.test(d1j), d1j.slice(0, 200))
   const perItem = Math.round(d1j.length / dp.length)
   ok('H-2d detail budget ≤1600B/item', perItem <= 1600, `perItem=${perItem}`)
@@ -169,6 +169,13 @@ try {
   ok('H-11 oversized seller specs → omitted + specs_truncated flag, per-item budget holds',
     d9p.specs === undefined && d9p.specs_truncated === true && JSON.stringify(d9).length <= 1600 + 400, `len=${JSON.stringify(d9).length}`)
 
+  // H-6d 卖家暂停谓词同样活跑
+  const s5 = scOf(await call({ sort: 'newest', limit: 3 }))
+  db.prepare("UPDATE users SET listing_paused = 1 WHERE id = 'seller1'").run()
+  const d10 = scOf(await call({ result_handle: String(s5.result_handle), selected_ids: [String((s5.products as Array<Record<string, unknown>>)[0].id)] }))
+  ok('H-6d seller paused after issue → unavailable (live predicate)', d10.count === 0 && Array.isArray(d10.unavailable_ids), JSON.stringify(d10).slice(0, 150))
+  db.prepare("UPDATE users SET listing_paused = 0 WHERE id = 'seller1'").run()
+
   // H-8 boot 清扫
   db.prepare("INSERT INTO mcp_result_cache (handle_id, subject, tool, item_ids, expires_at) VALUES ('res_dead', NULL, 'webaz_search', '[]', datetime('now','-1 hours'))").run()
   initMcpResultCacheSchema(db)
@@ -201,6 +208,29 @@ try {
   const u8 = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: u8since })
   ok('U-8 new return request (order row untouched) → NOT up_to_date, refund_status carries it',
     u8.up_to_date === undefined && JSON.stringify(u8.refund_status ?? {}).includes('pending'), JSON.stringify(u8).slice(0, 200))
+
+  // U-9 退货 resolved_at 也是锚点(仅 resolve 不新建行 → 仍不得 up_to_date)
+  db.prepare("UPDATE orders SET updated_at = datetime('now','-1 days') WHERE id = 'ord_u1'").run()
+  db.prepare("UPDATE return_requests SET resolved_at = datetime('now'), status = 'rejected' WHERE id = 'rr_u1'").run()
+  const u9 = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: new Date(Date.now() - 120_000).toISOString() })
+  ok('U-9 return resolved_at change alone defeats up_to_date', u9.up_to_date === undefined, JSON.stringify(u9).slice(0, 120))
+
+  // U-10 agent 发货追踪 executed_at 是锚点
+  db.prepare("DELETE FROM return_requests WHERE id = 'rr_u1'").run()
+  db.prepare(`INSERT INTO agent_permission_requests (id, human_id, grant_id, agent_label, requested_scopes, risk_level, duration, status, expires_at, kind, order_id, order_action, executed_at, created_at)
+    VALUES ('apr_trk','buyer1','grt_rh','RH','[]','high','once','executed', datetime('now','+1 days'),'order_action','ord_u1','ship', datetime('now'), datetime('now','-2 days'))`).run()
+  const u10 = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: new Date(Date.now() - 120_000).toISOString() })
+  ok('U-10 agent ship-tracking executed_at defeats up_to_date', u10.up_to_date === undefined, JSON.stringify(u10).slice(0, 120))
+  db.prepare("DELETE FROM agent_permission_requests WHERE id = 'apr_trk'").run()
+
+  // U-11 协商取消提案是锚点(存储态;表按需建 —— 与生产 initMutualCancelSchema 同构最小面)
+  db.exec("CREATE TABLE IF NOT EXISTS mutual_cancel_proposals (id TEXT PRIMARY KEY, order_id TEXT, proposer_id TEXT, status TEXT DEFAULT 'pending', created_at TEXT DEFAULT (datetime('now')), resolved_at TEXT, resolved_by TEXT)")
+  db.prepare("INSERT INTO mutual_cancel_proposals (id, order_id, proposer_id, created_at) VALUES ('mcp_u1','ord_u1','seller1', datetime('now'))").run()
+  const u11 = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: new Date(Date.now() - 120_000).toISOString() })
+  ok('U-11 mutual-cancel proposal (no transition) defeats up_to_date', u11.up_to_date === undefined, JSON.stringify(u11).slice(0, 120))
+  db.prepare("DELETE FROM mutual_cancel_proposals WHERE id = 'mcp_u1'").run()
+  const u12 = await mcp.handleBuyerOrders({ order_id: 'ord_u1', full: true, updated_since: new Date(Date.now() + 3600_000).toISOString() })
+  ok('U-12 after clearing anchors, future updated_since is up_to_date again (anchors are live MAX reads)', u12.up_to_date === true, JSON.stringify(u12).slice(0, 120))
 
   // H-12 限流(公共端点资源滥用护栏):RPM=1 → 立即 429 结构化;恢复默认后可用
   process.env.WEBAZ_RESULT_FETCH_RPM = '1'

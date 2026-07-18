@@ -407,14 +407,19 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
   //   资源滥用护栏(Codex M-4):无鉴权端点按 IP 限流(默认 60 req/min,WEBAZ_RESULT_FETCH_RPM 可调)。
   app.post('/api/products/result-fetch', async (req, res) => {
     const rpm = Math.max(1, Number(process.env.WEBAZ_RESULT_FETCH_RPM) || 60)
-    const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? 'unknown').split(',')[0].trim()
+    // 不信任 X-Forwarded-For(可伪造→桶逃逸,Codex round-2 M-2):只认 Cloudflare 权威头,否则退回
+    //   socket 地址(代理后=共享桶,只会更严不会更松)。清扫后仍超硬上限 → 整表重置(有界内存优先)。
+    const ip = String(req.headers['cf-connecting-ip'] ?? req.socket.remoteAddress ?? 'unknown')
     const now = Date.now()
     const slot = resultFetchRate.get(ip)
     if (!slot || now >= slot.resetAt) resultFetchRate.set(ip, { count: 1, resetAt: now + 60_000 })
     else if (++slot.count > rpm) {
       return void res.status(429).json({ error: 'rate limited', error_code: 'RATE_LIMITED', retryable: true, retry_after_s: Math.ceil((slot.resetAt - now) / 1000) })
     }
-    if (resultFetchRate.size > 10_000) { for (const [k, v] of resultFetchRate) if (now >= v.resetAt) resultFetchRate.delete(k) }
+    if (resultFetchRate.size > 10_000) {
+      for (const [k, v] of resultFetchRate) if (now >= v.resetAt) resultFetchRate.delete(k)
+      if (resultFetchRate.size > 50_000) resultFetchRate.clear()
+    }
     const { result_handle, selected_ids } = (req.body ?? {}) as { result_handle?: unknown; selected_ids?: unknown }
     if (typeof result_handle !== 'string' || !/^res_[0-9a-f]{32}$/.test(result_handle)) {
       return void res.status(400).json({ error: 'result_handle required', error_code: 'RESULT_HANDLE_INVALID', retryable: false, next_steps: [{ action: 'search_again', tool: 'webaz_search' }] })

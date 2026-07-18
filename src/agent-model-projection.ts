@@ -155,9 +155,16 @@ export function summarizeQuoteResult(r: Record<string, unknown>): string {
 // allowlist —— 内部字段(hash/回填/commission/source_*)在任何输入行下都构造性不可达。
 
 export const SCHEMA_PRODUCT_DETAIL = 'webaz.product_detail.model.v1'
-export const DETAIL_DESC_MAX = 600
 
-export const DETAIL_SPECS_MAX = 800
+export const DETAIL_SPECS_MAX_BYTES = 800
+export const DETAIL_DESC_MAX_BYTES = 900
+
+/** 按 UTF-8 字节封顶(Codex round-2 M-3:预算承诺以字节计,CJK 一字三字节 —— 字符截断守不住)。 */
+function capBytes(s: string, maxBytes: number): { text: string; truncated: boolean } {
+  const buf = Buffer.from(s, 'utf8')
+  if (buf.length <= maxBytes) return { text: s, truncated: false }
+  return { text: buf.subarray(0, maxBytes).toString('utf8').replace(/�+$/, ''), truncated: true }
+}
 
 export function projectProductDetail(p: Record<string, unknown>): Record<string, unknown> {
   const base = projectProductModel(p)
@@ -165,20 +172,21 @@ export function projectProductDetail(p: Record<string, unknown>): Record<string,
   let specs: unknown = null
   if (typeof p.specs === 'string' && p.specs) { try { specs = JSON.parse(p.specs) } catch { specs = null } }
   else if (p.specs && typeof p.specs === 'object') specs = p.specs
-  // 卖家可控字段全部封顶(Codex M-3):超大/深嵌套 specs 不得击穿"紧凑详情"承诺 —— 超限即整体省略
-  //   并打 specs_truncated(完整规格在 PWA 商品页;后续 UI Projection 层承接)。
+  // 卖家可控字段全部按【字节】封顶:超大/深嵌套 specs 整体省略(键都不出现)+ specs_truncated 标记
+  //   (完整规格在 PWA 商品页;后续 UI Projection 层承接)。
   let specsTruncated = false
   if (specs != null) {
-    try { if (JSON.stringify(specs).length > DETAIL_SPECS_MAX) { specs = null; specsTruncated = true } } catch { specs = null; specsTruncated = true }
+    try { if (Buffer.byteLength(JSON.stringify(specs), 'utf8') > DETAIL_SPECS_MAX_BYTES) { specs = null; specsTruncated = true } } catch { specs = null; specsTruncated = true }
   }
+  const descCap = desc ? capBytes(desc, DETAIL_DESC_MAX_BYTES) : { text: '', truncated: false }
   return {
     ...base,
-    description: desc ? desc.slice(0, DETAIL_DESC_MAX) : null,
-    description_truncated: desc.length > DETAIL_DESC_MAX,
-    specs,
+    description: descCap.text || null,
+    description_truncated: descCap.truncated,
+    ...(specs != null ? { specs } : {}),
     ...(specsTruncated ? { specs_truncated: true } : {}),
-    ship_regions: p.ship_regions == null ? null : String(p.ship_regions).slice(0, 200),
-    return_condition: p.return_condition == null ? null : String(p.return_condition).slice(0, 200),
+    ship_regions: p.ship_regions == null ? null : capBytes(String(p.ship_regions), 200).text,
+    return_condition: p.return_condition == null ? null : capBytes(String(p.return_condition), 200).text,
     fragile: p.fragile == null ? null : !!p.fragile,
   }
 }
