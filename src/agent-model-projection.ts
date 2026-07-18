@@ -141,6 +141,11 @@ export function summarizeBuyerOrders(r: Record<string, unknown>): string {
   return `${total} buyer order(s) (${parts.join(', ')}): ${list}.${more} Details in structuredContent. / 明细见结构化结果。`
 }
 
+export function summarizeUiSpike(r: Record<string, unknown>): string {
+  const items = Array.isArray(r.items) ? r.items as Array<Record<string, unknown>> : []
+  return `WebAZ UI spike: ${items.length} product card payload(s)${items.length ? ' — ' + items.map(i => `${i.title} ${i.price_display ?? ''}`.trim()).join(' | ') : ''}. If this host renders MCP Apps you should SEE CARDS above; this text is the fallback.`
+}
+
 export function summarizeQuoteResult(r: Record<string, unknown>): string {
   const payable = (r.payable_total ?? {}) as Record<string, unknown>
   const amt = Number(payable.amount_minor)

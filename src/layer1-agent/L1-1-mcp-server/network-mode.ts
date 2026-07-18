@@ -61,6 +61,7 @@ export const NETWORK_TOOLS = new Set<string>([
   'webaz_approval_requests',
   // RFC-026 PR-3 wallet minimal read (grant-wired, wallet_read_minimal; READ-ONLY forever). Same rule.
   'webaz_wallet_view',
+  'webaz_ui_spike',
   // RFC-026 PR-4 order-context chat (grant-wired, order_chat_read/send). Same rule.
   'webaz_order_chat',
   // RFC-026 PR-5 address masked read + change request (grant-wired). Same rule.
