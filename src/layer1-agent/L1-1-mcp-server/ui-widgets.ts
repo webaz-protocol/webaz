@@ -384,7 +384,7 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:var(--ink);bac
 .disc{font-size:11px;color:var(--warnbox-ink);margin-top:10px;line-height:1.5}
 .ok{color:var(--ok)}`
 
-const QUOTE_APPROVAL_BODY_JS = `
+export const QUOTE_APPROVAL_BODY_JS = `
 function renderBody(oai, out){
   oai = oai || {}
   var root = document.getElementById('root')
@@ -393,6 +393,15 @@ function renderBody(oai, out){
   function toggler(box,label,build){ var tg=el('span','toggle',label); var body=el('div','sec hide'); build(body); tg.addEventListener('click',function(){ body.classList.toggle('hide') }); box.appendChild(tg); box.appendChild(body) }
   function fiatLine(box,fe){ if(!fe)return; var f=el('div','fiat',fe.display+(fe.stale?'(近似汇率)':'')); box.appendChild(f) }
   function disclosures(box,list){ var d=el('div','disc',(list||[]).join(' · ')); box.appendChild(d) }
+  // fail-visible(B7,同 ProductResults):widget→host 回调(callTool/sendFollowUp)在部分宿主(ChatGPT)可能静默不生效。
+  //   任何按钮点击都①永不永久卡 ②追加一条可复制的手动指令,让"点按钮"在任何宿主上都能推进,不必用户精确打字。
+  function copyText(t){ try{ var n=(typeof navigator!=='undefined')?navigator:null; if(n&&n.clipboard&&n.clipboard.writeText){ n.clipboard.writeText(String(t)); return true } }catch(e){} return false }
+  function actHint(phrase, sent){
+    var h=el('div','disc'); h.appendChild(el('span',null,(sent?'已发送。若卡片没有刷新,复制发我:':'此宿主不支持一键,复制发我:')))
+    h.appendChild(el('span','ok',' “'+phrase+'” '))
+    var cp=el('button','toggle','复制'); cp.addEventListener('click',function(){ cp.textContent=copyText(phrase)?'已复制✓':'复制' }); h.appendChild(cp); root.appendChild(h)
+  }
+  function reenable(btn){ try{ setTimeout(function(){ try{ btn.disabled=false }catch(e){} },4000) }catch(e){} }
   root.textContent=''
   if(!out||!out.schema_version){ root.textContent='WebAZ: no structured payload visible to this widget.'; return }
   var box=el('div','box'); root.appendChild(box)
@@ -416,7 +425,7 @@ function renderBody(oai, out){
     row(box,'库存','未锁定(下单时重新校验)')
     if(out.quote_token&&typeof oai.callTool==='function'){
       var b1=el('button','btn','创建订单草稿(不扣款)')
-      b1.addEventListener('click',onceGuard(function(){ b1.disabled=true; oai.callTool('webaz_order_draft',{action:'create',quote_token:out.quote_token}) }))
+      b1.addEventListener('click',onceGuard(function(){ b1.disabled=true; var sent=false; try{ oai.callTool('webaz_order_draft',{action:'create',quote_token:out.quote_token}); sent=true }catch(e){} reenable(b1); actHint('用这个报价创建订单草稿(quote_token='+String(out.quote_token)+')', sent) }))
       box.appendChild(b1)
     }
     disclosures(box,out.disclosures)
@@ -433,7 +442,7 @@ function renderBody(oai, out){
     row(box,'过期时间',String(out.expires_at||''))
     if(String(out.status)==='draft'&&typeof oai.callTool==='function'){
       var b2=el('button','btn','提交 Passkey 审批(不会直接执行)')
-      b2.addEventListener('click',onceGuard(function(){ b2.disabled=true; oai.callTool('webaz_submit_order_request',{draft_id:out.draft_id}) }))
+      b2.addEventListener('click',onceGuard(function(){ b2.disabled=true; var sent=false; try{ oai.callTool('webaz_submit_order_request',{draft_id:out.draft_id}); sent=true }catch(e){} reenable(b2); actHint('提交这个草稿去 Passkey 审批(draft_id='+String(out.draft_id)+')', sent) }))
       box.appendChild(b2)
     }
     disclosures(box,out.disclosures)
@@ -452,10 +461,16 @@ function renderBody(oai, out){
     }
     var openBtn=el('button','btn','打开审批页面(webaz.xyz · Passkey)')
     openBtn.addEventListener('click',onceGuard(function(){
-      // approval_url = 服务端权威字段;openWebaz 内部做 origin 校验
-      if(!openWebaz(oai,'https://webaz.xyz/'+String(out.approval_url||'').replace(/^\\//,''))) sendFollowUpCompat(oai,'请给我审批页面链接')
+      // approval_url = 服务端权威字段;openWebaz 内部做 origin 校验;都不行 → 可复制手动指引(fail-visible)
+      if(!openWebaz(oai,'https://webaz.xyz/'+String(out.approval_url||'').replace(/^\\//,''))){ if(!sendFollowUpCompat(oai,'请给我审批页面链接')) actHint('给我这笔审批的 webaz.xyz Passkey 审批页面链接(request_id='+String(out.request_id||'')+')', false) }
     }))
     box.appendChild(openBtn)
+    // B7:批准在 webaz.xyz 用 Passkey 完成(卡外),本卡是提交时快照、不会自动刷新 → 一键刷新最新状态(已接单/已付款);
+    //   宿主回调不生效时降级为可复制指令(fail-visible),让"点按钮"在任何宿主都能推进。
+    var refBtn=el('button','btn','🔄 查看最新状态')
+    refBtn.addEventListener('click',onceGuard(function(){ refBtn.disabled=true; var sent=false; try{ sent=sendFollowUpCompat(oai,'请用 webaz_approval_requests(action=get, request_id='+String(out.request_id||'')+')查这笔审批最新状态;若已 executed 再给我该订单最新状态') }catch(e){} reenable(refBtn); actHint('查这笔审批/订单的最新状态(request_id='+String(out.request_id||'')+')', sent) }))
+    box.appendChild(refBtn)
+    box.appendChild(el('div','meta','此卡为提交时快照;批准在 webaz.xyz 完成后,点「🔄 查看最新状态」刷新 —— 本卡不会自动更新'))
     box.appendChild(el('div','meta ok','批准成功后:唯一正式订单号可经 webaz_approval_requests 查询(executed_order_id)'))
     disclosures(box,out.disclosures)
   } else {
