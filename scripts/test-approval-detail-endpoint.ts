@@ -88,6 +88,18 @@ try {
   // ── zero-PII: no api_key / handle-as-PII leak (seller_handle is a deliberate public projection) ──
   ok('no api_key leaks in detail body', !/k_a|k_b|k_s/.test(JSON.stringify(good.body)))
 
+  // ── EXCEPTION ISOLATION (real throw): make the summary builder THROW (order_drafts table gone), not just
+  //    return null — this is what actually exercises the try/catch (a missing-draft row only returns null and
+  //    would pass even WITHOUT the fix). Both detail and list must still respond promptly (no hang/500). ──
+  db.exec('ALTER TABLE order_drafts RENAME TO order_drafts__bak')
+  const thrownDetail = await j('/api/agent-grants/permission-requests/apr_ok', { user: 'alice' })
+  ok('builder THROW (table gone) → detail still 200 (no hang/500)', thrownDetail.status === 200)
+  ok('builder THROW → detail degrades to summary_unavailable (catch fired)', thrownDetail.body.summary_unavailable === true && !thrownDetail.body.submit_summary)
+  const thrownList = await j('/api/agent-grants/permission-requests', { user: 'alice' })
+  ok('builder THROW → list still 200 (no hang), actionable rows degraded not dropped', thrownList.status === 200 && (thrownList.body.requests as unknown[]).length >= 2)
+  ok('builder THROW → good row in list degraded to summary_unavailable', (thrownList.body.requests as Array<Record<string, unknown>>).find(r => r.id === 'apr_ok')?.summary_unavailable === true)
+  db.exec('ALTER TABLE order_drafts__bak RENAME TO order_drafts')
+
   // ── A5: absolutizeApprovalUrls turns relative deep links into absolute (top-level + nested requests[]) ──
   const abs1 = absolutizeApprovalUrls({ approval_url: '/#agent-approvals/apr_x' }) as Record<string, unknown>
   ok('absolutize top-level relative → https://webaz.xyz/#agent-approvals/apr_x', abs1.approval_url === 'https://webaz.xyz/#agent-approvals/apr_x')
