@@ -484,21 +484,28 @@ user_identity_subjects
   id
   user_id
   issuer                 exact normalized issuer
-  subject_hmac           keyed HMAC of stable provider subject
-  hmac_key_version       rotation identifier
   provider               google | apple | email
   email_hint_hash        optional; not an authorization key
   verified_at
+  created_at
+
+user_identity_subject_aliases
+  subject_id             references user_identity_subjects.id
+  issuer                 exact normalized issuer
+  subject_hmac           keyed HMAC of stable provider subject
+  hmac_key_version       rotation identifier
   created_at
   UNIQUE(issuer, subject_hmac)
 ```
 
 During HMAC-key rotation, lookup computes blind indexes with every accepted
-current/previous key version, then migrates a match to the current version in
-the same transaction. Old keys remain lookup-only until migration is complete;
-a first-seen subject is inserted only after the multi-key lookup. This prevents
-one provider subject from creating a second account merely because the HMAC key
-version changed.
+current/previous key version. A match keeps the stable subject row and
+transactionally adds the current-version alias; it never overwrites the old
+alias. Old keys remain lookup-only until every binding has a current alias.
+For a first-seen subject, insert the binding and current alias in one transaction;
+a concurrent unique-alias conflict loses, discards its provisional binding and
+loads the winner. This additive alias model prevents one provider subject from
+creating a second account merely because the HMAC key version changed.
 
 The callback links an existing user only through an authenticated account-link
 flow or a unique previously verified issuer/subject. A Google/Apple/OIDC email
@@ -755,8 +762,9 @@ In addition to the requested ten user journeys, every implementation must prove:
     wallet credit, seller capability or ordinary registration modal;
 21. duplicate tabs for one `pcx` reuse one active intent while different `pcx`
     values in the same browser can coexist without overwriting session proof;
-22. HMAC-key rotation finds and migrates an existing issuer/subject binding
-    before any insert, so it cannot create a duplicate account;
+22. HMAC-key rotation finds an existing issuer/subject through any accepted
+    alias and adds the current alias without deleting the old one; concurrent
+    first use or rotation cannot create a duplicate account;
 23. two simultaneous callbacks for one verified subject create one Buyer Lite
     account, no credited wallet and no referral/placement records;
 24. an agent retry resolves only the intent linked to its own OAuth authorization

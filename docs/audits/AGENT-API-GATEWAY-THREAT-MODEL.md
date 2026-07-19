@@ -534,7 +534,8 @@ Beyond the supplied 20 tests, add:
     public facts; it cannot bind an account or create an order;
 41. duplicate tabs for one preparation context converge while different
     contexts coexist under one browser session without cookie overwrite;
-42. identity-HMAC key rotation cannot create a second account for an existing
+42. additive identity-HMAC aliases and their unique index prevent key rotation
+    or concurrent first use from creating a second account for one
     issuer/subject pair;
 43. `purchase:prepare` cannot reach wallet/profile/order history/address change,
     another product, another intent or another chain's objects;
