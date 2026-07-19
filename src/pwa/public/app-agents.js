@@ -20,8 +20,8 @@ async function renderConnectedAgents(app) {
   const body = grants.length === 0
     ? `<div class="empty" style="padding:40px 16px;text-align:center">
          <div style="font-size:32px;margin-bottom:8px">🔌</div>
-         <div style="font-weight:600;margin-bottom:4px">${t('尚无已连接的 Agent')}</div>
-         <div style="color:#9ca3af;font-size:12px">${t('AI agent 通过 webaz_pair 配对、经你 Passkey 批准后出现在这里')}</div>
+         <div style="font-weight:600;margin-bottom:4px">${t('尚无已连接的应用或 Agent')}</div>
+         <div style="color:#9ca3af;font-size:12px">${t('AI 应用通过 OAuth 连接、或 agent 通过 webaz_pair 配对,经你 Passkey 批准后出现在这里')}</div>
        </div>`
     : grants.map(g => {
         const revoked = g.status === 'revoked'
@@ -37,7 +37,7 @@ async function renderConnectedAgents(app) {
           : t('从未使用')
         return `<div class="card" style="margin-bottom:10px;padding:14px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-            <div style="font-weight:600">${escHtml(g.agent_label || t('未命名 Agent'))}</div>
+            <div style="font-weight:600">${escHtml((g.connection_kind === 'oauth' ? String(g.agent_label || '').replace(/^OAuth:\s*/, '') : g.agent_label) || t('未命名 Agent'))}${g.connection_kind === 'oauth' ? ` <span style="font-size:10px;color:#7c3aed;background:#f5f3ff;padding:1px 6px;border-radius:999px">${t('OAuth')}</span>` : ''}</div>
             ${badge}
           </div>
           <div style="margin-bottom:6px">${caps || `<span style="font-size:11px;color:#9ca3af">${t('仅安全只读权限')}</span>`}</div>
@@ -48,8 +48,8 @@ async function renderConnectedAgents(app) {
       }).join('')
 
   app.innerHTML = shell(`
-    <div class="page-header"><h2>${t('🔌 已连接的 Agent')}</h2></div>
-    <div style="font-size:12px;color:#6b7280;padding:0 4px 12px">${t('这些是你授权给 AI agent 的委托凭证（作用域受限、短期、可随时撤销）。它们不是你的账号或密钥，永远无法动用资金、投票或改密钥。')}</div>
+    <div class="page-header"><h2>${t('🔌 已连接的应用与 Agent')}</h2></div>
+    <div style="font-size:12px;color:#6b7280;padding:0 4px 12px">${t('这些是你授权给 AI 应用/agent 的连接凭证（作用域受限、可随时撤销）。它们不是你的账号或密钥，永远无法动用资金、投票或改密钥；撤销后其访问令牌立即失效。')}</div>
     ${body}
   `, 'me')
 }
