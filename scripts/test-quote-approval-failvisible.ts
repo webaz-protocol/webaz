@@ -73,11 +73,11 @@ try {
   ok('B7-7a quote card 创建订单草稿 button present', !!findBtn(rQ.root, '创建订单草稿'))
   fire(findBtn(rQ.root, '创建订单草稿')!)
   const draftCall = calls.find(c => c[0] === 'webaz_order_draft')
-  ok('B7-7 create-draft → callTool webaz_order_draft {action:create, quote_token} unchanged + fail-visible hint', !!draftCall && (draftCall![1] as Record<string, unknown>).action === 'create' && (draftCall![1] as Record<string, unknown>).quote_token === 'qt_1' && treeText(rQ.root).includes('创建订单草稿(quote_token=qt_1)'))
+  ok('B7-7 create-draft → callTool webaz_order_draft with EXACT args {action:create, quote_token} (deep-equal, no extra keys) + fail-visible hint', !!draftCall && JSON.stringify(draftCall![1]) === JSON.stringify({ action: 'create', quote_token: 'qt_1' }) && treeText(rQ.root).includes('创建订单草稿(quote_token=qt_1)'))
   const rD = render(DRAFT, oai2)
   fire(findBtn(rD.root, '提交')!)
   const submitCall = calls.find(c => c[0] === 'webaz_submit_order_request')
-  ok('B7-8 submit → callTool webaz_submit_order_request {draft_id} unchanged + fail-visible hint', !!submitCall && (submitCall![1] as Record<string, unknown>).draft_id === 'odr_1' && treeText(rD.root).includes('draft_id=odr_1'))
+  ok('B7-8 submit → callTool webaz_submit_order_request with EXACT args {draft_id} (deep-equal, no extra keys) + fail-visible hint', !!submitCall && JSON.stringify(submitCall![1]) === JSON.stringify({ draft_id: 'odr_1' }) && treeText(rD.root).includes('draft_id=odr_1'))
 
   // ── B7-9/10/11: 打开审批页 must be fail-visible even when openExternal THROWS or silently drops (Codex R2 High) ──
   const rThrow = render(APPROVAL, { openExternal: () => { throw new Error('boom') } })
