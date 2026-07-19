@@ -1,5 +1,5 @@
 // Service Worker — 网络优先，离线降级缓存；API 请求不缓存
-const CACHE = 'webaz-v482'
+const CACHE = 'webaz-v483'
 
 self.addEventListener('install', e => {
   self.skipWaiting()

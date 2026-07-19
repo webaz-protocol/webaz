@@ -193,6 +193,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   //   handle + a MASKED account id + the grant's safe scopes + expiry — and NEVER an api_key, token, email,
   //   address, or any other PII (E-node requirement). Backs webaz_connection_status.
   app.get('/api/agent-grants/connection', requireAgentGrantScope('read_public'), async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store')   // 连接状态(scopes/expires_at)随撤销/过期而变,须实时;不缓存
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant
     if (!p) return void res.status(401).json({ error: 'no grant', error_code: 'GRANT_REQUIRED' })
     const g = await dbOne<{ capabilities: string; expires_at: string }>(
@@ -574,10 +575,12 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
 
   // RFC-026 PR-2 — 审批状态只读(safe scope approval_requests_read;只看本人;零 PII)
   app.get('/api/agent/approval-requests', requireAgentGrantScope('approval_requests_read'), async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store')   // 审批状态实时(pending→approved/executed/rejected/expired);不缓存
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     res.json(listApprovalRequests(db, p.human_id))
   })
   app.get('/api/agent/approval-requests/:id', requireAgentGrantScope('approval_requests_read'), async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store')   // 同上:单条审批状态实时,不缓存
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     const r = getApprovalRequest(db, p.human_id, req.params.id)
     if (!r.ok) return void res.status(r.status).json(r.body)
@@ -800,6 +803,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   // GET list this human's PENDING permission requests (for #agent-approvals). Human-authed.
   app.get('/api/agent-grants/permission-requests', async (req, res) => {
     const user = auth(req, res); if (!user) return
+    res.setHeader('Cache-Control', 'no-store')   // 审批列表必须实时(与 orders-read 一致);否则浏览器缓存旧列表 → 新审批/已处理状态不刷新
     const rows = await dbAll<Record<string, unknown>>(
       "SELECT id, agent_label, requested_scopes, permission_bundle, reason, task_context, risk_level, duration, created_at, expires_at, kind, order_id, order_action, params_hash, action_params, status, execution_result FROM agent_permission_requests WHERE human_id = ? AND ((status = 'pending' AND expires_at > ?) OR (kind IN ('order_submit','order_action','address_change','buyer_action') AND status = 'approved' AND executed_at IS NULL)) ORDER BY created_at DESC LIMIT 100",
       [user.id, new Date().toISOString()])  // RFC-026 R1:approved+未执行的 order_submit(执行结果不明冻结)也列出 —— 人再次 Passkey 批准即触发服务端和解(oracle 核对补回链或安全重试),这是冻结态唯一的解锁路径
@@ -826,6 +830,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   //   fail-visible: every path responds (404 not-found-or-not-yours = anti-enumeration; 500 only on assembly throw).
   app.get('/api/agent-grants/permission-requests/:request_id', async (req, res) => {
     const user = auth(req, res); if (!user) return
+    res.setHeader('Cache-Control', 'no-store')   // 深链接终态读须实时(executed/rejected/expired),不缓存
     try {
       const r = getApprovalRequest(db, user.id as string, req.params.request_id)
       if (!r.ok) return void res.status(r.status).json(r.body)
@@ -839,6 +844,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   //   its own request status (pending/approved/rejected/expired) without hitting the target surface. Bound to
   //   grant_id: an agent sees ONLY its own requests, never the human's other agents'. Audited (fail-closed).
   app.get('/api/agent-grants/my-permission-requests', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store')   // agent 侧审批状态读须实时(pending→approved/executed);不缓存
     if (!rateLimitOk(`agent_perm_list:${req.ip || 'anon'}`, 30, 60_000)) return void res.status(429).json({ error: 'too_many_requests', error_code: 'GRANT_RATE_LIMITED', retry_after_s: 60 })
     const g = await resolveActiveGrantByBearer(req)
     if (!g) return void res.status(401).json({ error: 'an active delegation grant is required (pair first with webaz_pair)', error_code: 'GRANT_REQUIRED' })
