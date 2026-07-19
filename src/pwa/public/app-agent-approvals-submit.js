@@ -27,7 +27,7 @@
       row(t('运费'), waz(s.shipping_units)) +
       (Number(s.donation_bps || 0) > 0 ? row(t('捐赠'), (Number(s.donation_bps) / 100).toFixed(1) + '% = ' + waz(s.donation_units) + ' ' + escHtml(String(s.currency || 'USDC')) + ' ' + t('(额外扣款,入公益池)')) : '') +
       row(t('支付轨道'), railLine) +
-      (s.direct_receive_account_id ? row(t('卖家收款账户'), '<code>' + escHtml(String(s.direct_receive_account_id)) + '</code>') : (s.payment_rail === 'direct_p2p' ? '<div style="font-size:12px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;margin-top:6px">⚠️ ' + t('卖家未配置直付收款账户,无法确认收款目的地 —— 已禁止批准') + '</div>' : '')) +
+      (s.payment_rail === 'direct_p2p' ? (s.direct_pay_destination_resolvable === false ? '<div style="font-size:12px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;margin-top:6px">⚠️ ' + t('卖家未配置可用的直付收款目的地 —— 已禁止批准') + '</div>' : row(t('卖家收款目的地'), escHtml([(s.direct_pay_destination && (s.direct_pay_destination.label || s.direct_pay_destination.method)) || '', s.direct_pay_destination && s.direct_pay_destination.currency].filter(Boolean).join(' · ')) || (s.direct_receive_account_id ? '<code>' + escHtml(String(s.direct_receive_account_id)) + '</code>' : t('卖家默认收款账户')))) : '') +
       (s.anonymous_recipient ? row(t('匿名收件'), t('已开启(卖家/物流不见你的身份)')) : '') +
       row(t('卖家'), escHtml(String(s.seller_handle || t('(无 handle)'))) + ' <code style="font-size:10px">' + escHtml(String(s.seller_id_hint || '')) + '</code>') +
       row(t('收货'), t('默认地址') + (s.dest_region ? ' · ' + escHtml(String(s.dest_region)) : '')) +

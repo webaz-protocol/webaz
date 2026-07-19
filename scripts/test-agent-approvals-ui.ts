@@ -95,12 +95,16 @@ const runSubmitCard = (r: unknown): { html?: string; threw?: string } => {
   } catch (e) { return { threw: (e as Error).message } }
 }
 const escrowSummary = { submit_summary: { product_id: 'prd_a', product_title: 'AAA', quantity: 1, unit_price_units: 4_070_000, item_units: 4_070_000, shipping_units: 0, payable_units: 4_070_000, total_units: 4_070_000, currency: 'USDC', payment_rail: 'escrow', seller_handle: '@s', seller_id_hint: 'usr_***', dest_region: 'SG', draft_id: 'odr_1', draft_expires_at: '2026-07-20T16:50:00Z', draft_status: 'draft' }, kind: 'order_submit' }
-const directNoAcct = { submit_summary: { ...escrowSummary.submit_summary, payment_rail: 'direct_p2p', direct_receive_account_id: null }, kind: 'order_submit' }
+// B6a/B6c: card/gate key off server truth direct_pay_destination_resolvable, NOT direct_receive_account_id==null.
+const directUnresolvable = { submit_summary: { ...escrowSummary.submit_summary, payment_rail: 'direct_p2p', direct_receive_account_id: null, direct_pay_destination_resolvable: false }, kind: 'order_submit' }
+const directResolvable = { submit_summary: { ...escrowSummary.submit_summary, payment_rail: 'direct_p2p', direct_receive_account_id: null, direct_pay_destination_resolvable: true, direct_pay_destination: { source: 'sole_active_account', method: 'PayNow', currency: 'SGD', label: '主收款' } }, kind: 'order_submit' }
 const rEscrow = runSubmitCard(escrowSummary)
 ok('B6-1. order_submit card RENDERS without throwing (row helper defined — regression for "row is not defined")', !rEscrow.threw && !!rEscrow.html)
 ok('B6-2. rendered card shows the hash-bound term rows (单价/运费/支付轨道/卖家/收货/草稿)', !!rEscrow.html && ['单价', '运费', '支付轨道', '卖家', '收货', '草稿'].every(k => rEscrow.html!.includes(k)))
-const rDirect = runSubmitCard(directNoAcct)
-ok('B6-3. direct_p2p with no receiving account renders (no crash) + shows the missing-account warning', !rDirect.threw && !!rDirect.html && rDirect.html.includes('卖家未配置直付收款账户'))
+const rUnres = runSubmitCard(directUnresolvable)
+ok('B6-3. direct_p2p with NO resolvable destination → renders (no crash) + accurate "无可用收款目的地" warning', !rUnres.threw && !!rUnres.html && rUnres.html.includes('卖家未配置可用的直付收款目的地'))
+const rRes = runSubmitCard(directResolvable)
+ok('B6-3b. direct_p2p resolvable (omitted id, seller default) → shows the destination, NO false "未配置" warning (fixes @holden over-block)', !rRes.threw && !!rRes.html && rRes.html.includes('主收款') && !rRes.html.includes('卖家未配置可用的直付收款目的地'))
 // B6-4 gate is BEHAVIORAL (run aaEconomicIncomplete) — a source regex is the same weakness that hid the original crash.
 const runGate = (): ((r: unknown) => boolean) | null => {
   const ctx: Record<string, unknown> = { window: {} as Record<string, unknown>, t: (s: string) => s, escHtml: (s: string) => String(s), document: { getElementById: () => null }, console, setTimeout, location: { hash: '' } }
@@ -109,14 +113,14 @@ const runGate = (): ((r: unknown) => boolean) | null => {
 }
 const gate = runGate()
 const sub = (o: Record<string, unknown>) => ({ kind: 'order_submit', submit_summary: { payable_units: 1, currency: 'USDC', ...o } })
-ok('B6-4. fail-closed gate (behavioral): blocks direct_p2p order_submit lacking a receiving account; does NOT over-block escrow or direct_p2p WITH an account',
+ok('B6-4. fail-closed gate (behavioral): blocks direct_p2p ONLY when destination is unresolvable; escrow + resolvable direct_p2p (even with omitted account_id) NOT over-blocked',
   !!gate
   && gate(sub({ payment_rail: 'escrow' })) === false
-  && gate(sub({ payment_rail: 'direct_p2p', direct_receive_account_id: 'acc_1' })) === false
-  && gate(sub({ payment_rail: 'direct_p2p', direct_receive_account_id: null })) === true
+  && gate(sub({ payment_rail: 'direct_p2p', direct_pay_destination_resolvable: true, direct_receive_account_id: null })) === false
+  && gate(sub({ payment_rail: 'direct_p2p', direct_pay_destination_resolvable: false, direct_receive_account_id: null })) === true
   && gate({ kind: 'order_submit', summary_unavailable: true }) === true
   && gate({ kind: 'order_action' }) === false)
-ok('B6-5. new UI strings are bilingual (t + _EN entry present)', I18N.includes('卖家未配置直付收款账户,无法确认收款目的地 —— 已禁止批准') && I18N.includes('关键条款不完整(金额/币种/支付轨道/收款账户)'))
+ok('B6-5. new UI strings are bilingual (t + _EN entry present)', I18N.includes('卖家未配置可用的直付收款目的地 —— 已禁止批准') && I18N.includes('卖家收款目的地') && I18N.includes('关键条款不完整(金额/币种/支付轨道/收款账户)'))
 
 // ── i18n parity ──
 {
