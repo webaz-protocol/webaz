@@ -205,7 +205,22 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     // Always redact — NEVER return the full id. Long id → prefix…suffix (middle hidden); short id (≤8,
     // where prefix+suffix would overlap and reveal everything) → 2-char prefix + ellipsis only.
     const account_id_hint = !id ? '' : id.length > 8 ? `${id.slice(0, 4)}…${id.slice(-4)}` : `${id.slice(0, 2)}…`
-    res.json({ connected: true, handle: u?.handle ? `@${u.handle}` : null, account_id_hint, agent_label: p.agent_label, scopes, expires_at: g?.expires_at ?? null })
+    // PR-5: connection lifecycle hints so a client can renew/reconnect proactively.
+    //   refresh_supported — OAuth-consent grants (authoritatively: they have an oauth_auth_code) issue refresh
+    //     tokens, so the client silently renews its short access token for the whole grant window; gtk_ pairing
+    //     grants do not. expires_in_seconds — seconds until the GRANT (the connection itself) lapses. When the
+    //     grant window nears its end even refresh can't extend it → reconnect_required flags re-consent soon.
+    const oc = await dbOne<{ n: number }>('SELECT COUNT(*) AS n FROM oauth_auth_codes WHERE grant_id = ?', [p.grant_id])
+    const refresh_supported = Number(oc?.n) > 0
+    const expMs = g?.expires_at ? new Date(g.expires_at).getTime() : null
+    const expires_in_seconds = expMs != null ? Math.max(0, Math.floor((expMs - Date.now()) / 1000)) : null
+    const RECONNECT_THRESHOLD_S = 24 * 3600   // within a day of the grant lapsing → prompt re-consent
+    const reconnect_required = expires_in_seconds != null && expires_in_seconds <= RECONNECT_THRESHOLD_S
+    res.json({
+      connected: true, handle: u?.handle ? `@${u.handle}` : null, account_id_hint, agent_label: p.agent_label, scopes,
+      expires_at: g?.expires_at ?? null, grant_expires_at: g?.expires_at ?? null, expires_in_seconds,
+      refresh_supported, reconnect_required,
+    })
   })
 
   // First REAL grant-consumed seller surface (Catalog Agent): read the grant human's OWN catalog. Read-only,

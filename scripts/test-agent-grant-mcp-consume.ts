@@ -97,6 +97,15 @@ try {
     !JSON.stringify(conn).includes('gtk_int') && !JSON.stringify(conn).includes('key_bob')
     && !JSON.stringify(conn).includes(human) && !/api_key|email|address/i.test(JSON.stringify(conn)))
   ok('3c4 connection_status with NO grant → connected:false + guidance (not a crash/PII)', await (async () => { const c = await mcp.handleConnectionStatus({ __isolated__: true }); return c.connected === false && typeof c.note === 'string' && !JSON.stringify(c).includes('gtk_int') })())
+  // PR-5 — lifecycle hints. This gtk_ grant has NO oauth_auth_code → refresh_supported=false; it expires in
+  //   ~1h (< 24h threshold) → reconnect_required=true; grant_expires_at + expires_in_seconds present.
+  ok('3c-pr5a gtk_ grant → refresh_supported=false, reconnect_required=true, grant_expires_at + expires_in_seconds present',
+    conn.refresh_supported === false && conn.reconnect_required === true
+    && typeof conn.grant_expires_at === 'string' && typeof conn.expires_in_seconds === 'number' && (conn.expires_in_seconds as number) <= 3600)
+  // An OAuth-consent grant (authoritatively: has an oauth_auth_code) → refresh_supported=true.
+  db.prepare('INSERT INTO oauth_auth_codes (code_hash, client_id, user_id, grant_id, scope, code_challenge, redirect_uri, resource, expires_at, consumed_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+    .run('cc_' + gid, 'webaz-dev-client', human, gid, 'read', 'ch', 'https://x/cb', 'https://webaz.xyz/mcp', new Date(Date.now() + 60_000).toISOString(), new Date().toISOString())
+  ok('3c-pr5b grant WITH an oauth_auth_code → refresh_supported=true', await (async () => { const c = await mcp.handleConnectionStatus({}); return c.refresh_supported === true })())
   // 3c5 — a SHORT account id must STILL be redacted, NEVER returned verbatim (defense-in-depth, Codex).
   const shortHuman = 'usr_s'   // 5 chars ≤ 8: the overlap branch
   db.prepare('INSERT INTO users (id, name, role, api_key, handle) VALUES (?,?,?,?,?)').run(shortHuman, 'Sam', 'buyer', 'key_sam', 'sam_s')
