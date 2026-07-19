@@ -76,7 +76,7 @@
     else if (!res.ok) { const e = aaReadError(res); html = e || aaErrorCard({ title: t('无法读取该审批请求'), actions: [{ ...AA_RETRY, primary: true }, AA_BACK] }) }
     else {
       const d = res.data, s = String(d.status || '')
-      if (s === 'executed') html = aaErrorCard({ title: '✅ ' + t('该审批已执行'), detail: t('正式订单已创建') + (d.executed_order_id ? ' · ' + d.executed_order_id : '') + '。', actions: [d.executed_order_id ? { label: '查看订单', onclick: `navigate('order-detail','${escHtml(String(d.executed_order_id))}')`, primary: true } : null, AA_BACK].filter(Boolean) })
+      if (s === 'executed') html = aaErrorCard({ title: '✅ ' + t('该审批已执行'), detail: t('正式订单已创建') + (d.executed_order_id ? ' · ' + d.executed_order_id : '') + '。', actions: [d.executed_order_id ? { label: '查看订单', onclick: `navigate('#order/${escHtml(String(d.executed_order_id))}')`, primary: true } : null, AA_BACK].filter(Boolean) })
       else if (s === 'rejected') html = aaErrorCard({ title: t('该审批已被拒绝'), detail: t('如需继续,请让 agent 重新发起请求。'), actions: [AA_BACK] })
       else if (s === 'expired') html = aaErrorCard({ title: t('该审批已过期'), detail: t('请让 agent 重新报价并提交。'), actions: [AA_BACK] })
       else html = aaErrorCard({ title: t('该审批请求当前不可操作'), detail: t('状态') + ': ' + escHtml(s || '—'), actions: [{ ...AA_RETRY, primary: true }, AA_BACK] })

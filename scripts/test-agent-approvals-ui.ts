@@ -121,6 +121,9 @@ ok('B6-4. fail-closed gate (behavioral): blocks direct_p2p ONLY when destination
   && gate({ kind: 'order_submit', summary_unavailable: true }) === true
   && gate({ kind: 'order_action' }) === false)
 ok('B6-5. new UI strings are bilingual (t + _EN entry present)', I18N.includes('卖家未配置可用的直付收款目的地 —— 已禁止批准') && I18N.includes('卖家收款目的地') && I18N.includes('关键条款不完整(金额/币种/支付轨道/收款账户)'))
+// B6b: executed-approval "查看订单" must navigate to the REAL order route (#order/<id>), not the dead 'order-detail'
+//   (navigate(hash) takes ONE arg; router only has case 'order' → #order/<id>). Regression for a broken deep-link CTA.
+ok('B6b. executed-terminal 查看订单 uses #order/<id> route, not the dead order-detail', /navigate\('#order\/\$\{escHtml\(String\(d\.executed_order_id\)\)\}'\)/.test(UI_STATE) && !/navigate\('order-detail'/.test(UI_STATE))
 
 // ── i18n parity ──
 {
