@@ -52,7 +52,7 @@ function onQuickActionsPointerDown(event) {
   const trigger = event.target.closest?.('#quick-actions-trigger')
   if (!trigger || !usesDockedQuickActions()) return
   const root = document.getElementById('quick-actions')
-  if (!root) return
+  if (!root) return; root.dataset.docked = 'false'; const menu = document.getElementById('quick-actions-menu'); if (menu) menu.hidden = true; trigger.setAttribute('aria-expanded', 'false')
   dragState = { pointerId: event.pointerId, trigger, startY: event.clientY, startTop: root.getBoundingClientRect().top, moved: false }
   trigger.setPointerCapture?.(event.pointerId)
 }
@@ -63,7 +63,7 @@ function onQuickActionsPointerMove(event) {
   if (Math.abs(delta) < 6 && !dragState.moved) return
   dragState.moved = true
   event.preventDefault()
-  window.closeQuickActions()
+  const menu = document.getElementById('quick-actions-menu'); if (menu) menu.hidden = true; dragState.trigger.setAttribute('aria-expanded', 'false')
   placeQuickActions(dragState.startTop + delta)
 }
 
@@ -74,10 +74,7 @@ function onQuickActionsPointerEnd(event) {
   state.trigger.releasePointerCapture?.(event.pointerId)
   if (!state.moved) return
   suppressTriggerClickUntil = performance.now() + 300
-  requestAnimationFrame(() => {
-    const root = document.getElementById('quick-actions')
-    if (root) saveQuickActionsTop(root.getBoundingClientRect().top)
-  })
+  requestAnimationFrame(() => { const root = document.getElementById('quick-actions'); if (root) saveQuickActionsTop(root.getBoundingClientRect().top); setTimeout(() => { if (document.getElementById('quick-actions-trigger')?.getAttribute('aria-expanded') === 'false') window.closeQuickActions() }, 1200) })
 }
 
 document.addEventListener('pointerdown', onQuickActionsPointerDown)
