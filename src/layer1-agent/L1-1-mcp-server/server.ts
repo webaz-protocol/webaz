@@ -2770,7 +2770,13 @@ export async function handleSearch(args: Record<string, unknown>) {
         acp_feed: 'https://webaz.xyz/.well-known/webaz-acp-feed.json',
         // 目录样本【明确标注非匹配】,仅供参考,≤5 件;不再作为"浏览全目录"的入口
         catalog_sample_note: 'NOT query matches — a small labeled catalog sample for reference only.',
-        catalog_sample: sample.slice(0, 5).map(p => ({ id: p.id, title: p.title, price: p.price, price_display: `${p.price} USDC`, category: p.category })),
+        // p.price 已是 Model Projection 的对象 { amount_minor, display, ... }(products?mode=agent 走 projectProductModel);
+        // 直接 `${p.price}` 会渲染成 "[object Object] USDC"。取 .display,兼容旧标量形状。
+        catalog_sample: sample.slice(0, 5).map(p => {
+          const pr = p.price as Record<string, unknown> | number | null | undefined
+          const price_display = pr != null && typeof pr === 'object' ? String(pr.display ?? '') : (pr != null ? `${pr} USDC` : '')
+          return { id: p.id, title: p.title, price: p.price, price_display, category: p.category }
+        }),
       }
     }
     return {
