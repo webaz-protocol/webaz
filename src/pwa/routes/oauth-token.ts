@@ -14,8 +14,12 @@
  *   T2/I-3  aud is stamped from the code row's resource (== https://webaz.xyz/mcp); a caller-supplied
  *           resource, if present, must match it (RFC 8707).
  *   D1      token is OPAQUE (random 256-bit, prefix oat_), stored HASHED; revocation is online.
- *   D2      no refresh token — expires_in caps at the UNDERLYING GRANT's expiry (I-5): a token can
- *           never outlive the grant the human approved.
+ *   PR-1    refresh tokens (OAuth 2.1 §4.3): issued alongside the access token (prefix ort_, stored
+ *           HASHED). ROTATING + single-use — a used/expired/revoked refresh token never mints again,
+ *           and REUSE of a rotated/revoked one is treated as theft: the whole rotation family AND every
+ *           access token of that grant are revoked (RFC 6819 §5.2.2.3). I-5 still holds — a refresh
+ *           token is clamped to (and can never outlive) the underlying grant the human approved, and the
+ *           /mcp edge NEVER accepts ort_ (only oat_/gtk_), so refresh grants no capability.
  *   D4      public clients — client identity is the allowlist id + possession of code+verifier.
  *
  * Fail-closed mount (WEBAZ_OAUTH=1, sandbox refuses), per-IP rate limit (best-effort behind CF).
@@ -26,8 +30,10 @@ import { createHash, randomBytes } from 'node:crypto'
 import { oauthClients } from './oauth-authorize.js'
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
 
-export const OAUTH_TOKEN_TTL_SECONDS = 3600
+export const OAUTH_TOKEN_TTL_SECONDS = 3600                 // access token TTL (clamped to grant)
+export const OAUTH_REFRESH_TTL_SECONDS = 90 * 24 * 3600     // refresh TTL ceiling; ALWAYS clamped to grant (I-5)
 const VERIFIER_RE = /^[A-Za-z0-9\-._~]{43,128}$/   // RFC 7636 §4.1 unreserved charset
+const REFRESH_RE = /^ort_[0-9a-f]{64}$/            // opaque refresh token shape (prefix + 256-bit hex)
 
 export interface OAuthTokenDeps {
   rateLimitOk: (key: string, max?: number, windowMs?: number) => boolean
@@ -37,6 +43,30 @@ function asStr(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined
 }
 function sha256hex(s: string): string { return createHash('sha256').update(s).digest('hex') }
+
+/**
+ * Mint a NEW access token + a NEW rotating refresh token for a grant, both hashed at rest. Used by both
+ * grant paths (code exchange with a fresh family_id; refresh rotation reusing the family_id) so the two
+ * can never drift. Both expiries are clamped to the grant's — a credential never outlives the grant (I-5).
+ */
+async function issueTokens(opts: {
+  grantId: string; clientId: string; scope: string; aud: string; grantExpiresMs: number; familyId: string
+}): Promise<{ access: string; accessExpMs: number; refresh: string; refreshExpMs: number }> {
+  const now = Date.now()
+  const access = `oat_${randomBytes(32).toString('hex')}`
+  const accessExpMs = Math.min(now + OAUTH_TOKEN_TTL_SECONDS * 1000, opts.grantExpiresMs)
+  await dbRun(
+    'INSERT INTO oauth_access_tokens (token_hash, grant_id, client_id, scope, aud, expires_at) VALUES (?,?,?,?,?,?)',
+    [sha256hex(access), opts.grantId, opts.clientId, opts.scope, opts.aud, new Date(accessExpMs).toISOString()],
+  )
+  const refresh = `ort_${randomBytes(32).toString('hex')}`
+  const refreshExpMs = Math.min(now + OAUTH_REFRESH_TTL_SECONDS * 1000, opts.grantExpiresMs)
+  await dbRun(
+    'INSERT INTO oauth_refresh_tokens (token_hash, grant_id, client_id, family_id, scope, aud, expires_at) VALUES (?,?,?,?,?,?,?)',
+    [sha256hex(refresh), opts.grantId, opts.clientId, opts.familyId, opts.scope, opts.aud, new Date(refreshExpMs).toISOString()],
+  )
+  return { access, accessExpMs, refresh, refreshExpMs }
+}
 
 // 客户端 IP 真相源(同 mcp-remote.ts):CF 后 req.ip 塌缩成边缘 IP → 优先取 CF-Connecting-IP(CF 重写,
 // 经 CF 不可伪造;校验 IP 形态防任意字符串桶键)。★残余(已知并接受,同 mcp-remote):直连 origin 可伪造
@@ -94,64 +124,133 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
     if (!rateLimitOk(`oauth_token:${clientIp(req)}`, 30, 60_000)) return err(429, 'invalid_request', 'rate limited')
     const b = (req.body || {}) as Record<string, unknown>
 
-    if (asStr(b.grant_type) !== 'authorization_code') return err(400, 'unsupported_grant_type', 'only grant_type=authorization_code is supported')
-    const clientId = asStr(b.client_id)
-    const client = clientId ? (await oauthClients()).find(c => c.client_id === clientId) : undefined
-    if (!client) return err(401, 'invalid_client', 'unknown or missing client_id')
-    const code = asStr(b.code)
-    const verifier = asStr(b.code_verifier)
-    const redirectUri = asStr(b.redirect_uri)
-    if (!code || !verifier || !VERIFIER_RE.test(verifier) || !redirectUri) {
-      return err(400, 'invalid_request', 'code, code_verifier (RFC 7636) and redirect_uri are required')
-    }
+    const grantType = asStr(b.grant_type)
 
-    const codeHash = sha256hex(code)
-    const nowIso = new Date().toISOString()
+    // ── grant_type=authorization_code: PKCE code exchange → access + refresh (fresh rotation family) ──
+    if (grantType === 'authorization_code') {
+      const clientId = asStr(b.client_id)
+      const client = clientId ? (await oauthClients()).find(c => c.client_id === clientId) : undefined
+      if (!client) return err(401, 'invalid_client', 'unknown or missing client_id')
+      const code = asStr(b.code)
+      const verifier = asStr(b.code_verifier)
+      const redirectUri = asStr(b.redirect_uri)
+      if (!code || !verifier || !VERIFIER_RE.test(verifier) || !redirectUri) {
+        return err(400, 'invalid_request', 'code, code_verifier (RFC 7636) and redirect_uri are required')
+      }
 
-    // CAS-consume FIRST (single-use, unexpired). A consumed/unknown/expired code never proceeds.
-    const claimed = await dbRun(
-      'UPDATE oauth_auth_codes SET consumed_at = ? WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?',
-      [nowIso, codeHash, nowIso],
-    )
-    if (claimed.changes !== 1) {
-      // Replay of an ALREADY-consumed code → the code leaked; revoke that grant's tokens (RFC 6749 §10.5).
-      const revoked = await dbRun(
-        'UPDATE oauth_access_tokens SET revoked_at = ? WHERE revoked_at IS NULL AND grant_id = (SELECT grant_id FROM oauth_auth_codes WHERE code_hash = ? AND consumed_at IS NOT NULL)',
-        [nowIso, codeHash],
+      const codeHash = sha256hex(code)
+      const nowIso = new Date().toISOString()
+
+      // CAS-consume FIRST (single-use, unexpired). A consumed/unknown/expired code never proceeds.
+      const claimed = await dbRun(
+        'UPDATE oauth_auth_codes SET consumed_at = ? WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?',
+        [nowIso, codeHash, nowIso],
       )
-      if (revoked.changes > 0) console.error(`[oauth] auth-code replay detected — revoked ${revoked.changes} token(s) on the code's grant`)
-      return err(400, 'invalid_grant', 'code is invalid, expired, or already used')
+      if (claimed.changes !== 1) {
+        // Replay of an ALREADY-consumed code → the code leaked; revoke that grant's tokens (RFC 6749 §10.5).
+        const revoked = await dbRun(
+          'UPDATE oauth_access_tokens SET revoked_at = ? WHERE revoked_at IS NULL AND grant_id = (SELECT grant_id FROM oauth_auth_codes WHERE code_hash = ? AND consumed_at IS NOT NULL)',
+          [nowIso, codeHash],
+        )
+        if (revoked.changes > 0) console.error(`[oauth] auth-code replay detected — revoked ${revoked.changes} token(s) on the code's grant`)
+        return err(400, 'invalid_grant', 'code is invalid, expired, or already used')
+      }
+      const row = await dbOne<Record<string, unknown>>('SELECT * FROM oauth_auth_codes WHERE code_hash = ?', [codeHash]) as Record<string, unknown>
+
+      // Binding checks — failures leave the code burned (deliberate: see header).
+      if (row.client_id !== client.client_id) return err(400, 'invalid_grant', 'code was issued to a different client')
+      if (row.redirect_uri !== redirectUri) return err(400, 'invalid_grant', 'redirect_uri does not match the authorization request')
+      const challenge = createHash('sha256').update(verifier).digest('base64url')
+      if (challenge !== row.code_challenge) return err(400, 'invalid_grant', 'PKCE verification failed')
+      const resource = asStr(b.resource)
+      if (resource !== undefined && resource !== row.resource) return err(400, 'invalid_target', 'resource does not match the authorization request')
+
+      // I-5: the grant is the principal — it must still be alive (mid-flight revocation/expiry honored).
+      const grant = await dbOne<{ grant_id: string; expires_at: string }>(
+        "SELECT grant_id, expires_at FROM agent_delegation_grants WHERE grant_id = ? AND status = 'active' AND revoked_at IS NULL AND expires_at > ?",
+        [row.grant_id, nowIso],
+      )
+      if (!grant) return err(400, 'invalid_grant', 'the underlying delegation grant is no longer active')
+
+      // Opaque access + refresh, hashed at rest; both expiries clamped to the grant's (I-5). A brand-new
+      // rotation family starts here — every subsequent refresh keeps this family_id.
+      const { access, accessExpMs, refresh } = await issueTokens({
+        grantId: String(row.grant_id), clientId: client.client_id, scope: String(row.scope),
+        aud: String(row.resource), grantExpiresMs: new Date(grant.expires_at).getTime(),
+        familyId: `orf_${randomBytes(16).toString('hex')}`,
+      })
+
+      return void res.json({
+        access_token: access,                 // the ONLY time the raw tokens exist in a response
+        token_type: 'Bearer',
+        expires_in: Math.max(1, Math.floor((accessExpMs - Date.now()) / 1000)),
+        refresh_token: refresh,
+        scope: row.scope,
+      })
     }
-    const row = await dbOne<Record<string, unknown>>('SELECT * FROM oauth_auth_codes WHERE code_hash = ?', [codeHash]) as Record<string, unknown>
 
-    // Binding checks — failures leave the code burned (deliberate: see header).
-    if (row.client_id !== client.client_id) return err(400, 'invalid_grant', 'code was issued to a different client')
-    if (row.redirect_uri !== redirectUri) return err(400, 'invalid_grant', 'redirect_uri does not match the authorization request')
-    const challenge = createHash('sha256').update(verifier).digest('base64url')
-    if (challenge !== row.code_challenge) return err(400, 'invalid_grant', 'PKCE verification failed')
-    const resource = asStr(b.resource)
-    if (resource !== undefined && resource !== row.resource) return err(400, 'invalid_target', 'resource does not match the authorization request')
+    // ── grant_type=refresh_token: rotate → new access + new refresh (same family); reuse = theft ──
+    if (grantType === 'refresh_token') {
+      const clientId = asStr(b.client_id)
+      const client = clientId ? (await oauthClients()).find(c => c.client_id === clientId) : undefined
+      if (!client) return err(401, 'invalid_client', 'unknown or missing client_id')
+      const refreshTok = asStr(b.refresh_token)
+      if (!refreshTok || !REFRESH_RE.test(refreshTok)) return err(400, 'invalid_request', 'a well-formed refresh_token is required')
 
-    // I-5: the grant is the principal — it must still be alive (mid-flight revocation/expiry honored).
-    const grant = await dbOne<{ grant_id: string; expires_at: string }>(
-      "SELECT grant_id, expires_at FROM agent_delegation_grants WHERE grant_id = ? AND status = 'active' AND revoked_at IS NULL AND expires_at > ?",
-      [row.grant_id, nowIso],
-    )
-    if (!grant) return err(400, 'invalid_grant', 'the underlying delegation grant is no longer active')
+      const rHash = sha256hex(refreshTok)
+      const nowIso = new Date().toISOString()
 
-    // D1 opaque token, hashed at rest; D2 no refresh — expiry clamped to the grant's (never outlives it).
-    const token = `oat_${randomBytes(32).toString('hex')}`
-    const tokenExpiry = Math.min(Date.now() + OAUTH_TOKEN_TTL_SECONDS * 1000, new Date(grant.expires_at).getTime())
-    await dbRun(
-      'INSERT INTO oauth_access_tokens (token_hash, grant_id, client_id, scope, aud, expires_at) VALUES (?,?,?,?,?,?)',
-      [sha256hex(token), row.grant_id, client.client_id, row.scope, row.resource, new Date(tokenExpiry).toISOString()],
-    )
+      // CAS single-use rotation: only an un-rotated, un-revoked, unexpired token can be spent. Winning this
+      // race is what makes the token single-use — a second use finds rotated_at already set.
+      const rot = await dbRun(
+        'UPDATE oauth_refresh_tokens SET rotated_at = ? WHERE token_hash = ? AND rotated_at IS NULL AND revoked_at IS NULL AND expires_at > ?',
+        [nowIso, rHash, nowIso],
+      )
+      if (rot.changes !== 1) {
+        // Distinguish theft (reuse of a spent/revoked token) from a merely unknown/expired one.
+        const seen = await dbOne<{ family_id: string; grant_id: string; rotated_at: string | null; revoked_at: string | null }>(
+          'SELECT family_id, grant_id, rotated_at, revoked_at FROM oauth_refresh_tokens WHERE token_hash = ?', [rHash],
+        )
+        if (seen && (seen.rotated_at || seen.revoked_at)) {
+          // Replay of a rotated/revoked refresh token → treat as a leak: revoke the WHOLE rotation family
+          // AND every access token of the grant (RFC 6819 §5.2.2.3). The legitimate client must re-consent.
+          await dbRun('UPDATE oauth_refresh_tokens SET revoked_at = ? WHERE family_id = ? AND revoked_at IS NULL', [nowIso, seen.family_id])
+          await dbRun('UPDATE oauth_access_tokens SET revoked_at = ? WHERE grant_id = ? AND revoked_at IS NULL', [nowIso, seen.grant_id])
+          console.error("[oauth] refresh-token replay detected — revoked the rotation family + the grant's access tokens")
+        }
+        return err(400, 'invalid_grant', 'refresh token is invalid, expired, or already used')
+      }
 
-    res.json({
-      access_token: token,                 // the ONLY time the raw token exists in a response
-      token_type: 'Bearer',
-      expires_in: Math.max(1, Math.floor((tokenExpiry - Date.now()) / 1000)),
-      scope: row.scope,
-    })
+      // We won the single-use CAS; load the (now-rotated) row to carry its bindings forward unchanged.
+      const rtRow = await dbOne<{ grant_id: string; client_id: string; family_id: string; scope: string; aud: string }>(
+        'SELECT grant_id, client_id, family_id, scope, aud FROM oauth_refresh_tokens WHERE token_hash = ?', [rHash],
+      ) as { grant_id: string; client_id: string; family_id: string; scope: string; aud: string }
+      if (rtRow.client_id !== client.client_id) return err(400, 'invalid_grant', 'refresh token was issued to a different client')
+
+      // I-5: refresh works only while the human's grant is still alive (mid-flight revocation/expiry honored).
+      const grant = await dbOne<{ grant_id: string; expires_at: string }>(
+        "SELECT grant_id, expires_at FROM agent_delegation_grants WHERE grant_id = ? AND status = 'active' AND revoked_at IS NULL AND expires_at > ?",
+        [rtRow.grant_id, nowIso],
+      )
+      if (!grant) return err(400, 'invalid_grant', 'the underlying delegation grant is no longer active')
+
+      // Rotate: new access + new refresh in the SAME family; scope/aud carried forward (no escalation).
+      const { access, accessExpMs, refresh } = await issueTokens({
+        grantId: rtRow.grant_id, clientId: client.client_id, scope: rtRow.scope,
+        aud: rtRow.aud, grantExpiresMs: new Date(grant.expires_at).getTime(), familyId: rtRow.family_id,
+      })
+      // Audit chain: point the spent token at its successor.
+      await dbRun('UPDATE oauth_refresh_tokens SET replaced_by = ? WHERE token_hash = ?', [sha256hex(refresh), rHash])
+
+      return void res.json({
+        access_token: access,
+        token_type: 'Bearer',
+        expires_in: Math.max(1, Math.floor((accessExpMs - Date.now()) / 1000)),
+        refresh_token: refresh,
+        scope: rtRow.scope,
+      })
+    }
+
+    return err(400, 'unsupported_grant_type', 'grant_type must be authorization_code or refresh_token')
   })
 }

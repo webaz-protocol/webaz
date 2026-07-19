@@ -8,7 +8,7 @@
  * Locked decisions surfaced here (RFC-023 §6):
  *   - PKCE S256 ONLY (I-4): code_challenge_methods_supported = ["S256"]
  *   - public clients, no secret (D4): token_endpoint_auth_methods_supported = ["none"]
- *   - authorization_code only, no refresh (D2): grant_types_supported = ["authorization_code"]
+ *   - authorization_code + refresh_token (PR-1 refresh): grant_types_supported advertises both
  *   - audience-bound resource (I-3): resource = https://webaz.xyz/mcp
  *   - coarse SAFE scopes (D5)
  *
@@ -60,7 +60,7 @@ export function registerOAuthDiscoveryRoutes(app: Express): void {
       registration_endpoint: `${BASE}/oauth/register`,        // RFC-024 DCR (RFC 7591) — clients self-register
       scopes_supported: [...OAUTH_SCOPES],
       response_types_supported: ['code'],
-      grant_types_supported: ['authorization_code'],           // no refresh (D2)
+      grant_types_supported: ['authorization_code', 'refresh_token'],   // PR-1: rotating refresh tokens
       code_challenge_methods_supported: ['S256'],              // PKCE S256 only (I-4)
       token_endpoint_auth_methods_supported: ['none'],         // public clients, PKCE (D4)
       resource_indicators_supported: true,                     // RFC 8707 (I-3)

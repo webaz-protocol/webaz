@@ -70,7 +70,7 @@ async function main() {
   {
     const as = await (await fetch(`${base}/.well-known/oauth-authorization-server`)).json() as Record<string, unknown>
     ok('4a. AS metadata: PKCE S256 ONLY (I-4)', JSON.stringify(as.code_challenge_methods_supported) === '["S256"]')
-    ok('4b. AS metadata: authorization_code only, no refresh (D2)', JSON.stringify(as.grant_types_supported) === '["authorization_code"]')
+    ok('4b. AS metadata: advertises authorization_code + refresh_token (PR-1 refresh)', JSON.stringify(as.grant_types_supported) === '["authorization_code","refresh_token"]')
     ok('4c. AS metadata: public clients, none auth (D4)', JSON.stringify(as.token_endpoint_auth_methods_supported) === '["none"]')
     ok('4d. AS metadata: resource indicators supported (RFC 8707 / I-3)', as.resource_indicators_supported === true)
     ok('4e. AS metadata: authorize + token endpoints', typeof as.authorization_endpoint === 'string' && typeof as.token_endpoint === 'string')

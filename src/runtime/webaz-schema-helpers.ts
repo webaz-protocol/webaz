@@ -2277,6 +2277,28 @@ export function initOAuthSchema(db: Database.Database): void {
   ] as const) {
     try { db.exec(`ALTER TABLE oauth_clients ADD COLUMN ${col} ${ddl}`) } catch { /* already present */ }
   }
+
+  // RFC-023 PR-1(refresh)—— rotating refresh tokens (OAuth 2.1 §4.3 / RFC 6819 §5.2.2.3):
+  //   一次性(用过即 rotated_at)+ 轮换族(family_id)+ 重放即焚(用已轮换/已撤的 refresh → 撤整族 + 该 grant 全部
+  //   access token)。与 access token 同姿态:仅存 sha256,明文只在响应里出现一次;寿命 clamp 到底层 grant(I-5,
+  //   永不超过人类批准的 grant)。ort_ 前缀,/mcp 边缘【永不】接受(只接 oat_/gtk_),故 refresh 不授予任何能力。
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+    token_hash   TEXT PRIMARY KEY,          -- sha256 of the opaque ort_ token; never store plaintext
+    grant_id     TEXT NOT NULL,             -- RFC-020 grant principal (I-5); refresh never outlives it
+    client_id    TEXT NOT NULL,
+    family_id    TEXT NOT NULL,             -- rotation family; a replay revokes the WHOLE family
+    scope        TEXT NOT NULL,             -- carried forward unchanged on rotation (no scope escalation)
+    aud          TEXT NOT NULL,             -- == https://webaz.xyz/mcp; stamped from the access token's aud
+    issued_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at   TEXT NOT NULL,             -- refresh TTL, clamped to the grant's expiry at mint
+    rotated_at   TEXT,                      -- set (CAS, single-use) when this token mints a successor
+    revoked_at   TEXT,                      -- family-replay / grant revocation nukes these
+    replaced_by  TEXT                       -- successor token_hash (audit chain; NULL until rotated)
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_oauth_refresh_grant  ON oauth_refresh_tokens(grant_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_oauth_refresh_family ON oauth_refresh_tokens(family_id)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_oauth_refresh_expiry ON oauth_refresh_tokens(expires_at)`)
 }
 
 // ─── MCP Token PR-2 — result_handle 选择集缓存(webaz.*.model.v1 按需详情/翻页复用)────────────
