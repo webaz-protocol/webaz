@@ -41,7 +41,7 @@ import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-
 import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
 import { filterToolsBySurface, type ToolSurface } from './tool-surfaces.js'
 import { PRODUCT_RESULTS_WIDGET_HTML, QUOTE_APPROVAL_WIDGET_HTML, ORDER_TIMELINE_WIDGET_HTML, PRODUCT_RESULTS_WIDGET_MCP_HTML, QUOTE_APPROVAL_WIDGET_MCP_HTML, ORDER_TIMELINE_WIDGET_MCP_HTML } from './ui-widgets.js'  // MCP UI PR-4..6 + PR-A:legacy + 标准双轨组件
-import { CANONICAL_CATEGORIES } from '../../pwa/agent-categories.js'  // P0 PR-AB:资源降级用静态注册表
+import { CANONICAL_CATEGORIES, productTermSmell } from '../../pwa/agent-categories.js'  // P0 PR-AB:静态注册表 + 商品词校验单源(recovery 短词分类器共用)
 import { getUsdRates, regionToCurrency } from '../../fx-rates.js'  // USDC 显示换算(display-only)  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
 import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult, summarizeDraftResult, summarizeSubmitResult, summarizeOrderTimeline,
          projectQuoteConsumer, projectDraftConsumer, projectSubmitConsumer, projectOrderTimelineConsumer,
@@ -665,7 +665,7 @@ Roles: buyer (browse/order/confirm) | seller (list/accept/ship) | logistics (pic
     // was ~2607 chars, now ~1050 chars
     description: `Search WebAZ marketplace + cross-platform anchor lookup. No auth required.
 
-⚠️ **STRICT MATCH ONLY** (no fuzzy fallback). query matches = exact title OR exact external_title OR alias ≥6 chars contained in user text. Short/natural-language queries (e.g. "phone stand") return found:0 — **by design, NOT a bug**. On 0 results the response carries a **recovery** object: a labeled catalog_sample (NOT query matches) + a machine-actionable next_step (call webaz_search again with filters and NO query to browse). Do NOT retry with shorter terms; follow recovery.next_step to browse, or read /.well-known/webaz-acp-feed.json.
+⚠️ **STRICT MATCH ONLY** (no fuzzy). query = exact title / external_title / alias ≥6 chars. Short/NL queries ("phone stand") return found:0 — **by design**. On 0 results the **recovery** object's next_step points to **webaz_discover** (structured intent) — NOT a catalog browse. Do NOT retry shorter, do NOT scan with a big limit. Unconstrained browse (no query/category/filter) caps at 8, else UNBOUNDED_CATALOG_BROWSE.
 
 USE THIS when:
 - User gives **full product title / SKU / precise description** (strict-match candidate), OR
@@ -695,7 +695,7 @@ Returns: structuredContent (webaz.product_search.model.v1) — per-product decis
             canonical_url:  { type: 'string', description: 'Canonical URL (optional)' },
           },
         },
-        limit: { type: 'number', description: 'Result limit, default 5 (page); up to 200 per page. Use cursor for more.' },
+        limit: { type: 'number', description: 'Result limit, default 5 (page). Use cursor for more pages. Unconstrained browse (no query/category/filter) is capped at 8.' },
         result_handle: { type: 'string', description: 'Detail-fetch mode: a result_handle from a previous search page (10-min TTL). With selected_ids, returns full detail projections (description/specs/terms) for up to 5 chosen products — live re-read, never cached data.' },
         selected_ids: { type: 'array', items: { type: 'string' }, description: 'With result_handle: 1..5 product ids chosen FROM that result page.' },
         sort: { type: 'string', enum: ['trending', 'newest', 'rating', 'price_asc', 'price_desc', 'random'], description: 'Sort: trending=composite (default) / newest / rating / price_asc / price_desc / random' },
@@ -2627,7 +2627,7 @@ function parseProductForAgent(p: Record<string, unknown>) {
   return { ...p, specs, estimated_days, agent_summary: buildAgentSummary(p) }
 }
 
-async function handleSearch(args: Record<string, unknown>) {
+export async function handleSearch(args: Record<string, unknown>) {
   // MCP Token PR-2:result_handle 按需详情 —— 选择集句柄 + ≤5 个 id → 服务端活读详情投影
   //   (webaz.product_detail.model.v1)。句柄只在网络路径签发/兑付;数据永远按 id 现读 + 重跑
   //   active 谓词,不存在缓存陈货或权限绕过面。
@@ -2714,14 +2714,18 @@ async function handleSearch(args: Record<string, unknown>) {
       // 路由 agent 模式已产出 Model Projection 信封(schema_version/sellers/products/next_cursor)——原样透传。
       return { ...r, found: products.length }
     }
-    // ★ P2 可恢复建议(北极星:陌生 agent 首次自然语言搜 strict 返 0 时,给可动的下一步而非死路)。
-    //   strict 结果保持 0/[](不破 strict-match 不变量);recovery.catalog_sample 是【明确标注的目录样本,
-    //   非 query 匹配】—— 真浏览一次拿几件在售商品,让 agent 立即有可执行的下一步。仅 0-命中且有 query 时走。
+    // ★ 可恢复建议(调用契约 PR-C:0 命中不再导向"无 query 全目录浏览" —— 那是本次事故的制度化根因;
+    //   反转为导向【结构化 discover + 类目词表】)。strict 结果保持 0/[](不破 strict-match 不变量)。
+    //   确定性纪律(Holden):只有 query 符合【短商品词形态】才确定性转成 discover keyword;复杂标题/长
+    //   描述/外链失败不猜"核心词",退回词表 + 澄清,绝不伪造关键词。
     let recovery: Record<string, unknown> | undefined
     if (query) {
-      const browseArgs: Record<string, unknown> = { sort: 'newest', limit: 5 }
-      if (category) browseArgs.category = category
-      if (maxPrice != null) browseArgs.max_price = maxPrice
+      const q = String(query).trim()
+      // 短商品词:≤4 词 + 过 discover 同一 productTermSmell(单源;保证转出的 keyword 不会反被 discover 400)
+      const shortTerm = q.length > 0 && q.split(/\s+/).length <= 4 && productTermSmell(q) === null
+      const catBrowse: Record<string, unknown> = { sort: 'newest', limit: 8 }
+      if (category) catBrowse.category = category
+      if (maxPrice != null) catBrowse.max_price = maxPrice
       const bqs = new URLSearchParams({ mode: 'agent', limit: '5', sort: 'newest' })
       if (category) bqs.set('category', String(category))
       if (maxPrice != null) bqs.set('max_price', String(maxPrice))
@@ -2729,10 +2733,16 @@ async function handleSearch(args: Record<string, unknown>) {
       const sample = ((br as Record<string, unknown>).products as Array<Record<string, unknown>> | undefined) ?? []
       recovery = {
         reason: 'strict_no_match',
-        note: 'These are NOT query matches — webaz_search is strict (exact title/SKU). This is a small catalog sample so you can proceed. / 以下【不是】搜索匹配结果,而是目录样本,供你继续。',
-        next_step: { tool: 'webaz_search', arguments: browseArgs, description: 'browse the catalog with filters and NO query' },
+        note: 'webaz_search is STRICT (exact title/SKU) — no fuzzy fallback. For a natural-language product need, switch to webaz_discover (structured intent). Do NOT retry webaz_search with shorter words. / 精确匹配 0 命中;自然语言需求请改用 webaz_discover(结构化意图),勿用更短词重试 search。',
+        // 主路径:短商品词 → 确定性转 discover(单词 + any,防 AND 陷阱);复杂 query → 不伪造关键词,导词表
+        next_step: shortTerm
+          ? { tool: 'webaz_discover', arguments: { keywords: [q], keyword_match: 'any', ...(category ? { category } : {}), ...(maxPrice != null ? { max_price: maxPrice } : {}) }, description: 'structured discovery: your term as a single keyword (any-match). Refine category via the category vocabulary.' }
+          : { tool: 'webaz_discover', description: 'query too complex to convert automatically — pick a category key from the vocabulary and give 1-2 short keywords', category_vocabulary: 'GET https://webaz.xyz/api/agent/categories (or resource webaz://guide/categories)' },
+        category_vocabulary: 'GET https://webaz.xyz/api/agent/categories (or resource webaz://guide/categories)',
         acp_feed: 'https://webaz.xyz/.well-known/webaz-acp-feed.json',
-        catalog_sample: sample.map(p => ({ id: p.id, title: p.title, price: p.price, price_display: `${p.price} USDC`, category: p.category })),
+        // 目录样本【明确标注非匹配】,仅供参考,≤5 件;不再作为"浏览全目录"的入口
+        catalog_sample_note: 'NOT query matches — a small labeled catalog sample for reference only.',
+        catalog_sample: sample.slice(0, 5).map(p => ({ id: p.id, title: p.title, price: p.price, price_display: `${p.price} USDC`, category: p.category })),
       }
     }
     return {

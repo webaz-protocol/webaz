@@ -99,11 +99,38 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     // #977：新品发现 (has_sales=false) trending/recommended 转用卖家维度
     const isNewArrivalsCtx = has_sales === 'false'
 
+    // 调用契约 PR-C — 无约束全目录浏览守卫(agent 模式):审计根因之一是 0 命中被导向"无 query
+    //   浏览 limit 50/100/200"。有效约束 = query/精确匹配 · category · 价格 · 退货 · 发货 · 卖家 ·
+    //   ship_to · has_sales · product_type · since_days · has_trial(此路由后段真正应用的全部过滤)。
+    //   全无约束(纯浏览)时 agent 模式:单页硬顶 8(防一次 200 件的 token 轰炸,即本次事故形态)。
+    //   目录本身是公开的(匿名 search 即返回全部在售),守卫目的是防【单次响应】过大 + 引导结构化发现,
+    //   【不】隐藏目录 —— 故 cursor 翻页(每页仍 ≤8,token 有界)放行,与 model-projection 锁定的游标
+    //   分页完整性契约一致(Codex R2 曾建议连 cursor 一起拒,但那会破该契约且防的是非威胁:公开数据的
+    //   逐页枚举无害,真危害是单响应体积 —— 已由 ≤8 限住)。result_handle 非本 GET 路由能力,不豁免。
+    const hasQuery = typeof q === 'string' && q.trim().length > 0
+    // since_days 只在 SQL 实际生效范围(>0 且 ≤365)内算作有效约束 —— 否则 since_days=366 会被当约束却
+    //   不施加任何过滤,重开全目录枚举(Codex R2-1)。守卫判定必须与下方 SQL 生效条件字面一致。
+    const sinceDaysValid = typeof sinceDaysRaw === 'string' && Number.isFinite(Number(sinceDaysRaw)) && Number(sinceDaysRaw) > 0 && Number(sinceDaysRaw) <= 365
+    const hasFilter = !!category || max_price != null || min_return_days != null || max_handling_hours != null
+      || !!seller_id || (typeof ship_to === 'string' && ship_to.trim().length > 0)
+      || has_sales === 'true' || has_sales === 'false' || productTypeFilter != null
+      || sinceDaysValid || req.query.has_trial === 'true'
+    const unbounded = mode === 'agent' && !hasQuery && !hasFilter
+
     // limit
     const cap = PRODUCT_LIMITS[mode]
     let lim = Math.floor(Number(limitRaw))   // 非整数 limit 直进 SQL LIMIT 会炸 → 取整(Codex round-1 MEDIUM)
     if (!Number.isFinite(lim) || lim <= 0) lim = mode === 'pwa' ? 30 : (mode === 'raw' ? 100 : 50)
+    if (unbounded && lim > 8) {
+      return void res.status(400).json({
+        error: 'unbounded catalog browse — an agent must not pull a large unconstrained page. Give a constraint (category / keywords via webaz_discover, or a filter), or request a small page (limit ≤ 8; you may still paginate with cursor).',
+        error_code: 'UNBOUNDED_CATALOG_BROWSE',
+        recommended_next_call: { tool: 'webaz_discover', description: 'structured discovery with a category key and/or keywords', category_vocabulary: 'GET https://webaz.xyz/api/agent/categories' },
+        sample_browse: { tool: 'webaz_search', arguments: { mode: 'agent', sort: 'newest', limit: 8 }, description: 'small catalog sample (≤8/page)' },
+      })
+    }
     if (lim > cap) lim = cap
+    if (unbounded && lim > 8) lim = 8   // 纯浏览(无约束)硬顶 8,即便 cap 更高
 
     // 内层 SELECT：把 score 计算出来，外层用它过滤 + 排序
     // recommend_count = 已购买的买家中 4 星+ 评价的去重数（一个买家只能推荐一次）
