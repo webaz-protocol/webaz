@@ -851,6 +851,7 @@ jobs:
       - run: npm run test:oauth-approve
       - run: npm run test:oauth-token
       - run: npm run test:oauth-refresh
+      - run: npm run test:oauth-revoke
       - run: npm run test:oauth-mcp-bearer
       - run: npm run test:oauth-mcp-challenge
       - run: npm run test:mcp-http-edge

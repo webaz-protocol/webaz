@@ -57,6 +57,7 @@ export function registerOAuthDiscoveryRoutes(app: Express): void {
       issuer: BASE,
       authorization_endpoint: `${BASE}/oauth/authorize`,
       token_endpoint: `${BASE}/oauth/token`,
+      revocation_endpoint: `${BASE}/oauth/revoke`,            // RFC 7009 — clients revoke (disconnect) their token
       registration_endpoint: `${BASE}/oauth/register`,        // RFC-024 DCR (RFC 7591) — clients self-register
       scopes_supported: [...OAUTH_SCOPES],
       response_types_supported: ['code'],
