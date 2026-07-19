@@ -82,11 +82,11 @@ function portTableSql(sqliteSql: string): string {
     return `DEFAULT '${literal}'`
   })
 
-  // 4.6) SQLite GLOB hex-guard → PG POSIX regex。SQLite 无 {n} 量词,用否定字符类 `*[^0-9a-f]*`
-  //      (有任意非小写hex字符);PG 等价 `~ '[^0-9a-f]'`(含非hex字符),NOT 版 → `!~`。
-  //      仅翻这一已知形态;若出现其它 GLOB,pg:verify 的 GLOB 泄漏检测会拦下(逼回来扩翻译)。
-  s = s.replace(/\bNOT\s+GLOB\s+'\*\[\^0-9a-f\]\*'/gi, "!~ '[^0-9a-f]'")
-  s = s.replace(/\bGLOB\s+'\*\[\^0-9a-f\]\*'/gi, "~ '[^0-9a-f]'")
+  // 4.6) SQLite 的“仅允许字符集”GLOB guard → PG POSIX regex。SQLite 无 {n} 量词，
+  //      所以本仓以 `column NOT GLOB '*[^allowed]*'` 表示无任意非法字符；PG 等价
+  //      `column !~ '[^allowed]'`。这里保守只转换简单列名 + ASCII 字符类；任何别的
+  //      GLOB 仍由 pg:verify 拦下，避免静默误译。
+  s = s.replace(/\b([a-z_][a-z0-9_]*)\s+NOT\s+GLOB\s+'\*\[\^([0-9a-z_-]+)\]\*'/gi, (_m, column: string, allowed: string) => `${column} !~ '[^${allowed}]'`)
 
   // 5) 幂等:CREATE TABLE → CREATE TABLE IF NOT EXISTS(若原文未含)
   s = s.replace(/\bCREATE\s+TABLE\s+(?!IF\s+NOT\s+EXISTS)/i, 'CREATE TABLE IF NOT EXISTS ')
@@ -161,7 +161,7 @@ for (const ix of indexes) {
 // triggers (created in each table's init). SQLite triggers don't text-translate to PG, so we emit the
 // equivalent PG plpgsql RAISE EXCEPTION guard here for the tables actually present in this DB.
 // (The function body keeps `BEGIN ... END;` on one line so it never looks like a transaction `BEGIN;`.)
-const APPEND_ONLY_TABLES = ['identity_binding_events', 'admin_operator_claim_events', 'agent_execution_mandate_events', 'admin_coordination_fact_sources', 'admin_operator_claim_confirmations', 'admin_operator_unlink_requests', 'admin_operator_claim_marking_corrections', 'direct_pay_fee_receivables', 'direct_pay_fee_invoice_items', 'direct_pay_fee_adjustments', 'direct_pay_fee_invoice_events', 'direct_pay_fee_payments', 'direct_pay_fee_prepay_refunds', 'direct_receive_account_qr_images', 'direct_receive_account_events']   // 后两张:直付收款 QR 快照(内容寻址不可变)+ 收款账号事件审计(#252 审计补:曾漏 → PG 导入丢不可变性)
+const APPEND_ONLY_TABLES = ['identity_binding_events', 'admin_operator_claim_events', 'agent_execution_mandate_events', 'admin_coordination_fact_sources', 'admin_operator_claim_confirmations', 'admin_operator_unlink_requests', 'admin_operator_claim_marking_corrections', 'direct_pay_fee_receivables', 'direct_pay_fee_invoice_items', 'direct_pay_fee_adjustments', 'direct_pay_fee_invoice_events', 'direct_pay_fee_payments', 'direct_pay_fee_prepay_refunds', 'direct_receive_account_qr_images', 'direct_receive_account_events', 'recommendation_namespace_events', 'recommendation_anchor_events']   // 直付收款账号 + 推荐命名空间/口令事件都是内容可追溯的不可变审计日志
 const presentAppendOnly = APPEND_ONLY_TABLES.filter(name => tables.some(t => t.name === name))
 if (presentAppendOnly.length) {
   out.push('')
@@ -175,6 +175,66 @@ if (presentAppendOnly.length) {
       out.push(`DROP TRIGGER IF EXISTS ${trg} ON ${name};`)
       out.push(`CREATE TRIGGER ${trg} BEFORE ${op} ON ${name} FOR EACH ROW EXECUTE FUNCTION webaz_reject_mutation();`)
     }
+  }
+}
+
+// ── RECOMMENDATION-ANCHOR LIFECYCLE GUARDS ──
+// The SQLite runtime installs equivalent triggers in initRecommendationAnchorSchema.
+// These are intentionally explicit rather than treating the namespace/anchor rows as
+// append-only: their lifecycle status changes, while their identity and target never do.
+const hasRecommendationAnchors = ['recommendation_namespaces', 'recommendation_namespace_events', 'recommendation_anchors', 'recommendation_anchor_events']
+  .every(name => tables.some(t => t.name === name))
+if (hasRecommendationAnchors) {
+  out.push('')
+  out.push('-- ════════════ RECOMMENDATION-ANCHOR LIFECYCLE GUARDS ════════════')
+  out.push('CREATE OR REPLACE FUNCTION webaz_recommendation_namespace_guard() RETURNS trigger AS $$')
+  out.push(`BEGIN
+  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'recommendation namespaces are permanent tombstones (DELETE forbidden)'; END IF;
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status <> 'active' OR NEW.disabled_at IS NOT NULL OR NEW.retired_at IS NOT NULL THEN RAISE EXCEPTION 'recommendation namespace must be inserted active'; END IF;
+    RETURN NEW;
+  END IF;
+  IF NEW.owner_user_id IS DISTINCT FROM OLD.owner_user_id OR NEW.namespace IS DISTINCT FROM OLD.namespace THEN RAISE EXCEPTION 'recommendation namespace owner and name are immutable'; END IF;
+  IF NEW.status = OLD.status THEN
+    IF NEW.disabled_at IS DISTINCT FROM OLD.disabled_at OR NEW.retired_at IS DISTINCT FROM OLD.retired_at THEN RAISE EXCEPTION 'recommendation namespace lifecycle timestamps are immutable'; END IF;
+    RETURN NEW;
+  END IF;
+  IF OLD.status <> 'active' OR NEW.status NOT IN ('disabled', 'retired') THEN RAISE EXCEPTION 'recommendation namespace status cannot be reactivated'; END IF;
+  IF NEW.status = 'disabled' AND (NEW.disabled_at IS NULL OR NEW.retired_at IS NOT NULL) THEN RAISE EXCEPTION 'disabled recommendation namespace requires only disabled_at'; END IF;
+  IF NEW.status = 'retired' AND (NEW.retired_at IS NULL OR NEW.disabled_at IS NOT NULL) THEN RAISE EXCEPTION 'retired recommendation namespace requires only retired_at'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM recommendation_namespace_events e WHERE e.namespace_id = OLD.id AND e.event_type = NEW.status) THEN RAISE EXCEPTION 'recommendation namespace status requires append-only event'; END IF;
+  RETURN NEW;
+END;`)
+  out.push('$$ LANGUAGE plpgsql;')
+  for (const op of ['INSERT', 'UPDATE', 'DELETE']) {
+    const lower = op.toLowerCase()
+    out.push(`DROP TRIGGER IF EXISTS trg_recommendation_namespaces_guard_${lower} ON recommendation_namespaces;`)
+    out.push(`CREATE TRIGGER trg_recommendation_namespaces_guard_${lower} BEFORE ${op} ON recommendation_namespaces FOR EACH ROW EXECUTE FUNCTION webaz_recommendation_namespace_guard();`)
+  }
+  out.push('CREATE OR REPLACE FUNCTION webaz_recommendation_anchor_guard() RETURNS trigger AS $$')
+  out.push(`BEGIN
+  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'recommendation anchors are immutable tombstones (DELETE forbidden)'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM recommendation_namespaces n WHERE n.id = NEW.namespace_id AND n.owner_user_id = NEW.recommender_user_id) THEN RAISE EXCEPTION 'recommendation anchor recommender must own namespace'; END IF;
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status <> 'active' OR NEW.withdrawn_at IS NOT NULL OR NEW.disabled_at IS NOT NULL THEN RAISE EXCEPTION 'recommendation anchor must be inserted active'; END IF;
+    RETURN NEW;
+  END IF;
+  IF NEW.namespace_id IS DISTINCT FROM OLD.namespace_id OR NEW.local_code IS DISTINCT FROM OLD.local_code OR NEW.recommender_user_id IS DISTINCT FROM OLD.recommender_user_id OR NEW.product_id IS DISTINCT FROM OLD.product_id OR NEW.variant_id IS DISTINCT FROM OLD.variant_id OR NEW.seller_id_at_issue IS DISTINCT FROM OLD.seller_id_at_issue OR NEW.campaign_ref IS DISTINCT FROM OLD.campaign_ref OR NEW.target_snapshot_hash IS DISTINCT FROM OLD.target_snapshot_hash THEN RAISE EXCEPTION 'recommendation anchor target and issuer are immutable'; END IF;
+  IF NEW.status = OLD.status THEN
+    IF NEW.withdrawn_at IS DISTINCT FROM OLD.withdrawn_at OR NEW.disabled_at IS DISTINCT FROM OLD.disabled_at THEN RAISE EXCEPTION 'recommendation anchor lifecycle timestamps are immutable'; END IF;
+    RETURN NEW;
+  END IF;
+  IF OLD.status <> 'active' OR NEW.status NOT IN ('withdrawn', 'disabled') THEN RAISE EXCEPTION 'recommendation anchor status cannot be reactivated'; END IF;
+  IF NEW.status = 'withdrawn' AND (NEW.withdrawn_at IS NULL OR NEW.disabled_at IS NOT NULL) THEN RAISE EXCEPTION 'withdrawn recommendation anchor requires only withdrawn_at'; END IF;
+  IF NEW.status = 'disabled' AND (NEW.disabled_at IS NULL OR NEW.withdrawn_at IS NOT NULL) THEN RAISE EXCEPTION 'disabled recommendation anchor requires only disabled_at'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM recommendation_anchor_events e WHERE e.recommendation_anchor_id = OLD.id AND e.event_type = NEW.status) THEN RAISE EXCEPTION 'recommendation anchor status requires append-only event'; END IF;
+  RETURN NEW;
+END;`)
+  out.push('$$ LANGUAGE plpgsql;')
+  for (const op of ['INSERT', 'UPDATE', 'DELETE']) {
+    const lower = op.toLowerCase()
+    out.push(`DROP TRIGGER IF EXISTS trg_recommendation_anchors_guard_${lower} ON recommendation_anchors;`)
+    out.push(`CREATE TRIGGER trg_recommendation_anchors_guard_${lower} BEFORE ${op} ON recommendation_anchors FOR EACH ROW EXECUTE FUNCTION webaz_recommendation_anchor_guard();`)
   }
 }
 
