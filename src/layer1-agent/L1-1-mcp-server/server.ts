@@ -678,7 +678,7 @@ Roles: buyer (browse/order/confirm) | seller (list/accept/ship) | logistics (pic
     // was ~2607 chars, now ~1050 chars
     description: `Search WebAZ marketplace + cross-platform anchor lookup. No auth required.
 
-⚠️ **STRICT MATCH ONLY** (no fuzzy). query = exact title / external_title / alias ≥6 chars. Short/NL queries ("phone stand") return found:0 — **by design**. On 0 results the **recovery** object's next_step points to **webaz_discover** (structured intent) — NOT a catalog browse. Do NOT retry shorter, do NOT scan with a big limit. Unconstrained browse (no query/category/filter) caps at 8, else UNBOUNDED_CATALOG_BROWSE.
+⚠️ **STRICT MATCH ONLY** (no fuzzy). query = exact title / external_title / alias ≥6 chars. Short/NL queries return found:0 — **by design**. On 0 results the **recovery** object's next_step points to **webaz_discover** (structured intent) — NOT a catalog browse. Do NOT retry shorter, do NOT scan with a big limit. Unconstrained browse (no query/category/filter) caps at 8, else UNBOUNDED_CATALOG_BROWSE.
 
 USE THIS when:
 - User gives **full product title / SKU / precise description** (strict-match candidate), OR
@@ -686,9 +686,9 @@ USE THIS when:
 - User pastes **external URL / share-text** from Taobao / Tmall / JD / PDD / 1688 / Douyin / Xiaohongshu
   → URL-paste is a first-class mode of THIS tool, NOT a separate browser-fetch. WebAZ exact-matches against its cross-platform anchor registry.
 
-【External-link paste】Prefer LLM-parse into \`external_link\` { platform, external_id?, external_title } (title = verbatim text inside 「」). If unparseable, drop raw into \`paste_text\` (server does light regex). Match: L1 external_id exact → L2 external_title exact → else \`matched_by:'none'\`. **No fuzzy fallback, no keyword degradation, no similar-product guessing.** matched_by='none' = tell user honestly "no exact match"; trust premise is precise not "looks similar".
+【External-link paste】LLM-parse into \`external_link\` { platform, external_id?, external_title } (title = verbatim inside 「」); if unparseable use \`paste_text\` (server light-regex). Match: external_id exact → external_title exact → else \`matched_by:'none'\` — tell the user honestly "no exact match" (no fuzzy/keyword/similar guessing).
 
-Returns: structuredContent (webaz.product_search.model.v1) — per-product decision fields + decision_flags + one-line summary, deduped sellers map, next_cursor for paging; content = short text summary. Paste-link hits webaz.xyz prod data, not local webaz.db.`,
+Returns: structuredContent (webaz.product_search.model.v1) — per-product decision fields + decision_flags + one-line summary, deduped sellers map, next_cursor for paging; content = short text summary.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -716,6 +716,8 @@ Returns: structuredContent (webaz.product_search.model.v1) — per-product decis
         ship_to: { type: 'string', description: 'Ship-to (province/city); auto-filters unshippable' },
         seller_id: { type: 'string', description: 'Filter to one seller' },
         cursor: { type: 'string', description: 'Pagination cursor (from previous next_cursor)' },
+        recommend_id: { type: 'string', description: "Assistant's pick to highlight (a product_id from this result). Display-only, non-authoritative." },
+        recommend_reason: { type: 'string', description: 'Short reason for recommend_id (≤140 chars).' },
       },
     },
     // MCP UI PR-4/PR-A:MCP Apps 渐进增强 —— 标准键(SEP-1865)+ ChatGPT legacy 键双轨;
@@ -2639,6 +2641,18 @@ function parseProductForAgent(p: Record<string, unknown>) {
   return { ...p, specs, estimated_days, agent_summary: buildAgentSummary(p) }
 }
 
+// B3/§15 — AI 推荐【透传】(非生成):服务器保持中立事实层,绝不产出"最值得买"。模型经 recommend_id/recommend_reason
+//   给出推荐,服务器仅【校验+回显】:id 必须在本次结果集内(绝不高亮未展示项)、reason 脱敏截断。标注 source:'assistant'
+//   +non_authoritative:true。不进商品事实/不参与排序/不进任何 hash —— 纯展示投影(widget 据此高亮)。
+export function recommendationPassthrough(args: Record<string, unknown>, products: Array<Record<string, unknown>>): Record<string, unknown> | undefined {
+  const id = typeof args.recommend_id === 'string' ? args.recommend_id.trim() : ''
+  if (!id) return undefined
+  if (!products.some(p => String(p.id) === id || String(p.product_id) === id)) return undefined   // 只高亮本次展示的商品
+  let reason = typeof args.recommend_reason === 'string' ? args.recommend_reason.replace(/\s+/g, ' ').trim().slice(0, 140) : ''
+  if (/https?:\/\/|www\.|@/i.test(reason)) reason = ''   // 脱敏:折叠空白+截断+拒 URL/@(reason 经 widget textContent 渲染,任何字符只显示为文本不执行)
+  return { product_id: id, reason: reason || null, source: 'assistant', non_authoritative: true }
+}
+
 export async function handleSearch(args: Record<string, unknown>) {
   // MCP Token PR-2:result_handle 按需详情 —— 选择集句柄 + ≤5 个 id → 服务端活读详情投影
   //   (webaz.product_detail.model.v1)。句柄只在网络路径签发/兑付;数据永远按 id 现读 + 重跑
@@ -2724,7 +2738,8 @@ export async function handleSearch(args: Record<string, unknown>) {
     const products = (r.products as unknown[]) ?? []
     if (products.length) {
       // 路由 agent 模式已产出 Model Projection 信封(schema_version/sellers/products/next_cursor)——原样透传。
-      return { ...r, found: products.length }
+      const rec = recommendationPassthrough(args, products as Array<Record<string, unknown>>)   // B3:模型推荐【透传】,校验后回显(服务器不生成)
+      return { ...r, found: products.length, ...(rec ? { recommendation: rec } : {}) }
     }
     // ★ 可恢复建议(调用契约 PR-C:0 命中不再导向"无 query 全目录浏览" —— 那是本次事故的制度化根因;
     //   反转为导向【结构化 discover + 类目词表】)。strict 结果保持 0/[](不破 strict-match 不变量)。
@@ -2863,6 +2878,11 @@ export async function handleSearch(args: Record<string, unknown>) {
   //   但 score/score_breakdown/metrics 属服务端内部,不再进入模型上下文。
   let fxL: Record<string, unknown> | null = null
   try { const snap = await getUsdRates(); fxL = { base: snap.base, rates: snap.rates, as_of: snap.as_of, stale: snap.stale, note: 'display-only conversion — never a settlement path' } } catch { fxL = null }
+  const projected = sorted.map((p) => {
+    const parsed = parseProductForAgent(p)
+    return projectProductModel({ ...p, estimated_days: parsed.estimated_days, agent_summary: parsed.agent_summary, sales_count: Number(p.completion_count) || 0 })
+  })
+  const recL = recommendationPassthrough(args, projected as Array<Record<string, unknown>>)   // B3:local/sandbox 路径也透传模型推荐(与 network 一致)
   return {
     schema_version: SCHEMA_PRODUCT_SEARCH,
     found: sorted.length,
@@ -2871,10 +2891,8 @@ export async function handleSearch(args: Record<string, unknown>) {
     limit,
     ...(fxL ? { fx: fxL } : {}),
     sellers: sellersIndex(sorted.map(p => ({ seller_id: p.seller_id, seller_name: p.seller_name, rep_level: p._rep_level, rep_points: p._rep_points }))),
-    products: sorted.map((p) => {
-      const parsed = parseProductForAgent(p)
-      return projectProductModel({ ...p, estimated_days: parsed.estimated_days, agent_summary: parsed.agent_summary, sales_count: Number(p.completion_count) || 0 })
-    }),
+    products: projected,
+    ...(recL ? { recommendation: recL } : {}),
   }
 }
 

@@ -6,7 +6,12 @@
  * Usage: npm run test:product-widget-expand
  */
 import vm from 'node:vm'
+import { mkdtempSync, rmSync } from 'node:fs'; import { tmpdir } from 'node:os'; import { join } from 'node:path'
+// Codex R2:importing server.ts runs its module-load DB init reading HOME — point it at a throwaway temp HOME
+//   BEFORE the dynamic import so this widget unit test never touches the real ~/.webaz/webaz.db.
+const __tmpHome = mkdtempSync(join(tmpdir(), 'widget-expand-')); process.env.HOME = __tmpHome; process.env.USERPROFILE = __tmpHome
 const { __WIDGET_COMPAT_JS, PRODUCT_RESULTS_BODY_JS } = await import('../src/layer1-agent/L1-1-mcp-server/ui-widgets.js')
+const { recommendationPassthrough } = await import('../src/layer1-agent/L1-1-mcp-server/server.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push('✗ ' + n) } }
@@ -120,7 +125,35 @@ try {
   ok('B1-14 mobile: first card opens', /\bopen\b/.test(cardFor(rootNode, 'prd_a')!.className))
   fire(findByText(cardFor(rootNode, 'prd_b')!, '展开')!)
   ok('B1-15 mobile one-at-a-time: opening B closes A', /\bopen\b/.test(cardFor(rootNode, 'prd_b')!.className) && !/\bopen\b/.test(cardFor(rootNode, 'prd_a')!.className))
+  // ── B3 AI recommendation: server PASSTHROUGH (§15 — server never generates) + widget highlight ──
+  const prods = [{ id: 'prd_a' }, { id: 'prd_b' }]
+  const recOk = recommendationPassthrough({ recommend_id: 'prd_a', recommend_reason: '品牌更熟悉 容量适中 附挂钩' }, prods) as Record<string, unknown> | undefined
+  ok('B3-1 server echoes a model recommendation for an id IN the result set, labeled non-authoritative/assistant', !!recOk && recOk.product_id === 'prd_a' && recOk.reason === '品牌更熟悉 容量适中 附挂钩' && recOk.source === 'assistant' && recOk.non_authoritative === true)
+  ok('B3-2 server does NOT highlight an id NOT in the result set (never fabricates a pick)', recommendationPassthrough({ recommend_id: 'prd_ZZZ', recommend_reason: 'x' }, prods) === undefined)
+  ok('B3-3 no recommend_id → undefined (server never invents a recommendation)', recommendationPassthrough({}, prods) === undefined)
+  const recUrl = recommendationPassthrough({ recommend_id: 'prd_a', recommend_reason: 'buy at http://evil.example' }, prods) as Record<string, unknown>
+  ok('B3-4 reason sanitized: URL/@ rejected → reason null, still a valid pick', recUrl.product_id === 'prd_a' && recUrl.reason === null)
+  const recUpper = recommendationPassthrough({ recommend_id: 'prd_a', recommend_reason: 'see HTTPS://X and WWW.Y' }, prods) as Record<string, unknown>
+  ok('B3-4b URL rejection is case-insensitive (HTTPS/WWW also rejected) — Codex R2', recUpper.reason === null)
+  const recLong = recommendationPassthrough({ recommend_id: 'prd_a', recommend_reason: 'x'.repeat(300) }, prods) as Record<string, unknown>
+  ok('B3-5 reason capped at 140 chars', typeof recLong.reason === 'string' && (recLong.reason as string).length === 140)
+  const recWs = recommendationPassthrough({ recommend_id: 'prd_a', recommend_reason: 'cheap\tbut\nfragile' }, prods) as Record<string, unknown>
+  ok('B3-5b whitespace/control-whitespace collapsed to single spaces (not nulled) — Codex R1', recWs.reason === 'cheap but fragile')
+
+  // widget: recommended card gets highlight border + 🌟 AI 推荐 badge + reason; a non-matching id highlights nothing
+  const rn3 = mk('div'); rn3.setAttribute('id', 'root')
+  const doc3 = { getElementById: (id: string) => (id === 'root' ? rn3 : null), createElement: (t: string) => mk(t) }
+  const ctx3: Record<string, unknown> = { document: doc3, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON }
+  ctx3.globalThis = ctx3; ctx3.self = ctx3; vm.createContext(ctx3)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctx3)
+  ;(ctx3.__render as (o: unknown, out: unknown) => void)({}, { ...SEARCH, recommendation: { product_id: 'prd_a', reason: '容量适中并附挂钩', source: 'assistant', non_authoritative: true } })
+  const recCard = cardFor(rn3, 'prd_a')!, plainCard = cardFor(rn3, 'prd_b')!
+  ok('B3-6 widget highlights the recommended card (rec border class)', /\brec\b/.test(recCard.className) && !/\brec\b/.test(plainCard.className))
+  const treeText = (n: N): string => (n.textContent && n.children.length === 0 ? n.textContent : '') + (n.children || []).map(treeText).join(' ')
+  ok('B3-7 recommended card shows the 🌟 AI 推荐 badge (not "WebAZ 推荐")', !!findByText(recCard, '🌟 AI 推荐', 'DIV') && !treeText(rn3).includes('WebAZ 推荐'))
+  ok('B3-8 recommended card shows the reason', !!findByText(recCard, '“容量适中并附挂钩”', 'DIV'))
 } catch (e) { fail++; fails.push('✗ THREW: ' + ((e as Error).stack || (e as Error).message)) }
+try { rmSync(__tmpHome, { recursive: true, force: true }) } catch { /* temp HOME cleanup */ }
 
 if (fail > 0) { console.error(`\n❌ product-widget-expand FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-console.log(`✅ product-widget-expand+prepare: B1 expand/collapse PERSISTED (survives sort) + 展开/收起 toggle + clickable info + scroll + detail 返回列表 + mobile one-at-a-time; B2 准备下单 primary → structured follow-up carrying product_id (model orchestrates quote→draft→submit→Passkey), NEVER callTool the model-only quote, NEVER money-path tools, disables on click, no-channel→re-enables (never stuck)\n  ✅ pass ${pass}`)
+console.log(`✅ product-widget-expand+prepare: B1 expand/collapse PERSISTED (survives sort) + 展开/收起 toggle + clickable info + scroll + detail 返回列表 + mobile one-at-a-time; B2 准备下单 primary → structured follow-up carrying product_id (model orchestrates quote→draft→submit→Passkey), NEVER callTool the model-only quote, NEVER money-path tools, disables on click, no-channel→re-enables (never stuck); B3 AI 推荐 server PASSTHROUGH (only echoes model pick in the result set, sanitizes reason, never generates) + widget highlight (rec border + 🌟 AI 推荐 badge + reason, never "WebAZ 推荐")\n  ✅ pass ${pass}`)

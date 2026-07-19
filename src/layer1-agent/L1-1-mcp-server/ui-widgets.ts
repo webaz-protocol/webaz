@@ -159,6 +159,9 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
 .bar button.on{background:var(--accent-bg);border-color:var(--accent-line);color:var(--accent-ink)}
 .grid{display:flex;gap:10px;flex-wrap:wrap}
 .card{border:1px solid var(--line);border-radius:12px;padding:12px 14px;width:210px;background:var(--bg);display:flex;flex-direction:column;gap:6px}
+.card.rec{border:2px solid #4f46e5;box-shadow:0 0 0 1px #4f46e5}
+.recbadge{align-self:flex-start;font-size:10px;font-weight:600;color:#fff;background:#4f46e5;border-radius:6px;padding:1px 7px}
+.recreason{font-size:11px;color:var(--ink);line-height:1.5}
 .card b{font-size:13px;line-height:1.35;display:block;min-height:2.6em}
 .price{color:var(--price);font-weight:700;font-size:15px}
 .chips{display:flex;gap:4px;flex-wrap:wrap}
@@ -250,11 +253,15 @@ function renderBody(oai, out){
     var g=el('div','grid')
     list.forEach(function(p){
       var isOpen=!!state.open[p.id]
-      var c=el('div','card'+(isOpen?' open':''))
+      // B3/§15:模型推荐【透传】—— 高亮该卡(边框+🌟角标+理由),标注【AI 推荐】非 WebAZ 推荐;纯展示,不改事实/排序/价格。
+      var isRec=out.recommendation&&out.recommendation.product_id===p.id
+      var c=el('div','card'+(isOpen?' open':'')+(isRec?' rec':''))
       c.setAttribute('data-pid', String(p.id))
+      if(isRec){ c.appendChild(el('div','recbadge','🌟 AI 推荐')) }
       var __ti=el('b',null,p.title||p.id); __ti.style.cursor='pointer'
       __ti.addEventListener('click',function(){ toggleOpen(p.id) })   // B1:基本信息可点击展开/收起
       c.appendChild(__ti)
+      if(isRec&&out.recommendation.reason){ c.appendChild(el('div','recreason','“'+out.recommendation.reason+'”')) }
       c.appendChild(el('div','price',(p.price&&p.price.display)||''))
       var fx=out.fx&&out.fx.rates
       if(fx&&p.price&&p.price.amount_minor!=null){
