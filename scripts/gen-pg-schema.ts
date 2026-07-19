@@ -73,6 +73,9 @@ function portTableSql(sqliteSql: string): string {
   s = s.replace(/\bdatetime\(\s*'now'\s*\)/gi, `(${PG_NOW})`)
   s = s.replace(/\(\s*CURRENT_TIMESTAMP\s*\)/gi, `(${PG_NOW})`)
   s = s.replace(/\bDEFAULT\s+CURRENT_TIMESTAMP\b/gi, `DEFAULT (${PG_NOW})`)
+  // INTEGER epoch timestamps use SQLite strftime('%s','now'). PostgreSQL's
+  // equivalent must stay integral so existing cooldown arithmetic is unchanged.
+  s = s.replace(/strftime\(\s*'%s'\s*,\s*'now'\s*\)/gi, `floor(extract(epoch from now()))::bigint`)
 
   // 4.5) 字符串默认值的双引号 → 单引号(SQLite 容忍 DEFAULT "x" 当字符串字面量;
   //      PG 里 "x" 是【标识符】会报错)。只动 DEFAULT "..." 串默认值,不碰其它双引号标识符。
@@ -87,6 +90,8 @@ function portTableSql(sqliteSql: string): string {
   //      `column !~ '[^allowed]'`。这里保守只转换简单列名 + ASCII 字符类；任何别的
   //      GLOB 仍由 pg:verify 拦下，避免静默误译。
   s = s.replace(/\b([a-z_][a-z0-9_]*)\s+NOT\s+GLOB\s+'\*\[\^([0-9a-z_-]+)\]\*'/gi, (_m, column: string, allowed: string) => `${column} !~ '[^${allowed}]'`)
+  s = s.replace(/\bsubstr\(\s*([a-z_][a-z0-9_]*)\s*,\s*-1\s*,\s*1\s*\)\s+GLOB\s+'(\[[0-9a-z_-]+\])'/gi,
+    (_m, column: string, allowed: string) => `right(${column},1) ~ '^${allowed}$'`)
 
   // 5) 幂等:CREATE TABLE → CREATE TABLE IF NOT EXISTS(若原文未含)
   s = s.replace(/\bCREATE\s+TABLE\s+(?!IF\s+NOT\s+EXISTS)/i, 'CREATE TABLE IF NOT EXISTS ')
@@ -114,6 +119,48 @@ const indexes = db.prepare(
    WHERE type='index' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL
    ORDER BY rowid`
 ).all() as Array<{ name: string; sql: string }>
+
+/**
+ * SQLite permits a table to reference another table that is created later.
+ * PostgreSQL resolves REFERENCES targets while executing CREATE TABLE, so the
+ * generated artifact must put every dependency before its dependent table.
+ * Keep the original sqlite_master order as the stable tie-breaker.
+ */
+function orderTablesByReferences(input: Array<{ name: string; sql: string }>): Array<{ name: string; sql: string }> {
+  const byName = new Map(input.map(table => [table.name.toLowerCase(), table]))
+  const state = new Map<string, 'visiting' | 'done'>()
+  const stack: string[] = []
+  const ordered: Array<{ name: string; sql: string }> = []
+
+  const visit = (table: { name: string; sql: string }): void => {
+    const key = table.name.toLowerCase()
+    const current = state.get(key)
+    if (current === 'done') return
+    if (current === 'visiting') {
+      const cycleStart = stack.indexOf(key)
+      const cycle = [...stack.slice(cycleStart), key].join(' -> ')
+      throw new Error(`PostgreSQL CREATE TABLE dependency cycle: ${cycle}`)
+    }
+
+    state.set(key, 'visiting')
+    stack.push(key)
+    const references = [...table.sql.matchAll(/\bREFERENCES\s+["`]?([A-Za-z_][A-Za-z0-9_]*)["`]?/gi)]
+      .map(match => match[1].toLowerCase())
+    for (const dependencyName of references) {
+      if (dependencyName === key) continue
+      const dependency = byName.get(dependencyName)
+      if (dependency) visit(dependency)
+    }
+    stack.pop()
+    state.set(key, 'done')
+    ordered.push(table)
+  }
+
+  for (const table of input) visit(table)
+  return ordered
+}
+
+const orderedTables = orderTablesByReferences(tables)
 
 // PG 保留字 — 若被用作裸列/表名,Phase 2 import 时会报错,先在产物里标注
 const PG_RESERVED = new Set([
@@ -144,10 +191,19 @@ out.push('')
 out.push('BEGIN;')
 out.push('')
 
-out.push('-- ════════════ TABLES ════════════')
-for (const t of tables) {
+out.push('-- ════════════ TABLES (foreign-key dependency order) ════════════')
+for (const t of orderedTables) {
   flagReserved(t.name, t.sql)
   out.push(portTableSql(t.sql) + ';')
+  out.push('')
+}
+
+// Additive PG upgrade steps that CREATE TABLE IF NOT EXISTS cannot apply to an
+// already-provisioned database. Keep these next to their SQLite guarded ALTER.
+if (tables.some(t => t.name === 'oauth_access_tokens')) {
+  out.push('-- ════════════ ADDITIVE UPGRADES (existing PostgreSQL databases) ════════════')
+  out.push(`ALTER TABLE oauth_access_tokens ADD COLUMN IF NOT EXISTS dpop_jkt TEXT
+  CHECK(dpop_jkt IS NULL OR (length(dpop_jkt) = 43 AND dpop_jkt !~ '[^A-Za-z0-9_-]' AND right(dpop_jkt,1) ~ '^[AEIMQUYcgkosw048]$'));`)
   out.push('')
 }
 
