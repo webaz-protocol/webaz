@@ -307,6 +307,7 @@
     "test:prepare-case": "tsx scripts/test-prepare-case.ts",
     "test:oat-scope-gate": "tsx scripts/test-oat-scope-gate.ts",
     "test:approval-requests-read": "tsx scripts/test-approval-requests-read.ts",
+    "test:approval-detail-endpoint": "tsx scripts/test-approval-detail-endpoint.ts",
     "test:buyer-order-full": "tsx scripts/test-buyer-order-full.ts",
     "test:order-chat-grant": "tsx scripts/test-order-chat-grant.ts",
     "test:address-agent": "tsx scripts/test-address-agent.ts",

@@ -113,6 +113,19 @@ const TELEMETRY_ENABLED = (process.env.WEBAZ_TELEMETRY ?? 'off').toLowerCase() =
 const WEBAZ_API_URL = (process.env.WEBAZ_API_URL ?? 'https://webaz.xyz').replace(/\/+$/, '')
 const WEBAZ_API_KEY = process.env.WEBAZ_API_KEY ?? ''
 
+// P0-A A5 — approval deep-links must be ABSOLUTE so text-only Agent Hosts (no widget) get a clickable URL.
+//   PWA routes emit relative `/#agent-approvals/apr_xxx`; the widget hard-prefixes at click time, but that never
+//   reaches structuredContent / the text summary. This prepends WEBAZ_API_URL to any relative approval_url on the
+//   agent-facing surface (top-level + nested requests[]). Already-absolute or empty values are left untouched.
+export function absolutizeApprovalUrls<T>(r: T): T {
+  if (!r || typeof r !== 'object') return r
+  const abs = (u: unknown): unknown => (typeof u === 'string' && u.startsWith('/')) ? `${WEBAZ_API_URL}${u}` : u
+  const obj = r as Record<string, unknown>
+  if ('approval_url' in obj) obj.approval_url = abs(obj.approval_url)
+  if (Array.isArray(obj.requests)) for (const it of obj.requests) { if (it && typeof it === 'object' && 'approval_url' in (it as Record<string, unknown>)) (it as Record<string, unknown>).approval_url = abs((it as Record<string, unknown>).approval_url) }
+  return r
+}
+
 // RFC-022 凭证隔离上下文(单一权威源)。远程共享端点每请求在此 store 里跑,isIsolated()=true;
 // 任意调用栈深处(apiCall / pwaApi / readEndpoint / resolveMcpApiKey / resolveGrantCredential / handlePair)
 // 都从这里判断,不必逐个 threading args —— 修 Codex round-2 残余 P0(apiCall 直读宿主 WEBAZ_API_KEY 绕过补丁)。
@@ -3058,6 +3071,7 @@ export async function handleSubmitOrderRequest(args: Record<string, unknown>): P
   if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
   if (typeof args.draft_id !== 'string' || !args.draft_id) return { error: 'draft_id is required', error_code: 'DRAFT_NOT_FOUND' }
   const r = await apiCall(`/api/agent/order-drafts/${encodeURIComponent(args.draft_id)}/submit`, { method: 'POST', apiKey: cred.token })
+  absolutizeApprovalUrls(r)   // A5: absolute approval_url for text-only Hosts
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks order_submit_request. Re-connect via OAuth so the grant carries the order:draft scope, then retry.' }
   return r
 }
@@ -3084,6 +3098,7 @@ export async function handleBuyerActionRequest(args: Record<string, unknown>): P
   const body: Record<string, unknown> = { action: args.action }
   if (args.reason !== undefined) body.reason = args.reason
   const r = await apiCall(`/api/agent/orders/${encodeURIComponent(args.order_id)}/buyer-action-request`, { method: 'POST', apiKey: cred.token, body })
+  absolutizeApprovalUrls(r)   // A5
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_action_request. Re-connect via OAuth so the grant carries the aftersales:request scope, then retry.' }
   return r
 }
@@ -3103,6 +3118,7 @@ export async function handleAddressAgent(args: Record<string, unknown>): Promise
   } else {
     return { error: `unknown action: ${action}`, error_code: 'BAD_ACTION' }
   }
+  absolutizeApprovalUrls(r)   // A5
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: `Your grant lacks ${action === 'change_request' ? 'address_change_request' : 'address_read_masked'}. Re-connect via OAuth so the grant carries the address scope, then retry.` }
   return r
 }
@@ -3156,6 +3172,7 @@ export async function handleApprovalRequests(args: Record<string, unknown>): Pro
   } else {
     return { error: `unknown action: ${action}`, error_code: 'BAD_ACTION' }
   }
+  absolutizeApprovalUrls(r)   // A5: list[].approval_url + single approval_url → absolute
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks approval_requests_read. Re-connect via OAuth so the grant carries the read scope, then retry.' }
   return r
 }
@@ -3183,6 +3200,7 @@ export async function handleOrderActionRequest(args: Record<string, unknown>): P
     body.action_params = clean
   }
   const r = await apiCall(`/api/agent/orders/${encodeURIComponent(orderId)}/action-request`, { method: 'POST', apiKey: cred.token, body })
+  absolutizeApprovalUrls(r)   // A5
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks order_action_request. Run webaz_pair action="request" bundle="fulfillment_agent", have the human approve, then retry.' }
   return r
 }

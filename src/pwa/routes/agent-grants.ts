@@ -795,14 +795,30 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       const base: Record<string, unknown> = { ...r, requested_scopes: scopeNames(String(r.requested_scopes)), human_summary: bundleSummary(r.permission_bundle as string | null) }
       if (r.kind === 'order_action') { try { base.action_params = r.action_params ? JSON.parse(String(r.action_params)) : {} } catch { base.action_params = {} } }
       // RFC-025 PR-5a:order_submit 行附经济摘要(域层 submitRowSummary,route 零新增 seam 计数;零 PII)。
-      if (r.kind === 'order_submit') { const sum = submitRowSummary(db, String(r.order_id)); if (sum) base.submit_summary = sum; if (r.status === 'approved') base.needs_reconcile = true }
+      // P0-A #2 修复:每行 summary 独立 try/catch —— 单条坏数据绝不让整个 res.json(rows.map(...)) reject 后连接悬挂(永久 loading 根因)。降级为 summary_unavailable 标记(fail-visible)。
+      if (r.kind === 'order_submit') { try { const sum = submitRowSummary(db, String(r.order_id)); if (sum) base.submit_summary = sum; else base.summary_unavailable = true } catch { base.summary_unavailable = true } if (r.status === 'approved') base.needs_reconcile = true }
       // RFC-026 PR-2(Codex HIGH):order_action 执行失败保持 approved 可重试 —— 必须回到列表让人重批,不许悄悄搁浅;只回短错误码
-      if (r.kind === 'address_change') { const acr = addressChangeContentForHuman(db, String(r.id)); if (acr) base.address_change = acr; if (r.status === 'approved') base.retry_available = true }
-      if (r.kind === 'buyer_action') { const sum = buyerActionSummary(db, String(r.id)); if (sum) base.buyer_action = sum; if (r.status === 'approved') base.retry_available = true }
+      if (r.kind === 'address_change') { try { const acr = addressChangeContentForHuman(db, String(r.id)); if (acr) base.address_change = acr; else base.summary_unavailable = true } catch { base.summary_unavailable = true } if (r.status === 'approved') base.retry_available = true }
+      if (r.kind === 'buyer_action') { try { const sum = buyerActionSummary(db, String(r.id)); if (sum) base.buyer_action = sum; else base.summary_unavailable = true } catch { base.summary_unavailable = true } if (r.status === 'approved') base.retry_available = true }
       if (r.kind === 'order_action' && r.status === 'approved') { base.retry_available = true; try { const er = r.execution_result ? JSON.parse(String(r.execution_result)) as { ok?: boolean; error_code?: string } : null; if (er && er.ok === false) base.last_error = String(er.error_code ?? 'EXECUTE_FAILED') } catch { /* 无注解 */ } }
       delete base.status; delete base.execution_result
       return base
     }) })
+  })
+
+  // P0-A A1 — GET ONE approval request by id, for the #agent-approvals/:id deep link. Human-authed (session),
+  //   own-only + zero-PII, reuses the RFC-026 status-machine projection (getApprovalRequest). The deep-link page
+  //   should call THIS instead of loading the whole list, so a single hung/oversized list can't cause永久 loading.
+  //   fail-visible: every path responds (404 not-found-or-not-yours = anti-enumeration; 500 only on assembly throw).
+  app.get('/api/agent-grants/permission-requests/:request_id', async (req, res) => {
+    const user = auth(req, res); if (!user) return
+    try {
+      const r = getApprovalRequest(db, user.id as string, req.params.request_id)
+      if (!r.ok) return void res.status(r.status).json(r.body)
+      res.json(r.response)
+    } catch {
+      res.status(500).json({ error_code: 'APPROVAL_DETAIL_UNAVAILABLE', reason: 'could not assemble approval detail', retryable: true })
+    }
   })
 
   // GET list the requests THIS grant created — GRANT-authed (the agent, via webaz_pair), so an agent can poll
