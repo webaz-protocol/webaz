@@ -862,6 +862,7 @@ jobs:
       - run: npm run test:oauth-discovery
       - run: npm run test:agent-gateway-schema
       - run: npm run test:agent-gateway-dpop-schema
+      - run: npm run test:agent-gateway-dpop-token
       - run: npm run test:agent-gateway-proof
       - run: npm run test:oauth-authorize
       - run: npm run test:oauth-approve
