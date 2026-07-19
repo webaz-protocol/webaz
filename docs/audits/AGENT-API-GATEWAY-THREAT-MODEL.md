@@ -90,7 +90,7 @@ public client.
 | OAuth audience | access token stores and verifies `/mcp` audience | **Present** |
 | OAuth client/token sender constraint | public bearer token; reserved `agent_pubkey` unused | **Gap in WebAZ**; ChatGPT documents managed mTLS, but WebAZ does not yet validate it |
 | OAuth issuer/client/subject proof per request | token resolves grant and client metadata exists | **Partial**: bearer possession is sufficient; no validated mTLS/DPoP/request-signature context or proof replay cache |
-| OAuth consent presence | every consent currently requires Passkey | **Strong but incompatible with deferred-Passkey Buyer Lite**: only a server-selected SAFE/non-executing preparation bundle may use verified-session explicit consent; execution stays Passkey |
+| OAuth consent presence | every consent currently requires Passkey | **Strong but incompatible with deferred-Passkey Buyer Lite**: only a server-selected SAFE/non-executing `purchase:prepare` request, mutually exclusive with all ordinary scopes, may use verified-session explicit consent; execution consumes a purpose/payload-bound Passkey through a non-configurable gate |
 | Grant scope/object authorization | explicit route middleware; owner-scoped quote/draft reads | **Strong existing base** |
 | Grant audit | successful grant authorization fails closed if audit write fails | **Strong existing base** |
 | Passkey | UV-required, one-time challenge, purpose data and short gate token | **Strong existing base** |
@@ -545,3 +545,6 @@ Beyond the supplied 20 tests, add:
     concurrent handoff redemption fail closed;
 46. degraded-mode tests separately cover approval read, pre-claim refusal and
     expiry pause, post-claim atomic completion, and unknown-outcome reconcile.
+47. `purchase:prepare` mixed with any other OAuth scope fails `invalid_scope`,
+    and changing the generic human-presence protocol parameter cannot bypass
+    direct Passkey-token consumption at order-submit execution.

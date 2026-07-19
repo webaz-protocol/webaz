@@ -131,6 +131,11 @@ OAuth consent requires an existing Passkey. The narrow resolution is:
   **intent-bound preparation grant** without a Passkey. It uses one new,
   explicitly narrow external OAuth scope, `purchase:prepare`; existing `read`,
   `order:draft` and `address` meanings remain unchanged and Passkey-consented;
+- `purchase:prepare` is mutually exclusive with every other OAuth scope in a
+  no-Passkey authorization request. A request that combines it with `read`,
+  `order:draft`, `address` or any future scope fails with `invalid_scope`; a
+  user who wants an ordinary broader grant completes the existing Passkey
+  consent as a separate authorization transaction;
 - that grant is bound to one `gpi`, client, resource, user, context hash,
   product, variant and quantity. Its object chain is monotonic: only the quote,
   draft and approval created from that intent become readable/actionable;
@@ -148,7 +153,10 @@ OAuth consent requires an existing Passkey. The narrow resolution is:
 - the intent-bound `purchase:prepare` capability may quote, draft and submit one
   pending request, but cannot create an order or move funds;
 - execution of the approval and every existing iron-rule action still requires
-  a live purpose/payload-bound Passkey;
+  a live purpose/payload-bound Passkey. The order-submit execution route must
+  consume that gate token directly through the non-configurable
+  `consumeGateToken` path; the protocol-param-toggleable
+  `requireHumanPresence` wrapper is not sufficient for this economic action;
 - every other OAuth scope/policy continues to use the current Passkey rule.
 
 This is an explicit, separately reviewed security-policy PR. It must not be
@@ -605,7 +613,9 @@ a forwarded client-certificate header supplied by the caller.
 
 The existing coarse OAuth scopes keep their meanings. Add only the narrow
 `purchase:prepare` scope for this flow; fine capabilities and intent/object
-constraints remain internal mappings.
+constraints remain internal mappings. A no-Passkey `purchase:prepare` request
+must contain exactly that one scope. Mixed requests fail `invalid_scope`; they
+must never inherit the no-Passkey exception for ordinary scopes.
 
 Recommended phases:
 
@@ -670,7 +680,7 @@ Feature PRs then remain narrow:
 | **G3** | allowlisted return/deep-link and one-time browser handoff recovery | G1/G2 |
 | **G4** | anchor provenance through quote/draft/approval/order, still unreachable | RFC-027 + G1–G3 |
 | **G5** | address completion -> fresh quote resume | G3/G4 |
-| **G6** | first-purchase Passkey -> exact approval resume | G5 |
+| **G6** | first-purchase Passkey -> exact approval resume; order-submit execution consumes the purpose/payload-bound token directly, without a protocol-param bypass | G5 |
 
 Do not combine S1 with G1 or G2. Security primitives require independent
 review and rollback.
@@ -785,6 +795,10 @@ In addition to the requested ten user journeys, every implementation must prove:
     an account;
 30. pending-before-claim, claimed, committed and unknown-outcome approvals each
     follow the explicit degraded-mode behavior without double execution.
+31. `purchase:prepare` alone may enter the narrow no-Passkey consent, while any
+    request mixing it with `read`, `order:draft`, `address` or another scope
+    fails `invalid_scope`; disabling any generic human-presence protocol param
+    still cannot execute an order without a valid purpose/payload-bound Passkey.
 
 ## 14. Rollback
 
