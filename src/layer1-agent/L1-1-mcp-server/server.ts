@@ -2649,7 +2649,7 @@ export function recommendationPassthrough(args: Record<string, unknown>, product
   if (!id) return undefined
   if (!products.some(p => String(p.id) === id || String(p.product_id) === id)) return undefined   // 只高亮本次展示的商品
   let reason = typeof args.recommend_reason === 'string' ? args.recommend_reason.replace(/\s+/g, ' ').trim().slice(0, 140) : ''
-  if (/https?:\/\/|www\.|@/.test(reason)) reason = ''   // 脱敏:折叠空白+截断+拒 URL/@(reason 经 widget textContent 渲染,任何字符只显示为文本不执行)
+  if (/https?:\/\/|www\.|@/i.test(reason)) reason = ''   // 脱敏:折叠空白+截断+拒 URL/@(reason 经 widget textContent 渲染,任何字符只显示为文本不执行)
   return { product_id: id, reason: reason || null, source: 'assistant', non_authoritative: true }
 }
 

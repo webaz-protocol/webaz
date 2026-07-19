@@ -6,6 +6,10 @@
  * Usage: npm run test:product-widget-expand
  */
 import vm from 'node:vm'
+import { mkdtempSync, rmSync } from 'node:fs'; import { tmpdir } from 'node:os'; import { join } from 'node:path'
+// Codex R2:importing server.ts runs its module-load DB init reading HOME — point it at a throwaway temp HOME
+//   BEFORE the dynamic import so this widget unit test never touches the real ~/.webaz/webaz.db.
+const __tmpHome = mkdtempSync(join(tmpdir(), 'widget-expand-')); process.env.HOME = __tmpHome; process.env.USERPROFILE = __tmpHome
 const { __WIDGET_COMPAT_JS, PRODUCT_RESULTS_BODY_JS } = await import('../src/layer1-agent/L1-1-mcp-server/ui-widgets.js')
 const { recommendationPassthrough } = await import('../src/layer1-agent/L1-1-mcp-server/server.js')
 
@@ -129,6 +133,8 @@ try {
   ok('B3-3 no recommend_id → undefined (server never invents a recommendation)', recommendationPassthrough({}, prods) === undefined)
   const recUrl = recommendationPassthrough({ recommend_id: 'prd_a', recommend_reason: 'buy at http://evil.example' }, prods) as Record<string, unknown>
   ok('B3-4 reason sanitized: URL/@ rejected → reason null, still a valid pick', recUrl.product_id === 'prd_a' && recUrl.reason === null)
+  const recUpper = recommendationPassthrough({ recommend_id: 'prd_a', recommend_reason: 'see HTTPS://X and WWW.Y' }, prods) as Record<string, unknown>
+  ok('B3-4b URL rejection is case-insensitive (HTTPS/WWW also rejected) — Codex R2', recUpper.reason === null)
   const recLong = recommendationPassthrough({ recommend_id: 'prd_a', recommend_reason: 'x'.repeat(300) }, prods) as Record<string, unknown>
   ok('B3-5 reason capped at 140 chars', typeof recLong.reason === 'string' && (recLong.reason as string).length === 140)
   const recWs = recommendationPassthrough({ recommend_id: 'prd_a', recommend_reason: 'cheap\tbut\nfragile' }, prods) as Record<string, unknown>
@@ -147,6 +153,7 @@ try {
   ok('B3-7 recommended card shows the 🌟 AI 推荐 badge (not "WebAZ 推荐")', !!findByText(recCard, '🌟 AI 推荐', 'DIV') && !treeText(rn3).includes('WebAZ 推荐'))
   ok('B3-8 recommended card shows the reason', !!findByText(recCard, '“容量适中并附挂钩”', 'DIV'))
 } catch (e) { fail++; fails.push('✗ THREW: ' + ((e as Error).stack || (e as Error).message)) }
+try { rmSync(__tmpHome, { recursive: true, force: true }) } catch { /* temp HOME cleanup */ }
 
 if (fail > 0) { console.error(`\n❌ product-widget-expand FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ product-widget-expand+prepare: B1 expand/collapse PERSISTED (survives sort) + 展开/收起 toggle + clickable info + scroll + detail 返回列表 + mobile one-at-a-time; B2 准备下单 primary → structured follow-up carrying product_id (model orchestrates quote→draft→submit→Passkey), NEVER callTool the model-only quote, NEVER money-path tools, disables on click, no-channel→re-enables (never stuck); B3 AI 推荐 server PASSTHROUGH (only echoes model pick in the result set, sanitizes reason, never generates) + widget highlight (rec border + 🌟 AI 推荐 badge + reason, never "WebAZ 推荐")\n  ✅ pass ${pass}`)
