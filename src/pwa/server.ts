@@ -19,7 +19,7 @@
 import express, { Request, Response, NextFunction } from 'express'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import crypto from 'crypto'
+import crypto from 'crypto'; import { deriveHandleBase } from '../handle-policy.js'
 
 import { initDatabase, generateId } from '../layer0-foundation/L0-1-database/schema.js'
 import { setSeamDb } from '../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
@@ -2148,15 +2148,7 @@ function generatePermanentCode(): string {
 
 // handle：公开用户名（ASCII，可改）；从 name 清洗派生，冲突加数字后缀
 function deriveHandle(name: string, excludeUserId?: string): string {
-  // 标准化 + 拆掉组合标记 + 只留 [a-z0-9_.]
-  let base = String(name || '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
-  base = base.replace(/[^a-zA-Z0-9._]/g, '').toLowerCase()
-  // 去掉开头/结尾的 . _
-  base = base.replace(/^[._]+|[._]+$/g, '')
-  if (base.length < 3) base = 'user' + Math.random().toString(36).slice(2, 7)  // 中文/特殊昵称兜底
-  if (base.length > 18) base = base.slice(0, 18)
-  // 保留前缀：避免与系统占用碰撞
-  if (/^(usr|sys|admin|webaz|anonymous|null)/.test(base)) base = 'u_' + base
+  const base = deriveHandleBase(name)
   // 唯一性检测，冲突加数字后缀
   let candidate = base
   let i = 1

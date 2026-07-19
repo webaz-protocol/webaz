@@ -331,7 +331,8 @@
     "test:buyer-address-checkout": "tsx scripts/test-buyer-address-checkout.ts",
     "test:oauth-register": "tsx scripts/test-oauth-register.ts",
     "test:product-share-chain": "tsx scripts/test-product-share-chain.ts",
-    "test:recommendation-anchor": "tsx scripts/test-recommendation-anchor.ts"
+    "test:recommendation-anchor": "tsx scripts/test-recommendation-anchor.ts",
+    "test:handle-policy": "tsx scripts/test-handle-policy.ts"
   },
   "keywords": [
     "mcp",

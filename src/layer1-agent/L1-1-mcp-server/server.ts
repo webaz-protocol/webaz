@@ -101,6 +101,7 @@ import {
 import { requireAuth } from './auth.js'
 import { createHash, randomBytes } from 'node:crypto'
 import { SOFTWARE_VERSION } from '../../version.js'
+import { deriveHandleBase } from '../../handle-policy.js'
 
 // RFC-011 §④:版本单一来源 = package.json(经 src/version.ts)。不再硬编码(旧 '0.1.8' 早漂移到 0.1.19)。
 const SERVER_VERSION = SOFTWARE_VERSION
@@ -563,12 +564,7 @@ function mcpGeneratePermanentCode(): string {
   throw new Error('permanent_code generation exhausted')
 }
 function mcpDeriveHandle(name: string): { handle: string; requested: string; modified: boolean } {
-  let base = String(name || '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
-  base = base.replace(/[^a-zA-Z0-9._]/g, '').toLowerCase()
-  base = base.replace(/^[._]+|[._]+$/g, '')
-  if (base.length < 3) base = 'user' + Math.random().toString(36).slice(2, 7)
-  if (base.length > 18) base = base.slice(0, 18)
-  if (/^(usr|sys|admin|webaz|anonymous|null)/.test(base)) base = 'u_' + base
+  const base = deriveHandleBase(name)
   const requested = base
   let candidate = base, i = 1
   while (db.prepare("SELECT 1 FROM users WHERE handle = ?").get(candidate)) {
