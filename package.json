@@ -323,6 +323,7 @@
     "agent:compat-matrix": "node scripts/agent-compat-matrix.mjs",
     "test:oauth-discovery": "tsx scripts/test-oauth-discovery.ts",
     "test:agent-gateway-schema": "tsx scripts/test-agent-gateway-schema.ts",
+    "test:agent-gateway-dpop-schema": "tsx scripts/test-agent-gateway-dpop-schema.ts",
     "test:agent-gateway-proof": "tsx scripts/test-agent-gateway-proof.ts",
     "test:oauth-authorize": "tsx scripts/test-oauth-authorize.ts",
     "test:oauth-approve": "tsx scripts/test-oauth-approve.ts",

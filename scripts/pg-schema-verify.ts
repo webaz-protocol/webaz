@@ -267,30 +267,37 @@ await (async () => {
     await client.query('ROLLBACK')
     console.log(`✅ live smoke 通过 —— 整份 DDL 在真实 pg parse + 执行成功(已 ROLLBACK,未持久)`)
 
-    // RFC-028 S1b: prove the additive DPoP binding migration works on an OLD
-    // oauth_access_tokens table, is idempotent, and enforces canonical JKT.
-    const dpopUpgrade = ddl.match(/ALTER TABLE oauth_access_tokens ADD COLUMN IF NOT EXISTS dpop_jkt TEXT\s+CHECK\([\s\S]*?\);/)?.[0]
-    if (!dpopUpgrade) throw new Error('missing oauth_access_tokens dpop_jkt additive migration')
+    // RFC-028 S1b/S1c0: prove both additive DPoP binding migrations work on
+    // OLD token tables, are idempotent, preserve NULL bearer rows, and enforce
+    // canonical RFC 7638 thumbprints in a real PostgreSQL parser/runtime.
+    const dpopTables = ['oauth_access_tokens', 'oauth_refresh_tokens'] as const
     await client.query('BEGIN')
-    await client.query('CREATE TEMP TABLE oauth_access_tokens (token_hash TEXT PRIMARY KEY) ON COMMIT DROP')
-    await client.query(dpopUpgrade)
-    await client.query(dpopUpgrade)
-    const columns = await client.query<{ n: string }>(`
-      SELECT COUNT(*)::text AS n FROM pg_attribute
-       WHERE attrelid='oauth_access_tokens'::regclass AND attname='dpop_jkt' AND NOT attisdropped`)
-    if (columns.rows[0]?.n !== '1') throw new Error('dpop_jkt additive migration is not idempotent')
-    await client.query('INSERT INTO oauth_access_tokens(token_hash,dpop_jkt) VALUES ($1,$2)', ['valid', 'A'.repeat(43)])
-    await client.query('SAVEPOINT invalid_jkt')
-    let invalidRejected = false
-    try {
-      await client.query('INSERT INTO oauth_access_tokens(token_hash,dpop_jkt) VALUES ($1,$2)', ['invalid', `${'A'.repeat(42)}B`])
-    } catch {
-      invalidRejected = true
-      await client.query('ROLLBACK TO SAVEPOINT invalid_jkt')
+    for (const [i, table] of dpopTables.entries()) {
+      const dpopUpgrade = ddl.match(new RegExp(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS dpop_jkt TEXT\\s+CHECK\\([\\s\\S]*?\\);`))?.[0]
+      if (!dpopUpgrade) throw new Error(`missing ${table} dpop_jkt additive migration`)
+      await client.query(`CREATE TEMP TABLE ${table} (token_hash TEXT PRIMARY KEY) ON COMMIT DROP`)
+      await client.query(dpopUpgrade)
+      await client.query(dpopUpgrade)
+      const columns = await client.query<{ n: string }>(`
+        SELECT COUNT(*)::text AS n FROM pg_attribute
+         WHERE attrelid=$1::regclass AND attname='dpop_jkt' AND NOT attisdropped`, [table])
+      if (columns.rows[0]?.n !== '1') throw new Error(`${table} dpop_jkt migration is not idempotent`)
+      await client.query(`INSERT INTO ${table}(token_hash,dpop_jkt) VALUES ($1,$2),($3,NULL)`, [`valid_${i}`, 'A'.repeat(43), `bearer_${i}`])
+      for (const [caseName, invalidJkt] of [['bad_char', `${'A'.repeat(42)}!`], ['bad_tail', `${'A'.repeat(42)}B`]] as const) {
+        const savepoint = `invalid_jkt_${i}_${caseName}`
+        await client.query(`SAVEPOINT ${savepoint}`)
+        let invalidRejected = false
+        try {
+          await client.query(`INSERT INTO ${table}(token_hash,dpop_jkt) VALUES ($1,$2)`, [`${caseName}_${i}`, invalidJkt])
+        } catch {
+          invalidRejected = true
+          await client.query(`ROLLBACK TO SAVEPOINT ${savepoint}`)
+        }
+        if (!invalidRejected) throw new Error(`${caseName} dpop_jkt passed ${table} PostgreSQL CHECK`)
+      }
     }
-    if (!invalidRejected) throw new Error('non-canonical dpop_jkt passed PostgreSQL CHECK')
     await client.query('ROLLBACK')
-    console.log(`✅ additive upgrade smoke 通过 —— 旧 oauth_access_tokens 补列幂等 + canonical JKT CHECK 生效\n`)
+    console.log(`✅ additive upgrade smoke 通过 —— 旧 access+refresh token 表补列幂等 + nullable canonical JKT CHECK 生效\n`)
   } catch (e) {
     try { await client.query('ROLLBACK') } catch { /* ignore */ }
     console.error(`❌ live smoke 失败:${(e as Error).message}\n`)
