@@ -131,6 +131,8 @@ try {
   ok('B3-4 reason sanitized: URL/@ rejected → reason null, still a valid pick', recUrl.product_id === 'prd_a' && recUrl.reason === null)
   const recLong = recommendationPassthrough({ recommend_id: 'prd_a', recommend_reason: 'x'.repeat(300) }, prods) as Record<string, unknown>
   ok('B3-5 reason capped at 140 chars', typeof recLong.reason === 'string' && (recLong.reason as string).length === 140)
+  const recWs = recommendationPassthrough({ recommend_id: 'prd_a', recommend_reason: 'cheap\tbut\nfragile' }, prods) as Record<string, unknown>
+  ok('B3-5b whitespace/control-whitespace collapsed to single spaces (not nulled) — Codex R1', recWs.reason === 'cheap but fragile')
 
   // widget: recommended card gets highlight border + 🌟 AI 推荐 badge + reason; a non-matching id highlights nothing
   const rn3 = mk('div'); rn3.setAttribute('id', 'root')

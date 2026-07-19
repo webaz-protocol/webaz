@@ -2649,7 +2649,7 @@ export function recommendationPassthrough(args: Record<string, unknown>, product
   if (!id) return undefined
   if (!products.some(p => String(p.id) === id || String(p.product_id) === id)) return undefined   // 只高亮本次展示的商品
   let reason = typeof args.recommend_reason === 'string' ? args.recommend_reason.replace(/\s+/g, ' ').trim().slice(0, 140) : ''
-  if (/https?:\/\/|www\.|@|[ -]/.test(reason)) reason = ''   // 脱敏:拒 URL/@/控制符(服务器回显模型文本但保持干净)
+  if (/https?:\/\/|www\.|@/.test(reason)) reason = ''   // 脱敏:折叠空白+截断+拒 URL/@(reason 经 widget textContent 渲染,任何字符只显示为文本不执行)
   return { product_id: id, reason: reason || null, source: 'assistant', non_authoritative: true }
 }
 
@@ -2878,6 +2878,11 @@ export async function handleSearch(args: Record<string, unknown>) {
   //   但 score/score_breakdown/metrics 属服务端内部,不再进入模型上下文。
   let fxL: Record<string, unknown> | null = null
   try { const snap = await getUsdRates(); fxL = { base: snap.base, rates: snap.rates, as_of: snap.as_of, stale: snap.stale, note: 'display-only conversion — never a settlement path' } } catch { fxL = null }
+  const projected = sorted.map((p) => {
+    const parsed = parseProductForAgent(p)
+    return projectProductModel({ ...p, estimated_days: parsed.estimated_days, agent_summary: parsed.agent_summary, sales_count: Number(p.completion_count) || 0 })
+  })
+  const recL = recommendationPassthrough(args, projected as Array<Record<string, unknown>>)   // B3:local/sandbox 路径也透传模型推荐(与 network 一致)
   return {
     schema_version: SCHEMA_PRODUCT_SEARCH,
     found: sorted.length,
@@ -2886,10 +2891,8 @@ export async function handleSearch(args: Record<string, unknown>) {
     limit,
     ...(fxL ? { fx: fxL } : {}),
     sellers: sellersIndex(sorted.map(p => ({ seller_id: p.seller_id, seller_name: p.seller_name, rep_level: p._rep_level, rep_points: p._rep_points }))),
-    products: sorted.map((p) => {
-      const parsed = parseProductForAgent(p)
-      return projectProductModel({ ...p, estimated_days: parsed.estimated_days, agent_summary: parsed.agent_summary, sales_count: Number(p.completion_count) || 0 })
-    }),
+    products: projected,
+    ...(recL ? { recommendation: recL } : {}),
   }
 }
 
