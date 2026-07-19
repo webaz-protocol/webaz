@@ -396,8 +396,8 @@ function renderBody(oai, out){
   // fail-visible(B7,同 ProductResults):widget→host 回调(callTool/sendFollowUp)在部分宿主(ChatGPT)可能静默不生效。
   //   任何按钮点击都①永不永久卡 ②追加一条可复制的手动指令,让"点按钮"在任何宿主上都能推进,不必用户精确打字。
   function copyText(t){ try{ var n=(typeof navigator!=='undefined')?navigator:null; if(n&&n.clipboard&&n.clipboard.writeText){ n.clipboard.writeText(String(t)); return true } }catch(e){} return false }
-  function actHint(phrase, sent){
-    var h=el('div','disc'); h.appendChild(el('span',null,(sent?'已发送。若卡片没有刷新,复制发我:':'此宿主不支持一键,复制发我:')))
+  function actHint(phrase, sent, lead){
+    var h=el('div','disc'); h.appendChild(el('span',null,(lead||(sent?'已发送。若卡片没有刷新,复制发我:':'此宿主不支持一键,复制发我:'))))
     h.appendChild(el('span','ok',' “'+phrase+'” '))
     var cp=el('button','toggle','复制'); cp.addEventListener('click',function(){ cp.textContent=copyText(phrase)?'已复制✓':'复制' }); h.appendChild(cp); root.appendChild(h)
   }
@@ -461,8 +461,11 @@ function renderBody(oai, out){
     }
     var openBtn=el('button','btn','打开审批页面(webaz.xyz · Passkey)')
     openBtn.addEventListener('click',onceGuard(function(){
-      // approval_url = 服务端权威字段;openWebaz 内部做 origin 校验;都不行 → 可复制手动指引(fail-visible)
-      if(!openWebaz(oai,'https://webaz.xyz/'+String(out.approval_url||'').replace(/^\\//,''))){ if(!sendFollowUpCompat(oai,'请给我审批页面链接')) actHint('给我这笔审批的 webaz.xyz Passkey 审批页面链接(request_id='+String(out.request_id||'')+')', false) }
+      // approval_url = 服务端权威字段;openWebaz 内部做 origin 校验。fail-visible(Codex R2 High):openExternal 存在
+      //   即返回 true 但宿主可能静默丢弃、或 openExternal 抛错 —— 故 try/catch + 【无条件】追加可复制审批页 URL,永不静默死。
+      var href='https://webaz.xyz/'+String(out.approval_url||'').replace(/^\\//,'')
+      var opened=false; try{ opened=openWebaz(oai,href) }catch(e){ opened=false }
+      actHint(href, opened, (opened?'已尝试打开审批页;若没弹出':'此宿主未能打开')+',复制到浏览器用 Passkey 批准:')
     }))
     box.appendChild(openBtn)
     // B7:批准在 webaz.xyz 用 Passkey 完成(卡外),本卡是提交时快照、不会自动刷新 → 一键刷新最新状态(已接单/已付款);

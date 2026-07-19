@@ -72,10 +72,21 @@ try {
   const rQ = render(QUOTE, oai2)
   ok('B7-7a quote card 创建订单草稿 button present', !!findBtn(rQ.root, '创建订单草稿'))
   fire(findBtn(rQ.root, '创建订单草稿')!)
-  ok('B7-7 create-draft → callTool webaz_order_draft + fail-visible copyable hint', calls.some(c => c[0] === 'webaz_order_draft') && treeText(rQ.root).includes('创建订单草稿(quote_token=qt_1)'))
+  const draftCall = calls.find(c => c[0] === 'webaz_order_draft')
+  ok('B7-7 create-draft → callTool webaz_order_draft {action:create, quote_token} unchanged + fail-visible hint', !!draftCall && (draftCall![1] as Record<string, unknown>).action === 'create' && (draftCall![1] as Record<string, unknown>).quote_token === 'qt_1' && treeText(rQ.root).includes('创建订单草稿(quote_token=qt_1)'))
   const rD = render(DRAFT, oai2)
   fire(findBtn(rD.root, '提交')!)
-  ok('B7-8 submit → callTool webaz_submit_order_request + fail-visible copyable hint', calls.some(c => c[0] === 'webaz_submit_order_request') && treeText(rD.root).includes('draft_id=odr_1'))
+  const submitCall = calls.find(c => c[0] === 'webaz_submit_order_request')
+  ok('B7-8 submit → callTool webaz_submit_order_request {draft_id} unchanged + fail-visible hint', !!submitCall && (submitCall![1] as Record<string, unknown>).draft_id === 'odr_1' && treeText(rD.root).includes('draft_id=odr_1'))
+
+  // ── B7-9/10/11: 打开审批页 must be fail-visible even when openExternal THROWS or silently drops (Codex R2 High) ──
+  const rThrow = render(APPROVAL, { openExternal: () => { throw new Error('boom') } })
+  fire(findBtn(rThrow.root, '打开审批页面')!)
+  ok('B7-9 open-approval: openExternal THROWS → no crash + copyable approval URL shown (fail-visible)', !rThrow.threw && treeText(rThrow.root).includes('https://webaz.xyz/#agent-approvals/apr_123'))
+  const rDrop = render(APPROVAL, { openExternal: () => undefined })
+  fire(findBtn(rDrop.root, '打开审批页面')!)
+  ok('B7-10 open-approval: openExternal exists but silently drops → copyable approval URL STILL shown (not a silent no-op)', treeText(rDrop.root).includes('https://webaz.xyz/#agent-approvals/apr_123'))
+  ok('B7-11 fail-visible hints carry a 复制 (copy) affordance', !!findBtn(rDrop.root, '复制'))
 } catch (e) { fail++; fails.push('✗ THREW: ' + ((e as Error).stack || (e as Error).message)) }
 try { rmSync(__tmpHome, { recursive: true, force: true }) } catch { /* temp HOME cleanup */ }
 
