@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (810 endpoints, 20 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (811 endpoints, 20 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -3118,6 +3118,18 @@
           }
         ],
         "x-webaz-grant-scope": "price_quote"
+      }
+    },
+    "/api/agent/request-readiness": {
+      "get": {
+        "summary": "R0 请求就绪门:编排指引 HTTP 保底通道(宿主不支持 MCP Resource 读取时用;与 webaz://guide/request-readiness 同源)。无鉴权。",
+        "tags": [],
+        "security": [
+          {
+            "grantBearer": []
+          }
+        ],
+        "x-webaz-grant-scope": "buyer_discover"
       }
     },
     "/api/agent/seller/products": {

@@ -42,6 +42,7 @@ import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:
 import { filterToolsBySurface, type ToolSurface } from './tool-surfaces.js'
 import { PRODUCT_RESULTS_WIDGET_HTML, QUOTE_APPROVAL_WIDGET_HTML, ORDER_TIMELINE_WIDGET_HTML, PRODUCT_RESULTS_WIDGET_MCP_HTML, QUOTE_APPROVAL_WIDGET_MCP_HTML, ORDER_TIMELINE_WIDGET_MCP_HTML } from './ui-widgets.js'  // MCP UI PR-4..6 + PR-A:legacy + 标准双轨组件
 import { CANONICAL_CATEGORIES, productTermSmell } from '../../pwa/agent-categories.js'  // P0 PR-AB:静态注册表 + 商品词校验单源(recovery 短词分类器共用)
+import { REQUEST_READINESS_GUIDE } from '../../pwa/agent-request-readiness.js'  // R0:请求就绪门编排指引(资源+GET 双通道)
 import { getUsdRates, regionToCurrency } from '../../fx-rates.js'  // USDC 显示换算(display-only)  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
 import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult, summarizeDraftResult, summarizeSubmitResult, summarizeOrderTimeline,
          projectQuoteConsumer, projectDraftConsumer, projectSubmitConsumer, projectOrderTimelineConsumer,
@@ -5988,6 +5989,14 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
         description: 'The long-form webaz_info payload: end-user/contributor guides, roles, commission model, economics params, search routing, per-tool digests. Read on demand — the default webaz_info reply is a compact overview.',
         mimeType:    'application/json',
       },
+      // R0 请求就绪门:agent 编排指引(三档就绪/摩擦预算/最小取数/服务端守卫映射)。资源通道(不占 tools/list 预算);
+      //   HTTP 保底 = GET /api/agent/request-readiness。
+      {
+        uri:         'webaz://guide/request-readiness',
+        name:        'WebAZ request-readiness gate (agent orchestration)',
+        description: 'Before a broad product data request: form a clear goal + hard constraints, ask at most one combined question, reuse context, fetch only missing dimensions. Three readiness tiers + friction budget + the server guards that enforce it. Same data at GET https://webaz.xyz/api/agent/request-readiness.',
+        mimeType:    'application/json',
+      },
     ],
   }))
 
@@ -6024,6 +6033,9 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     }
     if (request.params.uri === GUIDE_INFO_URI) {
       return { contents: [{ uri: GUIDE_INFO_URI, mimeType: 'application/json', text: JSON.stringify(await buildInfoFull(), null, 2) }] }
+    }
+    if (request.params.uri === 'webaz://guide/request-readiness') {
+      return { contents: [{ uri: 'webaz://guide/request-readiness', mimeType: 'application/json', text: JSON.stringify(REQUEST_READINESS_GUIDE, null, 2) }] }
     }
     if (request.params.uri !== MANIFEST_URI) {
       throw new Error(`未知资源：${request.params.uri}`)

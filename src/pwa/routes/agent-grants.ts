@@ -50,6 +50,7 @@ import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-0
 import { notifyTransition } from '../../layer2-business/L2-6-notifications/notification-engine.js'  // 执行后通知买卖双方
 import { invalidateProductVerification } from '../../product-verification.js'
 import { resolveCategory, buildCategoryTable, productTermSmell } from '../agent-categories.js'  // 调用契约 P0 PR-AB:canonical 类目注册表 + 商品词校验单源
+import { REQUEST_READINESS_GUIDE } from '../agent-request-readiness.js'  // R0:请求就绪门编排指引
 
 export interface AgentGrantsDeps {
   db: Database.Database
@@ -302,6 +303,9 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     })
   })
 
+  // R0 请求就绪门:编排指引 HTTP 保底通道(宿主不支持 MCP Resource 读取时用;与 webaz://guide/request-readiness 同源)。无鉴权。
+  app.get('/api/agent/request-readiness', (_req, res) => { res.json(REQUEST_READINESS_GUIDE) })
+
   app.post('/api/agent/discover', requireAgentGrantScope('buyer_discover'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     const b = (req.body ?? {}) as Record<string, unknown>
@@ -333,7 +337,12 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       return void res.status(400).json({ error: 'quantity must be an integer 1..999', error_code: 'INVALID_QUANTITY' })
     }
     if (!category && keywords.length === 0) {
-      return void res.status(400).json({ error: 'give at least a category or one keyword', error_code: 'EMPTY_INTENT', next_steps: 'Provide { category } and/or { keywords: [...] } - short product terms only (shape-validated; passing inputs are recorded as-is).' })
+      // R0 请求就绪门(§8.7):零信号请求 → 结构化澄清(机器可执行),不猜、不扩成全目录浏览。
+      return void res.status(400).json({ error: 'give at least a category or one keyword', error_code: 'EMPTY_INTENT',
+        missing_fields: ['category', 'keywords'],
+        recommended_question: 'Which kind of product are you after? A category key (see webaz://guide/categories) or 1-2 short keywords is enough.',
+        safe_next_action: 'ask_user',
+        next_steps: 'Provide { category } and/or { keywords: [...] } - short product terms only (shape-validated; passing inputs are recorded as-is).' })
     }
     // ── keyword_match 契约(P0 PR-AB):默认 all(合取,兼容现语义)= 复合必要属性;any(析取)=
     //    同义词/别名扩展。审计实锤:同义词组被 AND 合取杀成 0 是 discover 假阴性主因之一。 ──

@@ -310,6 +310,7 @@
     "test:approval-requests-read": "tsx scripts/test-approval-requests-read.ts",
     "test:approval-detail-endpoint": "tsx scripts/test-approval-detail-endpoint.ts",
     "test:economic-currency-consistency": "tsx scripts/test-economic-currency-consistency.ts",
+    "test:request-readiness-gate": "tsx scripts/test-request-readiness-gate.ts",
     "test:buyer-order-full": "tsx scripts/test-buyer-order-full.ts",
     "test:order-chat-grant": "tsx scripts/test-order-chat-grant.ts",
     "test:address-agent": "tsx scripts/test-address-agent.ts",

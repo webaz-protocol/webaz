@@ -67,7 +67,7 @@ try {
   // ── [R] 资源双轨 ─────────────────────────────────────────────────────────────────────────
   const res = (await c.listResources()).resources as Array<{ uri: string; mimeType?: string; _meta?: Record<string, unknown> }>
   const uris = res.map(r => r.uri)
-  ok('R-0. 资源共 9 个且 URI 全局唯一(PR-AB +webaz://guide/categories)', res.length === 9 && new Set(uris).size === 9, uris.join(','))
+  ok('R-0. 资源共 10 个且 URI 全局唯一(PR-AB +categories;R0 +request-readiness)', res.length === 10 && new Set(uris).size === 10, uris.join(','))
   const LEGACY = ['ui://widget/webaz-products.html', 'ui://widget/webaz-quote-approval.html', 'ui://widget/webaz-order-timeline.html']
   const STD = ['ui://widget/webaz-products-mcp.html', 'ui://widget/webaz-quote-approval-mcp.html', 'ui://widget/webaz-order-timeline-mcp.html']
   for (const u of LEGACY) {
