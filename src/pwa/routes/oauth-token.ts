@@ -169,8 +169,12 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
         const claimed = db.prepare('UPDATE oauth_auth_codes SET consumed_at = ? WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?').run(nowIso, codeHash, nowIso)
         if (claimed.changes !== 1) {
           // Replay of an ALREADY-consumed code → the code leaked; revoke that grant's tokens (RFC 6749 §10.5).
-          const revoked = db.prepare('UPDATE oauth_access_tokens SET revoked_at = ? WHERE revoked_at IS NULL AND grant_id = (SELECT grant_id FROM oauth_auth_codes WHERE code_hash = ? AND consumed_at IS NOT NULL)').run(nowIso, codeHash)
-          if (revoked.changes > 0) console.error(`[oauth] auth-code replay detected — revoked ${revoked.changes} token(s) on the code's grant`)
+          // BOTH access AND refresh: the exchange now also mints a refresh token, so revoking only access would
+          // leave the leaked code's refresh token live to mint fresh access tokens.
+          const grantSel = '(SELECT grant_id FROM oauth_auth_codes WHERE code_hash = ? AND consumed_at IS NOT NULL)'
+          const revoked = db.prepare(`UPDATE oauth_access_tokens SET revoked_at = ? WHERE revoked_at IS NULL AND grant_id = ${grantSel}`).run(nowIso, codeHash)
+          const revokedRt = db.prepare(`UPDATE oauth_refresh_tokens SET revoked_at = ? WHERE revoked_at IS NULL AND grant_id = ${grantSel}`).run(nowIso, codeHash)
+          if (revoked.changes > 0 || revokedRt.changes > 0) console.error(`[oauth] auth-code replay detected — revoked ${revoked.changes} access + ${revokedRt.changes} refresh token(s) on the code's grant`)
           return { status: 400, error: 'invalid_grant', desc: 'code is invalid, expired, or already used' }
         }
         const row = db.prepare('SELECT * FROM oauth_auth_codes WHERE code_hash = ?').get(codeHash) as Record<string, unknown>
@@ -187,7 +191,7 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
         const pair = genPair(new Date(grant.expires_at).getTime())
         insertPair(db, { ...pair, grantId: String(row.grant_id), clientId: client.client_id, scope: String(row.scope), aud: String(row.resource), familyId: `orf_${randomBytes(16).toString('hex')}` })
         return { ok: true, access: pair.access, accessExpMs: pair.accessExpMs, refresh: pair.refresh, scope: String(row.scope) }
-      })()
+      }).immediate()   // IMMEDIATE: take the write lock at BEGIN so no mid-tx upgrade can BUSY under contention
       return respond(out)
     }
 
@@ -234,8 +238,8 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
         // Won the claim → persist the successor (same family; scope/aud carried forward, no escalation).
         insertPair(db, { ...pair, grantId: rt.grant_id, clientId: client.client_id, scope: rt.scope, aud: rt.aud, familyId: rt.family_id })
         return { ok: true, access: pair.access, accessExpMs: pair.accessExpMs, refresh: pair.refresh, scope: rt.scope }
-      })()
-      return respond(out)
+      }).immediate()   // IMMEDIATE: write lock at BEGIN → the loser of a cross-connection race serializes AFTER
+      return respond(out)                                                                     // the winner and hits the theft path, never a mid-tx BUSY
     }
 
     return err(400, 'unsupported_grant_type', 'grant_type must be authorization_code or refresh_token')

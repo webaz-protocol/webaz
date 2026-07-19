@@ -132,6 +132,19 @@ async function main() {
     ok('4f-3. and the grant\'s access tokens are revoked (theft posture)', acc.n === 0)
   }
 
+  // ── 4g. auth-code replay revokes the REFRESH token too (not just access) — the leaked code's refresh
+  //        must not survive to mint fresh access tokens (Codex R3 HIGH) ──
+  {
+    const { code, grantId } = seed(); const j = await (await exchange(code)).json() as { refresh_token: string }
+    await exchange(code)   // replay the same (now-consumed) code → leak posture: revoke that grant's tokens
+    const rtRow = db.prepare('SELECT revoked_at FROM oauth_refresh_tokens WHERE token_hash = ?').get(sha(j.refresh_token)) as { revoked_at: string | null }
+    ok('4g-1. code replay marks the issued refresh token revoked', rtRow.revoked_at !== null)
+    const rr = await refresh(j.refresh_token)
+    ok('4g-2. that refresh token is unusable after code replay → invalid_grant', rr.status === 400 && ((await rr.json()) as { error: string }).error === 'invalid_grant')
+    const liveAcc = db.prepare('SELECT COUNT(*) AS n FROM oauth_access_tokens WHERE grant_id = ? AND revoked_at IS NULL').get(grantId) as { n: number }
+    ok('4g-3. and no live access token remains on that grant', liveAcc.n === 0)
+  }
+
   // ── 5. grant liveness + I-5 clamp ──
   ok('5a. refresh after grant revoked → invalid_grant (mid-flight)', await (async () => {
     const { code, grantId } = seed(); const j = await (await exchange(code)).json() as { refresh_token: string }
