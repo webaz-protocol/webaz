@@ -921,8 +921,8 @@ function simpleHeader(title, sub, actions) {
 // 比例参考 iOS Segmented Control：~32px tall pill, font 13px, icon 15px
 function discoverNavTabs(active) {
   const items = [
-    { key: 'recommend', icon: '✨', label: t('推荐好物'), hash: '#discover'     },
     { key: 'new',       icon: '🆕', label: t('新品发现'), hash: '#discover/new' },
+    { key: 'recommend', icon: '✨', label: t('买家推荐'), hash: '#discover'     },
     { key: 'nearby',    icon: '📡', label: t('雷达扫描'), hash: '#nearby'       },
     { key: 'deals',     icon: '💎', label: t('拍卖二手'), hash: '#auctions'     },
     { key: 'rfq',       icon: '✍️', label: t('发起求购'), hash: '#rfq/new'      },

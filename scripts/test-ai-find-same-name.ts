@@ -21,6 +21,10 @@ ok('buyer and guest navigation use AI找同款 with a search icon',
   (APP.match(/icon: '🔎', label: t\('AI找同款'\)/g) || []).length === 2)
 ok('empty state explains find first, order only after a decision',
   DISCOVER.includes("t('已经知道想买什么？输入商品信息，先找到同款，再决定是否下单。')"))
+ok('AI Match guidance is compact by default and expandable on demand',
+  DISCOVER.includes('id="ai-match-guide"')
+    && DISCOVER.includes('class="ai-match-guide-body"')
+    && DISCOVER.includes("t('展开')"))
 ok('link workflow starts with find-match language',
   DISCOVER.includes("t('开始找同款')") && APP.includes("t('正在找同款...')"))
 ok('real transaction CTA remains explicit and separate', DISCOVER.includes("t('查看并下单')"))

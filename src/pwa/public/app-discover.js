@@ -396,17 +396,22 @@ function renderBuyEmptyState() {
   const rfqTarget = !state.user ? '#login' : '#rfq/new'
   return `
     <div style="margin-top:20px">
-      <div class="card" style="background:linear-gradient(135deg,#eef2ff 0%,#faf5ff 100%);border-color:#c7d2fe;padding:18px">
-        <div style="font-size:15px;font-weight:700;color:#4338ca;margin-bottom:6px">🔍 ${t('AI找同款')}</div>
-        <div style="font-size:12px;color:#4b5563;line-height:1.6;margin-bottom:10px">${t('已经知道想买什么？输入商品信息，先找到同款，再决定是否下单。')}</div>
-        <div style="font-size:12px;color:#4b5563;line-height:1.8;margin-bottom:12px">
-          · ${t('输入完整商品标题 → 精准查找同款')}<br>
-          · ${t('粘贴其他平台链接 → 识别并比价')}<br>
-          · ${t('输入口令 @xxx → 跳到达人推荐的商品')}<br>
-          · ${t('输入 P2P 内容 hash → 验证内容来源')}
+      <details id="ai-match-guide" class="card" style="background:linear-gradient(135deg,#eef2ff 0%,#faf5ff 100%);border-color:#c7d2fe;padding:0;overflow:hidden">
+        <summary style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;cursor:pointer;list-style:none">
+          <span style="font-size:15px;font-weight:700;color:#4338ca">🔍 ${t('AI找同款')}</span>
+          <span style="font-size:12px;color:#6366f1;white-space:nowrap">${t('展开')}⌄</span>
+        </summary>
+        <div class="ai-match-guide-body" style="padding:0 16px 14px;font-size:12px;color:#4b5563;line-height:1.7">
+          <div style="margin-bottom:10px">${t('已经知道想买什么？输入商品信息，先找到同款，再决定是否下单。')}</div>
+          <div style="line-height:1.8;margin-bottom:12px">
+            · ${t('输入完整商品标题 → 精准查找同款')}<br>
+            · ${t('粘贴其他平台链接 → 识别并比价')}<br>
+            · ${t('输入口令 @xxx → 跳到达人推荐的商品')}<br>
+            · ${t('输入 P2P 内容 hash → 验证内容来源')}
+          </div>
+          <div style="font-size:11px;color:#9ca3af">${t('协议级承诺：不做模糊推测，不主动推荐分发')}</div>
         </div>
-        <div style="font-size:11px;color:#9ca3af">${t('协议级承诺：不做模糊推测，不主动推荐分发')}</div>
-      </div>
+      </details>
 
       <div style="margin-top:14px;padding:12px 14px;background:#fff;border:1px dashed #bfdbfe;border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:10px">
         <div style="font-size:12px;color:#1e40af;line-height:1.5">
@@ -976,7 +981,7 @@ window.setDiscoverTab = (k) => {
   navigate(k === 'feed' ? '#discover/feed' : '#discover')
 }
 
-// 2026-05-24 推荐好物 · 动态 view（独立 renderer，与其他子页一致）
+// 2026-05-24 买家推荐 · 动态 view（独立 renderer，与其他子页一致）
 async function renderDiscoverFeed(app) {
   state.feedScope = state.feedScope || 'all'
   app.innerHTML = shell(`
@@ -1167,7 +1172,7 @@ async function renderNewArrivalsFeed(app) {
   const { items } = await GET_WITH_CURSOR('/products?sort=newest&has_sales=false&product_type=retail&limit=30')
   const products = items || []
   const body = products.length === 0
-    ? feedEmpty('🆕', t('暂无新品动态'), t('看看 推荐好物'), '#discover')
+    ? feedEmpty('🆕', t('暂无新品动态'), t('看看 买家推荐'), '#discover')
     : products.map(p => {
         const ts = fmtTime(p.created_at)
         const img = window.productThumbSrc(p.images)

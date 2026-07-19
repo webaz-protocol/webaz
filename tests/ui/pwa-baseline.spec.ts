@@ -293,6 +293,12 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     await page.goto('/#buy')
 
     await expect(page.locator('#app .tabbar')).toContainText('AI找同款')
+    const guide = page.locator('#ai-match-guide')
+    await expect(guide).toBeVisible()
+    await expect(guide).not.toHaveAttribute('open')
+    await expect(guide.locator('.ai-match-guide-body')).not.toBeVisible()
+    await guide.locator('summary').click()
+    await expect(guide.locator('.ai-match-guide-body')).toBeVisible()
     await expect(page.locator('#smart-results')).toContainText('先找到同款，再决定是否下单')
     await expect(page.locator('#sbh-search-inp')).toHaveAttribute('placeholder', '输入商品名 / 粘贴链接 / 口令 / 内容指纹')
     await expect(page.locator('#app')).not.toContainText('智能下单')

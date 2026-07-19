@@ -741,6 +741,7 @@ const _EN = {
   '发现好物': 'Discover',
   '搜': 'Go',
   '收起': 'Collapse',
+  '展开': 'Expand',
   '忘了密钥？点此找回 →': 'Forgot your key? Recover →',
   '通过注册名称查询绑定的恢复渠道': 'Look up the recovery channels bound to your registered name',
   '注册时使用的名称': 'Registered name',
@@ -2111,7 +2112,7 @@ const _EN = {
   '人已推荐':                          'recommended',
 
   // 发现页 sections 重排
-  '推荐好物':                          'For you',
+  '买家推荐':                          'Buyer picks',
   '发起求购':                          'Post RFQ',
   '拍卖/二手':                         'Deals',
   '去哪逛？':                          'Where to?',
@@ -6403,7 +6404,7 @@ const _EN = {
   '看好物':                            'View Goods',
   '看许愿池':                          'View wish pool',
   '暂无新品动态':                      'No new listings yet',
-  '看看 推荐好物':                     'View recommended',
+  '看看 买家推荐':                     'View buyer picks',
   '最近的买家求购单 · 商家可点击进入报价': "Recent buyer RFQs · sellers tap to bid",
   '我来发一条':                        'Post one',
   '暂无求购动态':                      'No RFQ activity',
