@@ -12,6 +12,7 @@
  */
 import type Database from 'better-sqlite3'
 import { createHash } from 'node:crypto'
+import { resolveDirectReceive } from '../direct-receive-resolve.js'   // B6a:审批摘要携带"收款目的地是否可解析"真值(供审批门/卡)
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
 
@@ -46,6 +47,11 @@ export function submitRowSummary(db: Database.Database, draftId: string): Record
   const prod = db.prepare('SELECT title FROM products WHERE id = ?').get(String(d.product_id)) as { title: string } | undefined
   const seller = db.prepare('SELECT handle FROM users WHERE id = ?').get(String(d.seller_id)) as { handle: string | null } | undefined
   const maskId = (id: string): string => !id ? '' : id.length > 8 ? `${id.slice(0, 4)}…${id.slice(-4)}` : `${id.slice(0, 2)}…`
+  // B6a:direct_p2p 的真实收款目的地由服务端解析(chosen→legacy→唯一 active 账号);审批门/卡据此判断,
+  //   而非用 direct_receive_account_id==null 误判"无账户"。只投影非敏感元数据,收款原文绝不出现在摘要。
+  const rr = String(d.payment_rail) === 'direct_p2p'
+    ? resolveDirectReceive(db, String(d.seller_id), d.direct_receive_account_id == null ? undefined : String(d.direct_receive_account_id))
+    : null
   return {
     draft_id: draftId, product_id: String(d.product_id),
     product_title: prod?.title ?? null,
@@ -61,6 +67,9 @@ export function submitRowSummary(db: Database.Database, draftId: string): Record
     //   相似购买分组按 payable_units+payment_rail(均不受此影响);真实结算轨的诚实文案由 railHonesty()/rail_note 承载。
     currency: 'USDC', payment_rail: String(d.payment_rail),
     direct_receive_account_id: d.direct_receive_account_id ?? null,
+    // B6a:direct_p2p 收款目的地真值 —— resolvable=false 才是真"无可用收款目的地";resolvable=true 时给非敏感目的地
+    //   描述(method/currency/label/source),审批卡如实展示、审批门(B6c)据此判断,不再用 account_id==null 误判。
+    ...(rr ? { direct_pay_destination_resolvable: rr.resolvable, direct_pay_destination: rr.resolvable ? { source: rr.source, method: rr.method, currency: rr.currency, label: rr.label } : null } : {}),
     anonymous_recipient: Number(d.anonymous_recipient) === 1,
     dest_region: d.dest_region ?? null, draft_status: String(d.status), draft_expires_at: String(d.expires_at),
   }

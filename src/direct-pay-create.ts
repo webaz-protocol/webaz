@@ -16,8 +16,8 @@ import type { Response } from 'express'
 import { type Units } from './money.js'
 import { feeUnitsForOrder, estimateOpenDirectPayFeeUnits, readAvailableFeePrepayUnits, sellerDirectPayGraceEligible, feePrepayGateOk } from './direct-pay-fee-ar.js'
 import { sellerBaseBondEntrySatisfied } from './direct-pay-base-bond-entry.js'
-import { getActivePaymentInstruction } from './direct-receive-payment-instruction.js'
-import { getAccount } from './direct-receive-accounts.js'  // Rail1 D2:买家所选多收款账号(dual-read;缺省回落 legacy 单条 instruction)
+import { resolveDirectReceive } from './direct-receive-resolve.js'   // 单一收款目的地解析:chosen → legacy → sole-active-account → none
+import { getAccount } from './direct-receive-accounts.js'  // Rail1 D2:解析到具体账号后取全行(qr_ref 等)冻结非敏感快照
 import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, coarsenBuyerFacingDirectPayCode, type DirectPayControlsConfig } from './direct-pay-controls.js'
 import { checkDeferralQuota, readDeferralQuotaConfig } from './direct-pay-deferral-quota.js'
 import { enforceCollateralExposureGate } from './merchant-bond-exposure.js'  // §6.5 抵押背书开放敞口上限(休眠安全:collateral=0 时 N/A)
@@ -174,15 +174,15 @@ export function createDirectPayResponse(
   let instructionSnapshot: string
   let accountSnapshot: DirectPayAccountSnapshot | null = null
   const chosenAccountId = ctx.directReceiveAccountId
-  if (chosenAccountId) {
-    const acc = getAccount(db, chosenAccountId)
-    if (!acc || acc.seller_id !== sellerId || acc.status !== 'active') { res.status(409).json({ error: '所选收款账号无效或已停用', error_code: 'DIRECT_RECEIVE_ACCOUNT_INVALID' }); return }
-    instructionSnapshot = acc.instruction
-    accountSnapshot = { account_id: acc.id, method: acc.method, currency: acc.currency, label: acc.label, qr_ref: acc.qr_image_ref, ...buildPayableSnapshot(ctx.totalAmount, acc.currency) }
-  } else {
-    const instr = getActivePaymentInstruction(db, sellerId)
-    if (!instr) { res.status(409).json({ error: '卖家未设置收款说明,无法创建直付订单', error_code: 'NO_PAYMENT_INSTRUCTION' }); return }
-    instructionSnapshot = instr.instruction
+  // 单一解析真源 resolveDirectReceive:选中 → 该账号;未选 → legacy 单条指令,否则唯一 active 账号(修:
+  //   仅新多账户、无 legacy 的卖家此前 omit 误判"无收款说明")。选了却无效 → fail-closed,绝不静默回落。
+  const rr = resolveDirectReceive(db, sellerId, chosenAccountId)
+  if (chosenAccountId && (!rr.resolvable || rr.source !== 'chosen')) { res.status(409).json({ error: '所选收款账号无效或已停用', error_code: 'DIRECT_RECEIVE_ACCOUNT_INVALID' }); return }
+  if (!rr.resolvable || rr.instruction == null) { res.status(409).json({ error: '卖家未设置收款说明,无法创建直付订单', error_code: 'NO_PAYMENT_INSTRUCTION' }); return }
+  instructionSnapshot = rr.instruction
+  if (rr.account_id) {   // 解析到具体账号(chosen 或 sole-active)→ 同 chosen 路径冻结非敏感账号快照 + 应付换算
+    const acc = getAccount(db, rr.account_id)
+    if (acc) accountSnapshot = { account_id: acc.id, method: acc.method, currency: acc.currency, label: acc.label, qr_ref: acc.qr_image_ref, ...buildPayableSnapshot(ctx.totalAmount, acc.currency) }
   }
   // ③ 缓交期额度门(launch blocker):靠 active deferral 入场(无生产 bond)的卖家,缓交期内笔数/累计金额压低。
   //   控制面全过后、任何 DB write 之前判(fail-closed);非缓交卖家 = no-op。超额 → 409,绝不建单。

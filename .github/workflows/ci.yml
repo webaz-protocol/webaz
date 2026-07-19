@@ -740,6 +740,7 @@ jobs:
       - run: npm run test:direct-receive-deposits
       - run: npm run test:direct-receive-accounts
       - run: npm run test:direct-receive-account-endpoints
+      - run: npm run test:direct-receive-resolve
       - run: npm run test:platform-receive-accounts
       - run: npm run test:fee-prepay-request
       - run: npm run test:fee-prepay-review
