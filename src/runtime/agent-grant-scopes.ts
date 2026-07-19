@@ -153,13 +153,43 @@ export function validateRequestedCapabilities(caps: readonly RequestedCapability
 
 export interface GrantRow { status?: string; expires_at?: string; revoked_at?: string | null }
 
+/** Parse WebAZ's two UTC storage forms: SQLite datetime() and ISO 8601. */
+export function parseStoredUtcInstant(value: string | null | undefined): number | null {
+  if (!value) return null
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})(?: |T)(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z)?$/)
+  if (!match) return null
+  const usesIsoSeparator = value[10] === 'T'
+  if (usesIsoSeparator !== Boolean(match[8])) return null
+  const [, y, mo, d, h, mi, s, fraction = '0'] = match
+  const parts = [y, mo, d, h, mi, s].map(Number)
+  const [year, month, day, hour, minute, second] = parts
+  if (year < 1970) return null
+  const millisecond = Number(fraction.padEnd(3, '0'))
+  const parsed = Date.UTC(year, month - 1, day, hour, minute, second, millisecond)
+  const roundTrip = new Date(parsed)
+  return roundTrip.getUTCFullYear() === year
+    && roundTrip.getUTCMonth() === month - 1
+    && roundTrip.getUTCDate() === day
+    && roundTrip.getUTCHours() === hour
+    && roundTrip.getUTCMinutes() === minute
+    && roundTrip.getUTCSeconds() === second
+    && roundTrip.getUTCMilliseconds() === millisecond
+    ? parsed
+    : null
+}
+
+export function storedUtcInstantIsFuture(value: string | null | undefined, nowIso: string): boolean {
+  const instant = parseStoredUtcInstant(value)
+  const now = parseStoredUtcInstant(nowIso)
+  return instant !== null && now !== null && instant > now
+}
+
 /** A grant authorizes nothing unless it is active and unexpired. `nowIso` for testability. */
 export function grantIsActive(grant: GrantRow, nowIso: string): boolean {
   if (!grant) return false
   if (grant.status !== 'active') return false
   if (grant.revoked_at) return false
-  if (!grant.expires_at) return false
-  return grant.expires_at > nowIso
+  return storedUtcInstantIsFuture(grant.expires_at, nowIso)
 }
 
 /** Short-lived bearer policy for SAFE scopes (RFC-020 bearer-first; PoP before risk/longer). */

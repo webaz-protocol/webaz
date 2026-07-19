@@ -147,8 +147,23 @@ jobs:
       - run: npm run pg:verify
 
   pg-schema-verify:
-    name: pg schema verify (static dialect lint)
+    name: pg schema verify (dialect + live migration smoke)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: webaz_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d webaz_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/webaz_ci
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -156,10 +171,8 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
-      # Codex #297 P2-2: guard the generated PG DDL in CI. With NO local SQLite DB and NO DATABASE_URL,
-      # pg:verify runs ONLY its static dialect-leak lint (SQLite-isms that would break a PG import) —
-      # which is env-independent. The parity layer (artifact vs a live SQLite introspection) and the
-      # live-connect smoke remain LOCAL-only (parity needs a built DB; live needs a real Postgres).
+      # Static lint plus real PostgreSQL parse/execute and additive-upgrade idempotency.
+      # SQLite-vs-PG column parity runs in schema-verify above after the complete PWA boot.
       - run: npm run pg:verify
       - name: On failure — PG dialect leak
         if: failure()
@@ -848,6 +861,7 @@ jobs:
       - run: npm run test:mcp-tool-annotations
       - run: npm run test:oauth-discovery
       - run: npm run test:agent-gateway-schema
+      - run: npm run test:agent-gateway-proof
       - run: npm run test:oauth-authorize
       - run: npm run test:oauth-approve
       - run: npm run test:oauth-token

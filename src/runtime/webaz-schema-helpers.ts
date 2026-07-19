@@ -2332,6 +2332,12 @@ export function initOAuthSchema(db: Database.Database): void {
     try { db.exec(`ALTER TABLE oauth_clients ADD COLUMN ${col} ${ddl}`) } catch { /* already present */ }
   }
 
+  // RFC-028 S1b: RFC 7638 thumbprint bound at DPoP-protected token issuance.
+  // NULL means ordinary bearer token and can never mint a Gateway PoP context.
+  try {
+    db.exec("ALTER TABLE oauth_access_tokens ADD COLUMN dpop_jkt TEXT CHECK(dpop_jkt IS NULL OR (length(dpop_jkt) = 43 AND dpop_jkt NOT GLOB '*[^A-Za-z0-9_-]*' AND substr(dpop_jkt,-1,1) GLOB '[AEIMQUYcgkosw048]'))")
+  } catch { /* already present */ }
+
   // RFC-023 PR-1(refresh)—— rotating refresh tokens (OAuth 2.1 §4.3 / RFC 6819 §5.2.2.3):
   //   一次性(用过即 rotated_at)+ 轮换族(family_id)+ 重放即焚(用已轮换/已撤的 refresh → 撤整族 + 该 grant 全部
   //   access token)。与 access token 同姿态:仅存 sha256,明文只在响应里出现一次;寿命 clamp 到底层 grant(I-5,

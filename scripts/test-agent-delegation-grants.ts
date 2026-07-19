@@ -80,6 +80,15 @@ try {
   const active = db.prepare('SELECT status, expires_at, revoked_at FROM agent_delegation_grants WHERE grant_id = ?').get(gid) as any
   ok('fresh active grant is active', scopes.grantIsActive(active, now))
   ok('active grant with past expiry is inactive', !scopes.grantIsActive({ status: 'active', expires_at: past, revoked_at: null }, now))
+  ok('SQLite UTC datetime future is active', scopes.grantIsActive({
+    status: 'active', expires_at: '2099-01-01 00:00:00', revoked_at: null,
+  }, now))
+  ok('malformed expiry fails closed', !scopes.grantIsActive({
+    status: 'active', expires_at: 'not-a-time', revoked_at: null,
+  }, now))
+  ok('date-only expiry fails closed', !scopes.grantIsActive({ status: 'active', expires_at: '2099', revoked_at: null }, now))
+  ok('invalid calendar date fails closed', !scopes.grantIsActive({ status: 'active', expires_at: '2099-02-30T00:00:00Z', revoked_at: null }, now))
+  ok('timezone-less ISO expiry fails closed', !scopes.grantIsActive({ status: 'active', expires_at: '2099-01-01T00:00:00', revoked_at: null }, now))
 
   db.prepare("UPDATE agent_delegation_grants SET status='revoked', revoked_at=? WHERE grant_id=?").run(now, gid)
   const revoked = db.prepare('SELECT status, expires_at, revoked_at FROM agent_delegation_grants WHERE grant_id = ?').get(gid) as any
