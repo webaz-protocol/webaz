@@ -36,11 +36,18 @@ export function registerAdminAnalyticsRoutes(app: Application, deps: AdminAnalyt
   app.get('/api/admin/demand-signals', async (req, res) => {
     if (!adminAuth(req, res)) return
     const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500)
-    const rows = await dbAll(`SELECT id, human_id, source, intent_json, category, region, budget_units, result_count, created_at
+    // PR-E:原始投影带上 quality/审计列,供消费方下游过滤
+    const rows = await dbAll(`SELECT id, human_id, source, intent_json, category, region, budget_units, result_count, quality, invalidated_at, invalid_reason, created_at
       FROM demand_signals ORDER BY created_at DESC LIMIT ?`, [limit])
-    const agg = await dbAll(`SELECT category, region, COUNT(*) AS signals, SUM(CASE WHEN result_count = 0 THEN 1 ELSE 0 END) AS unmet
+    // 供给缺口聚合:unmet 只计【真实未满足需求】—— 排除检索缺陷污染(invalidated 历史假阴性 +
+    //   false_negative_suspect 疑似);quality IS NULL 是加列前 legacy 行(未复核),保守计入 unmet_untriaged
+    //   单列以示区分,不混进 unmet。这正是 PR-E 要堵的污染消费点(Codex R1-1)。
+    const agg = await dbAll(`SELECT category, region, COUNT(*) AS signals,
+        SUM(CASE WHEN result_count = 0 AND quality = 'valid' THEN 1 ELSE 0 END) AS unmet,
+        SUM(CASE WHEN result_count = 0 AND quality IS NULL THEN 1 ELSE 0 END) AS unmet_untriaged,
+        SUM(CASE WHEN quality IN ('invalidated','false_negative_suspect') THEN 1 ELSE 0 END) AS excluded_polluted
       FROM demand_signals GROUP BY category, region ORDER BY unmet DESC, signals DESC LIMIT 50`)
-    res.json({ count: rows.length, signals: rows, aggregate: agg, note: 'internal only — public aggregation is a separate gated PR (threshold + anonymization)' })
+    res.json({ count: rows.length, signals: rows, aggregate: agg, note: 'internal only — public aggregation is a separate gated PR (threshold + anonymization). unmet counts quality=valid only; false_negative_suspect/invalidated are excluded as retrieval-defect pollution; unmet_untriaged = pre-column legacy rows pending governance.' })
   })
 
   app.get('/api/admin/usage', async (req, res) => {

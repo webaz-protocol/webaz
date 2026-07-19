@@ -76,11 +76,21 @@ try {
   ok('Q-4 复检保留预算约束:超预算不判假阴性 → quality=valid', Number(budgetZero.count) === 0
     && budgetZero.quality === undefined && lastQuality() === 'valid', JSON.stringify(budgetZero).slice(0, 160))
 
+  // Q-5(Codex R1-2 覆盖):目的地复检不可 LIMIT-1 先截断 —— 加一个仅售 SG 的多词品,another 区搜应判假阴性,SG 区也应
+  insP.run('prd_sgonly', 'seller1', '悬挂式抽纸 SG 专供', 'd', 9.9, 'WAZ', 5, '家庭清洁/纸品', 'active')
+  db.prepare("UPDATE products SET sale_regions=? WHERE id='prd_sgonly'").run(JSON.stringify({ mode: 'list', include: ['SG'] }))
+  const sgHit = await call({ category: '家庭清洁/纸品', keywords: ['专供', '不存在词丙'], ship_to_region: 'SG' })   // all:无一品同含两词 → 0;any:专供命中 prd_sgonly(SG 可售)
+  ok('Q-5 目的地可售的多词品:同约束 any 命中 → false_negative_suspect(复检未被 LIMIT1 漏掉区域匹配)',
+    Number(sgHit.count) === 0 && sgHit.quality === 'false_negative_suspect', JSON.stringify(sgHit).slice(0, 160))
+
   // (跨面契约:search 0 命中 → recovery 指 discover,由 test-discover-recovery-browse REC-1 锁定,此处不复测)
 
   // [H] 历史治理脚本 dry-run:插一条已知假阴性历史行(quality NULL,result_count 0,keywords 命中现供给)
   db.prepare("INSERT INTO demand_signals (id, human_id, source, intent_json, category, result_count, created_at) VALUES ('dms_legacy','buyer1','mcp_discover',?, 'household', 0, datetime('now','-1 day'))")
     .run(JSON.stringify({ category: 'household', keywords: ['抽纸'] }))   // 类目猜错(household)+ keywords 实际有供给
+  // mark-only 全量证明基线(治理跑之前拍快照):总行数 + 非目标行 quality/result_count
+  const beforeTotal = (db.prepare("SELECT COUNT(*) c FROM demand_signals").get() as { c: number }).c
+  const snapBefore = JSON.stringify(db.prepare("SELECT id, quality, result_count FROM demand_signals WHERE id != 'dms_legacy' ORDER BY id").all())
   const sb = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/backfill-demand-signal-quality.ts'],
     { env: { ...process.env, WEBAZ_DB_PATH: dbFile }, encoding: 'utf8', timeout: 60_000 })
   ok('H-1 治理脚本 dry-run 把历史假阴性判为 invalidated(只标不删)', /判定假阴性.*1|dms_legacy/.test(sb.stdout)
@@ -92,6 +102,11 @@ try {
     && (() => { const r = db.prepare("SELECT quality, invalid_reason, result_count FROM demand_signals WHERE id='dms_legacy'").get() as { quality: string; invalid_reason: string; result_count: number }; return r.quality === 'invalidated' && !!r.invalid_reason && r.result_count === 0 })(),
     (sbc.stdout + sbc.stderr).slice(-200))
   ok('H-3 治理只碰 result_count=0 未复核行:真 valid 行不被动', (db.prepare("SELECT quality FROM demand_signals WHERE id != 'dms_legacy' AND quality='valid'").all()).length >= 2)
+  // H-4(Codex R1-3):mark-only 全量证明 —— 总行数不变(零删除)+ 非 legacy 行 quality 快照逐行不变
+  const totalNow = (db.prepare("SELECT COUNT(*) c FROM demand_signals").get() as { c: number }).c
+  const snapAfter = JSON.stringify(db.prepare("SELECT id, quality, result_count FROM demand_signals WHERE id != 'dms_legacy' ORDER BY id").all())
+  ok('H-4 治理零删除(总行数不变)+ 除目标外每行 quality/result_count 快照逐行不变', totalNow === beforeTotal
+    && snapAfter === snapBefore, `total ${beforeTotal}->${totalNow}`)
 } finally { server.close() }
 
 if (fail > 0) { console.error(`\n❌ agent-invocation-conformance FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

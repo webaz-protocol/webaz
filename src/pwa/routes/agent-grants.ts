@@ -437,7 +437,9 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       const p2: unknown[] = [quantity, ...keywords.map(esc)]
       if (categoryResolved) { w2.splice(2, 0, 'LOWER(category) = LOWER(?)'); p2.splice(1, 0, categoryResolved) }
       if (maxPrice !== null) { w2.push('price <= ?'); p2.push(maxPrice) }
-      const r2 = await dbAll<Record<string, unknown>>(`SELECT id, seller_id, sale_regions FROM products WHERE ${w2.join(' AND ')} LIMIT 1`, p2)
+      // LIMIT 30 与主查询候选窗口一致再套目的地谓词 —— 不可 LIMIT 1 先截断:任取的首行可能不可售该区,
+      //   而另有可售匹配,会漏判假阴性(Codex R1-2:复检必须复刻主查询的 fetch-then-region 行为)。
+      const r2 = await dbAll<Record<string, unknown>>(`SELECT id, seller_id, sale_regions FROM products WHERE ${w2.join(' AND ')} ORDER BY created_at DESC LIMIT 30`, p2)
       const anyHit = region
         ? r2.some(r => { const rule = effectiveSaleRegionsRule(db, r as { sale_regions?: string | null }, String(r.seller_id)); return !rule || regionAllowedByRule(rule, region) })
         : r2.length > 0
