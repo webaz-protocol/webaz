@@ -1944,6 +1944,60 @@ export function initAgentPermissionRequestsSchema(db: Database.Database): void {
 }
 
 /**
+ * Ops Passkey-in-flow approval (删除切片) — mirrors the RFC-021 request→approve→execute shape but for
+ * OWNER-KEY product actions (not agent-grant scoped), so it needs its OWN queue rather than reusing
+ * agent_permission_requests (which is NOT NULL human_id + grant_id, grant-driven). Two tables:
+ *   1) product_action_requests — the submit→approve→execute queue for a single owner action (this slice:
+ *      action='delete'). Server-enforced approval gate lives on the DELETE route (later task); this table
+ *      only records intent + terminal state.
+ *   2) action_approval_windows — the ★new tiered approval-window token (multi-use, counted, revocable).
+ *      T1 (product disposition, incl. delete) / T2 (listing publish/price) may open a 30-min ≤20-use window;
+ *      T3 (order/funds) NEVER opens a window and is not modeled here. Consumption is a CAS increment
+ *      (uses<max_uses AND unexpired AND not revoked) — the executor/consumer logic is a later task.
+ * Brand-new tables → all columns in CREATE (no ALTER needed). CHECK constraints are real (fresh-DB tests
+ * assert them; fake DBs miss CHECK — see money/schema test discipline).
+ */
+export function initProductActionApprovalSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_action_requests (
+      id               TEXT PRIMARY KEY,                 -- par_xxx
+      owner_id         TEXT NOT NULL,                    -- product owner (resolved from the owner api_key)
+      action           TEXT NOT NULL CHECK (action IN ('delete')),   -- delete-only slice; extend when adding publish/price
+      product_id       TEXT NOT NULL,
+      status           TEXT NOT NULL DEFAULT 'pending'
+                         CHECK (status IN ('pending','approved','executed','expired','revoked')),
+      approve_url      TEXT,                             -- where the human approves (Passkey); minted at submit
+      approved_at      TEXT,
+      executed_at      TEXT,                             -- CAS idempotency key (executor writes; NULL until executed)
+      execution_result TEXT,                             -- JSON result of the executed delete (audit)
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at       TEXT NOT NULL                     -- request TTL (auto-expire if unanswered)
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_par_owner  ON product_action_requests(owner_id, status)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_par_status ON product_action_requests(status, expires_at)`)
+  // Anti double-pending: at most one non-terminal (pending|approved) request per (product_id, action).
+  //   executed/expired/revoked are terminal → don't occupy the index → a later re-submit is allowed.
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS ux_par_active ON product_action_requests(product_id, action) WHERE status IN ('pending','approved')`)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS action_approval_windows (
+      id         TEXT PRIMARY KEY,                       -- aw_xxx
+      owner_id   TEXT NOT NULL,
+      tier       TEXT NOT NULL CHECK (tier IN ('T1','T2')),   -- T3 (order/funds) NEVER opens a window
+      uses       INTEGER NOT NULL DEFAULT 0 CHECK (uses >= 0),
+      max_uses   INTEGER NOT NULL CHECK (max_uses BETWEEN 1 AND 20),   -- the ≤20-use window contract, enforced at rest
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      -- Bound the budget structurally: a malformed row can never let the CAS consume authorize excess.
+      CHECK (uses <= max_uses)
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_aw_owner_tier ON action_approval_windows(owner_id, tier, expires_at)`)
+}
+
+/**
  * RFC-020 PR-C1 — agent pairing sessions (OAuth device-flow + PKCE shape).
  *
  * One short-lived, one-time pairing per attempt: the agent starts a pairing (sends a
