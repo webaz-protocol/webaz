@@ -6,6 +6,7 @@
  * Usage: npm run test:agent-approvals-ui
  */
 import { readFileSync } from 'fs'
+import vm from 'node:vm'
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push('✗ ' + n) } }
@@ -14,6 +15,7 @@ const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fail
 //   ratchet 上限使新代码禁回塞主文件。断言按功能查两文件的并集(UI),读/写超时助手在 app-api-async.js。
 const UI_MAIN = readFileSync('src/pwa/public/app-agent-approvals.js', 'utf8')
 const UI_STATE = readFileSync('src/pwa/public/app-agent-approvals-state.js', 'utf8')
+const UI_SUBMIT = readFileSync('src/pwa/public/app-agent-approvals-submit.js', 'utf8')
 const UI = UI_MAIN + '\n' + UI_STATE
 const APIASYNC = readFileSync('src/pwa/public/app-api-async.js', 'utf8')
 const APP = readFileSync('src/pwa/public/app.js', 'utf8')
@@ -79,6 +81,28 @@ ok('A2-8. reconcile: executed → success, else safe to re-approve (never duplic
 ok('A2-9. incomplete economic data DISABLES approve — fail-closed (missing summary/currency/rail, not only the server marker)', /aaEconomicIncomplete = function/.test(UI) && /!s \|\| typeof s !== 'object' \|\| s\.payable_units == null \|\| !s\.currency \|\| !s\.payment_rail/.test(UI) && /econIncomplete \? ' disabled/.test(UI))
 ok('A2-10. auxiliary logic (aaMarkSimilarSubmits) wrapped in try/catch — never blocks main render', /try \{ if \(window\.aaMarkSimilarSubmits\)/.test(UI))
 ok('A2-11. badge read also timeout-guarded (apiRead, no hang)', /apiRead\('\/agent-grants\/permission-requests'\)[\s\S]{0,120}aa-pending-badge|aa-pending-badge[\s\S]{0,200}apiRead\('\/agent-grants\/permission-requests'\)/.test(UI))
+
+// ── B6 (P0): order_submit approval card must actually RENDER (behavioral vm run) — a static regex could not catch
+//    the real production crash "row is not defined" (aaOrderSubmitWhat called an undefined row() helper since PR-5a). ──
+const runSubmitCard = (r: unknown): { html?: string; threw?: string } => {
+  const ctx: Record<string, unknown> = { window: {} as Record<string, unknown>, t: (s: string) => s, escHtml: (s: string) => String(s), console }
+  ctx.globalThis = ctx
+  try {
+    vm.createContext(ctx); vm.runInContext(UI_SUBMIT, ctx)
+    const fn = (ctx.window as Record<string, unknown>).aaOrderSubmitWhat as ((r: unknown) => string) | undefined
+    if (typeof fn !== 'function') return { threw: 'aaOrderSubmitWhat not defined' }
+    return { html: fn(r) }
+  } catch (e) { return { threw: (e as Error).message } }
+}
+const escrowSummary = { submit_summary: { product_id: 'prd_a', product_title: 'AAA', quantity: 1, unit_price_units: 4_070_000, item_units: 4_070_000, shipping_units: 0, payable_units: 4_070_000, total_units: 4_070_000, currency: 'USDC', payment_rail: 'escrow', seller_handle: '@s', seller_id_hint: 'usr_***', dest_region: 'SG', draft_id: 'odr_1', draft_expires_at: '2026-07-20T16:50:00Z', draft_status: 'draft' }, kind: 'order_submit' }
+const directNoAcct = { submit_summary: { ...escrowSummary.submit_summary, payment_rail: 'direct_p2p', direct_receive_account_id: null }, kind: 'order_submit' }
+const rEscrow = runSubmitCard(escrowSummary)
+ok('B6-1. order_submit card RENDERS without throwing (row helper defined — regression for "row is not defined")', !rEscrow.threw && !!rEscrow.html)
+ok('B6-2. rendered card shows the hash-bound term rows (单价/运费/支付轨道/卖家/收货/草稿)', !!rEscrow.html && ['单价', '运费', '支付轨道', '卖家', '收货', '草稿'].every(k => rEscrow.html!.includes(k)))
+const rDirect = runSubmitCard(directNoAcct)
+ok('B6-3. direct_p2p with no receiving account renders (no crash) + shows the missing-account warning', !rDirect.threw && !!rDirect.html && rDirect.html.includes('卖家未配置直付收款账户'))
+ok('B6-4. fail-closed gate: aaEconomicIncomplete blocks direct_p2p order_submit lacking direct_receive_account_id', /s\.payment_rail === 'direct_p2p' && !s\.direct_receive_account_id/.test(UI_STATE))
+ok('B6-5. new UI strings are bilingual (t + _EN entry present)', I18N.includes('卖家未配置直付收款账户,无法确认收款目的地 —— 已禁止批准') && I18N.includes('关键条款不完整(金额/币种/支付轨道/收款账户)'))
 
 // ── i18n parity ──
 {

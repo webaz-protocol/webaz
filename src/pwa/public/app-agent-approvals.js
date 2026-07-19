@@ -50,7 +50,7 @@
       ${r.reason ? `<div style="font-size:12px;color:#6b7280;margin-top:8px">${t('用途(agent 自述)')}: ${escHtml(r.reason)} <span style="font-size:10px;color:#9ca3af">(${t('未验证')})</span></div>` : ''}
       ${window.grantDurationSelect(r.allowed_durations, r.duration, 'aa-dur-' + escHtml(String(r.id)))}
       <div style="font-size:11px;color:#9ca3af;margin-top:6px">${t('请求于')} ${r.created_at ? fmtTime(r.created_at) : '—'}</div>
-      ${econIncomplete ? `<div style="font-size:12px;line-height:1.7;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;margin-top:8px">⚠️ <b>${t('经济信息暂时不完整')}</b>。${t('无法安全批准 —— 商品金额/币种/支付轨道未能读取。请稍后重试,或让 agent 重新报价并建草稿。')}</div>` : ''}
+      ${econIncomplete ? `<div style="font-size:12px;line-height:1.7;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;margin-top:8px">⚠️ <b>${t('经济信息暂时不完整')}</b>。${t('无法安全批准 —— 关键条款不完整(金额/币种/支付轨道/收款账户)。请稍后重试,或让 agent 重新报价并建草稿。')}</div>` : ''}
       <div style="display:flex;gap:8px;margin-top:12px">
         <button class="btn btn-outline" style="flex:1;color:#dc2626;border-color:#fecaca" onclick="aaReject('${escHtml(String(r.id))}')">${t('拒绝')}</button>
         <button class="btn btn-primary" style="flex:2" onclick="aaApprove('${escHtml(String(r.id))}')"${econIncomplete ? ' disabled title="' + t('经济信息不完整,暂不可批准') + '"' : ''}>🔑 ${t('用 Passkey 批准')}</button>
