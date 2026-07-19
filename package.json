@@ -325,6 +325,7 @@
     "test:agent-gateway-schema": "tsx scripts/test-agent-gateway-schema.ts",
     "test:agent-gateway-dpop-schema": "tsx scripts/test-agent-gateway-dpop-schema.ts",
     "test:agent-gateway-dpop-token": "tsx scripts/test-agent-gateway-dpop-token.ts",
+    "test:agent-gateway-replay-pg": "tsx scripts/test-agent-gateway-replay-pg.ts",
     "test:agent-gateway-proof": "tsx scripts/test-agent-gateway-proof.ts",
     "test:oauth-authorize": "tsx scripts/test-oauth-authorize.ts",
     "test:oauth-approve": "tsx scripts/test-oauth-approve.ts",
