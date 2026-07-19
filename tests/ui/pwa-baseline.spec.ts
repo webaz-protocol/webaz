@@ -75,6 +75,7 @@ async function assertClassicScriptsLoaded(page: Page) {
     '/app-discover-new-filters.js',
     '/app-shop-rulings.js',
     '/app-seller.js',
+    '/app-quick-actions-dock.js',
     '/app-quick-actions.js',
     '/app.js',
   ]))
@@ -481,7 +482,10 @@ for (const viewport of SELLER_WORKBENCH_VIEWPORTS) {
   test(`authenticated seller workbench at ${viewport.name}`, async ({ page }) => {
     const guards = installRuntimeGuards(page)
     await mockSellerDashboard(page)
-    await page.addInitScript(() => localStorage.setItem('webaz_key', 'ux-seller-token'))
+    await page.addInitScript(() => {
+      localStorage.setItem('webaz_key', 'ux-seller-token')
+      localStorage.removeItem('webaz_quick_actions_top')
+    })
     await page.setViewportSize(viewport)
     await page.goto('/#seller')
 
@@ -501,11 +505,43 @@ for (const viewport of SELLER_WORKBENCH_VIEWPORTS) {
     const isPhone = viewport.width <= 600
     expect(columns).toBe(isPhone ? 2 : 5)
     if (isPhone) {
+      const header = page.locator('#app .navbar')
+      const expectedHeaderHeight = Math.max(52, Math.min(viewport.width * .12, 56))
+      await expect(header).toHaveCSS('height', `${expectedHeaderHeight}px`)
+      await page.evaluate(() => document.documentElement.style.setProperty('--pwa-safe-top', '47px'))
+      await expect(header).toHaveCSS('height', `${expectedHeaderHeight + 47}px`)
+      await page.evaluate(() => document.documentElement.style.setProperty('--pwa-safe-top', '0px'))
+      await expect(header).toHaveCSS('height', `${expectedHeaderHeight}px`)
       await expect(page.locator('#quick-actions-trigger')).toBeVisible()
       await expect(page.locator('#quick-actions-menu')).toBeHidden()
+      const trigger = page.locator('#quick-actions-trigger')
+      const initialDock = await trigger.boundingBox()
+      expect(initialDock).not.toBeNull()
+      expect(initialDock!.x + initialDock!.width).toBeGreaterThan(viewport.width)
+      expect(initialDock!.x).toBeLessThan(viewport.width)
+      await page.mouse.move(initialDock!.x + 20, initialDock!.y + 20)
+      await page.mouse.down()
+      await page.mouse.move(initialDock!.x + 20, initialDock!.y - 120, { steps: 4 })
+      await page.mouse.up()
+      await page.waitForTimeout(350)
+      const movedDock = await trigger.boundingBox()
+      const navBox = await header.boundingBox()
+      const tabbarBox = await page.locator('.tabbar').boundingBox()
+      expect(movedDock).not.toBeNull()
+      expect(navBox).not.toBeNull()
+      expect(tabbarBox).not.toBeNull()
+      expect(movedDock!.y).toBeLessThan(initialDock!.y - 100)
+      expect(movedDock!.y).toBeGreaterThanOrEqual(navBox!.y + navBox!.height + 12)
+      expect(movedDock!.y + movedDock!.height).toBeLessThanOrEqual(tabbarBox!.y - 12)
+      expect(await page.evaluate(() => Number(localStorage.getItem('webaz_quick_actions_top')))).toBeGreaterThan(0)
       await page.locator('#quick-actions-trigger').click()
       await expect(page.locator('#quick-actions-trigger')).toHaveAttribute('aria-expanded', 'true')
       await expect(page.locator('#quick-actions-menu')).toBeVisible()
+      const expandedDock = await trigger.boundingBox()
+      expect(expandedDock).not.toBeNull()
+      expect(expandedDock!.x + expandedDock!.width).toBeLessThanOrEqual(viewport.width - 7)
+      await page.waitForTimeout(350)
+      await expect(page.locator('#quick-actions-trigger')).toHaveAttribute('aria-expanded', 'true')
       await expect(page.locator('[data-quick-action="agent"]')).toBeVisible()
       await expect(page.locator('[data-quick-action="feedback"]')).toBeVisible()
       await page.locator('[data-quick-action="feedback"]').focus()

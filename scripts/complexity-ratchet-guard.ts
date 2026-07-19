@@ -104,6 +104,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-order-poll.js':                  19,
   'src/pwa/public/app-poll-governor.js':               22,
   'src/pwa/public/app-quick-actions.js':               29,
+  'src/pwa/public/app-quick-actions-dock.js':          95,
   'src/pwa/public/app-listings.js': 226,
   'src/pwa/public/app-external-links.js': 32,
   'src/pwa/public/app-product-media.js':       15,
