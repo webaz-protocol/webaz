@@ -77,15 +77,17 @@ body {
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
+  transition: right .24s cubic-bezier(.2,.8,.2,1), transform .2s ease;
 }
 .quick-actions-menu {
   display: grid;
   min-width: 132px;
   padding: 6px;
-  border: 1px solid #dbe3f4;
-  border-radius: 10px;
-  background: rgba(255,255,255,.98);
-  box-shadow: 0 10px 24px rgba(15,23,42,.16);
+  border: 1px solid rgba(219,227,244,.86);
+  border-radius: 14px;
+  background: rgba(255,255,255,.76);
+  box-shadow: 0 14px 34px rgba(15,23,42,.18), inset 0 1px rgba(255,255,255,.7);
+  backdrop-filter: blur(18px) saturate(1.2);
 }
 .quick-actions-menu[hidden] { display: none }
 .quick-action-item {
@@ -106,18 +108,21 @@ body {
 }
 .quick-action-item:hover { background: #f1f5f9 }
 .quick-actions-trigger {
-  width: 50px;
-  height: 50px;
-  border: 0;
+  width: 52px;
+  height: 52px;
+  border: 1px solid rgba(255,255,255,.54);
   border-radius: 50%;
-  background: linear-gradient(135deg,#4f46e5,#7c3aed);
+  background: linear-gradient(145deg,rgba(99,102,241,.92),rgba(109,40,217,.88));
   color: #fff;
-  box-shadow: 0 5px 16px rgba(79,70,229,.34);
+  box-shadow: 0 10px 24px rgba(79,70,229,.28), inset 0 1px rgba(255,255,255,.32), inset 0 -1px rgba(49,46,129,.22);
+  backdrop-filter: blur(14px) saturate(1.15);
   cursor: pointer;
   font-size: 24px;
   line-height: 1;
 }
-.quick-actions-trigger[aria-expanded="true"] { background: #3730a3 }
+.quick-actions-trigger:hover { transform: translateY(-1px); box-shadow: 0 13px 28px rgba(79,70,229,.34), inset 0 1px rgba(255,255,255,.35) }
+.quick-actions-trigger:focus-visible { outline: 3px solid rgba(99,102,241,.34); outline-offset: 3px }
+.quick-actions-trigger[aria-expanded="true"] { background: linear-gradient(145deg,rgba(67,56,202,.96),rgba(91,33,182,.92)) }
 #agent-chat-overlay {
   right: max(14px, env(safe-area-inset-right)) !important;
   bottom: calc(136px + env(safe-area-inset-bottom)) !important;
@@ -1043,14 +1048,14 @@ code, kbd, .mono { word-break: break-all; overflow-wrap: anywhere }
     .main { padding-left: max(10px, var(--pwa-safe-left)); padding-right: max(10px, var(--pwa-safe-right)) }
     .tabbar { padding-bottom: max(0px, var(--pwa-safe-bottom)) }
     .quick-actions {
-      right: max(-10px, calc(var(--pwa-safe-right) - 10px));
+      right: calc(var(--pwa-safe-right) - 20px);
       top: var(--quick-actions-top, 56%);
       bottom: auto;
       display: block;
     }
+    .quick-actions[data-docked="false"] { right: max(8px, var(--pwa-safe-right)) }
     .quick-actions-menu { position: absolute; right: calc(100% + 10px); bottom: 0 }
     .quick-actions-trigger { touch-action: none }
-    .quick-actions:focus-within { right: max(8px, var(--pwa-safe-right)) }
     #agent-chat-overlay { right: max(14px, var(--pwa-safe-right)) !important; bottom: calc(76px + var(--pwa-safe-bottom)) !important }
   }
 }

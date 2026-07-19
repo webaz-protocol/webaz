@@ -30,10 +30,10 @@ const LEGACY_AXE_ALLOWLIST = [
   { route: '#seller', id: 'color-contrast', target: 'div:nth-child(1) > div > span', reason: 'seller dashboard subtitle' },
   { route: '#seller', id: 'color-contrast', target: 'div:nth-child(3) > strong', reason: 'seller quota value' },
   { route: '#seller', id: 'color-contrast', target: 'div:nth-child(6) > .card', reason: 'seller empty analytics state' },
-  { route: '#discover', id: 'color-contrast', target: '.disc-nav > button:nth-child(2) > span:nth-child(2)', reason: 'inactive new-products tab' },
+  { route: '#discover', id: 'color-contrast', target: '.disc-nav > button:nth-child(2) > span:nth-child(2)', reason: 'inactive buyer-recommendations tab' },
   { route: '#discover', id: 'color-contrast', target: '.disc-nav > button:nth-child(3) > span:nth-child(2)', reason: 'inactive radar tab' },
-  { route: '#discover', id: 'color-contrast', target: 'button[onclick="navigate(\'#discover/feed\')"] > span:nth-child(2)', reason: 'inactive activity tab' },
-  { route: '#discover', id: 'color-contrast', target: 'div:nth-child(6)', reason: 'recommendation-method note' },
+  { route: '#discover', id: 'color-contrast', target: 'button[onclick="navigate(\'#discover/new/feed\')"] > span:nth-child(2)', reason: 'inactive activity tab' },
+  { route: '#discover/recommend', id: 'color-contrast', target: 'div:nth-child(6)', reason: 'recommendation-method note' },
   { route: '#discover', id: 'color-contrast', target: 'button:nth-child(4) > span:nth-child(2)', reason: 'inactive auction tab' },
   { route: '#discover', id: 'color-contrast', target: 'button:nth-child(5) > span:nth-child(2)', reason: 'inactive request tab' },
   { route: '#discover', id: 'color-contrast', target: 'button:nth-child(6) > span:nth-child(2)', reason: 'inactive charity tab' },
@@ -376,6 +376,8 @@ for (const viewport of VIEWPORTS) {
     await page.goto('/#discover')
 
     await assertClassicScriptsLoaded(page)
+    await expect(page.locator('#new-arrivals-filters')).toBeVisible()
+    await expect(page.locator('.disc-nav > button').first()).toContainText(/新品发现|New Finds|New arrivals/)
     await expect(page.locator('#product-list')).toBeVisible()
     await expect(page.locator('#app .navbar')).toBeVisible()
     await expect(page.locator('#app .tabbar')).toBeVisible()
@@ -397,7 +399,7 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
       localStorage.setItem('webaz_lang', 'zh')
     })
     await page.setViewportSize(viewport)
-    await page.goto('/#discover/new')
+    await page.goto('/#discover')
 
     const filters = page.locator('#new-arrivals-filters')
     await expect(filters).toBeVisible()
@@ -439,7 +441,7 @@ for (const viewport of DASHBOARD_VIEWPORTS) {
     await mockPublicShop(page)
     await page.addInitScript(() => localStorage.setItem('webaz_key', 'ux-buyer-token'))
     await page.setViewportSize(viewport)
-    await page.goto('/#discover')
+    await page.goto('/#discover/recommend')
 
     const product = page.locator('a.buyer-product-card[href="#order-product/ux-product"]')
     await expect(product).toContainText('Portable ceramic tea set')
@@ -519,6 +521,7 @@ for (const viewport of SELLER_WORKBENCH_VIEWPORTS) {
       await page.evaluate(() => document.documentElement.style.setProperty('--pwa-safe-top', '0px'))
       await expect(header).toHaveCSS('height', `${expectedHeaderHeight}px`)
       await expect(page.locator('#quick-actions-trigger')).toBeVisible()
+      await expect(page.locator('#quick-actions')).toHaveAttribute('data-docked', 'true')
       await expect(page.locator('#quick-actions-menu')).toBeHidden()
       const trigger = page.locator('#quick-actions-trigger')
       const initialDock = await trigger.boundingBox()
@@ -542,6 +545,7 @@ for (const viewport of SELLER_WORKBENCH_VIEWPORTS) {
       expect(await page.evaluate(() => Number(localStorage.getItem('webaz_quick_actions_top')))).toBeGreaterThan(0)
       await page.locator('#quick-actions-trigger').click()
       await expect(page.locator('#quick-actions-trigger')).toHaveAttribute('aria-expanded', 'true')
+      await expect(page.locator('#quick-actions')).toHaveAttribute('data-docked', 'false')
       await expect(page.locator('#quick-actions-menu')).toBeVisible()
       const expandedDock = await trigger.boundingBox()
       expect(expandedDock).not.toBeNull()
@@ -550,9 +554,13 @@ for (const viewport of SELLER_WORKBENCH_VIEWPORTS) {
       await expect(page.locator('#quick-actions-trigger')).toHaveAttribute('aria-expanded', 'true')
       await expect(page.locator('[data-quick-action="agent"]')).toBeVisible()
       await expect(page.locator('[data-quick-action="feedback"]')).toBeVisible()
+      await expect(page.locator('#quick-actions-menu')).toBeHidden({ timeout: 6000 })
+      await expect(page.locator('#quick-actions')).toHaveAttribute('data-docked', 'true')
+      await page.locator('#quick-actions-trigger').click()
       await page.locator('[data-quick-action="feedback"]').focus()
       await page.keyboard.press('Escape')
       await expect(page.locator('#quick-actions-menu')).toBeHidden()
+      await expect(page.locator('#quick-actions')).toHaveAttribute('data-docked', 'true')
       await expect(page.locator('#quick-actions-trigger')).toBeFocused()
       await page.locator('#quick-actions-trigger').click()
       await page.locator('[data-quick-action="agent"]').click()

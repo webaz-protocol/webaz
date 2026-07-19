@@ -251,32 +251,34 @@ window.clearSbhInput = () => {
   const inp = document.getElementById('sbh-search-inp')
   if (inp) { inp.value = ''; inp.focus(); toggleSbhClear() }
   // 发现/新品/附近：清掉 DOM 输入的同时也清掉 state 里的查询，否则切换 banner 会被 prefill 回来
-  if (state._discoverQ) {
-    state._discoverQ = ''
-    const h = location.hash
-    if (h.startsWith('#discover/new')) renderNewArrivals(document.getElementById('app'))
-    else if (h.startsWith('#discover')) renderDiscover(document.getElementById('app'))
-    else if (h.startsWith('#nearby'))   { try { renderNearby(document.getElementById('app')) } catch {} }
-  }
+  const h = location.hash
+  const isRecommend = h.startsWith('#discover/recommend') || h.startsWith('#discover/feed')
+  const key = isRecommend ? '_discoverQ' : h.startsWith('#discover') ? '_newQ' : h.startsWith('#nearby') ? '_nearbyQ' : ''
+  if (!key || !state[key]) return
+  state[key] = ''
+  if (isRecommend) renderDiscover(document.getElementById('app'))
+  else if (h.startsWith('#discover')) renderNewArrivals(document.getElementById('app'))
+  else { try { renderNearby(document.getElementById('app')) } catch {} }
 }
 
 // 清除当前发现页的模糊查询并重渲
 window.clearDiscoverQuery = () => {
-  state._discoverQ = ''
-  if (location.hash.startsWith('#discover/new')) renderNewArrivals(document.getElementById('app'))
-  else renderDiscover(document.getElementById('app'))
+  const isRecommend = location.hash.startsWith('#discover/recommend') || location.hash.startsWith('#discover/feed')
+  state[isRecommend ? '_discoverQ' : '_newQ'] = ''
+  if (isRecommend) renderDiscover(document.getElementById('app'))
+  else renderNewArrivals(document.getElementById('app'))
 }
 
 // 6-pill 顶部 banner 切换：换 tab 时清掉旧的模糊查询，避免不同板块互相串味
 window.switchDiscoverBanner = (hash) => {
-  state._discoverQ = ''
+  state._discoverQ = state._newQ = ''
   location.hash = hash
 }
 
 // 从 AI找同款 "无精确匹配" → 一键带 query 跳发现页并触发模糊搜索
 window.goDiscoverWithQuery = (q) => {
   state._discoverQ = String(q || '').trim()
-  navigate('#discover')
+  navigate('#discover/recommend')
 }
 window.smartHeaderSearch = () => {
   const raw = document.getElementById('sbh-search-inp')?.value?.trim() || ''
@@ -284,8 +286,9 @@ window.smartHeaderSearch = () => {
   const app = document.getElementById('app')
   // 2026-05-24 #974：scoped 搜索路由表 — 每个域用各自 query state
   const scopeMap = [
+    { test: h => h.startsWith('#discover/recommend') || h.startsWith('#discover/feed'), key: '_discoverQ', render: () => renderDiscover(app) },
     { test: h => h.startsWith('#discover/new'), key: '_newQ',      render: () => renderNewArrivals(app) },
-    { test: h => h.startsWith('#discover'),     key: '_discoverQ', render: () => renderDiscover(app) },
+    { test: h => h.startsWith('#discover'),     key: '_newQ',      render: () => renderNewArrivals(app) },
     { test: h => h.startsWith('#nearby'),       key: '_nearbyQ',   render: () => { try { renderNearby(app) } catch {} } },
     { test: h => h.startsWith('#auctions/feed'),key: '_aucQ',      render: () => renderAuctionsFeed(app) },
     { test: h => h.startsWith('#auctions'),     key: '_aucQ',      render: () => renderAuctionBoard(app) },
@@ -743,9 +746,9 @@ function computeBuyReasons(p) {
 
 async function renderDiscover(app) {
   app.innerHTML = shell(loading$(), 'discover')
-  // 2026-05-24 迁移到 hash 路由（#discover = 好物 / #discover/feed = 动态）
+  // 2026-05-24 迁移到 hash 路由（#discover/recommend = 买家推荐 / #discover/recommend/feed = 动态）
   // 与其他 5 个子页一致，支持 URL 分享 + 浏览器后退
-  const subTabs = pageHotFeedToggle('#discover', '#discover/feed')
+  const subTabs = pageHotFeedToggle('#discover/recommend', '#discover/recommend/feed')
 
   // goods — 里程碑 2：cursor 分页 + 加载更多 / 里程碑 5：sort chip / 里程碑 6：type chip
   // D4 智能默认：先用 state，再回退到 localStorage，再回退到默认
@@ -978,7 +981,7 @@ window.loadMoreDiscover = async (qsBase, gridId, moreId) => {
 
 // 2026-05-24 setDiscoverTab 兼容旧调用 — 改路由跳转
 window.setDiscoverTab = (k) => {
-  navigate(k === 'feed' ? '#discover/feed' : '#discover')
+  navigate(k === 'feed' ? '#discover/recommend/feed' : '#discover/recommend')
 }
 
 // 2026-05-24 买家推荐 · 动态 view（独立 renderer，与其他子页一致）
@@ -987,7 +990,7 @@ async function renderDiscoverFeed(app) {
   app.innerHTML = shell(`
     ${renderSmartBuyHeader('discover')}
     ${discoverGoodsTabs('recommend')}
-    ${pageHotFeedToggle('#discover', '#discover/feed')}
+    ${pageHotFeedToggle('#discover/recommend', '#discover/recommend/feed')}
     <div id="feed-view">${loading$()}</div>
   `, 'discover')
   await renderFeedView()
@@ -1172,7 +1175,7 @@ async function renderNewArrivalsFeed(app) {
   const { items } = await GET_WITH_CURSOR('/products?sort=newest&has_sales=false&product_type=retail&limit=30')
   const products = items || []
   const body = products.length === 0
-    ? feedEmpty('🆕', t('暂无新品动态'), t('看看 买家推荐'), '#discover')
+    ? feedEmpty('🆕', t('暂无新品动态'), t('看看 买家推荐'), '#discover/recommend')
     : products.map(p => {
         const ts = fmtTime(p.created_at)
         const img = window.productThumbSrc(p.images)

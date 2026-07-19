@@ -616,10 +616,10 @@ async function render(page, params) {
     case 'buy':           return renderBuy(app)
     case 'order-product': return renderBuyPage(app, params[0])
     case 'discover':
+      if (params[0] === 'recommend' || params[0] === 'feed') return (params[0] === 'recommend' && params[1] !== 'feed') ? renderDiscover(app) : renderDiscoverFeed(app)
       if (params[0] === 'new' && params[1] === 'feed') return renderNewArrivalsFeed(app)
       if (params[0] === 'new') return renderNewArrivals(app)
-      if (params[0] === 'feed') return renderDiscoverFeed(app)
-      return renderDiscover(app)
+      return renderNewArrivals(app)
     case 'cart':          return renderCart(app)
     case 'orders':        return renderOrders(app)
     case 'order':         return renderOrderDetail(app, params[0])
@@ -921,8 +921,8 @@ function simpleHeader(title, sub, actions) {
 // 比例参考 iOS Segmented Control：~32px tall pill, font 13px, icon 15px
 function discoverNavTabs(active) {
   const items = [
-    { key: 'new',       icon: '🆕', label: t('新品发现'), hash: '#discover/new' },
-    { key: 'recommend', icon: '✨', label: t('买家推荐'), hash: '#discover'     },
+    { key: 'new',       icon: '🆕', label: t('新品发现'), hash: '#discover'               },
+    { key: 'recommend', icon: '✨', label: t('买家推荐'), hash: '#discover/recommend'     },
     { key: 'nearby',    icon: '📡', label: t('雷达扫描'), hash: '#nearby'       },
     { key: 'deals',     icon: '💎', label: t('拍卖二手'), hash: '#auctions'     },
     { key: 'rfq',       icon: '✍️', label: t('发起求购'), hash: '#rfq/new'      },
@@ -1162,7 +1162,7 @@ function shell(content, activeTab, opts) {
       </button>
     ` : ''}
     ${state.user ? `
-      <div id="quick-actions" class="quick-actions">
+      <div id="quick-actions" class="quick-actions" data-docked="true">
         <div id="quick-actions-menu" class="quick-actions-menu" hidden>
           ${state.user.role !== 'admin' ? `<button class="quick-action-item" data-quick-action="agent" onclick="openQuickActionsAgent()"><span aria-hidden="true">🤖</span>${t('AI 助手')}</button>` : ''}
           <button class="quick-action-item" data-quick-action="feedback" onclick="openQuickActionsFeedback()"><span aria-hidden="true">💬</span>${t('反馈 / 建议')}</button>
