@@ -92,6 +92,29 @@ try {
     ok('10b sanitized error carries NO raw SQL/constraint/table text', !/SQLITE|no such table|constraint|product_action_requests/i.test(String(r.error)))
     bare.close()
   }
+  // 11. a NON-unique transient (SQLITE_BUSY) on INSERT must NOT be masked as 409 even though a dup exists (Codex R3).
+  //   A real (product,action) dup always trips ux_par_active (UNIQUE) first, so the mis-report only bites on a
+  //   non-constraint error; force it deterministically via a db proxy that throws SQLITE_BUSY on the INSERT while
+  //   a discoverable dup row exists. Old code would 409; the code-gated fix must return REQUEST_FAILED.
+  {
+    const pB = mkProduct(alice)
+    db.prepare("INSERT INTO product_action_requests (id, owner_id, action, product_id, status, expires_at) VALUES ('par_busy_dup', ?, 'delete', ?, 'pending', ?)")
+      .run(alice, pB, new Date(Date.now() + 60_000).toISOString())   // discoverable active dup for (pB, delete)
+    const proxy = new Proxy(db, {
+      get(t: any, p: string) {
+        if (p === 'prepare') return (sql: string) => {
+          if (/INSERT INTO product_action_requests/.test(sql)) return { run: () => { const e: any = new Error('database is locked'); e.code = 'SQLITE_BUSY'; throw e } }
+          return t.prepare(sql)
+        }
+        if (p === 'transaction') return (fn: () => unknown) => t.transaction(fn)
+        const v = t[p]; return typeof v === 'function' ? v.bind(t) : v
+      },
+    })
+    const r = submitProductActionRequest(proxy as never, { ownerId: alice, action: 'delete', productId: pB, generateId: () => 'par_new' })
+    ok('11 non-UNIQUE transient (SQLITE_BUSY) while a dup exists → REQUEST_FAILED, NOT masked as 409', r.error_code === 'REQUEST_FAILED')
+    // sanity: a GENUINE unique dup still returns 409 (the code-gate lets the real dup through)
+    ok('11b genuine unique dup still → 409', (await post({ action: 'delete', product_id: pB }, alice)).status === 409)
+  }
 
   if (fail > 0) { console.error(`\n❌ product-action-request FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ product-action-request (Task 2): owner-key submit · approve_url+TTL · ownership 403 · 404/400 · double-pending 409 · unauth 401 · zero-exec (no executor import, product untouched)\n  ✅ pass ${pass}`)

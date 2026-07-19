@@ -55,10 +55,13 @@ export function submitProductActionRequest(db: Database.Database, opts: {
         db.prepare("INSERT INTO product_action_requests (id, owner_id, action, product_id, status, approve_url, expires_at) VALUES (?,?,?,?, 'pending', ?, ?)").run(id, ownerId, action, productId, approveUrl, expiresAt)
       })()
     } catch (insErr) {
-      // ux_par_active:同 (product_id, action) 仍有 live pending/approved 请求 → 返回既有,不重复建。
-      //   dup 查询本身若抛,交给外层 sanitized 边界(不外泄)。
-      const dup = db.prepare("SELECT id FROM product_action_requests WHERE product_id=? AND action=? AND status IN ('pending','approved')").get(productId, action) as { id: string } | undefined
-      if (dup) return { ok: false, error_code: 'DUPLICATE_ACTION_REQUEST', error: '该商品该动作已有待批准请求', existing_request_id: dup.id, http: 409 }
+      // ONLY a genuine ux_par_active unique violation is a duplicate. Any other failure (SQLITE_BUSY, a
+      //   par_ PK collision, a trigger error, …) must NOT be masked as 409 just because an active row
+      //   happens to exist — rethrow it to the sanitized outer boundary (Codex R3).
+      if ((insErr as { code?: string }).code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        const dup = db.prepare("SELECT id FROM product_action_requests WHERE product_id=? AND action=? AND status IN ('pending','approved')").get(productId, action) as { id: string } | undefined
+        if (dup) return { ok: false, error_code: 'DUPLICATE_ACTION_REQUEST', error: '该商品该动作已有待批准请求', existing_request_id: dup.id, http: 409 }
+      }
       throw insErr
     }
     return { ok: true, request_id: id, approve_url: approveUrl, expires_at: expiresAt }
