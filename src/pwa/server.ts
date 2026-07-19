@@ -7733,7 +7733,7 @@ registerRemoteMcpRoutes(app, { rateLimitOk })   // RFC-022:WEBAZ_REMOTE_MCP=1 �
 registerOAuthDiscoveryRoutes(app)   // RFC-023 PR-1:WEBAZ_OAUTH=1 才挂载(fail-closed)发现面元数据
 registerOAuthAuthorizeRoutes(app)   // RFC-023 PR-2a:GET /oauth/authorize 校验+SPA consent 交接(mint 无)
 registerOAuthApproveRoutes(app, { db, auth, generateId, consumeGateToken, rateLimitOk })   // RFC-023 PR-2b:Passkey 门 consent → mint grant+code
-registerOAuthTokenRoutes(app, { rateLimitOk })   // RFC-023 PR-3:code+PKCE → opaque token(hashed,aud-bound,不超 grant 寿命)
+registerOAuthTokenRoutes(app, { db, rateLimitOk })   // RFC-023 PR-3 + PR-1 refresh:code+PKCE → access+refresh(hashed,aud-bound,不超 grant 寿命);轮换在一个 sync tx 内
 registerOAuthRegisterRoutes(app, { rateLimitOk })   // RFC-024:Dynamic Client Registration(POST /oauth/register,inert-until-consented)
 registerPublicUtilsRoutes(app, {
   db, MASTER_SEED, NODE_ENV, SERVICE_START_MS,

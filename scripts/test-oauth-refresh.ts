@@ -48,7 +48,7 @@ async function main() {
   const { registerOAuthTokenRoutes } = await import('../src/pwa/routes/oauth-token.js')
   const app = express()
   app.use(express.json())
-  registerOAuthTokenRoutes(app, { rateLimitOk: () => true })
+  registerOAuthTokenRoutes(app, { db, rateLimitOk: () => true })
   const http = await new Promise<HttpServer>(r => { const s = app.listen(0, () => r(s)) })
   const addr = http.address(); const base = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`
   const post = (params: Record<string, string>) =>
@@ -113,6 +113,21 @@ async function main() {
     ok('4d. the still-unused successor is dead after family revocation', r2.status === 400)
   }
 
+  // ── 4f. concurrent double-use of the SAME refresh → serialized atomic tx leaves NO unrevoked survivor ──
+  {
+    const { code, grantId } = seed(); const j = await (await exchange(code)).json() as { refresh_token: string }
+    const fam = (db.prepare('SELECT family_id FROM oauth_refresh_tokens WHERE token_hash = ?').get(sha(j.refresh_token)) as { family_id: string }).family_id
+    // Fire two refreshes of the identical token concurrently. better-sqlite3 tx is synchronous → one commits
+    // the rotation, the other's tx runs after and sees rotated_at → theft → nukes the family. Net: no survivor.
+    const [a, b] = await Promise.all([refresh(j.refresh_token), refresh(j.refresh_token)])
+    const codes = [a.status, b.status].sort()
+    ok('4f-1. concurrent double-use → one 200, one 400 (never two live successors)', codes[0] === 200 && codes[1] === 400)
+    const live = db.prepare('SELECT COUNT(*) AS n FROM oauth_refresh_tokens WHERE family_id = ? AND revoked_at IS NULL AND rotated_at IS NULL').get(fam) as { n: number }
+    ok('4f-2. after concurrent replay the whole family is dead (no unrevoked, un-rotated survivor)', live.n === 0)
+    const acc = db.prepare('SELECT COUNT(*) AS n FROM oauth_access_tokens WHERE grant_id = ? AND revoked_at IS NULL').get(grantId) as { n: number }
+    ok('4f-3. and the grant\'s access tokens are revoked (theft posture)', acc.n === 0)
+  }
+
   // ── 5. grant liveness + I-5 clamp ──
   ok('5a. refresh after grant revoked → invalid_grant (mid-flight)', await (async () => {
     const { code, grantId } = seed(); const j = await (await exchange(code)).json() as { refresh_token: string }
@@ -136,8 +151,11 @@ async function main() {
   ok('6b. malformed refresh_token → invalid_request', await (async () => {
     const r = await refresh('not-a-refresh-token'); return r.status === 400 && ((await r.json()) as { error: string }).error === 'invalid_request'
   })())
-  ok('6c. unknown well-formed refresh → invalid_grant (no oracle, no spurious revoke)', await (async () => {
-    const r = await refresh('ort_' + 'a'.repeat(64)); return r.status === 400 && ((await r.json()) as { error: string }).error === 'invalid_grant'
+  ok('6c. unknown well-formed refresh → invalid_grant + does NOT revoke any real token (no spurious family nuke)', await (async () => {
+    const { code, grantId } = seed(); await (await exchange(code)).json()   // a live, healthy family on this grant
+    const r = await refresh('ort_' + 'a'.repeat(64))
+    const stillLive = db.prepare('SELECT COUNT(*) AS n FROM oauth_refresh_tokens WHERE grant_id = ? AND revoked_at IS NULL AND rotated_at IS NULL').get(grantId) as { n: number }
+    return r.status === 400 && ((await r.json()) as { error: string }).error === 'invalid_grant' && stillLive.n === 1
   })())
   ok('6d. unknown client on refresh → 401 invalid_client', await (async () => {
     const { code } = seed(); const j = await (await exchange(code)).json() as { refresh_token: string }

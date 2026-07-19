@@ -49,7 +49,7 @@ async function main() {
   app.use(express.json())   // production-like: server.ts mounts the global JSON parser BEFORE the oauth routes
   app.get('/oauth/token/boom', () => { throw new Error('internal boom') })   // non-parse error UPSTREAM of the oauth error handler
   const rlKeys: string[] = []
-  registerOAuthTokenRoutes(app, { rateLimitOk: (k: string) => { rlKeys.push(k); return true } })
+  registerOAuthTokenRoutes(app, { db, rateLimitOk: (k: string) => { rlKeys.push(k); return true } })
   app.use((_e: unknown, _req: express.Request, res: express.Response, _next: unknown) => { if (!res.headersSent) res.status(500).json({ error: 'server_error' }) })
   const http = await new Promise<HttpServer>(r => { const s = app.listen(0, () => r(s)) })
   const addr = http.address(); const base = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`
@@ -140,7 +140,7 @@ async function main() {
   {
     delete process.env.WEBAZ_OAUTH
     const { registerOAuthTokenRoutes: reg2 } = await import('../src/pwa/routes/oauth-token.js')
-    const app2 = express(); reg2(app2, { rateLimitOk: () => true })
+    const app2 = express(); reg2(app2, { db, rateLimitOk: () => true })
     const h2 = await new Promise<HttpServer>(r => { const s = app2.listen(0, () => r(s)) })
     const a2 = h2.address(); const b2 = `http://127.0.0.1:${typeof a2 === 'object' && a2 ? a2.port : 0}`
     const r = await fetch(`${b2}/oauth/token`, { method: 'POST' })
