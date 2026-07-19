@@ -115,7 +115,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/governance/applications` | 🔐 | 👑 | GET /api/admin/governance/applications — 列出 pending_onboarding(可筛 quiz_passed +  | src/pwa/routes/governance-onboarding.ts:360 |
 | GET | `/api/admin/governance/auto-deactivations` | 🔐 | 👑 | spec §6.2 公示触发原因(透明 — 元规则 #1) | src/pwa/routes/governance-onboarding.ts:743 |
 | POST | `/api/admin/governance/resolve-appeal` | 🔐 | 👑 | accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由 | src/pwa/routes/governance-onboarding.ts:781 |
-| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:5318 |
+| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:5310 |
 | GET | `/api/admin/health` | 🔐 | 👑 |  | src/pwa/routes/admin-health.ts:33 |
 | GET | `/api/admin/hot-wallet` |  |  | Legacy x-admin-key 入口：仅余额 | src/pwa/routes/admin-wallet-ops.ts:74 |
 | GET | `/api/admin/hot-wallet/status` | 🔐 | 👑 | P2-5: protocol 权限（区域 admin 看不到全局热钱包） | src/pwa/routes/admin-wallet-ops.ts:48 |
@@ -610,22 +610,22 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/products/result-fetch` |  |  | 资源滥用护栏(Codex M-4):无鉴权端点按 IP 限流(默认 60 req/min,WEBAZ_RESULT_FETCH_RPM 可调)。 | src/pwa/routes/products-list.ts:451 |
 | GET | `/api/profile` | 🔐 |  |  | src/pwa/routes/auth-read.ts:48 |
 | PATCH | `/api/profile` | 🔐 |  | 通用 profile patch（search_anchor / bio / feed_visible） | src/pwa/routes/profile-prefs.ts:99 |
-| POST | `/api/profile/add-role` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:41 |
+| POST | `/api/profile/add-role` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:42 |
 | POST | `/api/profile/bind-email` | 🔐 |  | 绑定邮箱 — 步骤 1：发码 | src/pwa/routes/profile-credentials.ts:87 |
 | POST | `/api/profile/bind-placement` | 🔐 |  |  | src/pwa/routes/profile-placement.ts:55 |
-| POST | `/api/profile/change-handle` | 🔐 |  | 改 handle：累进式冷却 — 第 N 次改需距上次 N × 12 月 | src/pwa/routes/profile-identity.ts:142 |
-| POST | `/api/profile/change-name` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:129 |
+| POST | `/api/profile/change-handle` | 🔐 |  | 改 handle：累进式冷却 — 第 N 次改需距上次 N × 12 月 | src/pwa/routes/profile-identity.ts:143 |
+| POST | `/api/profile/change-name` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:130 |
 | POST | `/api/profile/clear-location` | 🔐 |  |  | src/pwa/routes/profile-location.ts:56 |
 | POST | `/api/profile/confirm-email` | 🔐 |  | 绑定邮箱 — 步骤 2：确认验证码 | src/pwa/routes/profile-credentials.ts:109 |
 | POST | `/api/profile/default-address` | 🔐 |  | 默认地址（结构化 + 兼容旧 text/region） | src/pwa/routes/profile-prefs.ts:31 |
 | PATCH | `/api/profile/feed-visible` | 🔐 |  | 隐私开关（旧 API，向后兼容；新代码用 PATCH /api/profile） | src/pwa/routes/profile-prefs.ts:91 |
 | POST | `/api/profile/placement-pref` | 🔐 |  |  | src/pwa/routes/profile-placement.ts:88 |
 | GET | `/api/profile/placement-status` | 🔐 |  |  | src/pwa/routes/profile-placement.ts:40 |
-| POST | `/api/profile/region` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:97 |
+| POST | `/api/profile/region` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:98 |
 | POST | `/api/profile/remove-password` | 🔐 |  | 移除密码（恢复只用 API Key 模式） | src/pwa/routes/profile-credentials.ts:74 |
 | POST | `/api/profile/set-location` | 🔐 |  |  | src/pwa/routes/profile-location.ts:37 |
 | POST | `/api/profile/set-password` | 🔐 |  | 设置 / 修改密码 | src/pwa/routes/profile-credentials.ts:43 |
-| POST | `/api/profile/switch-role` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:79 |
+| POST | `/api/profile/switch-role` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:80 |
 | POST | `/api/profile/verify-password` | 🔐 |  | 验证密码（显示 API Key 前的二次确认） | src/pwa/routes/profile-credentials.ts:62 |
 | GET | `/api/promoter/dashboard` | 🔐 |  |  | src/pwa/routes/promoter.ts:39 |
 | GET | `/api/promoter/team` | 🔐 |  | 直推 L1 列表 | src/pwa/routes/promoter.ts:207 |
