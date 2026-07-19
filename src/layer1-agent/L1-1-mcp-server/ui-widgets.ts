@@ -283,13 +283,13 @@ function renderBody(oai, out){
         row.appendChild(dt)
       }
       // B2:主按钮【准备下单】—— 一键发起 报价→草稿→提交审批,终点你 Passkey 批准。
-      //   widget 绝不直达钱路/不建正式订单/不动资金:webaz_quote_order 只读(不扣款/不锁库存),草稿与提交仍在会话流+服务端,
-      //   正式建单永远发生在人类 Passkey 批准路径。点击即 disabled 防误触;幂等由服务端 intent_hash 唯一索引兜底(重复 submit 返原请求)。
+      //   走 follow-up 让模型编排:webaz_quote_order 是 model-only(app 直调会被标准 host 拒绝并吞掉→按钮永久卡死),
+      //   故 widget 绝不 callTool 它;发结构化 follow-up(携准确 product_id)由模型跑 报价→草稿→提交,正式建单永远在人类
+      //   Passkey 路径。widget 绝不直达钱路/不建单/不动资金。点击即 disabled 防误触;幂等由服务端 intent_hash 唯一索引兜底。
       var pd=el('button','primary','准备下单')
       pd.addEventListener('click',onceGuard(function(){
         pd.disabled=true; pd.textContent='准备中…(报价→草稿→审批)'
-        if(typeof oai.callTool==='function'){ oai.callTool('webaz_quote_order',{product_id:p.id,quantity:1}) }
-        else if(!sendFollowUpCompat(oai,'请为该商品准备下单(数量 1):webaz_quote_order→webaz_order_draft→webaz_submit_order_request,最终由我 Passkey 批准。product_id='+p.id)){ pd.textContent='请在对话里说:为 '+p.id+' 准备下单'; pd.disabled=false }
+        if(!sendFollowUpCompat(oai,'请为该商品准备下单:webaz_quote_order 报价(数量 1)→ webaz_order_draft 建草稿 → webaz_submit_order_request 提交审批,最终由我 Passkey 批准。product_id='+p.id)){ pd.textContent='请在对话里说:为 '+p.id+' 准备下单'; pd.disabled=false }
       }))
       row.appendChild(pd)
       var sel=el('button',null,state.selected[p.id]?'已选✓':'比较')
