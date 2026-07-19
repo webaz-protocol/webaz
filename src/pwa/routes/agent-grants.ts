@@ -841,6 +841,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   //   its own request status (pending/approved/rejected/expired) without hitting the target surface. Bound to
   //   grant_id: an agent sees ONLY its own requests, never the human's other agents'. Audited (fail-closed).
   app.get('/api/agent-grants/my-permission-requests', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store')   // agent 侧审批状态读须实时(pending→approved/executed);不缓存
     if (!rateLimitOk(`agent_perm_list:${req.ip || 'anon'}`, 30, 60_000)) return void res.status(429).json({ error: 'too_many_requests', error_code: 'GRANT_RATE_LIMITED', retry_after_s: 60 })
     const g = await resolveActiveGrantByBearer(req)
     if (!g) return void res.status(401).json({ error: 'an active delegation grant is required (pair first with webaz_pair)', error_code: 'GRANT_REQUIRED' })
