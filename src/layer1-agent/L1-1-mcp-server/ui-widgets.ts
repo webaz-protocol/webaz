@@ -174,16 +174,18 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
 .cmp td,.cmp th{border:1px solid var(--line);padding:3px 6px;text-align:left;font-size:11px}
 .note{font-size:11px;color:var(--sub);margin-top:10px}`
 
-const PRODUCT_RESULTS_BODY_JS = `
+export const PRODUCT_RESULTS_BODY_JS = `
+var __lastSearch=null   // B1:缓存上一次搜索页 out —— 供详情页【← 返回列表】原地回退,不再固定住
 function renderBody(oai, out){
   oai = oai || {}
   var root = document.getElementById('root')
   function el(tag, cls, text){ var n=document.createElement(tag); if(cls)n.className=cls; if(text!=null)n.textContent=String(text); return n }
   if(!out){ root.textContent='WebAZ: no structured payload visible to this widget.'; return }
 
-  // ③详情形态
+  // ③详情形态 —— 完整描述/规格(卡内不可得,按需经 tool 拉取);顶部【← 返回列表】回到搜索页(修"固定住/回不去")。
   if(out.schema_version==='webaz.product_detail.model.v1'){
     root.textContent=''
+    if(__lastSearch){ var back=el('button',null,'← 返回列表'); back.addEventListener('click',function(){ renderBody(oai, __lastSearch) }); root.appendChild(back) }
     var dg=el('div','grid')
     ;(out.products||[]).forEach(function(p){
       var c=el('div','card open')
@@ -215,9 +217,17 @@ function renderBody(oai, out){
   }
 
   // ①搜索页
+  __lastSearch = out   // B1:缓存供详情页【返回列表】原地回退
   var sellers=out.sellers||{}
-  var state={sort:'default',selected:{}}
+  var state={sort:'default',selected:{},open:{}}
+  function toggleOpen(id){
+    var wasOpen=!!state.open[id]
+    if(!wasOpen && (window.innerWidth||999)<640){ state.open={} }   // B1:手机端一次只展开一张
+    state.open[id]=!wasOpen; render()
+    if(state.open[id]){ try{ var tn=root.querySelector('[data-pid="'+String(id).replace(/[^a-zA-Z0-9_.:-]/g,'')+'"]'); if(tn) tn.scrollIntoView({behavior:'smooth',block:'start'}) }catch(e){} }   // B1:点开滚到卡顶
+  }
   function render(){
+    var __sy=(window.pageYOffset||0)
     root.textContent=''
     var bar=el('div','bar')
     ;[['default','默认'],['price_asc','价格↑'],['price_desc','价格↓']].forEach(function(s){
@@ -237,8 +247,12 @@ function renderBody(oai, out){
     if(state.sort==='price_desc') list.sort(function(a,b){return priceOf(b)-priceOf(a)})
     var g=el('div','grid')
     list.forEach(function(p){
-      var c=el('div','card')
-      c.appendChild(el('b',null,p.title||p.id))
+      var isOpen=!!state.open[p.id]
+      var c=el('div','card'+(isOpen?' open':''))
+      c.setAttribute('data-pid', String(p.id))
+      var __ti=el('b',null,p.title||p.id); __ti.style.cursor='pointer'
+      __ti.addEventListener('click',function(){ toggleOpen(p.id) })   // B1:基本信息可点击展开/收起
+      c.appendChild(__ti)
       c.appendChild(el('div','price',(p.price&&p.price.display)||''))
       var fx=out.fx&&out.fx.rates
       if(fx&&p.price&&p.price.amount_minor!=null){
@@ -258,8 +272,8 @@ function renderBody(oai, out){
       m.appendChild(el('div','meta','退货 '+(p.return_days!=null?p.return_days+'天':'—')+' · 保修 '+(p.warranty_days!=null?p.warranty_days+'天':'—')+' · 发货 '+(p.handling_hours!=null?p.handling_hours+'h':'—')+' · 预计送达 '+(p.estimated_days!=null?String(p.estimated_days):'—')))
       c.appendChild(m)
       var row=el('div','row')
-      var ex=el('button',null,'展开')
-      ex.addEventListener('click',function(){ c.classList.toggle('open') })   // 本地展开
+      var ex=el('button',null,isOpen?'收起':'展开')
+      ex.addEventListener('click',function(){ toggleOpen(p.id) })   // B1:展开/收起(状态持久,render 后恢复)
       row.appendChild(ex)
       if(out.result_handle&&typeof oai.callTool==='function'){
         var dt=el('button',null,'详情')
@@ -294,6 +308,7 @@ function renderBody(oai, out){
       cmp.appendChild(t); root.appendChild(cmp)
     }
     root.appendChild(el('div','note','报价不会扣款 · 草稿不锁库存 · 正式下单需你在 webaz.xyz 用 Passkey 批准 · ≈ 法币换算仅显示参考,非结算'))
+    try{ window.scrollTo(0, __sy) }catch(e){}   // B1:render 后恢复滚动位置(排序/比较/收起不跳顶)
   }
   render()
 }`

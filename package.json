@@ -293,6 +293,7 @@
     "test:mcp-quote-approval-ui": "tsx scripts/test-mcp-quote-approval-ui.ts",
     "test:mcp-order-timeline-ui": "tsx scripts/test-mcp-order-timeline-ui.ts",
     "test:mcp-apps-standard": "tsx scripts/test-mcp-apps-standard.ts",
+    "test:product-widget-expand": "tsx scripts/test-product-widget-expand.ts",
     "test:agent-category-contract": "tsx scripts/test-agent-category-contract.ts",
     "test:discover-recovery-browse": "tsx scripts/test-discover-recovery-browse.ts",
     "test:agent-invocation-conformance": "tsx scripts/test-agent-invocation-conformance.ts",
