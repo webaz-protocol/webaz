@@ -89,8 +89,13 @@ export function registerOAuthRevokeRoutes(app: Express, deps: OAuthRevokeDeps): 
     const token = asStr(b.token)
     if (!token) return err(400, 'invalid_request', 'token is required')
 
-    // Unknown / malformed token → 200 no-op (RFC 7009: never reveal token validity).
-    if (!REVOKE_TOKEN_RE.test(token)) return void res.status(200).json({ revoked: false })
+    // RFC 7009 §2.2: EVERY presented token gets an IDENTICAL response (empty 200), whether it was
+    // recognized-and-revoked, unknown, malformed, already-revoked, or owned by another client. A distinct
+    // body/status would be a token-validity oracle. The revocation side effect still happens for a valid,
+    // client-owned token; the caller simply cannot tell from the response.
+    const done = (): void => void res.status(200).end()
+
+    if (!REVOKE_TOKEN_RE.test(token)) return done()   // malformed → indistinguishable no-op
     const hint = asStr(b.token_type_hint)
     const tokenHash = sha256hex(token)
     const now = new Date().toISOString()
@@ -103,8 +108,8 @@ export function registerOAuthRevokeRoutes(app: Express, deps: OAuthRevokeDeps): 
       ? (findRefresh() ?? findAccess())
       : (findAccess() ?? findRefresh())
 
-    // Unknown token, or a token that belongs to a DIFFERENT client → 200 no-op (no oracle, no cross-client revoke).
-    if (!row || row.client_id !== client.client_id) return void res.status(200).json({ revoked: false })
+    // Unknown token, or a token that belongs to a DIFFERENT client → identical no-op (no oracle, no cross-client revoke).
+    if (!row || row.client_id !== client.client_id) return done()
 
     // Tear the whole connection down: grant → revoked, and every access + refresh token of that grant. One
     // .immediate() tx so the cascade is atomic. Revoking the grant alone already fails all downstream
@@ -115,6 +120,6 @@ export function registerOAuthRevokeRoutes(app: Express, deps: OAuthRevokeDeps): 
       db.prepare('UPDATE oauth_refresh_tokens SET revoked_at = ? WHERE grant_id = ? AND revoked_at IS NULL').run(now, row.grant_id)
     }).immediate()
 
-    res.status(200).json({ revoked: true })
+    done()   // identical response — side effect done, but indistinguishable from the no-op cases above
   })
 }

@@ -79,17 +79,25 @@ async function main() {
     const r = await revoke({ token: refresh, client_id: CLIENT, token_type_hint: 'access_token' })   // wrong hint
     ok('3. wrong hint → still revoked (fallback to the other table)', r.status === 200 && grantStatus(grantId) === 'revoked')
   }
-  // ── 4. no-oracle + safety ──
-  ok('4a. unknown well-formed token → 200 revoked:false', await (async () => {
-    const r = await revoke({ token: 'oat_' + 'a'.repeat(64), client_id: CLIENT }); return r.status === 200 && ((await r.json()) as { revoked: boolean }).revoked === false
+  // ── 4. no-oracle: EVERY presented token gets an IDENTICAL empty 200 (recognized/unknown/malformed/cross-client) ──
+  const bodyOf = async (r: Response) => ({ status: r.status, body: await r.text() })
+  ok('4a. unknown well-formed token → 200 empty', await (async () => {
+    const b = await bodyOf(await revoke({ token: 'oat_' + 'a'.repeat(64), client_id: CLIENT })); return b.status === 200 && b.body === ''
   })())
-  ok('4b. malformed token → 200 revoked:false (no oracle)', await (async () => {
-    const r = await revoke({ token: 'garbage', client_id: CLIENT }); return r.status === 200 && ((await r.json()) as { revoked: boolean }).revoked === false
+  ok('4b. malformed token → 200 empty (no oracle)', await (async () => {
+    const b = await bodyOf(await revoke({ token: 'garbage', client_id: CLIENT })); return b.status === 200 && b.body === ''
   })())
-  ok('4c. cross-client revoke is a NO-OP (token owned by another client)', await (async () => {
+  ok('4c. cross-client revoke → 200 empty AND a genuine no-op (other client\'s grant untouched)', await (async () => {
     const { grantId, access } = seed('some-other-client')
-    const r = await revoke({ token: access, client_id: CLIENT })   // dev client tries to revoke another client's token
-    return r.status === 200 && grantStatus(grantId) === 'active' && liveTokens(grantId) === 2
+    const b = await bodyOf(await revoke({ token: access, client_id: CLIENT }))   // dev client tries to revoke another client's token
+    return b.status === 200 && b.body === '' && grantStatus(grantId) === 'active' && liveTokens(grantId) === 2
+  })())
+  ok('4c2. recognized-owned, unknown, malformed, cross-client responses are INDISTINGUISHABLE', await (async () => {
+    const owned = await bodyOf(await revoke({ token: seed().access, client_id: CLIENT }))
+    const unknown = await bodyOf(await revoke({ token: 'oat_' + 'b'.repeat(64), client_id: CLIENT }))
+    const malformed = await bodyOf(await revoke({ token: 'nope', client_id: CLIENT }))
+    const cross = await bodyOf(await revoke({ token: seed('other').access, client_id: CLIENT }))
+    return [unknown, malformed, cross].every(x => x.status === owned.status && x.body === owned.body)
   })())
   ok('4d. missing token → 400 invalid_request', await (async () => {
     const r = await revoke({ client_id: CLIENT }); return r.status === 400 && ((await r.json()) as { error: string }).error === 'invalid_request'
