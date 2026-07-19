@@ -193,6 +193,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   //   handle + a MASKED account id + the grant's safe scopes + expiry — and NEVER an api_key, token, email,
   //   address, or any other PII (E-node requirement). Backs webaz_connection_status.
   app.get('/api/agent-grants/connection', requireAgentGrantScope('read_public'), async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store')   // 连接状态(scopes/expires_at)随撤销/过期而变,须实时;不缓存
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant
     if (!p) return void res.status(401).json({ error: 'no grant', error_code: 'GRANT_REQUIRED' })
     const g = await dbOne<{ capabilities: string; expires_at: string }>(
@@ -574,10 +575,12 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
 
   // RFC-026 PR-2 — 审批状态只读(safe scope approval_requests_read;只看本人;零 PII)
   app.get('/api/agent/approval-requests', requireAgentGrantScope('approval_requests_read'), async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store')   // 审批状态实时(pending→approved/executed/rejected/expired);不缓存
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     res.json(listApprovalRequests(db, p.human_id))
   })
   app.get('/api/agent/approval-requests/:id', requireAgentGrantScope('approval_requests_read'), async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store')   // 同上:单条审批状态实时,不缓存
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     const r = getApprovalRequest(db, p.human_id, req.params.id)
     if (!r.ok) return void res.status(r.status).json(r.body)

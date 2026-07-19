@@ -38,6 +38,9 @@ try {
   ok('C-8 approval LIST read sets no-store', /permission-requests'[\s\S]{0,160}Cache-Control', 'no-store'/.test(GRANTS))
   ok('C-9 approval single-detail read sets no-store', /permission-requests\/:request_id'[\s\S]{0,160}Cache-Control', 'no-store'/.test(GRANTS))
   ok('C-9b agent-side my-permission-requests read sets no-store (Codex R1)', /my-permission-requests'[\s\S]{0,200}Cache-Control', 'no-store'/.test(GRANTS))
+  ok('C-9c canonical webaz_approval_requests LIST read sets no-store (Codex R2)', /agent\/approval-requests'[\s\S]{0,200}Cache-Control', 'no-store'/.test(GRANTS))
+  ok('C-9d canonical webaz_approval_requests DETAIL read sets no-store (Codex R2)', /agent\/approval-requests\/:id'[\s\S]{0,200}Cache-Control', 'no-store'/.test(GRANTS))
+  ok('C-9e connection status read sets no-store (scopes/expires_at change on revoke/expiry)', /agent-grants\/connection'[\s\S]{0,200}Cache-Control', 'no-store'/.test(GRANTS))
   const SW = readFileSync('src/pwa/public/sw.js', 'utf8')
   ok('C-10 sw.js cache version bumped past v482', /const CACHE = 'webaz-v(4[89]\d|[5-9]\d\d)'/.test(SW))
 } catch (e) { fail++; fails.push('✗ THREW: ' + ((e as Error).stack || (e as Error).message)) }
