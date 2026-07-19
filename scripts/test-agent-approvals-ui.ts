@@ -101,7 +101,21 @@ ok('B6-1. order_submit card RENDERS without throwing (row helper defined — reg
 ok('B6-2. rendered card shows the hash-bound term rows (单价/运费/支付轨道/卖家/收货/草稿)', !!rEscrow.html && ['单价', '运费', '支付轨道', '卖家', '收货', '草稿'].every(k => rEscrow.html!.includes(k)))
 const rDirect = runSubmitCard(directNoAcct)
 ok('B6-3. direct_p2p with no receiving account renders (no crash) + shows the missing-account warning', !rDirect.threw && !!rDirect.html && rDirect.html.includes('卖家未配置直付收款账户'))
-ok('B6-4. fail-closed gate: aaEconomicIncomplete blocks direct_p2p order_submit lacking direct_receive_account_id', /s\.payment_rail === 'direct_p2p' && !s\.direct_receive_account_id/.test(UI_STATE))
+// B6-4 gate is BEHAVIORAL (run aaEconomicIncomplete) — a source regex is the same weakness that hid the original crash.
+const runGate = (): ((r: unknown) => boolean) | null => {
+  const ctx: Record<string, unknown> = { window: {} as Record<string, unknown>, t: (s: string) => s, escHtml: (s: string) => String(s), document: { getElementById: () => null }, console, setTimeout, location: { hash: '' } }
+  ctx.globalThis = ctx
+  try { vm.createContext(ctx); vm.runInContext(UI_STATE, ctx); const g = (ctx.window as Record<string, unknown>).aaEconomicIncomplete; return typeof g === 'function' ? g as (r: unknown) => boolean : null } catch { return null }
+}
+const gate = runGate()
+const sub = (o: Record<string, unknown>) => ({ kind: 'order_submit', submit_summary: { payable_units: 1, currency: 'USDC', ...o } })
+ok('B6-4. fail-closed gate (behavioral): blocks direct_p2p order_submit lacking a receiving account; does NOT over-block escrow or direct_p2p WITH an account',
+  !!gate
+  && gate(sub({ payment_rail: 'escrow' })) === false
+  && gate(sub({ payment_rail: 'direct_p2p', direct_receive_account_id: 'acc_1' })) === false
+  && gate(sub({ payment_rail: 'direct_p2p', direct_receive_account_id: null })) === true
+  && gate({ kind: 'order_submit', summary_unavailable: true }) === true
+  && gate({ kind: 'order_action' }) === false)
 ok('B6-5. new UI strings are bilingual (t + _EN entry present)', I18N.includes('卖家未配置直付收款账户,无法确认收款目的地 —— 已禁止批准') && I18N.includes('关键条款不完整(金额/币种/支付轨道/收款账户)'))
 
 // ── i18n parity ──
