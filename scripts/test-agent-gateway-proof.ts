@@ -320,10 +320,14 @@ const productionRefs = tsFiles('src')
   .filter(path => /agent-gateway-proof|verifyAgentGatewayDpopRequest/.test(readFileSync(path, 'utf8')))
 const tokenRouteSource = readFileSync('src/pwa/routes/oauth-token.ts', 'utf8')
 const mcpRouteSource = readFileSync('src/pwa/routes/mcp-remote.ts', 'utf8')
-ok('35. S1c1 exposes only dormant token wiring; resource verifier remains unmounted',
-  productionRefs.length === 1 && productionRefs[0] === 'src/pwa/routes/oauth-token.ts'
+const replayStoreSource = readFileSync('src/runtime/agent-gateway-replay-pg.ts', 'utf8')
+ok('35. S1c2 adds only replay-store wiring; resource verifier remains unmounted',
+  productionRefs.length === 2
+    && productionRefs.includes('src/pwa/routes/oauth-token.ts')
+    && productionRefs.includes('src/runtime/agent-gateway-replay-pg.ts')
     && tokenRouteSource.includes('verifyAgentGatewayDpopTokenRequest')
     && !tokenRouteSource.includes('verifyAgentGatewayDpopRequest')
+    && !replayStoreSource.includes('verifyAgentGatewayDpopRequest')
     && !mcpRouteSource.includes('verifyAgentGatewayDpopRequest'),
   productionRefs.join(','))
 const source = readFileSync('src/runtime/agent-gateway-proof.ts', 'utf8')
