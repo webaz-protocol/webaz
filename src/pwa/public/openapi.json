@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (810 endpoints, 20 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (811 endpoints, 20 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2886,7 +2886,7 @@
     },
     "/api/agent/categories": {
       "get": {
-        "summary": "注册表键零商品也不消失(canonical registry);uncurated = 在售但未收录的卖家自由类目。",
+        "summary": "GET /api/agent/categories",
         "tags": [],
         "security": []
       }
@@ -3118,6 +3118,13 @@
           }
         ],
         "x-webaz-grant-scope": "price_quote"
+      }
+    },
+    "/api/agent/request-readiness": {
+      "get": {
+        "summary": "放在 categories(同样无鉴权)之前 —— gen-openapi 的「后 8 行探 requireAgentGrantScope」启发式才不会误把下方 discover 的 grant 算到本路由。",
+        "tags": [],
+        "security": []
       }
     },
     "/api/agent/seller/products": {

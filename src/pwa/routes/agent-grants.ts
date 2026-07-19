@@ -50,6 +50,7 @@ import { approveAndExecuteOrderAction } from '../order-action-exec.js'  // RFC-0
 import { notifyTransition } from '../../layer2-business/L2-6-notifications/notification-engine.js'  // 执行后通知买卖双方
 import { invalidateProductVerification } from '../../product-verification.js'
 import { resolveCategory, buildCategoryTable, productTermSmell } from '../agent-categories.js'  // 调用契约 P0 PR-AB:canonical 类目注册表 + 商品词校验单源
+import { REQUEST_READINESS_GUIDE } from '../agent-request-readiness.js'  // R0:请求就绪门编排指引
 
 export interface AgentGrantsDeps {
   db: Database.Database
@@ -294,6 +295,10 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   // 调用契约 P0 PR-AB — 类目词表(公开只读,无鉴权:类目本就经在售列表公开)。双通道之一
   //   (另一通道 = MCP 资源 webaz://guide/categories):不同宿主对 Resource 读取支持不一,HTTP 端点保底。
   //   注册表键零商品也不消失(canonical registry);uncurated = 在售但未收录的卖家自由类目。
+  // R0 请求就绪门:编排指引 HTTP 保底通道(宿主不支持 MCP Resource 读取时用;与 webaz://guide/request-readiness 同源)。无鉴权。
+  //   放在 categories(同样无鉴权)之前 —— gen-openapi 的「后 8 行探 requireAgentGrantScope」启发式才不会误把下方 discover 的 grant 算到本路由。
+  app.get('/api/agent/request-readiness', (_req, res) => { res.json(REQUEST_READINESS_GUIDE) })
+
   app.get('/api/agent/categories', async (_req, res) => {
     res.json({
       schema_version: 'webaz.category_table.v1',
@@ -333,7 +338,12 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       return void res.status(400).json({ error: 'quantity must be an integer 1..999', error_code: 'INVALID_QUANTITY' })
     }
     if (!category && keywords.length === 0) {
-      return void res.status(400).json({ error: 'give at least a category or one keyword', error_code: 'EMPTY_INTENT', next_steps: 'Provide { category } and/or { keywords: [...] } - short product terms only (shape-validated; passing inputs are recorded as-is).' })
+      // R0 请求就绪门(§8.7):零信号请求 → 结构化澄清(机器可执行),不猜、不扩成全目录浏览。
+      return void res.status(400).json({ error: 'give at least a category or one keyword', error_code: 'EMPTY_INTENT',
+        missing_fields: ['category', 'keywords'],
+        recommended_question: 'Which kind of product are you after? A category key (see webaz://guide/categories) or 1-2 short keywords is enough.',
+        safe_next_action: 'ask_user',
+        next_steps: 'Provide { category } and/or { keywords: [...] } - short product terms only (shape-validated; passing inputs are recorded as-is).' })
     }
     // ── keyword_match 契约(P0 PR-AB):默认 all(合取,兼容现语义)= 复合必要属性;any(析取)=
     //    同义词/别名扩展。审计实锤:同义词组被 AND 合取杀成 0 是 discover 假阴性主因之一。 ──
