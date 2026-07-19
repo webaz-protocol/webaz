@@ -17,7 +17,7 @@
  */
 import { createHash } from 'node:crypto'
 import { dbOne } from '../layer0-foundation/L0-1-database/db.js'
-import { classifyScope, grantIsActive } from './agent-grant-scopes.js'
+import { classifyScope, grantIsActive, storedUtcInstantIsFuture } from './agent-grant-scopes.js'
 
 export interface GrantPrincipal {
   grant_id: string
@@ -30,7 +30,7 @@ export type GrantVerifyResult =
   | { ok: true; principal: GrantPrincipal }
   | { ok: false; status: number; error_code: string; error: string; grant_id?: string; human_id?: string }
 
-interface GrantRow {
+export interface VerifiedGrantRow {
   grant_id: string
   human_id: string
   agent_label: string | null
@@ -38,6 +38,13 @@ interface GrantRow {
   status: string
   expires_at: string
   revoked_at: string | null
+}
+
+export interface OAuthCredentialBinding {
+  client_id: string
+  scope: string
+  audience: string
+  dpop_jkt: string | null
 }
 
 function parseCaps(json: unknown): Array<{ capability?: string }> {
@@ -48,7 +55,15 @@ function parseCaps(json: unknown): Array<{ capability?: string }> {
 // An oat_ minted for /mcp must never authorize anything outside that audience.
 const OAUTH_MCP_AUDIENCE = 'https://webaz.xyz/mcp'
 
-interface OAuthTokenRow { grant_id: string; scope: string; aud: string; expires_at: string; revoked_at: string | null }
+interface OAuthTokenRow {
+  grant_id: string
+  client_id: string
+  scope: string
+  aud: string
+  expires_at: string
+  revoked_at: string | null
+  dpop_jkt: string | null
+}
 
 /**
  * Resolve a bearer → the backing delegation GrantRow, dispatching on prefix:
@@ -61,27 +76,40 @@ interface OAuthTokenRow { grant_id: string; scope: string; aud: string; expires_
 async function resolveGrantRowFromBearer(
   bearer: string,
   nowIso: string,
-): Promise<{ ok: true; row: GrantRow } | { ok: false; status: number; error_code: string; error: string }> {
+  allowSenderConstrained: boolean,
+): Promise<{ ok: true; row: VerifiedGrantRow; oauth?: OAuthCredentialBinding } | { ok: false; status: number; error_code: string; error: string }> {
   if (bearer.startsWith('oat_')) {
     const tokenHash = createHash('sha256').update(bearer).digest('hex')
     const tok = await dbOne<OAuthTokenRow>(
-      'SELECT grant_id, scope, aud, expires_at, revoked_at FROM oauth_access_tokens WHERE token_hash = ?',
+      'SELECT grant_id,client_id,scope,aud,expires_at,revoked_at,dpop_jkt FROM oauth_access_tokens WHERE token_hash = ?',
       [tokenHash],
     )
     if (!tok) return { ok: false, status: 401, error_code: 'GRANT_NOT_FOUND', error: 'access token not found' }
     if (tok.revoked_at) return { ok: false, status: 401, error_code: 'TOKEN_REVOKED', error: 'access token has been revoked' }
-    if (!tok.expires_at || tok.expires_at <= nowIso) return { ok: false, status: 401, error_code: 'TOKEN_EXPIRED', error: 'access token has expired' }
+    if (!storedUtcInstantIsFuture(tok.expires_at, nowIso)) return { ok: false, status: 401, error_code: 'TOKEN_EXPIRED', error: 'access token has expired' }
     if (tok.aud !== OAUTH_MCP_AUDIENCE) return { ok: false, status: 403, error_code: 'TOKEN_WRONG_AUDIENCE', error: `access token audience is not ${OAUTH_MCP_AUDIENCE}` }
-    const row = await dbOne<GrantRow>(
+    if (tok.dpop_jkt && !allowSenderConstrained) {
+      return { ok: false, status: 401, error_code: 'DPOP_PROOF_REQUIRED', error: 'sender-constrained token requires a verified DPoP proof' }
+    }
+    const row = await dbOne<VerifiedGrantRow>(
       'SELECT grant_id, human_id, agent_label, capabilities, status, expires_at, revoked_at FROM agent_delegation_grants WHERE grant_id = ?',
       [tok.grant_id],
     )
     if (!row) return { ok: false, status: 401, error_code: 'GRANT_NOT_FOUND', error: 'delegation grant not found for this token' }
-    return { ok: true, row }
+    return {
+      ok: true,
+      row,
+      oauth: {
+        client_id: tok.client_id,
+        scope: tok.scope,
+        audience: tok.aud,
+        dpop_jkt: tok.dpop_jkt,
+      },
+    }
   }
   // gtk_* direct grant bearer
   const tokenHash = createHash('sha256').update(bearer).digest('hex')
-  const row = await dbOne<GrantRow>(
+  const row = await dbOne<VerifiedGrantRow>(
     'SELECT grant_id, human_id, agent_label, capabilities, status, expires_at, revoked_at FROM agent_delegation_grants WHERE token_hash = ?',
     [tokenHash],
   )
@@ -100,18 +128,34 @@ async function resolveGrantRowFromBearer(
 // "is this a usable credential at all" gate — used both by verifyGrantToken (which then adds a scope
 // check) and by the /mcp transport edge (which must reject a PRESENTED-but-invalid oat_ with 401 even on
 // a tool that needs no scope, so a bad credential is never silently downgraded to anonymous).
-type GrantIdentityResult =
-  | { ok: true; row: GrantRow }
+export type GrantIdentityResult =
+  | { ok: true; row: VerifiedGrantRow; oauth?: OAuthCredentialBinding }
   | { ok: false; status: number; error_code: string; error: string; grant_id?: string; human_id?: string }
 
 export async function verifyGrantIdentity(
   bearer: string | undefined,
   nowIso: string = new Date().toISOString(),
 ): Promise<GrantIdentityResult> {
+  return verifyGrantIdentityInternal(bearer, nowIso, false)
+}
+
+/** Internal Gateway entry: permits a bound token only so the DPoP verifier can validate its proof. */
+export async function verifyDpopBoundGrantIdentity(
+  bearer: string | undefined,
+  nowIso: string = new Date().toISOString(),
+): Promise<GrantIdentityResult> {
+  return verifyGrantIdentityInternal(bearer, nowIso, true)
+}
+
+async function verifyGrantIdentityInternal(
+  bearer: string | undefined,
+  nowIso: string,
+  allowSenderConstrained: boolean,
+): Promise<GrantIdentityResult> {
   if (!bearer || !(bearer.startsWith('gtk_') || bearer.startsWith('oat_'))) {
     return { ok: false, status: 401, error_code: 'GRANT_TOKEN_REQUIRED', error: 'a gtk_* delegation grant or oat_* access token bearer is required' }
   }
-  const resolved = await resolveGrantRowFromBearer(bearer, nowIso)
+  const resolved = await resolveGrantRowFromBearer(bearer, nowIso, allowSenderConstrained)
   if (!resolved.ok) return resolved
   const row = resolved.row
   if (!grantIsActive(row, nowIso)) {
@@ -130,7 +174,7 @@ export async function verifyGrantIdentity(
   if (subject.suspended) {
     return { ok: false, status: 403, error_code: 'GRANT_SUBJECT_INACTIVE', error: 'grant subject (human) is suspended', grant_id: row.grant_id, human_id: row.human_id }
   }
-  return { ok: true, row }
+  return { ok: true, row, ...(resolved.oauth ? { oauth: resolved.oauth } : {}) }
 }
 
 export async function verifyGrantToken(

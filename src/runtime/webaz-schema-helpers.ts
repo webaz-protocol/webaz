@@ -2332,6 +2332,12 @@ export function initOAuthSchema(db: Database.Database): void {
     try { db.exec(`ALTER TABLE oauth_clients ADD COLUMN ${col} ${ddl}`) } catch { /* already present */ }
   }
 
+  // RFC-028 S1b: RFC 7638 thumbprint bound at DPoP-protected token issuance.
+  // NULL means ordinary bearer token and can never mint a Gateway PoP context.
+  try {
+    db.exec("ALTER TABLE oauth_access_tokens ADD COLUMN dpop_jkt TEXT CHECK(dpop_jkt IS NULL OR (length(dpop_jkt) = 43 AND dpop_jkt NOT GLOB '*[^A-Za-z0-9_-]*' AND substr(dpop_jkt,-1,1) GLOB '[AEIMQUYcgkosw048]'))")
+  } catch { /* already present */ }
+
   // RFC-023 PR-1(refresh)—— rotating refresh tokens (OAuth 2.1 §4.3 / RFC 6819 §5.2.2.3):
   //   一次性(用过即 rotated_at)+ 轮换族(family_id)+ 重放即焚(用已轮换/已撤的 refresh → 撤整族 + 该 grant 全部
   //   access token)。与 access token 同姿态:仅存 sha256,明文只在响应里出现一次;寿命 clamp 到底层 grant(I-5,
@@ -2344,12 +2350,19 @@ export function initOAuthSchema(db: Database.Database): void {
     family_id    TEXT NOT NULL,             -- rotation family; a replay revokes the WHOLE family
     scope        TEXT NOT NULL,             -- carried forward unchanged on rotation (no scope escalation)
     aud          TEXT NOT NULL,             -- == https://webaz.xyz/mcp; stamped from the access token's aud
+    dpop_jkt     TEXT CHECK(dpop_jkt IS NULL OR (length(dpop_jkt) = 43 AND dpop_jkt NOT GLOB '*[^A-Za-z0-9_-]*' AND substr(dpop_jkt,-1,1) GLOB '[AEIMQUYcgkosw048]')),
+                                                -- RFC 9449 key binding; NULL preserves ordinary bearer families
     issued_at    TEXT NOT NULL DEFAULT (datetime('now')),
     expires_at   TEXT NOT NULL,             -- refresh TTL, clamped to the grant's expiry at mint
     rotated_at   TEXT,                      -- set (CAS, single-use) when this token mints a successor
     revoked_at   TEXT,                      -- family-replay / grant revocation nukes these
     replaced_by  TEXT                       -- successor token_hash (audit chain; NULL until rotated)
   )`)
+  // Existing refresh tables predate RFC-028 S1c. Keep the additive migration
+  // after CREATE so both fresh and upgraded databases receive the same binding.
+  try {
+    db.exec("ALTER TABLE oauth_refresh_tokens ADD COLUMN dpop_jkt TEXT CHECK(dpop_jkt IS NULL OR (length(dpop_jkt) = 43 AND dpop_jkt NOT GLOB '*[^A-Za-z0-9_-]*' AND substr(dpop_jkt,-1,1) GLOB '[AEIMQUYcgkosw048]'))")
+  } catch { /* already present */ }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_oauth_refresh_grant  ON oauth_refresh_tokens(grant_id)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_oauth_refresh_family ON oauth_refresh_tokens(family_id)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_oauth_refresh_expiry ON oauth_refresh_tokens(expires_at)`)

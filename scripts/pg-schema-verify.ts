@@ -53,6 +53,7 @@ const failures: string[] = []
 interface Leak { name: string; re: RegExp }
 const leaks: Leak[] = [
   { name: "datetime()/date() 未转 PG", re: /\b(?:datetime|date)\s*\(/gi },
+  { name: 'strftime() 未转 PG', re: /\bstrftime\s*\(/gi },
   { name: 'AUTOINCREMENT 残留', re: /\bAUTOINCREMENT\b/gi },
   { name: 'INTEGER 裸类型(应 BIGINT)', re: /\bINTEGER\b/gi },
   { name: 'REAL 裸类型(应 DOUBLE PRECISION)', re: /\bREAL\b/gi },
@@ -149,6 +150,14 @@ function pgTableColumns(sql: string): Map<string, Set<string>> {
   }
   return map
 }
+
+function pgTablePositions(sql: string): Map<string, number> {
+  const positions = new Map<string, number>()
+  const re = /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s*\(/g
+  for (const match of sql.matchAll(re)) positions.set(match[1].toLowerCase(), match.index)
+  return positions
+}
+
 if (existsSync(SQLITE_DB_PATH)) {
   const sdb = new Database(SQLITE_DB_PATH, { readonly: true })
   const sdbTriggers = (): { tbl: string; op: string }[] =>
@@ -165,7 +174,7 @@ if (existsSync(SQLITE_DB_PATH)) {
   if (ix.n !== createIdxTotal) failures.push(`索引数不匹配:SQLite ${ix.n} vs pg ${createIdxTotal} —— 产物 stale,重跑 npm run pg:schema`)
   // 逐表逐列 parity(#250 审计根治)
   const pgCols = pgTableColumns(body)
-  const tables = sdb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL`).all() as { name: string }[]
+  const tables = sdb.prepare(`SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL`).all() as { name: string; sql: string }[]
   const colDiffs: string[] = []
   for (const { name } of tables) {
     const sCols = new Set((sdb.prepare(`PRAGMA table_info(${JSON.stringify(name).replace(/"/g, '')})`).all() as { name: string }[]).map(c => c.name.toLowerCase()))
@@ -182,6 +191,30 @@ if (existsSync(SQLITE_DB_PATH)) {
     if (colDiffs.length > 12) failures.push(`    …及另外 ${colDiffs.length - 12} 张表`)
   } else {
     console.log(`  列 parity   ✅ 全部 ${tables.length} 张表列集合一致`)
+  }
+  // PostgreSQL resolves an inline REFERENCES target at CREATE TABLE time.
+  // SQLite allows forward references, so verify the generated artifact has
+  // every referenced table earlier than its dependent table.
+  const tablePositions = pgTablePositions(body)
+  const orderDiffs: string[] = []
+  for (const table of tables) {
+    const tableName = table.name.toLowerCase()
+    const tablePosition = tablePositions.get(tableName)
+    if (tablePosition === undefined) continue
+    for (const match of table.sql.matchAll(/\bREFERENCES\s+["`]?([A-Za-z_][A-Za-z0-9_]*)["`]?/gi)) {
+      const dependencyName = match[1].toLowerCase()
+      if (dependencyName === tableName) continue
+      const dependencyPosition = tablePositions.get(dependencyName)
+      if (dependencyPosition !== undefined && dependencyPosition > tablePosition) {
+        orderDiffs.push(`${table.name}: REFERENCES ${match[1]} before target exists`)
+      }
+    }
+  }
+  if (orderDiffs.length) {
+    failures.push(`PG 外键建表顺序错误 ×${orderDiffs.length} —— gen-pg-schema 必须按 REFERENCES 拓扑排序:`)
+    for (const dLine of orderDiffs.slice(0, 12)) failures.push(`    ${dLine}`)
+  } else {
+    console.log(`  FK order    ✅ 所有 REFERENCES 目标先于依赖表创建`)
   }
   // 不可变性 trigger parity(#252 审计):SQLite 里有 *_no_update/*_no_delete 触发器的表,
   //   PG 产物必须有对应 BEFORE UPDATE/DELETE 守卫 —— 否则 PG 导入后 append-only/immutable 审计不变量静默消失。
@@ -232,7 +265,39 @@ await (async () => {
     await client.query('BEGIN')
     await client.query(ddl)
     await client.query('ROLLBACK')
-    console.log(`✅ live smoke 通过 —— 整份 DDL 在真实 pg parse + 执行成功(已 ROLLBACK,未持久)\n`)
+    console.log(`✅ live smoke 通过 —— 整份 DDL 在真实 pg parse + 执行成功(已 ROLLBACK,未持久)`)
+
+    // RFC-028 S1b/S1c0: prove both additive DPoP binding migrations work on
+    // OLD token tables, are idempotent, preserve NULL bearer rows, and enforce
+    // canonical RFC 7638 thumbprints in a real PostgreSQL parser/runtime.
+    const dpopTables = ['oauth_access_tokens', 'oauth_refresh_tokens'] as const
+    await client.query('BEGIN')
+    for (const [i, table] of dpopTables.entries()) {
+      const dpopUpgrade = ddl.match(new RegExp(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS dpop_jkt TEXT\\s+CHECK\\([\\s\\S]*?\\);`))?.[0]
+      if (!dpopUpgrade) throw new Error(`missing ${table} dpop_jkt additive migration`)
+      await client.query(`CREATE TEMP TABLE ${table} (token_hash TEXT PRIMARY KEY) ON COMMIT DROP`)
+      await client.query(dpopUpgrade)
+      await client.query(dpopUpgrade)
+      const columns = await client.query<{ n: string }>(`
+        SELECT COUNT(*)::text AS n FROM pg_attribute
+         WHERE attrelid=$1::regclass AND attname='dpop_jkt' AND NOT attisdropped`, [table])
+      if (columns.rows[0]?.n !== '1') throw new Error(`${table} dpop_jkt migration is not idempotent`)
+      await client.query(`INSERT INTO ${table}(token_hash,dpop_jkt) VALUES ($1,$2),($3,NULL)`, [`valid_${i}`, 'A'.repeat(43), `bearer_${i}`])
+      for (const [caseName, invalidJkt] of [['bad_char', `${'A'.repeat(42)}!`], ['bad_tail', `${'A'.repeat(42)}B`]] as const) {
+        const savepoint = `invalid_jkt_${i}_${caseName}`
+        await client.query(`SAVEPOINT ${savepoint}`)
+        let invalidRejected = false
+        try {
+          await client.query(`INSERT INTO ${table}(token_hash,dpop_jkt) VALUES ($1,$2)`, [`${caseName}_${i}`, invalidJkt])
+        } catch {
+          invalidRejected = true
+          await client.query(`ROLLBACK TO SAVEPOINT ${savepoint}`)
+        }
+        if (!invalidRejected) throw new Error(`${caseName} dpop_jkt passed ${table} PostgreSQL CHECK`)
+      }
+    }
+    await client.query('ROLLBACK')
+    console.log(`✅ additive upgrade smoke 通过 —— 旧 access+refresh token 表补列幂等 + nullable canonical JKT CHECK 生效\n`)
   } catch (e) {
     try { await client.query('ROLLBACK') } catch { /* ignore */ }
     console.error(`❌ live smoke 失败:${(e as Error).message}\n`)
