@@ -1,11 +1,11 @@
 /**
  * RFC-028 S1b/S1c1: dormant Agent/API Gateway proof verifiers.
  *
- * The resource verifier remains deliberately unmounted. The token-endpoint
- * verifier is reachable only behind an independent default-off flag and an
- * injected replay authority; it can issue and rotate sender-constrained token
- * families without enabling protected-resource access. The resource verifier
- * turns a valid, server-resolved, issuance-time key-bound OAuth access token
+ * The token-endpoint and protected-resource verifiers are independently
+ * default-off and require an injected shared replay authority. Token issuance
+ * alone does not enable protected-resource access. When its separate resource
+ * flag is active, the resource verifier turns a valid, server-resolved,
+ * issuance-time key-bound OAuth access token
  * plus a pinned RFC 9449 DPoP proof into a
  * branded context that cannot be manufactured from request JSON or headers.
  * OAuth scopes and object authorization remain enforced by their existing
@@ -19,8 +19,8 @@ import {
   verify as verifySignature,
 } from 'node:crypto'
 import { dbOne } from '../layer0-foundation/L0-1-database/db.js'
-import { verifyDpopBoundGrantIdentity } from './agent-grant-verifier.js'
-import { storedUtcInstantIsFuture } from './agent-grant-scopes.js'
+import { verifyDpopBoundGrantIdentity, type GrantVerifyResult } from './agent-grant-verifier.js'
+import { classifyScope, storedUtcInstantIsFuture } from './agent-grant-scopes.js'
 
 const OAUTH_ISSUER = 'https://webaz.xyz'
 const OAUTH_MCP_AUDIENCE = 'https://webaz.xyz/mcp'
@@ -545,6 +545,32 @@ export async function verifyAgentGatewayDpopRequest(
   if (replay === 'replayed') return fail(409, 'GATEWAY_DPOP_REPLAYED', 'DPoP proof was already used')
   if (replay !== 'claimed') return fail(503, 'GATEWAY_REPLAY_STORE_UNAVAILABLE', 'replay protection is unavailable')
 
+  // The shared replay claim is an awaited external operation. Re-read every
+  // revocable trust fact after it returns so token/grant/subject/client/profile
+  // revocation in that window cannot mint a stale context.
+  const finalIdentity = await verifyDpopBoundGrantIdentity(input.access_token, nowIso)
+  if (!finalIdentity.ok || !finalIdentity.oauth
+    || finalIdentity.row.grant_id !== identity.row.grant_id
+    || finalIdentity.row.human_id !== identity.row.human_id
+    || finalIdentity.oauth.client_id !== oauth.client_id
+    || finalIdentity.oauth.audience !== oauth.audience
+    || finalIdentity.oauth.dpop_jkt !== oauth.dpop_jkt) {
+    return fail(401, 'GATEWAY_ACCESS_TOKEN_INACTIVE', 'OAuth access token, grant, or subject changed during proof verification')
+  }
+  const finalTrust = await dbOne<{ active: number }>(`
+    SELECT 1 AS active
+      FROM agent_gateway_clients g
+      JOIN oauth_clients o ON o.client_id=g.oauth_client_id
+      JOIN agent_gateway_proof_profiles p ON p.gateway_client_id=g.gateway_client_id
+     WHERE g.gateway_client_id=? AND g.oauth_client_id=? AND g.registry_status='verified'
+       AND g.verified_at IS NOT NULL AND g.suspended_at IS NULL AND g.revoked_at IS NULL
+       AND o.status='active' AND p.profile_id=? AND p.proof_method='dpop'
+       AND p.profile_status='active' AND p.proof_config_id='dpop_rfc9449_v1'
+       AND p.key_thumbprint=? AND p.verified_at IS NOT NULL AND p.revoked_at IS NULL
+       AND (p.expires_at IS NULL OR datetime(p.expires_at) > datetime(?))
+  `, [client.gateway_client_id, oauth.client_id, profile.profile_id, verifiedProof.key_thumbprint, nowIso])
+  if (!finalTrust) return fail(403, 'GATEWAY_PROOF_PROFILE_INACTIVE', 'Gateway client or proof profile changed during proof verification')
+
   const proof = Object.freeze({
     method: 'dpop' as const,
     profile_id: profile.profile_id,
@@ -558,11 +584,80 @@ export async function verifyAgentGatewayDpopRequest(
     oauth_client_id: oauth.client_id,
     grant_id: identity.row.grant_id,
     human_id: identity.row.human_id,
-    oauth_scopes: Object.freeze(oauth.scope.split(/\s+/).filter(Boolean)),
-    audience: oauth.audience,
+    oauth_scopes: Object.freeze(finalIdentity.oauth.scope.split(/\s+/).filter(Boolean)),
+    audience: finalIdentity.oauth.audience,
     policy_version: client.policy_version,
     proof,
   })
   issuedContexts.add(context)
   return { ok: true, context }
+}
+
+/**
+ * Resource-side grant check for a server-issued Gateway context. This is the
+ * only path that may consume a sender-constrained oat_ after its DPoP proof was
+ * verified at /mcp. It re-checks token/grant/subject, client/profile lifecycle
+ * and the exact SAFE capability; the branded context never replaces them.
+ */
+export async function verifyAgentGatewayGrantToken(
+  value: unknown,
+  bearer: string | undefined,
+  requiredScope: string,
+  nowIso: string = new Date().toISOString(),
+): Promise<GrantVerifyResult> {
+  let context: AgentGatewayContext
+  try { context = requireAgentGatewayContext(value) } catch {
+    return { ok: false, status: 401, error_code: 'GATEWAY_CONTEXT_REQUIRED', error: 'trusted Agent Gateway context required' }
+  }
+  if (classifyScope(requiredScope) !== 'safe') {
+    return { ok: false, status: 500, error_code: 'SCOPE_NOT_SAFE', error: `requiredScope "${requiredScope}" is not a safe scope; grants can only ever authorize safe scopes` }
+  }
+  const identity = await verifyDpopBoundGrantIdentity(bearer, nowIso)
+  if (!identity.ok) return identity
+  const oauth = identity.oauth
+  const tokenScopes = oauth?.scope.split(/\s+/).filter(Boolean).sort() ?? []
+  const contextScopes = [...context.oauth_scopes].sort()
+  if (!oauth || !oauth.dpop_jkt || oauth.client_id !== context.oauth_client_id
+    || oauth.audience !== context.audience || identity.row.grant_id !== context.grant_id
+    || identity.row.human_id !== context.human_id
+    || JSON.stringify(tokenScopes) !== JSON.stringify(contextScopes)) {
+    return { ok: false, status: 401, error_code: 'GATEWAY_CONTEXT_MISMATCH', error: 'Gateway context does not match this OAuth token and grant' }
+  }
+
+  const active = await dbOne<{ active: number }>(`
+    SELECT 1 AS active
+      FROM agent_gateway_clients g
+      JOIN oauth_clients o ON o.client_id=g.oauth_client_id
+      JOIN agent_gateway_proof_profiles p ON p.gateway_client_id=g.gateway_client_id
+     WHERE g.gateway_client_id=? AND g.oauth_client_id=? AND g.registry_status='verified'
+       AND g.verified_at IS NOT NULL AND g.suspended_at IS NULL AND g.revoked_at IS NULL
+       AND o.status='active' AND p.profile_id=? AND p.proof_method='dpop'
+       AND p.profile_status='active' AND p.proof_config_id='dpop_rfc9449_v1'
+       AND p.key_thumbprint=? AND p.verified_at IS NOT NULL AND p.revoked_at IS NULL
+       AND (p.expires_at IS NULL OR datetime(p.expires_at) > datetime(?))
+  `, [context.gateway_client_id, context.oauth_client_id, context.proof.profile_id,
+    context.proof.key_thumbprint, nowIso])
+  if (!active) {
+    return { ok: false, status: 403, error_code: 'GATEWAY_PROOF_PROFILE_INACTIVE', error: 'Gateway client or proof profile is no longer active' }
+  }
+
+  let capabilities: Array<{ capability?: string }> = []
+  try {
+    const parsed: unknown = JSON.parse(String(identity.row.capabilities))
+    if (Array.isArray(parsed)) capabilities = parsed as Array<{ capability?: string }>
+  } catch { capabilities = [] }
+  const holds = capabilities.some(c => c?.capability === requiredScope
+    && classifyScope(String(c.capability)) === 'safe')
+  if (!holds) {
+    return { ok: false, status: 403, error_code: 'SCOPE_NOT_GRANTED', error: `grant does not carry the required safe scope "${requiredScope}"`, grant_id: identity.row.grant_id, human_id: identity.row.human_id }
+  }
+  return {
+    ok: true,
+    principal: {
+      grant_id: identity.row.grant_id,
+      human_id: identity.row.human_id,
+      agent_label: identity.row.agent_label,
+      capability: requiredScope,
+    },
+  }
 }

@@ -98,7 +98,7 @@ async function main() {
   const MCP = readFileSync('src/pwa/routes/mcp-remote.ts', 'utf8')
   const SRV = readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
   const GR = readFileSync('src/pwa/routes/agent-grants.ts', 'utf8')
-  ok('7a. /mcp routes grant bearers to grantBearer, not defaultApiKey', MCP.includes("bearer.startsWith('gtk_') || bearer.startsWith('oat_')") && MCP.includes('grantBearer: bearer'))
+  ok('7a. /mcp routes Bearer or DPoP grant credentials to grantBearer, not defaultApiKey', MCP.includes("credential.startsWith('gtk_') || credential.startsWith('oat_')") && MCP.includes('grantBearer: credential'))
   ok('7b. buildMcpServer injects __grant_bearer__ per-request (server-forced)', SRV.includes('opts.grantBearer') && SRV.includes('__grant_bearer__ = opts.grantBearer') && SRV.includes("delete (args as Record<string, unknown>).__grant_bearer__"))
   ok('7c. resolveGrantCredential under isolation returns ONLY the injected bearer', SRV.includes('args?.__grant_bearer__') && SRV.includes('token: injected'))
   ok('7d. requireAgentGrantScope audits oat_ presentations too', GR.includes("bearer.startsWith('gtk_') || bearer.startsWith('oat_')"))

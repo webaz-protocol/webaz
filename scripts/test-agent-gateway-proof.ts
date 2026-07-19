@@ -15,6 +15,7 @@ import {
   isAgentGatewayContext,
   requireAgentGatewayContext,
   verifyAgentGatewayDpopRequest,
+  verifyAgentGatewayGrantToken,
 } from '../src/runtime/agent-gateway-proof.js'
 import {
   initAgentDelegationGrantsSchema,
@@ -309,27 +310,70 @@ function tamperSignature(jwt: string): string {
   a.db.close(); b.db.close()
 }
 
+{
+  const f = fixture('c')
+  setSeamDb(f.db)
+  const result = await verifyAgentGatewayDpopRequest({
+    access_token: f.token, dpop_proof: proof(f), http_method: 'POST',
+    target_uri: 'https://webaz.xyz/mcp', now_ms: f.nowMs,
+  }, {
+    claim: async () => {
+      f.db.prepare("UPDATE agent_gateway_proof_profiles SET profile_status='pending' WHERE profile_id='agp_c'").run()
+      return 'claimed'
+    },
+  })
+  ok('34a. profile revocation during the replay-store await prevents context minting', !result.ok
+    && result.error_code === 'GATEWAY_PROOF_PROFILE_INACTIVE')
+  f.db.close()
+}
+
+{
+  const f = fixture('d')
+  const verified = await verify(f)
+  setSeamDb(f.db)
+  const scoped = verified.ok
+    ? await verifyAgentGatewayGrantToken(verified.context, f.token, 'read_public', new Date(f.nowMs).toISOString())
+    : null
+  ok('34b. branded context still re-checks the exact SAFE grant capability', !!scoped?.ok
+    && scoped.principal.capability === 'read_public')
+  const forged = verified.ok ? { ...verified.context } : {}
+  const forgedResult = await verifyAgentGatewayGrantToken(forged, f.token, 'read_public', new Date(f.nowMs).toISOString())
+  ok('34c. structurally identical context cannot authorize a resource scope', !forgedResult.ok
+    && forgedResult.error_code === 'GATEWAY_CONTEXT_REQUIRED')
+  f.db.prepare("UPDATE oauth_access_tokens SET revoked_at='2026-07-19T00:00:00Z'").run()
+  const revoked = verified.ok
+    ? await verifyAgentGatewayGrantToken(verified.context, f.token, 'read_public', new Date(f.nowMs).toISOString())
+    : null
+  ok('34d. resource scope re-check rejects a token revoked after MCP proof verification', !!revoked && !revoked.ok)
+  f.db.close()
+}
+
 function tsFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
     const path = `${dir}/${entry.name}`
     return entry.isDirectory() ? tsFiles(path) : entry.isFile() && entry.name.endsWith('.ts') ? [path] : []
   })
 }
-const productionRefs = tsFiles('src')
+const resourceVerifierRefs = tsFiles('src')
   .filter(path => path !== 'src/runtime/agent-gateway-proof.ts')
-  .filter(path => /agent-gateway-proof|verifyAgentGatewayDpopRequest/.test(readFileSync(path, 'utf8')))
+  .filter(path => /\bverifyAgentGatewayDpopRequest\b/.test(readFileSync(path, 'utf8')))
 const tokenRouteSource = readFileSync('src/pwa/routes/oauth-token.ts', 'utf8')
 const mcpRouteSource = readFileSync('src/pwa/routes/mcp-remote.ts', 'utf8')
 const replayStoreSource = readFileSync('src/runtime/agent-gateway-replay-pg.ts', 'utf8')
-ok('35. S1c2 adds only replay-store wiring; resource verifier remains unmounted',
-  productionRefs.length === 2
-    && productionRefs.includes('src/pwa/routes/oauth-token.ts')
-    && productionRefs.includes('src/runtime/agent-gateway-replay-pg.ts')
+ok('35. S1c3 mounts the resource verifier only at the Remote MCP boundary',
+  resourceVerifierRefs.length === 1
+    && resourceVerifierRefs[0] === 'src/pwa/routes/mcp-remote.ts'
     && tokenRouteSource.includes('verifyAgentGatewayDpopTokenRequest')
     && !tokenRouteSource.includes('verifyAgentGatewayDpopRequest')
     && !replayStoreSource.includes('verifyAgentGatewayDpopRequest')
-    && !mcpRouteSource.includes('verifyAgentGatewayDpopRequest'),
-  productionRefs.join(','))
+    && mcpRouteSource.includes('verifyAgentGatewayDpopRequest'),
+  resourceVerifierRefs.join(','))
+const boundIdentityRefs = tsFiles('src')
+  .filter(path => path !== 'src/runtime/agent-grant-verifier.ts')
+  .filter(path => /\bverifyDpopBoundGrantIdentity\b/.test(readFileSync(path, 'utf8')))
+ok('35a. proof-less bound-token identity helper is confined to the proof module',
+  boundIdentityRefs.length === 1 && boundIdentityRefs[0] === 'src/runtime/agent-gateway-proof.ts',
+  boundIdentityRefs.join(','))
 const source = readFileSync('src/runtime/agent-gateway-proof.ts', 'utf8')
 const verifierInput = source.match(/verifyAgentGatewayDpopRequest\([\s\S]*?input:\s*\{([\s\S]*?)\n\s*\},\n\s*replayStore/)
 ok('36. verifier has no request-supplied client identity field', Boolean(verifierInput)

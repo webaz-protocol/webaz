@@ -7733,11 +7733,11 @@ registerWalletWriteRoutes(app, {
 })
 mountEdgeOriginGuard(app)   // cf-origin-guard (dormant until WEBAZ_EDGE_SECRET) — before handlers
 // #1013 Phase 107: 6 public/util endpoints 统一 register（必须在 SPA catch-all 之前；logError/generateManifest 在上方定义）
-registerRemoteMcpRoutes(app, { rateLimitOk })   // RFC-022:WEBAZ_REMOTE_MCP=1 才挂载(fail-closed)+ IP 限流
+const gatewayReplay = await (await import('../runtime/agent-gateway-replay-pg.js')).openConfiguredGatewayReplayRuntime()
+registerRemoteMcpRoutes(app, { rateLimitOk, gatewayReplayStore: gatewayReplay?.store, gatewayLoopbackBaseUrl: () => `http://127.0.0.1:${PORT}` })   // RFC-022 + RFC-028 S1c3:Remote MCP + optional shared DPoP proof authority/local handoff
 registerOAuthDiscoveryRoutes(app)   // RFC-023 PR-1:WEBAZ_OAUTH=1 才挂载(fail-closed)发现面元数据
 registerOAuthAuthorizeRoutes(app)   // RFC-023 PR-2a:GET /oauth/authorize 校验+SPA consent 交接(mint 无)
 registerOAuthApproveRoutes(app, { db, auth, generateId, consumeGateToken, rateLimitOk })   // RFC-023 PR-2b:Passkey 门 consent → mint grant+code
-const gatewayReplay = await (await import('../runtime/agent-gateway-replay-pg.js')).openConfiguredGatewayReplayRuntime()
 registerOAuthTokenRoutes(app, { db, rateLimitOk, gatewayReplayStore: gatewayReplay?.store })
 registerOAuthRevokeRoutes(app, { db, rateLimitOk })   // RFC-023 PR-3(revoke):RFC 7009 —— 出示 token → 撤其 grant + 级联撤 access/refresh(一个 .immediate() tx;200 无 oracle)
 registerOAuthRegisterRoutes(app, { rateLimitOk })   // RFC-024:Dynamic Client Registration(POST /oauth/register,inert-until-consented)

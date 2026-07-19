@@ -102,6 +102,12 @@ import { requireAuth } from './auth.js'
 import { createHash, randomBytes } from 'node:crypto'
 import { SOFTWARE_VERSION } from '../../version.js'
 import { deriveHandleBase } from '../../handle-policy.js'
+import {
+  agentGatewayHandoffHeaderName,
+  issueAgentGatewayHandoff,
+  runWithAgentGatewayContext,
+} from '../../runtime/agent-gateway-handoff.js'
+import type { AgentGatewayContext } from '../../runtime/agent-gateway-proof.js'
 
 // RFC-011 §④:版本单一来源 = package.json(经 src/version.ts)。不再硬编码(旧 '0.1.8' 早漂移到 0.1.19)。
 const SERVER_VERSION = SOFTWARE_VERSION
@@ -210,15 +216,22 @@ async function apiCall(path: string, opts: { method?: string; body?: unknown; ap
   // 隔离态(远程共享端点)绝不回退到宿主 WEBAZ_API_KEY —— 匿名远程真无 key(修 Codex P0 越权);
   // 显式传入的 opts.apiKey(=本请求 bearer / args.api_key)始终优先且不受影响。
   const key = opts.apiKey || (isIsolated() ? '' : WEBAZ_API_KEY)
-  const url = WEBAZ_API_URL + (path.startsWith('/') ? path : '/' + path)
+  const normalizedPath = path.startsWith('/') ? path : '/' + path
+  const serializedBody = body != null ? JSON.stringify(body) : ''
+  // RFC-028 S1c3: a DPoP proof is valid for /mcp, not the downstream /api/agent/* URL. A verified
+  // Gateway tool call therefore mints a one-use, exact-request-bound ticket and loops back to this
+  // process. No public header, MCP argument or raw proof can manufacture the ticket.
+  const handoff = key ? issueAgentGatewayHandoff({ bearer: key, method, path: normalizedPath, serialized_body: serializedBody }) : null
+  const url = (handoff?.loopback_base_url ?? WEBAZ_API_URL) + normalizedPath
   try {
     const resp = await fetch(url, {
       method,
       headers: {
         ...(key ? { authorization: `Bearer ${key}` } : {}),
+        ...(handoff ? { [agentGatewayHandoffHeaderName()]: handoff.ticket } : {}),
         ...(body != null ? { 'content-type': 'application/json' } : {}),
       },
-      ...(body != null ? { body: JSON.stringify(body) } : {}),
+      ...(body != null ? { body: serializedBody } : {}),
       signal: AbortSignal.timeout(15_000),
     })
     let json: Record<string, unknown> | null = null
@@ -5909,7 +5922,14 @@ function settleOrder(db: Database.Database, orderId: string) {
 //   (get_agent_order / order_action_request / list_product 草稿),使委托在远程可用 —— 但隔离不变量不破:
 //   resolveGrantCredential 在隔离下【只】认这个 per-request 注入值,绝不读宿主存储的 grant/pairing 文件。
 //   grant token 不当 defaultApiKey(它不是 human api_key;通用工具照旧匿名 network_readonly)。
-export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolean; grantBearer?: string; surface?: ToolSurface } = {}) {
+export function buildMcpServer(opts: {
+  defaultApiKey?: string
+  isolated?: boolean
+  grantBearer?: string
+  surface?: ToolSurface
+  agentGatewayContext?: AgentGatewayContext
+  gatewayLoopbackBaseUrl?: string
+} = {}) {
   const server = new Server(
     // name 是客户端配置引用的 server 标识(勿改);version 走单一来源(旧硬编码 '0.1.0' 已漂移)。
     { name: 'dcp-protocol', version: SOFTWARE_VERSION },
@@ -6199,7 +6219,8 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
     }
   })
 
-  server.setRequestHandler(CallToolRequestSchema, (request) => isolationALS.run(opts.isolated === true, async () => {
+  server.setRequestHandler(CallToolRequestSchema, (request) => isolationALS.run(opts.isolated === true, () =>
+    runWithAgentGatewayContext(opts.agentGatewayContext, opts.gatewayLoopbackBaseUrl, async () => {
     const { name, arguments: args = {} } = request.params
     // RFC-022:凭证隔离标记(服务端强制,先于一切)— 覆盖调用方任何伪造值;stdio(isolated=false)则清除。
     // 权威源是上面的 isolationALS.run(整条 async 栈可见);此 args 标记为二道防线(defense in depth)。
@@ -6325,7 +6346,7 @@ export function buildMcpServer(opts: { defaultApiKey?: string; isolated?: boolea
       })
     }
     return envelope
-  }))
+  })))
 
   return server
 }

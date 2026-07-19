@@ -223,13 +223,15 @@ export async function openConfiguredGatewayReplayRuntime(
   env: NodeJS.ProcessEnv = process.env,
   deps: GatewayReplayEnvDeps = {},
 ): Promise<GatewayReplayRuntime | undefined> {
-  if (env.WEBAZ_AGENT_GATEWAY_DPOP_TOKEN !== '1') return undefined
-  if (env.WEBAZ_OAUTH !== '1') throw new Error('DPoP token activation requires WEBAZ_OAUTH=1')
+  const enabled = env.WEBAZ_AGENT_GATEWAY_DPOP_TOKEN === '1'
+    || env.WEBAZ_AGENT_GATEWAY_DPOP_RESOURCE === '1'
+  if (!enabled) return undefined
+  if (env.WEBAZ_OAUTH !== '1') throw new Error('DPoP activation requires WEBAZ_OAUTH=1')
   if (env.WEBAZ_AGENT_GATEWAY_REPLAY_BACKEND !== 'postgres') {
-    throw new Error('DPoP token activation requires WEBAZ_AGENT_GATEWAY_REPLAY_BACKEND=postgres')
+    throw new Error('DPoP activation requires WEBAZ_AGENT_GATEWAY_REPLAY_BACKEND=postgres')
   }
   const raw = env.WEBAZ_AGENT_GATEWAY_REPLAY_DATABASE_URL
-  if (!raw) throw new Error('DPoP token activation requires a dedicated replay database URL')
+  if (!raw) throw new Error('DPoP activation requires a dedicated replay database URL')
   const connectionString = validateConnectionString(raw)
   const tlsCa = env.NODE_ENV === 'production' ? decodeTlsCa(env.WEBAZ_AGENT_GATEWAY_REPLAY_TLS_CA_B64) : undefined
   let createPool = deps.createPool
