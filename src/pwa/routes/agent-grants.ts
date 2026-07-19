@@ -25,7 +25,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
-import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrantAuthLogSchema, initAgentPermissionRequestsSchema, initDemandSignalsSchema, initOrderQuotesSchema, initOrderDraftsSchema } from '../../runtime/webaz-schema-helpers.js'
+import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrantAuthLogSchema, initAgentPermissionRequestsSchema, initDemandSignalsSchema, initOrderQuotesSchema, initOrderDraftsSchema, initOAuthSchema } from '../../runtime/webaz-schema-helpers.js'
 import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveBundle, durationAllowedForScopes, suggestedDurationForScopes, allowedDurationsForScopes, durationToSeconds, riskLevelForScopes, type GrantDuration } from '../../runtime/agent-grant-scopes.js'
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
 import { verifyGrantToken, type GrantPrincipal } from '../../runtime/agent-grant-verifier.js'
@@ -112,6 +112,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   initDemandSignalsSchema(db)
   initOrderQuotesSchema(db)
   initOrderDraftsSchema(db)
+  initOAuthSchema(db)   // PR-4: the grants list (connection_kind via oauth_auth_codes) + revoke cascade (oauth_*_tokens) depend on the OAuth tables; ensure they exist wherever these routes mount. Idempotent.
 
   // Resolve the ACTIVE grant behind a gtk_ bearer (no scope check) — used to bind a permission request to
   // (grant_id, human_id). Returns null on missing/expired/revoked. token_hash lookup mirrors the verifier.
