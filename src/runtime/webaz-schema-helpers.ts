@@ -1930,8 +1930,15 @@ export function initDemandSignalsSchema(db: Database.Database): void {
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
+  // 调用契约 PR-E — 信号质量四态(ALTER AFTER CREATE 铁律:新旧 DB 每次 boot 幂等收敛)。
+  //   quality: valid | false_negative_suspect | invalidated | unreviewed;NULL = legacy_unreviewed
+  //   (加列前的历史行,语义=未复核,绝不当作"已确认有效"—— Holden 显式要求)。
+  for (const col of ['quality TEXT', 'invalidated_at TEXT', 'invalid_reason TEXT']) {
+    try { db.exec(`ALTER TABLE demand_signals ADD COLUMN ${col}`) } catch { /* 已存在 */ }
+  }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_dms_created ON demand_signals(created_at)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_dms_cat ON demand_signals(category, created_at)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_dms_quality ON demand_signals(quality)`)
 }
 
 export function initAgentGrantAuthLogSchema(db: Database.Database): void {

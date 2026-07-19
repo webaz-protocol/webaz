@@ -427,11 +427,29 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
         perKeywordHits.push({ keyword: k, hits: hit })
       }
     }
+    // ── 信号质量判定(PR-E 防污染):0 命中时做一次【保留全部有效约束】的宽松复检 —— 仅把 keyword_match
+    //   降为 any(多词合取假阴性),类目/预算/库存/目的地约束【全部保留】(Holden:不得去 category 全局
+    //   搜就判假阴性)。宽松复检仍命中 → 本次标 false_negative_suspect(检索缺陷疑似,不当作真无供给);
+    //   否则 valid(命中或同约束下确无供给)。绝不静默:四态显式,NULL 只属加列前的 legacy 行。 ──
+    let quality: 'valid' | 'false_negative_suspect' = 'valid'
+    if (candidates.length === 0 && keywordMatch === 'all' && keywords.length > 1) {
+      const w2: string[] = ["status = 'active'", 'stock >= ?', `(${keywords.map(() => KW_CLAUSE).join(' OR ')})`]
+      const p2: unknown[] = [quantity, ...keywords.map(esc)]
+      if (categoryResolved) { w2.splice(2, 0, 'LOWER(category) = LOWER(?)'); p2.splice(1, 0, categoryResolved) }
+      if (maxPrice !== null) { w2.push('price <= ?'); p2.push(maxPrice) }
+      // LIMIT 30 与主查询候选窗口一致再套目的地谓词 —— 不可 LIMIT 1 先截断:任取的首行可能不可售该区,
+      //   而另有可售匹配,会漏判假阴性(Codex R1-2:复检必须复刻主查询的 fetch-then-region 行为)。
+      const r2 = await dbAll<Record<string, unknown>>(`SELECT id, seller_id, sale_regions FROM products WHERE ${w2.join(' AND ')} ORDER BY created_at DESC LIMIT 30`, p2)
+      const anyHit = region
+        ? r2.some(r => { const rule = effectiveSaleRegionsRule(db, r as { sale_regions?: string | null }, String(r.seller_id)); return !rule || regionAllowedByRule(rule, region) })
+        : r2.length > 0
+      if (anyHit) quality = 'false_negative_suspect'
+    }
     // ── 需求信号落库(append-only;失败不吞——采集是本端点被授权的显式效果,写不进则如实 503) ──
     const intent = { category: categoryResolved, ...(categoryCorrected ? { category_submitted: categoryCorrected.submitted } : {}), keywords, keyword_match: keywordMatch, max_price: maxPrice, ship_to_region: region, quantity }
     try {
-      await dbRun('INSERT INTO demand_signals (id, human_id, source, intent_json, category, region, budget_units, result_count) VALUES (?,?,?,?,?,?,?,?)',
-        [generateId('dms'), p.human_id, 'mcp_discover', JSON.stringify(intent), categoryResolved, region, maxPrice === null ? null : toUnits(maxPrice), candidates.length])
+      await dbRun('INSERT INTO demand_signals (id, human_id, source, intent_json, category, region, budget_units, result_count, quality) VALUES (?,?,?,?,?,?,?,?,?)',
+        [generateId('dms'), p.human_id, 'mcp_discover', JSON.stringify(intent), categoryResolved, region, maxPrice === null ? null : toUnits(maxPrice), candidates.length, quality])
     } catch (e) {
       console.error('[discover] demand-signal write failed:', (e as Error).message)
       return void res.status(503).json({ error: 'demand-signal ledger unavailable; discover is disclosed-as-recorded and will not run unrecorded', error_code: 'DEMAND_SIGNAL_WRITE_FAILED' })
@@ -441,6 +459,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       match_semantics: keywordMatch,
       ...(categoryCorrected ? { category_resolved: categoryCorrected } : {}),
       ...(perKeywordHits ? { per_keyword_hits: perKeywordHits } : {}),
+      ...(quality === 'false_negative_suspect' ? { quality, quality_note: 'suspected false negative: the SAME constraints matched under keyword_match:"any" — recorded as false_negative_suspect (not counted as unmet demand). Retry with keyword_match:"any".' } : {}),
       ...(candidates.length === 0 ? { no_candidates: true, note: 'No matching listings under THESE constraints — honestly zero, nothing similar is passed off as a match. Check per_keyword_hits: a keyword with 0 hits under keyword_match:"all" is what zeroed the set — drop it or retry with keyword_match:"any". Category keys: GET /api/agent/categories. Your structured request was recorded as a demand signal (disclosed). Consider an RFQ at webaz.xyz, or browse PWA #discover.' } : {}),
       disclosure: 'This query was recorded as-is as a demand signal linked to your account, to inform marketplace supply. Validation enforced: max-40-char product terms; emails, URLs, phone-like digit runs, and non-product punctuation are rejected (400) and never recorded. Inputs that pass are recorded verbatim - do not put personal data in category/keywords.',
     })
