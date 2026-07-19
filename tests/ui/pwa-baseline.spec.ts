@@ -75,14 +75,16 @@ async function assertClassicScriptsLoaded(page: Page) {
     '/app-discover-new-filters.js',
     '/app-shop-rulings.js',
     '/app-seller.js',
+    '/app-quick-actions.js',
     '/app.js',
   ]))
   await expect.poll(() => page.evaluate(() => ({
     app: !!document.getElementById('app')?.children.length,
     discover: typeof window.renderDiscover === 'function',
     seller: typeof window.renderSeller === 'function',
+    quickActions: typeof window.toggleQuickActions === 'function',
     welcome: typeof window.renderWelcome === 'function',
-  }))).toEqual({ app: true, discover: true, seller: true, welcome: true })
+  }))).toEqual({ app: true, discover: true, seller: true, quickActions: true, welcome: true })
 }
 
 async function assertLanguageSync(page: Page) {
@@ -499,8 +501,21 @@ for (const viewport of SELLER_WORKBENCH_VIEWPORTS) {
     const isPhone = viewport.width <= 600
     expect(columns).toBe(isPhone ? 2 : 5)
     if (isPhone) {
-      await expect(page.locator('#agent-fab')).toBeHidden()
-      await expect(page.locator('#feedback-fab')).toBeHidden()
+      await expect(page.locator('#quick-actions-trigger')).toBeVisible()
+      await expect(page.locator('#quick-actions-menu')).toBeHidden()
+      await page.locator('#quick-actions-trigger').click()
+      await expect(page.locator('#quick-actions-trigger')).toHaveAttribute('aria-expanded', 'true')
+      await expect(page.locator('#quick-actions-menu')).toBeVisible()
+      await expect(page.locator('[data-quick-action="agent"]')).toBeVisible()
+      await expect(page.locator('[data-quick-action="feedback"]')).toBeVisible()
+      await page.locator('[data-quick-action="feedback"]').focus()
+      await page.keyboard.press('Escape')
+      await expect(page.locator('#quick-actions-menu')).toBeHidden()
+      await expect(page.locator('#quick-actions-trigger')).toBeFocused()
+      await page.locator('#quick-actions-trigger').click()
+      await page.locator('[data-quick-action="agent"]').click()
+      await expect(page.locator('#quick-actions-trigger')).toHaveAttribute('aria-expanded', 'false')
+      await expect(page.locator('#agent-chat-overlay')).toBeVisible()
     }
     const alignment = await page.locator('.seller-workbench').evaluate(root => {
       const rect = (selector: string) => {
@@ -687,9 +702,8 @@ test('desktop bottom-bar shell has no rail gap or FAB overlap', async ({ page })
       centered: Math.abs(left - right) <= 1,
       barLeft: bar.getBoundingClientRect().left,
       barRight: window.innerWidth - bar.getBoundingClientRect().right,
-      agentDisplay: getComputedStyle(document.getElementById('agent-fab')!).display,
-      feedbackDisplay: getComputedStyle(document.getElementById('feedback-fab')!).display,
+      quickActionsDisplay: getComputedStyle(document.getElementById('quick-actions')!).display,
     }
   })
-  expect(geometry).toEqual({ centered: true, barLeft: 0, barRight: 0, agentDisplay: 'none', feedbackDisplay: 'none' })
+  expect(geometry).toEqual({ centered: true, barLeft: 0, barRight: 0, quickActionsDisplay: 'none' })
 })
