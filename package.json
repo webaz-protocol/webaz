@@ -149,6 +149,7 @@
     "test:direct-receive-accounts": "tsx scripts/test-direct-receive-accounts.ts",
     "test:direct-receive-account-endpoints": "tsx scripts/test-direct-receive-account-endpoints.ts",
     "test:direct-receive-resolve": "tsx scripts/test-direct-receive-resolve.ts",
+    "test:quote-approval-failvisible": "tsx scripts/test-quote-approval-failvisible.ts",
     "test:platform-receive-accounts": "tsx scripts/test-platform-receive-accounts.ts",
     "test:fee-prepay-request": "tsx scripts/test-fee-prepay-request.ts",
     "test:fee-prepay-review": "tsx scripts/test-fee-prepay-review.ts",
