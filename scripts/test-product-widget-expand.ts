@@ -87,6 +87,32 @@ try {
   fire(backBtn!)
   ok('B1-13 返回列表 restores the search list (both cards back) — cached, no tool call', !!cardFor(rootNode, 'prd_a') && !!cardFor(rootNode, 'prd_b'))
 
+  // ── B2 准备下单:one-click sends a structured follow-up (model orchestrates quote→draft→submit→Passkey).
+  //    Codex R1 HIGH: it must NOT callTool webaz_quote_order (model-only → app call rejected+swallowed → stuck).
+  //    So the card must issue a follow-up (never callTool) carrying the exact product_id. ──
+  const calls: Array<[string, unknown]> = []
+  const sent: string[] = []
+  const oai2 = { callTool: (n: string, a: unknown) => { calls.push([n, a]) }, sendFollowUpMessage: (o: { prompt?: string }) => { sent.push((o && o.prompt) || '') } }
+  win.innerWidth = 1200
+  renderBody(oai2, SEARCH)
+  const pdBtn = findByText(cardFor(rootNode, 'prd_a')!, '准备下单')
+  ok('B2-1 card shows a 准备下单 primary button (not the old 报价)', !!pdBtn && !findByText(rootNode, '报价'))
+  ok('B2-2 准备下单 button is styled primary', (pdBtn as N).className === 'primary')
+  fire(pdBtn!)
+  ok('B2-3 准备下单 sends a follow-up carrying the EXACT product_id (structured intent, not just a title)', sent.length >= 1 && sent[0].includes('prd_a') && /准备下单/.test(sent[0]))
+  ok('B2-4 does NOT callTool the model-only webaz_quote_order (would be rejected+swallowed on standard hosts → stuck)', !calls.some(c => c[0] === 'webaz_quote_order'))
+  ok('B2-5 widget NEVER calls money-path tools from the card (no order_draft/submit/execute)', !calls.some(c => /order_draft|submit_order|order_create|place_order|execute/.test(c[0])))
+  ok('B2-6 button disables on click (防误触; server intent_hash dedups any duplicate submit)', (pdBtn as N & { disabled?: boolean }).disabled === true)
+  // fallback: no follow-up channel → button re-enables with an actionable instruction (never permanently stuck)
+  const rn2 = mk('div'); rn2.setAttribute('id', 'root'); const doc2 = { getElementById: (id: string) => (id === 'root' ? rn2 : null), createElement: (t: string) => mk(t) }
+  const ctx2: Record<string, unknown> = { document: doc2, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON }
+  ctx2.globalThis = ctx2; ctx2.self = ctx2; vm.createContext(ctx2)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctx2)
+  ;(ctx2.__render as (o: unknown, out: unknown) => void)({}, SEARCH)   // oai with NO follow-up channel
+  const pd2 = findByText(rn2, '准备下单')!
+  fire(pd2)
+  ok('B2-7 no follow-up channel → button not stuck: relabels to an instruction and re-enables', !(pd2 as N & { disabled?: boolean }).disabled && /准备下单/.test(pd2.textContent))
+
   // ── mobile: opening a second card closes the first (one-at-a-time) ──
   win.innerWidth = 500
   renderBody(oai, SEARCH)
@@ -97,4 +123,4 @@ try {
 } catch (e) { fail++; fails.push('✗ THREW: ' + ((e as Error).stack || (e as Error).message)) }
 
 if (fail > 0) { console.error(`\n❌ product-widget-expand FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-console.log(`✅ product-widget-expand: per-card expand/collapse with PERSISTED state (survives sort re-render) + real 展开/收起 toggle + clickable basic-info + scroll-to-card + detail 返回列表 (cached, no dead-end) + mobile one-at-a-time\n  ✅ pass ${pass}`)
+console.log(`✅ product-widget-expand+prepare: B1 expand/collapse PERSISTED (survives sort) + 展开/收起 toggle + clickable info + scroll + detail 返回列表 + mobile one-at-a-time; B2 准备下单 primary → structured follow-up carrying product_id (model orchestrates quote→draft→submit→Passkey), NEVER callTool the model-only quote, NEVER money-path tools, disables on click, no-channel→re-enables (never stuck)\n  ✅ pass ${pass}`)
