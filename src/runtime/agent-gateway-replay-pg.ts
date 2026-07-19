@@ -74,18 +74,23 @@ async function assertReplaySchema(pool: ReplayPool): Promise<void> {
   }
 
   const readiness = await pool.query<{
-    can_select: boolean; can_insert: boolean; can_update: boolean; can_delete: boolean; db_now: Date | string
+    can_schema_usage: boolean; can_schema_create: boolean; can_select: boolean; can_insert: boolean
+    can_update: boolean; can_delete: boolean; can_truncate: boolean; db_now: Date | string
   }>(`
-    SELECT has_table_privilege(current_user,$1,'SELECT') AS can_select,
+    SELECT has_schema_privilege(current_user,$2,'USAGE') AS can_schema_usage,
+           has_schema_privilege(current_user,$2,'CREATE') AS can_schema_create,
+           has_table_privilege(current_user,$1,'SELECT') AS can_select,
            has_table_privilege(current_user,$1,'INSERT') AS can_insert,
            has_table_privilege(current_user,$1,'UPDATE') AS can_update,
            has_table_privilege(current_user,$1,'DELETE') AS can_delete,
+           has_table_privilege(current_user,$1,'TRUNCATE') AS can_truncate,
            clock_timestamp() AS db_now
-  `, [TABLE])
+  `, [TABLE, SCHEMA])
   const ready = readiness.rows[0]
   const dbNow = ready ? new Date(ready.db_now).getTime() : Number.NaN
-  if (!ready?.can_select || !ready.can_insert || !ready.can_update || !ready.can_delete) {
-    throw new Error('replay database role lacks required DML privileges')
+  if (!ready?.can_schema_usage || !ready.can_select || !ready.can_insert || !ready.can_update || !ready.can_delete
+    || ready.can_schema_create || ready.can_truncate) {
+    throw new Error('replay database role does not match the least-privilege contract')
   }
   if (!Number.isFinite(dbNow) || Math.abs(dbNow - Date.now()) > 60_000) {
     throw new Error('replay database clock is outside the allowed skew')
@@ -93,8 +98,16 @@ async function assertReplaySchema(pool: ReplayPool): Promise<void> {
 
   const expiryIndex = await pool.query<{ present: boolean }>(`
     SELECT EXISTS (
-      SELECT 1 FROM pg_indexes
-       WHERE schemaname=$1 AND tablename=$2 AND indexdef ~ '\\(expires_at\\)'
+      SELECT 1
+        FROM pg_index i
+        JOIN pg_class idx ON idx.oid=i.indexrelid
+        JOIN pg_class tbl ON tbl.oid=i.indrelid
+        JOIN pg_namespace ns ON ns.oid=tbl.relnamespace
+        JOIN pg_am am ON am.oid=idx.relam
+        JOIN pg_attribute a ON a.attrelid=tbl.oid AND a.attnum=i.indkey[0]
+       WHERE ns.nspname=$1 AND tbl.relname=$2
+         AND i.indisvalid AND i.indisready AND i.indpred IS NULL AND i.indexprs IS NULL
+         AND i.indnkeyatts >= 1 AND am.amname='btree' AND a.attname='expires_at'
     ) AS present
   `, [SCHEMA, TABLE_NAME])
   if (!expiryIndex.rows[0]?.present) throw new Error('replay expiry index is missing')
@@ -110,19 +123,33 @@ export async function createPostgresGatewayReplayRuntime(pool: ReplayPool): Prom
         // One statement is the cross-replica serialization point. An active
         // conflict returns no row (replayed); an expired conflict is replaced
         // atomically, so cleanup is never part of correctness.
-        const result = await pool.query<{ claimed: number }>(`
-          INSERT INTO ${TABLE} AS current
-            (proof_kind,replay_scope_hash,replay_key_hash,gateway_client_id,grant_id,first_seen_at,expires_at)
-          SELECT $1,$2,$3,$4,$5,statement_timestamp(),$6::timestamptz
-          WHERE $6::timestamptz > statement_timestamp()
-            AND $6::timestamptz <= statement_timestamp() + INTERVAL '24 hours'
-          ON CONFLICT (proof_kind,replay_scope_hash,replay_key_hash) DO UPDATE SET
-            gateway_client_id=EXCLUDED.gateway_client_id,
-            grant_id=EXCLUDED.grant_id,
-            first_seen_at=EXCLUDED.first_seen_at,
-            expires_at=EXCLUDED.expires_at
-          WHERE current.expires_at <= statement_timestamp()
-          RETURNING 1 AS claimed
+        const result = await pool.query<{ outcome: 'claimed' | 'replayed' | 'unavailable' }>(`
+          WITH candidate AS MATERIALIZED (
+            SELECT $1::text AS proof_kind,$2::text AS replay_scope_hash,$3::text AS replay_key_hash,
+                   $4::text AS gateway_client_id,$5::text AS grant_id,
+                   statement_timestamp() AS db_now,$6::timestamptz AS expires_at
+          ), claimed AS (
+            INSERT INTO ${TABLE} AS current
+              (proof_kind,replay_scope_hash,replay_key_hash,gateway_client_id,grant_id,first_seen_at,expires_at)
+            SELECT proof_kind,replay_scope_hash,replay_key_hash,gateway_client_id,grant_id,db_now,expires_at
+              FROM candidate
+             WHERE expires_at > db_now AND expires_at <= db_now + INTERVAL '24 hours'
+            ON CONFLICT (proof_kind,replay_scope_hash,replay_key_hash) DO UPDATE SET
+              gateway_client_id=EXCLUDED.gateway_client_id,
+              grant_id=EXCLUDED.grant_id,
+              first_seen_at=EXCLUDED.first_seen_at,
+              expires_at=EXCLUDED.expires_at
+            WHERE current.expires_at <= EXCLUDED.first_seen_at
+            RETURNING 1
+          )
+          SELECT CASE
+            WHEN NOT EXISTS (
+              SELECT 1 FROM candidate
+               WHERE expires_at > db_now AND expires_at <= db_now + INTERVAL '24 hours'
+            ) THEN 'unavailable'
+            WHEN EXISTS (SELECT 1 FROM claimed) THEN 'claimed'
+            ELSE 'replayed'
+          END AS outcome
         `, [
           input.proof_kind,
           input.replay_scope_hash,
@@ -131,7 +158,7 @@ export async function createPostgresGatewayReplayRuntime(pool: ReplayPool): Prom
           input.grant_id,
           input.expires_at,
         ])
-        return result.rowCount === 1 ? 'claimed' : 'replayed'
+        return result.rows[0]?.outcome ?? 'unavailable'
       } catch {
         return 'unavailable'
       }
@@ -168,10 +195,8 @@ function validateConnectionString(raw: string): string {
     || !parsed.hostname || !parsed.username || !parsed.password) {
     throw new Error('Agent Gateway replay database URL must be PostgreSQL with credentials')
   }
-  for (const forbidden of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert']) {
-    if (parsed.searchParams.has(forbidden)) {
-      throw new Error('Agent Gateway replay TLS is configured only through the pinned CA setting')
-    }
+  if (parsed.search || parsed.hash) {
+    throw new Error('Agent Gateway replay database URL must not contain query parameters or fragments')
   }
   return raw
 }

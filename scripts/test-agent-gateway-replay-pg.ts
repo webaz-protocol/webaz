@@ -49,13 +49,19 @@ ok('5. enabled requires dedicated URL', await rejects(
     WEBAZ_AGENT_GATEWAY_DPOP_TOKEN: '1', WEBAZ_OAUTH: '1',
     WEBAZ_AGENT_GATEWAY_REPLAY_BACKEND: 'postgres',
   }), 'dedicated replay database URL'))
-ok('6. URL-level TLS settings cannot override the pinned CA policy', await rejects(
+ok('6. URL query parameters cannot override the pinned CA policy', await rejects(
   () => openConfiguredGatewayReplayRuntime({
     WEBAZ_AGENT_GATEWAY_DPOP_TOKEN: '1', WEBAZ_OAUTH: '1',
     WEBAZ_AGENT_GATEWAY_REPLAY_BACKEND: 'postgres',
     WEBAZ_AGENT_GATEWAY_REPLAY_DATABASE_URL: 'postgresql://user:pass@db.example/replay?sslmode=require',
-  }), 'pinned CA setting'))
-ok('7. production requires a pinned CA bundle', await rejects(
+  }), 'must not contain query parameters'))
+ok('7. node-postgres ssl aliases cannot disable pinned-CA verification', await rejects(
+  () => openConfiguredGatewayReplayRuntime({
+    WEBAZ_AGENT_GATEWAY_DPOP_TOKEN: '1', WEBAZ_OAUTH: '1',
+    WEBAZ_AGENT_GATEWAY_REPLAY_BACKEND: 'postgres',
+    WEBAZ_AGENT_GATEWAY_REPLAY_DATABASE_URL: 'postgresql://user:pass@db.example/replay?ssl=0',
+  }), 'must not contain query parameters'))
+ok('8. production requires a pinned CA bundle', await rejects(
   () => openConfiguredGatewayReplayRuntime({
     NODE_ENV: 'production', WEBAZ_AGENT_GATEWAY_DPOP_TOKEN: '1', WEBAZ_OAUTH: '1',
     WEBAZ_AGENT_GATEWAY_REPLAY_BACKEND: 'postgres',
@@ -66,7 +72,7 @@ const unavailablePool = {
   async query(): Promise<never> { throw new Error('offline') },
   async end(): Promise<void> {},
 }
-ok('8. initialization fails when database is unavailable', await rejects(
+ok('9. initialization fails when database is unavailable', await rejects(
   () => createPostgresGatewayReplayRuntime(unavailablePool), 'offline'))
 
 const schemaColumns = [
@@ -79,9 +85,11 @@ function fakeReadyResult(text: string): { rowCount: number; rows: Record<string,
   if (text.includes('information_schema.columns')) return { rowCount: schemaColumns.length, rows: schemaColumns }
   if (text.includes("c.contype='p'")) return { rowCount: 1, rows: [{ columns: ['proof_kind', 'replay_scope_hash', 'replay_key_hash'] }] }
   if (text.includes('has_table_privilege')) return { rowCount: 1, rows: [{
-    can_select: true, can_insert: true, can_update: true, can_delete: true, db_now: new Date(),
+    can_schema_usage: true, can_schema_create: false,
+    can_select: true, can_insert: true, can_update: true, can_delete: true, can_truncate: false,
+    db_now: new Date(),
   }] }
-  if (text.includes('pg_indexes')) return { rowCount: 1, rows: [{ present: true }] }
+  if (text.includes('i.indisvalid')) return { rowCount: 1, rows: [{ present: true }] }
   return null
 }
 
@@ -92,20 +100,32 @@ const badSchemaPool = {
   },
   async end() {},
 }
-ok('9. startup rejects a missing or stale schema', await rejects(
+ok('10. startup rejects a missing or stale schema', await rejects(
   () => createPostgresGatewayReplayRuntime(badSchemaPool), 'column contract mismatch'))
 
 const badPrivilegePool = {
   async query(text: string) {
     if (text.includes('has_table_privilege')) return { rowCount: 1, rows: [{
-      can_select: true, can_insert: true, can_update: true, can_delete: false, db_now: new Date(),
+      can_schema_usage: true, can_schema_create: false,
+      can_select: true, can_insert: true, can_update: true, can_delete: false, can_truncate: false,
+      db_now: new Date(),
     }] }
     return fakeReadyResult(text) ?? { rowCount: 0, rows: [] }
   },
   async end() {},
 }
-ok('10. startup rejects an under-privileged application role', await rejects(
-  () => createPostgresGatewayReplayRuntime(badPrivilegePool), 'lacks required DML privileges'))
+ok('11. startup rejects an under-privileged application role', await rejects(
+  () => createPostgresGatewayReplayRuntime(badPrivilegePool), 'least-privilege contract'))
+
+const badIndexPool = {
+  async query(text: string) {
+    if (text.includes('i.indisvalid')) return { rowCount: 1, rows: [{ present: false }] }
+    return fakeReadyResult(text) ?? { rowCount: 0, rows: [] }
+  },
+  async end() {},
+}
+ok('12. startup rejects a partial, invalid, or wrongly keyed expiry index', await rejects(
+  () => createPostgresGatewayReplayRuntime(badIndexPool), 'expiry index is missing'))
 
 const queries: string[] = []
 let recordingClosed = false
@@ -114,18 +134,33 @@ const recordingPool = {
     queries.push(text)
     const ready = fakeReadyResult(text)
     if (ready) return ready
-    return { rowCount: text.includes('RETURNING 1 AS claimed') ? 1 : 0, rows: [] }
+    return text.includes('END AS outcome')
+      ? { rowCount: 1, rows: [{ outcome: 'claimed' }] }
+      : { rowCount: 0, rows: [] }
   },
   async end() { recordingClosed = true },
 }
 const recordingRuntime = await createPostgresGatewayReplayRuntime(recordingPool)
-ok('11. valid claim reaches the atomic upsert', await recordingRuntime.store.claim(claim()) === 'claimed')
-ok('12. claim is one statement and uses the shared database clock with a database-side TTL cap',
+ok('13. valid claim reaches the atomic upsert', await recordingRuntime.store.claim(claim()) === 'claimed')
+ok('14. claim is one statement and uses the shared database clock with a database-side TTL cap',
   queries.some(q => q.includes('ON CONFLICT') && q.includes('statement_timestamp()'))
   && queries.some(q => q.includes("INTERVAL '24 hours'"))
   && !queries.some(q => q.trimStart().startsWith('DELETE FROM')))
 await recordingRuntime.close()
-ok('13. runtime owns and closes its pool', recordingClosed)
+ok('15. runtime owns and closes its pool', recordingClosed)
+
+const clockRejectPool = {
+  async query(text: string) {
+    const ready = fakeReadyResult(text)
+    if (ready) return ready
+    return { rowCount: 1, rows: [{ outcome: 'unavailable' }] }
+  },
+  async end() {},
+}
+const clockRejectRuntime = await createPostgresGatewayReplayRuntime(clockRejectPool)
+ok('16. database-clock rejection is unavailable, never replayed',
+  await clockRejectRuntime.store.claim(claim()) === 'unavailable')
+await clockRejectRuntime.close()
 
 let runtimeCalls = 0
 const runtimeOutagePool = {
@@ -138,8 +173,8 @@ const runtimeOutagePool = {
   async end() {},
 }
 const outageRuntime = await createPostgresGatewayReplayRuntime(runtimeOutagePool)
-ok('14. runtime database outage fails closed', await outageRuntime.store.claim(claim()) === 'unavailable')
-ok('15. outage cannot fall back to a local claimant', runtimeCalls === 1)
+ok('17. runtime database outage fails closed', await outageRuntime.store.claim(claim()) === 'unavailable')
+ok('18. outage cannot fall back to a local claimant', runtimeCalls === 1)
 await outageRuntime.close()
 
 const secret = 'not-a-real-password'
@@ -156,7 +191,7 @@ try {
     async end(): Promise<void> { startupClosed = true },
   }) })
 } catch (error) { startupError = error instanceof Error ? error.message : String(error) }
-ok('16. startup error is generic and does not disclose the connection secret',
+ok('19. startup error is generic and does not disclose the connection secret',
   startupError.includes('replay store initialization failed') && !startupError.includes(secret) && startupClosed)
 
 let configuredClosed = false, configuredCa = ''
@@ -174,37 +209,58 @@ const configured = await openConfiguredGatewayReplayRuntime({
   createPool: (_url, ca) => { configuredCa = ca ?? ''; return configuredPool },
   random: () => 0.5,
 })
-ok('17. valid production config opens a runtime with the pinned CA', !!configured && configuredCa.includes('BEGIN CERTIFICATE'))
+ok('20. valid production config opens a runtime with the pinned CA', !!configured && configuredCa.includes('BEGIN CERTIFICATE'))
 await configured?.close()
-ok('18. configured runtime closes cleanly', configuredClosed)
+ok('21. configured runtime closes cleanly', configuredClosed)
 
 const url = process.env.DATABASE_URL
 if (url && process.env.WEBAZ_AGENT_GATEWAY_REPLAY_TEST_ALLOW === '1') {
   const migration = readFileSync('db/agent-gateway-replay.pg.sql', 'utf8')
   const owner = new Pool({ connectionString: url, application_name: `webaz-replay-test-owner-${runId}` })
-  await owner.query(migration)
-  await owner.end()
-  const p1 = new Pool({ connectionString: url, application_name: `webaz-replay-test-a-${runId}` })
-  const p2 = new Pool({ connectionString: url, application_name: `webaz-replay-test-b-${runId}` })
+  const roleName = `webaz_replay_test_${runId}`
+  const rolePassword = randomBytes(24).toString('hex')
+  const quotedRole = `"${roleName}"`
+  const appUrl = new URL(url)
+  appUrl.username = roleName
+  appUrl.password = rolePassword
+  let roleCreated = false
+  let p1: Pool | undefined
+  let p2: Pool | undefined
   let r1: Awaited<ReturnType<typeof createPostgresGatewayReplayRuntime>> | undefined
   let r2: Awaited<ReturnType<typeof createPostgresGatewayReplayRuntime>> | undefined
   try {
+    await owner.query(migration)
+    await owner.query(`CREATE ROLE ${quotedRole} LOGIN PASSWORD '${rolePassword}'
+      NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`)
+    roleCreated = true
+    await owner.query(`GRANT USAGE ON SCHEMA agent_gateway_replay TO ${quotedRole}`)
+    await owner.query(`GRANT SELECT,INSERT,UPDATE,DELETE ON ${AGENT_GATEWAY_REPLAY_TABLE} TO ${quotedRole}`)
+    p1 = new Pool({ connectionString: appUrl.toString(), application_name: `webaz-replay-test-a-${runId}` })
+    p2 = new Pool({ connectionString: appUrl.toString(), application_name: `webaz-replay-test-b-${runId}` })
     r1 = await createPostgresGatewayReplayRuntime(p1)
     r2 = await createPostgresGatewayReplayRuntime(p2)
+    const privileges = await p1.query<{
+      can_usage: boolean; can_create: boolean; can_truncate: boolean
+    }>(`SELECT has_schema_privilege(current_user,'agent_gateway_replay','USAGE') AS can_usage,
+               has_schema_privilege(current_user,'agent_gateway_replay','CREATE') AS can_create,
+               has_table_privilege(current_user,$1,'TRUNCATE') AS can_truncate`, [AGENT_GATEWAY_REPLAY_TABLE])
+    ok('22. live adapters use a non-owner role with only the required schema/table privileges',
+      privileges.rows[0]?.can_usage === true && privileges.rows[0]?.can_create === false
+      && privileges.rows[0]?.can_truncate === false)
     const same = claim()
     const outcomes = await Promise.all([r1.store.claim(same), r2.store.claim(same)])
-    ok('19. two independent instances produce one claimant', outcomes.filter(x => x === 'claimed').length === 1)
-    ok('20. two independent instances reject one replay', outcomes.filter(x => x === 'replayed').length === 1)
+    ok('23. two independent instances produce one claimant', outcomes.filter(x => x === 'claimed').length === 1)
+    ok('24. two independent instances reject one replay', outcomes.filter(x => x === 'replayed').length === 1)
     const stored = await p1.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM ${AGENT_GATEWAY_REPLAY_TABLE}
       WHERE proof_kind=$1 AND replay_scope_hash=$2 AND replay_key_hash=$3`, [
       same.proof_kind, same.replay_scope_hash, same.replay_key_hash,
     ])
-    ok('21. concurrent claim leaves exactly one row', stored.rows[0]?.count === '1')
+    ok('25. concurrent claim leaves exactly one row', stored.rows[0]?.count === '1')
 
     const otherScope = claim(randomBytes(32).toString('hex'), same.replay_key_hash)
-    ok('22. same proof key in a distinct scope does not collide', await r2.store.claim(otherScope) === 'claimed')
-    ok('23. malformed hashes fail closed without a write', await r1.store.claim({ ...claim(), replay_key_hash: 'raw-jti' }) === 'unavailable')
-    ok('24. expired input fails closed', await r1.store.claim({ ...claim(), expires_at: now.toISOString() }) === 'unavailable')
+    ok('26. same proof key in a distinct scope does not collide', await r2.store.claim(otherScope) === 'claimed')
+    ok('27. malformed hashes fail closed without a write', await r1.store.claim({ ...claim(), replay_key_hash: 'raw-jti' }) === 'unavailable')
+    ok('28. expired input fails closed', await r1.store.claim({ ...claim(), expires_at: now.toISOString() }) === 'unavailable')
 
     const expired = claim()
     await p1.query(`INSERT INTO ${AGENT_GATEWAY_REPLAY_TABLE}
@@ -215,18 +271,26 @@ if (url && process.env.WEBAZ_AGENT_GATEWAY_REPLAY_TEST_ALLOW === '1') {
       new Date(now.getTime() - 720_000).toISOString(), new Date(now.getTime() - 360_000).toISOString(),
     ])
     const expiredRace = await Promise.all([r1.store.claim(expired), r2.store.claim(expired)])
-    ok('25. expired-row replacement plus race has one claimant', expiredRace.filter(x => x === 'claimed').length === 1)
-    ok('26. expired-row replacement plus race rejects one replay', expiredRace.filter(x => x === 'replayed').length === 1)
+    ok('29. expired-row replacement plus race has one claimant', expiredRace.filter(x => x === 'claimed').length === 1)
+    ok('30. expired-row replacement plus race rejects one replay', expiredRace.filter(x => x === 'replayed').length === 1)
 
     const closedStore = r2.store
     await r2.close(); r2 = undefined
-    ok('27. a closed production pool returns unavailable without fallback', await closedStore.claim(claim()) === 'unavailable')
+    ok('31. a closed production pool returns unavailable without fallback', await closedStore.claim(claim()) === 'unavailable')
   } finally {
-    await p1.query(`DELETE FROM ${AGENT_GATEWAY_REPLAY_TABLE} WHERE gateway_client_id=$1`, [testGatewayId]).catch(() => undefined)
-    await Promise.all([r1?.close(), r2?.close()])
+    await Promise.all([
+      r1?.close() ?? p1?.end(),
+      r2?.close() ?? p2?.end(),
+    ])
+    await owner.query(`DELETE FROM ${AGENT_GATEWAY_REPLAY_TABLE} WHERE gateway_client_id=$1`, [testGatewayId]).catch(() => undefined)
+    if (roleCreated) {
+      await owner.query(`DROP OWNED BY ${quotedRole}`).catch(() => undefined)
+      await owner.query(`DROP ROLE ${quotedRole}`).catch(() => undefined)
+    }
+    await owner.end()
   }
 } else {
-  console.log('  live PostgreSQL checks 19..27 skipped (DATABASE_URL or explicit test guard not set)')
+  console.log('  live PostgreSQL checks 22..31 skipped (DATABASE_URL or explicit test guard not set)')
 }
 
 console.log(`\nagent-gateway-replay-pg: ${pass} passed, ${fail} failed`)

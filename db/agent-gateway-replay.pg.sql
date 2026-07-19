@@ -22,4 +22,11 @@ CREATE TABLE IF NOT EXISTS agent_gateway_replay.claims_v1 (
 CREATE INDEX IF NOT EXISTS idx_agent_gateway_replay_expiry_v1
   ON agent_gateway_replay.claims_v1(expires_at);
 
+REVOKE ALL ON SCHEMA agent_gateway_replay FROM PUBLIC;
+REVOKE ALL ON TABLE agent_gateway_replay.claims_v1 FROM PUBLIC;
+
 COMMIT;
+
+-- Provision the application role separately with no ownership/CREATE rights:
+-- GRANT USAGE ON SCHEMA agent_gateway_replay TO <application_role>;
+-- GRANT SELECT,INSERT,UPDATE,DELETE ON agent_gateway_replay.claims_v1 TO <application_role>;
