@@ -42,4 +42,33 @@ export const REQUEST_READINESS_GUIDE = {
     detail: 'result_handle + selected_ids (1..5 ids from that page) — a targeted fetch, never a broad re-scan.',
   },
   recommendation_note: 'WebAZ returns FACTS only and never authors a "best buy". The recommendation is YOURS (the assistant): pass recommend_id + recommend_reason to webaz_search to highlight one card, shown as "AI 推荐" (non-authoritative, display-only).',
+  // R1 — minimally-sufficient decision orchestration (agent behavior; WebAZ only guides).
+  decision_orchestration: {
+    intents: ['search', 'recommend_one', 'shortlist', 'compare', 'explain', 'spec', 'price', 'final_total', 'delivery', 'returns', 'seller_risk', 'prepare_order', 'open_approval', 'approval_status', 'order_status'],
+    steps: ['understand the current question', 'derive the decision dimensions it needs', 'INSPECT facts you already hold (conversation / last result) FIRST', 'assess sufficiency (ready / assume / clarify)', 'request ONLY the missing minimal dimensions', 'compose a minimal-sufficient answer', 'act on important steps only with the buyer\'s Passkey'],
+    do_not: 'Do NOT re-search + re-read full detail + re-dump on every follow-up. Answer "why recommend it?" / "which is cheaper?" from facts you already hold; only "final total?" needs a fresh quote.',
+    session_context: 'Keep a per-shopping-session context and REUSE it across follow-ups: product_ids, result_handle, retrieval_pool, decision_shortlist, user_visible_set, decision_facts, facts_updated_at, recommended_product_id, quote_id, draft_id, approval_request_id. Re-fetch a dimension only when product / variant / quantity / ship-to region / default address / payment rail / quote expiry / stock / product status changed.',
+    data_states: ['confirmed (server-authoritative now)', 'estimated', 'seller_asserted', 'platform_verified', 'recheck_required (re-verified at order creation)', 'stale', 'missing', 'conflicting'],
+    data_state_rules: 'Tell the user WHICH state each fact is in. Never present estimated as confirmed, seller_asserted as WebAZ-verified, item price as final payable, "no sales history" as "unreliable", third-party sourcing as "definitely out of stock", or an unconfirmed shipping fee as "free".',
+  },
+  // R2 — dynamic candidate selection (no fixed 3/5 cap; cover the decision space with the fewest candidates).
+  candidate_selection: {
+    pools: {
+      retrieval_pool: 'lightweight candidates: filter unshippable / out-of-stock / off-spec, dedup, see what main choices exist. Can be larger, but fetch only lightweight fields.',
+      decision_shortlist: 'candidates with independent decision value, worth compact decision facts.',
+      user_visible_set: 'only the few worth showing, each meaningfully different.',
+    },
+    dynamic_count: 'No fixed max (drop any "compare at most 3/5" rule). Decide by: question clarity, category complexity, candidate diversity, budget tiers, whether the user asked for several, data sufficiency, whether a lower-risk alternative helps. STOP adding candidates when a new one no longer materially improves the decision.',
+    dominance_filter: 'Drop a candidate that is worse on every dimension the CURRENT user cares about with no independent advantage (brand / material / accessory / reliability / use-case). Judge dominance against the current need, not a fixed platform ranking.',
+    marginal_gain: 'Keep a candidate only if it adds real value: a new advantage, a new price tier, a different use-case, or a lower-risk / clearly-cheaper-with-tradeoff alternative.',
+    user_asked_N: 'If the user asks for N, show N ONLY if N have independent value; else show fewer, say why (the rest are near-duplicates), and offer "view more candidates". Never pad with dominated items to hit a number.',
+    selection_rationale: 'Give ONE set-level line (e.g. "kept 4 of 12 shippable: lowest price / balanced / largest / accessory-included; the rest are near-duplicates") + ONE short reason per card.',
+  },
+  // R1/R2 presentation — minimal sufficient; the agent holds more than it shows.
+  user_facing_output: {
+    default_show: ['one set-level filter line', 'a few candidate cards', 'one short reason per card', 'one AI 推荐 (if you have one)', 'one key risk / uncertainty', 'one main next action'],
+    default_hide: ['the demand-parse process', 'all assumption fields', 'the full filter logic', 'filtered-out products', 'every spec of every product', 'full provenance', 'score formulas', 'your internal reasoning', 'token/tool-call status', 'risks the user did not ask about'],
+    price_discipline: 'Search cards show the ITEM price, not the final payable. Only after webaz_quote_order may you state an authoritative final total. Distinguish item price / estimated fees / live quote / final payable.',
+    token_framing: 'Reducing tool calls is an internal goal — do not tell users "to save tokens". Frame it as: less repetition, easier to compare, avoid overload, keep only genuinely different choices.',
+  },
 } as const

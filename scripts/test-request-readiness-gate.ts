@@ -50,6 +50,26 @@ try {
   ok('R0-4 §15: recommendation is the assistant\'s, non-authoritative; WebAZ returns facts only (no "best buy" authored)', /FACTS only/.test(gs) && /recommendation is YOURS/.test(gs) && /non-authoritative/.test(gs))
   ok('R0-5 clarify-once discipline present (你帮我决定/随便 → balanced default, do not keep asking)', /balanced default/.test(gs) && /Do NOT keep asking/.test(gs))
 
+  // ── R1 decision orchestration: intent taxonomy + check-existing-facts-first + session context reuse + data states ──
+  const dor = g.body.decision_orchestration as Record<string, unknown> | undefined
+  ok('R1-1 guide has a decision-orchestration block (intents + steps)', !!dor && Array.isArray(dor.intents) && (dor.intents as string[]).includes('recommend_one') && (dor.intents as string[]).includes('prepare_order') && Array.isArray(dor.steps))
+  ok('R1-2 orchestration: inspect held facts FIRST + do not re-search every follow-up', /INSPECT facts you already hold/.test(gs) && /Do NOT re-search/.test(gs))
+  ok('R1-3 session context reuse (product_ids/result_handle/quote_id/draft_id/approval_request_id) + re-fetch only on change', /session_context/.test(gs) && /result_handle/.test(gs) && /Re-fetch a dimension only when/.test(gs))
+  ok('R1-4 data-state taxonomy (confirmed/estimated/seller_asserted/recheck_required/stale/missing/conflicting) + never mislabel', Array.isArray(dor && dor.data_states) && /never present estimated as confirmed|Never present estimated as confirmed/i.test(gs) && /recheck_required/.test(gs))
+
+  // ── R2 dynamic candidate selection: pools + NO fixed max + dominance + marginal gain + user-asked-N ──
+  const cs = g.body.candidate_selection as Record<string, unknown> | undefined
+  ok('R2-1 candidate pools: retrieval_pool / decision_shortlist / user_visible_set', !!cs && !!(cs.pools as Record<string, unknown>) && !!(cs.pools as Record<string, unknown>).retrieval_pool && !!(cs.pools as Record<string, unknown>).decision_shortlist && !!(cs.pools as Record<string, unknown>).user_visible_set)
+  ok('R2-2 NO fixed 3/5 cap — dynamic count, stop on no marginal improvement', typeof (cs && cs.dynamic_count) === 'string' && /No fixed max/.test(cs!.dynamic_count as string) && /compare at most 3\/5/.test(cs!.dynamic_count as string) && /no longer materially improves/.test(cs!.dynamic_count as string))
+  ok('R2-3 dominance filter + marginal-gain stop + do-not-pad-to-N', /dominance_filter/.test(gs) && /marginal_gain/.test(gs) && /Never pad with dominated items/.test(gs))
+  ok('R2-4 set-level selection rationale + one reason per card', /selection_rationale/.test(gs) && /ONE set-level line/.test(gs))
+
+  // ── R1/R2 presentation: minimal user-facing output, hide internals, price discipline, token framing ──
+  const uo = g.body.user_facing_output as Record<string, unknown> | undefined
+  ok('R1R2-P1 minimal user output (1 filter line + cards + 1 reason + 1 rec + 1 risk + 1 next); hide internals', !!uo && Array.isArray(uo.default_show) && Array.isArray(uo.default_hide) && /your internal reasoning/.test(gs) && /filtered-out products/.test(gs))
+  ok('R1R2-P2 price discipline (item price ≠ final payable; authoritative total only after quote)', /Search cards show the ITEM price, not the final payable/.test(gs))
+  ok('R1R2-P3 token framing: never tell users "to save tokens"', typeof (uo && uo.token_framing) === 'string' && /do not tell users .to save tokens./.test(uo!.token_framing as string))
+
   // ── ② server validation: discover zero-signal → 400 EMPTY_INTENT with the machine-executable clarification fields ──
   const empty = await j('/api/agent/discover', { method: 'POST', bearer: 'gtk_disc', body: {} })
   ok('R0-6 discover with no category/keywords → 400 EMPTY_INTENT', empty.status === 400 && empty.body.error_code === 'EMPTY_INTENT')
