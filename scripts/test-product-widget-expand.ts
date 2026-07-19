@@ -45,6 +45,8 @@ function findByText(root: N, text: string, tag = 'BUTTON'): N | null {
   return walk(root)
 }
 function cardFor(root: N, pid: string): N | null { return treeFind(root, `[data-pid="${pid}"]`) }
+function treeTextG(n: N): string { return (n.textContent && n.children.length === 0 ? n.textContent : '') + (n.children || []).map(treeTextG).join(' ') }
+function findTag(root: N, tag: string): N | null { const walk = (n: N): N | null => { if ((n.tagName || '').toUpperCase() === tag.toUpperCase()) return n; for (const c of n.children || []) { const r = walk(c); if (r) return r } return null }; return walk(root) }
 
 const rootNode = mk('div'); rootNode.setAttribute('id', 'root')
 const win: Record<string, unknown> = { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }
@@ -107,8 +109,12 @@ try {
   ok('B2-3 准备下单 sends a follow-up carrying the EXACT product_id (structured intent, not just a title)', sent.length >= 1 && sent[0].includes('prd_a') && /准备下单/.test(sent[0]))
   ok('B2-4 does NOT callTool the model-only webaz_quote_order (would be rejected+swallowed on standard hosts → stuck)', !calls.some(c => c[0] === 'webaz_quote_order'))
   ok('B2-5 widget NEVER calls money-path tools from the card (no order_draft/submit/execute)', !calls.some(c => /order_draft|submit_order|order_create|place_order|execute/.test(c[0])))
-  ok('B2-6 button disables on click (防误触; server intent_hash dedups any duplicate submit)', (pdBtn as N & { disabled?: boolean }).disabled === true)
-  // fallback: no follow-up channel → button re-enables with an actionable instruction (never permanently stuck)
+  // B4 fail-visible: after click, a visible manual path (a copyable phrase carrying the exact product_id) appears —
+  //   never a silent no-op / permanent loading. The 准备下单 button re-renders usable (not stuck).
+  ok('B4-1 准备下单 shows a fail-visible manual hint carrying the exact product_id (never a silent no-op)', /prd_a/.test(treeTextG(rootNode)) && !!findByText(rootNode, '“为「AAA」准备下单(product_id=prd_a)”', 'SPAN'))
+  ok('B4-2 hint offers a 复制 (copy) action so any host without a working bridge can still proceed', !!findByText(rootNode, '复制'))
+  ok('B4-3 准备下单 button is not permanently stuck (re-rendered usable, still labeled 准备下单)', !!findByText(cardFor(rootNode, 'prd_a')!, '准备下单') && !findByText(rootNode, '准备中…(报价→草稿→审批)'))
+  // no follow-up channel → still fail-visible: hint states the host limitation + gives the same copyable phrase
   const rn2 = mk('div'); rn2.setAttribute('id', 'root'); const doc2 = { getElementById: (id: string) => (id === 'root' ? rn2 : null), createElement: (t: string) => mk(t) }
   const ctx2: Record<string, unknown> = { document: doc2, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON }
   ctx2.globalThis = ctx2; ctx2.self = ctx2; vm.createContext(ctx2)
@@ -116,7 +122,29 @@ try {
   ;(ctx2.__render as (o: unknown, out: unknown) => void)({}, SEARCH)   // oai with NO follow-up channel
   const pd2 = findByText(rn2, '准备下单')!
   fire(pd2)
-  ok('B2-7 no follow-up channel → button not stuck: relabels to an instruction and re-enables', !(pd2 as N & { disabled?: boolean }).disabled && /准备下单/.test(pd2.textContent))
+  ok('B4-4 no follow-up channel → not stuck + fail-visible manual phrase (product_id) shown', !(pd2 as N & { disabled?: boolean }).disabled && /prd_a/.test(treeTextG(rn2)) && !!findByText(rn2, '复制'))
+  // B4 详情: openDetail fires the callTool detail fetch AND always shows a copyable manual detail phrase (fail-visible)
+  const calls3: Array<[string, unknown]> = []
+  const rn5 = mk('div'); rn5.setAttribute('id', 'root'); const doc5 = { getElementById: (id: string) => (id === 'root' ? rn5 : null), createElement: (t: string) => mk(t) }
+  const ctx5: Record<string, unknown> = { document: doc5, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON }
+  ctx5.globalThis = ctx5; ctx5.self = ctx5; vm.createContext(ctx5)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctx5)
+  ;(ctx5.__render as (o: unknown, out: unknown) => void)({ callTool: (n: string, a: unknown) => { calls3.push([n, a]) } }, SEARCH)
+  fire(findByText(cardFor(rn5, 'prd_a')!, '详情')!)
+  ok('B4-5 详情 → callTool webaz_search with result_handle + selected_ids (on-demand detail fetch)', calls3.some(c => c[0] === 'webaz_search' && (c[1] as { result_handle?: string; selected_ids?: string[] }).result_handle === 'rh1' && ((c[1] as { selected_ids?: string[] }).selected_ids || [])[0] === 'prd_a'))
+  ok('B4-6 详情 also shows a fail-visible copyable detail phrase (never dead when host does not re-render)', /prd_a/.test(treeTextG(rn5)) && !!findByText(rn5, '复制'))
+  // B4 compare→buy: selecting ≥2 renders a comparison table with a per-row 准备下单 that follows-up the row's product_id
+  const sent6: string[] = []
+  const rn6 = mk('div'); rn6.setAttribute('id', 'root'); const doc6 = { getElementById: (id: string) => (id === 'root' ? rn6 : null), createElement: (t: string) => mk(t) }
+  const ctx6: Record<string, unknown> = { document: doc6, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON }
+  ctx6.globalThis = ctx6; ctx6.self = ctx6; vm.createContext(ctx6)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctx6)
+  ;(ctx6.__render as (o: unknown, out: unknown) => void)({ sendFollowUpMessage: (o: { prompt?: string }) => { sent6.push((o && o.prompt) || '') } }, SEARCH)
+  fire(findByText(cardFor(rn6, 'prd_a')!, '比较')!); fire(findByText(cardFor(rn6, 'prd_b')!, '比较')!)
+  const cmpTable = findTag(rn6, 'TABLE')
+  ok('B4-7 selecting ≥2 renders a compare table with a per-row 准备下单 action', !!cmpTable && treeTextG(cmpTable).includes('下单') && !!findByText(cmpTable!, '准备下单'))
+  fire(findByText(cmpTable!, '准备下单')!)   // the table row-action button (not a card button)
+  ok('B4-8 compare-table 准备下单 sends a follow-up carrying that row product_id (compare→pick→buy)', sent6.some(s => /prd_a|prd_b/.test(s) && /准备下单/.test(s)))
 
   // ── mobile: opening a second card closes the first (one-at-a-time) ──
   win.innerWidth = 500
@@ -156,4 +184,4 @@ try {
 try { rmSync(__tmpHome, { recursive: true, force: true }) } catch { /* temp HOME cleanup */ }
 
 if (fail > 0) { console.error(`\n❌ product-widget-expand FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-console.log(`✅ product-widget-expand+prepare: B1 expand/collapse PERSISTED (survives sort) + 展开/收起 toggle + clickable info + scroll + detail 返回列表 + mobile one-at-a-time; B2 准备下单 primary → structured follow-up carrying product_id (model orchestrates quote→draft→submit→Passkey), NEVER callTool the model-only quote, NEVER money-path tools, disables on click, no-channel→re-enables (never stuck); B3 AI 推荐 server PASSTHROUGH (only echoes model pick in the result set, sanitizes reason, never generates) + widget highlight (rec border + 🌟 AI 推荐 badge + reason, never "WebAZ 推荐")\n  ✅ pass ${pass}`)
+console.log(`✅ product-widget-expand+prepare+failvisible: B1 expand/collapse PERSISTED (survives sort) + 展开/收起 toggle + clickable info + scroll + detail 返回列表 + mobile one-at-a-time; B2 准备下单 primary → structured follow-up carrying product_id (model orchestrates quote→draft→submit→Passkey), NEVER callTool the model-only quote, NEVER money-path tools; B4 FAIL-VISIBLE: 详情(callTool webaz_search on-demand) + 准备下单 always surface a copyable manual phrase carrying the exact product_id (never a silent no-op / permanent loading on hosts whose widget→host bridge no-ops, e.g. ChatGPT) + 复制 action; compare (≥2) → table per-row 准备下单 (compare→pick→buy) follows-up that product_id; B3 AI 推荐 server PASSTHROUGH (echoes model pick in the result set, sanitizes reason, never generates) + widget highlight (rec border + 🌟 AI 推荐 badge + reason, never "WebAZ 推荐")\n  ✅ pass ${pass}`)

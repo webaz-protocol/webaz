@@ -177,6 +177,8 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
 .cmp{margin-top:12px;border-top:1px solid var(--line);padding-top:8px;font-size:12px;display:none}
 .cmp table{border-collapse:collapse;width:100%}
 .cmp td,.cmp th{border:1px solid var(--line);padding:3px 6px;text-align:left;font-size:11px}
+.hint{margin-top:10px;font-size:12px;color:var(--warnbox-ink);background:var(--warnbox-bg);border:1px solid var(--warnbox-line);border-radius:10px;padding:8px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;line-height:1.5}
+button.mini{border:1px solid var(--accent-line);background:var(--accent-bg);color:var(--accent-ink);border-radius:8px;padding:3px 8px;font-size:11px;cursor:pointer;white-space:nowrap}
 .note{font-size:11px;color:var(--sub);margin-top:10px}`
 
 export const PRODUCT_RESULTS_BODY_JS = `
@@ -224,7 +226,23 @@ function renderBody(oai, out){
   // ①搜索页
   __lastSearch = out   // B1:缓存供详情页【返回列表】原地回退
   var sellers=out.sellers||{}
-  var state={sort:'default',selected:{},open:{}}
+  var state={sort:'default',selected:{},open:{},hint:null}
+  // fail-visible:widget→host 回调(callTool/sendFollowUp)在部分宿主(如 ChatGPT)可能静默不生效
+  // (点了详情/准备下单没反应或永久卡)。铁律:任何这类动作都 ①永不永久卡 loading ②始终留一条可见的
+  // 手动路径 —— 展示一句可【复制发给模型】的话,让用户在任何宿主上都能继续。绝不假装成功、绝不碰钱路。
+  function copyText(t){ try{ var nav=(typeof navigator!=='undefined')?navigator:null; if(nav&&nav.clipboard&&nav.clipboard.writeText){ nav.clipboard.writeText(String(t)); return true } }catch(e){} return false }
+  function prepareOrder(pid,title){
+    var phrase='为「'+(title||pid)+'」准备下单(product_id='+pid+')'
+    var sent=sendFollowUpCompat(oai,'请为该商品准备下单:webaz_quote_order 报价(数量 1)→ webaz_order_draft 建草稿 → webaz_submit_order_request 提交审批,最终由我 Passkey 批准。product_id='+pid)
+    state.hint={ text:(sent?'已发送「准备下单」。若对话里没有出现报价卡,请把这句话复制发给我:':'此宿主不支持一键操作;请把这句话复制发给我:'), phrase:phrase }
+    render()
+  }
+  function openDetail(pid,title){
+    var fired=false
+    if(out.result_handle&&typeof oai.callTool==='function'){ try{ oai.callTool('webaz_search',{result_handle:out.result_handle,selected_ids:[pid]}); fired=true }catch(e){} }
+    state.hint={ text:(fired?'正在载入详情…若卡片没有更新为详情页,请把这句话复制发给我:':'此宿主不支持一键操作;请把这句话复制发给我:'), phrase:'看「'+(title||pid)+'」的完整详情(product_id='+pid+')' }
+    render()
+  }
   function toggleOpen(id){
     var wasOpen=!!state.open[id]
     if(!wasOpen && (window.innerWidth||999)<640){ state.open={} }   // B1:手机端一次只展开一张
@@ -284,9 +302,9 @@ function renderBody(oai, out){
       var ex=el('button',null,isOpen?'收起':'展开')
       ex.addEventListener('click',function(){ toggleOpen(p.id) })   // B1:展开/收起(状态持久,render 后恢复)
       row.appendChild(ex)
-      if(out.result_handle&&typeof oai.callTool==='function'){
+      if(out.result_handle){   // 详情走 openDetail:试 callTool 拉取,同时永远给可复制的手动路径(宿主不回渲也不卡)
         var dt=el('button',null,'详情')
-        dt.addEventListener('click',onceGuard(function(){ oai.callTool('webaz_search',{result_handle:out.result_handle,selected_ids:[p.id]}) }))
+        dt.addEventListener('click',onceGuard(function(){ openDetail(p.id,p.title) }))
         row.appendChild(dt)
       }
       // B2:主按钮【准备下单】—— 一键发起 报价→草稿→提交审批,终点你 Passkey 批准。
@@ -294,10 +312,7 @@ function renderBody(oai, out){
       //   故 widget 绝不 callTool 它;发结构化 follow-up(携准确 product_id)由模型跑 报价→草稿→提交,正式建单永远在人类
       //   Passkey 路径。widget 绝不直达钱路/不建单/不动资金。点击即 disabled 防误触;幂等由服务端 intent_hash 唯一索引兜底。
       var pd=el('button','primary','准备下单')
-      pd.addEventListener('click',onceGuard(function(){
-        pd.disabled=true; pd.textContent='准备中…(报价→草稿→审批)'
-        if(!sendFollowUpCompat(oai,'请为该商品准备下单:webaz_quote_order 报价(数量 1)→ webaz_order_draft 建草稿 → webaz_submit_order_request 提交审批,最终由我 Passkey 批准。product_id='+p.id)){ pd.textContent='请在对话里说:为 '+p.id+' 准备下单'; pd.disabled=false }
-      }))
+      pd.addEventListener('click',onceGuard(function(){ prepareOrder(p.id,p.title) }))   // fail-visible:永不永久卡,始终留可复制手动路径
       row.appendChild(pd)
       var sel=el('button',null,state.selected[p.id]?'已选✓':'比较')
       sel.addEventListener('click',function(){ state.selected[p.id]=!state.selected[p.id]; render() })   // 本地选择
@@ -311,14 +326,25 @@ function renderBody(oai, out){
       var cmp=el('div','cmp'); cmp.style.display='block'
       var t=document.createElement('table')
       var head=document.createElement('tr')
-      ;['商品','价格','退货','保修','发货','已售'].forEach(function(h){ head.appendChild(el('th',null,h)) })
+      ;['商品','价格','退货','保修','发货','已售','下单'].forEach(function(h){ head.appendChild(el('th',null,h)) })
       t.appendChild(head)
       chosen.forEach(function(p){
         var tr=document.createElement('tr')
         ;[p.title,(p.price&&p.price.display)||'',p.return_days!=null?p.return_days+'天':'—',p.warranty_days!=null?p.warranty_days+'天':'—',p.handling_hours!=null?p.handling_hours+'h':'—',p.sales_count||0].forEach(function(v){ tr.appendChild(el('td',null,v)) })
+        var actTd=document.createElement('td'); var buyBtn=el('button','mini','准备下单')   // 比较完直接选它下单(走硬化后的 prepareOrder)
+        buyBtn.addEventListener('click',onceGuard(function(){ prepareOrder(p.id,p.title) }))
+        actTd.appendChild(buyBtn); tr.appendChild(actTd)
         t.appendChild(tr)
       })
       cmp.appendChild(t); root.appendChild(cmp)
+    }
+    if(state.hint){   // fail-visible 手动路径:一句可复制发给模型的话 —— 任何宿主上按钮不生效都能继续
+      var hb=el('div','hint'); hb.appendChild(el('span',null,state.hint.text))
+      if(state.hint.phrase){
+        hb.appendChild(el('span','recreason','“'+state.hint.phrase+'”'))
+        var cp=el('button','mini','复制'); cp.addEventListener('click',function(){ cp.textContent=copyText(state.hint.phrase)?'已复制✓':'复制' }); hb.appendChild(cp)
+      }
+      root.appendChild(hb)
     }
     root.appendChild(el('div','note','报价不会扣款 · 草稿不锁库存 · 正式下单需你在 webaz.xyz 用 Passkey 批准 · ≈ 法币换算仅显示参考,非结算'))
     try{ window.scrollTo(0, __sy) }catch(e){}   // B1:render 后恢复滚动位置(排序/比较/收起不跳顶)
