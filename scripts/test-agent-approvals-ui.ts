@@ -71,7 +71,7 @@ ok('A2-5. every error card offers an actionable next step (retry / back / re-log
 ok('A2-6. deep-link terminal state via the A1 single-detail endpoint (executed/rejected/expired)', /permission-requests\/' \+ encodeURIComponent\(id\)/.test(UI) && /aaRenderDeepTerminal/.test(UI))
 ok('A2-7. approve is an idempotent write; timeout → reconcile via re-read, NOT blind retry', /apiWriteIdempotent\('POST'[\s\S]{0,160}\/approve/.test(UI) && /w\.unknownOutcome[\s\S]{0,260}apiRead\('\/agent-grants\/permission-requests\//.test(UI))
 ok('A2-8. reconcile: executed → success, else safe to re-approve (never duplicate)', /String\(chk\.data\.status\) === 'executed'/.test(UI) && /不会重复下单/.test(UI))
-ok('A2-9. incomplete economic data (summary_unavailable) DISABLES approve (fail-visible, no fail-open)', /summary_unavailable[\s\S]{0,200}disabled/.test(UI))
+ok('A2-9. incomplete economic data DISABLES approve — fail-closed (missing summary/currency/rail, not only the server marker)', /function aaEconomicIncomplete\(/.test(UI) && /!s \|\| typeof s !== 'object' \|\| s\.payable_units == null \|\| !s\.currency \|\| !s\.payment_rail/.test(UI) && /econIncomplete \? ' disabled/.test(UI))
 ok('A2-10. auxiliary logic (aaMarkSimilarSubmits) wrapped in try/catch — never blocks main render', /try \{ if \(window\.aaMarkSimilarSubmits\)/.test(UI))
 ok('A2-11. badge read also timeout-guarded (apiRead, no hang)', /apiRead\('\/agent-grants\/permission-requests'\)[\s\S]{0,120}aa-pending-badge|aa-pending-badge[\s\S]{0,200}apiRead\('\/agent-grants\/permission-requests'\)/.test(UI))
 

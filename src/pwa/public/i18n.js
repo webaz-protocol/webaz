@@ -25,6 +25,7 @@ const _EN = {
   '登录已失效': 'Session expired',
   '请重新登录后再查看审批请求。': 'Please sign in again to view approval requests.',
   '无法读取授权请求': 'Could not load authorization requests',
+  '服务器返回了无法解析的内容。': 'The server returned an unreadable response.',
   '返回审批中心': 'Back to approvals',
   '重新登录': 'Sign in again',
   '审批请求未找到': 'Approval request not found',

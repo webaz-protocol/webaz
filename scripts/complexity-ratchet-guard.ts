@@ -39,7 +39,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-seller.js': 199,
   'src/pwa/public/app-agents.js': 63,
   'src/pwa/public/app-agent-pair.js': 127,
-  'src/pwa/public/app-agent-approvals.js':            153,
+  'src/pwa/public/app-agent-approvals.js':            171,
   'src/pwa/public/app-agent-approvals-order.js':      18,
   'src/pwa/public/app-agent-approvals-submit.js':     38,   // RFC-025 PR-5a 下单审批卡(新文件基线;Codex BLOCKER-3 两轮定稿)
   'src/pwa/public/app-agent-approvals-dup.js':        26,   // RFC-026 PR-1 相似购买警告(新文件基线)

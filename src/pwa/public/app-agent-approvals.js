@@ -54,11 +54,20 @@
   async function aaHydrate() {
     const box = document.getElementById('aa-body'); if (!box) return
     box.innerHTML = loading$()   // A3:每次进入都回到 loading,任一分支落地都会替换它
+    // A3(Codex R1 HIGH):整个 hydrate 包 try/catch —— 任何意外抛出(如 200+空/坏 JSON body 的 .requests 解引用)
+    //   都必须落到明确错误态,绝不让 spinner 永留。这是本 PR 的核心不变量。
+    try { await aaHydrateInner(box) }
+    catch (e) { box.innerHTML = aaErrorCard({ title: t('无法读取授权请求'), detail: (e && e.message) || '', actions: [{ ...AA_RETRY, primary: true }, AA_BACK] }) }
+  }
+  window.aaHydrate = aaHydrate
+
+  async function aaHydrateInner(box) {
     const deepId = (location.hash.split('/')[1] || '').trim()
     // 列表读(带超时);深链接目标即使不在 actionable 列表,也用单条端点补齐终态,绝不停在 spinner。
     const res = await apiRead('/agent-grants/permission-requests')
     const err = aaReadError(res)
     if (err) { box.innerHTML = err; return }
+    if (!res.data || typeof res.data !== 'object') { box.innerHTML = aaErrorCard({ title: t('无法读取授权请求'), detail: t('服务器返回了无法解析的内容。'), actions: [{ ...AA_RETRY, primary: true }, AA_BACK] }); return }   // 200 但空/坏体 → 明确错误,不解引用 null
     const reqs = Array.isArray(res.data.requests) ? res.data.requests : []
     if (reqs.length === 0) {
       // 深链接但列表空 → 该请求可能已终结,用单条端点给精确终态(而非泛泛"暂无")。
@@ -76,7 +85,6 @@
     if (deepId && !reqs.some(r => String(r.id) === deepId)) { await aaRenderDeepTerminal(box, deepId, true) }
     else { try { if (window.aaApplyDeepLink) window.aaApplyDeepLink(box) } catch (e) { /* 高亮失败不影响主体 */ } }
   }
-  window.aaHydrate = aaHydrate
 
   // A1 单条端点(agent 投影 shape:status/executed_order_id)用于精确终态展示 —— 深链接指向的请求已执行/拒绝/过期。
   async function aaRenderDeepTerminal(box, id, prepend) {
@@ -94,8 +102,18 @@
     if (prepend) { const wrap = document.createElement('div'); wrap.innerHTML = html; box.prepend(wrap.firstElementChild) } else { box.innerHTML = html }
   }
 
+  // A4/Codex-R1(fail-closed):order_submit 必须有【完整】经济摘要才可批准 —— 金额/币种/轨道任一缺失即禁批,
+  //   不只依赖服务端 summary_unavailable 标记(部分部署/响应变形/坏缓存可能两者都无)。绝不 fail-open。
+  function aaEconomicIncomplete(r) {
+    if (r.kind !== 'order_submit') return false
+    if (r.summary_unavailable) return true
+    const s = r.submit_summary
+    return !s || typeof s !== 'object' || s.payable_units == null || !s.currency || !s.payment_rail
+  }
+
   function aaCard(r) {
     const risk = RISK[r.risk_level] || RISK.low
+    const econIncomplete = aaEconomicIncomplete(r)
     const scopes = Array.isArray(r.requested_scopes) ? r.requested_scopes : []
     // Prefer the human-readable bundle summary; otherwise show the individual safe-scope chips.
     const what = r.kind === 'order_action' ? (window.aaOrderWhat ? window.aaOrderWhat(r) : '') : r.kind === 'order_submit' ? (window.aaOrderSubmitWhat ? window.aaOrderSubmitWhat(r) : '') : r.kind === 'address_change' ? (window.aaAddressWhat ? window.aaAddressWhat(r) : '') : r.kind === 'buyer_action' ? (window.aaBuyerActionWhat ? window.aaBuyerActionWhat(r) : '') : r.human_summary
@@ -111,10 +129,10 @@
       ${r.reason ? `<div style="font-size:12px;color:#6b7280;margin-top:8px">${t('用途(agent 自述)')}: ${escHtml(r.reason)} <span style="font-size:10px;color:#9ca3af">(${t('未验证')})</span></div>` : ''}
       ${window.grantDurationSelect(r.allowed_durations, r.duration, 'aa-dur-' + escHtml(String(r.id)))}
       <div style="font-size:11px;color:#9ca3af;margin-top:6px">${t('请求于')} ${r.created_at ? fmtTime(r.created_at) : '—'}</div>
-      ${r.kind === 'order_submit' && r.summary_unavailable ? `<div style="font-size:12px;line-height:1.7;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;margin-top:8px">⚠️ <b>${t('经济信息暂时不完整')}</b>。${t('无法安全批准 —— 商品金额/币种/支付轨道未能读取。请稍后重试,或让 agent 重新报价并建草稿。')}</div>` : ''}
+      ${econIncomplete ? `<div style="font-size:12px;line-height:1.7;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;margin-top:8px">⚠️ <b>${t('经济信息暂时不完整')}</b>。${t('无法安全批准 —— 商品金额/币种/支付轨道未能读取。请稍后重试,或让 agent 重新报价并建草稿。')}</div>` : ''}
       <div style="display:flex;gap:8px;margin-top:12px">
         <button class="btn btn-outline" style="flex:1;color:#dc2626;border-color:#fecaca" onclick="aaReject('${escHtml(String(r.id))}')">${t('拒绝')}</button>
-        <button class="btn btn-primary" style="flex:2" onclick="aaApprove('${escHtml(String(r.id))}')"${(r.kind === 'order_submit' && r.summary_unavailable) ? ' disabled title="' + t('经济信息不完整,暂不可批准') + '"' : ''}>🔑 ${t('用 Passkey 批准')}</button>
+        <button class="btn btn-primary" style="flex:2" onclick="aaApprove('${escHtml(String(r.id))}')"${econIncomplete ? ' disabled title="' + t('经济信息不完整,暂不可批准') + '"' : ''}>🔑 ${t('用 Passkey 批准')}</button>
       </div>
     </div>`
   }
