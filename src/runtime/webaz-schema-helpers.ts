@@ -2355,6 +2355,78 @@ export function initOAuthSchema(db: Database.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_oauth_refresh_expiry ON oauth_refresh_tokens(expires_at)`)
 }
 
+/**
+ * RFC-028 S1a — Agent/API Gateway trust registry and replay-claim storage.
+ *
+ * This is schema only. It grants no trust and mounts no route. In particular,
+ * oauth_clients.verified remains presentation metadata; only a future gateway
+ * policy may consume an active proof profile after independent verification.
+ * Raw proof JTI/nonce/assertions and private key material must never be stored.
+ * replay_scope_hash is SHA-256 over the canonical client/issuer/audience scope;
+ * replay_key_hash separately hashes the proof JTI/nonce. Both are required, so
+ * equal raw JTIs from different clients do not collide and no raw value is kept.
+ * This SQLite table defines persistence/parity only; it is NOT the shared,
+ * multi-instance replay authority required before any proof profile is enabled.
+ */
+export function initAgentGatewaySchema(db: Database.Database): void {
+  // The MCP runtime bridge enumerates module exports by name, so this helper may run before
+  // initOAuthSchema. Create the referenced parent first; the initializer is idempotent.
+  initOAuthSchema(db)
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_gateway_clients (
+    gateway_client_id TEXT PRIMARY KEY,
+    oauth_client_id   TEXT UNIQUE REFERENCES oauth_clients(client_id) ON DELETE SET NULL,
+    display_name      TEXT NOT NULL,
+    publisher_id      TEXT,
+    registry_status   TEXT NOT NULL DEFAULT 'unverified'
+      CHECK(registry_status IN ('unverified','verified','suspended','revoked')),
+    policy_version    TEXT NOT NULL,
+    reviewed_by       TEXT,
+    verified_at       TEXT,
+    suspended_at      TEXT,
+    revoked_at        TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_clients_status ON agent_gateway_clients(registry_status)`)
+
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_gateway_proof_profiles (
+    profile_id        TEXT PRIMARY KEY,
+    gateway_client_id TEXT NOT NULL REFERENCES agent_gateway_clients(gateway_client_id) ON DELETE RESTRICT,
+    proof_method      TEXT NOT NULL
+      CHECK(proof_method IN ('openai_mtls','dpop','request_signature','partner_mtls','cimd_private_key_jwt')),
+    profile_status    TEXT NOT NULL DEFAULT 'pending'
+      CHECK(profile_status IN ('pending','active','suspended','revoked','expired')),
+    proof_config_id   TEXT NOT NULL
+      CHECK(length(proof_config_id) BETWEEN 3 AND 64 AND proof_config_id NOT GLOB '*[^a-z0-9_-]*'),
+    key_thumbprint    TEXT
+      CHECK(key_thumbprint IS NULL OR (length(key_thumbprint) = 64 AND key_thumbprint NOT GLOB '*[^0-9a-f]*')),
+    verified_at       TEXT,
+    expires_at        TEXT,
+    revoked_at        TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_profiles_client ON agent_gateway_proof_profiles(gateway_client_id, profile_status)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_profiles_method ON agent_gateway_proof_profiles(proof_method, profile_status)`)
+
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_gateway_replay_claims (
+    proof_kind       TEXT NOT NULL
+      CHECK(proof_kind IN ('dpop','request_signature','private_key_jwt','server_nonce')),
+    replay_scope_hash TEXT NOT NULL
+      CHECK(length(replay_scope_hash) = 64 AND replay_scope_hash NOT GLOB '*[^0-9a-f]*'),
+    replay_key_hash TEXT NOT NULL
+      CHECK(length(replay_key_hash) = 64 AND replay_key_hash NOT GLOB '*[^0-9a-f]*'),
+    gateway_client_id TEXT REFERENCES agent_gateway_clients(gateway_client_id) ON DELETE RESTRICT,
+    grant_id         TEXT,
+    first_seen_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at       TEXT NOT NULL,
+    PRIMARY KEY(proof_kind, replay_scope_hash, replay_key_hash)
+  )`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_gateway_replay_expiry ON agent_gateway_replay_claims(expires_at)`)
+}
+
 // ─── MCP Token PR-2 — result_handle 选择集缓存(webaz.*.model.v1 按需详情/翻页复用)────────────
 // 设计不变量:handle 行【只存 id 选择集 + 查询上下文】,绝不存数据载荷 —— 取详情永远按 id 活读
 // 数据库并重跑与搜索完全相同的【公共可见性谓词】(active + 有库存 + 卖家未暂停 + 外链治理;

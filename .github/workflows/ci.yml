@@ -847,6 +847,7 @@ jobs:
       - run: npm run test:buyer-action-agent
       - run: npm run test:mcp-tool-annotations
       - run: npm run test:oauth-discovery
+      - run: npm run test:agent-gateway-schema
       - run: npm run test:oauth-authorize
       - run: npm run test:oauth-approve
       - run: npm run test:oauth-token

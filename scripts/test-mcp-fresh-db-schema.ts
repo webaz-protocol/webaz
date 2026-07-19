@@ -62,6 +62,9 @@ try {
   }
   const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map(t => t.name))
   ok('product_aliases table present after bridge', tables.has('product_aliases'))
+  for (const table of ['agent_gateway_clients', 'agent_gateway_proof_profiles', 'agent_gateway_replay_claims']) {
+    ok(`${table} present after MCP schema bridge`, tables.has(table))
+  }
 
   // ── 4) The real handler SQL now succeeds against the bridged schema ──
   // register (SANDBOX local account): exact INSERTs from handleRegister
