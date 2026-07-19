@@ -45,25 +45,31 @@ function asStr(v: unknown): string | undefined {
 }
 function sha256hex(s: string): string { return createHash('sha256').update(s).digest('hex') }
 
+interface TokenPair { access: string; accessExpMs: number; refresh: string; refreshExpMs: number }
+
 /**
- * Mint a NEW access token + a NEW rotating refresh token for a grant, both hashed at rest. SYNCHRONOUS and
- * meant to run INSIDE a db.transaction(): both grant paths (code exchange with a fresh family_id; refresh
- * rotation reusing the family_id) call it so the pair can never drift and never partially persist. Both
- * expiries are clamped to the grant's — a credential never outlives the grant (I-5).
+ * Generate a fresh opaque access + refresh token PAIR (raw values only — NO DB write). Kept pure so the
+ * refresh path can compute the successor's hash BEFORE the atomic claim (see below). Both expiries are
+ * clamped to the grant's — a credential never outlives the grant the human approved (I-5).
  */
-function mintPair(db: Database.Database, opts: {
-  grantId: string; clientId: string; scope: string; aud: string; grantExpiresMs: number; familyId: string
-}): { access: string; accessExpMs: number; refresh: string } {
+function genPair(grantExpiresMs: number): TokenPair {
   const now = Date.now()
-  const access = `oat_${randomBytes(32).toString('hex')}`
-  const accessExpMs = Math.min(now + OAUTH_TOKEN_TTL_SECONDS * 1000, opts.grantExpiresMs)
+  return {
+    access: `oat_${randomBytes(32).toString('hex')}`,
+    accessExpMs: Math.min(now + OAUTH_TOKEN_TTL_SECONDS * 1000, grantExpiresMs),
+    refresh: `ort_${randomBytes(32).toString('hex')}`,
+    refreshExpMs: Math.min(now + OAUTH_REFRESH_TTL_SECONDS * 1000, grantExpiresMs),
+  }
+}
+
+/** Persist a generated pair, both hashed at rest. SYNCHRONOUS — must run inside a db.transaction(). */
+function insertPair(db: Database.Database, p: TokenPair & {
+  grantId: string; clientId: string; scope: string; aud: string; familyId: string
+}): void {
   db.prepare('INSERT INTO oauth_access_tokens (token_hash, grant_id, client_id, scope, aud, expires_at) VALUES (?,?,?,?,?,?)')
-    .run(sha256hex(access), opts.grantId, opts.clientId, opts.scope, opts.aud, new Date(accessExpMs).toISOString())
-  const refresh = `ort_${randomBytes(32).toString('hex')}`
-  const refreshExpMs = Math.min(now + OAUTH_REFRESH_TTL_SECONDS * 1000, opts.grantExpiresMs)
+    .run(sha256hex(p.access), p.grantId, p.clientId, p.scope, p.aud, new Date(p.accessExpMs).toISOString())
   db.prepare('INSERT INTO oauth_refresh_tokens (token_hash, grant_id, client_id, family_id, scope, aud, expires_at) VALUES (?,?,?,?,?,?,?)')
-    .run(sha256hex(refresh), opts.grantId, opts.clientId, opts.familyId, opts.scope, opts.aud, new Date(refreshExpMs).toISOString())
-  return { access, accessExpMs, refresh }
+    .run(sha256hex(p.refresh), p.grantId, p.clientId, p.familyId, p.scope, p.aud, new Date(p.refreshExpMs).toISOString())
 }
 
 // 客户端 IP 真相源(同 mcp-remote.ts):CF 后 req.ip 塌缩成边缘 IP → 优先取 CF-Connecting-IP(CF 重写,
@@ -176,13 +182,11 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
         // I-5: the grant is the principal — it must still be alive (mid-flight revocation/expiry honored).
         const grant = db.prepare("SELECT grant_id, expires_at FROM agent_delegation_grants WHERE grant_id = ? AND status = 'active' AND revoked_at IS NULL AND expires_at > ?").get(row.grant_id, nowIso) as { grant_id: string; expires_at: string } | undefined
         if (!grant) return { status: 400, error: 'invalid_grant', desc: 'the underlying delegation grant is no longer active' }
-        // A brand-new rotation family starts here — every subsequent refresh keeps this family_id.
-        const { access, accessExpMs, refresh } = mintPair(db, {
-          grantId: String(row.grant_id), clientId: client.client_id, scope: String(row.scope),
-          aud: String(row.resource), grantExpiresMs: new Date(grant.expires_at).getTime(),
-          familyId: `orf_${randomBytes(16).toString('hex')}`,
-        })
-        return { ok: true, access, accessExpMs, refresh, scope: String(row.scope) }
+        // A brand-new rotation family starts here — every subsequent refresh keeps this family_id. The code
+        // was already CAS-consumed above (single-use), so a plain insert is sufficient here.
+        const pair = genPair(new Date(grant.expires_at).getTime())
+        insertPair(db, { ...pair, grantId: String(row.grant_id), clientId: client.client_id, scope: String(row.scope), aud: String(row.resource), familyId: `orf_${randomBytes(16).toString('hex')}` })
+        return { ok: true, access: pair.access, accessExpMs: pair.accessExpMs, refresh: pair.refresh, scope: String(row.scope) }
       })()
       return respond(out)
     }
@@ -197,36 +201,39 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
       const rHash = sha256hex(refreshTok)
       const nowIso = new Date().toISOString()
 
-      // The whole rotation is ONE synchronous transaction: read → validate → (theft-revoke | mint+consume).
-      // VALIDATE-BEFORE-CONSUME — the token is marked rotated ONLY after client + grant checks pass, so a
-      // wrong-client or dead-grant request never burns it. Single-use + replay handling are race-free because
-      // a concurrent second use runs its whole tx after this one commits, finding rotated_at already set.
+      // The whole rotation is ONE synchronous transaction: read → validate → CONDITIONAL-CLAIM → mint | theft.
+      // The consume is a CONDITIONAL WRITE (UPDATE ... WHERE rotated_at IS NULL AND revoked_at IS NULL AND
+      // expires_at > now, require changes===1) — that conditional, not the surrounding tx, is the atomic
+      // serialization point: even across independent DB connections / under any isolation level, at most ONE
+      // caller's claim can win. The successor's refresh hash is computed BEFORE the claim (genPair is pure),
+      // so the claim stamps rotated_at + replaced_by in one write. A LOST claim (0 changes) means the token
+      // was concurrently spent/already-spent/revoked → theft posture: revoke the whole family + the grant's
+      // access tokens (RFC 6819 §5.2.2.3). VALIDATE-BEFORE-CLAIM keeps a wrong-client / dead-grant request
+      // from ever burning a still-valid token.
       const out: MintResult = db.transaction((): MintResult => {
         const rt = db.prepare('SELECT grant_id, client_id, family_id, scope, aud, expires_at, rotated_at, revoked_at FROM oauth_refresh_tokens WHERE token_hash = ?').get(rHash) as
           { grant_id: string; client_id: string; family_id: string; scope: string; aud: string; expires_at: string; rotated_at: string | null; revoked_at: string | null } | undefined
         const invalid = { status: 400, error: 'invalid_grant', desc: 'refresh token is invalid, expired, or already used' } as const
         if (!rt) return invalid
-        if (rt.rotated_at || rt.revoked_at) {
-          // Reuse of a spent/revoked refresh token → theft: revoke the WHOLE rotation family AND every access
-          // token of the grant (RFC 6819 §5.2.2.3). The legitimate client must re-consent.
+        const revokeFamily = (): void => {
           db.prepare('UPDATE oauth_refresh_tokens SET revoked_at = ? WHERE family_id = ? AND revoked_at IS NULL').run(nowIso, rt.family_id)
           db.prepare('UPDATE oauth_access_tokens SET revoked_at = ? WHERE grant_id = ? AND revoked_at IS NULL').run(nowIso, rt.grant_id)
-          console.error("[oauth] refresh-token replay detected — revoked the rotation family + the grant's access tokens")
-          return invalid
+          console.error("[oauth] refresh-token replay/concurrent-use — revoked the rotation family + the grant's access tokens")
         }
+        if (rt.rotated_at || rt.revoked_at) { revokeFamily(); return invalid }   // sequential replay of a spent token
         if (rt.expires_at <= nowIso) return invalid
-        // Validate BEFORE consuming — these must NOT burn a still-valid token.
+        // Validate BEFORE claiming — these must NOT burn a still-valid token.
         if (rt.client_id !== client.client_id) return { status: 400, error: 'invalid_grant', desc: 'refresh token was issued to a different client' }
         const grant = db.prepare("SELECT expires_at FROM agent_delegation_grants WHERE grant_id = ? AND status = 'active' AND revoked_at IS NULL AND expires_at > ?").get(rt.grant_id, nowIso) as { expires_at: string } | undefined
         if (!grant) return { status: 400, error: 'invalid_grant', desc: 'the underlying delegation grant is no longer active' }
-        // All checks passed → mint successor (same family; scope/aud carried forward, no escalation), then
-        // consume the old token + link the audit chain — all inside this one tx.
-        const { access, accessExpMs, refresh } = mintPair(db, {
-          grantId: rt.grant_id, clientId: client.client_id, scope: rt.scope,
-          aud: rt.aud, grantExpiresMs: new Date(grant.expires_at).getTime(), familyId: rt.family_id,
-        })
-        db.prepare('UPDATE oauth_refresh_tokens SET rotated_at = ?, replaced_by = ? WHERE token_hash = ?').run(nowIso, sha256hex(refresh), rHash)
-        return { ok: true, access, accessExpMs, refresh, scope: rt.scope }
+        // Successor first (pure, no write), then the ATOMIC conditional claim.
+        const pair = genPair(new Date(grant.expires_at).getTime())
+        const claim = db.prepare('UPDATE oauth_refresh_tokens SET rotated_at = ?, replaced_by = ? WHERE token_hash = ? AND rotated_at IS NULL AND revoked_at IS NULL AND expires_at > ?')
+          .run(nowIso, sha256hex(pair.refresh), rHash, nowIso)
+        if (claim.changes !== 1) { revokeFamily(); return invalid }   // lost the race → concurrent use = theft posture
+        // Won the claim → persist the successor (same family; scope/aud carried forward, no escalation).
+        insertPair(db, { ...pair, grantId: rt.grant_id, clientId: client.client_id, scope: rt.scope, aud: rt.aud, familyId: rt.family_id })
+        return { ok: true, access: pair.access, accessExpMs: pair.accessExpMs, refresh: pair.refresh, scope: rt.scope }
       })()
       return respond(out)
     }

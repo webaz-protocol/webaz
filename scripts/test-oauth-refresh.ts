@@ -117,8 +117,12 @@ async function main() {
   {
     const { code, grantId } = seed(); const j = await (await exchange(code)).json() as { refresh_token: string }
     const fam = (db.prepare('SELECT family_id FROM oauth_refresh_tokens WHERE token_hash = ?').get(sha(j.refresh_token)) as { family_id: string }).family_id
-    // Fire two refreshes of the identical token concurrently. better-sqlite3 tx is synchronous → one commits
-    // the rotation, the other's tx runs after and sees rotated_at → theft → nukes the family. Net: no survivor.
+    // Fire two refreshes of the identical token concurrently. NOTE: one Express process + one better-sqlite3
+    // handle → the txns necessarily serialize, so this proves the SINGLE-PROCESS property (and would have
+    // caught the former async-seam interleaving). The CROSS-connection guarantee rests on the conditional
+    // CLAIM (UPDATE ... WHERE rotated_at IS NULL ... require changes===1): even under a future multi-conn /
+    // PG deployment at most one caller wins the claim; the loser's 0-change → theft-revoke. Here one commits
+    // the rotation, the other loses the claim (or sees rotated_at) → theft → nukes the family. Net: no survivor.
     const [a, b] = await Promise.all([refresh(j.refresh_token), refresh(j.refresh_token)])
     const codes = [a.status, b.status].sort()
     ok('4f-1. concurrent double-use → one 200, one 400 (never two live successors)', codes[0] === 200 && codes[1] === 400)
