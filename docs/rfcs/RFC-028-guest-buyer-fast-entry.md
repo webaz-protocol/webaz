@@ -373,14 +373,26 @@ route surface. It must pass the gateway policy described in the threat model.
 The required principal distinction is:
 
 - `anonymous_agent`: public exact reads only;
-- `registered_agent`: verified client identity, public reads only;
-- `user_authorized_agent`: verified client + valid user grant + object scope;
+- `registered_agent`: verified cryptographic client identity, public reads only;
+- `user_authorized_agent`: verified per-connection client proof + valid user
+  grant + object scope;
 - `verified_partner_agent`: higher quota only, never weaker authorization;
 - `human_browser_guest`: first-party browser risk context, not an asserted
   identity; may create a bounded guest intent after challenge.
 
 Unverified DCR clients remain `anonymous_agent`. User-Agent, model name, Host,
-custom headers and conversation text never raise trust.
+custom headers and conversation text never raise trust. Proof is negotiated per
+registered client, not hard-coded to one vendor: ChatGPT's documented minimum
+profile is OpenAI-managed mTLS + OAuth, while DPoP/request signatures/partner
+mTLS may serve other clients. CIMD + `private_key_jwt` strengthens ChatGPT's
+token exchange but does not replace proof on the MCP resource connection.
+
+Because Cloudflare terminates TLS, production elevation requires a positive
+staging experiment proving that the edge validates OpenAI's published CA chain
+and required SAN and creates an internal, non-spoofable gateway principal. If
+the active Cloudflare plan cannot import the OpenAI CA, WebAZ must use a
+dedicated trusted TLS terminator or keep the client low-tier; it must not trust
+a forwarded client-certificate header supplied by the caller.
 
 ## 9. Progressive authorization
 
@@ -433,7 +445,7 @@ Security PRs are prerequisites, not optional polish:
 | PR | Scope | Production reachability |
 |---|---|---|
 | **S0** | threat model, asset/current-control audit, acceptance matrix | docs only |
-| **S1** | principal/client registry and request-proof seam; DPoP evaluation/replay cache | fail-closed, feature flag off |
+| **S1** | principal/client registry; proof negotiation; OpenAI mTLS/CIMD experiments; DPoP/signature seam and replay cache | fail-closed, feature flag off |
 | **S2** | distributed multi-dimensional limits, cost budgets, circuit breakers | guards existing/new agent API |
 | **S3** | registration/anchor/quote/draft/approval abuse policy | policy off until tested |
 | **S4** | edge/WAF/origin/degraded-mode runbook and application switch | operationally gated |

@@ -52,8 +52,8 @@ authorization.
 | Principal | Verifiable basis | Allowed baseline |
 |---|---|---|
 | `anonymous_agent` | none | exact public anchor resolution, bounded search/detail/policy reads |
-| `registered_agent` | approved client registry + cryptographic client proof | higher public-read quota only |
-| `user_authorized_agent` | verified client proof + active OAuth grant + subject/scope/object checks | quote/draft/approval preparation by scope |
+| `registered_agent` | approved client registry + cryptographic client proof negotiated for that client | higher public-read quota only |
+| `user_authorized_agent` | verified per-connection client proof + active OAuth grant + subject/scope/object checks | quote/draft/approval preparation by scope |
 | `verified_partner_agent` | reviewed registry status + sender-constrained token | higher quota; same user/Passkey rules |
 | `human_browser_guest` | first-party origin plus anti-bot/risk challenge; not identity | create one minimal guest intent |
 | `human_session` | existing WebAZ authenticated account | existing PWA permissions |
@@ -87,8 +87,8 @@ public client.
 | OAuth DCR limits | 10/IP/min + 60 global/min and stale-client sweep | **Present locally**, still in-memory and not verified-client identity |
 | OAuth auth-code replay | code is one-time; replay revokes tokens on the associated grant | **Present** |
 | OAuth audience | access token stores and verifies `/mcp` audience | **Present** |
-| OAuth client/token sender constraint | public bearer token; reserved `agent_pubkey` unused | **Gap** |
-| OAuth issuer/client/subject proof per request | token resolves grant and client metadata exists | **Partial**: bearer possession is sufficient; no DPoP/mTLS proof or jti replay cache |
+| OAuth client/token sender constraint | public bearer token; reserved `agent_pubkey` unused | **Gap in WebAZ**; ChatGPT documents managed mTLS, but WebAZ does not yet validate it |
+| OAuth issuer/client/subject proof per request | token resolves grant and client metadata exists | **Partial**: bearer possession is sufficient; no validated mTLS/DPoP/request-signature context or proof replay cache |
 | OAuth consent presence | every consent currently requires Passkey | **Strong but incompatible with deferred-Passkey Buyer Lite**: only a server-selected SAFE/non-executing preparation bundle may use verified-session explicit consent; execution stays Passkey |
 | Grant scope/object authorization | explicit route middleware; owner-scoped quote/draft reads | **Strong existing base** |
 | Grant audit | successful grant authorization fails closed if audit write fails | **Strong existing base** |
@@ -167,20 +167,51 @@ boundary. For authenticated agent state changes, validate:
 - key thumbprint bound to the access token;
 - request id, idempotency key and canonical payload hash.
 
-### 7.1 DPoP decision
+### 7.1 Client-proof compatibility decision
 
-DPoP (RFC 9449) is the preferred first evaluation for MCP/OAuth agents because
-it works at HTTP application level and supports public clients. mTLS remains a
-valid verified-partner option but is operationally harder for consumer hosts.
+The gateway supports a proof-policy seam, not one vendor-specific proof. A
+client enters an elevated tier only through a proof method that the client
+actually supports and WebAZ has verified end to end.
+
+Current official OpenAI documentation establishes that ChatGPT:
+
+- presents an OpenAI-managed client certificate to MCP servers and publishes
+  the CA chain and required SAN for mTLS validation;
+- supports Client ID Metadata Documents (CIMD), preferring
+  `private_key_jwt` at the token endpoint when the authorization server also
+  supports it, with `none` as the public-client fallback;
+- sends the issued access token to MCP requests as an
+  `Authorization: Bearer` token.
+
+The documentation does not advertise DPoP proof on ChatGPT MCP resource
+requests. Therefore **S1 must not require DPoP from ChatGPT**. The minimum
+ChatGPT profile is validated OpenAI mTLS on each MCP connection + OAuth user
+token validation; CIMD + `private_key_jwt` additionally authenticates the
+OAuth client at token exchange but does not replace per-connection mTLS.
+
+DPoP remains the preferred application-layer option for clients that prove
+support. Request signatures or customer-controlled mTLS may be registered for
+other clients. Unsupported clients stay anonymous/low-tier; a bearer token or
+self-declared client name never silently substitutes for proof.
 
 DPoP does **not** make a self-registered client a verified company. It proves
 continued possession of a key and constrains a token. Publisher verification is
 a separate registry/governance fact.
 
-S1 must run compatibility experiments with ChatGPT, Claude and a generic MCP
-client before making DPoP mandatory. Until a client proves support, its bearer
-grant may use existing low quotas and existing SAFE scopes; it cannot enter a
-verified/high-quota tier.
+OpenAI mTLS capability is now documented, but WebAZ deployment compatibility is
+not yet proven. Because Cloudflare terminates the public TLS connection, S1
+must prove that the edge validates the OpenAI CA chain, client-auth EKU and the
+exact `mtls.prod.connectors.openai.com` SAN and then passes only an
+edge-authenticated internal principal. A caller-supplied header must never be
+accepted as this signal. Cloudflare documents that importing a non-Cloudflare
+CA for edge mTLS is an Enterprise capability; if the active plan cannot trust
+the OpenAI CA, the experiment must fail closed and choose a dedicated trusted
+TLS terminator or keep ChatGPT out of elevated agent tiers. It must not weaken
+the rule.
+
+Until a client proves a supported method, it may use only low-quota exact
+public reads; a bearer grant alone cannot unlock private user data, guest-intent
+creation, quote/draft writes or a verified/high-quota tier.
 
 Replay state must be shared across instances and expire at least as long as the
 accepted proof window. Failures return a coarse code; thresholds and observed
@@ -203,6 +234,18 @@ fingerprints are not disclosed.
   supplies the `iss`/`sub` identity model and transaction nonce required for
   Buyer Lite provider login. WebAZ must bind the stable issuer+subject pair;
   display name or email alone is not the account key.
+- [OpenAI Apps SDK authentication](https://developers.openai.com/apps-sdk/build/auth)
+  documents ChatGPT's OAuth 2.1 client behavior, CIMD support,
+  `private_key_jwt`, OpenAI-managed MCP client certificate, published CA chain,
+  required SAN and continued requirement for OAuth user authorization.
+- [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+  standardizes OAuth 2.1, protected-resource metadata, resource indicators,
+  PKCE, CIMD/DCR and Bearer access-token use. It does not require DPoP, so
+  WebAZ cannot make DPoP a universal interoperability assumption.
+- [Cloudflare mTLS documentation](https://developers.cloudflare.com/api-shield/security/mtls/)
+  documents edge client-certificate validation and the plan boundary for
+  bringing a non-Cloudflare CA. WebAZ must verify its actual account capability
+  rather than assuming the OpenAI CA can be installed.
 
 DPoP covers selected request metadata, not an arbitrary JSON payload. WebAZ's
 existing canonical payload hash, idempotency key and state revalidation remain
@@ -332,8 +375,10 @@ failures and degraded-mode duration.
 |---|---|---|
 | Is `WEBAZ_EDGE_SECRET` active in production? | direct-origin negative probe + CF path positive probe | origin sensitive routes 403; canonical host succeeds |
 | Current Cloudflare WAF/Bot/ASN/rate rules | export/read-only ops audit | documented owned rules and rollback |
-| ChatGPT DPoP support for custom MCP | Developer Mode trace without secrets | DPoP proof issued and token accepted |
-| Claude/generic MCP DPoP support | same test matrix | compatible or remains low-tier bearer |
+| OpenAI mTLS through the current Cloudflare plan | staging MCP hostname + OpenAI CA/SAN validation + Developer Mode trace | valid ChatGPT connection receives an unforgeable internal principal; no/wrong cert and spoofed headers fail |
+| ChatGPT CIMD + `private_key_jwt` | staging authorization-server metadata and token trace | assertion validates against ChatGPT CIMD JWKS; replay/wrong audience/wrong client fails |
+| ChatGPT DPoP support | Developer Mode trace without secrets | optional only; absence does not fail the mTLS profile |
+| Claude/generic MCP proof support | mTLS/DPoP/request-signature matrix | a supported proof is registered or the client remains low tier |
 | Multi-instance shared limiter store | infrastructure inventory/load test | one global budget across instances |
 | Explicit request-body/time limits | oversized/slow tests at edge and app | bounded before handler work |
 | OIDC providers and subject semantics | provider metadata/policy review | issuer/subject/nonce verified, no email-only takeover |
@@ -351,7 +396,9 @@ No unknown may be converted into an implementation assumption.
 
 - internal gateway context and default-deny policy registry;
 - verified client registry lifecycle (unverified DCR stays anonymous);
-- DPoP/mTLS compatibility decision;
+- proof negotiation (`openai_mtls`, `dpop`, `request_signature`, partner mTLS);
+- OpenAI mTLS edge experiment and fail-closed principal propagation;
+- optional CIMD + `private_key_jwt` token-endpoint client authentication;
 - shared nonce/jti replay cache;
 - feature flag off; no commerce route moved yet.
 
@@ -391,13 +438,21 @@ Beyond the supplied 20 tests, add:
 
 21. unverified DCR client remains anonymous despite arbitrary brand name;
 22. DPoP proof for method/URL A cannot authorize method/URL B;
-23. two instances reject the same replayed jti;
-24. quota cannot be reset by rotating IP while keeping client/subject/product;
-25. anonymous agent cannot create even a zero-value persistent intent;
-26. first-party guest challenge cannot be replayed by an agent;
-27. intent locator without resume proof fails;
-28. forged `ran_*` never changes provenance;
-29. logs and traces pass a secret/PII canary scan;
-30. degraded mode preserves order approval and reconcile paths;
-31. circuit breaker opens without exhausting worker/DB pools;
-32. cache keys never mix authenticated/private and public responses.
+23. OpenAI mTLS positive path requires the published CA chain, client-auth EKU
+    and exact SAN;
+24. absent certificate, wrong CA, wrong SAN, revoked certificate and a spoofed
+    edge-proof header cannot enter `registered_agent`;
+25. a valid OAuth bearer replayed outside its bound verified client connection
+    cannot reach guest-intent/quote/draft writes;
+26. `private_key_jwt` replay, wrong audience, wrong client and unknown `kid`
+    fail without changing OAuth or commerce state;
+27. two instances reject the same replayed jti;
+28. quota cannot be reset by rotating IP while keeping client/subject/product;
+29. anonymous agent cannot create even a zero-value persistent intent;
+30. first-party guest challenge cannot be replayed by an agent;
+31. intent locator without resume proof fails;
+32. forged `ran_*` never changes provenance;
+33. logs and traces pass a secret/PII canary scan;
+34. degraded mode preserves order approval and reconcile paths;
+35. circuit breaker opens without exhausting worker/DB pools;
+36. cache keys never mix authenticated/private and public responses.
