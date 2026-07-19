@@ -41,7 +41,7 @@ can be issued.
 
 | Label | Meaning |
 |---|---|
-| **Current fact** | Verified through the PR base `origin/main` at `4bfe71e`. |
+| **Current fact** | Verified through the PR base `origin/main` at `6410671`. |
 | **Decision** | Required target behavior; not yet implemented. |
 | **Experiment** | Must be proved in tests or a host matrix before claiming support. |
 
