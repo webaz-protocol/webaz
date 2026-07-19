@@ -1148,7 +1148,8 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   app.get('/api/agent-grants', async (req, res) => {
     const user = auth(req, res); if (!user) return
     const rows = await dbAll<Record<string, unknown>>(
-      `SELECT g.grant_id, g.agent_label, g.capabilities, g.status, g.created_at, g.expires_at, g.revoked_at, g.revoked_reason, g.token_hash,
+      `SELECT g.grant_id, g.agent_label, g.capabilities, g.status, g.created_at, g.expires_at, g.revoked_at, g.revoked_reason,
+              (SELECT COUNT(*) FROM oauth_auth_codes oc WHERE oc.grant_id = g.grant_id) AS oauth_codes,
               MAX(CASE WHEN l.outcome = 'allow' THEN l.ts END) AS last_used_at,
               COUNT(CASE WHEN l.outcome = 'allow' THEN 1 END) AS use_count
          FROM agent_delegation_grants g
@@ -1161,16 +1162,16 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const now = new Date().toISOString()
     res.json({
       grants: rows.map(g => {
-        // OAuth-consent grants carry token_hash=NULL (the OAuth access token is the credential); gtk_ direct
-        // pairing grants store a bearer hash. Surface a coarse kind so the UI can frame OAuth "apps" vs paired
-        // "agents" — and NEVER leak token_hash itself to the client.
-        const { token_hash, ...rest } = g
+        // OAuth vs gtk_ is decided AUTHORITATIVELY by whether an oauth_auth_code was ever minted for this grant
+        // (oauth-approve mints grant+code atomically; gtk_ pairing grants never have one). token_hash-nullability
+        // is NOT a discriminator — a Passkey-paired grant is also NULL before/without one-time retrieval.
+        const { oauth_codes, ...rest } = g
         return {
           ...rest,
           capabilities: safeParseCaps(g.capabilities),
           use_count: Number(g.use_count) || 0,
           active: grantIsActive(g as { status?: string; expires_at?: string; revoked_at?: string | null }, now),
-          connection_kind: token_hash == null ? 'oauth' : 'delegation',
+          connection_kind: Number(oauth_codes) > 0 ? 'oauth' : 'delegation',
         }
       }),
     })
@@ -1185,19 +1186,22 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       [grantId, user.id],
     )
     if (!g) return void res.status(404).json({ error: 'grant_not_found' })
-    if (g.status === 'revoked') return void res.json({ success: true, already_revoked: true, grant_id: grantId })
-    const reason = typeof req.body?.reason === 'string' ? req.body.reason.slice(0, 200) : null
+    const alreadyRevoked = g.status === 'revoked'
     const nowIso = new Date().toISOString()
-    await dbRun(
-      "UPDATE agent_delegation_grants SET status = 'revoked', revoked_at = ?, revoked_reason = ? WHERE grant_id = ? AND human_id = ?",
-      [nowIso, reason, grantId, user.id],
-    )
+    if (!alreadyRevoked) {
+      const reason = typeof req.body?.reason === 'string' ? req.body.reason.slice(0, 200) : null
+      await dbRun(
+        "UPDATE agent_delegation_grants SET status = 'revoked', revoked_at = ?, revoked_reason = ? WHERE grant_id = ? AND human_id = ?",
+        [nowIso, reason, grantId, user.id],
+      )
+    }
     // PR-4: a UI revoke must fully tear the connection down like /oauth/revoke — also stamp any OAuth
-    // access/refresh tokens of this grant (no-op for gtk_ grants, which have none). Revoking the grant
-    // already fails all downstream introspection/refresh via the grant-liveness gate; this keeps the token
-    // rows honest too (no "live-looking" orphans) and unifies UI-revoke with the RFC 7009 endpoint.
+    // access/refresh tokens of this grant (no-op for gtk_ grants, which have none). Run this ALWAYS, even
+    // when the grant was already revoked, so a retry repairs any orphaned/unrevoked tokens (endpoint-level
+    // idempotent teardown, not just per-statement). Revoking the grant already fails downstream
+    // introspection/refresh via the liveness gate; this keeps the token rows honest and matches RFC 7009.
     await dbRun('UPDATE oauth_access_tokens SET revoked_at = ? WHERE grant_id = ? AND revoked_at IS NULL', [nowIso, grantId])
     await dbRun('UPDATE oauth_refresh_tokens SET revoked_at = ? WHERE grant_id = ? AND revoked_at IS NULL', [nowIso, grantId])
-    res.json({ success: true, grant_id: grantId })
+    res.json({ success: true, grant_id: grantId, ...(alreadyRevoked ? { already_revoked: true } : {}) })
   })
 }
