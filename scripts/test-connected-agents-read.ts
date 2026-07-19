@@ -21,6 +21,7 @@ process.env.USERPROFILE = tmpHome
 const { initDatabase, generateId } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')
 const { registerAgentGrantsRoutes } = await import('../src/pwa/routes/agent-grants.js')
+const { initOAuthSchema } = await import('../src/runtime/webaz-schema-helpers.js')   // PR-4: oauth tables for the revoke cascade + connection_kind
 
 let pass = 0, fail = 0
 const fails: string[] = []
@@ -28,6 +29,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 const db = initDatabase()
 setSeamDb(db)
+initOAuthSchema(db)   // oauth_access_tokens / oauth_refresh_tokens for the PR-4 revoke cascade
 const auth = (req: express.Request, res: express.Response) => {
   const u = req.header('x-test-user')
   if (!u) { res.status(401).json({ error: 'unauthorized' }); return null }
@@ -52,6 +54,20 @@ const mkGrant = (human: string, label: string, caps: string[], status = 'active'
 const audit = (gid: string, human: string, outcome: 'allow' | 'deny', ts: string): void => {
   db.prepare('INSERT INTO agent_grant_auth_log (grant_id, human_id, capability, outcome, ts) VALUES (?,?,?,?,?)').run(gid, human, 'read_public', outcome, ts)
 }
+// An OAuth-consent grant: token_hash=NULL (the OAuth token is the credential) + backing access/refresh tokens.
+const mkOAuthGrant = (human: string, label: string): string => {
+  const gid = generateId('grt')
+  db.prepare('INSERT INTO agent_delegation_grants (grant_id, human_id, agent_label, capabilities, token_hash, status, expires_at) VALUES (?,?,?,?,?,?,?)')
+    .run(gid, human, label, JSON.stringify([{ capability: 'read_public' }]), null, 'active', new Date(Date.now() + 2592000_000).toISOString())
+  db.prepare('INSERT INTO oauth_access_tokens (token_hash, grant_id, client_id, scope, aud, expires_at) VALUES (?,?,?,?,?,?)')
+    .run('ah_' + gid, gid, 'webaz-dev-client', 'read', 'https://webaz.xyz/mcp', new Date(Date.now() + 3600_000).toISOString())
+  db.prepare('INSERT INTO oauth_refresh_tokens (token_hash, grant_id, client_id, family_id, scope, aud, expires_at) VALUES (?,?,?,?,?,?,?)')
+    .run('rh_' + gid, gid, 'webaz-dev-client', 'orf_' + gid, 'read', 'https://webaz.xyz/mcp', new Date(Date.now() + 2592000_000).toISOString())
+  return gid
+}
+const oauthTokensLive = (gid: string) =>
+  (db.prepare('SELECT COUNT(*) n FROM oauth_access_tokens WHERE grant_id = ? AND revoked_at IS NULL').get(gid) as { n: number }).n +
+  (db.prepare('SELECT COUNT(*) n FROM oauth_refresh_tokens WHERE grant_id = ? AND revoked_at IS NULL').get(gid) as { n: number }).n
 
 try {
   const alice = generateId('usr'), bob = generateId('usr')
@@ -59,6 +75,7 @@ try {
   const gFresh = mkGrant(alice, 'NewAgent', ['read_public'])           // no usage yet
   const gRevoked = mkGrant(alice, 'OldAgent', ['read_public'], 'active')
   const gBob = mkGrant(bob, 'BobAgent', ['read_public'])               // belongs to a different human
+  const gOAuth = mkOAuthGrant(alice, 'OAuth: ChatGPT')                 // PR-4: an OAuth-connected app (token_hash NULL + tokens)
 
   audit(gUsed, alice, 'allow', '2026-06-20T10:00:00Z')
   audit(gUsed, alice, 'allow', '2026-06-25T12:00:00Z')                 // latest allow
@@ -72,7 +89,11 @@ try {
   const byId: Record<string, any> = Object.fromEntries(r.body.grants.map((g: any) => [g.grant_id, g]))
 
   // human isolation
-  ok('only the human\'s own grants are listed', r.body.grants.length === 3 && !byId[gBob])
+  ok('only the human\'s own grants are listed', r.body.grants.length === 4 && !byId[gBob])
+
+  // PR-4: connection_kind distinguishes OAuth apps (token_hash NULL) from gtk_ paired agents
+  ok('gtk_ paired grant → connection_kind=delegation', byId[gUsed]?.connection_kind === 'delegation')
+  ok('OAuth-consent grant → connection_kind=oauth', byId[gOAuth]?.connection_kind === 'oauth')
 
   // recent-use derived from allow rows only
   ok('used grant: use_count counts allow rows only (not deny)', byId[gUsed]?.use_count === 2)
@@ -91,6 +112,11 @@ try {
   const r2 = await j('/api/agent-grants', alice)
   const revoked = r2.body.grants.find((g: any) => g.grant_id === gRevoked)
   ok('revoked grant shows status=revoked + active=false', revoked?.status === 'revoked' && revoked?.active === false)
+
+  // PR-4: revoking an OAuth grant cascades — its access + refresh tokens are stamped revoked (like /oauth/revoke)
+  ok('OAuth grant has live tokens before revoke', oauthTokensLive(gOAuth) === 2)
+  ok('revoke OAuth grant succeeds', (await j(`/api/agent-grants/${gOAuth}/revoke`, alice, 'POST')).status === 200)
+  ok('revoke cascaded: all OAuth access+refresh tokens revoked', oauthTokensLive(gOAuth) === 0)
 
   if (fail === 0) {
     console.log(`\n✅ connected-agents read (PR-D1): grants + recent-use (allow-only) from audit log; human isolation; revoke reflected; no secret leak\n  ✅ pass  ${pass}\n  ❌ fail  ${fail}`)
