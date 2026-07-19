@@ -143,8 +143,22 @@ try {
   fire(findByText(cardFor(rn6, 'prd_a')!, '比较')!); fire(findByText(cardFor(rn6, 'prd_b')!, '比较')!)
   const cmpTable = findTag(rn6, 'TABLE')
   ok('B4-7 selecting ≥2 renders a compare table with a per-row 准备下单 action', !!cmpTable && treeTextG(cmpTable).includes('下单') && !!findByText(cmpTable!, '准备下单'))
-  fire(findByText(cmpTable!, '准备下单')!)   // the table row-action button (not a card button)
-  ok('B4-8 compare-table 准备下单 sends a follow-up carrying that row product_id (compare→pick→buy)', sent6.some(s => /prd_a|prd_b/.test(s) && /准备下单/.test(s)))
+  const rows6: N[] = []; (function collect(n: N){ if ((n.tagName || '').toUpperCase() === 'TR') rows6.push(n); (n.children || []).forEach(collect) })(cmpTable!)
+  const rowB = rows6.find(r => treeTextG(r).includes('BBB'))!   // prd_b's row specifically (title BBB)
+  ok('B4-8 compare-row 准备下单 submits THAT row exact product_id (prd_b), never another', !!rowB && (() => { fire(findByText(rowB, '准备下单')!); const last = sent6[sent6.length - 1] || ''; return last.includes('prd_b') && !last.includes('prd_a') && /准备下单/.test(last) })())
+
+  // B4-9 fail-visible even when the host bridge THROWS synchronously (Codex R1 High) — never a silent no-op.
+  const rn7 = mk('div'); rn7.setAttribute('id', 'root'); const doc7 = { getElementById: (id: string) => (id === 'root' ? rn7 : null), createElement: (t: string) => mk(t) }
+  const ctx7: Record<string, unknown> = { document: doc7, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON }
+  ctx7.globalThis = ctx7; ctx7.self = ctx7; vm.createContext(ctx7)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctx7)
+  ;(ctx7.__render as (o: unknown, out: unknown) => void)({ sendFollowUpMessage: () => { throw new Error('host bridge boom') } }, SEARCH)
+  fire(findByText(cardFor(rn7, 'prd_a')!, '准备下单')!)
+  ok('B4-9 host bridge THROWS synchronously → still fail-visible manual phrase + 复制 (not a silent no-op)', /prd_a/.test(treeTextG(rn7)) && !!findByText(rn7, '复制'))
+  // B4-10 copy honesty: no working clipboard → button must NOT falsely claim 已复制✓ (Codex R1 Medium)
+  const cpBtn = findByText(rn7, '复制')!
+  fire(cpBtn)
+  ok('B4-10 copy without a working clipboard does NOT falsely claim success (已复制✓)', cpBtn.textContent !== '已复制✓' && /手动选择/.test(cpBtn.textContent))
 
   // ── mobile: opening a second card closes the first (one-at-a-time) ──
   win.innerWidth = 500

@@ -230,10 +230,18 @@ function renderBody(oai, out){
   // fail-visible:widget→host 回调(callTool/sendFollowUp)在部分宿主(如 ChatGPT)可能静默不生效
   // (点了详情/准备下单没反应或永久卡)。铁律:任何这类动作都 ①永不永久卡 loading ②始终留一条可见的
   // 手动路径 —— 展示一句可【复制发给模型】的话,让用户在任何宿主上都能继续。绝不假装成功、绝不碰钱路。
-  function copyText(t){ try{ var nav=(typeof navigator!=='undefined')?navigator:null; if(nav&&nav.clipboard&&nav.clipboard.writeText){ nav.clipboard.writeText(String(t)); return true } }catch(e){} return false }
+  // 复制诚实化(Codex R1):writeText 异步,只有 resolve 才显示「已复制」;reject/无 clipboard → 提示手动选择。
+  //   兜底真相是:phrase 永远以文字显示在提示里,复制失败也能手选,fail-visible 不依赖 clipboard。
+  function doCopy(text,btn){
+    try{ var nav=(typeof navigator!=='undefined')?navigator:null
+      if(nav&&nav.clipboard&&nav.clipboard.writeText){ btn.textContent='复制中…'; nav.clipboard.writeText(String(text)).then(function(){ btn.textContent='已复制✓' },function(){ btn.textContent='复制失败,请手选' }); return }
+    }catch(e){}
+    btn.textContent='请手动选择上面文字'
+  }
   function prepareOrder(pid,title){
     var phrase='为「'+(title||pid)+'」准备下单(product_id='+pid+')'
-    var sent=sendFollowUpCompat(oai,'请为该商品准备下单:webaz_quote_order 报价(数量 1)→ webaz_order_draft 建草稿 → webaz_submit_order_request 提交审批,最终由我 Passkey 批准。product_id='+pid)
+    // fail-visible 铁律:即便宿主的 sendFollowUpMessage 同步抛错,也必须落到 state.hint(Codex R1 High)。
+    var sent=false; try{ sent=sendFollowUpCompat(oai,'请为该商品准备下单:webaz_quote_order 报价(数量 1)→ webaz_order_draft 建草稿 → webaz_submit_order_request 提交审批,最终由我 Passkey 批准。product_id='+pid) }catch(e){ sent=false }
     state.hint={ text:(sent?'已发送「准备下单」。若对话里没有出现报价卡,请把这句话复制发给我:':'此宿主不支持一键操作;请把这句话复制发给我:'), phrase:phrase }
     render()
   }
@@ -342,7 +350,7 @@ function renderBody(oai, out){
       var hb=el('div','hint'); hb.appendChild(el('span',null,state.hint.text))
       if(state.hint.phrase){
         hb.appendChild(el('span','recreason','“'+state.hint.phrase+'”'))
-        var cp=el('button','mini','复制'); cp.addEventListener('click',function(){ cp.textContent=copyText(state.hint.phrase)?'已复制✓':'复制' }); hb.appendChild(cp)
+        var cp=el('button','mini','复制'); cp.addEventListener('click',function(){ doCopy(state.hint.phrase,cp) }); hb.appendChild(cp)
       }
       root.appendChild(hb)
     }
