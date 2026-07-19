@@ -20,11 +20,11 @@
         ' <span style="font-size:10px;color:#9ca3af">(' + t('当前标题,仅供识别;绑定的是商品 ID') + ' <code>' + escHtml(String(s.product_id)) + '</code>)</span>' +
         (s.variant_id ? ' <span style="font-size:11px;color:#6b7280">' + t('规格') + ': ' + escHtml(String(s.variant_id)) + '</span>' : '') +
         ' × <b>' + escHtml(String(s.quantity)) + '</b></div>' +
-      '<div style="font-size:13px;color:#111827"><b>' + t('实付') + ': ' + waz(s.payable_units) + ' ' + escHtml(String(s.currency || 'WAZ')) + '</b>' +
+      '<div style="font-size:13px;color:#111827"><b>' + t('实付') + ': ' + waz(s.payable_units) + ' ' + escHtml(String(s.currency || 'USDC')) + '</b>' +
         ' <span style="font-size:11px;color:#6b7280">(' + t('总额') + ' ' + waz(s.total_units) + ')</span></div>' +
       row(t('单价'), waz(s.unit_price_units) + ' × ' + escHtml(String(s.quantity)) + ' = ' + waz(s.item_units)) +
       row(t('运费'), waz(s.shipping_units)) +
-      (Number(s.donation_bps || 0) > 0 ? row(t('捐赠'), (Number(s.donation_bps) / 100).toFixed(1) + '% = ' + waz(s.donation_units) + ' WAZ ' + t('(额外扣款,入公益池)')) : '') +
+      (Number(s.donation_bps || 0) > 0 ? row(t('捐赠'), (Number(s.donation_bps) / 100).toFixed(1) + '% = ' + waz(s.donation_units) + ' ' + escHtml(String(s.currency || 'USDC')) + ' ' + t('(额外扣款,入公益池)')) : '') +
       row(t('支付轨道'), railLine) +
       (s.direct_receive_account_id ? row(t('卖家收款账户'), '<code>' + escHtml(String(s.direct_receive_account_id)) + '</code>') : '') +
       (s.anonymous_recipient ? row(t('匿名收件'), t('已开启(卖家/物流不见你的身份)')) : '') +

@@ -407,7 +407,9 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const candidates = matched.map(r => ({
       label: 'discovery_candidate' as const,   // 诚实标注:相似候选,非精确命中
       product_id: String(r.id), title: String(r.title), price: Number(r.price),
-      currency: String(r.currency || 'WAZ'), category: r.category == null ? null : String(r.category),
+      // P0-C 币种一致性:agent 面统一显示 USDC 别名(1 WAZ=1 USDC=1e6 base-units,纯 relabel 非重新计价;
+      //   与 search/quote/draft 消费投影一致,消除 discover 独露 WAZ 的漂移)。记账仍 WAZ;结算仍模拟。
+      currency: 'USDC', category: r.category == null ? null : String(r.category),
     }))
     // ── 逐词命中诊断(P0 PR-AB):0 命中且多词时,同约束(类目/预算/库存/目的地)下逐词单独计数,
     //    让 agent 一眼看出是哪个词杀掉了结果(all 合取假阴性的机器可读证据)。 ──

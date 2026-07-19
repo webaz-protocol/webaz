@@ -299,7 +299,7 @@ export function projectSubmitConsumer(r: Record<string, unknown>): Record<string
   return {
     schema_version: SCHEMA_ORDER_APPROVAL,
     request_id: r.request_id, draft_id: r.draft_id,
-    action_type: 'order_create', status: 'pending_approval',
+    action_type: 'order_create', status: 'pending',   // P0-C canonical status 统一:与 webaz_approval_requests 读回一致(pending/executed/rejected/expired/failed/needs_reconcile);"待批准"语义由 passkey_required:true 表达,不再用独有的 pending_approval
     passkey_required: true,
     // rail-aware 中性措辞(Codex H-3):submit 响应不携轨道,绝不硬编码"资金会移动"——直付下 WebAZ 不托管本金
     on_approval: 'creates the single real order; payment behavior follows the disclosed rail (escrow: wallet→escrow debit at creation; direct_p2p: WebAZ holds no principal — buyer pays the seller directly)',

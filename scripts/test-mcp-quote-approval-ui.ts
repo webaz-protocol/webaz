@@ -143,7 +143,7 @@ try {
   // ── Submit/Approval 投影(12,15,19c)──
   const s1 = await callSC('webaz_submit_order_request', { draft_id: d.draft_id })
   const sj = JSON.stringify(s1)
-  ok('A-1 approval 投影(request_id/passkey_required/rail-aware on_approval 中性措辞/approval_url/pending)', s1.schema_version === 'webaz.order_approval.model.v1' && !!s1.request_id && s1.passkey_required === true && /follows the disclosed rail/.test(String(s1.on_approval)) && /holds no principal/.test(String(s1.on_approval)) && String(s1.approval_url).includes('agent-approvals') && s1.status === 'pending_approval', sj.slice(0, 200))
+  ok('A-1 approval 投影(request_id/passkey_required/rail-aware on_approval 中性措辞/approval_url/pending)', s1.schema_version === 'webaz.order_approval.model.v1' && !!s1.request_id && s1.passkey_required === true && /follows the disclosed rail/.test(String(s1.on_approval)) && /holds no principal/.test(String(s1.on_approval)) && String(s1.approval_url).includes('agent-approvals') && s1.status === 'pending', sj.slice(0, 200))
   ok('12. 提交不执行(orders 表零行,资金库存零变化)', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === 0 && walletSnap() === before.wallet && stockOf() === before.stock)
   ok('19c. Approval 投影 ≤1000B(≈250 tok)', sj.length <= 1000, `bytes=${sj.length}`)
   const s2 = await callSC('webaz_submit_order_request', { draft_id: d.draft_id })

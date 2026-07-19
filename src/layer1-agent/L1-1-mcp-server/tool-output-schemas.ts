@@ -109,7 +109,7 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
     properties: {
       schema_version: { type: 'string', const: SCHEMA_ORDER_APPROVAL },
       request_id: { type: 'string' }, draft_id: { type: 'string' },
-      action_type: { type: 'string', const: 'order_create' }, status: { type: 'string', const: 'pending_approval' },
+      action_type: { type: 'string', const: 'order_create' }, status: { type: 'string', const: 'pending' },   // P0-C canonical status 统一(原 pending_approval)
       passkey_required: { type: 'boolean', const: true },
       on_approval: { type: 'string', description: 'rail-aware neutral wording: approval creates the single order; payment behavior follows the disclosed rail (direct_p2p: WebAZ holds no principal)' },
       approval_url: { type: 'string' },
