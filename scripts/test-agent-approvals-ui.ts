@@ -30,7 +30,7 @@ ok('5. defines window.renderAgentApprovals', /window\.renderAgentApprovals\s*=/.
 
 // ── 页面行为要点 ──
 ok('6. not-logged-in guard (prompt login)', /if \(!state\.user\)/.test(UI))
-ok('7. lists pending requests via GET /agent-grants/permission-requests', /GET\('\/agent-grants\/permission-requests'\)/.test(UI))
+ok('7. lists pending requests via apiRead (timeout-guarded) /agent-grants/permission-requests', /apiRead\('\/agent-grants\/permission-requests'\)/.test(UI))
 ok('8. approve goes through Passkey ceremony (agent_permission_approve)', /requestPasskeyGate\('agent_permission_approve'/.test(UI))
 ok('9. approve POSTs /permission-requests/:id/approve with webauthn_token', /permission-requests\/'[\s\S]{0,60}\/approve'[\s\S]{0,80}webauthn_token/.test(UI))
 ok('10. reject path calls the reject endpoint', /\/reject'/.test(UI) && /aaReject/.test(UI))
@@ -60,6 +60,20 @@ ok('25. agent_permission_approve in webauthn auth/start allowed purposes', /'age
 ok('26a. each card renders the shared duration selector (per-request id)', /grantDurationSelect\(r\.allowed_durations, r\.duration, 'aa-dur-' \+ escHtml\(String\(r\.id\)\)\)/.test(UI))
 ok('26b. approve sends the chosen duration (shared reader)', /grantDurationValue\('aa-dur-' \+ id\)/.test(UI) && /\/approve'[\s\S]{0,160}duration/.test(UI))
 ok('26c. backend approve honors a human duration override, strict-validated (400 on invalid, no silent fallback)', /durationAllowedForScopes\(reqScopes, bodyDur\)/.test(GRANTS) && /INVALID_GRANT_DURATION/.test(GRANTS) && /effDuration: GrantDuration = \(bodyDur !== undefined/.test(GRANTS))
+
+// ── P0-A A2/A3/A4 — 状态机 + 读写分离超时 + reconcile + fail-visible(browser-smoke 等价静态断言）──
+const A2APP = readFileSync('src/pwa/public/app.js', 'utf8')
+ok('A2-1. app.js exposes apiRead with AbortSignal.timeout (reads never hang)', /async function apiRead\(/.test(A2APP) && /apiRead[\s\S]{0,400}AbortSignal\.timeout/.test(A2APP))
+ok('A2-2. app.js exposes apiWriteIdempotent that flags unknownOutcome on timeout (no blind retry)', /async function apiWriteIdempotent\(/.test(A2APP) && /unknownOutcome: true/.test(A2APP) && /apiWriteIdempotent[\s\S]{0,400}AbortSignal\.timeout/.test(A2APP))
+ok('A2-3. hydrate resets to loading$() so every branch replaces the spinner', /box\.innerHTML = loading\$\(\)/.test(UI))
+ok('A2-4. read errors map to explicit states (timeout / network / 401)', /加载超时/.test(UI) && /网络异常/.test(UI) && /登录已失效/.test(UI))
+ok('A2-5. every error card offers an actionable next step (retry / back / re-login)', /aaErrorCard/.test(UI) && /aaHydrate\(\)/.test(UI) && /navigate\('me'\)/.test(UI))
+ok('A2-6. deep-link terminal state via the A1 single-detail endpoint (executed/rejected/expired)', /permission-requests\/' \+ encodeURIComponent\(id\)/.test(UI) && /aaRenderDeepTerminal/.test(UI))
+ok('A2-7. approve is an idempotent write; timeout → reconcile via re-read, NOT blind retry', /apiWriteIdempotent\('POST'[\s\S]{0,160}\/approve/.test(UI) && /w\.unknownOutcome[\s\S]{0,260}apiRead\('\/agent-grants\/permission-requests\//.test(UI))
+ok('A2-8. reconcile: executed → success, else safe to re-approve (never duplicate)', /String\(chk\.data\.status\) === 'executed'/.test(UI) && /不会重复下单/.test(UI))
+ok('A2-9. incomplete economic data (summary_unavailable) DISABLES approve (fail-visible, no fail-open)', /summary_unavailable[\s\S]{0,200}disabled/.test(UI))
+ok('A2-10. auxiliary logic (aaMarkSimilarSubmits) wrapped in try/catch — never blocks main render', /try \{ if \(window\.aaMarkSimilarSubmits\)/.test(UI))
+ok('A2-11. badge read also timeout-guarded (apiRead, no hang)', /apiRead\('\/agent-grants\/permission-requests'\)[\s\S]{0,120}aa-pending-badge|aa-pending-badge[\s\S]{0,200}apiRead\('\/agent-grants\/permission-requests'\)/.test(UI))
 
 // ── i18n parity ──
 {
