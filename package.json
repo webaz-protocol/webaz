@@ -322,6 +322,7 @@
     "agent:first-success": "node scripts/agent-first-success.mjs",
     "agent:compat-matrix": "node scripts/agent-compat-matrix.mjs",
     "test:oauth-discovery": "tsx scripts/test-oauth-discovery.ts",
+    "test:agent-gateway-schema": "tsx scripts/test-agent-gateway-schema.ts",
     "test:oauth-authorize": "tsx scripts/test-oauth-authorize.ts",
     "test:oauth-approve": "tsx scripts/test-oauth-approve.ts",
     "test:oauth-token": "tsx scripts/test-oauth-token.ts",
