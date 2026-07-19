@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (809 endpoints, 20 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (810 endpoints, 20 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2728,6 +2728,17 @@
     "/api/agent-grants/permission-requests/:id/reject": {
       "post": {
         "summary": "POST reject — human-authed. Terminal 'rejected'; nothing is granted.",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/agent-grants/permission-requests/:request_id": {
+      "get": {
+        "summary": "fail-visible: every path responds (404 not-found-or-not-yours = anti-enumeration; 500 only on assembly throw).",
         "tags": [],
         "security": [
           {

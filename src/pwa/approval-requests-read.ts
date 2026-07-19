@@ -56,8 +56,12 @@ function project(db: Database.Database, r: Record<string, unknown>, nowIso: stri
     ...(view === 'execution_failed' || view === 'approved_retryable' ? { failure_reason: failureCode(r), note: 'Execution did not complete — the request stays approved and the human can re-approve with a Passkey to retry (never a duplicate).' } : {}),
   }
   if (full && r.kind === 'order_submit') {
-    const sum = submitRowSummary(db, String(r.order_id))
-    if (sum) out.submit_summary = sum
+    // fail-visible:单行经济摘要组装失败绝不拖死整条响应(审批页据 summary_unavailable 禁用批准按钮)。
+    try {
+      const sum = submitRowSummary(db, String(r.order_id))
+      if (sum) out.submit_summary = sum
+      else out.summary_unavailable = true   // 草稿已不存在 → 经济信息不完整
+    } catch { out.summary_unavailable = true }
     out.economic_effect = { moves_funds: true, note: 'approval creates the REAL order; escrow rail debits wallet→escrow at creation' }
   }
   return out

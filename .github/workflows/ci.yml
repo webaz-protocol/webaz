@@ -833,6 +833,7 @@ jobs:
       - run: npm run test:prepare-case
       - run: npm run test:oat-scope-gate
       - run: npm run test:approval-requests-read
+      - run: npm run test:approval-detail-endpoint
       - run: npm run test:buyer-order-full
       - run: npm run test:order-chat-grant
       - run: npm run test:address-agent

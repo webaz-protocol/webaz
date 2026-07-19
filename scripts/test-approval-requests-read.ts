@@ -112,12 +112,14 @@ try {
     && by.apr_executed?.status === 'executed' && by.apr_executed?.executed_order_id === 'ord_done_1'
     && by.apr_failed?.status === 'failed' && /fresh request/.test(String(by.apr_failed?.note))
     && by.apr_frozen?.status === 'needs_reconcile' && /re-approves with a Passkey/.test(String(by.apr_frozen?.note)), JSON.stringify(by).slice(0, 400))
-  ok('A-5 deep-link approval_url ONLY on actionable states (pending/needs_reconcile), exact format',
-    by.apr_pending?.approval_url === '/#agent-approvals/apr_pending' && by.apr_frozen?.approval_url === '/#agent-approvals/apr_frozen'
+  // P0-A A5: the MCP surface (handleApprovalRequests) absolutizes approval_url with WEBAZ_API_URL so text-only Hosts can open it.
+  const AB = process.env.WEBAZ_API_URL
+  ok('A-5 deep-link approval_url ONLY on actionable states (pending/needs_reconcile), ABSOLUTE format (A5)',
+    by.apr_pending?.approval_url === `${AB}/#agent-approvals/apr_pending` && by.apr_frozen?.approval_url === `${AB}/#agent-approvals/apr_frozen`
     && by.apr_executed?.approval_url === null && by.apr_failed?.approval_url === null && by.apr_expired?.approval_url === null)
-  ok('A-4b order_action honesty: failed execution → execution_failed + failure_reason + actionable url; mid-flight → approved_retryable + url',
-    by.apr_act_failed?.status === 'execution_failed' && by.apr_act_failed?.failure_reason === 'TRACKING_REQUIRED' && by.apr_act_failed?.approval_url === '/#agent-approvals/apr_act_failed'
-    && by.apr_act_mid?.status === 'approved_retryable' && by.apr_act_mid?.approval_url === '/#agent-approvals/apr_act_mid', JSON.stringify({ f: by.apr_act_failed, m: by.apr_act_mid }))
+  ok('A-4b order_action honesty: failed execution → execution_failed + failure_reason + actionable url (absolute); mid-flight → approved_retryable + url',
+    by.apr_act_failed?.status === 'execution_failed' && by.apr_act_failed?.failure_reason === 'TRACKING_REQUIRED' && by.apr_act_failed?.approval_url === `${AB}/#agent-approvals/apr_act_failed`
+    && by.apr_act_mid?.status === 'approved_retryable' && by.apr_act_mid?.approval_url === `${AB}/#agent-approvals/apr_act_mid`, JSON.stringify({ f: by.apr_act_failed, m: by.apr_act_mid }))
   // 人工审批列表:失败的 order_action 必须回列表可重批(不许搁浅);冻结 submit 带 needs_reconcile
   { const hres = await fetch(`${process.env.WEBAZ_API_URL}/api/agent-grants/permission-requests`, { headers: { 'x-test-uid': 'buyer1' } })
     const hj = await hres.json() as { requests: Array<Record<string, unknown>> }
