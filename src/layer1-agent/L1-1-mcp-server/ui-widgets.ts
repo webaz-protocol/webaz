@@ -217,7 +217,10 @@ function renderBody(oai, out){
     if(rec.catalog_sample&&rec.catalog_sample.length){
       root.appendChild(el('div','note','以下是目录样本(非搜索结果):'))
       var g0=el('div','grid')
-      rec.catalog_sample.forEach(function(p){ var c=el('div','card'); c.appendChild(el('b',null,p.title||p.id)); c.appendChild(el('div','price',p.price_display||(p.price!=null?p.price+' USDC':''))); g0.appendChild(c) })
+      rec.catalog_sample.forEach(function(p){ var c=el('div','card'); c.appendChild(el('b',null,p.title||p.id))
+        // 防御:price 可能是对象 { display, amount_minor }(Model Projection),绝不让它 toString 成 [object Object]。
+        var pd=p.price_display || (p.price&&typeof p.price==='object' ? (p.price.display||(p.price.amount_minor!=null?(p.price.amount_minor/1000000)+' USDC':'')) : (p.price!=null?p.price+' USDC':''))
+        c.appendChild(el('div','price',pd)); g0.appendChild(c) })
       root.appendChild(g0)
     }
     return

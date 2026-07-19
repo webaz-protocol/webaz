@@ -160,6 +160,20 @@ try {
   fire(cpBtn)
   ok('B4-10 copy without a working clipboard does NOT falsely claim success (已复制✓)', cpBtn.textContent !== '已复制✓' && /手动选择/.test(cpBtn.textContent))
 
+  // ── B5 0-hit recovery: catalog_sample price is a Model-Projection OBJECT {display, amount_minor};
+  //    the recovery card must render the human display, NEVER "[object Object] USDC". ──
+  const rn8 = mk('div'); rn8.setAttribute('id', 'root'); const doc8 = { getElementById: (id: string) => (id === 'root' ? rn8 : null), createElement: (t: string) => mk(t) }
+  const ctx8: Record<string, unknown> = { document: doc8, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON }
+  ctx8.globalThis = ctx8; ctx8.self = ctx8; vm.createContext(ctx8)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctx8)
+  ;(ctx8.__render as (o: unknown, out: unknown) => void)({}, { products: [], recovery: { catalog_sample: [
+    { id: 'prd_x', title: 'XXX', price: { amount_minor: 7_060_000, currency: 'USDC', display: '7.06 USDC' }, price_display: '7.06 USDC' },
+    { id: 'prd_y', title: 'YYY', price: { amount_minor: 4_440_000, currency: 'USDC', display: '4.44 USDC' } },
+  ] } })
+  ok('B5-1 0-hit recovery renders human price display, NEVER "[object Object]"', !treeTextG(rn8).includes('[object Object]'))
+  ok('B5-2 recovery card uses server price_display when present (7.06 USDC)', !!findByText(rn8, '7.06 USDC', 'DIV'))
+  ok('B5-3 recovery card falls back to price.display when price_display absent (4.44 USDC)', !!findByText(rn8, '4.44 USDC', 'DIV'))
+
   // ── mobile: opening a second card closes the first (one-at-a-time) ──
   win.innerWidth = 500
   renderBody(oai, SEARCH)
