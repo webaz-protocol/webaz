@@ -57,16 +57,19 @@ function project(db: Database.Database, r: Record<string, unknown>, nowIso: stri
   }
   if (full && r.kind === 'order_submit') {
     // fail-visible:单行经济摘要组装失败绝不拖死整条响应(审批页据 summary_unavailable 禁用批准按钮)。
-    let rail = ''
+    let rail = ''; let haveSummary = false
     try {
       const sum = submitRowSummary(db, String(r.order_id))
-      if (sum) { out.submit_summary = sum; rail = String((sum as Record<string, unknown>).payment_rail || '') }
+      if (sum) { out.submit_summary = sum; rail = String((sum as Record<string, unknown>).payment_rail || ''); haveSummary = true }
       else out.summary_unavailable = true   // 草稿已不存在 → 经济信息不完整
     } catch { out.summary_unavailable = true }
-    // P0-C 诚实披露(rail-aware):金额以 USDC 显示为别名,不代表真实 USDC/法币托管;escrow=模拟测试轨。
-    out.economic_effect = rail === 'direct_p2p'
-      ? { moves_funds: false, simulated: false, note: 'approval creates the REAL order; direct_p2p — WebAZ holds no principal, you pay the seller directly. USDC amounts are a display alias, not a WebAZ settlement.' }
-      : { moves_funds: true, simulated: true, note: 'approval creates the REAL order; the escrow rail is a SIMULATED test ledger — USDC amounts are a display alias and do NOT represent real USDC or fiat custody/settlement.' }
+    // P0-C 诚实披露(rail-aware,fail-visible):金额以 USDC 显示为别名,不代表真实 USDC/法币托管;escrow=模拟测试轨。
+    //   Codex R2 P1:摘要不可用时 rail 未知,绝不默认成 escrow 语义(否则对 direct_p2p 谎报"模拟托管扣款")→ moves_funds:null。
+    out.economic_effect = !haveSummary
+      ? { moves_funds: null, note: 'economic terms unavailable (draft missing/unreadable) — fund movement cannot be stated; do NOT approve until the terms are readable.' }
+      : rail === 'direct_p2p'
+        ? { moves_funds: false, simulated: false, note: 'approval creates the REAL order; direct_p2p — WebAZ holds no principal, you pay the seller directly. USDC amounts are a display alias, not a WebAZ settlement.' }
+        : { moves_funds: true, simulated: true, note: 'approval creates the REAL order; the escrow rail is a SIMULATED test ledger — USDC amounts are a display alias and do NOT represent real USDC or fiat custody/settlement.' }
   }
   return out
 }
