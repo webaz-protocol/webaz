@@ -200,9 +200,13 @@ for (const t of orderedTables) {
 
 // Additive PG upgrade steps that CREATE TABLE IF NOT EXISTS cannot apply to an
 // already-provisioned database. Keep these next to their SQLite guarded ALTER.
-if (tables.some(t => t.name === 'oauth_access_tokens')) {
+const hasOauthAccessTokens = tables.some(t => t.name === 'oauth_access_tokens')
+const hasOauthRefreshTokens = tables.some(t => t.name === 'oauth_refresh_tokens')
+if (hasOauthAccessTokens || hasOauthRefreshTokens) {
   out.push('-- ════════════ ADDITIVE UPGRADES (existing PostgreSQL databases) ════════════')
-  out.push(`ALTER TABLE oauth_access_tokens ADD COLUMN IF NOT EXISTS dpop_jkt TEXT
+  if (hasOauthAccessTokens) out.push(`ALTER TABLE oauth_access_tokens ADD COLUMN IF NOT EXISTS dpop_jkt TEXT
+  CHECK(dpop_jkt IS NULL OR (length(dpop_jkt) = 43 AND dpop_jkt !~ '[^A-Za-z0-9_-]' AND right(dpop_jkt,1) ~ '^[AEIMQUYcgkosw048]$'));`)
+  if (hasOauthRefreshTokens) out.push(`ALTER TABLE oauth_refresh_tokens ADD COLUMN IF NOT EXISTS dpop_jkt TEXT
   CHECK(dpop_jkt IS NULL OR (length(dpop_jkt) = 43 AND dpop_jkt !~ '[^A-Za-z0-9_-]' AND right(dpop_jkt,1) ~ '^[AEIMQUYcgkosw048]$'));`)
   out.push('')
 }
