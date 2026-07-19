@@ -67,6 +67,64 @@ body {
 .shell-user-btn:hover { background: var(--gray-50); border-color: var(--gray-300) }
 .role-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700 }
 
+/* ── 全局快捷操作 ── */
+.quick-actions {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: calc(74px + env(safe-area-inset-bottom));
+  z-index: 99;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.quick-actions-menu {
+  display: grid;
+  min-width: 132px;
+  padding: 6px;
+  border: 1px solid #dbe3f4;
+  border-radius: 10px;
+  background: rgba(255,255,255,.98);
+  box-shadow: 0 10px 24px rgba(15,23,42,.16);
+}
+.quick-actions-menu[hidden] { display: none }
+.quick-action-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #334155;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+}
+.quick-action-item:hover { background: #f1f5f9 }
+.quick-actions-trigger {
+  width: 50px;
+  height: 50px;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg,#4f46e5,#7c3aed);
+  color: #fff;
+  box-shadow: 0 5px 16px rgba(79,70,229,.34);
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+}
+.quick-actions-trigger[aria-expanded="true"] { background: #3730a3 }
+#agent-chat-overlay {
+  right: max(14px, env(safe-area-inset-right)) !important;
+  bottom: calc(136px + env(safe-area-inset-bottom)) !important;
+}
+.main--has-bottom-bar ~ #quick-actions,
+.main--has-bottom-bar ~ #agent-chat-overlay { display: none !important }
+
 /* ── 底部 Tab 栏 ── */
 .tabbar {
   position: fixed;
@@ -854,17 +912,13 @@ select:focus-visible,
   .buyer-checkout-sheet { padding: 18px 22px 24px !important }
   .main:not(.main--no-tabbar) ~ .page-bottom-bar { left: 196px !important }
   .main--no-tabbar { width: min(100%, 1180px); margin: 0 auto; padding-left: clamp(28px, 4vw, 56px); padding-right: clamp(28px, 4vw, 56px) }
-  .main--has-bottom-bar ~ #feedback-fab,
-  .main--has-bottom-bar ~ #agent-fab,
   .main--has-bottom-bar ~ #compare-fab { display: none !important }
-  #feedback-fab { left: 212px !important; bottom: 22px !important }
-  #agent-fab { right: 22px !important; bottom: 22px !important }
+  .quick-actions { right: 22px; bottom: 22px }
+  #agent-chat-overlay { right: 22px !important; bottom: 86px !important }
   #compare-fab { right: 22px !important; bottom: 88px !important }
 }
 
 @media (max-width: 600px) {
-  body:has(.seller-workbench) #agent-fab,
-  body:has(.seller-workbench) #feedback-fab { display: none !important }
   .seller-subtab { min-height: 42px; padding: 9px 12px }
   .seller-kpi-grid { grid-template-columns: repeat(2,minmax(0,1fr)) }
   .seller-kpi-card:first-child { grid-column: 1 / -1 }
@@ -922,6 +976,8 @@ select:focus-visible,
 @media (max-width: 600px) {
   .shell-user-btn > span:nth-last-child(2) { display: none }
   .role-badge { display: none }
+  .shell-lang-btn,
+  .shell-wallet-btn { display: none }
   .shell-tool-btn { padding: 0 8px }
   .hub-action-card { min-height: 76px; padding: 11px !important }
   .hub-action-title {
@@ -973,6 +1029,7 @@ code, kbd, .mono { word-break: break-all; overflow-wrap: anywhere }
 /* ⑦ PWA 安全区适配（iPhone X+ 刘海屏） */
 @supports (padding: max(0px)) {
   @media (max-width: 919px) {
+    .navbar { height: calc(60px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); box-sizing: border-box }
     .main { padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)) }
     .tabbar { padding-bottom: max(0px, env(safe-area-inset-bottom)) }
   }

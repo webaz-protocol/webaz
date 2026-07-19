@@ -1138,14 +1138,14 @@ function shell(content, activeTab, opts) {
     <nav class="navbar">
       <a class="navbar-brand" href="#buy">🦞 WebAZ</a>
       <div class="navbar-actions">
-        ${canInstall ? `<button class="shell-tool-btn" onclick="doInstallPWA()" title="${t('把 WebAZ 装到桌面')}">📲 ${t('安装')}</button>` : ''}
-        <button class="shell-tool-btn" onclick="toggleLang()">${window._lang === 'en' ? '中文' : 'EN'}</button>
+        ${canInstall ? `<button class="shell-tool-btn shell-install-btn" onclick="doInstallPWA()" title="${t('把 WebAZ 装到桌面')}">📲 ${t('安装')}</button>` : ''}
+        <button class="shell-tool-btn shell-lang-btn" onclick="toggleLang()">${window._lang === 'en' ? '中文' : 'EN'}</button>
         ${state.user
           ? `${role === 'buyer' ? `<button class="shell-icon-btn" onclick="navigate('#cart')" title="${t('购物车')}">
                🛒
                <span id="cart-badge" style="position:absolute;top:0;right:0;background:#4f46e5;color:#fff;border-radius:99px;font-size:10px;padding:0 4px;min-width:16px;text-align:center;display:${(state.cartCount || 0) > 0 ? 'inline' : 'none'}">${state.cartCount || ''}</span>
              </button>` : ''}
-             ${role === 'seller' ? `<button class="shell-icon-btn" onclick="navigate('#wallet')" title="${t('钱包')}">💰</button>` : ''}
+             ${role === 'seller' ? `<button class="shell-icon-btn shell-wallet-btn" onclick="navigate('#wallet')" title="${t('钱包')}">💰</button>` : ''}
              <button class="shell-user-btn" onclick="openAvatarMenu()" title="${t('快捷菜单')}">
                ${roleBadgeHtml}
                <span style="font-size:13px;color:#6b7280">${state.user.name}</span>
@@ -1161,11 +1161,16 @@ function shell(content, activeTab, opts) {
         📊 ${t('对比')} (0)
       </button>
     ` : ''}
+    ${state.user ? `
+      <div id="quick-actions" class="quick-actions">
+        <div id="quick-actions-menu" class="quick-actions-menu" hidden>
+          ${state.user.role !== 'admin' ? `<button class="quick-action-item" data-quick-action="agent" onclick="openQuickActionsAgent()"><span aria-hidden="true">🤖</span>${t('AI 助手')}</button>` : ''}
+          <button class="quick-action-item" data-quick-action="feedback" onclick="openQuickActionsFeedback()"><span aria-hidden="true">💬</span>${t('反馈 / 建议')}</button>
+        </div>
+        <button id="quick-actions-trigger" class="quick-actions-trigger" type="button" onclick="toggleQuickActions()" aria-expanded="false" aria-controls="quick-actions-menu" title="${t('AI 助手')} / ${t('反馈 / 建议')}" aria-label="${t('AI 助手')} / ${t('反馈 / 建议')}">✦</button>
+      </div>
+    ` : ''}
     ${state.user && state.user.role !== 'admin' ? `
-      <button id="agent-fab" onclick="navigate('#ai-recommend')" title="${t('AI 助手')}"
-        style="position:fixed;bottom:74px;right:14px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;border:none;cursor:pointer;font-size:24px;box-shadow:0 4px 12px rgba(79,70,229,0.4);z-index:99;display:flex;align-items:center;justify-content:center">
-        🤖
-      </button>
       <div id="agent-chat-overlay" style="display:none;position:fixed;bottom:136px;right:14px;width:min(360px,calc(100vw - 28px));max-height:60vh;background:#fff;border:1px solid #c7d2fe;border-radius:14px;box-shadow:0 8px 32px rgba(79,70,229,0.25);z-index:100;flex-direction:column;overflow:hidden">
         <div style="padding:10px 14px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;display:flex;justify-content:space-between;align-items:center">
           <div style="font-size:13px;font-weight:600">🤖 ${t('AI 助手')}</div>
@@ -1175,7 +1180,7 @@ function shell(content, activeTab, opts) {
           </div>
         </div>
         <div id="agent-chat-msgs" style="flex:1;overflow-y:auto;padding:10px 14px;font-size:12px;line-height:1.6;min-height:160px;max-height:320px">
-          <div style="color:#9ca3af;text-align:center;padding:20px 0;font-size:11px">${t('问任何关于 WebAZ 的问题')}<br><span style="font-size:10px">${t('例：我有什么订单？怎么发求购？')}</span></div>
+          <div style="color:#64748b;text-align:center;padding:20px 0;font-size:11px">${t('问任何关于 WebAZ 的问题')}<br><span style="font-size:10px">${t('例：我有什么订单？怎么发求购？')}</span></div>
         </div>
         <div style="padding:8px 12px;border-top:1px solid #e5e7eb;display:flex;gap:6px">
           <input id="agent-chat-input" placeholder="${t('问 AI ...')}" onkeydown="if(event.key==='Enter')sendAgentChat()" style="flex:1;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px">
@@ -1183,12 +1188,6 @@ function shell(content, activeTab, opts) {
           <button onclick="sendAgentChat()" class="btn btn-primary btn-sm" style="width:auto;padding:8px 14px;font-size:12px">${t('发送')}</button>
         </div>
       </div>
-    ` : ''}
-    ${state.user ? `
-      <button id="feedback-fab" onclick="openBuildFeedback()" title="${t('反馈 / 建议')}"
-        style="position:fixed;bottom:74px;left:14px;width:48px;height:48px;border-radius:50%;background:#fff;color:#4f46e5;border:1px solid #c7d2fe;cursor:pointer;font-size:22px;box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:99;display:flex;align-items:center;justify-content:center" aria-label="${t('反馈 / 建议')}">
-        💬
-      </button>
     ` : ''}
     ${_opts.bottomBar ? `<div class="page-bottom-bar" style="position:fixed;bottom:0;left:0;right:0;z-index:50;background:#fff;border-top:1px solid #e5e7eb;padding:10px 14px;box-shadow:0 -2px 12px rgba(0,0,0,0.04);padding-bottom:max(10px, env(safe-area-inset-bottom))">${_opts.bottomBar}</div>` : ''}
     ${_opts.hideTabbar ? '' : `<nav class="tabbar">
@@ -1239,6 +1238,7 @@ window.openAvatarMenu = function() {
       ${sectionTitle(t('个人'))}
       ${item('🏠', t('我的主页'), '#me')}
       ${item('⚙️', t('设置 / 角色'), '#me/settings')}
+      ${role === 'seller' ? item('💰', t('钱包'), '#wallet') : ''}
       ${!isTrusted ? item('👁', t('公开主页'), '#u/' + u.id) : ''}
       ${item('🤖', t('我的 agents'), '#my-agents')}
 
