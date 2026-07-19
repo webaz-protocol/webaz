@@ -33,28 +33,37 @@ export function submitProductActionRequest(db: Database.Database, opts: {
 }): ProductActionResult {
   const { ownerId, action, productId } = opts
   if (action !== 'delete') return { ok: false, error_code: 'BAD_ACTION', error: "action 必须为 'delete'(本切片)", http: 400 }
-  const product = db.prepare('SELECT seller_id FROM products WHERE id = ?').get(productId) as { seller_id: string } | undefined
-  if (!product) return { ok: false, error_code: 'PRODUCT_NOT_FOUND', error: '商品不存在', http: 404 }
-  if (product.seller_id !== ownerId) return { ok: false, error_code: 'NOT_PRODUCT_OWNER', error: '该商品不属于你', http: 403 }
 
-  const id = opts.generateId('par')
-  const approveUrl = `/#product-action/${id}`
-  const nowIso = new Date().toISOString()
-  const expiresAt = new Date(Date.now() + REQUEST_TTL_MIN * 60_000).toISOString()
+  // Single sanitized failure boundary: EVERY db read/write below is inside this try, so no raw SQLite
+  // exception (from the ownership read, the reap+insert tx, OR the dup lookup) can ever escape to the
+  // route / Express default handler and leak schema/stack to the client (Codex R2).
   try {
-    // Lazily reap STALE unanswered requests before inserting: without an expiry worker yet, an expired
-    // pending row would otherwise keep occupying ux_par_active and permanently block resubmission. Reap +
-    // insert in ONE tx so the uniqueness guarantee holds (only a genuinely-live pending/approved blocks).
-    db.transaction(() => {
-      db.prepare("UPDATE product_action_requests SET status='expired' WHERE product_id=? AND action=? AND status='pending' AND expires_at <= ?").run(productId, action, nowIso)
-      db.prepare("INSERT INTO product_action_requests (id, owner_id, action, product_id, status, approve_url, expires_at) VALUES (?,?,?,?, 'pending', ?, ?)").run(id, ownerId, action, productId, approveUrl, expiresAt)
-    })()
+    const product = db.prepare('SELECT seller_id FROM products WHERE id = ?').get(productId) as { seller_id: string } | undefined
+    if (!product) return { ok: false, error_code: 'PRODUCT_NOT_FOUND', error: '商品不存在', http: 404 }
+    if (product.seller_id !== ownerId) return { ok: false, error_code: 'NOT_PRODUCT_OWNER', error: '该商品不属于你', http: 403 }
+
+    const id = opts.generateId('par')
+    const approveUrl = `/#product-action/${id}`
+    const nowIso = new Date().toISOString()
+    const expiresAt = new Date(Date.now() + REQUEST_TTL_MIN * 60_000).toISOString()
+    try {
+      // Lazily reap STALE unanswered requests before inserting: without an expiry worker yet, an expired
+      // pending row would otherwise keep occupying ux_par_active and permanently block resubmission. Reap +
+      // insert in ONE tx so the uniqueness guarantee holds (only a genuinely-live pending/approved blocks).
+      db.transaction(() => {
+        db.prepare("UPDATE product_action_requests SET status='expired' WHERE product_id=? AND action=? AND status='pending' AND expires_at <= ?").run(productId, action, nowIso)
+        db.prepare("INSERT INTO product_action_requests (id, owner_id, action, product_id, status, approve_url, expires_at) VALUES (?,?,?,?, 'pending', ?, ?)").run(id, ownerId, action, productId, approveUrl, expiresAt)
+      })()
+    } catch (insErr) {
+      // ux_par_active:同 (product_id, action) 仍有 live pending/approved 请求 → 返回既有,不重复建。
+      //   dup 查询本身若抛,交给外层 sanitized 边界(不外泄)。
+      const dup = db.prepare("SELECT id FROM product_action_requests WHERE product_id=? AND action=? AND status IN ('pending','approved')").get(productId, action) as { id: string } | undefined
+      if (dup) return { ok: false, error_code: 'DUPLICATE_ACTION_REQUEST', error: '该商品该动作已有待批准请求', existing_request_id: dup.id, http: 409 }
+      throw insErr
+    }
+    return { ok: true, request_id: id, approve_url: approveUrl, expires_at: expiresAt }
   } catch (e) {
-    // ux_par_active:同 (product_id, action) 仍有 live pending/approved 请求 → 返回既有,不重复建
-    const dup = db.prepare("SELECT id FROM product_action_requests WHERE product_id=? AND action=? AND status IN ('pending','approved')").get(productId, action) as { id: string } | undefined
-    if (dup) return { ok: false, error_code: 'DUPLICATE_ACTION_REQUEST', error: '该商品该动作已有待批准请求', existing_request_id: dup.id, http: 409 }
-    console.error('[product-action-request] insert failed:', (e as Error).message)   // detail stays server-side (no raw SQL text to clients)
+    console.error('[product-action-request] failed:', (e as Error).message)   // detail stays server-side
     return { ok: false, error_code: 'REQUEST_FAILED', error: '无法创建请求,请重试', http: 500 }
   }
-  return { ok: true, request_id: id, approve_url: approveUrl, expires_at: expiresAt }
 }

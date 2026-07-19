@@ -20,6 +20,8 @@ process.env.HOME = tmpHome; process.env.USERPROFILE = tmpHome
 
 const { initDatabase, generateId } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 const { registerProductActionRoutes } = await import('../src/pwa/routes/product-actions.js')
+const { submitProductActionRequest } = await import('../src/pwa/product-action-request.js')
+const Database = (await import('better-sqlite3')).default
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push('✗ ' + n) } }
@@ -80,8 +82,16 @@ try {
     ok('9a resubmit over an EXPIRED pending → 200 (stale reaped)', r.status === 200 && ((await r.json()) as { success: boolean }).success === true)
     ok('9b the stale pending was reaped to status=expired', (db.prepare("SELECT status FROM product_action_requests WHERE id='par_stale'").get() as { status: string }).status === 'expired')
   }
-  // 10. error path returns a fixed message, never raw SQL text (Codex R1)
-  ok('10 REQUEST_FAILED path never returns raw SQL/constraint text', !/SQLITE|UNIQUE|constraint|no such/i.test(src.match(/error_code: 'REQUEST_FAILED'[^}]*/)?.[0] || ''))
+  // 10. REAL db failure → sanitized REQUEST_FAILED, NO raw SQL text escapes (Codex R2: exercise an actual failure)
+  {
+    const bare = new Database(':memory:')   // products exists but product_action_requests deliberately absent → insert throws
+    bare.exec("CREATE TABLE products (id TEXT PRIMARY KEY, seller_id TEXT NOT NULL, title TEXT, description TEXT, price REAL, status TEXT)")
+    bare.prepare("INSERT INTO products (id, seller_id, title, description, price, status) VALUES ('prd_bare','u','T','D',1,'active')").run()
+    const r = submitProductActionRequest(bare, { ownerId: 'u', action: 'delete', productId: 'prd_bare', generateId })
+    ok('10a real db failure → REQUEST_FAILED (no throw escapes)', r.ok === false && r.error_code === 'REQUEST_FAILED' && r.http === 500)
+    ok('10b sanitized error carries NO raw SQL/constraint/table text', !/SQLITE|no such table|constraint|product_action_requests/i.test(String(r.error)))
+    bare.close()
+  }
 
   if (fail > 0) { console.error(`\n❌ product-action-request FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ product-action-request (Task 2): owner-key submit · approve_url+TTL · ownership 403 · 404/400 · double-pending 409 · unauth 401 · zero-exec (no executor import, product untouched)\n  ✅ pass ${pass}`)
