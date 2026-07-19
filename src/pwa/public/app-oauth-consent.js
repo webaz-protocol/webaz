@@ -22,7 +22,7 @@
     const scopes = scope.split(' ').filter(Boolean)
     app.innerHTML = shell(`
       <div class="page-header"><h2>${t('🔐 授权连接请求')}</h2></div>
-      <div style="font-size:12px;color:#6b7280;padding:0 4px 12px;line-height:1.6">${t('一个 AI 客户端请求通过 OAuth 连接你的 WebAZ 账号。它只会拿到下列受限、短期(1小时)、可随时撤销的权限 —— 不是你的账号或密钥;资金/发布/发货等敏感动作永远需要你的 Passkey 逐次批准。')}</div>
+      <div style="font-size:12px;color:#6b7280;padding:0 4px 12px;line-height:1.6">${t('一个 AI 客户端请求通过 OAuth 连接你的 WebAZ 账号。它只会拿到下列受限、可随时撤销的权限 —— 不是你的账号或密钥;资金/发布/发货等敏感动作永远需要你的 Passkey 逐次批准。你可选择连接保持多久,期间客户端会自动续期,无需反复重连。')}</div>
       <div class="card" style="padding:16px">
         <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"><div style="font-size:13px;color:#374151">${t('将以此账号连接:')} <strong>@${escHtml(state.user.handle || state.user.id || '')}</strong></div><button class="btn btn-outline btn-sm" style="white-space:nowrap;flex-shrink:0" onclick="oauthConsentSwitchAccount()">${t('换一个账号')}</button></div>
         <div id="oauth-client-block"><div style="font-size:12px;color:#6b7280">${t('请求方 client_id(自称,未验证)')}</div>
@@ -34,7 +34,7 @@
           <code style="font-size:12px;background:#f3f4f6;padding:2px 6px;border-radius:4px;white-space:nowrap">${escHtml(s)}</code>
           <div style="font-size:12px;color:#374151;line-height:1.5">${SCOPE_DESC[s] ? SCOPE_DESC[s]() : t('未知权限(将被服务端拒绝)')}</div>
         </div>`).join('')}
-        <div style="font-size:11px;color:#9ca3af;margin-top:10px;line-height:1.6">${t('批准后将跳回:')} <span style="font-family:monospace">${escHtml(redirectUri)}</span></div>
+        <div style="font-size:11px;color:#9ca3af;margin-top:10px;line-height:1.6">${t('批准后将跳回:')} <span style="font-family:monospace">${escHtml(redirectUri)}</span></div>${oauthDurationBlockHtml()}
         <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="oauthConsentApprove(this)">${t('🔐 Passkey 批准连接')}</button>
         <button class="btn btn-outline" style="width:100%;margin-top:8px" onclick="oauthConsentDeny(this)">${t('拒绝')}</button>
       </div>
@@ -55,12 +55,12 @@
   window.oauthConsentApprove = async (btn) => {
     btn.disabled = true
     try {
-      // purpose_data 绑全量请求(含 redirect_uri+resource):人批的 = 服务端 mint 的,一字不差
-      const token = await requestPasskeyGate('oauth_consent_approve', { client_id: q('client_id'), scope: q('scope'), code_challenge: q('code_challenge'), redirect_uri: q('redirect_uri'), resource: q('resource') })
+      // purpose_data 绑全量请求(含 redirect_uri+resource+duration):人批的 = 服务端 mint 的,一字不差。duration 取自时长选择器(app-oauth-consent-duration.js),同步读两次值一致。
+      const token = await requestPasskeyGate('oauth_consent_approve', { client_id: q('client_id'), scope: q('scope'), code_challenge: q('code_challenge'), redirect_uri: q('redirect_uri'), resource: q('resource'), duration: oauthReadDuration() })
       const r = await oauthPost('/oauth/authorize/approve', {
         client_id: q('client_id'), redirect_uri: q('redirect_uri'), scope: q('scope'),
         code_challenge: q('code_challenge'), resource: q('resource'), state: q('state') || undefined,
-        webauthn_token: token,
+        duration: oauthReadDuration(), webauthn_token: token,
       })
       if (r.error || !r.redirect_to) { toast$(r.error || t('批准失败,请重试'), 'error'); btn.disabled = false; return }
       toast$(t('已批准,正在跳回 AI 客户端…'), 'success')

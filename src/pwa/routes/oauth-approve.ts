@@ -27,7 +27,7 @@ import type { Express, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
 import { validateAuthorizeRequest, oauthClients } from './oauth-authorize.js'
-import { validateRequestedCapabilities } from '../../runtime/agent-grant-scopes.js'
+import { validateRequestedCapabilities, durationAllowedForScopes, durationToSeconds, type GrantDuration } from '../../runtime/agent-grant-scopes.js'
 import type { HumanPresence } from '../human-presence.js'
 
 // D5 coarse OAuth scopes → RFC-020 SAFE capabilities (the grant carries capabilities, not raw
@@ -48,7 +48,11 @@ export const OAUTH_SCOPE_CAPABILITIES: Record<string, readonly string[]> = {
   'aftersales:request': ['buyer_action_request'],   // RFC-026 PR-6:确认收货/直付取消/退货【请求】—— 执行永远要 Passkey   // RFC-026 PR-5:读=region+存在性(无子串);变更=请求制,Passkey 批准才写   // RFC-026 PR-4:订单上下文聊天(参与方绑定;反诈/限频生产同路)
 }
 
-export const OAUTH_GRANT_TTL_SECONDS = 3600        // grant lives as long as the access token (D2: no refresh)
+// PR-2: the human CHOOSES how long the connection lasts (1h/24h/7d/30d, gated to SAFE scopes by
+// allowedDurationsForScopes). Default 30d — with refresh tokens (PR-1) the client silently renews its 1h
+// access token for the whole grant window, so a longer grant is what actually stops the ~hourly reconnect.
+// Access tokens stay short (min(1h, grant)); the grant length is the human-approved connection lifetime.
+export const OAUTH_DEFAULT_DURATION: GrantDuration = '30d'
 export const OAUTH_CODE_TTL_SECONDS = 60           // single-use code; client exchanges it immediately
 
 export interface OAuthApproveDeps {
@@ -92,28 +96,38 @@ export function registerOAuthApproveRoutes(app: Express, deps: OAuthApproveDeps)
     }, await oauthClients())
     if (!v.ok) return void res.status(400).json({ error: v.error_description, error_code: v.error.toUpperCase() })
 
+    // OAuth scopes → SAFE capabilities; re-classified so a mapping mistake can never mint risk (I-6).
+    const caps = [...new Set(v.scopes.flatMap(s => OAUTH_SCOPE_CAPABILITIES[s] ?? []))].map(capability => ({ capability }))
+    const cv = validateRequestedCapabilities(caps)
+    if (!cv.ok) return void res.status(500).json({ error: 'scope mapping produced a non-SAFE capability — refusing', error_code: 'SCOPE_MAP_INVARIANT' })
+
+    // PR-2: human-chosen connection lifetime. Default 30d; validated against the durations the mapped SAFE
+    // capabilities may carry (allowedDurationsForScopes: 1h/24h/7d/30d for safe). An unmapped/tampered value
+    // is rejected — never silently downgraded — so the minted grant matches exactly what the human approved.
+    const duration = (asStr(b.duration) ?? OAUTH_DEFAULT_DURATION) as GrantDuration
+    if (!durationAllowedForScopes(caps.map(c => c.capability), duration)) {
+      return void res.status(400).json({ error: 'requested connection duration is not allowed for these scopes', error_code: 'DURATION_NOT_ALLOWED' })
+    }
+
     // I-1: live Passkey — token consumed DIRECTLY (no param toggle can disable a credential mint),
-    // purpose-bound to the FULL consent request the human saw (incl. redirect_uri + resource).
+    // purpose-bound to the FULL consent request the human saw (incl. redirect_uri + resource + duration —
+    // so the approved lifetime is exactly what mints; a tampered duration fails the gate).
     const gate = consumeGateToken(
       user.id as string, asStr(b.webauthn_token), 'oauth_consent_approve',
       (data) => {
         const d = data as Record<string, unknown> | null
         return !!d && d.client_id === v.client.client_id && d.scope === v.scopes.join(' ')
           && d.code_challenge === v.code_challenge && d.redirect_uri === v.redirect_uri && d.resource === v.resource
+          && d.duration === duration
       },
     )
     if (!gate.ok) return void res.status(412).json({ error: gate.reason || 'Passkey verification required', error_code: 'HUMAN_PRESENCE_REQUIRED' })
-
-    // OAuth scopes → SAFE capabilities; re-classified so a mapping mistake can never mint risk (I-6).
-    const caps = [...new Set(v.scopes.flatMap(s => OAUTH_SCOPE_CAPABILITIES[s] ?? []))].map(capability => ({ capability }))
-    const cv = validateRequestedCapabilities(caps)
-    if (!cv.ok) return void res.status(500).json({ error: 'scope mapping produced a non-SAFE capability — refusing', error_code: 'SCOPE_MAP_INVARIANT' })
 
     const grantId = generateId('grt')
     const code = `oac_${randomBytes(32).toString('hex')}`
     const codeHash = createHash('sha256').update(code).digest('hex')
     const now = Date.now()
-    const grantExpiresAt = new Date(now + OAUTH_GRANT_TTL_SECONDS * 1000).toISOString()
+    const grantExpiresAt = new Date(now + durationToSeconds(duration) * 1000).toISOString()
     const codeExpiresAt = new Date(now + OAUTH_CODE_TTL_SECONDS * 1000).toISOString()
 
     db.transaction(() => {

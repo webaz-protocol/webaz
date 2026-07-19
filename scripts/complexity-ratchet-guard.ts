@@ -111,6 +111,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-product-gallery.js':     30,
   'src/pwa/public/app-connect.js':             60,
   'src/pwa/public/app-oauth-consent.js':       80,
+  'src/pwa/public/app-oauth-consent-duration.js':       22,   // PR-2 时长选择器(从 consent 抽出守 ceiling)
   'src/pwa/public/app-oauth-consent-badge.js':       29,
   'src/pwa/public/app-product-image-ui.js':    35,
   'src/pwa/public/app-product-presentation.js': 56,
