@@ -40,8 +40,10 @@ let gateSeq = 0
 /** Simulate the post-ceremony state: insert the gate-token row /api/webauthn/auth/finish would mint. */
 function mintGateToken(purposeData: Record<string, unknown>, purpose = 'oauth_consent_approve', userId = USER): string {
   const id = `wgt_${++gateSeq}_${Math.random().toString(36).slice(2)}`
+  // PR-2: the consent gate is now bound to duration too; default to the server default (30d) unless overridden.
+  const pd = { duration: '30d', ...purposeData }
   db.prepare('INSERT INTO webauthn_gate_tokens (id, user_id, purpose, purpose_data, expires_at) VALUES (?,?,?,?,?)')
-    .run(id, userId, purpose, JSON.stringify(purposeData), new Date(Date.now() + 60_000).toISOString())
+    .run(id, userId, purpose, JSON.stringify(pd), new Date(Date.now() + 60_000).toISOString())
   return id
 }
 
@@ -127,6 +129,38 @@ async function main() {
     const r2 = await post('/oauth/authorize/deny', { client_id: GOOD.client_id, redirect_uri: 'http://evil/cb' })
     ok('4c. deny with unregistered redirect_uri → 400 (no open redirect)', r2.status === 400)
   }
+
+  // ── 5. PR-2 human-chosen connection duration ──
+  const latestGrantExpMs = () => new Date(String((db.prepare('SELECT expires_at FROM agent_delegation_grants ORDER BY rowid DESC LIMIT 1').get() as { expires_at: string }).expires_at)).getTime()
+  const near = (ms: number, targetSec: number) => Math.abs(ms - (Date.now() + targetSec * 1000)) <= 120_000
+  ok('5a. default (no duration in body) → grant lasts ~30d', await (async () => {
+    // happy-path grant #1 was minted with the default; assert its lifetime is ~30d, not the old fixed 1h
+    const first = new Date(String((db.prepare('SELECT expires_at FROM agent_delegation_grants ORDER BY rowid ASC LIMIT 1').get() as { expires_at: string }).expires_at)).getTime()
+    return first - Date.now() > 25 * 86400 * 1000   // clearly a multi-week grant, not 1h
+  })())
+  ok('5b. explicit duration=7d → grant lasts ~7d', await (async () => {
+    const tok = mintGateToken({ client_id: GOOD.client_id, scope: GOOD.scope, code_challenge: CHALLENGE, redirect_uri: GOOD.redirect_uri, resource: GOOD.resource, duration: '7d' })
+    const r = await post('/oauth/authorize/approve', { ...GOOD, duration: '7d', webauthn_token: tok })
+    return r.status === 200 && near(latestGrantExpMs(), 604800)
+  })())
+  ok('5c. explicit duration=30d → grant lasts ~30d', await (async () => {
+    const tok = mintGateToken({ client_id: GOOD.client_id, scope: GOOD.scope, code_challenge: CHALLENGE, redirect_uri: GOOD.redirect_uri, resource: GOOD.resource, duration: '30d' })
+    const r = await post('/oauth/authorize/approve', { ...GOOD, duration: '30d', webauthn_token: tok })
+    return r.status === 200 && near(latestGrantExpMs(), 2592000)
+  })())
+  ok('5d. disallowed duration (90d) → 400 DURATION_NOT_ALLOWED, no mint', await (async () => {
+    const before = counts().grants
+    const tok = mintGateToken({ client_id: GOOD.client_id, scope: GOOD.scope, code_challenge: CHALLENGE, redirect_uri: GOOD.redirect_uri, resource: GOOD.resource, duration: '90d' })
+    const r = await post('/oauth/authorize/approve', { ...GOOD, duration: '90d', webauthn_token: tok })
+    return r.status === 400 && ((await r.json()) as { error_code?: string }).error_code === 'DURATION_NOT_ALLOWED' && counts().grants === before
+  })())
+  ok('5e. gate bound to a DIFFERENT duration than the body → 412 (approve-what-you-saw)', await (async () => {
+    const before = counts().grants
+    const tok = mintGateToken({ client_id: GOOD.client_id, scope: GOOD.scope, code_challenge: CHALLENGE, redirect_uri: GOOD.redirect_uri, resource: GOOD.resource, duration: '7d' })
+    const r = await post('/oauth/authorize/approve', { ...GOOD, duration: '30d', webauthn_token: tok })
+    return r.status === 412 && counts().grants === before
+  })())
+
   http.close()
 
   // ── 5. fail-closed mounting ──
