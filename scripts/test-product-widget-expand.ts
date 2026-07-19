@@ -87,6 +87,19 @@ try {
   fire(backBtn!)
   ok('B1-13 返回列表 restores the search list (both cards back) — cached, no tool call', !!cardFor(rootNode, 'prd_a') && !!cardFor(rootNode, 'prd_b'))
 
+  // ── B2 准备下单:one-click starts quote→draft→submit→Passkey via a READ-ONLY quote (never money-path) ──
+  const calls: Array<[string, unknown]> = []
+  const oai2 = { callTool: (n: string, a: unknown) => { calls.push([n, a]) } }
+  win.innerWidth = 1200
+  renderBody(oai2, SEARCH)
+  const pdBtn = findByText(cardFor(rootNode, 'prd_a')!, '准备下单')
+  ok('B2-1 card shows a 准备下单 primary button (not the old 报价)', !!pdBtn && !findByText(rootNode, '报价'))
+  ok('B2-2 准备下单 button is styled primary', (pdBtn as N).className === 'primary')
+  fire(pdBtn!)
+  ok('B2-3 准备下单 kicks off a READ-ONLY webaz_quote_order with the exact product_id + quantity', calls.length >= 1 && calls[0][0] === 'webaz_quote_order' && (calls[0][1] as Record<string, unknown>).product_id === 'prd_a' && (calls[0][1] as Record<string, unknown>).quantity === 1)
+  ok('B2-4 widget NEVER calls the money-path tools directly (no order_draft/submit/execute from the card)', !calls.some(c => /order_draft|submit_order|order_create|place_order|execute/.test(c[0])))
+  ok('B2-5 button disables on click (防误触; server intent_hash dedups any duplicate submit)', (pdBtn as N & { disabled?: boolean }).disabled === true)
+
   // ── mobile: opening a second card closes the first (one-at-a-time) ──
   win.innerWidth = 500
   renderBody(oai, SEARCH)
@@ -97,4 +110,4 @@ try {
 } catch (e) { fail++; fails.push('✗ THREW: ' + ((e as Error).stack || (e as Error).message)) }
 
 if (fail > 0) { console.error(`\n❌ product-widget-expand FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-console.log(`✅ product-widget-expand: per-card expand/collapse with PERSISTED state (survives sort re-render) + real 展开/收起 toggle + clickable basic-info + scroll-to-card + detail 返回列表 (cached, no dead-end) + mobile one-at-a-time\n  ✅ pass ${pass}`)
+console.log(`✅ product-widget-expand+prepare: B1 expand/collapse PERSISTED (survives sort) + 展开/收起 toggle + clickable info + scroll + detail 返回列表 + mobile one-at-a-time; B2 准备下单 primary → READ-ONLY webaz_quote_order(product_id+qty), NEVER money-path tools, disables on click\n  ✅ pass ${pass}`)

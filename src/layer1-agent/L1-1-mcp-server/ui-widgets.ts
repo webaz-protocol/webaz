@@ -169,6 +169,8 @@ body{font-family:system-ui,sans-serif;margin:0;padding:10px;color:var(--ink);bac
 .card.open .more{display:block}
 .row{display:flex;gap:6px;margin-top:auto}
 .row button{flex:1;border:1px solid var(--line);background:var(--btn-bg);color:var(--btn-ink);border-radius:8px;padding:4px 6px;font-size:11px;cursor:pointer}
+.row button.primary{background:#4f46e5;color:#fff;border-color:transparent;font-weight:600}
+.row button:disabled{opacity:.6;cursor:default}
 .cmp{margin-top:12px;border-top:1px solid var(--line);padding-top:8px;font-size:12px;display:none}
 .cmp table{border-collapse:collapse;width:100%}
 .cmp td,.cmp th{border:1px solid var(--line);padding:3px 6px;text-align:left;font-size:11px}
@@ -280,12 +282,16 @@ function renderBody(oai, out){
         dt.addEventListener('click',onceGuard(function(){ oai.callTool('webaz_search',{result_handle:out.result_handle,selected_ids:[p.id]}) }))
         row.appendChild(dt)
       }
-      var q=el('button',null,'报价')
-      q.addEventListener('click',onceGuard(function(){
-        // 经济链路回会话流:报价→草稿→提交→Passkey(widget 绝不直达钱路)
-        if(!sendFollowUpCompat(oai,'请用 webaz_quote_order 给商品 '+p.id+' 报价')) q.textContent='请在对话里说:给 '+p.id+' 报价'
+      // B2:主按钮【准备下单】—— 一键发起 报价→草稿→提交审批,终点你 Passkey 批准。
+      //   widget 绝不直达钱路/不建正式订单/不动资金:webaz_quote_order 只读(不扣款/不锁库存),草稿与提交仍在会话流+服务端,
+      //   正式建单永远发生在人类 Passkey 批准路径。点击即 disabled 防误触;幂等由服务端 intent_hash 唯一索引兜底(重复 submit 返原请求)。
+      var pd=el('button','primary','准备下单')
+      pd.addEventListener('click',onceGuard(function(){
+        pd.disabled=true; pd.textContent='准备中…(报价→草稿→审批)'
+        if(typeof oai.callTool==='function'){ oai.callTool('webaz_quote_order',{product_id:p.id,quantity:1}) }
+        else if(!sendFollowUpCompat(oai,'请为该商品准备下单(数量 1):webaz_quote_order→webaz_order_draft→webaz_submit_order_request,最终由我 Passkey 批准。product_id='+p.id)){ pd.textContent='请在对话里说:为 '+p.id+' 准备下单'; pd.disabled=false }
       }))
-      row.appendChild(q)
+      row.appendChild(pd)
       var sel=el('button',null,state.selected[p.id]?'已选✓':'比较')
       sel.addEventListener('click',function(){ state.selected[p.id]=!state.selected[p.id]; render() })   // 本地选择
       row.appendChild(sel)
