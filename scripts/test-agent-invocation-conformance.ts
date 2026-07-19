@@ -76,11 +76,14 @@ try {
   ok('Q-4 复检保留预算约束:超预算不判假阴性 → quality=valid', Number(budgetZero.count) === 0
     && budgetZero.quality === undefined && lastQuality() === 'valid', JSON.stringify(budgetZero).slice(0, 160))
 
-  // Q-5(Codex R1-2 覆盖):目的地复检不可 LIMIT-1 先截断 —— 加一个仅售 SG 的多词品,another 区搜应判假阴性,SG 区也应
-  insP.run('prd_sgonly', 'seller1', '悬挂式抽纸 SG 专供', 'd', 9.9, 'WAZ', 5, '家庭清洁/纸品', 'active')
-  db.prepare("UPDATE products SET sale_regions=? WHERE id='prd_sgonly'").run(JSON.stringify({ mode: 'list', include: ['SG'] }))
-  const sgHit = await call({ category: '家庭清洁/纸品', keywords: ['专供', '不存在词丙'], ship_to_region: 'SG' })   // all:无一品同含两词 → 0;any:专供命中 prd_sgonly(SG 可售)
-  ok('Q-5 目的地可售的多词品:同约束 any 命中 → false_negative_suspect(复检未被 LIMIT1 漏掉区域匹配)',
+  // Q-5(Codex R1-2/R2 覆盖):证 fetch-then-region 而非 LIMIT-1。两个都匹配"专供"的品:
+  //   prd_cnonly【更新、仅售 CN】+ prd_sgonly【更旧、仅售 SG】。搜 ship_to=SG 时,LIMIT-1 按 created_at DESC
+  //   会先抓 CN-only → region 滤掉 → 错判 valid(旧 bug);LIMIT-30 能看到 SG-only → 正确判 suspect。
+  const insDated = db.prepare("INSERT INTO products (id,seller_id,title,description,price,currency,stock,category,status,sale_regions,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+  insDated.run('prd_sgonly', 'seller1', '悬挂式抽纸 SG 专供', 'd', 9.9, 'WAZ', 5, '家庭清洁/纸品', 'active', JSON.stringify({ mode: 'list', include: ['SG'] }), '2026-01-01 00:00:00')
+  insDated.run('prd_cnonly', 'seller1', '悬挂式抽纸 CN 专供', 'd', 8.8, 'WAZ', 5, '家庭清洁/纸品', 'active', JSON.stringify({ mode: 'list', include: ['CN'] }), '2026-06-01 00:00:00')   // 更新 → LIMIT-1 先命中它
+  const sgHit = await call({ category: '家庭清洁/纸品', keywords: ['专供', '不存在词丙'], ship_to_region: 'SG' })   // all:无一品同含两词 → 0;any:两品命中,仅 SG-only 可售 SG
+  ok('Q-5 fetch-then-region:更新的 CN-only 排在前,复检仍找到更旧的 SG-only → false_negative_suspect(证非 LIMIT-1)',
     Number(sgHit.count) === 0 && sgHit.quality === 'false_negative_suspect', JSON.stringify(sgHit).slice(0, 160))
 
   // (跨面契约:search 0 命中 → recovery 指 discover,由 test-discover-recovery-browse REC-1 锁定,此处不复测)
