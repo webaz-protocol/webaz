@@ -368,6 +368,7 @@ import { registerOAuthDiscoveryRoutes } from './routes/oauth-discovery.js'
 import { registerOAuthAuthorizeRoutes } from './routes/oauth-authorize.js'
 import { registerOAuthApproveRoutes } from './routes/oauth-approve.js'
 import { registerOAuthTokenRoutes } from './routes/oauth-token.js'
+import { registerOAuthRevokeRoutes } from './routes/oauth-revoke.js'
 import { registerOAuthRegisterRoutes, startOAuthClientSweepCron } from './routes/oauth-register.js'
 import { mountEdgeOriginGuard } from './routes/edge-origin-guard.js'
 // Agent reputation (#1013 Phase 108) — 2 endpoints
@@ -7734,6 +7735,7 @@ registerOAuthDiscoveryRoutes(app)   // RFC-023 PR-1:WEBAZ_OAUTH=1 才挂载(fail
 registerOAuthAuthorizeRoutes(app)   // RFC-023 PR-2a:GET /oauth/authorize 校验+SPA consent 交接(mint 无)
 registerOAuthApproveRoutes(app, { db, auth, generateId, consumeGateToken, rateLimitOk })   // RFC-023 PR-2b:Passkey 门 consent → mint grant+code
 registerOAuthTokenRoutes(app, { db, rateLimitOk })   // RFC-023 PR-3 + PR-1 refresh:code+PKCE → access+refresh(hashed,aud-bound,不超 grant 寿命);轮换在一个 sync tx 内
+registerOAuthRevokeRoutes(app, { db, rateLimitOk })   // RFC-023 PR-3(revoke):RFC 7009 —— 出示 token → 撤其 grant + 级联撤 access/refresh(一个 .immediate() tx;200 无 oracle)
 registerOAuthRegisterRoutes(app, { rateLimitOk })   // RFC-024:Dynamic Client Registration(POST /oauth/register,inert-until-consented)
 registerPublicUtilsRoutes(app, {
   db, MASTER_SEED, NODE_ENV, SERVICE_START_MS,

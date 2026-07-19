@@ -74,6 +74,7 @@ async function main() {
     ok('4c. AS metadata: public clients, none auth (D4)', JSON.stringify(as.token_endpoint_auth_methods_supported) === '["none"]')
     ok('4d. AS metadata: resource indicators supported (RFC 8707 / I-3)', as.resource_indicators_supported === true)
     ok('4e. AS metadata: authorize + token endpoints', typeof as.authorization_endpoint === 'string' && typeof as.token_endpoint === 'string')
+    ok('4e2. AS metadata: revocation_endpoint advertised (RFC 7009)', typeof as.revocation_endpoint === 'string' && String(as.revocation_endpoint).endsWith('/oauth/revoke'))
     const pr = await (await fetch(`${base}/.well-known/oauth-protected-resource`)).json() as Record<string, unknown>
     ok('4f. protected-resource: aud-bound resource = /mcp (I-3)', pr.resource === 'https://webaz.xyz/mcp')
     ok('4g. protected-resource: names the AS', Array.isArray(pr.authorization_servers) && (pr.authorization_servers as string[])[0] === 'https://webaz.xyz')
