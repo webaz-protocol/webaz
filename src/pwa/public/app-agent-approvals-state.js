@@ -31,7 +31,7 @@
     if (r.kind !== 'order_submit') return false
     if (r.summary_unavailable) return true
     const s = r.submit_summary
-    return !s || typeof s !== 'object' || s.payable_units == null || !s.currency || !s.payment_rail
+    return !s || typeof s !== 'object' || s.payable_units == null || !s.currency || !s.payment_rail || (s.payment_rail === 'direct_p2p' && !s.direct_receive_account_id)
   }
 
   async function aaHydrate() {
