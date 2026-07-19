@@ -1,7 +1,8 @@
 // RFC-020 — Agent 授权请求审批页(#agent-approvals)。一个已连接的 agent 请求【更多 SAFE 作用域 / 一个能力包】,
 //   真人在这里审核并用 Passkey 批准或拒绝。批准 = 扩展该 agent 已有的委托凭证(仍只 SAFE、可撤销、按时长)。
-//   经典脚本,全局函数;globals(GET/POST/state/shell/t/escHtml/fmtTime/navigate/loading$/toast$/requestPasskeyGate)调用时解析。
-//   商家视角:不需要懂 scope/complete/verify —— 只看【哪个 agent · 要做什么 · 风险 · 多久】。批准需 Passkey(扩权=提权)。
+//   经典脚本,全局函数;globals(GET/apiRead/state/shell/t/escHtml/fmtTime/loading$/grantDurationSelect)调用时解析。
+//   本文件 = 渲染壳(壳/卡);状态机 + 交互(hydrate/approve/reject/错误态/reconcile)在 app-agent-approvals-state.js
+//   (P0-A A2:ratchet 上限,新代码禁回塞本文件)。商家视角:只看【哪个 agent · 要做什么 · 风险 · 多久】。批准需 Passkey。
 ;(function () {
   const RISK = {
     low:    { label: '低风险', color: '#16a34a', bg: '#dcfce7' },
@@ -12,7 +13,8 @@
   // Lightweight badge: fill #aa-pending-badge with a pending count (called from the account/settings page).
   async function hydrateAgentApprovalsBadge() {
     const el = document.getElementById('aa-pending-badge'); if (!el || !state.user) return
-    const r = await GET('/agent-grants/permission-requests').catch(() => null)
+    const res = await apiRead('/agent-grants/permission-requests')   // A4:带超时,徽章读绝不挂死
+    const r = res.ok ? res.data : null
     const n = (r && Array.isArray(r.requests)) ? r.requests.length : 0
     el.innerHTML = n > 0 ? `<span style="display:inline-block;min-width:16px;height:16px;line-height:16px;text-align:center;font-size:10px;color:#fff;background:#dc2626;border-radius:999px;padding:0 5px;margin-left:4px">${n}</span>` : ''
   }
@@ -25,28 +27,14 @@
       <div style="font-size:12px;color:#6b7280;padding:0 4px 12px;line-height:1.6">${t('一个已连接的 AI agent 在请求授权。【扩权请求】只扩展受限、可撤销的只读/草稿凭证,不动资金;【订单提交】批准会创建真实订单 —— 托管轨将从你的钱包扣款入托管(卡片列出全部条款,任何变化服务端拒绝执行)。投票/仲裁/改密钥永不可委托。')}</div>
       <div id="aa-body">${loading$()}</div>
     `, 'me')
-    setTimeout(aaHydrate, 30)
+    setTimeout(() => window.aaHydrate(), 30)   // aaHydrate 在 -state.js
   }
   window.renderAgentApprovals = renderAgentApprovals
 
-  async function aaHydrate() {
-    const box = document.getElementById('aa-body'); if (!box) return
-    const r = await GET('/agent-grants/permission-requests').catch(() => null)
-    if (!r || r.error) { box.innerHTML = `<div class="card" style="padding:16px;color:#991b1b">${escHtml((r && r.error) || t('无法读取授权请求,请重试。'))} <button class="btn btn-outline" style="margin-top:8px" onclick="location.reload()">${t('重试')}</button></div>`; return }
-    const reqs = Array.isArray(r.requests) ? r.requests : []
-    if (reqs.length === 0) {
-      box.innerHTML = `<div class="empty" style="padding:40px 16px;text-align:center">
-        <div style="font-size:32px;margin-bottom:8px">✅</div>
-        <div style="font-weight:600;margin-bottom:4px">${t('暂无待处理的授权请求')}</div>
-        <div style="color:#9ca3af;font-size:12px">${t('当你的 agent 请求更多权限时,会出现在这里等你批准。')}</div>
-      </div>`
-      return
-    }
-    if (window.aaMarkSimilarSubmits) window.aaMarkSimilarSubmits(reqs); box.innerHTML = reqs.map(aaCard).join(''); if (window.aaApplyDeepLink) window.aaApplyDeepLink(box)  // RFC-026 PR-1/2 相似标记+深链接(逻辑在 -dup.js)
-  }
-
+  // 单卡渲染(状态机在 -state.js 调用 window.aaCard);批准门 = window.aaEconomicIncomplete(fail-closed)。
   function aaCard(r) {
     const risk = RISK[r.risk_level] || RISK.low
+    const econIncomplete = window.aaEconomicIncomplete ? window.aaEconomicIncomplete(r) : false
     const scopes = Array.isArray(r.requested_scopes) ? r.requested_scopes : []
     // Prefer the human-readable bundle summary; otherwise show the individual safe-scope chips.
     const what = r.kind === 'order_action' ? (window.aaOrderWhat ? window.aaOrderWhat(r) : '') : r.kind === 'order_submit' ? (window.aaOrderSubmitWhat ? window.aaOrderSubmitWhat(r) : '') : r.kind === 'address_change' ? (window.aaAddressWhat ? window.aaAddressWhat(r) : '') : r.kind === 'buyer_action' ? (window.aaBuyerActionWhat ? window.aaBuyerActionWhat(r) : '') : r.human_summary
@@ -62,31 +50,12 @@
       ${r.reason ? `<div style="font-size:12px;color:#6b7280;margin-top:8px">${t('用途(agent 自述)')}: ${escHtml(r.reason)} <span style="font-size:10px;color:#9ca3af">(${t('未验证')})</span></div>` : ''}
       ${window.grantDurationSelect(r.allowed_durations, r.duration, 'aa-dur-' + escHtml(String(r.id)))}
       <div style="font-size:11px;color:#9ca3af;margin-top:6px">${t('请求于')} ${r.created_at ? fmtTime(r.created_at) : '—'}</div>
+      ${econIncomplete ? `<div style="font-size:12px;line-height:1.7;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;margin-top:8px">⚠️ <b>${t('经济信息暂时不完整')}</b>。${t('无法安全批准 —— 商品金额/币种/支付轨道未能读取。请稍后重试,或让 agent 重新报价并建草稿。')}</div>` : ''}
       <div style="display:flex;gap:8px;margin-top:12px">
         <button class="btn btn-outline" style="flex:1;color:#dc2626;border-color:#fecaca" onclick="aaReject('${escHtml(String(r.id))}')">${t('拒绝')}</button>
-        <button class="btn btn-primary" style="flex:2" onclick="aaApprove('${escHtml(String(r.id))}')">🔑 ${t('用 Passkey 批准')}</button>
+        <button class="btn btn-primary" style="flex:2" onclick="aaApprove('${escHtml(String(r.id))}')"${econIncomplete ? ' disabled title="' + t('经济信息不完整,暂不可批准') + '"' : ''}>🔑 ${t('用 Passkey 批准')}</button>
       </div>
     </div>`
   }
-
-  window.aaApprove = async (id) => {
-    const card = document.querySelector(`[data-aa-id="${(window.CSS && CSS.escape) ? CSS.escape(id) : id}"]`)
-    const btn = card ? card.querySelector('.btn-primary') : null; if (btn) btn.disabled = true
-    let token
-    // Passkey bound to THIS request (a token minted for request A can't approve B — server re-validates).
-    try { token = await requestPasskeyGate('agent_permission_approve', { request_id: id, order_id: (card && card.dataset.aaOrderId) || undefined, action: (card && card.dataset.aaAction) || undefined, params_hash: (card && card.dataset.aaHash) || undefined }) }
-    catch (e) { if (window.dpPromptRegisterPasskey && e && e.code === 'NO_PASSKEY_REGISTERED') { await window.dpPromptRegisterPasskey(e) } else { toast$((e && e.message) || t('Passkey 验证已取消'), 'error') } if (btn) btn.disabled = false; return }
-    const r = await POST('/agent-grants/permission-requests/' + encodeURIComponent(id) + '/approve', { webauthn_token: token, duration: window.grantDurationValue('aa-dur-' + id) }).catch(() => null)
-    if (!r || r.error) { toast$((r && r.error) || t('批准失败,请重试'), 'error'); if (btn) btn.disabled = false; return }
-    toast$(r.kind === 'order_submit' ? t('已批准 —— 订单已创建') + (r.order_id ? ' ' + r.order_id : '') : t('已批准 —— 该 agent 的权限已扩展'))
-    aaHydrate(); hydrateAgentApprovalsBadge()
-  }
-
-  window.aaReject = async (id) => {
-    if (!confirm(t('确认拒绝这个授权请求?'))) return
-    const r = await POST('/agent-grants/permission-requests/' + encodeURIComponent(id) + '/reject', {}).catch(() => null)
-    if (!r || r.error) { toast$((r && r.error) || t('操作失败'), 'error'); return }
-    toast$(t('已拒绝该授权请求'))
-    aaHydrate(); hydrateAgentApprovalsBadge()
-  }
+  window.aaCard = aaCard
 })()
