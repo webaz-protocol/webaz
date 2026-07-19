@@ -326,6 +326,7 @@
     "test:oauth-approve": "tsx scripts/test-oauth-approve.ts",
     "test:oauth-token": "tsx scripts/test-oauth-token.ts",
     "test:oauth-refresh": "tsx scripts/test-oauth-refresh.ts",
+    "test:product-action-schema": "tsx scripts/test-product-action-schema.ts",
     "test:oauth-revoke": "tsx scripts/test-oauth-revoke.ts",
     "test:oauth-mcp-bearer": "tsx scripts/test-oauth-mcp-bearer.ts",
     "test:oauth-mcp-challenge": "tsx scripts/test-oauth-mcp-challenge.ts",
