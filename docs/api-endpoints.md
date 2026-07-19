@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (811 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (812 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -566,6 +566,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/peers/heartbeat` | 🔐 |  |  | src/pwa/routes/peers.ts:25 |
 | POST | `/api/pin-receipts` | 🔐 |  |  | src/pwa/routes/pin-receipts.ts:29 |
 | GET | `/api/pin-receipts/mine` | 🔐 |  |  | src/pwa/routes/pin-receipts.ts:53 |
+| POST | `/api/product-actions/request` | 🔐 |  | 提交:owner-key 建 pending 删除请求 → 返回 approve_url(人去 Passkey)。绝不执行删除。 | src/pwa/routes/product-actions.ts:25 |
 | POST | `/api/product-share/touch` | 🔐 |  | 商品分享归因落库（前端登录后首次进入带 share_id 时调用） | src/pwa/routes/share-redirects.ts:129 |
 | GET | `/api/products` |  |  |  | src/pwa/routes/products-list.ts:63 |
 | POST | `/api/products` | 🔐 |  |  | src/pwa/routes/products-create.ts:307 |
