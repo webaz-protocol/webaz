@@ -38,7 +38,7 @@ export const REQUEST_READINESS_GUIDE = {
   server_guards: {
     discover: 'requires a category OR ≥1 keyword; else 400 EMPTY_INTENT with missing_fields + recommended_question + safe_next_action. Category = registry key (webaz://guide/categories).',
     search: 'strict-match only; 0 hits → recovery points to webaz_discover (not a browse). Unconstrained browse (no query/category/filter) caps at 8, else 400 UNBOUNDED_CATALOG_BROWSE.',
-    quote: 'requires product_id + quantity; variant products fail closed with VARIANT_REQUIRED — never guess a variant.',
+    quote: 'requires product_id (quantity defaults to 1); variant products fail closed with VARIANT_REQUIRED — never guess a variant.',
     detail: 'result_handle + selected_ids (1..5 ids from that page) — a targeted fetch, never a broad re-scan.',
   },
   recommendation_note: 'WebAZ returns FACTS only and never authors a "best buy". The recommendation is YOURS (the assistant): pass recommend_id + recommend_reason to webaz_search to highlight one card, shown as "AI 推荐" (non-authoritative, display-only).',

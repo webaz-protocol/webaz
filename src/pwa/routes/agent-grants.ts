@@ -295,6 +295,10 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   // 调用契约 P0 PR-AB — 类目词表(公开只读,无鉴权:类目本就经在售列表公开)。双通道之一
   //   (另一通道 = MCP 资源 webaz://guide/categories):不同宿主对 Resource 读取支持不一,HTTP 端点保底。
   //   注册表键零商品也不消失(canonical registry);uncurated = 在售但未收录的卖家自由类目。
+  // R0 请求就绪门:编排指引 HTTP 保底通道(宿主不支持 MCP Resource 读取时用;与 webaz://guide/request-readiness 同源)。无鉴权。
+  //   放在 categories(同样无鉴权)之前 —— gen-openapi 的「后 8 行探 requireAgentGrantScope」启发式才不会误把下方 discover 的 grant 算到本路由。
+  app.get('/api/agent/request-readiness', (_req, res) => { res.json(REQUEST_READINESS_GUIDE) })
+
   app.get('/api/agent/categories', async (_req, res) => {
     res.json({
       schema_version: 'webaz.category_table.v1',
@@ -302,9 +306,6 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       usage: 'discover 的 category 参数只接受这里的 key(等值匹配);同义词/别名请用 keywords + keyword_match:"any" 搜标题。',
     })
   })
-
-  // R0 请求就绪门:编排指引 HTTP 保底通道(宿主不支持 MCP Resource 读取时用;与 webaz://guide/request-readiness 同源)。无鉴权。
-  app.get('/api/agent/request-readiness', (_req, res) => { res.json(REQUEST_READINESS_GUIDE) })
 
   app.post('/api/agent/discover', requireAgentGrantScope('buyer_discover'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!

@@ -2886,7 +2886,7 @@
     },
     "/api/agent/categories": {
       "get": {
-        "summary": "注册表键零商品也不消失(canonical registry);uncurated = 在售但未收录的卖家自由类目。",
+        "summary": "GET /api/agent/categories",
         "tags": [],
         "security": []
       }
@@ -3122,14 +3122,9 @@
     },
     "/api/agent/request-readiness": {
       "get": {
-        "summary": "R0 请求就绪门:编排指引 HTTP 保底通道(宿主不支持 MCP Resource 读取时用;与 webaz://guide/request-readiness 同源)。无鉴权。",
+        "summary": "放在 categories(同样无鉴权)之前 —— gen-openapi 的「后 8 行探 requireAgentGrantScope」启发式才不会误把下方 discover 的 grant 算到本路由。",
         "tags": [],
-        "security": [
-          {
-            "grantBearer": []
-          }
-        ],
-        "x-webaz-grant-scope": "buyer_discover"
+        "security": []
       }
     },
     "/api/agent/seller/products": {
