@@ -67,7 +67,7 @@ try {
   // ── R1/R2 presentation: minimal user-facing output, hide internals, price discipline, token framing ──
   const uo = g.body.user_facing_output as Record<string, unknown> | undefined
   ok('R1R2-P1 minimal user output (1 filter line + cards + 1 reason + 1 rec + 1 risk + 1 next); hide internals', !!uo && Array.isArray(uo.default_show) && Array.isArray(uo.default_hide) && /your internal reasoning/.test(gs) && /filtered-out products/.test(gs))
-  ok('R1R2-P2 price discipline (item price ≠ final payable; authoritative total only after quote)', /Search cards show the ITEM price, not the final payable/.test(gs))
+  ok('R1R2-P2 price discipline (item price ≠ final payable; authoritative total only after quote)', typeof (uo && uo.price_discipline) === 'string' && /Search cards show the ITEM price, not the final payable/.test(uo!.price_discipline as string) && /Only after webaz_quote_order may you state an authoritative final total/.test(uo!.price_discipline as string))
   ok('R1R2-P3 token framing: never tell users "to save tokens"', typeof (uo && uo.token_framing) === 'string' && /do not tell users .to save tokens./.test(uo!.token_framing as string))
 
   // ── ② server validation: discover zero-signal → 400 EMPTY_INTENT with the machine-executable clarification fields ──
