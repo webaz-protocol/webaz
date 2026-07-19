@@ -14,13 +14,14 @@
  *   - 受信角色（admin/verifier）权责分离：不能 add 任何角色 + 不能切到 buyer/seller
  *   - region 切换冷却 30 天（防规避 MLM 合规 / 薅历史佣金）
  *   - handle 累进冷却：N×12 月（防 anchor prefix 信誉断层）
- *   - handle 系统保留前缀 usr/sys/admin/webaz/anonymous/null
+ *   - handle 统一保留策略：系统/凭证/代理身份 + 推荐口令分隔符
  *
  * 跨域注入：safeRoles, generateId
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { getHandlePolicyIssue, handlePolicyMessage } from '../../handle-policy.js'
 
 const ROLE_LOCKED_ROLES = ['admin', 'verifier']
 const VALID_REGIONS = new Set(['china', 'us', 'eu', 'india', 'singapore', 'global_north', 'global'])
@@ -143,10 +144,11 @@ export function registerProfileIdentityRoutes(app: Application, deps: ProfileIde
     const user = auth(req, res); if (!user) return
     const raw = String(req.body?.handle ?? '').trim().replace(/^@/, '').toLowerCase()
     if (!raw) return void res.json({ error: '请填写新用户名' })
+    const policyIssue = getHandlePolicyIssue(raw)
+    if (policyIssue) return void res.json({ error: handlePolicyMessage(policyIssue), error_code: policyIssue })
     if (!/^[a-z0-9._]+$/.test(raw)) return void res.json({ error: '只能用小写字母 / 数字 / . _' })
     if (raw.length < 3 || raw.length > 20) return void res.json({ error: '用户名长度需在 3–20 个字符之间' })
     if (/^[._]|[._]$/.test(raw)) return void res.json({ error: '开头/结尾不能是 . 或 _' })
-    if (/^(usr|sys|admin|webaz|anonymous|null)/i.test(raw)) return void res.json({ error: '该前缀被系统保留' })
     if (raw === user.handle) return void res.json({ error: '新用户名与当前相同' })
 
     // 累进冷却
