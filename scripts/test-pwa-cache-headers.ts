@@ -5,10 +5,14 @@
  * Usage: npm run test:pwa-cache-headers
  */
 import express from 'express'
+import Database from 'better-sqlite3'
+import { createHash } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { shouldNoCacheStaticAsset } from '../src/pwa/pwa-cache-headers.js'
+import { setSeamDb } from '../src/layer0-foundation/L0-1-database/db.js'
+import { registerAgentGrantsRoutes } from '../src/pwa/routes/agent-grants.js'
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push('✗ ' + n) } }
@@ -38,9 +42,35 @@ try {
   ok('C-8 approval LIST read sets no-store', /permission-requests'[\s\S]{0,160}Cache-Control', 'no-store'/.test(GRANTS))
   ok('C-9 approval single-detail read sets no-store', /permission-requests\/:request_id'[\s\S]{0,160}Cache-Control', 'no-store'/.test(GRANTS))
   ok('C-9b agent-side my-permission-requests read sets no-store (Codex R1)', /my-permission-requests'[\s\S]{0,200}Cache-Control', 'no-store'/.test(GRANTS))
-  ok('C-9c canonical webaz_approval_requests LIST read sets no-store (Codex R2)', /agent\/approval-requests'[\s\S]{0,200}Cache-Control', 'no-store'/.test(GRANTS))
-  ok('C-9d canonical webaz_approval_requests DETAIL read sets no-store (Codex R2)', /agent\/approval-requests\/:id'[\s\S]{0,200}Cache-Control', 'no-store'/.test(GRANTS))
-  ok('C-9e connection status read sets no-store (scopes/expires_at change on revoke/expiry)', /agent-grants\/connection'[\s\S]{0,200}Cache-Control', 'no-store'/.test(GRANTS))
+
+  // ── behavioral (Codex R2/R3): mount the REAL registerAgentGrantsRoutes on a live express app + in-memory
+  //    DB, mint a real active grant, and assert the ACTUAL Cache-Control response header the real handlers
+  //    emit for the canonical webaz_approval_requests list/detail + connection reads — not a source-grep. ──
+  const gdb = new Database(':memory:')
+  setSeamDb(gdb)   // verifyGrantToken / dbOne read through the async seam; point it at this in-memory DB
+  gdb.exec('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, handle TEXT)')
+  gdb.exec('CREATE TABLE IF NOT EXISTS user_moderation (user_id TEXT PRIMARY KEY, suspended INTEGER)')
+  gdb.prepare('INSERT INTO users (id, handle) VALUES (?,?)').run('usr_test', 'tester')
+  const gapp = express()
+  registerAgentGrantsRoutes(gapp, {   // this call inits the grant/log/permission-request schemas on gdb
+    db: gdb,
+    auth: () => null,
+    generateId: (p: string) => `${p}_test`,
+    rateLimitOk: () => true,
+    requireHumanPresence: () => ({ ok: true }),
+  })
+  const RAW = 'gtk_test_behavioral_' + 'x'.repeat(24)
+  gdb.prepare('INSERT INTO agent_delegation_grants (grant_id, human_id, agent_label, capabilities, token_hash, status, expires_at) VALUES (?,?,?,?,?,?,?)')
+    .run('grt_test', 'usr_test', 'Test Agent',
+      JSON.stringify([{ capability: 'read_public' }, { capability: 'approval_requests_read' }]),
+      createHash('sha256').update(RAW).digest('hex'), 'active', '2999-01-01T00:00:00.000Z')
+  const gserver = gapp.listen(0); const gbase = `http://127.0.0.1:${(gserver.address() as AddressInfo).port}`
+  const ghead = async (p: string) => (await fetch(gbase + p, { headers: { authorization: `Bearer ${RAW}` } })).headers.get('cache-control')
+  ok('C-9c REAL GET /api/agent/approval-requests (canonical LIST) → no-store (real handler over HTTP, Codex R2)', (await ghead('/api/agent/approval-requests')) === 'no-store')
+  ok('C-9d REAL GET /api/agent/approval-requests/:id (canonical DETAIL) → no-store', (await ghead('/api/agent/approval-requests/req_missing')) === 'no-store')
+  ok('C-9e REAL GET /api/agent-grants/connection → no-store (scopes/expires_at change on revoke/expiry)', (await ghead('/api/agent-grants/connection')) === 'no-store')
+  gserver.close(); gdb.close()
+
   const SW = readFileSync('src/pwa/public/sw.js', 'utf8')
   ok('C-10 sw.js cache version bumped past v482', /const CACHE = 'webaz-v(4[89]\d|[5-9]\d\d)'/.test(SW))
 } catch (e) { fail++; fails.push('✗ THREW: ' + ((e as Error).stack || (e as Error).message)) }
