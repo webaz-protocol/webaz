@@ -1155,6 +1155,176 @@ export function initProductVariantsSchema(db: Database.Database): void {
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_pv_product ON product_variants(product_id, is_active)') } catch {}
 }
 
+// ─── RFC-027 RA1: permanent recommendation namespaces + immutable anchors ──
+// This is discovery metadata only. No route, resolver, QR, quote, order, attribution,
+// commission, wallet, or settlement path consumes it until later RA slices.
+export function initRecommendationAnchorSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS recommendation_namespaces (
+      id              TEXT PRIMARY KEY,
+      owner_user_id   TEXT NOT NULL REFERENCES users(id),
+      namespace       TEXT NOT NULL UNIQUE CHECK (
+        length(namespace) BETWEEN 3 AND 32
+        AND namespace = lower(namespace)
+        AND substr(namespace, 1, 1) BETWEEN 'a' AND 'z'
+        AND namespace NOT GLOB '*[^a-z0-9_]*'
+      ),
+      status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled','retired')),
+      issued_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      disabled_at     TEXT,
+      retired_at      TEXT,
+      UNIQUE(owner_user_id)
+    );
+    CREATE TABLE IF NOT EXISTS recommendation_namespace_events (
+      id              TEXT PRIMARY KEY,
+      namespace_id    TEXT NOT NULL REFERENCES recommendation_namespaces(id),
+      actor_id        TEXT REFERENCES users(id),
+      event_type      TEXT NOT NULL CHECK (event_type IN ('claimed','disabled','retired')),
+      reason_code     TEXT NOT NULL CHECK (length(reason_code) BETWEEN 3 AND 64 AND reason_code NOT GLOB '*[^a-z0-9_]*'),
+      created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS recommendation_anchors (
+      id                    TEXT PRIMARY KEY,
+      namespace_id          TEXT NOT NULL REFERENCES recommendation_namespaces(id),
+      local_code            TEXT NOT NULL CHECK (
+        length(local_code) = 5
+        AND local_code = lower(local_code)
+        AND local_code NOT GLOB '*[^23456789abcdefghjkmnpqrstuvwxyz]*'
+      ),
+      recommender_user_id   TEXT NOT NULL REFERENCES users(id),
+      product_id            TEXT NOT NULL REFERENCES products(id),
+      variant_id            TEXT REFERENCES product_variants(id),
+      seller_id_at_issue    TEXT NOT NULL REFERENCES users(id),
+      campaign_ref          TEXT,
+      target_snapshot_hash  TEXT NOT NULL CHECK (
+        length(target_snapshot_hash) = 64
+        AND target_snapshot_hash NOT GLOB '*[^0-9a-f]*'
+      ),
+      status                TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','withdrawn','disabled')),
+      issued_at             TEXT NOT NULL DEFAULT (datetime('now')),
+      withdrawn_at          TEXT,
+      disabled_at           TEXT,
+      UNIQUE(namespace_id, local_code)
+    );
+    CREATE TABLE IF NOT EXISTS recommendation_anchor_events (
+      id                       TEXT PRIMARY KEY,
+      recommendation_anchor_id TEXT NOT NULL REFERENCES recommendation_anchors(id),
+      actor_id                 TEXT REFERENCES users(id),
+      event_type               TEXT NOT NULL CHECK (event_type IN ('issued','withdrawn','disabled')),
+      reason_code              TEXT NOT NULL CHECK (length(reason_code) BETWEEN 3 AND 64 AND reason_code NOT GLOB '*[^a-z0-9_]*'),
+      created_at               TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_recommendation_anchors_product_active
+      ON recommendation_anchors(product_id, status, issued_at);
+    CREATE INDEX IF NOT EXISTS idx_recommendation_anchors_recommender_active
+      ON recommendation_anchors(recommender_user_id, status, issued_at);
+    CREATE INDEX IF NOT EXISTS idx_recommendation_namespace_events_namespace
+      ON recommendation_namespace_events(namespace_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_recommendation_anchor_events_anchor
+      ON recommendation_anchor_events(recommendation_anchor_id, created_at);
+
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_namespaces_no_delete
+      BEFORE DELETE ON recommendation_namespaces
+      BEGIN SELECT RAISE(ABORT, 'recommendation namespaces are permanent tombstones (DELETE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_namespaces_immutable
+      BEFORE UPDATE OF owner_user_id, namespace ON recommendation_namespaces
+      BEGIN SELECT RAISE(ABORT, 'recommendation namespace owner and name are immutable'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_namespaces_insert_active
+      BEFORE INSERT ON recommendation_namespaces
+      WHEN NEW.status <> 'active' OR NEW.disabled_at IS NOT NULL OR NEW.retired_at IS NOT NULL
+      BEGIN SELECT RAISE(ABORT, 'recommendation namespace must be inserted active'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_namespaces_status_forward
+      BEFORE UPDATE OF status ON recommendation_namespaces
+      WHEN NOT (
+        OLD.status = NEW.status
+        OR (OLD.status = 'active' AND NEW.status IN ('disabled','retired'))
+      )
+      BEGIN SELECT RAISE(ABORT, 'recommendation namespace status cannot be reactivated'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_namespaces_status_event
+      BEFORE UPDATE OF status ON recommendation_namespaces
+      WHEN NEW.status <> OLD.status AND NOT EXISTS (
+        SELECT 1 FROM recommendation_namespace_events e
+        WHERE e.namespace_id = NEW.id
+          AND e.event_type = CASE NEW.status WHEN 'disabled' THEN 'disabled' WHEN 'retired' THEN 'retired' END
+      )
+      BEGIN SELECT RAISE(ABORT, 'recommendation namespace status requires append-only event'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_namespaces_status_timestamps
+      BEFORE UPDATE OF status ON recommendation_namespaces
+      WHEN (NEW.status = 'disabled' AND (NEW.disabled_at IS NULL OR NEW.retired_at IS NOT NULL))
+        OR (NEW.status = 'retired' AND (NEW.retired_at IS NULL OR NEW.disabled_at IS NOT NULL))
+      BEGIN SELECT RAISE(ABORT, 'recommendation namespace status requires matching lifecycle timestamp'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_namespaces_timestamps_immutable
+      BEFORE UPDATE OF disabled_at, retired_at ON recommendation_namespaces
+      WHEN NEW.status = OLD.status
+      BEGIN SELECT RAISE(ABORT, 'recommendation namespace lifecycle timestamps are immutable'); END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_namespace_events_no_update
+      BEFORE UPDATE ON recommendation_namespace_events
+      BEGIN SELECT RAISE(ABORT, 'recommendation_namespace_events is append-only (UPDATE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_namespace_events_no_delete
+      BEFORE DELETE ON recommendation_namespace_events
+      BEGIN SELECT RAISE(ABORT, 'recommendation_namespace_events is append-only (DELETE forbidden)'); END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_anchors_no_delete
+      BEFORE DELETE ON recommendation_anchors
+      BEGIN SELECT RAISE(ABORT, 'recommendation anchors are immutable tombstones (DELETE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_anchors_immutable
+      BEFORE UPDATE OF namespace_id, local_code, recommender_user_id, product_id, variant_id,
+                       seller_id_at_issue, campaign_ref, target_snapshot_hash ON recommendation_anchors
+      BEGIN SELECT RAISE(ABORT, 'recommendation anchor target and issuer are immutable'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_anchors_owner_match_insert
+      BEFORE INSERT ON recommendation_anchors
+      WHEN NOT EXISTS (
+        SELECT 1 FROM recommendation_namespaces n
+        WHERE n.id = NEW.namespace_id AND n.owner_user_id = NEW.recommender_user_id
+      )
+      BEGIN SELECT RAISE(ABORT, 'recommendation anchor recommender must own namespace'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_anchors_owner_match_update
+      BEFORE UPDATE OF namespace_id, recommender_user_id ON recommendation_anchors
+      WHEN NOT EXISTS (
+        SELECT 1 FROM recommendation_namespaces n
+        WHERE n.id = NEW.namespace_id AND n.owner_user_id = NEW.recommender_user_id
+      )
+      BEGIN SELECT RAISE(ABORT, 'recommendation anchor recommender must own namespace'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_anchors_insert_active
+      BEFORE INSERT ON recommendation_anchors
+      WHEN NEW.status <> 'active' OR NEW.withdrawn_at IS NOT NULL OR NEW.disabled_at IS NOT NULL
+      BEGIN SELECT RAISE(ABORT, 'recommendation anchor must be inserted active'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_anchors_status_forward
+      BEFORE UPDATE OF status ON recommendation_anchors
+      WHEN NOT (
+        OLD.status = NEW.status
+        OR (OLD.status = 'active' AND NEW.status IN ('withdrawn','disabled'))
+      )
+      BEGIN SELECT RAISE(ABORT, 'recommendation anchor status cannot be reactivated'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_anchors_status_event
+      BEFORE UPDATE OF status ON recommendation_anchors
+      WHEN NEW.status <> OLD.status AND NOT EXISTS (
+        SELECT 1 FROM recommendation_anchor_events e
+        WHERE e.recommendation_anchor_id = NEW.id
+          AND e.event_type = CASE NEW.status WHEN 'withdrawn' THEN 'withdrawn' WHEN 'disabled' THEN 'disabled' END
+      )
+      BEGIN SELECT RAISE(ABORT, 'recommendation anchor status requires append-only event'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_anchors_status_timestamps
+      BEFORE UPDATE OF status ON recommendation_anchors
+      WHEN (NEW.status = 'withdrawn' AND (NEW.withdrawn_at IS NULL OR NEW.disabled_at IS NOT NULL))
+        OR (NEW.status = 'disabled' AND (NEW.disabled_at IS NULL OR NEW.withdrawn_at IS NOT NULL))
+      BEGIN SELECT RAISE(ABORT, 'recommendation anchor status requires matching lifecycle timestamp'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_anchors_timestamps_immutable
+      BEFORE UPDATE OF withdrawn_at, disabled_at ON recommendation_anchors
+      WHEN NEW.status = OLD.status
+      BEGIN SELECT RAISE(ABORT, 'recommendation anchor lifecycle timestamps are immutable'); END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_anchor_events_no_update
+      BEFORE UPDATE ON recommendation_anchor_events
+      BEGIN SELECT RAISE(ABORT, 'recommendation_anchor_events is append-only (UPDATE forbidden)'); END;
+    CREATE TRIGGER IF NOT EXISTS trg_recommendation_anchor_events_no_delete
+      BEFORE DELETE ON recommendation_anchor_events
+      BEGIN SELECT RAISE(ABORT, 'recommendation_anchor_events is append-only (DELETE forbidden)'); END;
+  `)
+}
+
 // ─── B-4: 编辑精选 / 每周推荐 ──────────────────────────────────────
 export function initEditorPicksSchema(db: Database.Database): void {
   db.exec(`

@@ -1,6 +1,7 @@
 # RFC-027 — Recommendation Anchors / 推荐商品口令
 
-**Status**: draft — RA0 research only; no production behavior is changed by this RFC.
+**Status**: draft — RA1 implementation in review; no public resolver, UI, QR,
+search, order, attribution, or payment behavior is changed yet.
 **Author**: WebAZ maintainers
 **Created**: 2026-07-19
 **Track**: exploratory
@@ -261,11 +262,15 @@ recommendation_namespaces
   id, owner_user_id, namespace, status, issued_at, disabled_at, retired_at
   UNIQUE(namespace), UNIQUE(owner_user_id)  -- one V1 namespace per identity
 
+recommendation_namespace_events
+  id, namespace_id, actor_id NULL, event_type, reason_code, created_at
+  append-only; claim/disable/retire audit without a mutable namespace history
+
 recommendation_anchors
   id, namespace_id, local_code, recommender_user_id,
   product_id, variant_id NULL, seller_id_at_issue,
   campaign_ref NULL, target_snapshot_hash,
-  status, issued_at, withdrawn_at
+  status, issued_at, withdrawn_at, disabled_at
   UNIQUE(namespace_id, local_code)
 
 recommendation_anchor_events
@@ -309,11 +314,11 @@ key to a separately approved campaign record; caller-supplied free text is not
 stored.
 
 "Append-only" is a database property, not a convention: RA1 installs
-no-update/no-delete triggers for `recommendation_anchor_events`.  It also
+no-update/no-delete triggers for both namespace and anchor event logs.  It also
 rejects direct updates to an anchor's namespace, local code, recommender,
 product, variant, seller snapshot, campaign reference, and target hash.  The
-only lifecycle changes are domain-owned status transitions that write the
-corresponding event in the same transaction.
+only lifecycle changes are domain-owned forward-only status transitions that
+write the corresponding event in the same transaction.
 
 Public behavior is fail-closed:
 
@@ -509,7 +514,7 @@ money calculations.
 - RA4 rollback disables new source creation but leaves past
   `order_recommendation_sources` rows as immutable audit facts.
 
-## 11. Decisions to lock before RA1
+## 11. Decisions applied by RA1
 
 1. **Code length:** approve fixed five-character local codes (recommended) or
    explicitly accept the weaker four-character example format.
@@ -570,7 +575,9 @@ money calculations.
 
 ## 14. Pre-flight checklist / 提交前自查
 
-- [x] This RA0 document contains no production code or schema migration.
+- [x] RA0 contained no production code, schema migration, merge, or deploy.
+- [x] RA1 remains unreachable from public routes, MCP, search, URLs, QR, orders,
+  attribution, commissions, wallets, escrow, and settlement.
 - [x] Existing handles, anchors, aliases, and share attribution were audited.
 - [x] At least five alternatives were considered and rejected with reasons.
 - [x] Unknown host behavior is assigned to concrete experiments.
@@ -580,8 +587,8 @@ money calculations.
 
 ## Implementation tracking / 实现追踪
 
-- RA0 RFC PR: pending
-- RA1: pending
+- RA0 RFC PR: merged as #430
+- RA1: in progress (isolated draft branch; no public behavior)
 - RA2: pending
 - RA3: pending
 - RA4: pending
@@ -592,4 +599,6 @@ money calculations.
 **Status history / 状态变更**:
 
 - 2026-07-19: RA0 draft created from read-only code audit, standards research,
-  and a live MCP string-transport probe.  No production code changed.
+  and a live MCP string-transport probe. No production code changed in RA0.
+- 2026-07-19: RA0 merged as #430. RA1 began as an isolated, unreachable schema
+  and lifecycle implementation; it requires its own review before merge.

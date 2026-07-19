@@ -723,6 +723,7 @@ jobs:
       - run: npm run test:invite-code-narrowing
       - run: npm run test:shop-referral-attribution
       - run: npm run test:product-share-chain
+      - run: npm run test:recommendation-anchor
       - run: npm run test:money-units
       - run: npm run test:cart-checkout
       - run: npm run test:cart-ui-contract
