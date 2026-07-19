@@ -1985,11 +1985,13 @@ export function initProductActionApprovalSchema(db: Database.Database): void {
       id         TEXT PRIMARY KEY,                       -- aw_xxx
       owner_id   TEXT NOT NULL,
       tier       TEXT NOT NULL CHECK (tier IN ('T1','T2')),   -- T3 (order/funds) NEVER opens a window
-      uses       INTEGER NOT NULL DEFAULT 0,
-      max_uses   INTEGER NOT NULL,
+      uses       INTEGER NOT NULL DEFAULT 0 CHECK (uses >= 0),
+      max_uses   INTEGER NOT NULL CHECK (max_uses BETWEEN 1 AND 20),   -- the ≤20-use window contract, enforced at rest
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       expires_at TEXT NOT NULL,
-      revoked_at TEXT
+      revoked_at TEXT,
+      -- Bound the budget structurally: a malformed row can never let the CAS consume authorize excess.
+      CHECK (uses <= max_uses)
     )
   `)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_aw_owner_tier ON action_approval_windows(owner_id, tier, expires_at)`)

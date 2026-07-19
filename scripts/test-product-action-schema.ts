@@ -44,6 +44,13 @@ ok('T1-7 after the first goes terminal (executed), a re-submit is allowed', (() 
 // ── window tier CHECK + CAS-consume semantics ──
 ok('T1-8 tier CHECK rejects T3 (order/funds never opens a window)', throws(() =>
   db.prepare('INSERT INTO action_approval_windows (id, owner_id, tier, max_uses, expires_at) VALUES (?,?,?,?,?)').run('aw_bad', 'usr_1', 'T3', 20, future)))
+// counter bounds — a malformed window must never authorize excess consumption (Codex R1 HIGH)
+const insWin = (id: string, uses: number, max: number) =>
+  db.prepare('INSERT INTO action_approval_windows (id, owner_id, tier, uses, max_uses, expires_at) VALUES (?,?,?,?,?,?)').run(id, 'usr_1', 'T1', uses, max, future)
+ok('T1-8a rejects negative uses', throws(() => insWin('aw_neg', -100, 20)))
+ok('T1-8b rejects max_uses above the ≤20 contract', throws(() => insWin('aw_big', 0, 1000000)))
+ok('T1-8c rejects max_uses < 1', throws(() => insWin('aw_zero', 0, 0)))
+ok('T1-8d rejects uses > max_uses', throws(() => insWin('aw_over', 5, 2)))
 db.prepare('INSERT INTO action_approval_windows (id, owner_id, tier, uses, max_uses, expires_at) VALUES (?,?,?,?,?,?)').run('aw_1', 'usr_1', 'T1', 0, 2, future)
 const cas = (id: string) => db.prepare("UPDATE action_approval_windows SET uses = uses + 1 WHERE id=? AND uses < max_uses AND expires_at > ? AND revoked_at IS NULL").run(id, new Date().toISOString()).changes
 ok('T1-9 window CAS-consume increments while under max_uses', cas('aw_1') === 1 && cas('aw_1') === 1)
