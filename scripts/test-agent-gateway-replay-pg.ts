@@ -275,7 +275,7 @@ if (url && process.env.WEBAZ_AGENT_GATEWAY_REPLAY_TEST_ALLOW === '1') {
     ok('30. expired-row replacement plus race rejects one replay', expiredRace.filter(x => x === 'replayed').length === 1)
 
     const closedStore = r2.store
-    await r2.close(); r2 = undefined
+    await r2.close(); r2 = undefined; p2 = undefined
     ok('31. a closed production pool returns unavailable without fallback', await closedStore.claim(claim()) === 'unavailable')
   } finally {
     await Promise.all([
