@@ -121,7 +121,8 @@ try {
   // ══ P1-a 前端锚点(真实前端 wiring,非伪造)══
   const uiOrder = readFileSync('src/pwa/public/app-agent-approvals-order.js', 'utf8')
   ok('UI-1 app-agent-approvals-order.js 定义 aaOrderWhat 渲染 order_id/order_action', /window\.aaOrderWhat/.test(uiOrder) && /r\.order_id/.test(uiOrder) && /r\.order_action/.test(uiOrder))
-  const uiAppr = readFileSync('src/pwa/public/app-agent-approvals.js', 'utf8')
+  // P0-A A2:审批页拆成 渲染壳(app-agent-approvals.js)+ 状态机/交互(-state.js);aaApprove 绑定在 -state.js。
+  const uiAppr = readFileSync('src/pwa/public/app-agent-approvals.js', 'utf8') + '\n' + readFileSync('src/pwa/public/app-agent-approvals-state.js', 'utf8')
   ok('UI-2 aaApprove 绑三元组(order_id/action/params_hash from data-*)', /order_id:.*dataset\.aaOrderId/.test(uiAppr) && /action:.*dataset\.aaAction/.test(uiAppr) && /params_hash:.*dataset\.aaHash/.test(uiAppr))
   ok('UI-3 aaCard 落 data-aa-hash(供 aaApprove 取 params_hash)', /data-aa-hash=/.test(uiAppr) && /r\.kind === 'order_action'/.test(uiAppr))
 
