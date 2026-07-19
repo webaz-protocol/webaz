@@ -71,6 +71,18 @@ try {
   const imports = src.split('\n').filter(l => /^\s*import\b/.test(l)).join('\n')
   ok('8 submit module does NOT import product-action-exec (I1 zero-exec)', !/product-action-exec/.test(imports))
 
+  // 9. an EXPIRED pending must NOT permanently block resubmit — it is lazily reaped, new request succeeds (Codex R1)
+  {
+    const pExp = mkProduct(alice)
+    db.prepare("INSERT INTO product_action_requests (id, owner_id, action, product_id, status, expires_at) VALUES (?,?,?,?, 'pending', ?)")
+      .run('par_stale', alice, 'delete', pExp, new Date(Date.now() - 60_000).toISOString())   // already expired
+    const r = await post({ action: 'delete', product_id: pExp }, alice)
+    ok('9a resubmit over an EXPIRED pending → 200 (stale reaped)', r.status === 200 && ((await r.json()) as { success: boolean }).success === true)
+    ok('9b the stale pending was reaped to status=expired', (db.prepare("SELECT status FROM product_action_requests WHERE id='par_stale'").get() as { status: string }).status === 'expired')
+  }
+  // 10. error path returns a fixed message, never raw SQL text (Codex R1)
+  ok('10 REQUEST_FAILED path never returns raw SQL/constraint text', !/SQLITE|UNIQUE|constraint|no such/i.test(src.match(/error_code: 'REQUEST_FAILED'[^}]*/)?.[0] || ''))
+
   if (fail > 0) { console.error(`\n❌ product-action-request FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ product-action-request (Task 2): owner-key submit · approve_url+TTL · ownership 403 · 404/400 · double-pending 409 · unauth 401 · zero-exec (no executor import, product untouched)\n  ✅ pass ${pass}`)
 } finally {
