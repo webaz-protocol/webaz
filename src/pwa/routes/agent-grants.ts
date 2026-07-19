@@ -407,7 +407,9 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const candidates = matched.map(r => ({
       label: 'discovery_candidate' as const,   // 诚实标注:相似候选,非精确命中
       product_id: String(r.id), title: String(r.title), price: Number(r.price),
-      currency: String(r.currency || 'WAZ'), category: r.category == null ? null : String(r.category),
+      // P0-C 币种一致性:agent 面统一显示 USDC 别名(1 WAZ=1 USDC=1e6 base-units,纯 relabel 非重新计价;
+      //   与 search/quote/draft 消费投影一致,消除 discover 独露 WAZ 的漂移)。记账仍 WAZ;结算仍模拟。
+      currency: 'USDC', category: r.category == null ? null : String(r.category),
     }))
     // ── 逐词命中诊断(P0 PR-AB):0 命中且多词时,同约束(类目/预算/库存/目的地)下逐词单独计数,
     //    让 agent 一眼看出是哪个词杀掉了结果(all 合取假阴性的机器可读证据)。 ──
@@ -456,6 +458,8 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     }
     res.json({
       count: candidates.length, candidates,
+      // P0-C 诚实披露:候选价的 USDC 是内部模拟单位的显示别名,不代表真实 USDC/法币托管或结算。
+      pricing_note: 'Prices are shown in USDC as a display alias for the internal simulated unit — NOT real USDC/fiat custody or settlement. Final payable is authoritative only from webaz_quote_order.',
       match_semantics: keywordMatch,
       ...(categoryCorrected ? { category_resolved: categoryCorrected } : {}),
       ...(perKeywordHits ? { per_keyword_hits: perKeywordHits } : {}),

@@ -17,6 +17,8 @@ window.resolveInitialLang = (savedLang, navigatorLike) => {
 window._lang = window.resolveInitialLang(localStorage.getItem('webaz_lang'), typeof navigator !== 'undefined' ? navigator : null)
 
 const _EN = {
+  // P0-C — approval-card escrow honesty disclosure (USDC display alias, simulated rail)
+  '托管(批准后立即从你的钱包扣款入托管)—— 模拟测试轨,金额以 USDC 显示为别名,不代表真实 USDC 或法币托管/结算': 'Escrow (approval immediately debits your wallet into escrow) — SIMULATED test rail; amounts shown in USDC are a display alias and do NOT represent real USDC or fiat custody/settlement',
   // P0-A A2/A3 — approval page state machine (app-agent-approvals.js)
   '加载超时': 'Loading timed out',
   '服务器暂时没有响应。请重试;不会重复创建任何请求或订单。': 'The server did not respond in time. Please retry — no request or order will be duplicated.',

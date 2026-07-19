@@ -56,7 +56,10 @@ export function submitRowSummary(db: Database.Database, draftId: string): Record
     item_units: Number(d.item_units), shipping_units: Number(d.shipping_units),
     donation_bps: Number(d.donation_bps), donation_units: Number(d.donation_units),
     total_units: Number(d.total_units), payable_units: Number(d.payable_units),
-    currency: String(d.currency), payment_rail: String(d.payment_rail),
+    // P0-C 币种一致性:审批摘要对外统一显示 USDC 别名(1 WAZ=1 USDC=1e6,纯展示 relabel;记账/结算仍模拟 WAZ)。
+    //   与 quote/draft 消费投影一致,消除审批页独露 WAZ 的漂移。currency 仅展示用 —— params_hash 读 draft.currency,
+    //   相似购买分组按 payable_units+payment_rail(均不受此影响);真实结算轨的诚实文案由 railHonesty()/rail_note 承载。
+    currency: 'USDC', payment_rail: String(d.payment_rail),
     direct_receive_account_id: d.direct_receive_account_id ?? null,
     anonymous_recipient: Number(d.anonymous_recipient) === 1,
     dest_region: d.dest_region ?? null, draft_status: String(d.status), draft_expires_at: String(d.expires_at),

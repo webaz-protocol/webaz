@@ -1938,7 +1938,7 @@ No grant → GRANT_REQUIRED (webaz_pair action=start). Missing scope → structu
         category: { type: 'string', description: 'Registry category KEY (equality-matched; see webaz://guide/categories or GET /api/agent/categories). Unique aliases auto-correct; unknown keys 400 with the table.' },
         keywords: { type: 'array', items: { type: 'string' }, description: 'Up to 5 short keywords, substring-matched against listing TITLES (at least one of category/keywords required)' },
         keyword_match: { type: 'string', enum: ['any', 'all'], description: "Default 'all' (conjunctive — compound required attributes). Use 'any' for synonym/alias expansion; synonyms under 'all' zero each other out." },
-        max_price: { type: 'number', description: 'Budget ceiling in WAZ (optional)' },
+        max_price: { type: 'number', description: 'Budget ceiling in USDC (optional)' },
         ship_to_region: { type: 'string', description: 'ISO 3166-1 alpha-2 destination country (optional; filters out listings that cannot sell there)' },
         quantity: { type: 'integer', description: 'Desired quantity (default 1; filters by stock)' },
       },
