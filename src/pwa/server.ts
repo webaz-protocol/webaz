@@ -114,6 +114,7 @@ import {
 // @simplewebauthn/server 已迁出到 src/pwa/routes/webauthn.ts (#1013 Phase 1)
 import { registerWebauthnRoutes } from './routes/webauthn.js'; import { makeCreateOrderLoopback, makeApiLoopback } from './order-loopback.js'
 import { createHumanPresence } from './human-presence.js'
+import { shouldNoCacheStaticAsset } from './pwa-cache-headers.js'
 // welcome 域（#991 /welcome 落地页 + #1005 反 bot）已迁出 (#1013 Phase 2)
 import { registerWelcomeRoutes } from './routes/welcome.js'
 // 测评免单 (#978-#988) 域 + 评估 cron 已迁出 (#1013 Phase 3)
@@ -7742,12 +7743,12 @@ registerPublicUtilsRoutes(app, {
 })
 
 // ─── 静态文件 + SPA 回退（必须在所有 API 路由之后）────────────
-// PWA 壳文件必须 no-cache(否则 CF/浏览器 4h 缓存挡新版本)；
-// 其他静态资产(图标/字体)走 CF 默认。
+// PWA 代码文件必须 no-cache(否则 CF/浏览器 ~4h 缓存挡新版本)——文件名无内容 hash,URL 跨部署不变,
+//   靠 no-cache 强制重验。**所有 .js**(app.js + 89 个 app-*.js 拆包 + sw.js/i18n.js)+ 壳 html/manifest 都要覆盖,
+//   否则部署后老客户端继续跑旧 app-*.js 直到硬刷新(审批页崩溃即此)。图标/字体等仍走 CF 默认。
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
-    const base = path.basename(filePath)
-    if (base === 'app.js' || base === 'sw.js' || base === 'i18n.js' || base === 'index.html' || base === 'manifest.json') {
+    if (shouldNoCacheStaticAsset(path.basename(filePath))) {
       res.setHeader('Cache-Control', 'no-cache, must-revalidate')
     }
   },

@@ -800,6 +800,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   // GET list this human's PENDING permission requests (for #agent-approvals). Human-authed.
   app.get('/api/agent-grants/permission-requests', async (req, res) => {
     const user = auth(req, res); if (!user) return
+    res.setHeader('Cache-Control', 'no-store')   // 审批列表必须实时(与 orders-read 一致);否则浏览器缓存旧列表 → 新审批/已处理状态不刷新
     const rows = await dbAll<Record<string, unknown>>(
       "SELECT id, agent_label, requested_scopes, permission_bundle, reason, task_context, risk_level, duration, created_at, expires_at, kind, order_id, order_action, params_hash, action_params, status, execution_result FROM agent_permission_requests WHERE human_id = ? AND ((status = 'pending' AND expires_at > ?) OR (kind IN ('order_submit','order_action','address_change','buyer_action') AND status = 'approved' AND executed_at IS NULL)) ORDER BY created_at DESC LIMIT 100",
       [user.id, new Date().toISOString()])  // RFC-026 R1:approved+未执行的 order_submit(执行结果不明冻结)也列出 —— 人再次 Passkey 批准即触发服务端和解(oracle 核对补回链或安全重试),这是冻结态唯一的解锁路径
@@ -826,6 +827,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   //   fail-visible: every path responds (404 not-found-or-not-yours = anti-enumeration; 500 only on assembly throw).
   app.get('/api/agent-grants/permission-requests/:request_id', async (req, res) => {
     const user = auth(req, res); if (!user) return
+    res.setHeader('Cache-Control', 'no-store')   // 深链接终态读须实时(executed/rejected/expired),不缓存
     try {
       const r = getApprovalRequest(db, user.id as string, req.params.request_id)
       if (!r.ok) return void res.status(r.status).json(r.body)
