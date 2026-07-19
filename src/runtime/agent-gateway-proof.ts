@@ -1,11 +1,12 @@
 /**
- * RFC-028 S1b: dormant Agent/API Gateway proof verifier.
+ * RFC-028 S1b/S1c1: dormant Agent/API Gateway proof verifiers.
  *
- * This module is deliberately not mounted on an HTTP route. Token issuance and
- * refresh do not create DPoP-bound tokens yet; that remains an activation
- * prerequisite. This verifier turns a valid,
- * server-resolved, issuance-time key-bound OAuth access token plus a pinned
- * RFC 9449 DPoP proof into a
+ * The resource verifier remains deliberately unmounted. The token-endpoint
+ * verifier is reachable only behind an independent default-off flag and an
+ * injected replay authority; it can issue and rotate sender-constrained token
+ * families without enabling protected-resource access. The resource verifier
+ * turns a valid, server-resolved, issuance-time key-bound OAuth access token
+ * plus a pinned RFC 9449 DPoP proof into a
  * branded context that cannot be manufactured from request JSON or headers.
  * OAuth scopes and object authorization remain enforced by their existing
  * route guards; this context is an additional client-integrity fact, never a
@@ -64,9 +65,11 @@ export type AgentGatewayFailureCode =
   | 'GATEWAY_DPOP_REPLAYED'
   | 'GATEWAY_REPLAY_STORE_UNAVAILABLE'
 
+type AgentGatewayFailure = { ok: false; status: number; error_code: AgentGatewayFailureCode; error: string }
+
 export type AgentGatewayVerifyResult =
   | { ok: true; context: AgentGatewayContext }
-  | { ok: false; status: number; error_code: AgentGatewayFailureCode; error: string }
+  | AgentGatewayFailure
 
 export interface GatewayReplayClaim {
   proof_kind: 'dpop'
@@ -168,12 +171,18 @@ export function dpopJwkThumbprintHex(value: unknown): string | null {
 
 function canonicalTargetUri(raw: string, proofClaim: boolean): string | null {
   try {
+    if (/[^\x21-\x7e]|\\/.test(raw)) return null
+    if (proofClaim && (raw.includes('?') || raw.includes('#'))) return null
     const url = new URL(raw)
     if (url.protocol !== 'https:' || url.username || url.password) return null
-    if (proofClaim && (url.search || url.hash)) return null
     url.search = ''
     url.hash = ''
-    return `${url.origin}${url.pathname}`
+    const pathname = url.pathname.replace(/%[0-9a-fA-F]{2}/g, encoded => {
+      const byte = Number.parseInt(encoded.slice(1), 16)
+      const char = String.fromCharCode(byte)
+      return /^[A-Za-z0-9\-._~]$/.test(char) ? char : encoded.toUpperCase()
+    })
+    return `${url.origin}${pathname}`
   } catch {
     return null
   }
@@ -186,9 +195,10 @@ interface VerifiedDpop {
   token_jkt: string
 }
 
-function verifyDpopProof(input: {
+function verifyDpopJwtProof(input: {
   proof: string
-  access_token: string
+  mode: 'token_endpoint' | 'resource'
+  access_token?: string
   http_method: string
   target_uri: string
   expected_nonce?: string
@@ -232,9 +242,37 @@ function verifyDpopProof(input: {
   const actualTarget = canonicalTargetUri(input.target_uri, false)
   const proofTarget = typeof payload.htu === 'string' ? canonicalTargetUri(payload.htu, true) : null
   if (!actualTarget || !proofTarget || actualTarget !== proofTarget) return null
-  if (payload.ath !== sha256Base64url(input.access_token)) return null
+  if (input.mode === 'resource') {
+    if (!input.access_token || payload.ath !== sha256Base64url(input.access_token)) return null
+  } else if (payload.ath !== undefined) {
+    // The token endpoint proof establishes the key before an access token
+    // exists. Rejecting ath here prevents a resource proof being replayed as
+    // an issuance proof under a different verification path.
+    return null
+  }
   if (input.expected_nonce !== undefined && payload.nonce !== input.expected_nonce) return null
   return { jti: payload.jti, iat, key_thumbprint: thumbprint, token_jkt: tokenJkt }
+}
+
+export function verifyDpopTokenEndpointProof(input: {
+  proof: string
+  http_method: string
+  target_uri: string
+  expected_nonce?: string
+  now_ms?: number
+}): VerifiedDpop | null {
+  return verifyDpopJwtProof({ ...input, mode: 'token_endpoint', now_ms: input.now_ms ?? Date.now() })
+}
+
+function verifyDpopResourceProof(input: {
+  proof: string
+  access_token: string
+  http_method: string
+  target_uri: string
+  expected_nonce?: string
+  now_ms: number
+}): VerifiedDpop | null {
+  return verifyDpopJwtProof({ ...input, mode: 'resource' })
 }
 
 /**
@@ -301,8 +339,124 @@ interface ProofProfileRow {
   revoked_at: string | null
 }
 
-function fail(status: number, error_code: AgentGatewayFailureCode, error: string): AgentGatewayVerifyResult {
+function fail(status: number, error_code: AgentGatewayFailureCode, error: string): AgentGatewayFailure {
   return { ok: false, status, error_code, error }
+}
+
+export interface AgentGatewayDpopTokenBinding {
+  readonly gateway_client_id: string
+  readonly oauth_client_id: string
+  readonly profile_id: string
+  readonly key_thumbprint: string
+  readonly dpop_jkt: string
+}
+
+export type AgentGatewayDpopTokenVerifyResult =
+  | { ok: true; binding: AgentGatewayDpopTokenBinding }
+  | (AgentGatewayFailure & { binding?: AgentGatewayDpopTokenBinding })
+
+/**
+ * Validate an RFC 9449 proof at the token endpoint. This is a dormant,
+ * dependency-injected seam: it creates no token and grants no scope. The
+ * caller must re-check the returned registry/profile binding inside the
+ * synchronous mint transaction before persisting dpop_jkt.
+ */
+export async function verifyAgentGatewayDpopTokenRequest(
+  input: {
+    oauth_client_id: string
+    grant_id: string
+    dpop_proof: string
+    http_method: string
+    target_uri: string
+    expected_nonce?: string
+    now_ms?: number
+  },
+  replayStore: GatewayReplayStore,
+): Promise<AgentGatewayDpopTokenVerifyResult> {
+  const nowMs = input.now_ms ?? Date.now()
+  const nowIso = new Date(nowMs).toISOString()
+  const verifiedProof = verifyDpopTokenEndpointProof({
+    proof: input.dpop_proof,
+    http_method: input.http_method,
+    target_uri: input.target_uri,
+    expected_nonce: input.expected_nonce,
+    now_ms: nowMs,
+  })
+  if (!verifiedProof) return fail(401, 'GATEWAY_DPOP_INVALID', 'DPoP token-endpoint proof is invalid')
+
+  const client = await dbOne<GatewayClientRow>(`
+    SELECT g.gateway_client_id,g.oauth_client_id,g.registry_status,g.policy_version,g.verified_at,
+           g.suspended_at,g.revoked_at,o.status AS oauth_client_status
+      FROM agent_gateway_clients g JOIN oauth_clients o ON o.client_id=g.oauth_client_id
+     WHERE g.oauth_client_id=?
+  `, [input.oauth_client_id])
+  if (!client || client.registry_status !== 'verified' || !client.verified_at
+    || client.suspended_at || client.revoked_at || client.oauth_client_status !== 'active') {
+    return fail(403, 'GATEWAY_CLIENT_NOT_VERIFIED', 'OAuth client has no verified Gateway identity')
+  }
+
+  const profile = await dbOne<ProofProfileRow>(`
+    SELECT profile_id,proof_config_id,key_thumbprint,verified_at,expires_at,revoked_at
+      FROM agent_gateway_proof_profiles
+     WHERE gateway_client_id=? AND proof_method='dpop' AND profile_status='active' AND key_thumbprint=?
+  `, [client.gateway_client_id, verifiedProof.key_thumbprint])
+  if (!profile || profile.proof_config_id !== 'dpop_rfc9449_v1' || !profile.verified_at
+    || profile.revoked_at || (profile.expires_at !== null && !storedUtcInstantIsFuture(profile.expires_at, nowIso))) {
+    return fail(403, 'GATEWAY_PROOF_PROFILE_INACTIVE', 'no active pinned DPoP profile matches this proof')
+  }
+
+  const target = canonicalTargetUri(input.target_uri, false)
+  if (!target) return fail(401, 'GATEWAY_DPOP_INVALID', 'DPoP token-endpoint target is invalid')
+  const replayScopeHash = sha256Hex([
+    'dpop-token-endpoint', OAUTH_ISSUER, target, client.gateway_client_id, input.oauth_client_id,
+    verifiedProof.key_thumbprint,
+  ].join('\u0000'))
+  const binding = Object.freeze({
+    gateway_client_id: client.gateway_client_id,
+    oauth_client_id: input.oauth_client_id,
+    profile_id: profile.profile_id,
+    key_thumbprint: verifiedProof.key_thumbprint,
+    dpop_jkt: verifiedProof.token_jkt,
+  })
+  const replay = await replayStore.claim({
+    proof_kind: 'dpop',
+    replay_scope_hash: replayScopeHash,
+    replay_key_hash: sha256Hex(verifiedProof.jti),
+    gateway_client_id: client.gateway_client_id,
+    grant_id: input.grant_id,
+    now_iso: nowIso,
+    expires_at: new Date((verifiedProof.iat + DPOP_MAX_AGE_SECONDS + DPOP_FUTURE_SKEW_SECONDS) * 1000).toISOString(),
+  })
+  if (replay === 'replayed') {
+    return { ...fail(409, 'GATEWAY_DPOP_REPLAYED', 'DPoP proof was already used'), binding }
+  }
+  if (replay !== 'claimed') return fail(503, 'GATEWAY_REPLAY_STORE_UNAVAILABLE', 'replay protection is unavailable')
+
+  return {
+    ok: true,
+    binding,
+  }
+}
+
+/** Re-check the trust facts atomically with access/refresh token persistence. */
+export function agentGatewayDpopBindingIsActive(
+  db: Database.Database,
+  binding: AgentGatewayDpopTokenBinding,
+  nowIso: string,
+): boolean {
+  const row = db.prepare(`
+    SELECT p.expires_at
+      FROM agent_gateway_clients g
+      JOIN oauth_clients o ON o.client_id=g.oauth_client_id
+      JOIN agent_gateway_proof_profiles p ON p.gateway_client_id=g.gateway_client_id
+     WHERE g.gateway_client_id=? AND g.oauth_client_id=? AND g.registry_status='verified'
+       AND g.verified_at IS NOT NULL AND g.suspended_at IS NULL AND g.revoked_at IS NULL
+       AND o.status='active' AND p.profile_id=? AND p.proof_method='dpop'
+       AND p.profile_status='active' AND p.proof_config_id='dpop_rfc9449_v1'
+       AND p.key_thumbprint=? AND p.verified_at IS NOT NULL AND p.revoked_at IS NULL
+  `).get(binding.gateway_client_id, binding.oauth_client_id, binding.profile_id, binding.key_thumbprint) as
+    { expires_at: string | null } | undefined
+  return !!row && (row.expires_at === null || storedUtcInstantIsFuture(row.expires_at, nowIso))
 }
 
 export async function verifyAgentGatewayDpopRequest(
@@ -352,7 +506,7 @@ export async function verifyAgentGatewayDpopRequest(
     return fail(403, 'GATEWAY_CLIENT_NOT_VERIFIED', 'OAuth client has no verified Gateway identity')
   }
 
-  const verifiedProof = verifyDpopProof({
+  const verifiedProof = verifyDpopResourceProof({
     proof: input.dpop_proof,
     access_token: input.access_token,
     http_method: input.http_method,

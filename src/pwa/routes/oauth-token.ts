@@ -28,7 +28,14 @@ import express from 'express'
 import type { Express, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
+import { dbOne } from '../../layer0-foundation/L0-1-database/db.js'
 import { oauthClients } from './oauth-authorize.js'
+import {
+  agentGatewayDpopBindingIsActive,
+  verifyAgentGatewayDpopTokenRequest,
+  type AgentGatewayDpopTokenBinding,
+  type GatewayReplayStore,
+} from '../../runtime/agent-gateway-proof.js'
 
 export const OAUTH_TOKEN_TTL_SECONDS = 3600                 // access token TTL (clamped to grant)
 export const OAUTH_REFRESH_TTL_SECONDS = 90 * 24 * 3600     // refresh TTL ceiling; ALWAYS clamped to grant (I-5)
@@ -38,6 +45,7 @@ const REFRESH_RE = /^ort_[0-9a-f]{64}$/            // opaque refresh token shape
 export interface OAuthTokenDeps {
   db: Database.Database   // sync handle — token/refresh mint is one better-sqlite3 transaction (no torn state)
   rateLimitOk: (key: string, max?: number, windowMs?: number) => boolean
+  gatewayReplayStore?: GatewayReplayStore
 }
 
 function asStr(v: unknown): string | undefined {
@@ -64,12 +72,12 @@ function genPair(grantExpiresMs: number): TokenPair {
 
 /** Persist a generated pair, both hashed at rest. SYNCHRONOUS — must run inside a db.transaction(). */
 function insertPair(db: Database.Database, p: TokenPair & {
-  grantId: string; clientId: string; scope: string; aud: string; familyId: string
+  grantId: string; clientId: string; scope: string; aud: string; familyId: string; dpopJkt?: string
 }): void {
-  db.prepare('INSERT INTO oauth_access_tokens (token_hash, grant_id, client_id, scope, aud, expires_at) VALUES (?,?,?,?,?,?)')
-    .run(sha256hex(p.access), p.grantId, p.clientId, p.scope, p.aud, new Date(p.accessExpMs).toISOString())
-  db.prepare('INSERT INTO oauth_refresh_tokens (token_hash, grant_id, client_id, family_id, scope, aud, expires_at) VALUES (?,?,?,?,?,?,?)')
-    .run(sha256hex(p.refresh), p.grantId, p.clientId, p.familyId, p.scope, p.aud, new Date(p.refreshExpMs).toISOString())
+  db.prepare('INSERT INTO oauth_access_tokens (token_hash, grant_id, client_id, scope, aud, expires_at, dpop_jkt) VALUES (?,?,?,?,?,?,?)')
+    .run(sha256hex(p.access), p.grantId, p.clientId, p.scope, p.aud, new Date(p.accessExpMs).toISOString(), p.dpopJkt ?? null)
+  db.prepare('INSERT INTO oauth_refresh_tokens (token_hash, grant_id, client_id, family_id, scope, aud, expires_at, dpop_jkt) VALUES (?,?,?,?,?,?,?,?)')
+    .run(sha256hex(p.refresh), p.grantId, p.clientId, p.familyId, p.scope, p.aud, new Date(p.refreshExpMs).toISOString(), p.dpopJkt ?? null)
 }
 
 // 客户端 IP 真相源(同 mcp-remote.ts):CF 后 req.ip 塌缩成边缘 IP → 优先取 CF-Connecting-IP(CF 重写,
@@ -82,6 +90,16 @@ function clientIp(req: Request): string {
   return req.ip || 'unknown'
 }
 
+function readSingleDpopHeader(req: Request): { present: false } | { present: true; value?: string } {
+  const values: string[] = []
+  for (let i = 0; i < req.rawHeaders.length; i += 2) {
+    if (req.rawHeaders[i]?.toLowerCase() === 'dpop') values.push(req.rawHeaders[i + 1] ?? '')
+  }
+  if (values.length === 0) return { present: false }
+  if (values.length !== 1 || !values[0].trim()) return { present: true }
+  return { present: true, value: values[0].trim() }
+}
+
 export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): void {
   if (process.env.WEBAZ_OAUTH !== '1') return                 // fail-closed
   if (process.env.WEBAZ_MODE === 'sandbox') {
@@ -89,6 +107,10 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
     return
   }
   const { db, rateLimitOk } = deps
+  const dpopTokenEnabled = process.env.WEBAZ_AGENT_GATEWAY_DPOP_TOKEN === '1'
+  if (dpopTokenEnabled && !deps.gatewayReplayStore) {
+    throw new Error('WEBAZ_AGENT_GATEWAY_DPOP_TOKEN=1 requires an injected shared replay store')
+  }
 
   // P2(Codex PR-3 两轮):parser 错误也必须守 RFC 6749 错误形状 + no-store。两个来源都要接住:
   //   ① 本路由的 urlencoded parser(显式 2kb 上限);② 生产在本路由注册【之前】挂的全局 express.json()
@@ -127,18 +149,48 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
 
     if (!rateLimitOk(`oauth_token:${clientIp(req)}`, 30, 60_000)) return err(429, 'invalid_request', 'rate limited')
     const b = (req.body || {}) as Record<string, unknown>
+    const dpopHeader = readSingleDpopHeader(req)
+    if (dpopHeader.present && !dpopHeader.value) return err(400, 'invalid_dpop_proof', 'exactly one non-empty DPoP header is required')
+    if (dpopHeader.present && !dpopTokenEnabled) return err(400, 'invalid_dpop_proof', 'DPoP token issuance is not enabled')
+
+    const verifyDpop = async (clientId: string, grantId: string): Promise<
+      { ok: true; binding?: AgentGatewayDpopTokenBinding }
+      | { ok: false; status: number; error: string; desc: string; replayBinding?: AgentGatewayDpopTokenBinding }
+    > => {
+      if (!dpopHeader.present) return { ok: true }
+      const result = await verifyAgentGatewayDpopTokenRequest({
+        oauth_client_id: clientId,
+        grant_id: grantId,
+        dpop_proof: dpopHeader.value!,
+        http_method: 'POST',
+        target_uri: 'https://webaz.xyz/oauth/token',
+      }, deps.gatewayReplayStore!)
+      if (result.ok) return { ok: true, binding: result.binding }
+      if (result.error_code === 'GATEWAY_REPLAY_STORE_UNAVAILABLE') {
+        return { ok: false, status: 503, error: 'temporarily_unavailable', desc: 'DPoP replay protection is unavailable' }
+      }
+      return {
+        ok: false,
+        status: 400,
+        error: 'invalid_dpop_proof',
+        desc: 'DPoP proof is invalid, replayed, or not registered for this client',
+        ...(result.error_code === 'GATEWAY_DPOP_REPLAYED' && result.binding
+          ? { replayBinding: result.binding }
+          : {}),
+      }
+    }
 
     const grantType = asStr(b.grant_type)
 
     // Discriminated result of a mint transaction: an RFC error shape, or the issued tokens.
     type MintResult =
       | { status: number; error: string; desc: string }
-      | { ok: true; access: string; accessExpMs: number; refresh: string; scope: string }
+      | { ok: true; access: string; accessExpMs: number; refresh: string; scope: string; dpopJkt?: string }
     const respond = (out: MintResult): void => {
       if (!('ok' in out)) return err(out.status, out.error, out.desc)
       res.json({
         access_token: out.access,               // the ONLY time the raw tokens exist in a response
-        token_type: 'Bearer',
+        token_type: out.dpopJkt ? 'DPoP' : 'Bearer',
         expires_in: Math.max(1, Math.floor((out.accessExpMs - Date.now()) / 1000)),
         refresh_token: out.refresh,
         scope: out.scope,
@@ -160,6 +212,18 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
       const nowIso = new Date().toISOString()
       const resource = asStr(b.resource)
       const challenge = createHash('sha256').update(verifier).digest('base64url')
+      let dpopBinding: AgentGatewayDpopTokenBinding | undefined
+      if (dpopHeader.present) {
+        const preview = await dbOne<{ grant_id: string }>(`
+          SELECT grant_id FROM oauth_auth_codes
+           WHERE code_hash=? AND client_id=? AND consumed_at IS NULL AND expires_at>?
+        `, [codeHash, client.client_id, nowIso])
+        if (preview) {
+          const proof = await verifyDpop(client.client_id, preview.grant_id)
+          if (!proof.ok) return err(proof.status, proof.error, proof.desc)
+          dpopBinding = proof.binding
+        }
+      }
 
       // The whole exchange is ONE synchronous better-sqlite3 transaction (like oauth-approve): CAS-consume,
       // binding/PKCE/grant checks, and the access+refresh mint either all commit or all roll back — no torn
@@ -186,11 +250,14 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
         // I-5: the grant is the principal — it must still be alive (mid-flight revocation/expiry honored).
         const grant = db.prepare("SELECT grant_id, expires_at FROM agent_delegation_grants WHERE grant_id = ? AND status = 'active' AND revoked_at IS NULL AND expires_at > ?").get(row.grant_id, nowIso) as { grant_id: string; expires_at: string } | undefined
         if (!grant) return { status: 400, error: 'invalid_grant', desc: 'the underlying delegation grant is no longer active' }
+        if (dpopHeader.present && (!dpopBinding || !agentGatewayDpopBindingIsActive(db, dpopBinding, nowIso))) {
+          return { status: 400, error: 'invalid_dpop_proof', desc: 'DPoP client or proof profile is no longer active' }
+        }
         // A brand-new rotation family starts here — every subsequent refresh keeps this family_id. The code
         // was already CAS-consumed above (single-use), so a plain insert is sufficient here.
         const pair = genPair(new Date(grant.expires_at).getTime())
-        insertPair(db, { ...pair, grantId: String(row.grant_id), clientId: client.client_id, scope: String(row.scope), aud: String(row.resource), familyId: `orf_${randomBytes(16).toString('hex')}` })
-        return { ok: true, access: pair.access, accessExpMs: pair.accessExpMs, refresh: pair.refresh, scope: String(row.scope) }
+        insertPair(db, { ...pair, grantId: String(row.grant_id), clientId: client.client_id, scope: String(row.scope), aud: String(row.resource), familyId: `orf_${randomBytes(16).toString('hex')}`, dpopJkt: dpopBinding?.dpop_jkt })
+        return { ok: true, access: pair.access, accessExpMs: pair.accessExpMs, refresh: pair.refresh, scope: String(row.scope), dpopJkt: dpopBinding?.dpop_jkt }
       }).immediate()   // IMMEDIATE: take the write lock at BEGIN so no mid-tx upgrade can BUSY under contention
       return respond(out)
     }
@@ -204,6 +271,25 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
       if (!refreshTok || !REFRESH_RE.test(refreshTok)) return err(400, 'invalid_request', 'a well-formed refresh_token is required')
       const rHash = sha256hex(refreshTok)
       const nowIso = new Date().toISOString()
+      const preview = await dbOne<{ grant_id: string; client_id: string; dpop_jkt: string | null }>(`
+        SELECT grant_id,client_id,dpop_jkt FROM oauth_refresh_tokens
+         WHERE token_hash=? AND rotated_at IS NULL AND revoked_at IS NULL AND expires_at>?
+      `, [rHash, nowIso])
+      let dpopBinding: AgentGatewayDpopTokenBinding | undefined
+      let replayedDpopBinding: AgentGatewayDpopTokenBinding | undefined
+      if (preview?.dpop_jkt) {
+        if (!dpopHeader.present) return err(400, 'invalid_dpop_proof', 'this refresh-token family requires a DPoP proof')
+        const proof = await verifyDpop(preview.client_id, preview.grant_id)
+        if (!proof.ok) {
+          if (proof.replayBinding?.dpop_jkt !== preview.dpop_jkt) return err(proof.status, proof.error, proof.desc)
+          replayedDpopBinding = proof.replayBinding
+        } else {
+          if (proof.binding?.dpop_jkt !== preview.dpop_jkt) return err(400, 'invalid_dpop_proof', 'DPoP key does not match this refresh-token family')
+          dpopBinding = proof.binding
+        }
+      } else if (preview && dpopHeader.present) {
+        return err(400, 'invalid_dpop_proof', 'an ordinary bearer refresh-token family cannot be upgraded to DPoP')
+      }
 
       // The whole rotation is ONE synchronous transaction: read → validate → CONDITIONAL-CLAIM → mint | theft.
       // The consume is a CONDITIONAL WRITE (UPDATE ... WHERE rotated_at IS NULL AND revoked_at IS NULL AND
@@ -215,8 +301,8 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
       // access tokens (RFC 6819 §5.2.2.3). VALIDATE-BEFORE-CLAIM keeps a wrong-client / dead-grant request
       // from ever burning a still-valid token.
       const out: MintResult = db.transaction((): MintResult => {
-        const rt = db.prepare('SELECT grant_id, client_id, family_id, scope, aud, expires_at, rotated_at, revoked_at FROM oauth_refresh_tokens WHERE token_hash = ?').get(rHash) as
-          { grant_id: string; client_id: string; family_id: string; scope: string; aud: string; expires_at: string; rotated_at: string | null; revoked_at: string | null } | undefined
+        const rt = db.prepare('SELECT grant_id, client_id, family_id, scope, aud, dpop_jkt, expires_at, rotated_at, revoked_at FROM oauth_refresh_tokens WHERE token_hash = ?').get(rHash) as
+          { grant_id: string; client_id: string; family_id: string; scope: string; aud: string; dpop_jkt: string | null; expires_at: string; rotated_at: string | null; revoked_at: string | null } | undefined
         const invalid = { status: 400, error: 'invalid_grant', desc: 'refresh token is invalid, expired, or already used' } as const
         if (!rt) return invalid
         const revokeFamily = (): void => {
@@ -224,20 +310,32 @@ export function registerOAuthTokenRoutes(app: Express, deps: OAuthTokenDeps): vo
           db.prepare('UPDATE oauth_access_tokens SET revoked_at = ? WHERE grant_id = ? AND revoked_at IS NULL').run(nowIso, rt.grant_id)
           console.error("[oauth] refresh-token replay/concurrent-use — revoked the rotation family + the grant's access tokens")
         }
+        if (replayedDpopBinding) {
+          if (rt.client_id === replayedDpopBinding.oauth_client_id
+            && rt.dpop_jkt === replayedDpopBinding.dpop_jkt) revokeFamily()
+          return { status: 400, error: 'invalid_dpop_proof', desc: 'DPoP proof was already used' }
+        }
         if (rt.rotated_at || rt.revoked_at) { revokeFamily(); return invalid }   // sequential replay of a spent token
         if (rt.expires_at <= nowIso) return invalid
         // Validate BEFORE claiming — these must NOT burn a still-valid token.
         if (rt.client_id !== client.client_id) return { status: 400, error: 'invalid_grant', desc: 'refresh token was issued to a different client' }
         const grant = db.prepare("SELECT expires_at FROM agent_delegation_grants WHERE grant_id = ? AND status = 'active' AND revoked_at IS NULL AND expires_at > ?").get(rt.grant_id, nowIso) as { expires_at: string } | undefined
         if (!grant) return { status: 400, error: 'invalid_grant', desc: 'the underlying delegation grant is no longer active' }
+        if (rt.dpop_jkt && (!dpopBinding || dpopBinding.dpop_jkt !== rt.dpop_jkt
+          || !agentGatewayDpopBindingIsActive(db, dpopBinding, nowIso))) {
+          return { status: 400, error: 'invalid_dpop_proof', desc: 'DPoP key or proof profile is no longer active' }
+        }
+        if (!rt.dpop_jkt && dpopBinding) {
+          return { status: 400, error: 'invalid_dpop_proof', desc: 'an ordinary bearer refresh-token family cannot be upgraded to DPoP' }
+        }
         // Successor first (pure, no write), then the ATOMIC conditional claim.
         const pair = genPair(new Date(grant.expires_at).getTime())
         const claim = db.prepare('UPDATE oauth_refresh_tokens SET rotated_at = ?, replaced_by = ? WHERE token_hash = ? AND rotated_at IS NULL AND revoked_at IS NULL AND expires_at > ?')
           .run(nowIso, sha256hex(pair.refresh), rHash, nowIso)
         if (claim.changes !== 1) { revokeFamily(); return invalid }   // lost the race → concurrent use = theft posture
         // Won the claim → persist the successor (same family; scope/aud carried forward, no escalation).
-        insertPair(db, { ...pair, grantId: rt.grant_id, clientId: client.client_id, scope: rt.scope, aud: rt.aud, familyId: rt.family_id })
-        return { ok: true, access: pair.access, accessExpMs: pair.accessExpMs, refresh: pair.refresh, scope: rt.scope }
+        insertPair(db, { ...pair, grantId: rt.grant_id, clientId: client.client_id, scope: rt.scope, aud: rt.aud, familyId: rt.family_id, dpopJkt: rt.dpop_jkt ?? undefined })
+        return { ok: true, access: pair.access, accessExpMs: pair.accessExpMs, refresh: pair.refresh, scope: rt.scope, dpopJkt: rt.dpop_jkt ?? undefined }
       }).immediate()   // IMMEDIATE: write lock at BEGIN → the loser of a cross-connection race serializes AFTER
       return respond(out)                                                                     // the winner and hits the theft path, never a mid-tx BUSY
     }

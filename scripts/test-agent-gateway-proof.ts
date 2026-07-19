@@ -181,6 +181,16 @@ function tamperSignature(jwt: string): string {
   ok('15. method comparison is exact and case-sensitive', !lowercaseMethod.ok)
   ok('16. wrong target URI is rejected', !(await verify(f, proof(f, { htu: 'https://webaz.xyz/oauth/token' }))).ok)
   ok('17. query-bearing htu is rejected', !(await verify(f, proof(f, { htu: 'https://webaz.xyz/mcp?x=1' }))).ok)
+  ok('17a. empty query or fragment delimiters are still rejected',
+    !(await verify(f, proof(f, { htu: 'https://webaz.xyz/mcp?' }))).ok
+      && !(await verify(f, proof(f, { htu: 'https://webaz.xyz/mcp#' }))).ok)
+  ok('17b. RFC 3986 unreserved percent-encoding normalizes before htu comparison',
+    (await verify(f, proof(f, { htu: 'https://webaz.xyz/%6Dcp' }))).ok)
+  ok('17c. raw backslash and ASCII controls cannot normalize into the target',
+    !(await verify(f, proof(f, { htu: 'https://webaz.xyz\\mcp' }))).ok
+      && !(await verify(f, proof(f, { htu: 'https://webaz.xyz/\tmcp' }))).ok)
+  ok('17d. encoded path separators remain distinct from literal separators',
+    !(await verify(f, proof(f, { htu: 'https://webaz.xyz/%2Fmcp' }))).ok)
   ok('18. stale iat is rejected', !(await verify(f, proof(f, { iat: Math.floor(f.nowMs / 1000) - 301 }))).ok)
   ok('19. far-future iat is rejected', !(await verify(f, proof(f, { iat: Math.floor(f.nowMs / 1000) + 61 }))).ok)
   ok('20. wrong access-token hash is rejected', !(await verify(f, proof(f, { ath: 'wrong' }))).ok)
@@ -308,7 +318,13 @@ function tsFiles(dir: string): string[] {
 const productionRefs = tsFiles('src')
   .filter(path => path !== 'src/runtime/agent-gateway-proof.ts')
   .filter(path => /agent-gateway-proof|verifyAgentGatewayDpopRequest/.test(readFileSync(path, 'utf8')))
-ok('35. S1b remains dormant across the production source graph', productionRefs.length === 0,
+const tokenRouteSource = readFileSync('src/pwa/routes/oauth-token.ts', 'utf8')
+const mcpRouteSource = readFileSync('src/pwa/routes/mcp-remote.ts', 'utf8')
+ok('35. S1c1 exposes only dormant token wiring; resource verifier remains unmounted',
+  productionRefs.length === 1 && productionRefs[0] === 'src/pwa/routes/oauth-token.ts'
+    && tokenRouteSource.includes('verifyAgentGatewayDpopTokenRequest')
+    && !tokenRouteSource.includes('verifyAgentGatewayDpopRequest')
+    && !mcpRouteSource.includes('verifyAgentGatewayDpopRequest'),
   productionRefs.join(','))
 const source = readFileSync('src/runtime/agent-gateway-proof.ts', 'utf8')
 const verifierInput = source.match(/verifyAgentGatewayDpopRequest\([\s\S]*?input:\s*\{([\s\S]*?)\n\s*\},\n\s*replayStore/)
