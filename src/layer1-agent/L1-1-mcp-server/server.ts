@@ -1917,9 +1917,8 @@ No grant → GRANT_REQUIRED (webaz_pair action=start). Missing scope → structu
 ⚠️ MATCHING CONTRACT:
 - category = REGISTRY KEY, equality-matched (not a search word). Keys: resource webaz://guide/categories or GET /api/agent/categories. Unknown key → 400 UNKNOWN_CATEGORY (full table + machine-executable recommended_next_call); unique alias (e.g. "household") auto-corrects (echoed as category_resolved); ambiguous alias → 400 CATEGORY_AMBIGUOUS + options.
 - keywords substring-match listing TITLES. Default keyword_match:"all" = conjunctive (compound required attributes). Synonyms/aliases MUST use "any" — under "all" they zero each other out. Zero results carry per_keyword_hits showing which keyword killed the set.
-- Results are honest DISCOVERY CANDIDATES (label discovery_candidate), never exact matches. Exact title/SKU/URL → webaz_search (strict).
-- DISCLOSURE: every VALID query is recorded as a structured demand signal linked to your account (intent + result count) to inform supply; 400-rejected inputs are never recorded. Product-term shape enforced (<=40 chars; emails/URLs/phone-like digit runs rejected); passing inputs recorded as-is — NO personal data in category/keywords. If you do not want queries recorded, do not call this tool.
-- Read + that disclosed append-only record only: no order, no funds, no PII returned.`,
+- Results are honest DISCOVERY CANDIDATES (discovery_candidate), never exact matches. Exact title/SKU/URL → webaz_search.
+- DISCLOSURE: every VALID query is recorded as a demand signal linked to your account (intent + result count) to inform supply; 400-rejected inputs are not recorded. Product-term shape enforced (<=40 chars; emails/URLs/phone-like runs rejected); passing inputs recorded as-is — NO personal data in category/keywords. Read-only: no order/funds/PII.`,
     inputSchema: {
       type: 'object',
       properties: {

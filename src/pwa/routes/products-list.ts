@@ -416,6 +416,16 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     // USDC 显示换算表(与 /api/fx/rates 同源;fail-soft 省略)—— 模型/组件据此给出"≈ 本地法币"对照
     let fx: Record<string, unknown> | null = null
     try { const snap = await getUsdRates(); fx = { base: snap.base, rates: snap.rates, as_of: snap.as_of, stale: snap.stale, note: 'display-only conversion — never a settlement path' } } catch { fx = null }
+    // 调用契约 PR-D:列表响应机器化引导取详情 —— 不再让 agent 从长篇工具描述里自己发现 result_handle 用法
+    //   (审计 A6)。detail_required_for_card:渲染完整卡片前必须先取详情;selectable_ids:本页可选 id
+    //   全集;detail_fetch_template:填 selected_ids 即可执行的调用骨架;selection_required:最终商品必须
+    //   由 agent 选择(Holden:不预填第一条 id,服务端不为任何候选背书)。
+    const detailGuidance = resultHandle ? {
+      detail_required_for_card: true,
+      selection_required: true,
+      selectable_ids: rows.map(r => String(r.id)),
+      detail_fetch_template: { tool: 'webaz_search', arguments: { result_handle: resultHandle, selected_ids: ['<pick 1-5 ids from selectable_ids>'] } },
+    } : {}
     res.json({
       schema_version: SCHEMA_PRODUCT_SEARCH,
       mode, sort, limit: lim,
@@ -423,6 +433,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       next_cursor: nextCursor,
       ...(fx ? { fx } : {}),
       ...(resultHandle ? { result_handle: resultHandle, result_handle_expires_in_s: 600 } : {}),
+      ...detailGuidance,
       sellers: sellersIndex(rows),
       products: rows.map(r => {
         const f = formatProductForAgent(r, req)

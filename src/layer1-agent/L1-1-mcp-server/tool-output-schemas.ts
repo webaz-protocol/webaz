@@ -45,6 +45,7 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
       },
       recovery: { type: 'object', description: 'on 0 hits: labeled catalog sample (NOT query matches) + actionable next_step' },
       result_handle: { type: 'string', description: 'selection handle (10-min TTL) — pass back with selected_ids (≤5) for live detail projections (webaz.product_detail.model.v1: description/specs/terms)' },
+      detail_required_for_card: { type: 'boolean', description: 'fetch detail (result_handle + selected_ids from selectable_ids) before a full card; selection_required + detail_fetch_template also ride the response' },
       ...err,
     },
   },

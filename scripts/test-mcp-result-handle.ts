@@ -101,6 +101,16 @@ try {
   const handle = String(s1.result_handle ?? '')
   ok('H-1 search issues result_handle (res_<32hex>) + TTL hint', /^res_[0-9a-f]{32}$/.test(handle) && s1.result_handle_expires_in_s === 600, JSON.stringify(s1).slice(0, 200))
   const ids = (s1.products as Array<Record<string, unknown>>).map(p => String(p.id))
+  // 调用契约 PR-D:列表带机器化取详情引导 —— detail_required_for_card / selection_required / selectable_ids
+  //   (=本页 id 全集)/ detail_fetch_template(可执行骨架,selected_ids 留占位不预填第一条 —— 不背书)
+  const tmpl = (s1.detail_fetch_template ?? {}) as { tool?: string; arguments?: Record<string, unknown> }
+  ok('H-1b list carries machine detail guidance (required + selectable_ids + template, no pre-filled id)',
+    s1.detail_required_for_card === true && s1.selection_required === true
+    && Array.isArray(s1.selectable_ids) && (s1.selectable_ids as string[]).length === ids.length
+    && (s1.selectable_ids as string[]).every(id => ids.includes(id))
+    && tmpl.tool === 'webaz_search' && tmpl.arguments?.result_handle === handle
+    && Array.isArray(tmpl.arguments?.selected_ids) && !ids.includes(String((tmpl.arguments?.selected_ids as string[])[0])),
+    JSON.stringify({ drc: s1.detail_required_for_card, sr: s1.selection_required, sel: s1.selectable_ids, tmpl }).slice(0, 240))
 
   // H-2 按需详情:活读 + 截断 + 零内部字段 + 预算
   const d1r = await call({ result_handle: handle, selected_ids: ids.slice(0, 2) })
