@@ -30,7 +30,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 // Lower a ceiling when you trim the file; never raise one.
 const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/server.ts': 8394,
-  'src/pwa/public/app.js': 25741,
+  'src/pwa/public/app.js': 25714,
+  'src/pwa/public/app-api-async.js': 32,   // P0-A A4 读/写分离超时助手(从 app.js 拆出)
   'src/pwa/public/app-cart-actions.js': 121,
   'src/pwa/public/app-address-book-checkout.js': 54,
   'src/pwa/public/app-edit-product-images.js': 107,
@@ -39,7 +40,8 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-seller.js': 199,
   'src/pwa/public/app-agents.js': 63,
   'src/pwa/public/app-agent-pair.js': 127,
-  'src/pwa/public/app-agent-approvals.js':            171,
+  'src/pwa/public/app-agent-approvals.js':            93,
+  'src/pwa/public/app-agent-approvals-state.js':      118,   // P0-A A2 审批页状态机+交互(从 app-agent-approvals.js 拆出)
   'src/pwa/public/app-agent-approvals-order.js':      18,
   'src/pwa/public/app-agent-approvals-submit.js':     38,   // RFC-025 PR-5a 下单审批卡(新文件基线;Codex BLOCKER-3 两轮定稿)
   'src/pwa/public/app-agent-approvals-dup.js':        26,   // RFC-026 PR-1 相似购买警告(新文件基线)
