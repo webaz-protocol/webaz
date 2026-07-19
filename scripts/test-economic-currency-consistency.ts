@@ -52,6 +52,15 @@ try {
   // ── schema const kept in sync with the runtime status ──
   const SCHEMAS = readFileSync('src/layer1-agent/L1-1-mcp-server/tool-output-schemas.ts', 'utf8')
   ok('order_approval schema status const = pending (matches projection)', /const: 'pending' }/.test(SCHEMAS) && !/const: 'pending_approval'/.test(SCHEMAS))
+
+  // ── HONESTY (Codex R1): USDC is a display alias — a "not real USDC/fiat custody" note must be REACHABLE on
+  //    every relabeled surface (discover / approval agent-read / approval human card / the budget-param contract). ──
+  ok('discover response carries a pricing_note (USDC = display alias, not real settlement)', /pricing_note:[\s\S]{0,120}display alias[\s\S]{0,80}NOT real USDC/.test(GRANTS))
+  const SERVER = readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
+  ok('webaz_discover max_price contract says USDC (not the old WAZ), flagged as simulated alias', /Budget ceiling in USDC[\s\S]{0,80}not real USDC settlement/.test(SERVER) && !/Budget ceiling in WAZ/.test(SERVER))
+  const APRREAD = readFileSync('src/pwa/approval-requests-read.ts', 'utf8')
+  ok('approval agent-read economic_effect is rail-aware + honest (escrow=SIMULATED, USDC display alias)', /SIMULATED test ledger[\s\S]{0,80}display alias/.test(APRREAD) && /direct_p2p[\s\S]{0,120}holds no principal/.test(APRREAD))
+  ok('human approval card escrow line carries the simulated/not-real-USDC disclosure', /模拟测试轨,金额以 USDC 显示为别名,不代表真实 USDC 或法币托管\/结算/.test(SUBMIT_CARD))
 } finally { try { rmSync(process.env.HOME as string, { recursive: true, force: true }) } catch {} }
 
 if (fail > 0) { console.error(`\n❌ economic-currency-consistency FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

@@ -458,6 +458,8 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     }
     res.json({
       count: candidates.length, candidates,
+      // P0-C 诚实披露:候选价的 USDC 是内部模拟单位的显示别名,不代表真实 USDC/法币托管或结算。
+      pricing_note: 'Prices are shown in USDC as a display alias for the internal simulated unit — NOT real USDC/fiat custody or settlement. Final payable is authoritative only from webaz_quote_order.',
       match_semantics: keywordMatch,
       ...(categoryCorrected ? { category_resolved: categoryCorrected } : {}),
       ...(perKeywordHits ? { per_keyword_hits: perKeywordHits } : {}),

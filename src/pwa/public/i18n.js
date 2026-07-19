@@ -17,6 +17,8 @@ window.resolveInitialLang = (savedLang, navigatorLike) => {
 window._lang = window.resolveInitialLang(localStorage.getItem('webaz_lang'), typeof navigator !== 'undefined' ? navigator : null)
 
 const _EN = {
+  // P0-C — approval-card escrow honesty disclosure (USDC display alias, simulated rail)
+  '托管(批准后立即从你的钱包扣款入托管)—— 模拟测试轨,金额以 USDC 显示为别名,不代表真实 USDC 或法币托管/结算': 'Escrow (approval immediately debits your wallet into escrow) — SIMULATED test rail; amounts shown in USDC are a display alias and do NOT represent real USDC or fiat custody/settlement',
   // OAuth consent (#oauth-consent, RFC-023 PR-2b)
   '读取:公开商品/搜索/你的公开资料,以及你自己的商品目录和最小化订单信息(不含买家地址/联系方式等 PII)': 'Read: public products, search, your public profile, plus your own catalog and minimal order info (no buyer PII such as address/contact)',
   '获取报价(用你的默认收货地区计算;不下单/不付款/不动资金)、起草订单,并向你的人工审批队列提交接单/发货【请求】(仅提交 —— 绝不执行,执行永远需要你的 Passkey)': 'Get quotes (computed with your default shipping region; no order, no payment, no funds moved), draft orders, and SUBMIT accept/ship REQUESTS into your human approval queue (submit-only - execution always needs your Passkey)',
