@@ -50,3 +50,9 @@ An earlier hypothesis held that `summarizeSubmitResult` misses the duplicate not
 
 ## Trace fields Phase 3 should add (design only — do NOT change prod behavior now)
 A default-off, test-only diagnostic could stamp (behind an env flag, no PII): the JSON-RPC `id` (`tool_call_id`), `intent_hash` prefix, `duplicate` flag, and `reused_existing_request_id` into a diagnostic log, so a real `duplicate=true` can be classified as retry-vs-prior-intent without guessing. This is a Phase-3 proposal, not built here.
+
+## BUG-08 resolution (Phase 3A.2C) — gaps this audit found, now closed
+- **H4 over-merge** (`intent_hash` excludes `draft_id` → different drafts merged forever): closed by the explicit `purchase_intent_instance` escape (folded into `intent_hash` only on the user's "再买一份"); implicit repeats still dedup. See `IDEMPOTENCY_IMPLEMENTATION.md`.
+- **Weak correlation logging** (only the DB row tied calls together): closed by the zero-PII `agent_idempotency_trace` (trace_id / interaction_id / operation_attempt_id / bridge_type / tool_call_id / idempotency_key_hash / intent_hash prefix / purchase_intent_instance / draft_id / request_id / order_id / duplicate / duplicate_reason / duplicate_of / timings). Fail-open — a trace-write error never blocks the trade.
+- **retry-vs-prior-intent classification** (was LIVE_HOST_REQUIRED): now a machine `duplicate_reason` distinguishes SAME_DRAFT_REPLAY / SAME_IDEMPOTENCY_KEY / ACTIVE_INTENT_REUSED / EXPLICIT_SECOND_PURCHASE / DATABASE_UNIQUE_RACE / RESPONSE_LOSS_RECONCILED.
+- **Client key**: base had none; BUG-08 adds an optional `idempotency_key` as the primary retry key (same key+payload → same result; same key+different payload → IDEMPOTENCY_CONFLICT).
