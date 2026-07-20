@@ -39,6 +39,8 @@ const off = await openConfiguredGatewayReplayRuntime({
 }, { createPool: () => { poolConstructed = true; throw new Error('must not run') } })
 ok('1. default-off returns no runtime', off === undefined)
 ok('2. default-off constructs no pool', poolConstructed === false)
+ok('2a. resource-only activation also requires OAuth and the shared backend', await rejects(
+  () => openConfiguredGatewayReplayRuntime({ WEBAZ_AGENT_GATEWAY_DPOP_RESOURCE: '1' }), 'WEBAZ_OAUTH=1'))
 ok('3. enabled requires OAuth', await rejects(
   () => openConfiguredGatewayReplayRuntime({ WEBAZ_AGENT_GATEWAY_DPOP_TOKEN: '1' }), 'WEBAZ_OAUTH=1'))
 ok('4. enabled requires explicit postgres backend', await rejects(

@@ -21,6 +21,12 @@ import { resolveSurface } from '../../layer1-agent/L1-1-mcp-server/tool-surfaces
 import { oauthEnabled } from './oauth-discovery.js'
 import { OAUTH_SCOPE_CAPABILITIES } from './oauth-approve.js'
 import { verifyGrantToken, verifyGrantIdentity } from '../../runtime/agent-grant-verifier.js'
+import {
+  verifyAgentGatewayDpopRequest,
+  verifyAgentGatewayGrantToken,
+  type AgentGatewayContext,
+  type GatewayReplayStore,
+} from '../../runtime/agent-gateway-proof.js'
 
 export function remoteMcpEnabled(): boolean {
   return process.env.WEBAZ_REMOTE_MCP === '1' && process.env.WEBAZ_MODE !== 'sandbox'
@@ -171,6 +177,8 @@ export function remoteMcpManifest(): Record<string, unknown> | null {
 // deps.rateLimitOk 复用主 server 的进程级 IP 限流器(T2/T3:防公开端点被刷 / 暴力猜 key / DoS)。
 export interface RemoteMcpDeps {
   rateLimitOk: (ip: string, max?: number, windowMs?: number) => boolean
+  gatewayReplayStore?: GatewayReplayStore
+  gatewayLoopbackBaseUrl?: () => string
 }
 
 export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
@@ -236,12 +244,67 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
     try {
       const authz = String(req.headers.authorization || '')
       const bearer = authz.startsWith('Bearer ') ? authz.slice(7).trim() : ''
+      const authorizationHeaders: string[] = []
+      for (let i = 0; i < req.rawHeaders.length; i += 2) {
+        if (req.rawHeaders[i]?.toLowerCase() === 'authorization') authorizationHeaders.push(req.rawHeaders[i + 1] ?? '')
+      }
+      const dpopMatch = /^DPoP ([^\s]+)$/i.exec(authz)
+      const dpopBearer = dpopMatch?.[1] ?? ''
+      const credential = dpopBearer || bearer
       // RFC-023 PR-5:匿名调用注定需要身份的工具 → 401 + WWW-Authenticate 指回 protected-resource
       //   metadata,合规 MCP 客户端据此自启 OAuth 流(MCP Authorization spec)。仅 WEBAZ_OAUTH=1 时
       //   挑战(关着时 metadata 404,不能把客户端指向不存在的文档);带任何 Bearer 的请求照旧进工具层
       //   (无效凭证的语义化 error_code 在那里,PR-4)。匿名【读】面完全不受影响(I-2)。
       const bodyId = (req.body as { id?: number | string | null } | null)?.id ?? null
-      if (oauthEnabled() && bearer.startsWith('oat_') && isToolCall(req.body)) {
+      let gatewayContext: AgentGatewayContext | undefined
+      if (oauthEnabled() && dpopBearer && isToolCall(req.body)) {
+        // RFC-9449 sender-constrained access uses the DPoP authorization scheme. Ordinary ChatGPT OAuth
+        // continues to use Bearer and never enters this branch. DPoP is independently default-off.
+        if (authorizationHeaders.length !== 1) {
+          res.setHeader('WWW-Authenticate', 'DPoP error="invalid_token", error_description="exactly one DPoP Authorization header is required"')
+          return void res.status(401).json({ jsonrpc: '2.0', id: bodyId, error: { code: -32001, message: 'invalid DPoP authorization' } })
+        }
+        if (process.env.WEBAZ_AGENT_GATEWAY_DPOP_RESOURCE !== '1') {
+          res.setHeader('WWW-Authenticate', 'DPoP error="invalid_token", error_description="DPoP protected-resource access is not enabled"')
+          return void res.status(401).json({ jsonrpc: '2.0', id: bodyId, error: { code: -32001, message: 'DPoP protected-resource access is not enabled' } })
+        }
+        if (!deps.gatewayReplayStore || !deps.gatewayLoopbackBaseUrl) {
+          return void res.status(503).json({ jsonrpc: '2.0', id: bodyId, error: { code: -32003, message: 'sender-constrained proof verification is unavailable' } })
+        }
+        const dpopHeaders: string[] = []
+        for (let i = 0; i < req.rawHeaders.length; i += 2) {
+          if (req.rawHeaders[i]?.toLowerCase() === 'dpop') dpopHeaders.push(req.rawHeaders[i + 1] ?? '')
+        }
+        if (dpopHeaders.length !== 1 || !dpopHeaders[0]) {
+          res.setHeader('WWW-Authenticate', 'DPoP error="invalid_dpop_proof", error_description="exactly one non-empty DPoP proof is required"')
+          return void res.status(401).json({ jsonrpc: '2.0', id: bodyId, error: { code: -32001, message: 'invalid DPoP proof' } })
+        }
+        const verified = await verifyAgentGatewayDpopRequest({
+          access_token: dpopBearer,
+          dpop_proof: dpopHeaders[0],
+          http_method: 'POST',
+          target_uri: 'https://webaz.xyz/mcp',
+        }, deps.gatewayReplayStore)
+        if (!verified.ok) {
+          const status = verified.status === 409 ? 409 : verified.status === 503 ? 503 : verified.status === 403 ? 403 : 401
+          res.setHeader('WWW-Authenticate', 'DPoP error="invalid_dpop_proof", error_description="sender-constrained proof validation failed"')
+          return void res.status(status).json({ jsonrpc: '2.0', id: bodyId, error: { code: -32001, message: 'sender-constrained proof validation failed' } })
+        }
+        gatewayContext = verified.context
+        if (isAuthOnlyToolCall(req.body)) {
+          const requiredScope = scopeForAuthOnlyCall(req.body)
+          const scoped = await verifyAgentGatewayGrantToken(gatewayContext, dpopBearer, requiredScope)
+          if (!scoped.ok) {
+            if (scoped.error_code === 'SCOPE_NOT_GRANTED') {
+              const coarseScope = coarseScopeForAuthOnlyCall(req.body)
+              const challenge = `DPoP resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}", error="insufficient_scope", error_description="your OAuth grant does not carry the ${coarseScope} scope this tool needs", scope="${coarseScope}"`
+              return void authChallengeResult(res, bodyId, `insufficient scope — your OAuth grant does not carry the "${coarseScope}" scope this tool needs.`, challenge)
+            }
+            res.setHeader('WWW-Authenticate', 'DPoP error="invalid_token", error_description="sender-constrained token is no longer active"')
+            return void res.status(scoped.status).json({ jsonrpc: '2.0', id: bodyId, error: { code: -32001, message: 'sender-constrained token is no longer active' } })
+          }
+        }
+      } else if (oauthEnabled() && bearer.startsWith('oat_') && isToolCall(req.body)) {
         // A PRESENTED oat_ is validated at the transport edge — a bad credential is NEVER silently
         // downgraded to anonymous. Identity is checked for ANY tool (invalid/expired/revoked/wrong-aud →
         // invalid_token challenge); for an auth-only tool call the required safe scope is also checked (valid
@@ -274,18 +337,22 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
       // gtk_ / api_key / anonymous-public → fall through to dispatch (unchanged).
       // RFC-023 PR-4:grant token(gtk_ 直接 grant / oat_ OAuth access token)走 grant 凭证注入,不当 human
       //   api_key —— 它 audience-bound 到 /mcp 的 grant 面,通用工具照旧匿名。human api_key 走 defaultApiKey。
-      const isGrantBearer = bearer.startsWith('gtk_') || bearer.startsWith('oat_')
+      const isGrantBearer = credential.startsWith('gtk_') || credential.startsWith('oat_')
       // 每请求独立装配(SDK 无状态模式的标准形态)— 请求间零共享状态。
       // isolated:true = 凭证隔离(RFC-022 §2 T5):远程只认本请求 bearer,绝不继承宿主 env key / 存储 grant /
       //   pairing 文件;匿名远程 = 真 network_readonly。修 Codex 两个 P0(跨请求越权 + pairing 竞态)。
       // MCP Token PR-3:工具面选择 —— ?surface=buyer|seller|full 显式 > api_key bearer(full)> 默认 buyer。
       //   只影响 tools/list 可见性(定义 ~101KB→buyer ~40KB);按名 tools/call 一切照旧(授权在 call 时)。
-      const surface = resolveSurface(req.query.surface, bearer ? (isGrantBearer ? 'grant' : 'api_key') : 'none')
+      const surface = resolveSurface(req.query.surface, credential ? (isGrantBearer ? 'grant' : 'api_key') : 'none')
       const server = buildMcpServer({
         isolated: true,
         surface,
         ...(bearer && !isGrantBearer ? { defaultApiKey: bearer } : {}),
-        ...(isGrantBearer ? { grantBearer: bearer } : {}),
+        ...(isGrantBearer ? { grantBearer: credential } : {}),
+        ...(gatewayContext ? {
+          agentGatewayContext: gatewayContext,
+          gatewayLoopbackBaseUrl: deps.gatewayLoopbackBaseUrl!(),
+        } : {}),
       })
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,        // stateless:不发 session id

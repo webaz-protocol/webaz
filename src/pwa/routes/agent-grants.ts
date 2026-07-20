@@ -29,6 +29,8 @@ import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrant
 import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveBundle, durationAllowedForScopes, suggestedDurationForScopes, allowedDurationsForScopes, durationToSeconds, riskLevelForScopes, type GrantDuration } from '../../runtime/agent-grant-scopes.js'
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
 import { verifyGrantToken, type GrantPrincipal } from '../../runtime/agent-grant-verifier.js'
+import { verifyAgentGatewayGrantToken } from '../../runtime/agent-gateway-proof.js'
+import { agentGatewayHandoffHeaderName, consumeAgentGatewayHandoff } from '../../runtime/agent-gateway-handoff.js'
 import { minimalSellerOrderView, MINIMAL_ORDER_COLUMNS, minimalBuyerOrderView, BUYER_MINIMAL_ORDER_COLUMNS,
          BUYER_ACTIVE_STATUSES, buyerOrdersSummary, encodeBuyerOrdersCursor, decodeBuyerOrdersCursor } from '../agent-order-minimal-view.js'  // RFC-021 §6a / RFC-025 PR-1 最小化订单读投影 + MCP Token PR-1 分页/汇总
 import { SCHEMA_ORDER_STATUS } from '../../agent-model-projection.js'  // MCP Token PR-1: webaz.order_status.model.v1
@@ -139,7 +141,23 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       }
       const bearer = (req.header('authorization') || '').replace(/^Bearer\s+/i, '')
       const presentedGrant = bearer.startsWith('gtk_') || bearer.startsWith('oat_')   // gtk_ direct grant OR oat_ OAuth token (both grant-authorized)
-      const r = await verifyGrantToken(bearer, scope)
+      // RFC-028 S1c3: a sender-constrained oat_ is proved at /mcp, then the MCP server performs a
+      // one-use 127.0.0.1 handoff bound to this exact request. Caller headers alone have no authority:
+      // consumeAgentGatewayHandoff accepts only an issued, unexpired, single-use ticket and returns the
+      // module-branded context. Ordinary Bearer/gtk_ requests keep the existing verifier unchanged.
+      const socketAddress = req.socket.remoteAddress || ''
+      const isLoopback = socketAddress === '127.0.0.1' || socketAddress === '::1' || socketAddress === '::ffff:127.0.0.1'
+      const handoff = consumeAgentGatewayHandoff({
+        ticket: req.header(agentGatewayHandoffHeaderName()),
+        bearer,
+        method: req.method,
+        path: req.originalUrl,
+        serialized_body: req.body === undefined ? '' : JSON.stringify(req.body),
+        is_loopback: isLoopback,
+      })
+      const r = handoff
+        ? await verifyAgentGatewayGrantToken(handoff, bearer, scope)
+        : await verifyGrantToken(bearer, scope)
       // Append-only audit (RFC-020 §3.7 + invariant: every grant-authorized request is audited). Only audit
       // requests that actually presented a grant bearer — a no-token request is pure noise (and an unauth
       // bloat vector), not a grant-authorized request.
