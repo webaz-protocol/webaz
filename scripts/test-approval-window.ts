@@ -47,6 +47,12 @@ try {
     ok('3a maxUses 999 → clamped to 20 (no throw)', hi.ok === true && hi.max_uses === 20)
     const lo = mintWindow(db, { ownerId: bob, tier: 'T2', generateId, maxUses: 0 })
     ok('3b maxUses 0 → clamped to 1', lo.ok === true && lo.max_uses === 1)
+    // non-finite input (Number(req.body.x) on non-numeric) must NOT throw the schema CHECK / Date(NaN) → a
+    //   misleading 500; it falls back to defaults. (regression for the NaN-defeats-clamp finding)
+    const nan = mintWindow(db, { ownerId: 'usr_nan', tier: 'T1', generateId, maxUses: Number('abc'), ttlSec: Number(undefined) })
+    ok('3c NaN maxUses/ttl → clamped to defaults, ok (not 500)', nan.ok === true && nan.max_uses === 20 && String(nan.expires_at) > new Date().toISOString())
+    const frac = mintWindow(db, { ownerId: 'usr_frac', tier: 'T2', generateId, maxUses: 1.9 })
+    ok('3d fractional maxUses 1.9 → floored to 1', frac.ok === true && frac.max_uses === 1)
   }
 
   // 4. consume decrements remaining
@@ -114,11 +120,30 @@ try {
     bare.close()
   }
 
-  // 11. NEGATIVE import guard (I1): a window AUTHORIZES; it must never reach the executor
+  // 11. consume is a SINGLE atomic statement (UPDATE … RETURNING) — so no post-UPDATE query can throw AFTER a
+  //   slot is already burned and flip a committed consume to WINDOW_OP_FAILED (regression for that bug). A db
+  //   proxy that throws on ANY prepare after the first still yields ok:true, proving there is no second query.
+  {
+    const m = mintWindow(db, { ownerId: 'usr_atomic', tier: 'T1', generateId, maxUses: 5 })
+    let prepared = 0
+    const proxy = new Proxy(db, {
+      get(t: any, p: string) {
+        if (p === 'prepare') return (sql: string) => { if (++prepared > 1) throw new Error('no second query allowed'); return t.prepare(sql) }
+        const v = t[p]; return typeof v === 'function' ? v.bind(t) : v
+      },
+    })
+    const r = consumeWindow(proxy as never, { ownerId: 'usr_atomic', tier: 'T1' })
+    ok('11a consume succeeds with EXACTLY one prepared statement (no burn-then-fail readback)', r.ok === true && prepared === 1 && r.window_id === m.window_id && r.remaining === 4)
+    ok('11b the burned slot is real (uses incremented to 1)', (db.prepare('SELECT uses FROM action_approval_windows WHERE id=?').get(m.window_id) as { uses: number }).uses === 1)
+  }
+
+  // 12. NEGATIVE import guard (I1): a window only AUTHORIZES; it must never reach an executor / money path.
+  //   Assert the ONLY import is the type-only better-sqlite3, and no exec/ledger/settle/order token appears in imports.
   {
     const src = readFileSync(join(process.cwd(), 'src/pwa/approval-window.ts'), 'utf8')
-    const imports = src.split('\n').filter(l => /^\s*import\b/.test(l)).join('\n')
-    ok('11 approval-window does NOT import product-action-exec (I1 zero-exec)', !/product-action-exec/.test(imports))
+    const importLines = src.split('\n').filter(l => /^\s*import\b/.test(l))
+    ok('12a only import is `import type … better-sqlite3` (no runtime imports)', importLines.length === 1 && /^\s*import type .* from 'better-sqlite3'/.test(importLines[0]))
+    ok('12b no executor/money-path token anywhere in source (require/dynamic import too)', !/product-action-exec|\bledger\b|settle|order-action|require\(/i.test(src))
   }
 
   if (fail > 0) { console.error(`\n❌ approval-window FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

@@ -49,9 +49,13 @@ export function mintWindow(db: Database.Database, opts: {
 }): MintWindowResult {
   const { ownerId, tier } = opts
   if (!isTier(tier)) return { ok: false, error_code: 'BAD_TIER', error: "tier 必须为 'T1' 或 'T2'(T3 永不开窗)", http: 400 }
-  // clamp:调用方给越界值也不抛(schema CHECK 是最后防线,不作正常控制流)
-  const maxUses = Math.max(1, Math.min(MAX_USES_CEILING, Math.floor(opts.maxUses ?? MAX_USES_CEILING)))
-  const ttlSec = Math.max(1, Math.floor(opts.ttlSec ?? WINDOW_TTL_SEC_DEFAULT))
+  // clamp:调用方给越界值也不抛(schema CHECK 是最后防线,不作正常控制流)。非有限值(NaN/±Infinity,
+  //   常见于 Number(req.body.x) 对非数字输入)回落到默认,绝不让 NaN 传到 INSERT(→NOT NULL/CHECK 失败=误导 500)
+  //   或 Date(NaN)(→RangeError)。
+  const rawMax = Number(opts.maxUses)
+  const maxUses = Number.isFinite(rawMax) ? Math.max(1, Math.min(MAX_USES_CEILING, Math.floor(rawMax))) : MAX_USES_CEILING
+  const rawTtl = Number(opts.ttlSec)
+  const ttlSec = Number.isFinite(rawTtl) ? Math.max(1, Math.floor(rawTtl)) : WINDOW_TTL_SEC_DEFAULT
 
   try {
     const id = opts.generateId('aw')
@@ -82,22 +86,22 @@ export function consumeWindow(db: Database.Database, opts: { ownerId: string; ti
 
   try {
     const nowIso = new Date().toISOString()
-    const info = db.prepare(
+    // 单条原子 UPDATE … RETURNING:自增与回执(id + 剩余次数)在同一语句取自【正被核销的那一行】。
+    //   ① 不再有"UPDATE 已提交、随后独立回读抛错→把已核销误报成失败(白烧一次额度)"的窗口(旧版 bug);
+    //   ② 回执严格对应被核销行,不会在多窗共存/时钟回拨下选错窗;
+    //   ③ RETURNING 看到的是自增【后】的值,故 max_uses-uses 即真实剩余。changes 语义等价于 row 是否存在。
+    const row = db.prepare(
       `UPDATE action_approval_windows SET uses = uses + 1
          WHERE id = (
            SELECT id FROM action_approval_windows
              WHERE owner_id=? AND tier=? AND revoked_at IS NULL AND expires_at > ? AND uses < max_uses
              ORDER BY created_at DESC, id DESC LIMIT 1
          )
-         AND revoked_at IS NULL AND expires_at > ? AND uses < max_uses`
-    ).run(ownerId, tier, nowIso, nowIso)
-    if (info.changes !== 1) return { ok: false, error_code: 'NO_ACTIVE_WINDOW' }
-    // 回读该窗剩余次数 + id(供审计/回执)。此读失败不改变"已核销"事实,故也在 try 内但不影响 ok。
-    const row = db.prepare(
-      `SELECT id, (max_uses - uses) AS remaining FROM action_approval_windows
-         WHERE owner_id=? AND tier=? AND revoked_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1`
-    ).get(ownerId, tier) as { id: string; remaining: number } | undefined
-    return { ok: true, window_id: row?.id, remaining: row?.remaining }
+         AND revoked_at IS NULL AND expires_at > ? AND uses < max_uses
+         RETURNING id AS window_id, (max_uses - uses) AS remaining`
+    ).get(ownerId, tier, nowIso, nowIso) as { window_id: string; remaining: number } | undefined
+    if (!row) return { ok: false, error_code: 'NO_ACTIVE_WINDOW' }   // 无匹配行 = 不存在/已满/过期/作废
+    return { ok: true, window_id: row.window_id, remaining: row.remaining }
   } catch (e) {
     console.error('[approval-window] consume failed:', (e as Error).message)
     return { ok: false, error_code: 'WINDOW_OP_FAILED' }
