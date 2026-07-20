@@ -72,8 +72,15 @@ try {
       && (e.app ? m['openai/widgetAccessible'] === true : !('openai/widgetAccessible' in m))
       && !!t?.outputSchema, JSON.stringify(m).slice(0, 200))
   }
-  const uiToolCount = tools.filter(t => (t._meta as Record<string, unknown> | undefined)?.ui).length
-  ok('T-2. 只有 5 个工具带标准 ui meta(不外溢)', uiToolCount === 5, `n=${uiToolCount}`)
+  // §III renders_component (有 resourceUri → 渲染独立卡片) vs callable_from_component (app-visible → 组件可直调)。
+  const rendersComponent = tools.filter(t => ((t._meta as Record<string, unknown> | undefined)?.ui as Record<string, unknown> | undefined)?.resourceUri).map(t => t.name).sort()
+  const callableFromComponent = tools.filter(t => { const ui = (t._meta as Record<string, unknown> | undefined)?.ui as Record<string, unknown> | undefined; const vis = ui?.visibility; return Array.isArray(vis) && (vis as string[]).includes('app') }).map(t => t.name).sort()
+  ok('T-2. renders_component = 恰好 5 个卡片工具(有 resourceUri)', JSON.stringify(rendersComponent) === JSON.stringify(['webaz_buyer_orders', 'webaz_order_draft', 'webaz_quote_order', 'webaz_search', 'webaz_submit_order_request']), rendersComponent.join(','))
+  ok('T-2b. callable_from_component = 5 卡片工具 + approval_requests + order_chat(app-visible)', JSON.stringify(callableFromComponent) === JSON.stringify(['webaz_approval_requests', 'webaz_buyer_orders', 'webaz_order_chat', 'webaz_order_draft', 'webaz_quote_order', 'webaz_search', 'webaz_submit_order_request']), callableFromComponent.join(','))
+  for (const n of ['webaz_approval_requests', 'webaz_order_chat']) {
+    const t = tools.find(x => x.name === n); const m = (t?._meta ?? {}) as Record<string, unknown>; const ui = (m.ui ?? {}) as Record<string, unknown>
+    ok(`T-2c. ${n} app 可调用 ≠ 必须有 resourceUri(callable=true, renders=false)`, Array.isArray(ui.visibility) && (ui.visibility as string[]).includes('app') && !('resourceUri' in ui) && m['openai/widgetAccessible'] === true)
+  }
 
   // ── [R] 资源双轨(版本化 URI + 裸别名)────────────────────────────────────────────────────
   ok('R-0. 资源共 10 个且 URI 全局唯一', res.length === 10 && new Set(uris).size === 10, uris.join(','))

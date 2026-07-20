@@ -2070,6 +2070,10 @@ No buyer PII / free text — the human sees those on the order page. Submitting 
       },
       required: ['action'],
     },
+    // §IV callable_from_component:审批卡「🔄 查看最新状态」DIRECT_TOOL 直调(结构化 request_id)。visibility 加
+    //   'app'(additive)+ widgetAccessible;本工具【无 resourceUri = 不渲染独立卡片】—— app 可调用 ≠ 必须有 UI 模板
+    //   (renders_component=false, callable_from_component=true)。纯读,无副作用;OAuth 授权/校验不变。
+    _meta: { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true },
   },
   {
     name: 'webaz_buyer_action_request',
@@ -2123,6 +2127,10 @@ Chat moves no funds, changes no order state. Never paste addresses, payment cred
       },
       required: ['action', 'order_id'],
     },
+    // §V callable_from_component:订单卡「联系商家」读会话(list)+ 发消息(send)DIRECT_TOOL 直调。visibility 加
+    //   'app'(additive)+ widgetAccessible;无 resourceUri = 不渲染独立卡片(在当前订单卡内渲染会话区)。send 是生产
+    //   反诈路径 —— 参与者/反诈/block/限频/幂等校验全在服务端不变;widget 只结构化直调,正文由用户在输入框明确输入。
+    _meta: { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true },
   },
   {
     name: 'webaz_wallet_view',

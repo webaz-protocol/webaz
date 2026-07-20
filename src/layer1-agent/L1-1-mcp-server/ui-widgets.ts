@@ -115,9 +115,10 @@ const WIDGET_BOOT_STANDARD_JS = `
   var __br=makeStandardBridge(__onToolResult)
   __br.connect(600).then(function(){
     __facade={
-      // 单渲染源(Codex R1-2):规范要求宿主对【一切】完成的工具执行统一发 ui/notifications/tool-result
-      // (含 view 发起的),渲染只走通知路径 —— response 不重复渲染,消除双渲染/乱序覆盖。
-      callTool:function(n,a){ __br.callTool(n,a).catch(function(){}) },
+      // 单渲染源(Codex R1-2):CARD 工具的结果经 ui/notifications/tool-result 渲染 —— 调用方【不消费】本返回值,
+      //   response 不重复渲染,消除双渲染/乱序覆盖。§IV/§V:card-LESS 工具(approval_requests/order_chat)无 tool-result
+      //   通知,故返回底层 promise 供当前卡片【就地消费】结果(同 legacy window.openai.callTool 语义);guard .catch 防未处理拒绝。
+      callTool:function(n,a){ var p=__br.callTool(n,a); try{ p.catch(function(){}) }catch(e){} return p },
       openExternal:function(o){ var u=o&&o.href; var h=(typeof safeWebazHref==='function')?safeWebazHref(u):null; if(h) __br.openLink(h).catch(function(){}) },
       sendFollowUpMessage:function(o){ __br.sendMessage((o&&o.prompt)||'').catch(function(){}) },
     }
@@ -483,12 +484,39 @@ function renderBody(oai, out){
       actHint(href, opened, (opened?'已尝试打开审批页;若没弹出':'此宿主未能打开')+',复制到浏览器用 Passkey 批准:')
     }))
     box.appendChild(openBtn)
-    // B7:批准在 webaz.xyz 用 Passkey 完成(卡外),本卡是提交时快照、不会自动刷新 → 一键刷新最新状态(已接单/已付款);
-    //   宿主回调不生效时降级为可复制指令(fail-visible),让"点按钮"在任何宿主都能推进。
+    // §IV DIRECT_TOOL:「🔄 查看最新状态」结构化直调 webaz_approval_requests(action=get, request_id),就地消费结果更新状态;
+    //   不发自然语言、不需模型选工具。executed 且有 order_id → 结构化「查看订单」DIRECT_TOOL(callTool buyer_orders)。
+    //   宿主不支持组件直调 → fail-visible + fallback_reason=HOST_COMPONENT_TOOL_CALL_UNAVAILABLE(不静默)。
+    var statusLine=el('div','meta','状态:待批准(点「🔄 查看最新状态」刷新)'); box.appendChild(statusLine)
+    var orderSlot=el('div'); box.appendChild(orderSlot)
+    function applyApprovalStatus(r){
+      var d=(r&&r.structuredContent)?r.structuredContent:r; if(!d){ statusLine.textContent='状态:未获取到,请重试'; return }
+      var st=d.status||(d.request&&d.request.status)||''
+      var oid=d.executed_order_id||(d.request&&d.request.executed_order_id)||''
+      statusLine.textContent='状态:'+String(st||'未知'); orderSlot.textContent=''
+      if(String(st)==='executed'&&oid&&typeof oai.callTool==='function'){
+        var vo=el('button','btn','查看订单 '+String(oid).slice(0,10)+'…')
+        vo.addEventListener('click',onceGuard(function(){ try{ oai.callTool('webaz_buyer_orders',{order_id:oid,full:true}) }catch(e){} }))
+        orderSlot.appendChild(vo)
+      }
+    }
     var refBtn=el('button','btn','🔄 查看最新状态')
-    refBtn.addEventListener('click',onceGuard(function(){ refBtn.disabled=true; var sent=false; try{ sent=sendFollowUpCompat(oai,'请用 webaz_approval_requests(action=get, request_id='+String(out.request_id||'')+')查这笔审批最新状态;若已 executed 再给我该订单最新状态') }catch(e){} reenable(refBtn); actHint('查这笔审批/订单的最新状态(request_id='+String(out.request_id||'')+')', sent) }))
+    refBtn.addEventListener('click',onceGuard(function(){
+      refBtn.disabled=true; reenable(refBtn); var rid=String(out.request_id||'')
+      if(typeof oai.callTool==='function'){
+        statusLine.textContent='状态:查询中…'
+        try{ var p=oai.callTool('webaz_approval_requests',{action:'get',request_id:rid})
+          if(p&&typeof p.then==='function'){ p.then(function(r){ applyApprovalStatus(r) },function(){ statusLine.textContent='状态:查询失败,请重试' }) }
+          else { statusLine.textContent='状态:已请求(等待宿主回传)' }
+        }catch(e){ statusLine.textContent='状态:查询失败,请重试' }
+        return
+      }
+      try{ console.warn('[webaz-widget] view_status fallback_reason=HOST_COMPONENT_TOOL_CALL_UNAVAILABLE') }catch(e){}
+      var sent=false; try{ sent=sendFollowUpCompat(oai,'请用 webaz_approval_requests(action=get, request_id='+rid+')查这笔审批最新状态') }catch(e){}
+      actHint('查这笔审批/订单的最新状态(request_id='+rid+')', sent)
+    }))
     box.appendChild(refBtn)
-    box.appendChild(el('div','meta','此卡为提交时快照;批准在 webaz.xyz 完成后,点「🔄 查看最新状态」刷新 —— 本卡不会自动更新'))
+    box.appendChild(el('div','meta','此卡为提交时快照;批准在 webaz.xyz 完成后,点「🔄 查看最新状态」直调查询 —— 本卡不会自动更新'))
     box.appendChild(el('div','meta ok','批准成功后:唯一正式订单号可经 webaz_approval_requests 查询(executed_order_id)'))
     disclosures(box,out.disclosures)
   } else {
@@ -516,9 +544,13 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:var(--ink);bac
 .warn{background:var(--warnbox-bg);border:1px solid var(--warnbox-line);border-radius:10px;padding:8px 10px;font-size:11px;color:var(--warnbox-ink);margin-top:8px}
 .rowbtn{display:flex;gap:6px;margin-top:10px}
 .rowbtn button{flex:1;border:1px solid var(--accent-line);background:var(--accent-bg);border-radius:10px;padding:6px;font-size:12px;font-weight:600;cursor:pointer;color:var(--accent-ink)}
-.meta{font-size:11px;color:var(--sub)}`
+.meta{font-size:11px;color:var(--sub)}
+.chatpanel{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+.chatmsgs{max-height:160px;overflow-y:auto;font-size:12px;color:var(--row-ink)}
+.chatinput{width:100%;box-sizing:border-box;margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:6px;font-size:12px;background:var(--bg);color:var(--ink)}
+.chatpanel .btn{display:block;width:100%;margin-top:8px;border:1px solid var(--accent-line);background:var(--accent-bg);border-radius:10px;padding:6px;font-size:12px;font-weight:600;cursor:pointer;color:var(--accent-ink)}`
 
-const ORDER_TIMELINE_BODY_JS = `
+export const ORDER_TIMELINE_BODY_JS = `
 function renderBody(oai, out){
   oai = oai || {}
   var root = document.getElementById('root')
@@ -582,10 +614,48 @@ function renderBody(oai, out){
     rf.addEventListener('click',onceGuard(function(){ oai.callTool('webaz_buyer_orders',{order_id:out.order_id,full:true}) }))   // 增量语义在服务端 updated_since;此处全读保证动作面新鲜
     btns.appendChild(rf)
   }
-  if(out.order_id&&canFollowUp(oai)){
-    var chat=el('button',null,'联系商家')
-    chat.addEventListener('click',onceGuard(function(){ sendFollowUpCompat(oai,'请用 webaz_order_chat 读取订单 '+out.order_id+' 的对话') },2000))
-    btns.appendChild(chat)
+  if(out.order_id){
+    // §V DIRECT_TOOL:「联系商家」= 读会话(order_chat list)+ 发消息(order_chat send)结构化直调,零自然语言、零模型选工具。
+    //   会话就地渲染;发送正文由用户在输入框明确输入,明确标注「发给订单对方」;single-flight + 稳定幂等键;无 alert/confirm。
+    //   宿主不支持组件直调 → fail-visible + fallback_reason,不把正文自动发给模型。参与者/反诈/block/限频/幂等校验全在服务端不变。
+    function shash(s){ var h=5381; for(var i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))>>>0 } return h.toString(36) }
+    var chatBtn=el('button',null,'联系商家')
+    var chatPanel=el('div','chatpanel'); chatPanel.style.display='none'
+    var chatMsgs=el('div','chatmsgs'); chatPanel.appendChild(chatMsgs)
+    function renderChat(r){
+      var d=(r&&r.structuredContent)?r.structuredContent:r; chatMsgs.textContent=''
+      var msgs=(d&&(d.messages||d.conversation||d.items))||[]
+      if(!msgs.length){ chatMsgs.appendChild(el('div','meta','暂无消息')); return }
+      msgs.forEach(function(m){ var who=(m.sender||m.from||''); chatMsgs.appendChild(el('div','meta',(who?who+': ':'')+String(m.body||m.text||''))) })
+    }
+    function loadChat(){
+      if(typeof oai.callTool!=='function') return false
+      chatMsgs.textContent='读取中…'
+      try{ var p=oai.callTool('webaz_order_chat',{action:'list',order_id:out.order_id}); if(p&&typeof p.then==='function'){ p.then(renderChat,function(){ chatMsgs.textContent='读取失败,请重试' }) } else { chatMsgs.textContent='已请求(等待宿主回传)' } }catch(e){ chatMsgs.textContent='读取失败' }
+      return true
+    }
+    var inp=document.createElement('textarea'); inp.className='chatinput'; inp.setAttribute('rows','2'); inp.setAttribute('maxlength','2000'); inp.setAttribute('placeholder','给订单对方的消息(将发送给对方)')
+    var sendBtn=el('button','btn','发送给订单对方'); var sending=false
+    sendBtn.addEventListener('click',function(){
+      if(sending) return
+      var body=String(inp.value||'').trim()
+      if(!body){ chatMsgs.appendChild(el('div','meta','请输入消息内容')); return }
+      if(body.length>2000){ chatMsgs.appendChild(el('div','meta','消息过长(≤2000)')); return }
+      if(typeof oai.callTool!=='function'){ try{ console.warn('[webaz-widget] chat_send fallback_reason=HOST_COMPONENT_TOOL_CALL_UNAVAILABLE') }catch(e){} chatMsgs.appendChild(el('div','meta','此宿主不支持组件发送;请在 webaz.xyz 订单页联系商家')); return }
+      sending=true; sendBtn.disabled=true
+      var idem='wgt_'+shash(String(out.order_id)+'|'+body)   // 稳定幂等键:同内容重试复用(服务端幂等兜底);改内容=新键
+      try{ var p=oai.callTool('webaz_order_chat',{action:'send',order_id:out.order_id,body:body,idempotency_key:idem})
+        if(p&&typeof p.then==='function'){ p.then(function(){ inp.value=''; sending=false; sendBtn.disabled=false; loadChat() },function(){ sending=false; sendBtn.disabled=false; chatMsgs.appendChild(el('div','meta','发送失败,请重试(同内容重试不会重复发送)')) }) }
+        else { sending=false; sendBtn.disabled=false; chatMsgs.appendChild(el('div','meta','已请求发送(等待宿主回传);同内容重试不会重复发送')) }
+      }catch(e){ sending=false; sendBtn.disabled=false }
+    })
+    chatPanel.appendChild(inp); chatPanel.appendChild(sendBtn)
+    chatPanel.appendChild(el('div','meta','消息将发送给订单对方 · 请勿在消息中填写地址/支付凭据/验证码/密钥'))
+    chatBtn.addEventListener('click',onceGuard(function(){
+      if(chatPanel.style.display==='none'){ chatPanel.style.display='block'; if(!loadChat()){ try{ console.warn('[webaz-widget] chat_list fallback_reason=HOST_COMPONENT_TOOL_CALL_UNAVAILABLE') }catch(e){} chatMsgs.textContent=''; chatMsgs.appendChild(el('div','meta','此宿主不支持组件读取;请在 webaz.xyz 订单页查看会话')) } }
+      else { chatPanel.style.display='none' }
+    },1500))
+    btns.appendChild(chatBtn); box.appendChild(chatPanel)
   }
   var open=el('button',null,'订单页(webaz.xyz)')
   open.addEventListener('click',onceGuard(function(){ openWebaz(oai,'https://webaz.xyz/#order/'+encodeURIComponent(String(out.order_id||''))) }))

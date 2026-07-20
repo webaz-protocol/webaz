@@ -143,8 +143,10 @@ try {
   const SINK_TOKENS = /\b(innerHTML|outerHTML|insertAdjacentHTML|write|writeln|eval|Function)\b/
   ok('W-1. 组件自包含 + 零请求词元 + 零 sink + 零 WAZ + 双形态', html.includes('toolOutput') && !REQUEST_TOKENS.test(html) && !SINK_TOKENS.test(html)
     && !html.includes(' WAZ') && html.includes('order_timeline.model.v1') && html.includes('order_status.model.v1'))
-  ok('10. 联系商家 = 会话流 + 订单号内插进提示词(webaz_order_chat 绑定;无自由私信面)',
-    html.includes("读取订单 '+out.order_id+' 的对话") && html.includes('webaz_order_chat') && html.includes('sendFollowupTurn'))
+  ok('10. 联系商家 = DIRECT_TOOL 会话 read(list)+ send(结构化直调 webaz_order_chat;组件内会话区;无自由私信;旧 NL 提示已移除)',
+    html.includes("callTool('webaz_order_chat',{action:'list'") && html.includes("action:'send'")
+    && html.includes('发送给订单对方') && html.includes('idempotency_key:idem')
+    && !html.includes("读取订单 '+out.order_id+' 的对话"))
   ok('13. 组件端本地时区渲染(toLocaleString)+ 刷新走 callTool', html.includes('toLocaleString') && html.includes("callTool('webaz_buyer_orders'"))
   // PR-A 起 openExternal 唯一调用点在 openWebaz 内部,且入参必须先过 safeWebazHref(URL 解析
   // origin === 'https://webaz.xyz' 且无 userinfo);deep link 调用点仍是字面 webaz.xyz 前缀构造。
