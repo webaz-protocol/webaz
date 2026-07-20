@@ -435,7 +435,7 @@ export function projectOrderTimelineConsumer(r: Record<string, unknown>, fx: FxV
     timeline: (Array.isArray(r.timeline) ? r.timeline as Array<Record<string, unknown>> : []).map(t => ({
       from: t.from ?? null, to_status: statusView(t.to), actor: t.actor_role ?? null, at: toIsoUtc(t.at),
     })),
-    logistics: { dest_region: logi.dest_region ?? null, tracking: logi.tracking ?? null, shipping_est_days: logi.shipping_est_days ?? null },
+    logistics: { dest_region: logi.dest_region ?? null, tracking: logi.tracking ?? null, shipping_est_days: logi.shipping_est_days ?? null, promised_eta: logi.promised_eta ?? null },   // BUG-02:promised(下单承诺)+ shipping_est_days(logistics)分列
     // 无退货时字段缺席(非 null):buyer_orders 豁免 stripEmpty,null 会被 schema 校验型宿主拒收
     ...(returns.length ? { refund: {
       requests: returns.map(x => ({ status: x.status, amount: { display: fmtUsdcMinor(Number(x.refund_amount) ? Math.round(Number(x.refund_amount) * 1_000_000) : null) }, created_at: toIsoUtc(x.created_at), resolved_at: toIsoUtc(x.resolved_at) })),

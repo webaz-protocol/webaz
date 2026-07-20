@@ -13,6 +13,7 @@
 import type Database from 'better-sqlite3'
 import { createHash } from 'node:crypto'
 import { verifyQuoteToken } from './buyer-quote.js'
+import { parsePromisedEta } from '../delivery-eta.js'   // BUG-02:草稿视图透出继承的配送估计
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
 
@@ -35,9 +36,11 @@ export function draftView(db: Database.Database, row: Record<string, unknown>): 
   // 过期语义(本 PR 惰性派生,不写库):status=draft 且过了 expires_at → 视图/生命周期一律按 expired 对待;
   //   PR-5a 的提交器将硬拒过期草稿。派生而非 UPDATE = 读路径零写,与"草稿不可变"一致。
   const effectiveStatus = String(row.status) === 'draft' && String(row.expires_at) <= new Date().toISOString() ? 'expired' : String(row.status)
+  const promised = parsePromisedEta(typeof row.promised_eta_snapshot === 'string' ? row.promised_eta_snapshot : null)   // BUG-02:继承的配送估计(旧草稿=null)
   return {
     draft_id: String(row.id),
     status: effectiveStatus,
+    ...(promised ? { promised_eta: promised } : {}),
     acting_as: buyer?.handle ? `@${buyer.handle}` : null,
     account_id_hint: maskId(String(row.buyer_id)),
     quote_id: String(row.quote_id),
@@ -107,11 +110,12 @@ export function createOrderDraft(db: Database.Database, deps: DraftDeps, humanId
       if (cas.changes !== 1) return false   // 并发消费/刚过期 → 让上层给准确错误
       db.prepare(`INSERT INTO order_drafts (id, buyer_id, quote_id, product_id, variant_id, seller_id, quantity, unit_price_units,
           item_units, shipping_units, donation_bps, donation_units, total_units, payable_units, currency, payment_rail,
-          direct_receive_account_id, dest_region, address_summary_hash, anonymous_recipient, status, idempotency_key, expires_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'draft', ?, ?)`)
+          direct_receive_account_id, dest_region, address_summary_hash, anonymous_recipient, status, idempotency_key, expires_at, promised_eta_snapshot)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'draft', ?, ?, ?)`)
         .run(draftId, humanId, String(q.id), String(q.product_id), q.variant_id ?? null, String(q.seller_id), Number(q.quantity), Number(q.unit_price_units),
           Number(q.item_units), Number(q.shipping_units), Number(q.donation_bps), Number(q.donation_units), Number(q.total_units), Number(q.payable_units), String(q.currency ?? 'WAZ'), String(q.payment_rail),
-          q.direct_receive_account_id ?? null, q.dest_region ?? null, q.address_summary_hash ?? null, Number(q.anonymous_recipient), idemKey, expiresAt)
+          q.direct_receive_account_id ?? null, q.dest_region ?? null, q.address_summary_hash ?? null, Number(q.anonymous_recipient), idemKey, expiresAt,
+          q.promised_eta_snapshot ?? null)   // BUG-02:草稿继承 quote 冻结的配送估计,不重读 listing
       return true
     }).immediate()
     if (!made) return derr(409, 'QUOTE_ALREADY_CONSUMED', 'this quote was consumed or expired concurrently — request a fresh quote', { next_steps: ['webaz_quote_order'] })

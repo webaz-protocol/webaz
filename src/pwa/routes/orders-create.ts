@@ -334,8 +334,8 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
           l1_uid, l2_uid, l3_uid, snapshot_commission_rate, buyer_region, content_hash_at_order,
           delivery_window, variant_id, variant_options_snapshot,
           gift_recipient_name, gift_recipient_phone, gift_message, insurance_premium,
-          anonymous_recipient, recipient_code, donation_amount, stake_backing, ship_to_region, shipping_fee, shipping_est_days, draft_id
-        ) VALUES (?,?,?,?,?,?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+          anonymous_recipient, recipient_code, donation_amount, stake_backing, ship_to_region, shipping_fee, shipping_est_days, draft_id, promised_eta_snapshot
+        ) VALUES (?,?,?,?,?,?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
           orderId, product.id, user.id, product.seller_uid, reqQty, basePrice, totalAmount, totalAmount,
           shippingAddress, notes || null,
           addHours(now, 24), addHours(now, 48), addHours(now, 120),
@@ -345,7 +345,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
           variant ? variant.id : null,
           variant ? variant.options_json : null,
           giftRecipientName, giftRecipientPhone, giftMessage, insurancePremium,
-          anonymousFlag, recipientCode, donationAmount, stakeBacking, _ship.region, _ship.feeU > 0 || _ship.region ? shippingFee : null, _ship.estDays, _dl.kind === 'link' ? _dl.draftId : null,
+          anonymousFlag, recipientCode, donationAmount, stakeBacking, _ship.region, _ship.feeU > 0 || _ship.region ? shippingFee : null, _ship.estDays, _dl.kind === 'link' ? _dl.draftId : null, _dl.kind === 'link' && _dl.draftId ? ((db.prepare('SELECT promised_eta_snapshot FROM order_drafts WHERE id=?').get(_dl.draftId) as { promised_eta_snapshot: string | null } | undefined)?.promised_eta_snapshot ?? null) : null,   // BUG-02:草稿→订单继承冻结 ETA(直下单/无草稿=NULL,不回填 listing)
         ); writeTradeTermsSnapshot(db, orderId, buildTradeTermsSnapshot(db, { productId: String(product.id), sellerId: String(product.seller_uid), shipping: { source: _ship.region ? 'template' : 'none', region: _ship.region ?? null, fee: _ship.region ? shippingFee : null, estDays: _ship.estDays ?? null, freeThresholdApplied: _ship.freeThresholdApplied }, acceptModeEffective: _acceptModeAuto ? 'auto' : null }))   // S0 条款快照:冻结下单时效/退货/清关/税责声明(fail-soft,非计价输入)
         // 协议层：写 genesis 事件 — order 创建（必然是 buyer 自己）
         try {

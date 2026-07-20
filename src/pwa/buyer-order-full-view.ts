@@ -15,6 +15,7 @@
 import type Database from 'better-sqlite3'
 import { minimalBuyerOrderView, BUYER_MINIMAL_ORDER_COLUMNS } from './agent-order-minimal-view.js'
 import { readTradeTermsSnapshot } from '../trade-terms.js'
+import { parsePromisedEta, legacyMissingEta } from '../delivery-eta.js'   // BUG-02:订单读透出冻结的配送估计
 import { getMutualCancelState } from '../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'
 import { effectiveReturnDays } from '../trade-terms.js'
 
@@ -102,7 +103,7 @@ function availableActions(db: Database.Database, o: Record<string, unknown>, hum
 export function buildBuyerOrderFull(db: Database.Database, humanId: string, orderId: unknown, updatedSince?: unknown):
   { ok: true; response: Record<string, unknown> } | { ok: false; status: number; body: Record<string, unknown> } {
   if (typeof orderId !== 'string' || !orderId) return { ok: false, status: 400, body: { error_code: 'ORDER_NOT_FOUND', reason: 'order_id is required', retryable: true } }
-  const cols = [...BUYER_MINIMAL_ORDER_COLUMNS, 'created_at', 'updated_at', 'quantity', 'ship_to_region', 'shipping_fee', 'shipping_est_days', 'trade_terms_snapshot', 'direct_pay_window_deadline'].join(', ')
+  const cols = [...BUYER_MINIMAL_ORDER_COLUMNS, 'created_at', 'updated_at', 'quantity', 'ship_to_region', 'shipping_fee', 'shipping_est_days', 'promised_eta_snapshot', 'trade_terms_snapshot', 'direct_pay_window_deadline'].join(', ')
   const o = db.prepare(`SELECT ${cols} FROM orders WHERE id = ? AND buyer_id = ?`).get(orderId, humanId) as Record<string, unknown> | undefined
   if (!o) return { ok: false, status: 404, body: { error_code: 'ORDER_NOT_FOUND', reason: 'no such order (or not yours)', retryable: false } }
 
@@ -181,7 +182,8 @@ export function buildBuyerOrderFull(db: Database.Database, humanId: string, orde
     logistics: {
       dest_region: o.ship_to_region == null ? null : String(o.ship_to_region),
       shipping_fee: o.shipping_fee == null ? null : Number(o.shipping_fee),
-      shipping_est_days: o.shipping_est_days == null ? null : String(o.shipping_est_days),
+      shipping_est_days: o.shipping_est_days == null ? null : String(o.shipping_est_days),   // logistics_eta:下单时运费模板估计(非承诺;WebAZ 暂无实时物流回传)
+      promised_eta: parsePromisedEta(typeof o.promised_eta_snapshot === 'string' ? o.promised_eta_snapshot : null) ?? legacyMissingEta(),   // BUG-02:下单时向买家承诺的配送估计(冻结;旧单=legacy_missing → "下单时未记录")
       tracking, tracking_note: tracking ? 'tracking from the Passkey-approved agent ship action' : 'human-entered tracking (if any) is on the order page — never exposed to agents here',
     },
     deadlines: {
