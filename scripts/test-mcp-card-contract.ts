@@ -26,21 +26,36 @@ async function main(): Promise<void> {
   const proj = await import('../src/agent-model-projection.js')
   const { OUTPUT_SCHEMAS } = await import('../src/layer1-agent/L1-1-mcp-server/tool-output-schemas.js')
 
-  // ── Truncation contract (projectProductDetail) ───────────────────────────────────────────
+  // ── Truncation contract (projectProductDetail) — BUG-01 fixed: no silent truncation, full-terms path ──
   const longDesc = '规格说明'.repeat(400)      // ~4800 bytes CJK
   const bigSpecs: Record<string, string> = {}
   for (let i = 0; i < 80; i++) bigSpecs['属性' + i] = '取值内容' + i
-  const longReturn = '退货条件说明'.repeat(80)   // >200 bytes, cut mid-sentence
+  const longReturn = '退货需在七天内完好退回。'.repeat(40)   // >400 bytes, frequent 。 sentence boundaries
+  const longShip = '全国除偏远地区。港澳台另计。'.repeat(30)   // >400 bytes, sentence boundaries
+  const rh = 'res_' + '0'.repeat(32)
   const d = proj.projectProductDetail({
-    id: 'prd_x', title: 't', description: longDesc, specs: bigSpecs, return_condition: longReturn, ship_regions: 'SG',
-  }) as Record<string, unknown>
+    id: 'prd_x', title: 't', description: longDesc, specs: bigSpecs, return_condition: longReturn, ship_regions: longShip, has_variants: 1,
+  }, { resultHandle: rh }) as Record<string, unknown>
 
   ok('T1. description byte-capped to <= DETAIL_DESC_MAX_BYTES (900)', bytes(String(d.description)) <= proj.DETAIL_DESC_MAX_BYTES)
   ok('T2. description_truncated flag set true when capped', d.description_truncated === true)
   ok('T3. oversized specs dropped wholesale (keys vanish) + specs_truncated=true', !('specs' in d) && d.specs_truncated === true)
-  ok('T4. return_condition byte-capped to <= 200', bytes(String(d.return_condition)) <= 200)
-  // FINDING lock: return_condition truncation is SILENT — there is deliberately NO return_condition_truncated flag.
-  ok('T5. [finding] return_condition truncation is SILENT (no return_condition_truncated flag exists)', !('return_condition_truncated' in d))
+  ok('T4. return_condition byte-capped to <= DETAIL_TERMS_MAX_BYTES (400)', bytes(String(d.return_condition)) <= proj.DETAIL_TERMS_MAX_BYTES)
+  ok('T5. [BUG-01 fixed] return_condition truncation is now FLAGGED (return_condition_truncated=true)', d.return_condition_truncated === true)
+  ok('T6. ship_regions truncation also flagged (ship_regions_truncated=true)', d.ship_regions_truncated === true)
+  ok('T7. terms_complete=false when any critical field truncated', d.terms_complete === false)
+  const ft = d.full_terms_fetch as Record<string, Record<string, unknown>> | undefined
+  ok('T8. full-terms fetch reference present + full_terms:true + selected_ids + result_handle threaded',
+    d.full_terms_available === true && !!ft && ft.args.full_terms === true && Array.isArray(ft.args.selected_ids) && (ft.args.selected_ids as string[])[0] === 'prd_x' && ft.args.result_handle === rh)
+  ok('T9. no U+FFFD — multibyte char never broken by truncation', !/�/.test(String(d.description)) && !/�/.test(String(d.return_condition)) && !/�/.test(String(d.ship_regions)))
+  ok('T10. return_condition truncated at a sentence/clause boundary (ends with 。/punct)', /[。！？;；,，.!?\n]$/.test(String(d.return_condition)))
+  // full mode: untruncated, no flags, terms_complete=true, specs retained
+  const dfull = proj.projectProductDetail({ id: 'prd_x', title: 't', description: longDesc, specs: bigSpecs, return_condition: longReturn, ship_regions: longShip }, { full: true }) as Record<string, unknown>
+  ok('T11. full mode: untruncated return_condition + terms_complete=true + no *_truncated', dfull.terms_complete === true && String(dfull.return_condition) === longReturn && !('return_condition_truncated' in dfull) && !('specs_truncated' in dfull))
+  ok('T12. full mode retains full specs (not dropped)', !!dfull.specs && typeof dfull.specs === 'object')
+  // short/empty fields → terms_complete=true, no truncation flags, no fetch ref
+  const dshort = proj.projectProductDetail({ id: 'prd_y', title: 't', description: '短', return_condition: '可退', ship_regions: 'SG' }) as Record<string, unknown>
+  ok('T13. short fields → terms_complete=true, no truncation flags, no full_terms_fetch', dshort.terms_complete === true && !('return_condition_truncated' in dshort) && !('full_terms_fetch' in dshort))
 
   // ── Duplicate mapping + summary-carries-duplicate (projectSubmitConsumer / summarizeSubmitResult) ──
   const dupRaw = { request_id: 'apr_1', draft_id: 'odr_1', approval_url: '/#agent-approvals/apr_1', idempotency: { duplicate: true } }

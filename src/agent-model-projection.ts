@@ -158,6 +158,7 @@ export const SCHEMA_PRODUCT_DETAIL = 'webaz.product_detail.model.v1'
 
 export const DETAIL_SPECS_MAX_BYTES = 800
 export const DETAIL_DESC_MAX_BYTES = 900
+export const DETAIL_TERMS_MAX_BYTES = 400   // BUG-01: return_condition / ship_regions 关键交易条款 —— 截断即带 *_truncated 标志 + 全文入口,绝不静默
 
 /** 按 UTF-8 字节封顶(Codex round-2 M-3:预算承诺以字节计,CJK 一字三字节 —— 字符截断守不住)。 */
 function capBytes(s: string, maxBytes: number): { text: string; truncated: boolean } {
@@ -166,29 +167,86 @@ function capBytes(s: string, maxBytes: number): { text: string; truncated: boole
   return { text: buf.subarray(0, maxBytes).toString('utf8').replace(/�+$/, ''), truncated: true }
 }
 
-export function projectProductDetail(p: Record<string, unknown>): Record<string, unknown> {
+/** 边界感知截断(BUG-01 §II.7/§II.8):在 capBytes 之上尽量收在句子/子句边界,既不破坏多字节字符也不半句硬切。 */
+function capAtBoundary(s: string, maxBytes: number): { text: string; truncated: boolean } {
+  const c = capBytes(s, maxBytes)
+  if (!c.truncated) return c
+  let cut = c.text
+  const BOUND = ['。', '！', '？', '\n', '；', ';', '. ', '! ', '? ', '，', ',']
+  let best = -1
+  for (const b of BOUND) { const i = cut.lastIndexOf(b); if (i >= 0 && i + b.length > best) best = i + b.length }
+  if (best >= Math.floor(cut.length * 0.6)) cut = cut.slice(0, best)   // 只在边界落在后 40% 时收尾,避免过度截短
+  return { text: cut, truncated: true }
+}
+
+export interface ProductDetailOpts { full?: boolean; resultHandle?: string }
+
+/**
+ * BUG-01 — 商品详情投影。两种形态:
+ *   full=true  : 关键交易条款(specs / return_condition / ship_regions / 变体)【完整、零截断】,terms_complete=true。
+ *   summary(默认): 按字节封顶,但每个被截断的关键字段都显式带 *_truncated 标志,并给出可直接重放的【完整读取入口】
+ *                 full_terms_fetch(卡片/模型皆可据此取全)。绝不静默截断关键条款,绝不半句破句。
+ */
+export function projectProductDetail(p: Record<string, unknown>, opts: ProductDetailOpts = {}): Record<string, unknown> {
   const base = projectProductModel(p)
+  const pid = String(p.id ?? (base as { id?: unknown }).id ?? '')
   const desc = typeof p.description === 'string' ? p.description : ''
   let specs: unknown = null
   if (typeof p.specs === 'string' && p.specs) { try { specs = JSON.parse(p.specs) } catch { specs = null } }
   else if (p.specs && typeof p.specs === 'object') specs = p.specs
-  // 卖家可控字段全部按【字节】封顶:超大/深嵌套 specs 整体省略(键都不出现)+ specs_truncated 标记
-  //   (完整规格在 PWA 商品页;后续 UI Projection 层承接)。
+  const rc = p.return_condition == null ? null : String(p.return_condition)
+  const sr = p.ship_regions == null ? null : String(p.ship_regions)
+  const hasVariants = p.has_variants == null ? null : !!Number(p.has_variants)
+  const productType = p.product_type == null ? null : String(p.product_type)
+  const fragile = p.fragile == null ? null : !!p.fragile
+
+  // full 模式:完整关键条款(§II.4/§II.6)—— 卡片「查看完整条款」与下单确认据此拿到无损全文。
+  if (opts.full === true) {
+    return {
+      ...base,
+      description: desc || null,
+      ...(specs != null ? { specs } : {}),
+      return_condition: rc,
+      ship_regions: sr,
+      has_variants: hasVariants,
+      product_type: productType,
+      fragile,
+      terms_complete: true,
+    }
+  }
+
+  // summary 模式:字节封顶 + 显式截断标志 + 全文入口。
   let specsTruncated = false
   if (specs != null) {
     try { if (Buffer.byteLength(JSON.stringify(specs), 'utf8') > DETAIL_SPECS_MAX_BYTES) { specs = null; specsTruncated = true } } catch { specs = null; specsTruncated = true }
   }
   const descCap = desc ? capBytes(desc, DETAIL_DESC_MAX_BYTES) : { text: '', truncated: false }
-  return {
+  const rcCap = rc == null ? { text: null as string | null, truncated: false } : capAtBoundary(rc, DETAIL_TERMS_MAX_BYTES)
+  const srCap = sr == null ? { text: null as string | null, truncated: false } : capAtBoundary(sr, DETAIL_TERMS_MAX_BYTES)
+  const anyTrunc = descCap.truncated || specsTruncated || rcCap.truncated || srCap.truncated
+  const out: Record<string, unknown> = {
     ...base,
     description: descCap.text || null,
     description_truncated: descCap.truncated,
     ...(specs != null ? { specs } : {}),
     ...(specsTruncated ? { specs_truncated: true } : {}),
-    ship_regions: p.ship_regions == null ? null : capBytes(String(p.ship_regions), 200).text,
-    return_condition: p.return_condition == null ? null : capBytes(String(p.return_condition), 200).text,
-    fragile: p.fragile == null ? null : !!p.fragile,
+    ship_regions: srCap.text,
+    ...(srCap.truncated ? { ship_regions_truncated: true } : {}),
+    return_condition: rcCap.text,
+    ...(rcCap.truncated ? { return_condition_truncated: true } : {}),
+    has_variants: hasVariants,
+    product_type: productType,
+    fragile,
+    terms_complete: !anyTrunc,
   }
+  if (anyTrunc) {
+    // §II.2/§II.3:任一关键字段被截断 → 声明「全文存在」+ 可直接重放的取全动作(卡片 onceGuard 调 webaz_search 即得完整条款)。
+    out.full_terms_available = true
+    out.full_terms_fetch = pid
+      ? { tool: 'webaz_search', description: 'fetch complete, untruncated terms for this product', args: { result_handle: opts.resultHandle ?? null, selected_ids: [pid], full_terms: true } }
+      : { note: 'call webaz_search with the originating result_handle + selected_ids=[this id] + full_terms:true' }
+  }
+  return out
 }
 
 // ─── MCP UI PR-5 — QuoteAndApproval 消费者投影(WAZ is never a consumer-facing currency)────────

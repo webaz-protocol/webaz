@@ -199,9 +199,18 @@ function renderBody(oai, out){
       c.appendChild(el('b',null,p.title||p.id))
       c.appendChild(el('div','price',(p.price&&p.price.display)||''))
       var m=el('div','more'); m.style.display='block'
-      m.appendChild(el('div',null,p.description||'')); if(p.description_truncated) m.appendChild(el('div','meta','…(截断,完整描述见商品页)'))
+      m.appendChild(el('div',null,p.description||'')); if(p.description_truncated) m.appendChild(el('div','meta','…(描述截断)'))
       if(p.specs){ try{ Object.keys(p.specs).forEach(function(k){ m.appendChild(el('div','meta',k+': '+p.specs[k])) }) }catch(e){} }
-      m.appendChild(el('div','meta','退货 '+(p.return_days!=null?p.return_days+'天':'—')+' · 保修 '+(p.warranty_days!=null?p.warranty_days+'天':'—')+' · 发货 '+(p.handling_hours!=null?p.handling_hours+'h':'—')))
+      if(p.specs_truncated) m.appendChild(el('div','meta','规格较多,已省略 —— 点「查看完整条款」获取完整规格'))
+      if(p.return_condition) m.appendChild(el('div','meta','退货条件: '+p.return_condition+(p.return_condition_truncated?' …(截断)':'')))
+      if(p.ship_regions) m.appendChild(el('div','meta','配送区域: '+p.ship_regions+(p.ship_regions_truncated?' …(截断)':'')))
+      m.appendChild(el('div','meta','退货 '+(p.return_days!=null?p.return_days+'天':'—')+' · 保修 '+(p.warranty_days!=null?p.warranty_days+'天':'—')+' · 发货 '+(p.handling_hours!=null?p.handling_hours+'h':'—')+(p.has_variants?' · 有多规格':'')))
+      // BUG-01:关键条款被截断 → 一键取全(webaz_search full_terms=true);宿主不支持一键则给可复制指引,绝不静默丢失条款。
+      if(p.terms_complete===false){
+        if(p.full_terms_fetch&&p.full_terms_fetch.args&&typeof oai.callTool==='function'){
+          var ftb=el('button','mini','查看完整条款'); ftb.addEventListener('click',onceGuard(function(){ try{ oai.callTool('webaz_search',p.full_terms_fetch.args) }catch(e){} })); m.appendChild(ftb)
+        } else { m.appendChild(el('div','meta','完整条款:让我用 webaz_search(full_terms=true)取该商品完整规格/退货/配送条款')) }
+      }
       c.appendChild(m); dg.appendChild(c)
     })
     if(out.unavailable_ids&&out.unavailable_ids.length) dg.appendChild(el('div','meta','已不可购: '+out.unavailable_ids.join(', ')))
