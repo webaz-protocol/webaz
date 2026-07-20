@@ -483,10 +483,13 @@ function renderBody(oai, out){
     row(box,'批准后','创建唯一正式订单(Passkey 必需)');
     box.appendChild(el('div','meta',String(out.on_approval||'资金行为随所披露的支付轨道:托管=建单时钱包→托管;直付=WebAZ 不托管本金')))
     row(box,'状态',(out.status&&typeof out.status==='object')?(stLabel(out.status)||'待批准'):'待批准')   // v2 status 对象用本地化 label;v1 裸字符串('pending')回退到 '待批准'(提交态恒为 pending),不显英文 code
-    if(out.duplicate_warning){
-      var w=el('div','warn'); w.appendChild(el('b',null,'检测到相似购买请求'))
-      w.appendChild(el('div',null,out.duplicate_warning.note||''))
-      ;(out.duplicate_warning.options||[]).forEach(function(o){ w.appendChild(el('div','meta','· '+o)) })
+    // BUG-08:按 duplicate_reason 显示精确文案(绝不统一"检测到重复");旧卡只有 duplicate_warning 时回退其 note。
+    var dupReason=String(out.duplicate_reason||'')
+    var DUP_TEXT={SAME_DRAFT_REPLAY:'同一草稿重复提交 —— 已复用原审批请求,未创建第二个',SAME_IDEMPOTENCY_KEY:'重试命中相同操作键 —— 返回同一结果,未创建第二个',ACTIVE_INTENT_REUSED:'你已有一个等价的待审批购买 —— 可打开它,或明确「再买一份」创建独立购买',DATABASE_UNIQUE_RACE:'并发提交竞争 —— 已复用先创建的审批,未创建第二个',RESPONSE_LOSS_RECONCILED:'上次响应可能丢失 —— 已恢复原审批请求,未重复创建'}
+    if(out.duplicate||out.duplicate_warning){
+      var w=el('div','warn'); w.appendChild(el('b',null,DUP_TEXT[dupReason]||(out.duplicate_warning&&out.duplicate_warning.note)||'检测到重复购买保护 —— 已复用现有审批'))
+      var dupOf=out.duplicate_of||out.existing_request_id||(out.duplicate_warning&&out.duplicate_warning.existing_request_id)
+      if(dupOf) w.appendChild(el('div','meta','已有请求:'+String(dupOf)))
       box.appendChild(w)
     }
     var openBtn=el('button','btn','打开审批页面(webaz.xyz · Passkey)')
@@ -498,6 +501,22 @@ function renderBody(oai, out){
       actHint(href, opened, (opened?'已尝试打开审批页;若没弹出':'此宿主未能打开')+',复制到浏览器用 Passkey 批准:')
     }))
     box.appendChild(openBtn)
+    // BUG-08 §五/§八:活跃意图复用时给三个明确动作 —— 打开已有审批(上方)/ 取消本次 / 再买一份。
+    //   全部结构化按钮,绝不靠自然语言推断;再买一份 = 显式独立购买(服务端 new_purchase_intent,仍需 Passkey)。
+    var wantSecond=(dupReason==='ACTIVE_INTENT_REUSED')||(Array.isArray(out.available_actions)&&out.available_actions.indexOf('create_second_purchase')>=0)
+    if(wantSecond){
+      var cancelBtn=el('button','toggle','取消本次')
+      cancelBtn.addEventListener('click',onceGuard(function(){ cancelBtn.disabled=true; box.appendChild(el('div','meta ok','已取消本次尝试 —— 原有待审批购买不受影响')) }))
+      box.appendChild(cancelBtn)
+      var againBtn=el('button','btn','再买一份(独立购买)')
+      againBtn.addEventListener('click',onceGuard(function(){
+        againBtn.disabled=true
+        try{ console.log('[webaz-widget] explicit_second_purchase requested (structured action; no NL inference)') }catch(e){}
+        // 独立购买必须走全新报价→草稿→提交(带 new_purchase_intent);组件不静默复用已绑定旧审批的草稿。fail-visible 明确指引。
+        actHint('再买一份(独立购买):重新报价该商品 → 新建草稿 → 提交时选择「独立购买」。系统会作为新的购买意图创建独立订单,仍需 Passkey 批准。', false, '')
+      }))
+      box.appendChild(againBtn)
+    }
     // §IV DIRECT_TOOL:「🔄 查看最新状态」结构化直调 webaz_approval_requests(action=get, request_id),就地消费结果更新状态;
     //   不发自然语言、不需模型选工具。executed 且有 order_id → 结构化「查看订单」DIRECT_TOOL(callTool buyer_orders)。
     //   宿主不支持组件直调 → fail-visible + fallback_reason=HOST_COMPONENT_TOOL_CALL_UNAVAILABLE(不静默)。

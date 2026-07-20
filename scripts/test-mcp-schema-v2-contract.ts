@@ -211,5 +211,14 @@ const draftBase = { draft_id: 'odr1', status: { code: 'draft', label: '草稿', 
 { const s = summ({ ...draftBase, quantity: 4 }); ok('C1. valid draft summary shows ×4 (valid unchanged)', s.includes('×4') && !s.includes('null') && !s.includes('数量数据异常')) }
 { const s = summ({ ...draftBase, quantity: null, quantity_valid: false, quantity_error: 'zero' }); ok('C2. invalid draft summary shows 数量数据异常, NEVER ×null / ×', /数量数据异常/.test(s) && !s.includes('null') && !s.includes('×')) }
 
+// D. BUG-08 — approval card renders precise duplicate_reason text + the three distinct actions
+//   (再买一份 ONLY for ACTIVE_INTENT_REUSED); no generic "检测到重复"; no 再买一份 on a plain replay.
+{ const h = renderWith(QA, { schema_version: 'webaz.order_approval.model.v2', type: 'order_approval', request_id: 'apr_1', status: { code: 'pending', label: '待批准', label_en: 'pending' }, approval_url: '/#a/apr_1', duplicate: true, duplicate_reason: 'ACTIVE_INTENT_REUSED', duplicate_of: 'apr_prev', available_actions: ['open_existing_approval', 'cancel_current_attempt', 'create_second_purchase'], disclosures: [] })
+  ok('D1. ACTIVE_INTENT_REUSED → precise text + 再买一份 + 取消本次 + existing request id', /你已有一个等价的待审批购买/.test(h) && /再买一份/.test(h) && /取消本次/.test(h) && /apr_prev/.test(h)) }
+{ const h = renderWith(QA, { schema_version: 'webaz.order_approval.model.v2', type: 'order_approval', request_id: 'apr_2', status: { code: 'pending', label: '待批准', label_en: 'pending' }, approval_url: '/#a/apr_2', duplicate: true, duplicate_reason: 'SAME_DRAFT_REPLAY', duplicate_of: 'apr_2', available_actions: ['open_existing_approval', 'check_status'], disclosures: [] })
+  ok('D2. SAME_DRAFT_REPLAY → its precise text, NO 再买一份 button', /同一草稿重复提交/.test(h) && !/再买一份/.test(h)) }
+{ const h = renderWith(QA, { schema_version: 'webaz.order_approval.model.v2', type: 'order_approval', request_id: 'apr_3', status: { code: 'pending', label: '待批准', label_en: 'pending' }, approval_url: '/#a/apr_3', disclosures: [] })
+  ok('D3. non-duplicate approval → no duplicate warning + no 再买一份', !/检测到重复|再买一份|重复购买保护/.test(h)) }
+
 if (fail > 0) { console.error(`\n❌ schema-v2-contract FAILED  ✅ ${pass} ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ mcp-schema-v2-contract: v2 unified contract (type/status object/posInt quantity) + v1↔v2 compat + unknown/missing safe-fail + cross-input isolation + promised_eta preserved + UTC + zero-PII\n  ✅ pass ${pass}`)
