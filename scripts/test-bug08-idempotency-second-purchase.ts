@@ -12,6 +12,7 @@ const { initDatabase, generateId } = await import('../src/layer0-foundation/L0-1
 const { applyWebazRuntimeSchema } = await import('../src/runtime/apply-webaz-runtime-schema.js')
 const { createOrderSubmitRequest, orderSubmitIntentHash } = await import('../src/pwa/order-submit-request.js')
 const { projectSubmitConsumer: projSubmit } = await import('../src/agent-model-projection.js')
+const { recordIdempotencyTrace } = await import('../src/pwa/idempotency-trace.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push('✗ ' + n) } }
@@ -93,6 +94,24 @@ ok('9d. non-duplicate projection → normal actions, no duplicate_reason', (proj
 // ── 10. zero-PII on the submit result — no address text / names ──
 // (passkey_required is a legit boolean flag, not a credential — the PII check targets raw address/name/credential VALUES)
 ok('10. submit results carry no raw address text / default_address / access token value', !/\d+\s+\w+\s+(Rd|St|Ave)|default_address|access_token|bearer\s|oat_[A-Za-z0-9]/i.test(JSON.stringify([r1, r5, r6, projReuse])))
+
+// ── 11. zero-PII trace: full key is NEVER stored (only a 16-hex hash); intent stored as a 12-char prefix ──
+const wrote = recordIdempotencyTrace(db, { generateId, idempotencyKey: 'super-secret-key-value', intentHash: 'abcdef0123456789deadbeef', draftId: dA, requestId: R1, duplicate: true, duplicateReason: 'SAME_DRAFT_REPLAY', duplicateOf: R1, operationAttemptId: 'op-1', purchaseIntentInstance: R6instance, resultStatus: 'duplicate', receivedAt: '2026-07-20T00:00:00.000Z', completedAt: '2026-07-20T00:00:00.100Z' })
+ok('11. trace write returns true', wrote === true)
+const trow = db.prepare("SELECT * FROM agent_idempotency_trace WHERE request_id=? ORDER BY id DESC LIMIT 1").get(R1) as Record<string, unknown>
+ok('11a. full idempotency_key NEVER stored — only a 16-hex hash', trow.idempotency_key_hash !== 'super-secret-key-value' && /^[0-9a-f]{16}$/.test(String(trow.idempotency_key_hash)))
+ok('11b. no column contains the raw key', !JSON.stringify(trow).includes('super-secret-key-value'))
+ok('11c. intent stored as a 12-char prefix, not the full hash', trow.intent_hash_prefix === 'abcdef012345' && String(trow.intent_hash_prefix).length === 12)
+ok('11d. machine duplicate_reason + duplicate_of recorded', trow.duplicate === 1 && trow.duplicate_reason === 'SAME_DRAFT_REPLAY' && trow.duplicate_of === R1)
+// PII-column check targets genuine PII names (tool_name / tool_call_id are structural, not PII)
+ok('11e. no PII columns exist in the trace table', (db.prepare("PRAGMA table_info(agent_idempotency_trace)").all() as Array<{ name: string }>).every(c => !/address|phone|passkey|cookie|email|recipient|full_key|chat_body|access_token/i.test(c.name)))
+
+// ── 12. trace is FAIL-OPEN — a broken table must not throw (trade must not be blocked) ──
+const db2 = initDatabase(); db2.exec('DROP TABLE IF EXISTS agent_idempotency_trace')
+let threw = false; let openResult = true
+try { openResult = recordIdempotencyTrace(db2, { generateId, requestId: 'x', resultStatus: 'created' }) } catch { threw = true }
+ok('12. trace write on a missing table returns false and NEVER throws (fail-open)', threw === false && openResult === false)
+db2.close()
 
 db.close()
 if (fail > 0) { console.error(`\n❌ bug08-idempotency FAILED  ✅ ${pass} ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
