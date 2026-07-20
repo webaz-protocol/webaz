@@ -165,6 +165,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/webaz_ci
       WEBAZ_AGENT_GATEWAY_REPLAY_TEST_ALLOW: '1'
+      WEBAZ_AGENT_GATEWAY_LIMITS_TEST_ALLOW: '1'
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -184,6 +185,8 @@ jobs:
           echo "Regenerate with: npm run pg:schema   (then re-run npm run pg:verify locally for parity)."
       - name: Agent Gateway shared replay authority
         run: npm run test:agent-gateway-replay-pg
+      - name: Agent Gateway distributed rate-limit authority
+        run: npm run test:gateway-limits-pg
 
   dco-check:
     name: DCO sign-off check
