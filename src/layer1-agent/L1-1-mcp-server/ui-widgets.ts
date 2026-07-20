@@ -439,6 +439,12 @@ function renderBody(oai, out){
   // BUG-08:客户端 nonce(独立购买实例 / 每步 idempotency_key)—— [A-Za-z0-9_-],≤64;服务端仍再校验格式。
   function nonce(){ return (Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8)) }
   function consume(r){ return (r&&typeof r==='object'&&r.structuredContent)?r.structuredContent:r }
+  // BUG-08 §二:零 PII 追踪标识(组件生成,格式即 nonce();服务端再校验+封顶)。widget_session 每次渲染一个;
+  //   bridge_type 区分标准桥(oai.callTool)/legacy 桥;每个写动作带 trace/interaction/operation_attempt。
+  var __wsid='ws_'+nonce()
+  function bridgeType(){ return (typeof oai.callTool==='function')?'standard':'legacy' }
+  function traceArgs(iid){ return { trace_id:'tr_'+nonce(), interaction_id:iid||('ix_'+nonce()), operation_attempt_id:'op_'+nonce(), widget_session_id:__wsid, bridge_type:bridgeType() } }
+  function withTrace(a,iid){ var t=traceArgs(iid); for(var k in t){ a[k]=t[k] } return a }
 
   if(sv==='webaz.order_quote.model.v1'||sv==='webaz.order_quote.model.v2'){
     box.appendChild(el('div','h','报价 · '+((out.product&&out.product.title)||'')+(qtyBad(out)?' · 数量数据异常':' ×'+qtyDisp(out.quantity))))
@@ -476,7 +482,7 @@ function renderBody(oai, out){
     if(stCode(out.status)==='draft'&&typeof oai.callTool==='function'){
       var b2=el('button','btn','提交 Passkey 审批(不会直接执行)')
       if(qtyBad(out)){ b2.disabled=true; box.appendChild(b2); box.appendChild(el('div','warn','数量数据异常,无法提交审批(quantity_error='+qtyErr(out)+')')) }   // BUG-06: never initiate a submit call on invalid quantity
-      else { b2.addEventListener('click',onceGuard(function(){ b2.disabled=true; var sent=false; try{ oai.callTool('webaz_submit_order_request',{draft_id:out.draft_id}); sent=true }catch(e){} reenable(b2); actHint('提交这个草稿去 Passkey 审批(draft_id='+String(out.draft_id)+')', sent) })); box.appendChild(b2) }
+      else { b2.addEventListener('click',onceGuard(function(){ b2.disabled=true; var sent=false; try{ oai.callTool('webaz_submit_order_request',withTrace({draft_id:out.draft_id})); sent=true }catch(e){} reenable(b2); actHint('提交这个草稿去 Passkey 审批(draft_id='+String(out.draft_id)+')', sent) })); box.appendChild(b2) }
     }
     disclosures(box,out.disclosures)
   } else if(sv==='webaz.order_approval.model.v1'||sv==='webaz.order_approval.model.v2'){
@@ -525,6 +531,7 @@ function renderBody(oai, out){
         againRunning=true; againBtn.disabled=true
         if(stageLine.parentNode!==box) box.appendChild(stageLine)
         var instance='pii_'+nonce()   // §一.3:全链一致
+        var chainIid='ix_'+nonce()    // §二.6:整条新购买链共享一个 interaction_id(可关联原 duplicate 事件)
         try{ console.log('[webaz-widget] explicit_second_purchase start instance='+instance) }catch(e){}
         function fail(stage,msg){ againRunning=false; againBtn.disabled=false
           stageLine.textContent='再买一份失败(步骤:'+stage+'):'+String(msg||'请重试')+' —— 未创建任何订单。可再次点击「再买一份」重试(会用全新实例)。' }
@@ -536,7 +543,7 @@ function renderBody(oai, out){
             return Promise.resolve(oai.callTool('webaz_order_draft',{action:'create',quote_token:q.quote_token,idempotency_key:'d_'+instance})).then(function(dr){
               var d=consume(dr); if(!d||d.error||!d.draft_id){ return fail('建草稿', (d&&(d.error||d.error_code))||'未返回 draft_id') }
               stageLine.textContent='再买一份 · 步骤3/3 提交独立购买(new_purchase_intent)…'
-              return Promise.resolve(oai.callTool('webaz_submit_order_request',{draft_id:d.draft_id,new_purchase_intent:true,purchase_intent_instance:instance,idempotency_key:'s_'+instance})).then(function(sr){
+              return Promise.resolve(oai.callTool('webaz_submit_order_request',withTrace({draft_id:d.draft_id,new_purchase_intent:true,purchase_intent_instance:instance,idempotency_key:'s_'+instance},chainIid))).then(function(sr){
                 var s=consume(sr); if(!s||s.error||!s.request_id){ return fail('提交', (s&&(s.error||s.error_code))||'未返回 request_id') }
                 againRunning=false
                 stageLine.textContent='再买一份成功 —— 已创建独立审批(仍需 Passkey)。原审批入口保留在上方,互不影响。'

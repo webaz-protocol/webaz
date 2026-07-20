@@ -690,15 +690,9 @@ Roles: buyer (browse/order/confirm) | seller (list/accept/ship) | logistics (pic
 
 ⚠️ **STRICT MATCH ONLY** (no fuzzy). query = exact title / external_title / alias ≥6 chars. Short/NL queries return found:0 — **by design**. On 0 results the **recovery** object's next_step points to **webaz_discover** (structured intent) — NOT a catalog browse. Do NOT retry shorter, do NOT scan with a big limit. Unconstrained browse (no query/category/filter) caps at 8, else UNBOUNDED_CATALOG_BROWSE.
 
-USE THIS when:
-- User gives **full product title / SKU / precise description** (strict-match candidate), OR
-- User gives **filters** (category / max_price / min_return_days / max_handling_hours / sort), OR
-- User pastes **external URL / share-text** from Taobao / Tmall / JD / PDD / 1688 / Douyin / Xiaohongshu
-  → URL-paste is a first-class mode of THIS tool, NOT a separate browser-fetch. WebAZ exact-matches against its cross-platform anchor registry.
-
-【External-link paste】LLM-parse into \`external_link\` { platform, external_id?, external_title } (title = verbatim inside 「」); if unparseable use \`paste_text\` (server light-regex). Match: external_id exact → external_title exact → else \`matched_by:'none'\` — tell the user honestly "no exact match" (no fuzzy/keyword/similar guessing).
-
-Returns: structuredContent (webaz.product_search.model.v1) — per-product decision fields + decision_flags + one-line summary, deduped sellers map, next_cursor for paging; content = short text summary.`,
+USE THIS when: full product title/SKU/precise description (strict-match), OR filters (category/max_price/min_return_days/max_handling_hours/sort), OR an external URL/share-text (Taobao/Tmall/JD/PDD/1688/Douyin/Xiaohongshu) — URL-paste is a first-class mode of THIS tool, exact-matched against the cross-platform anchor registry.
+【External-link paste】LLM-parse into \`external_link\` {platform, external_id?, external_title (verbatim inside 「」)}; else \`paste_text\`. Match: external_id → external_title → else matched_by:'none' (honest "no exact match", no fuzzy).
+Returns structuredContent (webaz.product_search.model.v1): decision fields + decision_flags + summary, deduped sellers, next_cursor.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1910,13 +1904,10 @@ No grant → GRANT_REQUIRED (webaz_pair action=start). Missing scope → structu
   },
   {
     name: 'webaz_buyer_orders',
-    description: `Grant-wired MINIMAL buyer order read (RFC-025 PR-1, safe scope buyer_orders_read_minimal). Reads YOUR OWN orders as a buyer via an OAuth/delegation grant, NOT an api_key. Returns a minimal projection only — order_id / status / next_actor / deadline / amount / item_ref / payment_rail — with NO shipping address / recipient / contact / notes and no execution.
-
-- order_id given → that one order; omitted → your buyer order list (most recent first).
-- payment_rail (escrow | direct_p2p) tells you the funds semantics of the order; amounts are read-only facts, this tool moves nothing.
-- Seller-side orders are NOT visible here (use webaz_get_agent_order with a fulfillment grant for those).
-- No grant → GRANT_REQUIRED (connect via OAuth; a compliant client shows a connect prompt). Missing scope → structured PERMISSION_REQUIRED (re-connect so the grant carries the read scope, then retry).
-- To ACT on an order (confirm receipt, dispute, cancel …) direct the human to webaz.xyz — buyer actions are not delegated in this tool.`,
+    description: `Grant-wired buyer order read (safe scope buyer_orders_read_minimal; OAuth grant). Reads YOUR OWN orders — minimal projection only (order_id/status/next_actor/deadline/amount/item_ref/payment_rail), NO address/recipient/contact/notes, no execution.
+- order_id → that order; omitted → your buyer order list (most recent first). payment_rail = funds semantics; amounts are read-only.
+- Seller-side orders not here (use webaz_get_agent_order). No grant → GRANT_REQUIRED; missing scope → PERMISSION_REQUIRED (re-connect).
+- To ACT (confirm/dispute/cancel …) direct the human to webaz.xyz — buyer actions aren't delegated here.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1938,19 +1929,18 @@ No grant → GRANT_REQUIRED (webaz_pair action=start). Missing scope → structu
   },
   {
     name: 'webaz_discover',
-    description: `Buyer discovery over ACTIVE WebAZ listings (RFC-025 PR-2, safe scope buyer_discover; OAuth grant, no api_key). Give a structured intent — category and/or keywords, optional max_price / ship_to_region / quantity — NOT free chat text.
-
-⚠️ MATCHING CONTRACT:
-- category = REGISTRY KEY, equality-matched (not a search word). Keys: resource webaz://guide/categories or GET /api/agent/categories. Unknown key → 400 UNKNOWN_CATEGORY (full table + machine-executable recommended_next_call); unique alias (e.g. "household") auto-corrects (echoed as category_resolved); ambiguous alias → 400 CATEGORY_AMBIGUOUS + options.
-- keywords substring-match listing TITLES. Default keyword_match:"all" = conjunctive (compound required attributes). Synonyms/aliases MUST use "any" — under "all" they zero each other out. Zero results carry per_keyword_hits showing which keyword killed the set.
-- Results are honest DISCOVERY CANDIDATES (discovery_candidate), never exact matches. Exact title/SKU/URL → webaz_search.
-- DISCLOSURE: every VALID query is recorded as a demand signal linked to your account (intent + result count) to inform supply; 400-rejected inputs are not recorded. Product-term shape enforced (<=40 chars; emails/URLs/phone-like runs rejected); passing inputs recorded as-is — NO personal data in category/keywords. Only effect = that disclosed append-only demand-signal write; no order/funds/PII.`,
+    description: `Buyer discovery over ACTIVE WebAZ listings (safe scope buyer_discover; OAuth grant). Structured intent — category and/or keywords, optional max_price/ship_to_region/quantity — NOT free chat text.
+⚠️ MATCHING:
+- category = REGISTRY KEY, equality-matched (webaz://guide/categories). Unknown → 400 UNKNOWN_CATEGORY (+table+recommended_next_call); unique alias auto-corrects (category_resolved); ambiguous → 400 CATEGORY_AMBIGUOUS.
+- keywords substring-match TITLES. Default keyword_match:"all" (conjunctive); synonyms MUST use "any" (under "all" they zero out). Zero results carry per_keyword_hits.
+- Results are DISCOVERY CANDIDATES, never exact. Exact title/SKU/URL → webaz_search.
+- DISCLOSURE: every VALID query is recorded as a demand signal (intent + count) linked to your account; 400s not recorded. Term shape enforced (≤40 chars; emails/URLs/phones rejected); NO personal data. Only effect = that append-only write; no order/funds/PII.`,
     inputSchema: {
       type: 'object',
       properties: {
-        category: { type: 'string', description: 'Registry category KEY (equality-matched; see webaz://guide/categories or GET /api/agent/categories). Unique aliases auto-correct; unknown keys 400 with the table.' },
+        category: { type: 'string', description: 'Registry category KEY (equality-matched; webaz://guide/categories). Unique aliases auto-correct; unknown → 400 + table.' },
         keywords: { type: 'array', items: { type: 'string' }, description: 'Up to 5 short keywords, substring-matched against listing TITLES (at least one of category/keywords required)' },
-        keyword_match: { type: 'string', enum: ['any', 'all'], description: "Default 'all' (conjunctive — compound required attributes). Use 'any' for synonym/alias expansion; synonyms under 'all' zero each other out." },
+        keyword_match: { type: 'string', enum: ['any', 'all'], description: "Default 'all' (conjunctive); use 'any' for synonyms/aliases (under 'all' they zero out)." },
         max_price: { type: 'number', description: 'Budget ceiling in USDC (optional)' },
         ship_to_region: { type: 'string', description: 'ISO 3166-1 alpha-2 destination country (optional; filters out listings that cannot sell there)' },
         quantity: { type: 'integer', description: 'Desired quantity (default 1; filters by stock)' },
@@ -1959,10 +1949,10 @@ No grant → GRANT_REQUIRED (webaz_pair action=start). Missing scope → structu
   },
   {
     name: 'webaz_quote_order',
-    description: `Server-authoritative buyer QUOTE (safe scope price_quote; OAuth grant). Integer line items + a time-limited quote_token bound to your account. QUOTE ONLY: creates no order, pays nothing, locks no funds, reserves no stock (stock_reserved always false; availability re-checked at real order creation), and cannot be approved into anything by itself.
-Uses your SAVED default address server-side; the full address is never returned. No default → DEFAULT_ADDRESS_REQUIRED with a safe PWA next step (never paste an address into chat).
-Amounts are INTEGER base-units (WAZ, exponent 6) — never sum lines yourself, total/payable_total are server-asserted. payment_rail: escrow (WebAZ custodies at order time) | direct_p2p (you pay the seller DIRECTLY; WebAZ holds no funds, no authoritative FX). Ineligible rails FAIL structurally — never auto-switched.
-quote_token: 10-min, single-use, bound to you+product+quantity+address+rail+amounts (tampering/other accounts/expiry all fail). Next: webaz_order_draft(quote_token) → webaz_submit_order_request → human Passkey approval creates the real order.`,
+    description: `Server-authoritative buyer QUOTE (safe scope price_quote; OAuth grant). Integer line items + a single-use time-limited quote_token bound to your account. QUOTE ONLY: no order, no payment, no funds locked, no stock reserved (availability re-checked at real order creation).
+Uses your SAVED default address server-side (never returned); no default → DEFAULT_ADDRESS_REQUIRED (never paste an address into chat).
+Amounts are INTEGER base-units (exp 6) — never sum lines yourself. payment_rail: escrow (WebAZ custodies) | direct_p2p (you pay the seller directly; WebAZ holds no funds). Ineligible rails FAIL — never auto-switched.
+quote_token: 10-min single-use, bound to you+product+quantity+address+rail+amounts. Next: webaz_order_draft → webaz_submit_order_request → Passkey approval creates the real order.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1992,10 +1982,8 @@ quote_token: 10-min, single-use, bound to you+product+quantity+address+rail+amou
   },
   {
     name: 'webaz_order_draft',
-    description: `Buyer ORDER DRAFT (safe scope draft_order; OAuth grant). Converts ONE valid quote_token into a frozen immutable snapshot — one quote, one draft (single-use, atomic).
-A draft is a SNAPSHOT ONLY: no order, nothing charged, no funds locked, no stock held. Everything re-validates at human approval; drift hard-fails back to a fresh quote — terms are NEVER silently changed.
-action = create (quote_token, optional idempotency_key) | cancel (draft_id; terminal) | get (draft_id) | list. Drafts expire in 24h (derived status, no hidden writes; the submitter hard-rejects expired). Zero PII: destination stays a region tag + summary; amounts copied verbatim from the quote.
-Next: webaz_submit_order_request(draft_id) → the human's Passkey approval re-validates and creates the REAL order server-side. The agent never executes.`,
+    description: `Buyer ORDER DRAFT (safe scope draft_order; OAuth grant). Converts ONE quote_token into a frozen immutable snapshot (one quote → one draft, single-use, atomic). SNAPSHOT ONLY: no order/charge/funds/stock. Re-validates at approval; drift hard-fails to a fresh quote.
+action = create (quote_token, optional idempotency_key) | cancel (draft_id) | get (draft_id) | list. 24h expiry (submitter rejects expired). Zero PII: region tag + summary only. Next: webaz_submit_order_request → Passkey approval creates the REAL order server-side (the agent never executes).`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -2018,21 +2006,23 @@ Next: webaz_submit_order_request(draft_id) → the human's Passkey approval re-v
   },
   {
     name: 'webaz_submit_order_request',
-    description: `SUBMIT a buyer order draft into the human's Passkey approval queue (RFC-025 PR-5a, safe scope order_submit_request; OAuth grant, no api_key). SUBMIT-ONLY — this tool executes NOTHING.
-
-- Takes a draft_id (from webaz_order_draft). Returns request_id + approval_url — tell the human to open it and approve with their Passkey.
-- What approval does (server-side, never reachable by agents): re-validates the draft against CURRENT price/stock/region/rail state — ANY drift hard-fails back to a fresh quote (terms are never silently changed) — then creates the REAL order through the same production order path. For escrow that debits the buyer's wallet into escrow at creation; for direct_p2p no protocol funds move (you pay the seller directly).
-- The Passkey is bound to the draft's exact economic snapshot (params_hash): what the human approves is byte-for-byte what executes.
-- One pending submit per draft (DUPLICATE_SUBMIT_REQUEST otherwise); expired/cancelled drafts are rejected; decline is always available to the human in the PWA.`,
+    description: `SUBMIT a draft into the human's Passkey approval queue (safe scope order_submit_request; OAuth grant). SUBMIT-ONLY — executes NOTHING.
+- draft_id (from webaz_order_draft) → request_id + approval_url; the human opens it and approves with their Passkey.
+- Approval (server-side, unreachable by agents) re-validates price/stock/region/rail — any drift hard-fails to a fresh quote (terms never silently changed) — then creates the REAL order (escrow: wallet→escrow at creation; direct_p2p: no protocol funds move). Passkey binds the exact economic snapshot (params_hash) = byte-for-byte what executes.
+- Idempotent: a retry/duplicate returns the SAME request (duplicate_reason, no 2nd order); the explicit 再买一份 action (new_purchase_intent) creates an independent purchase. Expired/cancelled drafts rejected.`,
     inputSchema: {
       type: 'object',
       properties: {
         draft_id: { type: 'string', description: 'The odr_ draft id to submit for approval' },
         // BUG-08 三层幂等身份(全部可选;组件按钮提供,不由模型编造):
-        idempotency_key: { type: 'string', description: 'Optional [A-Za-z0-9_-]{1,64}: a click + its retries carry the SAME key → same result (SAME_IDEMPOTENCY_KEY); same key + different payload → IDEMPOTENCY_CONFLICT (no execute). 再买一份 mints a NEW key.' },
-        new_purchase_intent: { type: 'boolean', description: 'Set true ONLY when the human explicitly chose 再买一份 (a structured card action) — creates an INDEPENDENT purchase even if identical to a pending one. NEVER infer this from natural language.' },
-        purchase_intent_instance: { type: 'string', description: 'Optional nonce identifying one independent purchase instance (paired with new_purchase_intent). Omit and the server mints one.' },
-        operation_attempt_id: { type: 'string', description: 'Optional trace id for one component operation attempt (click + retries share it). Diagnostics only — never a dedup key.' },
+        idempotency_key: { type: 'string', description: 'Optional [A-Za-z0-9_-]{1,64}: click+retries share it → same result; same key + different payload → IDEMPOTENCY_CONFLICT (no execute).' },
+        new_purchase_intent: { type: 'boolean', description: 'true ONLY on the explicit 再买一份 card action → an INDEPENDENT purchase. NEVER infer from natural language.' },
+        purchase_intent_instance: { type: 'string', description: 'Optional nonce for one independent purchase (with new_purchase_intent); server mints one if omitted.' },
+        operation_attempt_id: { type: 'string', description: 'Optional trace id (diagnostics only, never a dedup key).' },
+        // BUG-08 §二 zero-PII trace ids (trace_id / interaction_id / widget_session_id / bridge_type /
+        //   tool_call_id / mcp_request_id) are widget-supplied and pass through additively (schema is not
+        //   additionalProperties:false); they're observation-only and never model-facing, so they are NOT
+        //   declared here (keeps tools/list under the token-budget ratchet). The route reads them from body.
       },
       required: ['draft_id'],
     },
@@ -2048,9 +2038,9 @@ Next: webaz_submit_order_request(draft_id) → the human's Passkey approval re-v
   },
   {
     name: 'webaz_prepare_case',
-    description: `Assemble an after-sales CASE DRAFT for one of YOUR orders (safe scope buyer_case_prepare; OAuth grant). READ-ONLY — submits nothing, writes no domain state.
-Returns server facts: structural status timeline; terms FROZEN at order time (later seller edits do not apply); CURRENT listing anchors (labeled, possibly edited since); evidence refs (ids + normalized types); any existing dispute. Routing: delivery problems → delivery dispute (48h respond / 120h arbitrate); broken ORDER terms → order claim (10 WAZ stake, 48h deadline, 3 verifiers); lying LISTING → product claim (5 WAZ stake, 72h deadline, 3 verifiers).
-No buyer PII / free text — the human sees those on the order page. Submitting disputes/returns/escalations, confirming receipt, refunds and closures are HUMAN actions at webaz.xyz (direct_p2p risk actions need a Passkey); this tool only organizes facts first.`,
+    description: `Assemble an after-sales CASE DRAFT for one of YOUR orders (safe scope buyer_case_prepare; OAuth grant). READ-ONLY — writes nothing.
+Returns server facts: status timeline; terms FROZEN at order time; CURRENT listing anchors (labeled); evidence refs; any existing dispute. Routing: delivery → delivery dispute (48h/120h); broken ORDER terms → order claim (10 WAZ stake, 48h, 3 verifiers); lying LISTING → product claim (5 WAZ stake, 72h, 3 verifiers).
+No buyer PII/free text. Submitting disputes/returns/refunds/closures are HUMAN actions at webaz.xyz (direct_p2p risk needs Passkey); this tool only organizes facts.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -2061,12 +2051,11 @@ No buyer PII / free text — the human sees those on the order page. Submitting 
   },
   {
     name: 'webaz_approval_requests',
-    description: `Read the status of YOUR OWN approval requests (RFC-026 PR-2, safe scope approval_requests_read; OAuth grant, no api_key). READ-ONLY — answers "is my request still pending / approved / executed / failed / a duplicate, and which page should the human open" WITHOUT re-submitting anything.
-
-- action="list" → your latest requests (newest first, max 50): request_id, action_type, status, timestamps, deep-link approval_url, executed_order_id.
-- action="get" (request_id) → one request in full, incl. the zero-PII economic summary for order submits.
-- status meanings: pending (open the approval_url) | needs_reconcile (order submit: last outcome unknown — a fresh Passkey approval reconciles safely) | execution_failed / approved_retryable (order action: execution did not complete, failure_reason carries the code — a fresh Passkey approval retries) | executed (executed_order_id is the REAL order) | failed (terminal; retry = submit a fresh request) | rejected | expired.
-- NEVER re-submit a quote/draft/submit chain just to check status — use this tool instead.`,
+    description: `Read the status of YOUR OWN approval requests (safe scope approval_requests_read; OAuth grant). READ-ONLY — checks pending/approved/executed/failed/duplicate + which page to open, without re-submitting.
+- action="list" → latest requests (max 50): request_id, action_type, status, timestamps, approval_url, executed_order_id.
+- action="get" (request_id) → one request in full + the zero-PII economic summary for order submits.
+- status: pending (open approval_url) | needs_reconcile (submit outcome unknown — a fresh Passkey approval reconciles) | execution_failed/approved_retryable (fresh Passkey retries; failure_reason has the code) | executed (executed_order_id = REAL order) | failed/rejected/expired.
+- NEVER re-run a quote/draft/submit chain just to check status — use this tool.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -2117,11 +2106,10 @@ No buyer PII / free text — the human sees those on the order page. Submitting 
   },
   {
     name: 'webaz_order_chat',
-    description: `Chat with the counterparty INSIDE one of YOUR orders (chat:context OAuth scope). CONTEXT-BOUND: order participants only — no free-form DM surface, nobody outside your order.
-list (order_id) → conversation: sender = you/counterparty (no raw ids), bodies verbatim, anti-scam flags kept, agent messages marked (sent_by_agent + agent_label).
-send (order_id, body ≤2000, optional idempotency_key) → PRODUCTION chat path: anti-scam, block status and the shared human rate budget (60/min) unchanged; attributed to the human account, marked agent-sent with a content hash (grant audit log).
-Idempotency: same key → the original message (same body only; different body = explicit conflict). At-least-once boundary: only a crash at the send/claim edge lets a >10min retry resend — verify with list before long-delayed retries.
-Chat moves no funds, changes no order state. Never paste addresses, payment credentials or codes into chat.`,
+    description: `Chat with the counterparty INSIDE one of YOUR orders (chat:context OAuth scope). CONTEXT-BOUND: order participants only — no free-form DM surface.
+list (order_id) → conversation: sender = you/counterparty (no raw ids), bodies verbatim, anti-scam flags, agent messages marked.
+send (order_id, body ≤2000, optional idempotency_key) → PRODUCTION chat: anti-scam + shared 60/min budget; attributed to the human, marked agent-sent (content hash). Idempotency: same key → the original message (different body = conflict); verify with list before long-delayed retries.
+Chat moves no funds, changes no state. Never paste addresses/credentials/codes into chat.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -3179,6 +3167,10 @@ export async function handleSubmitOrderRequest(args: Record<string, unknown>): P
   if (args.new_purchase_intent === true) submitBody.new_purchase_intent = true
   if (typeof args.purchase_intent_instance === 'string') submitBody.purchase_intent_instance = args.purchase_intent_instance
   if (typeof args.operation_attempt_id === 'string') submitBody.operation_attempt_id = args.operation_attempt_id
+  // BUG-08 §二:透传零 PII 追踪标识(仅观测,绝不影响授权/幂等/交易);服务端再格式校验+封顶。
+  for (const k of ['trace_id', 'interaction_id', 'widget_session_id', 'bridge_type', 'tool_call_id', 'mcp_request_id'] as const) {
+    if (typeof args[k] === 'string') submitBody[k] = args[k]
+  }
   const r = await apiCall(`/api/agent/order-drafts/${encodeURIComponent(args.draft_id)}/submit`, { method: 'POST', apiKey: cred.token, body: submitBody })
   absolutizeApprovalUrls(r)   // A5: absolute approval_url for text-only Hosts
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks order_submit_request. Re-connect via OAuth so the grant carries the order:draft scope, then retry.' }
