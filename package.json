@@ -301,6 +301,7 @@
     "test:mcp-definition-budget": "tsx scripts/test-mcp-definition-budget.ts",
     "test:mcp-quote-approval-ui": "tsx scripts/test-mcp-quote-approval-ui.ts",
     "test:mcp-order-timeline-ui": "tsx scripts/test-mcp-order-timeline-ui.ts",
+    "test:mcp-schema-v2-contract": "tsx scripts/test-mcp-schema-v2-contract.ts",
     "test:mcp-apps-standard": "tsx scripts/test-mcp-apps-standard.ts",
     "test:product-widget-expand": "tsx scripts/test-product-widget-expand.ts",
     "test:agent-category-contract": "tsx scripts/test-agent-category-contract.ts",

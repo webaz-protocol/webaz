@@ -135,7 +135,7 @@ try {
   const q2 = await callSC('webaz_quote_order', { product_id: 'prd_q', quantity: 1 })
   const d = await callSC('webaz_order_draft', { action: 'create', quote_token: q2.quote_token })
   const dj = JSON.stringify(d)
-  ok('D-1 draft 消费者投影(schema/USDC/法币估算/轨道诚信/available submit)', d.schema_version === 'webaz.order_draft.model.v1' && (d.price as Record<string, unknown>)?.currency === 'USDC' && !!d.fiat_estimate && /模拟托管/.test(String(d.rail_note)) && JSON.stringify(d.available_actions) === '["submit_request"]', dj.slice(0, 200))
+  ok('D-1 draft 消费者投影(BUG-06 v2 schema/status object/USDC/法币估算/轨道诚信/available submit)', d.schema_version === 'webaz.order_draft.model.v2' && d.type === 'order_draft' && (d.status as Record<string, unknown>)?.code === 'draft' && (d.status as Record<string, unknown>)?.label === '草稿' && (d.price as Record<string, unknown>)?.currency === 'USDC' && !!d.fiat_estimate && /模拟托管/.test(String(d.rail_note)) && JSON.stringify(d.available_actions) === '["submit_request"]', dj.slice(0, 200))
   ok('11. draft 不扣款不占库存(DB 零变化)', walletSnap() === before.wallet && stockOf() === before.stock)
   ok('19b. Draft 投影 ≤1200B(≈300 tok)', dj.length <= 1200, `bytes=${dj.length}`)
   ok('D-2 draft 零 WAZ 零 PII', !dj.includes(' WAZ') && !PII.test(dj))
@@ -143,7 +143,7 @@ try {
   // ── Submit/Approval 投影(12,15,19c)──
   const s1 = await callSC('webaz_submit_order_request', { draft_id: d.draft_id })
   const sj = JSON.stringify(s1)
-  ok('A-1 approval 投影(request_id/passkey_required/rail-aware on_approval 中性措辞/approval_url/pending)', s1.schema_version === 'webaz.order_approval.model.v1' && !!s1.request_id && s1.passkey_required === true && /follows the disclosed rail/.test(String(s1.on_approval)) && /holds no principal/.test(String(s1.on_approval)) && String(s1.approval_url).includes('agent-approvals') && s1.status === 'pending', sj.slice(0, 200))
+  ok('A-1 approval 投影(BUG-06 v2 schema/status object/request_id/passkey_required/rail-aware on_approval 中性措辞/approval_url/pending)', s1.schema_version === 'webaz.order_approval.model.v2' && s1.type === 'order_approval' && !!s1.request_id && s1.passkey_required === true && /follows the disclosed rail/.test(String(s1.on_approval)) && /holds no principal/.test(String(s1.on_approval)) && String(s1.approval_url).includes('agent-approvals') && (s1.status as Record<string, unknown>)?.code === 'pending' && (s1.status as Record<string, unknown>)?.label === '待批准', sj.slice(0, 200))
   ok('12. 提交不执行(orders 表零行,资金库存零变化)', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === 0 && walletSnap() === before.wallet && stockOf() === before.stock)
   ok('19c. Approval 投影 ≤1000B(≈250 tok)', sj.length <= 1000, `bytes=${sj.length}`)
   const s2 = await callSC('webaz_submit_order_request', { draft_id: d.draft_id })

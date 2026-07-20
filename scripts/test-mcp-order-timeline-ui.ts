@@ -85,7 +85,8 @@ try {
   // 1/3/7/8/12/16:escrow 单完整时间线
   const { sc: t1, text: t1text } = await call({ order_id: 'ord_t1', full: true })
   const t1j = JSON.stringify(t1)
-  ok('1. 时间线投影(schema/状态标签单源/事件序列)', t1.schema_version === 'webaz.order_timeline.model.v1'
+  ok('1. 时间线投影(BUG-06 v2 schema/type/状态对象单源/正整数 quantity/事件序列)', t1.schema_version === 'webaz.order_timeline.model.v2'
+    && t1.type === 'order_timeline' && Number.isInteger(t1.quantity) && (t1.quantity as number) > 0
     && (t1.status as Record<string, unknown>)?.code === 'accepted' && String((t1.status as Record<string, unknown>)?.label).length > 0
     && Array.isArray(t1.timeline) && (t1.timeline as unknown[]).length === 2
     && ((t1.timeline as Array<Record<string, unknown>>)[1].to_status as Record<string, unknown>).code === 'accepted', t1j.slice(0, 200))

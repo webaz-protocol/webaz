@@ -39,9 +39,11 @@ Every **v2** order-lifecycle result carries:
   string, never a decimal, never `≤ 0`. Present on cards that **intrinsically** carry a quantity:
   `order_quote`, `order_draft`, `order_timeline`. See §5 for the approval exception.
 - **timestamps** — ISO-8601 **UTC** (`…Z`), via `toIsoUtc()` (BUG-07). No TZ-less strings in v2.
-- **`promised_eta`** — preserved **unchanged** as the `webaz.promised_eta.v1` object (BUG-02) wherever
-  it appears (quote / draft / order). Missing → BUG-02 `legacy_missing` behavior. BUG-06 does **not**
-  re-version, re-shape, or drop `promised_eta`.
+- **`promised_eta`** — preserved **unchanged** as the `webaz.promised_eta.v1` object (BUG-02). In the
+  **consumer projection layer** it surfaces only on the order timeline (`logistics.promised_eta`); the
+  quote consumer surfaces the frozen ETA via `shipping.estimated_days`, and the draft consumer keeps
+  the snapshot on the raw draft/order row (not in the consumer projection). Missing → BUG-02
+  `legacy_missing` behavior. BUG-06 does **not** re-version, re-shape, or drop `promised_eta` anywhere.
 
 Everything else (price, amounts, destination region, rail, disclosures, available_actions, refund,
 timeline events, promised_eta) is **unchanged** from v1 — v2 is strictly the `type` + `status` +

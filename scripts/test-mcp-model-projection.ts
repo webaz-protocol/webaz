@@ -176,10 +176,11 @@ try {
   const osOf = (n: string): Record<string, unknown> => (byName[n]?.outputSchema ?? {}) as Record<string, unknown>
   ok('W-1 exactly the 5 shopping-chain tools carry outputSchema (search/buyer_orders/quote/draft/submit)',
     tools.filter(t => t.outputSchema).map(t => t.name).sort().join(',') === 'webaz_buyer_orders,webaz_order_draft,webaz_quote_order,webaz_search,webaz_submit_order_request')
-  ok('W-2 outputSchema carries versioned schema ids (webaz.*.model.v1)',
+  ok('W-2 outputSchema carries versioned schema ids (product/order_status v1; quote bumped to BUG-06 v2)',
     JSON.stringify(osOf('webaz_search')).includes('webaz.product_search.model.v1')
     && JSON.stringify(osOf('webaz_buyer_orders')).includes('webaz.order_status.model.v1')
-    && JSON.stringify(osOf('webaz_quote_order')).includes('webaz.order_quote.model.v1'))
+    && JSON.stringify(osOf('webaz_buyer_orders')).includes('webaz.order_timeline.model.v2')
+    && JSON.stringify(osOf('webaz_quote_order')).includes('webaz.order_quote.model.v2'))
 
   const sr = await client.callTool({ name: 'webaz_search', arguments: {} }) as Record<string, unknown>
   const sc = sr.structuredContent as Record<string, unknown> | undefined

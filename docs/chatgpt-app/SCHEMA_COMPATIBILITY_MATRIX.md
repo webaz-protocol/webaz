@@ -26,11 +26,11 @@ Legend — **status structure**: `string` = bare status code string · `object` 
 ## 2. Quote — `webaz.order_quote.model.v2`  *(was v1)*
 - **type:** `order_quote`
 - **required:** `schema_version`, `type`, `quote_id`, `product{id,title}`, `quantity`, `price`, `status`, `available_actions`, `disclosures`
-- **optional:** `quote_token` (single-use) **or** `quote_token_note`+`replay`, `fiat_estimate`, `amounts`, `destination`, `shipping`, `promised_eta`, `return_days`, `warranty_days`
+- **optional:** `quote_token` (single-use) **or** `quote_token_note`+`replay`, `fiat_estimate`, `amounts`, `destination`, `shipping` (incl. frozen `estimated_days`), `return_days`, `warranty_days`
 - **status structure:** `object` — `{code:"quoted", label:"报价", label_en:"quoted"}` (uniform; a quote has no order status)
 - **quantity structure:** `int` (positive integer)
 - **timestamp structure:** `expires_at` ISO-8601 UTC
-- **promised_eta:** `webaz.promised_eta.v1` object (BUG-02), frozen at quote; **preserved unchanged**
+- **promised_eta:** the frozen ETA surfaces via `shipping.estimated_days` (BUG-02); the quote **consumer** projection carries no separate `promised_eta` object. **BUG-06 leaves this unchanged.**
 - **old-input compat:** v1 quote (no `type`, no `status`, quantity number) still renders — component accepts v1+v2 in the quote branch; header shows `报价 · <title> ×<qty>`
 - **new-output:** v2 (adds `type`+`status`, quantity guaranteed positive int)
 - **component:** `QUOTE_APPROVAL_BODY_JS` (quote branch)
@@ -39,11 +39,11 @@ Legend — **status structure**: `string` = bare status code string · `object` 
 ## 3. Draft — `webaz.order_draft.model.v2`  *(was v1)*
 - **type:** `order_draft`
 - **required:** `schema_version`, `type`, `draft_id`, `status`, `product{id,title}`, `quantity`, `price`, `available_actions`, `disclosures`
-- **optional:** `fiat_estimate`, `destination`, `payment_rail`, `rail_note`, `expires_at`, `promised_eta`, `idempotent_replay`, `already_cancelled`; **list form** `{count, drafts[]}`
+- **optional:** `fiat_estimate`, `destination`, `payment_rail`, `rail_note`, `expires_at`, `idempotent_replay`, `already_cancelled`; **list form** `{count, drafts[]}`
 - **status structure:** `object` — `{code, label, label_en}`, code ∈ `draft|submitted|cancelled|expired` (`DRAFT_STATE_MEANINGS`)
 - **quantity structure:** `int`
 - **timestamp structure:** `expires_at` ISO-8601 UTC
-- **promised_eta:** `webaz.promised_eta.v1` object, inherited from the quote; **preserved unchanged**
+- **promised_eta:** the frozen snapshot lives on the raw draft/order row (BUG-02); the draft **consumer** projection surfaces no `promised_eta` object. **BUG-06 leaves this unchanged.**
 - **old-input compat:** v1 draft had `status` as a **string** → component's `stLabel`/`stCode` normalize a string OR object once at entry; `submit_request` button still gates on `stCode==='draft'`
 - **new-output:** v2 (status object, quantity positive int, `type`)
 - **component:** `QUOTE_APPROVAL_BODY_JS` (draft branch, incl. list form)
