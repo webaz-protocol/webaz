@@ -105,7 +105,7 @@ export function orderSubmitIntentHash(humanId: string, draft: Record<string, unk
 
 /** BUG-08 机器可读重复原因(向后兼容:旧客户端只读 duplicate 布尔仍工作)。 */
 export type DuplicateReason = 'SAME_DRAFT_REPLAY' | 'SAME_IDEMPOTENCY_KEY' | 'ACTIVE_INTENT_REUSED' | 'DATABASE_UNIQUE_RACE' | 'RESPONSE_LOSS_RECONCILED' | 'EXPLICIT_SECOND_PURCHASE'
-export interface SubmitResult { ok: true; request_id: string; params_hash: string; intent_hash?: string; duplicate?: boolean; duplicate_reason?: DuplicateReason; duplicate_of?: string; purchase_intent_instance?: string | null; new_purchase_intent?: boolean }
+export interface SubmitResult { ok: true; request_id: string; params_hash: string; intent_hash?: string; duplicate?: boolean; duplicate_reason?: DuplicateReason; duplicate_of?: string; purchase_intent_instance?: string | null; new_purchase_intent?: boolean; reorder_product_id?: string; reorder_quantity?: number }
 export interface SubmitError { ok: false; http: number; error: string; error_code: string }
 
 /** 活跃(未终结未执行)的 order_submit 行:同 draft 或同意图。 */
@@ -137,6 +137,8 @@ export function createOrderSubmitRequest(db: Database.Database, args: {
   //   隐式路径(instance 为空)保持旧指纹 → 与既有行去重,零回归。
   const instance = args.newPurchaseIntent ? String(args.purchaseIntentInstance || generateId('pii')) : (args.purchaseIntentInstance ? String(args.purchaseIntentInstance) : null)
   const intentHash = orderSubmitIntentHash(humanId, draft, args.newPurchaseIntent ? instance : null)
+  // BUG-08 §一:重购目标(product_id + quantity)—— 供组件"再买一份"重新报价;不含地址/价格,由服务器重校验。
+  const reorder = { reorder_product_id: String(draft.product_id), reorder_quantity: Number(draft.quantity) }
 
   // ── 层 2:idempotency_key 优先(最强重试安全键;先于 draft/intent 判定)──
   if (idemKey) {
@@ -144,7 +146,7 @@ export function createOrderSubmitRequest(db: Database.Database, args: {
     if (prior) {
       if (String(prior.params_hash) !== paramsHash) return { ok: false, http: 409, error: '相同 idempotency_key 但请求内容不同 —— 拒绝执行,不覆盖原记录', error_code: 'IDEMPOTENCY_CONFLICT' }
       const terminalOrExecuted = prior.executed_at != null || !['pending', 'approved'].includes(String(prior.status))
-      return { ok: true, request_id: String(prior.id), params_hash: String(prior.params_hash), intent_hash: intentHash, duplicate: true, duplicate_reason: terminalOrExecuted ? 'RESPONSE_LOSS_RECONCILED' : 'SAME_IDEMPOTENCY_KEY', duplicate_of: String(prior.id), purchase_intent_instance: instance }
+      return { ok: true, request_id: String(prior.id), params_hash: String(prior.params_hash), intent_hash: intentHash, duplicate: true, duplicate_reason: terminalOrExecuted ? 'RESPONSE_LOSS_RECONCILED' : 'SAME_IDEMPOTENCY_KEY', duplicate_of: String(prior.id), purchase_intent_instance: instance, ...reorder }
     }
   }
 
@@ -156,7 +158,7 @@ export function createOrderSubmitRequest(db: Database.Database, args: {
           (id, human_id, grant_id, agent_label, requested_scopes, risk_level, duration, status, expires_at, kind, order_id, order_action, params_hash, intent_hash, action_params, idempotency_key, purchase_intent_instance, operation_attempt_id)
         VALUES (?,?,?,?, '[]', 'high', 'once', 'pending', ?, 'order_submit', ?, 'order_submit', ?, ?, ?, ?, ?, ?)`)
         .run(requestId, humanId, grantId, agentLabel, new Date(Date.now() + 24 * 3600_000).toISOString(), draftId, paramsHash, intentHash, JSON.stringify({ draft_id: draftId }), idemKey, instance, args.operationAttemptId ? String(args.operationAttemptId) : null)
-      return { ok: true, request_id: requestId, params_hash: paramsHash, intent_hash: intentHash, purchase_intent_instance: instance, ...(args.newPurchaseIntent ? { new_purchase_intent: true } : {}) }
+      return { ok: true, request_id: requestId, params_hash: paramsHash, intent_hash: intentHash, purchase_intent_instance: instance, ...(args.newPurchaseIntent ? { new_purchase_intent: true, ...reorder } : {}) }
     } catch (e) {
       const msg = (e as Error).message
       if (!/UNIQUE/i.test(msg)) return { ok: false, http: 503, error: '提交暂不可用,请稍后重试', error_code: 'SUBMIT_UNAVAILABLE' }
@@ -165,7 +167,7 @@ export function createOrderSubmitRequest(db: Database.Database, args: {
         const byKey = findByIdemKey(db, humanId, idemKey)
         if (byKey) {
           if (String(byKey.params_hash) !== paramsHash) return { ok: false, http: 409, error: '相同 idempotency_key 但请求内容不同 —— 拒绝执行,不覆盖原记录', error_code: 'IDEMPOTENCY_CONFLICT' }
-          return { ok: true, request_id: String(byKey.id), params_hash: String(byKey.params_hash), intent_hash: intentHash, duplicate: true, duplicate_reason: 'DATABASE_UNIQUE_RACE', duplicate_of: String(byKey.id), purchase_intent_instance: instance }
+          return { ok: true, request_id: String(byKey.id), params_hash: String(byKey.params_hash), intent_hash: intentHash, duplicate: true, duplicate_reason: 'DATABASE_UNIQUE_RACE', duplicate_of: String(byKey.id), purchase_intent_instance: instance, ...reorder }
         }
       }
       const existing = findActiveSubmit(db, humanId, draftId, intentHash)
@@ -183,7 +185,7 @@ export function createOrderSubmitRequest(db: Database.Database, args: {
       // BUG-08:等价请求【返回已有请求】+ 机器可读原因 —— 同 draft 是纯重放;跨 draft 同意图是活跃意图复用
       //   (卡片据此给"打开已有审批 / 取消 / 再买一份")。绝不第二条活跃,绝不让 agent 猜。
       const sameDraft = String(existing.order_id) === draftId
-      return { ok: true, request_id: String(existing.id), params_hash: String(existing.params_hash), intent_hash: intentHash, duplicate: true, duplicate_reason: sameDraft ? 'SAME_DRAFT_REPLAY' : 'ACTIVE_INTENT_REUSED', duplicate_of: String(existing.id), purchase_intent_instance: instance }
+      return { ok: true, request_id: String(existing.id), params_hash: String(existing.params_hash), intent_hash: intentHash, duplicate: true, duplicate_reason: sameDraft ? 'SAME_DRAFT_REPLAY' : 'ACTIVE_INTENT_REUSED', duplicate_of: String(existing.id), purchase_intent_instance: instance, ...reorder }
     }
   }
   return { ok: false, http: 503, error: '提交暂不可用,请稍后重试', error_code: 'SUBMIT_UNAVAILABLE' }

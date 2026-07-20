@@ -654,6 +654,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     recordIdempotencyTrace(db, { ...traceBase, requestId: r.request_id, intentHash: r.intent_hash, purchaseIntentInstance: r.purchase_intent_instance, duplicate: !!r.duplicate, duplicateReason: r.duplicate_reason, duplicateOf: r.duplicate_of, resultStatus: r.duplicate ? 'duplicate' : 'created' })
     res.json({ success: true, request_id: r.request_id, draft_id: req.params.id, params_hash: r.params_hash, approval_url: `/#agent-approvals/${r.request_id}`,
       idempotency: { params_hash: r.params_hash, duplicate: !!r.duplicate, reused_existing_request: !!r.duplicate, duplicate_reason: r.duplicate_reason ?? null, duplicate_of: r.duplicate_of ?? null, purchase_intent_instance: r.purchase_intent_instance ?? null, new_purchase_intent: !!r.new_purchase_intent },
+      ...(r.reorder_product_id ? { reorder: { product_id: r.reorder_product_id, quantity: r.reorder_quantity } } : {}),
       note: r.duplicate ? 'An equivalent submit request is already awaiting Passkey approval — REUSED it (no second request was created). Do NOT re-quote or re-draft to retry; ask the human to open the approval page, or the human may explicitly choose 再买一份.' : 'Pending human Passkey approval. NOT executed — approval creates the order (and for escrow debits wallet→escrow) server-side; nothing happens without the Passkey.' })
   })
 

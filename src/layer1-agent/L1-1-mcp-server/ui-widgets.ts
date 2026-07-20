@@ -436,6 +436,9 @@ function renderBody(oai, out){
   function qtyBad(out){ return out.quantity_valid===false || !qtyOk(out.quantity) }
   function qtyDisp(q){ return typeof q==='number'?q:Number(String(q).trim()) }
   function qtyErr(out){ return String(out.quantity_error||(out.quantity_valid===false?'invalid':'invalid')) }
+  // BUG-08:客户端 nonce(独立购买实例 / 每步 idempotency_key)—— [A-Za-z0-9_-],≤64;服务端仍再校验格式。
+  function nonce(){ return (Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8)) }
+  function consume(r){ return (r&&typeof r==='object'&&r.structuredContent)?r.structuredContent:r }
 
   if(sv==='webaz.order_quote.model.v1'||sv==='webaz.order_quote.model.v2'){
     box.appendChild(el('div','h','报价 · '+((out.product&&out.product.title)||'')+(qtyBad(out)?' · 数量数据异常':' ×'+qtyDisp(out.quantity))))
@@ -509,12 +512,43 @@ function renderBody(oai, out){
       cancelBtn.addEventListener('click',onceGuard(function(){ cancelBtn.disabled=true; box.appendChild(el('div','meta ok','已取消本次尝试 —— 原有待审批购买不受影响')) }))
       box.appendChild(cancelBtn)
       var againBtn=el('button','btn','再买一份(独立购买)')
-      againBtn.addEventListener('click',onceGuard(function(){
-        againBtn.disabled=true
-        try{ console.log('[webaz-widget] explicit_second_purchase requested (structured action; no NL inference)') }catch(e){}
-        // 独立购买必须走全新报价→草稿→提交(带 new_purchase_intent);组件不静默复用已绑定旧审批的草稿。fail-visible 明确指引。
-        actHint('再买一份(独立购买):重新报价该商品 → 新建草稿 → 提交时选择「独立购买」。系统会作为新的购买意图创建独立订单,仍需 Passkey 批准。', false, '')
-      }))
+      var stageLine=el('div','meta')
+      // BUG-08 §一:再买一份 = 确定性 DIRECT_TOOL 链(报价→草稿→提交),全程不发自然语言、不调模型。
+      //   同一 purchase_intent_instance 贯穿整条新链;每个写步骤用独立 idempotency_key;失败即停并给重试入口;
+      //   绝不复用原 quote_token/draft/审批;价格/库存/地址/区域由服务器在报价与执行期重校验。手动 single-flight。
+      var againRunning=false
+      againBtn.addEventListener('click',function(){
+        if(againRunning) return; // §一.11:快速双击只启动一条流程
+        var ro=out.reorder||{}
+        if(typeof oai.callTool!=='function'){ actHint('再买一份需在支持组件直调的宿主中进行;或在 WebAZ PWA 重新购买该商品(会作为独立购买处理)。', false, ''); return }
+        if(!ro.product_id){ box.appendChild(el('div','warn','无法自动再买一份(此卡缺少商品信息)—— 请在 WebAZ PWA 重新购买')); return }
+        againRunning=true; againBtn.disabled=true
+        if(stageLine.parentNode!==box) box.appendChild(stageLine)
+        var instance='pii_'+nonce()   // §一.3:全链一致
+        try{ console.log('[webaz-widget] explicit_second_purchase start instance='+instance) }catch(e){}
+        function fail(stage,msg){ againRunning=false; againBtn.disabled=false
+          stageLine.textContent='再买一份失败(步骤:'+stage+'):'+String(msg||'请重试')+' —— 未创建任何订单。可再次点击「再买一份」重试(会用全新实例)。' }
+        stageLine.textContent='再买一份 · 步骤1/3 重新报价(服务器重算价格/库存/区域)…'
+        try{
+          Promise.resolve(oai.callTool('webaz_quote_order',{product_id:String(ro.product_id),quantity:Number(ro.quantity)||1,idempotency_key:'q_'+instance})).then(function(qr){
+            var q=consume(qr); if(!q||q.error||!q.quote_token){ return fail('报价', (q&&(q.error||q.error_code))||'报价未返回可用 quote_token(可能已下架/区域不支持/涨价需重报)') }
+            stageLine.textContent='再买一份 · 步骤2/3 新建独立草稿…'
+            return Promise.resolve(oai.callTool('webaz_order_draft',{action:'create',quote_token:q.quote_token,idempotency_key:'d_'+instance})).then(function(dr){
+              var d=consume(dr); if(!d||d.error||!d.draft_id){ return fail('建草稿', (d&&(d.error||d.error_code))||'未返回 draft_id') }
+              stageLine.textContent='再买一份 · 步骤3/3 提交独立购买(new_purchase_intent)…'
+              return Promise.resolve(oai.callTool('webaz_submit_order_request',{draft_id:d.draft_id,new_purchase_intent:true,purchase_intent_instance:instance,idempotency_key:'s_'+instance})).then(function(sr){
+                var s=consume(sr); if(!s||s.error||!s.request_id){ return fail('提交', (s&&(s.error||s.error_code))||'未返回 request_id') }
+                againRunning=false
+                stageLine.textContent='再买一份成功 —— 已创建独立审批(仍需 Passkey)。原审批入口保留在上方,互不影响。'
+                box.appendChild(el('div','meta ok','新请求:'+String(s.request_id)))
+                var newOpen=el('button','btn','打开新审批(webaz.xyz · Passkey)')
+                newOpen.addEventListener('click',onceGuard(function(){ var href='https://webaz.xyz/'+String(s.approval_url||'').replace(/^\\//,''); var op=false; try{op=openWebaz(oai,href)}catch(e){op=false} actHint(href,op,(op?'已尝试打开新审批;若没弹出':'此宿主未能打开')+',复制到浏览器用 Passkey 批准:') }))
+                box.appendChild(newOpen)
+              },function(){ fail('提交','宿主未回传提交结果') })
+            },function(){ fail('建草稿','宿主未回传草稿结果') })
+          },function(){ fail('报价','宿主未回传报价结果') })
+        }catch(e){ fail('启动','无法发起报价') }
+      })
       box.appendChild(againBtn)
     }
     // §IV DIRECT_TOOL:「🔄 查看最新状态」结构化直调 webaz_approval_requests(action=get, request_id),就地消费结果更新状态;

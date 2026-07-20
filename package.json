@@ -303,6 +303,7 @@
     "test:mcp-order-timeline-ui": "tsx scripts/test-mcp-order-timeline-ui.ts",
     "test:mcp-schema-v2-contract": "tsx scripts/test-mcp-schema-v2-contract.ts",
     "test:bug08-idempotency": "tsx scripts/test-bug08-idempotency-second-purchase.ts",
+    "test:bug08-second-purchase-widget-flow": "tsx scripts/test-bug08-second-purchase-widget-flow.ts",
     "test:mcp-apps-standard": "tsx scripts/test-mcp-apps-standard.ts",
     "test:product-widget-expand": "tsx scripts/test-product-widget-expand.ts",
     "test:agent-category-contract": "tsx scripts/test-agent-category-contract.ts",

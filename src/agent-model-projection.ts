@@ -448,6 +448,8 @@ export function projectSubmitConsumer(r: Record<string, unknown>): Record<string
     on_approval: 'creates the single real order; payment behavior follows the disclosed rail (escrow: wallet→escrow debit at creation; direct_p2p: WebAZ holds no principal — buyer pays the seller directly)',
     approval_url: r.approval_url,
     ...(idem.purchase_intent_instance != null ? { purchase_intent_instance: String(idem.purchase_intent_instance) } : {}),
+    // BUG-08 §一:重购目标 —— 组件"再买一份"用它重新报价(product_id + quantity;地址/价格由服务器重校验)。
+    ...((r.reorder as Record<string, unknown>)?.product_id ? { reorder: { product_id: String((r.reorder as Record<string, unknown>).product_id), quantity: Number((r.reorder as Record<string, unknown>).quantity) } } : {}),
     // BUG-08 §八:机器可读重复合同(旧客户端只读 duplicate 布尔仍工作)。duplicate_warning 保留为向后兼容展示。
     ...(dup ? {
       duplicate: true,
