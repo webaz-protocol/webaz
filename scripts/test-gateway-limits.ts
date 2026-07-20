@@ -34,18 +34,37 @@ try {
     ok('2b (limit+1)-th denied on ip + retry_after = window_sec', over.allowed === false && over.denied_dimension === 'ip' && over.retry_after_sec === budget.window_sec)
   }
 
-  // 3. strictest-wins: two dimensions both exceed → the LONGER-window one is reported
+  // 3. strictest-wins: TWO dimensions exceed with DIFFERENT windows → the LONGER-window one is reported.
+  //   The real policy has equal windows within a class, so inject a synthetic policy that differs (short 60s
+  //   ip vs long 3600s subject) — this genuinely exercises the longest-window selection at the branch.
   {
     const store = new InMemoryGatewayLimitStore()
-    // high: subject {20,3600}, ip {40,3600}, client {100,3600} — make subject (shorter is same here) exceed first;
-    //   craft budgets differing in window by using medium (product 60s) vs a synthetic — instead assert on 'high'
-    //   where subject(3600) and ip(3600) share window, so use public_low(ip 60) + a forced longer window via medium.
-    // Simplest deterministic strictest-wins: medium has product{120,60} and subject{60,60} (same window) — not enough.
-    // Use two classes-independent budgets by exceeding subject(3600) in 'high' and ip(3600) — equal windows; pick any.
-    const dims = { subject: 'usr_x', ip: '9.9.9.9', client: 'cli_x' }
-    let dec = { allowed: true } as { allowed: boolean; denied_dimension?: string; retry_after_sec?: number }
-    for (let i = 0; i < 25; i++) dec = evaluateGatewayLimits({ cost_class: 'high', dims }, store, NOW)   // subject limit 20 → exceeded first
-    ok('3 high: exceeding subject(20/3600) denies with a 3600s retry', dec.allowed === false && dec.retry_after_sec === 3600)
+    const synthetic = {
+      public_low: {}, private_read: {}, medium: {}, economic: {},
+      high: { ip: { limit: 1, window_sec: 60 }, subject: { limit: 1, window_sec: 3600 } },
+    } as never
+    const dims = { ip: '9.9.9.9', subject: 'usr_x' }
+    evaluateGatewayLimits({ cost_class: 'high', dims }, store, NOW, synthetic)                     // 1st: both at limit, allowed
+    const dec = evaluateGatewayLimits({ cost_class: 'high', dims }, store, NOW, synthetic)          // 2nd: BOTH exceed
+    ok('3a both dims exceeded → denied', dec.allowed === false)
+    ok('3b strictest (longest window 3600s subject, not 60s ip) reported', dec.denied_dimension === 'subject' && dec.retry_after_sec === 3600)
+  }
+
+  // 3.5 count-all-dims: a request consumes quota on EVERY present dimension even after a denial is latched
+  {
+    const hits: string[] = []
+    const spy = { hit: (k: string) => { hits.push(k); return 999 } }   // everything over-limit
+    const dec = evaluateGatewayLimits({ cost_class: 'medium', dims: { subject: 's', product: 'p', client: 'c', ip: 'i' } }, spy as never, NOW)
+    ok('3.5 all 4 present medium dims counted (no short-circuit on first denial)', dec.allowed === false && hits.length === 4)
+  }
+
+  // 3.6 TOTAL + fail-closed: unknown cost_class or missing dims DENY, never throw / never allow
+  {
+    const store = new InMemoryGatewayLimitStore()
+    const bad = evaluateGatewayLimits({ cost_class: 'nope' as never, dims: { ip: 'x' } }, store, NOW)
+    ok('3.6a unknown cost_class → fail-closed deny (not allow, not throw)', bad.allowed === false)
+    const noDims = evaluateGatewayLimits({ cost_class: 'public_low' } as never, store, NOW)
+    ok('3.6b missing dims object → allowed (nothing to count), no throw', noDims.allowed === true)
   }
 
   // 4. absent dimension is skipped (no key created, no false denial)
