@@ -27,6 +27,9 @@ import {
   type AgentGatewayContext,
   type GatewayReplayStore,
 } from '../../runtime/agent-gateway-proof.js'
+import { evaluateGatewayLimitsAsync, type AsyncGatewayLimitStore, type GatewayLimitInput } from '../../runtime/gateway-limits.js'
+import { buildMcpLimitInput } from '../../runtime/gateway-request-shaping.js'
+import { TOOL_ANNOTATIONS } from '../../layer1-agent/L1-1-mcp-server/tool-annotations.js'
 
 export function remoteMcpEnabled(): boolean {
   return process.env.WEBAZ_REMOTE_MCP === '1' && process.env.WEBAZ_MODE !== 'sandbox'
@@ -179,6 +182,36 @@ export interface RemoteMcpDeps {
   rateLimitOk: (ip: string, max?: number, windowMs?: number) => boolean
   gatewayReplayStore?: GatewayReplayStore
   gatewayLoopbackBaseUrl?: () => string
+  gatewayLimitStore?: AsyncGatewayLimitStore   // RFC-028 S2b: authoritative distributed limiter (shadow-mode only for now)
+}
+
+/**
+ * RFC-028 S2b-2b — shadow-mode multi-dimensional limit OBSERVATION. Evaluates the authoritative distributed
+ * limiter for this request against real traffic and LOGS what it WOULD have decided. It NEVER blocks, awaits
+ * in the response path, mutates `res`, or changes control flow — it is called fire-and-forget, so a slow or
+ * down limiter database cannot stall /mcp. Active only when a limit store is configured AND
+ * WEBAZ_AGENT_GATEWAY_LIMITS_MODE=shadow; otherwise a pure no-op. Enforcement (deny) is a later slice.
+ *
+ * First slice observes the IP + per-class global budgets only (the primary availability surface); client and
+ * subject dimensions are added when identity extraction is wired. Only would-be DENIALS are logged, without
+ * the raw dimension values (the limiter key is already a hash).
+ */
+export function observeGatewayLimitsShadow(store: AsyncGatewayLimitStore | undefined, body: unknown, ip: string): void {
+  if (!store || process.env.WEBAZ_AGENT_GATEWAY_LIMITS_MODE !== 'shadow') return
+  let input: GatewayLimitInput
+  try {
+    const b = body as { method?: unknown; params?: { name?: unknown } } | null
+    const method = typeof b?.method === 'string' ? b.method : ''
+    const toolName = method === 'tools/call' && typeof b?.params?.name === 'string' ? b.params.name : undefined
+    const annotation = toolName ? TOOL_ANNOTATIONS[toolName] : undefined
+    input = buildMcpLimitInput({ method, toolName, annotation, ip })
+  } catch { return }   // extraction must NEVER affect the request
+  // Fire-and-forget: not awaited. .catch() guards unhandledRejection; in shadow a store outage is silently
+  // ignored (it would only ever have logged). The hits still increment the authoritative counters so the
+  // shadow data reflects real load before enforcement is turned on.
+  void evaluateGatewayLimitsAsync(input, store, Date.now())
+    .then(d => { if (!d.allowed) console.warn(`[agent-gateway-limits] shadow would-deny class=${input.cost_class} dim=${d.denied_dimension} retry_after=${d.retry_after_sec}s`) })
+    .catch(() => undefined)
 }
 
 export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
@@ -241,6 +274,8 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
     if (!mcpOriginAllowed(req)) {
       return void res.status(403).json({ jsonrpc: '2.0', error: { code: -32000, message: 'forbidden origin — /mcp accepts requests with no browser Origin or an allowlisted Origin only' }, id: null })
     }
+    // RFC-028 S2b-2b: shadow-mode limit observation — log-only, fire-and-forget, never blocks or mutates res.
+    observeGatewayLimitsShadow(deps.gatewayLimitStore, req.body, clientIp(req))
     try {
       const authz = String(req.headers.authorization || '')
       const bearer = authz.startsWith('Bearer ') ? authz.slice(7).trim() : ''
