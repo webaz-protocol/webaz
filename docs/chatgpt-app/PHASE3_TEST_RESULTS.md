@@ -2,6 +2,28 @@
 
 > Phase-3A local test results. All runs hermetic (temp `$HOME`), no network, no prod DB, no deploy. No live-ChatGPT verification claimed.
 
+## Latest run (this session — 5 commits landed)
+```
+tsc --noEmit                       exit 0
+guard:complexity                   OK (server.ts 55/55, 234/234)
+test-mcp-card-contract             pass 37   (BUG-01 truncation/full-terms/FT-safety + BUG-07 TZ1-9 + duplicate + schema)
+test-product-widget-expand         pass 43   (LOCAL_UI no-tool + 准备下单 DIRECT_TOOL + fallback_reason path)
+test-mcp-quote-approval-ui         pass 31
+test-mcp-order-timeline-ui         pass 23
+test-mcp-apps-standard             pass 45   (quote_order now model+app)
+test-mcp-tool-annotations          pass 36
+test-product-presentation-ui       pass 19
+test-mcp-manifest-version          pass 8    (BUG-09 protocol version)
+test-mcp-http-edge                 pass 38
+diagnose-mcp-card-matrix           9 ✅ + 2 expected flags (checks 2 & 7) + check 11 ✅
+boot smoke                         buildMcpServer assembles + lists 55 tools (repeated across suites)
+fresh-boot migration               N/A this session (no schema change landed; prerequisite for BUG-02/06)
+```
+Commits (on `5b44137`): `110a300` BUG-01 · `801b39f` MWN 准备下单 · `6d380a9` §II verify · `2e2a654` BUG-09 · `14d185c` BUG-07 · (docs). **Remaining: BUG-04, BUG-02, BUG-06, BUG-08, §XI two NL buttons** — see PHASE3_IMPLEMENTATION_REPORT §15.
+
+---
+## Earlier snapshot (interaction-architecture commit)
+
 ## Commands + results (rerun any)
 ```
 npx tsc --noEmit                                  # exit 0 (whole project typechecks)
