@@ -209,6 +209,10 @@ export function observeGatewayLimitsShadow(store: AsyncGatewayLimitStore | undef
   // Fire-and-forget: not awaited. .catch() guards unhandledRejection; in shadow a store outage is silently
   // ignored (it would only ever have logged). The hits still increment the authoritative counters so the
   // shadow data reflects real load before enforcement is turned on.
+  // ★SAFETY PIN: this call sits OUTSIDE the try/catch above. That is safe ONLY because
+  // evaluateGatewayLimitsAsync is `async` — a synchronous throw before its first await (planGatewayLimitChecks
+  // / the store.hit map) becomes a REJECTED promise caught by .catch() below, not a sync throw into /mcp. Do
+  // NOT convert it to a non-async function that can throw synchronously without also wrapping this in try/catch.
   void evaluateGatewayLimitsAsync(input, store, Date.now())
     .then(d => { if (!d.allowed) console.warn(`[agent-gateway-limits] shadow would-deny class=${input.cost_class} dim=${d.denied_dimension} retry_after=${d.retry_after_sec}s`) })
     .catch(() => undefined)
