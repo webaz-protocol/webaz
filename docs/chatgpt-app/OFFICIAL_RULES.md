@@ -55,7 +55,7 @@
 Three siblings with **distinct audiences** — this is the most misuse-prone contract:
 
 - **`structuredContent`** — concise JSON the **widget uses AND the model reads**. **MUST** validate against the tool's declared **`outputSchema`**. Keep small. Appears in the transcript.
-- **`content`** — optional Markdown/plaintext narration **for the model's response**. Appears in the transcript.
+- **`content`** — optional Markdown/plaintext narration. Visible to **both the model and the component** (it is part of the tool result the model reads AND is delivered to the view alongside `structuredContent`); it is NOT model-only. Appears in the transcript. (Phase-3A clarification.)
 - **`_meta`** — large or sensitive data **exclusively for the widget**; **`_meta` never reaches the model**. Use for hydrating UI without exposing data to the model. **MUST NOT** put secrets/tokens in `structuredContent` or component props.
 
 Tool-result `_meta` keys (verbatim): `_meta["openai/widgetSessionId"]` (per-widget id for correlating calls/logs while mounted), `_meta["mcp/www_authenticate"]` (auth challenge).

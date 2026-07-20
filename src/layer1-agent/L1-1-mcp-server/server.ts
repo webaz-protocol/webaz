@@ -1978,11 +1978,14 @@ quote_token: 10-min, single-use, bound to you+product+quantity+address+rail+amou
       },
       required: ['product_id'],
     },
-    // PR-A:quote 结果由 QuoteAndApproval 组件渲染,但组件从不 callTool 本工具(报价入口走会话流)——
-    // visibility 只留 'model',不授 'app'(遵守"当前不被 widget 调用的工具不因本 PR 获得 app 权限")。
+    // Phase-3A(低模型消耗):ProductResults 的「准备下单」按钮改为 DIRECT_TOOL —— 结构化直调本工具
+    //   (product_id + 默认地址 + 数量1),不再向聊天框发自然语言让模型选工具。故 visibility 加 'app'
+    //   (additive,不移除 'model';报价仍是加性快照,无资金/库存/订单变更,与 draft/submit 已 app 化一致)。
+    //   ★宿主是否把报价卡渲染成新卡(跨组件)属 LIVE_HOST_REQUIRED;按钮永远保留可复制的 NL 兼容降级。
     _meta: {
-      ui: { resourceUri: 'ui://widget/webaz-quote-approval-mcp.html', visibility: ['model'] },
+      ui: { resourceUri: 'ui://widget/webaz-quote-approval-mcp.html', visibility: ['model', 'app'] },
       'openai/outputTemplate': 'ui://widget/webaz-quote-approval.html',
+      'openai/widgetAccessible': true,
       'openai/toolInvocation/invoking': 'Preparing WebAZ order flow…',
       'openai/toolInvocation/invoked': 'WebAZ order flow ready',
     },

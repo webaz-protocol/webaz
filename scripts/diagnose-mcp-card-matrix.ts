@@ -163,6 +163,13 @@ async function main(): Promise<void> {
   add(10, 'no duplicate resource URIs (cache-key collision)', new Set(uris).size === uris.length,
     new Set(uris).size === uris.length ? `${uris.length} distinct URIs` : 'DUPLICATE URI present')
 
+  // 11. interaction-class (Phase-3A low-token): every DIRECT_TOOL card tool must be app-visible so the widget
+  //     can call it directly (no natural-language round-trip through the model). quote_order joins after Phase-3A.
+  const DIRECT_TOOL_TOOLS = ['webaz_search', 'webaz_buyer_orders', 'webaz_order_draft', 'webaz_submit_order_request', 'webaz_quote_order']
+  const notApp = DIRECT_TOOL_TOOLS.filter(n => { const r = rows.find(x => x.name === n); return !r || !/app/.test(r.visibility) })
+  add(11, 'DIRECT_TOOL card tools are app-visible (widget calls them directly; quote_order app-visible after Phase-3A)', notApp.length === 0,
+    notApp.length ? 'NOT app-visible: ' + notApp.join(', ') : DIRECT_TOOL_TOOLS.map(n => n.replace('webaz_', '') + '=app').join(' '))
+
   // ── Emit RESOURCE_REGISTRATION_MATRIX.md ─────────────────────────────────────────────────
   let rm = `# RESOURCE_REGISTRATION_MATRIX\n\n> **Code-generated** by \`scripts/diagnose-mcp-card-matrix.ts\` from the live \`buildMcpServer({surface:'full'})\`. Do not hand-edit.\n> Generated against commit HEAD on the audit branch. Every row is what \`resources/list\` + \`resources/read\` actually return.\n\n`
   rm += `## All registered resources (${resources.length})\n\n`

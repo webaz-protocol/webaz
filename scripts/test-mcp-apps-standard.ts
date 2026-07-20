@@ -5,7 +5,7 @@
  *
  * 覆盖(任务书 §十三):
  *   [T] 工具描述符:五 UI 工具标准 _meta.ui.resourceUri + legacy openai/outputTemplate 并存且 URI 不同;
- *       visibility 逐工具精确映射(不扩大);widgetAccessible 仅在 widget 实际调用的 4 工具;匿名面仍 21。
+ *       visibility 逐工具精确映射;widgetAccessible 在 widget 实际调用的 5 工具(Phase-3A:准备下单 DIRECT_TOOL 后 quote_order 加 app);匿名面仍 21。
  *   [R] 资源:legacy 3 个 skybridge 原值不动;standard 3 个 profile=mcp-app + ui.csp 四空数组 +
  *       无 ui.domain;URI 全局唯一;standard HTML 自包含(零请求词元/零 sink/零 WAZ)且单桥(legacy
  *       HTML 无标准桥词元)。
@@ -46,7 +46,7 @@ try {
   ok('T-0. 匿名工具面仍 21(本 PR 零工具增减)', tools.length === 21, `n=${tools.length}`)
   const EXPECT: Record<string, { std: string; legacy: string; vis: string[]; app: boolean }> = {
     webaz_search:               { std: 'ui://widget/webaz-products-mcp.html',        legacy: 'ui://widget/webaz-products.html',        vis: ['model', 'app'], app: true },
-    webaz_quote_order:          { std: 'ui://widget/webaz-quote-approval-mcp.html',  legacy: 'ui://widget/webaz-quote-approval.html',  vis: ['model'],        app: false },
+    webaz_quote_order:          { std: 'ui://widget/webaz-quote-approval-mcp.html',  legacy: 'ui://widget/webaz-quote-approval.html',  vis: ['model', 'app'], app: true },   // Phase-3A: ProductResults 准备下单 DIRECT_TOOL 直调 → app-visible (additive)
     webaz_order_draft:          { std: 'ui://widget/webaz-quote-approval-mcp.html',  legacy: 'ui://widget/webaz-quote-approval.html',  vis: ['model', 'app'], app: true },
     webaz_submit_order_request: { std: 'ui://widget/webaz-quote-approval-mcp.html',  legacy: 'ui://widget/webaz-quote-approval.html',  vis: ['model', 'app'], app: true },
     webaz_buyer_orders:         { std: 'ui://widget/webaz-order-timeline-mcp.html',  legacy: 'ui://widget/webaz-order-timeline.html',  vis: ['model', 'app'], app: true },
