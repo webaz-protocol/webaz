@@ -844,6 +844,7 @@ jobs:
       - run: npm run test:mcp-quote-approval-ui
       - run: npm run test:mcp-order-timeline-ui
       - run: npm run test:mcp-schema-v2-contract
+      - run: npm run test:bug08-idempotency
       - run: npm run test:mcp-apps-standard
       - run: npm run test:product-widget-expand
       - run: npm run test:agent-category-contract
