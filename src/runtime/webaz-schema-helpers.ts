@@ -2090,6 +2090,7 @@ export function initOrderQuotesSchema(db: Database.Database): void {
       created_at       TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
+  try { db.exec('ALTER TABLE order_quotes ADD COLUMN promised_eta_snapshot TEXT') } catch { /* exists */ }   // BUG-02:冻结报价时向买家承诺的配送估计快照 JSON(ALTER AFTER CREATE;历史行=NULL)
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_oq_idem ON order_quotes(human_id, idempotency_key) WHERE idempotency_key IS NOT NULL`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_oq_expires ON order_quotes(expires_at)`)
 }
@@ -2136,6 +2137,7 @@ export function initOrderDraftsSchema(db: Database.Database): void {
   `)
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_od_quote ON order_drafts(quote_id)`)   // 一 quote 一 draft:schema 级持久保证(不止服务层 CAS)
   try { db.exec('ALTER TABLE order_drafts ADD COLUMN order_id TEXT') } catch { /* exists */ }   // PR-5a:批准执行后回链真实订单(status=ordered);ALTER AFTER CREATE 铁律
+  try { db.exec('ALTER TABLE order_drafts ADD COLUMN promised_eta_snapshot TEXT') } catch { /* exists */ }   // BUG-02:从 quote 继承的配送估计快照(不重读 listing)
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_od_idem ON order_drafts(buyer_id, idempotency_key) WHERE idempotency_key IS NOT NULL`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_od_buyer ON order_drafts(buyer_id, created_at)`)
 }
