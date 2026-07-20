@@ -7739,7 +7739,7 @@ registerOAuthAuthorizeRoutes(app)   // RFC-023 PR-2a:GET /oauth/authorize 校验
 registerOAuthApproveRoutes(app, { db, auth, generateId, consumeGateToken, rateLimitOk })   // RFC-023 PR-2b:Passkey 门 consent → mint grant+code
 const gatewayReplay = await (await import('../runtime/agent-gateway-replay-pg.js')).openConfiguredGatewayReplayRuntime()
 registerOAuthTokenRoutes(app, { db, rateLimitOk, gatewayReplayStore: gatewayReplay?.store })   // RFC-023 PR-3 + PR-1 refresh;S1c gatewayReplayStore
-;(await import('./routes/product-actions.js')).registerProductActionRoutes(app, { db, auth, generateId })   // Ops Passkey-in-flow:owner-key 提交商品动作(删除)请求 → approve_url;执行永远要 Passkey(inline import 守 server.ts LOC ceiling)
+;(await import('./routes/product-actions.js')).registerProductActionRoutes(app, { db, auth, generateId, consumeGateToken, retireAnchorsByTarget })   // Ops Passkey-in-flow:owner-key 提交删除请求 + 现场真人 Passkey 批准执行(裸 api_key 永不直删;inline import 守 server.ts LOC ceiling)
 registerOAuthRevokeRoutes(app, { db, rateLimitOk })   // RFC-023 PR-3(revoke):RFC 7009 —— 出示 token → 撤其 grant + 级联撤 access/refresh(一个 .immediate() tx;200 无 oracle)
 registerOAuthRegisterRoutes(app, { rateLimitOk })   // RFC-024:Dynamic Client Registration(POST /oauth/register,inert-until-consented)
 registerPublicUtilsRoutes(app, {
