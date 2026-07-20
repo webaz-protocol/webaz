@@ -19,7 +19,7 @@
 import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
 import { toUnits, mulRate, mulQty, type Units } from '../money.js'
-import { SCHEMA_ORDER_QUOTE } from '../agent-model-projection.js'  // MCP Token PR-1: webaz.order_quote.model.v1
+import { SCHEMA_ORDER_QUOTE_V1 } from '../agent-model-projection.js'  // raw/internal quote shape (line_items) tags itself v1; the MCP consumer projection (projectQuoteConsumer) re-stamps the BUG-06 v2 contract
 import { MAX_PER_ORDER } from '../order-limits.js'
 import { effectiveShippingTemplate, resolveShipping, normalizeRegion } from '../shipping-templates.js'
 import { buildPromisedEta, serializePromisedEta, parsePromisedEta } from '../delivery-eta.js'   // BUG-02:配送估计冻结
@@ -127,7 +127,7 @@ function buildResponse(db: Database.Database, row: Record<string, unknown>, quot
   if (sumIncluded !== totalU || totalU + donU !== payableU) throw new Error('QUOTE_CALCULATION_FAILED: line-item/total invariant broke')
   const acc = row.direct_receive_account_id ? getAccount(db, String(row.direct_receive_account_id)) : null
   return {
-    schema_version: SCHEMA_ORDER_QUOTE,   // MCP Token PR-1:版本化投影标识(结构不变,字段即契约)
+    schema_version: SCHEMA_ORDER_QUOTE_V1,   // raw internal shape (unchanged); MCP consumer projection re-stamps v2
     quote_id: String(row.id),
     acting_as: buyer?.handle ? `@${buyer.handle}` : null,
     account_id_hint: maskId(String(row.human_id)),

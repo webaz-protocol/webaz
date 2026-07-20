@@ -46,7 +46,7 @@ import { REQUEST_READINESS_GUIDE } from '../../pwa/agent-request-readiness.js'  
 import { getUsdRates, regionToCurrency } from '../../fx-rates.js'  // USDC 显示换算(display-only)  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
 import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult, summarizeDraftResult, summarizeSubmitResult, summarizeOrderTimeline,
          projectQuoteConsumer, projectDraftConsumer, projectSubmitConsumer, projectOrderTimelineConsumer,
-         SCHEMA_PRODUCT_SEARCH, projectProductModel, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1:Model Projection 单一真相源
+         SCHEMA_PRODUCT_SEARCH, SCHEMA_ORDER_DRAFT, projectProductModel, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1:Model Projection 单一真相源
 import { homedir } from 'node:os'
 import { join as pathJoin } from 'node:path'
 import { existsSync as fsExists, mkdirSync, writeFileSync, readFileSync, unlinkSync, chmodSync } from 'node:fs'
@@ -2246,7 +2246,7 @@ const STRUCTURED_RESULT_TOOLS: Record<string, { summarize: (r: Record<string, un
     project: async r => Array.isArray(r.timeline) && r.order ? projectOrderTimelineConsumer(r, await fxView(), regionToCurrency) : r },
   webaz_quote_order: { summarize: summarizeQuoteResult, project: async r => r.quote_id ? projectQuoteConsumer(r, await fxView(), regionToCurrency) : r },
   webaz_order_draft: { summarize: summarizeDraftResult, project: async r => {
-    if (Array.isArray(r.drafts)) { const fx = await fxView(); return { schema_version: 'webaz.order_draft.model.v1', count: r.count, drafts: (r.drafts as Array<Record<string, unknown>>).map(d => projectDraftConsumer(d, fx, regionToCurrency)) } }
+    if (Array.isArray(r.drafts)) { const fx = await fxView(); return { schema_version: SCHEMA_ORDER_DRAFT, count: r.count, drafts: (r.drafts as Array<Record<string, unknown>>).map(d => projectDraftConsumer(d, fx, regionToCurrency)) } }
     return r.draft_id ? projectDraftConsumer(r, await fxView(), regionToCurrency) : r
   } },
   webaz_submit_order_request: { summarize: summarizeSubmitResult, project: async r => r.request_id ? projectSubmitConsumer(r) : r },

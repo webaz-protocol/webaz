@@ -13,6 +13,9 @@ import { SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL, SCHEMA_ORDER_STATUS, SCHE
 
 const productMoney = { type: 'object', description: 'product price: amount_minor / currency USDC / display (display line only; fx table gives display-only local conversions)' }
 const protocolMoney = { type: 'object', description: 'protocol-recorded integer money: amount_minor / currency / currency_exponent / display' }
+// BUG-06 v2 shared fragments — status is ALWAYS an object {code,label,label_en}; quantity is a positive integer.
+const statusObject = { type: 'object', description: 'BUG-06 v2 unified status: {code (canonical machine code — never inferred from label), label (zh), label_en}' }
+const posIntQty = { type: 'integer', minimum: 1, description: 'positive integer; display-only (the charged amount is price.amount_minor, never derived from quantity)' }
 const err = {
   error: { type: 'string', description: 'present ONLY on failure (with error_code + structured recovery fields)' },
   error_code: { type: 'string' },
@@ -54,9 +57,11 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
     description: `${SCHEMA_ORDER_STATUS} (list/minimal/up_to_date) OR ${SCHEMA_ORDER_TIMELINE} (full single-order timeline: status labels, USDC price + display-only fiat estimate, rail-honest refund state, server-authoritative actions) — zero PII`,
     properties: {
       schema_version: { type: 'string', enum: [SCHEMA_ORDER_STATUS, SCHEMA_ORDER_TIMELINE] },
+      type: { type: 'string', description: 'BUG-06 v2 discriminator on the full timeline form: "order_timeline" (absent on the minimal order_status list)' },
+      quantity: posIntQty,
       timeline: { type: 'array', description: 'full form: {from, to_status{code,label}, actor, at} events' },
       refund: { type: 'object', description: 'rail-honest refund state; ABSENT when the order has no return requests (direct_p2p: WebAZ holds no principal — protocol records outcomes only)' },
-      rail_badge: { type: 'string' }, status: { description: 'timeline form: {code, label, label_en} object; up_to_date form: raw status code string' },
+      rail_badge: { type: 'string' }, status: { description: 'timeline (v2) form: {code, label, label_en} object; up_to_date (order_status v1) form: raw status code string' },
       summary: { type: 'object', description: 'whole-account counts: total / active / awaiting_you / disputed / completed / cancelled / other_terminal' },
       count: { type: 'number' }, total_count: { type: 'number' },
       next_cursor: { type: 'string', description: 'present when older orders exist — pass back as cursor' },
@@ -72,8 +77,9 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
     description: `${SCHEMA_ORDER_QUOTE} — consumer quote projection: USDC price + display-only fiat estimate, region-only destination, rail-honesty note. Quote only — nothing charged, no stock held`,
     properties: {
       schema_version: { type: 'string', const: SCHEMA_ORDER_QUOTE },
+      type: { type: 'string', const: 'order_quote' }, status: statusObject,
       quote_id: { type: 'string' }, quote_token: { type: 'string', description: 'single-use, 10-min TTL — pass to webaz_order_draft' },
-      product: { type: 'object', description: '{id, title}' }, quantity: { type: 'number' },
+      product: { type: 'object', description: '{id, title}' }, quantity: posIntQty,
       price: productMoney,
       fiat_estimate: { type: 'object', description: 'display-only local-fiat estimate {currency, display ≈…, rate, as_of, stale, estimated:true} — NEVER a locked settlement amount; omitted when unavailable (USDC still shown)' },
       amounts: { type: 'object', description: 'integer minor breakdown {item, shipping, other}' },
@@ -92,8 +98,9 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
     description: `${SCHEMA_ORDER_DRAFT} — consumer draft projection (single or {count,drafts[]}): frozen snapshot, nothing charged, no stock held, 24h expiry`,
     properties: {
       schema_version: { type: 'string', const: SCHEMA_ORDER_DRAFT },
-      draft_id: { type: 'string' }, status: { type: 'string' },
-      product: { type: 'object' }, quantity: { type: 'number' },
+      type: { type: 'string', const: 'order_draft' }, status: statusObject,
+      draft_id: { type: 'string' },
+      product: { type: 'object' }, quantity: posIntQty,
       price: productMoney,
       fiat_estimate: { type: 'object', description: 'display-only ≈ local fiat (see quote schema)' },
       destination: { type: 'object' }, payment_rail: { type: 'string' }, rail_note: { type: 'string' },
@@ -108,8 +115,9 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
     description: `${SCHEMA_ORDER_APPROVAL} — approval submit projection: pending human Passkey; submit NEVER executes; duplicate-purchase protection surfaces an explicit warning`,
     properties: {
       schema_version: { type: 'string', const: SCHEMA_ORDER_APPROVAL },
+      type: { type: 'string', const: 'order_approval' },
       request_id: { type: 'string' }, draft_id: { type: 'string' },
-      action_type: { type: 'string', const: 'order_create' }, status: { type: 'string', const: 'pending' },   // P0-C canonical status 统一(原 pending_approval)
+      action_type: { type: 'string', const: 'order_create' }, status: statusObject,   // BUG-06 v2: {code:'pending',label,label_en} object (was the bare string 'pending'); quantity n/a (references draft_id)
       passkey_required: { type: 'boolean', const: true },
       on_approval: { type: 'string', description: 'rail-aware neutral wording: approval creates the single order; payment behavior follows the disclosed rail (direct_p2p: WebAZ holds no principal)' },
       approval_url: { type: 'string' },

@@ -14,8 +14,11 @@
 import { toUnits } from './money.js'
 
 export const SCHEMA_PRODUCT_SEARCH = 'webaz.product_search.model.v1'
-export const SCHEMA_ORDER_STATUS = 'webaz.order_status.model.v1'
-export const SCHEMA_ORDER_QUOTE = 'webaz.order_quote.model.v1'
+export const SCHEMA_ORDER_STATUS = 'webaz.order_status.model.v1'   // list/minimal — NOT bumped by BUG-06 (status stays a bare code string, never mixed within its own version)
+// BUG-06 — the four shared order-lifecycle cards move to a unified v2 contract (type + status{code,label,label_en} + positive-int quantity).
+// Legacy v1 values are retained so the compatibility matrix + tests can reference the shape old chat messages still carry.
+export const SCHEMA_ORDER_QUOTE_V1 = 'webaz.order_quote.model.v1'
+export const SCHEMA_ORDER_QUOTE = 'webaz.order_quote.model.v2'
 
 /** 递归剥离 null / undefined / 空数组 / 空对象(0 与 false 与 '' 保留 —— 语义值不动)。 */
 export function stripEmpty(v: unknown): unknown {
@@ -254,8 +257,34 @@ export function projectProductDetail(p: Record<string, unknown>, opts: ProductDe
 // 法币估算(带 ≈/estimated/stale,绝不表述为已锁定结算金额)+ 支付轨道诚信文案。协议记账
 // (line_items/units/WAZ)保留在路由响应与审批执行层 —— 投影只重塑消费者可见面,不动经济语义。
 
-export const SCHEMA_ORDER_DRAFT = 'webaz.order_draft.model.v1'
-export const SCHEMA_ORDER_APPROVAL = 'webaz.order_approval.model.v1'
+export const SCHEMA_ORDER_DRAFT_V1 = 'webaz.order_draft.model.v1'
+export const SCHEMA_ORDER_DRAFT = 'webaz.order_draft.model.v2'
+export const SCHEMA_ORDER_APPROVAL_V1 = 'webaz.order_approval.model.v1'
+export const SCHEMA_ORDER_APPROVAL = 'webaz.order_approval.model.v2'
+
+// BUG-06 — status meanings maps (single source per card family). statusView(code, meanings) turns a
+// canonical machine code into {code,label,label_en}; an unknown code renders honestly as label=code.
+export const DRAFT_STATE_MEANINGS: Record<string, { zh: string; en: string }> = {
+  draft: { zh: '草稿', en: 'draft' }, submitted: { zh: '已提交', en: 'submitted' },
+  cancelled: { zh: '已取消', en: 'cancelled' }, expired: { zh: '已过期', en: 'expired' },
+}
+export const APPROVAL_STATE_MEANINGS: Record<string, { zh: string; en: string }> = {
+  pending: { zh: '待批准', en: 'pending' }, executed: { zh: '已执行', en: 'executed' },
+  rejected: { zh: '已拒绝', en: 'rejected' }, expired: { zh: '已过期', en: 'expired' },
+  failed: { zh: '执行失败', en: 'failed' }, needs_reconcile: { zh: '需对账', en: 'needs_reconcile' },
+}
+const QUOTE_STATE_MEANINGS: Record<string, { zh: string; en: string }> = { quoted: { zh: '报价', en: 'quoted' } }
+
+/** BUG-06 — v2 quantity contract: a positive integer, never a string/decimal/≤0. Source is a trusted
+ * DB integer (orders/drafts.quantity), so a clean value passes through; a malformed value falls back
+ * to 1 for the display-only `×N` field — the charged amount is projected from `price.amount_minor`
+ * (server), never from this field, so a fallback cannot change what the buyer pays. */
+export function toPosInt(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(String(v ?? '').trim())
+  if (Number.isInteger(n) && n > 0 && n <= Number.MAX_SAFE_INTEGER) return n
+  const t = Math.trunc(n)
+  return Number.isFinite(t) && t > 0 && t <= Number.MAX_SAFE_INTEGER ? t : 1
+}
 
 const FIAT_SYMBOL: Record<string, string> = { USD: '$', SGD: 'S$', CNY: '¥', EUR: '€', INR: '₹', IDR: 'Rp', MYR: 'RM', PHP: '₱', VND: '₫', THB: '฿' }
 
@@ -326,11 +355,13 @@ export function projectQuoteConsumer(r: Record<string, unknown>, fx: FxView | nu
   const item = lineAmt(r, 'item_subtotal'), shipping = lineAmt(r, 'shipping')
   const other = Math.max(0, payable - item - shipping)
   return {
-    schema_version: SCHEMA_ORDER_QUOTE,
+    schema_version: SCHEMA_ORDER_QUOTE,   // BUG-06 v2: type + unified status object + positive-int quantity
+    type: 'order_quote',
     quote_id: r.quote_id,
+    status: statusView('quoted', QUOTE_STATE_MEANINGS),   // a quote has no order status; v2 emits a uniform `quoted` for family shape consistency
     ...(typeof r.quote_token === 'string' ? { quote_token: r.quote_token } : { quote_token_note: 'idempotent replay — the single-use token was issued ONLY with the original response: reuse that original quote_token, or wait for expiry (~10 min) and quote again', replay: true }),
     product: { id: prod.product_id, title: prod.title },
-    quantity: qty,
+    quantity: toPosInt(qty),
     price: { amount_minor: payable, currency: 'USDC', currency_exponent: 6, display: fmtUsdcMinor(payable) },
     ...(fiatEstimate(payable, dest.region, fx, regionToCcy) ? { fiat_estimate: fiatEstimate(payable, dest.region, fx, regionToCcy) } : {}),
     amounts: { item, shipping, other },
@@ -350,20 +381,21 @@ export function projectDraftConsumer(d: Record<string, unknown>, fx: FxView | nu
   const prod = (d.product ?? {}) as Record<string, unknown>
   const dest = (d.destination ?? {}) as Record<string, unknown>
   const payable = Number(((d.payable_total ?? d.total ?? {}) as Record<string, unknown>).amount_minor)
-  const status = String(d.status ?? '')
+  const statusCode = String(d.status ?? '')
   return {
-    schema_version: SCHEMA_ORDER_DRAFT,
-    draft_id: d.draft_id, status,
+    schema_version: SCHEMA_ORDER_DRAFT,   // BUG-06 v2: type + status object (was a bare string) + positive-int quantity
+    type: 'order_draft',
+    draft_id: d.draft_id, status: statusView(statusCode, DRAFT_STATE_MEANINGS),
     ...(d.idempotent_replay ? { idempotent_replay: true } : {}), ...(d.already_cancelled ? { already_cancelled: true } : {}),
     product: { id: prod.product_id, title: prod.title },
-    quantity: d.quantity,
+    quantity: toPosInt(d.quantity),
     price: { amount_minor: payable, currency: 'USDC', currency_exponent: 6, display: fmtUsdcMinor(payable) },
     ...(fiatEstimate(payable, dest.region, fx, regionToCcy) ? { fiat_estimate: fiatEstimate(payable, dest.region, fx, regionToCcy) } : {}),
     destination: { region: dest.region ?? null, summary: dest.address_summary ?? null },
     payment_rail: d.payment_rail ?? 'escrow', rail_note: railHonesty(d.payment_rail),
     stock_reserved: false, economic_action_executed: false,
     expires_at: toIsoUtc(d.expires_at),
-    available_actions: status === 'draft' ? ['submit_request'] : [],
+    available_actions: statusCode === 'draft' ? ['submit_request'] : [],
     disclosures: ['草稿不会扣款、不锁库存,24 小时过期', '提交后需真人 Passkey 批准才创建正式订单'],
   }
 }
@@ -373,9 +405,10 @@ export function projectSubmitConsumer(r: Record<string, unknown>): Record<string
   const idem = (r.idempotency ?? {}) as Record<string, unknown>
   const dup = idem.duplicate === true
   return {
-    schema_version: SCHEMA_ORDER_APPROVAL,
+    schema_version: SCHEMA_ORDER_APPROVAL,   // BUG-06 v2: type + status object (was the bare string 'pending'); quantity is n/a (references draft_id — documented in SCHEMA_V2_CONTRACT §5)
+    type: 'order_approval',
     request_id: r.request_id, draft_id: r.draft_id,
-    action_type: 'order_create', status: 'pending',   // P0-C canonical status 统一:与 webaz_approval_requests 读回一致(pending/executed/rejected/expired/failed/needs_reconcile);"待批准"语义由 passkey_required:true 表达,不再用独有的 pending_approval
+    action_type: 'order_create', status: statusView('pending', APPROVAL_STATE_MEANINGS),   // P0-C canonical status 统一:与 webaz_approval_requests 读回一致(pending/executed/rejected/expired/failed/needs_reconcile);"待批准"语义由 passkey_required:true 表达,不再用独有的 pending_approval
     passkey_required: true,
     // rail-aware 中性措辞(Codex H-3):submit 响应不携轨道,绝不硬编码"资金会移动"——直付下 WebAZ 不托管本金
     on_approval: 'creates the single real order; payment behavior follows the disclosed rail (escrow: wallet→escrow debit at creation; direct_p2p: WebAZ holds no principal — buyer pays the seller directly)',
@@ -405,9 +438,9 @@ import { ORDER_STATE_MEANINGS } from './layer0-foundation/L0-2-state-machine/tra
 
 export const SCHEMA_ORDER_TIMELINE = 'webaz.order_timeline.model.v1'
 
-export function statusView(code: unknown): Record<string, unknown> {
+export function statusView(code: unknown, meanings: Record<string, { zh: string; en: string }> = ORDER_STATE_MEANINGS as Record<string, { zh: string; en: string }>): Record<string, unknown> {
   const c = String(code ?? '')
-  const m = (ORDER_STATE_MEANINGS as Record<string, { zh: string; en: string }>)[c]
+  const m = meanings[c]
   return { code: c, label: m?.zh ?? c, label_en: m?.en ?? c }
 }
 
@@ -420,11 +453,12 @@ export function projectOrderTimelineConsumer(r: Record<string, unknown>, fx: FxV
   const returns = Array.isArray(refund.return_requests) ? refund.return_requests as Array<Record<string, unknown>> : []
   const railBadge = rail === 'direct_p2p' ? '直付(WebAZ 不托管本金)' : '模拟托管测试订单 — 不代表真实 USDC 或法币托管'
   return {
-    schema_version: SCHEMA_ORDER_TIMELINE,
+    schema_version: SCHEMA_ORDER_TIMELINE,   // BUG-06 v2: add type; quantity coerced to a positive integer (was `?? null`); status already an object
+    type: 'order_timeline',
     order_id: o.order_id,
     // 卖家可控字符串必封顶:防超预算 + 防超长文本注入模型可见面
     product: { id: o.item_ref, title: typeof (o as Record<string, unknown>).product_title === 'string' ? capBytes(String((o as Record<string, unknown>).product_title), 200).text : null },
-    quantity: o.quantity ?? null,
+    quantity: toPosInt(o.quantity),
     price: { amount_minor: amountMinor, currency: 'USDC', currency_exponent: 6, display: fmtUsdcMinor(amountMinor) },
     ...(fiatEstimate(amountMinor, logi.dest_region, fx, regionToCcy) ? { fiat_estimate: fiatEstimate(amountMinor, logi.dest_region, fx, regionToCcy) } : {}),
     status: statusView(o.status),
