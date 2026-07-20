@@ -1,5 +1,7 @@
 # ACTION_SAFETY_MATRIX
 
+> **Phase-3A update:** the `interaction_class` (LOCAL_UI / DIRECT_TOOL / MODEL_REQUIRED) and per-button model/tool/chat-message flags are in **MODEL_USAGE_ARCHITECTURE.md §III**. Safety-relevant change: **准备下单** is now a DIRECT_TOOL (`webaz_quote_order`, additive quote — no fund/stock/order; still gated to webaz.xyz Passkey for execution) rather than a natural-language follow-up. The new **查看完整条款** button is a read-only DIRECT_TOOL (`webaz_search full_terms`). All safety invariants below are unchanged.
+>
 > Phase-2 §VIII. Every card action that can leave the widget, graded for real-world effect. Source: `ui-widgets.ts` + the tool annotations (`tool-annotations.ts`) + the submit/draft domain (`order-submit-request.ts`, `order-draft.ts`). No code changed.
 
 ## Effect classes

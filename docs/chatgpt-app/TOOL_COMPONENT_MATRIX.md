@@ -9,7 +9,7 @@
 |---|---|---|---|---|---|---|---|---|---|---|
 | `webaz_search` | RO/OW | — | ✅ | webaz.product_search.model.v1 \| webaz.product_detail.model.v1 | `ui://widget/webaz-products-mcp.html` | `ui://widget/webaz-products.html` | true | model,app | ProductResults | ✅ |
 | `webaz_buyer_orders` | RO/OW | — | ✅ | webaz.order_status.model.v1 \| webaz.order_timeline.model.v1 | `ui://widget/webaz-order-timeline-mcp.html` | `ui://widget/webaz-order-timeline.html` | true | model,app | OrderTimeline | ✅ |
-| `webaz_quote_order` | W/OW | — | ✅ | webaz.order_quote.model.v1 | `ui://widget/webaz-quote-approval-mcp.html` | `ui://widget/webaz-quote-approval.html` | — | model | QuoteAndApproval | ✅ |
+| `webaz_quote_order` | W/OW | — | ✅ | webaz.order_quote.model.v1 | `ui://widget/webaz-quote-approval-mcp.html` | `ui://widget/webaz-quote-approval.html` | true | model,app | QuoteAndApproval | ✅ |
 | `webaz_order_draft` | W/D/OW | — | ✅ | webaz.order_draft.model.v1 | `ui://widget/webaz-quote-approval-mcp.html` | `ui://widget/webaz-quote-approval.html` | true | model,app | QuoteAndApproval | ✅ |
 | `webaz_submit_order_request` | W/OW | — | ✅ | webaz.order_approval.model.v1 | `ui://widget/webaz-quote-approval-mcp.html` | `ui://widget/webaz-quote-approval.html` | true | model,app | QuoteAndApproval | ✅ |
 

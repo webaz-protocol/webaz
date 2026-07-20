@@ -1,5 +1,7 @@
 # CURRENT_BUTTON_INVENTORY
 
+> **Phase-3A update:** each button now carries an `interaction_class` (LOCAL_UI / DIRECT_TOOL / MODEL_REQUIRED) — the authoritative 23-row classification with all fields lives in **MODEL_USAGE_ARCHITECTURE.md §III** and **FULL_BUTTON_TEST_MATRIX.md**. Two changes since Phase 2: (1) **准备下单** is now **DIRECT_TOOL** — it calls `webaz_quote_order{product_id,quantity:1}` directly (NL follow-up kept only as fail-visible fallback); (2) a new **查看完整条款** button (DIRECT_TOOL, `webaz_search` with `full_terms:true`) was added to the detail view (BUG-01). Count is now **23** controls.
+>
 > Phase-2 §VIII. Extracted from the ACTUAL component source `src/layer1-agent/L1-1-mcp-server/ui-widgets.ts` — not from any ideal design. Every button below exists in code with the cited line.
 > Test-level legend: **CODE_INSPECTED** (read this phase) · **UNIT_TESTED** (a `scripts/test-*` exercises it) · HOST_SIMULATED/CHATGPT_WEB_TESTED/IOS_TESTED/ANDROID_TESTED — **none used** (no live ChatGPT access this phase, per instruction).
 
