@@ -7734,7 +7734,7 @@ registerWalletWriteRoutes(app, {
 mountEdgeOriginGuard(app)   // cf-origin-guard (dormant until WEBAZ_EDGE_SECRET) — before handlers
 // #1013 Phase 107: 6 public/util endpoints 统一 register（必须在 SPA catch-all 之前；logError/generateManifest 在上方定义）
 const gatewayReplay = await (await import('../runtime/agent-gateway-replay-pg.js')).openConfiguredGatewayReplayRuntime()
-registerRemoteMcpRoutes(app, { rateLimitOk, gatewayReplayStore: gatewayReplay?.store, gatewayLoopbackBaseUrl: () => `http://127.0.0.1:${PORT}`, gatewayLimitStore: (await (await import('../runtime/gateway-limits-pg.js')).openConfiguredGatewayLimitStore())?.store })   // RFC-022 + RFC-028 S1c3/S2b:Remote MCP + optional DPoP authority/handoff + default-off shadow limiter
+registerRemoteMcpRoutes(app, { rateLimitOk, gatewayReplayStore: gatewayReplay?.store, gatewayLoopbackBaseUrl: () => `http://127.0.0.1:${PORT}`, gatewayLimitStore: (await (await import('../runtime/gateway-limits-pg.js')).openConfiguredGatewayLimitStoreOrDegrade())?.store })   // RFC-022 + RFC-028 S1c3/S2b:Remote MCP + optional DPoP authority/handoff + fail-soft shadow limiter (observability never crashes boot)
 registerOAuthDiscoveryRoutes(app)   // RFC-023 PR-1:WEBAZ_OAUTH=1 才挂载(fail-closed)发现面元数据
 registerOAuthAuthorizeRoutes(app)   // RFC-023 PR-2a:GET /oauth/authorize 校验+SPA consent 交接(mint 无)
 registerOAuthApproveRoutes(app, { db, auth, generateId, consumeGateToken, rateLimitOk })   // RFC-023 PR-2b:Passkey 门 consent → mint grant+code
