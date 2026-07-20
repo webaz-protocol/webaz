@@ -7,7 +7,7 @@
  *
  * Usage: npm run test:gateway-limits
  */
-const { GATEWAY_LIMIT_POLICY, gatewayLimitKey, evaluateGatewayLimits, InMemoryGatewayLimitStore } =
+const { GATEWAY_LIMIT_POLICY, gatewayLimitKey, evaluateGatewayLimits, evaluateGatewayLimitsAsync, InMemoryGatewayLimitStore } =
   await import('../src/runtime/gateway-limits.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -101,6 +101,53 @@ try {
     for (let i = 0; i < 1000; i++) store.hit('flood:' + i, 60, NOW)
     // internal map is private; assert behavior: an early key was evicted (its count restarts at 1)
     ok('7 flooded keys evicted (bounded cardinality) — early key count restarted', store.hit('flood:0', 60, NOW) === 1)
+  }
+
+  // 8. async evaluator (distributed store path) — same strictest-wins decision, counts every dim, propagates rejection
+  {
+    const syntheticAsync = {
+      public_low: { ip: { limit: 2, window_sec: 60 } },
+      private_read: {}, medium: {}, economic: {},
+      high: { ip: { limit: 1, window_sec: 60 }, subject: { limit: 1, window_sec: 3600 } },
+    } as never
+
+    // 8a under-limit allows, over-limit denies with the same shape as the sync path
+    const counters = new Map<string, number>()
+    const asyncStore = { hit: async (k: string) => { const n = (counters.get(k) ?? 0) + 1; counters.set(k, n); return n } }
+    const a1 = await evaluateGatewayLimitsAsync({ cost_class: 'public_low', dims: { ip: '1.2.3.4' } }, asyncStore, NOW, syntheticAsync)
+    const a2 = await evaluateGatewayLimitsAsync({ cost_class: 'public_low', dims: { ip: '1.2.3.4' } }, asyncStore, NOW, syntheticAsync)
+    const a3 = await evaluateGatewayLimitsAsync({ cost_class: 'public_low', dims: { ip: '1.2.3.4' } }, asyncStore, NOW, syntheticAsync)
+    ok('8a async under-limit allowed', a1.allowed === true && a2.allowed === true)
+    ok('8b async over-limit denied on ip + retry_after', a3.allowed === false && a3.denied_dimension === 'ip' && a3.retry_after_sec === 60)
+
+    // 8c strictest-wins across dims with different windows (longest window reported), matching sync
+    const s2 = { hit: async () => 999 }   // everything over
+    const dec = await evaluateGatewayLimitsAsync({ cost_class: 'high', dims: { ip: '9.9.9.9', subject: 'usr_x' } }, s2, NOW, syntheticAsync)
+    ok('8c async strictest (3600s subject) reported', dec.allowed === false && dec.denied_dimension === 'subject' && dec.retry_after_sec === 3600)
+
+    // 8d counts EVERY present dim (no short-circuit) even when all over-limit
+    const hitKeys: string[] = []
+    const s3 = { hit: async (k: string) => { hitKeys.push(k); return 999 } }
+    await evaluateGatewayLimitsAsync({ cost_class: 'high', dims: { ip: 'i', subject: 's' } }, s3, NOW, syntheticAsync)
+    ok('8d async counts all present dims (ip+subject)', hitKeys.length === 2)
+
+    // 8e a hit REJECTION propagates — never swallowed into an allow (fail-closed at the caller)
+    let propagated = false
+    try { await evaluateGatewayLimitsAsync({ cost_class: 'public_low', dims: { ip: 'x' } }, { hit: async () => { throw new Error('store outage') } }, NOW, syntheticAsync) }
+    catch (e) { propagated = e instanceof Error && e.message.includes('store outage') }
+    ok('8e async store outage rejects (not allowed)', propagated)
+
+    // 8f unknown cost_class → fail-closed deny WITHOUT touching the store
+    let touched = false
+    const bad = await evaluateGatewayLimitsAsync({ cost_class: 'nope' as never, dims: { ip: 'x' } }, { hit: async () => { touched = true; return 1 } }, NOW, syntheticAsync)
+    ok('8f async unknown class → deny, store not called', bad.allowed === false && touched === false)
+
+    // 8g fail-closed on a non-finite count (seam-contract violation): a store returning undefined/NaN must
+    //    DENY, never be read as under-limit (NaN > limit === false would be a silent fail-open)
+    const nanSync = evaluateGatewayLimits({ cost_class: 'public_low', dims: { ip: '1.2.3.4' } }, { hit: () => undefined as never }, NOW, syntheticAsync)
+    ok('8g sync non-finite count → fail-closed deny', nanSync.allowed === false)
+    const nanAsync = await evaluateGatewayLimitsAsync({ cost_class: 'public_low', dims: { ip: '1.2.3.4' } }, { hit: async () => NaN }, NOW, syntheticAsync)
+    ok('8h async non-finite count → fail-closed deny', nanAsync.allowed === false)
   }
 
   if (fail > 0) { console.error(`\n❌ gateway-limits FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
