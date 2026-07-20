@@ -12,7 +12,7 @@
 | **BUG-09** manifest protocol version | ✅ DONE | `2e2a654` |
 | **BUG-07** timestamp ISO-8601-UTC | ✅ DONE | `14d185c` |
 | **BUG-04** widget URI versioning | ⬜ NOT DONE — designed (RESOURCE_URI_MIGRATION.md) | — |
-| **BUG-02** delivery-ETA snapshot + migration | ⬜ NOT DONE — designed (SCHEMA_MIGRATION.md §ETA) | — |
+| **BUG-02** delivery-ETA snapshot + migration | ✅ DONE (Phase-3A.2A) | `0976128` `2c65d8a` `2a2fbba` `e72b418` |
 | **BUG-06** status/quantity schema-version | ⬜ NOT DONE — designed (SCHEMA_MIGRATION.md §status) | — |
 | **BUG-08** duplicate semantics + full trace | ⬜ NOT DONE — designed (IDEMPOTENCY_IMPLEMENTATION.md) | — |
 | §XI two NL buttons (查看最新状态 / 联系商家) | ⬜ NOT DONE — designed below; LIVE_HOST-gated | — |

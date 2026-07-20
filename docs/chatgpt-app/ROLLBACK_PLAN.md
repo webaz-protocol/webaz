@@ -11,6 +11,10 @@
 | `2e2a654` BUG-09 | manifest version fields | manifest reverts to `protocol_version:'2025-03-26'` | none — advertisement only |
 | `14d185c` BUG-07 | `toIsoUtc` on wire timestamps | timestamps revert to bare passthrough | none — representation only |
 | (BUG-04) | content-versioned widget URIs + bare aliases | tool `_meta`/ListResources revert to bare URIs; ReadResource still served both (aliases) so no card 404s mid-revert | none — URIs only; no data |
+| `0976128` BUG-02 migration | + `promised_eta_snapshot TEXT` on orders/order_quotes/order_drafts | revert leaves the (nullable, unread) columns harmless; or drop-column via a follow-up (SQLite: rebuild). No data to undo. | none — additive nullable, no backfill |
+| `2c65d8a` BUG-02 freeze | quote/draft/order freeze + read | revert → quote shows live ETA again; the stored snapshots become unread (harmless). No money/status/deadline change to undo. | none |
+| `2a2fbba` BUG-02 card | OrderTimeline promised/logistics ETA lines | revert → card drops the ETA lines (prior behavior). | none |
+| `e72b418` BUG-02 F1 | normalize quote region for fee+ETA | revert → mis-cased regions fall back to the pre-existing (inconsistent) fee/ETA tiering. | none |
 
 **Full-branch rollback:** `git checkout main` (branch never merged) — production is entirely unaffected (nothing deployed).
 

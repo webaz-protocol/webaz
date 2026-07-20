@@ -17,6 +17,12 @@
 ## No columns exist for some "full terms" fields (BUG-01 scope note)
 The `products` table has `specs / return_condition / ship_regions / has_variants / product_type / fragile`, but **no dedicated columns** for packaging, attachments, or third-party fulfillment. `full_terms` returns the untruncated fields that exist plus `has_variants`/`product_type`/`fragile`; packaging/attachments/third-party would live inside `specs`/`description` free text. Adding structured columns is out of scope (a seller-schema change), noted for a future PR.
 
+## BUG-02 (delivery ETA snapshot) — DONE (Phase-3A.2A), with these known limits
+- **Direct buy-now (non-draft) orders carry no promised ETA** (adversarial F2): only the quote→draft→order (agent card) path freezes an ETA; a PWA buy-now order shows `legacy_missing` ("下单时未记录"). Honest (that path never froze a promise), not a fabrication. Snapshotting a buy-now ETA is a separate follow-up.
+- **`logistics_eta` is not a live carrier feed.** WebAZ has no real-time logistics integration; the "当前物流预计" line is the order-time shipping-template estimate (`orders.shipping_est_days`), labeled as such. A true dynamic logistics ETA is future work.
+- **No CJK→ISO region aliasing.** A region name that is not the (uppercased) template key is honestly `region_not_covered` (falls to wildcard/product-level). `sg`/`SG` agree (case-normalized, F1 fixed); `新加坡`→`SG` aliasing is out of scope.
+- **LIVE_HOST_REQUIRED:** confirm the OrderTimeline card renders both ETAs correctly on a real ChatGPT host.
+
 ## Remaining Phase-3A work (NOT done — Phase-3A is NOT complete)
 The following graded items from Phase 2 are **not yet implemented**; each is a money/state/schema change that warrants its own isolated, adversarially-reviewed, fresh-boot-verified change (per repo rules) and is gated on your go-ahead:
 - **BUG-02** delivery-ETA snapshot (quote/draft/order freeze + DB migration + timeline card render).

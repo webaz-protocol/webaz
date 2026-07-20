@@ -29,7 +29,9 @@ No agent-reachable endpoint returns the untruncated description or the dropped s
 | **model projection** | **YES — `projectProductDetail` byte-caps 900/800/200** |
 | card render | only `description` shows a truncation notice; specs silent; return_condition silent |
 
-## Part 2 — Delivery estimate present at quote, `null` on the order
+## Part 2 — Delivery estimate present at quote, `null` on the order — **FIXED (BUG-02, Phase-3A.2A)**
+
+> Resolved by `0976128`/`2c65d8a`/`2a2fbba`/`e72b418`: a region-resolved `promised_eta_snapshot` is now frozen at quote time and inherited draft→order (immune to listing edits), rendered on the order card as "下单时预计配送" separate from "当前物流预计" (the template `shipping_est_days`); legacy orders show "下单时未记录". Region normalized so fee/ETA/order agree. See SCHEMA_MIGRATION.md §ETA + BUG02_ADVERSARIAL_REVIEW.md. The as-is analysis below is the pre-fix state (retained for provenance).
 
 **The quote card and the order card read the delivery estimate from two DIFFERENT source fields. The product-level ETA is never persisted into the quote/draft/order snapshot.** — HIGH_CONFIDENCE (the specific product's shipping-template state was not queried per the read-only constraint; the null arises structurally)
 

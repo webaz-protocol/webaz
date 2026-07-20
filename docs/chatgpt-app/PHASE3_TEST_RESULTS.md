@@ -2,6 +2,19 @@
 
 > Phase-3A local test results. All runs hermetic (temp `$HOME`), no network, no prod DB, no deploy. No live-ChatGPT verification claimed.
 
+## Phase-3A.2A run (BUG-02 delivery-ETA snapshot)
+```
+tsc 0 · complexity OK · diagnostic 10✅
+test-delivery-eta            23   (region selection exact/wildcard/product/none · parse · round-trip · legacy · no-PII)
+test-eta-migration           21   (additive · NULL-not-backfilled · money/status/deadline untouched · idempotent · fresh+upgrade boot)
+test-eta-snapshot-flow       13   (freeze@quote → inherit draft → inherit order · drift-immune · promised≠logistics · legacy_missing · F1 case fix)
+test-buyer-quote             59 · test-order-draft 28 · test-buyer-order-full 28 · test-shipping-templates 25 · test-mcp-place-order-rail 13
+test-mcp-order-timeline-ui   24   (+E1: promised vs logistics ETA distinction)
+(all Phase-3A/3A.1 suites still green: card-contract 37, widget-expand 43, apps-standard 55, uri-versioning 11, direct-tool-buttons 12, …)
+```
+Commits: `0976128` migration · `2c65d8a` freeze chain · `2a2fbba` card · `e72b418` F1 region-normalization + docs. Adversarial review clean (BUG02_ADVERSARIAL_REVIEW.md). No deploy, no BUG-06/BUG-08, no live-host verification.
+
+---
 ## Phase-3A.1 run (BUG-04 URI versioning + two NL buttons → DIRECT_TOOL)
 ```
 tsc --noEmit                        exit 0

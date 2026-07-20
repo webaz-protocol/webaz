@@ -2,7 +2,11 @@
 
 > Two money/state/schema changes, each its own commit with a backward-compatible migration, fresh-boot + `pg:schema` verification, and a real second-model adversarial pass (when Codex returns). No backfill of historical rows with current-listing values.
 
-## §ETA — BUG-02: delivery estimate into the trade snapshot
+## §ETA — BUG-02: delivery estimate into the trade snapshot — **IMPLEMENTED** (Phase-3A.2A)
+
+> Built as commits `0976128` (migration) · `2c65d8a` (freeze chain) · `2a2fbba` (card) · `e72b418` (F1 region-normalization). As-built differs slightly from the original plan below (kept for reference): the three delivery times are `listing_eta` (product), `promised_eta_snapshot` (frozen at quote, inherited), `logistics_eta` (existing `orders.shipping_est_days`, template). New nullable additive columns `promised_eta_snapshot TEXT` on `order_quotes` / `order_drafts` / `orders` (ALTER-after-CREATE, no backfill). Freeze at `computeBuyerQuote` → inherit at `createOrderDraft` → persist at the orders INSERT (draft-linked only; direct buy-now = NULL/legacy_missing). Region normalized once (F1). ETA is **not** in `params_hash`/`intent_hash` (no BUG-08 impact). Card shows 下单时预计配送 + 当前物流预计 + legacy-missing. Tests: `test-delivery-eta` (23), `test-eta-migration` (21, fresh+upgrade+idempotent), `test-eta-snapshot-flow` (13, freeze→inherit→drift-immune→legacy). Adversarial review: `BUG02_ADVERSARIAL_REVIEW.md` (no BLOCKER/HIGH; F1 fixed, F2 documented). **Not yet done (Phase 3B):** live-host confirmation the card renders both ETAs on real ChatGPT.
+
+### Original plan (reference)
 ### Three distinct delivery times (name them explicitly)
 - `listing_eta` — the seller's current `products.estimated_days` (mutable).
 - `quoted_eta` — the ETA the buyer saw, **frozen** at quote time.
