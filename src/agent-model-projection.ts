@@ -275,15 +275,29 @@ export const APPROVAL_STATE_MEANINGS: Record<string, { zh: string; en: string }>
 }
 const QUOTE_STATE_MEANINGS: Record<string, { zh: string; en: string }> = { quoted: { zh: '报价', en: 'quoted' } }
 
-/** BUG-06 — v2 quantity contract: a positive integer, never a string/decimal/≤0. Source is a trusted
- * DB integer (orders/drafts.quantity), so a clean value passes through; a malformed value falls back
- * to 1 for the display-only `×N` field — the charged amount is projected from `price.amount_minor`
- * (server), never from this field, so a fallback cannot change what the buyer pays. */
-export function toPosInt(v: unknown): number {
-  const n = typeof v === 'number' ? v : Number(String(v ?? '').trim())
-  if (Number.isInteger(n) && n > 0 && n <= Number.MAX_SAFE_INTEGER) return n
-  const t = Math.trunc(n)
-  return Number.isFinite(t) && t > 0 && t <= Number.MAX_SAFE_INTEGER ? t : 1
+/** BUG-06 quantity-safety — do NOT silently fake invalid machine data as "quantity 1".
+ * A trusted positive safe integer (or a positive-integer legacy string) passes through; anything else
+ * (negative / zero / decimal / overflow / empty / null / non-numeric) is projected as an EXPLICIT
+ * invalid result: `{ quantity: null, quantity_valid: false, quantity_error: <machine code> }`. The card
+ * then shows "数量数据异常" (never ×1) and disables every quantity-dependent transaction button, so no
+ * quote/draft/order call is initiated on corrupt data. Valid data is byte-unchanged (no extra field).
+ * The charged amount remains `price.amount_minor` (server) — never derived from this field. */
+export function projectQuantity(v: unknown): Record<string, unknown> {
+  const inv = (code: string): Record<string, unknown> => ({ quantity: null, quantity_valid: false, quantity_error: code })
+  let n: number
+  if (typeof v === 'number') n = v
+  else if (typeof v === 'string') {
+    const t = v.trim()
+    if (t === '') return inv('empty')
+    if (!/^[+-]?\d+(\.\d+)?$/.test(t)) return inv('non_numeric')
+    n = Number(t)
+  } else return inv(v == null ? 'missing' : 'non_numeric')
+  if (!Number.isFinite(n)) return inv('non_numeric')
+  if (!Number.isInteger(n)) return inv('not_integer')
+  if (n === 0) return inv('zero')
+  if (n < 0) return inv('negative')
+  if (n > Number.MAX_SAFE_INTEGER) return inv('overflow')
+  return { quantity: n }   // valid → no diagnostic field (valid-path behavior unchanged)
 }
 
 const FIAT_SYMBOL: Record<string, string> = { USD: '$', SGD: 'S$', CNY: '¥', EUR: '€', INR: '₹', IDR: 'Rp', MYR: 'RM', PHP: '₱', VND: '₫', THB: '฿' }
@@ -350,7 +364,7 @@ export function projectQuoteConsumer(r: Record<string, unknown>, fx: FxView | nu
   const pay = (r.payment ?? {}) as Record<string, unknown>
   const ship = (r.shipping ?? {}) as Record<string, unknown>
   const terms = (r.trade_terms ?? {}) as Record<string, unknown>
-  const qty = Number(((r.quantity ?? {}) as Record<string, unknown>).quoted) || 1
+  const quotedRaw = ((r.quantity ?? {}) as Record<string, unknown>).quoted   // raw (NOT ||1'd) so a corrupt quote quantity surfaces as invalid, not a faked 1
   const payable = Number(((r.payable_total ?? {}) as Record<string, unknown>).amount_minor)
   const item = lineAmt(r, 'item_subtotal'), shipping = lineAmt(r, 'shipping')
   const other = Math.max(0, payable - item - shipping)
@@ -361,7 +375,7 @@ export function projectQuoteConsumer(r: Record<string, unknown>, fx: FxView | nu
     status: statusView('quoted', QUOTE_STATE_MEANINGS),   // a quote has no order status; v2 emits a uniform `quoted` for family shape consistency
     ...(typeof r.quote_token === 'string' ? { quote_token: r.quote_token } : { quote_token_note: 'idempotent replay — the single-use token was issued ONLY with the original response: reuse that original quote_token, or wait for expiry (~10 min) and quote again', replay: true }),
     product: { id: prod.product_id, title: prod.title },
-    quantity: toPosInt(qty),
+    ...projectQuantity(quotedRaw),
     price: { amount_minor: payable, currency: 'USDC', currency_exponent: 6, display: fmtUsdcMinor(payable) },
     ...(fiatEstimate(payable, dest.region, fx, regionToCcy) ? { fiat_estimate: fiatEstimate(payable, dest.region, fx, regionToCcy) } : {}),
     amounts: { item, shipping, other },
@@ -388,7 +402,7 @@ export function projectDraftConsumer(d: Record<string, unknown>, fx: FxView | nu
     draft_id: d.draft_id, status: statusView(statusCode, DRAFT_STATE_MEANINGS),
     ...(d.idempotent_replay ? { idempotent_replay: true } : {}), ...(d.already_cancelled ? { already_cancelled: true } : {}),
     product: { id: prod.product_id, title: prod.title },
-    quantity: toPosInt(d.quantity),
+    ...projectQuantity(d.quantity),
     price: { amount_minor: payable, currency: 'USDC', currency_exponent: 6, display: fmtUsdcMinor(payable) },
     ...(fiatEstimate(payable, dest.region, fx, regionToCcy) ? { fiat_estimate: fiatEstimate(payable, dest.region, fx, regionToCcy) } : {}),
     destination: { region: dest.region ?? null, summary: dest.address_summary ?? null },
@@ -463,7 +477,7 @@ export function projectOrderTimelineConsumer(r: Record<string, unknown>, fx: FxV
     order_id: o.order_id,
     // 卖家可控字符串必封顶:防超预算 + 防超长文本注入模型可见面
     product: { id: o.item_ref, title: typeof (o as Record<string, unknown>).product_title === 'string' ? capBytes(String((o as Record<string, unknown>).product_title), 200).text : null },
-    quantity: toPosInt(o.quantity),
+    ...projectQuantity(o.quantity),
     price: { amount_minor: amountMinor, currency: 'USDC', currency_exponent: 6, display: fmtUsdcMinor(amountMinor) },
     ...(fiatEstimate(amountMinor, logi.dest_region, fx, regionToCcy) ? { fiat_estimate: fiatEstimate(amountMinor, logi.dest_region, fx, regionToCcy) } : {}),
     status: statusView(o.status),

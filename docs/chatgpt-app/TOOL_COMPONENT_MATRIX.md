@@ -9,9 +9,9 @@
 |---|---|---|---|---|---|---|---|---|---|---|
 | `webaz_search` | RO/OW | — | ✅ | webaz.product_search.model.v1 \| webaz.product_detail.model.v1 | `ui://widget/webaz-products-mcp.ea12ee851a.html` | `ui://widget/webaz-products.c4bd5e13bb.html` | true | model,app | ProductResults | ✅ |
 | `webaz_buyer_orders` | RO/OW | — | ✅ | webaz.order_status.model.v1 \| webaz.order_timeline.model.v2 | `ui://widget/webaz-order-timeline-mcp.46aba2059d.html` | `ui://widget/webaz-order-timeline.5ea1e0d365.html` | true | model,app | OrderTimeline | ✅ |
-| `webaz_quote_order` | W/OW | — | ✅ | webaz.order_quote.model.v2 | `ui://widget/webaz-quote-approval-mcp.19335f16d8.html` | `ui://widget/webaz-quote-approval.c5f351c9da.html` | true | model,app | QuoteAndApproval | ✅ |
-| `webaz_order_draft` | W/D/OW | — | ✅ | webaz.order_draft.model.v2 | `ui://widget/webaz-quote-approval-mcp.19335f16d8.html` | `ui://widget/webaz-quote-approval.c5f351c9da.html` | true | model,app | QuoteAndApproval | ✅ |
-| `webaz_submit_order_request` | W/OW | — | ✅ | webaz.order_approval.model.v2 | `ui://widget/webaz-quote-approval-mcp.19335f16d8.html` | `ui://widget/webaz-quote-approval.c5f351c9da.html` | true | model,app | QuoteAndApproval | ✅ |
+| `webaz_quote_order` | W/OW | — | ✅ | webaz.order_quote.model.v2 | `ui://widget/webaz-quote-approval-mcp.089198c915.html` | `ui://widget/webaz-quote-approval.778146d83b.html` | true | model,app | QuoteAndApproval | ✅ |
+| `webaz_order_draft` | W/D/OW | — | ✅ | webaz.order_draft.model.v2 | `ui://widget/webaz-quote-approval-mcp.089198c915.html` | `ui://widget/webaz-quote-approval.778146d83b.html` | true | model,app | QuoteAndApproval | ✅ |
+| `webaz_submit_order_request` | W/OW | — | ✅ | webaz.order_approval.model.v2 | `ui://widget/webaz-quote-approval-mcp.089198c915.html` | `ui://widget/webaz-quote-approval.778146d83b.html` | true | model,app | QuoteAndApproval | ✅ |
 
 ## All tools — output-schema / annotation / security summary (55)
 

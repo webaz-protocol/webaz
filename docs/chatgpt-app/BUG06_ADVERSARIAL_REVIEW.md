@@ -58,6 +58,37 @@ The OrderTimeline resource `description` said `webaz.order_timeline.model.v1`; u
   object `status` consistently without `additionalProperties:false`, so validation is not broken;
   `statusView`'s new optional `meanings` param is backward-compatible with the default-arg (timeline) caller.
 
+## Addendum — pre-acceptance quantity-safety hardening (commit after `ef61fbd`)
+
+The original BUG-06 review noted `toPosInt` faithfully passed valid integers and fell back to `1` for
+malformed input (finding 4 = OK, since the amount is server-side). A pre-acceptance requirement tightened
+this: **invalid machine data must never be faked as "quantity 1".** Changes:
+
+- `toPosInt` → **`projectQuantity`**: valid positive safe integer (or a pure-digit legacy string) →
+  `{quantity:n}`; negative / zero / decimal / overflow / empty / null / non-numeric → explicit
+  `{quantity:null, quantity_valid:false, quantity_error:<machine code>}` (codes:
+  missing|empty|zero|negative|not_integer|overflow|non_numeric — zero-PII).
+- Component: a bad quantity (server signal OR local re-check for old v1 cards) renders **数量数据异常**
+  (never `×1`) and **disables** the quote→create-draft and draft→submit-approval buttons — clicking a
+  disabled button fires **no** `callTool`, so no quote/draft/order is initiated on corrupt data.
+- outputSchema: `quantity` is now `["integer","null"]` + `quantity_valid`/`quantity_error` declared.
+
+Re-review of the hardening (this session, read-only):
+- **Money path** — `projectQuantity` still feeds only display; amount stays `price.amount_minor`. A now
+  `null` quantity cannot reach any amount computation. OK.
+- **Valid path unchanged** — valid data emits `{quantity:n}` with no extra field; card shows `×N`;
+  buttons enabled; exactly one tool call fires. Locked by tests A1a–d, B6c/d, B7f/g.
+- **Button suppression** — verified in `node:vm` that a disabled invalid-quantity button fires zero
+  `callTool` (B7a/b/d/e) and a valid button fires exactly one (B7g).
+- **Bug found & fixed during hardening** — the string-path regex `/^\d+$/` was authored inside the
+  widget **template literal**, where `\d` collapses to `d` at runtime (the file's convention is `\\`).
+  Test B6c ("4"→×4) caught it; fixed to `/^\\d+$/`. Without the test this would have rejected every
+  legacy integer-string quantity as invalid.
+- **Rollback** — still projection-layer + component only; no DB/persisted change. Reverting restores the
+  prior behavior; v2 cards in history keep rendering.
+
+No BLOCKER / HIGH in the hardening. New machine fields are additive and zero-PII.
+
 ## Limitation of this review
 Single-model adversarial pass (Claude, this session). A second-model (Codex) pass is recommended when it
 returns (2026-07-25) before this branch is merged — standard for schema/contract changes.

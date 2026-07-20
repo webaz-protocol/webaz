@@ -28,7 +28,7 @@ Legend — **status structure**: `string` = bare status code string · `object` 
 - **required:** `schema_version`, `type`, `quote_id`, `product{id,title}`, `quantity`, `price`, `status`, `available_actions`, `disclosures`
 - **optional:** `quote_token` (single-use) **or** `quote_token_note`+`replay`, `fiat_estimate`, `amounts`, `destination`, `shipping` (incl. frozen `estimated_days`), `return_days`, `warranty_days`
 - **status structure:** `object` — `{code:"quoted", label:"报价", label_en:"quoted"}` (uniform; a quote has no order status)
-- **quantity structure:** `int` (positive integer)
+- **quantity structure:** `int` when valid; invalid → `quantity:null` + `quantity_valid:false` + `quantity_error` (never faked to 1). Invalid → card shows 数量数据异常 + create-draft button disabled.
 - **timestamp structure:** `expires_at` ISO-8601 UTC
 - **promised_eta:** the frozen ETA surfaces via `shipping.estimated_days` (BUG-02); the quote **consumer** projection carries no separate `promised_eta` object. **BUG-06 leaves this unchanged.**
 - **old-input compat:** v1 quote (no `type`, no `status`, quantity number) still renders — component accepts v1+v2 in the quote branch; header shows `报价 · <title> ×<qty>`
@@ -41,7 +41,7 @@ Legend — **status structure**: `string` = bare status code string · `object` 
 - **required:** `schema_version`, `type`, `draft_id`, `status`, `product{id,title}`, `quantity`, `price`, `available_actions`, `disclosures`
 - **optional:** `fiat_estimate`, `destination`, `payment_rail`, `rail_note`, `expires_at`, `idempotent_replay`, `already_cancelled`; **list form** `{count, drafts[]}`
 - **status structure:** `object` — `{code, label, label_en}`, code ∈ `draft|submitted|cancelled|expired` (`DRAFT_STATE_MEANINGS`)
-- **quantity structure:** `int`
+- **quantity structure:** `int` when valid; invalid → `quantity:null` + `quantity_valid:false` + `quantity_error` (never faked to 1). Invalid → card shows 数量数据异常 + submit-approval button disabled.
 - **timestamp structure:** `expires_at` ISO-8601 UTC
 - **promised_eta:** the frozen snapshot lives on the raw draft/order row (BUG-02); the draft **consumer** projection surfaces no `promised_eta` object. **BUG-06 leaves this unchanged.**
 - **old-input compat:** v1 draft had `status` as a **string** → component's `stLabel`/`stCode` normalize a string OR object once at entry; `submit_request` button still gates on `stCode==='draft'`
@@ -78,7 +78,7 @@ Legend — **status structure**: `string` = bare status code string · `object` 
 - **required:** `schema_version`, `type`, `order_id`, `status`, `product{id,title}`, `quantity`, `price`, `payment_rail`, `rail_badge`, `timeline[]`, `logistics`
 - **optional:** `fiat_estimate`, `next_actor`, `deadline{iso,note}`, `incremental`, `refund{requests[]}`
 - **status structure:** `object` — `{code,label,label_en}` via `ORDER_STATE_MEANINGS` (already an object in v1; unchanged shape)
-- **quantity structure:** `int` (v1 allowed `null`; v2 coerces to a positive integer)
+- **quantity structure:** `int` when valid; a genuinely-missing/corrupt order quantity → `quantity:null` + `quantity_valid:false` + `quantity_error` (never faked to 1). Timeline is read-only (no quantity-gated transaction button).
 - **timestamp structure:** `deadline.iso`, `timeline[].at`, `refund[].created_at/resolved_at` all ISO-8601 UTC (BUG-07)
 - **promised_eta:** `logistics.promised_eta` = `webaz.promised_eta.v1` (下单承诺) vs `logistics.shipping_est_days` (物流估计) — two ETAs kept separate; **preserved unchanged**
 - **old-input compat:** v1 timeline already had status object → component accepts v1+v2 in one branch
@@ -132,6 +132,7 @@ Legend — **status structure**: `string` = bare status code string · `object` 
 |---|---|
 | status source | v2 status is an **object**; `code` is authoritative, never inferred from `label` |
 | quantity → amount | the card's `quantity` is display-only; the charged amount is `price.amount_minor` (server) |
+| invalid quantity | never faked to 1 — invalid → `quantity:null` + `quantity_valid:false` + machine `quantity_error`; card shows 数量数据异常 and disables quantity-dependent transaction buttons (no tool call) |
 | timestamps | all v2 timestamps are ISO-8601 **UTC** (`…Z`) via `toIsoUtc` |
 | promised_eta | `webaz.promised_eta.v1` preserved unchanged; missing → BUG-02 `legacy_missing` |
 | unknown schema_version | consumer shows "unsupported old card version", never crashes / mis-renders |

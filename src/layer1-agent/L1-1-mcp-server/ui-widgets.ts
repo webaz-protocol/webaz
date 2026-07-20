@@ -428,10 +428,17 @@ function renderBody(oai, out){
   //   qtyText = display-only positive integer (the charged amount is price.amount_minor, not this).
   function stLabel(s){ return (s&&typeof s==='object')?String(s.label||s.label_en||s.code||''):String(s||'') }
   function stCode(s){ return (s&&typeof s==='object')?String(s.code||''):String(s||'') }
-  function qtyText(q){ var n=(typeof q==='number')?q:Number(String(q==null?'':q).trim()); return (isFinite(n)&&Math.floor(n)===n&&n>0)?n:1 }
+  // BUG-06 quantity safety: an invalid/corrupt quantity is NEVER shown as ×1. qtyOk = strict positive
+  //   safe integer (number OR a pure-digit string); qtyBad = server said invalid (quantity_valid===false)
+  //   OR the value fails the local check (covers old v1 cards with no diagnostic field). A bad quantity
+  //   shows 数量数据异常 and disables every quantity-dependent transaction button (no tool call fires).
+  function qtyOk(q){ if(typeof q==='number'){ return isFinite(q)&&Math.floor(q)===q&&q>0&&q<=9007199254740991 } if(typeof q==='string'){ var t=q.trim(); if(!/^\\d+$/.test(t)) return false; var n=Number(t); return n>0&&n<=9007199254740991 } return false }
+  function qtyBad(out){ return out.quantity_valid===false || !qtyOk(out.quantity) }
+  function qtyDisp(q){ return typeof q==='number'?q:Number(String(q).trim()) }
+  function qtyErr(out){ return String(out.quantity_error||(out.quantity_valid===false?'invalid':'invalid')) }
 
   if(sv==='webaz.order_quote.model.v1'||sv==='webaz.order_quote.model.v2'){
-    box.appendChild(el('div','h','报价 · '+((out.product&&out.product.title)||'')+' ×'+qtyText(out.quantity)))
+    box.appendChild(el('div','h','报价 · '+((out.product&&out.product.title)||'')+(qtyBad(out)?' · 数量数据异常':' ×'+qtyDisp(out.quantity))))
     box.appendChild(el('div','price',(out.price&&out.price.display)||''))
     fiatLine(box,out.fiat_estimate)
     var a=out.amounts||{}
@@ -448,15 +455,15 @@ function renderBody(oai, out){
     row(box,'库存','未锁定(下单时重新校验)')
     if(out.quote_token&&typeof oai.callTool==='function'){
       var b1=el('button','btn','创建订单草稿(不扣款)')
-      b1.addEventListener('click',onceGuard(function(){ b1.disabled=true; var sent=false; try{ oai.callTool('webaz_order_draft',{action:'create',quote_token:out.quote_token}); sent=true }catch(e){} reenable(b1); actHint('用这个报价创建订单草稿(quote_token='+String(out.quote_token)+')', sent) }))
-      box.appendChild(b1)
+      if(qtyBad(out)){ b1.disabled=true; box.appendChild(b1); box.appendChild(el('div','warn','数量数据异常,无法创建草稿(quantity_error='+qtyErr(out)+')')) }   // BUG-06: never initiate a draft call on invalid quantity
+      else { b1.addEventListener('click',onceGuard(function(){ b1.disabled=true; var sent=false; try{ oai.callTool('webaz_order_draft',{action:'create',quote_token:out.quote_token}); sent=true }catch(e){} reenable(b1); actHint('用这个报价创建订单草稿(quote_token='+String(out.quote_token)+')', sent) })); box.appendChild(b1) }
     }
     disclosures(box,out.disclosures)
   } else if(sv==='webaz.order_draft.model.v1'||sv==='webaz.order_draft.model.v2'){
     if(Array.isArray(out.drafts)){ box.appendChild(el('div','h','订单草稿列表')); out.drafts.forEach(function(d){ row(box,String(d.draft_id).slice(0,10)+'…',stLabel(d.status)+' · '+((d.price&&d.price.display)||'')) }); return }
     box.appendChild(el('div','h','订单草稿 · '+String(out.draft_id||'').slice(0,10)+'…'))
     row(box,'状态',stLabel(out.status))
-    row(box,'商品',((out.product&&out.product.title)||'')+' ×'+qtyText(out.quantity))
+    row(box,'商品',((out.product&&out.product.title)||'')+(qtyBad(out)?' · 数量数据异常':' ×'+qtyDisp(out.quantity)))
     box.appendChild(el('div','price',(out.price&&out.price.display)||''))
     fiatLine(box,out.fiat_estimate)
     row(box,'配送',(out.destination&&out.destination.summary)||'')
@@ -465,8 +472,8 @@ function renderBody(oai, out){
     row(box,'过期时间',String(out.expires_at||''))
     if(stCode(out.status)==='draft'&&typeof oai.callTool==='function'){
       var b2=el('button','btn','提交 Passkey 审批(不会直接执行)')
-      b2.addEventListener('click',onceGuard(function(){ b2.disabled=true; var sent=false; try{ oai.callTool('webaz_submit_order_request',{draft_id:out.draft_id}); sent=true }catch(e){} reenable(b2); actHint('提交这个草稿去 Passkey 审批(draft_id='+String(out.draft_id)+')', sent) }))
-      box.appendChild(b2)
+      if(qtyBad(out)){ b2.disabled=true; box.appendChild(b2); box.appendChild(el('div','warn','数量数据异常,无法提交审批(quantity_error='+qtyErr(out)+')')) }   // BUG-06: never initiate a submit call on invalid quantity
+      else { b2.addEventListener('click',onceGuard(function(){ b2.disabled=true; var sent=false; try{ oai.callTool('webaz_submit_order_request',{draft_id:out.draft_id}); sent=true }catch(e){} reenable(b2); actHint('提交这个草稿去 Passkey 审批(draft_id='+String(out.draft_id)+')', sent) })); box.appendChild(b2) }
     }
     disclosures(box,out.disclosures)
   } else if(sv==='webaz.order_approval.model.v1'||sv==='webaz.order_approval.model.v2'){

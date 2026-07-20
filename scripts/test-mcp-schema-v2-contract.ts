@@ -2,8 +2,10 @@
 /**
  * BUG-06 — unified v2 card contract + backward compatibility.
  * Part A (projection layer): quote/draft/approval/timeline emit v2 (schema_version + type + status
- *   object {code,label,label_en} + positive-int quantity); toPosInt safe-integer contract
- *   (number/string/decimal/negative/zero/overflow); statusView per meanings map + unknown-code fallback;
+ *   object {code,label,label_en} + positive-int quantity); projectQuantity safe-integer contract —
+ *   invalid data (number/string/decimal/negative/zero/overflow/empty/null/non-numeric) → EXPLICIT
+ *   invalid result (quantity_valid=false + machine error code), NEVER faked to 1; invalid quantity
+ *   disables the quote/draft transaction buttons and fires no tool call; statusView + unknown-code fallback;
  *   promised_eta (webaz.promised_eta.v1) preserved; timestamps ISO-8601 UTC; quantity is display-only
  *   (amount stays price.amount_minor); zero-PII.
  * Part B (component, node:vm): render v1 (legacy) AND v2 forms of every card; unknown schema_version →
@@ -28,16 +30,27 @@ const PE = { schema_version: 'webaz.promised_eta.v1', destination_region: 'SG', 
 
 // ─────────────── Part A — projection layer ───────────────
 
-// A1. toPosInt safe-integer contract (the money-safety core — quantity never becomes a wrong number)
-ok('A1a. toPosInt(3) === 3', proj.toPosInt(3) === 3)
-ok('A1b. toPosInt("2") === 2 (clean integer string)', proj.toPosInt('2') === 2)
-ok('A1c. toPosInt("  4 ") === 4 (trimmed)', proj.toPosInt('  4 ') === 4)
-ok('A1d. toPosInt(2.5) === 2 (decimal truncates to a positive int, never a fraction)', proj.toPosInt(2.5) === 2)
-ok('A1e. toPosInt(-3) === 1 (negative → safe fallback, never a negative quantity)', proj.toPosInt(-3) === 1)
-ok('A1f. toPosInt(0) === 1 (zero → safe fallback)', proj.toPosInt(0) === 1)
-ok('A1g. toPosInt(NaN/null/"abc") === 1 (non-numeric → safe fallback)', proj.toPosInt(NaN) === 1 && proj.toPosInt(null) === 1 && proj.toPosInt('abc') === 1)
-ok('A1h. toPosInt(1e21) === 1 (overflow beyond MAX_SAFE_INTEGER → safe fallback)', proj.toPosInt(1e21) === 1)
-ok('A1i. toPosInt(MAX_SAFE_INTEGER) passes through', proj.toPosInt(Number.MAX_SAFE_INTEGER) === Number.MAX_SAFE_INTEGER)
+// A1. projectQuantity — valid data passes through; invalid data is an EXPLICIT invalid result
+//   (NEVER silently faked as "quantity 1"). Diagnostic: {quantity:null, quantity_valid:false, quantity_error}.
+const pq = (v: unknown): Record<string, unknown> => proj.projectQuantity(v)
+const valid = (v: unknown, n: number): boolean => { const r = pq(v); return r.quantity === n && !('quantity_valid' in r) && !('quantity_error' in r) }
+const badq = (v: unknown, code: string): boolean => { const r = pq(v); return r.quantity === null && r.quantity_valid === false && r.quantity_error === code }
+ok('A1a. valid 3 → {quantity:3} (no diagnostic field — valid path unchanged)', valid(3, 3))
+ok('A1b. valid "2" (clean integer string) → 2', valid('2', 2))
+ok('A1c. valid "  4 " (trimmed) → 4', valid('  4 ', 4))
+ok('A1d. MAX_SAFE_INTEGER passes through', valid(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER))
+ok('A1e. decimal 2.5 → INVALID not_integer (never truncated to 2)', badq(2.5, 'not_integer'))
+ok('A1f. decimal string "2.5" → INVALID not_integer', badq('2.5', 'not_integer'))
+ok('A1g. negative -3 → INVALID negative (never faked to 1)', badq(-3, 'negative'))
+ok('A1h. zero 0 → INVALID zero', badq(0, 'zero'))
+ok('A1i. overflow 1e21 → INVALID overflow', badq(1e21, 'overflow'))
+ok('A1j. null → INVALID missing', badq(null, 'missing'))
+ok('A1k. undefined → INVALID missing', badq(undefined, 'missing'))
+ok('A1l. "" → INVALID empty', badq('', 'empty'))
+ok('A1m. "abc" → INVALID non_numeric', badq('abc', 'non_numeric'))
+ok('A1n. NaN → INVALID non_numeric', badq(NaN, 'non_numeric'))
+ok('A1o. object → INVALID non_numeric', badq({} as unknown, 'non_numeric'))
+ok('A1p. quantity_error is a machine code (zero-PII, no free text)', /^[a-z_]+$/.test(String(pq(-1).quantity_error)))
 
 // A2. statusView(code, meanings) → object; unknown code falls back to code (never crashes / never invents)
 const sD = proj.statusView('draft', proj.DRAFT_STATE_MEANINGS)
@@ -78,11 +91,14 @@ ok('A5c. approval has NO quantity (references draft_id — documented v2 omissio
 ok('A5d. approval passkey_required stays true', s1.passkey_required === true)
 
 // A6. timeline v2 projection (status already an object; add type + posInt quantity + UTC)
-const tlRaw = { order: { order_id: 'ord1', item_ref: 'prd1', product_title: 'Ring', quantity: null, status: 'accepted', amount: 7.06, payment_rail: 'escrow', deadline: '2026-07-22 03:04:05' }, logistics: { dest_region: 'SG', promised_eta: PE, shipping_est_days: '10-20' }, refund_status: {}, timeline: [{ from: 'created', to: 'accepted', actor_role: 'seller', at: '2026-07-20 00:00:00' }] }
+const tlRaw = { order: { order_id: 'ord1', item_ref: 'prd1', product_title: 'Ring', quantity: 2, status: 'accepted', amount: 7.06, payment_rail: 'escrow', deadline: '2026-07-22 03:04:05' }, logistics: { dest_region: 'SG', promised_eta: PE, shipping_est_days: '10-20' }, refund_status: {}, timeline: [{ from: 'created', to: 'accepted', actor_role: 'seller', at: '2026-07-20 00:00:00' }] }
 const t = proj.projectOrderTimelineConsumer(tlRaw, noFx, r2c)
 ok('A6a. timeline schema_version v2 + type', t.schema_version === 'webaz.order_timeline.model.v2' && t.type === 'order_timeline')
 ok('A6b. timeline status object via ORDER_STATE_MEANINGS', isStatusObj(t.status) && (t.status as Record<string, unknown>).code === 'accepted')
-ok('A6c. timeline quantity null → 1 (positive integer, was `?? null`)', t.quantity === 1 && Number.isInteger(t.quantity))
+ok('A6c. timeline valid quantity 2 → {quantity:2} (no diagnostic field)', t.quantity === 2 && !('quantity_valid' in t))
+// A6c2. an order with a genuinely missing quantity → explicit invalid, NOT faked to 1
+const tBad = proj.projectOrderTimelineConsumer({ ...tlRaw, order: { ...(tlRaw.order as Record<string, unknown>), quantity: null } }, noFx, r2c)
+ok('A6c2. timeline null quantity → invalid diagnostic (never 1)', tBad.quantity === null && tBad.quantity_valid === false && tBad.quantity_error === 'missing')
 ok('A6d. timeline promised_eta preserved unchanged as webaz.promised_eta.v1 + kept SEPARATE from shipping_est_days', JSON.stringify((t.logistics as Record<string, unknown>).promised_eta) === JSON.stringify(PE) && ((t.logistics as Record<string, unknown>).promised_eta as Record<string, unknown>).schema_version === 'webaz.promised_eta.v1' && (t.logistics as Record<string, unknown>).shipping_est_days === '10-20')
 ok('A6e. timeline deadline.iso + event.at are ISO UTC', UTC.test(String((t.deadline as Record<string, unknown>).iso)) && UTC.test(String((t.timeline as Array<Record<string, unknown>>)[0].at)))
 
@@ -93,8 +109,8 @@ ok('A7. no raw address text leaks (destination only region + masked summary)', !
 // A8. outputSchema ↔ structuredContent alignment (status declared object, quantity integer)
 const draftOS = JSON.stringify(OUTPUT_SCHEMAS.webaz_order_draft)
 const quoteOS = JSON.stringify(OUTPUT_SCHEMAS.webaz_quote_order)
-ok('A8a. draft outputSchema declares status object + integer quantity + type + v2 id', /"status":\{"type":"object"/.test(draftOS) && /"quantity":\{"type":"integer","minimum":1/.test(draftOS) && draftOS.includes('order_draft.model.v2') && /"type":\{"type":"string","const":"order_draft"\}/.test(draftOS))
-ok('A8b. quote outputSchema declares status object + integer quantity + v2 id', /"status":\{"type":"object"/.test(quoteOS) && /"quantity":\{"type":"integer","minimum":1/.test(quoteOS) && quoteOS.includes('order_quote.model.v2'))
+ok('A8a. draft outputSchema declares status object + nullable-integer quantity + diagnostics + type + v2 id', /"status":\{"type":"object"/.test(draftOS) && /"quantity":\{"type":\["integer","null"\]/.test(draftOS) && draftOS.includes('quantity_valid') && draftOS.includes('quantity_error') && draftOS.includes('order_draft.model.v2') && /"type":\{"type":"string","const":"order_draft"\}/.test(draftOS))
+ok('A8b. quote outputSchema declares status object + nullable-integer quantity + diagnostics + v2 id', /"status":\{"type":"object"/.test(quoteOS) && /"quantity":\{"type":\["integer","null"\]/.test(quoteOS) && quoteOS.includes('quantity_valid') && quoteOS.includes('quantity_error') && quoteOS.includes('order_quote.model.v2'))
 
 // ─────────────── Part B — component render (node:vm) ───────────────
 interface N { tagName: string; className: string; textContent: string; children: N[]; _h: Record<string, Array<(e: unknown) => void>>; appendChild(c: N): N; setAttribute(k: string, v: string): void; addEventListener(ev: string, fn: (e: unknown) => void): void }
@@ -147,10 +163,46 @@ ok('B5a. quote-versioned payload routes to the quote branch only (报价), never
 //   a draft-versioned payload whose status is (defensively) a bare string still renders via stLabel
 ok('B5b. draft v2 version but status still a bare string → stLabel normalizes (renders, no crash)', /订单草稿/.test(renderWith(QA, { schema_version: 'webaz.order_draft.model.v2', type: 'order_draft', draft_id: 'odr1', status: 'draft', product: { title: 'Ring' }, quantity: 1, price: {}, disclosures: [] })))
 
-// B6. quantity display safety: a malformed v1 quantity never shows a fraction/negative; falls to ×1
-ok('B6a. draft quantity 2.5 (old message) → ×1 display (no fraction)', /×1/.test(renderWith(QA, { schema_version: 'webaz.order_draft.model.v1', draft_id: 'odr1', status: 'draft', product: { title: 'Ring' }, quantity: 2.5, price: {}, disclosures: [] })))
-ok('B6b. draft quantity -3 → ×1 display (no negative)', /×1/.test(renderWith(QA, { schema_version: 'webaz.order_draft.model.v1', draft_id: 'odr1', status: 'draft', product: { title: 'Ring' }, quantity: -3, price: {}, disclosures: [] })))
-ok('B6c. draft quantity "4" (string) → ×4 display', /×4/.test(renderWith(QA, { schema_version: 'webaz.order_draft.model.v1', draft_id: 'odr1', status: 'draft', product: { title: 'Ring' }, quantity: '4', price: {}, disclosures: [] })))
+// B6. quantity display safety: a malformed quantity shows 数量数据异常, NEVER ×1 (never fakes invalid data)
+{ const h = renderWith(QA, { schema_version: 'webaz.order_draft.model.v1', draft_id: 'odr1', status: 'draft', product: { title: 'Ring' }, quantity: 2.5, price: {}, disclosures: [] }); ok('B6a. draft decimal quantity 2.5 → 数量数据异常 (never ×1, never ×2)', /数量数据异常/.test(h) && !/×1|×2/.test(h)) }
+{ const h = renderWith(QA, { schema_version: 'webaz.order_draft.model.v1', draft_id: 'odr1', status: 'draft', product: { title: 'Ring' }, quantity: -3, price: {}, disclosures: [] }); ok('B6b. draft negative quantity -3 → 数量数据异常 (never ×1)', /数量数据异常/.test(h) && !/×1/.test(h)) }
+ok('B6c. draft quantity "4" (clean integer string) → ×4 display (valid unchanged)', /×4/.test(renderWith(QA, { schema_version: 'webaz.order_draft.model.v1', draft_id: 'odr1', status: 'draft', product: { title: 'Ring' }, quantity: '4', price: {}, disclosures: [] })))
+ok('B6d. draft valid quantity 2 → ×2 (valid unchanged)', /×2/.test(renderWith(QA, { schema_version: 'webaz.order_draft.model.v2', type: 'order_draft', draft_id: 'odr1', status: { code: 'draft', label: '草稿', label_en: 'draft' }, product: { title: 'Ring' }, quantity: 2, price: {}, disclosures: [] })))
+
+// B7. invalid quantity → quantity-dependent transaction buttons DISABLED + NO tool call fires (req 5 & 6)
+function renderRoot(body: string, out: unknown, oai: unknown): N {
+  const root = mk('div')
+  const ctx: Record<string, unknown> = { document: { getElementById: (id: string) => (id === 'root' ? root : null), createElement: (t: string) => mk(t) }, window: { innerWidth: 1200 }, navigator: { clipboard: { writeText: () => Promise.resolve() } }, setTimeout, Promise, URL, console: { warn() {}, log() {}, error() {} }, String, Object, Array, Math, JSON, Number, isFinite }
+  ctx.globalThis = ctx; ctx.self = ctx; vm.createContext(ctx)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${body}\nthis.__render=renderBody`, ctx)
+  ;(ctx.__render as (o: unknown, r: unknown) => void)(oai, out)
+  return root
+}
+const fire = (n: N): void => ((n as unknown as { _h: Record<string, Array<(e: unknown) => void>> })._h.click || []).forEach(fn => fn({}))
+function findBtn(n: N, text: string): N | null { if ((n.tagName || '').toUpperCase() === 'BUTTON' && (n.textContent || '').indexOf(text) >= 0) return n; for (const c of n.children || []) { const r = findBtn(c, text); if (r) return r } return null }
+const isDisabled = (b: N | null): boolean => !!b && (b as unknown as { disabled: boolean }).disabled === true
+
+{ const calls: unknown[] = []; const oai = { callTool: (nm: string, a: unknown) => { calls.push([nm, a]); return Promise.resolve({}) } }
+  const root = renderRoot(QA, { schema_version: 'webaz.order_quote.model.v2', type: 'order_quote', product: { title: 'Ring' }, quantity: null, quantity_valid: false, quantity_error: 'zero', quote_token: 'qtk_x', price: {}, amounts: {}, shipping: {}, disclosures: [] }, oai)
+  const btn = findBtn(root, '创建订单草稿')
+  ok('B7a. invalid quote → 创建订单草稿 button present but DISABLED', isDisabled(btn))
+  if (btn) fire(btn)
+  ok('B7b. clicking the disabled invalid-quote button fires NO callTool (no draft initiated on bad quantity)', calls.length === 0)
+  ok('B7c. invalid quote card shows 数量数据异常 + machine error code', /数量数据异常/.test(allText(root)) && /zero/.test(allText(root))) }
+
+{ const calls: unknown[] = []; const oai = { callTool: (nm: string, a: unknown) => { calls.push([nm, a]); return Promise.resolve({}) } }
+  const root = renderRoot(QA, { schema_version: 'webaz.order_draft.model.v2', type: 'order_draft', draft_id: 'odr1', status: { code: 'draft', label: '草稿', label_en: 'draft' }, product: { title: 'Ring' }, quantity: null, quantity_valid: false, quantity_error: 'negative', price: {}, disclosures: [] }, oai)
+  const btn = findBtn(root, '提交 Passkey 审批')
+  ok('B7d. invalid draft → 提交审批 button DISABLED', isDisabled(btn))
+  if (btn) fire(btn)
+  ok('B7e. clicking the disabled invalid-draft button fires NO callTool (no submit on bad quantity)', calls.length === 0) }
+
+{ const calls: unknown[] = []; const oai = { callTool: (nm: string, a: unknown) => { calls.push([nm, a]); return Promise.resolve({}) } }
+  const root = renderRoot(QA, { schema_version: 'webaz.order_quote.model.v2', type: 'order_quote', product: { title: 'Ring' }, quantity: 2, quote_token: 'qtk_x', price: {}, amounts: {}, shipping: {}, disclosures: [] }, oai)
+  const btn = findBtn(root, '创建订单草稿')
+  ok('B7f. VALID quote → button ENABLED (valid path unchanged)', !!btn && !isDisabled(btn))
+  if (btn) fire(btn)
+  ok('B7g. VALID quote → clicking fires exactly one webaz_order_draft call', calls.length === 1 && (calls[0] as unknown[])[0] === 'webaz_order_draft') }
 
 if (fail > 0) { console.error(`\n❌ schema-v2-contract FAILED  ✅ ${pass} ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ mcp-schema-v2-contract: v2 unified contract (type/status object/posInt quantity) + v1↔v2 compat + unknown/missing safe-fail + cross-input isolation + promised_eta preserved + UTC + zero-PII\n  ✅ pass ${pass}`)

@@ -35,9 +35,23 @@ Every **v2** order-lifecycle result carries:
   - `code` — canonical machine status code (see §4). **Never inferred from the Chinese label.**
   - `label` — human zh label, `label_en` — human en label. Both derived from a single source-of-truth
     meanings map; unknown code falls back to `label = label_en = code` (never crashes).
-- **`quantity`** — **positive integer** (`Number.isInteger && > 0 && ≤ MAX_SAFE_INTEGER`). Never a
-  string, never a decimal, never `≤ 0`. Present on cards that **intrinsically** carry a quantity:
-  `order_quote`, `order_draft`, `order_timeline`. See §5 for the approval exception.
+- **`quantity`** — **positive integer** (`Number.isInteger && > 0 && ≤ MAX_SAFE_INTEGER`) **when
+  valid**. A legacy positive-integer string (e.g. `"3"`) is accepted; everything else — negative, zero,
+  decimal, overflow, empty, `null`, non-numeric — is projected as an **explicit invalid result**, never
+  silently faked to `1`:
+  - valid → `{ quantity: <n> }` (no diagnostic field; valid-path bytes unchanged)
+  - invalid → `{ quantity: null, quantity_valid: false, quantity_error: <machine code> }`, where
+    `quantity_error ∈ missing | empty | zero | negative | not_integer | overflow | non_numeric`
+    (zero-PII machine codes only).
+  Present on cards that **intrinsically** carry a quantity: `order_quote`, `order_draft`,
+  `order_timeline`. See §5 for the approval exception. Producer: `projectQuantity()` in
+  `agent-model-projection.ts`.
+- **invalid-quantity handling (safety)** — a card with `quantity_valid: false` renders **数量数据异常**
+  (never `×1`) and the component **disables every quantity-dependent transaction button** (quote →
+  create-draft, draft → submit-approval) so **no quote/draft/order tool call is initiated on corrupt
+  data**. The server order-creation path independently validates quantity (G-QTY-1); this is the
+  card-side guard. Old v1 cards (no diagnostic field) are validated locally by the component with the
+  same rule, so a corrupt legacy quantity also shows 数量数据异常, not `×1`.
 - **timestamps** — ISO-8601 **UTC** (`…Z`), via `toIsoUtc()` (BUG-07). No TZ-less strings in v2.
 - **`promised_eta`** — preserved **unchanged** as the `webaz.promised_eta.v1` object (BUG-02). In the
   **consumer projection layer** it surfaces only on the order timeline (`logistics.promised_eta`); the
@@ -60,6 +74,10 @@ Two safety invariants a consumer relies on:
    `quantity` is a display field (`×N`). A malformed/absent quantity therefore cannot change the
    charged amount — the amount is projected independently on the server from the real order/draft
    row. Tests assert this explicitly.
+3. **Invalid `quantity` is never silently faked to `1`.** Corrupt machine data surfaces as an explicit
+   `quantity_valid: false` + `quantity_error` diagnostic; the card shows 数量数据异常 and disables the
+   quantity-dependent transaction buttons — a consumer can neither be misled into thinking the quantity
+   is `1` nor proceed to a quote/draft/order on corrupt data.
 
 ## 4. Canonical status vocabularies (single source of truth per card)
 

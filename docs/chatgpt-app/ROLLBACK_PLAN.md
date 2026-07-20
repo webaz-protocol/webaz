@@ -15,6 +15,8 @@
 | `2c65d8a` BUG-02 freeze | quote/draft/order freeze + read | revert → quote shows live ETA again; the stored snapshots become unread (harmless). No money/status/deadline change to undo. | none |
 | `2a2fbba` BUG-02 card | OrderTimeline promised/logistics ETA lines | revert → card drops the ETA lines (prior behavior). | none |
 | `e72b418` BUG-02 F1 | normalize quote region for fee+ETA | revert → mis-cased regions fall back to the pre-existing (inconsistent) fee/ETA tiering. | none |
+| BUG-06 (`1d82a73`+`cd0eeeb`+`7ba21af`+`ef61fbd`) | v2 card contract (type + status object + posInt quantity) in the projection layer + component v1/v2 rendering | revert → projections emit v1 again; v2 cards already in chat history hit the "不支持此旧卡片版本" safe message (no partial render). **No DB migration** — projection/output/component only. | none — no writes, no schema change |
+| BUG-06 quantity-safety (`projectQuantity`) | invalid quantity → explicit `quantity_valid:false`+`quantity_error` (never faked to 1); card 数量数据异常 + disabled buttons | revert → invalid quantity falls back to the prior `toPosInt` fake-1 behavior (display only; amount always was `price.amount_minor`) | none — display/diagnostic only |
 
 **Full-branch rollback:** `git checkout main` (branch never merged) — production is entirely unaffected (nothing deployed).
 
