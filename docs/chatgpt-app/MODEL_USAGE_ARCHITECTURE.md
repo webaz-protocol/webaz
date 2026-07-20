@@ -1,5 +1,11 @@
 # MODEL_USAGE_ARCHITECTURE — Model-When-Necessary (low-token interaction)
 
+> **Phase-3A.1 update (natural-language round-trip → 0):** the two remaining NL-fallback buttons are now DIRECT_TOOL. `查看最新状态` → `webaz_approval_requests(action=get)`; `联系商家` → `webaz_order_chat(action=list)` read + `(action=send)` send. `approval_requests`/`order_chat` gained additive app-visibility (`_meta.ui.visibility:['model','app']` + `widgetAccessible`) with **no** `resourceUri` — proving **`callable_from_component` ≠ `renders_component`** (renders_component = the 5 card tools with a `resourceUri`; callable_from_component = 7). Two new controls appeared (send button + a conditional `查看订单` on executed) and one input (chat textarea).
+>
+> **Updated interaction_class counts (26 controls):** LOCAL_UI **12** (11 + chat textarea) · DIRECT_TOOL **14** (10 + 查看最新状态 + 联系商家-read + 发送给订单对方 + 查看订单) · **DIRECT_TOOL-target-currently-NL 0** · MODEL_REQUIRED-button **0**. The number rose from 23 because send/view-order/input split out — reported accurately, not merged to hold 23. Locked by `test-mcp-direct-tool-buttons.ts` (12: no-model, single-flight, idempotency, no sensitive-field auto-insert, observable `fallback_reason`) + apps-standard T-2/T-2b/T-2c.
+>
+> The §III table below still lists the Phase-3A baseline (rows 17 & 22 were the two NL buttons — now DIRECT_TOOL); treat this header block as the current authority for counts.
+>
 > Phase-3A supplemental. Principle: **UI interactions are deterministic and must not round-trip through the model.** The model is used only for natural-language understanding, semantic comparison, recommendation, and explanation.
 > Grades: **CONFIRMED** (code) · **HIGH_CONFIDENCE** · **LIVE_HOST_REQUIRED** · **NOT_REPRODUCED**.
 

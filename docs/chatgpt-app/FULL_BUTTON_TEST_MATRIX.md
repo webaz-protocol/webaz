@@ -1,5 +1,8 @@
 # FULL_BUTTON_TEST_MATRIX
 
+> **Phase-3A.1 update:** rows 17 (查看最新状态) and 22 (联系商家) are now **DIRECT_TOOL** (were DIRECT_TOOL-target-NL). New controls: 发送给订单对方 (DIRECT_TOOL, `webaz_order_chat` send, UNIT_TESTED via `test-mcp-direct-tool-buttons`), 查看订单 (DIRECT_TOOL, conditional on executed), chat textarea (LOCAL_UI). Runtime invariants (no-model, single-flight, idempotency, no sensitive-field auto-insert, `fallback_reason`) locked by `scripts/test-mcp-direct-tool-buttons.ts` (12). Authoritative counts: MODEL_USAGE_ARCHITECTURE.md header (LOCAL_UI 12 / DIRECT_TOOL 14 / target-NL 0). Still no CHATGPT_WEB/IOS/ANDROID levels.
+
+
 > Phase-3A §X. Test level per button + which §X low-token invariant covers it. Test levels: **CODE_INSPECTED** · **UNIT_TESTED** · **HOST_SIMULATED** (JSDOM/vm) · **LIVE_HOST_REQUIRED**. No CHATGPT_WEB / IOS / ANDROID levels (no real ChatGPT access this phase).
 
 ## Automated tests backing this matrix

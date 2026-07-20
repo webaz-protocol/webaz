@@ -2,8 +2,9 @@
 
 > Honest limits of what Phase-3A delivered. Nothing here is claimed as live-host verified.
 
-## Deferred DIRECT_TOOL conversions (kept as NL follow-up + fail-visible fallback)
-- **🔄 查看最新状态** (`webaz_approval_requests`) and **联系商家** (`webaz_order_chat`): both target tools have **no `_meta` / no app-visibility / no card**. Converting to DIRECT_TOOL needs (a) widening their visibility to `['model','app']` and (b) deciding a render target (they have no widget). On ChatGPT the result of a card-initiated call to a non-card tool would render as model text — **LIVE_HOST_REQUIRED** to confirm behavior. Deferred to avoid a speculative visibility change on read tools; the NL path still works and is fail-visible. Not a regression.
+## DIRECT_TOOL conversions — DONE in Phase-3A.1 (was deferred)
+- **🔄 查看最新状态** (`webaz_approval_requests`) and **联系商家** (`webaz_order_chat`) are now DIRECT_TOOL (commit `a04ccd7`): app-visibility widened additively (`_meta.ui.visibility:['model','app']` + `widgetAccessible`, no `resourceUri`); the standard bridge returns the callTool promise so card-less results are consumed in-place. NL follow-up is retained ONLY as a fail-visible fallback (host without `callTool`), logging `fallback_reason=HOST_COMPONENT_TOOL_CALL_UNAVAILABLE`.
+- **Still LIVE_HOST_REQUIRED (Phase 3B):** whether ChatGPT renders/returns a card-initiated call to a **card-less** tool (`approval_requests`/`order_chat`) so the in-card status/chat area actually updates. The DIRECT path is implemented and consumes the returned promise; if a real host neither pushes a notification nor returns a value to the widget, the fail-visible fallback covers the user. **Chat SEND was tested with a mock/vm only — never against a real order** (no real message sent).
 
 ## LIVE_HOST_REQUIRED (Phase 3B) — cannot close from code
 - Whether ChatGPT renders a **cross-component** result (ProductResults calling `webaz_quote_order` → QuoteAndApproval card) as a new card, or feeds it back to the calling widget. The 准备下单 DIRECT_TOOL path assumes a new card; the NL fallback + copyable hint cover the case where it does not.

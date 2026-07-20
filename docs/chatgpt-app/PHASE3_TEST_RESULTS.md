@@ -2,7 +2,28 @@
 
 > Phase-3A local test results. All runs hermetic (temp `$HOME`), no network, no prod DB, no deploy. No live-ChatGPT verification claimed.
 
-## Latest run (this session — 5 commits landed)
+## Phase-3A.1 run (BUG-04 URI versioning + two NL buttons → DIRECT_TOOL)
+```
+tsc --noEmit                        exit 0
+guard:complexity                    OK
+test-mcp-card-contract              pass 37
+test-product-widget-expand          pass 43
+test-mcp-quote-approval-ui           pass 31
+test-mcp-order-timeline-ui           pass 23
+test-mcp-apps-standard               pass 55   (BUG-04 version-agnostic + bare-alias R-5; §III renders/callable decoupling T-2/2b/2c)
+test-mcp-tool-annotations            pass 36
+test-mcp-tool-surfaces               pass 25
+test-product-presentation-ui         pass 19
+test-mcp-manifest-version            pass 8
+test-mcp-http-edge                   pass 38
+test-mcp-uri-versioning              pass 11   (URI-hash===sha256(HTML), content→version, dangling-ref, bare alias, bogus reject)
+test-mcp-direct-tool-buttons         pass 12   (查看最新状态 + 联系商家 read/send: no-model, single-flight, idempotency, no sensitive-field, fallback_reason)
+diagnose-mcp-card-matrix             10 ✅ + 1 expected flag (check 2 = design) ; check 7 now ✅ (versioned) ; check 11 ✅
+```
+Commits added: `8cc6259` BUG-04 URI versioning · `a04ccd7` two NL buttons → DIRECT_TOOL. Natural-language round-trip buttons now **0**. Interaction_class: LOCAL_UI 12 / DIRECT_TOOL 14 / target-NL 0 (26 controls). **No deploy, no real chat message sent, no live-ChatGPT verification.**
+
+---
+## Latest run (Phase-3A — 5 commits landed)
 ```
 tsc --noEmit                       exit 0
 guard:complexity                   OK (server.ts 55/55, 234/234)
