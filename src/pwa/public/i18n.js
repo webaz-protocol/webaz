@@ -1755,6 +1755,7 @@ const _EN = {
   '确认移入回收箱？移入后商品将下架，可随时恢复。': 'Move to recycle bin? The product will be unlisted. You can restore it anytime.',
   '确认下架到仓库？买家将无法购买。': 'Delist to warehouse? Buyers will no longer see this product.',
   '彻底删除后无法恢复，确认删除？': 'This cannot be undone. Delete permanently?',
+  '彻底删除需现场真人 Passkey 验证': 'Permanent deletion requires a live human Passkey verification',
 
   // ── Search ───────────────────────────────────────────────────
   '没有找到"': 'No results for "',
