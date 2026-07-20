@@ -112,12 +112,21 @@ try {
     const res = approveProductActionRequest(db, { requestId: r, ownerId: alice, webauthnToken: 'tok', openWindow: false, generateId, consumeGateToken: makeGate({ request_id: r, open_window: false }), retireAnchorsByTarget: noAnchor })
     ok('9 expired → REQUEST_EXPIRED 410 + reaped, product intact', res.error_code === 'REQUEST_EXPIRED' && res.http === 410 && reqStatus(r) === 'expired' && exists(p))
   }
-  // 10. precondition fail (product NOT in recycle bin): gate ok, approved, but executor → NOT_IN_RECYCLE_BIN 409, approved:true
+  // 10. precondition fail (product NOT in recycle bin): gate ok, but executor → NOT_IN_RECYCLE_BIN 409. ★The
+  //   request is REVERTED to pending (not left 'approved') so the single ceremony cannot become a persistent
+  //   bearer authority — any retry must re-Passkey. Product intact.
   {
     const p = mkProduct(alice, 'active'), r = mkReq(alice, p, 'pending')
     const res = approveProductActionRequest(db, { requestId: r, ownerId: alice, webauthnToken: 'tok', openWindow: false, generateId, consumeGateToken: makeGate({ request_id: r, open_window: false }), retireAnchorsByTarget: noAnchor })
-    ok('10a active product → NOT_IN_RECYCLE_BIN 409, approved:true', res.ok === false && res.error_code === 'NOT_IN_RECYCLE_BIN' && res.approved === true)
-    ok('10b request is approved (audit trail), product intact', reqStatus(r) === 'approved' && exists(p))
+    ok('10a active product → NOT_IN_RECYCLE_BIN 409, approved:false (reverted)', res.ok === false && res.error_code === 'NOT_IN_RECYCLE_BIN' && res.approved === false)
+    ok('10b request REVERTED to pending (no stale approved), product intact', reqStatus(r) === 'pending' && exists(p))
+    // regression: the reverted request must NOT be executable off a stale approval. Move the product INTO the
+    //   recycle bin (so the executor's preconditions pass and the AUTH check is actually reached); status is now
+    //   pending with no window → the approved-path is unreachable → NOT_AUTHORIZED (a fresh Passkey/window is required).
+    db.prepare("UPDATE products SET status='deleted' WHERE id=?").run(p)
+    const { executeProductActionRequest } = await import('../src/pwa/product-action-exec.js')
+    ok('10c no stale-approval bearer authority: recycled product + reverted req → executor NOT_AUTHORIZED',
+      executeProductActionRequest(db, { requestId: r, retireAnchorsByTarget: noAnchor }).error_code === 'NOT_AUTHORIZED' && exists(p))
   }
   // 11. sanitized failure: missing requests table → APPROVE_FAILED, no raw SQL
   {

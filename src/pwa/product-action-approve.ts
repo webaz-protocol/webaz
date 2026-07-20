@@ -68,8 +68,11 @@ export function approveProductActionRequest(db: Database.Database, opts: Approve
     // 执行(批准路径:executor 见 approved → 走 approval 授权,不消费窗口)。
     const exec = executeProductActionRequest(db, { requestId, retireAnchorsByTarget })
     if (!exec.ok) {
-      // 已批准但未删成(如商品未入回收箱/有进行中订单):如实回错;请求保持 approved,修好前置后可经窗口重试。
-      return { ok: false, error_code: exec.error_code, error: exec.error, http: exec.http || 500, approved: true, window_opened: windowOpened, window_expires_at: windowExpiresAt }
+      // 未删成(如商品未入回收箱/有进行中订单):把 approved 退回 pending。★安全:绝不把 'approved' 作为【持久
+      //   bearer 授权】留库——执行器的 approved 路径无需新 gate,若留 approved,未来任何 owner-key 调用都能凭这次
+      //   旧 ceremony 直删(无新真人在场)。退回 pending 后,重试必须【重新 Passkey】(或消费一次窗口),ceremony 一次性。
+      db.prepare("UPDATE product_action_requests SET status='pending', approved_at=NULL WHERE id=? AND status='approved'").run(requestId)
+      return { ok: false, error_code: exec.error_code, error: exec.error, http: exec.http || 500, approved: false, window_opened: windowOpened, window_expires_at: windowExpiresAt }
     }
     return { ok: true, request_id: requestId, deleted_product_id: exec.product_id, approved: true, window_opened: windowOpened, window_expires_at: windowExpiresAt }
   } catch (e) {
