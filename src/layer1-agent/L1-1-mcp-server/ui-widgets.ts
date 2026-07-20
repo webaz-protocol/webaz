@@ -597,6 +597,12 @@ function renderBody(oai, out){
   if(out.next_actor) row(box,'下一责任方',String(out.next_actor))
   if(out.deadline&&out.deadline.iso) row(box,'截止时间',localTime(out.deadline.iso))
   var lg=out.logistics||{}
+  // BUG-02:三种配送时间分列 —— ①下单时预计配送(promised_eta,冻结承诺)②当前物流预计(shipping_est_days,运费模板;非承诺)③物流追踪。
+  //   两种 ETA 绝不合成一个标签;旧单无承诺快照 → "下单时未记录预计配送时间";只显示"约N天/范围",不伪造确定日期。
+  var pe=lg.promised_eta
+  function etaText(e){ if(!e) return null; if(e.legacy_missing) return '下单时未记录预计配送时间'; if(e.estimated_days_text==null) return '无配送估计'; var lo=e.estimated_min_days, hi=e.estimated_max_days; if(lo!=null&&hi!=null) return (lo===hi?('约'+lo+'天'):(lo+'–'+hi+'天')); return String(e.estimated_days_text)+'天' }
+  var petxt=etaText(pe); if(petxt) row(box,'下单时预计配送',petxt)
+  if(lg.shipping_est_days!=null) row(box,'当前物流预计',String(lg.shipping_est_days)+'天')
   if(lg.tracking) row(box,'物流单号',String(lg.tracking))
   var tl=el('div','tl')
   ;(out.timeline||[]).forEach(function(t){ tl.appendChild(el('div',null,localTime(t.at)+' · '+((t.to_status&&t.to_status.label)||'')+(t.actor?'('+t.actor+')':''))) })

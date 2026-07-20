@@ -148,6 +148,9 @@ try {
     && html.includes('发送给订单对方') && html.includes('idempotency_key:idem')
     && !html.includes("读取订单 '+out.order_id+' 的对话"))
   ok('13. 组件端本地时区渲染(toLocaleString)+ 刷新走 callTool', html.includes('toLocaleString') && html.includes("callTool('webaz_buyer_orders'"))
+  ok('E1. BUG-02 订单卡分列 promised(下单时预计配送)+ logistics(当前物流预计)+ legacy 缺失,两 ETA 不合成一标签;范围/约N天不伪造确定日期',
+    html.includes('下单时预计配送') && html.includes('当前物流预计') && html.includes('下单时未记录预计配送时间')
+    && html.includes('lg.promised_eta') && html.includes("'约'+lo+'天'"))
   // PR-A 起 openExternal 唯一调用点在 openWebaz 内部,且入参必须先过 safeWebazHref(URL 解析
   // origin === 'https://webaz.xyz' 且无 userinfo);deep link 调用点仍是字面 webaz.xyz 前缀构造。
   ok('R1-4. openExternal 单一调用点在 safeWebazHref 守卫后 + deep link 字面前缀', (html.match(/openExternal\(\{href:/g) ?? []).length === 1
