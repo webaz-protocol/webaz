@@ -70,6 +70,15 @@ const legFull = buildBuyerOrderFull(db, 'buyer1', legId) as { ok: boolean; respo
 const legPe = ((legFull.response.logistics ?? {}) as Record<string, unknown>).promised_eta as Record<string, unknown> | undefined
 ok('L1. legacy order (no snapshot) → legacy_missing true (never backfilled from current listing)', !!legPe && legPe.legacy_missing === true && legPe.estimated_days_text === null)
 
+// ── §IV / adversarial F1: lowercase "sg" resolves the SAME exact tier for BOTH fee and ETA (no case-drift) ──
+db.prepare("INSERT INTO users (id,name,handle,role,api_key,default_address_text,default_address_region) VALUES ('buyer_lc','B','blc','buyer','k_lc','7 SG Rd','sg')").run()
+db.prepare("UPDATE products SET estimated_days='30', shipping_template=? WHERE id='prd1'").run(JSON.stringify([{ region: 'SG', fee: 0, est_days: '3-5' }, { region: '*', fee: 9, est_days: '10-20' }]))
+const qlc = computeBuyerQuote(db, deps, 'buyer_lc', { product_id: 'prd1', quantity: 1 }, 'issue') as { ok: boolean; response: Record<string, unknown> }
+const lcPe = qlc.response.promised_eta as Record<string, unknown>
+ok('F1a. lowercase "sg" → ETA exact SG tier (3-5, not wildcard 10-20) + region normalized to SG', lcPe.source === 'template_exact' && lcPe.estimated_days_text === '3-5' && lcPe.destination_region === 'SG')
+const lcShip = (qlc.response.line_items as Array<Record<string, unknown>>).find(l => l.code === 'shipping')
+ok('F1b. lowercase "sg" → fee tier ALSO exact SG (shipping 0, not wildcard 9) — fee/ETA no case-drift', Number(lcShip?.amount_minor) === 0)
+
 db.close()
 if (fail > 0) { console.error(`\n❌ eta snapshot flow FAILED  ✅ ${pass} ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ eta snapshot flow: freeze@quote → inherit draft → inherit order · drift-immune · promised≠logistics · legacy_missing\n  ✅ pass ${pass}`)

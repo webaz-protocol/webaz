@@ -21,7 +21,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { toUnits, mulRate, mulQty, type Units } from '../money.js'
 import { SCHEMA_ORDER_QUOTE } from '../agent-model-projection.js'  // MCP Token PR-1: webaz.order_quote.model.v1
 import { MAX_PER_ORDER } from '../order-limits.js'
-import { effectiveShippingTemplate, resolveShipping } from '../shipping-templates.js'
+import { effectiveShippingTemplate, resolveShipping, normalizeRegion } from '../shipping-templates.js'
 import { buildPromisedEta, serializePromisedEta, parsePromisedEta } from '../delivery-eta.js'   // BUG-02:配送估计冻结
 import { freeShippingWaives } from '../free-shipping.js'
 import { effectiveSaleRegionsRule, regionAllowedByRule, parsePlatformBlocklist } from '../sale-regions.js'
@@ -218,7 +218,9 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
   const u = db.prepare('SELECT default_address_text, default_address_region FROM users WHERE id = ?').get(humanId) as { default_address_text: string | null; default_address_region: string | null } | undefined
   const addrText = (u?.default_address_text || '').trim()
   if (!addrText) return qerr(409, 'DEFAULT_ADDRESS_REQUIRED', 'no default address on file — set one at webaz.xyz (PWA profile) or via webaz_default_address action=set; never paste a full address into chat', { missing_requirements: ['default_address'], next_steps: ['change_address_in_pwa'] })
-  const regionTag = (u?.default_address_region || '').trim() || null
+  // BUG-02 §IV.5/6 (adversarial F1):规范化收货地区一次(trim+UPPER),让运费档、ETA 档、落库 dest_region 与
+  //   建单路径(gateShippingForCreate 亦 normalizeRegion)完全一致 —— 'sg'/'SG' 不因大小写选错档(运费 vs ETA 漂移)。
+  const regionTag = normalizeRegion(u?.default_address_region)
 
   // ── 7. 可售地区(镜像 gateSaleRegionForCreate 全语义:平台合规 overlay 先裁 + 坏配置 fail-closed)+ 运费 ──
   const parsedBlock = parsePlatformBlocklist(deps.getProtocolParam<string>('trade.platform_region_blocklist', '[]'))
