@@ -141,6 +141,13 @@ try {
     let touched = false
     const bad = await evaluateGatewayLimitsAsync({ cost_class: 'nope' as never, dims: { ip: 'x' } }, { hit: async () => { touched = true; return 1 } }, NOW, syntheticAsync)
     ok('8f async unknown class → deny, store not called', bad.allowed === false && touched === false)
+
+    // 8g fail-closed on a non-finite count (seam-contract violation): a store returning undefined/NaN must
+    //    DENY, never be read as under-limit (NaN > limit === false would be a silent fail-open)
+    const nanSync = evaluateGatewayLimits({ cost_class: 'public_low', dims: { ip: '1.2.3.4' } }, { hit: () => undefined as never }, NOW, syntheticAsync)
+    ok('8g sync non-finite count → fail-closed deny', nanSync.allowed === false)
+    const nanAsync = await evaluateGatewayLimitsAsync({ cost_class: 'public_low', dims: { ip: '1.2.3.4' } }, { hit: async () => NaN }, NOW, syntheticAsync)
+    ok('8h async non-finite count → fail-closed deny', nanAsync.allowed === false)
   }
 
   if (fail > 0) { console.error(`\n❌ gateway-limits FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

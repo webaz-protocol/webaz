@@ -29,9 +29,23 @@ try {
   ok('3c leading zeros canonicalized', normalizeIpDimension('2001:0db8:0000:0001::5') === '2001:db8:0:1::/64')
   ok('3d uppercase normalized to lowercase', normalizeIpDimension('2001:DB8:ABCD:1234::1') === '2001:db8:abcd:1234::/64')
 
-  // 4. IPv4-mapped / embedded IPv6 → keyed by the embedded IPv4
+  // 4. IPv4-mapped / IPv4-compatible → keyed by the embedded IPv4 (these DENOTE an IPv4 client)
   ok('4a ::ffff:1.2.3.4 → IPv4', normalizeIpDimension('::ffff:192.168.0.1') === '192.168.0.1')
   ok('4b malformed embedded IPv4 → empty', normalizeIpDimension('::ffff:1.2.3.999') === '')
+  ok('4c ::1.2.3.4 (compat) → IPv4', normalizeIpDimension('::1.2.3.4') === '1.2.3.4')
+
+  // 4.5 GENERAL embedded-IPv4 form (X:...:d.d.d.d): the quad is HOST bits, not an identity → must keep the /64
+  //   (audit #1 — otherwise one /64 splits into 2^32 keys and different /64s collide with each other + real IPv4)
+  const g1 = normalizeIpDimension('2001:db8:aaaa:1111::1.2.3.4')
+  const g2 = normalizeIpDimension('2001:db8:aaaa:1111::5.6.7.8')
+  ok('4.5a same /64 with dotted host bits → ONE key (no split)', g1 === g2 && g1 === '2001:db8:aaaa:1111::/64')
+  ok('4.5b different /64 → different key (no collision)', normalizeIpDimension('2001:db8:bbbb:2222::1.2.3.4') !== g1)
+  ok('4.5c embedded-quad /64 never collides with a real IPv4', g1 !== normalizeIpDimension('1.2.3.4'))
+
+  // 4.6 IPv4 canonicalization (audit #2 — leading-zero octets must NOT mint distinct keys)
+  ok('4.6a leading-zero IPv4 canonicalized', normalizeIpDimension('01.02.03.04') === '1.2.3.4')
+  ok('4.6b padded IPv4 canonicalized', normalizeIpDimension('001.002.003.004') === '1.2.3.4')
+  ok('4.6c leading-zero mapped IPv4 canonicalized', normalizeIpDimension('::ffff:01.02.03.04') === '1.2.3.4')
 
   // 5. garbage / edge → empty (fail-safe: never key on junk)
   ok('5a empty → empty', normalizeIpDimension('') === '')

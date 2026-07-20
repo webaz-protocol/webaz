@@ -19,6 +19,30 @@ function isValidIpv4(v4: string): boolean {
   return parts.every(p => /^\d{1,3}$/.test(p) && Number(p) <= 255)
 }
 
+/** Re-serialize an IPv4 to canonical dotted-decimal so textual variants of ONE host share ONE key
+ *  (1.2.3.4 == 01.02.03.04 == 001.002.003.004). Assumes isValidIpv4 already passed. */
+function canonicalIpv4(v4: string): string {
+  return v4.split('.').map(Number).join('.')
+}
+
+/**
+ * If `ip` ends with an embedded dotted-quad that is the low 32 bits of a GENERAL IPv6 address
+ * (X:...:d.d.d.d, RFC 4291 §2.2.3 — NOT the ::ffff:/:: mapped forms, which are handled as IPv4 upstream),
+ * fold the quad into two hextets so expandIpv6 keeps the real /64. Returns the input unchanged when there is
+ * no embedded quad, or null when the embedded quad is malformed. This prevents an attacker from writing host
+ * bits in dotted form to split one /64 into up to 2^32 keys, or to collide two /64s onto one key.
+ */
+function foldEmbeddedV4(ip: string): string | null {
+  const m = /^(.*:)((?:\d{1,3}\.){3}\d{1,3})$/.exec(ip)
+  if (!m) return ip
+  const quad = m[2]!
+  if (!isValidIpv4(quad)) return null
+  const o = quad.split('.').map(Number)
+  const h1 = ((o[0]! << 8) | o[1]!).toString(16)
+  const h2 = ((o[2]! << 8) | o[3]!).toString(16)
+  return m[1]! + h1 + ':' + h2
+}
+
 /** Expand a pure-IPv6 literal to 8 canonical (no-leading-zero) hextets, or null if malformed. */
 function expandIpv6(ip: string): string[] | null {
   const halves = ip.split('::')
@@ -53,13 +77,15 @@ function expandIpv6(ip: string): string[] | null {
 export function normalizeIpDimension(rawIp: string): string {
   const ip = String(rawIp ?? '').trim().toLowerCase()
   if (!ip || ip.length > 45 || !/^[0-9a-f:.]+$/.test(ip)) return ''
-  if (ip.includes('.')) {
-    // plain IPv4, or IPv4-mapped/embedded IPv6 whose trailing token is the IPv4 address
-    const embed = /(?:^|:)((?:\d{1,3}\.){3}\d{1,3})$/.exec(ip)
-    const v4 = embed ? embed[1]! : ip
-    return isValidIpv4(v4) ? v4 : ''
-  }
-  const hextets = expandIpv6(ip)
+  // Plain IPv4 (no colon): key per canonical address.
+  if (!ip.includes(':')) return isValidIpv4(ip) ? canonicalIpv4(ip) : ''
+  // IPv4-mapped (::ffff:d.d.d.d) / IPv4-compatible (::d.d.d.d): these DENOTE an IPv4 client → key as IPv4.
+  const mapped = /^::(?:ffff:)?((?:\d{1,3}\.){3}\d{1,3})$/.exec(ip)
+  if (mapped) return isValidIpv4(mapped[1]!) ? canonicalIpv4(mapped[1]!) : ''
+  // General IPv6 (possibly X:...:d.d.d.d where the quad is host bits, not an identity) → collapse to /64.
+  const folded = foldEmbeddedV4(ip)
+  if (folded === null) return ''
+  const hextets = expandIpv6(folded)
   if (!hextets) return ''
   return hextets.slice(0, 4).join(':') + '::/64'
 }
