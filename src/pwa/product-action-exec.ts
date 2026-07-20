@@ -35,7 +35,9 @@ class ExecAbort extends Error {
   constructor(public payload: ProductActionExecResult) { super('exec-abort') }
 }
 
-interface ExecDeps { requestId: string; retireAnchorsByTarget?: (db: Database.Database, kind: string, id: string) => void }
+// retireAnchorsByTarget is REQUIRED (not optional): the DELETE route always retires anchors, so making it
+//   optional here would let a call site silently delete a product yet leave dangling anchors → parity drift.
+interface ExecDeps { requestId: string; retireAnchorsByTarget: (db: Database.Database, kind: string, id: string) => void }
 
 /**
  * 执行一条 product-action 删除请求。授权(approved / 活跃 T1 窗)成立且删除前置满足才动手;全程单事务原子。
@@ -77,7 +79,12 @@ export function executeProductActionRequest(db: Database.Database, opts: ExecDep
         authorizedVia = 'approval'
       } else {
         const consumed = consumeWindow(db, { ownerId: reqRow.owner_id, tier: DELETE_TIER })
-        if (!consumed.ok) return { ok: false, error_code: 'NOT_AUTHORIZED', error: '需要人工 Passkey 批准', http: 403 }
+        if (!consumed.ok) {
+          // 区分"无可核销窗(需人工 Passkey)"与"窗口操作真实 db 故障":后者是可重试的系统错误,不能
+          //   伪装成 403「没权限」。两种情况都没发生写(consume 失败 changes=0),直接返回不需回滚。
+          if (consumed.error_code === 'WINDOW_OP_FAILED') return { ok: false, error_code: 'EXEC_FAILED', error: '执行失败,请重试', http: 500 }
+          return { ok: false, error_code: 'NOT_AUTHORIZED', error: '需要人工 Passkey 批准', http: 403 }
+        }
         authorizedVia = 'window'
       }
 
@@ -89,9 +96,8 @@ export function executeProductActionRequest(db: Database.Database, opts: ExecDep
 
       // 硬删,复刻 DELETE 路由:先删外链,anchor GC 尽力而为(不因其失败回滚删除),再删商品本体。
       db.prepare('DELETE FROM product_external_links WHERE product_id = ?').run(product.id)
-      if (retireAnchorsByTarget) {
-        try { retireAnchorsByTarget(db, 'product', product.id) } catch (e) { console.warn('[product-action-exec] anchor gc:', (e as Error).message) }
-      }
+      // anchor GC 尽力而为:与 DELETE 路由一致,失败只 warn 不回滚删除(在 tx 内 catch 住,不触发整体 rollback)。
+      try { retireAnchorsByTarget(db, 'product', product.id) } catch (e) { console.warn('[product-action-exec] anchor gc:', (e as Error).message) }
       db.prepare('DELETE FROM products WHERE id = ?').run(product.id)
 
       return { ok: true, request_id: requestId, product_id: product.id, authorized_via: authorizedVia }
