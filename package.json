@@ -11,6 +11,7 @@
     "test:agent-projection-source-privacy": "tsx scripts/test-agent-projection-source-privacy.ts",
     "test:agent-gateway-principal": "tsx scripts/test-agent-gateway-principal.ts",
     "test:gateway-limits": "tsx scripts/test-gateway-limits.ts",
+    "test:gateway-limits-pg": "tsx scripts/test-gateway-limits-pg.ts",
     "build": "npm run build:whitepaper && tsc && cp -r src/pwa/public dist/pwa/",
     "build:whitepaper": "tsx scripts/build-whitepaper-html.ts",
     "check:whitepaper-fresh": "tsx scripts/build-whitepaper-html.ts && git diff --exit-code -- src/pwa/public/whitepaper",

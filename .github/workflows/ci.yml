@@ -869,6 +869,7 @@ jobs:
       - run: npm run test:agent-gateway-proof
       - run: npm run test:agent-gateway-principal
       - run: npm run test:gateway-limits
+      - run: npm run test:gateway-limits-pg
       - run: npm run test:oauth-authorize
       - run: npm run test:oauth-approve
       - run: npm run test:oauth-token
