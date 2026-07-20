@@ -11,7 +11,7 @@ const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js
 const { computeBuyerQuote } = await import('../src/pwa/buyer-quote.js')
 const { createOrderDraft, getOrderDraft } = await import('../src/pwa/order-draft.js')
 const { buildBuyerOrderFull } = await import('../src/pwa/buyer-order-full-view.js')
-const { parsePromisedEta } = await import('../src/delivery-eta.js')
+const { parsePromisedEta, promisedEtaForOrder } = await import('../src/delivery-eta.js')
 const { applyWebazRuntimeSchema } = await import('../src/runtime/apply-webaz-runtime-schema.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -78,6 +78,15 @@ const lcPe = qlc.response.promised_eta as Record<string, unknown>
 ok('F1a. lowercase "sg" → ETA exact SG tier (3-5, not wildcard 10-20) + region normalized to SG', lcPe.source === 'template_exact' && lcPe.estimated_days_text === '3-5' && lcPe.destination_region === 'SG')
 const lcShip = (qlc.response.line_items as Array<Record<string, unknown>>).find(l => l.code === 'shipping')
 ok('F1b. lowercase "sg" → fee tier ALSO exact SG (shipping 0, not wildcard 9) — fee/ETA no case-drift', Number(lcShip?.amount_minor) === 0)
+
+// ── §F2: order-level promised ETA — draft inherits; direct buy-now (no draft) freezes the CURRENT listing ──
+//   (direct buy-now = webaz_place_order / PWA #buy — a live production path; must NOT be legacy_missing)
+const nowIso = '2026-07-20T00:00:00.000Z'
+const peDraft = promisedEtaForOrder(db, {}, 'seller1', 'SG', draftId, nowIso)
+ok('F2a. order(draftId) inherits the draft snapshot (3-5), ignores product arg / current listing', parsePromisedEta(peDraft)?.estimated_days_text === '3-5')
+const peDirect = promisedEtaForOrder(db, { estimated_days: '30', shipping_template: JSON.stringify([{ region: 'SG', fee: 0, est_days: '6-8' }]) }, 'seller1', 'SG', null, nowIso)
+ok('F2b. direct buy-now (no draft) freezes the CURRENT listing (SG 6-8 = what buyer saw), NOT legacy_missing', parsePromisedEta(peDirect)?.estimated_days_text === '6-8' && parsePromisedEta(peDirect)?.legacy_missing !== true && parsePromisedEta(peDirect)?.source === 'template_exact')
+ok('F2c. direct buy-now with no ETA data → source none / no_estimate (honest, not fabricated)', parsePromisedEta(promisedEtaForOrder(db, {}, 'seller1', 'SG', null, nowIso))?.source === 'none')
 
 db.close()
 if (fail > 0) { console.error(`\n❌ eta snapshot flow FAILED  ✅ ${pass} ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

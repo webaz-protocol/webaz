@@ -17,6 +17,7 @@ import { type Units } from './money.js'
 import { feeUnitsForOrder, estimateOpenDirectPayFeeUnits, readAvailableFeePrepayUnits, sellerDirectPayGraceEligible, feePrepayGateOk } from './direct-pay-fee-ar.js'
 import { sellerBaseBondEntrySatisfied } from './direct-pay-base-bond-entry.js'
 import { resolveDirectReceive } from './direct-receive-resolve.js'   // 单一收款目的地解析:chosen → legacy → sole-active-account → none
+import { promisedEtaForOrder } from './delivery-eta.js'   // BUG-02 F2:direct_p2p 订单也冻结 promised ETA
 import { getAccount } from './direct-receive-accounts.js'  // Rail1 D2:解析到具体账号后取全行(qr_ref 等)冻结非敏感快照
 import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, coarsenBuyerFacingDirectPayCode, type DirectPayControlsConfig } from './direct-pay-controls.js'
 import { checkDeferralQuota, readDeferralQuotaConfig } from './direct-pay-deferral-quota.js'
@@ -92,19 +93,22 @@ export function createDirectPayOrder(db: Database.Database, deps: DirectPayCreat
     const s = args.snapshot
     const quoteRequired = !!args.shipping?.quoteRequired
     const manual = args.acceptMode === 'manual' || quoteRequired   // 询价单必须先接单报价(无论接单模式)
+    // BUG-02(F2):direct_p2p 订单也冻结 promised ETA —— 草稿继承其快照;直下单(无草稿)冻结当刻 listing(region-resolved)。
+    const _peProd = db.prepare('SELECT estimated_days, shipping_template FROM products WHERE id = ?').get(args.productId) as { estimated_days?: string | null; shipping_template?: string | null } | undefined
+    const _pe = promisedEtaForOrder(db, _peProd ?? {}, args.sellerId, args.shipping?.region ?? null, args.draftId ?? null, new Date().toISOString())
     // manual:不设 window deadline(接单时才起表),记 accept_mode 快照 + 接单截止。
     db.prepare(`INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount,
       status, payment_rail, shipping_address, direct_pay_instruction_snapshot, direct_pay_account_snapshot, direct_pay_window_deadline,
       accept_mode_snapshot, pending_accept_deadline, ship_to_region, shipping_fee, shipping_est_days, shipping_quote_required,
       direct_pay_enabled_snapshot, direct_pay_rail_breaker_snapshot, direct_pay_region_snapshot,
-      direct_pay_region_allowlist_snapshot, direct_pay_per_tx_cap_units_snapshot, direct_pay_seller_breaker_snapshot, direct_pay_decision_code, draft_id)
-      VALUES (?,?,?,?,?,?,?,0,'created','direct_p2p',?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?)`)
+      direct_pay_region_allowlist_snapshot, direct_pay_per_tx_cap_units_snapshot, direct_pay_seller_breaker_snapshot, direct_pay_decision_code, draft_id, promised_eta_snapshot)
+      VALUES (?,?,?,?,?,?,?,0,'created','direct_p2p',?,?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?)`)
       .run(orderId, args.productId, args.buyerId, args.sellerId, args.quantity, args.unitPrice, args.totalAmount,
         args.shippingAddress, args.instructionSnapshot, args.accountSnapshot ? JSON.stringify(args.accountSnapshot) : null,
         manual ? null : args.windowDeadlineIso, args.acceptMode, manual ? (args.pendingAcceptDeadlineIso ?? null) : null,
         args.shipping?.region ?? null, (args.shipping && (args.shipping.fee > 0 || args.shipping.region)) ? args.shipping.fee : null, args.shipping?.estDays ?? null, quoteRequired ? 1 : null,
         s.enabled ? 1 : 0, s.railBreakerTripped ? 1 : 0, s.region,
-        JSON.stringify(s.regionAllowlist), s.perTxCapUnits, s.sellerBreakerTripped ? 1 : 0, s.decisionCode, args.draftId ?? null)
+        JSON.stringify(s.regionAllowlist), s.perTxCapUnits, s.sellerBreakerTripped ? 1 : 0, s.decisionCode, args.draftId ?? null, _pe)
     appendOrderEvent(db, {
       orderId, eventType: 'open', fromStatus: null, toStatus: 'created', actorId: args.buyerId, actorRole: 'buyer',
       extra: { product_id: args.productId, seller_id: args.sellerId, quantity: args.quantity, total_amount: args.totalAmount, payment_rail: 'direct_p2p' },

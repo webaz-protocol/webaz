@@ -90,6 +90,28 @@ export function parsePromisedEta(json: string | null | undefined): PromisedEta |
   try { const o = JSON.parse(json) as PromisedEta; return o && typeof o === 'object' && o.schema_version === PROMISED_ETA_SCHEMA ? o : null } catch { return null }
 }
 
+/**
+ * BUG-02 (adversarial F2) — the promised-ETA JSON to persist at ORDER creation, for BOTH purchase paths:
+ *   - draft-linked (quote→draft→submit→Passkey): inherit the draft's already-frozen snapshot (no re-read).
+ *   - direct buy-now (webaz_place_order / PWA #buy, no draft): freeze the CURRENT listing (region-resolved)
+ *     — that is exactly what the buyer saw at the buy-now moment. `captured_at` = order-creation time (UTC).
+ * Returns a JSON string or null (a legacy/absent draft snapshot stays null → legacy_missing at read).
+ */
+export function promisedEtaForOrder(
+  db: Database.Database,
+  product: { estimated_days?: string | null; shipping_template?: string | null },
+  sellerId: string,
+  rawRegion: unknown,
+  draftId: string | null | undefined,
+  capturedAtIso: string,
+): string | null {
+  if (draftId) {
+    const r = db.prepare('SELECT promised_eta_snapshot FROM order_drafts WHERE id = ?').get(String(draftId)) as { promised_eta_snapshot: string | null } | undefined
+    return r?.promised_eta_snapshot ?? null
+  }
+  return serializePromisedEta(buildPromisedEta(db, product, sellerId, rawRegion, capturedAtIso))
+}
+
 /** Stable marker for a legacy order with no snapshot — rendered as "下单时未记录预计配送时间"; NEVER backfilled. */
 export function legacyMissingEta(): PromisedEta {
   return { schema_version: PROMISED_ETA_SCHEMA, destination_region: null, estimated_days_text: null, estimated_min_days: null, estimated_max_days: null, source: 'none', captured_at: '', unavailable_reason: 'legacy_not_recorded', legacy_missing: true }
