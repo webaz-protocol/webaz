@@ -195,7 +195,7 @@ async function main() {
     ok('10c. 429 前不建 MCP server(限流在装配之前)', ROUTE.indexOf('deps.rateLimitOk(') < ROUTE.indexOf('buildMcpServer({'))
     lh.close()
   }
-  ok('10d. 注册需 rateLimitOk dep(server.ts 已注入)', has(SERVER, 'registerRemoteMcpRoutes(app, { rateLimitOk })'))
+  ok('10d. 注册需 rateLimitOk dep(server.ts 已注入)', has(SERVER, 'registerRemoteMcpRoutes(app, { rateLimitOk'))   // 前缀匹配:S1c3 起还注入 gatewayReplayStore/gatewayLoopbackBaseUrl,rateLimitOk 仍是首个 dep
   ok('10e. 命名空间桶 remote_mcp:(修 P2,不与 telemetry 裸-IP 桶串)', has(ROUTE, "'remote_mcp:' + clientIp(req)"))
   ok('10f. 客户端 IP 真相源优先 CF-Connecting-IP(修 P1,CF 覆盖不可伪造)', has(ROUTE, "req.headers['cf-connecting-ip']") && has(ROUTE, 'req.ip'))
   ok('10g. CF-Connecting-IP 需过 IP 形态校验(拒任意字符串桶键,P2 收窄)', has(ROUTE, 'IP_RE.test(cf)'))
