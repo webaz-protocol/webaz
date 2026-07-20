@@ -44,19 +44,30 @@ try {
   // ── [T] 工具描述符 ────────────────────────────────────────────────────────────────────────
   const tools = (await c.listTools()).tools as Array<{ name: string; outputSchema?: unknown; _meta?: Record<string, unknown> }>
   ok('T-0. 匿名工具面仍 21(本 PR 零工具增减)', tools.length === 21, `n=${tools.length}`)
-  const EXPECT: Record<string, { std: string; legacy: string; vis: string[]; app: boolean }> = {
-    webaz_search:               { std: 'ui://widget/webaz-products-mcp.html',        legacy: 'ui://widget/webaz-products.html',        vis: ['model', 'app'], app: true },
-    webaz_quote_order:          { std: 'ui://widget/webaz-quote-approval-mcp.html',  legacy: 'ui://widget/webaz-quote-approval.html',  vis: ['model', 'app'], app: true },   // Phase-3A: ProductResults 准备下单 DIRECT_TOOL 直调 → app-visible (additive)
-    webaz_order_draft:          { std: 'ui://widget/webaz-quote-approval-mcp.html',  legacy: 'ui://widget/webaz-quote-approval.html',  vis: ['model', 'app'], app: true },
-    webaz_submit_order_request: { std: 'ui://widget/webaz-quote-approval-mcp.html',  legacy: 'ui://widget/webaz-quote-approval.html',  vis: ['model', 'app'], app: true },
-    webaz_buyer_orders:         { std: 'ui://widget/webaz-order-timeline-mcp.html',  legacy: 'ui://widget/webaz-order-timeline.html',  vis: ['model', 'app'], app: true },
+  // BUG-04: URIs are content-versioned. Assert per-tool std/legacy templates by COMPONENT BASE (version-agnostic),
+  // both present in ListResources, std≠legacy, versioned pattern holds. Bare aliases resolve in R-5.
+  const res = (await c.listResources()).resources as Array<{ uri: string; mimeType?: string; _meta?: Record<string, unknown> }>
+  const uris = res.map(r => r.uri)
+  const VER = /^ui:\/\/widget\/[a-z-]+\.[0-9a-f]{8,}\.html$/
+  const baseOf = (u: string): string => u.replace(/\.[0-9a-f]{8,}\.html$/, '').replace(/-mcp$/, '')
+  const legacyUris = res.filter(r => r.mimeType === 'text/html+skybridge').map(r => r.uri)
+  const stdUris = res.filter(r => r.mimeType === 'text/html;profile=mcp-app').map(r => r.uri)
+  const EXPECT: Record<string, { base: string; vis: string[]; app: boolean }> = {
+    webaz_search:               { base: 'ui://widget/webaz-products',       vis: ['model', 'app'], app: true },
+    webaz_quote_order:          { base: 'ui://widget/webaz-quote-approval', vis: ['model', 'app'], app: true },   // Phase-3A: 准备下单 DIRECT_TOOL → app-visible
+    webaz_order_draft:          { base: 'ui://widget/webaz-quote-approval', vis: ['model', 'app'], app: true },
+    webaz_submit_order_request: { base: 'ui://widget/webaz-quote-approval', vis: ['model', 'app'], app: true },
+    webaz_buyer_orders:         { base: 'ui://widget/webaz-order-timeline', vis: ['model', 'app'], app: true },
   }
   for (const [name, e] of Object.entries(EXPECT)) {
     const t = tools.find(x => x.name === name)
     const m = (t?._meta ?? {}) as Record<string, unknown>
     const ui = (m.ui ?? {}) as Record<string, unknown>
-    ok(`T-1. ${name} 标准/legacy 双轨 + visibility 精确`,
-      ui.resourceUri === e.std && m['openai/outputTemplate'] === e.legacy && e.std !== e.legacy
+    const ru = String(ui.resourceUri ?? ''), ot = String(m['openai/outputTemplate'] ?? '')
+    ok(`T-1. ${name} 标准/legacy 双轨(版本化)+ base 一致 + visibility 精确`,
+      VER.test(ru) && VER.test(ot) && ru !== ot
+      && baseOf(ru) === e.base && baseOf(ot) === e.base
+      && stdUris.includes(ru) && legacyUris.includes(ot)
       && JSON.stringify(ui.visibility) === JSON.stringify(e.vis)
       && (e.app ? m['openai/widgetAccessible'] === true : !('openai/widgetAccessible' in m))
       && !!t?.outputSchema, JSON.stringify(m).slice(0, 200))
@@ -64,20 +75,17 @@ try {
   const uiToolCount = tools.filter(t => (t._meta as Record<string, unknown> | undefined)?.ui).length
   ok('T-2. 只有 5 个工具带标准 ui meta(不外溢)', uiToolCount === 5, `n=${uiToolCount}`)
 
-  // ── [R] 资源双轨 ─────────────────────────────────────────────────────────────────────────
-  const res = (await c.listResources()).resources as Array<{ uri: string; mimeType?: string; _meta?: Record<string, unknown> }>
-  const uris = res.map(r => r.uri)
-  ok('R-0. 资源共 10 个且 URI 全局唯一(PR-AB +categories;R0 +request-readiness)', res.length === 10 && new Set(uris).size === 10, uris.join(','))
-  const LEGACY = ['ui://widget/webaz-products.html', 'ui://widget/webaz-quote-approval.html', 'ui://widget/webaz-order-timeline.html']
-  const STD = ['ui://widget/webaz-products-mcp.html', 'ui://widget/webaz-quote-approval-mcp.html', 'ui://widget/webaz-order-timeline-mcp.html']
-  for (const u of LEGACY) {
+  // ── [R] 资源双轨(版本化 URI + 裸别名)────────────────────────────────────────────────────
+  ok('R-0. 资源共 10 个且 URI 全局唯一', res.length === 10 && new Set(uris).size === 10, uris.join(','))
+  ok('R-0b. 3 legacy(skybridge)+ 3 standard(mcp-app),全部内容版本化', legacyUris.length === 3 && stdUris.length === 3 && [...legacyUris, ...stdUris].every(u => VER.test(u)), `L=${legacyUris.length} S=${stdUris.length}`)
+  for (const u of legacyUris) {
     const r = res.find(x => x.uri === u)!
     const m = (r._meta ?? {}) as Record<string, unknown>
     ok(`R-1. legacy ${u.slice(12)} skybridge + widgetCSP/domain 原值不动`, r.mimeType === 'text/html+skybridge'
       && JSON.stringify((m['openai/widgetCSP'] as Record<string, unknown>)?.connect_domains) === '[]'
       && m['openai/widgetDomain'] === 'https://webaz.xyz' && !('ui' in m))
   }
-  for (const u of STD) {
+  for (const u of stdUris) {
     const r = res.find(x => x.uri === u)!
     const m = (r._meta ?? {}) as Record<string, unknown>
     const ui = (m.ui ?? {}) as Record<string, unknown>
@@ -89,30 +97,37 @@ try {
   }
   const REQUEST_TOKENS = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|src)\b/
   const SINK_TOKENS = /\b(innerHTML|outerHTML|insertAdjacentHTML|write|writeln|eval|Function)\b/
-  for (const u of STD) {
+  for (const u of stdUris) {
     const rr = await c.readResource({ uri: u })
-    const ct0 = (rr.contents as Array<{ mimeType?: string; text: string; _meta?: Record<string, unknown> }>)[0]
+    const ct0 = (rr.contents as Array<{ uri?: string; mimeType?: string; text: string; _meta?: Record<string, unknown> }>)[0]
     const html = ct0.text
-    ok(`R-3. read ${u.slice(12)}:标准 MIME + 桥词元 + 自包含 + 零 WAZ`,
-      ct0.mimeType === 'text/html;profile=mcp-app'
+    ok(`R-3. read ${u.slice(12)}:contents.uri 一致 + 标准 MIME + 桥词元 + 自包含 + 零 WAZ`,
+      ct0.uri === u && ct0.mimeType === 'text/html;profile=mcp-app'
       && html.includes('ui/initialize') && html.includes('ui/notifications/tool-result')
       && html.includes("'ui/open-link'") && html.includes("role:'user'")
       && html.includes("content:{type:'text'") && !html.includes('content:[{')   // 2026-01-26 冻结版:单 ContentBlock
       && !REQUEST_TOKENS.test(html) && !SINK_TOKENS.test(html) && !html.includes(' WAZ')
       && !!(ct0._meta as Record<string, unknown>)?.ui)
   }
-  for (const u of LEGACY) {
+  for (const u of legacyUris) {
     const rr = await c.readResource({ uri: u })
     const html = (rr.contents as Array<{ text: string }>)[0].text
-    // products 无深链面 → 不注入 link 片段(保住其"零 href 词元"最强锁);quote/timeline 必须带 safeWebazHref。
-    const needLink = u !== 'ui://widget/webaz-products.html'
+    const needLink = baseOf(u) !== 'ui://widget/webaz-products'   // products 无深链面 → 不注入 link 片段
     ok(`R-4. legacy ${u.slice(12)} 单桥(无标准桥词元)+ compat 守卫在场`,
       !html.includes('ui/initialize') && html.includes('window.openai') && html.includes('sendFollowUpCompat')
       && (needLink ? html.includes('safeWebazHref') : !html.includes('safeWebazHref')))
   }
+  // R-5 (BUG-04): 旧裸 URI 作为只读别名仍可 Read(历史消息里的卡片不失效);contents.uri = 请求的裸 URI。
+  const BARE = ['ui://widget/webaz-products.html', 'ui://widget/webaz-products-mcp.html', 'ui://widget/webaz-quote-approval.html', 'ui://widget/webaz-quote-approval-mcp.html', 'ui://widget/webaz-order-timeline.html', 'ui://widget/webaz-order-timeline-mcp.html']
+  for (const u of BARE) {
+    const rr = await c.readResource({ uri: u })
+    const ct0 = (rr.contents as Array<{ uri?: string; mimeType?: string; text: string }>)[0]
+    const expectMime = u.includes('-mcp.') ? 'text/html;profile=mcp-app' : 'text/html+skybridge'
+    ok(`R-5. bare alias ${u.slice(12)} 仍可读 + contents.uri=请求URI + MIME 正确`, ct0.uri === u && ct0.mimeType === expectMime && ct0.text.length > 100)
+  }
 
   // ── [T2] 主题双轨(PR-0 深色修复):6 个资源全部带 token 化主题 + 三层信号 + 按钮显式字色 ──
-  for (const u of [...LEGACY, ...STD]) {
+  for (const u of [...legacyUris, ...stdUris]) {
     const rr = await c.readResource({ uri: u })
     const html = (rr.contents as Array<{ text: string }>)[0].text
     ok(`T2. ${u.slice(12)} 主题 token + prefers-color-scheme + data-theme 双向 + 按钮显式字色`,

@@ -2134,9 +2134,61 @@ Chat moves no funds, changes no order state. Never paste addresses, payment cred
   },
 ]
 
+// ─── BUG-04:UI 资源 URI 内容寻址版本化(HTML 变 → 版本变 → 宿主缓存失效)。标准/legacy 双轨各自版本化,
+//    旧裸 URI 保留为 ReadResource 只读别名(历史消息里的卡片仍可读);模板键不合并、桥不删、组件不换绑。 ──
+const _uiVer = (html: string): string => createHash('sha256').update(html).digest('hex').slice(0, 10)
+const UI_URI = {
+  productsLegacy: `ui://widget/webaz-products.${_uiVer(PRODUCT_RESULTS_WIDGET_HTML)}.html`,
+  productsStd:    `ui://widget/webaz-products-mcp.${_uiVer(PRODUCT_RESULTS_WIDGET_MCP_HTML)}.html`,
+  quoteLegacy:    `ui://widget/webaz-quote-approval.${_uiVer(QUOTE_APPROVAL_WIDGET_HTML)}.html`,
+  quoteStd:       `ui://widget/webaz-quote-approval-mcp.${_uiVer(QUOTE_APPROVAL_WIDGET_MCP_HTML)}.html`,
+  timelineLegacy: `ui://widget/webaz-order-timeline.${_uiVer(ORDER_TIMELINE_WIDGET_HTML)}.html`,
+  timelineStd:    `ui://widget/webaz-order-timeline-mcp.${_uiVer(ORDER_TIMELINE_WIDGET_MCP_HTML)}.html`,
+} as const
+// 裸 URI(工具 _meta 历史值)→ 版本化 URI(工具描述符重写用);裸 URI 仍作 ReadResource 别名。
+const UI_BARE_TO_VERSIONED: Record<string, string> = {
+  'ui://widget/webaz-products.html': UI_URI.productsLegacy,
+  'ui://widget/webaz-products-mcp.html': UI_URI.productsStd,
+  'ui://widget/webaz-quote-approval.html': UI_URI.quoteLegacy,
+  'ui://widget/webaz-quote-approval-mcp.html': UI_URI.quoteStd,
+  'ui://widget/webaz-order-timeline.html': UI_URI.timelineLegacy,
+  'ui://widget/webaz-order-timeline-mcp.html': UI_URI.timelineStd,
+}
+// 任意(版本化或裸)UI URI → 组件 HTML + 轨道(legacy skybridge / standard mcp-app)。ReadResource 单一真相。
+const UI_RESOLVE: Record<string, { html: string; kind: 'legacy' | 'std' }> = {
+  [UI_URI.productsLegacy]: { html: PRODUCT_RESULTS_WIDGET_HTML, kind: 'legacy' }, 'ui://widget/webaz-products.html': { html: PRODUCT_RESULTS_WIDGET_HTML, kind: 'legacy' },
+  [UI_URI.productsStd]: { html: PRODUCT_RESULTS_WIDGET_MCP_HTML, kind: 'std' }, 'ui://widget/webaz-products-mcp.html': { html: PRODUCT_RESULTS_WIDGET_MCP_HTML, kind: 'std' },
+  [UI_URI.quoteLegacy]: { html: QUOTE_APPROVAL_WIDGET_HTML, kind: 'legacy' }, 'ui://widget/webaz-quote-approval.html': { html: QUOTE_APPROVAL_WIDGET_HTML, kind: 'legacy' },
+  [UI_URI.quoteStd]: { html: QUOTE_APPROVAL_WIDGET_MCP_HTML, kind: 'std' }, 'ui://widget/webaz-quote-approval-mcp.html': { html: QUOTE_APPROVAL_WIDGET_MCP_HTML, kind: 'std' },
+  [UI_URI.timelineLegacy]: { html: ORDER_TIMELINE_WIDGET_HTML, kind: 'legacy' }, 'ui://widget/webaz-order-timeline.html': { html: ORDER_TIMELINE_WIDGET_HTML, kind: 'legacy' },
+  [UI_URI.timelineStd]: { html: ORDER_TIMELINE_WIDGET_MCP_HTML, kind: 'std' }, 'ui://widget/webaz-order-timeline-mcp.html': { html: ORDER_TIMELINE_WIDGET_MCP_HTML, kind: 'std' },
+}
+const uiResourceMeta = (kind: 'legacy' | 'std'): Record<string, unknown> => kind === 'legacy'
+  ? { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' }
+  : { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } }
+const uiResourceMime = (kind: 'legacy' | 'std'): string => kind === 'legacy' ? 'text/html+skybridge' : 'text/html;profile=mcp-app'
+/** 工具描述符 _meta 的 resourceUri(标准)/openai/outputTemplate(legacy)裸值 → 版本化值。深拷贝仅改这两键。 */
+function withVersionedUris<T extends { _meta?: unknown }>(tools: T[]): T[] {
+  return tools.map(t => {
+    const m = t._meta as Record<string, unknown> | undefined
+    if (!m) return t
+    const ui = m.ui as Record<string, unknown> | undefined
+    const ru = typeof ui?.resourceUri === 'string' ? ui.resourceUri : undefined
+    const ot = typeof m['openai/outputTemplate'] === 'string' ? m['openai/outputTemplate'] as string : undefined
+    if ((!ru || !UI_BARE_TO_VERSIONED[ru]) && (!ot || !UI_BARE_TO_VERSIONED[ot])) return t
+    return { ...t, _meta: {
+      ...m,
+      ...(ru && UI_BARE_TO_VERSIONED[ru] ? { ui: { ...ui, resourceUri: UI_BARE_TO_VERSIONED[ru] } } : {}),
+      ...(ot && UI_BARE_TO_VERSIONED[ot] ? { 'openai/outputTemplate': UI_BARE_TO_VERSIONED[ot] } : {}),
+    } }
+  })
+}
+
 // Standard MCP annotations merged once at module load (fail-fast if any tool lacks a mapping). The
 // single ListTools handler returns this SAME surface for stdio AND Remote MCP → zero drift.
-const TOOLS_ANNOTATED = withSecuritySchemes(withOutputSchemas(annotateTools(TOOLS)))
+// BUG-04: withVersionedUris rewrites the (bare) resourceUri/outputTemplate in each tool's _meta to the
+// content-versioned URI — atomically consistent with ListResources/ReadResource (same UI_URI constants).
+const TOOLS_ANNOTATED = withVersionedUris(withSecuritySchemes(withOutputSchemas(annotateTools(TOOLS))))
 
 /** MCP UI PR-5(可测导出):消费者投影边界。投影器抛错(含敌意 getter)→ 结构化 PROJECTION_FAILED
  * 降级(经 buildToolEnvelope 错误路径出 isError + 完整错误 JSON),原始协议对象永不外泄。 */
@@ -5952,7 +6004,7 @@ export function buildMcpServer(opts: {
         mimeType:    'application/json',
       },
       {
-        uri:         'ui://widget/webaz-products.html',
+        uri:         UI_URI.productsLegacy,
         name:        'WebAZ ProductResults widget',
         description: 'MCP App component rendering webaz_search structuredContent (search page / zero-hit recovery / on-demand detail) as product cards with local sort/expand/compare. Self-contained; reads window.openai.toolOutput.',
         mimeType:    'text/html+skybridge',
@@ -5964,14 +6016,14 @@ export function buildMcpServer(opts: {
         },
       },
       {
-        uri:         'ui://widget/webaz-quote-approval.html',
+        uri:         UI_URI.quoteLegacy,
         name:        'WebAZ QuoteAndApproval widget',
         description: 'MCP App component rendering quote → draft → Passkey-approval states (webaz.order_quote/order_draft/order_approval .model.v1) with USDC pricing, fiat estimates, rail-honesty notes and duplicate-purchase warnings. Economic execution stays behind the webaz.xyz Passkey.',
         mimeType:    'text/html+skybridge',
         _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' },
       },
       {
-        uri:         'ui://widget/webaz-order-timeline.html',
+        uri:         UI_URI.timelineLegacy,
         name:        'WebAZ OrderTimeline widget',
         description: 'MCP App component rendering the buyer order timeline (webaz.order_timeline.model.v1) and order list/up_to_date shapes: status labels, deadlines in the viewer timezone, rail-honest refund state, server-authoritative actions. High-risk actions stay on the webaz.xyz order page (Passkey).',
         mimeType:    'text/html+skybridge',
@@ -5981,21 +6033,21 @@ export function buildMcpServer(opts: {
       //    URI 分离防宿主缓存/MIME 歧义;同一 render 体,boot 用标准 ui/* postMessage 桥。CSP deny-by-
       //    default(四空数组);刻意省略 ui.domain(组件无固定 CORS 来源需求,由宿主给默认沙箱 origin)。
       {
-        uri:         'ui://widget/webaz-products-mcp.html',
+        uri:         UI_URI.productsStd,
         name:        'WebAZ ProductResults (MCP Apps)',
         description: 'Standard MCP Apps variant of the ProductResults component (same render body; ui/* postMessage bridge). Self-contained, no external requests.',
         mimeType:    'text/html;profile=mcp-app',
         _meta: { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } },
       },
       {
-        uri:         'ui://widget/webaz-quote-approval-mcp.html',
+        uri:         UI_URI.quoteStd,
         name:        'WebAZ QuoteAndApproval (MCP Apps)',
         description: 'Standard MCP Apps variant of the QuoteAndApproval component (same render body; ui/* postMessage bridge). Economic execution stays behind the webaz.xyz Passkey.',
         mimeType:    'text/html;profile=mcp-app',
         _meta: { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } },
       },
       {
-        uri:         'ui://widget/webaz-order-timeline-mcp.html',
+        uri:         UI_URI.timelineStd,
         name:        'WebAZ OrderTimeline (MCP Apps)',
         description: 'Standard MCP Apps variant of the OrderTimeline component (same render body; ui/* postMessage bridge). High-risk actions stay on the webaz.xyz order page (Passkey).',
         mimeType:    'text/html;profile=mcp-app',
@@ -6027,27 +6079,11 @@ export function buildMcpServer(opts: {
   }))
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    if (request.params.uri === 'ui://widget/webaz-order-timeline.html') {
-      return { contents: [{ uri: 'ui://widget/webaz-order-timeline.html', mimeType: 'text/html+skybridge', text: ORDER_TIMELINE_WIDGET_HTML,
-        _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' } }] }
-    }
-    if (request.params.uri === 'ui://widget/webaz-quote-approval.html') {
-      return { contents: [{ uri: 'ui://widget/webaz-quote-approval.html', mimeType: 'text/html+skybridge', text: QUOTE_APPROVAL_WIDGET_HTML,
-        _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' } }] }
-    }
-    if (request.params.uri === 'ui://widget/webaz-products.html') {
-      return { contents: [{ uri: 'ui://widget/webaz-products.html', mimeType: 'text/html+skybridge', text: PRODUCT_RESULTS_WIDGET_HTML,
-        _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' } }] }
-    }
-    // PR-A:标准 MCP Apps 资源(profile=mcp-app;ui.csp deny-by-default;无 ui.domain)
-    const STANDARD_WIDGETS: Record<string, string> = {
-      'ui://widget/webaz-products-mcp.html': PRODUCT_RESULTS_WIDGET_MCP_HTML,
-      'ui://widget/webaz-quote-approval-mcp.html': QUOTE_APPROVAL_WIDGET_MCP_HTML,
-      'ui://widget/webaz-order-timeline-mcp.html': ORDER_TIMELINE_WIDGET_MCP_HTML,
-    }
-    if (STANDARD_WIDGETS[request.params.uri]) {
-      return { contents: [{ uri: request.params.uri, mimeType: 'text/html;profile=mcp-app', text: STANDARD_WIDGETS[request.params.uri],
-        _meta: { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } } }] }
+    // BUG-04:版本化 URI + 裸别名统一解析(单一真相 UI_RESOLVE)。contents[].uri 恒等于被请求的 URI
+    //   (版本化→版本化;裸别名→裸),legacy/standard 双轨的 MIME 与 _meta 按轨道派生;组件从不换绑。
+    const uiHit = UI_RESOLVE[request.params.uri]
+    if (uiHit) {
+      return { contents: [{ uri: request.params.uri, mimeType: uiResourceMime(uiHit.kind), text: uiHit.html, _meta: uiResourceMeta(uiHit.kind) }] }
     }
     if (request.params.uri === 'webaz://guide/categories') {
       // NETWORK 模式经 API(与 HTTP 通道同源);失败降级为静态注册表(counts 缺席,如实标注)

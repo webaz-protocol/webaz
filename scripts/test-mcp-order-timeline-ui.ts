@@ -133,7 +133,7 @@ try {
 
   // 10/13/17/18:组件纪律
   const res = await c.listResources()
-  const wRes = res.resources.find(r => r.uri === 'ui://widget/webaz-order-timeline.html') as { mimeType?: string; _meta?: Record<string, unknown> } | undefined
+  const wRes = res.resources.find(r => r.mimeType === 'text/html+skybridge' && r.uri.startsWith('ui://widget/webaz-order-timeline.')) as { mimeType?: string; _meta?: Record<string, unknown> } | undefined   // BUG-04: versioned URI, match by base
   ok('17/18. 资源在列 + CSP 空域 + widgetDomain', !!wRes && wRes.mimeType === 'text/html+skybridge'
     && JSON.stringify(((wRes._meta ?? {})['openai/widgetCSP'] as Record<string, unknown>)?.connect_domains) === '[]'
     && (wRes._meta ?? {})['openai/widgetDomain'] === 'https://webaz.xyz')
@@ -153,7 +153,7 @@ try {
     && html.includes("openWebaz(oai,'https://webaz.xyz/#order/'"), `sites=${(html.match(/openExternal\(\{href:/g) ?? []).length}`)
   ok('R1-1b. 组件带 minimal 单订单分支(查看完整时间线入口)', html.includes('查看完整时间线') && html.includes('out.order'))
   const tools = (await c.listTools()).tools as Array<{ name: string; _meta?: Record<string, unknown> }>
-  ok('T-1. webaz_buyer_orders 描述符挂 order-timeline outputTemplate', tools.find(t => t.name === 'webaz_buyer_orders')?._meta?.['openai/outputTemplate'] === 'ui://widget/webaz-order-timeline.html')
+  ok('T-1. webaz_buyer_orders 描述符挂 order-timeline outputTemplate(版本化 URI)', (() => { const ot = String(tools.find(t => t.name === 'webaz_buyer_orders')?._meta?.['openai/outputTemplate'] ?? ''); return ot.startsWith('ui://widget/webaz-order-timeline.') && /\.[0-9a-f]{8,}\.html$/.test(ot) })())
 } finally { server.close() }
 
 if (fail > 0) { console.error(`\n❌ mcp-order-timeline-ui FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

@@ -10,6 +10,7 @@
 | `6d380a9` §II | tests + fallback_reason observability | loses fallback_reason log + tests | none |
 | `2e2a654` BUG-09 | manifest version fields | manifest reverts to `protocol_version:'2025-03-26'` | none — advertisement only |
 | `14d185c` BUG-07 | `toIsoUtc` on wire timestamps | timestamps revert to bare passthrough | none — representation only |
+| (BUG-04) | content-versioned widget URIs + bare aliases | tool `_meta`/ListResources revert to bare URIs; ReadResource still served both (aliases) so no card 404s mid-revert | none — URIs only; no data |
 
 **Full-branch rollback:** `git checkout main` (branch never merged) — production is entirely unaffected (nothing deployed).
 

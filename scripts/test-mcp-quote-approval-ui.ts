@@ -168,7 +168,7 @@ try {
 
   // ── 17/18. 组件资源 + CSP + domain;组件三形态 + 安全纪律 ──
   const res = await c.listResources()
-  const qaRes = res.resources.find(r => r.uri === 'ui://widget/webaz-quote-approval.html') as { mimeType?: string; _meta?: Record<string, unknown> } | undefined
+  const qaRes = res.resources.find(r => r.mimeType === 'text/html+skybridge' && r.uri.startsWith('ui://widget/webaz-quote-approval.')) as { mimeType?: string; _meta?: Record<string, unknown> } | undefined   // BUG-04: versioned URI, match by base
   ok('17/18a. quote-approval 资源在列(独立稳定 URI + CSP 空域 + widgetDomain)', !!qaRes && qaRes.mimeType === 'text/html+skybridge'
     && JSON.stringify(((qaRes._meta ?? {})['openai/widgetCSP'] as Record<string, unknown>)?.connect_domains) === '[]'
     && (qaRes._meta ?? {})['openai/widgetDomain'] === 'https://webaz.xyz')
@@ -180,7 +180,7 @@ try {
   ok('17/18b. 组件自包含 + 零请求能力词元 + 零可执行 sink + 零 WAZ', html.includes('toolOutput') && !REQUEST_TOKENS.test(html) && !SINK_TOKENS.test(html) && !html.includes(' WAZ'))
   ok('W-3s. 组件覆盖三形态 + 重复警告 + Passkey 边界 + openExternal 锁死 webaz.xyz 前缀', html.includes('order_quote.model.v1') && html.includes('order_draft.model.v1') && html.includes('order_approval.model.v1') && html.includes('duplicate_warning') && html.includes('Passkey') && html.includes('不会直接执行') && html.includes("'https://webaz.xyz/'"))
   const tools = (await c.listTools()).tools as Array<{ name: string; _meta?: Record<string, unknown> }>
-  ok('W-4s. 三工具描述符都挂 quote-approval outputTemplate', ['webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request'].every(n => tools.find(t => t.name === n)?._meta?.['openai/outputTemplate'] === 'ui://widget/webaz-quote-approval.html'))
+  ok('W-4s. 三工具描述符都挂 quote-approval outputTemplate(版本化 URI)', ['webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request'].every(n => { const ot = String(tools.find(t => t.name === n)?._meta?.['openai/outputTemplate'] ?? ''); return ot.startsWith('ui://widget/webaz-quote-approval.') && /\.[0-9a-f]{8,}\.html$/.test(ot) }))
 
   // ── H-4 锁:投影器失败(敌意 getter)→ PROJECTION_FAILED 降级,原始协议对象零外泄 ──
   {

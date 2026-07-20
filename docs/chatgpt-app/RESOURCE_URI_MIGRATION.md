@@ -1,6 +1,15 @@
-# RESOURCE_URI_MIGRATION — BUG-04 (DESIGN — NOT YET IMPLEMENTED)
+# RESOURCE_URI_MIGRATION — BUG-04 (IMPLEMENTED)
 
-> Concrete plan for versioning the 6 widget resource URIs so a redeploy that changes the HTML busts host caches. To be built as its own commit. Preserves the legacy/standard dual-rail; does NOT merge template keys, delete legacy, or install ext-apps SDK.
+> **Status: implemented** (commit on branch `fix/chatgpt-card-contract-phase3`). The 6 widget resource URIs are content-versioned; old bare URIs remain read aliases. Legacy/standard dual-rail preserved; template keys NOT merged; no legacy removed; no ext-apps SDK.
+
+## As-built
+- Versioned URI format: `ui://widget/<base>.<sha256(html)[:10]>.html` (legacy skybridge) and `ui://widget/<base>-mcp.<hash>.html` (standard mcp-app). Example (hashes vary with HTML): `ui://widget/webaz-products.c4bd5e13bb.html`, `ui://widget/webaz-products-mcp.859d24466f.html`.
+- `server.ts`: `UI_URI`/`UI_BARE_TO_VERSIONED`/`UI_RESOLVE` + `withVersionedUris()` in the assembly chain rewrite each UI tool's `_meta.ui.resourceUri` + `openai/outputTemplate` to the versioned URI; `ListResources` advertises versioned URIs; `ReadResource` resolves BOTH versioned and bare (alias), returning `contents[].uri === request.uri`.
+- Tests: `test-mcp-uri-versioning.ts` (11) locks URI-hash === sha256(actual HTML), content-change→version-change, no dangling tool→URI reference, versioned + bare-alias both resolve, bogus URI rejected. `apps-standard` (52) asserts version-agnostic by component base + bare-alias R-5. `diagnose-mcp-card-matrix` check 7 now passes (versioned) and check 4 groups by component.
+
+---
+## Original design (retained for reference)
+> Concrete plan for versioning the 6 widget resource URIs so a redeploy that changes the HTML busts host caches. Preserves the legacy/standard dual-rail; does NOT merge template keys, delete legacy, or install ext-apps SDK.
 
 ## Problem (Phase-2 BUG-04, HIGH_CONFIDENCE)
 All six widget URIs are unversioned (`ui://widget/webaz-products.html`, `…-mcp.html`, ×3 components). Hosts cache by URI; a redeploy that changes the widget body can serve stale HTML until the host TTL expires.

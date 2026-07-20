@@ -7,11 +7,11 @@
 
 | tool | annR | securitySchemes | outputSchema | schema_version(s) | _meta.ui.resourceUri | openai/outputTemplate | widgetAccessible | visibility | bound component | exists |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `webaz_search` | RO/OW | — | ✅ | webaz.product_search.model.v1 \| webaz.product_detail.model.v1 | `ui://widget/webaz-products-mcp.html` | `ui://widget/webaz-products.html` | true | model,app | ProductResults | ✅ |
-| `webaz_buyer_orders` | RO/OW | — | ✅ | webaz.order_status.model.v1 \| webaz.order_timeline.model.v1 | `ui://widget/webaz-order-timeline-mcp.html` | `ui://widget/webaz-order-timeline.html` | true | model,app | OrderTimeline | ✅ |
-| `webaz_quote_order` | W/OW | — | ✅ | webaz.order_quote.model.v1 | `ui://widget/webaz-quote-approval-mcp.html` | `ui://widget/webaz-quote-approval.html` | true | model,app | QuoteAndApproval | ✅ |
-| `webaz_order_draft` | W/D/OW | — | ✅ | webaz.order_draft.model.v1 | `ui://widget/webaz-quote-approval-mcp.html` | `ui://widget/webaz-quote-approval.html` | true | model,app | QuoteAndApproval | ✅ |
-| `webaz_submit_order_request` | W/OW | — | ✅ | webaz.order_approval.model.v1 | `ui://widget/webaz-quote-approval-mcp.html` | `ui://widget/webaz-quote-approval.html` | true | model,app | QuoteAndApproval | ✅ |
+| `webaz_search` | RO/OW | — | ✅ | webaz.product_search.model.v1 \| webaz.product_detail.model.v1 | `ui://widget/webaz-products-mcp.859d24466f.html` | `ui://widget/webaz-products.c4bd5e13bb.html` | true | model,app | ProductResults | ✅ |
+| `webaz_buyer_orders` | RO/OW | — | ✅ | webaz.order_status.model.v1 \| webaz.order_timeline.model.v1 | `ui://widget/webaz-order-timeline-mcp.af0f70edba.html` | `ui://widget/webaz-order-timeline.1422dd6d4b.html` | true | model,app | OrderTimeline | ✅ |
+| `webaz_quote_order` | W/OW | — | ✅ | webaz.order_quote.model.v1 | `ui://widget/webaz-quote-approval-mcp.0d157bb047.html` | `ui://widget/webaz-quote-approval.4770e0569f.html` | true | model,app | QuoteAndApproval | ✅ |
+| `webaz_order_draft` | W/D/OW | — | ✅ | webaz.order_draft.model.v1 | `ui://widget/webaz-quote-approval-mcp.0d157bb047.html` | `ui://widget/webaz-quote-approval.4770e0569f.html` | true | model,app | QuoteAndApproval | ✅ |
+| `webaz_submit_order_request` | W/OW | — | ✅ | webaz.order_approval.model.v1 | `ui://widget/webaz-quote-approval-mcp.0d157bb047.html` | `ui://widget/webaz-quote-approval.4770e0569f.html` | true | model,app | QuoteAndApproval | ✅ |
 
 ## All tools — output-schema / annotation / security summary (55)
 

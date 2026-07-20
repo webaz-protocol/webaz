@@ -125,13 +125,18 @@ async function main(): Promise<void> {
   add(3, 'ListResources uri/mime === ReadResource contents[].uri/mime', uriDrift.length === 0,
     uriDrift.length ? uriDrift.map(r => String(r.uri)).join(', ') : `all ${uiResources.length} UI resources consistent`)
 
-  // 4. standard + legacy resource of the same component render the SAME component body
-  const pairs = [['ui://widget/webaz-products.html', 'ui://widget/webaz-products-mcp.html'],
-    ['ui://widget/webaz-quote-approval.html', 'ui://widget/webaz-quote-approval-mcp.html'],
-    ['ui://widget/webaz-order-timeline.html', 'ui://widget/webaz-order-timeline-mcp.html']]
-  const pairBad = pairs.filter(([a, b]) => !readMap[a] || !readMap[b] || readMap[a].component !== readMap[b].component || readMap[a].component === 'UNKNOWN')
-  add(4, 'legacy + standard variant bind to the SAME correct component', pairBad.length === 0,
-    pairBad.length ? pairBad.map(p => p.join('/')).join('; ') : pairs.map(p => `${p[0].split('/').pop()}=${readMap[p[0]].component}`).join(', '))
+  // 4. each component has BOTH a legacy(skybridge) and a standard(mcp-app) variant (versioned), same component
+  const byComp: Record<string, { legacy: number; std: number }> = {}
+  for (const r of uiResources) {
+    const rm = readMap[String(r.uri)]; if (!rm) continue
+    ;(byComp[rm.component] ||= { legacy: 0, std: 0 })
+    if (rm.readMime.includes('skybridge')) byComp[rm.component].legacy++
+    else if (rm.readMime.includes('profile=mcp-app')) byComp[rm.component].std++
+  }
+  const wantComps = ['ProductResults', 'QuoteAndApproval', 'OrderTimeline']
+  const compBad = wantComps.filter(c => !byComp[c] || byComp[c].legacy < 1 || byComp[c].std < 1)
+  add(4, 'each component has BOTH a legacy(skybridge) + standard(mcp-app) variant, same component (no UNKNOWN)', compBad.length === 0 && !byComp['UNKNOWN'],
+    compBad.length || byComp['UNKNOWN'] ? `bad: ${compBad.join(',') || '-'}${byComp['UNKNOWN'] ? ' +UNKNOWN' : ''}` : wantComps.map(c => `${c}=L${byComp[c].legacy}/S${byComp[c].std}`).join(' '))
 
   // 5. two DIFFERENT business tools pointing at the SAME resource (report; shared-by-design is allowed)
   const byResource: Record<string, string[]> = {}
@@ -144,9 +149,11 @@ async function main(): Promise<void> {
   add(6, 'each URI maps to exactly one HTML body (no same-URI/two-bodies)', true,
     uiResources.map(r => `${String(r.uri).split('/').pop()}:${readMap[String(r.uri)]?.len}B`).join(' '))
 
-  // 7. unversioned URI but content changed — flag that widget URIs are NOT content-versioned (cache risk)
-  add(7, 'widget URIs are content-versioned', false,
-    'ALL six widget URIs are unversioned (…-products.html / …-products-mcp.html etc.) — no hash/version segment. Host caching keys on the URI, so a redeploy that changes the HTML body reuses the old cache entry until the host TTL expires. [see BRIDGE/REMEDIATION]')
+  // 7. widget URIs are content-versioned (BUG-04: a hash segment before .html, busts host cache on HTML change)
+  const VER_RE = /\.[0-9a-f]{8,}\.html$/
+  const unversioned = uiResources.map(r => String(r.uri)).filter(u => !VER_RE.test(u))
+  add(7, 'widget URIs are content-versioned (hash segment before .html — busts host cache on change)', unversioned.length === 0,
+    unversioned.length ? 'UNVERSIONED: ' + unversioned.join(', ') : `all ${uiResources.length} versioned (e.g. ${String(uiResources[0].uri).split('/').pop()})`)
 
   // 8. registration-order / array-index mis-binding — binding is by explicit string switch, not index
   const readByIndex = 'ReadResource dispatches by explicit `request.params.uri ===` / STANDARD_WIDGETS[uri] map — NOT by array index; ListResources is a static literal array. No index-derived binding.'
