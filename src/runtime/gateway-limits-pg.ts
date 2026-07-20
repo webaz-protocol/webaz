@@ -267,4 +267,23 @@ export async function openConfiguredGatewayLimitStore(
   return runtime
 }
 
+/**
+ * Boot-safe opener for SHADOW observability. The limiter in shadow mode is an OBSERVABILITY feature, so its
+ * activation must never reduce availability: a misconfigured, unmigrated, or unreachable limits database
+ * DEGRADES observation to off (returns undefined) rather than throwing and crashing server boot. The failure
+ * is logged loudly (generic, secret-free) so the operator notices. Use this at the server wiring site; use
+ * the strict openConfiguredGatewayLimitStore where a config error SHOULD be fatal.
+ */
+export async function openConfiguredGatewayLimitStoreOrDegrade(
+  env: NodeJS.ProcessEnv = process.env,
+  deps: GatewayLimitsEnvDeps = {},
+): Promise<GatewayLimitRuntime | undefined> {
+  try {
+    return await openConfiguredGatewayLimitStore(env, deps)
+  } catch {
+    console.error('[agent-gateway-limits] limit store disabled — activation failed; shadow observation is OFF (server unaffected)')
+    return undefined
+  }
+}
+
 export const AGENT_GATEWAY_LIMITS_TABLE = TABLE

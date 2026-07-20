@@ -7,6 +7,7 @@ import {
   AGENT_GATEWAY_LIMITS_TABLE,
   createPostgresGatewayLimitStore,
   openConfiguredGatewayLimitStore,
+  openConfiguredGatewayLimitStoreOrDegrade,
 } from '../src/runtime/gateway-limits-pg.js'
 
 let pass = 0, fail = 0
@@ -54,6 +55,24 @@ const unavailablePool = {
 }
 ok('7. initialization fails when database is unavailable', await rejects(
   () => createPostgresGatewayLimitStore(unavailablePool), 'offline'))
+
+// 7.5 fail-soft opener for SHADOW: default-off returns undefined; a misconfigured/unreachable DB DEGRADES to
+//     undefined (never throws) so a bad observability config can never crash server boot.
+ok('7.5a degrade opener: default-off → undefined', await openConfiguredGatewayLimitStoreOrDegrade({ NODE_ENV: 'production' }) === undefined)
+{
+  const origErr = console.error; let logged = false; console.error = () => { logged = true }
+  let threw = false, result: unknown = 'x'
+  try {
+    result = await openConfiguredGatewayLimitStoreOrDegrade({
+      NODE_ENV: 'production', WEBAZ_AGENT_GATEWAY_LIMITS_BACKEND: 'postgres',
+      WEBAZ_AGENT_GATEWAY_LIMITS_DATABASE_URL: 'postgresql://user:pass@db.example/limits',
+      WEBAZ_AGENT_GATEWAY_LIMITS_TLS_CA_B64: Buffer.from('-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----').toString('base64'),
+    }, { createPool: () => ({ async query(): Promise<never> { throw new Error('boot outage') }, async end(): Promise<void> {} }) })
+  } catch { threw = true }
+  console.error = origErr
+  ok('7.5b degrade opener: init failure → undefined, no throw', threw === false && result === undefined)
+  ok('7.5c degrade opener logs the disable', logged === true)
+}
 
 // --- schema-contract assertion against a fake ready pool ---
 const schemaColumns = [
