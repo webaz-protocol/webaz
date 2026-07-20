@@ -419,10 +419,14 @@ export function projectSubmitConsumer(r: Record<string, unknown>): Record<string
   }
 }
 
+/** BUG-06: summaries run on the PROJECTED result, whose status is now a v2 object {code,label,label_en}
+ * (was a bare string). Read the code from either shape so the text summary never renders "[object Object]". */
+export function statusText(s: unknown): string { return (s && typeof s === 'object') ? String((s as Record<string, unknown>).code ?? (s as Record<string, unknown>).label ?? '') : String(s ?? '') }
+
 export function summarizeDraftResult(r: Record<string, unknown>): string {
-  if (Array.isArray(r.drafts)) return `${Number(r.count) || (r.drafts as unknown[]).length} draft(s): ${(r.drafts as Array<Record<string, unknown>>).map(d => `${d.draft_id}=${d.status}`).join(', ')}. Details in structuredContent.`
+  if (Array.isArray(r.drafts)) return `${Number(r.count) || (r.drafts as unknown[]).length} draft(s): ${(r.drafts as Array<Record<string, unknown>>).map(d => `${d.draft_id}=${statusText(d.status)}`).join(', ')}. Details in structuredContent.`
   const p = (r.price ?? {}) as Record<string, unknown>
-  return `Draft ${r.draft_id} (${r.status}): ${(r.product as Record<string, unknown>)?.title ?? ''} ×${r.quantity} ${p.display ?? ''}. Not charged, no stock held; expires ${r.expires_at}. Next: webaz_submit_order_request(draft_id). / 草稿不扣款不锁库存。`
+  return `Draft ${r.draft_id} (${statusText(r.status)}): ${(r.product as Record<string, unknown>)?.title ?? ''} ×${r.quantity} ${p.display ?? ''}. Not charged, no stock held; expires ${r.expires_at}. Next: webaz_submit_order_request(draft_id). / 草稿不扣款不锁库存。`
 }
 
 export function summarizeSubmitResult(r: Record<string, unknown>): string {
@@ -436,7 +440,8 @@ export function summarizeSubmitResult(r: Record<string, unknown>): string {
 // 本金未由 WebAZ 托管,实际退款需买卖双方完成);deadline 只给 iso,本地时区显示由组件端完成。
 import { ORDER_STATE_MEANINGS } from './layer0-foundation/L0-2-state-machine/transitions.js'
 
-export const SCHEMA_ORDER_TIMELINE = 'webaz.order_timeline.model.v1'
+export const SCHEMA_ORDER_TIMELINE_V1 = 'webaz.order_timeline.model.v1'
+export const SCHEMA_ORDER_TIMELINE = 'webaz.order_timeline.model.v2'   // BUG-06: type + positive-int quantity (status already an object)
 
 export function statusView(code: unknown, meanings: Record<string, { zh: string; en: string }> = ORDER_STATE_MEANINGS as Record<string, { zh: string; en: string }>): Record<string, unknown> {
   const c = String(code ?? '')

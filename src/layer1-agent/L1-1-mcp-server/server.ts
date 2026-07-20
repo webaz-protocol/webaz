@@ -2241,7 +2241,7 @@ export function buildToolEnvelope(name: string, result: unknown): { content: Arr
 // (USDC/法币估算/诚信文案)只发生在 wrapper 的 structuredContent 层 —— 模型/组件看到的才是投影。
 const STRUCTURED_RESULT_TOOLS: Record<string, { summarize: (r: Record<string, unknown>) => string; project?: (r: Record<string, unknown>) => Promise<Record<string, unknown>> }> = {
   webaz_search: { summarize: summarizeSearchResult },
-  webaz_buyer_orders: { summarize: r => r.schema_version === 'webaz.order_timeline.model.v1' ? summarizeOrderTimeline(r) : summarizeBuyerOrders(r),
+  webaz_buyer_orders: { summarize: r => (typeof r.schema_version === 'string' && (r.schema_version as string).startsWith('webaz.order_timeline.model.')) ? summarizeOrderTimeline(r) : summarizeBuyerOrders(r),   // BUG-06: summarize runs on the PROJECTED result; match the timeline family across v1/v2
     // PR-6:仅 full 视图(带 timeline)投影为消费者时间线;列表(7 键契约)/最小单/up_to_date 原样透传
     project: async r => Array.isArray(r.timeline) && r.order ? projectOrderTimelineConsumer(r, await fxView(), regionToCurrency) : r },
   webaz_quote_order: { summarize: summarizeQuoteResult, project: async r => r.quote_id ? projectQuoteConsumer(r, await fxView(), regionToCurrency) : r },
