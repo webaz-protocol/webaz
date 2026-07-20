@@ -475,7 +475,7 @@ function renderBody(oai, out){
     row(box,'操作','创建正式订单')
     row(box,'批准后','创建唯一正式订单(Passkey 必需)');
     box.appendChild(el('div','meta',String(out.on_approval||'资金行为随所披露的支付轨道:托管=建单时钱包→托管;直付=WebAZ 不托管本金')))
-    row(box,'状态',stLabel(out.status)||'待批准')
+    row(box,'状态',(out.status&&typeof out.status==='object')?(stLabel(out.status)||'待批准'):'待批准')   // v2 status 对象用本地化 label;v1 裸字符串('pending')回退到 '待批准'(提交态恒为 pending),不显英文 code
     if(out.duplicate_warning){
       var w=el('div','warn'); w.appendChild(el('b',null,'检测到相似购买请求'))
       w.appendChild(el('div',null,out.duplicate_warning.note||''))

@@ -122,6 +122,7 @@ const QA = QUOTE_APPROVAL_BODY_JS as string; const TL = ORDER_TIMELINE_BODY_JS a
 ok('B1a. v1 draft (status STRING "draft") renders', /订单草稿/.test(renderWith(QA, { schema_version: 'webaz.order_draft.model.v1', draft_id: 'odr1', status: 'draft', product: { title: 'Ring' }, quantity: 1, price: { display: '7 USDC' }, disclosures: [] })))
 ok('B1b. v1 approval (status STRING "pending") renders', /待 Passkey 审批/.test(renderWith(QA, { schema_version: 'webaz.order_approval.model.v1', request_id: 'apr1', status: 'pending', approval_url: '/#a/apr1', disclosures: [] })))
 ok('B1c. v1 quote renders', /报价/.test(renderWith(QA, { schema_version: 'webaz.order_quote.model.v1', product: { title: 'Ring' }, quantity: 1, price: { display: '7 USDC', amount_minor: 7_000_000 }, amounts: { item: 7_000_000, shipping: 0, other: 0 }, shipping: {}, disclosures: [] })))
+{ const h = renderWith(QA, { schema_version: 'webaz.order_approval.model.v1', request_id: 'apr1', status: 'pending', approval_url: '/#a/apr1', disclosures: [] }); ok('B1e. v1 approval (bare string "pending") shows 待批准, NOT the English code (bilingual, no i18n regression)', /待批准/.test(h) && !/状态:pending/.test(h)) }
 ok('B1d. v1 timeline (status object) renders', /Ring/.test(renderWith(TL, { schema_version: 'webaz.order_timeline.model.v1', order_id: 'o1', product: { title: 'Ring' }, status: { label: '已受理' }, timeline: [] })))
 
 // B2. v2 render (status OBJECT) shows the localized label

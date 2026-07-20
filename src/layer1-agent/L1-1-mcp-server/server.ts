@@ -6033,7 +6033,7 @@ export function buildMcpServer(opts: {
       {
         uri:         UI_URI.timelineLegacy,
         name:        'WebAZ OrderTimeline widget',
-        description: 'MCP App component rendering the buyer order timeline (webaz.order_timeline.model.v1) and order list/up_to_date shapes: status labels, deadlines in the viewer timezone, rail-honest refund state, server-authoritative actions. High-risk actions stay on the webaz.xyz order page (Passkey).',
+        description: 'MCP App component rendering the buyer order timeline (webaz.order_timeline.model — v1 legacy + BUG-06 v2) and order list/up_to_date shapes: status labels, deadlines in the viewer timezone, rail-honest refund state, server-authoritative actions. High-risk actions stay on the webaz.xyz order page (Passkey).',
         mimeType:    'text/html+skybridge',
         _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' },
       },
