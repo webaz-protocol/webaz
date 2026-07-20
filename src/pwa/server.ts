@@ -4186,16 +4186,16 @@ function formatProductForAgent(p: Record<string, unknown>, req?: Request): Recor
     if (i18n_titles && i18n_titles[lang]) title = i18n_titles[lang]
     if (i18n_descs && i18n_descs[lang]) description = i18n_descs[lang]
   }
-  return {
+  const out: Record<string, unknown> = {
     ...p,
     title, description,
     specs,
     estimated_days,
     origin_claims,
     i18n_titles, i18n_descs,
-    _lang: lang,
-    agent_summary: buildAgentSummary(p),
+    _lang: lang, agent_summary: buildAgentSummary(p),
   }
+  delete out.source_url; delete out.source_price_at; return out   // 溯源原始列不出站(内部证据;买家同款走 verified external_links);source_price 保留=discover"省X%"比价
 }
 
 // ─── Tier 7：角色感知 API 辅助函数 ─────────────────────────────
@@ -4357,7 +4357,7 @@ registerProductsMetaRoutes(app, { db, auth, generateId, rateLimitOk, flagNewAcco
 registerProductsLinksRoutes(app, { db, auth, generateId, extractUrlFromText, extractTitleFromText, parsePlatformUrl })
 
 // products CRUD lighter 3 endpoints — Phase 92 已迁出
-registerProductsCrudRoutes(app, { db, auth, errorRes, formatProductForAgent, retireAnchorsByTarget })
+registerProductsCrudRoutes(app, { db, auth, errorRes, formatProductForAgent, retireAnchorsByTarget, consumeGateToken })
 
 // products PUT 1 endpoint — Phase 93 已迁出
 registerProductsUpdateRoutes(app, {
@@ -7738,7 +7738,8 @@ registerRemoteMcpRoutes(app, { rateLimitOk, gatewayReplayStore: gatewayReplay?.s
 registerOAuthDiscoveryRoutes(app)   // RFC-023 PR-1:WEBAZ_OAUTH=1 才挂载(fail-closed)发现面元数据
 registerOAuthAuthorizeRoutes(app)   // RFC-023 PR-2a:GET /oauth/authorize 校验+SPA consent 交接(mint 无)
 registerOAuthApproveRoutes(app, { db, auth, generateId, consumeGateToken, rateLimitOk })   // RFC-023 PR-2b:Passkey 门 consent → mint grant+code
-registerOAuthTokenRoutes(app, { db, rateLimitOk, gatewayReplayStore: gatewayReplay?.store })
+registerOAuthTokenRoutes(app, { db, rateLimitOk, gatewayReplayStore: gatewayReplay?.store })   // RFC-023 PR-3 + PR-1 refresh;S1c gatewayReplayStore(gatewayReplay 已在上方 S1c3 提前定义,供 registerRemoteMcpRoutes 复用,不重复声明)
+;(await import('./routes/product-actions.js')).registerProductActionRoutes(app, { db, auth, generateId, consumeGateToken, retireAnchorsByTarget })   // Ops Passkey-in-flow:owner-key 提交删除请求 + 现场真人 Passkey 批准执行(裸 api_key 永不直删;inline import 守 server.ts LOC ceiling)
 registerOAuthRevokeRoutes(app, { db, rateLimitOk })   // RFC-023 PR-3(revoke):RFC 7009 —— 出示 token → 撤其 grant + 级联撤 access/refresh(一个 .immediate() tx;200 无 oracle)
 registerOAuthRegisterRoutes(app, { rateLimitOk })   // RFC-024:Dynamic Client Registration(POST /oauth/register,inert-until-consented)
 registerPublicUtilsRoutes(app, {

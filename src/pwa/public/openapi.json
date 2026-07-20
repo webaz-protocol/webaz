@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (811 endpoints, 20 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (813 endpoints, 20 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -6813,6 +6813,28 @@
     "/api/pin-receipts/mine": {
       "get": {
         "summary": "GET /api/pin-receipts/mine",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/product-actions/:id/approve": {
+      "post": {
+        "summary": "gate token 的 purpose_data,故\"不开窗的 token\"无法被复用去开窗。裸 api_key 永远过不了(consumeGateToken)。",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/product-actions/request": {
+      "post": {
+        "summary": "提交:owner-key 建 pending 删除请求 → 返回 approve_url(人去 Passkey)。绝不执行删除。",
         "tags": [],
         "security": [
           {
