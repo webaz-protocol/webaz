@@ -2028,6 +2028,11 @@ Next: webaz_submit_order_request(draft_id) → the human's Passkey approval re-v
       type: 'object',
       properties: {
         draft_id: { type: 'string', description: 'The odr_ draft id to submit for approval' },
+        // BUG-08 三层幂等身份(全部可选;组件按钮提供,不由模型编造):
+        idempotency_key: { type: 'string', description: 'Optional [A-Za-z0-9_-]{1,64}: a click + its retries carry the SAME key → same result (SAME_IDEMPOTENCY_KEY); same key + different payload → IDEMPOTENCY_CONFLICT (no execute). 再买一份 mints a NEW key.' },
+        new_purchase_intent: { type: 'boolean', description: 'Set true ONLY when the human explicitly chose 再买一份 (a structured card action) — creates an INDEPENDENT purchase even if identical to a pending one. NEVER infer this from natural language.' },
+        purchase_intent_instance: { type: 'string', description: 'Optional nonce identifying one independent purchase instance (paired with new_purchase_intent). Omit and the server mints one.' },
+        operation_attempt_id: { type: 'string', description: 'Optional trace id for one component operation attempt (click + retries share it). Diagnostics only — never a dedup key.' },
       },
       required: ['draft_id'],
     },
@@ -3168,7 +3173,13 @@ export async function handleSubmitOrderRequest(args: Record<string, unknown>): P
   const cred = resolveGrantCredential(args)
   if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
   if (typeof args.draft_id !== 'string' || !args.draft_id) return { error: 'draft_id is required', error_code: 'DRAFT_NOT_FOUND' }
-  const r = await apiCall(`/api/agent/order-drafts/${encodeURIComponent(args.draft_id)}/submit`, { method: 'POST', apiKey: cred.token })
+  // BUG-08:三层身份透传(全部可选)。new_purchase_intent 只接受显式布尔 true —— 绝不由模型/自然语言推断。
+  const submitBody: Record<string, unknown> = {}
+  if (typeof args.idempotency_key === 'string') submitBody.idempotency_key = args.idempotency_key
+  if (args.new_purchase_intent === true) submitBody.new_purchase_intent = true
+  if (typeof args.purchase_intent_instance === 'string') submitBody.purchase_intent_instance = args.purchase_intent_instance
+  if (typeof args.operation_attempt_id === 'string') submitBody.operation_attempt_id = args.operation_attempt_id
+  const r = await apiCall(`/api/agent/order-drafts/${encodeURIComponent(args.draft_id)}/submit`, { method: 'POST', apiKey: cred.token, body: submitBody })
   absolutizeApprovalUrls(r)   // A5: absolute approval_url for text-only Hosts
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks order_submit_request. Re-connect via OAuth so the grant carries the order:draft scope, then retry.' }
   return r

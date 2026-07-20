@@ -414,10 +414,30 @@ export function projectDraftConsumer(d: Record<string, unknown>, fx: FxView | nu
   }
 }
 
-/** submit 路由响应 → 审批消费者投影(目标 ≤250 tok;重复购买保护字段透传成显式警告)。 */
+// BUG-08 §八 —— 每个 duplicate_reason 的精确文案(绝不统一显示"检测到重复")+ available_actions。
+const DUPLICATE_REASON_TEXT: Record<string, string> = {
+  SAME_DRAFT_REPLAY: '同一草稿重复提交 —— 已复用原审批请求,未创建第二个',
+  SAME_IDEMPOTENCY_KEY: '重试命中相同操作键 —— 返回同一结果,未创建第二个',
+  ACTIVE_INTENT_REUSED: '你已有一个等价的待审批购买 —— 可打开它,或明确「再买一份」创建独立购买',
+  DATABASE_UNIQUE_RACE: '并发提交竞争 —— 已复用先创建的审批,未创建第二个',
+  RESPONSE_LOSS_RECONCILED: '上次响应可能丢失 —— 已恢复原审批请求,未重复创建',
+}
+const DUPLICATE_REASON_ACTIONS: Record<string, string[]> = {
+  // 活跃意图复用是唯一给"再买一份"的场景(§四C/§五);其余重复只给打开/查状态。
+  ACTIVE_INTENT_REUSED: ['open_existing_approval', 'cancel_current_attempt', 'create_second_purchase'],
+  SAME_DRAFT_REPLAY: ['open_existing_approval', 'check_status'],
+  SAME_IDEMPOTENCY_KEY: ['open_existing_approval', 'check_status'],
+  DATABASE_UNIQUE_RACE: ['open_existing_approval', 'check_status'],
+  RESPONSE_LOSS_RECONCILED: ['open_existing_approval', 'check_status'],
+}
+
+/** submit 路由响应 → 审批消费者投影(目标 ≤250 tok;BUG-08:机器可读 duplicate_reason + 精确动作面)。 */
 export function projectSubmitConsumer(r: Record<string, unknown>): Record<string, unknown> {
   const idem = (r.idempotency ?? {}) as Record<string, unknown>
   const dup = idem.duplicate === true
+  const reason = typeof idem.duplicate_reason === 'string' ? idem.duplicate_reason : null
+  const dupOf = idem.duplicate_of != null ? String(idem.duplicate_of) : (dup ? String(r.request_id) : null)
+  const actions = dup ? (reason && DUPLICATE_REASON_ACTIONS[reason] ? DUPLICATE_REASON_ACTIONS[reason] : ['open_existing_approval', 'check_status']) : ['open_approval', 'check_status_via_webaz_approval_requests']
   return {
     schema_version: SCHEMA_ORDER_APPROVAL,   // BUG-06 v2: type + status object (was the bare string 'pending'); quantity is n/a (references draft_id — documented in SCHEMA_V2_CONTRACT §5)
     type: 'order_approval',
@@ -427,8 +447,16 @@ export function projectSubmitConsumer(r: Record<string, unknown>): Record<string
     // rail-aware 中性措辞(Codex H-3):submit 响应不携轨道,绝不硬编码"资金会移动"——直付下 WebAZ 不托管本金
     on_approval: 'creates the single real order; payment behavior follows the disclosed rail (escrow: wallet→escrow debit at creation; direct_p2p: WebAZ holds no principal — buyer pays the seller directly)',
     approval_url: r.approval_url,
-    ...(dup ? { duplicate: true, duplicate_warning: { note: '检测到相似购买请求 —— 已复用现有待审批请求,未创建第二个审批/订单', existing_request_id: r.request_id, options: ['打开已有审批', '取消本次', '如确需再买一份,请明确说明后重新报价'] } } : {}),
-    available_actions: ['open_approval', 'check_status_via_webaz_approval_requests'],
+    ...(idem.purchase_intent_instance != null ? { purchase_intent_instance: String(idem.purchase_intent_instance) } : {}),
+    // BUG-08 §八:机器可读重复合同(旧客户端只读 duplicate 布尔仍工作)。duplicate_warning 保留为向后兼容展示。
+    ...(dup ? {
+      duplicate: true,
+      duplicate_reason: reason ?? 'ACTIVE_INTENT_REUSED',
+      duplicate_of: dupOf,
+      existing_request_id: dupOf,
+      duplicate_warning: { note: (reason && DUPLICATE_REASON_TEXT[reason]) || '检测到相似购买请求 —— 已复用现有待审批请求,未创建第二个审批/订单', existing_request_id: dupOf, reason: reason ?? null },
+    } : {}),
+    available_actions: actions,
     disclosures: ['提交不会执行 —— 只有真人 Passkey 批准才创建唯一正式订单(重试/重复批准返回同一订单)'],
   }
 }

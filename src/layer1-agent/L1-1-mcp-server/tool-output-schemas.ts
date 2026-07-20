@@ -125,7 +125,11 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
       on_approval: { type: 'string', description: 'rail-aware neutral wording: approval creates the single order; payment behavior follows the disclosed rail (direct_p2p: WebAZ holds no principal)' },
       approval_url: { type: 'string' },
       duplicate: { type: 'boolean' }, duplicate_warning: { type: 'object', description: 'similar-purchase protection: existing request REUSED, no second approval/order' },
-      available_actions: { type: 'array' }, disclosures: { type: 'array' },
+      // BUG-08 machine-readable duplicate contract (old clients still read the boolean):
+      duplicate_reason: { type: 'string', description: 'SAME_DRAFT_REPLAY | SAME_IDEMPOTENCY_KEY | ACTIVE_INTENT_REUSED | DATABASE_UNIQUE_RACE | RESPONSE_LOSS_RECONCILED — render the precise reason, never a generic "duplicate detected"' },
+      duplicate_of: { type: 'string' }, existing_request_id: { type: 'string' },
+      purchase_intent_instance: { type: 'string', description: 'present when an explicit second-purchase instance was minted' },
+      available_actions: { type: 'array', description: 'ACTIVE_INTENT_REUSED → open_existing_approval|cancel_current_attempt|create_second_purchase; other duplicates → open_existing_approval|check_status' }, disclosures: { type: 'array' },
       ...err,
     },
   },

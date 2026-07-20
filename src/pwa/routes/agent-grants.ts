@@ -630,9 +630,17 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
 
   app.post('/api/agent/order-drafts/:id/submit', requireAgentGrantScope('order_submit_request'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
-    const r = createOrderSubmitRequest(db, { draftId: String(req.params.id), grantId: p.grant_id, humanId: p.human_id, agentLabel: p.agent_label ?? 'agent', generateId })
+    // BUG-08:三层身份从 body 透传(全部可选;缺省 = 旧行为)。new_purchase_intent 必须是显式布尔,绝不由 NL 推断。
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const r = createOrderSubmitRequest(db, { draftId: String(req.params.id), grantId: p.grant_id, humanId: p.human_id, agentLabel: p.agent_label ?? 'agent', generateId,
+      idempotencyKey: typeof body.idempotency_key === 'string' ? body.idempotency_key : null,
+      newPurchaseIntent: body.new_purchase_intent === true,
+      purchaseIntentInstance: typeof body.purchase_intent_instance === 'string' ? body.purchase_intent_instance : null,
+      operationAttemptId: typeof body.operation_attempt_id === 'string' ? body.operation_attempt_id : null })
     if (!r.ok) return void res.status(r.http).json({ error: r.error, error_code: r.error_code })
-    res.json({ success: true, request_id: r.request_id, draft_id: req.params.id, params_hash: r.params_hash, approval_url: `/#agent-approvals/${r.request_id}`, idempotency: { params_hash: r.params_hash, duplicate: !!r.duplicate, reused_existing_request: !!r.duplicate }, note: r.duplicate ? 'An equivalent submit request is already awaiting Passkey approval — REUSED it (no second request was created). Do NOT re-quote or re-draft to retry; ask the human to open the approval page.' : 'Pending human Passkey approval. NOT executed — approval creates the order (and for escrow debits wallet→escrow) server-side; nothing happens without the Passkey.' })
+    res.json({ success: true, request_id: r.request_id, draft_id: req.params.id, params_hash: r.params_hash, approval_url: `/#agent-approvals/${r.request_id}`,
+      idempotency: { params_hash: r.params_hash, duplicate: !!r.duplicate, reused_existing_request: !!r.duplicate, duplicate_reason: r.duplicate_reason ?? null, duplicate_of: r.duplicate_of ?? null, purchase_intent_instance: r.purchase_intent_instance ?? null, new_purchase_intent: !!r.new_purchase_intent },
+      note: r.duplicate ? 'An equivalent submit request is already awaiting Passkey approval — REUSED it (no second request was created). Do NOT re-quote or re-draft to retry; ask the human to open the approval page, or the human may explicitly choose 再买一份.' : 'Pending human Passkey approval. NOT executed — approval creates the order (and for escrow debits wallet→escrow) server-side; nothing happens without the Passkey.' })
   })
 
   // RFC-021 PR2 — order-action 请求提交(safe scope order_action_request)。SUBMIT-only:写 pending,【绝不执行】。
