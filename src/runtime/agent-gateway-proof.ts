@@ -21,6 +21,8 @@ import {
 import { dbOne } from '../layer0-foundation/L0-1-database/db.js'
 import { verifyDpopBoundGrantIdentity, type GrantVerifyResult } from './agent-grant-verifier.js'
 import { classifyScope, storedUtcInstantIsFuture } from './agent-grant-scopes.js'
+import { classifyGatewayPrincipal, type AgentGatewayPrincipalType, type AgentGatewayTrustTier } from './agent-gateway-principal.js'
+export type { AgentGatewayPrincipalType, AgentGatewayTrustTier }
 
 const OAUTH_ISSUER = 'https://webaz.xyz'
 const OAUTH_MCP_AUDIENCE = 'https://webaz.xyz/mcp'
@@ -31,7 +33,7 @@ const DPOP_MAX_BYTES = 8_192
 const DPOP_MAX_AGE_SECONDS = 300
 const DPOP_FUTURE_SKEW_SECONDS = 60
 
-export type AgentGatewayTrustTier = 'user_authorized_agent'
+// AgentGatewayTrustTier is now the full §3.1 taxonomy (was a single literal) — imported/re-exported above.
 
 export interface AgentGatewayContext {
   readonly kind: 'webaz.agent_gateway_context.v1'
@@ -579,7 +581,14 @@ export async function verifyAgentGatewayDpopRequest(
   })
   const context = Object.freeze({
     kind: 'webaz.agent_gateway_context.v1' as const,
-    trust_tier: 'user_authorized_agent' as const,
+    // §3.1: this path reached here only with a 'verified' registry client + an active user grant + a
+    //   sender-constrained (DPoP) token → verified_partner_agent. Classify from the real facts (not a
+    //   hardcoded literal) so the tier can never over-state above what was actually verified.
+    trust_tier: classifyGatewayPrincipal({
+      registry_status: client.registry_status,   // asserted 'verified' by the checks above
+      has_active_user_grant: true,                // identity/grant/subject verified above
+      sender_constrained: true,                   // DPoP proof verified + jkt bound to the token
+    }),
     gateway_client_id: client.gateway_client_id,
     oauth_client_id: oauth.client_id,
     grant_id: identity.row.grant_id,
