@@ -23,10 +23,13 @@ export interface ProductsCrudDeps {
   formatProductForAgent: (p: Record<string, unknown>, req?: Request) => Record<string, unknown>
   // 真实签名带 AnchorTargetKind 字面量；用 any 避免泛型对齐
   retireAnchorsByTarget: any
+  /** Ops Passkey-in-flow(T6 安全支点):硬删必须现场真人 Passkey。一次性 purpose-bound gate token 消费器
+   *  (server.ts createHumanPresence 注入)。裸 api_key(含 agent/ops-bot)无 live assertion → 403。 */
+  consumeGateToken: (userId: string, token: string | undefined, purpose: string, validate: (data: unknown) => boolean) => { ok: boolean; reason?: string }
 }
 
 export function registerProductsCrudRoutes(app: Application, deps: ProductsCrudDeps): void {
-  const { db, auth, errorRes, formatProductForAgent, retireAnchorsByTarget } = deps
+  const { db, auth, errorRes, formatProductForAgent, retireAnchorsByTarget, consumeGateToken } = deps
 
   // 单品详情（agent verify price 时使用）
   // 卖家可查看自己的非上架商品（编辑页用），其他人只能看 active
@@ -72,6 +75,12 @@ export function registerProductsCrudRoutes(app: Application, deps: ProductsCrudD
     const user = auth(req, res); if (!user) return
     const product = await dbOne<Record<string, unknown>>('SELECT * FROM products WHERE id = ? AND seller_id = ?', [req.params.id, user.id])
     if (!product) return void res.status(404).json({ error: '商品不存在或无权限' })
+    // ★T6 安全支点:硬删是破坏性动作,必须现场真人 Passkey。裸 api_key(含 agent/ops-bot,无 live assertion)→ 403。
+    //   gate token 绑 product_id(为删 A 拿的 token 不能删 B),一次性消费。归属校验在前 → 非 owner 不会白烧 token。
+    //   注:ops-bot 的授权路径是【审批流执行器】(在 DB 层删,不走本 HTTP 路由),故本闸只挡"裸 key 直连本路由"。
+    const gate = consumeGateToken(String(user.id), req.header('x-webauthn-token') || undefined, 'product_hard_delete',
+      (data) => { const d = data as { product_id?: string } | null; return !!d && d.product_id === req.params.id })
+    if (!gate.ok) return void errorRes(res, 403, 'HUMAN_PRESENCE_REQUIRED', gate.reason || '彻底删除需现场真人 Passkey 验证')
     if (product.status !== 'deleted') return void res.json({ error: '请先将商品移入回收箱' })
     const activeOrders = (await dbOne<{ n: number }>(`
       SELECT COUNT(*) as n FROM orders WHERE product_id = ? AND status NOT IN ('completed','cancelled','refunded','expired')

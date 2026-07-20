@@ -4357,7 +4357,7 @@ registerProductsMetaRoutes(app, { db, auth, generateId, rateLimitOk, flagNewAcco
 registerProductsLinksRoutes(app, { db, auth, generateId, extractUrlFromText, extractTitleFromText, parsePlatformUrl })
 
 // products CRUD lighter 3 endpoints — Phase 92 已迁出
-registerProductsCrudRoutes(app, { db, auth, errorRes, formatProductForAgent, retireAnchorsByTarget })
+registerProductsCrudRoutes(app, { db, auth, errorRes, formatProductForAgent, retireAnchorsByTarget, consumeGateToken })
 
 // products PUT 1 endpoint — Phase 93 已迁出
 registerProductsUpdateRoutes(app, {
