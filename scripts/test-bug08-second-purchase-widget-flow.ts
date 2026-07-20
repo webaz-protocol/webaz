@@ -75,6 +75,8 @@ const DUP = { schema_version: 'webaz.order_approval.model.v2', type: 'order_appr
   ok('10. did NOT reuse the original approval (apr_orig) as the draft/submit target', dArgs.quote_token !== 'apr_orig' && sArgs.draft_id !== 'apr_orig')
   const txt = allText(root)
   ok('11. success shows BOTH the original approval entry and the new approval entry (no confusion)', /打开审批页面/.test(txt) && /打开新审批/.test(txt) && /apr_NEW/.test(txt) && /原审批入口保留/.test(txt))
+  // §二: the chain's submit call carries the zero-PII trace ids (bridge_type=standard since callTool exists)
+  ok('11b. submit call carries trace ids (trace_id/interaction_id/operation_attempt_id/widget_session_id) + bridge_type standard', typeof sArgs.trace_id === 'string' && typeof sArgs.interaction_id === 'string' && typeof sArgs.operation_attempt_id === 'string' && typeof sArgs.widget_session_id === 'string' && sArgs.bridge_type === 'standard' && /^[A-Za-z0-9_-]{1,64}$/.test(String(sArgs.interaction_id)))
 }
 
 // ── 2. fail-stop: quote fails (delisted/price/region) → stops, no draft/submit, recovery text ──
