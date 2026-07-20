@@ -267,6 +267,24 @@ export function fmtUsdcMinor(minor: unknown): string {
   return `${Number.isInteger(v) ? v : v.toFixed(2)} USDC`
 }
 
+/**
+ * BUG-07 — normalize a machine timestamp to ISO 8601 UTC (`…Z`). WebAZ SQLite timestamps are stored in UTC
+ * (SQLite `datetime('now')`/`CURRENT_TIMESTAMP` = UTC; the seller-age check already appends `Z` to bare
+ * values), so a bare `YYYY-MM-DD HH:MM:SS` (or `T`-separated, no offset) is treated as UTC — this is a
+ * documented conversion, not a guess. Already-zoned values pass through (re-emitted as canonical `…Z`).
+ * A truly unparseable value is returned verbatim (never silently reinterpreted as local time). Display
+ * localization stays in the card (`localTime()`); wire values are always UTC-qualified.
+ */
+export function toIsoUtc(v: unknown): string | null {
+  if (v == null) return null
+  const s = String(v).trim()
+  if (!s) return null
+  if (/[zZ]$|[+-]\d\d:?\d\d$/.test(s)) { const d = new Date(s); return Number.isNaN(d.getTime()) ? s : d.toISOString() }   // already zoned
+  const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?)$/.exec(s)                                          // bare SQLite UTC
+  if (m) { const d = new Date(`${m[1]}T${m[2]}Z`); return Number.isNaN(d.getTime()) ? s : d.toISOString() }
+  const d = new Date(s); return Number.isNaN(d.getTime()) ? s : d.toISOString()                                            // last resort (still no silent local reinterpret of bare values)
+}
+
 export interface FxView { rates?: Record<string, number>; as_of?: string; stale?: boolean }
 
 /** 法币估算(display-only):region → 币种;USD 区或无汇率 → 省略(仍显示 USDC,绝不伪造法币)。 */
@@ -279,7 +297,7 @@ export function fiatEstimate(payableMinor: unknown, region: unknown, fx: FxView 
   return {
     currency: ccy,
     display: `≈ ${FIAT_SYMBOL[ccy] ?? ccy}${((n / 1_000_000) * rate).toFixed(2)}`,
-    rate, as_of: fx.as_of ?? null, stale: fx.stale === true, estimated: true,
+    rate, as_of: toIsoUtc(fx.as_of), stale: fx.stale === true, estimated: true,
     note: fx.stale === true ? '按近似(非实时)参考汇率估算,非结算金额' : '按当前参考汇率估算,非结算金额',
   }
 }
@@ -321,7 +339,7 @@ export function projectQuoteConsumer(r: Record<string, unknown>, fx: FxView | nu
     return_days: terms.return_days ?? null, warranty_days: terms.warranty_days ?? null,
     payment_rail: pay.rail ?? 'escrow', rail_note: railHonesty(pay.rail),
     stock_reserved: false, economic_action_executed: false,
-    expires_at: r.expires_at,
+    expires_at: toIsoUtc(r.expires_at),
     available_actions: typeof r.quote_token === 'string' ? ['create_draft'] : [],   // replay 无 token → 无可执行动作(诚实动作面,Codex H-2)
     disclosures: ['此报价不会扣款', '此报价不会锁定库存', '只有通过 Passkey 批准后才会创建正式订单'],
   }
@@ -344,7 +362,7 @@ export function projectDraftConsumer(d: Record<string, unknown>, fx: FxView | nu
     destination: { region: dest.region ?? null, summary: dest.address_summary ?? null },
     payment_rail: d.payment_rail ?? 'escrow', rail_note: railHonesty(d.payment_rail),
     stock_reserved: false, economic_action_executed: false,
-    expires_at: d.expires_at,
+    expires_at: toIsoUtc(d.expires_at),
     available_actions: status === 'draft' ? ['submit_request'] : [],
     disclosures: ['草稿不会扣款、不锁库存,24 小时过期', '提交后需真人 Passkey 批准才创建正式订单'],
   }
@@ -411,16 +429,16 @@ export function projectOrderTimelineConsumer(r: Record<string, unknown>, fx: FxV
     ...(fiatEstimate(amountMinor, logi.dest_region, fx, regionToCcy) ? { fiat_estimate: fiatEstimate(amountMinor, logi.dest_region, fx, regionToCcy) } : {}),
     status: statusView(o.status),
     next_actor: o.next_actor ?? null,
-    deadline: o.deadline ? { iso: o.deadline, note: 'render in the viewer local timezone' } : null,
+    deadline: o.deadline ? { iso: toIsoUtc(o.deadline), note: 'render in the viewer local timezone' } : null,
     payment_rail: rail, rail_badge: railBadge,
     ...(r.incremental ? { incremental: r.incremental } : {}),
     timeline: (Array.isArray(r.timeline) ? r.timeline as Array<Record<string, unknown>> : []).map(t => ({
-      from: t.from ?? null, to_status: statusView(t.to), actor: t.actor_role ?? null, at: t.at,
+      from: t.from ?? null, to_status: statusView(t.to), actor: t.actor_role ?? null, at: toIsoUtc(t.at),
     })),
     logistics: { dest_region: logi.dest_region ?? null, tracking: logi.tracking ?? null, shipping_est_days: logi.shipping_est_days ?? null },
     // 无退货时字段缺席(非 null):buyer_orders 豁免 stripEmpty,null 会被 schema 校验型宿主拒收
     ...(returns.length ? { refund: {
-      requests: returns.map(x => ({ status: x.status, amount: { display: fmtUsdcMinor(Number(x.refund_amount) ? Math.round(Number(x.refund_amount) * 1_000_000) : null) }, created_at: x.created_at, resolved_at: x.resolved_at ?? null })),
+      requests: returns.map(x => ({ status: x.status, amount: { display: fmtUsdcMinor(Number(x.refund_amount) ? Math.round(Number(x.refund_amount) * 1_000_000) : null) }, created_at: toIsoUtc(x.created_at), resolved_at: toIsoUtc(x.resolved_at) })),
       is_real_funds_flow: false,
       note: rail === 'direct_p2p'
         ? '协议已记录责任结果;本金未由 WebAZ 托管;实际退款需由买卖双方完成'

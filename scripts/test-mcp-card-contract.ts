@@ -69,6 +69,18 @@ async function main(): Promise<void> {
   ok('FT3. full-mode detail output = whitelisted fields ONLY (no source_price/seller_id/internal_note/api_key leak)', leak.length === 0)
   ok('FT4. full mode carries no *_truncated flags (nothing truncated to leak-hide)', !Object.keys(dfull2).some(k => /_truncated$/.test(k)))
 
+  // ── §VI BUG-07: timestamp normalization (toIsoUtc) — UTC / DST / offset / sorting / expiry ──
+  ok('TZ1. bare SQLite UTC → ISO 8601 Z', proj.toIsoUtc('2026-01-02 03:04:05') === '2026-01-02T03:04:05.000Z')
+  ok('TZ2. T-separated bare → ISO Z', proj.toIsoUtc('2026-01-02T03:04:05') === '2026-01-02T03:04:05.000Z')
+  ok('TZ3. already-Z → canonical Z', proj.toIsoUtc('2026-01-02T03:04:05Z') === '2026-01-02T03:04:05.000Z')
+  ok('TZ4. +08:00 offset → correct UTC instant', proj.toIsoUtc('2026-01-02T11:04:05+08:00') === '2026-01-02T03:04:05.000Z')
+  ok('TZ5. null/empty → null', proj.toIsoUtc(null) === null && proj.toIsoUtc('') === null)
+  ok('TZ6. unparseable returned verbatim (never silently localized)', proj.toIsoUtc('not-a-date') === 'not-a-date')
+  ok('TZ7. DST-region summer instant stays unambiguous UTC (no local guess)', proj.toIsoUtc('2026-07-01 12:00:00') === '2026-07-01T12:00:00.000Z')
+  const times = ['2026-01-02 03:04:05', '2026-01-01 23:59:59', '2026-01-02 03:04:06'].map(t => proj.toIsoUtc(t) as string)
+  ok('TZ8. ISO Z strings are lexically sortable = chronological', [...times].sort().join() === [times[1], times[0], times[2]].join())
+  ok('TZ9. expiry boundary is comparable as ISO', (proj.toIsoUtc('2020-01-01 00:00:00') as string) < (proj.toIsoUtc('2030-01-01 00:00:00') as string))
+
   // ── Duplicate mapping + summary-carries-duplicate (projectSubmitConsumer / summarizeSubmitResult) ──
   const dupRaw = { request_id: 'apr_1', draft_id: 'odr_1', approval_url: '/#agent-approvals/apr_1', idempotency: { duplicate: true } }
   const dupProj = proj.projectSubmitConsumer(dupRaw) as Record<string, unknown>
