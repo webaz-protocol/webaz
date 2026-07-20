@@ -875,6 +875,7 @@ jobs:
       - run: npm run test:product-action-request
       - run: npm run test:approval-window
       - run: npm run test:product-action-exec
+      - run: npm run test:product-action-approve
       - run: npm run test:oauth-revoke
       - run: npm run test:oauth-mcp-bearer
       - run: npm run test:oauth-mcp-challenge

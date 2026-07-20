@@ -335,6 +335,7 @@
     "test:product-action-request": "tsx scripts/test-product-action-request.ts",
     "test:approval-window": "tsx scripts/test-approval-window.ts",
     "test:product-action-exec": "tsx scripts/test-product-action-exec.ts",
+    "test:product-action-approve": "tsx scripts/test-product-action-approve.ts",
     "test:oauth-revoke": "tsx scripts/test-oauth-revoke.ts",
     "test:oauth-mcp-bearer": "tsx scripts/test-oauth-mcp-bearer.ts",
     "test:oauth-mcp-challenge": "tsx scripts/test-oauth-mcp-challenge.ts",

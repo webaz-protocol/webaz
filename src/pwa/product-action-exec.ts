@@ -37,7 +37,9 @@ class ExecAbort extends Error {
 
 // retireAnchorsByTarget is REQUIRED (not optional): the DELETE route always retires anchors, so making it
 //   optional here would let a call site silently delete a product yet leave dangling anchors → parity drift.
-interface ExecDeps { requestId: string; retireAnchorsByTarget: (db: Database.Database, kind: string, id: string) => void }
+//   Typed with kind:'product' (a real AnchorTargetKind member) + unknown return so the production function
+//   (…, AnchorTargetKind, string) => number is assignable without leaking the anchor generics into this module.
+interface ExecDeps { requestId: string; retireAnchorsByTarget: (db: Database.Database, kind: 'product', id: string) => unknown }
 
 /**
  * 执行一条 product-action 删除请求。授权(approved / 活跃 T1 窗)成立且删除前置满足才动手;全程单事务原子。
