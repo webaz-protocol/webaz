@@ -204,5 +204,12 @@ const isDisabled = (b: N | null): boolean => !!b && (b as unknown as { disabled:
   if (btn) fire(btn)
   ok('B7g. VALID quote → clicking fires exactly one webaz_order_draft call', calls.length === 1 && (calls[0] as unknown[])[0] === 'webaz_order_draft') }
 
+// C. text summary (content) quantity safety — `content` reaches the model AND is the card-less-host
+//   fallback: valid → ×N; invalid → 数量数据异常; NEVER ×null (never hand a corrupt quantity to the model)
+const summ = (r: Record<string, unknown>): string => proj.summarizeDraftResult(r)
+const draftBase = { draft_id: 'odr1', status: { code: 'draft', label: '草稿', label_en: 'draft' }, product: { title: 'Ring' }, price: { display: '28 USDC' }, expires_at: '2026-07-21T00:00:00.000Z' }
+{ const s = summ({ ...draftBase, quantity: 4 }); ok('C1. valid draft summary shows ×4 (valid unchanged)', s.includes('×4') && !s.includes('null') && !s.includes('数量数据异常')) }
+{ const s = summ({ ...draftBase, quantity: null, quantity_valid: false, quantity_error: 'zero' }); ok('C2. invalid draft summary shows 数量数据异常, NEVER ×null / ×', /数量数据异常/.test(s) && !s.includes('null') && !s.includes('×')) }
+
 if (fail > 0) { console.error(`\n❌ schema-v2-contract FAILED  ✅ ${pass} ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ mcp-schema-v2-contract: v2 unified contract (type/status object/posInt quantity) + v1↔v2 compat + unknown/missing safe-fail + cross-input isolation + promised_eta preserved + UTC + zero-PII\n  ✅ pass ${pass}`)

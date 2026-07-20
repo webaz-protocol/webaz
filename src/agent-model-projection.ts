@@ -437,10 +437,18 @@ export function projectSubmitConsumer(r: Record<string, unknown>): Record<string
  * (was a bare string). Read the code from either shape so the text summary never renders "[object Object]". */
 export function statusText(s: unknown): string { return (s && typeof s === 'object') ? String((s as Record<string, unknown>).code ?? (s as Record<string, unknown>).label ?? '') : String(s ?? '') }
 
+/** BUG-06 quantity-safety in the text summary — `content` can enter the model context AND is the
+ * card-less-host fallback text. A valid projected quantity renders `×N`; an invalid one (quantity_valid
+ * === false / null) renders `数量数据异常`, NEVER `×null` — so a corrupt quantity is never handed to the
+ * model to misread or summarize as a real number. */
+export function quantityText(r: Record<string, unknown>): string {
+  return (r.quantity_valid === false || typeof r.quantity !== 'number') ? '数量数据异常' : '×' + r.quantity
+}
+
 export function summarizeDraftResult(r: Record<string, unknown>): string {
   if (Array.isArray(r.drafts)) return `${Number(r.count) || (r.drafts as unknown[]).length} draft(s): ${(r.drafts as Array<Record<string, unknown>>).map(d => `${d.draft_id}=${statusText(d.status)}`).join(', ')}. Details in structuredContent.`
   const p = (r.price ?? {}) as Record<string, unknown>
-  return `Draft ${r.draft_id} (${statusText(r.status)}): ${(r.product as Record<string, unknown>)?.title ?? ''} ×${r.quantity} ${p.display ?? ''}. Not charged, no stock held; expires ${r.expires_at}. Next: webaz_submit_order_request(draft_id). / 草稿不扣款不锁库存。`
+  return `Draft ${r.draft_id} (${statusText(r.status)}): ${(r.product as Record<string, unknown>)?.title ?? ''} ${quantityText(r)} ${p.display ?? ''}. Not charged, no stock held; expires ${r.expires_at}. Next: webaz_submit_order_request(draft_id). / 草稿不扣款不锁库存。`
 }
 
 export function summarizeSubmitResult(r: Record<string, unknown>): string {
