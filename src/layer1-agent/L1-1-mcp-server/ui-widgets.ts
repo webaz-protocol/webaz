@@ -254,10 +254,13 @@ function renderBody(oai, out){
     var phrase='为「'+(title||pid)+'」准备下单(product_id='+pid+')'
     // Phase-3A DIRECT_TOOL:优先结构化直调 webaz_quote_order(默认地址、数量1)→ 报价卡,零自然语言、零"模型选工具"。
     //   宿主是否跨组件渲染报价卡属 LIVE_HOST_REQUIRED,故直调失败/不可用时降级为可复制 NL 指引(绝不把 NL 回传作为唯一实现,也绝不删兼容路径)。
-    var fired=false
-    if(typeof oai.callTool==='function'){ try{ oai.callTool('webaz_quote_order',{product_id:pid,quantity:1}); fired=true }catch(e){ fired=false } }
-    if(!fired){ try{ sendFollowUpCompat(oai,'请为该商品准备下单:webaz_quote_order 报价(数量 1)→ webaz_order_draft 建草稿 → webaz_submit_order_request 提交审批,最终由我 Passkey 批准。product_id='+pid) }catch(e){} }
-    state.hint={ text:(fired?'正在获取报价…若没有出现报价卡,请把这句话复制发给我:':'此宿主不支持一键操作;请把这句话复制发给我:'), phrase:phrase }
+    var fired=false, freason=null
+    if(typeof oai.callTool==='function'){ try{ oai.callTool('webaz_quote_order',{product_id:pid,quantity:1}); fired=true }catch(e){ fired=false; freason='callTool_threw' } }
+    else { freason='host_no_callTool' }
+    // §II.7:NL fallback 只在宿主不支持组件直调时启用,且 fallback_reason 可观察(console,零 PII)。
+    if(!fired){ try{ if(freason) console.warn('[webaz-widget] prepare_order fallback_reason='+freason) }catch(e){}
+      try{ sendFollowUpCompat(oai,'请为该商品准备下单:webaz_quote_order 报价(数量 1)→ webaz_order_draft 建草稿 → webaz_submit_order_request 提交审批,最终由我 Passkey 批准。product_id='+pid) }catch(e){} }
+    state.hint={ text:(fired?'正在获取报价…若没有出现报价卡,请把这句话复制发给我:':'此宿主不支持一键操作;请把这句话复制发给我:'), phrase:phrase, fallback_reason:freason }
     render()
   }
   function openDetail(pid,title){

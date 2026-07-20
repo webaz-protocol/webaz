@@ -57,6 +57,18 @@ async function main(): Promise<void> {
   const dshort = proj.projectProductDetail({ id: 'prd_y', title: 't', description: '短', return_condition: '可退', ship_regions: 'SG' }) as Record<string, unknown>
   ok('T13. short fields → terms_complete=true, no truncation flags, no full_terms_fetch', dshort.terms_complete === true && !('return_condition_truncated' in dshort) && !('full_terms_fetch' in dshort))
 
+  // ── §II full-terms safety: default search never carries full terms; full mode leaks no private fields ──
+  const sm = proj.projectProductModel({ id: 'prd_x', title: 't', price: 9, stock: 5, description: 'X', specs: '{"a":1}', return_condition: 'R', ship_regions: 'SG', source_price: 3.14, seller_id: 'u1', internal_note: 'secret' }) as Record<string, unknown>
+  ok('FT1. default search projection excludes description/specs/return_condition/ship_regions (full terms are on-demand only)',
+    !('description' in sm) && !('specs' in sm) && !('return_condition' in sm) && !('ship_regions' in sm))
+  ok('FT2. search projection never leaks seller-private raw fields (source_price/internal_note/seller_id)',
+    !('source_price' in sm) && !('internal_note' in sm) && !('seller_id' in sm))
+  const FULL_ALLOWED = new Set(['id', 'title', 'price', 'stock_status', 'category', 'handling_hours', 'estimated_days', 'return_days', 'warranty_days', 'seller_ref', 'sales_count', 'decision_flags', 'summary', 'description', 'specs', 'return_condition', 'ship_regions', 'has_variants', 'product_type', 'fragile', 'terms_complete'])
+  const dfull2 = proj.projectProductDetail({ id: 'prd_z', title: 't', price: 9, stock: 5, description: 'D', specs: '{"a":1}', return_condition: 'R', ship_regions: 'SG', source_price: 3.14, seller_id: 'u1', internal_note: 'secret', api_key: 'k' }, { full: true }) as Record<string, unknown>
+  const leak = Object.keys(dfull2).filter(k => !FULL_ALLOWED.has(k))
+  ok('FT3. full-mode detail output = whitelisted fields ONLY (no source_price/seller_id/internal_note/api_key leak)', leak.length === 0)
+  ok('FT4. full mode carries no *_truncated flags (nothing truncated to leak-hide)', !Object.keys(dfull2).some(k => /_truncated$/.test(k)))
+
   // ── Duplicate mapping + summary-carries-duplicate (projectSubmitConsumer / summarizeSubmitResult) ──
   const dupRaw = { request_id: 'apr_1', draft_id: 'odr_1', approval_url: '/#agent-approvals/apr_1', idempotency: { duplicate: true } }
   const dupProj = proj.projectSubmitConsumer(dupRaw) as Record<string, unknown>
