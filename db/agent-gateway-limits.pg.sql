@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS agent_gateway_limits.counters_v1 (
   hit_count    BIGINT NOT NULL
     CHECK (hit_count >= 1),
   expires_at   TIMESTAMPTZ NOT NULL,
-  PRIMARY KEY (limiter_key,window_start)
+  -- A budget is identified by (key, window length, window start): the same key under two different window
+  -- lengths is TWO independent budgets, so window_sec is part of the bucket identity — without it, two
+  -- windows whose edges coincide (e.g. the top of the hour for 60s and 3600s) would merge into one row.
+  PRIMARY KEY (limiter_key,window_sec,window_start)
 );
 
 -- Cleanup drives off expires_at; the limiter read path never scans this index.

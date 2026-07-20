@@ -42,8 +42,12 @@ export interface GatewayLimitRuntime {
   close(): Promise<void>
 }
 
-/** Fail-closed input guard. Bounds the key (matches the DB CHECK) and the window so a bad caller cannot
- *  mint an unbounded key or a nonsensical window. Rejected input NEVER touches the database. */
+/** Fail-closed input guard. Bounds the key LENGTH (matches the DB CHECK) and the window so a bad caller
+ *  cannot mint an oversized key or a nonsensical window. Rejected input NEVER touches the database.
+ *  NOTE: this bounds each key's size, NOT the NUMBER of distinct keys. Per-key cardinality (e.g. one row
+ *  per source IPv6 address per window) is the caller's responsibility to bound by normalizing
+ *  high-cardinality dimensions (IPv6→/64, capped anchor/product sets) BEFORE keying — see gateway-limits.ts
+ *  gatewayLimitKey. This store additionally drains expired buckets adaptively (see the cleanup scheduler). */
 function validLimiterInput(key: string, windowSec: number): boolean {
   return typeof key === 'string' && key.length > 0 && key.length <= 128
     && Number.isInteger(windowSec) && windowSec >= 1 && windowSec <= MAX_WINDOW_SEC
@@ -69,7 +73,7 @@ async function assertLimitsSchema(pool: LimitsPool): Promise<void> {
      WHERE c.conrelid=$1::regclass AND c.contype='p'
      GROUP BY c.oid
   `, [TABLE])
-  if (JSON.stringify(pk.rows[0]?.columns) !== JSON.stringify(['limiter_key', 'window_start'])) {
+  if (JSON.stringify(pk.rows[0]?.columns) !== JSON.stringify(['limiter_key', 'window_sec', 'window_start'])) {
     throw new Error('limits schema primary-key contract mismatch')
   }
 
@@ -131,7 +135,7 @@ export async function createPostgresGatewayLimitStore(pool: LimitsPool): Promise
         INSERT INTO ${TABLE} AS c (limiter_key,window_start,window_sec,hit_count,expires_at)
         SELECT $1::text, w.window_start, $2::int, 1, w.window_start + ($2::int * INTERVAL '1 second')
           FROM w
-        ON CONFLICT (limiter_key,window_start) DO UPDATE SET hit_count=c.hit_count + 1
+        ON CONFLICT (limiter_key,window_sec,window_start) DO UPDATE SET hit_count=c.hit_count + 1
         RETURNING hit_count
       `, [key, windowSec])
       const count = Number(result.rows[0]?.hit_count)
@@ -145,10 +149,14 @@ export async function createPostgresGatewayLimitStore(pool: LimitsPool): Promise
     store,
     async cleanupExpired(limit = 1000): Promise<number> {
       if (!Number.isInteger(limit) || limit < 1 || limit > 50_000) throw new Error('invalid limiter cleanup limit')
+      // 10s grace: only reclaim buckets expired for a while. A bucket's expires_at is window_start+window_sec;
+      // a hit still inside that window has statement_timestamp() < expires_at, which can never be 10s behind a
+      // cleanup that (by this predicate) ran at >= expires_at+10s — so cleanup can never race-delete a bucket a
+      // late same-window hit would then resurrect from 1 (fail-open sliver closed).
       const result = await pool.query(`
         WITH doomed AS (
           SELECT ctid FROM ${TABLE}
-           WHERE expires_at <= statement_timestamp()
+           WHERE expires_at <= statement_timestamp() - INTERVAL '10 seconds'
            ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED
         )
         DELETE FROM ${TABLE} live USING doomed
@@ -232,13 +240,19 @@ export async function openConfiguredGatewayLimitStore(
     throw new Error('Agent Gateway limits store initialization failed')
   }
 
+  const CLEANUP_BATCH = 1000
   let timer: NodeJS.Timeout | undefined
   let stopped = false
   const scheduleCleanup = (delay: number): void => {
     timer = setTimeout(async () => {
-      try { await runtime.cleanupExpired() }
+      let drained = 0
+      try { drained = await runtime.cleanupExpired(CLEANUP_BATCH) }
       catch { console.error('[agent-gateway-limits] expired-bucket cleanup failed') }
-      if (!stopped) scheduleCleanup(60_000 + Math.floor((deps.random?.() ?? Math.random()) * 15_000))
+      // A full batch means backlog remains — drain again in ~1s instead of idling, so a flood of
+      // high-cardinality keys (e.g. per-IPv6 buckets) cannot outpace reclamation at a fixed 1000/min.
+      // Each statement stays bounded (LIMIT + SKIP LOCKED); only the cadence adapts.
+      const next = drained >= CLEANUP_BATCH ? 1_000 : 60_000 + Math.floor((deps.random?.() ?? Math.random()) * 15_000)
+      if (!stopped) scheduleCleanup(next)
     }, delay)
     timer.unref()
   }

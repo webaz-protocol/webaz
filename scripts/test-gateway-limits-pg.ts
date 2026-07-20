@@ -63,7 +63,7 @@ const schemaColumns = [
 
 function fakeReadyResult(text: string): { rowCount: number; rows: Record<string, unknown>[] } | null {
   if (text.includes('information_schema.columns')) return { rowCount: schemaColumns.length, rows: schemaColumns }
-  if (text.includes("c.contype='p'")) return { rowCount: 1, rows: [{ columns: ['limiter_key', 'window_start'] }] }
+  if (text.includes("c.contype='p'")) return { rowCount: 1, rows: [{ columns: ['limiter_key', 'window_sec', 'window_start'] }] }
   if (text.includes('has_table_privilege')) return { rowCount: 1, rows: [{
     can_schema_usage: true, can_schema_create: false,
     can_select: true, can_insert: true, can_update: true, can_delete: true, can_truncate: false,
@@ -298,20 +298,28 @@ if (url && process.env.WEBAZ_AGENT_GATEWAY_LIMITS_TEST_ALLOW === '1') {
     const shortWin = await r1.store.hit(liveKey, 60, Date.now())
     ok('32. a distinct window is an independent bucket', shortWin === 1)
 
-    // Cleanup removes only already-expired buckets; the live bucket survives.
+    // Cleanup reclaims only buckets expired past the 10s grace; the live bucket and a within-grace bucket survive.
     const expiredKey = `gl:ip:public_low:expired_${runId}`
+    const graceKey = `gl:ip:public_low:grace_${runId}`
     await owner.query(`INSERT INTO ${AGENT_GATEWAY_LIMITS_TABLE}
       (limiter_key,window_start,window_sec,hit_count,expires_at)
-      VALUES ($1, now() - INTERVAL '2 hours', 3600, 5, now() - INTERVAL '1 hour')`, [expiredKey])
+      VALUES ($1, now() - INTERVAL '2 hours', 3600, 5, now() - INTERVAL '1 hour'),
+             ($2, now() - INTERVAL '61 seconds', 60, 3, now() - INTERVAL '1 second')`, [expiredKey, graceKey])
     const removed = await r1.cleanupExpired(1000)
-    ok('33. cleanup removes expired buckets', removed >= 1)
-    const survives = await p1.query<{ count: string }>(
+    ok('33. cleanup removes fully-expired buckets', removed >= 1)
+    const expiredGone = await p1.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM ${AGENT_GATEWAY_LIMITS_TABLE} WHERE limiter_key=$1`, [expiredKey])
+    ok('34. the fully-expired bucket is gone', expiredGone.rows[0]?.count === '0')
+    const graceSurvives = await p1.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM ${AGENT_GATEWAY_LIMITS_TABLE} WHERE limiter_key=$1`, [graceKey])
+    ok('35. a bucket expired within the 10s grace is NOT reclaimed (F3 race closed)', graceSurvives.rows[0]?.count === '1')
+    const liveSurvives = await p1.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM ${AGENT_GATEWAY_LIMITS_TABLE} WHERE limiter_key=$1 AND window_sec=3600`, [liveKey])
-    ok('34. cleanup leaves the live bucket intact', survives.rows[0]?.count === '1')
+    ok('36. cleanup leaves the live bucket intact', liveSurvives.rows[0]?.count === '1')
 
     const closedStore = r2.store
     await r2.close(); r2 = undefined; p2 = undefined
-    ok('35. a closed production pool rejects without fallback', await rejects(
+    ok('37. a closed production pool rejects without fallback', await rejects(
       () => closedStore.hit(liveKey, 3600, Date.now()), ''))
   } finally {
     await Promise.all([r1?.close() ?? p1?.end(), r2?.close() ?? p2?.end()])
@@ -323,7 +331,7 @@ if (url && process.env.WEBAZ_AGENT_GATEWAY_LIMITS_TEST_ALLOW === '1') {
     await owner.end()
   }
 } else {
-  console.log('  live PostgreSQL checks 28..35 skipped (DATABASE_URL or explicit test guard not set)')
+  console.log('  live PostgreSQL checks 28..37 skipped (DATABASE_URL or explicit test guard not set)')
 }
 
 console.log(`\ngateway-limits-pg: ${pass} passed, ${fail} failed`)
