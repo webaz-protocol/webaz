@@ -15848,8 +15848,8 @@ window.setProductStatus = async (id, status) => {
 
 window.deleteProductPermanently = async (id) => {
   if (!confirm(t('彻底删除后无法恢复，确认删除？'))) return
-  const res = await api('DELETE', `/products/${id}`)
-  if (res.error) return void alert(res.error)
+  let _tk; try { _tk = await requestPasskeyGate('product_hard_delete', { product_id: id }) } catch (e) { return void alert((e && e.message ? e.message + ' — ' : '') + t('彻底删除需现场真人 Passkey 验证')) }
+  const res = await api('DELETE', `/products/${id}`, null, { 'X-WebAuthn-Token': _tk }); if (res.error) return void alert(res.error)
   renderSeller(document.getElementById('app'))
 }
 

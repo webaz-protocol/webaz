@@ -571,8 +571,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/product-share/touch` | 🔐 |  | 商品分享归因落库（前端登录后首次进入带 share_id 时调用） | src/pwa/routes/share-redirects.ts:129 |
 | GET | `/api/products` |  |  |  | src/pwa/routes/products-list.ts:63 |
 | POST | `/api/products` | 🔐 |  |  | src/pwa/routes/products-create.ts:307 |
-| DELETE | `/api/products/:id` | 🔐 |  | 硬删（仅 deleted 状态 + 无进行中订单） | src/pwa/routes/products-crud.ts:71 |
-| GET | `/api/products/:id` |  |  | 卖家可查看自己的非上架商品（编辑页用），其他人只能看 active | src/pwa/routes/products-crud.ts:33 |
+| DELETE | `/api/products/:id` | 🔐 |  | 硬删（仅 deleted 状态 + 无进行中订单） | src/pwa/routes/products-crud.ts:74 |
+| GET | `/api/products/:id` |  |  | 卖家可查看自己的非上架商品（编辑页用），其他人只能看 active | src/pwa/routes/products-crud.ts:36 |
 | PUT | `/api/products/:id` | 🔐 |  |  | src/pwa/routes/products-update.ts:44 |
 | GET | `/api/products/:id/aliases` | 🔐 |  | M7.2-7: alias CRUD（仅商品 owner） | src/pwa/routes/products-aliases.ts:46 |
 | POST | `/api/products/:id/aliases` | 🔐 |  |  | src/pwa/routes/products-aliases.ts:56 |
@@ -588,7 +588,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/products/:id/preview` |  |  | 公开预览：未登录可调，返回最小公开信息（分享 banner 用） | src/pwa/routes/products-meta.ts:162 |
 | GET | `/api/products/:id/price-history` |  |  |  | src/pwa/routes/products-meta.ts:58 |
 | GET | `/api/products/:id/shipping-options` |  |  | 公开读:买家下单前查配送范围。生效 = 单品覆盖 ?? 店铺默认;template=null → 不按地区计费(下单不要求选地区)。 | src/pwa/routes/shipping-templates.ts:144 |
-| PATCH | `/api/products/:id/status` | 🔐 |  | 状态切换（active / warehouse / deleted） | src/pwa/routes/products-crud.ts:49 |
+| PATCH | `/api/products/:id/status` | 🔐 |  | 状态切换（active / warehouse / deleted） | src/pwa/routes/products-crud.ts:52 |
 | GET | `/api/products/:product_id/flash-sale` |  |  | 公开：商品当前生效的 flash sale | src/pwa/routes/flash-sales.ts:102 |
 | POST | `/api/products/:product_id/flash-sale` | 🔐 |  |  | src/pwa/routes/flash-sales.ts:58 |
 | GET | `/api/products/:product_id/qa` |  |  |  | src/pwa/routes/wishlist-qa.ts:125 |
