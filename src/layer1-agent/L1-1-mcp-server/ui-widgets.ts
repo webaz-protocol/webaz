@@ -380,7 +380,7 @@ function renderBody(oai, out){
 }`
 
 // ─── QuoteAndApproval ─────────────────────────────────────────────────────────────────────────
-// 渲染 quote / draft / approval 三形态(webaz.order_quote|order_draft|order_approval .model.v1)。
+// 渲染 quote / draft / approval 三形态(webaz.order_quote|order_draft|order_approval .model — v1 旧卡 + BUG-06 v2 均兼容)。
 // 创建草稿与提交审批 = callTool(不扣款/不锁库存/幂等 + 重复购买保护);正式建单只发生在 webaz.xyz
 // 的 Passkey 批准。duplicate_warning 渲染为显式警告卡,绝不静默二次创建。
 
@@ -422,9 +422,16 @@ function renderBody(oai, out){
   if(!out||!out.schema_version){ root.textContent='WebAZ: no structured payload visible to this widget.'; return }
   var box=el('div','box'); root.appendChild(box)
   var sv=String(out.schema_version)
+  // BUG-06 — normalize status ONCE at entry: v1 carried a bare string, v2 an object {code,label,label_en}.
+  //   stLabel = display text (v1 string shows the raw code, unchanged; v2 shows the localized label).
+  //   stCode  = canonical machine code for branch/button gating (never inferred from the label).
+  //   qtyText = display-only positive integer (the charged amount is price.amount_minor, not this).
+  function stLabel(s){ return (s&&typeof s==='object')?String(s.label||s.label_en||s.code||''):String(s||'') }
+  function stCode(s){ return (s&&typeof s==='object')?String(s.code||''):String(s||'') }
+  function qtyText(q){ var n=(typeof q==='number')?q:Number(String(q==null?'':q).trim()); return (isFinite(n)&&Math.floor(n)===n&&n>0)?n:1 }
 
-  if(sv==='webaz.order_quote.model.v1'){
-    box.appendChild(el('div','h','报价 · '+((out.product&&out.product.title)||'')+' ×'+(out.quantity||1)))
+  if(sv==='webaz.order_quote.model.v1'||sv==='webaz.order_quote.model.v2'){
+    box.appendChild(el('div','h','报价 · '+((out.product&&out.product.title)||'')+' ×'+qtyText(out.quantity)))
     box.appendChild(el('div','price',(out.price&&out.price.display)||''))
     fiatLine(box,out.fiat_estimate)
     var a=out.amounts||{}
@@ -445,30 +452,30 @@ function renderBody(oai, out){
       box.appendChild(b1)
     }
     disclosures(box,out.disclosures)
-  } else if(sv==='webaz.order_draft.model.v1'){
-    if(Array.isArray(out.drafts)){ box.appendChild(el('div','h','订单草稿列表')); out.drafts.forEach(function(d){ row(box,String(d.draft_id).slice(0,10)+'…',d.status+' · '+((d.price&&d.price.display)||'')) }); return }
+  } else if(sv==='webaz.order_draft.model.v1'||sv==='webaz.order_draft.model.v2'){
+    if(Array.isArray(out.drafts)){ box.appendChild(el('div','h','订单草稿列表')); out.drafts.forEach(function(d){ row(box,String(d.draft_id).slice(0,10)+'…',stLabel(d.status)+' · '+((d.price&&d.price.display)||'')) }); return }
     box.appendChild(el('div','h','订单草稿 · '+String(out.draft_id||'').slice(0,10)+'…'))
-    row(box,'状态',String(out.status||''))
-    row(box,'商品',((out.product&&out.product.title)||'')+' ×'+(out.quantity||1))
+    row(box,'状态',stLabel(out.status))
+    row(box,'商品',((out.product&&out.product.title)||'')+' ×'+qtyText(out.quantity))
     box.appendChild(el('div','price',(out.price&&out.price.display)||''))
     fiatLine(box,out.fiat_estimate)
     row(box,'配送',(out.destination&&out.destination.summary)||'')
     row(box,'支付轨道',String(out.payment_rail||''))
     toggler(box,'展开轨道说明',function(b){ b.appendChild(el('div','meta',out.rail_note||'')) })
     row(box,'过期时间',String(out.expires_at||''))
-    if(String(out.status)==='draft'&&typeof oai.callTool==='function'){
+    if(stCode(out.status)==='draft'&&typeof oai.callTool==='function'){
       var b2=el('button','btn','提交 Passkey 审批(不会直接执行)')
       b2.addEventListener('click',onceGuard(function(){ b2.disabled=true; var sent=false; try{ oai.callTool('webaz_submit_order_request',{draft_id:out.draft_id}); sent=true }catch(e){} reenable(b2); actHint('提交这个草稿去 Passkey 审批(draft_id='+String(out.draft_id)+')', sent) }))
       box.appendChild(b2)
     }
     disclosures(box,out.disclosures)
-  } else if(sv==='webaz.order_approval.model.v1'){
+  } else if(sv==='webaz.order_approval.model.v1'||sv==='webaz.order_approval.model.v2'){
     box.appendChild(el('div','h','待 Passkey 审批'))
     row(box,'请求',String(out.request_id||''))
     row(box,'操作','创建正式订单')
     row(box,'批准后','创建唯一正式订单(Passkey 必需)');
     box.appendChild(el('div','meta',String(out.on_approval||'资金行为随所披露的支付轨道:托管=建单时钱包→托管;直付=WebAZ 不托管本金')))
-    row(box,'状态','待批准')
+    row(box,'状态',stLabel(out.status)||'待批准')
     if(out.duplicate_warning){
       var w=el('div','warn'); w.appendChild(el('b',null,'检测到相似购买请求'))
       w.appendChild(el('div',null,out.duplicate_warning.note||''))
@@ -493,8 +500,8 @@ function renderBody(oai, out){
       var d=(r&&r.structuredContent)?r.structuredContent:r; if(!d){ statusLine.textContent='状态:未获取到,请重试'; return }
       var st=d.status||(d.request&&d.request.status)||''
       var oid=d.executed_order_id||(d.request&&d.request.executed_order_id)||''
-      statusLine.textContent='状态:'+String(st||'未知'); orderSlot.textContent=''
-      if(String(st)==='executed'&&oid&&typeof oai.callTool==='function'){
+      statusLine.textContent='状态:'+(stLabel(st)||'未知'); orderSlot.textContent=''   // BUG-06: live read may carry a string OR a v2 object — normalize both
+      if(stCode(st)==='executed'&&oid&&typeof oai.callTool==='function'){
         var vo=el('button','btn','查看订单 '+String(oid).slice(0,10)+'…')
         vo.addEventListener('click',onceGuard(function(){ try{ oai.callTool('webaz_buyer_orders',{order_id:oid,full:true}) }catch(e){} }))
         orderSlot.appendChild(vo)
@@ -520,7 +527,7 @@ function renderBody(oai, out){
     box.appendChild(el('div','meta ok','批准成功后:唯一正式订单号可经 webaz_approval_requests 查询(executed_order_id)'))
     disclosures(box,out.disclosures)
   } else {
-    box.textContent='未知投影版本:'+sv
+    box.textContent='不支持此旧卡片版本(schema_version='+sv+')。请在 WebAZ PWA 查看最新状态。'
   }
 }`
 
@@ -588,7 +595,7 @@ function renderBody(oai, out){
     return
   }
 
-  if(sv!=='webaz.order_timeline.model.v1'){ box.textContent='未知投影版本:'+sv; return }
+  if(sv!=='webaz.order_timeline.model.v1'&&sv!=='webaz.order_timeline.model.v2'){ box.textContent='不支持此旧卡片版本(schema_version='+sv+')。请在 WebAZ PWA 查看最新状态。'; return }
   box.appendChild(el('div','h',(out.product&&out.product.title)||String(out.order_id||'')))
   box.appendChild(el('div','price',(out.price&&out.price.display)||''))
   if(out.fiat_estimate) box.appendChild(el('div','fiat',out.fiat_estimate.display+(out.fiat_estimate.stale?'(近似汇率)':'')))
