@@ -49,3 +49,10 @@ Discovered-but-not-fetched official slugs (for later phases): `/apps-sdk/quickst
 | Claude Code — Settings | https://code.claude.com/docs/en/settings | none; references v2.1.181+ / v2.1.193+ features | permission modes, Bash/Read/Write/Git permissions, MCP config, headless `-p`, verbose | Yes — active dev |
 
 **Redirect note:** `docs.anthropic.com/en/docs/claude-code/settings` → `docs.claude.com/en/docs/claude-code/settings` → **301** `code.claude.com/docs/en/settings`. The Anthropic-domain claude-code docs path listed in the task now resolves to `code.claude.com`.
+
+## D. Version verification for BUG-09 (Phase-3A, verified 2026-07-20 against the installed SDK, not a doc claim)
+
+The `/mcp` manifest's `protocol_version` refers to the **MCP CORE protocol** (transport handshake), a version system **distinct** from the MCP Apps card extension. Verified from `@modelcontextprotocol/sdk` v1.29.0 `types.js`:
+- `LATEST_PROTOCOL_VERSION = '2025-11-25'` — now advertised as `protocol_version` (was the SDK's `DEFAULT_NEGOTIATED_PROTOCOL_VERSION = '2025-03-26'`, which under-advertised).
+- `SUPPORTED_PROTOCOL_VERSIONS = ['2025-11-25','2025-06-18','2025-03-26','2024-11-05','2024-10-07']` — now advertised as `protocol_versions_supported`.
+- The MCP Apps extension (`SEP-1865`, spec `2026-01-26`) is reported under a separate `mcp_apps_extension` key — never folded into `protocol_version`. Actual per-connection version is negotiated by the MCP `initialize` handshake (SDK-managed); the manifest is advisory only.
