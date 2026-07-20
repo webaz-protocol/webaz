@@ -4186,16 +4186,16 @@ function formatProductForAgent(p: Record<string, unknown>, req?: Request): Recor
     if (i18n_titles && i18n_titles[lang]) title = i18n_titles[lang]
     if (i18n_descs && i18n_descs[lang]) description = i18n_descs[lang]
   }
-  return {
+  const out: Record<string, unknown> = {
     ...p,
     title, description,
     specs,
     estimated_days,
     origin_claims,
     i18n_titles, i18n_descs,
-    _lang: lang,
-    agent_summary: buildAgentSummary(p),
+    _lang: lang, agent_summary: buildAgentSummary(p),
   }
+  delete out.source_url; delete out.source_price_at; return out   // 溯源原始列不出站(内部证据;买家同款走 verified external_links);source_price 保留=discover"省X%"比价
 }
 
 // ─── Tier 7：角色感知 API 辅助函数 ─────────────────────────────

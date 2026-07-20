@@ -877,6 +877,7 @@ jobs:
       - run: npm run test:product-action-exec
       - run: npm run test:product-action-approve
       - run: npm run test:product-hard-delete-gate
+      - run: npm run test:agent-projection-source-privacy
       - run: npm run test:oauth-revoke
       - run: npm run test:oauth-mcp-bearer
       - run: npm run test:oauth-mcp-challenge
