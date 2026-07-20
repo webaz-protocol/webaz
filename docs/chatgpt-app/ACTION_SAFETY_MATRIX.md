@@ -40,3 +40,8 @@
 ## Residual / live-host items
 - Whether ChatGPT's own "the app wants to run tool X" consent UI appears for the two additive-write `callTool`s is **LIVE_HOST_REQUIRED** (the MCP-Apps spec lets the host require approval per UI-initiated tool call).
 - `准备下单` relies on the model to actually chain quote→draft→submit; an over-eager model could submit prematurely, but that is **model behavior, not a card side effect** — NOT_REPRODUCED as a card defect.
+
+## BUG-08 addendum — 提交审批 / 再买一份 safety
+- `webaz_submit_order_request` (write, Passkey-gated): idempotent by idempotency_key → draft → intent; a repeat NEVER creates a 2nd active submit row or a 2nd order (one request_id → one executed_order_id via the unchanged I5 CAS). Explicit `new_purchase_intent=true` creates an INDEPENDENT purchase (distinct intent_hash) — still Passkey-gated, still re-validated at execution. Same key + different payload → IDEMPOTENCY_CONFLICT (no execute, no overwrite).
+- 再买一份 (component): explicit structured action only, never inferred from natural language; fail-visible entry to an independent purchase.
+- Trace is zero-PII + fail-open — a diagnostic write can never block or alter the trade.

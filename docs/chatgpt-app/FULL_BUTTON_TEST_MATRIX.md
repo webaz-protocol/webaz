@@ -56,3 +56,12 @@
 | 23 | Timeline | 订单页 | LOCAL_UI (NAV) | UNIT_TESTED | order-timeline-ui |
 
 **No button is CHATGPT_WEB_TESTED / IOS_TESTED / ANDROID_TESTED** — those require Phase 3B live-host access.
+
+## BUG-08 addendum — duplicate/second-purchase buttons
+| button | test | result |
+|---|---|---|
+| 打开已有审批 (duplicate) | existing openWebaz path | unchanged, fail-visible |
+| 取消本次 (ACTIVE_INTENT_REUSED) | vm render D1 | present; client-only no-op (nothing to cancel server-side) |
+| 再买一份 (ACTIVE_INTENT_REUSED only) | vm render D1/D2 | present only for ACTIVE_INTENT_REUSED; absent on SAME_DRAFT_REPLAY; fail-visible explicit-purchase entry (server new_purchase_intent) |
+| submit (idempotent) | test-bug08 1-7 | retry/double-click/response-loss/race → same request_id, no 2nd row |
+Component-driven auto-chained 再买一份 (quote→draft→submit instance threading) = LIVE_HOST_REQUIRED.

@@ -85,3 +85,6 @@ See ROLLBACK_PLAN.md. Summary: each commit reverts independently; the landed cha
 ## §XII low-token acceptance (status)
 1. LOCAL_UI no tool/model ✅ · 2. DIRECT_TOOL no NL ✅ (准备下单 proven) · 3. DIRECT_TOOL one structured call ✅ · 4. fallback only on host-incapability ✅ (fallback_reason) · 5. main chain one model point ✅ · 6–7. 查看最新状态/商家消息no-model ⬜ (still NL-fallback — §XI pending) · 8. subjective needs model ✅ · 9. large detail on-demand ✅ · 10. visibility not needlessly widened ✅ (only quote_order, additive).
 Items 6–7 remain gated on the §XI conversion (LIVE_HOST).
+
+## BUG-08 — duplicate purchase / idempotency / explicit second-purchase / zero-PII trace (Phase-3A.2C)
+8 commits (a205653 audit · b8e3569 migration · f520988 submit semantics · bf9d72d test · 409569a trace · 8f69530 UI · docs/fix). Server core complete + tested (25 assertions), independent adversarial review PASS (no BLOCKER/HIGH; F1 MEDIUM + F2 LOW fixed). Three-layer identity (operation_attempt_id / idempotency_key / purchase_intent_instance); six duplicate_reason paths; explicit new_purchase_intent → independent Passkey-gated submit; zero-PII fail-open trace. No money/exec/ETA/schema-v2 change (rail-agnostic). Widget end-to-end 再买一份 auto-threading = LIVE_HOST_REQUIRED (KNOWN_LIMITATIONS). See IDEMPOTENCY_IMPLEMENTATION.md.

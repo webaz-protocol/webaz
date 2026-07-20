@@ -57,3 +57,6 @@ render(out) → branch on out.schema_version
 - **No auto-refresh anywhere.** The APPROVAL card explicitly declares itself a submit-time snapshot and offers a manual "🔄 查看最新状态" (`ui-widgets.ts:476`). This is a deliberate design limit (the host cannot push server-side Passkey-approval events back to the card), **not a bug** — see OBSERVED_BUGS N7.
 - **No `setWidgetState` / `widgetState` persistence** is used — all UI state is per-render in-memory. A host re-render loses sort/selection/expand.
 - **Unknown schema_version** → "未知投影版本: <sv>" safe fallback (`:480,:544`); never force-renders the wrong form.
+
+## BUG-08 addendum — approval card duplicate states
+On a duplicate submit the approval card renders the precise `duplicate_reason` text (SAME_DRAFT_REPLAY / SAME_IDEMPOTENCY_KEY / ACTIVE_INTENT_REUSED / DATABASE_UNIQUE_RACE / RESPONSE_LOSS_RECONCILED) + `duplicate_of`. For ACTIVE_INTENT_REUSED it offers three distinct structured actions: 打开已有审批 · 取消本次 · 再买一份(独立购买). Non-duplicate → normal pending state. No generic "检测到重复"; no natural-language round-trip.

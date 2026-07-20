@@ -103,3 +103,8 @@ npx tsx scripts/diagnose-mcp-card-matrix.ts       # 9 ✅ + 2 ⚠️ (checks 2 &
 
 ## Remaining Phase-3A (NOT done; Phase-3A is NOT complete)
 BUG-02 (ETA snapshot + migration), BUG-04 (URI versioning), BUG-06 (status/quantity schema-version), BUG-07 (timestamp TZ), BUG-08 (duplicate semantics + trace telemetry wiring), BUG-09 (manifest version). Each is a money/state/schema change to be done as its own isolated, adversarially-reviewed, fresh-boot-verified step — gated on your go-ahead. Nothing is merged/pushed/deployed.
+
+## BUG-08 test results (Phase-3A.2C)
+- test-bug08-idempotency-second-purchase (25): same-draft/key replay · same-key+diff-payload IDEMPOTENCY_CONFLICT (no overwrite) · active-intent reuse · explicit second-purchase (distinct intent_hash, new request_id, still pending/Passkey) · response-loss reconcile · economics-only identity · duplicate_reason→available_actions · one-active-row money invariant · zero-PII trace (full key never stored, intent as prefix, no PII columns) · trace fail-open on missing table.
+- test-mcp-schema-v2-contract (75, +D1-D3): approval card renders per-reason duplicate text + 再买一份 only for ACTIVE_INTENT_REUSED.
+- Full regression green (tsc / complexity / schema:verify / pg:verify + 24 MCP/UI/ETA/permission suites). Fresh-boot + idempotent re-apply + existing-DB upgrade verified.
