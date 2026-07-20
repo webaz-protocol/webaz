@@ -633,6 +633,13 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
     // BUG-08:三层身份从 body 透传(全部可选;缺省 = 旧行为)。new_purchase_intent 必须是显式布尔,绝不由 NL 推断。
     const body = (req.body ?? {}) as Record<string, unknown>
+    // BUG-08 adversarial MEDIUM:显式约束客户端身份令牌为 [A-Za-z0-9_-]{1,64}(fail-closed)—— 防超长/自由文本
+    //   进入 agent_permission_requests / 零 PII 追踪台账(purchase_intent_instance 必须是不透明 nonce,不承载 PII)。
+    const IDTOK = /^[A-Za-z0-9_-]{1,64}$/
+    for (const k of ['idempotency_key', 'purchase_intent_instance', 'operation_attempt_id'] as const) {
+      const v = body[k]
+      if (v != null && (typeof v !== 'string' || !IDTOK.test(v))) return void res.status(400).json({ error: `${k} must match [A-Za-z0-9_-]{1,64}`, error_code: 'IDENTITY_MALFORMED' })
+    }
     const receivedAt = new Date().toISOString()
     const r = createOrderSubmitRequest(db, { draftId: String(req.params.id), grantId: p.grant_id, humanId: p.human_id, agentLabel: p.agent_label ?? 'agent', generateId,
       idempotencyKey: typeof body.idempotency_key === 'string' ? body.idempotency_key : null,
@@ -644,7 +651,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       operationAttemptId: body.operation_attempt_id, idempotencyKey: body.idempotency_key, traceId: body.trace_id, interactionId: body.interaction_id,
       widgetSessionId: body.widget_session_id, bridgeType: body.bridge_type, toolCallId: body.tool_call_id, mcpRequestId: body.mcp_request_id }
     if (!r.ok) { recordIdempotencyTrace(db, { ...traceBase, duplicate: false, resultStatus: r.error_code }); return void res.status(r.http).json({ error: r.error, error_code: r.error_code }) }
-    recordIdempotencyTrace(db, { ...traceBase, requestId: r.request_id, purchaseIntentInstance: r.purchase_intent_instance, duplicate: !!r.duplicate, duplicateReason: r.duplicate_reason, duplicateOf: r.duplicate_of, resultStatus: r.duplicate ? 'duplicate' : 'created' })
+    recordIdempotencyTrace(db, { ...traceBase, requestId: r.request_id, intentHash: r.intent_hash, purchaseIntentInstance: r.purchase_intent_instance, duplicate: !!r.duplicate, duplicateReason: r.duplicate_reason, duplicateOf: r.duplicate_of, resultStatus: r.duplicate ? 'duplicate' : 'created' })
     res.json({ success: true, request_id: r.request_id, draft_id: req.params.id, params_hash: r.params_hash, approval_url: `/#agent-approvals/${r.request_id}`,
       idempotency: { params_hash: r.params_hash, duplicate: !!r.duplicate, reused_existing_request: !!r.duplicate, duplicate_reason: r.duplicate_reason ?? null, duplicate_of: r.duplicate_of ?? null, purchase_intent_instance: r.purchase_intent_instance ?? null, new_purchase_intent: !!r.new_purchase_intent },
       note: r.duplicate ? 'An equivalent submit request is already awaiting Passkey approval — REUSED it (no second request was created). Do NOT re-quote or re-draft to retry; ask the human to open the approval page, or the human may explicitly choose 再买一份.' : 'Pending human Passkey approval. NOT executed — approval creates the order (and for escrow debits wallet→escrow) server-side; nothing happens without the Passkey.' })

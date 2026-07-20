@@ -17,6 +17,10 @@
 | `e72b418` BUG-02 F1 | normalize quote region for fee+ETA | revert → mis-cased regions fall back to the pre-existing (inconsistent) fee/ETA tiering. | none |
 | BUG-06 (`1d82a73`+`cd0eeeb`+`7ba21af`+`ef61fbd`) | v2 card contract (type + status object + posInt quantity) in the projection layer + component v1/v2 rendering | revert → projections emit v1 again; v2 cards already in chat history hit the "不支持此旧卡片版本" safe message (no partial render). **No DB migration** — projection/output/component only. | none — no writes, no schema change |
 | BUG-06 quantity-safety (`projectQuantity`) | invalid quantity → explicit `quantity_valid:false`+`quantity_error` (never faked to 1); card 数量数据异常 + disabled buttons | revert → invalid quantity falls back to the prior `toPosInt` fake-1 behavior (display only; amount always was `price.amount_minor`) | none — display/diagnostic only |
+| BUG-08 migration (`b8e3569`) | +idempotency_key/purchase_intent_instance/operation_attempt_id (nullable) + `ux_apr_submit_idem` partial index + `agent_idempotency_trace` table | revert leaves the columns/index/table inert (unread); or drop them via a follow-up. No backfill, no data to undo. | none — additive nullable + partial index + new table |
+| BUG-08 submit semantics (`f520988`) | three-layer identity + duplicate_reason + `new_purchase_intent` intent-hash fold | revert → submit reverts to the prior draft+intent dedup (implicit repeats still deduped; no client key, no explicit second-purchase). No money/status/exec change to undo. | none — pre-execution submit row only |
+| BUG-08 trace (`409569a`) | zero-PII `recordIdempotencyTrace` wired into the submit route | revert → the diagnostic rows stop being written (fail-open; the trade path never depended on them). | none |
+| BUG-08 UI (`8f69530`) | approval card per-reason text + 3 actions | revert → the card shows the prior generic duplicate warning; buttons unchanged. | none — component only |
 
 **Full-branch rollback:** `git checkout main` (branch never merged) — production is entirely unaffected (nothing deployed).
 

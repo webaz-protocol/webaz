@@ -13,7 +13,10 @@ import { createHash } from 'node:crypto'
 
 const keyHash = (k: unknown): string | null => (typeof k === 'string' && k) ? createHash('sha256').update(k).digest('hex').slice(0, 16) : null
 const prefix = (h: unknown, n: number): string | null => (typeof h === 'string' && h) ? h.slice(0, n) : null
-const str = (v: unknown): string | null => v == null ? null : String(v)
+// Defensive cap: any client-supplied id (trace_id / interaction_id / bridge_type / tool_call_id / …) is
+// truncated so the zero-PII diagnostic table can never store unbounded raw text (route validates the
+// three identity tokens more strictly; this backstops the rest).
+const str = (v: unknown): string | null => v == null ? null : String(v).slice(0, 128)
 
 export interface IdemTraceInput {
   traceId?: unknown; interactionId?: unknown; operationAttemptId?: unknown; widgetSessionId?: unknown

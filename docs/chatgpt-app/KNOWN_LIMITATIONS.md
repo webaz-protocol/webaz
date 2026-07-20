@@ -37,3 +37,28 @@ Committed so far this phase: **BUG-01** (full product terms) and the **Model-Whe
 ## Things deliberately NOT changed (per your constraints)
 - No legacy Skybridge removed; no template-key merge; no ext-apps SDK; no forced ChatGPT bridge switch; no component-layer rewrite.
 - `webaz_quote_order` visibility was **widened** (additive `+app`), never narrowed; `['model']` retained.
+
+## BUG-08 (duplicate purchase / idempotency / explicit second-purchase / trace) — DONE (Phase-3A.2C), with these limits
+- **Server core is complete + tested** (25 assertions): three-layer identity (operation_attempt_id /
+  idempotency_key / purchase_intent_instance), all six `duplicate_reason` paths, explicit
+  `new_purchase_intent` → independent submit (distinct intent_hash, still Passkey-gated),
+  response-loss reconcile, one-active-row money invariant, zero-PII fail-open trace. Independent
+  adversarial review clean (no BLOCKER/HIGH). Rail-agnostic — no money/exec/ETA/schema-v2 change.
+- **Widget-driven "再买一份" is a fail-visible ENTRY, not an auto-chained flow.** The approval card shows
+  the three explicit structured actions (打开已有审批 / 取消本次 / 再买一份) with per-reason text. Because
+  an independent purchase requires a fresh quote→draft (the old draft is bound to the pending submit), the
+  button surfaces the explicit next step rather than auto-executing a quote→draft→submit chain. An
+  agent/client achieves the independent purchase today by passing `new_purchase_intent=true` to
+  `webaz_submit_order_request` (fully implemented + tested). **Auto-threading a minted
+  `purchase_intent_instance` end-to-end through the widget's quote→draft→submit cards is
+  LIVE_HOST_REQUIRED** (needs the real multi-call ChatGPT widget behavior) and is the remaining
+  Phase-3B item for this bug.
+- **§五.9-11 (fresh quote on expiry / stock=1 second-purchase fails / delisted-or-price-changed) are
+  enforced by the EXISTING execution re-validation** at Passkey approval (unchanged by BUG-08), not by new
+  code. They were not re-tested in this phase (the exec path was deliberately untouched).
+- **Concurrency tests are single-process** (SQLite sync + partial-unique-index race handling proven by
+  construction); a true multi-process race and process-restart retry are LIVE_HOST_REQUIRED.
+- **MCP-level trace ids** (trace_id / interaction_id / widget_session_id / bridge_type / tool_call_id /
+  mcp_request_id) are recorded when the component/tool supplies them; wiring the widget to emit them is
+  incremental (the server-side correlation — request_id / draft_id / idempotency_key_hash /
+  intent_hash_prefix / duplicate_reason / purchase_intent_instance — is populated now).
