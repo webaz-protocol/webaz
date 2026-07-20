@@ -74,3 +74,12 @@ local action area and states "原有待审批购买不受影响" (which is exact
 ## Limitation of this review
 Single-model adversarial pass (Claude, this session). A second-model (Codex) pass is recommended when it
 returns (2026-07-25) before this branch is merged — standard for money/idempotency/schema changes.
+
+## Phase-3A final-closure addendum (new surface — self-reviewed, external re-review recommended)
+The 4 closure items added new code: the 再买一份 DIRECT_TOOL chain (component), the trace wiring
+(component→handler→route), and the exec/restart tests. Money-safety checks re-verified this pass:
+- **No new execute path.** The chain calls only quote_order/order_draft/submit_order_request; the REAL order is still created exclusively by the human Passkey execution path (approveAndExecuteOrderSubmit), unchanged. The chain's submit carries new_purchase_intent → an independent PENDING request (Passkey-gated), never an execution.
+- **No double-order via the chain.** A fresh quote→draft→submit that collides (implicit) still dedups; the explicit instance yields a distinct intent. Execution re-validation (now TESTED) hard-fails on price/stock/region/address drift with NO order + NO charge; duplicate Passkey → one order (test-bug08-execution-revalidation).
+- **Trace can't affect the trade.** Trace ids are format-capped, observation-only, never used for authz/idempotency/tx; recording is fail-open (a write error never blocks the trade). Strict zero-PII re-verified (test-bug08-trace-propagation).
+- **Client can't forge control via trace/instance.** purchase_intent_instance only relaxes dedup within the same human's own intent (still Passkey-gated + re-validated); trace fields are 128-capped and non-authoritative.
+- **Single-model, no external re-review of the new surface yet.** A second-model (Codex, 2026-07-25) pass over the closure commits is recommended before merge, as for all money/idempotency changes.

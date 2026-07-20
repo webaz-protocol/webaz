@@ -74,3 +74,8 @@ concurrent submits (same draft, same intent, different drafts); rapid double-cli
 
 ## Guards
 Money-path: sync `db.transaction`, balance guards, no fake success; migration additive + fresh-boot verified; second-model adversarial review before merge; Passkey remains the human gate.
+
+## Phase-3A final closure (shipped)
+- 再买一份 end-to-end DIRECT_TOOL chain in the component: quote_order → order_draft → submit_order_request, one purchase_intent_instance threaded through, fresh per-step idempotency_key, fail-stop, single-flight, no auto-replay; server exposes reorder{product_id,quantity} on the approval result for the re-quote.
+- Zero-PII trace wired component→tool handler→route→agent_idempotency_trace (trace_id/interaction_id/operation_attempt_id/widget_session_id/bridge_type + hashed key + intent prefix); observation-only, fail-open, 128-char capped, never affects authz/idempotency/tx.
+- Execution re-validation (unchanged code, now TESTED): a second purchase is re-validated at Passkey execution (price/stock/region/address); any drift or stock exhaustion hard-fails with NO order and NO charge; duplicate Passkey → one order.

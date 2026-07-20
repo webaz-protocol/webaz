@@ -108,3 +108,10 @@ BUG-02 (ETA snapshot + migration), BUG-04 (URI versioning), BUG-06 (status/quant
 - test-bug08-idempotency-second-purchase (25): same-draft/key replay · same-key+diff-payload IDEMPOTENCY_CONFLICT (no overwrite) · active-intent reuse · explicit second-purchase (distinct intent_hash, new request_id, still pending/Passkey) · response-loss reconcile · economics-only identity · duplicate_reason→available_actions · one-active-row money invariant · zero-PII trace (full key never stored, intent as prefix, no PII columns) · trace fail-open on missing table.
 - test-mcp-schema-v2-contract (75, +D1-D3): approval card renders per-reason duplicate text + 再买一份 only for ACTIVE_INTENT_REUSED.
 - Full regression green (tsc / complexity / schema:verify / pg:verify + 24 MCP/UI/ETA/permission suites). Fresh-boot + idempotent re-apply + existing-DB upgrade verified.
+
+## BUG-08 Phase-3A final-closure test results
+- test-bug08-second-purchase-widget-flow (18): 再买一份 DIRECT_TOOL chain quote→draft→submit; 3 ordered calls, instance consistency, distinct per-step keys, no NL, fail-stop (quote/draft), single-flight, no auto-replay, trace ids on the submit call.
+- test-bug08-execution-revalidation (10): expiry/price/stock=1/delisted/region/address hard-fail with NO order + charge loopback not executed; duplicate Passkey → one order; escrow + Direct Pay (fail-closed).
+- test-bug08-restart-concurrency (8): restart recovery by key/draft; executed retry → same result; cross-connection intent uniqueness; distinct instances independent; double-fire key → one.
+- test-bug08-trace-propagation (9): full field set + hashed key + intent prefix + standard/legacy bridge_type + interaction correlation + strict zero-PII.
+- Full regression green (tsc / complexity / schema:verify / contract:verify / definition-budget[reclaimed] + all MCP/UI suites). No deploy, no merge.

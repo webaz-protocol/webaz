@@ -44,15 +44,16 @@ Committed so far this phase: **BUG-01** (full product terms) and the **Model-Whe
   `new_purchase_intent` → independent submit (distinct intent_hash, still Passkey-gated),
   response-loss reconcile, one-active-row money invariant, zero-PII fail-open trace. Independent
   adversarial review clean (no BLOCKER/HIGH). Rail-agnostic — no money/exec/ETA/schema-v2 change.
-- **Widget-driven "再买一份" is a fail-visible ENTRY, not an auto-chained flow.** The approval card shows
-  the three explicit structured actions (打开已有审批 / 取消本次 / 再买一份) with per-reason text. Because
-  an independent purchase requires a fresh quote→draft (the old draft is bound to the pending submit), the
-  button surfaces the explicit next step rather than auto-executing a quote→draft→submit chain. An
-  agent/client achieves the independent purchase today by passing `new_purchase_intent=true` to
-  `webaz_submit_order_request` (fully implemented + tested). **Auto-threading a minted
-  `purchase_intent_instance` end-to-end through the widget's quote→draft→submit cards is
-  LIVE_HOST_REQUIRED** (needs the real multi-call ChatGPT widget behavior) and is the remaining
-  Phase-3B item for this bug.
+- **Widget-driven "再买一份" end-to-end chain — DONE (Phase-3A final closure).** The approval card's
+  再买一份 now runs a deterministic DIRECT_TOOL chain in the component: `webaz_quote_order` (reorder
+  product/qty) → `webaz_order_draft` (create, new quote_token) → `webaz_submit_order_request` (new draft,
+  `new_purchase_intent`, one `purchase_intent_instance` threaded through the whole chain, fresh per-step
+  `idempotency_key`). No natural language, no model, fail-stop on any step with a recovery entry, manual
+  single-flight (triple-click = one chain), no auto-replay on remount, cancel is local-only, both the
+  original and new approval entries kept. Proven in a `node:vm` Host simulation (test-bug08-second-
+  purchase-widget-flow, 18). **Still LIVE_HOST_REQUIRED:** that the REAL ChatGPT host actually returns
+  each card-initiated tool result to the widget so the chain advances (the vm proves the widget logic +
+  arg threading; a real multi-call host round-trip can only be confirmed live).
 - **§五.9-11 (fresh quote on expiry / stock=1 second-purchase fails / delisted-or-price-changed) are
   enforced by the EXISTING execution re-validation** at Passkey approval (unchanged by BUG-08), not by new
   code. They were not re-tested in this phase (the exec path was deliberately untouched).

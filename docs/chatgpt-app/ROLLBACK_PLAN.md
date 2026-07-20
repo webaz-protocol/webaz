@@ -39,3 +39,8 @@
 
 ## Iron rules preserved
 No legacy Skybridge removed, no template-key merge, no ext-apps SDK, no forced ChatGPT bridge switch, no prod deploy, no `main` merge. `webaz_quote_order` visibility only widened (never narrowed).
+
+## BUG-08 Phase-3A final closure (additional commits)
+| 再买一份 chain (7dbcb38) | component DIRECT_TOOL chain + reorder{product_id,quantity} on the approval result | revert → 再买一份 reverts to the fail-visible explicit-instruction entry; server new_purchase_intent unaffected | none — component + read projection |
+| trace wiring + budget (21c101e) | widget trace ids → handler → route → trace; tools/list description compression | revert → trace ids stop propagating (fail-open, no trade impact); descriptions revert (budget would go red again) | none |
+| tests (a1db194) | exec/restart/trace tests | revert → loses coverage | none |

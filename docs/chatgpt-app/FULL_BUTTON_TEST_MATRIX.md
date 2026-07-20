@@ -65,3 +65,7 @@
 | 再买一份 (ACTIVE_INTENT_REUSED only) | vm render D1/D2 | present only for ACTIVE_INTENT_REUSED; absent on SAME_DRAFT_REPLAY; fail-visible explicit-purchase entry (server new_purchase_intent) |
 | submit (idempotent) | test-bug08 1-7 | retry/double-click/response-loss/race → same request_id, no 2nd row |
 Component-driven auto-chained 再买一份 (quote→draft→submit instance threading) = LIVE_HOST_REQUIRED.
+
+## BUG-08 Phase-3A final closure — 再买一份 chain (updated)
+| 再买一份 (ACTIVE_INTENT_REUSED) | test-bug08-second-purchase-widget-flow | DONE: DIRECT_TOOL chain quote→draft→submit(new_purchase_intent), one instance, distinct keys, no NL, fail-stop, single-flight, both approval entries kept |
+Live-host: whether the REAL host returns each card-initiated tool result to the widget so the chain advances (vm proves the widget logic + arg threading).
