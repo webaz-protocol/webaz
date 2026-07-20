@@ -207,7 +207,7 @@ async function main() {
   const man = remoteMcpManifest()
   ok('11a. remoteMcpManifest 返回完整 shape(端点开时)', !!man && man.transport === 'streamable_http' && man.endpoint === 'https://webaz.xyz/mcp' && man.status === 'live')
   ok('11b. shape 含 authentication.anonymous / .bearer', !!(man as Record<string, Record<string, unknown>>)?.authentication?.anonymous && !!(man as Record<string, Record<string, unknown>>)?.authentication?.bearer)
-  ok('11c. shape 含 protocol_version + stdio 区分', man?.protocol_version === '2025-03-26' && String(man?.stdio_alternative || '').includes('npx -y @seasonkoh/webaz'))
+  ok('11c. shape 含 protocol_version + stdio 区分', man?.protocol_version === '2025-11-25' && String(man?.stdio_alternative || '').includes('npx -y @seasonkoh/webaz'))   // BUG-09:core protocol_version = SDK LATEST '2025-11-25'(原 2025-03-26 欠报);drift-proof 断言在 test-mcp-manifest-version
   const ICsrc = readFileSync('src/pwa/integration-contract.ts', 'utf8')
   const PUsrc = readFileSync('src/pwa/routes/public-utils.ts', 'utf8')
 const PUsrc2 = PUsrc
