@@ -76,9 +76,16 @@ ok('6d. second purchase has a DISTINCT intent_hash (folded instance) — not mer
 // ── 7. rule 5: response-loss recovery — key row already terminal/executed → RESPONSE_LOSS_RECONCILED ──
 const dL = mkDraft({ quantity: 3, item_units: 21_000_000, total_units: 21_000_000, payable_units: 21_000_000 })
 const L1 = createOrderSubmitRequest(db, { ...base, draftId: dL, idempotencyKey: 'idem-LOSS' }) as R
+// mirror the REAL executor: an executed submit sets executed_at AND moves its draft to 'ordered'
+//   (L1 PR-review fix: the idempotency_key pre-check runs BEFORE the draft-status guard, so this is reachable)
 db.prepare("UPDATE agent_permission_requests SET status='approved', executed_at=datetime('now'), execution_result=? WHERE id=?").run(JSON.stringify({ ok: true, order_id: 'ord_x' }), (L1 as { request_id: string }).request_id)
+db.prepare("UPDATE order_drafts SET status='ordered', order_id='ord_x' WHERE id=?").run(dL)
 const L2 = createOrderSubmitRequest(db, { ...base, draftId: dL, idempotencyKey: 'idem-LOSS' }) as R
-ok('7. retry after executed (lost response) → RESPONSE_LOSS_RECONCILED, same request_id (no 2nd order path)', L2.ok === true && (L2 as { duplicate_reason?: string }).duplicate_reason === 'RESPONSE_LOSS_RECONCILED' && (L2 as { request_id: string }).request_id === (L1 as { request_id: string }).request_id)
+ok('7. retry after execution (draft now ordered, lost response) → RESPONSE_LOSS_RECONCILED, same request_id (no 2nd order path)', L2.ok === true && (L2 as { duplicate_reason?: string }).duplicate_reason === 'RESPONSE_LOSS_RECONCILED' && (L2 as { request_id: string }).request_id === (L1 as { request_id: string }).request_id)
+// same key + a DIFFERENT payload after execution still → IDEMPOTENCY_CONFLICT (never a 2nd order)
+const dL2 = mkDraft({ quantity: 7, item_units: 49_000_000, total_units: 49_000_000, payable_units: 49_000_000 })
+const L3 = createOrderSubmitRequest(db, { ...base, draftId: dL2, idempotencyKey: 'idem-LOSS' }) as R
+ok('7b. same key + different payload (post-exec) → IDEMPOTENCY_CONFLICT, no 2nd order', L3.ok === false && (L3 as { error_code: string }).error_code === 'IDEMPOTENCY_CONFLICT')
 
 // ── 8. dedup identity uses ONLY economic fields, never display text ──
 ok('8. intent_hash is identical for identical economics regardless of any display/title (economics-only)', orderSubmitIntentHash('buyer1', { product_id: 'prd1', seller_id: 'seller1', quantity: 1, unit_price_units: 7_000_000, item_units: 7_000_000, shipping_units: 0, donation_bps: 0, donation_units: 0, total_units: 7_000_000, payable_units: 7_000_000, currency: 'WAZ', payment_rail: 'escrow', dest_region: 'SG', anonymous_recipient: 0, product_title: 'X' } as Record<string, unknown>) === intentA)

@@ -844,6 +844,13 @@ jobs:
       - run: npm run test:mcp-quote-approval-ui
       - run: npm run test:mcp-order-timeline-ui
       - run: npm run test:mcp-schema-v2-contract
+      - run: npm run test:mcp-card-contract
+      - run: npm run test:mcp-uri-versioning
+      - run: npm run test:mcp-direct-tool-buttons
+      - run: npm run test:mcp-manifest-version
+      - run: npm run test:delivery-eta
+      - run: npm run test:eta-migration
+      - run: npm run test:eta-snapshot-flow
       - run: npm run test:bug08-idempotency
       - run: npm run test:bug08-second-purchase-widget-flow
       - run: npm run test:bug08-execution-revalidation

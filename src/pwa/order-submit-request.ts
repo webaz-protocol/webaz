@@ -130,8 +130,6 @@ export function createOrderSubmitRequest(db: Database.Database, args: {
   const nowIso = new Date().toISOString()
   const draft = db.prepare('SELECT * FROM order_drafts WHERE id = ? AND buyer_id = ?').get(draftId, humanId) as Record<string, unknown> | undefined
   if (!draft) return { ok: false, http: 404, error: '草稿不存在或不属于你', error_code: 'DRAFT_NOT_FOUND' }
-  if (String(draft.status) !== 'draft') return { ok: false, http: 409, error: `草稿状态为 ${String(draft.status)},不可提交`, error_code: 'DRAFT_NOT_AVAILABLE' }
-  if (String(draft.expires_at) <= nowIso) return { ok: false, http: 409, error: '草稿已过期(24h),请重新报价并建草稿', error_code: 'DRAFT_NOT_AVAILABLE' }
   const paramsHash = orderSubmitParamsHash(draft)
   // BUG-08:仅显式"再买一份"把 purchase_intent_instance 折入意图指纹,使同经济字段产生独立身份(绕过意图合并)。
   //   隐式路径(instance 为空)保持旧指纹 → 与既有行去重,零回归。
@@ -140,7 +138,9 @@ export function createOrderSubmitRequest(db: Database.Database, args: {
   // BUG-08 §一:重购目标(product_id + quantity)—— 供组件"再买一份"重新报价;不含地址/价格,由服务器重校验。
   const reorder = { reorder_product_id: String(draft.product_id), reorder_quantity: Number(draft.quantity) }
 
-  // ── 层 2:idempotency_key 优先(最强重试安全键;先于 draft/intent 判定)──
+  // ── 层 2:idempotency_key 优先(最强重试安全键)—— L1(PR 审查):必须【先于 draft 状态/过期闸门】判定。
+  //   否则响应丢失后重试:草稿已被执行推进到 'ordered' → status 闸门先返回 409,永远够不到 RESPONSE_LOSS_RECONCILED。
+  //   经济身份仍锁死:params_hash 含 draft_id → 同键异 payload 仍 IDEMPOTENCY_CONFLICT,一 draft 一单由 ux_orders_draft 兜底。
   if (idemKey) {
     const prior = findByIdemKey(db, humanId, idemKey)
     if (prior) {
@@ -149,6 +149,9 @@ export function createOrderSubmitRequest(db: Database.Database, args: {
       return { ok: true, request_id: String(prior.id), params_hash: String(prior.params_hash), intent_hash: intentHash, duplicate: true, duplicate_reason: terminalOrExecuted ? 'RESPONSE_LOSS_RECONCILED' : 'SAME_IDEMPOTENCY_KEY', duplicate_of: String(prior.id), purchase_intent_instance: instance, ...reorder }
     }
   }
+  // draft 状态/过期闸门在 idempotency_key 回放之后(新 draft 首次提交仍必须是 draft、未过期)。
+  if (String(draft.status) !== 'draft') return { ok: false, http: 409, error: `草稿状态为 ${String(draft.status)},不可提交`, error_code: 'DRAFT_NOT_AVAILABLE' }
+  if (String(draft.expires_at) <= nowIso) return { ok: false, http: 409, error: '草稿已过期(24h),请重新报价并建草稿', error_code: 'DRAFT_NOT_AVAILABLE' }
 
   // 至多重试一次:唯一撞车的对手若已过期,标记 expired 腾位后重插(索引只放行一条活跃行,竞态安全)。
   for (let attempt = 0; attempt < 2; attempt++) {
