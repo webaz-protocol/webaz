@@ -131,7 +131,8 @@ export function absolutizeApprovalUrls<T>(r: T): T {
   const abs = (u: unknown): unknown => (typeof u === 'string' && u.startsWith('/')) ? `${WEBAZ_API_URL}${u}` : u
   const obj = r as Record<string, unknown>
   if ('approval_url' in obj) obj.approval_url = abs(obj.approval_url)
-  if (Array.isArray(obj.requests)) for (const it of obj.requests) { if (it && typeof it === 'object' && 'approval_url' in (it as Record<string, unknown>)) (it as Record<string, unknown>).approval_url = abs((it as Record<string, unknown>).approval_url) }
+  if ('order_url' in obj) obj.order_url = abs(obj.order_url)   // A3-3:executed 订单深链同样绝对化(text-only Host + widget 数据渲染)
+  if (Array.isArray(obj.requests)) for (const it of obj.requests) { const o = it as Record<string, unknown>; if (it && typeof it === 'object') { if ('approval_url' in o) o.approval_url = abs(o.approval_url); if ('order_url' in o) o.order_url = abs(o.order_url) } }
   return r
 }
 
@@ -2786,8 +2787,8 @@ export async function handleSearch(args: Record<string, unknown>) {
   const hasSales = args.has_sales as 'true' | 'false' | undefined
   const sellerId = args.seller_id as string | undefined
   // MCP Token PR-1:默认 5 件(此前 10;agent 单页上限仍 200 需显式请求)—— 大结果走 next_cursor 翻页。
-  let limit = Math.floor(Number(args.limit ?? 5))
-  if (!Number.isFinite(limit) || limit < 1) limit = 5
+  let limit = Math.floor(Number(args.limit ?? 8))   // A3-3(R4-1):默认 5→8(=agent 浏览硬顶)。6-8 命中的小目录一页装完,
+  if (!Number.isFinite(limit) || limit < 1) limit = 8   //   杜绝"模型为展示翻页→宿主只突出末页卡(1 款)"的视觉覆盖事故。
   if (limit > 200) limit = 200
   const sortMode = (args.sort as string | undefined) ?? 'trending'
 
@@ -2810,7 +2811,12 @@ export async function handleSearch(args: Record<string, unknown>) {
     if (products.length) {
       // 路由 agent 模式已产出 Model Projection 信封(schema_version/sellers/products/next_cursor)——原样透传。
       const rec = recommendationPassthrough(args, products as Array<Record<string, unknown>>)   // B3:模型推荐【透传】,校验后回显(服务器不生成)
-      return { ...r, found: products.length, ...(rec ? { recommendation: rec } : {}) }
+      // A3-3:模型执行守则(照抄级,弱模型友好)。R4-1 实锤:为展示翻页会让宿主只突出末页卡。
+      const conduct = [
+        r.next_cursor ? 'Do NOT paginate for display — the card has its own 下一页; another call renders a NEW card that visually replaces this one. Only pass cursor if the buyer explicitly asks for more.' : null,
+        'The card already shows every product field — do not restate fields in prose; give only your conclusion / comparison / next step.',
+      ].filter(Boolean).join(' ')
+      return { ...r, found: products.length, ...(rec ? { recommendation: rec } : {}), model_conduct: conduct }
     }
     // ★ 可恢复建议(调用契约 PR-C:0 命中不再导向"无 query 全目录浏览" —— 那是本次事故的制度化根因;
     //   反转为导向【结构化 discover + 类目词表】)。strict 结果保持 0/[](不破 strict-match 不变量)。
@@ -3106,6 +3112,8 @@ export async function handleDiscover(args: Record<string, unknown>): Promise<Rec
   if (args.quantity !== undefined) body.quantity = args.quantity
   const r = await apiCall('/api/agent/discover', { method: 'POST', apiKey: cred.token, body })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_discover. Re-connect via OAuth so the grant carries the read scope, then retry.' }
+  // A3-3:discover 无卡模板 —— 引导模型转 search 出交互卡(而不是让宿主静态自渲染一面文字墙,R2 实锤)。
+  if (!('error' in r)) (r as Record<string, unknown>).display_hint = 'discover has NO interactive card. To SHOW buyable cards, follow up with webaz_search (query = the exact product title you picked); do not render these rows as a wall of text.'
   return r
 }
 

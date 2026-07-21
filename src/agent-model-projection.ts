@@ -451,6 +451,7 @@ export function projectQuoteConsumer(r: Record<string, unknown>, fx: FxView | nu
     expires_at: toIsoUtc(r.expires_at),
     display_expires_at: displayExpiresAt(toIsoUtc(r.expires_at)),   // A2:R2-2 裸 ISO 收口
     available_actions: typeof r.quote_token === 'string' ? ['create_draft'] : [],   // replay 无 token → 无可执行动作(诚实动作面,Codex H-2)
+    ...(typeof r.quote_token === 'string' ? { next_call: { tool: 'webaz_order_draft', arguments: { action: 'create', quote_token: r.quote_token } } } : {}),   // A3-3:照抄骨架(弱模型直接执行,零推导)
     disclosures: ['此报价不会扣款', '此报价不会锁定库存', '只有通过 Passkey 批准后才会创建正式订单'],
   }
 }
@@ -476,6 +477,7 @@ export function projectDraftConsumer(d: Record<string, unknown>, fx: FxView | nu
     expires_at: toIsoUtc(d.expires_at),
     display_expires_at: displayExpiresAt(toIsoUtc(d.expires_at)),   // A2
     available_actions: statusCode === 'draft' ? ['submit_request'] : [],
+    ...(statusCode === 'draft' && d.draft_id ? { next_call: { tool: 'webaz_submit_order_request', arguments: { draft_id: d.draft_id } } } : {}),   // A3-3:照抄骨架
     disclosures: ['草稿不会扣款、不锁库存,24 小时过期', '提交后需真人 Passkey 批准才创建正式订单'],
   }
 }

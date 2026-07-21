@@ -271,6 +271,29 @@ function renderBody(oai, out){
         ap.appendChild(ao)
         var ac=el('button','mini','复制审批链接'); ac.addEventListener('click',function(){ doCopy(state.approval.url,ac,ae) }); ap.appendChild(ac)
       }
+      // A3-3(Holden):支付回来点一下看状态 —— 就地刷新审批状态(R3-2 同款三级兜底);executed 给订单号+打开订单页(order_url 为服务端数据)。
+      if(typeof oai.callTool==='function'){
+        var ast=el('div','meta','(完成 Passkey 后点下方按钮查看订单状态)')
+        var aslot=el('div',null,null)
+        var arf=el('button','mini','查看最新状态')
+        arf.addEventListener('click',onceGuard(function(){
+          ast.textContent='查询中…'
+          callWebazTool(oai,'webaz_approval_requests',{action:'get',request_id:state.approval.request_id}).then(function(res){
+            var d=res.structuredContent||{}
+            if(!d.display_status&&!d.status&&res&&res.structuredContent===undefined){ ast.textContent='查询失败,稍后重试或打开审批页查看'; return }
+            if(d.error){ ast.textContent='查询失败('+String(d.error_code||d.error).slice(0,40)+'),可打开审批页查看'; return }
+            var st=d.display_status||((d.status&&typeof d.status==='object')?(d.status.label||d.status.code):String(d.status||''))
+            ast.textContent='状态:'+(st||'未知 —— 可打开审批页查看')
+            aslot.textContent=''
+            if(d.order_url){
+              var vo=el('button','mini','打开订单页')
+              vo.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,String(d.order_url)) }catch(e){ op=false } if(!op){ doCopy(String(d.order_url),vo,null) } }))
+              aslot.appendChild(vo)
+            }
+          })
+        },1500))
+        ap.appendChild(arf); ap.appendChild(ast); ap.appendChild(aslot)
+      }
       root.appendChild(ap)
     }
     if(state.hint){   // fail-visible 手动路径:一句可复制发给模型的话 —— 任何宿主上按钮不生效都能继续
