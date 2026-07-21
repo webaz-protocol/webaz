@@ -26,7 +26,7 @@ function renderBody(oai, out){
   //   stLabel = display text (v1 string shows the raw code, unchanged; v2 shows the localized label).
   //   stCode  = canonical machine code for branch/button gating (never inferred from the label).
   //   qtyText = display-only positive integer (the charged amount is price.amount_minor, not this).
-  function stLabel(s){ return (s&&typeof s==='object')?String(s.label||s.label_en||s.code||''):String(s||'') }
+  function stLabel(s){ if(s&&typeof s==='object'){ return webazLocale()==='en' ? String(s.label_en||s.label||s.code||'') : String(s.label||s.label_en||s.code||'') } return String(s||'') }
   function stCode(s){ return (s&&typeof s==='object')?String(s.code||''):String(s||'') }
   // BUG-06 quantity safety: an invalid/corrupt quantity is NEVER shown as ×1. qtyOk = strict positive
   //   safe integer (number OR a pure-digit string); qtyBad = server said invalid (quantity_valid===false)

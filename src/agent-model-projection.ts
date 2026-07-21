@@ -40,23 +40,23 @@ export function stripEmpty(v: unknown): unknown {
   return v === null ? undefined : v
 }
 
-export interface DecisionFlag { code: string; severity: 'info' | 'warning'; label: string }
+export interface DecisionFlag { code: string; severity: 'info' | 'warning'; label: string; label_en?: string }
 
 /** 服务端事实性决策标签(§15:风险事实由服务器给,推荐判断留给模型)。 */
 export function productDecisionFlags(p: Record<string, unknown>): DecisionFlag[] {
   const flags: DecisionFlag[] = []
   const sellerCreated = p.seller_created_at ? new Date(String(p.seller_created_at).replace(' ', 'T') + 'Z').getTime() : NaN
   if (Number.isFinite(sellerCreated) && Date.now() - sellerCreated <= 90 * 86400_000) {
-    flags.push({ code: 'NEW_SELLER', severity: 'info', label: '新卖家(≤90 天)' })
+    flags.push({ code: 'NEW_SELLER', severity: 'info', label: '新卖家(≤90 天)', label_en: 'New seller (≤90 d)' })
   }
   const sales = Number(p.sales_count ?? p.completion_count) || 0
-  if (sales === 0) flags.push({ code: 'NO_SALES_HISTORY', severity: 'warning', label: '暂无成交记录' })
+  if (sales === 0) flags.push({ code: 'NO_SALES_HISTORY', severity: 'warning', label: '暂无成交记录', label_en: 'No sales yet' })
   const disputeLosses = Number(p.dispute_loss_count) || 0
-  if (disputeLosses > 0) flags.push({ code: 'DISPUTE_LOSSES', severity: 'warning', label: `卖家有 ${disputeLosses} 次争议败诉` })
+  if (disputeLosses > 0) flags.push({ code: 'DISPUTE_LOSSES', severity: 'warning', label: `卖家有 ${disputeLosses} 次争议败诉`, label_en: `${disputeLosses} dispute loss(es)` })
   const stock = Number(p.stock)
-  if (Number.isFinite(stock) && stock > 0 && stock <= 3) flags.push({ code: 'LOW_STOCK', severity: 'info', label: '库存少' })
-  if (p.fragile) flags.push({ code: 'FRAGILE', severity: 'info', label: '易碎品' })
-  if (Number(p.trial_quota_remaining) > 0) flags.push({ code: 'TRIAL_AVAILABLE', severity: 'info', label: '有测评免单名额' })
+  if (Number.isFinite(stock) && stock > 0 && stock <= 3) flags.push({ code: 'LOW_STOCK', severity: 'info', label: '库存少', label_en: 'Low stock' })
+  if (p.fragile) flags.push({ code: 'FRAGILE', severity: 'info', label: '易碎品', label_en: 'Fragile' })
+  if (Number(p.trial_quota_remaining) > 0) flags.push({ code: 'TRIAL_AVAILABLE', severity: 'info', label: '有测评免单名额', label_en: 'Free-trial slot' })
   return flags.slice(0, 4)
 }
 
@@ -577,6 +577,7 @@ export function projectOrderTimelineConsumer(r: Record<string, unknown>, fx: FxV
   const amountMinor = Number(o.amount) ? Math.round(Number(o.amount) * 1_000_000) : null
   const returns = Array.isArray(refund.return_requests) ? refund.return_requests as Array<Record<string, unknown>> : []
   const railBadge = rail === 'direct_p2p' ? '直付(WebAZ 不托管本金)' : '模拟托管测试订单 — 不代表真实 USDC 或法币托管'
+  const railBadgeEn = rail === 'direct_p2p' ? 'Direct pay (WebAZ holds no principal)' : 'Simulated escrow test order — not real USDC or fiat custody'
   return {
     schema_version: SCHEMA_ORDER_TIMELINE,   // BUG-06 v2: add type; quantity coerced to a positive integer (was `?? null`); status already an object
     type: 'order_timeline',
@@ -589,7 +590,7 @@ export function projectOrderTimelineConsumer(r: Record<string, unknown>, fx: FxV
     status: statusView(o.status),
     next_actor: o.next_actor ?? null,
     deadline: o.deadline ? { iso: toIsoUtc(o.deadline), note: 'render in the viewer local timezone' } : null,
-    payment_rail: rail, rail_badge: railBadge,
+    payment_rail: rail, rail_badge: railBadge, rail_badge_en: railBadgeEn,
     ...(r.incremental ? { incremental: r.incremental } : {}),
     timeline: (Array.isArray(r.timeline) ? r.timeline as Array<Record<string, unknown>> : []).map(t => ({
       from: t.from ?? null, to_status: statusView(t.to), actor: t.actor_role ?? null, at: toIsoUtc(t.at),

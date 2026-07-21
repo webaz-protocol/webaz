@@ -77,14 +77,15 @@ const SEARCH_OUT = {
   fx: { rates: { SGD: 1.29 }, stale: false }, dest_region: 'SG', destination: { region: 'SG' },
   sellers: { s1: { name: 'Holden' } }, next_cursor: null,
   products: [
-    { id: 'p1', title: 'Widget A', price: { display: '11.5 USDC', amount_minor: 11500000 }, seller_ref: 's1', stock_status: 'low_stock', estimated_days: { SG: 12, all: 12 }, display_eta: '约12天', return_days: 7, warranty_days: 0, handling_hours: 72, sales_count: 0, decision_flags: [], summary: 'x' },
+    { id: 'p1', title: 'Widget A', price: { display: '11.5 USDC', amount_minor: 11500000 }, seller_ref: 's1', stock_status: 'in_stock', estimated_days: { SG: 12, all: 12 }, display_eta: '约12天', return_days: 7, warranty_days: 0, handling_hours: 72, sales_count: 0, decision_flags: [{ code: 'NEW_SELLER', label: '新卖家(≤90 天)', label_en: 'New seller (≤90 d)', severity: 'info' }, { code: 'NO_SALES_HISTORY', label: '暂无成交记录', label_en: 'No sales yet', severity: 'warning' }], summary: 'x' },
     { id: 'p2', title: 'Widget B', price: { display: '9.2 USDC', amount_minor: 9200000 }, seller_ref: 's1', stock_status: 'in_stock', estimated_days: 12, return_days: 7, warranty_days: 0, handling_hours: 72, sales_count: 0, decision_flags: [] },
   ],
   recommendation: { product_id: 'p1', reason: 'best value' },
 }
 const enText = renderEnAndScan(PRODUCT_RESULTS_BODY_JS, SEARCH_OUT)
 const cjkHits = enText.split('').filter(t => CJK.test(t))
-ok('I18N-EN ProductResults search page renders ZERO widget-authored CJK under en locale', cjkHits.length === 0, 'leaked: ' + JSON.stringify(cjkHits.slice(0, 8)) + ' | text=' + enText.slice(0, 200))
+ok('I18N-EN ProductResults renders ZERO CJK under en (incl. server decision_flags via label_en)', cjkHits.length === 0, 'leaked: ' + JSON.stringify(cjkHits.slice(0, 8)) + ' | text=' + enText.slice(0, 200))
+ok('I18N-EN server decision_flags shown in English (label_en picked under en)', /New seller/.test(enText) && /No sales yet/.test(enText))
 
 // ── 静态全扫锁:三张卡 body 里【每个】CJK 单引号字面量都必须是 L('zh','en') 的 zh 半边 ──
 //    (无需渲染 harness 即可捕获 QuoteApproval/OrderTimeline 的任何漏译:未包裹的中文串一律不允许)

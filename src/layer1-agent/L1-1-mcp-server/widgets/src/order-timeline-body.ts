@@ -41,8 +41,8 @@ function renderBody(oai, out){
   box.appendChild(el('div','h',(out.product&&out.product.title)||String(out.order_id||'')))
   box.appendChild(el('div','price',(out.price&&out.price.display)||''))
   if(out.fiat_estimate) box.appendChild(el('div','fiat',out.fiat_estimate.display+(out.fiat_estimate.stale?L('(近似汇率)','(approx. rate)'):'')))
-  box.appendChild(el('div','badge',String(out.rail_badge||'')))
-  box.appendChild(el('div','st',(out.status&&out.status.label)||''))
+  box.appendChild(el('div','badge',String((webazLocale()==='en'?(out.rail_badge_en||out.rail_badge):out.rail_badge)||'')))
+  box.appendChild(el('div','st',(out.status&&(webazLocale()==='en'?(out.status.label_en||out.status.label):out.status.label))||''))
   if(out.next_actor) row(box,L('下一责任方','Next actor'),String(out.next_actor))
   if(out.deadline&&out.deadline.iso) row(box,L('截止时间','Deadline'),localTime(out.deadline.iso))
   var lg=out.logistics||{}
@@ -54,7 +54,7 @@ function renderBody(oai, out){
   if(lg.shipping_est_days!=null) row(box,L('当前物流预计','Current logistics ETA'),String(lg.shipping_est_days)+L('天',' days'))
   if(lg.tracking) row(box,L('物流单号','Tracking no.'),String(lg.tracking))
   var tl=el('div','tl')
-  ;(out.timeline||[]).forEach(function(t){ tl.appendChild(el('div',null,localTime(t.at)+' · '+((t.to_status&&t.to_status.label)||'')+(t.actor?'('+t.actor+')':''))) })
+  ;(out.timeline||[]).forEach(function(t){ tl.appendChild(el('div',null,localTime(t.at)+' · '+((t.to_status&&(webazLocale()==='en'?(t.to_status.label_en||t.to_status.label):t.to_status.label))||'')+(t.actor?'('+t.actor+')':''))) })
   box.appendChild(tl)
   if(out.refund){
     var w=el('div','warn')
