@@ -184,7 +184,7 @@ function renderBody(oai, out){
       if(d.error){ statusLine.textContent=L('状态:查询失败(','Status: check failed (')+String(d.error_code||d.error).slice(0,48)+L(')—— 可在 webaz.xyz 审批页查看',') — view it on the webaz.xyz approval page'); return }
       var st=d.status||(d.request&&d.request.status)||''
       var oid=d.executed_order_id||(d.request&&d.request.executed_order_id)||''
-      statusLine.textContent=L('状态:','Status: ')+(stLabel(st)||L('未知 —— 可在 webaz.xyz 审批页查看','unknown — view on the webaz.xyz approval page')); orderSlot.textContent=''   // BUG-06: live read may carry a string OR a v2 object — normalize both
+      statusLine.textContent=L('状态:','Status: ')+(apprStatusText(st,d.display_status||(d.request&&d.request.display_status))||L('未知 —— 可在 webaz.xyz 审批页查看','unknown — view on the webaz.xyz approval page')); orderSlot.textContent=''   // BUG-06: live read carries a bare machine code (approval get) OR a v2 object — apprStatusText normalizes+localizes both
       if(stCode(st)==='executed'&&oid&&typeof oai.callTool==='function'){
         var vo=el('button','btn',L('查看订单 ','View order ')+String(oid).slice(0,10)+'…')
         vo.addEventListener('click',onceGuard(function(){   // F4:此卡渲染 approval;订单时间线属另一卡 → 打开 webaz.xyz 订单页(fail-visible),不发丢弃的 callTool

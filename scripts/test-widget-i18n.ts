@@ -20,7 +20,7 @@ function evalWith(openaiLocale: string | undefined, navLang: string | undefined)
     setTimeout, clearTimeout, Promise, URL, console, JSON, Math, String, Number, Object, Array, isFinite,
   }
   vm.createContext(sandbox)
-  vm.runInContext(__WIDGET_COMPAT_JS + '\nthis.etaDisplay=etaDisplay; this.webazLocale=webazLocale;', sandbox)
+  vm.runInContext(__WIDGET_COMPAT_JS + '\nthis.etaDisplay=etaDisplay; this.webazLocale=webazLocale; this.apprStatusText=apprStatusText; this.railNoteText=railNoteText;', sandbox)
   return sandbox
 }
 
@@ -41,6 +41,19 @@ ok('en: etaDisplay number → ~12 days (no CJK)', etaEn(12) === '~12 days' && !C
 ok('en: etaDisplay region map → ~12 days', etaEn({ SG: 12, all: 12 }, 'SG') === '~12 days')
 ok('en: etaDisplay null → English, no CJK', !CJK.test(etaEn(null)) && etaEn(null).length > 0)
 ok('en: range → 3–5 days (no CJK)', etaEn({ estimated_min_days: 3, estimated_max_days: 5 }) === '3–5 days')
+
+// apprStatusText:approval get 的 status 是裸机器码 + zh display_status(无 _en 投影)——客户端本地化锁
+//   (审计 Finding-1 回归锁:QuoteApproval 实时刷新曾直接渲染裸码 'pending';现走单一 apprStatusText 双语)
+const aEn = en.apprStatusText as (s: unknown, dz?: unknown) => string
+const aZh = zh.apprStatusText as (s: unknown, dz?: unknown) => string
+ok('appr: en bare code pending → English (no CJK, not raw code)', aEn('pending', '待批准') === 'Pending approval' && !CJK.test(aEn('pending', '待批准')))
+ok('appr: en executed → English', aEn('executed', '已执行') === 'Executed — real order created')
+ok('appr: zh bare code → server display_status (byte-unchanged)', aZh('pending', '待批准') === '待批准')
+ok('appr: en unknown code → falls back to display_status (never blank)', aEn('weird_code', '奇怪') === '奇怪')
+ok('appr: v2 object {label,label_en} → label_en under en / label under zh', aEn({ code: 'pending', label: '待批准', label_en: 'Pending approval' }) === 'Pending approval' && aZh({ code: 'pending', label: '待批准', label_en: 'Pending approval' }) === '待批准')
+const rEn = en.railNoteText as (r: unknown, z?: unknown) => string
+ok('rail: en direct_p2p → English no-custody note (no CJK)', /WebAZ holds no principal/.test(rEn('direct_p2p', 'zh')) && !CJK.test(rEn('direct_p2p', 'zh')))
+ok('rail: zh → server zhFallback (byte-unchanged)', (zh.railNoteText as (r: unknown, z?: unknown) => string)('direct_p2p', '买家直接向卖家付款') === '买家直接向卖家付款')
 
 // navigator.language 兜底(非 ChatGPT 宿主,无 window.openai.locale)
 const enNav = evalWith(undefined, 'en-GB')

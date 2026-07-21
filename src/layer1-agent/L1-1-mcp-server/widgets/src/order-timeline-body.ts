@@ -60,7 +60,7 @@ function renderBody(oai, out){
     var w=el('div','warn')
     w.appendChild(el('b',null,L('退款/退货','Refund/return')))
     ;(out.refund.requests||[]).forEach(function(x){ w.appendChild(el('div',null,String(x.status)+' · '+((x.amount&&x.amount.display)||'')+' · '+String(x.created_at||''))) })
-    w.appendChild(el('div','meta',webazLocale()==='en'?(String(out.payment_rail)==='direct_p2p'?'The protocol recorded the liability outcome; principal is not held by WebAZ; the actual refund is settled between buyer and seller':'Simulated escrow rail: refunds release from simulated escrow per the dispute/return outcome — not real USDC or fiat fund flow'):String(out.refund.note||'')))
+    w.appendChild(el('div','meta',(webazLocale()==='en'&&out.payment_rail)?(String(out.payment_rail)==='direct_p2p'?'The protocol recorded the liability outcome; principal is not held by WebAZ; the actual refund is settled between buyer and seller':'Simulated escrow rail: refunds release from simulated escrow per the dispute/return outcome — not real USDC or fiat fund flow'):String(out.refund.note||'')))
     box.appendChild(w)
   }
   var btns=el('div','rowbtn')
