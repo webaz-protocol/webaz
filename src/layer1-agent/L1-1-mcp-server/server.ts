@@ -2749,9 +2749,12 @@ export async function handleSearch(args: Record<string, unknown>) {
   // 口令 / anchor 直达(AI Match 语义):@code → /api/anchor/:code/lookup 精确解析单品,复用 A4 exact-first 投影成卡片。
   //   仅接线已有端点,不改匹配语义;无效/归档/无在售商品 → 诚实 found:0 + 引导(宁缺毋滥)。
   {
-    const rawAnchor = typeof args.anchor === 'string' ? args.anchor.trim() : ''
+    const stripAt = (x: string): string => x.replace(/^@/, '').trim()
+    const rawAnchor = typeof args.anchor === 'string' ? stripAt(args.anchor.trim()) : ''
     const q0 = typeof args.query === 'string' ? args.query.trim() : ''
-    const cand = rawAnchor || (/^@?[a-z0-9]{6,20}$/i.test(q0) ? q0 : '')   // 显式 anchor 参数优先;query 为裸 @code 形态时兜底识别
+    // 显式 anchor 参数(形态校验通过)优先;query 【必须带 @ 前缀】才当口令 —— 避免把 "tissue" 这类
+    //   6-20 字单词关键词误劫持成口令查询(审计前置修:普通关键词永远走正常搜索/discover)。
+    const cand = (/^[a-z0-9]{6,20}$/i.test(rawAnchor) ? rawAnchor : '') || (/^@[a-z0-9]{6,20}$/i.test(q0) ? stripAt(q0) : '')
     if (cand) {
       if (toolBackend('webaz_search') !== 'network') return { error: 'anchor lookup is a network-mode surface (registry lives on webaz.xyz)', error_code: 'ANCHOR_REQUIRES_NETWORK' }
       const code = cand.replace(/^@/, '')

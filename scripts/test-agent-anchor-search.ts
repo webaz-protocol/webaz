@@ -41,8 +41,10 @@ try {
   ok('AN-1 explicit anchor param → exact single product, matched_by:anchor', r1.matched_by === 'anchor' && Array.isArray(r1.products) && (r1.products as unknown[]).length === 1 && (r1.products as Array<{id:string}>)[0].id === PROD.id)
   ok('AN-1b anchor result carries NO pagination (no cursor/more_url)', !r1.next_cursor && !r1.more_url && r1.total_count === 1)
 
-  const r2 = await handleSearch({ query: 'tinama47' })   // 裸 @code 在 query 里
-  ok('AN-2 bare code in query is recognized as anchor', r2.matched_by === 'anchor' && (r2.products as unknown[]).length === 1)
+  const r2 = await handleSearch({ query: '@tinama47' })   // query 带 @ 前缀 → 当口令
+  ok('AN-2 @-prefixed code in query is recognized as anchor', r2.matched_by === 'anchor' && (r2.products as unknown[]).length === 1)
+  const r2b = await handleSearch({ query: 'tinama47' })   // 单词无 @ → 绝不当口令(不劫持普通关键词)
+  ok('AN-2b bare word WITHOUT @ is NOT an anchor (no hijack of keyword search)', r2b.matched_by !== 'anchor')
 
   const r3 = await handleSearch({ anchor: 'tinaold9' })
   ok('AN-3 retired anchor → honest found:0 + archived note', r3.found === 0 && r3.matched_by === 'anchor_not_found' && /archived|归档/.test(JSON.stringify(r3.recovery)))
