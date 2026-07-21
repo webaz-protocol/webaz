@@ -37,7 +37,7 @@ const listVia = async (opts: Record<string, unknown>): Promise<Array<{ name: str
 //   余量 ≤9% —— 静默抬顶(不真瘦身)会立刻撞余量检查,改动必须显式且可 review。
 // PR-5 显式抬顶(可 review 的正当增长):draft/submit 两个 outputSchema + QuoteAndApproval
 // outputTemplate 元数据 ≈ +2.5KB(buyer 41,764 / full 106,199 实测)。余量仍 ≤9%。
-const CEILINGS = { buyer: 44_100, seller: 42_500, full: 110_000 }   // A3-1:+55B 为 5 个 outputTemplate 的版本化哈希段(宿主模板缓存击穿的结构性成本,非描述膨胀);buyer 顶棚 44000→44100 登记式上调
+const CEILINGS = { buyer: 44_300, seller: 42_500, full: 110_000 }   // 口令/anchor 直达参数(真新能力,非描述膨胀):buyer 44100→44300 登记式上调   // A3-1:+55B 为 5 个 outputTemplate 的版本化哈希段(宿主模板缓存击穿的结构性成本,非描述膨胀);buyer 顶棚 44000→44100 登记式上调
 const utf8 = (v: unknown): number => Buffer.byteLength(JSON.stringify(v), 'utf8')
 for (const surface of ['buyer', 'seller', 'full'] as const) {
   const tools = await listVia({ isolated: true, surface })

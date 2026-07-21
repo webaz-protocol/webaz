@@ -700,6 +700,7 @@ Returns structuredContent (webaz.product_search.model.v1): decision fields + dec
       type: 'object',
       properties: {
         query:              { type: 'string', description: 'Search keyword (product name or description)' },
+        anchor:             { type: 'string', description: 'WebAZ 口令 / creator anchor (e.g. "@tinama47" or "tinama47") → the exact product it tags. Extract the code from text like "匹配口令 @tinama47".' },
         category:           { type: 'string', description: 'Category filter (optional)' },
         max_price:          { type: 'number', description: 'Max price filter (optional)' },
         min_return_days:    { type: 'number', description: 'Min return days (optional, e.g. 7 = only ≥7-day return)' },
@@ -2744,6 +2745,45 @@ export async function handleSearch(args: Record<string, unknown>) {
       return { error: 'result_handle detail fetch is a network-mode surface (handles are issued by webaz.xyz search)', error_code: 'RESULT_HANDLE_INVALID' }
     }
     return await apiCall('/api/products/result-fetch', { method: 'POST', body: { result_handle: args.result_handle, selected_ids: args.selected_ids, full_terms: args.full_terms === true } })
+  }
+  // 口令 / anchor 直达(AI Match 语义):@code → /api/anchor/:code/lookup 精确解析单品,复用 A4 exact-first 投影成卡片。
+  //   仅接线已有端点,不改匹配语义;无效/归档/无在售商品 → 诚实 found:0 + 引导(宁缺毋滥)。
+  {
+    const stripAt = (x: string): string => x.replace(/^@/, '').trim()
+    const rawAnchor = typeof args.anchor === 'string' ? stripAt(args.anchor.trim()) : ''
+    const q0 = typeof args.query === 'string' ? args.query.trim() : ''
+    // 显式 anchor 参数(形态校验通过)优先;query 【必须带 @ 前缀】才当口令 —— 避免把 "tissue" 这类
+    //   6-20 字单词关键词误劫持成口令查询(审计前置修:普通关键词永远走正常搜索/discover)。
+    const cand = (/^[a-z0-9]{6,20}$/i.test(rawAnchor) ? rawAnchor : '') || (/^@[a-z0-9]{6,20}$/i.test(q0) ? stripAt(q0) : '')
+    if (cand) {
+      if (toolBackend('webaz_search') !== 'network') return { error: 'anchor lookup is a network-mode surface (registry lives on webaz.xyz)', error_code: 'ANCHOR_REQUIRES_NETWORK' }
+      const code = cand.replace(/^@/, '')
+      const apiUrl = process.env.WEBAZ_API_URL ?? 'https://webaz.xyz'
+      let look: Record<string, unknown> | null = null; let httpStatus = 0
+      try {
+        const resp = await fetch(`${apiUrl}/api/anchor/${encodeURIComponent(code)}/lookup`, { signal: AbortSignal.timeout(5000) })
+        httpStatus = resp.status; look = await resp.json().catch(() => null) as Record<string, unknown> | null
+      } catch { /* network error → 下方按未找到处理 */ }
+      if (!look || look.found !== true || httpStatus === 410 || look.status === 'retired' || look.status === 'reclaimable') {
+        const note = httpStatus === 410 || look?.hint === 'archived'
+          ? 'This anchor is archived (its product was delisted). Ask the seller for a current link, or search by full product title. / 该口令已归档(商品下架),请向卖家索取新链接或用完整标题搜索。'
+          : 'No such anchor (or it was reset). Check the code, or search by full product title / webaz_discover. / 口令不存在或已重置,请核对,或用完整标题 / webaz_discover 搜索。'
+        return { schema_version: SCHEMA_PRODUCT_SEARCH, mode: 'agent', found: 0, count: 0, products: [], matched_by: 'anchor_not_found', recovery: { reason: 'anchor_not_found', anchor: code, note } }
+      }
+      const prod = look.product as Record<string, unknown> | null
+      if (!prod || !prod.id || !prod.title) {
+        return { schema_version: SCHEMA_PRODUCT_SEARCH, mode: 'agent', found: 0, count: 0, products: [], matched_by: 'anchor_no_product', recovery: { reason: 'anchor_no_active_product', anchor: code, note: 'This anchor has no purchasable product right now. / 该口令暂无在售关联商品。' } }
+      }
+      // 复用已部署 A4 exact-first:按精确标题搜,再按 target id 过滤(兜底同名碰撞)。零新投影。
+      const aqs = new URLSearchParams({ mode: 'agent', limit: '5' }); aqs.set('q', String(prod.title))
+      const r = await apiCall('/api/products?' + aqs.toString()).catch(() => null) as Record<string, unknown> | null
+      const all = (r && !('error' in r) ? (r.products as Array<Record<string, unknown>> | undefined) : undefined) ?? []
+      const hit = all.filter(pp => String(pp.id) === String(prod.id))
+      if (r && hit.length) {
+        return { ...r, products: hit, count: hit.length, found: hit.length, total_count: hit.length, next_cursor: undefined, more_url: undefined, matched_by: 'anchor', anchor: code }
+      }
+      return { schema_version: SCHEMA_PRODUCT_SEARCH, mode: 'agent', found: 0, count: 0, products: [], matched_by: 'anchor_stale', recovery: { reason: 'anchor_target_unavailable', anchor: code, note: 'The product this anchor points to is not purchasable now (delisted / out of stock). / 口令指向的商品当前不可购买(已下架或售罄)。' } }
+    }
   }
   // 外链/粘贴文本模式 → relay 到 webaz.xyz/api/search-by-link（生产数据有索引）
   if (args.paste_text || args.external_link) {
