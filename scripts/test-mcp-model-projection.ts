@@ -307,6 +307,12 @@ try {
   }
   ok('T-1 trending pages with new-seller slot injection cover ALL 8 products (duplicates allowed, permanent loss forbidden)', seen.size === 8, `seen=${[...seen].sort().join(',')}`)
 
+  // A3-5:approval_requests 必须走结构化信封(此前只有 content 文本 → widget 一级消费踩空,live 实锤「状态:未知」)。
+  //   sandbox 下返回 GRANT_REQUIRES_NETWORK 错误体 —— 错误体同样必须出现在 structuredContent(isError 信封)。
+  const ar = await client.callTool({ name: 'webaz_approval_requests', arguments: { action: 'get', request_id: 'apr_x' } }) as Record<string, unknown>
+  const arsc = ar.structuredContent as Record<string, unknown> | undefined
+  ok('A-1 approval_requests carries structuredContent (A3-5 envelope; error body included)', !!arsc && typeof arsc.error_code === 'string', JSON.stringify(ar).slice(0, 200))
+
   console.log(`  [tools/list] total serialized: ${JSON.stringify(tools).length}B (outputSchema on ${tools.filter(t => t.outputSchema).length} tools)`)
 
   // ── [sandbox 子进程] 本地路径投影 ──────────────────────────────────────────────────────────

@@ -2248,6 +2248,15 @@ const STRUCTURED_RESULT_TOOLS: Record<string, { summarize: (r: Record<string, un
     return r.draft_id ? projectDraftConsumer(r, await fxView(), regionToCurrency) : r
   } },
   webaz_submit_order_request: { summarize: summarizeSubmitResult, project: async r => r.request_id ? projectSubmitConsumer(r) : r },
+  // A3-5(live 根因):此前 approval_requests 响应只有 content 文本无 structuredContent —— widget/审批卡的
+  //   一级消费天然踩空,只能靠脆弱的 content[].text 解析。补结构化信封后,【已渲染的旧卡】的「查看最新状态」
+  //   立即恢复工作(无需任何模板刷新)。projection 不再加工:read 端点已是零 PII 投影(approval-requests-read)。
+  webaz_approval_requests: { summarize: r => {
+    if (Array.isArray(r.requests)) return `${(r.requests as unknown[]).length} approval request(s). Details in structuredContent. / 审批请求列表见结构化结果。`
+    const st = r.display_status ?? r.status ?? ''
+    const oid = r.executed_order_id ? ` — order ${String(r.executed_order_id)}` : ''
+    return `Approval ${String(r.request_id ?? '')}: ${String(st)}${oid}. / 审批状态见结构化结果。`
+  } },
 }
 
 // Tools that only make sense on a LOCAL (stdio) transport and must NOT be advertised on the remote
