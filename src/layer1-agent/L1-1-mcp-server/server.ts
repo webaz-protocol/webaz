@@ -2169,18 +2169,23 @@ const uiResourceMeta = (kind: 'legacy' | 'std'): Record<string, unknown> => kind
   ? { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' }
   : { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } }
 const uiResourceMime = (kind: 'legacy' | 'std'): string => kind === 'legacy' ? 'text/html+skybridge' : 'text/html;profile=mcp-app'
-/** B-2(Round1b 稳定 outputTemplate):只把标准桥 ui.resourceUri 版本化(内容哈希缓存击穿);
- *  openai/outputTemplate 保持【稳定裸别名】—— ChatGPT(legacy skybridge)读它,裸别名不随 widget 内容
- *  哈希变化,故改 widget 内容部署后已连接会话缓存的引用仍解析到当前 widget,不再"Failed to fetch template"需重连。
- *  裸别名的 ReadResource 服务端永远返回当前 HTML(ui:// 资源经 MCP 协议读取,无 CDN 中间层);版本化 URI 仍可解析(历史引用)。 */
+/** A3(B-2 v2,2026-07-21 live 定稿):outputTemplate【回到版本化 URI】。
+ *  裸别名方案的实测代价:ChatGPT 按 URI 缓存模板内容(TTL 数小时),裸别名 URI 不变 → 部署新 widget 后
+ *  宿主继续渲染旧模板,修复无法触达(A2.1/A2.2 两次 live 实锤)。版本化 URI 内容变则 URI 变 → tools/list
+ *  刷新后宿主必取新版;历史/过期 URI 由 KNOWN_STALE_WIDGET_HASHES 显式 allowlist 兜底返回当前内容
+ *  (widget-template-compat.ts,生产已验证三代 hash),绝不 404 —— 即时更新与永不断链两全。
+ *  裸别名仍保留为 ReadResource 只读别名(旧 tools/list 缓存期间照常工作)。 */
 function withVersionedUris<T extends { _meta?: unknown }>(tools: T[]): T[] {
   return tools.map(t => {
     const m = t._meta as Record<string, unknown> | undefined
     if (!m) return t
     const ui = m.ui as Record<string, unknown> | undefined
     const ru = typeof ui?.resourceUri === 'string' ? ui.resourceUri : undefined
-    if (!ru || !UI_BARE_TO_VERSIONED[ru]) return t
-    return { ...t, _meta: { ...m, ui: { ...ui, resourceUri: UI_BARE_TO_VERSIONED[ru] } } }   // outputTemplate 故意不改 → 保持裸别名
+    const ot = typeof m['openai/outputTemplate'] === 'string' ? m['openai/outputTemplate'] as string : undefined
+    if ((!ru || !UI_BARE_TO_VERSIONED[ru]) && (!ot || !UI_BARE_TO_VERSIONED[ot])) return t
+    return { ...t, _meta: { ...m,
+      ...(ot && UI_BARE_TO_VERSIONED[ot] ? { 'openai/outputTemplate': UI_BARE_TO_VERSIONED[ot] } : {}),
+      ...(ru && UI_BARE_TO_VERSIONED[ru] ? { ui: { ...ui, resourceUri: UI_BARE_TO_VERSIONED[ru] } } : {}) } }
   })
 }
 

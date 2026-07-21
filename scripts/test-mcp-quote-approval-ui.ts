@@ -180,8 +180,8 @@ try {
   ok('17/18b. 组件自包含 + 零请求能力词元 + 零可执行 sink + 零 WAZ', html.includes('toolOutput') && !REQUEST_TOKENS.test(html) && !SINK_TOKENS.test(html) && !html.includes(' WAZ'))
   ok('W-3s. 组件覆盖三形态 + 重复警告 + Passkey 边界 + openExternal 锁死 webaz.xyz 前缀', html.includes('order_quote.model.v1') && html.includes('order_draft.model.v1') && html.includes('order_approval.model.v1') && html.includes('duplicate_warning') && html.includes('Passkey') && html.includes('不会直接执行') && html.includes("'https://webaz.xyz/'"))
   const tools = (await c.listTools()).tools as Array<{ name: string; _meta?: Record<string, unknown> }>
-  // B-2(Round1b):outputTemplate 改稳定裸别名(部署不失效);版本化仍在标准桥 ui.resourceUri。
-  ok('W-4s. 三工具描述符都挂 quote-approval outputTemplate(稳定裸别名 B-2)', ['webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request'].every(n => String(tools.find(t => t.name === n)?._meta?.['openai/outputTemplate'] ?? '') === 'ui://widget/webaz-quote-approval.html'))
+  // A3(B-2 v2):outputTemplate 回版本化(宿主模板缓存击穿);过期 URI 走 allowlist 兜底。
+  ok('W-4s. 三工具描述符都挂 quote-approval outputTemplate(版本化 A3)', ['webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request'].every(n => /^ui:\/\/widget\/webaz-quote-approval\.[0-9a-f]{10}\.html$/.test(String(tools.find(t => t.name === n)?._meta?.['openai/outputTemplate'] ?? ''))))
 
   // ── H-4 锁:投影器失败(敌意 getter)→ PROJECTION_FAILED 降级,原始协议对象零外泄 ──
   {
