@@ -156,8 +156,16 @@ function renderBody(oai, out){
       bar.appendChild(b)
     })
     if(out.next_cursor&&typeof oai.callTool==='function'){
+      // A3-8(live):最后一颗 F4 类 fire-and-forget —— 下一页现在就地消费并整页替换(返回列表指向新页)。
       var more=el('button',null,'下一页')
-      more.addEventListener('click',onceGuard(function(){ oai.callTool('webaz_search',{cursor:out.next_cursor,limit:5}) }))
+      more.addEventListener('click',onceGuard(function(){
+        more.textContent='加载中…'
+        callWebazTool(oai,'webaz_search',{cursor:String(out.next_cursor),limit:8}).then(function(res){
+          var sc=res.structuredContent
+          if(res.ok&&sc&&sc.schema_version==='webaz.product_search.model.v1'&&(sc.products||[]).length){ __lastSearch=sc; renderBody(oai,sc); return }
+          more.textContent='下一页(加载失败,可重试)'
+        })
+      },3000))
       bar.appendChild(more)
     }
     root.appendChild(bar)

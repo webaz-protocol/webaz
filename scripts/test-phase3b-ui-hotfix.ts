@@ -136,6 +136,10 @@ ok('A3-6 quote/approval panels persist via host widgetState (probe + restore)', 
 // A3-7(R4-1 兜底):小目录自动取齐 —— 一次性、就地合并、按 id 去重
 ok('A3-7 small-catalog auto-fill (once, merge by id, ≤8 only)', /__autoFilled=true/.test(PRODUCT_RESULTS_WIDGET_HTML) && /tc&&tc<=8/.test(PRODUCT_RESULTS_WIDGET_HTML) && /if\(!seen\[pp\.id\]\) out\.products\.push\(pp\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
+// A3-8:下一页必须消费(零 fire-and-forget 终局锁 —— 全卡不允许裸 oai.callTool( 出现)
+ok('A3-8 下一页 consumes via callWebazTool + page replace', /callWebazTool\(oai,'webaz_search',\{cursor:String\(out\.next_cursor\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && /'加载中…'/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-8 ZERO bare fire-and-forget callTool left in ProductResults', !/[^.]oai\.callTool\('webaz_search',\{cursor/.test(PRODUCT_RESULTS_WIDGET_HTML))
+
 // ── Self-containment lock: ProductResults must stay URL-literal-free + zero request-capability tokens (incl. in comments) ──
 // A3-2b:ProductResults 获得与审批卡同级的 LINK compat(打开审批页)。零 URL 字面量锁【保持】;
 //   请求词元锁收窄为非链接词元(href 仅允许出现在 compat-link 的 safeWebazHref/openExternal 面)。
