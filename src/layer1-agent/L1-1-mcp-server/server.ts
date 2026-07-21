@@ -722,7 +722,7 @@ Returns structuredContent (webaz.product_search.model.v1): decision fields + dec
         ship_to: { type: 'string', description: 'Ship-to (province/city); auto-filters unshippable' },
         seller_id: { type: 'string', description: 'Filter to one seller' },
         cursor: { type: 'string', description: 'Pagination cursor (from previous next_cursor)' },
-        recommend_id: { type: 'string', description: "Assistant's pick to highlight (a product_id from this result). Display-only, non-authoritative. Pass your pick — card shows 🌟 badge + reason." },
+        recommend_id: { type: 'string', description: "Assistant's pick to highlight (a product_id from this result; card shows a 🌟 badge + your reason). Display-only, non-authoritative." },
         recommend_reason: { type: 'string', description: 'Short reason for recommend_id (≤140 chars).' },
       },
     },
