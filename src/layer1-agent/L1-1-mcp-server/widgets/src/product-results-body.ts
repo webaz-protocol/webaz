@@ -2,6 +2,7 @@
 
 var __lastSearch=null   // B1:缓存上一次搜索页 out —— 供详情页【← 返回列表】原地回退,不再固定住
 var __autoFillAttempts=0   // 审计F1:跨渲染尝试上限 —— 终止性不再依赖服务端隐式不变量
+var __pageHistory=[]   // A3-11(Holden):上一页 —— 服务端仅前向 cursor,页历史存卡片侧(容量 10)
 function renderBody(oai, out){
   oai = oai || {}
   var root = document.getElementById('root')
@@ -167,6 +168,11 @@ function renderBody(oai, out){
       b.addEventListener('click',function(){ state.sort=s[0]; render() })   // 本地排序,零模型调用
       bar.appendChild(b)
     })
+    if(__pageHistory.length){   // A3-11:上一页(本地弹栈还原,零调用)
+      var prevBtn=el('button',null,'上一页')
+      prevBtn.addEventListener('click',function(){ var pv=__pageHistory.pop(); if(pv){ __lastSearch=pv; renderBody(oai,pv) } })
+      bar.appendChild(prevBtn)
+    }
     if(out.next_cursor&&typeof oai.callTool==='function'){
       // A3-8(live):最后一颗 F4 类 fire-and-forget —— 下一页现在就地消费并整页替换(返回列表指向新页)。
       var more=el('button',null,'下一页')
@@ -174,7 +180,7 @@ function renderBody(oai, out){
         more.textContent='加载中…'
         callWebazTool(oai,'webaz_search',{cursor:String(out.next_cursor),limit:8}).then(function(res){
           var sc=res.structuredContent
-          if(res.ok&&sc&&sc.schema_version==='webaz.product_search.model.v1'&&(sc.products||[]).length){ __lastSearch=sc; renderBody(oai,sc); return }
+          if(res.ok&&sc&&sc.schema_version==='webaz.product_search.model.v1'&&(sc.products||[]).length){ __pageHistory.push(out); if(__pageHistory.length>10) __pageHistory.shift(); __lastSearch=sc; renderBody(oai,sc); return }
           more.textContent='下一页(加载失败,可重试)'
         })
       },16000))   // 审计info(b):守卫窗 ≥ 15s 超时,与审批刷新同纪律
