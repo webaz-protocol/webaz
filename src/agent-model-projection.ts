@@ -60,11 +60,55 @@ export function productDecisionFlags(p: Record<string, unknown>): DecisionFlag[]
   return flags.slice(0, 4)
 }
 
+// ─── A2 display 线:展示串一律服务端算好(纯字符串或 null),widget 只渲染、绝不解析领域对象 ───────
+
+/** 预计送达展示串。入参与 widget etaDisplay 同域(number/数字串/范围串/区域 map/JSON 串/promised_eta);
+ *  无法推导时返回 null(widget 端自兜「暂未提供」),绝不返回对象/JSON。 */
+export function displayEta(v: unknown, region?: string | null): string | null {
+  if (v == null) return null
+  if (typeof v === 'number') return Number.isFinite(v) ? `约${v}天` : null
+  if (typeof v === 'string') {
+    const t = v.trim()
+    if (!t) return null
+    if (/^\d+$/.test(t)) return `约${t}天`
+    if (/^\d+\s*[-–~]\s*\d+$/.test(t)) return t.replace(/\s*[-–~]\s*/, '–') + '天'
+    if (t.startsWith('{') || t.startsWith('[')) { try { return displayEta(JSON.parse(t), region) } catch { return null } }
+    return t
+  }
+  if (typeof v === 'object') {
+    const o = v as Record<string, unknown>
+    if (o.legacy_missing) return '下单时未记录预计配送时间'
+    const lo = o.estimated_min_days ?? o.min, hi = o.estimated_max_days ?? o.max
+    if (lo != null && hi != null) return lo === hi ? `约${lo}天` : `${lo}–${hi}天`
+    if (o.estimated_days_text != null) { const et = String(o.estimated_days_text).trim(); return et ? `约${et}天` : null }
+    const r = region != null ? String(region).toUpperCase() : null
+    let pick: unknown = null
+    if (r && o[r] != null) pick = o[r]
+    else if (o.all != null) pick = o.all
+    else if (o.default != null) pick = o.default
+    else { for (const k of Object.keys(o)) { if (o[k] != null && (typeof o[k] === 'number' || /^\d+$/.test(String(o[k])))) { pick = o[k]; break } } }
+    if (pick != null) return (typeof pick === 'number' || /^\d+$/.test(String(pick))) ? `约${pick}天` : String(pick)
+    return null
+  }
+  return null
+}
+
+/** 到期时间展示串(固定新加坡时间 UTC+8,display-only;协议字段仍是 ISO UTC)。 */
+export function displayExpiresAt(iso: unknown): string | null {
+  if (typeof iso !== 'string' || !iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  const sg = new Date(d.getTime() + 8 * 3600_000)
+  const p2 = (n: number): string => String(n).padStart(2, '0')
+  return `${sg.getUTCFullYear()}-${p2(sg.getUTCMonth() + 1)}-${p2(sg.getUTCDate())} ${p2(sg.getUTCHours())}:${p2(sg.getUTCMinutes())}(新加坡时间)`
+}
+
 /**
  * 单商品 Model Projection(目标 ≤ ~350B/件)。输入是已 enrich 的行(含 seller_name / sales_count /
- * agent_summary / estimated_days 已解析等);输出【字面键】,与输入行解耦。
+ * agent_summary / estimated_days 已解析等);输出【字面键】,与输入行解耦。destRegion 供 display_eta
+ * 解析区域 map(可缺省 → 落 all/default)。
  */
-export function projectProductModel(p: Record<string, unknown>): Record<string, unknown> {
+export function projectProductModel(p: Record<string, unknown>, destRegion?: string | null): Record<string, unknown> {
   const price = Number(p.price) || 0
   const stock = Number(p.stock) || 0
   let amountMinor: number | null = null
@@ -79,6 +123,7 @@ export function projectProductModel(p: Record<string, unknown>): Record<string, 
     category: p.category == null ? null : String(p.category),
     handling_hours: p.handling_hours == null ? null : Number(p.handling_hours),
     estimated_days: p.estimated_days ?? null,
+    display_eta: displayEta(p.estimated_days ?? null, destRegion),   // A2:纯字符串或 null,widget 首选
     return_days: p.return_days == null ? null : Number(p.return_days),
     warranty_days: p.warranty_days == null ? null : Number(p.warranty_days),
     seller_ref: p.seller_id == null ? null : String(p.seller_id),
@@ -399,10 +444,12 @@ export function projectQuoteConsumer(r: Record<string, unknown>, fx: FxView | nu
     amounts: { item, shipping, other },
     destination: { region: dest.region ?? null, summary: dest.address_summary ?? null },
     shipping: { supported: ship.supported !== false, handling_hours: ship.handling_hours ?? null, estimated_days: ship.estimated_days ?? null },
+    display_eta: displayEta(ship.estimated_days ?? null, (dest.region as string | null) ?? null),   // A2:纯字符串或 null
     return_days: terms.return_days ?? null, warranty_days: terms.warranty_days ?? null,
     payment_rail: pay.rail ?? 'escrow', rail_note: railHonesty(pay.rail),
     stock_reserved: false, economic_action_executed: false,
     expires_at: toIsoUtc(r.expires_at),
+    display_expires_at: displayExpiresAt(toIsoUtc(r.expires_at)),   // A2:R2-2 裸 ISO 收口
     available_actions: typeof r.quote_token === 'string' ? ['create_draft'] : [],   // replay 无 token → 无可执行动作(诚实动作面,Codex H-2)
     disclosures: ['此报价不会扣款', '此报价不会锁定库存', '只有通过 Passkey 批准后才会创建正式订单'],
   }
@@ -427,6 +474,7 @@ export function projectDraftConsumer(d: Record<string, unknown>, fx: FxView | nu
     payment_rail: d.payment_rail ?? 'escrow', rail_note: railHonesty(d.payment_rail),
     stock_reserved: false, economic_action_executed: false,
     expires_at: toIsoUtc(d.expires_at),
+    display_expires_at: displayExpiresAt(toIsoUtc(d.expires_at)),   // A2
     available_actions: statusCode === 'draft' ? ['submit_request'] : [],
     disclosures: ['草稿不会扣款、不锁库存,24 小时过期', '提交后需真人 Passkey 批准才创建正式订单'],
   }
