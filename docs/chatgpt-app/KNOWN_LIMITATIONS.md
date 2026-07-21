@@ -63,3 +63,8 @@ Committed so far this phase: **BUG-01** (full product terms) and the **Model-Whe
   mcp_request_id) are recorded when the component/tool supplies them; wiring the widget to emit them is
   incremental (the server-side correlation — request_id / draft_id / idempotency_key_hash /
   intent_hash_prefix / duplicate_reason / purchase_intent_instance — is populated now).
+- **F2 — anonymous/free-text search recall (Round-1 live finding, NOT a Phase-3A regression):** `webaz_search`
+  is strict-match (no fuzzy, default limit 5, unconstrained-browse cap 8; 0-hit → recovery → PWA #discover). Live
+  dropship products sit on `category_id="cat_default"` (unpublished category), so free-text queries — even exact
+  titles — return 0. Fix is data/config (assign published categories/keywords to products) + an optional matcher
+  review; tracked separately from the Phase-3B UI hotfix (F3/F4/F5), NOT changed in that PR.

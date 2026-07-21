@@ -64,6 +64,46 @@ const WIDGET_COMPAT_CORE_JS = `
     return false
   }
   function onceGuard(fn,ms){ var busy=false; return function(){ if(busy)return; busy=true; try{ fn.apply(null,arguments) }finally{ setTimeout(function(){busy=false},ms||1500) } } }
+  // F3(Round1 UI hotfix):统一 ETA formatter —— 商品卡/报价卡/时间线共用,永不显示原始 JSON。
+  //   入参可为 number / 数字串 / 范围串("3-5") / 范围对象 / 区域→天数 map({"SG":12,"all":12}) / promised_eta v1 / null。
+  //   优先目的区域 → all/default → 首个数值;输出「约12天」「3–5天」「暂未提供预计配送时间」;绝不伪造具体日期。
+  function etaDisplay(v, region){
+    if(v==null) return '暂未提供预计配送时间'
+    if(typeof v==='number'){ return isFinite(v)?('约'+v+'天'):'暂未提供预计配送时间' }
+    if(typeof v==='string'){ var t=v.trim(); if(!t) return '暂未提供预计配送时间'
+      if(/^\\d+$/.test(t)) return '约'+t+'天'
+      if(/^\\d+\\s*[-–~]\\s*\\d+$/.test(t)) return t.replace(/\\s*[-–~]\\s*/,'–')+'天'
+      return t }
+    if(typeof v==='object'){
+      if(v.legacy_missing) return '下单时未记录预计配送时间'
+      var lo=(v.estimated_min_days!=null)?v.estimated_min_days:v.min, hi=(v.estimated_max_days!=null)?v.estimated_max_days:v.max
+      if(lo!=null&&hi!=null) return (lo===hi)?('约'+lo+'天'):(lo+'–'+hi+'天')
+      if(v.estimated_days_text!=null){ var et=String(v.estimated_days_text).trim(); return et?('约'+et+'天'):'暂未提供预计配送时间' }
+      var r=(region!=null)?String(region).toUpperCase():null, pick=null
+      if(r&&v[r]!=null) pick=v[r]; else if(v.all!=null) pick=v.all; else if(v.default!=null) pick=v.default
+      else { for(var k in v){ if(v[k]!=null&&(typeof v[k]==='number'||/^\\d+$/.test(String(v[k])))){ pick=v[k]; break } } }
+      if(pick!=null){ return (typeof pick==='number'||/^\\d+$/.test(String(pick)))?('约'+pick+'天'):String(pick) }
+      return '暂未提供预计配送时间'
+    }
+    return '暂未提供预计配送时间'
+  }
+  // F4(Round1 UI hotfix):统一工具调用 —— legacy(window.openai.callTool)与标准桥 facade.callTool 都返回 promise,
+  //   单一 consume 路径就地消费 structuredContent(不依赖宿主重挂载/重渲染)。归一 {ok,structuredContent,error,timeout,sourceBridge};
+  //   15s 超时;调用期 __inlineConsuming>0 抑制标准桥 tool-result 通知的重复渲染(同一结果只渲染一次)。正常路径【绝不】 sendFollowUp。
+  var __inlineConsuming=0
+  function webazConsume(r){ return (r&&typeof r==='object'&&r.structuredContent)?r.structuredContent:r }
+  function callWebazTool(oai, name, args){
+    if(!oai||typeof oai.callTool!=='function'){ return Promise.resolve({ok:false,error:'HOST_COMPONENT_TOOL_CALL_UNAVAILABLE',sourceBridge:'none'}) }
+    var bridge=(oai._webazBridge==='standard')?'standard':'legacy'
+    __inlineConsuming++
+    var settled=false
+    function done(v){ if(!settled){ settled=true; setTimeout(function(){ if(__inlineConsuming>0)__inlineConsuming-- },0) } return v }
+    var to=new Promise(function(res){ setTimeout(function(){ res(done({ok:false,error:'TIMEOUT',timeout:true,sourceBridge:bridge})) }, 15000) })
+    var call
+    try{ call=Promise.resolve(oai.callTool(name,args)).then(function(r){ var sc=webazConsume(r); return done({ok:!!sc&&!sc.error,structuredContent:sc,error:(sc&&sc.error)||null,sourceBridge:bridge}) },function(e){ return done({ok:false,error:(e&&(e.message||e.code))||'CALL_REJECTED',sourceBridge:bridge}) }) }
+    catch(e){ return Promise.resolve(done({ok:false,error:'CALL_THREW',sourceBridge:bridge})) }
+    return Promise.race([call,to])
+  }
 `
 // openExternal 安全:仅放行 https + 精确主机 webaz.xyz + 默认端口 + 无 userinfo(URL 解析后逐字段
 // 比较,拒 javascript:/data:/协议相对/用户名注入);deep link 只由调用点从服务端权威字段构造。
@@ -111,13 +151,14 @@ const WIDGET_BRIDGE_STANDARD_JS = `
 `
 const WIDGET_BOOT_STANDARD_JS = `
   var __facade=null
-  function __onToolResult(r){ if(r&&r.structuredContent) renderBody(__facade, r.structuredContent) }
+  // F4:按钮就地消费(callWebazTool)期间 __inlineConsuming>0 → 跳过 tool-result 通知,避免同一结果被 promise 和通知渲染两次。
+  function __onToolResult(r){ if(__inlineConsuming>0) return; if(r&&r.structuredContent) renderBody(__facade, r.structuredContent) }
   var __br=makeStandardBridge(__onToolResult)
   __br.connect(600).then(function(){
     __facade={
-      // 单渲染源(Codex R1-2):CARD 工具的结果经 ui/notifications/tool-result 渲染 —— 调用方【不消费】本返回值,
-      //   response 不重复渲染,消除双渲染/乱序覆盖。§IV/§V:card-LESS 工具(approval_requests/order_chat)无 tool-result
-      //   通知,故返回底层 promise 供当前卡片【就地消费】结果(同 legacy window.openai.callTool 语义);guard .catch 防未处理拒绝。
+      _webazBridge:'standard',   // callWebazTool 据此标注 sourceBridge(仅日志/诊断)
+      // 双路径统一(Round1 F4):CARD 工具结果既可经 ui/notifications/tool-result 渲染,也可由按钮 callWebazTool 就地消费
+      //   本返回 promise;__inlineConsuming 去重保证同一结果只渲染一次(见 __onToolResult)。card-LESS 工具就地消费返回值。
       callTool:function(n,a){ var p=__br.callTool(n,a); try{ p.catch(function(){}) }catch(e){} return p },
       openExternal:function(o){ var u=o&&o.href; var h=(typeof safeWebazHref==='function')?safeWebazHref(u):null; if(h) __br.openLink(h).catch(function(){}) },
       sendFollowUpMessage:function(o){ __br.sendMessage((o&&o.prompt)||'').catch(function(){}) },
@@ -251,18 +292,40 @@ function renderBody(oai, out){
     }catch(e){}
     btn.textContent='请手动选择上面文字'
   }
+  // F4(Round1 UI hotfix):准备下单 = 结构化直调 webaz_quote_order → 【就地消费】结果,把商品卡切到报价态(§四.A)。
+  //   single-flight:进行中再点无效;成功→报价面板(真实金额/ETA/到期)+「创建草稿并提交审批」继续键;失败/超时→卡内错误 + 可复制手动路径。
+  //   宿主无 callTool → 唯一允许的 sendFollowUp 降级(§三:正常路径绝不 sendFollowUp)。绝不假装成功、绝不直达钱路(建单仍在 Passkey)。
   function prepareOrder(pid,title){
     var phrase='为「'+(title||pid)+'」准备下单(product_id='+pid+')'
-    // Phase-3A DIRECT_TOOL:优先结构化直调 webaz_quote_order(默认地址、数量1)→ 报价卡,零自然语言、零"模型选工具"。
-    //   宿主是否跨组件渲染报价卡属 LIVE_HOST_REQUIRED,故直调失败/不可用时降级为可复制 NL 指引(绝不把 NL 回传作为唯一实现,也绝不删兼容路径)。
-    var fired=false, freason=null
-    if(typeof oai.callTool==='function'){ try{ oai.callTool('webaz_quote_order',{product_id:pid,quantity:1}); fired=true }catch(e){ fired=false; freason='callTool_threw' } }
-    else { freason='host_no_callTool' }
-    // §II.7:NL fallback 只在宿主不支持组件直调时启用,且 fallback_reason 可观察(console,零 PII)。
-    if(!fired){ try{ if(freason) console.warn('[webaz-widget] prepare_order fallback_reason='+freason) }catch(e){}
-      try{ sendFollowUpCompat(oai,'请为该商品准备下单:webaz_quote_order 报价(数量 1)→ webaz_order_draft 建草稿 → webaz_submit_order_request 提交审批,最终由我 Passkey 批准。product_id='+pid) }catch(e){} }
-    state.hint={ text:(fired?'正在获取报价…若没有出现报价卡,请把这句话复制发给我:':'此宿主不支持一键操作;请把这句话复制发给我:'), phrase:phrase, fallback_reason:freason }
-    render()
+    if(typeof oai.callTool!=='function'){   // 宿主不支持组件直调 → fail-visible NL 降级(仅此情形)
+      try{ console.warn('[webaz-widget] prepare_order fallback_reason=HOST_COMPONENT_TOOL_CALL_UNAVAILABLE') }catch(e){}
+      try{ sendFollowUpCompat(oai,'请为该商品准备下单:webaz_quote_order 报价(数量 1)→ webaz_order_draft 建草稿 → webaz_submit_order_request 提交审批,最终由我 Passkey 批准。product_id='+pid) }catch(e){}
+      state.hint={ text:'此宿主不支持一键操作;请把这句话复制发给我:', phrase:phrase }; render(); return
+    }
+    if(state.busy) return   // single-flight:整个 promise 周期内二次点击不产生请求
+    state.busy=true; state.hint={ text:'正在获取报价…', phrase:null }; render()
+    callWebazTool(oai,'webaz_quote_order',{product_id:pid,quantity:1}).then(function(res){
+      state.busy=false
+      if(res.ok&&res.structuredContent){ state.quote={ pid:pid, title:title, sc:res.structuredContent }; state.hint=null; render(); return }
+      state.hint={ text:(res.timeout?'获取报价超时,请重试或把这句话复制发给我:':'获取报价失败('+String(res.error||'')+'),请重试或把这句话复制发给我:'), phrase:phrase }; render()
+    })
+  }
+  // 报价→草稿→提交 链(就地消费,single-flight);正式建单永远在 webaz.xyz 的 Passkey。绝不复用 token,幂等键由服务端兜底。
+  function continueToApproval(q){
+    if(state.busy) return; state.busy=true
+    var qsc=q.sc, qt=qsc&&qsc.quote_token
+    if(!qt){ state.busy=false; state.hint={ text:'报价缺少 quote_token,无法继续;请把这句话复制发给我:', phrase:'为「'+(q.title||q.pid)+'」准备下单(product_id='+q.pid+')' }; state.quote=null; render(); return }
+    state.stage='正在创建订单草稿…'; render()
+    callWebazTool(oai,'webaz_order_draft',{action:'create',quote_token:qt}).then(function(dr){
+      if(!dr.ok||!dr.structuredContent||!dr.structuredContent.draft_id){ state.busy=false; state.stage=null; state.hint={ text:(dr.timeout?'创建草稿超时':'创建草稿失败('+String(dr.error||'')+'')+',请重试或把这句话复制发给我:', phrase:'用这个报价创建订单草稿(quote_token='+String(qt)+')' }; render(); return }
+      var did=dr.structuredContent.draft_id
+      state.stage='正在提交 Passkey 审批…'; render()
+      callWebazTool(oai,'webaz_submit_order_request',{draft_id:did}).then(function(sr){
+        state.busy=false; state.stage=null
+        if(sr.ok&&sr.structuredContent&&sr.structuredContent.request_id){ state.approval=sr.structuredContent; state.quote=null; render(); return }
+        state.hint={ text:(sr.timeout?'提交超时':'提交失败('+String(sr.error||'')+'')+',请重试或把这句话复制发给我:', phrase:'提交这个草稿去 Passkey 审批(draft_id='+String(did)+')' }; render()
+      })
+    })
   }
   function openDetail(pid,title){
     var fired=false
@@ -291,6 +354,9 @@ function renderBody(oai, out){
       bar.appendChild(more)
     }
     root.appendChild(bar)
+    // F5(Round1 UI hotfix):卡片显式标注真实展示数 —— 卡片只展示严格匹配命中,绝不虚构;模型叙述的"找到N款/推荐"可能来自更广候选集(discover),两者口径不同。
+    var __shown=products.length, __total=(out.count!=null?out.count:__shown)
+    root.appendChild(el('div','note','精确匹配 · 本卡展示 '+__shown+' 款'+((__total>__shown)?('(共 '+__total+' 命中,翻页查看更多)'):'')+' —— 模型文字里的"找到/推荐 N 款"可能来自更广候选集,以本卡商品为准'))
     var list=products.slice()
     var priceOf=function(p){ return (p.price&&p.price.amount_minor)||0 }
     if(state.sort==='price_asc') list.sort(function(a,b){return priceOf(a)-priceOf(b)})
@@ -323,7 +389,7 @@ function renderBody(oai, out){
       c.appendChild(el('div','meta',(seller.name||'')+' · 已售 '+(p.sales_count||0)))
       var m=el('div','more')
       m.appendChild(el('div',null,p.summary||''))
-      m.appendChild(el('div','meta','退货 '+(p.return_days!=null?p.return_days+'天':'—')+' · 保修 '+(p.warranty_days!=null?p.warranty_days+'天':'—')+' · 发货 '+(p.handling_hours!=null?p.handling_hours+'h':'—')+' · 预计送达 '+(p.estimated_days!=null?String(p.estimated_days):'—')))
+      m.appendChild(el('div','meta','退货 '+(p.return_days!=null?p.return_days+'天':'—')+' · 保修 '+(p.warranty_days!=null?p.warranty_days+'天':'—')+' · 发货 '+(p.handling_hours!=null?p.handling_hours+'h':'—')+' · 预计送达 '+etaDisplay(p.estimated_days,(out.dest_region||(out.destination&&out.destination.region)))))   // F3:统一 formatter,不再 String(对象)
       c.appendChild(m)
       var row=el('div','row')
       var ex=el('button',null,isOpen?'收起':'展开')
@@ -339,7 +405,8 @@ function renderBody(oai, out){
       //   故 widget 绝不 callTool 它;发结构化 follow-up(携准确 product_id)由模型跑 报价→草稿→提交,正式建单永远在人类
       //   Passkey 路径。widget 绝不直达钱路/不建单/不动资金。点击即 disabled 防误触;幂等由服务端 intent_hash 唯一索引兜底。
       var pd=el('button','primary','准备下单')
-      pd.addEventListener('click',onceGuard(function(){ prepareOrder(p.id,p.title) }))   // fail-visible:永不永久卡,始终留可复制手动路径
+      if(state.busy) pd.disabled=true   // F4 single-flight:进行中禁用,防重复报价
+      pd.addEventListener('click',onceGuard(function(){ prepareOrder(p.id,p.title) }))   // 就地消费报价;失败留可复制手动路径
       row.appendChild(pd)
       var sel=el('button',null,state.selected[p.id]?'已选✓':'比较')
       sel.addEventListener('click',function(){ state.selected[p.id]=!state.selected[p.id]; render() })   // 本地选择
@@ -364,6 +431,23 @@ function renderBody(oai, out){
         t.appendChild(tr)
       })
       cmp.appendChild(t); root.appendChild(cmp)
+    }
+    if(state.quote){   // F4:报价就地态 —— 真实金额/ETA/到期 + 继续键(草稿→提交),不再"正在获取报价"永久卡
+      var qp=el('div','hint'); var qs=state.quote.sc||{}
+      qp.appendChild(el('span',null,'✓ 已获取报价:'+(state.quote.title||'')))
+      qp.appendChild(el('div','recreason',((qs.price&&qs.price.display)||'')+' · 预计送达 '+etaDisplay(qs.shipping&&qs.shipping.estimated_days,(qs.destination&&qs.destination.region))+(qs.expires_at?(' · 到期 '+String(qs.expires_at)):'')))
+      if(state.stage){ qp.appendChild(el('div','meta',state.stage)) }
+      else { var cb=el('button','mini','创建草稿并提交审批'); cb.addEventListener('click',function(){ continueToApproval(state.quote) }); qp.appendChild(cb) }
+      qp.appendChild(el('div','meta','报价不扣款 · 草稿不锁库存 · 正式建单需你在 webaz.xyz 用 Passkey 批准'))
+      root.appendChild(qp)
+    }
+    if(state.approval){   // F4:提交成功态 —— request_id + 可复制审批链接(去 webaz.xyz Passkey);ProductResults 无 openExternal,链接以文字给出
+      var ap=el('div','hint'); var asc=state.approval
+      ap.appendChild(el('span',null,'✓ 已提交审批(request_id='+String(asc.request_id||'').slice(0,12)+'…)。去 webaz.xyz 用 Passkey 批准:'))
+      var aurl='https://webaz.xyz/'+String(asc.approval_url||'').replace(/^\\//,'')
+      ap.appendChild(el('span','recreason',aurl))
+      var acp=el('button','mini','复制审批链接'); acp.addEventListener('click',function(){ doCopy(aurl,acp) }); ap.appendChild(acp)
+      root.appendChild(ap)
     }
     if(state.hint){   // fail-visible 手动路径:一句可复制发给模型的话 —— 任何宿主上按钮不生效都能继续
       var hb=el('div','hint'); hb.appendChild(el('span',null,state.hint.text))
@@ -455,7 +539,7 @@ function renderBody(oai, out){
     var s=out.shipping||{}
     row(box,'配送',(out.destination&&out.destination.summary)||'')
     row(box,'发货时限',s.handling_hours!=null?s.handling_hours+'h':'—')
-    row(box,'预计送达',s.estimated_days!=null?String(s.estimated_days):'—')
+    row(box,'预计送达',etaDisplay(s.estimated_days,(out.destination&&out.destination.region)))   // F3:统一 formatter,不再 String(对象)
     toggler(box,'展开退货与保修',function(b){ row(b,'退货期',out.return_days!=null?out.return_days+'天':'—'); row(b,'保修',out.warranty_days!=null?out.warranty_days+'天':'—') })
     row(box,'支付轨道',String(out.payment_rail||'escrow'))
     toggler(box,'展开风险与轨道说明',function(b){ b.appendChild(el('div','meta',out.rail_note||'')) })
@@ -465,7 +549,12 @@ function renderBody(oai, out){
     if(out.quote_token&&typeof oai.callTool==='function'){
       var b1=el('button','btn','创建订单草稿(不扣款)')
       if(qtyBad(out)){ b1.disabled=true; box.appendChild(b1); box.appendChild(el('div','warn','数量数据异常,无法创建草稿(quantity_error='+qtyErr(out)+')')) }   // BUG-06: never initiate a draft call on invalid quantity
-      else { b1.addEventListener('click',onceGuard(function(){ b1.disabled=true; var sent=false; try{ oai.callTool('webaz_order_draft',{action:'create',quote_token:out.quote_token}); sent=true }catch(e){} reenable(b1); actHint('用这个报价创建订单草稿(quote_token='+String(out.quote_token)+')', sent) })); box.appendChild(b1) }
+      else { b1.addEventListener('click',onceGuard(function(){ b1.disabled=true   // F4:就地消费结果 → 渲染草稿卡(同 widget renderBody 处理 draft schema);失败留可复制手动路径
+        callWebazTool(oai,'webaz_order_draft',{action:'create',quote_token:out.quote_token}).then(function(res){
+          if(res.ok&&res.structuredContent){ renderBody(oai,res.structuredContent); return }
+          b1.disabled=false; actHint('用这个报价创建订单草稿(quote_token='+String(out.quote_token)+')', false, (res.timeout?'创建草稿超时':'创建草稿失败:'+String(res.error||''))+',请重试或复制发我:')
+        })
+      })); box.appendChild(b1) }
     }
     disclosures(box,out.disclosures)
   } else if(sv==='webaz.order_draft.model.v1'||sv==='webaz.order_draft.model.v2'){
@@ -482,7 +571,12 @@ function renderBody(oai, out){
     if(stCode(out.status)==='draft'&&typeof oai.callTool==='function'){
       var b2=el('button','btn','提交 Passkey 审批(不会直接执行)')
       if(qtyBad(out)){ b2.disabled=true; box.appendChild(b2); box.appendChild(el('div','warn','数量数据异常,无法提交审批(quantity_error='+qtyErr(out)+')')) }   // BUG-06: never initiate a submit call on invalid quantity
-      else { b2.addEventListener('click',onceGuard(function(){ b2.disabled=true; var sent=false; try{ oai.callTool('webaz_submit_order_request',withTrace({draft_id:out.draft_id})); sent=true }catch(e){} reenable(b2); actHint('提交这个草稿去 Passkey 审批(draft_id='+String(out.draft_id)+')', sent) })); box.appendChild(b2) }
+      else { b2.addEventListener('click',onceGuard(function(){ b2.disabled=true   // F4:就地消费结果 → 渲染审批卡(approval schema);money 参数 withTrace 不变,仅新增结果消费
+        callWebazTool(oai,'webaz_submit_order_request',withTrace({draft_id:out.draft_id})).then(function(res){
+          if(res.ok&&res.structuredContent){ renderBody(oai,res.structuredContent); return }
+          b2.disabled=false; actHint('提交这个草稿去 Passkey 审批(draft_id='+String(out.draft_id)+')', false, (res.timeout?'提交超时':'提交失败:'+String(res.error||''))+',请重试或复制发我:')
+        })
+      })); box.appendChild(b2) }
     }
     disclosures(box,out.disclosures)
   } else if(sv==='webaz.order_approval.model.v1'||sv==='webaz.order_approval.model.v2'){
@@ -570,7 +664,10 @@ function renderBody(oai, out){
       statusLine.textContent='状态:'+(stLabel(st)||'未知'); orderSlot.textContent=''   // BUG-06: live read may carry a string OR a v2 object — normalize both
       if(stCode(st)==='executed'&&oid&&typeof oai.callTool==='function'){
         var vo=el('button','btn','查看订单 '+String(oid).slice(0,10)+'…')
-        vo.addEventListener('click',onceGuard(function(){ try{ oai.callTool('webaz_buyer_orders',{order_id:oid,full:true}) }catch(e){} }))
+        vo.addEventListener('click',onceGuard(function(){   // F4:此卡渲染 approval;订单时间线属另一卡 → 打开 webaz.xyz 订单页(fail-visible),不发丢弃的 callTool
+          var href='https://webaz.xyz/#order/'+encodeURIComponent(String(oid)); var op=false; try{ op=openWebaz(oai,href) }catch(e){ op=false }
+          actHint(href, op, (op?'已尝试打开订单页;若没弹出':'此宿主未能打开')+',复制到浏览器查看订单:')
+        }))
         orderSlot.appendChild(vo)
       }
     }
