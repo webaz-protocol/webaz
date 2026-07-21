@@ -60,7 +60,7 @@ function renderBody(oai, out){
     var w=el('div','warn')
     w.appendChild(el('b',null,L('退款/退货','Refund/return')))
     ;(out.refund.requests||[]).forEach(function(x){ w.appendChild(el('div',null,String(x.status)+' · '+((x.amount&&x.amount.display)||'')+' · '+String(x.created_at||''))) })
-    w.appendChild(el('div','meta',String(out.refund.note||'')))
+    w.appendChild(el('div','meta',String((webazLocale()==='en'?(out.refund.note_en||out.refund.note):out.refund.note)||'')))
     box.appendChild(w)
   }
   var btns=el('div','rowbtn')
@@ -116,5 +116,5 @@ function renderBody(oai, out){
   open.addEventListener('click',onceGuard(function(){ openWebaz(oai,'https://webaz.xyz/#order/'+encodeURIComponent(String(out.order_id||''))) }))
   btns.appendChild(open)
   box.appendChild(btns)
-  box.appendChild(el('div','meta',String(out.actions_note||'')))
+  box.appendChild(el('div','meta',String((webazLocale()==='en'?(out.actions_note_en||out.actions_note):out.actions_note)||'')))
 }export {}

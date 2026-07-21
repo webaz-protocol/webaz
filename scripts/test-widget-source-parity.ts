@@ -37,12 +37,12 @@ ok('P-3 webazConsume unwraps structuredContent', JSON.stringify(webazConsume({ s
 // P-4 content pins (round1b == A1; see header before touching)
 const uiVer = (html: string): string => createHash('sha256').update(html).digest('hex').slice(0, 10)
 const PINS: Array<[string, string, string]> = [
-  ['PRODUCT_RESULTS_WIDGET_HTML', uiVer(PRODUCT_RESULTS_WIDGET_HTML), '90fcef824f'],
-  ['PRODUCT_RESULTS_WIDGET_MCP_HTML', uiVer(PRODUCT_RESULTS_WIDGET_MCP_HTML), '19c11926ba'],
-  ['QUOTE_APPROVAL_WIDGET_HTML', uiVer(QUOTE_APPROVAL_WIDGET_HTML), '324582b212'],
-  ['QUOTE_APPROVAL_WIDGET_MCP_HTML', uiVer(QUOTE_APPROVAL_WIDGET_MCP_HTML), '727c11f0ea'],
-  ['ORDER_TIMELINE_WIDGET_HTML', uiVer(ORDER_TIMELINE_WIDGET_HTML), '6ed5bd5cd7'],
-  ['ORDER_TIMELINE_WIDGET_MCP_HTML', uiVer(ORDER_TIMELINE_WIDGET_MCP_HTML), '2b9f115fa6'],
+  ['PRODUCT_RESULTS_WIDGET_HTML', uiVer(PRODUCT_RESULTS_WIDGET_HTML), '6f2f2473c9'],
+  ['PRODUCT_RESULTS_WIDGET_MCP_HTML', uiVer(PRODUCT_RESULTS_WIDGET_MCP_HTML), '0172ebc7af'],
+  ['QUOTE_APPROVAL_WIDGET_HTML', uiVer(QUOTE_APPROVAL_WIDGET_HTML), 'd0a4332e11'],
+  ['QUOTE_APPROVAL_WIDGET_MCP_HTML', uiVer(QUOTE_APPROVAL_WIDGET_MCP_HTML), '6a5d17ca14'],
+  ['ORDER_TIMELINE_WIDGET_HTML', uiVer(ORDER_TIMELINE_WIDGET_HTML), '6b8aae0367'],
+  ['ORDER_TIMELINE_WIDGET_MCP_HTML', uiVer(ORDER_TIMELINE_WIDGET_MCP_HTML), '2e19789924'],
 ]
 for (const [name, got, want] of PINS) ok(`P-4 ${name} content hash pinned ${want} (got ${got})`, got === want)
 

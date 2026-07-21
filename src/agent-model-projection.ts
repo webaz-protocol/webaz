@@ -414,6 +414,11 @@ export function railHonesty(rail: unknown): string {
     ? '买家直接向卖家付款;WebAZ 不托管本金;实际付款方式和币种以确认页面为准'
     : '支付轨道:模拟托管测试 —— 本流程不代表真实 USDC 或法币结算'
 }
+export function railHonestyEn(rail: unknown): string {
+  return String(rail) === 'direct_p2p'
+    ? 'You pay the seller directly; WebAZ holds no principal; the actual method and currency are shown on the confirm page'
+    : 'Payment rail: simulated escrow test — this flow is not real USDC or fiat settlement'
+}
 
 const lineAmt = (r: Record<string, unknown>, code: string): number => {
   const li = Array.isArray(r.line_items) ? r.line_items as Array<Record<string, unknown>> : []
@@ -446,7 +451,7 @@ export function projectQuoteConsumer(r: Record<string, unknown>, fx: FxView | nu
     shipping: { supported: ship.supported !== false, handling_hours: ship.handling_hours ?? null, estimated_days: ship.estimated_days ?? null },
     display_eta: displayEta(ship.estimated_days ?? null, (dest.region as string | null) ?? null),   // A2:纯字符串或 null
     return_days: terms.return_days ?? null, warranty_days: terms.warranty_days ?? null,
-    payment_rail: pay.rail ?? 'escrow', rail_note: railHonesty(pay.rail),
+    payment_rail: pay.rail ?? 'escrow', rail_note: railHonesty(pay.rail), rail_note_en: railHonestyEn(pay.rail),
     stock_reserved: false, economic_action_executed: false,
     expires_at: toIsoUtc(r.expires_at),
     display_expires_at: displayExpiresAt(toIsoUtc(r.expires_at)),   // A2:R2-2 裸 ISO 收口
@@ -472,7 +477,7 @@ export function projectDraftConsumer(d: Record<string, unknown>, fx: FxView | nu
     price: { amount_minor: payable, currency: 'USDC', currency_exponent: 6, display: fmtUsdcMinor(payable) },
     ...(fiatEstimate(payable, dest.region, fx, regionToCcy) ? { fiat_estimate: fiatEstimate(payable, dest.region, fx, regionToCcy) } : {}),
     destination: { region: dest.region ?? null, summary: dest.address_summary ?? null },
-    payment_rail: d.payment_rail ?? 'escrow', rail_note: railHonesty(d.payment_rail),
+    payment_rail: d.payment_rail ?? 'escrow', rail_note: railHonesty(d.payment_rail), rail_note_en: railHonestyEn(d.payment_rail),
     stock_reserved: false, economic_action_executed: false,
     expires_at: toIsoUtc(d.expires_at),
     display_expires_at: displayExpiresAt(toIsoUtc(d.expires_at)),   // A2
@@ -603,9 +608,13 @@ export function projectOrderTimelineConsumer(r: Record<string, unknown>, fx: FxV
       note: rail === 'direct_p2p'
         ? '协议已记录责任结果;本金未由 WebAZ 托管;实际退款需由买卖双方完成'
         : '模拟托管轨:退款按争议/退货结果从模拟托管释放,不代表真实 USDC 或法币资金流',
+      note_en: rail === 'direct_p2p'
+        ? 'The protocol recorded the liability outcome; principal is not held by WebAZ; the actual refund is settled between buyer and seller'
+        : 'Simulated escrow rail: refunds release from simulated escrow per the dispute/return outcome — not real USDC or fiat fund flow',
     } } : {}),
     available_actions: Array.isArray(r.available_actions) ? (r.available_actions as Array<Record<string, unknown>>).map(a => ({ action: a.action, executor: a.executor })) : [],
     actions_note: '服务器权威动作面 — 人类动作在 webaz.xyz 订单页完成(高风险动作需 Passkey)',
+    actions_note_en: 'Server-authoritative action surface — human actions happen on the webaz.xyz order page (high-risk actions need Passkey)',
   }
 }
 

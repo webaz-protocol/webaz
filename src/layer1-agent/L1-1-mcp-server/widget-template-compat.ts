@@ -23,12 +23,12 @@
  */
 
 export const KNOWN_STALE_WIDGET_HASHES: Readonly<Record<string, readonly string[]>> = {
-  'webaz-products':            ['c4bd5e13bb', '48c4e4cb06', '2992d4bf3f', 'f1688b621b', 'bc1a887d88', 'e87312858c', '8edeb847f3', '212893345f', 'bfff65173b', '62376d0873', '1cdf9b1eb9', '36df144409', '31780e8528', 'eec0686d7d'],
-  'webaz-products-mcp':        ['ea12ee851a', 'b4d9cb133c', '3b8c59d367', 'b9b8e577a8', '334fe638ce', '4d42fe0623', '9e1ebdac31', '97a9101d7c', '2a96b6e19a', 'f7acafe890', 'f20a304140', '2d204e46da', 'fd21fdaee4', 'dd693cdbe6'],
-  'webaz-quote-approval':      ['6a2e96dfb1', '4e4d16d232', 'a1bb13f641', '176e2de4e7', '82c5fb2d46', 'ddfed02d36', '4530e921c8'],
-  'webaz-quote-approval-mcp':  ['9f5a3ea6f7', '2395886fc7', 'efba433258', 'fb414f1c0c', 'a22bdea384', '86c5302705', '181c26cdcf'],
-  'webaz-order-timeline':      ['5ea1e0d365', '1e1d9f3a1b', '4c3103b1f4', '9f0cf3187f'],
-  'webaz-order-timeline-mcp':  ['46aba2059d', 'ec18a7d9da', 'fdca310a4f', 'b8f9bcb00b'],
+  'webaz-products':            ['c4bd5e13bb', '2992d4bf3f', 'f1688b621b', 'bc1a887d88', 'e87312858c', '8edeb847f3', '212893345f', 'bfff65173b', '62376d0873', '1cdf9b1eb9', '36df144409', '31780e8528', 'eec0686d7d', '90fcef824f'],
+  'webaz-products-mcp':        ['b4d9cb133c', '3b8c59d367', 'b9b8e577a8', '334fe638ce', '4d42fe0623', '9e1ebdac31', '97a9101d7c', '2a96b6e19a', 'f7acafe890', 'f20a304140', '2d204e46da', 'fd21fdaee4', 'dd693cdbe6', '19c11926ba'],
+  'webaz-quote-approval':      ['6a2e96dfb1', '4e4d16d232', 'a1bb13f641', '176e2de4e7', '82c5fb2d46', 'ddfed02d36', '4530e921c8', '324582b212'],
+  'webaz-quote-approval-mcp':  ['9f5a3ea6f7', '2395886fc7', 'efba433258', 'fb414f1c0c', 'a22bdea384', '86c5302705', '181c26cdcf', '727c11f0ea'],
+  'webaz-order-timeline':      ['5ea1e0d365', '1e1d9f3a1b', '4c3103b1f4', '9f0cf3187f', '6ed5bd5cd7'],
+  'webaz-order-timeline-mcp':  ['46aba2059d', 'ec18a7d9da', 'fdca310a4f', 'b8f9bcb00b', '2b9f115fa6'],
 }
 
 const VERSIONED_WIDGET_URI_RE = /^ui:\/\/widget\/([a-z0-9][a-z0-9-]*)\.([0-9a-f]{10})\.html$/

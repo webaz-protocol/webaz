@@ -319,7 +319,7 @@ function renderBody(oai, out){
             if(!d.display_status&&!d.status&&!d.error&&d.content&&d.content.length){ try{ var __t=d.content[0]&&d.content[0].text; if(__t&&__t.charAt(0)==='{'){ var __j=JSON.parse(__t); if(__j&&(__j.display_status||__j.status||__j.error)) d=__j } }catch(e){} }
             if(!d.display_status&&!d.status&&res&&res.structuredContent===undefined){ ast.textContent=L('查询失败,稍后重试或打开审批页查看','Check failed — retry later or open the approval page'); return }
             if(d.error){ ast.textContent=L('查询失败(','Check failed (')+String(d.error_code||d.error).slice(0,40)+L('),可打开审批页查看','), open the approval page'); return }
-            var st=(webazLocale()==='en'&&d.status&&d.status.label_en)?d.status.label_en:(d.display_status||((d.status&&typeof d.status==='object')?(d.status.label||d.status.code):String(d.status||'')))
+            var st=(webazLocale()==='en'&&(d.display_status_en||(d.status&&d.status.label_en)))?(d.display_status_en||d.status.label_en):(d.display_status||((d.status&&typeof d.status==='object')?(d.status.label||d.status.code):String(d.status||'')))
             ast.textContent=L('状态:','Status: ')+(st||L('未知 —— 可打开审批页查看','unknown — open the approval page'))
             aslot.textContent=''
             if(d.order_url){
