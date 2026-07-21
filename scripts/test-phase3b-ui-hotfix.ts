@@ -88,7 +88,7 @@ ok('F4 standard bridge dedupes notification during inline consume', /__inlineCon
 ok('F4 normal path does NOT sendFollowUp for quote (only when no callTool)', !/正在获取报价[\s\S]{0,40}sendFollowUpCompat/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 // ── F3 wiring + F5 label in built HTML ──
-ok('F3 product card uses etaDisplay fallback behind display_eta', /预计送达 '\+\(p\.display_eta\|\|etaDisplay\(p\.estimated_days/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('F3 product card uses etaDisplay fallback behind display_eta (i18n)', /p\.display_eta\|\|etaDisplay\(p\.estimated_days/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('F3 quote card uses etaDisplay fallback behind display_eta', /'预计送达',out\.display_eta\|\|etaDisplay\(s\.estimated_days/.test(QUOTE_APPROVAL_WIDGET_HTML))
 ok('F5 shown-count label present', /精确匹配 · 本卡展示 /.test(PRODUCT_RESULTS_WIDGET_HTML))
 
@@ -107,12 +107,12 @@ ok('A2 R2-1 detail renders detail model in place', /webaz\.product_detail\.model
 ok('A3-2 in-card chain: draft consumes quote_token', /callWebazTool\(oai,'webaz_order_draft',\{action:'create',quote_token:qs\.quote_token\}\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2 in-card chain: submit threads draft_id from draft result', /callWebazTool\(oai,'webaz_submit_order_request',\{draft_id:String\(ds\.draft_id\)\}\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2 chain single-flight (chainBusy guard)', /if\(state\.chainBusy\) return/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A3-2 fail-stop keeps copyable phrase on draft/submit failure', /提交订单审批\(draft_id='\+String\(ds\.draft_id\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 fail-stop keeps copyable phrase on draft/submit failure', /draft_id=[^)]*'\)\+String\(ds\.draft_id\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2 approval panel renders server data url + copy (no source URL literal)', /'复制链接'/.test(PRODUCT_RESULTS_WIDGET_HTML) && /state\.approval\.url/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2 duplicate submit surfaced honestly via FLATTENED projection keys (audit F1)', /ss\.duplicate\|\|ss\.duplicate_warning/.test(PRODUCT_RESULTS_WIDGET_HTML) && /已有同参数审批待批准/.test(PRODUCT_RESULTS_WIDGET_HTML) && !/ss\.idempotency/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2 renderBody rejects non-product models (audit F2: late notifications cannot fake 0-hit)', /indexOf\('webaz\.product_'\)!==0\)\{ return \}/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2 chain failures surface precise error_code (audit F3)', /ds\.error_code\|\|dr\.error/.test(PRODUCT_RESULTS_WIDGET_HTML) && /ss\.error_code\|\|sr\.error/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A3-2 copy fallback ALWAYS visible', /var qcp=el\('button','mini','复制继续'\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && !/else \{\s*var qcp/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 copy fallback ALWAYS visible (i18n)', /var qcp=el\('button','mini',L\('复制继续'/.test(PRODUCT_RESULTS_WIDGET_HTML) && !/else \{\s*var qcp/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2 no sendFollowUp in quote-panel chain (host drops it — R3-1)', !/qgo[\s\S]{0,200}sendFollowUpCompat/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2.1 detail card actionable (quote consume in detail branch)', /callWebazTool\(oai,'webaz_quote_order',\{product_id:p\.id,quantity:1\}\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2.1 detail specs collapse beyond 6 rows', /展开全部规格\(/.test(PRODUCT_RESULTS_WIDGET_HTML))
@@ -121,7 +121,7 @@ ok('A2.1 multi-product detail defaults collapsed (explicit 展开详情)', /__mu
 ok('A2.2 status consume falls back to content[0].text JSON', /r\.content\[0\]&&r\.content\[0\]\.text/.test(QUOTE_APPROVAL_WIDGET_HTML))
 ok('A2.2 error body surfaced, never swallowed as 未知', /状态:查询失败\('\+String\(d\.error_code\|\|d\.error\)/.test(QUOTE_APPROVAL_WIDGET_HTML))
 ok('A2.2 unknown status keeps webaz.xyz escape hatch', /未知 —— 可在 webaz\.xyz 审批页查看/.test(QUOTE_APPROVAL_WIDGET_HTML))
-ok('A3-2 chain button disables + shows progress on click', /qgo\.disabled=true; qgo\.textContent='创建草稿中…'/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 chain button disables + shows progress on click (i18n)', /qgo\.disabled=true; qgo\.textContent=L\('创建草稿中…'/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2 R2-3 stock badge deduped vs decision_flags', /lb===stockChip\) return/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2 QuoteApproval prefers display_expires_at', /display_expires_at\|\|out\.expires_at/.test(QUOTE_APPROVAL_WIDGET_HTML))
 ok('A3-2b audit P3-2: approval_url never double-prefixed (prefix-aware both sites)', (QUOTE_APPROVAL_WIDGET_HTML.match(/indexOf\('https'\)===0/g)||[]).length >= 2)
@@ -159,7 +159,7 @@ ok('A3-3 approval panel refresh consumes approval_requests get', /callWebazTool\
 ok('A3-3 refresh prefers server display_status', /d\.display_status\|\|/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-4 panel refresh parses content[0].text JSON (card-less receipt tier-2, R3-2 class)', /d\.content\[0\]&&d\.content\[0\]\.text/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-3 executed → 打开订单页 via server order_url data (url hidden until copy-fallback needs it)', /openWebaz\(oai,String\(d\.order_url\)\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && /oue\.style\.display='block'; doCopy/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A3-2b 取消 is LOCAL-only (clears quote panel, no tool call, blocked mid-chain)', /var qx=el\('button','mini','取消'\); qx\.addEventListener\('click',function\(\)\{ if\(state\.chainBusy\) return; state\.quote=null/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2b 取消 is LOCAL-only (clears quote panel, no tool call, blocked mid-chain; i18n)', /var qx=el\('button','mini',L\('取消'[^)]*\)\); qx\.addEventListener\('click',function\(\)\{ if\(state\.chainBusy\) return; state\.quote=null/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 await run().then(() => {
   if (fail > 0) { console.error(`\n❌ phase3b-ui-hotfix FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

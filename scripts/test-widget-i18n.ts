@@ -6,7 +6,7 @@
  * Usage: npm run test:widget-i18n
  */
 import vm from 'node:vm'
-import { __WIDGET_COMPAT_JS } from '../src/layer1-agent/L1-1-mcp-server/ui-widgets.js'
+import { __WIDGET_COMPAT_JS, PRODUCT_RESULTS_BODY_JS } from '../src/layer1-agent/L1-1-mcp-server/ui-widgets.js'
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push('✗ ' + n) } }
@@ -47,6 +47,44 @@ const enNav = evalWith(undefined, 'en-GB')
 ok('cross-agent: navigator.language en-GB → en (waterfall fallback)', (enNav.webazLocale as () => string)() === 'en')
 const zhNav = evalWith(undefined, 'fr-FR')
 ok('cross-agent: non-en (fr) → zh default', (zhNav.webazLocale as () => string)() === 'zh')
+
+// ── 综合防错漏:ProductResults 在 en locale 下真渲染,累积 textContent 扫零 widget-authored CJK ──
+function renderEnAndScan(bodyJs: string, out: unknown): string {
+  const texts: string[] = []
+  const mkNode = (): Record<string, unknown> => {
+    const n: Record<string, unknown> = { style: {}, classList: { toggle() {}, add() {} } }
+    n.appendChild = (c: unknown) => c
+    n.setAttribute = () => {}; n.addEventListener = () => {}; n.querySelector = () => null; n.scrollIntoView = () => {}
+    let _t = ''
+    Object.defineProperty(n, 'textContent', { set(v: unknown) { if (v != null) texts.push(String(v)); _t = String(v) }, get() { return _t } })
+    Object.defineProperty(n, 'innerText', { set(v: unknown) { if (v != null) texts.push(String(v)) }, get() { return '' } })
+    return n
+  }
+  const root = mkNode()
+  const ctx: Record<string, unknown> = {
+    window: { openai: { locale: 'en-US' }, innerWidth: 1200, pageYOffset: 0 },
+    navigator: { language: 'en-US', clipboard: { writeText: () => Promise.resolve() } },
+    document: { getElementById: () => root, createElement: () => mkNode(), createRange: () => ({ selectNodeContents() {} }) },
+    setTimeout: (f: () => void) => { try { f() } catch { /* noop */ } return 0 }, clearTimeout, Promise, URL, Date, Math, JSON, String, Object, Array, Number, isFinite, console,
+  }
+  vm.createContext(ctx)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${bodyJs}\nthis.__r=renderBody`, ctx)
+  ;(ctx.__r as (o: unknown, out: unknown) => void)({ callTool: () => Promise.resolve({ structuredContent: {} }), toolOutput: out }, out)
+  return texts.join('')
+}
+const SEARCH_OUT = {
+  schema_version: 'webaz.product_search.model.v1', count: 2, total_count: 6, more_url: 'https://webaz.xyz/#discover', result_handle: 'rh',
+  fx: { rates: { SGD: 1.29 }, stale: false }, dest_region: 'SG', destination: { region: 'SG' },
+  sellers: { s1: { name: 'Holden' } }, next_cursor: null,
+  products: [
+    { id: 'p1', title: 'Widget A', price: { display: '11.5 USDC', amount_minor: 11500000 }, seller_ref: 's1', stock_status: 'low_stock', estimated_days: { SG: 12, all: 12 }, display_eta: '约12天', return_days: 7, warranty_days: 0, handling_hours: 72, sales_count: 0, decision_flags: [], summary: 'x' },
+    { id: 'p2', title: 'Widget B', price: { display: '9.2 USDC', amount_minor: 9200000 }, seller_ref: 's1', stock_status: 'in_stock', estimated_days: 12, return_days: 7, warranty_days: 0, handling_hours: 72, sales_count: 0, decision_flags: [] },
+  ],
+  recommendation: { product_id: 'p1', reason: 'best value' },
+}
+const enText = renderEnAndScan(PRODUCT_RESULTS_BODY_JS, SEARCH_OUT)
+const cjkHits = enText.split('').filter(t => CJK.test(t))
+ok('I18N-EN ProductResults search page renders ZERO widget-authored CJK under en locale', cjkHits.length === 0, 'leaked: ' + JSON.stringify(cjkHits.slice(0, 8)) + ' | text=' + enText.slice(0, 200))
 
 if (fail > 0) { console.error(`\n❌ widget-i18n FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ widget-i18n batch0: webazLocale waterfall (openai.locale→navigator.language→zh) + L() + compat-core etaDisplay/copy bilingual; zh output byte-unchanged\n  ✅ pass ${pass}`)
