@@ -58,7 +58,7 @@ ok('B-3 every tool definition ≤ 7000 UTF-8 bytes serialized', worstDef.l <= 70
 const L1 = readFileSync('src/layer1-agent/L1-1-mcp-server/server.ts', 'utf8')
 ok('B-4 global response serialization is MINIFIED (no pretty/indent stringify variant anywhere in the wrapper)',
   !/text: JSON\.stringify\(result,\s*null/.test(L1) && !/JSON\.stringify\(result,\s*undefined,\s*\d/.test(L1) && L1.includes('JSON.stringify(result) }'))
-ok('B-5 search default page stays 8 (A3-3/R4-1:=agent 浏览硬顶,小目录一页装完防末页卡覆盖)', L1.includes('Math.floor(Number(args.limit ?? 8))'))
+ok('B-5 search page clamped ≤5 (A4 宁缺毋滥)', L1.includes('Math.floor(Number(args.limit ?? 5))') && L1.includes('if (limit > 5) limit = 5'))
 ok('B-6 response_bytes telemetry recorded per call (mcp_tool_calls.response_bytes)',
   L1.includes('response_bytes') && L1.includes('recordToolCall(name, args, result, latencyMs, responseBytes)') && L1.includes("Buffer.byteLength(envelope.content[0].text, 'utf8')"))
 

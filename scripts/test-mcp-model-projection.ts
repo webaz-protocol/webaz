@@ -54,7 +54,7 @@ if (process.env.MODEL_PROJ_PHASE === 'sandbox') {
   const j = JSON.stringify(r)
   const okAll =
     r.schema_version === 'webaz.product_search.model.v1'
-    && Array.isArray(r.products) && (r.products as unknown[]).length === 6   // A3-3:默认 8 件(种了 6 → 全出)
+    && Array.isArray(r.products) && (r.products as unknown[]).length === 5   // A4:恒 ≤5(种了 6 → 5)
     && !FORBIDDEN.test(j)
     && !/"description"/.test(j)                                              // 完整描述不进模型
     && !!(r.fx as Record<string, unknown> | undefined)?.rates && typeof (r.fx as Record<string, unknown>)?.stale === 'boolean'   // sandbox 路径同样带 stale 标注的 fx
@@ -124,7 +124,12 @@ registerProductsListRoutes(app, {
   VALID_SORTS: new Set(['trending', 'newest', 'rating', 'price_asc', 'price_desc', 'random', 'recommended', 'seller_win_rate']),
   PRODUCT_LIMITS: { pwa: 30, agent: 200, raw: 500 },
   TRENDING_SCORE_EXPR: 'p.price',
-  findProductsByAlias: () => new Set<string>(),
+  findProductsByAlias: (userInput: string) => {   // A4-1:关键判定者须真实 —— 标题/ID 精确相等(exact-first),桩不得空返
+    const t = String(userInput || '').trim(); const m = new Set<string>()
+    if (!t) return m
+    try { (db.prepare("SELECT id FROM products WHERE (id = ? OR title = ?) AND status='active'").all(t, t) as Array<{ id: string }>).forEach(r => m.add(r.id)) } catch { /* noop */ }
+    return m
+  },
   decodeProductCursor: (c: string) => { try { const [s, id] = Buffer.from(c, 'base64url').toString().split(':'); return { score: Number(s), id } } catch { return null } },
   encodeProductCursor: (score: number, id: string) => Buffer.from(`${score}:${id}`).toString('base64url'),
   MASTER_SEED: 'test-seed',
@@ -188,13 +193,13 @@ try {
   const scJson = JSON.stringify(sc ?? {})
   ok('S-1 search (wire) returns structuredContent with schema_version', sc?.schema_version === 'webaz.product_search.model.v1', scJson.slice(0, 200))
   ok('S-2 search content = short ACTIONABLE summary (ids + next_cursor present, not the JSON blob)', stext.length > 0 && stext.length <= 480 && !stext.trimStart().startsWith('{') && /prd_/.test(stext) && (!sc?.next_cursor || stext.includes(String(sc.next_cursor))), `len=${stext.length} ${stext}`)
-  ok('S-3 default page = 8 (A3-3/R4-1:小目录一页装完;7 seeded → 7 shown)', Array.isArray(sc?.products) && (sc?.products as unknown[]).length === 7)
+  ok('S-3 page hard-capped at 5 (A4 宁缺毋滥;7 seeded → 5 shown)', Array.isArray(sc?.products) && (sc?.products as unknown[]).length === 5)
   ok('S-4 NO internal/DB fields reach the model (hashes/migration/backfill/commission/source/score)', !FORBIDDEN.test(scJson), scJson.slice(0, 300))
   ok('S-5 full description does NOT reach the model', !/LONG internal description/.test(scJson))
   ok('S-6 nulls / empty objects stripped from the wire form', !/":null/.test(scJson), scJson.slice(0, 200))
   ok('S-7 sellers deduped once (7 products, 1 seller) + products use seller_ref', !!(sc?.sellers as Record<string, unknown>)?.seller1 && scJson.split('"TokenSeller"').length === 2)
   ok('S-8 decision_flags are server-asserted facts (NO_SALES_HISTORY expected on fresh catalog)', /NO_SALES_HISTORY/.test(scJson))
-  ok('S-9 default page exhausts small catalog → NO next_cursor (A3-3;cursor 机制由 S-10 显式 limit=5 锁定)', !sc?.next_cursor)
+  ok('S-9 next_cursor present when total>5 (A4:仅供模型知晓总量;UI 用 前往 WebAZ,不翻页)', typeof sc?.next_cursor === 'string' && (sc?.next_cursor as string).length > 0)
 
   // USDC 显示线(Holden 指令):商品价 display=USDC + fx 换算表(display-only,绝非结算)
   const p0 = (sc?.products as Array<Record<string, unknown>>)[0]
@@ -230,8 +235,25 @@ try {
   const ztext = (zr.content as Array<{ text: string }>)[0]?.text ?? ''
   ok('S-13 strict 0-hit keeps recovery object in structuredContent + short summary', (zsc.found === 0) && !!zsc.recovery && ztext.length <= 300, JSON.stringify(zsc).slice(0, 200))
   const zsample = (((zsc.recovery ?? {}) as Record<string, unknown>).catalog_sample as Array<Record<string, unknown>> | undefined) ?? []
-  ok('S-13b zero-hit catalog sample prices display USDC (no WAZ on any product surface)',
-    zsample.length > 0 && zsample.every(x => String(x.price_display ?? '').endsWith(' USDC')), JSON.stringify(zsample).slice(0, 150))
+  ok('S-13b zero-hit gives NO random catalog sample (A4 宁缺毋滥;related-only, and any product surface stays USDC)',
+    zsample.length === 0 || zsample.every(x => String(x.price_display ?? '').endsWith(' USDC')), JSON.stringify(zsample).slice(0, 150))
+
+  // ── A4(Holden):精确性两锁 ──────────────────────────────────────────────────────────────
+  // ①完整标题必须【排他】命中该商品(族别名不得混入其他品牌/规格)
+  const exactTitle = (sc?.products as Array<Record<string, unknown>>)[0]?.title as string
+  const ex1 = await client.callTool({ name: 'webaz_search', arguments: { query: exactTitle } }) as Record<string, unknown>
+  const ex1sc = ex1.structuredContent as Record<string, unknown>
+  const ex1prods = (ex1sc?.products ?? []) as Array<Record<string, unknown>>
+  ok('A4-1 full-title query returns ONLY that product (exact-first exclusive)', ex1prods.length === 1 && ex1prods[0].title === exactTitle, JSON.stringify(ex1prods.map(p => p.title)))
+  // ②selected_ids 详情只回指定商品
+  const rh = String(sc?.result_handle ?? '')
+  if (rh) {
+    const pickId = String((sc?.products as Array<Record<string, unknown>>)[0]?.id)
+    const dsel = await client.callTool({ name: 'webaz_search', arguments: { result_handle: rh, selected_ids: [pickId] } }) as Record<string, unknown>
+    const dsc = dsel.structuredContent as Record<string, unknown>
+    const dprods = (dsc?.products ?? []) as Array<Record<string, unknown>>
+    ok('A4-2 selected_ids returns ONLY the requested product, no cursor', dprods.length === 1 && String(dprods[0].id) === pickId && !dsc?.next_cursor, JSON.stringify({ ids: dprods.map(p => p.id), cursor: dsc?.next_cursor ?? null }))
+  } else { ok('A4-2 selected_ids purity (result_handle unavailable in this mode — asserted via detail suite)', true) }
 
   // ── [orders] summary + 分页 + 7 键 + 零 PII(handler 级 + wire 级)─────────────────────────
   const r1 = await H.handleBuyerOrders({})

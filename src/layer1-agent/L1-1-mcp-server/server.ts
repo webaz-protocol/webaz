@@ -2796,9 +2796,9 @@ export async function handleSearch(args: Record<string, unknown>) {
   const hasSales = args.has_sales as 'true' | 'false' | undefined
   const sellerId = args.seller_id as string | undefined
   // MCP Token PR-1:默认 5 件(此前 10;agent 单页上限仍 200 需显式请求)—— 大结果走 next_cursor 翻页。
-  let limit = Math.floor(Number(args.limit ?? 8))   // A3-3(R4-1):默认 5→8(=agent 浏览硬顶)。6-8 命中的小目录一页装完,
-  if (!Number.isFinite(limit) || limit < 1) limit = 8   //   杜绝"模型为展示翻页→宿主只突出末页卡(1 款)"的视觉覆盖事故。
-  if (limit > 200) limit = 200
+  let limit = Math.floor(Number(args.limit ?? 5))   // A4(Holden 铁律):返回一定精准且 ≤5 —— 多了没有意义;
+  if (!Number.isFinite(limit) || limit < 1) limit = 5   //   "更多"经卡片第 6 格「前往 WebAZ」跳转,不做翻页。
+  if (limit > 5) limit = 5
   const sortMode = (args.sort as string | undefined) ?? 'trending'
 
   // RFC-003 P4: NETWORK 模式关键词搜索 → 生产 GET /api/products?mode=agent
@@ -2822,11 +2822,14 @@ export async function handleSearch(args: Record<string, unknown>) {
       const rec = recommendationPassthrough(args, products as Array<Record<string, unknown>>)   // B3:模型推荐【透传】,校验后回显(服务器不生成)
       // A3-3:模型执行守则(照抄级,弱模型友好)。R4-1 实锤:为展示翻页会让宿主只突出末页卡。
       const conduct = [
-        r.next_cursor ? 'Do NOT paginate for display — the card has its own 下一页; another call renders a NEW card that visually replaces this one. Only pass cursor if the buyer explicitly asks for more.' : null,
+        r.next_cursor ? 'Results are capped at 5 PRECISE matches (Holden rule: never dilute). Do NOT paginate for display — the card offers 前往 WebAZ 查看更多; another call renders a NEW card that visually replaces this one.' : null,
         'The card already shows every product field — do not restate fields in prose; give only your conclusion / comparison / next step.',
         'If you recommend ONE product, repeat this search with recommend_id=<that product_id> + recommend_reason (≤140 chars) — the card then highlights it with a 🌟 AI推荐 badge, which buyers rely on.',   // A3-8(Holden):把 B3 徽标从"偶发"变"常规"
       ].filter(Boolean).join(' ')
-      return { ...r, found: products.length, ...(rec ? { recommendation: rec } : {}), model_conduct: conduct }
+      const totalN = Number((r as Record<string, unknown>).total_count)
+      return { ...r, found: products.length, ...(rec ? { recommendation: rec } : {}),
+        ...(Number.isFinite(totalN) && totalN > products.length ? { more_url: `${WEBAZ_API_URL}/#discover` } : {}),   // A4:第 6 格跳转 webaz 看更多
+        model_conduct: conduct }
     }
     // ★ 可恢复建议(调用契约 PR-C:0 命中不再导向"无 query 全目录浏览" —— 那是本次事故的制度化根因;
     //   反转为导向【结构化 discover + 类目词表】)。strict 结果保持 0/[](不破 strict-match 不变量)。
@@ -2843,20 +2846,18 @@ export async function handleSearch(args: Record<string, unknown>) {
       // A3-10(Holden live:随机目录样本被误读为"模糊搜索垃圾")—— 商品词 0 命中时,样本改为
       //   【标题包含检索词】的相关商品(= 已认可的 discover title-substring 语义;fuzzy 参数只喂给
       //   recovery 样本,strict 结果集恒为 0/[],铁律不破);无相关项才回落随机目录样本。
+      // A4(Holden 铁律:宁缺毋滥)—— 相关项只给标题含词强匹配且 ≤5;无相关项【什么都不给】
+      //   (随机目录样本移除:不匹配客户目标的商品绝不出现)。
       let related: Array<Record<string, unknown>> = []
       let relatedSellers: Record<string, unknown> = {}
       if (shortTerm) {
-        const rqs = new URLSearchParams({ mode: 'agent', limit: '8', sort: 'newest', fuzzy: 'true' })
+        const rqs = new URLSearchParams({ mode: 'agent', limit: '5', sort: 'newest', fuzzy: 'true' })
         rqs.set('q', q)
         const rr = await apiCall('/api/products?' + rqs.toString()).catch(() => ({}))
         related = ((rr as Record<string, unknown>).products as Array<Record<string, unknown>> | undefined) ?? []
         relatedSellers = ((rr as Record<string, unknown>).sellers as Record<string, unknown> | undefined) ?? {}
       }
-      const bqs = new URLSearchParams({ mode: 'agent', limit: '5', sort: 'newest' })
-      if (category) bqs.set('category', String(category))
-      if (maxPrice != null) bqs.set('max_price', String(maxPrice))
-      const br = related.length ? {} : await apiCall('/api/products?' + bqs.toString()).catch(() => ({}))
-      const sample = ((br as Record<string, unknown>).products as Array<Record<string, unknown>> | undefined) ?? []
+      const sample: Array<Record<string, unknown>> = []
       recovery = {
         reason: 'strict_no_match',
         ...(related.length ? { related_products: related, related_sellers: relatedSellers, related_query: q, related_note: 'titles CONTAINING the query (NOT exact matches) — the strict result set is still 0' } : {}),
@@ -2904,23 +2905,24 @@ export async function handleSearch(args: Record<string, unknown>) {
       SELECT product_id, alias_value FROM product_aliases
       WHERE status = 'active' AND length(alias_value) >= 6 AND length(alias_value) <= ?
     `).all(query.length) as Array<{ product_id: string; alias_value: string }>
-    const aliasIds = new Set<string>()
-    for (const a of aliasRows) {
-      if (query.includes(a.alias_value)) aliasIds.add(a.product_id)
-    }
-    if (aliasIds.size === 0) {
-      sql += ` AND (
-        p.title = ?
-        OR EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.external_title = ?)
-      )`
+    // A4(Holden:完整标题不得返回其他商品)—— exact-first【排他】:标题/外部标题精确命中 → 只返回精确集;
+    //   仅在无精确命中时才启用族 alias 包含判定(与 PWA findProductsByAlias 同纪律)。
+    const exactRow = db.prepare(`
+      SELECT p.id FROM products p WHERE p.status='active' AND p.stock>0 AND (
+        p.title = ? OR EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.external_title = ?)
+      ) LIMIT 1`).get(query, query) as { id: string } | undefined
+    if (exactRow) {
+      sql += ` AND (p.title = ? OR EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.external_title = ?))`
       params.push(query, query)
     } else {
-      sql += ` AND (
-        p.id IN (${[...aliasIds].map(() => '?').join(',')})
-        OR p.title = ?
-        OR EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.external_title = ?)
-      )`
-      params.push(...aliasIds, query, query)
+      const aliasIds = new Set<string>()
+      for (const a of aliasRows) { if (query.includes(a.alias_value)) aliasIds.add(a.product_id) }
+      if (aliasIds.size === 0) {
+        sql += ` AND 1 = 0`   // 无精确、无族别名 → strict 0 命中(不补同类)
+      } else {
+        sql += ` AND p.id IN (${[...aliasIds].map(() => '?').join(',')})`
+        params.push(...aliasIds)
+      }
     }
   }
   if (category) { sql += ` AND p.category = ?`; params.push(category) }

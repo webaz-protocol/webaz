@@ -2638,6 +2638,9 @@ function findProductsByAlias(userInput: string): Set<string> {
     const rows = db.prepare(`SELECT DISTINCT product_id FROM product_external_links WHERE external_title = ?`).all(text) as Array<{ product_id: string }>
     rows.forEach(r => matched.add(r.product_id))
   } catch {}
+  // A4(Holden:完整标题不得返回其他商品)—— 精确命中(ID/标题/外部标题完全相等)优先且【排他】:
+  //   有精确命中就只返回精确集,族别名(③包含判定)仅在无精确命中时生效。宁缺毋滥。
+  if (matched.size > 0) return matched
   // ③ alias 包含判定 — 只取 active + alias_value 长度 ≤ text 长度（必要条件）
   // 性能：MVP 阶段全表扫；大表后切 FTS5
   try {

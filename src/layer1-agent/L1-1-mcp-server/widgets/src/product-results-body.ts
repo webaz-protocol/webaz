@@ -2,7 +2,6 @@
 
 var __lastSearch=null   // B1:缓存上一次搜索页 out —— 供详情页【← 返回列表】原地回退,不再固定住
 var __autoFillAttempts=0   // 审计F1:跨渲染尝试上限 —— 终止性不再依赖服务端隐式不变量
-var __pageHistory=[]   // A3-11(Holden):上一页 —— 服务端仅前向 cursor,页历史存卡片侧(容量 10)
 function renderBody(oai, out){
   oai = oai || {}
   var root = document.getElementById('root')
@@ -168,28 +167,10 @@ function renderBody(oai, out){
       b.addEventListener('click',function(){ state.sort=s[0]; render() })   // 本地排序,零模型调用
       bar.appendChild(b)
     })
-    if(__pageHistory.length){   // A3-11:上一页(本地弹栈还原,零调用)
-      var prevBtn=el('button',null,'上一页')
-      prevBtn.addEventListener('click',function(){ var pv=__pageHistory.pop(); if(pv){ __lastSearch=pv; renderBody(oai,pv) } })
-      bar.appendChild(prevBtn)
-    }
-    if(out.next_cursor&&typeof oai.callTool==='function'){
-      // A3-8(live):最后一颗 F4 类 fire-and-forget —— 下一页现在就地消费并整页替换(返回列表指向新页)。
-      var more=el('button',null,'下一页')
-      more.addEventListener('click',onceGuard(function(){
-        more.textContent='加载中…'
-        callWebazTool(oai,'webaz_search',{cursor:String(out.next_cursor),limit:8}).then(function(res){
-          var sc=res.structuredContent
-          if(res.ok&&sc&&sc.schema_version==='webaz.product_search.model.v1'&&(sc.products||[]).length){ __pageHistory.push(out); if(__pageHistory.length>10) __pageHistory.shift(); __lastSearch=sc; renderBody(oai,sc); return }
-          more.textContent='下一页(加载失败,可重试)'
-        })
-      },16000))   // 审计info(b):守卫窗 ≥ 15s 超时,与审批刷新同纪律
-      bar.appendChild(more)
-    }
     root.appendChild(bar)
     // F5(Round1 UI hotfix):卡片显式标注真实展示数 —— 卡片只展示严格匹配命中,绝不虚构;模型叙述的"找到N款/推荐"可能来自更广候选集(discover),两者口径不同。
     var __shown=products.length, __total=(out.total_count!=null?out.total_count:(out.count!=null?out.count:__shown))   // A2.2:优先服务端总命中数
-    root.appendChild(el('div','note',out.__related_note?String(out.__related_note):('精确匹配 · 本卡展示 '+__shown+' 款'+((__total>__shown)?('(共 '+__total+' 命中,翻页查看更多)'):'')+' —— 模型文字里的"找到/推荐 N 款"可能来自更广候选集,以本卡商品为准')))
+    root.appendChild(el('div','note',out.__related_note?String(out.__related_note):('精确匹配 · 本卡展示 '+__shown+' 款'+((__total>__shown)?('(共 '+__total+' 命中)'):'')+' —— 模型文字里的"找到/推荐 N 款"可能来自更广候选集,以本卡商品为准')))
     var list=products.slice()
     var priceOf=function(p){ return (p.price&&p.price.amount_minor)||0 }
     if(state.sort==='price_asc') list.sort(function(a,b){return priceOf(a)-priceOf(b)})
@@ -247,6 +228,14 @@ function renderBody(oai, out){
       c.appendChild(row)
       g.appendChild(c)
     })
+    if(out.more_url&&__total>__shown){   // A4:第 6 格 = 前往 WebAZ 查看更多(不翻页,宁缺毋滥)
+      var mc=el('div','card'); mc.appendChild(el('b',null,'还有 '+(__total-__shown)+' 款'))
+      var mUrl=el('div','recreason',String(out.more_url)); mUrl.style.display='none'
+      var mb=el('button','primary','前往 WebAZ 查看更多')
+      mb.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,String(out.more_url)) }catch(e){ op=false } if(!op){ mUrl.style.display='block'; doCopy(String(out.more_url),mb,mUrl) } }))
+      var mr=el('div','row'); mr.appendChild(mb); mc.appendChild(mr); mc.appendChild(mUrl)
+      g.appendChild(mc)
+    }
     root.appendChild(g)
     var chosen=list.filter(function(p){return state.selected[p.id]})
     if(chosen.length>=2){
@@ -356,31 +345,4 @@ function renderBody(oai, out){
     try{ window.scrollTo(0, __sy) }catch(e){}   // B1:render 后恢复滚动位置(排序/比较/收起不跳顶)
   }
   render()
-  // A3-7(R4-1 确定性兜底):模型显式小 limit 把 ≤8 的小目录切了页 → 卡片自动取齐余下商品(一次,就地合并,
-  //   展示层补全,零语义改写)。守则/默认页只是引导,这里保证买家【总能】一张卡看全小目录。
-  var __autoFilled=false
-  ;(function maybeAutoFill(){
-    if(__autoFilled) return
-    var tc=out.total_count
-    if(!(tc&&tc<=8&&(out.products||[]).length<tc&&typeof oai.callTool==='function')) return
-    if(!out.next_cursor&&(!out.query||out.filtered)) return   // 审计F2:无 cursor 且(无法重构 或 带过滤)→ 放弃(标注如实显示 共N命中,绝不丢约束换商品)
-    if(__autoFillAttempts>=2) return
-    __autoFillAttempts++
-    __autoFilled=true
-    // A3-9:价格序等排序不产 keyset cursor → 按原 query+sort 整页重取(limit=8 覆盖 ≤8 小目录)
-    var __args=out.next_cursor?{cursor:String(out.next_cursor),limit:8}:{query:String(out.query),sort:String(out.sort||'trending'),limit:8}
-    callWebazTool(oai,'webaz_search',__args).then(function(res){
-      var sc=res.structuredContent
-      if(!(res.ok&&sc&&sc.schema_version==='webaz.product_search.model.v1'&&(sc.products||[]).length)) return
-      if(!__args.cursor&&(sc.products||[]).length>=(out.products||[]).length){
-        if(!sc.recommendation&&out.recommendation&&(sc.products||[]).some(function(pp){ return pp.id===out.recommendation.product_id })){ sc.recommendation=out.recommendation }   // 审计F2:替换页延续 🌟 推荐(商品仍在时)
-        __lastSearch=sc; renderBody(oai,sc); return }   // A3-9:整页重取 → 直接替换
-      var seen={}; (out.products||[]).forEach(function(pp){ seen[pp.id]=1 })
-      ;(sc.products||[]).forEach(function(pp){ if(!seen[pp.id]) out.products.push(pp) })
-      if(sc.sellers){ for(var __k in sc.sellers){ if(!sellers[__k]) sellers[__k]=sc.sellers[__k] } }
-      out.next_cursor=sc.next_cursor||null
-      products=(out.products||[]).slice()
-      render()
-    })
-  })()
 }export {}

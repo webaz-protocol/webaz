@@ -133,23 +133,18 @@ ok('A3-2 no CNY in ProductResults card', !/CNY|¥/.test(PRODUCT_RESULTS_WIDGET_H
 ok('A3-6 detail always offers a way back (title re-search when no cached list)', /返回商品列表/.test(PRODUCT_RESULTS_WIDGET_HTML) && /callWebazTool\(oai,'webaz_search',\{query:String\(\(out\.products\[0\]\|\|\{\}\)\.title/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-6 quote/approval panels persist via host widgetState (probe + restore)', /oai\.widgetState/.test(PRODUCT_RESULTS_WIDGET_HTML) && /setWidgetState/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
-// A3-7(R4-1 兜底):小目录自动取齐 —— 一次性、就地合并、按 id 去重
-ok('A3-9 auto-fill works WITHOUT cursor (query+sort full-page refetch, price sorts covered)', /\{query:String\(out\.query\),sort:String\(out\.sort\|\|'trending'\),limit:8\}/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A3-9 filtered results NEVER full-page refetched (audit F2 constraint preservation)', /out\.filtered\)\) return/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A3-9 🌟 recommendation carried across page replace (audit F2)', /sc\.recommendation=out\.recommendation/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A3-9 cross-render attempt cap (audit F1)', /__autoFillAttempts>=2\) return/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A3-7 small-catalog auto-fill (once, merge by id, ≤8 only)', /__autoFilled=true/.test(PRODUCT_RESULTS_WIDGET_HTML) && /tc&&tc<=8/.test(PRODUCT_RESULTS_WIDGET_HTML) && /if\(!seen\[pp\.id\]\) out\.products\.push\(pp\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
-// A3-8:下一页必须消费(零 fire-and-forget 终局锁 —— 全卡不允许裸 oai.callTool( 出现)
-ok('A3-8 下一页 consumes via callWebazTool + page replace', /callWebazTool\(oai,'webaz_search',\{cursor:String\(out\.next_cursor\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && /'加载中…'/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-8 ZERO bare fire-and-forget callTool left in ProductResults (terminal lock)', !/try\{ oai\.callTool\(/.test(PRODUCT_RESULTS_WIDGET_HTML) && !/[^.]oai\.callTool\('webaz_search',\{cursor/.test(PRODUCT_RESULTS_WIDGET_HTML) && /载入条款中…/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 // A3-10:0 命中相关商品(标题含词)—— 完整交互页渲染 + 诚实横幅;strict 0 事实保留
 ok('A3-10 related recovery renders full interactive page with honest banner', /rec\.related_products&&rec\.related_products\.length/.test(PRODUCT_RESULTS_WIDGET_HTML) && /非精确命中/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-10 F5 label swapped by related banner in related mode', /out\.__related_note\?String\(out\.__related_note\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
-// A3-11:上一页 = 本地页历史弹栈(零调用),下一页压栈,容量 10
-ok('A3-11 上一页 local history (push on next, pop on prev, cap 10)', /__pageHistory\.push\(out\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && /'上一页'/.test(PRODUCT_RESULTS_WIDGET_HTML) && /__pageHistory\.length>10\) __pageHistory\.shift/.test(PRODUCT_RESULTS_WIDGET_HTML))
+
+// A4(Holden 铁律):恒 ≤5 精准结果,无翻页 UI,第 6 格 = 前往 WebAZ 查看更多
+ok('A4 no pagination UI (下一页/上一页 removed)', !/'下一页'/.test(PRODUCT_RESULTS_WIDGET_HTML) && !/'上一页'/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A4 6th slot = 前往 WebAZ 查看更多 (openWebaz + copy fallback, server more_url data)', /前往 WebAZ 查看更多/.test(PRODUCT_RESULTS_WIDGET_HTML) && /openWebaz\(oai,String\(out\.more_url\)\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A4 F5 label has no 翻页 wording', !/翻页查看更多/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 // ── Self-containment lock: ProductResults must stay URL-literal-free + zero request-capability tokens (incl. in comments) ──
 // A3-2b:ProductResults 获得与审批卡同级的 LINK compat(打开审批页)。零 URL 字面量锁【保持】;
