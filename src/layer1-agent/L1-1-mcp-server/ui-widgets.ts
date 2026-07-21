@@ -173,8 +173,10 @@ body{font-family:system-ui,sans-serif;margin:0;padding:12px;color:var(--ink);bac
 
 // ─── 导出:每组件 legacy(skybridge)+ standard(profile=mcp-app)双 HTML,共享同一 render 体 ──
 
-export const PRODUCT_RESULTS_WIDGET_HTML = buildWidgetHtml({ style: PRODUCT_RESULTS_STYLE, loading: 'WebAZ ProductResults — loading…', bodyJs: PRODUCT_RESULTS_BODY_JS, standard: false, link: false })
-export const PRODUCT_RESULTS_WIDGET_MCP_HTML = buildWidgetHtml({ style: PRODUCT_RESULTS_STYLE, loading: 'WebAZ ProductResults — loading…', bodyJs: PRODUCT_RESULTS_BODY_JS, standard: true, link: false })
+// A3-2b(Holden):审批跳转成为链路正当终点 → ProductResults 升级为与审批卡同级的受控链接纪律
+//   (LINK compat:https + 精确主机 webaz.xyz + 无 userinfo 才放行;URL 只来自服务端数据;源码仍零 URL 字面量)。
+export const PRODUCT_RESULTS_WIDGET_HTML = buildWidgetHtml({ style: PRODUCT_RESULTS_STYLE, loading: 'WebAZ ProductResults — loading…', bodyJs: PRODUCT_RESULTS_BODY_JS, standard: false, link: true })
+export const PRODUCT_RESULTS_WIDGET_MCP_HTML = buildWidgetHtml({ style: PRODUCT_RESULTS_STYLE, loading: 'WebAZ ProductResults — loading…', bodyJs: PRODUCT_RESULTS_BODY_JS, standard: true, link: true })
 
 export const QUOTE_APPROVAL_WIDGET_HTML = buildWidgetHtml({ style: QUOTE_APPROVAL_STYLE, loading: 'WebAZ QuoteAndApproval — loading…', bodyJs: QUOTE_APPROVAL_BODY_JS, standard: false, link: true })
 export const QUOTE_APPROVAL_WIDGET_MCP_HTML = buildWidgetHtml({ style: QUOTE_APPROVAL_STYLE, loading: 'WebAZ QuoteAndApproval — loading…', bodyJs: QUOTE_APPROVAL_BODY_JS, standard: true, link: true })

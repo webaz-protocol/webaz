@@ -129,9 +129,13 @@ ok('A2 QuoteApproval prefers display_expires_at', /display_expires_at\|\|out\.ex
 ok('A3-2 no CNY in ProductResults card', !/CNY|¥/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 // ── Self-containment lock: ProductResults must stay URL-literal-free + zero request-capability tokens (incl. in comments) ──
-const REQ_TOK = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|import|src|href|location)\b/
+// A3-2b:ProductResults 获得与审批卡同级的 LINK compat(打开审批页)。零 URL 字面量锁【保持】;
+//   请求词元锁收窄为非链接词元(href 仅允许出现在 compat-link 的 safeWebazHref/openExternal 面)。
+const REQ_TOK = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|import|src|location)\b/
 ok('ProductResults has NO url literal (zero-URL self-containment lock)', !/["'`](https?:)?\/\//.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('ProductResults has NO request-capability token (incl. comments)', !REQ_TOK.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('ProductResults has NO request-capability token beyond vetted LINK compat', !REQ_TOK.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2b link discipline: safeWebazHref gate present + approval open uses it', /safeWebazHref/.test(PRODUCT_RESULTS_WIDGET_HTML) && /openWebaz\(oai,state\.approval\.url\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2b copy fallback stays beside 打开审批页', /复制审批链接/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 await run().then(() => {
   if (fail > 0) { console.error(`\n❌ phase3b-ui-hotfix FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

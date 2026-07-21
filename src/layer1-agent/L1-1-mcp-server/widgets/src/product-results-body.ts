@@ -263,6 +263,10 @@ function renderBody(oai, out){
       ap.appendChild(el('div','recreason','去 webaz.xyz 用 Passkey 批准后才会创建正式订单;批准前不扣款、不锁库存。'))
       if(state.approval.url){
         var ae=el('div','recreason',state.approval.url); ap.appendChild(ae)
+        // A3-2b:一键直跳(openWebaz:https+精确主机 webaz.xyz 校验后才放行;URL 是服务端数据);宿主不支持→复制降级。
+        var ao=el('button','mini','打开审批页')
+        ao.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,state.approval.url) }catch(e){ op=false } ao.textContent=op?'已尝试打开;没弹出就用复制':'此宿主不支持打开,请用复制' }))
+        ap.appendChild(ao)
         var ac=el('button','mini','复制审批链接'); ac.addEventListener('click',function(){ doCopy(state.approval.url,ac,ae) }); ap.appendChild(ac)
       }
       root.appendChild(ap)
