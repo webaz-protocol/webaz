@@ -73,6 +73,7 @@ const WIDGET_COMPAT_CORE_JS = `
     if(typeof v==='string'){ var t=v.trim(); if(!t) return '暂未提供预计配送时间'
       if(/^\\d+$/.test(t)) return '约'+t+'天'
       if(/^\\d+\\s*[-–~]\\s*\\d+$/.test(t)) return t.replace(/\\s*[-–~]\\s*/,'–')+'天'
+      if(t.charAt(0)==='{'||t.charAt(0)==='['){ try{ return etaDisplay(JSON.parse(t), region) }catch(e){} }   // B-1(Round1b):JSON 字符串区域 map(如报价投影传来的 '{"SG":12,"all":12}')→ 解析后递归;解析失败安全回退原串
       return t }
     if(typeof v==='object'){
       if(v.legacy_missing) return '下单时未记录预计配送时间'
@@ -103,6 +104,18 @@ const WIDGET_COMPAT_CORE_JS = `
     try{ call=Promise.resolve(oai.callTool(name,args)).then(function(r){ var sc=webazConsume(r); return done({ok:!!sc&&!sc.error,structuredContent:sc,error:(sc&&sc.error)||null,sourceBridge:bridge}) },function(e){ return done({ok:false,error:(e&&(e.message||e.code))||'CALL_REJECTED',sourceBridge:bridge}) }) }
     catch(e){ return Promise.resolve(done({ok:false,error:'CALL_THREW',sourceBridge:bridge})) }
     return Promise.race([call,to])
+  }
+  // B-4(Round1b):卡内复制降级 —— 主路 clipboard.writeText;失败→点击事件内 execCommand('copy');再失败→自动选中文本(Cmd/Ctrl+C);最后才手选。
+  //   任何分支都【绝不】触发报价/下单/工具调用。用词避开 widget SINK 守卫(execCommand/value/select 均不在禁用表)。
+  function webazExecCopy(text){ try{ var ta=document.createElement('textarea'); ta.value=String(text); ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.top='-1000px'; document.body.appendChild(ta); ta.focus(); ta.select(); var okc=false; try{ okc=document.execCommand('copy') }catch(e){ okc=false } document.body.removeChild(ta); return okc }catch(e){ return false } }
+  function webazSelect(el){ try{ if(!el||typeof document==='undefined'||!document.createRange) return false; var r=document.createRange(); r.selectNodeContents(el); var s=window.getSelection(); s.removeAllRanges(); s.addRange(r); return true }catch(e){ return false } }
+  function webazCopy(text, btn, selEl){
+    var s=String(text)
+    function afterFail(){ if(webazExecCopy(s)){ if(btn) btn.textContent='已复制✓'; return } if(webazSelect(selEl)){ if(btn) btn.textContent='已选中,按 Cmd/Ctrl+C 复制'; return } if(btn) btn.textContent='请手动选择上面文字' }
+    try{ var nav=(typeof navigator!=='undefined')?navigator:null
+      if(nav&&nav.clipboard&&nav.clipboard.writeText){ if(btn) btn.textContent='复制中…'; nav.clipboard.writeText(s).then(function(){ if(btn) btn.textContent='已复制✓' }, afterFail); return }
+    }catch(e){}
+    afterFail()
   }
 `
 // openExternal 安全:仅放行 https + 精确主机 webaz.xyz + 默认端口 + 无 userinfo(URL 解析后逐字段
@@ -286,12 +299,7 @@ function renderBody(oai, out){
   // 手动路径 —— 展示一句可【复制发给模型】的话,让用户在任何宿主上都能继续。绝不假装成功、绝不碰钱路。
   // 复制诚实化(Codex R1):writeText 异步,只有 resolve 才显示「已复制」;reject/无 clipboard → 提示手动选择。
   //   兜底真相是:phrase 永远以文字显示在提示里,复制失败也能手选,fail-visible 不依赖 clipboard。
-  function doCopy(text,btn){
-    try{ var nav=(typeof navigator!=='undefined')?navigator:null
-      if(nav&&nav.clipboard&&nav.clipboard.writeText){ btn.textContent='复制中…'; nav.clipboard.writeText(String(text)).then(function(){ btn.textContent='已复制✓' },function(){ btn.textContent='复制失败,请手选' }); return }
-    }catch(e){}
-    btn.textContent='请手动选择上面文字'
-  }
+  function doCopy(text,btn,selEl){ webazCopy(text,btn,selEl) }   // B-4:统一降级(clipboard→execCommand→自动选中→手选)
   // F4(Round1 UI hotfix):准备下单 = 结构化直调 webaz_quote_order → 【就地消费】结果,把商品卡切到报价态(§四.A)。
   //   single-flight:进行中再点无效;成功→报价面板(真实金额/ETA/到期)+「创建草稿并提交审批」继续键;失败/超时→卡内错误 + 可复制手动路径。
   //   宿主无 callTool → 唯一允许的 sendFollowUp 降级(§三:正常路径绝不 sendFollowUp)。绝不假装成功、绝不直达钱路(建单仍在 Passkey)。
@@ -423,16 +431,16 @@ function renderBody(oai, out){
       qp.appendChild(el('span',null,'✓ 已获取报价:'+(state.quote.title||'')))
       qp.appendChild(el('div','recreason',((qs.price&&qs.price.display)||'')+' · 预计送达 '+etaDisplay(qs.shipping&&qs.shipping.estimated_days,(qs.destination&&qs.destination.region))+(qs.expires_at?(' · 到期 '+String(qs.expires_at)):'')))
       var qphrase='用这个报价创建订单草稿并提交 Passkey 审批(product_id='+state.quote.pid+')'
-      qp.appendChild(el('div','recreason','“'+qphrase+'”'))
-      var qcp=el('button','mini','复制继续'); qcp.addEventListener('click',function(){ doCopy(qphrase,qcp) }); qp.appendChild(qcp)
+      var qpe=el('div','recreason','“'+qphrase+'”'); qp.appendChild(qpe)
+      var qcp=el('button','mini','复制继续'); qcp.addEventListener('click',function(){ doCopy(qphrase,qcp,qpe) }); qp.appendChild(qcp)
       qp.appendChild(el('div','meta','报价不扣款 · 草稿/提交/Passkey 在下单卡完成 · 正式建单需你在 webaz.xyz 用 Passkey 批准'))
       root.appendChild(qp)
     }
     if(state.hint){   // fail-visible 手动路径:一句可复制发给模型的话 —— 任何宿主上按钮不生效都能继续
       var hb=el('div','hint'); hb.appendChild(el('span',null,state.hint.text))
       if(state.hint.phrase){
-        hb.appendChild(el('span','recreason','“'+state.hint.phrase+'”'))
-        var cp=el('button','mini','复制'); cp.addEventListener('click',function(){ doCopy(state.hint.phrase,cp) }); hb.appendChild(cp)
+        var phe=el('span','recreason','“'+state.hint.phrase+'”'); hb.appendChild(phe)
+        var cp=el('button','mini','复制'); cp.addEventListener('click',function(){ doCopy(state.hint.phrase,cp,phe) }); hb.appendChild(cp)
       }
       root.appendChild(hb)
     }
@@ -474,11 +482,10 @@ function renderBody(oai, out){
   function disclosures(box,list){ var d=el('div','disc',(list||[]).join(' · ')); box.appendChild(d) }
   // fail-visible(B7,同 ProductResults):widget→host 回调(callTool/sendFollowUp)在部分宿主(ChatGPT)可能静默不生效。
   //   任何按钮点击都①永不永久卡 ②追加一条可复制的手动指令,让"点按钮"在任何宿主上都能推进,不必用户精确打字。
-  function copyText(t){ try{ var n=(typeof navigator!=='undefined')?navigator:null; if(n&&n.clipboard&&n.clipboard.writeText){ n.clipboard.writeText(String(t)); return true } }catch(e){} return false }
   function actHint(phrase, sent, lead){
     var h=el('div','disc'); h.appendChild(el('span',null,(lead||(sent?'已发送。若卡片没有刷新,复制发我:':'此宿主不支持一键,复制发我:'))))
-    h.appendChild(el('span','ok',' “'+phrase+'” '))
-    var cp=el('button','toggle','复制'); cp.addEventListener('click',function(){ cp.textContent=copyText(phrase)?'已复制✓':'复制' }); h.appendChild(cp); root.appendChild(h)
+    var pe=el('span','ok',' “'+phrase+'” '); h.appendChild(pe)
+    var cp=el('button','toggle','复制'); cp.addEventListener('click',function(){ webazCopy(phrase,cp,pe) }); h.appendChild(cp); root.appendChild(h)   // B-4:降级复制(clipboard→execCommand→自动选中)
   }
   function reenable(btn){ try{ setTimeout(function(){ try{ btn.disabled=false }catch(e){} },4000) }catch(e){} }
   root.textContent=''
