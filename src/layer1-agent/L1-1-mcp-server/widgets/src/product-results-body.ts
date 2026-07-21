@@ -14,6 +14,18 @@ function renderBody(oai, out){
   if(out.schema_version==='webaz.product_detail.model.v1'){
     root.textContent=''
     if(__lastSearch){ var back=el('button',null,'← 返回列表'); back.addEventListener('click',function(){ renderBody(oai, __lastSearch) }); root.appendChild(back) }
+    else if(typeof oai.callTool==='function'&&(out.products||[]).length){   // A3-6:本实例没渲染过列表(详情覆盖/独立详情卡)→ 按精确标题就地重搜回列表,买家永远回得去
+      var back2=el('button',null,'← 返回商品列表')
+      back2.addEventListener('click',onceGuard(function(){
+        back2.textContent='载入列表中…'
+        callWebazTool(oai,'webaz_search',{query:String((out.products[0]||{}).title||'')}).then(function(res){
+          var sc=res.structuredContent
+          if(res.ok&&sc&&sc.schema_version==='webaz.product_search.model.v1'&&(sc.products||[]).length){ renderBody(oai,sc); return }
+          back2.textContent='← 返回商品列表(载入失败,可让我重新搜索)'
+        })
+      },3000))
+      root.appendChild(back2)
+    }
     var dg=el('div','grid')
     var __multiDetail=((out.products||[]).length>1)   // A2.1(Holden):批量详情【默认不平铺】——明确点击才展示全文
     ;(out.products||[]).forEach(function(p){
@@ -87,6 +99,9 @@ function renderBody(oai, out){
   __lastSearch = out   // B1:缓存供详情页【返回列表】原地回退
   var sellers=out.sellers||{}
   var state={sort:'default',selected:{},open:{},hint:null,approval:null,chainBusy:false}
+  // A3-6:宿主 widgetState 恢复(ChatGPT 持久化每条消息的组件态)—— 刷新/重挂载后报价/审批面板不丢。
+  try{ var __ws=oai.widgetState; if(__ws&&typeof __ws==='object'){ if(__ws.q&&__ws.q.pid) state.quote=__ws.q; if(__ws.a&&__ws.a.request_id) state.approval=__ws.a } }catch(e){}
+  function persist(){ try{ if(typeof oai.setWidgetState==='function') oai.setWidgetState({ q: state.quote, a: state.approval }) }catch(e){} }
   // fail-visible:widget→host 回调(callTool/sendFollowUp)在部分宿主(如 ChatGPT)可能静默不生效
   // (点了详情/准备下单没反应或永久卡)。铁律:任何这类动作都 ①永不永久卡 loading ②始终留一条可见的
   // 手动路径 —— 展示一句可【复制发给模型】的话,让用户在任何宿主上都能继续。绝不假装成功、绝不碰钱路。
@@ -108,7 +123,7 @@ function renderBody(oai, out){
     state.busy=true; state.hint={ text:'正在获取报价…若卡片未更新为报价,复制发我:', phrase:phrase }; render()
     callWebazTool(oai,'webaz_quote_order',{product_id:pid,quantity:1}).then(function(res){
       state.busy=false
-      if(res.ok&&res.structuredContent){ state.quote={ pid:pid, title:title, sc:res.structuredContent }; state.hint=null; render(); return }
+      if(res.ok&&res.structuredContent){ state.quote={ pid:pid, title:title, sc:res.structuredContent }; state.hint=null; persist(); render(); return }
       state.hint={ text:(res.timeout?'获取报价超时,请重试或把这句话复制发给我:':'获取报价失败('+String(res.error||'')+'),请重试或把这句话复制发给我:'), phrase:phrase }; render()
     })
   }
@@ -247,7 +262,7 @@ function renderBody(oai, out){
               var ss=sr.structuredContent||{}
               if(!sr.ok||!ss.request_id){ state.hint={ text:(sr.timeout?'提交审批超时':'提交审批失败('+String(ss.error_code||sr.error||'')+')')+',请把这句话复制发给我:', phrase:'提交订单审批(draft_id='+String(ds.draft_id)+')' }; render(); return }
               state.approval={ request_id:String(ss.request_id), url:String(ss.approval_url||''), duplicate:!!(ss.duplicate||ss.duplicate_warning) }   // 审计F1:投影已拍平为顶层 duplicate/duplicate_warning
-              state.quote=null; state.hint=null; render()
+              state.quote=null; state.hint=null; persist(); render()
             })
           })
         },3000))
@@ -255,7 +270,7 @@ function renderBody(oai, out){
       }
       var qcp=el('button','mini','复制继续'); qcp.addEventListener('click',function(){ doCopy(qphrase,qcp,qpe) }); qp.appendChild(qcp)
       // A3-2b(Holden):取消 = 纯本地关面板(不调工具;报价不扣款不锁库存,服务端自然过期)—— 买家可改选其他商品。
-      var qx=el('button','mini','取消'); qx.addEventListener('click',function(){ if(state.chainBusy) return; state.quote=null; state.hint=null; render() }); qp.appendChild(qx)
+      var qx=el('button','mini','取消'); qx.addEventListener('click',function(){ if(state.chainBusy) return; state.quote=null; state.hint=null; persist(); render() }); qp.appendChild(qx)
       qp.appendChild(el('div','meta','报价不扣款 · 草稿/提交/Passkey 在下单卡完成 · 正式建单需你在 webaz.xyz 用 Passkey 批准'))
       root.appendChild(qp)
     }

@@ -129,6 +129,10 @@ ok('A3-2b audit P3-2: approval_url never double-prefixed (prefix-aware both site
 // A3-2(Holden):买家只看 USDC + 本地法币 —— 卡片绝不显示人民币
 ok('A3-2 no CNY in ProductResults card', !/CNY|¥/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
+// A3-6:详情永远可回列表 + 面板持久化(宿主 widgetState)
+ok('A3-6 detail always offers a way back (title re-search when no cached list)', /返回商品列表/.test(PRODUCT_RESULTS_WIDGET_HTML) && /callWebazTool\(oai,'webaz_search',\{query:String\(\(out\.products\[0\]\|\|\{\}\)\.title/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-6 quote/approval panels persist via host widgetState (probe + restore)', /oai\.widgetState/.test(PRODUCT_RESULTS_WIDGET_HTML) && /setWidgetState/.test(PRODUCT_RESULTS_WIDGET_HTML))
+
 // ── Self-containment lock: ProductResults must stay URL-literal-free + zero request-capability tokens (incl. in comments) ──
 // A3-2b:ProductResults 获得与审批卡同级的 LINK compat(打开审批页)。零 URL 字面量锁【保持】;
 //   请求词元锁收窄为非链接词元(href 仅允许出现在 compat-link 的 safeWebazHref/openExternal 面)。
