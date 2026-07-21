@@ -64,9 +64,9 @@ try {
     const m = (t?._meta ?? {}) as Record<string, unknown>
     const ui = (m.ui ?? {}) as Record<string, unknown>
     const ru = String(ui.resourceUri ?? ''), ot = String(m['openai/outputTemplate'] ?? '')
-    // B-2(Round1b):标准桥 ui.resourceUri 仍版本化(内容哈希);legacy openai/outputTemplate 改【稳定裸别名】(部署不失效)。
-    ok(`T-1. ${name} 标准桥版本化 resourceUri + legacy 稳定裸别名 outputTemplate(B-2)+ base 一致 + visibility 精确`,
-      VER.test(ru) && ot === e.base + '.html' && ru !== ot
+    // A3(B-2 v2):legacy openai/outputTemplate 也回【版本化】(宿主模板缓存击穿;过期 URI 走 allowlist 兜底)。
+    ok(`T-1. ${name} 标准桥版本化 resourceUri + legacy 版本化 outputTemplate(A3)+ base 一致 + visibility 精确`,
+      VER.test(ru) && new RegExp('^' + e.base.replace(/[/.]/g, m => '\\' + m) + '\\.[0-9a-f]{10}\\.html$').test(ot) && ru !== ot
       && baseOf(ru) === e.base
       && stdUris.includes(ru)
       && JSON.stringify(ui.visibility) === JSON.stringify(e.vis)

@@ -159,8 +159,8 @@ try {
     && html.includes("openWebaz(oai,'https://webaz.xyz/#order/'"), `sites=${(html.match(/openExternal\(\{href:/g) ?? []).length}`)
   ok('R1-1b. 组件带 minimal 单订单分支(查看完整时间线入口)', html.includes('查看完整时间线') && html.includes('out.order'))
   const tools = (await c.listTools()).tools as Array<{ name: string; _meta?: Record<string, unknown> }>
-  // B-2(Round1b):outputTemplate 稳定裸别名(部署不失效);版本化在标准桥 ui.resourceUri。
-  ok('T-1. webaz_buyer_orders 描述符挂 order-timeline outputTemplate(稳定裸别名 B-2)', String(tools.find(t => t.name === 'webaz_buyer_orders')?._meta?.['openai/outputTemplate'] ?? '') === 'ui://widget/webaz-order-timeline.html')
+  // A3(B-2 v2):outputTemplate 回版本化(宿主模板缓存击穿);过期 URI 走 allowlist 兜底。
+  ok('T-1. webaz_buyer_orders 描述符挂 order-timeline outputTemplate(版本化 A3)', /^ui:\/\/widget\/webaz-order-timeline\.[0-9a-f]{10}\.html$/.test(String(tools.find(t => t.name === 'webaz_buyer_orders')?._meta?.['openai/outputTemplate'] ?? '')))
 } finally { server.close() }
 
 if (fail > 0) { console.error(`\n❌ mcp-order-timeline-ui FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

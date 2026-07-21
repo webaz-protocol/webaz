@@ -45,9 +45,9 @@ async function main(): Promise<void> {
   // 2. content change → version change (the mechanism): mutating the HTML yields a different hash.
   ok('V2. content change → version change (hash differs when HTML changes)', ver(W.PRODUCT_RESULTS_WIDGET_HTML) !== ver(W.PRODUCT_RESULTS_WIDGET_HTML + ' '))
 
-  // 3. B-2(Round1b 稳定 outputTemplate):ui.resourceUri(标准桥,版本化)∈ ListResources(无悬挂引用);
-  //    openai/outputTemplate(ChatGPT legacy 桥)是【稳定裸别名】(无内容哈希段)且 ReadResource 可解析 —— 改 widget 内容
-  //    部署后已连接会话缓存的裸别名引用仍解析到当前 widget,不再 Failed to fetch template 需重连。
+  // 3. A3(B-2 v2):outputTemplate 回到【版本化 URI】(宿主按 URI 缓存模板内容 —— 裸别名会让部署后的修复
+  //    等缓存过期才触达,live 两次实锤);过期 URI 由 KNOWN_STALE allowlist 兜底(widget-template-compat)。
+  //    裸别名仍保留为 ReadResource 只读别名(旧 tools/list 缓存期间照常工作)。
   const tools = (await c.listTools()).tools as Array<{ _meta?: Record<string, unknown> }>
   const uiSet = new Set(uiUris)
   let dangling = 0, otBad = 0
@@ -57,14 +57,16 @@ async function main(): Promise<void> {
     const ot = m['openai/outputTemplate'] as string | undefined
     if (ru && !uiSet.has(ru)) dangling++
     if (ot) {
-      const isBare = /^ui:\/\/widget\/[a-z-]+\.html$/.test(ot)   // 裸别名:无 .<10hex>. 内容哈希段
-      let resolves = false
+      const isVersioned = /^ui:\/\/widget\/[a-z-]+\.[0-9a-f]{10}\.html$/.test(ot)   // A3:内容哈希段(缓存击穿)
+      const bare = ot.replace(/\.[0-9a-f]{10}\.html$/, '.html')
+      let resolves = false, bareResolves = false
       try { const rr = await c.readResource({ uri: ot }); const cnt = (rr.contents as Array<{ text?: string }>)[0]; resolves = !!(cnt && cnt.text && cnt.text.length > 100) } catch { resolves = false }
-      if (!isBare || !resolves) otBad++
+      try { const rb = await c.readResource({ uri: bare }); const cb = (rb.contents as Array<{ text?: string }>)[0]; bareResolves = !!(cb && cb.text && cb.text.length > 100) } catch { bareResolves = false }
+      if (!isVersioned || !resolves || !bareResolves) otBad++
     }
   }
   ok('V3. no tool ui.resourceUri absent from ListResources (dangling reference)', dangling === 0)
-  ok('V3b. every tool openai/outputTemplate is a STABLE bare alias that ReadResource-resolves (B-2: deploy-survivable)', otBad === 0)
+  ok('V3b. every tool openai/outputTemplate is VERSIONED (cache-busting) + resolves + bare alias still resolves (A3/B-2v2)', otBad === 0)
 
   // 4. ReadResource resolves every versioned URI with the right MIME.
   let readBad = 0

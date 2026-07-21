@@ -6,6 +6,9 @@ function renderBody(oai, out){
   var root = document.getElementById('root')
   function el(tag, cls, text){ var n=document.createElement(tag); if(cls)n.className=cls; if(text!=null)n.textContent=String(text); return n }
   if(!out){ root.textContent='WebAZ: no structured payload visible to this widget.'; return }
+  // 审计F2:本渲染器只认 product 系模型 —— 晚到的 draft/approval 通知(超时后宿主回灌)绝不允许把卡
+  //   砸成"0 命中"或覆盖审批面板;非 product 模型直接忽略,保留当前 DOM。
+  if(out.schema_version&&String(out.schema_version).indexOf('webaz.product_')!==0){ return }
 
   // ③详情形态 —— 完整描述/规格(卡内不可得,按需经 tool 拉取);顶部【← 返回列表】回到搜索页(修"固定住/回不去")。
   if(out.schema_version==='webaz.product_detail.model.v1'){
@@ -83,7 +86,7 @@ function renderBody(oai, out){
   // ①搜索页
   __lastSearch = out   // B1:缓存供详情页【返回列表】原地回退
   var sellers=out.sellers||{}
-  var state={sort:'default',selected:{},open:{},hint:null}
+  var state={sort:'default',selected:{},open:{},hint:null,approval:null,chainBusy:false}
   // fail-visible:widget→host 回调(callTool/sendFollowUp)在部分宿主(如 ChatGPT)可能静默不生效
   // (点了详情/准备下单没反应或永久卡)。铁律:任何这类动作都 ①永不永久卡 loading ②始终留一条可见的
   // 手动路径 —— 展示一句可【复制发给模型】的话,让用户在任何宿主上都能继续。绝不假装成功、绝不碰钱路。
@@ -166,8 +169,7 @@ function renderBody(oai, out){
       var fx=out.fx&&out.fx.rates
       if(fx&&p.price&&p.price.amount_minor!=null){
         var usd=p.price.amount_minor/1000000, approx=[]
-        if(fx.SGD) approx.push('S$'+(usd*fx.SGD).toFixed(2))
-        if(fx.CNY) approx.push('¥'+(usd*fx.CNY).toFixed(2))
+        if(fx.SGD) approx.push('S$'+(usd*fx.SGD).toFixed(2))   // 买家本地法币(现阶段商品仅配送 SG);Holden:绝不显示人民币
         if(approx.length) c.appendChild(el('div','meta','≈ '+approx.join(' · ')+(out.fx.stale?'(近似汇率)':'')))
       }
       var chips=el('div','chips')
@@ -228,17 +230,42 @@ function renderBody(oai, out){
       qp.appendChild(el('div','recreason',((qs.price&&qs.price.display)||'')+' · 预计送达 '+(qs.display_eta||etaDisplay(qs.shipping&&qs.shipping.estimated_days,(qs.destination&&qs.destination.region)))+((qs.display_expires_at||qs.expires_at)?(' · 到期 '+String(qs.display_expires_at||qs.expires_at)):'')))
       var qphrase='用这个报价创建订单草稿并提交 Passkey 审批(product_id='+state.quote.pid+')'
       var qpe=el('div','recreason','“'+qphrase+'”'); qp.appendChild(qpe)
-      // A2.1(R3-1):实测 ChatGPT 会【静默丢弃】widget 的 sendFollowUpMessage(API 存在、调用成功、消息不进会话)。
-      //   fail-visible 铁律:复制键【常驻】,绝不藏在"发送能力可用"背后;发送文案不承诺已达,只承诺已请求。
-      //   后续模型回合仍走 报价→草稿→提交→Passkey 链,本按钮不建单、不扣款、不绕确认。
-      if(canFollowUp(oai)){
+      // A3-2:卡内直调链 —— 草稿→提交审批就地完成(sendFollowUp 被宿主静默丢弃已实锤,模型移出关键路径;
+      //   弱模型与强模型同体验)。fail-stop:任一步失败/超时留可复制短语;成功渲染审批引导(approval_url 是
+      //   服务端返回的数据,textContent 展示,不触零 URL 源码锁)。仍不建单、不扣款:正式建单只在 webaz.xyz Passkey。
+      if(typeof oai.callTool==='function'&&qs.quote_token){
         var qgo=el('button','mini','继续下单')
-        qgo.addEventListener('click',onceGuard(function(){ if(qgo.disabled) return; if(sendFollowUpCompat(oai,qphrase)){ qgo.disabled=true; qgo.textContent='已请求发送——若模型没有响应,请用复制' } else { doCopy(qphrase,qgo,qpe) } },3000))
+        qgo.addEventListener('click',onceGuard(function(){
+          if(state.chainBusy) return
+          state.chainBusy=true; qgo.disabled=true; qgo.textContent='创建草稿中…'
+          callWebazTool(oai,'webaz_order_draft',{action:'create',quote_token:qs.quote_token}).then(function(dr){
+            var ds=dr.structuredContent||{}
+            if(!dr.ok||!ds.draft_id){ state.chainBusy=false; state.hint={ text:(dr.timeout?'创建草稿超时':'创建草稿失败('+String(ds.error_code||dr.error||'')+')')+',请把这句话复制发给我:', phrase:qphrase }; render(); return }   // 审计F3:优先精确 error_code(如 QUOTE_ALREADY_CONSUMED)
+            qgo.textContent='提交审批中…'
+            callWebazTool(oai,'webaz_submit_order_request',{draft_id:String(ds.draft_id)}).then(function(sr){
+              state.chainBusy=false
+              var ss=sr.structuredContent||{}
+              if(!sr.ok||!ss.request_id){ state.hint={ text:(sr.timeout?'提交审批超时':'提交审批失败('+String(ss.error_code||sr.error||'')+')')+',请把这句话复制发给我:', phrase:'提交订单审批(draft_id='+String(ds.draft_id)+')' }; render(); return }
+              state.approval={ request_id:String(ss.request_id), url:String(ss.approval_url||''), duplicate:!!(ss.duplicate||ss.duplicate_warning) }   // 审计F1:投影已拍平为顶层 duplicate/duplicate_warning
+              state.quote=null; state.hint=null; render()
+            })
+          })
+        },3000))
         qp.appendChild(qgo)
       }
       var qcp=el('button','mini','复制继续'); qcp.addEventListener('click',function(){ doCopy(qphrase,qcp,qpe) }); qp.appendChild(qcp)
       qp.appendChild(el('div','meta','报价不扣款 · 草稿/提交/Passkey 在下单卡完成 · 正式建单需你在 webaz.xyz 用 Passkey 批准'))
       root.appendChild(qp)
+    }
+    if(state.approval){   // A3-2:审批引导就地态 —— request_id + 绝对 approval_url(服务端数据),Passkey 前零资金动作
+      var ap=el('div','hint')
+      ap.appendChild(el('span',null,(state.approval.duplicate?'♻️ 已有等待批准的同参数请求(未新建):':'✅ 审批请求已提交:')+state.approval.request_id))
+      ap.appendChild(el('div','recreason','去 webaz.xyz 用 Passkey 批准后才会创建正式订单;批准前不扣款、不锁库存。'))
+      if(state.approval.url){
+        var ae=el('div','recreason',state.approval.url); ap.appendChild(ae)
+        var ac=el('button','mini','复制审批链接'); ac.addEventListener('click',function(){ doCopy(state.approval.url,ac,ae) }); ap.appendChild(ac)
+      }
+      root.appendChild(ap)
     }
     if(state.hint){   // fail-visible 手动路径:一句可复制发给模型的话 —— 任何宿主上按钮不生效都能继续
       var hb=el('div','hint'); hb.appendChild(el('span',null,state.hint.text))
