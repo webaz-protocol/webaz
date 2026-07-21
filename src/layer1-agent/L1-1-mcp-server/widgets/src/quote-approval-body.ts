@@ -26,7 +26,7 @@ function renderBody(oai, out){
   //   stLabel = display text (v1 string shows the raw code, unchanged; v2 shows the localized label).
   //   stCode  = canonical machine code for branch/button gating (never inferred from the label).
   //   qtyText = display-only positive integer (the charged amount is price.amount_minor, not this).
-  function stLabel(s){ return (s&&typeof s==='object')?String(s.label||s.label_en||s.code||''):String(s||'') }
+  function stLabel(s){ if(s&&typeof s==='object'){ return webazLocale()==='en' ? String(s.label_en||s.label||s.code||'') : String(s.label||s.label_en||s.code||'') } return String(s||'') }
   function stCode(s){ return (s&&typeof s==='object')?String(s.code||''):String(s||'') }
   // BUG-06 quantity safety: an invalid/corrupt quantity is NEVER shown as ×1. qtyOk = strict positive
   //   safe integer (number OR a pure-digit string); qtyBad = server said invalid (quantity_valid===false)
@@ -58,7 +58,7 @@ function renderBody(oai, out){
     row(box,L('预计送达','ETA'),webazLocale()==='en'?etaDisplay(s.estimated_days,(out.destination&&out.destination.region)):(out.display_eta||etaDisplay(s.estimated_days,(out.destination&&out.destination.region))))   // F3:统一 formatter,不再 String(对象)
     toggler(box,L('展开退货与保修','Show returns & warranty'),function(b){ row(b,L('退货期','Return window'),out.return_days!=null?out.return_days+L('天',' days'):'—'); row(b,L('保修','Warranty'),out.warranty_days!=null?out.warranty_days+L('天',' days'):'—') })
     row(box,L('支付轨道','Payment rail'),String(out.payment_rail||'escrow'))
-    toggler(box,L('展开风险与轨道说明','Show risk & rail note'),function(b){ b.appendChild(el('div','meta',out.rail_note||'')) })
+    toggler(box,L('展开风险与轨道说明','Show risk & rail note'),function(b){ b.appendChild(el('div','meta',railNoteText(out.payment_rail,out.rail_note))) })
     if(out.fiat_estimate) toggler(box,L('查看汇率时间','Show FX timestamp'),function(b){ b.appendChild(el('div','meta','1 USD ≈ '+out.fiat_estimate.rate+' '+out.fiat_estimate.currency+' @ '+(out.fiat_estimate.as_of||'')+(out.fiat_estimate.stale?L('(近似)','(approx.)'):''))) })
     row(box,L('报价到期','Quote expires'),__i18nExp(out.display_expires_at,out.expires_at))
     row(box,L('库存','Stock'),L('未锁定(下单时重新校验)','not held (re-checked at order time)'))
@@ -83,7 +83,7 @@ function renderBody(oai, out){
     fiatLine(box,out.fiat_estimate)
     row(box,L('配送','Delivery'),(out.destination&&out.destination.summary)||'')
     row(box,L('支付轨道','Payment rail'),String(out.payment_rail||''))
-    toggler(box,L('展开轨道说明','Show rail note'),function(b){ b.appendChild(el('div','meta',out.rail_note||'')) })
+    toggler(box,L('展开轨道说明','Show rail note'),function(b){ b.appendChild(el('div','meta',railNoteText(out.payment_rail,out.rail_note))) })
     row(box,L('过期时间','Expires'),__i18nExp(out.display_expires_at,out.expires_at))
     if(stCode(out.status)==='draft'&&typeof oai.callTool==='function'){
       var b2=el('button','btn',L('提交 Passkey 审批(不会直接执行)','Submit Passkey approval (never executes directly)'))
@@ -184,7 +184,7 @@ function renderBody(oai, out){
       if(d.error){ statusLine.textContent=L('状态:查询失败(','Status: check failed (')+String(d.error_code||d.error).slice(0,48)+L(')—— 可在 webaz.xyz 审批页查看',') — view it on the webaz.xyz approval page'); return }
       var st=d.status||(d.request&&d.request.status)||''
       var oid=d.executed_order_id||(d.request&&d.request.executed_order_id)||''
-      statusLine.textContent=L('状态:','Status: ')+(stLabel(st)||L('未知 —— 可在 webaz.xyz 审批页查看','unknown — view on the webaz.xyz approval page')); orderSlot.textContent=''   // BUG-06: live read may carry a string OR a v2 object — normalize both
+      statusLine.textContent=L('状态:','Status: ')+(apprStatusText(st,d.display_status||(d.request&&d.request.display_status))||L('未知 —— 可在 webaz.xyz 审批页查看','unknown — view on the webaz.xyz approval page')); orderSlot.textContent=''   // BUG-06: live read carries a bare machine code (approval get) OR a v2 object — apprStatusText normalizes+localizes both
       if(stCode(st)==='executed'&&oid&&typeof oai.callTool==='function'){
         var vo=el('button','btn',L('查看订单 ','View order ')+String(oid).slice(0,10)+'…')
         vo.addEventListener('click',onceGuard(function(){   // F4:此卡渲染 approval;订单时间线属另一卡 → 打开 webaz.xyz 订单页(fail-visible),不发丢弃的 callTool

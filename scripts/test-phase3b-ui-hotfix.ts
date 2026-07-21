@@ -156,7 +156,7 @@ ok('A3-2b link discipline: safeWebazHref gate present + approval open uses it', 
 ok('A3-7 slim panel: raw ids/urls behind 详情 toggle, copy failure auto-expands', /'详情'/.test(PRODUCT_RESULTS_WIDGET_HTML) && /__openDet\(\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && /审批号:/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-7 copy button present (复制链接)', /'复制链接'/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-3 approval panel refresh consumes approval_requests get', /callWebazTool\(oai,'webaz_approval_requests',\{action:'get',request_id:state\.approval\.request_id\}\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A3-3 refresh prefers server display_status', /d\.display_status\|\|/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-3 refresh prefers server display_status (via apprStatusText: zh→display_status, en→code map w/ display_status fallback)', /apprStatusText\(d\.status,d\.display_status\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && /return String\(displayZh\|\|code\)/.test(__WIDGET_COMPAT_JS))
 ok('A3-4 panel refresh parses content[0].text JSON (card-less receipt tier-2, R3-2 class)', /d\.content\[0\]&&d\.content\[0\]\.text/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-3 executed → 打开订单页 via server order_url data (url hidden until copy-fallback needs it)', /openWebaz\(oai,String\(d\.order_url\)\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && /oue\.style\.display='block'; doCopy/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2b 取消 is LOCAL-only (clears quote panel, no tool call, blocked mid-chain; i18n)', /var qx=el\('button','mini',L\('取消'[^)]*\)\); qx\.addEventListener\('click',function\(\)\{ if\(state\.chainBusy\) return; state\.quote=null/.test(PRODUCT_RESULTS_WIDGET_HTML))

@@ -41,8 +41,8 @@ function renderBody(oai, out){
   box.appendChild(el('div','h',(out.product&&out.product.title)||String(out.order_id||'')))
   box.appendChild(el('div','price',(out.price&&out.price.display)||''))
   if(out.fiat_estimate) box.appendChild(el('div','fiat',out.fiat_estimate.display+(out.fiat_estimate.stale?L('(近似汇率)','(approx. rate)'):'')))
-  box.appendChild(el('div','badge',String(out.rail_badge||'')))
-  box.appendChild(el('div','st',(out.status&&out.status.label)||''))
+  box.appendChild(el('div','badge',String((webazLocale()==='en'?(out.rail_badge_en||out.rail_badge):out.rail_badge)||'')))
+  box.appendChild(el('div','st',(out.status&&(webazLocale()==='en'?(out.status.label_en||out.status.label):out.status.label))||''))
   if(out.next_actor) row(box,L('下一责任方','Next actor'),String(out.next_actor))
   if(out.deadline&&out.deadline.iso) row(box,L('截止时间','Deadline'),localTime(out.deadline.iso))
   var lg=out.logistics||{}
@@ -54,13 +54,13 @@ function renderBody(oai, out){
   if(lg.shipping_est_days!=null) row(box,L('当前物流预计','Current logistics ETA'),String(lg.shipping_est_days)+L('天',' days'))
   if(lg.tracking) row(box,L('物流单号','Tracking no.'),String(lg.tracking))
   var tl=el('div','tl')
-  ;(out.timeline||[]).forEach(function(t){ tl.appendChild(el('div',null,localTime(t.at)+' · '+((t.to_status&&t.to_status.label)||'')+(t.actor?'('+t.actor+')':''))) })
+  ;(out.timeline||[]).forEach(function(t){ tl.appendChild(el('div',null,localTime(t.at)+' · '+((t.to_status&&(webazLocale()==='en'?(t.to_status.label_en||t.to_status.label):t.to_status.label))||'')+(t.actor?'('+t.actor+')':''))) })
   box.appendChild(tl)
   if(out.refund){
     var w=el('div','warn')
     w.appendChild(el('b',null,L('退款/退货','Refund/return')))
     ;(out.refund.requests||[]).forEach(function(x){ w.appendChild(el('div',null,String(x.status)+' · '+((x.amount&&x.amount.display)||'')+' · '+String(x.created_at||''))) })
-    w.appendChild(el('div','meta',String(out.refund.note||'')))
+    w.appendChild(el('div','meta',(webazLocale()==='en'&&out.payment_rail)?(String(out.payment_rail)==='direct_p2p'?'The protocol recorded the liability outcome; principal is not held by WebAZ; the actual refund is settled between buyer and seller':'Simulated escrow rail: refunds release from simulated escrow per the dispute/return outcome — not real USDC or fiat fund flow'):String(out.refund.note||'')))
     box.appendChild(w)
   }
   var btns=el('div','rowbtn')
@@ -116,5 +116,5 @@ function renderBody(oai, out){
   open.addEventListener('click',onceGuard(function(){ openWebaz(oai,'https://webaz.xyz/#order/'+encodeURIComponent(String(out.order_id||''))) }))
   btns.appendChild(open)
   box.appendChild(btns)
-  box.appendChild(el('div','meta',String(out.actions_note||'')))
+  box.appendChild(el('div','meta',webazLocale()==='en'?'Server-authoritative action surface — human actions happen on the webaz.xyz order page (high-risk actions need Passkey)':String(out.actions_note||'')))
 }export {}

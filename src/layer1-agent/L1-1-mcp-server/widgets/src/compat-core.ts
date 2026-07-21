@@ -11,6 +11,25 @@
     return __webazLoc
   }
   export function L(zh, en){ return webazLocale()==='en' ? en : zh }
+  // rail honesty note, rendered client-side from the canonical payment_rail (keeps the model-context
+  // projection lean — server sends only the zh rail_note + machine payment_rail, not a display _en sibling).
+  export function railNoteText(rail, zhFallback){
+    if(webazLocale()!=='en') return zhFallback||''
+    return String(rail)==='direct_p2p'
+      ? 'You pay the seller directly; WebAZ holds no principal; the actual method and currency are shown on the confirm page'
+      : 'Payment rail: simulated escrow test — this flow is not real USDC or fiat settlement'
+  }
+  // webaz_approval_requests 'get' returns status as a bare machine code + a zh display_status (no _en
+  // sibling — the model-context projection stays lean). Localize it client-side here so every card's
+  // live status refresh renders the right language instead of the raw code. `s` may also be a v2 object
+  // {code,label,label_en} (quote/draft submit) — handled first. Single source so the two call sites can't drift.
+  export function apprStatusText(s, displayZh){
+    if(s&&typeof s==='object') return webazLocale()==='en' ? String(s.label_en||s.label||s.code||'') : String(s.label||s.code||'')
+    var code=String(s||'')
+    if(webazLocale()!=='en') return String(displayZh||code)
+    var m={pending:'Pending approval',approved:'Approved (executing)',executed:'Executed — real order created',needs_reconcile:'Outcome pending (re-approve with Passkey to reconcile safely)',execution_failed:'Execution incomplete (re-approve to retry)',approved_retryable:'Execution incomplete (re-approve to retry)',failed:'Failed (terms drifted / draft unavailable)',rejected:'Rejected',expired:'Expired'}
+    return m[code]||String(displayZh||code)
+  }
 
   export function canFollowUp(oai){ return !!oai&&(typeof oai.sendFollowUpMessage==='function'||typeof oai.sendFollowupTurn==='function') }
   export function sendFollowUpCompat(oai,text){
