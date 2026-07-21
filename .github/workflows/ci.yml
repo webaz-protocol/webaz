@@ -844,6 +844,10 @@ jobs:
       - run: npm run test:mcp-quote-approval-ui
       - run: npm run test:phase3b-ui-hotfix
       - run: npm run test:buyer-specs-privacy
+      - run: npm run test:widget-source-parity
+      - run: npm run test:widget-template-compat
+      - run: npm run check:widgets
+      - run: npm run lint:widgets
       - run: npm run test:mcp-order-timeline-ui
       - run: npm run test:mcp-schema-v2-contract
       - run: npm run test:mcp-card-contract
