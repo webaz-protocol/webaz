@@ -9,6 +9,9 @@ import vm from 'node:vm'
 import {
   __WIDGET_COMPAT_JS,
   __WIDGET_BOOT_STANDARD_JS,
+  PRODUCT_RESULTS_BODY_JS,
+  QUOTE_APPROVAL_BODY_JS,
+  ORDER_TIMELINE_BODY_JS,
   PRODUCT_RESULTS_WIDGET_HTML,
   QUOTE_APPROVAL_WIDGET_HTML,
 } from '../src/layer1-agent/L1-1-mcp-server/ui-widgets.js'
@@ -22,6 +25,18 @@ vm.createContext(sandbox)
 vm.runInContext(__WIDGET_COMPAT_JS + '\nthis.etaDisplay=etaDisplay; this.callWebazTool=callWebazTool; this.webazConsume=webazConsume;', sandbox)
 const etaDisplay = sandbox.etaDisplay as (v: unknown, r?: unknown) => string
 const callWebazTool = sandbox.callWebazTool as (oai: unknown, n: string, a: unknown) => Promise<Record<string, unknown>>
+
+// ── Syntax guard: every widget body must vm-compile with the shared blob (catches stray-paren-in-template bugs) ──
+for (const [name, body] of [['ProductResults', PRODUCT_RESULTS_BODY_JS], ['QuoteApproval', QUOTE_APPROVAL_BODY_JS], ['OrderTimeline', ORDER_TIMELINE_BODY_JS]] as const) {
+  let compiled = false
+  try {
+    const c: Record<string, unknown> = { document: { getElementById: () => null, createElement: () => ({ style: {}, classList: { toggle() {} }, appendChild: (x: unknown) => x, setAttribute() {}, addEventListener() {} }) }, window: { innerWidth: 1200 }, navigator: { clipboard: { writeText: () => Promise.resolve() } }, setTimeout, Promise, URL, Date, Math, console, String, Object, Array, JSON, Number, isFinite }
+    vm.createContext(c)
+    vm.runInContext(`${__WIDGET_COMPAT_JS}\n${body}\nthis.__r=renderBody`, c)
+    compiled = typeof (c as { __r?: unknown }).__r === 'function'
+  } catch { compiled = false }
+  ok(`syntax: ${name} body compiles with shared blob (renderBody defined)`, compiled)
+}
 
 // ── F3: ETA formatter — never raw JSON ──
 ok('F3 region map picks dest region (SG→12)', etaDisplay({ SG: 12, all: 12 }, 'SG') === '约12天')

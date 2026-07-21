@@ -552,7 +552,7 @@ function renderBody(oai, out){
       else { b1.addEventListener('click',onceGuard(function(){ b1.disabled=true   // F4:就地消费结果 → 渲染草稿卡(同 widget renderBody 处理 draft schema);失败留可复制手动路径
         callWebazTool(oai,'webaz_order_draft',{action:'create',quote_token:out.quote_token}).then(function(res){
           if(res.ok&&res.structuredContent){ renderBody(oai,res.structuredContent); return }
-          b1.disabled=false; actHint('用这个报价创建订单草稿(quote_token='+String(out.quote_token)+')', false, (res.timeout?'创建草稿超时':'创建草稿失败('+String(res.error||'')+''))+',请重试或复制发我:')
+          b1.disabled=false; actHint('用这个报价创建订单草稿(quote_token='+String(out.quote_token)+')', false, (res.timeout?'创建草稿超时':'创建草稿失败:'+String(res.error||''))+',请重试或复制发我:')
         })
       })); box.appendChild(b1) }
     }
@@ -574,7 +574,7 @@ function renderBody(oai, out){
       else { b2.addEventListener('click',onceGuard(function(){ b2.disabled=true   // F4:就地消费结果 → 渲染审批卡(approval schema);money 参数 withTrace 不变,仅新增结果消费
         callWebazTool(oai,'webaz_submit_order_request',withTrace({draft_id:out.draft_id})).then(function(res){
           if(res.ok&&res.structuredContent){ renderBody(oai,res.structuredContent); return }
-          b2.disabled=false; actHint('提交这个草稿去 Passkey 审批(draft_id='+String(out.draft_id)+')', false, (res.timeout?'提交超时':'提交失败('+String(res.error||'')+''))+',请重试或复制发我:')
+          b2.disabled=false; actHint('提交这个草稿去 Passkey 审批(draft_id='+String(out.draft_id)+')', false, (res.timeout?'提交超时':'提交失败:'+String(res.error||''))+',请重试或复制发我:')
         })
       })); box.appendChild(b2) }
     }
