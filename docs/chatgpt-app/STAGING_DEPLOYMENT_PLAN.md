@@ -2,11 +2,21 @@
 
 > This is a **preparation** document. **Do NOT deploy** without explicit owner authorization. No production
 > deploy, no `main` merge, no Phase 3B until staging passes and is approved. **No secrets/credentials appear
-> here — only environment-variable NAMES and configuration steps.** Frozen at `phase3a-complete-98e10c9`.
+> here — only environment-variable NAMES and configuration steps.**
+
+## Deployment baseline (MANDATORY)
+- **Deploy staging ONLY from the git tag `phase3a-ci-green-8cdd3db` (commit `8cdd3db`).** This is the
+  **only version permitted for staging** — the reviewed, CI-all-green (35/35) baseline.
+- `phase3a-complete-98e10c9` — **historical freeze point only. Do NOT deploy.**
+- `phase3a-reviewed-f1e982d` — superseded (CI was not yet green). **Do NOT deploy.**
+- **PR #471 is NOT merged.** Staging must **never** be deployed from `main` or from a floating branch HEAD
+  (`origin/fix/chatgpt-card-contract-phase3` may advance); always `git checkout phase3a-ci-green-8cdd3db`
+  (a fixed tag), verify `git rev-parse HEAD == 8cdd3db…`, then build/deploy.
 
 ## 0. Preconditions
-- PR #471 green in CI (all wired suites incl. the 7 newly-wired ETA/URI/manifest/card-contract tests).
-- FINAL_PR_ADVERSARIAL_REVIEW: no BLOCKER/HIGH; M1+L1 fixed.
+- Checked out exactly at `phase3a-ci-green-8cdd3db` (verify the SHA before boot).
+- PR #471 green in CI at `8cdd3db` (all 35 checks SUCCESS, incl. the 7 newly-wired ETA/URI/manifest/card-contract tests, schema-verify pg parity, remote-mcp, economic-currency).
+- FINAL_PR_ADVERSARIAL_REVIEW: no BLOCKER/HIGH; M1+L1 fixed (+ CI-fix commits `1124c3c`/`1c26766`/`8cdd3db`).
 - Staging is a **separate Railway environment** from production — never share the production DB, OAuth app, or `WALLET_MASTER_SEED`.
 
 ## 1. Staging domain
