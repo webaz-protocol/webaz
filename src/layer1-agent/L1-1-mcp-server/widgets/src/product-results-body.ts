@@ -1,6 +1,7 @@
 // @ts-nocheck — body 为 ES5 风格运行时脚本(el() 可选参/动态 state),完整类型标注另行任务;语法错误仍会上报。生成器会剥离本行。
 
 var __lastSearch=null   // B1:缓存上一次搜索页 out —— 供详情页【← 返回列表】原地回退,不再固定住
+var __autoFillAttempts=0   // 审计F1:跨渲染尝试上限 —— 终止性不再依赖服务端隐式不变量
 function renderBody(oai, out){
   oai = oai || {}
   var root = document.getElementById('root')
@@ -352,14 +353,18 @@ function renderBody(oai, out){
     if(__autoFilled) return
     var tc=out.total_count
     if(!(tc&&tc<=8&&(out.products||[]).length<tc&&typeof oai.callTool==='function')) return
-    if(!out.next_cursor&&!out.query) return   // 无 cursor 且无法重构查询 → 放弃(标注仍如实显示 共N命中)
+    if(!out.next_cursor&&(!out.query||out.filtered)) return   // 审计F2:无 cursor 且(无法重构 或 带过滤)→ 放弃(标注如实显示 共N命中,绝不丢约束换商品)
+    if(__autoFillAttempts>=2) return
+    __autoFillAttempts++
     __autoFilled=true
     // A3-9:价格序等排序不产 keyset cursor → 按原 query+sort 整页重取(limit=8 覆盖 ≤8 小目录)
-    var __args=out.next_cursor?{cursor:String(out.next_cursor),limit:8}:{query:String(out.query),sort:String(out.sort||'default'),limit:8}
+    var __args=out.next_cursor?{cursor:String(out.next_cursor),limit:8}:{query:String(out.query),sort:String(out.sort||'trending'),limit:8}
     callWebazTool(oai,'webaz_search',__args).then(function(res){
       var sc=res.structuredContent
       if(!(res.ok&&sc&&sc.schema_version==='webaz.product_search.model.v1'&&(sc.products||[]).length)) return
-      if(!__args.cursor&&(sc.products||[]).length>=(out.products||[]).length){ __lastSearch=sc; renderBody(oai,sc); return }   // A3-9:整页重取 → 直接替换
+      if(!__args.cursor&&(sc.products||[]).length>=(out.products||[]).length){
+        if(!sc.recommendation&&out.recommendation&&(sc.products||[]).some(function(pp){ return pp.id===out.recommendation.product_id })){ sc.recommendation=out.recommendation }   // 审计F2:替换页延续 🌟 推荐(商品仍在时)
+        __lastSearch=sc; renderBody(oai,sc); return }   // A3-9:整页重取 → 直接替换
       var seen={}; (out.products||[]).forEach(function(pp){ seen[pp.id]=1 })
       ;(sc.products||[]).forEach(function(pp){ if(!seen[pp.id]) out.products.push(pp) })
       if(sc.sellers){ for(var __k in sc.sellers){ if(!sellers[__k]) sellers[__k]=sc.sellers[__k] } }

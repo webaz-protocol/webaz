@@ -434,6 +434,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       schema_version: SCHEMA_PRODUCT_SEARCH,
       mode, sort, limit: lim,
       ...(q ? { query: String(q).slice(0, 100) } : {}),   // A3-9:回显查询词 —— 卡片无 cursor 时按原 query+sort 自动取齐(价格序等无 keyset cursor 的排序)
+      ...(hasFilter ? { filtered: true } : {}),   // 审计F2:带过滤的结果卡片绝不整页重取(query+sort 重构会丢 category/max_price/ship_to 等约束)
       count: rows.length,
       ...(totalCount != null && Number.isFinite(totalCount) ? { total_count: totalCount } : {}),
       next_cursor: nextCursor,

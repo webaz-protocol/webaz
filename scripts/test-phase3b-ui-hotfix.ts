@@ -134,7 +134,10 @@ ok('A3-6 detail always offers a way back (title re-search when no cached list)',
 ok('A3-6 quote/approval panels persist via host widgetState (probe + restore)', /oai\.widgetState/.test(PRODUCT_RESULTS_WIDGET_HTML) && /setWidgetState/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 // A3-7(R4-1 兜底):小目录自动取齐 —— 一次性、就地合并、按 id 去重
-ok('A3-9 auto-fill works WITHOUT cursor (query+sort full-page refetch, price sorts covered)', /\{query:String\(out\.query\),sort:String\(out\.sort\|\|'default'\),limit:8\}/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-9 auto-fill works WITHOUT cursor (query+sort full-page refetch, price sorts covered)', /\{query:String\(out\.query\),sort:String\(out\.sort\|\|'trending'\),limit:8\}/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-9 filtered results NEVER full-page refetched (audit F2 constraint preservation)', /out\.filtered\)\) return/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-9 🌟 recommendation carried across page replace (audit F2)', /sc\.recommendation=out\.recommendation/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-9 cross-render attempt cap (audit F1)', /__autoFillAttempts>=2\) return/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-7 small-catalog auto-fill (once, merge by id, ≤8 only)', /__autoFilled=true/.test(PRODUCT_RESULTS_WIDGET_HTML) && /tc&&tc<=8/.test(PRODUCT_RESULTS_WIDGET_HTML) && /if\(!seen\[pp\.id\]\) out\.products\.push\(pp\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 // A3-8:下一页必须消费(零 fire-and-forget 终局锁 —— 全卡不允许裸 oai.callTool( 出现)
