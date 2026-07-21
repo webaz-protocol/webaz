@@ -1,4 +1,17 @@
 
+  // i18n(批0):跨 agent 语言探测(能力探测瀑布,一次缓存;与 theme 探测同款 try/catch 绝不抛)。
+  //   window.openai.locale(ChatGPT)→ navigator.language(任何 iframe 宿主兜底)→ 默认 zh;en 前缀→'en' 否则 'zh'。
+  var __webazLoc=null
+  export function webazLocale(){
+    if(__webazLoc) return __webazLoc
+    var lc=''
+    try{ if(window.openai&&typeof window.openai.locale==='string') lc=window.openai.locale }catch(e){}
+    try{ if(!lc&&typeof navigator!=='undefined'&&navigator.language) lc=navigator.language }catch(e){}
+    __webazLoc=(/^en/i.test(String(lc||''))) ? 'en' : 'zh'
+    return __webazLoc
+  }
+  export function L(zh, en){ return webazLocale()==='en' ? en : zh }
+
   export function canFollowUp(oai){ return !!oai&&(typeof oai.sendFollowUpMessage==='function'||typeof oai.sendFollowupTurn==='function') }
   export function sendFollowUpCompat(oai,text){
     if(!oai) return false
@@ -11,25 +24,25 @@
   //   入参可为 number / 数字串 / 范围串("3-5") / 范围对象 / 区域→天数 map({"SG":12,"all":12}) / promised_eta v1 / null。
   //   优先目的区域 → all/default → 首个数值;输出「约12天」「3–5天」「暂未提供预计配送时间」;绝不伪造具体日期。
   export function etaDisplay(v, region){
-    if(v==null) return '暂未提供预计配送时间'
-    if(typeof v==='number'){ return isFinite(v)?('约'+v+'天'):'暂未提供预计配送时间' }
-    if(typeof v==='string'){ var t=v.trim(); if(!t) return '暂未提供预计配送时间'
-      if(/^\d+$/.test(t)) return '约'+t+'天'
-      if(/^\d+\s*[-–~]\s*\d+$/.test(t)) return t.replace(/\s*[-–~]\s*/,'–')+'天'
+    if(v==null) return L('暂未提供预计配送时间','delivery estimate unavailable')
+    if(typeof v==='number'){ return isFinite(v)?L('约'+v+'天','~'+v+' days'):L('暂未提供预计配送时间','delivery estimate unavailable') }
+    if(typeof v==='string'){ var t=v.trim(); if(!t) return L('暂未提供预计配送时间','delivery estimate unavailable')
+      if(/^\d+$/.test(t)) return L('约'+t+'天','~'+t+' days')
+      if(/^\d+\s*[-–~]\s*\d+$/.test(t)) return t.replace(/\s*[-–~]\s*/,'–')+L('天',' days')
       if(t.charAt(0)==='{'||t.charAt(0)==='['){ try{ return etaDisplay(JSON.parse(t), region) }catch(e){} }   // B-1(Round1b):JSON 字符串区域 map(如报价投影传来的 '{"SG":12,"all":12}')→ 解析后递归;解析失败安全回退原串
       return t }
     if(typeof v==='object'){
-      if(v.legacy_missing) return '下单时未记录预计配送时间'
+      if(v.legacy_missing) return L('下单时未记录预计配送时间','delivery time not recorded at order')
       var lo=(v.estimated_min_days!=null)?v.estimated_min_days:v.min, hi=(v.estimated_max_days!=null)?v.estimated_max_days:v.max
-      if(lo!=null&&hi!=null) return (lo===hi)?('约'+lo+'天'):(lo+'–'+hi+'天')
-      if(v.estimated_days_text!=null){ var et=String(v.estimated_days_text).trim(); return et?('约'+et+'天'):'暂未提供预计配送时间' }
+      if(lo!=null&&hi!=null) return (lo===hi)?L('约'+lo+'天','~'+lo+' days'):(lo+'–'+hi+L('天',' days'))
+      if(v.estimated_days_text!=null){ var et=String(v.estimated_days_text).trim(); return et?L('约'+et+'天','~'+et+' days'):L('暂未提供预计配送时间','delivery estimate unavailable') }
       var r=(region!=null)?String(region).toUpperCase():null, pick=null
       if(r&&v[r]!=null) pick=v[r]; else if(v.all!=null) pick=v.all; else if(v.default!=null) pick=v.default
       else { for(var k in v){ if(v[k]!=null&&(typeof v[k]==='number'||/^\d+$/.test(String(v[k])))){ pick=v[k]; break } } }
-      if(pick!=null){ return (typeof pick==='number'||/^\d+$/.test(String(pick)))?('约'+pick+'天'):String(pick) }
-      return '暂未提供预计配送时间'
+      if(pick!=null){ return (typeof pick==='number'||/^\d+$/.test(String(pick)))?L('约'+pick+'天','~'+pick+' days'):String(pick) }
+      return L('暂未提供预计配送时间','delivery estimate unavailable')
     }
-    return '暂未提供预计配送时间'
+    return L('暂未提供预计配送时间','delivery estimate unavailable')
   }
   // F4(Round1 UI hotfix):统一工具调用 —— legacy(window.openai.callTool)与标准桥 facade.callTool 都返回 promise,
   //   单一 consume 路径就地消费 structuredContent(不依赖宿主重挂载/重渲染)。归一 {ok,structuredContent,error,timeout,sourceBridge};
@@ -54,9 +67,9 @@
   export function webazSelect(el){ try{ if(!el||typeof document==='undefined'||!document.createRange) return false; var r=document.createRange(); r.selectNodeContents(el); var s=window.getSelection(); s.removeAllRanges(); s.addRange(r); return true }catch(e){ return false } }
   export function webazCopy(text, btn, selEl){
     var s=String(text)
-    function afterFail(){ if(webazExecCopy(s)){ if(btn) btn.textContent='已复制✓'; return } if(webazSelect(selEl)){ if(btn) btn.textContent='已选中,按 Cmd/Ctrl+C 复制'; return } if(btn) btn.textContent='请手动选择上面文字' }
+    function afterFail(){ if(webazExecCopy(s)){ if(btn) btn.textContent=L('已复制✓','Copied ✓'); return } if(webazSelect(selEl)){ if(btn) btn.textContent=L('已选中,按 Cmd/Ctrl+C 复制','Selected — press Cmd/Ctrl+C'); return } if(btn) btn.textContent=L('请手动选择上面文字','Select the text above manually') }
     try{ var nav=(typeof navigator!=='undefined')?navigator:null
-      if(nav&&nav.clipboard&&nav.clipboard.writeText){ if(btn) btn.textContent='复制中…'; nav.clipboard.writeText(s).then(function(){ if(btn) btn.textContent='已复制✓' }, afterFail); return }
+      if(nav&&nav.clipboard&&nav.clipboard.writeText){ if(btn) btn.textContent=L('复制中…','Copying…'); nav.clipboard.writeText(s).then(function(){ if(btn) btn.textContent=L('已复制✓','Copied ✓') }, afterFail); return }
     }catch(e){}
     afterFail()
   }

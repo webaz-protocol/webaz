@@ -16,6 +16,8 @@ declare function webazConsume(r: unknown): unknown
 declare function callWebazTool(oai: unknown, name: string, args: unknown): Promise<{ ok: boolean; structuredContent?: Record<string, unknown>; error?: string | null; timeout?: boolean; sourceBridge?: string }>
 declare function webazExecCopy(text: unknown): boolean
 declare function webazSelect(el: unknown): boolean
+declare function webazLocale(): string
+declare function L(zh: string, en: string): string
 declare function webazCopy(text: unknown, btn?: unknown, selEl?: unknown): void
 declare function safeWebazHref(h: unknown): string | null
 declare function openWebaz(oai: unknown, href: unknown): boolean

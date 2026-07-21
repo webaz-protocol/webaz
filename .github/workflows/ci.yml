@@ -845,6 +845,7 @@ jobs:
       - run: npm run test:phase3b-ui-hotfix
       - run: npm run test:buyer-specs-privacy
       - run: npm run test:widget-source-parity
+      - run: npm run test:widget-i18n
       - run: npm run test:widget-template-compat
       - run: npm run test:display-fields
       - run: npm run test:agent-anchor-search
