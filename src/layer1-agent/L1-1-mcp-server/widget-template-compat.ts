@@ -23,8 +23,8 @@
  */
 
 export const KNOWN_STALE_WIDGET_HASHES: Readonly<Record<string, readonly string[]>> = {
-  'webaz-products':            ['c4bd5e13bb', '48c4e4cb06', '2992d4bf3f'],
-  'webaz-products-mcp':        ['ea12ee851a', 'b4d9cb133c', '3b8c59d367'],
+  'webaz-products':            ['c4bd5e13bb', '48c4e4cb06', '2992d4bf3f', 'f1688b621b'],
+  'webaz-products-mcp':        ['ea12ee851a', 'b4d9cb133c', '3b8c59d367', 'b9b8e577a8'],
   'webaz-quote-approval':      ['6a2e96dfb1', '4e4d16d232', 'a1bb13f641'],
   'webaz-quote-approval-mcp':  ['9f5a3ea6f7', '2395886fc7', 'efba433258'],
   'webaz-order-timeline':      ['5ea1e0d365', '1e1d9f3a1b', '4c3103b1f4'],

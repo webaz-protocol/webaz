@@ -68,3 +68,10 @@ Committed so far this phase: **BUG-01** (full product terms) and the **Model-Whe
   dropship products sit on `category_id="cat_default"` (unpublished category), so free-text queries — even exact
   titles — return 0. Fix is data/config (assign published categories/keywords to products) + an optional matcher
   review; tracked separately from the Phase-3B UI hotfix (F3/F4/F5), NOT changed in that PR.
+
+## R3-1 (2026-07-21, live-reproduced twice) — ChatGPT silently DROPS widget-initiated sendFollowUpMessage
+- `window.openai.sendFollowUpMessage({prompt})` exists, the call succeeds, but the message never enters
+  the conversation (no user turn, no model turn; reproduced on multiple products, dev-13 sandbox).
+- Consequence: any "one-tap → model orchestrates next step" chain cannot rely on it. A2.1 mitigation:
+  the copy fallback stays PERMANENTLY visible next to 继续下单, and the sent-state label promises only
+  "已请求发送", never delivery. Re-probe this host capability on future ChatGPT sandbox updates.
