@@ -174,10 +174,15 @@ function renderBody(oai, out){
     var statusLine=el('div','meta','状态:待批准(点「🔄 查看最新状态」刷新)'); box.appendChild(statusLine)
     var orderSlot=el('div'); box.appendChild(orderSlot)
     function applyApprovalStatus(r){
-      var d=(r&&r.structuredContent)?r.structuredContent:r; if(!d){ statusLine.textContent='状态:未获取到,请重试'; return }
+      var d=(r&&r.structuredContent)?r.structuredContent:r
+      // R3-2(A2.2):无卡工具的宿主回执可能只带 content[].text(JSON 文本)无 structuredContent → 二级兜底解析;
+      //   错误体(权限/未找到)三级兜底【明确展示】,绝不吞成「未知」;最后指引 webaz.xyz 审批页(永不死胡同)。
+      if(d&&!d.status&&!d.error&&r&&r.content&&r.content.length){ try{ var __t=r.content[0]&&r.content[0].text; if(__t&&__t.charAt(0)==='{'){ var __j=JSON.parse(__t); if(__j&&(__j.status||__j.error)) d=__j } }catch(e){} }
+      if(!d){ statusLine.textContent='状态:未获取到,请重试'; return }
+      if(d.error){ statusLine.textContent='状态:查询失败('+String(d.error_code||d.error).slice(0,48)+')—— 可在 webaz.xyz 审批页查看'; return }
       var st=d.status||(d.request&&d.request.status)||''
       var oid=d.executed_order_id||(d.request&&d.request.executed_order_id)||''
-      statusLine.textContent='状态:'+(stLabel(st)||'未知'); orderSlot.textContent=''   // BUG-06: live read may carry a string OR a v2 object — normalize both
+      statusLine.textContent='状态:'+(stLabel(st)||'未知 —— 可在 webaz.xyz 审批页查看'); orderSlot.textContent=''   // BUG-06: live read may carry a string OR a v2 object — normalize both
       if(stCode(st)==='executed'&&oid&&typeof oai.callTool==='function'){
         var vo=el('button','btn','查看订单 '+String(oid).slice(0,10)+'…')
         vo.addEventListener('click',onceGuard(function(){   // F4:此卡渲染 approval;订单时间线属另一卡 → 打开 webaz.xyz 订单页(fail-visible),不发丢弃的 callTool
