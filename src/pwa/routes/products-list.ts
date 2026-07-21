@@ -425,7 +425,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       selection_required: true,
       selectable_ids: rows.map(r => String(r.id)),
       detail_fetch_template: { tool: 'webaz_search', arguments: { result_handle: resultHandle, selected_ids: ['<pick 1-5 ids from selectable_ids>'] } },
-      detail_usage: 'Fetch full terms ONLY for the product(s) the buyer is actively deciding on (usually 1). Do NOT bulk-fetch every result just to display them — the list card already shows the essentials; bulk detail dumps overload the conversation.',   // A2.1:防模型为展示批量拉详情(实测 5 全拉=巨量冗余输出)
+      detail_usage: 'Fetch details ONLY for the product(s) the buyer is deciding on (usually 1); never bulk-fetch all results for display.',   // A2.1:防模型为展示批量拉详情(实测 5 全拉=巨量冗余输出)
     } : {}
     res.json({
       schema_version: SCHEMA_PRODUCT_SEARCH,
