@@ -2518,6 +2518,7 @@ try {
 
 // ─── 里程碑 7.2：商品 alias 系统 schema ─────────────────────────
 // 协议级精准匹配：卖家声明该 SKU 的多种 alias（外部 id / 标题 / 短链 / 淘口令 token / 标题片段）
+import { resolveProductMatch } from './product-alias-match.js'
 // 服务端用 findProductsByAlias 做"完全相等 + 包含"判定。alias 至少 6 字符，反通用词。
 try {
   initProductAliasesSchema(db)
@@ -2624,38 +2625,8 @@ function extractCandidateAliases(text: string): Array<{ type: string; value: str
   return candidates
 }
 // 找到所有可能匹配用户输入的 product_id 集合：ID/title/external_title/alias。
-function findProductsByAlias(userInput: string): Set<string> {
-  const text = String(userInput || '').trim()
-  const matched = new Set<string>()
-  if (!text) return matched
-  // ① product ID / title 完全相等
-  try {
-    const rows = db.prepare(`SELECT id FROM products WHERE (id = ? OR title = ?) AND status = 'active'`).all(text, text) as Array<{ id: string }>
-    rows.forEach(r => matched.add(r.id))
-  } catch {}
-  // ② external_title 完全相等（product_external_links）
-  try {
-    const rows = db.prepare(`SELECT DISTINCT product_id FROM product_external_links WHERE external_title = ?`).all(text) as Array<{ product_id: string }>
-    rows.forEach(r => matched.add(r.product_id))
-  } catch {}
-  // A4(Holden:完整标题不得返回其他商品)—— 精确命中(ID/标题/外部标题完全相等)优先且【排他】:
-  //   有精确命中就只返回精确集,族别名(③包含判定)仅在无精确命中时生效。宁缺毋滥。
-  if (matched.size > 0) return matched
-  // ③ alias 包含判定 — 只取 active + alias_value 长度 ≤ text 长度（必要条件）
-  // 性能：MVP 阶段全表扫；大表后切 FTS5
-  try {
-    const aliases = db.prepare(`
-      SELECT product_id, alias_value
-      FROM product_aliases
-      WHERE status = 'active' AND length(alias_value) >= 6 AND length(alias_value) <= ?
-    `).all(text.length) as Array<{ product_id: string; alias_value: string }>
-    for (const a of aliases) {
-      if (text.includes(a.alias_value)) matched.add(a.product_id)
-    }
-  } catch {}
-
-  return matched
-}
+// 商品匹配抽至 product-alias-match.ts(A4 exact-first 单一真相源;顶格文件加码必拆新文件)。
+function findProductsByAlias(userInput: string): Set<string> { return resolveProductMatch(db, userInput) }
 
 // 预编译插入语句，hot path 上零运行时开销
 const logAgentCallStmt = db.prepare(
