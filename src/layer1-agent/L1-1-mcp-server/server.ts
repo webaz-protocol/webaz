@@ -249,7 +249,7 @@ async function apiCall(path: string, opts: { method?: string; body?: unknown; ap
       // RFC-025 PR-3(类修,allowlist 版):透传服务端结构化错误契约 —— 此前非 2xx 只留 error/error_code,
       //   机器可执行的恢复指引全被丢弃。只放行【已知恢复字段】(Codex L-9:无限 spread 会把任何路由错误体里
       //   的意外字段/潜在 PII 一并送进模型上下文;allowlist 让边界可审计)。error/error_code/http_status 照旧。
-      const RECOVERY_FIELDS = ['reason', 'retryable', 'missing_requirements', 'next_steps', 'hint', 'next_step', 'approval_url', 'required_scope', 'missing_scopes', 'retry_after_approval', 'request_permission', 'existing_request_id', 'duplicate', 'available_stock', 'stock', 'max_per_order', 'new_price', 'old_price', 'session_quantity', 'requested_quantity', 'region', 'option', 'options', 'suggested_question', 'submitted', 'category_table', 'alias_hints', 'recommended_next_call', 'recommended_next_calls', 'selection_required', 'match_semantics', 'per_keyword_hits'] as const   // P0 PR-AB:类目契约错误体机器可执行字段   // 'note' 刻意不放行(自由文本面);stock/old_price = 既有 orders-create 错误体消费字段
+      const RECOVERY_FIELDS = ['reason', 'retryable', 'missing_requirements', 'next_steps', 'hint', 'next_step', 'approval_url', 'required_scope', 'missing_scopes', 'retry_after_approval', 'request_permission', 'existing_request_id', 'duplicate', 'available_stock', 'stock', 'max_per_order', 'new_price', 'old_price', 'session_quantity', 'requested_quantity', 'region', 'option', 'options', 'suggested_question', 'submitted', 'category_table', 'alias_hints', 'recommended_next_call', 'recommended_next_calls', 'selection_required', 'match_semantics', 'per_keyword_hits', 'related_products', 'related_sellers', 'related_query', 'related_note'] as const   // A3-10:相关商品样本(标题含词,非精确命中)   // P0 PR-AB:类目契约错误体机器可执行字段   // 'note' 刻意不放行(自由文本面);stock/old_price = 既有 orders-create 错误体消费字段
       const recovery: Record<string, unknown> = {}
       for (const k of RECOVERY_FIELDS) if (json && json[k] !== undefined) recovery[k] = json[k]
       return { ...recovery, error: baseErr + authBoundaryHint(resp.status), error_code: json?.error_code, http_status: resp.status }
@@ -2840,13 +2840,26 @@ export async function handleSearch(args: Record<string, unknown>) {
       const catBrowse: Record<string, unknown> = { sort: 'newest', limit: 8 }
       if (category) catBrowse.category = category
       if (maxPrice != null) catBrowse.max_price = maxPrice
+      // A3-10(Holden live:随机目录样本被误读为"模糊搜索垃圾")—— 商品词 0 命中时,样本改为
+      //   【标题包含检索词】的相关商品(= 已认可的 discover title-substring 语义;fuzzy 参数只喂给
+      //   recovery 样本,strict 结果集恒为 0/[],铁律不破);无相关项才回落随机目录样本。
+      let related: Array<Record<string, unknown>> = []
+      let relatedSellers: Record<string, unknown> = {}
+      if (shortTerm) {
+        const rqs = new URLSearchParams({ mode: 'agent', limit: '8', sort: 'newest', fuzzy: 'true' })
+        rqs.set('q', q)
+        const rr = await apiCall('/api/products?' + rqs.toString()).catch(() => ({}))
+        related = ((rr as Record<string, unknown>).products as Array<Record<string, unknown>> | undefined) ?? []
+        relatedSellers = ((rr as Record<string, unknown>).sellers as Record<string, unknown> | undefined) ?? {}
+      }
       const bqs = new URLSearchParams({ mode: 'agent', limit: '5', sort: 'newest' })
       if (category) bqs.set('category', String(category))
       if (maxPrice != null) bqs.set('max_price', String(maxPrice))
-      const br = await apiCall('/api/products?' + bqs.toString()).catch(() => ({}))
+      const br = related.length ? {} : await apiCall('/api/products?' + bqs.toString()).catch(() => ({}))
       const sample = ((br as Record<string, unknown>).products as Array<Record<string, unknown>> | undefined) ?? []
       recovery = {
         reason: 'strict_no_match',
+        ...(related.length ? { related_products: related, related_sellers: relatedSellers, related_query: q, related_note: 'titles CONTAINING the query (NOT exact matches) — the strict result set is still 0' } : {}),
         note: 'webaz_search is STRICT (exact title/SKU) — no fuzzy fallback. For a natural-language product need, switch to webaz_discover (structured intent). Do NOT retry webaz_search with shorter words. / 精确匹配 0 命中;自然语言需求请改用 webaz_discover(结构化意图),勿用更短词重试 search。',
         // 主路径:短商品词 → 确定性转 discover(单词 + any,防 AND 陷阱);复杂 query → 不伪造关键词,导词表
         next_step: shortTerm

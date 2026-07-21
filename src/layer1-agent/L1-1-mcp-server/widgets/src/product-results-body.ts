@@ -89,8 +89,12 @@ function renderBody(oai, out){
   // ②0 命中
   if(!products.length){
     root.textContent=''
-    root.appendChild(el('div',null,'精确匹配 0 命中(WebAZ 搜索是协议级严格匹配)。'))
     var rec=out.recovery||{}
+    if(rec.related_products&&rec.related_products.length){   // A3-10:相关商品(标题含词)以完整交互页渲染 + 诚实横幅;strict 0 事实保留在横幅里
+      renderBody(oai,{ schema_version:'webaz.product_search.model.v1', products:rec.related_products, sellers:rec.related_sellers||{}, count:rec.related_products.length, total_count:rec.related_products.length, __related_note:'精确匹配 0 命中 —— 以下是标题包含「'+String(rec.related_query||'')+'」的相关商品(非精确命中)' })
+      return
+    }
+    root.appendChild(el('div',null,'精确匹配 0 命中(WebAZ 搜索是协议级严格匹配)。'))
     if(rec.catalog_sample&&rec.catalog_sample.length){
       root.appendChild(el('div','note','以下是目录样本(非搜索结果):'))
       var g0=el('div','grid')
@@ -179,7 +183,7 @@ function renderBody(oai, out){
     root.appendChild(bar)
     // F5(Round1 UI hotfix):卡片显式标注真实展示数 —— 卡片只展示严格匹配命中,绝不虚构;模型叙述的"找到N款/推荐"可能来自更广候选集(discover),两者口径不同。
     var __shown=products.length, __total=(out.total_count!=null?out.total_count:(out.count!=null?out.count:__shown))   // A2.2:优先服务端总命中数
-    root.appendChild(el('div','note','精确匹配 · 本卡展示 '+__shown+' 款'+((__total>__shown)?('(共 '+__total+' 命中,翻页查看更多)'):'')+' —— 模型文字里的"找到/推荐 N 款"可能来自更广候选集,以本卡商品为准'))
+    root.appendChild(el('div','note',out.__related_note?String(out.__related_note):('精确匹配 · 本卡展示 '+__shown+' 款'+((__total>__shown)?('(共 '+__total+' 命中,翻页查看更多)'):'')+' —— 模型文字里的"找到/推荐 N 款"可能来自更广候选集,以本卡商品为准')))
     var list=products.slice()
     var priceOf=function(p){ return (p.price&&p.price.amount_minor)||0 }
     if(state.sort==='price_asc') list.sort(function(a,b){return priceOf(a)-priceOf(b)})

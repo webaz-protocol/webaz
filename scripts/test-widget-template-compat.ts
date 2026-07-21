@@ -40,7 +40,7 @@ for (const u of ['ui://widget/webaz-products.html', 'ui://widget/webaz-products.
 
 // C-5 retention bound
 for (const [name, hashes] of Object.entries(KNOWN_STALE_WIDGET_HASHES)) {
-  ok(`C-5 ${name} retention ≤12 (30-day WINDOW dominates count — 2026-07-21 rapid iteration stacked several same-day versions; prune by window from ~2026-08-18)`, hashes.length >= 1 && hashes.length <= 12)
+  ok(`C-5 ${name} retention ≤14 (30-day WINDOW dominates count — 2026-07-21 rapid iteration stacked several same-day versions; prune by window from ~2026-08-18)`, hashes.length >= 1 && hashes.length <= 14)
   ok(`C-5 ${name} hashes are 10-hex + unique`, new Set(hashes).size === hashes.length && hashes.every(h => /^[0-9a-f]{10}$/.test(h)))
 }
 
