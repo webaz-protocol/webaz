@@ -30,19 +30,19 @@ ok('P-1 checked-in generated artifact matches fresh build (run npm run gen:widge
 ok('P-2 build is deterministic (two builds byte-identical)', build1 === build2)
 
 // P-3 direct import of pure functions
-ok('P-3 etaDisplay importable + region map', etaDisplay({ SG: 12, all: 12 }, 'SG') === '约12天')
-ok('P-3 etaDisplay JSON-string (B-1)', etaDisplay('{"SG":12,"all":12}') === '约12天')
+ok('P-3 etaDisplay importable + region map (locale-tolerant; i18n verified in test:widget-i18n)', /^(约12天|~12 days)$/.test(etaDisplay({ SG: 12, all: 12 }, 'SG')))
+ok('P-3 etaDisplay JSON-string (B-1)', /^(约12天|~12 days)$/.test(etaDisplay('{"SG":12,"all":12}')))
 ok('P-3 webazConsume unwraps structuredContent', JSON.stringify(webazConsume({ structuredContent: { a: 1 } })) === '{"a":1}')
 
 // P-4 content pins (round1b == A1; see header before touching)
 const uiVer = (html: string): string => createHash('sha256').update(html).digest('hex').slice(0, 10)
 const PINS: Array<[string, string, string]> = [
-  ['PRODUCT_RESULTS_WIDGET_HTML', uiVer(PRODUCT_RESULTS_WIDGET_HTML), '514843c88b'],
-  ['PRODUCT_RESULTS_WIDGET_MCP_HTML', uiVer(PRODUCT_RESULTS_WIDGET_MCP_HTML), '9d92c1b644'],
-  ['QUOTE_APPROVAL_WIDGET_HTML', uiVer(QUOTE_APPROVAL_WIDGET_HTML), 'ddfed02d36'],
-  ['QUOTE_APPROVAL_WIDGET_MCP_HTML', uiVer(QUOTE_APPROVAL_WIDGET_MCP_HTML), '86c5302705'],
-  ['ORDER_TIMELINE_WIDGET_HTML', uiVer(ORDER_TIMELINE_WIDGET_HTML), '4c3103b1f4'],
-  ['ORDER_TIMELINE_WIDGET_MCP_HTML', uiVer(ORDER_TIMELINE_WIDGET_MCP_HTML), 'fdca310a4f'],
+  ['PRODUCT_RESULTS_WIDGET_HTML', uiVer(PRODUCT_RESULTS_WIDGET_HTML), 'eec0686d7d'],
+  ['PRODUCT_RESULTS_WIDGET_MCP_HTML', uiVer(PRODUCT_RESULTS_WIDGET_MCP_HTML), 'dd693cdbe6'],
+  ['QUOTE_APPROVAL_WIDGET_HTML', uiVer(QUOTE_APPROVAL_WIDGET_HTML), '4530e921c8'],
+  ['QUOTE_APPROVAL_WIDGET_MCP_HTML', uiVer(QUOTE_APPROVAL_WIDGET_MCP_HTML), '181c26cdcf'],
+  ['ORDER_TIMELINE_WIDGET_HTML', uiVer(ORDER_TIMELINE_WIDGET_HTML), '9f0cf3187f'],
+  ['ORDER_TIMELINE_WIDGET_MCP_HTML', uiVer(ORDER_TIMELINE_WIDGET_MCP_HTML), 'b8f9bcb00b'],
 ]
 for (const [name, got, want] of PINS) ok(`P-4 ${name} content hash pinned ${want} (got ${got})`, got === want)
 

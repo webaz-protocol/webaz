@@ -376,7 +376,8 @@
     "test:widget-source-parity": "tsx scripts/test-widget-source-parity.ts",
     "test:widget-template-compat": "tsx scripts/test-widget-template-compat.ts",
     "test:display-fields": "tsx scripts/test-display-fields.ts",
-    "test:agent-anchor-search": "tsx scripts/test-agent-anchor-search.ts"
+    "test:agent-anchor-search": "tsx scripts/test-agent-anchor-search.ts",
+    "test:widget-i18n": "tsx scripts/test-widget-i18n.ts"
   },
   "keywords": [
     "mcp",
