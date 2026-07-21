@@ -437,7 +437,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       sellers: sellersIndex(rows),
       products: rows.map(r => {
         const f = formatProductForAgent(r, req)
-        return projectProductModel({ ...r, title: f.title, estimated_days: f.estimated_days, agent_summary: f.agent_summary })
+        return projectProductModel({ ...r, title: f.title, estimated_days: f.estimated_days, agent_summary: f.agent_summary }, (typeof ship_to === 'string' && ship_to.trim()) ? ship_to.trim().toUpperCase() : null)
       }),
     })
   })

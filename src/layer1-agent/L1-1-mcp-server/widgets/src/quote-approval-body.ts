@@ -1,4 +1,4 @@
-// @ts-nocheck — A1 冻结期:body 源码字节级冻结(内容 hash 不变),语义标注留给 A2;语法错误仍会上报。生成器会剥离本行。
+// @ts-nocheck — body 为 ES5 风格运行时脚本(el() 可选参/动态 state),完整类型标注另行任务;语法错误仍会上报。生成器会剥离本行。
 
 function renderBody(oai, out){
   oai = oai || {}
@@ -53,12 +53,12 @@ function renderBody(oai, out){
     var s=out.shipping||{}
     row(box,'配送',(out.destination&&out.destination.summary)||'')
     row(box,'发货时限',s.handling_hours!=null?s.handling_hours+'h':'—')
-    row(box,'预计送达',etaDisplay(s.estimated_days,(out.destination&&out.destination.region)))   // F3:统一 formatter,不再 String(对象)
+    row(box,'预计送达',out.display_eta||etaDisplay(s.estimated_days,(out.destination&&out.destination.region)))   // F3:统一 formatter,不再 String(对象)
     toggler(box,'展开退货与保修',function(b){ row(b,'退货期',out.return_days!=null?out.return_days+'天':'—'); row(b,'保修',out.warranty_days!=null?out.warranty_days+'天':'—') })
     row(box,'支付轨道',String(out.payment_rail||'escrow'))
     toggler(box,'展开风险与轨道说明',function(b){ b.appendChild(el('div','meta',out.rail_note||'')) })
     if(out.fiat_estimate) toggler(box,'查看汇率时间',function(b){ b.appendChild(el('div','meta','1 USD ≈ '+out.fiat_estimate.rate+' '+out.fiat_estimate.currency+' @ '+(out.fiat_estimate.as_of||'')+(out.fiat_estimate.stale?'(近似)':''))) })
-    row(box,'报价到期',String(out.expires_at||''))
+    row(box,'报价到期',String(out.display_expires_at||out.expires_at||''))
     row(box,'库存','未锁定(下单时重新校验)')
     if(out.quote_token&&typeof oai.callTool==='function'){
       var b1=el('button','btn','创建订单草稿(不扣款)')
@@ -82,7 +82,7 @@ function renderBody(oai, out){
     row(box,'配送',(out.destination&&out.destination.summary)||'')
     row(box,'支付轨道',String(out.payment_rail||''))
     toggler(box,'展开轨道说明',function(b){ b.appendChild(el('div','meta',out.rail_note||'')) })
-    row(box,'过期时间',String(out.expires_at||''))
+    row(box,'过期时间',String(out.display_expires_at||out.expires_at||''))
     if(stCode(out.status)==='draft'&&typeof oai.callTool==='function'){
       var b2=el('button','btn','提交 Passkey 审批(不会直接执行)')
       if(qtyBad(out)){ b2.disabled=true; box.appendChild(b2); box.appendChild(el('div','warn','数量数据异常,无法提交审批(quantity_error='+qtyErr(out)+')')) }   // BUG-06: never initiate a submit call on invalid quantity

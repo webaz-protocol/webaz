@@ -4,10 +4,10 @@
  *  P-1 parity:      checked-in widget-js.generated.ts must equal a fresh build (no hand edits / stale artifact)
  *  P-2 determinism: two consecutive builds are byte-identical (no timestamps/randomness)
  *  P-3 importable:  compat-core pure functions are directly importable (the A1 unit-test contract)
- *  P-4 content pin: the 6 widget HTML content hashes are EXACTLY the round1b production hashes —
- *                   A1 is a byte-identical refactor; ANY drift here is a regression. When a later PR
- *                   (A2+) intentionally changes widget content, update these pins AND append the
- *                   superseded hashes to KNOWN_STALE_WIDGET_HASHES (widget-template-compat.ts).
+ *  P-4 content pin: the 6 widget HTML content hashes are EXACTLY the A2 build hashes —
+ *                   any unintended drift is a regression. When a PR intentionally changes widget
+ *                   content, update these pins AND append the superseded hashes to
+ *                   KNOWN_STALE_WIDGET_HASHES (widget-template-compat.ts).
  * Usage: npm run test:widget-source-parity
  */
 import { readFileSync } from 'node:fs'
@@ -37,10 +37,10 @@ ok('P-3 webazConsume unwraps structuredContent', JSON.stringify(webazConsume({ s
 // P-4 content pins (round1b == A1; see header before touching)
 const uiVer = (html: string): string => createHash('sha256').update(html).digest('hex').slice(0, 10)
 const PINS: Array<[string, string, string]> = [
-  ['PRODUCT_RESULTS_WIDGET_HTML', uiVer(PRODUCT_RESULTS_WIDGET_HTML), '2992d4bf3f'],
-  ['PRODUCT_RESULTS_WIDGET_MCP_HTML', uiVer(PRODUCT_RESULTS_WIDGET_MCP_HTML), '3b8c59d367'],
-  ['QUOTE_APPROVAL_WIDGET_HTML', uiVer(QUOTE_APPROVAL_WIDGET_HTML), 'a1bb13f641'],
-  ['QUOTE_APPROVAL_WIDGET_MCP_HTML', uiVer(QUOTE_APPROVAL_WIDGET_MCP_HTML), 'efba433258'],
+  ['PRODUCT_RESULTS_WIDGET_HTML', uiVer(PRODUCT_RESULTS_WIDGET_HTML), 'f1688b621b'],
+  ['PRODUCT_RESULTS_WIDGET_MCP_HTML', uiVer(PRODUCT_RESULTS_WIDGET_MCP_HTML), 'b9b8e577a8'],
+  ['QUOTE_APPROVAL_WIDGET_HTML', uiVer(QUOTE_APPROVAL_WIDGET_HTML), '176e2de4e7'],
+  ['QUOTE_APPROVAL_WIDGET_MCP_HTML', uiVer(QUOTE_APPROVAL_WIDGET_MCP_HTML), 'fb414f1c0c'],
   ['ORDER_TIMELINE_WIDGET_HTML', uiVer(ORDER_TIMELINE_WIDGET_HTML), '4c3103b1f4'],
   ['ORDER_TIMELINE_WIDGET_MCP_HTML', uiVer(ORDER_TIMELINE_WIDGET_MCP_HTML), 'fdca310a4f'],
 ]
