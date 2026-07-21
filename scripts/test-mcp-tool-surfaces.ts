@@ -110,7 +110,7 @@ console.log(`  [tools/list bytes] full=${fullB}B (~${Math.ceil(fullB / 4)} tok) 
     html.includes('window.openai') && html.includes('toolOutput')
     && !/["'\`](https?:)?\/\//.test(html) && !REQUEST_TOKENS.test(html) && html.includes('safeWebazHref'))
   ok('U-2b widget handles ALL THREE structuredContent shapes (search page / detail / zero-hit recovery)',
-    html.includes('webaz.product_detail.model.v1') && html.includes('catalog_sample') && html.includes('next_cursor'))
+    html.includes('webaz.product_detail.model.v1') && html.includes('related_products') && html.includes('more_url'))
   ok('U-2e widget fx line: reads fx table, USDC sample labels via price_display, stale marker, and a visible non-settlement disclosure',
     html.includes('out.fx') && html.includes('≈') && html.includes('price_display') && html.includes('stale') && html.includes('非结算') && !html.includes(' WAZ'))
   ok('U-2c widget has NO executable/HTML sink TOKENS in any form (incl bracket access) and economic entry returns to the conversation flow',
