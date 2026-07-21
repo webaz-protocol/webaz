@@ -549,10 +549,11 @@ function renderBody(oai, out){
     if(out.quote_token&&typeof oai.callTool==='function'){
       var b1=el('button','btn','创建订单草稿(不扣款)')
       if(qtyBad(out)){ b1.disabled=true; box.appendChild(b1); box.appendChild(el('div','warn','数量数据异常,无法创建草稿(quantity_error='+qtyErr(out)+')')) }   // BUG-06: never initiate a draft call on invalid quantity
-      else { b1.addEventListener('click',onceGuard(function(){ b1.disabled=true   // F4:就地消费结果 → 渲染草稿卡(同 widget renderBody 处理 draft schema);失败留可复制手动路径
-        callWebazTool(oai,'webaz_order_draft',{action:'create',quote_token:out.quote_token}).then(function(res){
+      else { b1.addEventListener('click',onceGuard(function(){ b1.disabled=true
+        actHint('用这个报价创建订单草稿(quote_token='+String(out.quote_token)+')', true, '正在创建订单草稿…若卡片未更新为草稿,复制发我:')   // 同步 fail-visible:立即留可复制手动路径,永不静默/永不卡死
+        callWebazTool(oai,'webaz_order_draft',{action:'create',quote_token:out.quote_token}).then(function(res){   // F4:就地消费结果 → 渲染草稿卡(替换上方 hint);失败/超时保留手动路径并可重试
           if(res.ok&&res.structuredContent){ renderBody(oai,res.structuredContent); return }
-          b1.disabled=false; actHint('用这个报价创建订单草稿(quote_token='+String(out.quote_token)+')', false, (res.timeout?'创建草稿超时':'创建草稿失败:'+String(res.error||''))+',请重试或复制发我:')
+          b1.disabled=false
         })
       })); box.appendChild(b1) }
     }
@@ -571,10 +572,11 @@ function renderBody(oai, out){
     if(stCode(out.status)==='draft'&&typeof oai.callTool==='function'){
       var b2=el('button','btn','提交 Passkey 审批(不会直接执行)')
       if(qtyBad(out)){ b2.disabled=true; box.appendChild(b2); box.appendChild(el('div','warn','数量数据异常,无法提交审批(quantity_error='+qtyErr(out)+')')) }   // BUG-06: never initiate a submit call on invalid quantity
-      else { b2.addEventListener('click',onceGuard(function(){ b2.disabled=true   // F4:就地消费结果 → 渲染审批卡(approval schema);money 参数 withTrace 不变,仅新增结果消费
-        callWebazTool(oai,'webaz_submit_order_request',withTrace({draft_id:out.draft_id})).then(function(res){
+      else { b2.addEventListener('click',onceGuard(function(){ b2.disabled=true
+        actHint('提交这个草稿去 Passkey 审批(draft_id='+String(out.draft_id)+')', true, '正在提交 Passkey 审批…若卡片未更新为审批,复制发我:')   // 同步 fail-visible:立即留可复制手动路径
+        callWebazTool(oai,'webaz_submit_order_request',withTrace({draft_id:out.draft_id})).then(function(res){   // F4:就地消费 → 渲染审批卡;money 参数 withTrace 不变,仅新增结果消费;失败/超时保留手动路径
           if(res.ok&&res.structuredContent){ renderBody(oai,res.structuredContent); return }
-          b2.disabled=false; actHint('提交这个草稿去 Passkey 审批(draft_id='+String(out.draft_id)+')', false, (res.timeout?'提交超时':'提交失败:'+String(res.error||''))+',请重试或复制发我:')
+          b2.disabled=false
         })
       })); box.appendChild(b2) }
     }

@@ -75,8 +75,8 @@ const run = async (): Promise<void> => {
 // ── F4 wiring: the built widget HTML must consume results (callWebazTool) and NOT fire-and-forget the primary buttons ──
 ok('F4 ProductResults uses callWebazTool', /callWebazTool\(oai,'webaz_quote_order'/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('F4 ProductResults no fire-and-forget quote (old pattern gone)', !/oai\.callTool\('webaz_quote_order',\{product_id:pid,quantity:1\}\); fired=true/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('F4 QuoteApproval draft consumes+renders', /callWebazTool\(oai,'webaz_order_draft'[\s\S]{0,160}renderBody\(oai,res\.structuredContent\)/.test(QUOTE_APPROVAL_WIDGET_HTML))
-ok('F4 QuoteApproval submit consumes+renders', /callWebazTool\(oai,'webaz_submit_order_request'[\s\S]{0,180}renderBody\(oai,res\.structuredContent\)/.test(QUOTE_APPROVAL_WIDGET_HTML))
+ok('F4 QuoteApproval draft consumes+renders', /callWebazTool\(oai,'webaz_order_draft'[\s\S]{0,320}renderBody\(oai,res\.structuredContent\)/.test(QUOTE_APPROVAL_WIDGET_HTML))
+ok('F4 QuoteApproval submit consumes+renders', /callWebazTool\(oai,'webaz_submit_order_request'[\s\S]{0,340}renderBody\(oai,res\.structuredContent\)/.test(QUOTE_APPROVAL_WIDGET_HTML))
 ok('F4 submit keeps withTrace (money args unchanged)', /callWebazTool\(oai,'webaz_submit_order_request',withTrace\(\{draft_id:out\.draft_id\}\)\)/.test(QUOTE_APPROVAL_WIDGET_HTML))
 ok('F4 standard bridge dedupes notification during inline consume', /__inlineConsuming>0\) return/.test(__WIDGET_BOOT_STANDARD_JS))
 ok('F4 normal path does NOT sendFollowUp for quote (only when no callTool)', !/正在获取报价[\s\S]{0,40}sendFollowUpCompat/.test(PRODUCT_RESULTS_WIDGET_HTML))
