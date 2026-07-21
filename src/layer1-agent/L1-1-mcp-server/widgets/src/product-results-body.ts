@@ -6,6 +6,9 @@ function renderBody(oai, out){
   var root = document.getElementById('root')
   function el(tag, cls, text){ var n=document.createElement(tag); if(cls)n.className=cls; if(text!=null)n.textContent=String(text); return n }
   if(!out){ root.textContent='WebAZ: no structured payload visible to this widget.'; return }
+  // 审计F2:本渲染器只认 product 系模型 —— 晚到的 draft/approval 通知(超时后宿主回灌)绝不允许把卡
+  //   砸成"0 命中"或覆盖审批面板;非 product 模型直接忽略,保留当前 DOM。
+  if(out.schema_version&&String(out.schema_version).indexOf('webaz.product_')!==0){ return }
 
   // ③详情形态 —— 完整描述/规格(卡内不可得,按需经 tool 拉取);顶部【← 返回列表】回到搜索页(修"固定住/回不去")。
   if(out.schema_version==='webaz.product_detail.model.v1'){
@@ -237,13 +240,13 @@ function renderBody(oai, out){
           state.chainBusy=true; qgo.disabled=true; qgo.textContent='创建草稿中…'
           callWebazTool(oai,'webaz_order_draft',{action:'create',quote_token:qs.quote_token}).then(function(dr){
             var ds=dr.structuredContent||{}
-            if(!dr.ok||!ds.draft_id){ state.chainBusy=false; state.hint={ text:(dr.timeout?'创建草稿超时':'创建草稿失败('+String(dr.error||'')+')')+',请把这句话复制发给我:', phrase:qphrase }; render(); return }
+            if(!dr.ok||!ds.draft_id){ state.chainBusy=false; state.hint={ text:(dr.timeout?'创建草稿超时':'创建草稿失败('+String(ds.error_code||dr.error||'')+')')+',请把这句话复制发给我:', phrase:qphrase }; render(); return }   // 审计F3:优先精确 error_code(如 QUOTE_ALREADY_CONSUMED)
             qgo.textContent='提交审批中…'
             callWebazTool(oai,'webaz_submit_order_request',{draft_id:String(ds.draft_id)}).then(function(sr){
               state.chainBusy=false
               var ss=sr.structuredContent||{}
-              if(!sr.ok||!ss.request_id){ state.hint={ text:(sr.timeout?'提交审批超时':'提交审批失败('+String(sr.error||'')+')')+',请把这句话复制发给我:', phrase:'提交订单审批(draft_id='+String(ds.draft_id)+')' }; render(); return }
-              state.approval={ request_id:String(ss.request_id), url:String(ss.approval_url||''), duplicate:!!(ss.idempotency&&ss.idempotency.duplicate) }
+              if(!sr.ok||!ss.request_id){ state.hint={ text:(sr.timeout?'提交审批超时':'提交审批失败('+String(ss.error_code||sr.error||'')+')')+',请把这句话复制发给我:', phrase:'提交订单审批(draft_id='+String(ds.draft_id)+')' }; render(); return }
+              state.approval={ request_id:String(ss.request_id), url:String(ss.approval_url||''), duplicate:!!(ss.duplicate||ss.duplicate_warning) }   // 审计F1:投影已拍平为顶层 duplicate/duplicate_warning
               state.quote=null; state.hint=null; render()
             })
           })
