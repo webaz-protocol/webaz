@@ -45,6 +45,8 @@ function project(db: Database.Database, r: Record<string, unknown>, nowIso: stri
     kind: String(r.kind ?? 'scope'),
     action_type: r.kind === 'order_submit' ? 'order_create' : r.kind === 'order_action' ? String(r.order_action ?? '') : 'scope_grant',
     status: view,
+    display_status: ({ pending: '待批准', approved: '已批准(执行中)', executed: '已执行 — 正式订单已创建', needs_reconcile: '结果待确认(重新 Passkey 可安全对账)', execution_failed: '执行未完成(可重新批准重试)', approved_retryable: '执行未完成(可重新批准重试)', failed: '失败(条款漂移/草稿失效)', rejected: '已拒绝', expired: '已过期' } as Record<string, string>)[view] ?? view,   // A3-3:display_* 纪律 —— widget 只渲染字符串
+    ...(executedOrderId ? { order_url: `/#order/${executedOrderId}` } : {}),   // A3-3:executed → 订单深链(相对;MCP 层 A5 绝对化)
     created_at: String(r.created_at), expires_at: String(r.expires_at),
     approval_url: view === 'pending' || view === 'needs_reconcile' || view === 'execution_failed' || view === 'approved_retryable' ? `/#agent-approvals/${String(r.id)}` : null,
     executed_order_id: executedOrderId,

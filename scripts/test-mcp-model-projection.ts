@@ -54,7 +54,7 @@ if (process.env.MODEL_PROJ_PHASE === 'sandbox') {
   const j = JSON.stringify(r)
   const okAll =
     r.schema_version === 'webaz.product_search.model.v1'
-    && Array.isArray(r.products) && (r.products as unknown[]).length === 5   // 默认 5 件(种了 6)
+    && Array.isArray(r.products) && (r.products as unknown[]).length === 6   // A3-3:默认 8 件(种了 6 → 全出)
     && !FORBIDDEN.test(j)
     && !/"description"/.test(j)                                              // 完整描述不进模型
     && !!(r.fx as Record<string, unknown> | undefined)?.rates && typeof (r.fx as Record<string, unknown>)?.stale === 'boolean'   // sandbox 路径同样带 stale 标注的 fx
@@ -188,13 +188,13 @@ try {
   const scJson = JSON.stringify(sc ?? {})
   ok('S-1 search (wire) returns structuredContent with schema_version', sc?.schema_version === 'webaz.product_search.model.v1', scJson.slice(0, 200))
   ok('S-2 search content = short ACTIONABLE summary (ids + next_cursor present, not the JSON blob)', stext.length > 0 && stext.length <= 480 && !stext.trimStart().startsWith('{') && /prd_/.test(stext) && (!sc?.next_cursor || stext.includes(String(sc.next_cursor))), `len=${stext.length} ${stext}`)
-  ok('S-3 default page = 5 products (7 seeded)', Array.isArray(sc?.products) && (sc?.products as unknown[]).length === 5)
+  ok('S-3 default page = 8 (A3-3/R4-1:小目录一页装完;7 seeded → 7 shown)', Array.isArray(sc?.products) && (sc?.products as unknown[]).length === 7)
   ok('S-4 NO internal/DB fields reach the model (hashes/migration/backfill/commission/source/score)', !FORBIDDEN.test(scJson), scJson.slice(0, 300))
   ok('S-5 full description does NOT reach the model', !/LONG internal description/.test(scJson))
   ok('S-6 nulls / empty objects stripped from the wire form', !/":null/.test(scJson), scJson.slice(0, 200))
   ok('S-7 sellers deduped once (7 products, 1 seller) + products use seller_ref', !!(sc?.sellers as Record<string, unknown>)?.seller1 && scJson.split('"TokenSeller"').length === 2)
   ok('S-8 decision_flags are server-asserted facts (NO_SALES_HISTORY expected on fresh catalog)', /NO_SALES_HISTORY/.test(scJson))
-  ok('S-9 next_cursor present on page 1 (more results exist)', typeof sc?.next_cursor === 'string' && (sc?.next_cursor as string).length > 0)
+  ok('S-9 default page exhausts small catalog → NO next_cursor (A3-3;cursor 机制由 S-10 显式 limit=5 锁定)', !sc?.next_cursor)
 
   // USDC 显示线(Holden 指令):商品价 display=USDC + fx 换算表(display-only,绝非结算)
   const p0 = (sc?.products as Array<Record<string, unknown>>)[0]
@@ -215,7 +215,7 @@ try {
 
   // budget: search 5 件(模型可见 = structuredContent + content 摘要)
   const searchBytes = scJson.length + stext.length
-  ok('S-11 search 5-item model-visible bytes within budget (≤3600B ≈ 900 tokens)', budgetOk('search 5 items', searchBytes, 3600), `bytes=${searchBytes}`)
+  ok('S-11 search default-page model-visible bytes within budget (≤5100B;A3-3 重基线:默认页 5→8 + model_conduct 守则 —— 换来的是叙述复述/展示翻页的多倍节省)', budgetOk('search default page', searchBytes, 5100), `bytes=${searchBytes}`)
 
   // legacy 基线(与旧 agent 分支同构:SELECT * 行 spread × 5 + metrics/score_breakdown 近似)
   const legacyRows = db.prepare("SELECT p.*, u.name as seller_name, u.created_at as seller_created_at FROM products p JOIN users u ON u.id=p.seller_id WHERE p.status='active' LIMIT 5").all()
