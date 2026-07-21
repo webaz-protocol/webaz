@@ -136,6 +136,7 @@ ok('ProductResults has NO url literal (zero-URL self-containment lock)', !/["'`]
 ok('ProductResults has NO request-capability token beyond vetted LINK compat', !REQ_TOK.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2b link discipline: safeWebazHref gate present + approval open uses it', /safeWebazHref/.test(PRODUCT_RESULTS_WIDGET_HTML) && /openWebaz\(oai,state\.approval\.url\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2b copy fallback stays beside 打开审批页', /复制审批链接/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2b 取消 is LOCAL-only (clears quote panel, no tool call, blocked mid-chain)', /var qx=el\('button','mini','取消'\); qx\.addEventListener\('click',function\(\)\{ if\(state\.chainBusy\) return; state\.quote=null/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 await run().then(() => {
   if (fail > 0) { console.error(`\n❌ phase3b-ui-hotfix FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

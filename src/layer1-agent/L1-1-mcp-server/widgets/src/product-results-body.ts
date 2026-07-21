@@ -254,6 +254,8 @@ function renderBody(oai, out){
         qp.appendChild(qgo)
       }
       var qcp=el('button','mini','复制继续'); qcp.addEventListener('click',function(){ doCopy(qphrase,qcp,qpe) }); qp.appendChild(qcp)
+      // A3-2b(Holden):取消 = 纯本地关面板(不调工具;报价不扣款不锁库存,服务端自然过期)—— 买家可改选其他商品。
+      var qx=el('button','mini','取消'); qx.addEventListener('click',function(){ if(state.chainBusy) return; state.quote=null; state.hint=null; render() }); qp.appendChild(qx)
       qp.appendChild(el('div','meta','报价不扣款 · 草稿/提交/Passkey 在下单卡完成 · 正式建单需你在 webaz.xyz 用 Passkey 批准'))
       root.appendChild(qp)
     }
