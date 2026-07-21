@@ -60,14 +60,14 @@ function renderBody(oai, out){
               ftb.textContent=L('查看完整条款(载入失败,可重试)','Full terms (load failed — retry)')
             })
           },16000)); m.appendChild(ftb)
-        } else { m.appendChild(el('div','meta','完整条款:让我用 webaz_search(full_terms=true)取该商品完整规格/退货/配送条款')) }
+        } else { m.appendChild(el('div','meta',L('完整条款:让我用 webaz_search(full_terms=true)取该商品完整规格/退货/配送条款','Full terms: let me run webaz_search(full_terms=true) for the complete spec/returns/shipping'))) }
       }
       if(__multiDetail){ var __dt=el('button','mini',L('展开详情','Expand'))
         __dt.addEventListener('click',function(){ var on=m.style.display==='none'; m.style.display=on?'block':'none'; __dt.textContent=on?L('收起详情','Collapse'):L('展开详情','Expand') })
         c.appendChild(__dt) }
       c.appendChild(m)
       // A2.1:详情卡可操作 —— 就地报价(与列表 prepareOrder 同 consume 纪律);无 callTool 宿主给可复制短语。
-      var __ph=L('为「','Prepare order for "')+(p.title||p.id)+'」准备下单(product_id='+p.id+')'
+      var __ph=L('为「','Prepare order for "')+(p.title||p.id)+L('」准备下单(product_id=','" (product_id=')+p.id+')'
       var __act=el('div','row')
       if(typeof oai.callTool==='function'){
         var __pd=el('button','primary',L('准备下单','Prepare order'))
@@ -126,10 +126,10 @@ function renderBody(oai, out){
   //   single-flight:进行中再点无效;成功→报价面板(真实金额/ETA/到期)+「创建草稿并提交审批」继续键;失败/超时→卡内错误 + 可复制手动路径。
   //   宿主无 callTool → 唯一允许的 sendFollowUp 降级(§三:正常路径绝不 sendFollowUp)。绝不假装成功、绝不直达钱路(建单仍在 Passkey)。
   function prepareOrder(pid,title){
-    var phrase=L('为「','Prepare order for "')+(title||pid)+'」准备下单(product_id='+pid+')'
+    var phrase=L('为「','Prepare order for "')+(title||pid)+L('」准备下单(product_id=','" (product_id=')+pid+')'
     if(typeof oai.callTool!=='function'){   // 宿主不支持组件直调 → fail-visible NL 降级(仅此情形)
       try{ console.warn('[webaz-widget] prepare_order fallback_reason=HOST_COMPONENT_TOOL_CALL_UNAVAILABLE') }catch(e){}
-      try{ sendFollowUpCompat(oai,'请为该商品准备下单:webaz_quote_order 报价(数量 1)→ webaz_order_draft 建草稿 → webaz_submit_order_request 提交审批,最终由我 Passkey 批准。product_id='+pid) }catch(e){}
+      try{ sendFollowUpCompat(oai,L('请为该商品准备下单:webaz_quote_order 报价(数量 1)→ webaz_order_draft 建草稿 → webaz_submit_order_request 提交审批,最终由我 Passkey 批准。product_id=','Prepare this order: webaz_quote_order (qty 1) → webaz_order_draft → webaz_submit_order_request, then I approve with Passkey. product_id=')+pid) }catch(e){}
       state.hint={ text:L('此宿主不支持一键操作;请把这句话复制发给我:','This host lacks one-tap; copy this to me:'), phrase:phrase }; render(); return
     }
     if(state.busy) return   // single-flight:整个 promise 周期内二次点击不产生请求
@@ -144,7 +144,7 @@ function renderBody(oai, out){
   // ProductResults 自包含锁(零外链词元):不在此卡内跑 草稿→提交→审批(那会引入 webaz.xyz 完整链接)。
   //   报价就地展示后,继续下单交给可复制的一句话(模型编排 draft→submit → QuoteAndApproval 卡,链接与 Passkey 在那张卡处理)。
   function openDetail(pid,title){
-    var phrase=L('看「','View "')+(title||pid)+'」的完整详情(product_id='+pid+')'
+    var phrase=L('看「','View "')+(title||pid)+L('」的完整详情(product_id=','" full detail (product_id=')+pid+')'
     if(!out.result_handle||typeof oai.callTool!=='function'){ state.hint={ text:L('此宿主不支持一键操作;请把这句话复制发给我:','This host lacks one-tap; copy this to me:'), phrase:phrase }; render(); return }
     // R2-1(A2):就地消费详情结果 —— 与 prepareOrder 同一 consume 纪律,绝不 fire-and-forget;失败/超时留可复制手动路径。
     state.hint={ text:L('正在载入详情…若卡片没有更新为详情页,请把这句话复制发给我:','Loading detail… if the detail page does not open, copy this to me:'), phrase:phrase }; render()
@@ -244,7 +244,7 @@ function renderBody(oai, out){
       var cmp=el('div','cmp'); cmp.style.display='block'
       var t=document.createElement('table')
       var head=document.createElement('tr')
-      ;['商品','价格','退货','保修','发货','已售','下单'].forEach(function(h){ head.appendChild(el('th',null,h)) })
+      ;[L('商品','Item'),L('价格','Price'),L('退货','Return'),L('保修','Warranty'),L('发货','Dispatch'),L('已售','Sold'),L('下单','Order')].forEach(function(h){ head.appendChild(el('th',null,h)) })
       t.appendChild(head)
       chosen.forEach(function(p){
         var tr=document.createElement('tr')
@@ -260,7 +260,7 @@ function renderBody(oai, out){
       var qp=el('div','hint'); var qs=state.quote.sc||{}
       qp.appendChild(el('span',null,L('✓ 已获取报价:','✓ Quote ready: ')+(state.quote.title||'')))
       qp.appendChild(el('div','recreason',((qs.price&&qs.price.display)||'')+L(' · 预计送达 ',' · ETA ')+(webazLocale()==='en'?etaDisplay(qs.shipping&&qs.shipping.estimated_days,(qs.destination&&qs.destination.region)):(qs.display_eta||etaDisplay(qs.shipping&&qs.shipping.estimated_days,(qs.destination&&qs.destination.region))))+((qs.display_expires_at||qs.expires_at)?(L(' · 到期 ',' · expires ')+__i18nExp(qs.display_expires_at,qs.expires_at)):'')))
-      var qphrase='用这个报价创建订单草稿并提交 Passkey 审批(product_id='+state.quote.pid+')'
+      var qphrase=L('用这个报价创建订单草稿并提交 Passkey 审批(product_id=','Create an order draft from this quote and submit for Passkey approval (product_id=')+state.quote.pid+')'
       var qpe=el('div','recreason','“'+qphrase+'”'); qp.appendChild(qpe)
       // A3-2:卡内直调链 —— 草稿→提交审批就地完成(sendFollowUp 被宿主静默丢弃已实锤,模型移出关键路径;
       //   弱模型与强模型同体验)。fail-stop:任一步失败/超时留可复制短语;成功渲染审批引导(approval_url 是
@@ -272,12 +272,12 @@ function renderBody(oai, out){
           state.chainBusy=true; qgo.disabled=true; qgo.textContent=L('创建草稿中…','Creating draft…')
           callWebazTool(oai,'webaz_order_draft',{action:'create',quote_token:qs.quote_token}).then(function(dr){
             var ds=dr.structuredContent||{}
-            if(!dr.ok||!ds.draft_id){ state.chainBusy=false; state.hint={ text:(dr.timeout?L('创建草稿超时','Draft creation timed out'):L('创建草稿失败(','Draft creation failed (')+String(ds.error_code||dr.error||'')+')')+',请把这句话复制发给我:', phrase:qphrase }; render(); return }   // 审计F3:优先精确 error_code(如 QUOTE_ALREADY_CONSUMED)
+            if(!dr.ok||!ds.draft_id){ state.chainBusy=false; state.hint={ text:(dr.timeout?L('创建草稿超时','Draft creation timed out'):L('创建草稿失败(','Draft creation failed (')+String(ds.error_code||dr.error||'')+')')+L(',请把这句话复制发给我:',', copy this to me:'), phrase:qphrase }; render(); return }   // 审计F3:优先精确 error_code(如 QUOTE_ALREADY_CONSUMED)
             qgo.textContent=L('提交审批中…','Submitting…')
             callWebazTool(oai,'webaz_submit_order_request',{draft_id:String(ds.draft_id)}).then(function(sr){
               state.chainBusy=false
               var ss=sr.structuredContent||{}
-              if(!sr.ok||!ss.request_id){ state.hint={ text:(sr.timeout?L('提交审批超时','Submission timed out'):L('提交审批失败(','Submission failed (')+String(ss.error_code||sr.error||'')+')')+',请把这句话复制发给我:', phrase:L('提交订单审批(draft_id=','Submit order approval (draft_id=')+String(ds.draft_id)+')' }; render(); return }
+              if(!sr.ok||!ss.request_id){ state.hint={ text:(sr.timeout?L('提交审批超时','Submission timed out'):L('提交审批失败(','Submission failed (')+String(ss.error_code||sr.error||'')+')')+L(',请把这句话复制发给我:',', copy this to me:'), phrase:L('提交订单审批(draft_id=','Submit order approval (draft_id=')+String(ds.draft_id)+')' }; render(); return }
               state.approval={ request_id:String(ss.request_id), url:String(ss.approval_url||''), duplicate:!!(ss.duplicate||ss.duplicate_warning) }   // 审计F1:投影已拍平为顶层 duplicate/duplicate_warning
               state.quote=null; state.hint=null; persist(); render()
             })

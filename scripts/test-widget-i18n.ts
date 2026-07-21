@@ -6,7 +6,7 @@
  * Usage: npm run test:widget-i18n
  */
 import vm from 'node:vm'
-import { __WIDGET_COMPAT_JS, PRODUCT_RESULTS_BODY_JS } from '../src/layer1-agent/L1-1-mcp-server/ui-widgets.js'
+import { __WIDGET_COMPAT_JS, PRODUCT_RESULTS_BODY_JS, QUOTE_APPROVAL_BODY_JS, ORDER_TIMELINE_BODY_JS } from '../src/layer1-agent/L1-1-mcp-server/ui-widgets.js'
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean): void => { if (c) pass++; else { fail++; fails.push('✗ ' + n) } }
@@ -85,6 +85,27 @@ const SEARCH_OUT = {
 const enText = renderEnAndScan(PRODUCT_RESULTS_BODY_JS, SEARCH_OUT)
 const cjkHits = enText.split('').filter(t => CJK.test(t))
 ok('I18N-EN ProductResults search page renders ZERO widget-authored CJK under en locale', cjkHits.length === 0, 'leaked: ' + JSON.stringify(cjkHits.slice(0, 8)) + ' | text=' + enText.slice(0, 200))
+
+// ── 静态全扫锁:三张卡 body 里【每个】CJK 单引号字面量都必须是 L('zh','en') 的 zh 半边 ──
+//    (无需渲染 harness 即可捕获 QuoteApproval/OrderTimeline 的任何漏译:未包裹的中文串一律不允许)
+function unwrappedCJK(bodyJs: string): string[] {
+  // 剥注释(// 行注释 + /* */ 块注释),避免注释里的中文误报;数据模式(.replace/.split 的实参)豁免。
+  const code = bodyJs.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/[^\n]*$/gm, '')
+  const out: string[] = []
+  const re = /'((?:[^'\\]|\\.)*)'/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(code))) {
+    if (!/[一-鿿]/.test(m[1])) continue
+    const before = code.slice(Math.max(0, m.index - 12), m.index)
+    // 允许:L( 的第一个实参(zh 半边),或 .replace(/.split( 的匹配模式(数据,非展示文本)
+    if (!/L\(\s*$/.test(before) && !/\.(replace|split)\(\s*$/.test(before)) out.push(m[1].slice(0, 24))
+  }
+  return out
+}
+for (const [name, body] of [['ProductResults', PRODUCT_RESULTS_BODY_JS], ['QuoteApproval', QUOTE_APPROVAL_BODY_JS], ['OrderTimeline', ORDER_TIMELINE_BODY_JS]] as const) {
+  const leaked = unwrappedCJK(body)
+  ok(`I18N-STATIC ${name}: every CJK literal is an L() zh-half (no unwrapped user string)`, leaked.length === 0, 'unwrapped: ' + JSON.stringify(leaked.slice(0, 8)))
+}
 
 if (fail > 0) { console.error(`\n❌ widget-i18n FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ widget-i18n batch0: webazLocale waterfall (openai.locale→navigator.language→zh) + L() + compat-core etaDisplay/copy bilingual; zh output byte-unchanged\n  ✅ pass ${pass}`)
