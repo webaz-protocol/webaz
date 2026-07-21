@@ -254,6 +254,8 @@ function renderBody(oai, out){
         qp.appendChild(qgo)
       }
       var qcp=el('button','mini','复制继续'); qcp.addEventListener('click',function(){ doCopy(qphrase,qcp,qpe) }); qp.appendChild(qcp)
+      // A3-2b(Holden):取消 = 纯本地关面板(不调工具;报价不扣款不锁库存,服务端自然过期)—— 买家可改选其他商品。
+      var qx=el('button','mini','取消'); qx.addEventListener('click',function(){ if(state.chainBusy) return; state.quote=null; state.hint=null; render() }); qp.appendChild(qx)
       qp.appendChild(el('div','meta','报价不扣款 · 草稿/提交/Passkey 在下单卡完成 · 正式建单需你在 webaz.xyz 用 Passkey 批准'))
       root.appendChild(qp)
     }
@@ -263,6 +265,10 @@ function renderBody(oai, out){
       ap.appendChild(el('div','recreason','去 webaz.xyz 用 Passkey 批准后才会创建正式订单;批准前不扣款、不锁库存。'))
       if(state.approval.url){
         var ae=el('div','recreason',state.approval.url); ap.appendChild(ae)
+        // A3-2b:一键直跳(openWebaz:https+精确主机 webaz.xyz 校验后才放行;URL 是服务端数据);宿主不支持→复制降级。
+        var ao=el('button','mini','打开审批页')
+        ao.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,state.approval.url) }catch(e){ op=false } ao.textContent=op?'已尝试打开;没弹出就用复制':'此宿主不支持打开,请用复制' }))
+        ap.appendChild(ao)
         var ac=el('button','mini','复制审批链接'); ac.addEventListener('click',function(){ doCopy(state.approval.url,ac,ae) }); ap.appendChild(ac)
       }
       root.appendChild(ap)

@@ -120,7 +120,7 @@ try {
   for (const u of legacyUris) {
     const rr = await c.readResource({ uri: u })
     const html = (rr.contents as Array<{ text: string }>)[0].text
-    const needLink = baseOf(u) !== 'ui://widget/webaz-products'   // products 无深链面 → 不注入 link 片段
+    const needLink = true   // A3-2b:products 也有深链面(打开审批页)→ 全部注入 link 片段(safeWebazHref 白名单)
     ok(`R-4. legacy ${u.slice(12)} 单桥(无标准桥词元)+ compat 守卫在场`,
       !html.includes('ui/initialize') && html.includes('window.openai') && html.includes('sendFollowUpCompat')
       && (needLink ? html.includes('safeWebazHref') : !html.includes('safeWebazHref')))

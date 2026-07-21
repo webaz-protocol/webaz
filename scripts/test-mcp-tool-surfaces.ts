@@ -103,11 +103,12 @@ console.log(`  [tools/list bytes] full=${fullB}B (~${Math.ceil(fullB / 4)} tok) 
   const html = (widget.contents as Array<{ text: string }>)[0].text
   // 词元存在即禁(Codex round-2:与空白/属性赋值/括号访问形式无关 —— document['write'] 也含 write 词元)。
   // 残余边界(诚实声明):字符串拼接构造('wr'+'ite')不可静态锁 —— widget 是一方代码,由 review+审计守。
-  const REQUEST_TOKENS = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|import|src|href|location)\b/
+  // A3-2b:ProductResults 获得与审批卡同级的 LINK compat(打开审批页)—— href 词元仅经 safeWebazHref 白名单面出现;其余请求词元照禁,零 URL 字面量锁不变。
+  const REQUEST_TOKENS = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|import|src|location)\b/
   const SINK_TOKENS = /\b(innerHTML|outerHTML|insertAdjacentHTML|write|writeln|eval|Function)\b/
   ok('U-2 widget self-contained (reads window.openai.toolOutput; zero request-capability TOKENS present in any form)',
     html.includes('window.openai') && html.includes('toolOutput')
-    && !/["'\`](https?:)?\/\//.test(html) && !REQUEST_TOKENS.test(html))
+    && !/["'\`](https?:)?\/\//.test(html) && !REQUEST_TOKENS.test(html) && html.includes('safeWebazHref'))
   ok('U-2b widget handles ALL THREE structuredContent shapes (search page / detail / zero-hit recovery)',
     html.includes('webaz.product_detail.model.v1') && html.includes('catalog_sample') && html.includes('next_cursor'))
   ok('U-2e widget fx line: reads fx table, USDC sample labels via price_display, stale marker, and a visible non-settlement disclosure',

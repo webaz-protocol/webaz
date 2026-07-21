@@ -124,14 +124,20 @@ ok('A2.2 unknown status keeps webaz.xyz escape hatch', /未知 —— 可在 web
 ok('A3-2 chain button disables + shows progress on click', /qgo\.disabled=true; qgo\.textContent='创建草稿中…'/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2 R2-3 stock badge deduped vs decision_flags', /lb===stockChip\) return/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2 QuoteApproval prefers display_expires_at', /display_expires_at\|\|out\.expires_at/.test(QUOTE_APPROVAL_WIDGET_HTML))
+ok('A3-2b audit P3-2: approval_url never double-prefixed (prefix-aware both sites)', (QUOTE_APPROVAL_WIDGET_HTML.match(/indexOf\('https'\)===0/g)||[]).length >= 2)
 
 // A3-2(Holden):买家只看 USDC + 本地法币 —— 卡片绝不显示人民币
 ok('A3-2 no CNY in ProductResults card', !/CNY|¥/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 // ── Self-containment lock: ProductResults must stay URL-literal-free + zero request-capability tokens (incl. in comments) ──
-const REQ_TOK = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|import|src|href|location)\b/
+// A3-2b:ProductResults 获得与审批卡同级的 LINK compat(打开审批页)。零 URL 字面量锁【保持】;
+//   请求词元锁收窄为非链接词元(href 仅允许出现在 compat-link 的 safeWebazHref/openExternal 面)。
+const REQ_TOK = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|import|src|location)\b/
 ok('ProductResults has NO url literal (zero-URL self-containment lock)', !/["'`](https?:)?\/\//.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('ProductResults has NO request-capability token (incl. comments)', !REQ_TOK.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('ProductResults has NO request-capability token beyond vetted LINK compat', !REQ_TOK.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2b link discipline: safeWebazHref gate present + approval open uses it', /safeWebazHref/.test(PRODUCT_RESULTS_WIDGET_HTML) && /openWebaz\(oai,state\.approval\.url\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2b copy fallback stays beside 打开审批页', /复制审批链接/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2b 取消 is LOCAL-only (clears quote panel, no tool call, blocked mid-chain)', /var qx=el\('button','mini','取消'\); qx\.addEventListener\('click',function\(\)\{ if\(state\.chainBusy\) return; state\.quote=null/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 await run().then(() => {
   if (fail > 0) { console.error(`\n❌ phase3b-ui-hotfix FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
