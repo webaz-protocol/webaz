@@ -1892,6 +1892,10 @@ export function initAgentPermissionRequestsSchema(db: Database.Database): void {
     "ALTER TABLE agent_permission_requests ADD COLUMN execution_claimed_at TEXT",           // buyer_action 执行租约;与 human approved_at 分离
     "ALTER TABLE agent_permission_requests ADD COLUMN intent_hash TEXT",                   // RFC-026 PR-1 购买意图指纹(经济快照,不含 draft_id —— 等价意图跨 draft 去重)
     "ALTER TABLE orders ADD COLUMN draft_id TEXT",                                         // RFC-026 PR-1 订单↔草稿稳定关联(一 draft 至多一单的 DB 级兜底)
+    // BUG-08 三层幂等身份(全部 nullable,legacy 行 NULL,不回填):
+    "ALTER TABLE agent_permission_requests ADD COLUMN idempotency_key TEXT",               // 逻辑操作重试键(客户端提供);同键同 payload 返回同结果,同键异 payload → IDEMPOTENCY_CONFLICT
+    "ALTER TABLE agent_permission_requests ADD COLUMN purchase_intent_instance TEXT",      // 独立购买意图实例;仅"再买一份"显式动作产生,折入 intent_hash 让其绕过意图合并
+    "ALTER TABLE agent_permission_requests ADD COLUMN operation_attempt_id TEXT",          // 一次组件操作尝试(点击+重试同值);仅追踪,绝不作去重键
   ]) { try { db.exec(stmt) } catch { /* 列已存在 */ } }
   // 防双 pending + I5 幂等根基:同一 (order_id, order_action) 至多一条未终结(pending/approved)的 order_action 请求。
   //   rejected/expired/executed 为终态,不占索引 → 允许事后重新提交。
@@ -1902,6 +1906,37 @@ export function initAgentPermissionRequestsSchema(db: Database.Database): void {
   //   活跃(未终结未执行)提交请求 —— 重新报价换 draft 也绕不过;执行完成(executed_at)后指纹释放=合法再购。
   //   legacy 行 intent_hash IS NULL 不入索引(24h 自然过期,不做回填 —— 迁移零风险,回滚=drop index)。
   try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_apr_intent_active ON agent_permission_requests(human_id, intent_hash) WHERE kind='order_submit' AND status IN ('pending','approved') AND executed_at IS NULL AND intent_hash IS NOT NULL") } catch { /* */ }
+  // BUG-08:同一人同一 idempotency_key 恰一行(跨所有状态,含终态)—— 重试(含响应丢失/执行后)命中原行返回原结果;
+  //   NULL key 不入索引(legacy + 未传键的路径不受影响)。这是最强的重试安全键,先于 draft/intent 判定。
+  try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_apr_submit_idem ON agent_permission_requests(human_id, idempotency_key) WHERE kind='order_submit' AND idempotency_key IS NOT NULL") } catch { /* */ }
+  // BUG-08:零 PII append-only 幂等诊断台账 —— 追踪写失败绝不阻断交易主路径(fail-open);绝不作资金/状态权威源。
+  //   只存哈希与机器码,绝不存完整 idempotency_key / 地址 / 姓名 / token / Passkey / 聊天正文 / 原始敏感请求体。
+  db.exec(`CREATE TABLE IF NOT EXISTS agent_idempotency_trace (
+    id                       TEXT PRIMARY KEY,
+    trace_id                 TEXT,
+    interaction_id           TEXT,
+    operation_attempt_id     TEXT,
+    widget_session_id        TEXT,
+    bridge_type              TEXT,
+    tool_call_id             TEXT,
+    mcp_request_id           TEXT,
+    tool_name                TEXT,
+    handler_attempt          INTEGER,
+    idempotency_key_hash     TEXT,               -- SHA-256(key)[:16]; 绝不存完整 key
+    purchase_intent_instance TEXT,
+    intent_hash_prefix       TEXT,               -- intent_hash[:12]
+    draft_id                 TEXT,
+    request_id               TEXT,
+    order_id                 TEXT,
+    duplicate                INTEGER,            -- 0/1
+    duplicate_reason         TEXT,
+    duplicate_of             TEXT,
+    result_status            TEXT,
+    retry_count              INTEGER,
+    received_at              TEXT,               -- ISO Z
+    completed_at             TEXT                -- ISO Z
+  )`)
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_idemtrace_intent ON agent_idempotency_trace(intent_hash_prefix, received_at)') } catch { /* */ }
   // RFC-026 PR-4:agent 聊天幂等预留(grant 命名空间 + body 哈希绑定;UNIQUE = 并发同键恰一发)
   db.exec(`CREATE TABLE IF NOT EXISTS agent_chat_idem (
     grant_id    TEXT NOT NULL,
@@ -2090,6 +2125,7 @@ export function initOrderQuotesSchema(db: Database.Database): void {
       created_at       TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
+  try { db.exec('ALTER TABLE order_quotes ADD COLUMN promised_eta_snapshot TEXT') } catch { /* exists */ }   // BUG-02:冻结报价时向买家承诺的配送估计快照 JSON(ALTER AFTER CREATE;历史行=NULL)
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_oq_idem ON order_quotes(human_id, idempotency_key) WHERE idempotency_key IS NOT NULL`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_oq_expires ON order_quotes(expires_at)`)
 }
@@ -2136,6 +2172,7 @@ export function initOrderDraftsSchema(db: Database.Database): void {
   `)
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_od_quote ON order_drafts(quote_id)`)   // 一 quote 一 draft:schema 级持久保证(不止服务层 CAS)
   try { db.exec('ALTER TABLE order_drafts ADD COLUMN order_id TEXT') } catch { /* exists */ }   // PR-5a:批准执行后回链真实订单(status=ordered);ALTER AFTER CREATE 铁律
+  try { db.exec('ALTER TABLE order_drafts ADD COLUMN promised_eta_snapshot TEXT') } catch { /* exists */ }   // BUG-02:从 quote 继承的配送估计快照(不重读 listing)
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_od_idem ON order_drafts(buyer_id, idempotency_key) WHERE idempotency_key IS NOT NULL`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_od_buyer ON order_drafts(buyer_id, created_at)`)
 }

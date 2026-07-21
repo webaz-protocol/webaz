@@ -37,7 +37,7 @@ try {
 
   // ── canonical status unified: submit consumer emits 'pending' (matches webaz_approval_requests read set) ──
   const sc = projectSubmitConsumer({ request_id: 'apr_1', draft_id: 'odr_1', approval_url: '/#agent-approvals/apr_1' }) as Record<string, unknown>
-  ok('projectSubmitConsumer status = canonical "pending" (not the old "pending_approval")', sc.status === 'pending')
+  ok('projectSubmitConsumer status = canonical "pending" (BUG-06 v2 status object; not the old "pending_approval")', (sc.status as Record<string, unknown>)?.code === 'pending')
   ok('projectSubmitConsumer keeps passkey_required:true (approval semantics preserved)', sc.passkey_required === true)
   ok('projectSubmitConsumer schema_version present', typeof sc.schema_version === 'string' && (sc.schema_version as string).length > 0)
 
@@ -51,7 +51,7 @@ try {
 
   // ── schema const kept in sync with the runtime status ──
   const SCHEMAS = readFileSync('src/layer1-agent/L1-1-mcp-server/tool-output-schemas.ts', 'utf8')
-  ok('order_approval schema status const = pending (matches projection)', /const: 'pending' }/.test(SCHEMAS) && !/const: 'pending_approval'/.test(SCHEMAS))
+  ok('order_approval schema status = v2 status object (BUG-06; never the old "pending_approval")', /status: statusObject/.test(SCHEMAS) && !/pending_approval/.test(SCHEMAS))
 
   // ── HONESTY (Codex R1): USDC is a display alias — a "not real USDC/fiat custody" note must be REACHABLE on
   //    every relabeled surface (discover / approval agent-read / approval human card / the budget-param contract). ──

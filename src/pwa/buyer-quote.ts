@@ -19,9 +19,10 @@
 import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
 import { toUnits, mulRate, mulQty, type Units } from '../money.js'
-import { SCHEMA_ORDER_QUOTE } from '../agent-model-projection.js'  // MCP Token PR-1: webaz.order_quote.model.v1
+import { SCHEMA_ORDER_QUOTE_V1 } from '../agent-model-projection.js'  // raw/internal quote shape (line_items) tags itself v1; the MCP consumer projection (projectQuoteConsumer) re-stamps the BUG-06 v2 contract
 import { MAX_PER_ORDER } from '../order-limits.js'
-import { effectiveShippingTemplate, resolveShipping } from '../shipping-templates.js'
+import { effectiveShippingTemplate, resolveShipping, normalizeRegion } from '../shipping-templates.js'
+import { buildPromisedEta, serializePromisedEta, parsePromisedEta } from '../delivery-eta.js'   // BUG-02:配送估计冻结
 import { freeShippingWaives } from '../free-shipping.js'
 import { effectiveSaleRegionsRule, regionAllowedByRule, parsePlatformBlocklist } from '../sale-regions.js'
 import {
@@ -108,6 +109,7 @@ function buildResponse(db: Database.Database, row: Record<string, unknown>, quot
   const buyer = db.prepare('SELECT handle FROM users WHERE id = ?').get(String(row.human_id)) as { handle: string | null } | undefined
   const prod = db.prepare('SELECT title, stock, has_variants, handling_hours, estimated_days, return_days, warranty_days, import_duty_terms FROM products WHERE id = ?').get(String(row.product_id)) as Record<string, unknown> | undefined
   const rail = String(row.payment_rail)
+  const promised = parsePromisedEta(typeof row.promised_eta_snapshot === 'string' ? row.promised_eta_snapshot : null)   // BUG-02:冻结的配送估计(旧报价行=null → 回落 live)
   const itemU = Number(row.item_units), shipU = Number(row.shipping_units), donU = Number(row.donation_units)
   const totalU = Number(row.total_units), payableU = Number(row.payable_units)
   const line = (code: string, amount: number, included: boolean, estimated: boolean, refundable: boolean, note?: string) =>
@@ -125,7 +127,7 @@ function buildResponse(db: Database.Database, row: Record<string, unknown>, quot
   if (sumIncluded !== totalU || totalU + donU !== payableU) throw new Error('QUOTE_CALCULATION_FAILED: line-item/total invariant broke')
   const acc = row.direct_receive_account_id ? getAccount(db, String(row.direct_receive_account_id)) : null
   return {
-    schema_version: SCHEMA_ORDER_QUOTE,   // MCP Token PR-1:版本化投影标识(结构不变,字段即契约)
+    schema_version: SCHEMA_ORDER_QUOTE_V1,   // raw internal shape (unchanged); MCP consumer projection re-stamps v2
     quote_id: String(row.id),
     acting_as: buyer?.handle ? `@${buyer.handle}` : null,
     account_id_hint: maskId(String(row.human_id)),
@@ -157,7 +159,9 @@ function buildResponse(db: Database.Database, row: Record<string, unknown>, quot
     total: { amount_minor: totalU, currency: 'WAZ', currency_exponent: 6 },
     payable_total: { amount_minor: payableU, currency: 'WAZ', currency_exponent: 6, note: 'total + donation (what an escrow order will debit at creation)' },
     trade_terms: prod ? { return_days: prod.return_days ?? null, warranty_days: prod.warranty_days ?? null, import_duty_terms: prod.import_duty_terms ?? null, note: 'seller-declared' } : null,
-    shipping: { supported: true, handling_hours: prod?.handling_hours ?? null, estimated_days: prod?.estimated_days ?? null },
+    // BUG-02:配送估计显示【冻结值】(promised_eta_snapshot),不再在响应时重读 listing;旧行无快照 → 回落 live(向后兼容)。
+    shipping: { supported: true, handling_hours: prod?.handling_hours ?? null, estimated_days: promised ? promised.estimated_days_text : (prod?.estimated_days ?? null) },
+    ...(promised ? { promised_eta: promised } : {}),
     ...(quoteToken ? { quote_token: quoteToken } : { quote_token_note: 'idempotent replay — the token was issued once with the original response and is not re-shown' }),
     issued_at: String(row.issued_at),
     expires_at: String(row.expires_at),
@@ -214,7 +218,9 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
   const u = db.prepare('SELECT default_address_text, default_address_region FROM users WHERE id = ?').get(humanId) as { default_address_text: string | null; default_address_region: string | null } | undefined
   const addrText = (u?.default_address_text || '').trim()
   if (!addrText) return qerr(409, 'DEFAULT_ADDRESS_REQUIRED', 'no default address on file — set one at webaz.xyz (PWA profile) or via webaz_default_address action=set; never paste a full address into chat', { missing_requirements: ['default_address'], next_steps: ['change_address_in_pwa'] })
-  const regionTag = (u?.default_address_region || '').trim() || null
+  // BUG-02 §IV.5/6 (adversarial F1):规范化收货地区一次(trim+UPPER),让运费档、ETA 档、落库 dest_region 与
+  //   建单路径(gateShippingForCreate 亦 normalizeRegion)完全一致 —— 'sg'/'SG' 不因大小写选错档(运费 vs ETA 漂移)。
+  const regionTag = normalizeRegion(u?.default_address_region)
 
   // ── 7. 可售地区(镜像 gateSaleRegionForCreate 全语义:平台合规 overlay 先裁 + 坏配置 fail-closed)+ 运费 ──
   const parsedBlock = parsePlatformBlocklist(deps.getProtocolParam<string>('trade.platform_region_blocklist', '[]'))
@@ -310,13 +316,16 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
   //   撞唯一索引(并发同键)不再报 GENERATION_FAILED,而是回读赢家行按幂等语义返回。
   type IdemOutcome = { kind: 'replay'; row: Record<string, unknown> } | { kind: 'conflict' } | { kind: 'created' }
   let outcome: IdemOutcome
+  // BUG-02:冻结【当时向买家展示的配送估计】(region-resolved),随 quote 落库;后续 draft/order 继承此快照,
+  //   卖家事后改 listing 不影响。这是披露快照,不锁库存、不担保物流。captured_at = 报价时刻(UTC nowIso)。
+  const promisedEtaJson = serializePromisedEta(buildPromisedEta(db, product, sellerId, regionTag, nowIso))
   const insertQuote = db.prepare(`INSERT INTO order_quotes (id, token_hash, human_id, product_id, variant_id, seller_id, quantity, unit_price_units,
       item_units, shipping_units, donation_bps, donation_units, total_units, payable_units, currency, payment_rail,
-      direct_receive_account_id, dest_region, address_summary_hash, anonymous_recipient, intent_hash, idempotency_key, issued_at, expires_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      direct_receive_account_id, dest_region, address_summary_hash, anonymous_recipient, intent_hash, idempotency_key, issued_at, expires_at, promised_eta_snapshot)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
   const insertArgs = [quoteId, sha(token), humanId, productId, variantId, sellerId, qty, unitPriceU,
     itemU, shipU, donationBps, donationU, totalU, payableU, 'WAZ', rail,
-    receiveAccountId, regionTag, sha(addrText), anonymous ? 1 : 0, intentHash, idemKey, nowIso, expiresAt] as const
+    receiveAccountId, regionTag, sha(addrText), anonymous ? 1 : 0, intentHash, idemKey, nowIso, expiresAt, promisedEtaJson] as const
   try {
     outcome = db.transaction((): IdemOutcome => {
       if (idemKey) {

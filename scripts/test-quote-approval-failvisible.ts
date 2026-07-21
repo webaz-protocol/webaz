@@ -77,7 +77,7 @@ try {
   const rD = render(DRAFT, oai2)
   fire(findBtn(rD.root, '提交')!)
   const submitCall = calls.find(c => c[0] === 'webaz_submit_order_request')
-  ok('B7-8 submit → callTool webaz_submit_order_request with EXACT args {draft_id} (deep-equal, no extra keys) + fail-visible hint', !!submitCall && JSON.stringify(submitCall![1]) === JSON.stringify({ draft_id: 'odr_1' }) && treeText(rD.root).includes('draft_id=odr_1'))
+  ok('B7-8 submit → callTool webaz_submit_order_request with draft_id + zero-PII trace ids (bridge_type standard; no sensitive keys) + fail-visible hint', !!submitCall && (submitCall![1] as Record<string, unknown>).draft_id === 'odr_1' && typeof (submitCall![1] as Record<string, unknown>).trace_id === 'string' && typeof (submitCall![1] as Record<string, unknown>).operation_attempt_id === 'string' && (submitCall![1] as Record<string, unknown>).bridge_type === 'standard' && !/address|token|passkey|password|cookie/i.test(JSON.stringify(submitCall![1])) && treeText(rD.root).includes('draft_id=odr_1'))
 
   // ── B7-9/10/11: 打开审批页 must be fail-visible even when openExternal THROWS or silently drops (Codex R2 High) ──
   const rThrow = render(APPROVAL, { openExternal: () => { throw new Error('boom') } })

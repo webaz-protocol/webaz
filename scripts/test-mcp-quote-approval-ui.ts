@@ -135,7 +135,7 @@ try {
   const q2 = await callSC('webaz_quote_order', { product_id: 'prd_q', quantity: 1 })
   const d = await callSC('webaz_order_draft', { action: 'create', quote_token: q2.quote_token })
   const dj = JSON.stringify(d)
-  ok('D-1 draft 消费者投影(schema/USDC/法币估算/轨道诚信/available submit)', d.schema_version === 'webaz.order_draft.model.v1' && (d.price as Record<string, unknown>)?.currency === 'USDC' && !!d.fiat_estimate && /模拟托管/.test(String(d.rail_note)) && JSON.stringify(d.available_actions) === '["submit_request"]', dj.slice(0, 200))
+  ok('D-1 draft 消费者投影(BUG-06 v2 schema/status object/USDC/法币估算/轨道诚信/available submit)', d.schema_version === 'webaz.order_draft.model.v2' && d.type === 'order_draft' && (d.status as Record<string, unknown>)?.code === 'draft' && (d.status as Record<string, unknown>)?.label === '草稿' && (d.price as Record<string, unknown>)?.currency === 'USDC' && !!d.fiat_estimate && /模拟托管/.test(String(d.rail_note)) && JSON.stringify(d.available_actions) === '["submit_request"]', dj.slice(0, 200))
   ok('11. draft 不扣款不占库存(DB 零变化)', walletSnap() === before.wallet && stockOf() === before.stock)
   ok('19b. Draft 投影 ≤1200B(≈300 tok)', dj.length <= 1200, `bytes=${dj.length}`)
   ok('D-2 draft 零 WAZ 零 PII', !dj.includes(' WAZ') && !PII.test(dj))
@@ -143,7 +143,7 @@ try {
   // ── Submit/Approval 投影(12,15,19c)──
   const s1 = await callSC('webaz_submit_order_request', { draft_id: d.draft_id })
   const sj = JSON.stringify(s1)
-  ok('A-1 approval 投影(request_id/passkey_required/rail-aware on_approval 中性措辞/approval_url/pending)', s1.schema_version === 'webaz.order_approval.model.v1' && !!s1.request_id && s1.passkey_required === true && /follows the disclosed rail/.test(String(s1.on_approval)) && /holds no principal/.test(String(s1.on_approval)) && String(s1.approval_url).includes('agent-approvals') && s1.status === 'pending', sj.slice(0, 200))
+  ok('A-1 approval 投影(BUG-06 v2 schema/status object/request_id/passkey_required/rail-aware on_approval 中性措辞/approval_url/pending)', s1.schema_version === 'webaz.order_approval.model.v2' && s1.type === 'order_approval' && !!s1.request_id && s1.passkey_required === true && /follows the disclosed rail/.test(String(s1.on_approval)) && /holds no principal/.test(String(s1.on_approval)) && String(s1.approval_url).includes('agent-approvals') && (s1.status as Record<string, unknown>)?.code === 'pending' && (s1.status as Record<string, unknown>)?.label === '待批准', sj.slice(0, 200))
   ok('12. 提交不执行(orders 表零行,资金库存零变化)', (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === 0 && walletSnap() === before.wallet && stockOf() === before.stock)
   ok('19c. Approval 投影 ≤1000B(≈250 tok)', sj.length <= 1000, `bytes=${sj.length}`)
   const s2 = await callSC('webaz_submit_order_request', { draft_id: d.draft_id })
@@ -168,7 +168,7 @@ try {
 
   // ── 17/18. 组件资源 + CSP + domain;组件三形态 + 安全纪律 ──
   const res = await c.listResources()
-  const qaRes = res.resources.find(r => r.uri === 'ui://widget/webaz-quote-approval.html') as { mimeType?: string; _meta?: Record<string, unknown> } | undefined
+  const qaRes = res.resources.find(r => r.mimeType === 'text/html+skybridge' && r.uri.startsWith('ui://widget/webaz-quote-approval.')) as { mimeType?: string; _meta?: Record<string, unknown> } | undefined   // BUG-04: versioned URI, match by base
   ok('17/18a. quote-approval 资源在列(独立稳定 URI + CSP 空域 + widgetDomain)', !!qaRes && qaRes.mimeType === 'text/html+skybridge'
     && JSON.stringify(((qaRes._meta ?? {})['openai/widgetCSP'] as Record<string, unknown>)?.connect_domains) === '[]'
     && (qaRes._meta ?? {})['openai/widgetDomain'] === 'https://webaz.xyz')
@@ -180,7 +180,8 @@ try {
   ok('17/18b. 组件自包含 + 零请求能力词元 + 零可执行 sink + 零 WAZ', html.includes('toolOutput') && !REQUEST_TOKENS.test(html) && !SINK_TOKENS.test(html) && !html.includes(' WAZ'))
   ok('W-3s. 组件覆盖三形态 + 重复警告 + Passkey 边界 + openExternal 锁死 webaz.xyz 前缀', html.includes('order_quote.model.v1') && html.includes('order_draft.model.v1') && html.includes('order_approval.model.v1') && html.includes('duplicate_warning') && html.includes('Passkey') && html.includes('不会直接执行') && html.includes("'https://webaz.xyz/'"))
   const tools = (await c.listTools()).tools as Array<{ name: string; _meta?: Record<string, unknown> }>
-  ok('W-4s. 三工具描述符都挂 quote-approval outputTemplate', ['webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request'].every(n => tools.find(t => t.name === n)?._meta?.['openai/outputTemplate'] === 'ui://widget/webaz-quote-approval.html'))
+  // B-2(Round1b):outputTemplate 改稳定裸别名(部署不失效);版本化仍在标准桥 ui.resourceUri。
+  ok('W-4s. 三工具描述符都挂 quote-approval outputTemplate(稳定裸别名 B-2)', ['webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request'].every(n => String(tools.find(t => t.name === n)?._meta?.['openai/outputTemplate'] ?? '') === 'ui://widget/webaz-quote-approval.html'))
 
   // ── H-4 锁:投影器失败(敌意 getter)→ PROJECTION_FAILED 降级,原始协议对象零外泄 ──
   {

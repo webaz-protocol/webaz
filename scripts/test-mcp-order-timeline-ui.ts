@@ -85,7 +85,8 @@ try {
   // 1/3/7/8/12/16:escrow 单完整时间线
   const { sc: t1, text: t1text } = await call({ order_id: 'ord_t1', full: true })
   const t1j = JSON.stringify(t1)
-  ok('1. 时间线投影(schema/状态标签单源/事件序列)', t1.schema_version === 'webaz.order_timeline.model.v1'
+  ok('1. 时间线投影(BUG-06 v2 schema/type/状态对象单源/正整数 quantity/事件序列)', t1.schema_version === 'webaz.order_timeline.model.v2'
+    && t1.type === 'order_timeline' && Number.isInteger(t1.quantity) && (t1.quantity as number) > 0
     && (t1.status as Record<string, unknown>)?.code === 'accepted' && String((t1.status as Record<string, unknown>)?.label).length > 0
     && Array.isArray(t1.timeline) && (t1.timeline as unknown[]).length === 2
     && ((t1.timeline as Array<Record<string, unknown>>)[1].to_status as Record<string, unknown>).code === 'accepted', t1j.slice(0, 200))
@@ -133,7 +134,7 @@ try {
 
   // 10/13/17/18:组件纪律
   const res = await c.listResources()
-  const wRes = res.resources.find(r => r.uri === 'ui://widget/webaz-order-timeline.html') as { mimeType?: string; _meta?: Record<string, unknown> } | undefined
+  const wRes = res.resources.find(r => r.mimeType === 'text/html+skybridge' && r.uri.startsWith('ui://widget/webaz-order-timeline.')) as { mimeType?: string; _meta?: Record<string, unknown> } | undefined   // BUG-04: versioned URI, match by base
   ok('17/18. 资源在列 + CSP 空域 + widgetDomain', !!wRes && wRes.mimeType === 'text/html+skybridge'
     && JSON.stringify(((wRes._meta ?? {})['openai/widgetCSP'] as Record<string, unknown>)?.connect_domains) === '[]'
     && (wRes._meta ?? {})['openai/widgetDomain'] === 'https://webaz.xyz')
@@ -143,9 +144,14 @@ try {
   const SINK_TOKENS = /\b(innerHTML|outerHTML|insertAdjacentHTML|write|writeln|eval|Function)\b/
   ok('W-1. 组件自包含 + 零请求词元 + 零 sink + 零 WAZ + 双形态', html.includes('toolOutput') && !REQUEST_TOKENS.test(html) && !SINK_TOKENS.test(html)
     && !html.includes(' WAZ') && html.includes('order_timeline.model.v1') && html.includes('order_status.model.v1'))
-  ok('10. 联系商家 = 会话流 + 订单号内插进提示词(webaz_order_chat 绑定;无自由私信面)',
-    html.includes("读取订单 '+out.order_id+' 的对话") && html.includes('webaz_order_chat') && html.includes('sendFollowupTurn'))
+  ok('10. 联系商家 = DIRECT_TOOL 会话 read(list)+ send(结构化直调 webaz_order_chat;组件内会话区;无自由私信;旧 NL 提示已移除)',
+    html.includes("callTool('webaz_order_chat',{action:'list'") && html.includes("action:'send'")
+    && html.includes('发送给订单对方') && html.includes('idempotency_key:idem')
+    && !html.includes("读取订单 '+out.order_id+' 的对话"))
   ok('13. 组件端本地时区渲染(toLocaleString)+ 刷新走 callTool', html.includes('toLocaleString') && html.includes("callTool('webaz_buyer_orders'"))
+  ok('E1. BUG-02 订单卡分列 promised(下单时预计配送)+ logistics(当前物流预计)+ legacy 缺失,两 ETA 不合成一标签;范围/约N天不伪造确定日期',
+    html.includes('下单时预计配送') && html.includes('当前物流预计') && html.includes('下单时未记录预计配送时间')
+    && html.includes('lg.promised_eta') && html.includes("'约'+lo+'天'"))
   // PR-A 起 openExternal 唯一调用点在 openWebaz 内部,且入参必须先过 safeWebazHref(URL 解析
   // origin === 'https://webaz.xyz' 且无 userinfo);deep link 调用点仍是字面 webaz.xyz 前缀构造。
   ok('R1-4. openExternal 单一调用点在 safeWebazHref 守卫后 + deep link 字面前缀', (html.match(/openExternal\(\{href:/g) ?? []).length === 1
@@ -153,7 +159,8 @@ try {
     && html.includes("openWebaz(oai,'https://webaz.xyz/#order/'"), `sites=${(html.match(/openExternal\(\{href:/g) ?? []).length}`)
   ok('R1-1b. 组件带 minimal 单订单分支(查看完整时间线入口)', html.includes('查看完整时间线') && html.includes('out.order'))
   const tools = (await c.listTools()).tools as Array<{ name: string; _meta?: Record<string, unknown> }>
-  ok('T-1. webaz_buyer_orders 描述符挂 order-timeline outputTemplate', tools.find(t => t.name === 'webaz_buyer_orders')?._meta?.['openai/outputTemplate'] === 'ui://widget/webaz-order-timeline.html')
+  // B-2(Round1b):outputTemplate 稳定裸别名(部署不失效);版本化在标准桥 ui.resourceUri。
+  ok('T-1. webaz_buyer_orders 描述符挂 order-timeline outputTemplate(稳定裸别名 B-2)', String(tools.find(t => t.name === 'webaz_buyer_orders')?._meta?.['openai/outputTemplate'] ?? '') === 'ui://widget/webaz-order-timeline.html')
 } finally { server.close() }
 
 if (fail > 0) { console.error(`\n❌ mcp-order-timeline-ui FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

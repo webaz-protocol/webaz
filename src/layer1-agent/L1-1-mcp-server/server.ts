@@ -46,7 +46,7 @@ import { REQUEST_READINESS_GUIDE } from '../../pwa/agent-request-readiness.js'  
 import { getUsdRates, regionToCurrency } from '../../fx-rates.js'  // USDC 显示换算(display-only)  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
 import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult, summarizeDraftResult, summarizeSubmitResult, summarizeOrderTimeline,
          projectQuoteConsumer, projectDraftConsumer, projectSubmitConsumer, projectOrderTimelineConsumer,
-         SCHEMA_PRODUCT_SEARCH, projectProductModel, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1:Model Projection 单一真相源
+         SCHEMA_PRODUCT_SEARCH, SCHEMA_ORDER_DRAFT, projectProductModel, sellersIndex, sanitizeBuyerSpecs } from '../../agent-model-projection.js'  // MCP Token PR-1:Model Projection 单一真相源
 import { homedir } from 'node:os'
 import { join as pathJoin } from 'node:path'
 import { existsSync as fsExists, mkdirSync, writeFileSync, readFileSync, unlinkSync, chmodSync } from 'node:fs'
@@ -690,15 +690,9 @@ Roles: buyer (browse/order/confirm) | seller (list/accept/ship) | logistics (pic
 
 ⚠️ **STRICT MATCH ONLY** (no fuzzy). query = exact title / external_title / alias ≥6 chars. Short/NL queries return found:0 — **by design**. On 0 results the **recovery** object's next_step points to **webaz_discover** (structured intent) — NOT a catalog browse. Do NOT retry shorter, do NOT scan with a big limit. Unconstrained browse (no query/category/filter) caps at 8, else UNBOUNDED_CATALOG_BROWSE.
 
-USE THIS when:
-- User gives **full product title / SKU / precise description** (strict-match candidate), OR
-- User gives **filters** (category / max_price / min_return_days / max_handling_hours / sort), OR
-- User pastes **external URL / share-text** from Taobao / Tmall / JD / PDD / 1688 / Douyin / Xiaohongshu
-  → URL-paste is a first-class mode of THIS tool, NOT a separate browser-fetch. WebAZ exact-matches against its cross-platform anchor registry.
-
-【External-link paste】LLM-parse into \`external_link\` { platform, external_id?, external_title } (title = verbatim inside 「」); if unparseable use \`paste_text\` (server light-regex). Match: external_id exact → external_title exact → else \`matched_by:'none'\` — tell the user honestly "no exact match" (no fuzzy/keyword/similar guessing).
-
-Returns: structuredContent (webaz.product_search.model.v1) — per-product decision fields + decision_flags + one-line summary, deduped sellers map, next_cursor for paging; content = short text summary.`,
+USE THIS when: full product title/SKU/precise description (strict-match), OR filters (category/max_price/min_return_days/max_handling_hours/sort), OR an external URL/share-text (Taobao/Tmall/JD/PDD/1688/Douyin/Xiaohongshu) — URL-paste is a first-class mode of THIS tool, exact-matched against the cross-platform anchor registry.
+【External-link paste】LLM-parse into \`external_link\` {platform, external_id?, external_title (verbatim inside 「」)}; else \`paste_text\`. Match: external_id → external_title → else matched_by:'none' (honest "no exact match", no fuzzy).
+Returns structuredContent (webaz.product_search.model.v1): decision fields + decision_flags + summary, deduped sellers, next_cursor.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -721,6 +715,7 @@ Returns: structuredContent (webaz.product_search.model.v1) — per-product decis
         limit: { type: 'number', description: 'Result limit, default 5 (page). Use cursor for more pages. Unconstrained browse (no query/category/filter) is capped at 8.' },
         result_handle: { type: 'string', description: 'Detail-fetch mode: a result_handle from a previous search page (10-min TTL). With selected_ids, returns full detail projections (description/specs/terms) for up to 5 chosen products — live re-read, never cached data.' },
         selected_ids: { type: 'array', items: { type: 'string' }, description: 'With result_handle: 1..5 product ids chosen FROM that result page.' },
+        full_terms: { type: 'boolean', description: 'Detail-fetch mode only: return COMPLETE, untruncated terms (full specs / return_condition / ship_regions / variants). Use when a detail projection shows terms_complete:false or any *_truncated:true (or before an order confirmation that needs the full terms).' },
         sort: { type: 'string', enum: ['trending', 'newest', 'rating', 'price_asc', 'price_desc', 'random'], description: 'Sort: trending=composite (default) / newest / rating / price_asc / price_desc / random' },
         has_sales: { type: 'string', enum: ['true', 'false'], description: 'true=only sold; false=only new' },
         ship_to: { type: 'string', description: 'Ship-to (province/city); auto-filters unshippable' },
@@ -1909,13 +1904,10 @@ No grant → GRANT_REQUIRED (webaz_pair action=start). Missing scope → structu
   },
   {
     name: 'webaz_buyer_orders',
-    description: `Grant-wired MINIMAL buyer order read (RFC-025 PR-1, safe scope buyer_orders_read_minimal). Reads YOUR OWN orders as a buyer via an OAuth/delegation grant, NOT an api_key. Returns a minimal projection only — order_id / status / next_actor / deadline / amount / item_ref / payment_rail — with NO shipping address / recipient / contact / notes and no execution.
-
-- order_id given → that one order; omitted → your buyer order list (most recent first).
-- payment_rail (escrow | direct_p2p) tells you the funds semantics of the order; amounts are read-only facts, this tool moves nothing.
-- Seller-side orders are NOT visible here (use webaz_get_agent_order with a fulfillment grant for those).
-- No grant → GRANT_REQUIRED (connect via OAuth; a compliant client shows a connect prompt). Missing scope → structured PERMISSION_REQUIRED (re-connect so the grant carries the read scope, then retry).
-- To ACT on an order (confirm receipt, dispute, cancel …) direct the human to webaz.xyz — buyer actions are not delegated in this tool.`,
+    description: `Grant-wired buyer order read (safe scope buyer_orders_read_minimal; OAuth grant). Reads YOUR OWN orders — minimal projection only (order_id/status/next_actor/deadline/amount/item_ref/payment_rail), NO address/recipient/contact/notes, no execution.
+- order_id → that order; omitted → your buyer order list (most recent first). payment_rail = funds semantics; amounts are read-only.
+- Seller-side orders not here (use webaz_get_agent_order). No grant → GRANT_REQUIRED; missing scope → PERMISSION_REQUIRED (re-connect).
+- To ACT (confirm/dispute/cancel …) direct the human to webaz.xyz — buyer actions aren't delegated here.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1937,19 +1929,18 @@ No grant → GRANT_REQUIRED (webaz_pair action=start). Missing scope → structu
   },
   {
     name: 'webaz_discover',
-    description: `Buyer discovery over ACTIVE WebAZ listings (RFC-025 PR-2, safe scope buyer_discover; OAuth grant, no api_key). Give a structured intent — category and/or keywords, optional max_price / ship_to_region / quantity — NOT free chat text.
-
-⚠️ MATCHING CONTRACT:
-- category = REGISTRY KEY, equality-matched (not a search word). Keys: resource webaz://guide/categories or GET /api/agent/categories. Unknown key → 400 UNKNOWN_CATEGORY (full table + machine-executable recommended_next_call); unique alias (e.g. "household") auto-corrects (echoed as category_resolved); ambiguous alias → 400 CATEGORY_AMBIGUOUS + options.
-- keywords substring-match listing TITLES. Default keyword_match:"all" = conjunctive (compound required attributes). Synonyms/aliases MUST use "any" — under "all" they zero each other out. Zero results carry per_keyword_hits showing which keyword killed the set.
-- Results are honest DISCOVERY CANDIDATES (discovery_candidate), never exact matches. Exact title/SKU/URL → webaz_search.
-- DISCLOSURE: every VALID query is recorded as a demand signal linked to your account (intent + result count) to inform supply; 400-rejected inputs are not recorded. Product-term shape enforced (<=40 chars; emails/URLs/phone-like runs rejected); passing inputs recorded as-is — NO personal data in category/keywords. Only effect = that disclosed append-only demand-signal write; no order/funds/PII.`,
+    description: `Buyer discovery over ACTIVE WebAZ listings (safe scope buyer_discover; OAuth grant). Structured intent — category and/or keywords, optional max_price/ship_to_region/quantity — NOT free chat text.
+⚠️ MATCHING:
+- category = REGISTRY KEY, equality-matched (webaz://guide/categories). Unknown → 400 UNKNOWN_CATEGORY (+table+recommended_next_call); unique alias auto-corrects (category_resolved); ambiguous → 400 CATEGORY_AMBIGUOUS.
+- keywords substring-match TITLES. Default keyword_match:"all" (conjunctive); synonyms MUST use "any" (under "all" they zero out). Zero results carry per_keyword_hits.
+- Results are DISCOVERY CANDIDATES, never exact. Exact title/SKU/URL → webaz_search.
+- DISCLOSURE: every VALID query is recorded as a demand signal (intent + count) linked to your account; 400s not recorded. Term shape enforced (≤40 chars; emails/URLs/phones rejected); NO personal data. Only effect = that append-only write; no order/funds/PII.`,
     inputSchema: {
       type: 'object',
       properties: {
-        category: { type: 'string', description: 'Registry category KEY (equality-matched; see webaz://guide/categories or GET /api/agent/categories). Unique aliases auto-correct; unknown keys 400 with the table.' },
+        category: { type: 'string', description: 'Registry category KEY (equality-matched; webaz://guide/categories). Unique aliases auto-correct; unknown → 400 + table.' },
         keywords: { type: 'array', items: { type: 'string' }, description: 'Up to 5 short keywords, substring-matched against listing TITLES (at least one of category/keywords required)' },
-        keyword_match: { type: 'string', enum: ['any', 'all'], description: "Default 'all' (conjunctive — compound required attributes). Use 'any' for synonym/alias expansion; synonyms under 'all' zero each other out." },
+        keyword_match: { type: 'string', enum: ['any', 'all'], description: "Default 'all' (conjunctive); use 'any' for synonyms/aliases (under 'all' they zero out)." },
         max_price: { type: 'number', description: 'Budget ceiling in USDC (optional)' },
         ship_to_region: { type: 'string', description: 'ISO 3166-1 alpha-2 destination country (optional; filters out listings that cannot sell there)' },
         quantity: { type: 'integer', description: 'Desired quantity (default 1; filters by stock)' },
@@ -1958,10 +1949,10 @@ No grant → GRANT_REQUIRED (webaz_pair action=start). Missing scope → structu
   },
   {
     name: 'webaz_quote_order',
-    description: `Server-authoritative buyer QUOTE (safe scope price_quote; OAuth grant). Integer line items + a time-limited quote_token bound to your account. QUOTE ONLY: creates no order, pays nothing, locks no funds, reserves no stock (stock_reserved always false; availability re-checked at real order creation), and cannot be approved into anything by itself.
-Uses your SAVED default address server-side; the full address is never returned. No default → DEFAULT_ADDRESS_REQUIRED with a safe PWA next step (never paste an address into chat).
-Amounts are INTEGER base-units (WAZ, exponent 6) — never sum lines yourself, total/payable_total are server-asserted. payment_rail: escrow (WebAZ custodies at order time) | direct_p2p (you pay the seller DIRECTLY; WebAZ holds no funds, no authoritative FX). Ineligible rails FAIL structurally — never auto-switched.
-quote_token: 10-min, single-use, bound to you+product+quantity+address+rail+amounts (tampering/other accounts/expiry all fail). Next: webaz_order_draft(quote_token) → webaz_submit_order_request → human Passkey approval creates the real order.`,
+    description: `Server-authoritative buyer QUOTE (safe scope price_quote; OAuth grant). Integer line items + a single-use time-limited quote_token bound to your account. QUOTE ONLY: no order, no payment, no funds locked, no stock reserved (availability re-checked at real order creation).
+Uses your SAVED default address server-side (never returned); no default → DEFAULT_ADDRESS_REQUIRED (never paste an address into chat).
+Amounts are INTEGER base-units (exp 6) — never sum lines yourself. payment_rail: escrow (WebAZ custodies) | direct_p2p (you pay the seller directly; WebAZ holds no funds). Ineligible rails FAIL — never auto-switched.
+quote_token: 10-min single-use, bound to you+product+quantity+address+rail+amounts. Next: webaz_order_draft → webaz_submit_order_request → Passkey approval creates the real order.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1977,21 +1968,22 @@ quote_token: 10-min, single-use, bound to you+product+quantity+address+rail+amou
       },
       required: ['product_id'],
     },
-    // PR-A:quote 结果由 QuoteAndApproval 组件渲染,但组件从不 callTool 本工具(报价入口走会话流)——
-    // visibility 只留 'model',不授 'app'(遵守"当前不被 widget 调用的工具不因本 PR 获得 app 权限")。
+    // Phase-3A(低模型消耗):ProductResults 的「准备下单」按钮改为 DIRECT_TOOL —— 结构化直调本工具
+    //   (product_id + 默认地址 + 数量1),不再向聊天框发自然语言让模型选工具。故 visibility 加 'app'
+    //   (additive,不移除 'model';报价仍是加性快照,无资金/库存/订单变更,与 draft/submit 已 app 化一致)。
+    //   ★宿主是否把报价卡渲染成新卡(跨组件)属 LIVE_HOST_REQUIRED;按钮永远保留可复制的 NL 兼容降级。
     _meta: {
-      ui: { resourceUri: 'ui://widget/webaz-quote-approval-mcp.html', visibility: ['model'] },
+      ui: { resourceUri: 'ui://widget/webaz-quote-approval-mcp.html', visibility: ['model', 'app'] },
       'openai/outputTemplate': 'ui://widget/webaz-quote-approval.html',
+      'openai/widgetAccessible': true,
       'openai/toolInvocation/invoking': 'Preparing WebAZ order flow…',
       'openai/toolInvocation/invoked': 'WebAZ order flow ready',
     },
   },
   {
     name: 'webaz_order_draft',
-    description: `Buyer ORDER DRAFT (safe scope draft_order; OAuth grant). Converts ONE valid quote_token into a frozen immutable snapshot — one quote, one draft (single-use, atomic).
-A draft is a SNAPSHOT ONLY: no order, nothing charged, no funds locked, no stock held. Everything re-validates at human approval; drift hard-fails back to a fresh quote — terms are NEVER silently changed.
-action = create (quote_token, optional idempotency_key) | cancel (draft_id; terminal) | get (draft_id) | list. Drafts expire in 24h (derived status, no hidden writes; the submitter hard-rejects expired). Zero PII: destination stays a region tag + summary; amounts copied verbatim from the quote.
-Next: webaz_submit_order_request(draft_id) → the human's Passkey approval re-validates and creates the REAL order server-side. The agent never executes.`,
+    description: `Buyer ORDER DRAFT (safe scope draft_order; OAuth grant). Converts ONE quote_token into a frozen immutable snapshot (one quote → one draft, single-use, atomic). SNAPSHOT ONLY: no order/charge/funds/stock. Re-validates at approval; drift hard-fails to a fresh quote.
+action = create (quote_token, optional idempotency_key) | cancel (draft_id) | get (draft_id) | list. 24h expiry (submitter rejects expired). Zero PII: region tag + summary only. Next: webaz_submit_order_request → Passkey approval creates the REAL order server-side (the agent never executes).`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -2014,16 +2006,23 @@ Next: webaz_submit_order_request(draft_id) → the human's Passkey approval re-v
   },
   {
     name: 'webaz_submit_order_request',
-    description: `SUBMIT a buyer order draft into the human's Passkey approval queue (RFC-025 PR-5a, safe scope order_submit_request; OAuth grant, no api_key). SUBMIT-ONLY — this tool executes NOTHING.
-
-- Takes a draft_id (from webaz_order_draft). Returns request_id + approval_url — tell the human to open it and approve with their Passkey.
-- What approval does (server-side, never reachable by agents): re-validates the draft against CURRENT price/stock/region/rail state — ANY drift hard-fails back to a fresh quote (terms are never silently changed) — then creates the REAL order through the same production order path. For escrow that debits the buyer's wallet into escrow at creation; for direct_p2p no protocol funds move (you pay the seller directly).
-- The Passkey is bound to the draft's exact economic snapshot (params_hash): what the human approves is byte-for-byte what executes.
-- One pending submit per draft (DUPLICATE_SUBMIT_REQUEST otherwise); expired/cancelled drafts are rejected; decline is always available to the human in the PWA.`,
+    description: `SUBMIT a draft into the human's Passkey approval queue (safe scope order_submit_request; OAuth grant). SUBMIT-ONLY — executes NOTHING.
+- draft_id (from webaz_order_draft) → request_id + approval_url; the human opens it and approves with their Passkey.
+- Approval (server-side, unreachable by agents) re-validates price/stock/region/rail — any drift hard-fails to a fresh quote (terms never silently changed) — then creates the REAL order (escrow: wallet→escrow at creation; direct_p2p: no protocol funds move). Passkey binds the exact economic snapshot (params_hash) = byte-for-byte what executes.
+- Idempotent: a retry/duplicate returns the SAME request (duplicate_reason, no 2nd order); the explicit 再买一份 action (new_purchase_intent) creates an independent purchase. Expired/cancelled drafts rejected.`,
     inputSchema: {
       type: 'object',
       properties: {
         draft_id: { type: 'string', description: 'The odr_ draft id to submit for approval' },
+        // BUG-08 三层幂等身份(全部可选;组件按钮提供,不由模型编造):
+        idempotency_key: { type: 'string', description: 'Optional [A-Za-z0-9_-]{1,64}: click+retries share it → same result; same key + different payload → IDEMPOTENCY_CONFLICT (no execute).' },
+        new_purchase_intent: { type: 'boolean', description: 'true ONLY on the explicit 再买一份 card action → an INDEPENDENT purchase. NEVER infer from natural language.' },
+        purchase_intent_instance: { type: 'string', description: 'Optional nonce for one independent purchase (with new_purchase_intent); server mints one if omitted.' },
+        operation_attempt_id: { type: 'string', description: 'Optional trace id (diagnostics only, never a dedup key).' },
+        // BUG-08 §二 zero-PII trace ids (trace_id / interaction_id / widget_session_id / bridge_type /
+        //   tool_call_id / mcp_request_id) are widget-supplied and pass through additively (schema is not
+        //   additionalProperties:false); they're observation-only and never model-facing, so they are NOT
+        //   declared here (keeps tools/list under the token-budget ratchet). The route reads them from body.
       },
       required: ['draft_id'],
     },
@@ -2039,9 +2038,9 @@ Next: webaz_submit_order_request(draft_id) → the human's Passkey approval re-v
   },
   {
     name: 'webaz_prepare_case',
-    description: `Assemble an after-sales CASE DRAFT for one of YOUR orders (safe scope buyer_case_prepare; OAuth grant). READ-ONLY — submits nothing, writes no domain state.
-Returns server facts: structural status timeline; terms FROZEN at order time (later seller edits do not apply); CURRENT listing anchors (labeled, possibly edited since); evidence refs (ids + normalized types); any existing dispute. Routing: delivery problems → delivery dispute (48h respond / 120h arbitrate); broken ORDER terms → order claim (10 WAZ stake, 48h deadline, 3 verifiers); lying LISTING → product claim (5 WAZ stake, 72h deadline, 3 verifiers).
-No buyer PII / free text — the human sees those on the order page. Submitting disputes/returns/escalations, confirming receipt, refunds and closures are HUMAN actions at webaz.xyz (direct_p2p risk actions need a Passkey); this tool only organizes facts first.`,
+    description: `Assemble an after-sales CASE DRAFT for one of YOUR orders (safe scope buyer_case_prepare; OAuth grant). READ-ONLY — writes nothing.
+Returns server facts: status timeline; terms FROZEN at order time; CURRENT listing anchors (labeled); evidence refs; any existing dispute. Routing: delivery → delivery dispute (48h/120h); broken ORDER terms → order claim (10 WAZ stake, 48h, 3 verifiers); lying LISTING → product claim (5 WAZ stake, 72h, 3 verifiers).
+No buyer PII/free text. Submitting disputes/returns/refunds/closures are HUMAN actions at webaz.xyz (direct_p2p risk needs Passkey); this tool only organizes facts.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -2052,12 +2051,11 @@ No buyer PII / free text — the human sees those on the order page. Submitting 
   },
   {
     name: 'webaz_approval_requests',
-    description: `Read the status of YOUR OWN approval requests (RFC-026 PR-2, safe scope approval_requests_read; OAuth grant, no api_key). READ-ONLY — answers "is my request still pending / approved / executed / failed / a duplicate, and which page should the human open" WITHOUT re-submitting anything.
-
-- action="list" → your latest requests (newest first, max 50): request_id, action_type, status, timestamps, deep-link approval_url, executed_order_id.
-- action="get" (request_id) → one request in full, incl. the zero-PII economic summary for order submits.
-- status meanings: pending (open the approval_url) | needs_reconcile (order submit: last outcome unknown — a fresh Passkey approval reconciles safely) | execution_failed / approved_retryable (order action: execution did not complete, failure_reason carries the code — a fresh Passkey approval retries) | executed (executed_order_id is the REAL order) | failed (terminal; retry = submit a fresh request) | rejected | expired.
-- NEVER re-submit a quote/draft/submit chain just to check status — use this tool instead.`,
+    description: `Read the status of YOUR OWN approval requests (safe scope approval_requests_read; OAuth grant). READ-ONLY — checks pending/approved/executed/failed/duplicate + which page to open, without re-submitting.
+- action="list" → latest requests (max 50): request_id, action_type, status, timestamps, approval_url, executed_order_id.
+- action="get" (request_id) → one request in full + the zero-PII economic summary for order submits.
+- status: pending (open approval_url) | needs_reconcile (submit outcome unknown — a fresh Passkey approval reconciles) | execution_failed/approved_retryable (fresh Passkey retries; failure_reason has the code) | executed (executed_order_id = REAL order) | failed/rejected/expired.
+- NEVER re-run a quote/draft/submit chain just to check status — use this tool.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -2066,6 +2064,10 @@ No buyer PII / free text — the human sees those on the order page. Submitting 
       },
       required: ['action'],
     },
+    // §IV callable_from_component:审批卡「🔄 查看最新状态」DIRECT_TOOL 直调(结构化 request_id)。visibility 加
+    //   'app'(additive)+ widgetAccessible;本工具【无 resourceUri = 不渲染独立卡片】—— app 可调用 ≠ 必须有 UI 模板
+    //   (renders_component=false, callable_from_component=true)。纯读,无副作用;OAuth 授权/校验不变。
+    _meta: { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true },
   },
   {
     name: 'webaz_buyer_action_request',
@@ -2104,11 +2106,10 @@ No buyer PII / free text — the human sees those on the order page. Submitting 
   },
   {
     name: 'webaz_order_chat',
-    description: `Chat with the counterparty INSIDE one of YOUR orders (chat:context OAuth scope). CONTEXT-BOUND: order participants only — no free-form DM surface, nobody outside your order.
-list (order_id) → conversation: sender = you/counterparty (no raw ids), bodies verbatim, anti-scam flags kept, agent messages marked (sent_by_agent + agent_label).
-send (order_id, body ≤2000, optional idempotency_key) → PRODUCTION chat path: anti-scam, block status and the shared human rate budget (60/min) unchanged; attributed to the human account, marked agent-sent with a content hash (grant audit log).
-Idempotency: same key → the original message (same body only; different body = explicit conflict). At-least-once boundary: only a crash at the send/claim edge lets a >10min retry resend — verify with list before long-delayed retries.
-Chat moves no funds, changes no order state. Never paste addresses, payment credentials or codes into chat.`,
+    description: `Chat with the counterparty INSIDE one of YOUR orders (chat:context OAuth scope). CONTEXT-BOUND: order participants only — no free-form DM surface.
+list (order_id) → conversation: sender = you/counterparty (no raw ids), bodies verbatim, anti-scam flags, agent messages marked.
+send (order_id, body ≤2000, optional idempotency_key) → PRODUCTION chat: anti-scam + shared 60/min budget; attributed to the human, marked agent-sent (content hash). Idempotency: same key → the original message (different body = conflict); verify with list before long-delayed retries.
+Chat moves no funds, changes no state. Never paste addresses/credentials/codes into chat.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -2119,6 +2120,10 @@ Chat moves no funds, changes no order state. Never paste addresses, payment cred
       },
       required: ['action', 'order_id'],
     },
+    // §V callable_from_component:订单卡「联系商家」读会话(list)+ 发消息(send)DIRECT_TOOL 直调。visibility 加
+    //   'app'(additive)+ widgetAccessible;无 resourceUri = 不渲染独立卡片(在当前订单卡内渲染会话区)。send 是生产
+    //   反诈路径 —— 参与者/反诈/block/限频/幂等校验全在服务端不变;widget 只结构化直调,正文由用户在输入框明确输入。
+    _meta: { ui: { visibility: ['model', 'app'] }, 'openai/widgetAccessible': true },
   },
   {
     name: 'webaz_wallet_view',
@@ -2130,9 +2135,59 @@ Chat moves no funds, changes no order state. Never paste addresses, payment cred
   },
 ]
 
+// ─── BUG-04:UI 资源 URI 内容寻址版本化(HTML 变 → 版本变 → 宿主缓存失效)。标准/legacy 双轨各自版本化,
+//    旧裸 URI 保留为 ReadResource 只读别名(历史消息里的卡片仍可读);模板键不合并、桥不删、组件不换绑。 ──
+const _uiVer = (html: string): string => createHash('sha256').update(html).digest('hex').slice(0, 10)
+const UI_URI = {
+  productsLegacy: `ui://widget/webaz-products.${_uiVer(PRODUCT_RESULTS_WIDGET_HTML)}.html`,
+  productsStd:    `ui://widget/webaz-products-mcp.${_uiVer(PRODUCT_RESULTS_WIDGET_MCP_HTML)}.html`,
+  quoteLegacy:    `ui://widget/webaz-quote-approval.${_uiVer(QUOTE_APPROVAL_WIDGET_HTML)}.html`,
+  quoteStd:       `ui://widget/webaz-quote-approval-mcp.${_uiVer(QUOTE_APPROVAL_WIDGET_MCP_HTML)}.html`,
+  timelineLegacy: `ui://widget/webaz-order-timeline.${_uiVer(ORDER_TIMELINE_WIDGET_HTML)}.html`,
+  timelineStd:    `ui://widget/webaz-order-timeline-mcp.${_uiVer(ORDER_TIMELINE_WIDGET_MCP_HTML)}.html`,
+} as const
+// 裸 URI(工具 _meta 历史值)→ 版本化 URI(工具描述符重写用);裸 URI 仍作 ReadResource 别名。
+const UI_BARE_TO_VERSIONED: Record<string, string> = {
+  'ui://widget/webaz-products.html': UI_URI.productsLegacy,
+  'ui://widget/webaz-products-mcp.html': UI_URI.productsStd,
+  'ui://widget/webaz-quote-approval.html': UI_URI.quoteLegacy,
+  'ui://widget/webaz-quote-approval-mcp.html': UI_URI.quoteStd,
+  'ui://widget/webaz-order-timeline.html': UI_URI.timelineLegacy,
+  'ui://widget/webaz-order-timeline-mcp.html': UI_URI.timelineStd,
+}
+// 任意(版本化或裸)UI URI → 组件 HTML + 轨道(legacy skybridge / standard mcp-app)。ReadResource 单一真相。
+const UI_RESOLVE: Record<string, { html: string; kind: 'legacy' | 'std' }> = {
+  [UI_URI.productsLegacy]: { html: PRODUCT_RESULTS_WIDGET_HTML, kind: 'legacy' }, 'ui://widget/webaz-products.html': { html: PRODUCT_RESULTS_WIDGET_HTML, kind: 'legacy' },
+  [UI_URI.productsStd]: { html: PRODUCT_RESULTS_WIDGET_MCP_HTML, kind: 'std' }, 'ui://widget/webaz-products-mcp.html': { html: PRODUCT_RESULTS_WIDGET_MCP_HTML, kind: 'std' },
+  [UI_URI.quoteLegacy]: { html: QUOTE_APPROVAL_WIDGET_HTML, kind: 'legacy' }, 'ui://widget/webaz-quote-approval.html': { html: QUOTE_APPROVAL_WIDGET_HTML, kind: 'legacy' },
+  [UI_URI.quoteStd]: { html: QUOTE_APPROVAL_WIDGET_MCP_HTML, kind: 'std' }, 'ui://widget/webaz-quote-approval-mcp.html': { html: QUOTE_APPROVAL_WIDGET_MCP_HTML, kind: 'std' },
+  [UI_URI.timelineLegacy]: { html: ORDER_TIMELINE_WIDGET_HTML, kind: 'legacy' }, 'ui://widget/webaz-order-timeline.html': { html: ORDER_TIMELINE_WIDGET_HTML, kind: 'legacy' },
+  [UI_URI.timelineStd]: { html: ORDER_TIMELINE_WIDGET_MCP_HTML, kind: 'std' }, 'ui://widget/webaz-order-timeline-mcp.html': { html: ORDER_TIMELINE_WIDGET_MCP_HTML, kind: 'std' },
+}
+const uiResourceMeta = (kind: 'legacy' | 'std'): Record<string, unknown> => kind === 'legacy'
+  ? { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' }
+  : { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } }
+const uiResourceMime = (kind: 'legacy' | 'std'): string => kind === 'legacy' ? 'text/html+skybridge' : 'text/html;profile=mcp-app'
+/** B-2(Round1b 稳定 outputTemplate):只把标准桥 ui.resourceUri 版本化(内容哈希缓存击穿);
+ *  openai/outputTemplate 保持【稳定裸别名】—— ChatGPT(legacy skybridge)读它,裸别名不随 widget 内容
+ *  哈希变化,故改 widget 内容部署后已连接会话缓存的引用仍解析到当前 widget,不再"Failed to fetch template"需重连。
+ *  裸别名的 ReadResource 服务端永远返回当前 HTML(ui:// 资源经 MCP 协议读取,无 CDN 中间层);版本化 URI 仍可解析(历史引用)。 */
+function withVersionedUris<T extends { _meta?: unknown }>(tools: T[]): T[] {
+  return tools.map(t => {
+    const m = t._meta as Record<string, unknown> | undefined
+    if (!m) return t
+    const ui = m.ui as Record<string, unknown> | undefined
+    const ru = typeof ui?.resourceUri === 'string' ? ui.resourceUri : undefined
+    if (!ru || !UI_BARE_TO_VERSIONED[ru]) return t
+    return { ...t, _meta: { ...m, ui: { ...ui, resourceUri: UI_BARE_TO_VERSIONED[ru] } } }   // outputTemplate 故意不改 → 保持裸别名
+  })
+}
+
 // Standard MCP annotations merged once at module load (fail-fast if any tool lacks a mapping). The
 // single ListTools handler returns this SAME surface for stdio AND Remote MCP → zero drift.
-const TOOLS_ANNOTATED = withSecuritySchemes(withOutputSchemas(annotateTools(TOOLS)))
+// BUG-04: withVersionedUris rewrites the (bare) resourceUri/outputTemplate in each tool's _meta to the
+// content-versioned URI — atomically consistent with ListResources/ReadResource (same UI_URI constants).
+const TOOLS_ANNOTATED = withVersionedUris(withSecuritySchemes(withOutputSchemas(annotateTools(TOOLS))))
 
 /** MCP UI PR-5(可测导出):消费者投影边界。投影器抛错(含敌意 getter)→ 结构化 PROJECTION_FAILED
  * 降级(经 buildToolEnvelope 错误路径出 isError + 完整错误 JSON),原始协议对象永不外泄。 */
@@ -2177,12 +2232,12 @@ export function buildToolEnvelope(name: string, result: unknown): { content: Arr
 // (USDC/法币估算/诚信文案)只发生在 wrapper 的 structuredContent 层 —— 模型/组件看到的才是投影。
 const STRUCTURED_RESULT_TOOLS: Record<string, { summarize: (r: Record<string, unknown>) => string; project?: (r: Record<string, unknown>) => Promise<Record<string, unknown>> }> = {
   webaz_search: { summarize: summarizeSearchResult },
-  webaz_buyer_orders: { summarize: r => r.schema_version === 'webaz.order_timeline.model.v1' ? summarizeOrderTimeline(r) : summarizeBuyerOrders(r),
+  webaz_buyer_orders: { summarize: r => (typeof r.schema_version === 'string' && (r.schema_version as string).startsWith('webaz.order_timeline.model.')) ? summarizeOrderTimeline(r) : summarizeBuyerOrders(r),   // BUG-06: summarize runs on the PROJECTED result; match the timeline family across v1/v2
     // PR-6:仅 full 视图(带 timeline)投影为消费者时间线;列表(7 键契约)/最小单/up_to_date 原样透传
     project: async r => Array.isArray(r.timeline) && r.order ? projectOrderTimelineConsumer(r, await fxView(), regionToCurrency) : r },
   webaz_quote_order: { summarize: summarizeQuoteResult, project: async r => r.quote_id ? projectQuoteConsumer(r, await fxView(), regionToCurrency) : r },
   webaz_order_draft: { summarize: summarizeDraftResult, project: async r => {
-    if (Array.isArray(r.drafts)) { const fx = await fxView(); return { schema_version: 'webaz.order_draft.model.v1', count: r.count, drafts: (r.drafts as Array<Record<string, unknown>>).map(d => projectDraftConsumer(d, fx, regionToCurrency)) } }
+    if (Array.isArray(r.drafts)) { const fx = await fxView(); return { schema_version: SCHEMA_ORDER_DRAFT, count: r.count, drafts: (r.drafts as Array<Record<string, unknown>>).map(d => projectDraftConsumer(d, fx, regionToCurrency)) } }
     return r.draft_id ? projectDraftConsumer(r, await fxView(), regionToCurrency) : r
   } },
   webaz_submit_order_request: { summarize: summarizeSubmitResult, project: async r => r.request_id ? projectSubmitConsumer(r) : r },
@@ -2671,7 +2726,7 @@ export async function handleSearch(args: Record<string, unknown>) {
     if (toolBackend('webaz_search') !== 'network') {
       return { error: 'result_handle detail fetch is a network-mode surface (handles are issued by webaz.xyz search)', error_code: 'RESULT_HANDLE_INVALID' }
     }
-    return await apiCall('/api/products/result-fetch', { method: 'POST', body: { result_handle: args.result_handle, selected_ids: args.selected_ids } })
+    return await apiCall('/api/products/result-fetch', { method: 'POST', body: { result_handle: args.result_handle, selected_ids: args.selected_ids, full_terms: args.full_terms === true } })
   }
   // 外链/粘贴文本模式 → relay 到 webaz.xyz/api/search-by-link（生产数据有索引）
   if (args.paste_text || args.external_link) {
@@ -2975,7 +3030,7 @@ async function handleVerifyPrice(args: Record<string, unknown>) {
       id: product.id,
       title: product.title,
       agent_summary: parsed.agent_summary,
-      specs: parsed.specs,
+      specs: sanitizeBuyerSpecs(parsed.specs),   // B-3(P0):价格会话产品响应同样剔除内部采购/成本/货源字段
     },
     expires_at: expiresAt.toISOString(),
     expires_in_seconds: 600,
@@ -3104,7 +3159,17 @@ export async function handleSubmitOrderRequest(args: Record<string, unknown>): P
   const cred = resolveGrantCredential(args)
   if (!cred) return { error: 'a delegation grant is required — connect via OAuth (a compliant client shows a connect prompt), then retry.', error_code: 'GRANT_REQUIRED' }
   if (typeof args.draft_id !== 'string' || !args.draft_id) return { error: 'draft_id is required', error_code: 'DRAFT_NOT_FOUND' }
-  const r = await apiCall(`/api/agent/order-drafts/${encodeURIComponent(args.draft_id)}/submit`, { method: 'POST', apiKey: cred.token })
+  // BUG-08:三层身份透传(全部可选)。new_purchase_intent 只接受显式布尔 true —— 绝不由模型/自然语言推断。
+  const submitBody: Record<string, unknown> = {}
+  if (typeof args.idempotency_key === 'string') submitBody.idempotency_key = args.idempotency_key
+  if (args.new_purchase_intent === true) submitBody.new_purchase_intent = true
+  if (typeof args.purchase_intent_instance === 'string') submitBody.purchase_intent_instance = args.purchase_intent_instance
+  if (typeof args.operation_attempt_id === 'string') submitBody.operation_attempt_id = args.operation_attempt_id
+  // BUG-08 §二:透传零 PII 追踪标识(仅观测,绝不影响授权/幂等/交易);服务端再格式校验+封顶。
+  for (const k of ['trace_id', 'interaction_id', 'widget_session_id', 'bridge_type', 'tool_call_id', 'mcp_request_id'] as const) {
+    if (typeof args[k] === 'string') submitBody[k] = args[k]
+  }
+  const r = await apiCall(`/api/agent/order-drafts/${encodeURIComponent(args.draft_id)}/submit`, { method: 'POST', apiKey: cred.token, body: submitBody })
   absolutizeApprovalUrls(r)   // A5: absolute approval_url for text-only Hosts
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks order_submit_request. Re-connect via OAuth so the grant carries the order:draft scope, then retry.' }
   return r
@@ -3249,10 +3314,8 @@ function catalogDraftBody(args: Record<string, unknown>, fields: string[]): Reco
   for (const k of sourceKeys) if (args[k] !== undefined) sourceEvidence[k] = args[k]
   for (const k of packageKeys) if (args[k] !== undefined) packageEvidence[k] = args[k]
   if (Object.keys(sourceEvidence).length || Object.keys(packageEvidence).length) {
-    const specs = body.specs && typeof body.specs === 'object' && !Array.isArray(body.specs) ? { ...(body.specs as Record<string, unknown>) } : {}
-    if (Object.keys(sourceEvidence).length) specs.agent_source_evidence = sourceEvidence
-    if (Object.keys(packageEvidence).length) specs.agent_package_evidence = packageEvidence
-    body.specs = specs
+    // B-3(P0 根因清理):内部采购/成本/货源证据【只】进 origin_claims(卖家/内部审核侧),绝不再写入 specs —— 买家详情投影会透传 specs,
+    //   写进 specs 就等于把 source_url/purchase_total_cost 直接给买家。买家侧另有 sanitizeBuyerSpecs 兜底(覆盖历史数据)。
     const origin = body.origin_claims && typeof body.origin_claims === 'object' && !Array.isArray(body.origin_claims) ? { ...(body.origin_claims as Record<string, unknown>) } : {}
     origin.agent_sourcing = {
       ...sourceEvidence,
@@ -5948,7 +6011,7 @@ export function buildMcpServer(opts: {
         mimeType:    'application/json',
       },
       {
-        uri:         'ui://widget/webaz-products.html',
+        uri:         UI_URI.productsLegacy,
         name:        'WebAZ ProductResults widget',
         description: 'MCP App component rendering webaz_search structuredContent (search page / zero-hit recovery / on-demand detail) as product cards with local sort/expand/compare. Self-contained; reads window.openai.toolOutput.',
         mimeType:    'text/html+skybridge',
@@ -5960,16 +6023,16 @@ export function buildMcpServer(opts: {
         },
       },
       {
-        uri:         'ui://widget/webaz-quote-approval.html',
+        uri:         UI_URI.quoteLegacy,
         name:        'WebAZ QuoteAndApproval widget',
         description: 'MCP App component rendering quote → draft → Passkey-approval states (webaz.order_quote/order_draft/order_approval .model.v1) with USDC pricing, fiat estimates, rail-honesty notes and duplicate-purchase warnings. Economic execution stays behind the webaz.xyz Passkey.',
         mimeType:    'text/html+skybridge',
         _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' },
       },
       {
-        uri:         'ui://widget/webaz-order-timeline.html',
+        uri:         UI_URI.timelineLegacy,
         name:        'WebAZ OrderTimeline widget',
-        description: 'MCP App component rendering the buyer order timeline (webaz.order_timeline.model.v1) and order list/up_to_date shapes: status labels, deadlines in the viewer timezone, rail-honest refund state, server-authoritative actions. High-risk actions stay on the webaz.xyz order page (Passkey).',
+        description: 'MCP App component rendering the buyer order timeline (webaz.order_timeline.model — v1 legacy + BUG-06 v2) and order list/up_to_date shapes: status labels, deadlines in the viewer timezone, rail-honest refund state, server-authoritative actions. High-risk actions stay on the webaz.xyz order page (Passkey).',
         mimeType:    'text/html+skybridge',
         _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' },
       },
@@ -5977,21 +6040,21 @@ export function buildMcpServer(opts: {
       //    URI 分离防宿主缓存/MIME 歧义;同一 render 体,boot 用标准 ui/* postMessage 桥。CSP deny-by-
       //    default(四空数组);刻意省略 ui.domain(组件无固定 CORS 来源需求,由宿主给默认沙箱 origin)。
       {
-        uri:         'ui://widget/webaz-products-mcp.html',
+        uri:         UI_URI.productsStd,
         name:        'WebAZ ProductResults (MCP Apps)',
         description: 'Standard MCP Apps variant of the ProductResults component (same render body; ui/* postMessage bridge). Self-contained, no external requests.',
         mimeType:    'text/html;profile=mcp-app',
         _meta: { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } },
       },
       {
-        uri:         'ui://widget/webaz-quote-approval-mcp.html',
+        uri:         UI_URI.quoteStd,
         name:        'WebAZ QuoteAndApproval (MCP Apps)',
         description: 'Standard MCP Apps variant of the QuoteAndApproval component (same render body; ui/* postMessage bridge). Economic execution stays behind the webaz.xyz Passkey.',
         mimeType:    'text/html;profile=mcp-app',
         _meta: { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } },
       },
       {
-        uri:         'ui://widget/webaz-order-timeline-mcp.html',
+        uri:         UI_URI.timelineStd,
         name:        'WebAZ OrderTimeline (MCP Apps)',
         description: 'Standard MCP Apps variant of the OrderTimeline component (same render body; ui/* postMessage bridge). High-risk actions stay on the webaz.xyz order page (Passkey).',
         mimeType:    'text/html;profile=mcp-app',
@@ -6023,27 +6086,11 @@ export function buildMcpServer(opts: {
   }))
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    if (request.params.uri === 'ui://widget/webaz-order-timeline.html') {
-      return { contents: [{ uri: 'ui://widget/webaz-order-timeline.html', mimeType: 'text/html+skybridge', text: ORDER_TIMELINE_WIDGET_HTML,
-        _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' } }] }
-    }
-    if (request.params.uri === 'ui://widget/webaz-quote-approval.html') {
-      return { contents: [{ uri: 'ui://widget/webaz-quote-approval.html', mimeType: 'text/html+skybridge', text: QUOTE_APPROVAL_WIDGET_HTML,
-        _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' } }] }
-    }
-    if (request.params.uri === 'ui://widget/webaz-products.html') {
-      return { contents: [{ uri: 'ui://widget/webaz-products.html', mimeType: 'text/html+skybridge', text: PRODUCT_RESULTS_WIDGET_HTML,
-        _meta: { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' } }] }
-    }
-    // PR-A:标准 MCP Apps 资源(profile=mcp-app;ui.csp deny-by-default;无 ui.domain)
-    const STANDARD_WIDGETS: Record<string, string> = {
-      'ui://widget/webaz-products-mcp.html': PRODUCT_RESULTS_WIDGET_MCP_HTML,
-      'ui://widget/webaz-quote-approval-mcp.html': QUOTE_APPROVAL_WIDGET_MCP_HTML,
-      'ui://widget/webaz-order-timeline-mcp.html': ORDER_TIMELINE_WIDGET_MCP_HTML,
-    }
-    if (STANDARD_WIDGETS[request.params.uri]) {
-      return { contents: [{ uri: request.params.uri, mimeType: 'text/html;profile=mcp-app', text: STANDARD_WIDGETS[request.params.uri],
-        _meta: { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } } }] }
+    // BUG-04:版本化 URI + 裸别名统一解析(单一真相 UI_RESOLVE)。contents[].uri 恒等于被请求的 URI
+    //   (版本化→版本化;裸别名→裸),legacy/standard 双轨的 MIME 与 _meta 按轨道派生;组件从不换绑。
+    const uiHit = UI_RESOLVE[request.params.uri]
+    if (uiHit) {
+      return { contents: [{ uri: request.params.uri, mimeType: uiResourceMime(uiHit.kind), text: uiHit.html, _meta: uiResourceMeta(uiHit.kind) }] }
     }
     if (request.params.uri === 'webaz://guide/categories') {
       // NETWORK 模式经 API(与 HTTP 通道同源);失败降级为静态注册表(counts 缺席,如实标注)

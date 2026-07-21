@@ -94,9 +94,10 @@ try {
   fire(backBtn!)
   ok('B1-13 返回列表 restores the search list (both cards back) — cached, no tool call', !!cardFor(rootNode, 'prd_a') && !!cardFor(rootNode, 'prd_b'))
 
-  // ── B2 准备下单:one-click sends a structured follow-up (model orchestrates quote→draft→submit→Passkey).
-  //    Codex R1 HIGH: it must NOT callTool webaz_quote_order (model-only → app call rejected+swallowed → stuck).
-  //    So the card must issue a follow-up (never callTool) carrying the exact product_id. ──
+  // ── B2 准备下单:Phase-3A DIRECT_TOOL —— when the host bridge exposes callTool, the button issues a single
+  //    structured webaz_quote_order call (product_id + quantity 1, default address server-side), NOT a
+  //    natural-language follow-up. quote_order is now app-visible (additive). The NL follow-up remains a
+  //    fail-visible fallback for hosts without callTool (exercised by the compare-row + throw-path cases below). ──
   const calls: Array<[string, unknown]> = []
   const sent: string[] = []
   const oai2 = { callTool: (n: string, a: unknown) => { calls.push([n, a]) }, sendFollowUpMessage: (o: { prompt?: string }) => { sent.push((o && o.prompt) || '') } }
@@ -106,9 +107,12 @@ try {
   ok('B2-1 card shows a 准备下单 primary button (not the old 报价)', !!pdBtn && !findByText(rootNode, '报价'))
   ok('B2-2 准备下单 button is styled primary', (pdBtn as N).className === 'primary')
   fire(pdBtn!)
-  ok('B2-3 准备下单 sends a follow-up carrying the EXACT product_id (structured intent, not just a title)', sent.length >= 1 && sent[0].includes('prd_a') && /准备下单/.test(sent[0]))
-  ok('B2-4 does NOT callTool the model-only webaz_quote_order (would be rejected+swallowed on standard hosts → stuck)', !calls.some(c => c[0] === 'webaz_quote_order'))
-  ok('B2-5 widget NEVER calls money-path tools from the card (no order_draft/submit/execute)', !calls.some(c => /order_draft|submit_order|order_create|place_order|execute/.test(c[0])))
+  ok('B2-3 [DIRECT_TOOL] 准备下单 issues ONE structured webaz_quote_order call carrying the exact product_id + quantity 1',
+    calls.filter(c => c[0] === 'webaz_quote_order').length === 1
+    && (calls.find(c => c[0] === 'webaz_quote_order')![1] as { product_id?: string; quantity?: number }).product_id === 'prd_a'
+    && (calls.find(c => c[0] === 'webaz_quote_order')![1] as { quantity?: number }).quantity === 1)
+  ok('B2-4 [DIRECT_TOOL] when direct call succeeds it does NOT also send an NL follow-up (no double path)', sent.length === 0)
+  ok('B2-5 widget NEVER calls money-path tools from the card (no order_draft/submit/execute; quote is additive only)', !calls.some(c => /order_draft|submit_order|order_create|place_order|execute/.test(c[0])))
   // B4 fail-visible: after click, a visible manual path (a copyable phrase carrying the exact product_id) appears —
   //   never a silent no-op / permanent loading. The 准备下单 button re-renders usable (not stuck).
   ok('B4-1 准备下单 shows a fail-visible manual hint carrying the exact product_id (never a silent no-op)', /prd_a/.test(treeTextG(rootNode)) && !!findByText(rootNode, '“为「AAA」准备下单(product_id=prd_a)”', 'SPAN'))
@@ -212,4 +216,4 @@ try {
 try { rmSync(__tmpHome, { recursive: true, force: true }) } catch { /* temp HOME cleanup */ }
 
 if (fail > 0) { console.error(`\n❌ product-widget-expand FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-console.log(`✅ product-widget-expand+prepare+failvisible: B1 expand/collapse PERSISTED (survives sort) + 展开/收起 toggle + clickable info + scroll + detail 返回列表 + mobile one-at-a-time; B2 准备下单 primary → structured follow-up carrying product_id (model orchestrates quote→draft→submit→Passkey), NEVER callTool the model-only quote, NEVER money-path tools; B4 FAIL-VISIBLE: 详情(callTool webaz_search on-demand) + 准备下单 always surface a copyable manual phrase carrying the exact product_id (never a silent no-op / permanent loading on hosts whose widget→host bridge no-ops, e.g. ChatGPT) + 复制 action; compare (≥2) → table per-row 准备下单 (compare→pick→buy) follows-up that product_id; B3 AI 推荐 server PASSTHROUGH (echoes model pick in the result set, sanitizes reason, never generates) + widget highlight (rec border + 🌟 AI 推荐 badge + reason, never "WebAZ 推荐")\n  ✅ pass ${pass}`)
+console.log(`✅ product-widget-expand+prepare+failvisible: B1 expand/collapse PERSISTED (survives sort) + 展开/收起 toggle + clickable info + scroll + detail 返回列表 + mobile one-at-a-time; B2 准备下单 primary → DIRECT_TOOL single webaz_quote_order call (product_id + qty1, no NL follow-up when callTool available; NL is fail-visible fallback only), NEVER money-path tools; B4 FAIL-VISIBLE: 详情(callTool webaz_search on-demand) + 准备下单 always surface a copyable manual phrase carrying the exact product_id (never a silent no-op / permanent loading on hosts whose widget→host bridge no-ops, e.g. ChatGPT) + 复制 action; compare (≥2) → table per-row 准备下单 (compare→pick→buy) follows-up that product_id; B3 AI 推荐 server PASSTHROUGH (echoes model pick in the result set, sanitizes reason, never generates) + widget highlight (rec border + 🌟 AI 推荐 badge + reason, never "WebAZ 推荐")\n  ✅ pass ${pass}`)

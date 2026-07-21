@@ -684,7 +684,8 @@ export function initDatabase(): Database.Database {
   try { db.exec(`ALTER TABLE users ADD COLUMN store_shipping_template TEXT`) } catch { /* 已存在 */ }      // 店铺级默认模板
   try { db.exec(`ALTER TABLE orders ADD COLUMN ship_to_region TEXT`) } catch { /* 已存在 */ }              // 买家下单所选收货地区(结构化,非自由文本地址)
   try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_fee DECIMAL(18,2)`) } catch { /* 已存在 */ }       // 下单快照运费(已并入 total_amount;NULL=无模板旧单)
-  try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_est_days TEXT`) } catch { /* 已存在 */ }           // 下单快照预计时效(展示;不接判责钟)
+  try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_est_days TEXT`) } catch { /* 已存在 */ }           // 下单快照预计时效(展示;不接判责钟)—— logistics_eta 口径(运费模板;非承诺)
+  try { db.exec(`ALTER TABLE orders ADD COLUMN promised_eta_snapshot TEXT`) } catch { /* 已存在 */ }       // BUG-02:下单时向买家承诺的配送估计快照 JSON(promised_eta;从 quote 冻结继承;卖家改 listing 不影响;历史单=NULL,展示"下单时未记录")
   // 询价握手(PR-3,直付轨):模板外地区先报价后接单。quote_ok=卖家 opt-in(单品??店铺,默认关)。
   try { db.exec(`ALTER TABLE products ADD COLUMN shipping_quote_ok INTEGER`) } catch { /* 已存在 */ }      // 1|0|NULL(=继承店铺)
   try { db.exec(`ALTER TABLE users ADD COLUMN store_shipping_quote_ok INTEGER`) } catch { /* 已存在 */ }   // 店铺级默认(NULL=关)

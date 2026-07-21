@@ -463,7 +463,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       for (const [k, v] of resultFetchRate) if (now >= v.resetAt) resultFetchRate.delete(k)
       if (resultFetchRate.size > 50_000) resultFetchRate.clear()
     }
-    const { result_handle, selected_ids } = (req.body ?? {}) as { result_handle?: unknown; selected_ids?: unknown }
+    const { result_handle, selected_ids, full_terms } = (req.body ?? {}) as { result_handle?: unknown; selected_ids?: unknown; full_terms?: unknown }
     if (typeof result_handle !== 'string' || !/^res_[0-9a-f]{32}$/.test(result_handle)) {
       return void res.status(400).json({ error: 'result_handle required', error_code: 'RESULT_HANDLE_INVALID', retryable: false, next_steps: [{ action: 'search_again', tool: 'webaz_search' }] })
     }
@@ -512,7 +512,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       sellers: sellersIndex(liveRows),
       products: liveRows.map(r => {
         const f = formatProductForAgent(r, req)
-        return projectProductDetail({ ...r, title: f.title, description: f.description, specs: f.specs, estimated_days: f.estimated_days, agent_summary: f.agent_summary })
+        return projectProductDetail({ ...r, title: f.title, description: f.description, specs: f.specs, estimated_days: f.estimated_days, agent_summary: f.agent_summary }, { full: full_terms === true, resultHandle: result_handle })
       }),
       ...(selected_ids.length !== liveRows.length ? { unavailable_ids: (selected_ids as string[]).filter(id => !liveIds.has(id)), unavailable_note: 'no longer active/available — live re-check, cached data is never served' } : {}),
     })

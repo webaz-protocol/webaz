@@ -16,6 +16,7 @@
  */
 import type { Express, Request, Response } from 'express'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS } from '@modelcontextprotocol/sdk/types.js'  // BUG-09: drift-proof version advertisement
 import { buildMcpServer } from '../../layer1-agent/L1-1-mcp-server/server.js'
 import { resolveSurface } from '../../layer1-agent/L1-1-mcp-server/tool-surfaces.js'  // MCP Token PR-3
 import { oauthEnabled } from './oauth-discovery.js'
@@ -152,7 +153,15 @@ export function remoteMcpManifest(): Record<string, unknown> | null {
     transport: 'streamable_http',
     endpoint: 'https://webaz.xyz/mcp',
     methods: 'POST (JSON-RPC 2.0); GET/DELETE → 405 (stateless, no session)',
-    protocol_version: '2025-03-26',
+    // BUG-09 — honest, non-conflated version advertisement. `protocol_version` = the LATEST MCP CORE
+    //   protocol this endpoint supports (the actual version is negotiated per-connection by the MCP
+    //   `initialize` handshake; the SDK falls back to 2025-03-26 for bare clients). Sourced from the SDK
+    //   constants so it can never drift from what the transport really speaks. The MCP Apps card extension
+    //   is a SEPARATE version system and is reported under `mcp_apps_extension` — never folded into this field.
+    protocol_version: LATEST_PROTOCOL_VERSION,
+    protocol_versions_supported: [...SUPPORTED_PROTOCOL_VERSIONS],
+    protocol_negotiation: 'per-connection via the MCP initialize handshake (SDK-managed capability negotiation)',
+    mcp_apps_extension: { spec_version: '2026-01-26', sep: 'SEP-1865', note: 'interactive UI cards (ui:// resources) — versioned independently of the core MCP protocol above' },
     status: 'live',
     authentication: {
       anonymous: 'public read-only tools (webaz_info / webaz_search / leaderboard / price-history / open build-tasks)',

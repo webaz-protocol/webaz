@@ -38,6 +38,7 @@ import { effectiveSaleRegionsRule, regionAllowedByRule } from '../../sale-region
 import { computeBuyerQuote } from '../buyer-quote.js'  // RFC-025 PR-3 报价服务(server 权威;route 只做鉴权+转发)
 import { createOrderDraft, cancelOrderDraft, getOrderDraft, listOrderDrafts } from '../order-draft.js'  // RFC-025 PR-4 草稿服务(draft_order 首个消费者)
 import { createOrderSubmitRequest, submitRowSummary } from '../order-submit-request.js'  // RFC-025 PR-5a 提交域(SUBMIT-only,绝不执行)
+import { recordIdempotencyTrace } from '../idempotency-trace.js'  // BUG-08 §七 零 PII 追踪(fail-open)
 import { approveAndExecuteOrderSubmit, type CreateOrderLoopback } from '../order-submit-exec.js'  // RFC-025 PR-5a 批准执行域(钱路;仅人类 approve 路径可达)
 import { buildCaseDraft } from '../buyer-case-draft.js'  // RFC-025 PR-6 售后案件草稿(纯只读组装)
 import { listApprovalRequests, getApprovalRequest } from '../approval-requests-read.js'  // RFC-026 PR-2 审批状态只读投影
@@ -630,9 +631,31 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
 
   app.post('/api/agent/order-drafts/:id/submit', requireAgentGrantScope('order_submit_request'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
-    const r = createOrderSubmitRequest(db, { draftId: String(req.params.id), grantId: p.grant_id, humanId: p.human_id, agentLabel: p.agent_label ?? 'agent', generateId })
-    if (!r.ok) return void res.status(r.http).json({ error: r.error, error_code: r.error_code })
-    res.json({ success: true, request_id: r.request_id, draft_id: req.params.id, params_hash: r.params_hash, approval_url: `/#agent-approvals/${r.request_id}`, idempotency: { params_hash: r.params_hash, duplicate: !!r.duplicate, reused_existing_request: !!r.duplicate }, note: r.duplicate ? 'An equivalent submit request is already awaiting Passkey approval — REUSED it (no second request was created). Do NOT re-quote or re-draft to retry; ask the human to open the approval page.' : 'Pending human Passkey approval. NOT executed — approval creates the order (and for escrow debits wallet→escrow) server-side; nothing happens without the Passkey.' })
+    // BUG-08:三层身份从 body 透传(全部可选;缺省 = 旧行为)。new_purchase_intent 必须是显式布尔,绝不由 NL 推断。
+    const body = (req.body ?? {}) as Record<string, unknown>
+    // BUG-08 adversarial MEDIUM:显式约束客户端身份令牌为 [A-Za-z0-9_-]{1,64}(fail-closed)—— 防超长/自由文本
+    //   进入 agent_permission_requests / 零 PII 追踪台账(purchase_intent_instance 必须是不透明 nonce,不承载 PII)。
+    const IDTOK = /^[A-Za-z0-9_-]{1,64}$/
+    for (const k of ['idempotency_key', 'purchase_intent_instance', 'operation_attempt_id'] as const) {
+      const v = body[k]
+      if (v != null && (typeof v !== 'string' || !IDTOK.test(v))) return void res.status(400).json({ error: `${k} must match [A-Za-z0-9_-]{1,64}`, error_code: 'IDENTITY_MALFORMED' })
+    }
+    const receivedAt = new Date().toISOString()
+    const r = createOrderSubmitRequest(db, { draftId: String(req.params.id), grantId: p.grant_id, humanId: p.human_id, agentLabel: p.agent_label ?? 'agent', generateId,
+      idempotencyKey: typeof body.idempotency_key === 'string' ? body.idempotency_key : null,
+      newPurchaseIntent: body.new_purchase_intent === true,
+      purchaseIntentInstance: typeof body.purchase_intent_instance === 'string' ? body.purchase_intent_instance : null,
+      operationAttemptId: typeof body.operation_attempt_id === 'string' ? body.operation_attempt_id : null })
+    // BUG-08 §七:零 PII append-only 追踪(fail-open,绝不阻断交易);MCP 层 id 由组件/工具透传 body,缺省为 null。
+    const traceBase = { generateId, toolName: 'webaz_submit_order_request', draftId: String(req.params.id), receivedAt, completedAt: new Date().toISOString(),
+      operationAttemptId: body.operation_attempt_id, idempotencyKey: body.idempotency_key, traceId: body.trace_id, interactionId: body.interaction_id,
+      widgetSessionId: body.widget_session_id, bridgeType: body.bridge_type, toolCallId: body.tool_call_id, mcpRequestId: body.mcp_request_id }
+    if (!r.ok) { recordIdempotencyTrace(db, { ...traceBase, duplicate: false, resultStatus: r.error_code }); return void res.status(r.http).json({ error: r.error, error_code: r.error_code }) }
+    recordIdempotencyTrace(db, { ...traceBase, requestId: r.request_id, intentHash: r.intent_hash, purchaseIntentInstance: r.purchase_intent_instance, duplicate: !!r.duplicate, duplicateReason: r.duplicate_reason, duplicateOf: r.duplicate_of, resultStatus: r.duplicate ? 'duplicate' : 'created' })
+    res.json({ success: true, request_id: r.request_id, draft_id: req.params.id, params_hash: r.params_hash, approval_url: `/#agent-approvals/${r.request_id}`,
+      idempotency: { params_hash: r.params_hash, duplicate: !!r.duplicate, reused_existing_request: !!r.duplicate, duplicate_reason: r.duplicate_reason ?? null, duplicate_of: r.duplicate_of ?? null, purchase_intent_instance: r.purchase_intent_instance ?? null, new_purchase_intent: !!r.new_purchase_intent },
+      ...(r.reorder_product_id ? { reorder: { product_id: r.reorder_product_id, quantity: r.reorder_quantity } } : {}),
+      note: r.duplicate ? 'An equivalent submit request is already awaiting Passkey approval — REUSED it (no second request was created). Do NOT re-quote or re-draft to retry; ask the human to open the approval page, or the human may explicitly choose 再买一份.' : 'Pending human Passkey approval. NOT executed — approval creates the order (and for escrow debits wallet→escrow) server-side; nothing happens without the Passkey.' })
   })
 
   // RFC-021 PR2 — order-action 请求提交(safe scope order_action_request)。SUBMIT-only:写 pending,【绝不执行】。
