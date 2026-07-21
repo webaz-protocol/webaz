@@ -37,8 +37,8 @@ ok('P-3 webazConsume unwraps structuredContent', JSON.stringify(webazConsume({ s
 // P-4 content pins (round1b == A1; see header before touching)
 const uiVer = (html: string): string => createHash('sha256').update(html).digest('hex').slice(0, 10)
 const PINS: Array<[string, string, string]> = [
-  ['PRODUCT_RESULTS_WIDGET_HTML', uiVer(PRODUCT_RESULTS_WIDGET_HTML), '8398b05669'],
-  ['PRODUCT_RESULTS_WIDGET_MCP_HTML', uiVer(PRODUCT_RESULTS_WIDGET_MCP_HTML), '1b508d359c'],
+  ['PRODUCT_RESULTS_WIDGET_HTML', uiVer(PRODUCT_RESULTS_WIDGET_HTML), '1cdf9b1eb9'],
+  ['PRODUCT_RESULTS_WIDGET_MCP_HTML', uiVer(PRODUCT_RESULTS_WIDGET_MCP_HTML), 'f20a304140'],
   ['QUOTE_APPROVAL_WIDGET_HTML', uiVer(QUOTE_APPROVAL_WIDGET_HTML), 'ddfed02d36'],
   ['QUOTE_APPROVAL_WIDGET_MCP_HTML', uiVer(QUOTE_APPROVAL_WIDGET_MCP_HTML), '86c5302705'],
   ['ORDER_TIMELINE_WIDGET_HTML', uiVer(ORDER_TIMELINE_WIDGET_HTML), '4c3103b1f4'],

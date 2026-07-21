@@ -2252,7 +2252,7 @@ const STRUCTURED_RESULT_TOOLS: Record<string, { summarize: (r: Record<string, un
   //   一级消费天然踩空,只能靠脆弱的 content[].text 解析。补结构化信封后,【已渲染的旧卡】的「查看最新状态」
   //   立即恢复工作(无需任何模板刷新)。projection 不再加工:read 端点已是零 PII 投影(approval-requests-read)。
   webaz_approval_requests: { summarize: r => {
-    if (Array.isArray(r.requests)) return `${(r.requests as unknown[]).length} approval request(s). Details in structuredContent. / 审批请求列表见结构化结果。`
+    if (Array.isArray(r.requests) || !r.request_id) return `${Array.isArray(r.requests) ? (r.requests as unknown[]).length : 0} approval request(s). Details in structuredContent. / 审批请求列表见结构化结果。`   // 审计F1:stripEmpty 会剥空数组 → 空列表也走列表分支,绝不产出「Approval : .」
     const st = r.display_status ?? r.status ?? ''
     const oid = r.executed_order_id ? ` — order ${String(r.executed_order_id)}` : ''
     return `Approval ${String(r.request_id ?? '')}: ${String(st)}${oid}. / 审批状态见结构化结果。`

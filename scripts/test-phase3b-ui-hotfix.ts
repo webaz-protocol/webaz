@@ -108,8 +108,8 @@ ok('A3-2 in-card chain: draft consumes quote_token', /callWebazTool\(oai,'webaz_
 ok('A3-2 in-card chain: submit threads draft_id from draft result', /callWebazTool\(oai,'webaz_submit_order_request',\{draft_id:String\(ds\.draft_id\)\}\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2 chain single-flight (chainBusy guard)', /if\(state\.chainBusy\) return/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2 fail-stop keeps copyable phrase on draft/submit failure', /提交订单审批\(draft_id='\+String\(ds\.draft_id\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A3-2 approval panel renders server data url + copy (no source URL literal)', /复制审批链接/.test(PRODUCT_RESULTS_WIDGET_HTML) && /state\.approval\.url/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A3-2 duplicate submit surfaced honestly via FLATTENED projection keys (audit F1)', /ss\.duplicate\|\|ss\.duplicate_warning/.test(PRODUCT_RESULTS_WIDGET_HTML) && /已有等待批准的同参数请求/.test(PRODUCT_RESULTS_WIDGET_HTML) && !/ss\.idempotency/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 approval panel renders server data url + copy (no source URL literal)', /'复制链接'/.test(PRODUCT_RESULTS_WIDGET_HTML) && /state\.approval\.url/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 duplicate submit surfaced honestly via FLATTENED projection keys (audit F1)', /ss\.duplicate\|\|ss\.duplicate_warning/.test(PRODUCT_RESULTS_WIDGET_HTML) && /已有同参数审批待批准/.test(PRODUCT_RESULTS_WIDGET_HTML) && !/ss\.idempotency/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2 renderBody rejects non-product models (audit F2: late notifications cannot fake 0-hit)', /indexOf\('webaz\.product_'\)!==0\)\{ return \}/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2 chain failures surface precise error_code (audit F3)', /ds\.error_code\|\|dr\.error/.test(PRODUCT_RESULTS_WIDGET_HTML) && /ss\.error_code\|\|sr\.error/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2 copy fallback ALWAYS visible', /var qcp=el\('button','mini','复制继续'\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && !/else \{\s*var qcp/.test(PRODUCT_RESULTS_WIDGET_HTML))
@@ -133,6 +133,9 @@ ok('A3-2 no CNY in ProductResults card', !/CNY|¥/.test(PRODUCT_RESULTS_WIDGET_H
 ok('A3-6 detail always offers a way back (title re-search when no cached list)', /返回商品列表/.test(PRODUCT_RESULTS_WIDGET_HTML) && /callWebazTool\(oai,'webaz_search',\{query:String\(\(out\.products\[0\]\|\|\{\}\)\.title/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-6 quote/approval panels persist via host widgetState (probe + restore)', /oai\.widgetState/.test(PRODUCT_RESULTS_WIDGET_HTML) && /setWidgetState/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
+// A3-7(R4-1 兜底):小目录自动取齐 —— 一次性、就地合并、按 id 去重
+ok('A3-7 small-catalog auto-fill (once, merge by id, ≤8 only)', /__autoFilled=true/.test(PRODUCT_RESULTS_WIDGET_HTML) && /tc&&tc<=8/.test(PRODUCT_RESULTS_WIDGET_HTML) && /if\(!seen\[pp\.id\]\) out\.products\.push\(pp\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
+
 // ── Self-containment lock: ProductResults must stay URL-literal-free + zero request-capability tokens (incl. in comments) ──
 // A3-2b:ProductResults 获得与审批卡同级的 LINK compat(打开审批页)。零 URL 字面量锁【保持】;
 //   请求词元锁收窄为非链接词元(href 仅允许出现在 compat-link 的 safeWebazHref/openExternal 面)。
@@ -140,11 +143,12 @@ const REQ_TOK = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|import
 ok('ProductResults has NO url literal (zero-URL self-containment lock)', !/["'`](https?:)?\/\//.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('ProductResults has NO request-capability token beyond vetted LINK compat', !REQ_TOK.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2b link discipline: safeWebazHref gate present + approval open uses it', /safeWebazHref/.test(PRODUCT_RESULTS_WIDGET_HTML) && /openWebaz\(oai,state\.approval\.url\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A3-2b copy fallback stays beside 打开审批页', /复制审批链接/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-7 slim panel: raw ids/urls behind 详情 toggle, copy failure auto-expands', /'详情'/.test(PRODUCT_RESULTS_WIDGET_HTML) && /__openDet\(\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && /审批号:/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-7 copy button present (复制链接)', /'复制链接'/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-3 approval panel refresh consumes approval_requests get', /callWebazTool\(oai,'webaz_approval_requests',\{action:'get',request_id:state\.approval\.request_id\}\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-3 refresh prefers server display_status', /d\.display_status\|\|/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-4 panel refresh parses content[0].text JSON (card-less receipt tier-2, R3-2 class)', /d\.content\[0\]&&d\.content\[0\]\.text/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A3-3 executed → 打开订单页 via server order_url data', /openWebaz\(oai,String\(d\.order_url\)\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-3 executed → 打开订单页 via server order_url data (url hidden until copy-fallback needs it)', /openWebaz\(oai,String\(d\.order_url\)\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && /oue\.style\.display='block'; doCopy/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A3-2b 取消 is LOCAL-only (clears quote panel, no tool call, blocked mid-chain)', /var qx=el\('button','mini','取消'\); qx\.addEventListener\('click',function\(\)\{ if\(state\.chainBusy\) return; state\.quote=null/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 await run().then(() => {
