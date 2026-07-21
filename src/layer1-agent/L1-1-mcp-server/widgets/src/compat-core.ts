@@ -11,6 +11,14 @@
     return __webazLoc
   }
   export function L(zh, en){ return webazLocale()==='en' ? en : zh }
+  // rail honesty note, rendered client-side from the canonical payment_rail (keeps the model-context
+  // projection lean — server sends only the zh rail_note + machine payment_rail, not a display _en sibling).
+  export function railNoteText(rail, zhFallback){
+    if(webazLocale()!=='en') return zhFallback||''
+    return String(rail)==='direct_p2p'
+      ? 'You pay the seller directly; WebAZ holds no principal; the actual method and currency are shown on the confirm page'
+      : 'Payment rail: simulated escrow test — this flow is not real USDC or fiat settlement'
+  }
 
   export function canFollowUp(oai){ return !!oai&&(typeof oai.sendFollowUpMessage==='function'||typeof oai.sendFollowupTurn==='function') }
   export function sendFollowUpCompat(oai,text){
