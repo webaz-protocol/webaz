@@ -115,7 +115,7 @@ function renderBody(oai, out){
     openBtn.addEventListener('click',onceGuard(function(){
       // approval_url = 服务端权威字段;openWebaz 内部做 origin 校验。fail-visible(Codex R2 High):openExternal 存在
       //   即返回 true 但宿主可能静默丢弃、或 openExternal 抛错 —— 故 try/catch + 【无条件】追加可复制审批页 URL,永不静默死。
-      var href='https://webaz.xyz/'+String(out.approval_url||'').replace(/^\//,'')
+      var __au=String(out.approval_url||''); var href=(__au.indexOf('https')===0)?__au:('https://webaz.xyz/'+__au.replace(/^\//,''))   // 审计P3-2:服务端(A5)可能已绝对化,绝不双前缀
       var opened=false; try{ opened=openWebaz(oai,href) }catch(e){ opened=false }
       actHint(href, opened, (opened?'已尝试打开审批页;若没弹出':'此宿主未能打开')+',复制到浏览器用 Passkey 批准:')
     }))
@@ -159,7 +159,7 @@ function renderBody(oai, out){
                 stageLine.textContent='再买一份成功 —— 已创建独立审批(仍需 Passkey)。原审批入口保留在上方,互不影响。'
                 box.appendChild(el('div','meta ok','新请求:'+String(s.request_id)))
                 var newOpen=el('button','btn','打开新审批(webaz.xyz · Passkey)')
-                newOpen.addEventListener('click',onceGuard(function(){ var href='https://webaz.xyz/'+String(s.approval_url||'').replace(/^\//,''); var op=false; try{op=openWebaz(oai,href)}catch(e){op=false} actHint(href,op,(op?'已尝试打开新审批;若没弹出':'此宿主未能打开')+',复制到浏览器用 Passkey 批准:') }))
+                newOpen.addEventListener('click',onceGuard(function(){ var __au2=String(s.approval_url||''); var href=(__au2.indexOf('https')===0)?__au2:('https://webaz.xyz/'+__au2.replace(/^\//,'')); var op=false; try{op=openWebaz(oai,href)}catch(e){op=false} actHint(href,op,(op?'已尝试打开新审批;若没弹出':'此宿主未能打开')+',复制到浏览器用 Passkey 批准:') }))
                 box.appendChild(newOpen)
               },function(){ fail('提交','宿主未回传提交结果') })
             },function(){ fail('建草稿','宿主未回传草稿结果') })

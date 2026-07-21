@@ -124,6 +124,7 @@ ok('A2.2 unknown status keeps webaz.xyz escape hatch', /未知 —— 可在 web
 ok('A3-2 chain button disables + shows progress on click', /qgo\.disabled=true; qgo\.textContent='创建草稿中…'/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2 R2-3 stock badge deduped vs decision_flags', /lb===stockChip\) return/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2 QuoteApproval prefers display_expires_at', /display_expires_at\|\|out\.expires_at/.test(QUOTE_APPROVAL_WIDGET_HTML))
+ok('A3-2b audit P3-2: approval_url never double-prefixed (prefix-aware both sites)', (QUOTE_APPROVAL_WIDGET_HTML.match(/indexOf\('https'\)===0/g)||[]).length >= 2)
 
 // A3-2(Holden):买家只看 USDC + 本地法币 —— 卡片绝不显示人民币
 ok('A3-2 no CNY in ProductResults card', !/CNY|¥/.test(PRODUCT_RESULTS_WIDGET_HTML))
