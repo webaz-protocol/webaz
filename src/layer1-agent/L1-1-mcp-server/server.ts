@@ -2824,6 +2824,7 @@ export async function handleSearch(args: Record<string, unknown>) {
       const conduct = [
         r.next_cursor ? 'Do NOT paginate for display — the card has its own 下一页; another call renders a NEW card that visually replaces this one. Only pass cursor if the buyer explicitly asks for more.' : null,
         'The card already shows every product field — do not restate fields in prose; give only your conclusion / comparison / next step.',
+        'If you recommend ONE product, repeat this search with recommend_id=<that product_id> + recommend_reason (≤140 chars) — the card then highlights it with a 🌟 AI推荐 badge, which buyers rely on.',   // A3-8(Holden):把 B3 徽标从"偶发"变"常规"
       ].filter(Boolean).join(' ')
       return { ...r, found: products.length, ...(rec ? { recommendation: rec } : {}), model_conduct: conduct }
     }

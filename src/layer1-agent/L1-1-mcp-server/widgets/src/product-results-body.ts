@@ -49,7 +49,14 @@ function renderBody(oai, out){
       // BUG-01:关键条款被截断 → 一键取全(webaz_search full_terms=true);宿主不支持一键则给可复制指引,绝不静默丢失条款。
       if(p.terms_complete===false){
         if(p.full_terms_fetch&&p.full_terms_fetch.args&&typeof oai.callTool==='function'){
-          var ftb=el('button','mini','查看完整条款'); ftb.addEventListener('click',onceGuard(function(){ try{ oai.callTool('webaz_search',p.full_terms_fetch.args) }catch(e){} })); m.appendChild(ftb)
+          var ftb=el('button','mini','查看完整条款'); ftb.addEventListener('click',onceGuard(function(){   // 审计F1:真·最后一颗裸调 → consume 化
+            ftb.textContent='载入条款中…'
+            callWebazTool(oai,'webaz_search',p.full_terms_fetch.args).then(function(res){
+              var sc=res.structuredContent
+              if(res.ok&&sc&&sc.schema_version==='webaz.product_detail.model.v1'){ renderBody(oai,sc); return }
+              ftb.textContent='查看完整条款(载入失败,可重试)'
+            })
+          },16000)); m.appendChild(ftb)
         } else { m.appendChild(el('div','meta','完整条款:让我用 webaz_search(full_terms=true)取该商品完整规格/退货/配送条款')) }
       }
       if(__multiDetail){ var __dt=el('button','mini','展开详情')
@@ -156,8 +163,16 @@ function renderBody(oai, out){
       bar.appendChild(b)
     })
     if(out.next_cursor&&typeof oai.callTool==='function'){
+      // A3-8(live):最后一颗 F4 类 fire-and-forget —— 下一页现在就地消费并整页替换(返回列表指向新页)。
       var more=el('button',null,'下一页')
-      more.addEventListener('click',onceGuard(function(){ oai.callTool('webaz_search',{cursor:out.next_cursor,limit:5}) }))
+      more.addEventListener('click',onceGuard(function(){
+        more.textContent='加载中…'
+        callWebazTool(oai,'webaz_search',{cursor:String(out.next_cursor),limit:8}).then(function(res){
+          var sc=res.structuredContent
+          if(res.ok&&sc&&sc.schema_version==='webaz.product_search.model.v1'&&(sc.products||[]).length){ __lastSearch=sc; renderBody(oai,sc); return }
+          more.textContent='下一页(加载失败,可重试)'
+        })
+      },16000))   // 审计info(b):守卫窗 ≥ 15s 超时,与审批刷新同纪律
       bar.appendChild(more)
     }
     root.appendChild(bar)
