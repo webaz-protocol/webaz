@@ -286,12 +286,13 @@ function renderBody(oai, out){
             ast.textContent='状态:'+(st||'未知 —— 可打开审批页查看')
             aslot.textContent=''
             if(d.order_url){
+              var oue=el('div','recreason',String(d.order_url))   // 审计F1:链接常显 —— 复制/手选降级永远有落点(fail-visible)
               var vo=el('button','mini','打开订单页')
-              vo.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,String(d.order_url)) }catch(e){ op=false } if(!op){ doCopy(String(d.order_url),vo,null) } }))
-              aslot.appendChild(vo)
+              vo.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,String(d.order_url)) }catch(e){ op=false } if(!op){ doCopy(String(d.order_url),vo,oue) } }))
+              aslot.appendChild(vo); aslot.appendChild(oue)
             }
           })
-        },1500))
+        },16000))   // 审计F2:单飞窗 ≥ callWebazTool 15s 超时,杜绝交错响应回写旧状态
         ap.appendChild(arf); ap.appendChild(ast); ap.appendChild(aslot)
       }
       root.appendChild(ap)
