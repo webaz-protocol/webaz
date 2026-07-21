@@ -104,8 +104,14 @@ ok('A2 grid ETA prefers server display_eta', /p\.display_eta\|\|etaDisplay\(p\.e
 ok('A2 quote panel prefers display_eta + display_expires_at', /qs\.display_eta\|\|etaDisplay/.test(PRODUCT_RESULTS_WIDGET_HTML) && /qs\.display_expires_at\|\|qs\.expires_at/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2 R2-1 detail consumes via callWebazTool (no fire-and-forget)', /callWebazTool\(oai,'webaz_search',\{result_handle/.test(PRODUCT_RESULTS_WIDGET_HTML) && !/try\{ oai\.callTool\('webaz_search',\{result_handle/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2 R2-1 detail renders detail model in place', /webaz\.product_detail\.model\.v1'\)\{ state\.hint=null; renderBody\(oai,sc\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A2.1 one-tap continue present + copy ALWAYS visible (R3-1 fail-visible)', /var qgo=el\('button','mini','继续下单'\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && !/else \{\s*var qcp=el\('button','mini','复制继续'\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && /var qcp=el\('button','mini','复制继续'\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A2.1 send label honest (requested, not delivered)', /已请求发送——若模型没有响应,请用复制/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 in-card chain: draft consumes quote_token', /callWebazTool\(oai,'webaz_order_draft',\{action:'create',quote_token:qs\.quote_token\}\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 in-card chain: submit threads draft_id from draft result', /callWebazTool\(oai,'webaz_submit_order_request',\{draft_id:String\(ds\.draft_id\)\}\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 chain single-flight (chainBusy guard)', /if\(state\.chainBusy\) return/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 fail-stop keeps copyable phrase on draft/submit failure', /提交订单审批\(draft_id='\+String\(ds\.draft_id\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 approval panel renders server data url + copy (no source URL literal)', /复制审批链接/.test(PRODUCT_RESULTS_WIDGET_HTML) && /state\.approval\.url/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 duplicate submit surfaced honestly', /已有等待批准的同参数请求/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 copy fallback ALWAYS visible', /var qcp=el\('button','mini','复制继续'\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && !/else \{\s*var qcp/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 no sendFollowUp in quote-panel chain (host drops it — R3-1)', !/qgo[\s\S]{0,200}sendFollowUpCompat/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2.1 detail card actionable (quote consume in detail branch)', /callWebazTool\(oai,'webaz_quote_order',\{product_id:p\.id,quantity:1\}\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2.1 detail specs collapse beyond 6 rows', /展开全部规格\(/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2.1 multi-product detail defaults collapsed (explicit 展开详情)', /__multiDetail\?'none':'block'/.test(PRODUCT_RESULTS_WIDGET_HTML) && /'展开详情'/.test(PRODUCT_RESULTS_WIDGET_HTML))
@@ -113,9 +119,12 @@ ok('A2.1 multi-product detail defaults collapsed (explicit 展开详情)', /__mu
 ok('A2.2 status consume falls back to content[0].text JSON', /r\.content\[0\]&&r\.content\[0\]\.text/.test(QUOTE_APPROVAL_WIDGET_HTML))
 ok('A2.2 error body surfaced, never swallowed as 未知', /状态:查询失败\('\+String\(d\.error_code\|\|d\.error\)/.test(QUOTE_APPROVAL_WIDGET_HTML))
 ok('A2.2 unknown status keeps webaz.xyz escape hatch', /未知 —— 可在 webaz\.xyz 审批页查看/.test(QUOTE_APPROVAL_WIDGET_HTML))
-ok('A2.1 one-tap continue is single-send (disable after send)', /qgo\.disabled=true; qgo\.textContent='已请求发送/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A3-2 chain button disables + shows progress on click', /qgo\.disabled=true; qgo\.textContent='创建草稿中…'/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2 R2-3 stock badge deduped vs decision_flags', /lb===stockChip\) return/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A2 QuoteApproval prefers display_expires_at', /display_expires_at\|\|out\.expires_at/.test(QUOTE_APPROVAL_WIDGET_HTML))
+
+// A3-2(Holden):买家只看 USDC + 本地法币 —— 卡片绝不显示人民币
+ok('A3-2 no CNY in ProductResults card', !/CNY|¥/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 // ── Self-containment lock: ProductResults must stay URL-literal-free + zero request-capability tokens (incl. in comments) ──
 const REQ_TOK = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|import|src|href|location)\b/
