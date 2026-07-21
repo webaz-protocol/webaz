@@ -301,6 +301,7 @@
     "test:mcp-definition-budget": "tsx scripts/test-mcp-definition-budget.ts",
     "test:mcp-quote-approval-ui": "tsx scripts/test-mcp-quote-approval-ui.ts",
     "test:phase3b-ui-hotfix": "tsx scripts/test-phase3b-ui-hotfix.ts",
+    "test:buyer-specs-privacy": "tsx scripts/test-buyer-specs-privacy.ts",
     "test:mcp-order-timeline-ui": "tsx scripts/test-mcp-order-timeline-ui.ts",
     "test:mcp-schema-v2-contract": "tsx scripts/test-mcp-schema-v2-contract.ts",
     "test:mcp-card-contract": "tsx scripts/test-mcp-card-contract.ts",

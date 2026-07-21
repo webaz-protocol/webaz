@@ -843,6 +843,7 @@ jobs:
       - run: npm run test:mcp-definition-budget
       - run: npm run test:mcp-quote-approval-ui
       - run: npm run test:phase3b-ui-hotfix
+      - run: npm run test:buyer-specs-privacy
       - run: npm run test:mcp-order-timeline-ui
       - run: npm run test:mcp-schema-v2-contract
       - run: npm run test:mcp-card-contract

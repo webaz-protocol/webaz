@@ -163,6 +163,23 @@ export const DETAIL_SPECS_MAX_BYTES = 800
 export const DETAIL_DESC_MAX_BYTES = 900
 export const DETAIL_TERMS_MAX_BYTES = 400   // BUG-01: return_condition / ship_regions 关键交易条款 —— 截断即带 *_truncated 标志 + 全文入口,绝不静默
 
+// B-3(Round1b P0 内部字段隔离):specs 是卖家自由键值,历史上 agent 建品把内部【采购/成本/货源】证据(source_url/
+//   source_seller/purchase_unit_price/purchase_total_cost/… 包在 agent_source_evidence / agent_package_evidence)写进了 specs
+//   → 买家详情投影原样透传 = 泄露成本与货源。修法在序列化层直接【剔除】这些内部键(不是前端隐藏、不是 [object Object] 兜底):
+//   买家可见 specs 永不含内部采购/成本/货源字段名或值。deny 按前缀 + 已知键,合法 specs(多为中文键)不受影响。
+const INTERNAL_SPEC_KEY_RE = /^(agent_source|agent_package|agent_sourcing|source_|purchase_|package_unit_spec|package_quantity|package_total_spec|listing_pricing_note|pre_acceptance_checklist|cost_|internal_)/i
+/** 从买家可见 specs 剔除内部采购/成本/货源字段。输入可为对象/JSON 字符串/其它;非对象原样返回(下游再处理)。 */
+export function sanitizeBuyerSpecs(specs: unknown): unknown {
+  if (specs == null) return specs
+  let obj: Record<string, unknown> | null = null
+  if (typeof specs === 'string') { try { obj = JSON.parse(specs) as Record<string, unknown> } catch { return specs } }
+  else if (typeof specs === 'object' && !Array.isArray(specs)) obj = specs as Record<string, unknown>
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return specs
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(obj)) { if (INTERNAL_SPEC_KEY_RE.test(k)) continue; out[k] = v }
+  return out
+}
+
 /** 按 UTF-8 字节封顶(Codex round-2 M-3:预算承诺以字节计,CJK 一字三字节 —— 字符截断守不住)。 */
 function capBytes(s: string, maxBytes: number): { text: string; truncated: boolean } {
   const buf = Buffer.from(s, 'utf8')
@@ -197,6 +214,7 @@ export function projectProductDetail(p: Record<string, unknown>, opts: ProductDe
   let specs: unknown = null
   if (typeof p.specs === 'string' && p.specs) { try { specs = JSON.parse(p.specs) } catch { specs = null } }
   else if (p.specs && typeof p.specs === 'object') specs = p.specs
+  specs = sanitizeBuyerSpecs(specs)   // B-3(P0):买家可见 specs 剔除内部采购/成本/货源字段(full + summary 两模式共用此点)
   const rc = p.return_condition == null ? null : String(p.return_condition)
   const sr = p.ship_regions == null ? null : String(p.ship_regions)
   const hasVariants = p.has_variants == null ? null : !!Number(p.has_variants)
