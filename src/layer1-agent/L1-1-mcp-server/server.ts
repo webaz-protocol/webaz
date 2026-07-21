@@ -37,6 +37,7 @@ import { applyWebazRuntimeSchema } from '../../runtime/apply-webaz-runtime-schem
 import { generateCodeVerifier, pkceChallengeS256 } from '../../runtime/agent-pairing.js'  // RFC-020 PR-C1 — PKCE 配对
 import { NETWORK_TOOLS, NETWORK_SELF_AWARE, toolAllowedInNetworkMode, resolveMode } from './network-mode.js'  // RFC-003 网络门(可单测)+ 模式解析(单一真相源)
 import { annotateTools } from './tool-annotations.js'  // 标准 MCP annotations(readOnly/destructive/openWorld)——stdio+Remote 共用
+import { matchKnownStaleWidgetUri, isUnknownVersionedWidgetUri } from './widget-template-compat.js'  // B-2 收官:已知历史 hash 显式 allowlist(绝不通配回落)
 import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-tool securitySchemes(oauth2 仅 grant-reachable / 余 noauth)
 import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
 import { filterToolsBySurface, type ToolSurface } from './tool-surfaces.js'
@@ -6091,6 +6092,19 @@ export function buildMcpServer(opts: {
     const uiHit = UI_RESOLVE[request.params.uri]
     if (uiHit) {
       return { contents: [{ uri: request.params.uri, mimeType: uiResourceMime(uiHit.kind), text: uiHit.html, _meta: uiResourceMeta(uiHit.kind) }] }
+    }
+    // B-2 收官:已知历史生产 hash(显式 allowlist)→ 当前内容 + 兼容标记;未知 hash 绝不静默回落
+    //   (掩盖拼写/漏发布 + 破坏内容寻址不可变语义)—— 落到下方 未知资源 错误,带 reject 日志。
+    const stale = matchKnownStaleWidgetUri(request.params.uri)
+    if (stale) {
+      const cur = UI_RESOLVE[stale.bareUri]
+      if (cur) {
+        console.log(`[widget-compat] known-stale hash alias: ${request.params.uri} → ${stale.bareUri}`)
+        return { contents: [{ uri: request.params.uri, mimeType: uiResourceMime(cur.kind), text: cur.html, _meta: { ...uiResourceMeta(cur.kind), 'webaz/compat': { alias_of: stale.bareUri, reason: 'known-stale-content-hash', policy: 'explicit-allowlist' } } }] }
+      }
+    }
+    if (isUnknownVersionedWidgetUri(request.params.uri)) {
+      console.warn(`[widget-compat] unknown versioned widget uri REJECTED (not in allowlist): ${request.params.uri}`)
     }
     if (request.params.uri === 'webaz://guide/categories') {
       // NETWORK 模式经 API(与 HTTP 通道同源);失败降级为静态注册表(counts 缺席,如实标注)
