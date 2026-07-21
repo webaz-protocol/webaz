@@ -36,7 +36,8 @@ import { setSeamDb } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-
 import { applyWebazRuntimeSchema } from '../../runtime/apply-webaz-runtime-schema.js'  // 与 PWA 同源的纯 schema 桥(防 MCP fresh DB 漂移)
 import { generateCodeVerifier, pkceChallengeS256 } from '../../runtime/agent-pairing.js'  // RFC-020 PR-C1 — PKCE 配对
 import { NETWORK_TOOLS, NETWORK_SELF_AWARE, toolAllowedInNetworkMode, resolveMode } from './network-mode.js'  // RFC-003 网络门(可单测)+ 模式解析(单一真相源)
-import { annotateTools } from './tool-annotations.js'  // 标准 MCP annotations(readOnly/destructive/openWorld)——stdio+Remote 共用
+import { annotateTools } from './tool-annotations.js'
+import { resolveProductMatch } from '../../pwa/product-alias-match.js'  // A4:商品匹配单一真相源(exact-first 排他,网络/本地同用)  // 标准 MCP annotations(readOnly/destructive/openWorld)——stdio+Remote 共用
 import { matchKnownStaleWidgetUri, isUnknownVersionedWidgetUri } from './widget-template-compat.js'  // B-2 收官:已知历史 hash 显式 allowlist(绝不通配回落)
 import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-tool securitySchemes(oauth2 仅 grant-reachable / 余 noauth)
 import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
@@ -2901,28 +2902,14 @@ export async function handleSearch(args: Record<string, unknown>) {
   //                 (2) 完全等于 任一 external_title OR
   //                 (3) 用户文本 包含 任一卖家声明的 alias_value (≥ 6 字符 且 active)
   if (query) {
-    const aliasRows = db.prepare(`
-      SELECT product_id, alias_value FROM product_aliases
-      WHERE status = 'active' AND length(alias_value) >= 6 AND length(alias_value) <= ?
-    `).all(query.length) as Array<{ product_id: string; alias_value: string }>
-    // A4(Holden:完整标题不得返回其他商品)—— exact-first【排他】:标题/外部标题精确命中 → 只返回精确集;
-    //   仅在无精确命中时才启用族 alias 包含判定(与 PWA findProductsByAlias 同纪律)。
-    const exactRow = db.prepare(`
-      SELECT p.id FROM products p WHERE p.status='active' AND p.stock>0 AND (
-        p.title = ? OR EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.external_title = ?)
-      ) LIMIT 1`).get(query, query) as { id: string } | undefined
-    if (exactRow) {
-      sql += ` AND (p.title = ? OR EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.external_title = ?))`
-      params.push(query, query)
+// A4(Holden:完整标题不得返回其他商品)—— 与网络路径【同一真相源】resolveProductMatch(exact-first 排他、
+    //   stock-agnostic;缺货由外层 stock>0 过滤,不回落族别名。消除审计 F1/F2 双路径分歧)。
+    const matchIds = resolveProductMatch(db, query)
+    if (matchIds.size === 0) {
+      sql += ` AND 1 = 0`   // 无精确、无族别名 → strict 0 命中(不补同类)
     } else {
-      const aliasIds = new Set<string>()
-      for (const a of aliasRows) { if (query.includes(a.alias_value)) aliasIds.add(a.product_id) }
-      if (aliasIds.size === 0) {
-        sql += ` AND 1 = 0`   // 无精确、无族别名 → strict 0 命中(不补同类)
-      } else {
-        sql += ` AND p.id IN (${[...aliasIds].map(() => '?').join(',')})`
-        params.push(...aliasIds)
-      }
+      sql += ` AND p.id IN (${[...matchIds].map(() => '?').join(',')})`
+      params.push(...matchIds)
     }
   }
   if (category) { sql += ` AND p.category = ?`; params.push(category) }
