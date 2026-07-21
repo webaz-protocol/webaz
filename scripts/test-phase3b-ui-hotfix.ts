@@ -86,6 +86,11 @@ ok('F3 product card uses etaDisplay', /预计送达 '\+etaDisplay\(p\.estimated_
 ok('F3 quote card uses etaDisplay', /'预计送达',etaDisplay\(s\.estimated_days/.test(QUOTE_APPROVAL_WIDGET_HTML))
 ok('F5 shown-count label present', /精确匹配 · 本卡展示 /.test(PRODUCT_RESULTS_WIDGET_HTML))
 
+// ── Self-containment lock: ProductResults must stay URL-literal-free + zero request-capability tokens (incl. in comments) ──
+const REQ_TOK = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|import|src|href|location)\b/
+ok('ProductResults has NO url literal (zero-URL self-containment lock)', !/["'`](https?:)?\/\//.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('ProductResults has NO request-capability token (incl. comments)', !REQ_TOK.test(PRODUCT_RESULTS_WIDGET_HTML))
+
 await run().then(() => {
   if (fail > 0) { console.error(`\n❌ phase3b-ui-hotfix FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
   console.log(`✅ phase3b-ui-hotfix: F3 ETA formatter (region map/range/null/malformed never [object Object]) + F4 callWebazTool consume (ok/error/throw/no-host) + button wiring (consume+render, no fire-and-forget, withTrace intact, notification dedup) + F5 shown-count label\n  ✅ pass ${pass}`)

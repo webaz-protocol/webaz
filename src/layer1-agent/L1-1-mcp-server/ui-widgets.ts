@@ -303,30 +303,16 @@ function renderBody(oai, out){
       state.hint={ text:'此宿主不支持一键操作;请把这句话复制发给我:', phrase:phrase }; render(); return
     }
     if(state.busy) return   // single-flight:整个 promise 周期内二次点击不产生请求
-    state.busy=true; state.hint={ text:'正在获取报价…', phrase:null }; render()
+    // B4 不变量:点击即【同步】fail-visible —— 载入提示携带精确 product_id 短语 + 复制键(永不静默/永不卡死);成功后被报价面板替换。
+    state.busy=true; state.hint={ text:'正在获取报价…若卡片未更新为报价,复制发我:', phrase:phrase }; render()
     callWebazTool(oai,'webaz_quote_order',{product_id:pid,quantity:1}).then(function(res){
       state.busy=false
       if(res.ok&&res.structuredContent){ state.quote={ pid:pid, title:title, sc:res.structuredContent }; state.hint=null; render(); return }
       state.hint={ text:(res.timeout?'获取报价超时,请重试或把这句话复制发给我:':'获取报价失败('+String(res.error||'')+'),请重试或把这句话复制发给我:'), phrase:phrase }; render()
     })
   }
-  // 报价→草稿→提交 链(就地消费,single-flight);正式建单永远在 webaz.xyz 的 Passkey。绝不复用 token,幂等键由服务端兜底。
-  function continueToApproval(q){
-    if(state.busy) return; state.busy=true
-    var qsc=q.sc, qt=qsc&&qsc.quote_token
-    if(!qt){ state.busy=false; state.hint={ text:'报价缺少 quote_token,无法继续;请把这句话复制发给我:', phrase:'为「'+(q.title||q.pid)+'」准备下单(product_id='+q.pid+')' }; state.quote=null; render(); return }
-    state.stage='正在创建订单草稿…'; render()
-    callWebazTool(oai,'webaz_order_draft',{action:'create',quote_token:qt}).then(function(dr){
-      if(!dr.ok||!dr.structuredContent||!dr.structuredContent.draft_id){ state.busy=false; state.stage=null; state.hint={ text:(dr.timeout?'创建草稿超时':'创建草稿失败('+String(dr.error||'')+'')+',请重试或把这句话复制发给我:', phrase:'用这个报价创建订单草稿(quote_token='+String(qt)+')' }; render(); return }
-      var did=dr.structuredContent.draft_id
-      state.stage='正在提交 Passkey 审批…'; render()
-      callWebazTool(oai,'webaz_submit_order_request',{draft_id:did}).then(function(sr){
-        state.busy=false; state.stage=null
-        if(sr.ok&&sr.structuredContent&&sr.structuredContent.request_id){ state.approval=sr.structuredContent; state.quote=null; render(); return }
-        state.hint={ text:(sr.timeout?'提交超时':'提交失败('+String(sr.error||'')+'')+',请重试或把这句话复制发给我:', phrase:'提交这个草稿去 Passkey 审批(draft_id='+String(did)+')' }; render()
-      })
-    })
-  }
+  // ProductResults 自包含锁(零外链词元):不在此卡内跑 草稿→提交→审批(那会引入 webaz.xyz 完整链接)。
+  //   报价就地展示后,继续下单交给可复制的一句话(模型编排 draft→submit → QuoteAndApproval 卡,链接与 Passkey 在那张卡处理)。
   function openDetail(pid,title){
     var fired=false
     if(out.result_handle&&typeof oai.callTool==='function'){ try{ oai.callTool('webaz_search',{result_handle:out.result_handle,selected_ids:[pid]}); fired=true }catch(e){} }
@@ -432,22 +418,15 @@ function renderBody(oai, out){
       })
       cmp.appendChild(t); root.appendChild(cmp)
     }
-    if(state.quote){   // F4:报价就地态 —— 真实金额/ETA/到期 + 继续键(草稿→提交),不再"正在获取报价"永久卡
+    if(state.quote){   // F4:报价就地态 —— 真实金额/ETA/到期,不再"正在获取报价"永久卡。继续下单=可复制一句话(模型编排 draft→submit → 下单卡),本卡保持零 URL 自包含。
       var qp=el('div','hint'); var qs=state.quote.sc||{}
       qp.appendChild(el('span',null,'✓ 已获取报价:'+(state.quote.title||'')))
       qp.appendChild(el('div','recreason',((qs.price&&qs.price.display)||'')+' · 预计送达 '+etaDisplay(qs.shipping&&qs.shipping.estimated_days,(qs.destination&&qs.destination.region))+(qs.expires_at?(' · 到期 '+String(qs.expires_at)):'')))
-      if(state.stage){ qp.appendChild(el('div','meta',state.stage)) }
-      else { var cb=el('button','mini','创建草稿并提交审批'); cb.addEventListener('click',function(){ continueToApproval(state.quote) }); qp.appendChild(cb) }
-      qp.appendChild(el('div','meta','报价不扣款 · 草稿不锁库存 · 正式建单需你在 webaz.xyz 用 Passkey 批准'))
+      var qphrase='用这个报价创建订单草稿并提交 Passkey 审批(product_id='+state.quote.pid+')'
+      qp.appendChild(el('div','recreason','“'+qphrase+'”'))
+      var qcp=el('button','mini','复制继续'); qcp.addEventListener('click',function(){ doCopy(qphrase,qcp) }); qp.appendChild(qcp)
+      qp.appendChild(el('div','meta','报价不扣款 · 草稿/提交/Passkey 在下单卡完成 · 正式建单需你在 webaz.xyz 用 Passkey 批准'))
       root.appendChild(qp)
-    }
-    if(state.approval){   // F4:提交成功态 —— request_id + 可复制审批链接(去 webaz.xyz Passkey);ProductResults 无 openExternal,链接以文字给出
-      var ap=el('div','hint'); var asc=state.approval
-      ap.appendChild(el('span',null,'✓ 已提交审批(request_id='+String(asc.request_id||'').slice(0,12)+'…)。去 webaz.xyz 用 Passkey 批准:'))
-      var aurl='https://webaz.xyz/'+String(asc.approval_url||'').replace(/^\\//,'')
-      ap.appendChild(el('span','recreason',aurl))
-      var acp=el('button','mini','复制审批链接'); acp.addEventListener('click',function(){ doCopy(aurl,acp) }); ap.appendChild(acp)
-      root.appendChild(ap)
     }
     if(state.hint){   // fail-visible 手动路径:一句可复制发给模型的话 —— 任何宿主上按钮不生效都能继续
       var hb=el('div','hint'); hb.appendChild(el('span',null,state.hint.text))
