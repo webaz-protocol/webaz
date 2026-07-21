@@ -55,6 +55,10 @@ try {
   const r5 = await handleSearch({ anchor: 'tinanop9' })
   ok('AN-5 anchor with no active product → found:0 no_product', r5.found === 0 && r5.matched_by === 'anchor_no_product')
 
+  const r6b = await handleSearch({ anchor: 'x'.repeat(500) })   // 超长非法显式参数 → 不 lookup,回落正常搜索(无 query → 无结果但非 anchor 错误)
+  ok('AN-6b oversized/invalid explicit anchor is ignored (shape-guarded, no lookup)', r6b.matched_by !== 'anchor' && r6b.matched_by !== 'anchor_not_found')
+  const r6c = await handleSearch({ query: 'shampoo' })   // 审计 F1 场景:英文单词无 @ → 正常搜索不劫持
+  ok('AN-6c single English keyword without @ → normal search, never anchor (audit HIGH lock)', r6c.matched_by !== 'anchor' && r6c.matched_by !== 'anchor_not_found')
   // 非 anchor query 不误触发(普通词不含 @、含空格/中文)
   const r6 = await handleSearch({ query: '悬挂式 底部抽纸' })
   ok('AN-6 normal multi-word query NOT treated as anchor', r6.matched_by !== 'anchor')
