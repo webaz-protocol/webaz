@@ -280,6 +280,9 @@ function renderBody(oai, out){
           ast.textContent='查询中…'
           callWebazTool(oai,'webaz_approval_requests',{action:'get',request_id:state.approval.request_id}).then(function(res){
             var d=res.structuredContent||{}
+            // A3-4(R3-2 同款二级兜底):无卡工具回执可能只带 content[].text(JSON)—— webazConsume 会把原始回执
+            //   原样传回,这里解析出真实状态;绝不把可解析的回执吞成「未知」。
+            if(!d.display_status&&!d.status&&!d.error&&d.content&&d.content.length){ try{ var __t=d.content[0]&&d.content[0].text; if(__t&&__t.charAt(0)==='{'){ var __j=JSON.parse(__t); if(__j&&(__j.display_status||__j.status||__j.error)) d=__j } }catch(e){} }
             if(!d.display_status&&!d.status&&res&&res.structuredContent===undefined){ ast.textContent='查询失败,稍后重试或打开审批页查看'; return }
             if(d.error){ ast.textContent='查询失败('+String(d.error_code||d.error).slice(0,40)+'),可打开审批页查看'; return }
             var st=d.display_status||((d.status&&typeof d.status==='object')?(d.status.label||d.status.code):String(d.status||''))
