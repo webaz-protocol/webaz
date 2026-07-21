@@ -274,29 +274,31 @@ function renderBody(oai, out){
       qp.appendChild(el('div','meta','报价不扣款 · 草稿/提交/Passkey 在下单卡完成 · 正式建单需你在 webaz.xyz 用 Passkey 批准'))
       root.appendChild(qp)
     }
-    if(state.approval){   // A3-2:审批引导就地态 —— request_id + 绝对 approval_url(服务端数据),Passkey 前零资金动作
+    if(state.approval){   // A3-7(Holden):默认极简一行 —— 长 ID/完整 URL 收进「详情」;复制失败自动展开供手选(fail-visible 不打折)。
       var ap=el('div','hint')
-      ap.appendChild(el('span',null,(state.approval.duplicate?'♻️ 已有等待批准的同参数请求(未新建):':'✅ 审批请求已提交:')+state.approval.request_id))
-      ap.appendChild(el('div','recreason','去 webaz.xyz 用 Passkey 批准后才会创建正式订单;批准前不扣款、不锁库存。'))
+      var __apDet=el('div',null,null); __apDet.style.display='none'
+      function __openDet(){ __apDet.style.display='block'; return __apDet }
+      ap.appendChild(el('span',null,(state.approval.duplicate?'♻️ 已有同参数审批待批准':'✅ 审批已提交')+' · 待你 Passkey 批准(批准前不扣款、不锁库存)'))
       if(state.approval.url){
-        var ae=el('div','recreason',state.approval.url); ap.appendChild(ae)
-        // A3-2b:一键直跳(openWebaz:https+精确主机 webaz.xyz 校验后才放行;URL 是服务端数据);宿主不支持→复制降级。
         var ao=el('button','mini','打开审批页')
-        ao.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,state.approval.url) }catch(e){ op=false } ao.textContent=op?'已尝试打开;没弹出就用复制':'此宿主不支持打开,请用复制' }))
+        ao.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,state.approval.url) }catch(e){ op=false } ao.textContent=op?'已尝试打开 ↗':'打开失败,请复制' }))
         ap.appendChild(ao)
-        var ac=el('button','mini','复制审批链接'); ac.addEventListener('click',function(){ doCopy(state.approval.url,ac,ae) }); ap.appendChild(ac)
+        var ac=el('button','mini','复制链接'); var __ae=el('div','recreason',state.approval.url)
+        ac.addEventListener('click',function(){ doCopy(state.approval.url,ac,__openDet()&&__ae) }); ap.appendChild(ac)
       }
-      // A3-3(Holden):支付回来点一下看状态 —— 就地刷新审批状态(R3-2 同款三级兜底);executed 给订单号+打开订单页(order_url 为服务端数据)。
+      var __dt7=el('button','mini','详情')
+      __dt7.addEventListener('click',function(){ var on=__apDet.style.display==='none'; __apDet.style.display=on?'block':'none'; __dt7.textContent=on?'收起':'详情' })
+      ap.appendChild(__dt7)
+      __apDet.appendChild(el('div','meta','审批号:'+state.approval.request_id))
+      if(state.approval.url){ __apDet.appendChild(__ae) }
       if(typeof oai.callTool==='function'){
-        var ast=el('div','meta','(完成 Passkey 后点下方按钮查看订单状态)')
+        var ast=el('div','meta',null)
         var aslot=el('div',null,null)
         var arf=el('button','mini','查看最新状态')
         arf.addEventListener('click',onceGuard(function(){
           ast.textContent='查询中…'
           callWebazTool(oai,'webaz_approval_requests',{action:'get',request_id:state.approval.request_id}).then(function(res){
             var d=res.structuredContent||{}
-            // A3-4(R3-2 同款二级兜底):无卡工具回执可能只带 content[].text(JSON)—— webazConsume 会把原始回执
-            //   原样传回,这里解析出真实状态;绝不把可解析的回执吞成「未知」。
             if(!d.display_status&&!d.status&&!d.error&&d.content&&d.content.length){ try{ var __t=d.content[0]&&d.content[0].text; if(__t&&__t.charAt(0)==='{'){ var __j=JSON.parse(__t); if(__j&&(__j.display_status||__j.status||__j.error)) d=__j } }catch(e){} }
             if(!d.display_status&&!d.status&&res&&res.structuredContent===undefined){ ast.textContent='查询失败,稍后重试或打开审批页查看'; return }
             if(d.error){ ast.textContent='查询失败('+String(d.error_code||d.error).slice(0,40)+'),可打开审批页查看'; return }
@@ -304,15 +306,16 @@ function renderBody(oai, out){
             ast.textContent='状态:'+(st||'未知 —— 可打开审批页查看')
             aslot.textContent=''
             if(d.order_url){
-              var oue=el('div','recreason',String(d.order_url))   // 审计F1:链接常显 —— 复制/手选降级永远有落点(fail-visible)
+              var oue=el('div','recreason',String(d.order_url)); oue.style.display='none'
               var vo=el('button','mini','打开订单页')
-              vo.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,String(d.order_url)) }catch(e){ op=false } if(!op){ doCopy(String(d.order_url),vo,oue) } }))
+              vo.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,String(d.order_url)) }catch(e){ op=false } if(!op){ oue.style.display='block'; doCopy(String(d.order_url),vo,oue) } }))
               aslot.appendChild(vo); aslot.appendChild(oue)
             }
           })
-        },16000))   // 审计F2:单飞窗 ≥ callWebazTool 15s 超时,杜绝交错响应回写旧状态
+        },16000))   // 审计F2:单飞窗 ≥ callWebazTool 15s 超时
         ap.appendChild(arf); ap.appendChild(ast); ap.appendChild(aslot)
       }
+      ap.appendChild(__apDet)
       root.appendChild(ap)
     }
     if(state.hint){   // fail-visible 手动路径:一句可复制发给模型的话 —— 任何宿主上按钮不生效都能继续
@@ -327,4 +330,23 @@ function renderBody(oai, out){
     try{ window.scrollTo(0, __sy) }catch(e){}   // B1:render 后恢复滚动位置(排序/比较/收起不跳顶)
   }
   render()
+  // A3-7(R4-1 确定性兜底):模型显式小 limit 把 ≤8 的小目录切了页 → 卡片自动取齐余下商品(一次,就地合并,
+  //   展示层补全,零语义改写)。守则/默认页只是引导,这里保证买家【总能】一张卡看全小目录。
+  var __autoFilled=false
+  ;(function maybeAutoFill(){
+    if(__autoFilled) return
+    var tc=out.total_count
+    if(!(tc&&tc<=8&&(out.products||[]).length<tc&&out.next_cursor&&typeof oai.callTool==='function')) return
+    __autoFilled=true
+    callWebazTool(oai,'webaz_search',{cursor:String(out.next_cursor),limit:8}).then(function(res){
+      var sc=res.structuredContent
+      if(!(res.ok&&sc&&sc.schema_version==='webaz.product_search.model.v1'&&(sc.products||[]).length)) return
+      var seen={}; (out.products||[]).forEach(function(pp){ seen[pp.id]=1 })
+      ;(sc.products||[]).forEach(function(pp){ if(!seen[pp.id]) out.products.push(pp) })
+      if(sc.sellers){ for(var __k in sc.sellers){ if(!sellers[__k]) sellers[__k]=sc.sellers[__k] } }
+      out.next_cursor=sc.next_cursor||null
+      products=(out.products||[]).slice()
+      render()
+    })
+  })()
 }export {}
