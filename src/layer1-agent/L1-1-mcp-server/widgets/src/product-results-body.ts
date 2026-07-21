@@ -12,13 +12,21 @@ function renderBody(oai, out){
     root.textContent=''
     if(__lastSearch){ var back=el('button',null,'← 返回列表'); back.addEventListener('click',function(){ renderBody(oai, __lastSearch) }); root.appendChild(back) }
     var dg=el('div','grid')
+    var __multiDetail=((out.products||[]).length>1)   // A2.1(Holden):批量详情【默认不平铺】——明确点击才展示全文
     ;(out.products||[]).forEach(function(p){
       var c=el('div','card open')
       c.appendChild(el('b',null,p.title||p.id))
       c.appendChild(el('div','price',(p.price&&p.price.display)||''))
-      var m=el('div','more'); m.style.display='block'
+      var m=el('div','more'); m.style.display=__multiDetail?'none':'block'
       m.appendChild(el('div',null,p.description||'')); if(p.description_truncated) m.appendChild(el('div','meta','…(描述截断)'))
-      if(p.specs){ try{ Object.keys(p.specs).forEach(function(k){ m.appendChild(el('div','meta',k+': '+p.specs[k])) }) }catch(e){} }
+      if(p.specs){ try{ var __ks=Object.keys(p.specs)   // A2.1:规格超 6 行折叠(本地开合,零调用)—— 详情不再一屏全文平铺
+        __ks.slice(0,6).forEach(function(k){ m.appendChild(el('div','meta',k+': '+p.specs[k])) })
+        if(__ks.length>6){ var __rest=el('div',null); __rest.style.display='none'
+          __ks.slice(6).forEach(function(k){ __rest.appendChild(el('div','meta',k+': '+p.specs[k])) })
+          var __tg=el('button','mini','展开全部规格('+(__ks.length-6)+')')
+          __tg.addEventListener('click',function(){ var on=__rest.style.display==='none'; __rest.style.display=on?'block':'none'; __tg.textContent=on?'收起规格':'展开全部规格('+(__ks.length-6)+')' })
+          m.appendChild(__tg); m.appendChild(__rest) }
+      }catch(e){} }
       if(p.specs_truncated) m.appendChild(el('div','meta','规格较多,已省略 —— 点「查看完整条款」获取完整规格'))
       if(p.return_condition) m.appendChild(el('div','meta','退货条件: '+p.return_condition+(p.return_condition_truncated?' …(截断)':'')))
       if(p.ship_regions) m.appendChild(el('div','meta','配送区域: '+p.ship_regions+(p.ship_regions_truncated?' …(截断)':'')))
@@ -29,7 +37,26 @@ function renderBody(oai, out){
           var ftb=el('button','mini','查看完整条款'); ftb.addEventListener('click',onceGuard(function(){ try{ oai.callTool('webaz_search',p.full_terms_fetch.args) }catch(e){} })); m.appendChild(ftb)
         } else { m.appendChild(el('div','meta','完整条款:让我用 webaz_search(full_terms=true)取该商品完整规格/退货/配送条款')) }
       }
-      c.appendChild(m); dg.appendChild(c)
+      if(__multiDetail){ var __dt=el('button','mini','展开详情')
+        __dt.addEventListener('click',function(){ var on=m.style.display==='none'; m.style.display=on?'block':'none'; __dt.textContent=on?'收起详情':'展开详情' })
+        c.appendChild(__dt) }
+      c.appendChild(m)
+      // A2.1:详情卡可操作 —— 就地报价(与列表 prepareOrder 同 consume 纪律);无 callTool 宿主给可复制短语。
+      var __ph='为「'+(p.title||p.id)+'」准备下单(product_id='+p.id+')'
+      var __act=el('div','row')
+      if(typeof oai.callTool==='function'){
+        var __pd=el('button','primary','准备下单')
+        __pd.addEventListener('click',onceGuard(function(){
+          var __h=el('div','hint',null); __h.textContent='正在获取报价…若无更新请把这句话发给我:'+__ph; c.appendChild(__h)
+          callWebazTool(oai,'webaz_quote_order',{product_id:p.id,quantity:1}).then(function(res){
+            var qs=res.structuredContent||{}
+            if(res.ok){ __h.textContent='✓ 报价 '+((qs.price&&qs.price.display)||'')+' · 预计送达 '+(qs.display_eta||'')+' · 到期 '+(qs.display_expires_at||String(qs.expires_at||''))+' —— 继续下单请把上面这句话发给我(报价不扣款,建单需 Passkey)' }
+            else { __h.textContent=(res.timeout?'获取报价超时':'获取报价失败')+',请把这句话发给我:'+__ph }
+          })
+        },3000))
+        __act.appendChild(__pd)
+      } else { __act.appendChild(el('div','meta','下单:把这句话发给我 —— '+__ph)) }
+      c.appendChild(__act); dg.appendChild(c)
     })
     if(out.unavailable_ids&&out.unavailable_ids.length) dg.appendChild(el('div','meta','已不可购: '+out.unavailable_ids.join(', ')))
     root.appendChild(dg); return
@@ -201,15 +228,15 @@ function renderBody(oai, out){
       qp.appendChild(el('div','recreason',((qs.price&&qs.price.display)||'')+' · 预计送达 '+(qs.display_eta||etaDisplay(qs.shipping&&qs.shipping.estimated_days,(qs.destination&&qs.destination.region)))+((qs.display_expires_at||qs.expires_at)?(' · 到期 '+String(qs.display_expires_at||qs.expires_at)):'')))
       var qphrase='用这个报价创建订单草稿并提交 Passkey 审批(product_id='+state.quote.pid+')'
       var qpe=el('div','recreason','“'+qphrase+'”'); qp.appendChild(qpe)
-      // A2 一键续链:主路径 sendFollowUp(一次点击只发一条,发送后禁用);宿主不支持才降级复制键。
+      // A2.1(R3-1):实测 ChatGPT 会【静默丢弃】widget 的 sendFollowUpMessage(API 存在、调用成功、消息不进会话)。
+      //   fail-visible 铁律:复制键【常驻】,绝不藏在"发送能力可用"背后;发送文案不承诺已达,只承诺已请求。
       //   后续模型回合仍走 报价→草稿→提交→Passkey 链,本按钮不建单、不扣款、不绕确认。
       if(canFollowUp(oai)){
         var qgo=el('button','mini','继续下单')
-        qgo.addEventListener('click',onceGuard(function(){ if(qgo.disabled) return; if(sendFollowUpCompat(oai,qphrase)){ qgo.disabled=true; qgo.textContent='已发送,等模型创建草稿…' } else { doCopy(qphrase,qgo,qpe) } },3000))
+        qgo.addEventListener('click',onceGuard(function(){ if(qgo.disabled) return; if(sendFollowUpCompat(oai,qphrase)){ qgo.disabled=true; qgo.textContent='已请求发送——若模型没有响应,请用复制' } else { doCopy(qphrase,qgo,qpe) } },3000))
         qp.appendChild(qgo)
-      } else {
-        var qcp=el('button','mini','复制继续'); qcp.addEventListener('click',function(){ doCopy(qphrase,qcp,qpe) }); qp.appendChild(qcp)
       }
+      var qcp=el('button','mini','复制继续'); qcp.addEventListener('click',function(){ doCopy(qphrase,qcp,qpe) }); qp.appendChild(qcp)
       qp.appendChild(el('div','meta','报价不扣款 · 草稿/提交/Passkey 在下单卡完成 · 正式建单需你在 webaz.xyz 用 Passkey 批准'))
       root.appendChild(qp)
     }
