@@ -1,4 +1,4 @@
-// @ts-nocheck — A1 冻结期:body 源码字节级冻结(内容 hash 不变),语义标注留给 A2;语法错误仍会上报。生成器会剥离本行。
+// @ts-nocheck — body 为 ES5 风格运行时脚本(el() 可选参/动态 state),完整类型标注另行任务;语法错误仍会上报。生成器会剥离本行。
 
 function renderBody(oai, out){
   oai = oai || {}

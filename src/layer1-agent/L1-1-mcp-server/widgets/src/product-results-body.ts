@@ -1,4 +1,4 @@
-// @ts-nocheck — A1 冻结期:body 源码字节级冻结(内容 hash 不变),语义标注留给 A2;语法错误仍会上报。生成器会剥离本行。
+// @ts-nocheck — body 为 ES5 风格运行时脚本(el() 可选参/动态 state),完整类型标注另行任务;语法错误仍会上报。生成器会剥离本行。
 
 var __lastSearch=null   // B1:缓存上一次搜索页 out —— 供详情页【← 返回列表】原地回退,不再固定住
 function renderBody(oai, out){
@@ -85,10 +85,15 @@ function renderBody(oai, out){
   // ProductResults 自包含锁(零外链词元):不在此卡内跑 草稿→提交→审批(那会引入 webaz.xyz 完整链接)。
   //   报价就地展示后,继续下单交给可复制的一句话(模型编排 draft→submit → QuoteAndApproval 卡,链接与 Passkey 在那张卡处理)。
   function openDetail(pid,title){
-    var fired=false
-    if(out.result_handle&&typeof oai.callTool==='function'){ try{ oai.callTool('webaz_search',{result_handle:out.result_handle,selected_ids:[pid]}); fired=true }catch(e){} }
-    state.hint={ text:(fired?'正在载入详情…若卡片没有更新为详情页,请把这句话复制发给我:':'此宿主不支持一键操作;请把这句话复制发给我:'), phrase:'看「'+(title||pid)+'」的完整详情(product_id='+pid+')' }
-    render()
+    var phrase='看「'+(title||pid)+'」的完整详情(product_id='+pid+')'
+    if(!out.result_handle||typeof oai.callTool!=='function'){ state.hint={ text:'此宿主不支持一键操作;请把这句话复制发给我:', phrase:phrase }; render(); return }
+    // R2-1(A2):就地消费详情结果 —— 与 prepareOrder 同一 consume 纪律,绝不 fire-and-forget;失败/超时留可复制手动路径。
+    state.hint={ text:'正在载入详情…若卡片没有更新为详情页,请把这句话复制发给我:', phrase:phrase }; render()
+    callWebazTool(oai,'webaz_search',{result_handle:out.result_handle,selected_ids:[pid]}).then(function(res){
+      var sc=res.structuredContent
+      if(res.ok&&sc&&sc.schema_version==='webaz.product_detail.model.v1'){ state.hint=null; renderBody(oai,sc); return }
+      state.hint={ text:(res.timeout?'载入详情超时,请重试或把这句话复制发给我:':'载入详情失败,请重试或把这句话复制发给我:'), phrase:phrase }; render()
+    })
   }
   function toggleOpen(id){
     var wasOpen=!!state.open[id]
@@ -139,14 +144,15 @@ function renderBody(oai, out){
         if(approx.length) c.appendChild(el('div','meta','≈ '+approx.join(' · ')+(out.fx.stale?'(近似汇率)':'')))
       }
       var chips=el('div','chips')
-      if(p.stock_status&&p.stock_status!=='in_stock') chips.appendChild(el('span','chip warn',p.stock_status==='low_stock'?'库存少':'缺货'))
-      ;(p.decision_flags||[]).forEach(function(f){ chips.appendChild(el('span','chip'+(f.severity==='warning'?' warn':''),f.label||f.code)) })
+      var stockChip=(p.stock_status&&p.stock_status!=='in_stock')?(p.stock_status==='low_stock'?'库存少':'缺货'):null
+      if(stockChip) chips.appendChild(el('span','chip warn',stockChip))
+      ;(p.decision_flags||[]).forEach(function(f){ var lb=f.label||f.code; if(stockChip&&lb===stockChip) return; chips.appendChild(el('span','chip'+(f.severity==='warning'?' warn':''),lb)) })   // R2-3:同义徽标只渲染一次
       c.appendChild(chips)
       var seller=sellers[p.seller_ref]||{}
       c.appendChild(el('div','meta',(seller.name||'')+' · 已售 '+(p.sales_count||0)))
       var m=el('div','more')
       m.appendChild(el('div',null,p.summary||''))
-      m.appendChild(el('div','meta','退货 '+(p.return_days!=null?p.return_days+'天':'—')+' · 保修 '+(p.warranty_days!=null?p.warranty_days+'天':'—')+' · 发货 '+(p.handling_hours!=null?p.handling_hours+'h':'—')+' · 预计送达 '+etaDisplay(p.estimated_days,(out.dest_region||(out.destination&&out.destination.region)))))   // F3:统一 formatter,不再 String(对象)
+      m.appendChild(el('div','meta','退货 '+(p.return_days!=null?p.return_days+'天':'—')+' · 保修 '+(p.warranty_days!=null?p.warranty_days+'天':'—')+' · 发货 '+(p.handling_hours!=null?p.handling_hours+'h':'—')+' · 预计送达 '+(p.display_eta||etaDisplay(p.estimated_days,(out.dest_region||(out.destination&&out.destination.region))))))   // F3:统一 formatter,不再 String(对象)
       c.appendChild(m)
       var row=el('div','row')
       var ex=el('button',null,isOpen?'收起':'展开')
@@ -192,10 +198,18 @@ function renderBody(oai, out){
     if(state.quote){   // F4:报价就地态 —— 真实金额/ETA/到期,不再"正在获取报价"永久卡。继续下单=可复制一句话(模型编排 draft→submit → 下单卡),本卡保持零 URL 自包含。
       var qp=el('div','hint'); var qs=state.quote.sc||{}
       qp.appendChild(el('span',null,'✓ 已获取报价:'+(state.quote.title||'')))
-      qp.appendChild(el('div','recreason',((qs.price&&qs.price.display)||'')+' · 预计送达 '+etaDisplay(qs.shipping&&qs.shipping.estimated_days,(qs.destination&&qs.destination.region))+(qs.expires_at?(' · 到期 '+String(qs.expires_at)):'')))
+      qp.appendChild(el('div','recreason',((qs.price&&qs.price.display)||'')+' · 预计送达 '+(qs.display_eta||etaDisplay(qs.shipping&&qs.shipping.estimated_days,(qs.destination&&qs.destination.region)))+((qs.display_expires_at||qs.expires_at)?(' · 到期 '+String(qs.display_expires_at||qs.expires_at)):'')))
       var qphrase='用这个报价创建订单草稿并提交 Passkey 审批(product_id='+state.quote.pid+')'
       var qpe=el('div','recreason','“'+qphrase+'”'); qp.appendChild(qpe)
-      var qcp=el('button','mini','复制继续'); qcp.addEventListener('click',function(){ doCopy(qphrase,qcp,qpe) }); qp.appendChild(qcp)
+      // A2 一键续链:主路径 sendFollowUp(一次点击只发一条,发送后禁用);宿主不支持才降级复制键。
+      //   后续模型回合仍走 报价→草稿→提交→Passkey 链,本按钮不建单、不扣款、不绕确认。
+      if(canFollowUp(oai)){
+        var qgo=el('button','mini','继续下单')
+        qgo.addEventListener('click',onceGuard(function(){ if(qgo.disabled) return; if(sendFollowUpCompat(oai,qphrase)){ qgo.disabled=true; qgo.textContent='已发送,等模型创建草稿…' } else { doCopy(qphrase,qgo,qpe) } },3000))
+        qp.appendChild(qgo)
+      } else {
+        var qcp=el('button','mini','复制继续'); qcp.addEventListener('click',function(){ doCopy(qphrase,qcp,qpe) }); qp.appendChild(qcp)
+      }
       qp.appendChild(el('div','meta','报价不扣款 · 草稿/提交/Passkey 在下单卡完成 · 正式建单需你在 webaz.xyz 用 Passkey 批准'))
       root.appendChild(qp)
     }
