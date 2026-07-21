@@ -45,18 +45,26 @@ async function main(): Promise<void> {
   // 2. content change → version change (the mechanism): mutating the HTML yields a different hash.
   ok('V2. content change → version change (hash differs when HTML changes)', ver(W.PRODUCT_RESULTS_WIDGET_HTML) !== ver(W.PRODUCT_RESULTS_WIDGET_HTML + ' '))
 
-  // 3. every UI tool's resourceUri + openai/outputTemplate exist in ListResources (no dangling reference).
+  // 3. B-2(Round1b 稳定 outputTemplate):ui.resourceUri(标准桥,版本化)∈ ListResources(无悬挂引用);
+  //    openai/outputTemplate(ChatGPT legacy 桥)是【稳定裸别名】(无内容哈希段)且 ReadResource 可解析 —— 改 widget 内容
+  //    部署后已连接会话缓存的裸别名引用仍解析到当前 widget,不再 Failed to fetch template 需重连。
   const tools = (await c.listTools()).tools as Array<{ _meta?: Record<string, unknown> }>
   const uiSet = new Set(uiUris)
-  let dangling = 0
+  let dangling = 0, otBad = 0
   for (const t of tools) {
     const m = t._meta as Record<string, unknown> | undefined; if (!m) continue
     const ru = (m.ui as Record<string, unknown> | undefined)?.resourceUri as string | undefined
     const ot = m['openai/outputTemplate'] as string | undefined
     if (ru && !uiSet.has(ru)) dangling++
-    if (ot && !uiSet.has(ot)) dangling++
+    if (ot) {
+      const isBare = /^ui:\/\/widget\/[a-z-]+\.html$/.test(ot)   // 裸别名:无 .<10hex>. 内容哈希段
+      let resolves = false
+      try { const rr = await c.readResource({ uri: ot }); const cnt = (rr.contents as Array<{ text?: string }>)[0]; resolves = !!(cnt && cnt.text && cnt.text.length > 100) } catch { resolves = false }
+      if (!isBare || !resolves) otBad++
+    }
   }
-  ok('V3. no tool references a UI URI absent from ListResources (dangling reference)', dangling === 0)
+  ok('V3. no tool ui.resourceUri absent from ListResources (dangling reference)', dangling === 0)
+  ok('V3b. every tool openai/outputTemplate is a STABLE bare alias that ReadResource-resolves (B-2: deploy-survivable)', otBad === 0)
 
   // 4. ReadResource resolves every versioned URI with the right MIME.
   let readBad = 0

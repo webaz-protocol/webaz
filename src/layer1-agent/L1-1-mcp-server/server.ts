@@ -46,7 +46,7 @@ import { REQUEST_READINESS_GUIDE } from '../../pwa/agent-request-readiness.js'  
 import { getUsdRates, regionToCurrency } from '../../fx-rates.js'  // USDC 显示换算(display-only)  // MCP Token PR-3:工具面(只影响 tools/list 可见性,不影响授权)
 import { stripEmpty, summarizeSearchResult, summarizeBuyerOrders, summarizeQuoteResult, summarizeDraftResult, summarizeSubmitResult, summarizeOrderTimeline,
          projectQuoteConsumer, projectDraftConsumer, projectSubmitConsumer, projectOrderTimelineConsumer,
-         SCHEMA_PRODUCT_SEARCH, SCHEMA_ORDER_DRAFT, projectProductModel, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1:Model Projection 单一真相源
+         SCHEMA_PRODUCT_SEARCH, SCHEMA_ORDER_DRAFT, projectProductModel, sellersIndex, sanitizeBuyerSpecs } from '../../agent-model-projection.js'  // MCP Token PR-1:Model Projection 单一真相源
 import { homedir } from 'node:os'
 import { join as pathJoin } from 'node:path'
 import { existsSync as fsExists, mkdirSync, writeFileSync, readFileSync, unlinkSync, chmodSync } from 'node:fs'
@@ -2168,20 +2168,18 @@ const uiResourceMeta = (kind: 'legacy' | 'std'): Record<string, unknown> => kind
   ? { 'openai/widgetCSP': { connect_domains: [], resource_domains: [] }, 'openai/widgetDomain': 'https://webaz.xyz' }
   : { ui: { csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] }, prefersBorder: true } }
 const uiResourceMime = (kind: 'legacy' | 'std'): string => kind === 'legacy' ? 'text/html+skybridge' : 'text/html;profile=mcp-app'
-/** 工具描述符 _meta 的 resourceUri(标准)/openai/outputTemplate(legacy)裸值 → 版本化值。深拷贝仅改这两键。 */
+/** B-2(Round1b 稳定 outputTemplate):只把标准桥 ui.resourceUri 版本化(内容哈希缓存击穿);
+ *  openai/outputTemplate 保持【稳定裸别名】—— ChatGPT(legacy skybridge)读它,裸别名不随 widget 内容
+ *  哈希变化,故改 widget 内容部署后已连接会话缓存的引用仍解析到当前 widget,不再"Failed to fetch template"需重连。
+ *  裸别名的 ReadResource 服务端永远返回当前 HTML(ui:// 资源经 MCP 协议读取,无 CDN 中间层);版本化 URI 仍可解析(历史引用)。 */
 function withVersionedUris<T extends { _meta?: unknown }>(tools: T[]): T[] {
   return tools.map(t => {
     const m = t._meta as Record<string, unknown> | undefined
     if (!m) return t
     const ui = m.ui as Record<string, unknown> | undefined
     const ru = typeof ui?.resourceUri === 'string' ? ui.resourceUri : undefined
-    const ot = typeof m['openai/outputTemplate'] === 'string' ? m['openai/outputTemplate'] as string : undefined
-    if ((!ru || !UI_BARE_TO_VERSIONED[ru]) && (!ot || !UI_BARE_TO_VERSIONED[ot])) return t
-    return { ...t, _meta: {
-      ...m,
-      ...(ru && UI_BARE_TO_VERSIONED[ru] ? { ui: { ...ui, resourceUri: UI_BARE_TO_VERSIONED[ru] } } : {}),
-      ...(ot && UI_BARE_TO_VERSIONED[ot] ? { 'openai/outputTemplate': UI_BARE_TO_VERSIONED[ot] } : {}),
-    } }
+    if (!ru || !UI_BARE_TO_VERSIONED[ru]) return t
+    return { ...t, _meta: { ...m, ui: { ...ui, resourceUri: UI_BARE_TO_VERSIONED[ru] } } }   // outputTemplate 故意不改 → 保持裸别名
   })
 }
 
@@ -3032,7 +3030,7 @@ async function handleVerifyPrice(args: Record<string, unknown>) {
       id: product.id,
       title: product.title,
       agent_summary: parsed.agent_summary,
-      specs: parsed.specs,
+      specs: sanitizeBuyerSpecs(parsed.specs),   // B-3(P0):价格会话产品响应同样剔除内部采购/成本/货源字段
     },
     expires_at: expiresAt.toISOString(),
     expires_in_seconds: 600,
@@ -3316,10 +3314,8 @@ function catalogDraftBody(args: Record<string, unknown>, fields: string[]): Reco
   for (const k of sourceKeys) if (args[k] !== undefined) sourceEvidence[k] = args[k]
   for (const k of packageKeys) if (args[k] !== undefined) packageEvidence[k] = args[k]
   if (Object.keys(sourceEvidence).length || Object.keys(packageEvidence).length) {
-    const specs = body.specs && typeof body.specs === 'object' && !Array.isArray(body.specs) ? { ...(body.specs as Record<string, unknown>) } : {}
-    if (Object.keys(sourceEvidence).length) specs.agent_source_evidence = sourceEvidence
-    if (Object.keys(packageEvidence).length) specs.agent_package_evidence = packageEvidence
-    body.specs = specs
+    // B-3(P0 根因清理):内部采购/成本/货源证据【只】进 origin_claims(卖家/内部审核侧),绝不再写入 specs —— 买家详情投影会透传 specs,
+    //   写进 specs 就等于把 source_url/purchase_total_cost 直接给买家。买家侧另有 sanitizeBuyerSpecs 兜底(覆盖历史数据)。
     const origin = body.origin_claims && typeof body.origin_claims === 'object' && !Array.isArray(body.origin_claims) ? { ...(body.origin_claims as Record<string, unknown>) } : {}
     origin.agent_sourcing = {
       ...sourceEvidence,

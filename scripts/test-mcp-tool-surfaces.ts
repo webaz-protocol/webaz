@@ -125,8 +125,9 @@ console.log(`  [tools/list bytes] full=${fullB}B (~${Math.ceil(fullB / 4)} tok) 
 {
   // U-3 走 WIRE:in-memory client 拿到的 webaz_search 描述符必须携带 outputTemplate _meta(非源码 grep)
   const searchTool = full.find(t => t.name === 'webaz_search') as (Record<string, unknown> & { _meta?: Record<string, unknown> }) | undefined
-  ok('U-3 webaz_search WIRE descriptor carries openai/outputTemplate → versioned ui://widget/webaz-products.*.html',
-    (() => { const ot = String(searchTool?._meta?.['openai/outputTemplate'] ?? ''); return ot.startsWith('ui://widget/webaz-products.') && /\.[0-9a-f]{8,}\.html$/.test(ot) })(), JSON.stringify(searchTool?._meta ?? null))
+  // B-2(Round1b):openai/outputTemplate 现为【稳定裸别名】(ChatGPT legacy 桥读它,部署不失效);版本化 URI 移到标准桥 ui.resourceUri。
+  ok('U-3 webaz_search WIRE descriptor carries openai/outputTemplate → STABLE bare ui://widget/webaz-products.html (B-2)',
+    String(searchTool?._meta?.['openai/outputTemplate'] ?? '') === 'ui://widget/webaz-products.html', JSON.stringify(searchTool?._meta ?? null))
   // U-4 残留扫全部注册面文件(不只 server.ts)+ 权威文档
   const fs2 = await import('node:fs')
   const residue = ['src/layer1-agent/L1-1-mcp-server/server.ts', 'src/layer1-agent/L1-1-mcp-server/tool-annotations.ts',

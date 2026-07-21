@@ -64,10 +64,11 @@ try {
     const m = (t?._meta ?? {}) as Record<string, unknown>
     const ui = (m.ui ?? {}) as Record<string, unknown>
     const ru = String(ui.resourceUri ?? ''), ot = String(m['openai/outputTemplate'] ?? '')
-    ok(`T-1. ${name} 标准/legacy 双轨(版本化)+ base 一致 + visibility 精确`,
-      VER.test(ru) && VER.test(ot) && ru !== ot
-      && baseOf(ru) === e.base && baseOf(ot) === e.base
-      && stdUris.includes(ru) && legacyUris.includes(ot)
+    // B-2(Round1b):标准桥 ui.resourceUri 仍版本化(内容哈希);legacy openai/outputTemplate 改【稳定裸别名】(部署不失效)。
+    ok(`T-1. ${name} 标准桥版本化 resourceUri + legacy 稳定裸别名 outputTemplate(B-2)+ base 一致 + visibility 精确`,
+      VER.test(ru) && ot === e.base + '.html' && ru !== ot
+      && baseOf(ru) === e.base
+      && stdUris.includes(ru)
       && JSON.stringify(ui.visibility) === JSON.stringify(e.vis)
       && (e.app ? m['openai/widgetAccessible'] === true : !('openai/widgetAccessible' in m))
       && !!t?.outputSchema, JSON.stringify(m).slice(0, 200))
