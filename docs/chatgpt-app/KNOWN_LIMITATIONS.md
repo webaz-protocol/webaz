@@ -75,3 +75,9 @@ Committed so far this phase: **BUG-01** (full product terms) and the **Model-Whe
 - Consequence: any "one-tap → model orchestrates next step" chain cannot rely on it. A2.1 mitigation:
   the copy fallback stays PERMANENTLY visible next to 继续下单, and the sent-state label promises only
   "已请求发送", never delivery. Re-probe this host capability on future ChatGPT sandbox updates.
+
+## R3-2 (2026-07-21, live) — card-less tool callTool receipts may lack structuredContent on ChatGPT
+- 审批卡「🔄 查看最新状态」(card-less `webaz_approval_requests`) live 显示「状态:未知」:宿主对无卡工具的
+  callTool 回执疑似只带 `content[].text`(JSON 文本)而无 `structuredContent`,且错误体曾被吞。
+- A2.2 加固:消费三级兜底(structuredContent → content[0].text JSON 解析 → 错误体明确展示),未知态永远
+  附 webaz.xyz 审批页逃生口。真实回执形状待下次 live 复测确认(修复对两种形状都工作)。

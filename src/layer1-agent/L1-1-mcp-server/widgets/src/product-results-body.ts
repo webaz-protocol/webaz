@@ -144,7 +144,7 @@ function renderBody(oai, out){
     }
     root.appendChild(bar)
     // F5(Round1 UI hotfix):卡片显式标注真实展示数 —— 卡片只展示严格匹配命中,绝不虚构;模型叙述的"找到N款/推荐"可能来自更广候选集(discover),两者口径不同。
-    var __shown=products.length, __total=(out.count!=null?out.count:__shown)
+    var __shown=products.length, __total=(out.total_count!=null?out.total_count:(out.count!=null?out.count:__shown))   // A2.2:优先服务端总命中数
     root.appendChild(el('div','note','精确匹配 · 本卡展示 '+__shown+' 款'+((__total>__shown)?('(共 '+__total+' 命中,翻页查看更多)'):'')+' —— 模型文字里的"找到/推荐 N 款"可能来自更广候选集,以本卡商品为准'))
     var list=products.slice()
     var priceOf=function(p){ return (p.price&&p.price.amount_minor)||0 }

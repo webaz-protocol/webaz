@@ -260,6 +260,9 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       orderBy = ` ORDER BY COALESCE(claim_loss_count, 0) ASC, seller_win_rate DESC, seller_dispute_count DESC, id DESC`
     }
 
+    // A2.2(F5 收口):总命中数 —— 卡片「共 N 命中,翻页查看」与模型叙述对齐(不含 cursor 截断,COUNT 同一 WHERE)
+    let totalCount: number | null = null
+    try { const tc = await dbAll<{ n: number }>(`SELECT COUNT(*) AS n ${baseFrom}`, params); totalCount = Number(tc?.[0]?.n) } catch { totalCount = null }
     // trending 多取候选用于 jitter 排序；其他排序直接遵守请求 limit
     let cursorAnchorRows: Record<string, unknown>[] | null = null
     const buffer = sort === 'trending' ? Math.min(lim * 3, lim + 30) : lim
@@ -431,6 +434,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       schema_version: SCHEMA_PRODUCT_SEARCH,
       mode, sort, limit: lim,
       count: rows.length,
+      ...(totalCount != null && Number.isFinite(totalCount) ? { total_count: totalCount } : {}),
       next_cursor: nextCursor,
       ...(fx ? { fx } : {}),
       ...(resultHandle ? { result_handle: resultHandle, result_handle_expires_in_s: 600 } : {}),
