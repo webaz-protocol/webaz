@@ -351,11 +351,15 @@ function renderBody(oai, out){
   ;(function maybeAutoFill(){
     if(__autoFilled) return
     var tc=out.total_count
-    if(!(tc&&tc<=8&&(out.products||[]).length<tc&&out.next_cursor&&typeof oai.callTool==='function')) return
+    if(!(tc&&tc<=8&&(out.products||[]).length<tc&&typeof oai.callTool==='function')) return
+    if(!out.next_cursor&&!out.query) return   // 无 cursor 且无法重构查询 → 放弃(标注仍如实显示 共N命中)
     __autoFilled=true
-    callWebazTool(oai,'webaz_search',{cursor:String(out.next_cursor),limit:8}).then(function(res){
+    // A3-9:价格序等排序不产 keyset cursor → 按原 query+sort 整页重取(limit=8 覆盖 ≤8 小目录)
+    var __args=out.next_cursor?{cursor:String(out.next_cursor),limit:8}:{query:String(out.query),sort:String(out.sort||'default'),limit:8}
+    callWebazTool(oai,'webaz_search',__args).then(function(res){
       var sc=res.structuredContent
       if(!(res.ok&&sc&&sc.schema_version==='webaz.product_search.model.v1'&&(sc.products||[]).length)) return
+      if(!__args.cursor&&(sc.products||[]).length>=(out.products||[]).length){ __lastSearch=sc; renderBody(oai,sc); return }   // A3-9:整页重取 → 直接替换
       var seen={}; (out.products||[]).forEach(function(pp){ seen[pp.id]=1 })
       ;(sc.products||[]).forEach(function(pp){ if(!seen[pp.id]) out.products.push(pp) })
       if(sc.sellers){ for(var __k in sc.sellers){ if(!sellers[__k]) sellers[__k]=sc.sellers[__k] } }
