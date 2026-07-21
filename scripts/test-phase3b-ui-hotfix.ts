@@ -88,8 +88,8 @@ ok('F4 standard bridge dedupes notification during inline consume', /__inlineCon
 ok('F4 normal path does NOT sendFollowUp for quote (only when no callTool)', !/正在获取报价[\s\S]{0,40}sendFollowUpCompat/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 // ── F3 wiring + F5 label in built HTML ──
-ok('F3 product card uses etaDisplay', /预计送达 '\+etaDisplay\(p\.estimated_days/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('F3 quote card uses etaDisplay', /'预计送达',etaDisplay\(s\.estimated_days/.test(QUOTE_APPROVAL_WIDGET_HTML))
+ok('F3 product card uses etaDisplay fallback behind display_eta', /预计送达 '\+\(p\.display_eta\|\|etaDisplay\(p\.estimated_days/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('F3 quote card uses etaDisplay fallback behind display_eta', /'预计送达',out\.display_eta\|\|etaDisplay\(s\.estimated_days/.test(QUOTE_APPROVAL_WIDGET_HTML))
 ok('F5 shown-count label present', /精确匹配 · 本卡展示 /.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 // ── B-4 copy fallback: clipboard → execCommand → auto-select, wired into both widgets ──
@@ -98,6 +98,16 @@ ok('B-4 execCommand copy fallback present', /execCommand\('copy'\)/.test(PRODUCT
 ok('B-4 auto-select fallback present (getSelection + createRange)', /getSelection\(\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && /createRange\(\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('B-4 old silent "复制失败,请手选" removed', !/复制失败,请手选/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('B-4 copy path introduces NO business tool call (no callTool inside webazCopy)', !/function webazCopy\([\s\S]{0,600}callTool/.test(PRODUCT_RESULTS_WIDGET_HTML))
+
+// ── A2:display_* 首选 + 详情就地消费 + 一键续链 + 徽标去重 ──
+ok('A2 grid ETA prefers server display_eta', /p\.display_eta\|\|etaDisplay\(p\.estimated_days/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A2 quote panel prefers display_eta + display_expires_at', /qs\.display_eta\|\|etaDisplay/.test(PRODUCT_RESULTS_WIDGET_HTML) && /qs\.display_expires_at\|\|qs\.expires_at/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A2 R2-1 detail consumes via callWebazTool (no fire-and-forget)', /callWebazTool\(oai,'webaz_search',\{result_handle/.test(PRODUCT_RESULTS_WIDGET_HTML) && !/try\{ oai\.callTool\('webaz_search',\{result_handle/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A2 R2-1 detail renders detail model in place', /webaz\.product_detail\.model\.v1'\)\{ state\.hint=null; renderBody\(oai,sc\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A2 one-tap continue: sendFollowUp primary, copy only as fallback branch', /canFollowUp\(oai\)\)\{\s*var qgo=el\('button','mini','继续下单'\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && /else \{\s*var qcp=el\('button','mini','复制继续'\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A2 one-tap continue is single-send (disable after send)', /qgo\.disabled=true; qgo\.textContent='已发送/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A2 R2-3 stock badge deduped vs decision_flags', /lb===stockChip\) return/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A2 QuoteApproval prefers display_expires_at', /display_expires_at\|\|out\.expires_at/.test(QUOTE_APPROVAL_WIDGET_HTML))
 
 // ── Self-containment lock: ProductResults must stay URL-literal-free + zero request-capability tokens (incl. in comments) ──
 const REQ_TOK = /\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|import|src|href|location)\b/

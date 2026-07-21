@@ -846,6 +846,7 @@ jobs:
       - run: npm run test:buyer-specs-privacy
       - run: npm run test:widget-source-parity
       - run: npm run test:widget-template-compat
+      - run: npm run test:display-fields
       - run: npm run check:widgets
       - run: npm run lint:widgets
       - run: npm run test:mcp-order-timeline-ui

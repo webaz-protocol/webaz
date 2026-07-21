@@ -374,7 +374,8 @@
     "check:widgets": "tsc -p src/layer1-agent/L1-1-mcp-server/widgets/src/tsconfig.json",
     "lint:widgets": "eslint src/layer1-agent/L1-1-mcp-server/widgets/src",
     "test:widget-source-parity": "tsx scripts/test-widget-source-parity.ts",
-    "test:widget-template-compat": "tsx scripts/test-widget-template-compat.ts"
+    "test:widget-template-compat": "tsx scripts/test-widget-template-compat.ts",
+    "test:display-fields": "tsx scripts/test-display-fields.ts"
   },
   "keywords": [
     "mcp",
