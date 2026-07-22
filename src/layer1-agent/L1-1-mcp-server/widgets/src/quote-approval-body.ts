@@ -57,7 +57,7 @@ function renderBody(oai, out){
     row(box,L('发货时限','Dispatch by'),s.handling_hours!=null?s.handling_hours+'h':'—')
     row(box,L('预计送达','ETA'),webazLocale()==='en'?etaDisplay(s.estimated_days,(out.destination&&out.destination.region)):(out.display_eta||etaDisplay(s.estimated_days,(out.destination&&out.destination.region))))   // F3:统一 formatter,不再 String(对象)
     toggler(box,L('展开退货与保修','Show returns & warranty'),function(b){ row(b,L('退货期','Return window'),out.return_days!=null?out.return_days+L('天',' days'):'—'); row(b,L('保修','Warranty'),out.warranty_days!=null?out.warranty_days+L('天',' days'):'—') })
-    row(box,L('支付轨道','Payment rail'),String(out.payment_rail||'escrow'))
+    row(box,L('支付轨道','Payment rail'),railDisplay(out.payment_rail))
     toggler(box,L('展开风险与轨道说明','Show risk & rail note'),function(b){ b.appendChild(el('div','meta',railNoteText(out.payment_rail,out.rail_note))) })
     if(out.fiat_estimate) toggler(box,L('查看汇率时间','Show FX timestamp'),function(b){ b.appendChild(el('div','meta','1 USD ≈ '+out.fiat_estimate.rate+' '+out.fiat_estimate.currency+' @ '+(out.fiat_estimate.as_of||'')+(out.fiat_estimate.stale?L('(近似)','(approx.)'):''))) })
     row(box,L('报价到期','Quote expires'),__i18nExp(out.display_expires_at,out.expires_at))
@@ -82,7 +82,7 @@ function renderBody(oai, out){
     box.appendChild(el('div','price',(out.price&&out.price.display)||''))
     fiatLine(box,out.fiat_estimate)
     row(box,L('配送','Delivery'),(out.destination&&out.destination.summary)||'')
-    row(box,L('支付轨道','Payment rail'),String(out.payment_rail||''))
+    row(box,L('支付轨道','Payment rail'),railDisplay(out.payment_rail))
     toggler(box,L('展开轨道说明','Show rail note'),function(b){ b.appendChild(el('div','meta',railNoteText(out.payment_rail,out.rail_note))) })
     row(box,L('过期时间','Expires'),__i18nExp(out.display_expires_at,out.expires_at))
     if(stCode(out.status)==='draft'&&typeof oai.callTool==='function'){
