@@ -78,6 +78,11 @@ const oD = optsFor('pD', 'sD')
 ok('D: two accounts, no legacy → both listed', ids(oD).join() === ['escrow', 'direct:accD1', 'direct:accD2'].sort().join())
 ok('D: MA3 — ambiguous default → NONE recommended, but every supported option still present (recommendation never shrinks menu)', rec(oD).length === 0 && oD.filter(o => o.rail === 'direct_p2p').length === 2)
 
+// ── Seller F: eligible, LEGACY instruction ONLY (no accounts) → escrow + legacy(recommended) ──
+mkSeller('sF'); mkProduct('pF', 'sF'); makeEligible('sF', 'pF'); legacyInstr('sF')
+const oF = optsFor('pF', 'sF')
+ok('F: legacy-only seller → escrow + legacy(recommended), NOT under-listed', ids(oF).join() === ['escrow', 'direct:legacy'].sort().join() && rec(oF).join() === 'direct:legacy')
+
 // ── Seller E: eligible but NO receive method (no legacy, no accounts) → escrow only (honest: direct has no destination) ──
 mkSeller('sE'); mkProduct('pE', 'sE'); makeEligible('sE', 'pE')
 const oE = optsFor('pE', 'sE')
