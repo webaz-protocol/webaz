@@ -68,53 +68,60 @@ creation so `params_hash` still binds the rail the human approved.
 |---|---|---|
 | Quote (`buyer-quote.ts:203`) | agent passes `payment_rail`, default `escrow`, **frozen** | rail **deferred**: quote/draft carry `payment_rail = null`; rail excluded from the pre-choice `intent_hash` |
 | Draft / submit | inherits frozen rail | rail absent until chosen; `submit` produces a rail-agnostic pending approval request |
-| **Confirm page (webaz.xyz, human present)** | rail shown **read-only** | **rail selector**: server lists only *eligible* rails; human picks → **`params_hash` minted with the chosen rail** |
-| Passkey (`agent-grants.ts:966`) | binds `params_hash` (frozen rail) | binds `params_hash` (**chosen** rail) — same crypto guarantee, same drift-hard-fail (`order-submit-exec.ts:122`) |
-| Create | forks on frozen rail | forks on chosen rail (existing escrow / `direct-pay-create.ts` paths unchanged) |
+| **Confirm page (webaz.xyz, human present)** | rail shown **read-only** | **option selector**: server lists only *seller-supported + eligible* options (rail × method); 1 → auto, ≥2 → human picks → **`params_hash` minted with the chosen `{rail, account}`** |
+| Passkey (`agent-grants.ts:966`) | binds `params_hash` (frozen rail) | binds `params_hash` (**chosen option**) — same crypto guarantee, same drift-hard-fail (`order-submit-exec.ts:122`) |
+| Create | forks on frozen rail | forks on chosen rail; `direct_receive_account_id` from the chosen option (existing escrow / `direct-pay-create.ts` paths unchanged) |
 | ChatGPT card (quote-approval widget) | shows rail read-only | no rail pre-fix; "支付方式将在你确认时选择", hands off to confirm page |
 
 ### Components to build (Design A)
-1. **Rail-deferred quote/draft/submit** — permit `payment_rail = null` end-to-end; keep it out of the
-   pre-choice `intent_hash`; the rail joins `params_hash` only at the confirm/choice step.
-2. **Eligible-rails read surface** for the confirm page — reuse `evaluateDirectPayLaunchControls` +
-   `direct-pay-availability.ts` (direct_p2p) and a buyer WAZ-balance check (escrow). Returns **only
-   gate-passing rails**, each with its honest settlement note; never leaks *why* a seller failed
-   (`coarsenBuyerFacingDirectPayCode`).
-3. **Confirm-page rail selector** (webaz.xyz) that sets the rail → mints the WebAuthn gate token bound
-   to `{request_id, draft_id, action, params_hash(with chosen rail)}`.
-4. **Widget copy change** (quote-approval widget) — remove rail pre-fix; point to the confirm page.
+1. **Option-deferred quote/draft/submit** — permit `payment_rail = null` (and no
+   `direct_receive_account_id`) end-to-end; keep both out of the pre-choice `intent_hash`; they join
+   `params_hash` only at the confirm/choice step.
+2. **Seller-supported payment-options surface** for the confirm page — server-computes the flat option
+   list `[{option_id, rail, method, recipient_label, payable, currency, settlement_note,
+   recommended?}]` = escrow (if enabled + buyer WAZ balance) **plus** one option per the seller's
+   active `direct-receive-accounts` when `direct_p2p` gates pass (`evaluateDirectPayLaunchControls` +
+   account resolution). Returns **only supported + gate-passing options**; honest per-option
+   settlement note; never leaks *why* a seller failed (`coarsenBuyerFacingDirectPayCode`). A seller
+   `recommended` flag marks a soft default only.
+3. **Confirm-page option selector** (webaz.xyz) — if 1 option, auto-select; if ≥2, the human picks
+   (recommended pre-selected). The choice sets `{payment_rail, direct_receive_account_id}` → mints the
+   WebAuthn gate token bound to `{request_id, draft_id, action, params_hash(with chosen option)}`.
+4. **Widget copy change** (quote-approval widget) — remove rail pre-fix; point to the confirm page
+   ("支付方式将在你确认时,从卖家支持的方式中选择").
 
-### Honesty framing (Design A) — decision needed, see §Menu-boundary
-`escrow` is a **simulated** ledger; `direct_p2p` is **off-platform, non-custodial**. Presenting both
-as a "payment method" risks "托管" reading as real buyer protection. Recommended near-term framing
-(b): treat the choice as **"opt into real direct-pay vs the sim default,"** with stark labels
-(托管 = 模拟测试·非真实结算 / 直付 = 你直接付卖家·平台不托管). The menu becomes genuinely multi-option
-when a PSP (Design B) lands.
+### Honesty framing (Design A) — settled by §Menu-boundary decision 3
+Since every supported option stays selectable ("既然支持就都可以选"), each is shown with a **stark,
+honest per-option settlement note** bound server-side: 托管 = 模拟测试·非真实结算 / 直付 = 你直接付
+卖家·平台不托管. No label may imply custody a rail doesn't provide (threat MA4). If a seller supports
+only `direct_p2p`, escrow simply isn't in that seller's menu (per-seller Layer-1 set), so the sim rail
+is never surfaced to that buyer at all. The menu becomes genuinely multi-*rail* when a PSP (Design B)
+lands; today it is already multi-*option* whenever a seller exposes >1 receiving method.
 
 ---
 
-## §Menu-boundary — WHO decides the menu vs. WHO picks (OPEN — pending Holden's supplement)
+## §Menu-boundary — the menu is the seller-supported set; the buyer picks (RESOLVED 2026-07-22)
 
-Two layers, deliberately separated:
-- **Layer 1 — which rails are *possible* (the menu):** decided **upfront** at deployment/config +
-  per-seller (`DIRECT_PAY_*` switches, region allowlist, seller KYC/bond/receiving-account, breaker).
-- **Layer 2 — which rail *this buyer* uses:** picked by the buyer at the confirm screen, **only from
-  the Layer-1 menu**.
+Two layers, deliberately separated, and the "menu item" is a **concrete payment option** — not a bare
+rail. An option = `(rail, method)`, e.g. escrow-sim, or direct_p2p backed by a specific seller
+receiving method (PayNow / bank / USDC account). This **subsumes** the earlier rail-vs-method framing:
+the buyer sees a flat list of *what the seller actually supports and what currently passes gates*.
 
-These are complementary ("部署先定好" = Layer 1; "买家支付界面才选" = Layer 2). The **open decisions**
-Holden will supplement (recommendation in *italics*, easy to change — no code depends on this yet):
+- **Layer 1 — the menu (which options are *possible*):** **per-seller (and per-product), from what the
+  seller supports** — NOT a deployment-global fixed list. Sources: `DIRECT_PAY_*` switches +
+  region/breaker (deployment) **intersected with** the seller's own support (KYC/bond +
+  `direct-receive-accounts` the seller configured). "不同卖家支持的方式不一样 → 取卖家支持的集合。"
+- **Layer 2 — the pick:** the buyer chooses one option from the Layer-1 set at the confirm screen.
 
-1. **Menu scope** — is the menu **deployment-global** (same eligible rails for every order) or
-   **per-seller / per-product** (each seller enables their own set)? *Rec: per-seller eligibility is
-   already how `direct_p2p` gating works; keep menu = per-seller-and-product eligible set.*
-2. **Always prompt vs. auto** — when the eligible menu has exactly **one** rail, does the buyer still
-   see a prompt, or auto-proceed? *Rec: single-eligible → auto (no prompt); prompt only when ≥2.*
-3. **Seller/operator override** — may a seller **pre-pin** a default or a single allowed rail for
-   their store (removing buyer choice)? *Rec: allow a seller default (pre-selected) but not a hard
-   lock in Design A; revisit if a store needs escrow-only or direct-only.*
-
-*(This section is intentionally unresolved; the rest of Design A does not depend on the answer beyond
-"the confirm page renders whatever the Layer-1 evaluator returns.")*
+**Resolved decisions (Holden, 2026-07-22):**
+1. **Menu scope = per-seller, seller-supported options.** The confirm surface **fetches the seller's
+   supported + gate-passing options** and offers them; different sellers → different menus.
+2. **Single option → auto-default (no prompt).** When exactly one option is supported+eligible, the
+   flow proceeds on it without asking; the selector appears only when ≥2.
+3. **Seller may *recommend*, not *lock*.** A seller can mark one option as recommended (pre-selected /
+   highlighted), but **every supported+eligible option stays buyer-selectable** — "既然支持就都可以
+   选." No server path lets a seller's recommendation remove another supported option from the buyer's
+   choice (see threat MA3: recommendation is a soft default, never a hard lock).
 
 ---
 

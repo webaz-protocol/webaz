@@ -106,12 +106,16 @@ gates are **re-evaluated at create** (render does not guarantee); ACP honesty �
 shown as real; buyer-facing reasons coarsened (`coarsenBuyerFacingDirectPayCode`), never leaking which
 seller gate failed.
 
-**TA3 — Agent forces the rail, bypassing the human**: the untrusted agent passes `payment_rail` (as
-today) and expects it honored, pre-empting the buyer's confirm-stage choice.
-→ MA3: in Design A the agent's `payment_rail` input is **advisory at most / ignored for the
-authoritative decision**; the rail that binds `params_hash` is set **only** at the human confirm step.
-The agent cannot mint the gate token (Passkey is human-only). If the agent supplies a rail, it may
-pre-select the UI but never commits it.
+**TA3 — Forced option, bypassing the human** — two sub-cases: (a) the untrusted **agent** passes
+`payment_rail`/account and expects it honored; (b) a **seller** "recommendation" collapses to a hard
+lock that removes other supported options from the buyer.
+→ MA3: the option that binds `params_hash` is set **only** at the human confirm step; the agent cannot
+mint the gate token (Passkey is human-only) — an agent-supplied option may pre-select UI but never
+commits. The seller `recommended` flag is a **soft default only**: the options surface always returns
+**every** supported+gate-passing option (server-computed union), and there is no server path by which a
+seller recommendation removes a supported option from the buyer's set ("既然支持就都可以选"). Invariant
+test: options(seller with a recommendation) ⊇ options(same seller without) — recommendation never
+shrinks the menu.
 
 **TA4 — "托管 = real custody" confusion (honesty/UX)**: presenting `escrow` (sim) beside `direct_p2p`
 lets a buyer believe escrow gives real buyer protection.
