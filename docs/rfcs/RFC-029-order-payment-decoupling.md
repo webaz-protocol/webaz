@@ -1,112 +1,196 @@
-# RFC-029: Order–Payment Decoupling & Payment Adapter SPI / 订单-支付解耦与支付适配器接口
+# RFC-029: Buyer-Chosen Payment Rail — Choose-at-Confirm & Order–Payment Decoupling / 买家在支付阶段选择支付轨道
 
-**Status**: draft (design-only — implementation explicitly gated, see §Gating)
-**Author**: @holden (drafted with Claude from a live ChatGPT buyer-canary session, 2026-07-21)
+**Status**: draft (design-only — implementation gated, see §Gating)
+**Author**: @holden (drafted with Claude from a live ChatGPT buyer-canary session, 2026-07-21; revised
+2026-07-22 to a two-tier design after mapping the current rail-selection code path)
 **Created**: 2026-07-21
 **Track**: exploratory
 **Related issue**: (n/a — seeded by Phase-3B live findings)
-**Supersedes**: (n/a)
-**Superseded by**: (n/a)
+**Threat model**: `RFC-029-threat-model.md` (v1 merged #488; v2 delta in this revision covers Design A)
 
 ---
 
 ## Summary / 摘要
 
-Today an order's payment rail is frozen at quote time, and the human Passkey approval is a single
-composite act: it creates the order AND executes the economic effect (escrow rail debits
-wallet→escrow at the approval instant). This RFC proposes decoupling three concerns — (1) confirming
-the goods, (2) creating the order, (3) choosing and executing payment — introducing an
-`awaiting_payment_method` order state, a `webaz_payment_options` surface, a short-lived
-`payment_quote_token`, and a Payment Adapter SPI so rails/PSPs (escrow-sim, direct_p2p, dtcpay,
-card, bank transfer, onchain) plug in as isolated modules. Passkey then approves the FINAL economic
-action ("pay X via method M for order O"), not order creation.
+Today an order's payment rail is chosen by the **agent** at quote time (optional input, default
+`escrow`), frozen, inherited unchanged through draft → submit, and bound into the human Passkey's
+`params_hash`. **The buyer never chooses.** The user's requirement (Holden, live ×3): payment choice
+MUST happen at the **payment stage, chosen by the buyer** — never frozen at quote time by the agent.
 
-今天支付轨道在报价期冻结,Passkey 批准=建单+资金动作一体。本 RFC 提议三段解耦:确认商品 → 创建
-待支付订单(`awaiting_payment_method`)→ 用户选择支付方式(`webaz_payment_options` +
-`payment_quote_token`)→ Passkey 只批准最终资金动作。支付渠道经统一 Adapter SPI 接入。
+This RFC specifies the change in **two tiers**, because the right shape depends on how many rails are
+concurrently real:
+
+- **Design A — Choose-at-Confirm (near-term, recommended)** for today's two rails (`escrow` sim,
+  `direct_p2p` off-platform). The rail is **deferred** (not chosen at quote); the **human picks it on
+  the webaz.xyz confirm page, before the order is created**, and that choice is bound into
+  `params_hash` at that moment. Minimal state-machine impact: **no new order state, no unpaid orders,
+  no soft stock-reservation, no payment_quote_token.**
+- **Design B — Order-First Decoupling (PSP-era)** for when a real async PSP rail (e.g. dtcpay/card)
+  exists. Creates a pending order (`awaiting_payment_method`), lists options, mints a
+  `payment_quote_token`, and Passkey approves the **payment execution** (not order creation). Design A
+  is a strict precursor — B extends it, does not rewrite it.
+
+今天支付轨道由 **agent** 在报价期选定(缺省 `escrow`)并冻结、绑进 Passkey。目标=改由**买家在支付
+阶段选**。分两档:**Design A(近期,推荐)**——轨道**延迟**到 webaz.xyz 确认页、**建单之前**由真人选,
+选择当场绑进 `params_hash`;**无新订单态、无未付订单、无软占库存、无 pqt**。**Design B(PSP 时代)**——
+订单先建(`awaiting_payment_method`)、列选项、pqt、Passkey 批准**支付执行**;A 是 B 的严格前身。
 
 ## Motivation / 动机
 
-- **Fact-checked current coupling** (2026-07-21 code audit): `payment_rail` on the order-creation
-  tool is OPTIONAL (default `escrow`; `direct_p2p` requires the seller's direct-receive account and
-  server-side eligibility gates) — the buyer never "chooses a payment method" today. But the
-  coupling is real: rail freezes at quote → draft inherits → Passkey approval creates the order and
-  executes the rail's economic effect in one act. There is no `awaiting_payment_method` state.
-- With a single effective rail per product this is fine. It stops scaling the moment a real PSP
-  (e.g. dtcpay) or multiple concurrently-eligible rails exist: the buyer must see FINAL payable
-  (fees, FX, buyer-protection differences) per method BEFORE committing funds, and that comparison
-  point does not exist in the current flow.
-- Weak-model hosts amplify the cost: every extra decision the model must thread (rail, token,
-  draft) is a failure surface. Decoupling moves payment choice to a human-facing page.
+- **Fact-checked current coupling** (2026-07-21/22 code audit): `payment_rail` freezes at quote
+  (`buyer-quote.ts:203`, default `escrow`), draft inherits verbatim (`order-draft.ts:111`), it rides
+  in `params_hash`/`intent_hash` (`order-submit-request.ts:35,98`), and the Passkey approval both
+  **creates the order and executes the rail's economic effect** in one act (escrow debits
+  wallet→escrow at approval; `order-submit-exec.ts`). `direct_p2p` is seller/product eligibility-gated
+  and creates `status=created` then the buyer pays off-platform.
+- **The concrete harm today**: because the agent defaults to `escrow` (a *simulated* ledger), a real
+  buyer's order silently lands on the sim rail unless the agent happens to pass `direct_p2p`. Moving
+  the choice to the human at confirm fixes "orders silently on the wrong/sim rail" — even before any
+  PSP exists.
+- **Why A before B**: order creation *forks* on the rail (escrow debits synchronously; direct_p2p
+  creates-then-off-platform). So the rail must be known **before** create. For the current two rails
+  there is no legitimate "rail-agnostic order that later becomes escrow-or-direct" — therefore the
+  choice belongs at the last human touchpoint *before* creation (the confirm/Passkey page), and the
+  order-first machinery (pending state, soft-reservation, pqt) is unnecessary weight. It becomes
+  necessary only when a rail's payment is a genuinely async phase (PSP redirect) → Design B.
 
-## Design / 设计 (four phases)
+---
 
-1. **Create pending order** — freeze goods/qty/seller/price/address-region/shipping/tax/return
-   terms/expiry. `status = awaiting_payment_method`. No fund movement, no payment instruction, no
-   Passkey. Emits `order_id` (or `checkout_id` pre-order variant).
+## Design A — Choose-at-Confirm (near-term, recommended)
+
+**Invariant preserved:** the human still Passkey-approves the exact economic snapshot; we only move
+*who* picks the rail and *when* — from agent@quote to human@confirm — keeping it **before** order
+creation so `params_hash` still binds the rail the human approved.
+
+### Flow (contrast with today)
+
+| Stage | Today | Design A |
+|---|---|---|
+| Quote (`buyer-quote.ts:203`) | agent passes `payment_rail`, default `escrow`, **frozen** | rail **deferred**: quote/draft carry `payment_rail = null`; rail excluded from the pre-choice `intent_hash` |
+| Draft / submit | inherits frozen rail | rail absent until chosen; `submit` produces a rail-agnostic pending approval request |
+| **Confirm page (webaz.xyz, human present)** | rail shown **read-only** | **rail selector**: server lists only *eligible* rails; human picks → **`params_hash` minted with the chosen rail** |
+| Passkey (`agent-grants.ts:966`) | binds `params_hash` (frozen rail) | binds `params_hash` (**chosen** rail) — same crypto guarantee, same drift-hard-fail (`order-submit-exec.ts:122`) |
+| Create | forks on frozen rail | forks on chosen rail (existing escrow / `direct-pay-create.ts` paths unchanged) |
+| ChatGPT card (quote-approval widget) | shows rail read-only | no rail pre-fix; "支付方式将在你确认时选择", hands off to confirm page |
+
+### Components to build (Design A)
+1. **Rail-deferred quote/draft/submit** — permit `payment_rail = null` end-to-end; keep it out of the
+   pre-choice `intent_hash`; the rail joins `params_hash` only at the confirm/choice step.
+2. **Eligible-rails read surface** for the confirm page — reuse `evaluateDirectPayLaunchControls` +
+   `direct-pay-availability.ts` (direct_p2p) and a buyer WAZ-balance check (escrow). Returns **only
+   gate-passing rails**, each with its honest settlement note; never leaks *why* a seller failed
+   (`coarsenBuyerFacingDirectPayCode`).
+3. **Confirm-page rail selector** (webaz.xyz) that sets the rail → mints the WebAuthn gate token bound
+   to `{request_id, draft_id, action, params_hash(with chosen rail)}`.
+4. **Widget copy change** (quote-approval widget) — remove rail pre-fix; point to the confirm page.
+
+### Honesty framing (Design A) — decision needed, see §Menu-boundary
+`escrow` is a **simulated** ledger; `direct_p2p` is **off-platform, non-custodial**. Presenting both
+as a "payment method" risks "托管" reading as real buyer protection. Recommended near-term framing
+(b): treat the choice as **"opt into real direct-pay vs the sim default,"** with stark labels
+(托管 = 模拟测试·非真实结算 / 直付 = 你直接付卖家·平台不托管). The menu becomes genuinely multi-option
+when a PSP (Design B) lands.
+
+---
+
+## §Menu-boundary — WHO decides the menu vs. WHO picks (OPEN — pending Holden's supplement)
+
+Two layers, deliberately separated:
+- **Layer 1 — which rails are *possible* (the menu):** decided **upfront** at deployment/config +
+  per-seller (`DIRECT_PAY_*` switches, region allowlist, seller KYC/bond/receiving-account, breaker).
+- **Layer 2 — which rail *this buyer* uses:** picked by the buyer at the confirm screen, **only from
+  the Layer-1 menu**.
+
+These are complementary ("部署先定好" = Layer 1; "买家支付界面才选" = Layer 2). The **open decisions**
+Holden will supplement (recommendation in *italics*, easy to change — no code depends on this yet):
+
+1. **Menu scope** — is the menu **deployment-global** (same eligible rails for every order) or
+   **per-seller / per-product** (each seller enables their own set)? *Rec: per-seller eligibility is
+   already how `direct_p2p` gating works; keep menu = per-seller-and-product eligible set.*
+2. **Always prompt vs. auto** — when the eligible menu has exactly **one** rail, does the buyer still
+   see a prompt, or auto-proceed? *Rec: single-eligible → auto (no prompt); prompt only when ≥2.*
+3. **Seller/operator override** — may a seller **pre-pin** a default or a single allowed rail for
+   their store (removing buyer choice)? *Rec: allow a seller default (pre-selected) but not a hard
+   lock in Design A; revisit if a store needs escrow-only or direct-only.*
+
+*(This section is intentionally unresolved; the rest of Design A does not depend on the answer beyond
+"the confirm page renders whatever the Layer-1 evaluator returns.")*
+
+---
+
+## Design B — Order-First Decoupling (PSP-era)
+
+When a real **async** payment phase exists (PSP redirect/webhook), the order legitimately exists
+before payment, and the four-phase decoupling becomes correct:
+
+1. **Create pending order** — freeze goods/qty/seller/price/region/shipping/tax/return/expiry;
+   `status = awaiting_payment_method`; no fund movement, no Passkey. Emits `order_id`
+   (or `checkout_id` pre-order variant).
 2. **List payment options** — `webaz_payment_options(order_id)` → server-computed eligible methods
-   with FINAL payable per method: `{method, payable, buyer_fee, currency, fx_expires_in,
-   buyer_protection, refund_terms, settlement_note}`. Honesty invariant: only rails whose gates
-   pass are listed (ACP discipline: `is_eligible_checkout=false` stays honest; never a simulated
-   rail presented as real).
+   with FINAL payable per method `{method, payable, buyer_fee, currency, fx_expires_in,
+   buyer_protection, refund_terms, settlement_note}`. Only gate-passing rails (ACP honesty:
+   `is_eligible_checkout=false` stays honest; never a simulated rail as real).
 3. **Payment quote** — `webaz_quote_payment(order_id, payment_method)` → short-lived
    `payment_quote_token` binding order_id + method + final amount + fees + FX + recipient +
-   protection/refund terms + expiry. (Renames today's overloaded quote_token semantics: goods
-   quoting stays product-side; PAYMENT quoting becomes its own object.)
-4. **Passkey approves the economic action** — approval object binds
-   `{order_id, payment_method, payable_amount, currency, fees, recipient, buyer_protection,
-   refund_terms, params_hash}`. Post-approval per adapter: escrow → custody transfer; direct_p2p →
-   seller receiving instruction + awaiting-payment; PSP → payment session/redirect; bank → payment
-   instruction; onchain → network+address.
+   protection/refund + expiry. (PAYMENT quoting becomes its own object; goods quoting stays
+   product-side.)
+4. **Passkey approves the economic action** — binds `{order_id, payment_method, payable, currency,
+   fees, recipient, buyer_protection, refund_terms, params_hash}`. Post-approval per adapter:
+   escrow → custody transfer; direct_p2p → receiving instruction + awaiting-payment; PSP → payment
+   session/redirect; bank → instruction; onchain → network+address.
 
-### Payment Adapter SPI
-
+### Payment Adapter SPI (Design B)
 `is_available(order)` · `quote(order)` · `create_payment(order, pqt)` · `get_status(payment)` ·
-`cancel(payment)` · `refund(payment)` · `reconcile(webhook)` — WebAZ core owns order truth and the
-approval gate; adapters (EscrowAdapter / DirectPayAdapter / DtcPayAdapter / StripeAdapter /
-BankTransferAdapter) own channel mechanics. Core never learns channel internals; adapters never
-touch order state directly (they return standardized results).
+`cancel(payment)` · `refund(payment)` · `reconcile(webhook)` — core owns order truth + the approval
+gate; adapters (Escrow / DirectPay / DtcPay / Stripe / BankTransfer) own channel mechanics. Core never
+learns channel internals; adapters never touch order state directly.
 
-### Stock handling
+### Stock handling (Design B only)
+Order-first means possibly-unpaid orders: `payment_deadline` / `reservation_expires_at`; soft-reserve
+stock ~15 min on creation, auto-release on expiry; re-check at execution; **NEVER accept funds then
+report out-of-stock** (hard invariant). *(Design A has none of this — no order exists until after the
+rail is chosen and Passkey-approved.)*
 
-Order-first means possibly-unpaid orders: add `payment_deadline` / `reservation_expires_at`.
-Recommended: soft-reserve stock ~15 min on order creation, auto-release on expiry; re-check stock
-at payment execution; NEVER accept funds then report out-of-stock (hard invariant).
+---
 
-### Widget/UX consequence
+## Impact / 影响面
 
-Card button becomes 「创建订单」;after creation the page (webaz.xyz, human-facing) shows
-「请选择支付方式」. Agents stop threading rail decisions entirely — aligned with the Phase-3B
-weak-model discipline (widget does the work; the model only ferries).
+**Design A (near-term):**
+1. **Order state machine**: **no new state.** The pending approval request becomes rail-agnostic until
+   the confirm step; the order is still created at Passkey as today.
+2. **Money path**: approval still == economic execution at create; the only change is the rail is
+   chosen by the human at confirm rather than the agent at quote. `params_hash` binding + drift-hard-
+   fail preserved.
+3. **Idempotency**: the pre-choice `intent_hash` (quote/draft) omits the rail; the rail joins
+   `params_hash` at the choice step. Each `(draft, chosen-rail)` is one intent; re-choosing a
+   different rail = a fresh `params_hash` (fresh gate token), never a silent swap.
+4. **Widget/UX**: card stops threading the rail; confirm page gains the selector.
 
-## Impact / 影响面(为什么必须整 RFC 而不是顺手改)
-
-1. **Order state machine** (iron-rule zone): new `awaiting_payment_method` state + expiry
-   transitions + soft-reservation lifecycle.
-2. **Money path**: today approval == economic execution (escrow debit at approval). Splitting
-   changes RFC-021's approve-to-execute object from "order creation" to "payment execution".
-3. **Idempotency**: BUG-08 intent identity currently spans quote→draft→submit; payment-phase
-   identity (`payment_quote_token`) needs its own replay/expiry semantics.
-4. **Arbitration/fault flows** read rail from the order; unpaid-order cancellation/timeout faults
-   are new territory (fairness §fault principles apply: 无责方零成本).
+**Design B (PSP-era):** as in the original RFC — new `awaiting_payment_method` state + expiry +
+soft-reservation lifecycle; RFC-021's approve-to-execute object re-points from "order creation" to
+"payment execution"; payment-phase idempotency (`payment_quote_token`) with its own replay/expiry;
+unpaid-order cancellation/timeout faults are new fairness territory (无责方零成本).
 
 ## Gating / 实施门槛
 
-Design-only until ALL of: (a) a second concurrently-eligible rail actually exists for real buyers
-(e.g. dtcpay PSP integration approved and gated), (b) threat model written FIRST (per
-security-artifact discipline), (c) Codex adversarial review of the state-machine + money-path
-diffs, (d) Holden's explicit go. Until then the single-rail coupled flow remains correct and
-simpler — this RFC exists so the PSP-era refactor starts from a settled design, not from scratch.
+- **Design A** may proceed once: (a) this revision's threat-model **v2 delta** is written & reviewed,
+  (b) Codex adversarial review of the rail-defer + params_hash-binding diffs, (c) Holden's explicit
+  go, (d) the §Menu-boundary decisions are settled. It does **not** require a second real rail — its
+  value is human-chosen rail + honest disclosure on the current two.
+- **Design B** stays gated additionally on a real concurrently-eligible PSP rail (dtcpay/card
+  approved and gated). Until then Design A is the correct, smaller shape.
 
 ## Non-goals now / 当前非目标
-
-- No change to current quote/draft/submit tools or their semantics.
-- No simulated multi-rail UI before real gates pass (ACP honesty rule).
 - No custody expansion (USDC display-alias discipline unchanged; 铁律不动).
+- No simulated multi-rail UI before real gates pass (ACP honesty rule).
+- Design A does not touch the escrow / direct-pay *create* mechanics — only *when/who* selects the
+  rail feeding them.
 
 ## Alternatives considered / 备选
-
-- **Keep coupling, add per-rail quote comparison pre-draft**: cheaper, but still forces rail choice
-  before an order exists and keeps Passkey's composite semantics — rejected as the long-term shape.
-- **checkout_id (pre-order) instead of real order**: viable variant of Phase 1; decide at
-  implementation time based on stock-reservation economics.
+- **Keep coupling, agent still picks but exposes a comparison**: cheaper, but leaves the choice with
+  the untrusted narrator (agent), not the human — rejected (violates the driver).
+- **Jump straight to Design B (order-first) for the two current rails**: over-weight — introduces
+  unpaid orders + soft-reservation + pqt with no async payment phase to justify them — rejected as
+  near-term shape; adopted only when PSP lands.
+- **`checkout_id` (pre-order) instead of a real order in Design B Phase 1**: viable variant; decide at
+  B-implementation time on stock-reservation economics.
