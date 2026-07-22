@@ -469,8 +469,8 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     if (typeof result_handle !== 'string' || !/^res_[0-9a-f]{32}$/.test(result_handle)) {
       return void res.status(400).json({ error: 'result_handle required', error_code: 'RESULT_HANDLE_INVALID', retryable: false, next_steps: [{ action: 'search_again', tool: 'webaz_search' }] })
     }
-    if (!Array.isArray(selected_ids) || selected_ids.length < 1 || selected_ids.length > 5 || !selected_ids.every(x => typeof x === 'string')) {
-      return void res.status(400).json({ error: 'selected_ids must be 1..5 product ids from the handle result', error_code: 'SELECTED_IDS_INVALID', retryable: true })
+    if (!Array.isArray(selected_ids) || selected_ids.length < 1 || selected_ids.length > 5 || !selected_ids.every(x => typeof x === 'string') || new Set(selected_ids).size !== selected_ids.length) {
+      return void res.status(400).json({ error: 'selected_ids must be 1..5 UNIQUE product ids from the handle result', error_code: 'SELECTED_IDS_INVALID', retryable: true })   // 去重强制(Codex R2:重复 id 会把 card total_count 算成负数)
     }
     const h = await dbOne<{ tool: string; item_ids: string; expires_at: string }>('SELECT tool, item_ids, expires_at FROM mcp_result_cache WHERE handle_id = ?', [result_handle])
     if (!h || h.tool !== 'webaz_search') {
@@ -522,7 +522,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
         count: liveRows.length,
         total_count: totalHonest,
         result_handle,   // Codex MED:widget 的每卡「详情」按钮依赖 out.result_handle —— 回传同一句柄,买家选中后可继续取详情/完整条款
-        result_handle_expires_in_s: 600,
+        result_handle_expires_in_s: Math.max(1, Math.floor((new Date(String(h.expires_at).replace(' ', 'T') + 'Z').getTime() - Date.now()) / 1000)),   // 真实剩余 TTL(Codex R2:不写死 600)
         ...(fxD ? { fx: fxD } : {}),
         ...(totalHonest > liveRows.length ? { more_url: 'https://webaz.xyz/#discover' } : {}),
         sellers: sellersIndex(liveRows),
