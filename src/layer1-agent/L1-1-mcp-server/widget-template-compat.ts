@@ -18,8 +18,9 @@
  *   a7528d5  = phase3b-round1-ui-green  (round1a)
  *   5e0dd5d  = phase3b-round1b-ui-green (round1b, == main at A1 time; A1 is byte-identical so these
  *              are ALSO the current hashes until A2 changes content — harmless overlap, UI_RESOLVE wins)
- * When A2 (or any later widget change) ships: append the then-current hashes here and prune entries
- * outside the 30-day window (8cdd3db era stays until ~2026-08-18; cap ≤6 while it lingers). scripts/test-widget-template-compat.ts locks this table's shape.
+ * When any later widget change ships: append the then-current (deployed) hashes here and prune the
+ * OLDEST non-protected entry to hold the enforced retention cap of ≤14 per widget (C-2 hashes stay).
+ * scripts/test-widget-template-compat.ts locks this table's shape + the ≤14 bound.
  */
 
 export const KNOWN_STALE_WIDGET_HASHES: Readonly<Record<string, readonly string[]>> = {
