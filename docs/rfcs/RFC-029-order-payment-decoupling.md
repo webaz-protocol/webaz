@@ -90,13 +90,46 @@ creation so `params_hash` still binds the rail the human approved.
 4. **Widget copy change** (quote-approval widget) — remove rail pre-fix; point to the confirm page
    ("支付方式将在你确认时,从卖家支持的方式中选择").
 
+### Design-A prerequisites & corrections (adversarial review, 2026-07-22)
+
+Codex read-only design audit confirmed the core thesis (create forks on rail → choice must precede
+create → no order-first machinery needed; Passkey binding + drift-hard-fail as described) and surfaced
+six concrete implementation prerequisites the first draft under-stated. Folded in:
+
+- **P1 — `payment_rail` is `NOT NULL` today** (`webaz-schema-helpers.ts:2115` quotes, `:2161` drafts;
+  hashes stringify it at `order-submit-request.ts:35,98`). "Defer to null" therefore requires a schema
+  migration to make quote/draft `payment_rail` (and `direct_receive_account_id`) **nullable**, plus
+  excluding them from the pre-choice `intent_hash` — not a pure flow change.
+- **P2 — default-to-escrow projections must learn "not yet chosen."** `agent-model-projection.ts:449`
+  and `:475` default a missing rail to `escrow`; the quote-approval widget shows
+  `out.payment_rail || 'escrow'` (`quote-approval-body.ts:60`); approval `economic_effect` treats any
+  non-direct rail as escrow (`approval-requests-read.ts:72`). A deferred rail must render as
+  **pending/未选择**, never silently as escrow (else TA3/TA4 leak).
+- **P3 — one active `order_submit` per draft is enforced** (unique active,
+  `webaz-schema-helpers.ts:1904`; reuse-existing at `order-submit-request.ts:112,190`). So re-choosing
+  the rail does **not** mint a second request — it **updates the single active request's `params_hash`
+  while still pending**, which invalidates any gate token minted against the old hash. (TA5 corrected.)
+- **P4 — render eligibility ≠ create eligibility.** The options surface can evaluate launch controls +
+  account resolution + open-order cap + exposure at render, but the FULL create gate stack
+  (`direct-pay-create.ts:151-219`: product verification, deferral quota, fee-prepay, …) is only
+  authoritative at create. Render is **best-effort**; create re-checks and may still reject with an
+  honest failure. The RFC must not present render-eligibility as a guarantee.
+- **P5 — options source is `direct-receive-accounts`, not the launch-readiness helper.** Enumerate the
+  seller's active accounts via `direct-receive-accounts.ts:89` (each an option); do NOT build the menu
+  from `direct-pay-launch-readiness.ts:114`, which only checks the legacy single instruction and would
+  under-list multi-account sellers.
+- **P6 — no per-seller escrow opt-out exists yet** (escrow is the universal fallback:
+  `orders-create.ts:261` defaults non-`direct_p2p` to escrow). See corrected §Menu-boundary note.
+
 ### Honesty framing (Design A) — settled by §Menu-boundary decision 3
 Since every supported option stays selectable ("既然支持就都可以选"), each is shown with a **stark,
 honest per-option settlement note** bound server-side: 托管 = 模拟测试·非真实结算 / 直付 = 你直接付
-卖家·平台不托管. No label may imply custody a rail doesn't provide (threat MA4). If a seller supports
-only `direct_p2p`, escrow simply isn't in that seller's menu (per-seller Layer-1 set), so the sim rail
-is never surfaced to that buyer at all. The menu becomes genuinely multi-*rail* when a PSP (Design B)
-lands; today it is already multi-*option* whenever a seller exposes >1 receiving method.
+卖家·平台不托管. No label may imply custody a rail doesn't provide (threat MA4). **Correction (P6):**
+today escrow is the **universal fallback** (`orders-create.ts:261`) — there is **no per-seller escrow
+opt-out** in code, so escrow is in every seller's menu unless/until a per-seller "escrow disabled"
+support flag is built (a small future addition, not assumed here). The menu becomes genuinely
+multi-*rail* when a PSP (Design B) lands; today it is already multi-*option* whenever a seller exposes
+>1 direct-receive method.
 
 ---
 
@@ -162,12 +195,16 @@ rail is chosen and Passkey-approved.)*
 
 ## Impact / 影响面
 
-**Design A (near-term):**
-1. **Order state machine**: **no new state.** The pending approval request becomes rail-agnostic until
-   the confirm step; the order is still created at Passkey as today.
+**Design A (near-term)** — smaller than B, but *not* zero-migration (see §Design-A prerequisites
+P1–P6):
+1. **Order state machine**: **no new order state.** But quote/draft need a **schema migration** to make
+   `payment_rail`/`direct_receive_account_id` **nullable** (today `NOT NULL`, P1), and the pending
+   submit request must permit a **`params_hash` update while pending** (P3). The order is still created
+   at Passkey as today.
 2. **Money path**: approval still == economic execution at create; the only change is the rail is
    chosen by the human at confirm rather than the agent at quote. `params_hash` binding + drift-hard-
-   fail preserved.
+   fail preserved. Default-to-escrow projections (P2) must be updated so a deferred rail reads as
+   *pending*, never silently escrow.
 3. **Idempotency**: the pre-choice `intent_hash` (quote/draft) omits the rail; the rail joins
    `params_hash` at the choice step. Each `(draft, chosen-rail)` is one intent; re-choosing a
    different rail = a fresh `params_hash` (fresh gate token), never a silent swap.

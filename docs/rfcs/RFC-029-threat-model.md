@@ -52,9 +52,12 @@ not tool discipline.
 **T5 — Options-surface dishonesty**: showing rails that can't actually execute (simulated PSP,
 ineligible direct_p2p) → user approves an impossible payment.
 → M5: `webaz_payment_options` lists ONLY gate-passing rails (server-evaluated eligibility:
-direct_receive account active + seller gates; ACP honesty rule: no simulated rails, ever); each
-option carries the honest settlement note (escrow=sim ledger disclosure; direct_p2p=non-custodial
-disclosure — reuse existing economic_effect copy).
+direct_receive account active + seller gates; ACP honesty rule: **never a simulated rail presented as
+real settlement** — escrow may appear only with its explicit sim disclosure, never labeled as real
+custody); each option carries the honest settlement note (escrow=sim ledger disclosure;
+direct_p2p=non-custodial disclosure — reuse existing economic_effect copy). *(Wording clarified to
+resolve the apparent conflict with Design-A's honest escrow display — the rule bans simulated-as-real,
+not simulated-with-disclosure.)*
 
 **T6 — Fee/AML erosion (Rail-1)**: decoupling lets a path skip the Rail-1 platform-fee ledger or
 AML posture checks.
@@ -126,9 +129,15 @@ label may imply custody the rail doesn't provide.
 
 **TA5 — Re-choice double-spend / stale gate token**: buyer changes rail after a gate token was minted
 for the prior rail, yielding two live tokens → two orders for one draft.
-→ MA5: a rail change **invalidates the prior gate token** (new `params_hash` ⇒ new single-use token);
-the draft is **consumed exactly once at create** (existing draft-consume CAS); at most one order per
-draft regardless of how many times the rail was re-picked.
+→ MA5 (corrected per P3): the schema enforces **one active `order_submit` request per draft**
+(`webaz-schema-helpers.ts:1904`; reuse-existing at `order-submit-request.ts:112,190`) — a re-choice
+does **NOT** create a second request. Instead it **updates the single active request's `params_hash`
+while it is still pending**, which invalidates any gate token minted against the old hash (the token
+binds the old `params_hash`; the drift check fails it). The draft is **consumed exactly once at
+create** (existing draft-consume CAS). Net: at most one active request and one order per draft,
+regardless of how many times the rail is re-picked. NOTE: this requires the submit-request path to
+permit a `params_hash` update on a pending active request (today it reuses the existing request as-is)
+— an implementation prerequisite, not free.
 
 ## Out of scope (unchanged invariants)
 Real-money custody (USDC stays display-alias; sim ledger disclosure), Passkey mechanics, arbitration
