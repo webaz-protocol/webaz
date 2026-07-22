@@ -326,6 +326,7 @@
     "test:agent-address-masking": "tsx scripts/test-agent-address-masking.ts",
     "test:buyer-quote": "tsx scripts/test-buyer-quote.ts",
     "test:rail-choice-defer": "tsx scripts/test-rail-choice-defer.ts",
+    "test:payment-options": "tsx scripts/test-payment-options.ts",
     "test:order-draft": "tsx scripts/test-order-draft.ts",
     "test:order-submit-approve": "tsx scripts/test-order-submit-approve.ts",
     "test:agent-buy-retired": "tsx scripts/test-agent-buy-retired.ts",
