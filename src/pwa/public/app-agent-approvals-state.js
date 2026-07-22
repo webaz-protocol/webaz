@@ -62,7 +62,7 @@
       return
     }
     try { if (window.aaMarkSimilarSubmits) window.aaMarkSimilarSubmits(reqs) } catch (e) { /* A3:辅助逻辑绝不阻断主渲染 */ }
-    box.innerHTML = reqs.map(window.aaCard).join('')
+    box.innerHTML = reqs.map(window.aaCard).join(''); if (window.aaLoadDeferredPay) window.aaLoadDeferredPay(box)   // RFC-029 Design A:载入 deferred 卡的支付方式选择器
     // 深链接目标若不在 actionable 列表,单条端点补精确终态卡在顶部(替代旧的泛泛提示)。
     if (deepId && !reqs.some(r => String(r.id) === deepId)) { await aaRenderDeepTerminal(box, deepId, true) }
     else { try { if (window.aaApplyDeepLink) window.aaApplyDeepLink(box) } catch (e) { /* 高亮失败不影响主体 */ } }
