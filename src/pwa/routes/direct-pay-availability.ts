@@ -12,7 +12,7 @@ import { dbOne } from '../../layer0-foundation/L0-1-database/db.js'
 import { toUnits } from '../../money.js'
 import { sellerBaseBondEntrySatisfied } from '../../direct-pay-base-bond-entry.js'
 import { evaluateDirectPayLaunchControls, readDirectPayControlsConfig, sellerDirectPayKybPassed, sellerDirectPaySanctionsClear, sellerDirectPayAmlClear, sellerDirectPayBreakerTripped, coarsenBuyerFacingDirectPayCode, DIRECT_PAY_SELLER_NOT_ELIGIBLE } from '../../direct-pay-controls.js'
-import { checkDeferralQuota, readDeferralQuotaConfig } from '../../direct-pay-deferral-quota.js'
+import { directPayProductAvailability } from '../../direct-pay-availability-check.js'  // RFC-029 PR-2 共享谓词
 import { sellerDirectPayReadinessView } from '../../direct-pay-launch-readiness.js'
 import { requestDeferral, getActiveDeferral, getLatestDeferral } from '../../direct-receive-deferral.js'
 import { requestProductVerification, submitProductVerificationLink, listSellerProductVerifications, toSellerProductVerificationView, productStoreVerified } from '../../product-verification.js'
@@ -45,30 +45,10 @@ export function registerDirectPayAvailabilityRoutes(app: Application, deps: Dire
       'SELECT seller_id, price FROM products WHERE id = ?', [productId])
     if (!product) return void res.status(404).json({ error: '商品不存在', error_code: 'PRODUCT_NOT_FOUND' })
 
-    const cfg = readDirectPayControlsConfig(getProtocolParam)
-    const decision = evaluateDirectPayLaunchControls(cfg, {
-      amountUnits: toUnits(Number(product.price) || 0),
-      sellerBreakerTripped: sellerDirectPayBreakerTripped(db, product.seller_id),  // 与 create 路径同源:卖家熔断也判不可用
-      baseBondSatisfied: sellerBaseBondEntrySatisfied(db, product.seller_id, new Date().toISOString()),
-      kycSanctionsPassed: sellerDirectPayKybPassed(db, product.seller_id) && sellerDirectPaySanctionsClear(db, product.seller_id),
-      amlClear: sellerDirectPayAmlClear(db, product.seller_id),
-    })
-    if (decision.ok) {
-      // 硬门(镜像 create):产品逐品验证 OR 卖家被豁免(店铺 verified + per_product_exempt)。都不满足 → 不可直付(产品级、非敏感)。
-      if (!(productStoreVerified(db, productId) || sellerExemptFromPerProduct(db, product.seller_id))) return void res.json({ available: false, error_code: 'DIRECT_PAY_PRODUCT_NOT_VERIFIED', reason: '该商品暂不支持直付(待平台验证)', per_tx_cap_units: cfg.perTxCapUnits })
-      // 镜像 create 的缓交额度门(qty=1 预览;以商品单价为本次拟建单金额)。超额是【缓交卖家私密状态】→ 收敛为通用不可用,
-      //   不向买家暴露"该卖家在缓交期/已超额"。create 仍是权威强制点。
-      const quota = checkDeferralQuota(db, product.seller_id, toUnits(Number(product.price) || 0), new Date().toISOString(), readDeferralQuotaConfig(getProtocolParam))
-      if (!quota.ok) return void res.json({ available: false, error_code: coarsenBuyerFacingDirectPayCode(quota.code), reason: '该卖家暂不支持直付', per_tx_cap_units: cfg.perTxCapUnits })
-      return void res.json({ available: true, per_tx_cap_units: cfg.perTxCapUnits })
-    }
-    const code = coarsenBuyerFacingDirectPayCode(decision.error_code as string)
-    return void res.json({
-      available: false,
-      error_code: code,
-      reason: code === DIRECT_PAY_SELLER_NOT_ELIGIBLE ? '该卖家暂不支持直付' : decision.reason,
-      per_tx_cap_units: cfg.perTxCapUnits,
-    })
+    // RFC-029 PR-2:抽出的单一可用性谓词(与 payment-options 枚举器同源,防漂移);响应形状逐字不变。
+    const avail = directPayProductAvailability(db, { productId, sellerId: product.seller_id, amountUnits: toUnits(Number(product.price) || 0), getProtocolParam })
+    if (avail.available) return void res.json({ available: true, per_tx_cap_units: avail.per_tx_cap_units })
+    return void res.json({ available: false, error_code: avail.code, reason: avail.reason, per_tx_cap_units: avail.per_tx_cap_units })
   })
 
   // GET /api/direct-receive/readiness — 卖家【自助脱敏】readiness:仅可行动/状态项(收款说明/Passkey/保证金/审核/暂停/平台开放)。
