@@ -31,7 +31,7 @@
     if (r.kind !== 'order_submit') return false
     if (r.summary_unavailable) return true
     const s = r.submit_summary
-    return !s || typeof s !== 'object' || s.payable_units == null || !s.currency || !s.payment_rail || (s.payment_rail === 'direct_p2p' && s.direct_pay_destination_resolvable === false)
+    return !s || typeof s !== 'object' || s.payable_units == null || !s.currency || !s.payment_rail || s.payment_rail === 'deferred' || (s.payment_rail === 'direct_p2p' && s.direct_pay_destination_resolvable === false)   // RFC-029 Design A:'deferred'(尚未选支付方式)= 经济不完整 → 禁批,直到确认页选定
   }
 
   async function aaHydrate() {

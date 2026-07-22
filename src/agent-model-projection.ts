@@ -194,8 +194,9 @@ export function summarizeQuoteResult(r: Record<string, unknown>): string {
   const price = (r.price ?? r.payable_total ?? {}) as Record<string, unknown>
   const disp = typeof price.display === 'string' ? price.display : fmtUsdcMinor(price.amount_minor) || 'n/a'
   const rail = r.payment_rail ?? ((r.payment ?? {}) as Record<string, unknown>).rail ?? 'escrow'
+  const railText = String(rail) === 'deferred' ? 'payment method not yet chosen' : `${String(rail)} rail`   // RFC-029 Design A
   const tok = typeof r.quote_token === 'string' ? ` quote_token=${r.quote_token} (single-use → webaz_order_draft).` : ''
-  return `Quote ${String(r.quote_id ?? '')}: payable ${disp} (${String(rail)} rail), expires ${String(r.expires_at ?? '')}.${tok} Quote only — nothing charged, no stock held. / 仅报价:不扣款、不锁库存。`
+  return `Quote ${String(r.quote_id ?? '')}: payable ${disp} (${railText}), expires ${String(r.expires_at ?? '')}.${tok} Quote only — nothing charged, no stock held. / 仅报价:不扣款、不锁库存。`
 }
 
 // ─── MCP Token PR-2 — 按需商品详情投影(webaz.product_detail.model.v1)───────────────────────
@@ -410,6 +411,8 @@ export function fiatEstimate(payableMinor: unknown, region: unknown, fx: FxView 
 
 /** 支付轨道诚信文案(消费者面必须诚实:模拟托管≠真实 USDC 托管;直付=WebAZ 不托管本金)。 */
 export function railHonesty(rail: unknown): string {
+  // RFC-029 Design A:'deferred' = 买家尚未在确认页选择支付方式;绝不谎报成 escrow/direct 语义。
+  if (String(rail) === 'deferred') return '支付方式尚未选择 —— 将在确认页(webaz.xyz)从卖家支持的方式中选择,选定后才可 Passkey 批准'
   return String(rail) === 'direct_p2p'
     ? '买家直接向卖家付款;WebAZ 不托管本金;实际付款方式和币种以确认页面为准'
     : '支付轨道:模拟托管测试 —— 本流程不代表真实 USDC 或法币结算'

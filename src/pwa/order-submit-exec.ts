@@ -28,6 +28,7 @@ import type Database from 'better-sqlite3'
 import { createHash } from 'node:crypto'
 import { computeBuyerQuote } from './buyer-quote.js'
 import { orderSubmitParamsHash } from './order-submit-request.js'
+import { isDeferredRail } from '../direct-pay-rails.js'   // RFC-029 Design A 安全闸
 import { toDecimal } from '../money.js'
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
@@ -97,6 +98,11 @@ export async function approveAndExecuteOrderSubmit(db: Database.Database, deps: 
   if (String(draft.status) === 'ordered') { db.prepare('UPDATE agent_permission_requests SET executed_at = ? WHERE id = ? AND executed_at IS NULL').run(nowIso, requestId); return { ok: true, already_executed: true, order_id: draft.order_id ? String(draft.order_id) : undefined } }
   if (String(draft.status) !== 'draft') return failTerminal('DRAFT_NOT_AVAILABLE', 409, `草稿状态为 ${String(draft.status)},不可执行`)
   if (String(draft.expires_at) <= nowIso) return failTerminal('DRAFT_NOT_AVAILABLE', 409, '草稿已过期,请重新报价')
+
+  // ── RFC-029 Design A 安全硬闸:'deferred' 轨道(买家尚未在确认页选支付方式)绝不建单。
+  //   必须在 preview 重算/建单之前拒绝 —— 否则 preview 接受 deferred、建单 body 非 direct_p2p 分支会误落 escrow 建单。
+  //   正常流程下 deferred 会先被确认页 choice(后续 PR)替换为真实轨道;此闸是 fail-closed 兜底。
+  if (isDeferredRail(draft.payment_rail)) return failTerminal('RAIL_NOT_CHOSEN', 409, '支付方式尚未选择 —— 请在确认页从卖家支持的方式中选定后再批准;deferred 轨道不可建单')
 
   // ── ① params_hash 重算必须与 Passkey 绑定的一致(直接改库也骗不过) ──
   if (orderSubmitParamsHash(draft) !== String(reqRow.params_hash)) return failTerminal('DRAFT_DRIFT', 409, '草稿内容与你 Passkey 批准的内容不一致,已拒绝执行')

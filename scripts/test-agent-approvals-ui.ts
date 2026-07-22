@@ -120,6 +120,10 @@ ok('B6-4. fail-closed gate (behavioral): blocks direct_p2p ONLY when destination
   && gate(sub({ payment_rail: 'direct_p2p', direct_pay_destination_resolvable: false, direct_receive_account_id: null })) === true
   && gate({ kind: 'order_submit', summary_unavailable: true }) === true
   && gate({ kind: 'order_action' }) === false)
+// RFC-029 Design A PR-1:'deferred'(买家尚未选支付方式)= 经济不完整 → 禁批;审批卡显示待选,绝不谎报成"托管扣款"。
+const rDeferred = runSubmitCard({ submit_summary: { ...escrowSummary.submit_summary, payment_rail: 'deferred' }, kind: 'order_submit' })
+ok('RFC-029 A: deferred rail → gate DISABLES approve (economically incomplete)', !!gate && gate(sub({ payment_rail: 'deferred' })) === true)
+ok('RFC-029 A: deferred approval card shows 待选(尚未选择), NEVER 托管扣款', !rDeferred.threw && !!rDeferred.html && rDeferred.html.includes('支付方式尚未选择') && !rDeferred.html.includes('托管(批准后立即从你的钱包扣款'))
 ok('B6-5. new UI strings are bilingual (t + _EN entry present)', I18N.includes('卖家未配置可用的直付收款目的地 —— 已禁止批准') && I18N.includes('卖家收款目的地') && I18N.includes('关键条款不完整(金额/币种/支付轨道/收款账户)'))
 // B6b: executed-approval "查看订单" must navigate to the REAL order route (#order/<id>), not the dead 'order-detail'
 //   (navigate(hash) takes ONE arg; router only has case 'order' → #order/<id>). Regression for a broken deep-link CTA.

@@ -642,6 +642,7 @@ const _EN = {
   '草稿摘要不可用(可能已取消/过期)—— 请刷新;无法核对条款时请勿批准': 'Draft summary unavailable (it may be cancelled/expired) - refresh; do NOT approve terms you cannot verify',
   '直付(WebAZ 不托管资金;你将按卖家收款说明场外支付)': 'Direct pay (WebAZ holds no funds; you pay the seller off-protocol per their receiving instructions)',
   '托管(批准后立即从你的钱包扣款入托管)': 'Escrow (approval immediately debits your wallet into escrow)',
+  '支付方式尚未选择 —— 请在确认页从卖家支持的方式中选定后再批准;deferred 轨道不可建单': 'Payment method not chosen yet — choose from the seller\'s supported methods on the confirm page before approving; a deferred rail cannot create an order',
   '当前标题,仅供识别;绑定的是商品 ID': 'current title, for recognition only - the approval binds the product ID',
   '捐赠': 'Donation',
   '(额外扣款,入公益池)': '(charged in addition, goes to the charity pool)',
