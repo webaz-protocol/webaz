@@ -31,7 +31,7 @@ import type Database from 'better-sqlite3'
 import { buildCartMandate, buildPaymentMandate, signMandate } from './ap2-mandate.js'
 // RFC-014 PR3 — 金额走整数 base-units;钱包写绝对值(防 REAL 浮点加法 dust)。
 import { toUnits, toDecimal, mulQty, mulRate } from '../../money.js'
-import { createDirectPayResponse } from '../../direct-pay-create.js'                    // PR-4c: direct_p2p 建单分叉(生产门+收款指令门+原子建单;本金不入协议)
+import { createDirectPayResponse } from '../../direct-pay-create.js'; import { isDeferredRail } from '../../direct-pay-rails.js'   // PR-4c direct_p2p 建单分叉 + RFC-029 Design A 纵深防御('deferred' 绝不建单)
 import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'; import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from '../../trade-terms.js'; import { gateSaleRegionForCreate } from '../../sale-regions.js'; import { promisedEtaForOrder } from '../../delivery-eta.js'  // PR-2 运费守门 + S0 条款快照 + S1 可售门(意愿/合规先于物流)+ BUG-02 F2 promised ETA
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'; import { AgentSpendCapExceeded, getAgentSpendCapViolation } from '../../agent-spend-cap.js'; import { hasInvalidPurchaseCredential, readStrictBearerCredential } from '../bearer-auth.js'; import { consumePriceSession, PriceSessionConsumeError } from '../../price-session-consume.js'; import { MAX_PER_ORDER } from '../../order-limits.js'; import { resolveDraftLink } from '../order-draft-link.js'; import { resolveBuyerAddressSnapshot } from '../address-book.js'  // RFC-016 异步 DB seam(下单事务外预检;事务内同步)+ RFC-025 共享限购常量
 
@@ -251,7 +251,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
       if (Number(session.quantity ?? 1) !== reqQty) return void res.status(409).json({ error: `session_token 的数量(${session.quantity})与本次下单数量(${reqQty})不一致，请按实际数量重新调用 verify-price`, error_code: 'PRICE_SESSION_QTY_MISMATCH', session_quantity: Number(session.quantity ?? 1), requested_quantity: reqQty })   // RFC-025 PR-3 G-QTY-1 真修:session 数量此前不绑定(qty=1 会话可被 qty=N 消费)
     }
 
-    const basePrice = product.price as number
+    if (isDeferredRail(req.body?.payment_rail)) return void res.status(409).json({ error: '支付方式尚未选择,不可建单', error_code: 'RAIL_NOT_CHOSEN' }); const basePrice = product.price as number   // RFC-029 Design A 纵深防御:'deferred' 绕过 exec 硬闸也绝不落 escrow 建单
     // RFC-014:全部金额在整数 base-units 上算(精确),再 toDecimal 落库/响应。
     //   多件：subtotal = basePrice × qty，减 coupon，再加保险（按 subtotal 计费）
     const basePriceU = toUnits(basePrice)

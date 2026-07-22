@@ -69,9 +69,11 @@ function project(db: Database.Database, r: Record<string, unknown>, nowIso: stri
     //   Codex R2 P1:摘要不可用时 rail 未知,绝不默认成 escrow 语义(否则对 direct_p2p 谎报"模拟托管扣款")→ moves_funds:null。
     out.economic_effect = !haveSummary
       ? { moves_funds: null, note: 'economic terms unavailable (draft missing/unreadable) — fund movement cannot be stated; do NOT approve until the terms are readable.' }
-      : rail === 'direct_p2p'
-        ? { moves_funds: false, simulated: false, note: 'approval creates the REAL order; direct_p2p — WebAZ holds no principal, you pay the seller directly. USDC amounts are a display alias, not a WebAZ settlement.' }
-        : { moves_funds: true, simulated: true, note: 'approval creates the REAL order; the escrow rail is a SIMULATED test ledger — USDC amounts are a display alias and do NOT represent real USDC or fiat custody/settlement.' }
+      : rail === 'deferred'   // RFC-029 Design A:轨道未选 → 不可批准,绝不谎报成 escrow 语义
+        ? { moves_funds: null, rail_choice_pending: true, note: 'payment method NOT chosen yet — choose from the seller\'s supported methods on the confirm page before this request can be approved; do NOT approve until a rail is chosen.' }
+        : rail === 'direct_p2p'
+          ? { moves_funds: false, simulated: false, note: 'approval creates the REAL order; direct_p2p — WebAZ holds no principal, you pay the seller directly. USDC amounts are a display alias, not a WebAZ settlement.' }
+          : { moves_funds: true, simulated: true, note: 'approval creates the REAL order; the escrow rail is a SIMULATED test ledger — USDC amounts are a display alias and do NOT represent real USDC or fiat custody/settlement.' }
   }
   return out
 }

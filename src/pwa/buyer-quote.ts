@@ -33,6 +33,7 @@ import { sellerBaseBondEntrySatisfied } from '../direct-pay-base-bond-entry.js'
 import { productStoreVerified } from '../product-verification.js'
 import { sellerExemptFromPerProduct } from '../store-verification.js'
 import { getAccount } from '../direct-receive-accounts.js'
+import { RAIL_DEFERRED, isDeferredRail, railChoiceEnabled } from '../direct-pay-rails.js'   // RFC-029 Design A
 import { getActiveFlashSale } from './routes/flash-sales.js'   // BLOCKER-1:报价必须用与建单同一套限时价覆盖
 
 export const QUOTE_TTL_MS = 10 * 60_000        // 与 price_sessions 同 TTL(现行规范 10 分钟)
@@ -144,7 +145,11 @@ function buildResponse(db: Database.Database, row: Record<string, unknown>, quot
       region: row.dest_region == null ? null : String(row.dest_region),
       address_resolved: true,
     },
-    payment: rail === 'direct_p2p' ? {
+    payment: isDeferredRail(rail) ? {
+      rail: RAIL_DEFERRED, custodied_by_webaz: null,
+      note: 'Payment method NOT chosen yet — you will choose from the seller\'s supported methods on the confirm page (webaz.xyz) before Passkey approval. This quote charges nothing and does not fix a rail.',
+      payable_currency: 'pending choice',
+    } : rail === 'direct_p2p' ? {
       rail, custodied_by_webaz: false,
       note: 'You pay the seller DIRECTLY off-protocol; WebAZ holds no funds and cannot auto-refund from the seller. Post-sale rulings affect reputation/liability records. Final eligibility gates re-run at order creation.',
       seller_receiving_account: acc ? { account_id: acc.id, method: acc.method, currency: acc.currency, label: acc.label } : { note: "seller's receiving instructions are revealed at order time (after disclosure acks)" },
@@ -200,8 +205,12 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
   const qty = vq.qty   // ↓ 此后一切只允许用 qty
 
   // ── 4. 支付轨道(只允许真实启用;绝不静默换轨) ──
-  const rail = input.payment_rail === undefined ? 'escrow' : input.payment_rail
-  if (rail !== 'escrow' && rail !== 'direct_p2p') {
+  // RFC-029 Design A(flag=WEBAZ_RAIL_CHOICE):开启后,省略轨道 → 'deferred'(买家在确认页选),不再静默默认 escrow;
+  //   关闭时行为逐字不变(省略 → escrow,'deferred' 被拒)。'deferred' 是"尚未选择"哨兵,绝不建单(exec/create 硬拒)。
+  const railChoice = railChoiceEnabled()
+  const rail = input.payment_rail === undefined ? (railChoice ? RAIL_DEFERRED : 'escrow') : String(input.payment_rail)
+  const railAllowed = rail === 'escrow' || rail === 'direct_p2p' || (railChoice && isDeferredRail(rail))
+  if (!railAllowed) {
     return qerr(409, 'PAYMENT_RAIL_DISABLED', `rail "${String(rail)}" is not enabled — only escrow and direct_p2p exist`, { next_steps: ['use payment_rail=escrow', 'use payment_rail=direct_p2p'] })
   }
 
