@@ -20,7 +20,7 @@ function evalWith(openaiLocale: string | undefined, navLang: string | undefined)
     setTimeout, clearTimeout, Promise, URL, console, JSON, Math, String, Number, Object, Array, isFinite,
   }
   vm.createContext(sandbox)
-  vm.runInContext(__WIDGET_COMPAT_JS + '\nthis.etaDisplay=etaDisplay; this.webazLocale=webazLocale; this.apprStatusText=apprStatusText; this.railNoteText=railNoteText;', sandbox)
+  vm.runInContext(__WIDGET_COMPAT_JS + '\nthis.etaDisplay=etaDisplay; this.webazLocale=webazLocale; this.apprStatusText=apprStatusText; this.railNoteText=railNoteText; this.railDisplay=railDisplay;', sandbox)
   return sandbox
 }
 
@@ -54,6 +54,10 @@ ok('appr: v2 object {label,label_en} → label_en under en / label under zh', aE
 const rEn = en.railNoteText as (r: unknown, z?: unknown) => string
 ok('rail: en direct_p2p → English no-custody note (no CJK)', /WebAZ holds no principal/.test(rEn('direct_p2p', 'zh')) && !CJK.test(rEn('direct_p2p', 'zh')))
 ok('rail: zh → server zhFallback (byte-unchanged)', (zh.railNoteText as (r: unknown, z?: unknown) => string)('direct_p2p', '买家直接向卖家付款') === '买家直接向卖家付款')
+// RFC-029 Design A PR-5:'deferred' 轨道显示/说明 —— 绝不显示成模拟托管
+ok('rail: en deferred note → pending-choice English (not escrow sim copy)', /not chosen yet/i.test(rEn('deferred', 'zh')) && !CJK.test(rEn('deferred', 'zh')) && !/simulated escrow/i.test(rEn('deferred', 'zh')))
+ok('railDisplay: deferred → localized 待选/Not chosen (never raw "deferred")', (en.railDisplay as (r: unknown) => string)('deferred') === 'Not chosen yet (choose at confirm)' && (zh.railDisplay as (r: unknown) => string)('deferred') === '待选(确认时选择)' && (en.railDisplay as (r: unknown) => string)('deferred') !== 'deferred')
+ok('railDisplay: escrow/direct unchanged (raw, non-deferred cards not churned)', (en.railDisplay as (r: unknown) => string)('escrow') === 'escrow' && (en.railDisplay as (r: unknown) => string)('direct_p2p') === 'direct_p2p')
 
 // navigator.language 兜底(非 ChatGPT 宿主,无 window.openai.locale)
 const enNav = evalWith(undefined, 'en-GB')
