@@ -22,8 +22,10 @@
   }
   // Localized payment-rail LABEL. Only 'deferred' is special-cased (shown as pending) — escrow/direct_p2p
   // keep their existing raw display to avoid churning non-deferred cards.
+  // Only 'deferred' is special-cased (shown as pending); every other value passes through RAW (incl. null →
+  // '') so each call site keeps its OWN fallback and non-deferred cards stay byte-identical.
   export function railDisplay(rail){
-    return String(rail)==='deferred' ? L('待选(确认时选择)','Not chosen yet (choose at confirm)') : String(rail||'escrow')
+    return String(rail)==='deferred' ? L('待选(确认时选择)','Not chosen yet (choose at confirm)') : String(rail||'')
   }
   // webaz_approval_requests 'get' returns status as a bare machine code + a zh display_status (no _en
   // sibling — the model-context projection stays lean). Localize it client-side here so every card's
