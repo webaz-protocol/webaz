@@ -100,26 +100,59 @@ six concrete implementation prerequisites the first draft under-stated. Folded i
   hashes stringify it at `order-submit-request.ts:35,98`). "Defer to null" therefore requires a schema
   migration to make quote/draft `payment_rail` (and `direct_receive_account_id`) **nullable**, plus
   excluding them from the pre-choice `intent_hash` — not a pure flow change.
-- **P2 — default-to-escrow projections must learn "not yet chosen."** `agent-model-projection.ts:449`
-  and `:475` default a missing rail to `escrow`; the quote-approval widget shows
-  `out.payment_rail || 'escrow'` (`quote-approval-body.ts:60`); approval `economic_effect` treats any
-  non-direct rail as escrow (`approval-requests-read.ts:72`). A deferred rail must render as
-  **pending/未选择**, never silently as escrow (else TA3/TA4 leak).
-- **P3 — one active `order_submit` per draft is enforced** (unique active,
-  `webaz-schema-helpers.ts:1904`; reuse-existing at `order-submit-request.ts:112,190`). So re-choosing
-  the rail does **not** mint a second request — it **updates the single active request's `params_hash`
-  while still pending**, which invalidates any gate token minted against the old hash. (TA5 corrected.)
+- **P2 — default-to-escrow projections must learn "not yet chosen."** Sites that default a missing
+  rail to `escrow` (all must render **pending/未选择** for a deferred rail, never silently escrow, else
+  TA3/TA4 leak): `agent-model-projection.ts:449`, `:475`, and the **summary path `:196`**;
+  `submitRowSummary` stringifies a null-like rail (`order-submit-request.ts:68`); the quote-approval
+  widget shows `out.payment_rail || 'escrow'` (`quote-approval-body.ts:60`); approval `economic_effect`
+  treats any non-direct rail as escrow (`approval-requests-read.ts:72`); **and the PWA approval page**
+  renders non-direct summaries as escrow (`app-agent-approvals-submit.js:16`). (Round-2 expanded the
+  site list.)
+- **P3 — the chosen rail must land in the DRAFT (executor's source of truth), not just the request.**
+  One active `order_submit` per draft is enforced (`webaz-schema-helpers.ts:1904,1965`; reuse-existing
+  at `order-submit-request.ts:112,190`), so re-choice does **not** mint a second request. BUT round-2
+  showed updating only `agent_permission_requests.params_hash` is insufficient: execution **recomputes
+  the hash from `order_drafts` and creates from draft fields** (`order-submit-exec.ts:102,115,144`) —
+  if the draft still holds the old/null rail, exec drift-hard-fails or creates the wrong rail. → The
+  chosen `{payment_rail, direct_receive_account_id}` must become the **execution source of truth**:
+  persist it into the pending draft (or a bound choice object the executor reads) AND update the
+  request `params_hash`, atomically, before the gate token is minted. See §Choice/update contract.
+- **P7 — the PWA approval page currently blocks a rail-deferred request.** `aaEconomicIncomplete`
+  disables approval when `payment_rail` is missing (`app-agent-approvals-state.js:34`). Intended for
+  Design A: a deferred-but-unchosen request stays **correctly non-approvable** until the choice sets
+  the rail; the approval button enables only **after** the confirm-page choice writes the rail. The
+  page's "missing rail = incomplete" logic must distinguish *deferred-awaiting-choice* from *broken*.
 - **P4 — render eligibility ≠ create eligibility.** The options surface can evaluate launch controls +
   account resolution + open-order cap + exposure at render, but the FULL create gate stack
   (`direct-pay-create.ts:151-219`: product verification, deferral quota, fee-prepay, …) is only
   authoritative at create. Render is **best-effort**; create re-checks and may still reject with an
   honest failure. The RFC must not present render-eligibility as a guarantee.
-- **P5 — options source is `direct-receive-accounts`, not the launch-readiness helper.** Enumerate the
-  seller's active accounts via `direct-receive-accounts.ts:89` (each an option); do NOT build the menu
-  from `direct-pay-launch-readiness.ts:114`, which only checks the legacy single instruction and would
-  under-list multi-account sellers.
+- **P5 — options source must mirror `resolveDirectReceive`, not the launch-readiness helper.**
+  Enumerate the seller's active accounts via `direct-receive-accounts.ts:89` **plus the legacy
+  single-instruction fallback** — i.e. the same resolution `create` uses (`resolveDirectReceive`:
+  chosen → legacy `getActivePaymentInstruction` → sole active account, `direct-receive-resolve.ts:43`;
+  `direct-pay-create.ts:183`). Do NOT build the menu from `direct-pay-launch-readiness.ts:115` (only
+  checks legacy) — it under-lists multi-account sellers; and enumerating *only* active accounts
+  (round-2) under-lists **legacy-only** sellers. The menu = whatever `resolveDirectReceive` can yield.
 - **P6 — no per-seller escrow opt-out exists yet** (escrow is the universal fallback:
   `orders-create.ts:261` defaults non-`direct_p2p` to escrow). See corrected §Menu-boundary note.
+
+### §Choice/update contract (the server-side seam Design A hinges on — round-2 High)
+
+The single endpoint that commits the buyer's confirm-page choice must be **atomic** and make the
+choice the executor's source of truth. In one transaction:
+1. **Validate** the chosen `option_id` against a freshly-recomputed eligible set (re-run the render
+   gates; reject if no longer offered — TOCTOU guard, P4).
+2. **Persist** `{payment_rail, direct_receive_account_id}` into the **pending draft** row (the field
+   `order-submit-exec.ts:115,144` reads), so exec recomputes/creates from the chosen values.
+3. **Recompute + update** the active request's `params_hash` from the now-updated draft
+   (`order-submit-request.ts` hash inputs), keeping one-active-request-per-draft.
+4. **Invalidate** any gate token bound to the prior `params_hash` (drift check at
+   `agent-grants.ts:966` / `order-submit-exec.ts` fails it automatically once the hash changes).
+5. Only then is the request approvable → Passkey mints against the new `params_hash` → create.
+
+This closes the round-2 High (choice must feed the draft-based executor, not just the request row) and
+keeps the whole flow inside the existing idempotency + drift-hard-fail invariants.
 
 ### Honesty framing (Design A) — settled by §Menu-boundary decision 3
 Since every supported option stays selectable ("既然支持就都可以选"), each is shown with a **stark,

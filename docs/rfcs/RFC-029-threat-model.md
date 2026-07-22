@@ -135,9 +135,11 @@ does **NOT** create a second request. Instead it **updates the single active req
 while it is still pending**, which invalidates any gate token minted against the old hash (the token
 binds the old `params_hash`; the drift check fails it). The draft is **consumed exactly once at
 create** (existing draft-consume CAS). Net: at most one active request and one order per draft,
-regardless of how many times the rail is re-picked. NOTE: this requires the submit-request path to
-permit a `params_hash` update on a pending active request (today it reuses the existing request as-is)
-— an implementation prerequisite, not free.
+regardless of how many times the rail is re-picked. NOTE (round-2 correction): a `params_hash` update
+alone is insufficient — the executor recomputes the hash from `order_drafts` and creates from draft
+fields (`order-submit-exec.ts:102,115,144`), so the choice must **persist into the pending draft** (the
+executor's source of truth) AND update the request hash, atomically, before the token is minted (RFC
+§Choice/update contract). Implementation prerequisites, not free.
 
 ## Out of scope (unchanged invariants)
 Real-money custody (USDC stays display-alias; sim ledger disclosure), Passkey mechanics, arbitration
