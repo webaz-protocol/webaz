@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (813 endpoints, 20 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (815 endpoints, 20 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2717,6 +2717,28 @@
     "/api/agent-grants/permission-requests/:id/approve": {
       "post": {
         "summary": "POST approve — human-authed + live Passkey; expands the bound grant (union scopes + bundle + extend expiry). Audited.",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/agent-grants/permission-requests/:id/choose-payment": {
+      "post": {
+        "summary": "POST /api/agent-grants/permission-requests/:id/choose-payment",
+        "tags": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/agent-grants/permission-requests/:id/payment-options": {
+      "get": {
+        "summary": "GET: 列当前可选支付方式(卖家支持+资格通过)。POST: 选定 → 写草稿 rail/account + 重算 params_hash(旧 Passkey 票据即失效)。",
         "tags": [],
         "security": [
           {
