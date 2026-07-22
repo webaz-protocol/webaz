@@ -59,11 +59,12 @@ ok('A: not eligible → escrow ONLY (direct gated off even with an account)', id
 ok('A: escrow is first, rail=escrow, sim note, method null', oA[0].option_id === 'escrow' && oA[0].rail === 'escrow' && /模拟托管/.test(oA[0].settlement_note) && oA[0].method === null)
 ok('A: directPayProductAvailability = false for ineligible seller', directPayProductAvailability(db, { productId: 'pA', sellerId: 'sA', amountUnits: toUnits(50), getProtocolParam: gp }).available === false)
 
-// ── Seller B: eligible, legacy instruction + 2 active accounts → escrow + legacy(rec) + 2 accounts ──
+// ── Seller B: eligible, legacy instruction + 2 active accounts → escrow + BOTH accounts (legacy NOT offered) ──
 mkSeller('sB'); mkProduct('pB', 'sB'); makeEligible('sB', 'pB'); legacyInstr('sB'); acct('accB1', 'sB', 'PayNow', 'B1'); acct('accB2', 'sB', 'Bank', 'B2'); acct('accBoff', 'sB', 'GCash', 'Boff', 'inactive')
 const oB = optsFor('pB', 'sB')
-ok('B: eligible → escrow + legacy + BOTH active accounts (inactive excluded)', ids(oB).join() === ['escrow', 'direct:legacy', 'direct:accB1', 'direct:accB2'].sort().join())
-ok('B: legacy is recommended (resolveDirectReceive prefers legacy); exactly one recommended', rec(oB).join() === 'direct:legacy')
+ok('B: eligible → escrow + BOTH active accounts (inactive excluded; null-account LEGACY NOT offered — Codex BLOCKER/MA5)', ids(oB).join() === ['escrow', 'direct:accB1', 'direct:accB2'].sort().join())
+ok('B: none of the direct options carry a null account id (all hash-bindable)', oB.filter(o => o.rail === 'direct_p2p').every(o => o.direct_receive_account_id !== null))
+ok('B: legacy-preferred default → no account is recommended (auto-pick is the non-offered legacy)', rec(oB).length === 0)
 ok('B: direct options carry method+label; non-custodial note', oB.filter(o => o.rail === 'direct_p2p').every(o => /直付/.test(o.settlement_note)) && oB.find(o => o.option_id === 'direct:accB1')!.method === 'PayNow')
 ok('B: availability true', directPayProductAvailability(db, { productId: 'pB', sellerId: 'sB', amountUnits: toUnits(50), getProtocolParam: gp }).available === true)
 
@@ -78,10 +79,10 @@ const oD = optsFor('pD', 'sD')
 ok('D: two accounts, no legacy → both listed', ids(oD).join() === ['escrow', 'direct:accD1', 'direct:accD2'].sort().join())
 ok('D: MA3 — ambiguous default → NONE recommended, but every supported option still present (recommendation never shrinks menu)', rec(oD).length === 0 && oD.filter(o => o.rail === 'direct_p2p').length === 2)
 
-// ── Seller F: eligible, LEGACY instruction ONLY (no accounts) → escrow + legacy(recommended) ──
+// ── Seller F: eligible, LEGACY instruction ONLY (no accounts) → escrow ONLY (legacy not buyer-choosable; safety>completeness) ──
 mkSeller('sF'); mkProduct('pF', 'sF'); makeEligible('sF', 'pF'); legacyInstr('sF')
 const oF = optsFor('pF', 'sF')
-ok('F: legacy-only seller → escrow + legacy(recommended), NOT under-listed', ids(oF).join() === ['escrow', 'direct:legacy'].sort().join() && rec(oF).join() === 'direct:legacy')
+ok('F: legacy-only seller → escrow ONLY in buyer-choice (null-account legacy not hash-bindable; seller must add an account for direct)', ids(oF).join() === 'escrow')
 
 // ── Seller E: eligible but NO receive method (no legacy, no accounts) → escrow only (honest: direct has no destination) ──
 mkSeller('sE'); mkProduct('pE', 'sE'); makeEligible('sE', 'pE')

@@ -969,7 +969,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
         (data) => { const d = data as Record<string, unknown> | null; return d != null && typeof d === 'object' && d.request_id === req.params.id && d.order_id === r.order_id && d.action === 'order_submit' && d.params_hash === r.params_hash })   // 四元组与 PWA aaApprove 一致,order_id 承载 draft_id -- Codex BLOCKER-1
       if (!hp.ok) return void res.status(412).json({ error: hp.reason, error_code: hp.error_code })
       if (!createOrderLoopback) return void res.status(503).json({ error: '批准执行暂不可用(执行通道未配置)', error_code: 'SUBMIT_EXEC_UNAVAILABLE' })
-      const er = await approveAndExecuteOrderSubmit(db, { requestId: req.params.id, approverId: user.id as string, nowIso: now, getProtocolParam, generateId, createOrderLoopback })
+      const er = await approveAndExecuteOrderSubmit(db, { requestId: req.params.id, approverId: user.id as string, nowIso: now, getProtocolParam, generateId, createOrderLoopback, expectedParamsHash: r.params_hash ?? undefined })   // RFC-029 PR-3:门校验过的 hash 传入,CAS 后再核(MA5 robust)
       if (!er.ok) return void res.status(er.http || 409).json({ error: er.error, error_code: er.error_code, ...(er.ambiguous ? { ambiguous: true } : {}) })
       return void res.json({ success: true, kind: 'order_submit', status: 'executed', draft_id: r.order_id, order_id: er.order_id, already_executed: er.already_executed || false })
     }

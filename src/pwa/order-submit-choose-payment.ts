@@ -10,9 +10,12 @@
  *      a 'deferred' rail (only a not-yet-chosen rail may be chosen — never re-forks a decided draft).
  *   2. Re-validate the chosen option against the CURRENT eligible set (sellerSupportedPaymentOptions —
  *      TOCTOU guard: the seller may have become ineligible since the draft was made).
- *   3. Authoritative rail check: preview-quote the draft WITH the chosen rail (runs every gate the
- *      create path runs — direct_p2p product-shape/eligibility/account). A deferred quote skipped these
- *      (they only run for a concrete rail), so this is where they finally apply.
+ *   3. Rail eligibility check: preview-quote the draft WITH the chosen rail. This runs the quote-level
+ *      direct_p2p gates a deferred quote skipped (product-shape variant/donation/anonymous/flash +
+ *      launch controls + product verification + explicit account activity). It is NOT the full create
+ *      stack — create additionally enforces per-order gates (open-order cap, collateral exposure,
+ *      fee-prepay) authoritatively. So a chosen rail is quote-eligible here; create remains the final
+ *      authority and may still reject with an honest late failure (fail-closed, never a silent switch).
  *   4. Persist {payment_rail, direct_receive_account_id} into the DRAFT (the executor's source of truth —
  *      exec recomputes params_hash from order_drafts and creates from draft fields), CAS on
  *      payment_rail='deferred', AND recompute+update the request's params_hash + intent_hash. Any Passkey

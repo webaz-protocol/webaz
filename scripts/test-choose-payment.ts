@@ -90,10 +90,10 @@ const s2 = seedDeferred('ps', null)
 const c2 = choose(s2.reqId, 'direct:acc1')
 ok('choose direct:acc1 → ok, draft rail=direct_p2p + account set', c2.ok === true && railOf(s2.draftId).payment_rail === 'direct_p2p' && railOf(s2.draftId).direct_receive_account_id === 'acc1')
 
-// ── choose direct legacy ──
+// ── null-account legacy is NOT buyer-choosable (Codex BLOCKER/MA5) → PAYMENT_OPTION_UNAVAILABLE ──
 const s3 = seedDeferred('ps', null)
 const c3 = choose(s3.reqId, 'direct:legacy')
-ok('choose direct:legacy → ok, rail=direct_p2p, account null (legacy)', c3.ok === true && railOf(s3.draftId).payment_rail === 'direct_p2p' && railOf(s3.draftId).direct_receive_account_id === null)
+ok('choose direct:legacy → PAYMENT_OPTION_UNAVAILABLE (null-account destination not hash-bindable)', c3.ok === false && (c3 as { error_code: string }).error_code === 'PAYMENT_OPTION_UNAVAILABLE' && railOf(s3.draftId).payment_rail === 'deferred')
 
 // ── guard: re-choose an already-chosen draft → RAIL_ALREADY_CHOSEN ──
 const c1again = choose(s1.reqId, 'direct:acc1')
@@ -123,6 +123,19 @@ ok('rejected request → REQUEST_NOT_PENDING', (() => { const r = choose(s5.reqI
 // ── read companion: already-chosen request → rail_chosen true, empty menu ──
 const readChosen = paymentOptionsForSubmitRequest(db, { requestId: s2.reqId, humanId: 'buyer1', nowIso: new Date().toISOString(), getProtocolParam: gp })
 ok('read: already-chosen request → rail_chosen true, empty options', readChosen.ok === true && readChosen.rail_chosen === true && readChosen.options.length === 0)
+
+// ── SAFETY: no order was created by any choose (choice never creates an order) ──
+ok('no orders created by any choose-payment', (db.prepare('SELECT COUNT(*) c FROM orders').get() as { c: number }).c === 0)
+
+// ── HIGH (MA5 robust): approveAndExecuteOrderSubmit re-checks expectedParamsHash AFTER the CAS claim ──
+//    Simulates "Passkey token minted for hash P1, then choose-payment changed it to P2": approve with a
+//    stale expectedParamsHash → PARAMS_HASH_CHANGED, loopback never called, no order.
+const { approveAndExecuteOrderSubmit } = await import('../src/pwa/order-submit-exec.js')
+const sH = seedDeferred('ps', null); choose(sH.reqId, 'escrow')   // now a real rail + fresh params_hash
+let loopbackCalled = false
+const staleApprove = await approveAndExecuteOrderSubmit(db, { requestId: sH.reqId, approverId: 'buyer1', nowIso: new Date().toISOString(), getProtocolParam: gp, generateId, createOrderLoopback: async () => { loopbackCalled = true; return { status: 200, json: {} } }, expectedParamsHash: 'ph_STALE_token_value' })
+ok('stale expectedParamsHash → PARAMS_HASH_CHANGED (token bound to pre-choice hash rejected)', staleApprove.ok === false && (staleApprove as { error_code: string }).error_code === 'PARAMS_HASH_CHANGED')
+ok('stale-hash approve never called order-create loopback + created no order', loopbackCalled === false && (db.prepare('SELECT COUNT(*) c FROM orders').get() as { c: number }).c === 0)
 
 if (fail > 0) { console.error(`\n❌ choose-payment FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ choose-payment: atomic rail choice on a deferred request (draft persist + params_hash rehash → old token invalid); guards (own/pending/already-chosen/unavailable/ineligible-shape); no money moved, no order created\n  ✅ pass ${pass}`)
