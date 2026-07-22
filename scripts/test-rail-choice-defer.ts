@@ -93,4 +93,8 @@ ok('exec created NO order for the deferred draft', !draftAfter.order_id)
 
 delete process.env.WEBAZ_RAIL_CHOICE
 if (fail > 0) { console.error(`\n❌ rail-choice-defer FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-console.log(`✅ rail-choice-defer: 'deferred' sentinel + WEBAZ_RAIL_CHOICE flag; flag-off byte-identical; deferred renders pending (never escrow); exec hard-refuses deferred (no order)\n  ✅ pass ${pass}`)
+// NOTE: the PWA approval-card honest rendering of 'deferred' (label + approve-disable) is behavior-tested
+//   in test-agent-approvals-ui (vm-run aaOrderSubmitWhat/aaEconomicIncomplete); the direct /api/orders
+//   deferred reject is the orders-create defense-in-depth (source-verified). This file proves the server
+//   projections + the exec hard-闸.
+console.log(`✅ rail-choice-defer: 'deferred' sentinel + WEBAZ_RAIL_CHOICE flag; flag-off byte-identical; deferred renders pending in server projections (never escrow); exec hard-refuses deferred (no order)\n  ✅ pass ${pass}`)
