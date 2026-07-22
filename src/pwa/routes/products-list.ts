@@ -465,12 +465,12 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       for (const [k, v] of resultFetchRate) if (now >= v.resetAt) resultFetchRate.delete(k)
       if (resultFetchRate.size > 50_000) resultFetchRate.clear()
     }
-    const { result_handle, selected_ids, full_terms } = (req.body ?? {}) as { result_handle?: unknown; selected_ids?: unknown; full_terms?: unknown }
+    const { result_handle, selected_ids, full_terms, card } = (req.body ?? {}) as { result_handle?: unknown; selected_ids?: unknown; full_terms?: unknown; card?: unknown }
     if (typeof result_handle !== 'string' || !/^res_[0-9a-f]{32}$/.test(result_handle)) {
       return void res.status(400).json({ error: 'result_handle required', error_code: 'RESULT_HANDLE_INVALID', retryable: false, next_steps: [{ action: 'search_again', tool: 'webaz_search' }] })
     }
-    if (!Array.isArray(selected_ids) || selected_ids.length < 1 || selected_ids.length > 5 || !selected_ids.every(x => typeof x === 'string')) {
-      return void res.status(400).json({ error: 'selected_ids must be 1..5 product ids from the handle result', error_code: 'SELECTED_IDS_INVALID', retryable: true })
+    if (!Array.isArray(selected_ids) || selected_ids.length < 1 || selected_ids.length > 5 || !selected_ids.every(x => typeof x === 'string') || new Set(selected_ids).size !== selected_ids.length) {
+      return void res.status(400).json({ error: 'selected_ids must be 1..5 UNIQUE product ids from the handle result', error_code: 'SELECTED_IDS_INVALID', retryable: true })   // 去重强制(Codex R2:重复 id 会把 card total_count 算成负数)
     }
     const h = await dbOne<{ tool: string; item_ids: string; expires_at: string }>('SELECT tool, item_ids, expires_at FROM mcp_result_cache WHERE handle_id = ?', [result_handle])
     if (!h || h.tool !== 'webaz_search') {
@@ -507,6 +507,32 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     const liveIds = new Set(liveRows.map(r => String(r.id)))
     let fxD: Record<string, unknown> | null = null
     try { const snap = await getUsdRates(); fxD = { base: snap.base, rates: snap.rates, as_of: snap.as_of, stale: snap.stale, note: 'display-only conversion — never a settlement path' } } catch { fxD = null }
+    // RFC-029 后续(多卡稳定化):card:true → 返回【标准搜索卡模型】(product_search.model.v1)而非详情模型。
+    //   discover 的 detail_fetch_template 用它:宿主渲染打磨过的对比卡(AI 推荐/决策徽标/第 6 槽「前往 WebAZ」),
+    //   而非详情模型的素平铺 —— 卡片格式从此由响应 schema 确定,不依赖模型选择。total_count = 句柄全集
+    //   (>展示数时 widget 自动出 WebAZ 跳转钮)。详情/完整条款仍走原详情模型(card 省略/false)。
+    if (card === true) {
+      // total 诚实口径(Codex L):被 revalidation 剔除的 unavailable 项不计入 total —— "还有 N 款"只指
+      //   句柄集里【未展示的真实候选】,不把下架品谎报成"更多"。
+      const unavailN = (selected_ids as string[]).length - liveRows.length
+      const totalHonest = allowed.length - unavailN
+      return void res.json({
+        schema_version: SCHEMA_PRODUCT_SEARCH,
+        mode: 'agent', sort: 'newest',
+        count: liveRows.length,
+        total_count: totalHonest,
+        result_handle,   // Codex MED:widget 的每卡「详情」按钮依赖 out.result_handle —— 回传同一句柄,买家选中后可继续取详情/完整条款
+        result_handle_expires_in_s: Math.max(1, Math.floor((new Date(String(h.expires_at).replace(' ', 'T') + 'Z').getTime() - Date.now()) / 1000)),   // 真实剩余 TTL(Codex R2:不写死 600)
+        ...(fxD ? { fx: fxD } : {}),
+        ...(totalHonest > liveRows.length ? { more_url: 'https://webaz.xyz/#discover' } : {}),
+        sellers: sellersIndex(liveRows),
+        products: liveRows.map(r => {
+          const f = formatProductForAgent(r, req)
+          return projectProductModel({ ...r, title: f.title, estimated_days: f.estimated_days, agent_summary: f.agent_summary }, null)
+        }),
+        ...(selected_ids.length !== liveRows.length ? { unavailable_ids: (selected_ids as string[]).filter(id => !liveIds.has(id)), unavailable_note: 'no longer active/available — live re-check, cached data is never served' } : {}),
+      })
+    }
     res.json({
       schema_version: SCHEMA_PRODUCT_DETAIL,
       count: liveRows.length,
