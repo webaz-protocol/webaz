@@ -24,7 +24,7 @@
         : (t('直付') + (o.method ? ' · ' + escHtml(String(o.method)) : '') + (o.recipient_label ? ' · ' + escHtml(String(o.recipient_label)) : ''))
       return '<label style="display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:6px;cursor:pointer">' +
         '<input type="radio" name="aapay-' + id + '" value="' + escHtml(String(o.option_id)) + '"' + (i === recIdx ? ' checked' : '') + '>' +
-        '<span style="flex:1"><span style="font-size:13px;color:#111827;font-weight:500">' + head + (o.recommended ? ' <span style="font-size:10px;color:#4f46e5">· ' + t('推荐') + '</span>' : '') + '</span>' +
+        '<span style="flex:1"><span style="font-size:13px;color:#111827;font-weight:500">' + head + (o.recommended ? ' <span style="font-size:10px;color:#4f46e5">· ' + t('推荐支付方式') + '</span>' : '') + '</span>' +
         '<span style="display:block;font-size:11px;color:#6b7280;margin-top:2px;line-height:1.5">' + escHtml(String(o.settlement_note || '')) + '</span></span></label>'
     }).join('')
     slot.innerHTML = '<div style="font-size:12px;color:#374151;margin-bottom:6px">' + t('选择支付方式(将在你 Passkey 批准时确定)') + '</div>' + rows +
