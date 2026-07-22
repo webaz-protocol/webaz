@@ -34,9 +34,11 @@ function loadCtx() {
     },
   }
   ctx.globalThis = ctx
+  let hydrated = false
   win.aaApprove = async (id: string) => { approvedId = id }
+  win.aaHydrate = () => { hydrated = true }
   vm.createContext(ctx); vm.runInContext(JS, ctx)
-  return { win, slot, card, posted, get approvedId() { return approvedId }, state }
+  return { win, slot, card, posted, get approvedId() { return approvedId }, get hydrated() { return hydrated }, state }
 }
 const call = (c: ReturnType<typeof loadCtx>, fn: string, id: string): Promise<void> => (c.win[fn] as (i: string) => Promise<void>)(id)
 
@@ -56,7 +58,7 @@ const call = (c: ReturnType<typeof loadCtx>, fn: string, id: string): Promise<vo
 {
   const c = loadCtx(); c.state.readResp = { ok: true, data: { rail_chosen: true, options: [] } }
   await call(c, 'aaLoadPay', 'r1')
-  ok('aaLoadPay rail_chosen → clears the selector (normal approve flow)', c.slot.innerHTML === '')
+  ok('aaLoadPay rail_chosen (race) → re-hydrates so the card re-renders as a normal approvable card', c.hydrated === true)
 }
 // ── choose w/o selection → no POST, no approve ──
 {

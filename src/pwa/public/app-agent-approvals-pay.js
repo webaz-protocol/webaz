@@ -14,21 +14,22 @@
     slot.innerHTML = '<div style="font-size:12px;color:#6b7280">' + t('正在载入支付方式…') + '</div>'
     var res = await apiRead('/agent-grants/permission-requests/' + encodeURIComponent(id) + '/payment-options')
     if (!res.ok || !res.data) { slot.innerHTML = '<div style="font-size:12px;color:#dc2626">' + t('支付方式载入失败,请刷新重试') + '</div>'; return }
-    if (res.data.rail_chosen) { slot.innerHTML = ''; return }   // 已选(并发)→ 走普通批准流,选择器隐藏
+    if (res.data.rail_chosen) { if (window.aaHydrate) window.aaHydrate(); return }   // 已选(并发)→ 重新水合,卡片以非 deferred(带批准按钮)重渲
     var opts = Array.isArray(res.data.options) ? res.data.options : []
     if (!opts.length) { slot.innerHTML = '<div style="font-size:12px;color:#991b1b">' + t('该卖家当前无可用支付方式') + '</div>'; return }
+    var eid = escHtml(String(id))   // request id 已在 aaCard 转义;这里在 name/onclick sink 再转一次(幂等)以贯彻转义纪律
     var recIdx = 0; for (var k = 0; k < opts.length; k++) { if (opts[k].recommended) { recIdx = k; break } }
     var rows = opts.map(function (o, i) {
       var head = o.rail === 'escrow'
         ? t('托管(模拟测试轨)')
         : (t('直付') + (o.method ? ' · ' + escHtml(String(o.method)) : '') + (o.recipient_label ? ' · ' + escHtml(String(o.recipient_label)) : ''))
       return '<label style="display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:6px;cursor:pointer">' +
-        '<input type="radio" name="aapay-' + id + '" value="' + escHtml(String(o.option_id)) + '"' + (i === recIdx ? ' checked' : '') + '>' +
+        '<input type="radio" name="aapay-' + eid + '" value="' + escHtml(String(o.option_id)) + '"' + (i === recIdx ? ' checked' : '') + '>' +
         '<span style="flex:1"><span style="font-size:13px;color:#111827;font-weight:500">' + head + (o.recommended ? ' <span style="font-size:10px;color:#4f46e5">· ' + t('推荐支付方式') + '</span>' : '') + '</span>' +
         '<span style="display:block;font-size:11px;color:#6b7280;margin-top:2px;line-height:1.5">' + escHtml(String(o.settlement_note || '')) + '</span></span></label>'
     }).join('')
     slot.innerHTML = '<div style="font-size:12px;color:#374151;margin-bottom:6px">' + t('选择支付方式(将在你 Passkey 批准时确定)') + '</div>' + rows +
-      '<button class="btn btn-primary" style="width:100%;margin-top:4px" onclick="aaChoosePayAndApprove(\'' + id + '\')">🔑 ' + t('确定支付方式并用 Passkey 批准') + '</button>'
+      '<button class="btn btn-primary" style="width:100%;margin-top:4px" onclick="aaChoosePayAndApprove(\'' + eid + '\')">🔑 ' + t('确定支付方式并用 Passkey 批准') + '</button>'
   }
 
   // choose-payment(设轨道 + 重算 params_hash)→ 更新卡片绑定 hash → 走原 Passkey 批准(aaApprove 绑新 hash)。
