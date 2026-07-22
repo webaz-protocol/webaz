@@ -162,7 +162,7 @@ function buildResponse(db: Database.Database, row: Record<string, unknown>, quot
     },
     line_items: lineItems,
     total: { amount_minor: totalU, currency: 'WAZ', currency_exponent: 6 },
-    payable_total: { amount_minor: payableU, currency: 'WAZ', currency_exponent: 6, note: 'total + donation (what an escrow order will debit at creation)' },
+    payable_total: { amount_minor: payableU, currency: 'WAZ', currency_exponent: 6, note: isDeferredRail(rail) ? 'total + donation (the amount payable once you choose a payment method on the confirm page — this quote debits nothing and fixes no rail)' : 'total + donation (what an escrow order will debit at creation)' },
     trade_terms: prod ? { return_days: prod.return_days ?? null, warranty_days: prod.warranty_days ?? null, import_duty_terms: prod.import_duty_terms ?? null, note: 'seller-declared' } : null,
     // BUG-02:配送估计显示【冻结值】(promised_eta_snapshot),不再在响应时重读 listing;旧行无快照 → 回落 live(向后兼容)。
     shipping: { supported: true, handling_hours: prod?.handling_hours ?? null, estimated_days: promised ? promised.estimated_days_text : (prod?.estimated_days ?? null) },

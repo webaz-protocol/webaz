@@ -49,7 +49,7 @@ export function draftView(db: Database.Database, row: Record<string, unknown>): 
     destination: { address_source: 'default', address_summary: `Default address · ${row.dest_region ? String(row.dest_region) : 'region unset'}`, region: row.dest_region == null ? null : String(row.dest_region) },
     payment_rail: String(row.payment_rail),
     total: { amount_minor: Number(row.total_units), currency: String(row.currency ?? 'WAZ'), currency_exponent: 6 },
-    payable_total: { amount_minor: Number(row.payable_units), currency: String(row.currency ?? 'WAZ'), currency_exponent: 6, note: 'total + donation — what an escrow order will debit at creation' },
+    payable_total: { amount_minor: Number(row.payable_units), currency: String(row.currency ?? 'WAZ'), currency_exponent: 6, note: String(row.payment_rail) === 'deferred' ? 'total + donation — the amount payable once you choose a payment method on the confirm page (no debit, no rail fixed by this draft)' : 'total + donation — what an escrow order will debit at creation' },
     donation_bps: Number(row.donation_bps),
     anonymous_recipient: Number(row.anonymous_recipient) === 1,
     created_at: String(row.created_at),
