@@ -512,13 +512,19 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     //   而非详情模型的素平铺 —— 卡片格式从此由响应 schema 确定,不依赖模型选择。total_count = 句柄全集
     //   (>展示数时 widget 自动出 WebAZ 跳转钮)。详情/完整条款仍走原详情模型(card 省略/false)。
     if (card === true) {
+      // total 诚实口径(Codex L):被 revalidation 剔除的 unavailable 项不计入 total —— "还有 N 款"只指
+      //   句柄集里【未展示的真实候选】,不把下架品谎报成"更多"。
+      const unavailN = (selected_ids as string[]).length - liveRows.length
+      const totalHonest = allowed.length - unavailN
       return void res.json({
         schema_version: SCHEMA_PRODUCT_SEARCH,
         mode: 'agent', sort: 'newest',
         count: liveRows.length,
-        total_count: allowed.length,
+        total_count: totalHonest,
+        result_handle,   // Codex MED:widget 的每卡「详情」按钮依赖 out.result_handle —— 回传同一句柄,买家选中后可继续取详情/完整条款
+        result_handle_expires_in_s: 600,
         ...(fxD ? { fx: fxD } : {}),
-        ...(allowed.length > liveRows.length ? { more_url: 'https://webaz.xyz/#discover' } : {}),
+        ...(totalHonest > liveRows.length ? { more_url: 'https://webaz.xyz/#discover' } : {}),
         sellers: sellersIndex(liveRows),
         products: liveRows.map(r => {
           const f = formatProductForAgent(r, req)

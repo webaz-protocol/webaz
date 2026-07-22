@@ -133,7 +133,7 @@ try {
   const c1 = scOf(await call({ result_handle: handle, selected_ids: ids.slice(0, 2), card: true }))
   const cp = (c1.products as Array<Record<string, unknown>>) ?? []
   ok('H-2e card:true → product_search.model.v1 with search projection rows', c1.schema_version === 'webaz.product_search.model.v1' && cp.length === 2 && typeof (cp[0].price as Record<string, unknown>)?.amount_minor === 'number', JSON.stringify(c1).slice(0, 200))
-  ok('H-2f card:true → total_count = full handle set + more_url jump to WebAZ when more than shown', c1.total_count === ids.length && (ids.length > 2 ? /webaz\.xyz/.test(String(c1.more_url)) : true))
+  ok('H-2f card:true → result_handle echoed (widget Detail buttons work) + honest total_count + more_url jump when more real candidates than shown', c1.result_handle === handle && c1.total_count === ids.length && (ids.length > 2 ? /webaz\.xyz/.test(String(c1.more_url)) : true))
   ok('H-2g card:true response carries NO internal fields', !FORBIDDEN.test(JSON.stringify(c1)))
   ok('H-2e detail summary text carries the ids (text-only clients keep working)', ids.slice(0, 2).every(id => String((d1r.content as Array<{ text: string }>)[0].text).includes(id)))
   ok('H-2f detail envelope carries the fx display table (stale-flagged, display-only note)',
