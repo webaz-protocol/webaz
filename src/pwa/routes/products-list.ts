@@ -29,7 +29,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { createHmac } from 'crypto'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
-import { randomBytes } from 'crypto'
+import { issueResultHandle } from '../mcp-result-handle.js'  // result_handle 单一签发助手
 import { genuineSalePredicate } from '../../layer0-foundation/L0-2-state-machine/genuine-sale.js'  // RFC-018 PR4: 真实成交(排除全额退货)
 import { SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL, projectProductModel, projectProductDetail, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1/2: agent 模式 Model Projection + 按需详情
 import { getUsdRates } from '../../fx-rates.js'  // USDC→本地法币显示换算(display-only,绝非结算路径)
@@ -408,14 +408,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     //   UI Projection / result_handle 按需取。i18n 标题与 agent_summary 仍经 formatProductForAgent 单源生成。
     // MCP Token PR-2:签发 result_handle —— 只存本页 id 选择集(零载荷),10 分钟 TTL。
     //   详情经 /api/products/result-fetch 按 id 活读(重跑 active 可见性谓词),句柄绝不携带数据本身。
-    let resultHandle: string | null = null
-    if (rows.length) {
-      resultHandle = 'res_' + randomBytes(16).toString('hex')
-      try {
-        await dbRun("INSERT INTO mcp_result_cache (handle_id, subject, tool, item_ids, context, expires_at) VALUES (?,?,?,?,?, datetime('now','+10 minutes'))",
-          [resultHandle, null, 'webaz_search', JSON.stringify(rows.map(r => String(r.id))), JSON.stringify({ sort, category: category ?? null, q: q ? 'set' : null }), ])
-      } catch (e) { resultHandle = null; console.warn('[result-handle] issue failed:', (e as Error).message) }   // 缓存面故障不阻断搜索本体,但留可观测日志(Codex L-2)
-    }
+    const resultHandle = await issueResultHandle(rows.map(r => String(r.id)), 'webaz_search', { sort, category: category ?? null, q: q ? 'set' : null })   // 单一签发助手(与 discover 同源)
     // USDC 显示换算表(与 /api/fx/rates 同源;fail-soft 省略)—— 模型/组件据此给出"≈ 本地法币"对照
     let fx: Record<string, unknown> | null = null
     try { const snap = await getUsdRates(); fx = { base: snap.base, rates: snap.rates, as_of: snap.as_of, stale: snap.stale, note: 'display-only conversion — never a settlement path' } } catch { fx = null }
@@ -427,8 +420,10 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       detail_required_for_card: true,
       selection_required: true,
       selectable_ids: rows.map(r => String(r.id)),
-      detail_fetch_template: { tool: 'webaz_search', arguments: { result_handle: resultHandle, selected_ids: ['<pick 1-5 ids from selectable_ids>'] } },
-      detail_usage: 'Fetch details ONLY for the product(s) the buyer is deciding on (usually 1); never bulk-fetch all results for display.',   // A2.1:防模型为展示批量拉详情(实测 5 全拉=巨量冗余输出)
+      // 契约:泛搜索有多个结果时,渲染 UP TO 5 一张对比卡(而非缩成 1)。selected_ids 预填本页前 5 个 id
+      //   (只是"渲染这几个",不为任一背书);完整条款仍只在选定/下单前取。
+      detail_fetch_template: { tool: 'webaz_search', arguments: { result_handle: resultHandle, selected_ids: rows.slice(0, 5).map(r => String(r.id)) } },
+      detail_usage: 'When multiple results match, display UP TO 5 in ONE comparison card (do NOT narrow to a single product). Fetch details for the whole shown set via detail_fetch_template; fetch FULL terms only after the buyer selects a product or before quote/order confirmation — never bulk-fetch full terms for every result.',
     } : {}
     res.json({
       schema_version: SCHEMA_PRODUCT_SEARCH,

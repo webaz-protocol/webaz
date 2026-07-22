@@ -3164,8 +3164,9 @@ export async function handleDiscover(args: Record<string, unknown>): Promise<Rec
   if (args.quantity !== undefined) body.quantity = args.quantity
   const r = await apiCall('/api/agent/discover', { method: 'POST', apiKey: cred.token, body })
   if (r.error_code === 'PERMISSION_REQUIRED') return { ...r, retry_after_approval: true, hint: 'Your grant lacks buyer_discover. Re-connect via OAuth so the grant carries the read scope, then retry.' }
-  // A3-3:discover 无卡模板 —— 引导模型转 search 出交互卡(而不是让宿主静态自渲染一面文字墙,R2 实锤)。
-  if (!('error' in r)) (r as Record<string, unknown>).display_hint = 'discover has NO interactive card. To SHOW buyable cards, follow up with webaz_search (query = the exact product title you picked); do not render these rows as a wall of text.'
+  // 调用契约:discover 的展示引导(display_hint + result_handle + detail_fetch_template)现由
+  //   /api/agent/discover 路由签发(多结果 → UP TO 5 一张对比卡,不缩单品、不模糊乱凑),此处原样透传,
+  //   不再覆写成旧的"复制某款完整标题去 webaz_search"funneling 引导(那会严格匹配缩成单品)。
   return r
 }
 
