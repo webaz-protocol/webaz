@@ -46,6 +46,8 @@ export async function approveAndExecuteOrderSubmit(db: Database.Database, deps: 
   getProtocolParam: <T>(key: string, fallback: T) => T
   generateId: (p: string) => string
   createOrderLoopback: CreateOrderLoopback
+  expectedParamsHash?: string   // RFC-029 PR-3:Passkey 门校验过的 params_hash;CAS claim 后再核一次,
+                                //   防"票据铸后被 choose-payment 改轨"的 TOCTOU(多进程/异步 DB 下也 robust,非仅单进程)
 }): Promise<SubmitExecResult> {
   const { requestId, approverId, nowIso } = deps
   const fail = (error_code: string, http: number, error: string): SubmitExecResult => ({ ok: false, error_code, http, error })
@@ -75,6 +77,14 @@ export async function approveAndExecuteOrderSubmit(db: Database.Database, deps: 
       return { ok: true, already_executed: true, order_id: d1?.order_id ?? undefined }
     }
     if (fresh?.status !== 'approved') return fail('SUBMIT_REQUEST_NOT_PENDING', 409, '提交请求已过期或已处理')
+  }
+
+  // RFC-029 PR-3(MA5 robust):CAS claim 后请求已冻结 approved(choose-payment 只改 pending)。此刻重读
+  //   params_hash 与 Passkey 门校验过的值比对 —— 若票据铸后有并发 choose-payment 改了轨道/条款,现值已变 → 硬拒。
+  //   单进程 better-sqlite3 下门→exec 同步不可插入;此核对使不变量在多进程/异步 DB 下亦 robust。
+  if (deps.expectedParamsHash != null) {
+    const cur = db.prepare('SELECT params_hash FROM agent_permission_requests WHERE id = ?').get(requestId) as { params_hash: string } | undefined
+    if (!cur || String(cur.params_hash) !== deps.expectedParamsHash) return failTerminal('PARAMS_HASH_CHANGED', 409, '你 Passkey 批准的支付方式/条款已被更改 —— 已拒绝执行;请在确认页重新选择并批准')
   }
 
   const draftId = String(reqRow.order_id)

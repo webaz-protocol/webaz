@@ -875,6 +875,7 @@ jobs:
       - run: npm run test:buyer-quote
       - run: npm run test:rail-choice-defer
       - run: npm run test:payment-options
+      - run: npm run test:choose-payment
       - run: npm run test:order-draft
       - run: npm run test:order-submit-approve
       - run: npm run test:agent-buy-retired
