@@ -517,7 +517,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
         detail_required_for_card: true,
         selectable_ids: candidateIds,
         detail_fetch_template: { tool: 'webaz_search', arguments: { result_handle: discoverHandle, selected_ids: candidateIds.slice(0, 5) } },
-        display_hint: 'discover has no interactive card of its own. To DISPLAY these candidates, call webaz_search with the detail_fetch_template (result_handle + up to 5 ids from selectable_ids) — it renders ONE comparison card of up to 5 products. Do NOT copy a candidate title into a keyword search (that strict-matches down to a single product), and do NOT drop results below what matched. Fetch FULL terms only after the buyer picks a product. When recommending one, keep the comparison card visible and mark the pick with recommend_id.',
+        display_hint: 'discover has no interactive card of its own. To DISPLAY these candidates, call webaz_search with the detail_fetch_template (result_handle + up to 5 ids from selectable_ids) — it renders ONE comparison card of up to 5 products. Do NOT copy a candidate title into a keyword search (that strict-matches down to a single product), and do NOT drop results below what matched. Some ids may re-validate as unavailable at fetch time (returned as unavailable_ids) — render the rest. Fetch FULL terms only after the buyer picks a product.',
       } : {}),
       // P0-C 诚实披露:候选价的 USDC 是内部模拟单位的显示别名,不代表真实 USDC/法币托管或结算。
       pricing_note: 'Prices are shown in USDC as a display alias for the internal simulated unit — NOT real USDC/fiat custody or settlement. Final payable is authoritative only from webaz_quote_order.',

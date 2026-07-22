@@ -17,7 +17,7 @@ function renderBody(oai, out){
   if(out.schema_version==='webaz.product_detail.model.v1'){
     root.textContent=''
     if(__lastSearch){ var back=el('button',null,L('← 返回列表','← Back to list')); back.addEventListener('click',function(){ renderBody(oai, __lastSearch) }); root.appendChild(back) }
-    else if(typeof oai.callTool==='function'&&(out.products||[]).length){   // A3-6:本实例没渲染过列表(详情覆盖/独立详情卡)→ 按精确标题就地重搜回列表,买家永远回得去
+    else if(typeof oai.callTool==='function'&&(out.products||[]).length===1){   // A3-6:仅【单件】详情且本实例没渲染过列表 → 按标题就地重搜回列表(严格匹配返回该件本身,非"从多缩一"漏斗)。多件详情本身就是列表视图,不再给会缩成单品的"返回列表"钮(RFC-029 后续多卡修复,Codex HIGH)。
       var back2=el('button',null,L('← 返回商品列表','← Back to products'))
       back2.addEventListener('click',onceGuard(function(){
         back2.textContent=L('载入列表中…','Loading list…')
