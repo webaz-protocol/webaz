@@ -126,6 +126,15 @@ try {
   ok('H-2c NO internal fields in detail projection', !FORBIDDEN.test(d1j), d1j.slice(0, 200))
   const perItem = Math.round(d1j.length / dp.length)
   ok('H-2d detail budget ≤1600B/item', perItem <= 1600, `perItem=${perItem}`)
+
+  // H-2e card:true(RFC-029 多卡稳定化):同一 handle → 标准搜索卡模型(product_search.model.v1),
+  //   total_count = 句柄全集(>展示数时带 more_url「前往 WebAZ」),products 是搜索投影(price 对象),
+  //   卡片格式由响应 schema 确定 —— 不再依赖模型选择渲染形态。detail 路径(card 省略)原样不变(H-2a 已锁)。
+  const c1 = scOf(await call({ result_handle: handle, selected_ids: ids.slice(0, 2), card: true }))
+  const cp = (c1.products as Array<Record<string, unknown>>) ?? []
+  ok('H-2e card:true → product_search.model.v1 with search projection rows', c1.schema_version === 'webaz.product_search.model.v1' && cp.length === 2 && typeof (cp[0].price as Record<string, unknown>)?.amount_minor === 'number', JSON.stringify(c1).slice(0, 200))
+  ok('H-2f card:true → total_count = full handle set + more_url jump to WebAZ when more than shown', c1.total_count === ids.length && (ids.length > 2 ? /webaz\.xyz/.test(String(c1.more_url)) : true))
+  ok('H-2g card:true response carries NO internal fields', !FORBIDDEN.test(JSON.stringify(c1)))
   ok('H-2e detail summary text carries the ids (text-only clients keep working)', ids.slice(0, 2).every(id => String((d1r.content as Array<{ text: string }>)[0].text).includes(id)))
   ok('H-2f detail envelope carries the fx display table (stale-flagged, display-only note)',
     !!(d1.fx as Record<string, unknown>)?.rates && typeof (d1.fx as Record<string, unknown>)?.stale === 'boolean' && /display-only/.test(String((d1.fx as Record<string, unknown>)?.note)), JSON.stringify(d1.fx ?? null))
