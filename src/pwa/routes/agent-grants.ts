@@ -25,6 +25,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { createHash, randomBytes } from 'node:crypto'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
+import { issueResultHandle } from '../mcp-result-handle.js'  // discover/search 共用 result_handle 签发
 import { initAgentDelegationGrantsSchema, initAgentPairingSchema, initAgentGrantAuthLogSchema, initAgentPermissionRequestsSchema, initDemandSignalsSchema, initOrderQuotesSchema, initOrderDraftsSchema, initOAuthSchema } from '../../runtime/webaz-schema-helpers.js'
 import { validateRequestedCapabilities, clampTtlSeconds, grantIsActive, resolveBundle, durationAllowedForScopes, suggestedDurationForScopes, allowedDurationsForScopes, durationToSeconds, riskLevelForScopes, type GrantDuration } from '../../runtime/agent-grant-scopes.js'
 import { generateUserCode, verifyPkceS256, clampPairingTtlSeconds, pairingApprovable, pairingRetrievable } from '../../runtime/agent-pairing.js'
@@ -503,8 +504,21 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
       console.error('[discover] demand-signal write failed:', (e as Error).message)
       return void res.status(503).json({ error: 'demand-signal ledger unavailable; discover is disclosed-as-recorded and will not run unrecorded', error_code: 'DEMAND_SIGNAL_WRITE_FAILED' })
     }
+    // 调用契约:discover 无自渲染卡 → 签发 result_handle,让模型据 detail_fetch_template 一次性渲染 UP TO 5 候选
+    //   对比卡,而非复制某款完整标题去 webaz_search(严格匹配→缩成单品),也不因结果不够而模糊乱凑。
+    //   id 面签发(渲染这几个 id),不引入任何模糊匹配 —— 严格匹配铁律不变。
+    const candidateIds = candidates.map(c => String((c as Record<string, unknown>).product_id))
+    const discoverHandle = candidates.length ? await issueResultHandle(candidateIds, 'webaz_search', { discover: true, category: categoryResolved ?? null }) : null
     res.json({
       count: candidates.length, candidates,
+      ...(discoverHandle ? {
+        result_handle: discoverHandle,
+        result_handle_expires_in_s: 600,
+        detail_required_for_card: true,
+        selectable_ids: candidateIds,
+        detail_fetch_template: { tool: 'webaz_search', arguments: { result_handle: discoverHandle, selected_ids: candidateIds.slice(0, 5) } },
+        display_hint: 'discover has no interactive card of its own. To DISPLAY these candidates, call webaz_search with the detail_fetch_template (result_handle + up to 5 ids from selectable_ids) — it renders ONE comparison card of up to 5 products. Do NOT copy a candidate title into a keyword search (that strict-matches down to a single product), and do NOT drop results below what matched. Fetch FULL terms only after the buyer picks a product. When recommending one, keep the comparison card visible and mark the pick with recommend_id.',
+      } : {}),
       // P0-C 诚实披露:候选价的 USDC 是内部模拟单位的显示别名,不代表真实 USDC/法币托管或结算。
       pricing_note: 'Prices are shown in USDC as a display alias for the internal simulated unit — NOT real USDC/fiat custody or settlement. Final payable is authoritative only from webaz_quote_order.',
       match_semantics: keywordMatch,

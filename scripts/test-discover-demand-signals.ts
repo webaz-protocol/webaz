@@ -84,7 +84,19 @@ try {
     ok('D-3 EVERY candidate labeled discovery_candidate (honest, never exact-match cosplay)', !!cands?.length && cands.every(c => c.label === 'discovery_candidate'))
     ok('D-4 response carries the collection disclosure', /demand signal/i.test(String(r.disclosure)))
     const sig = signals()
-    ok('D-5 hit query ALSO recorded (result_count = 2)', sig.length === 1 && sig[0].result_count === 2 && sig[0].human_id === 'buyer1' && sig[0].source === 'mcp_discover', JSON.stringify(sig).slice(0, 200)) }
+    ok('D-5 hit query ALSO recorded (result_count = 2)', sig.length === 1 && sig[0].result_count === 2 && sig[0].human_id === 'buyer1' && sig[0].source === 'mcp_discover', JSON.stringify(sig).slice(0, 200))
+    // RFC-029 后续 — discover 多结果契约:签发 result_handle + detail_fetch_template(UP TO 5 一张对比卡),
+    //   不funnel成"复制某款完整标题去 webaz_search"(严格匹配→单品),也不模糊乱凑。
+    ok('D-5a multi-result → result_handle + selectable_ids (id-面渲染,不复制标题)', typeof r.result_handle === 'string' && Array.isArray(r.selectable_ids) && (r.selectable_ids as unknown[]).length === cands!.length)
+    ok('D-5b detail_fetch_template = webaz_search(result_handle, selected_ids) with UP TO 5 ids (not 1)', (() => { const t = r.detail_fetch_template as { tool?: string; arguments?: { result_handle?: string; selected_ids?: unknown[] } } | undefined; return !!t && t.tool === 'webaz_search' && t.arguments?.result_handle === r.result_handle && Array.isArray(t.arguments?.selected_ids) && (t.arguments!.selected_ids as unknown[]).length === Math.min(5, cands!.length) })())
+    ok('D-5c display_hint steers a multi-product comparison card + recommend_id, NEVER "exact product title you picked"', typeof r.display_hint === 'string' && /comparison card|up to 5/i.test(String(r.display_hint)) && /recommend_id/.test(String(r.display_hint)) && !/exact product title you picked/i.test(String(r.display_hint))) }
+  // 6-candidate case → count=6, selectable_ids=6, template caps selected_ids at 5 (一张卡展示5,不缩1、不越5)
+  db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller_m','SM','seller','k_sm')").run()
+  for (let i = 0; i < 6; i++) db.prepare("INSERT INTO products (id,seller_id,title,description,price,currency,stock,category,status) VALUES (?,?,?,?,?,?,?,?,?)").run('prd_m' + i, 'seller_m', 'Multi Tray ' + i, 'd', 10 + i, 'WAZ', 5, 'desk_organizer', 'active')
+  { const r = await mcp.handleDiscover({ category: 'desk_organizer' })
+    const cands = r.candidates as Array<Record<string, unknown>> | undefined
+    ok('D-5d 6 candidates → count=6, selectable_ids=6 (all preserved, none dropped)', Array.isArray(cands) && cands.length === 6 && Array.isArray(r.selectable_ids) && (r.selectable_ids as unknown[]).length === 6)
+    ok('D-5e template caps at 5 for the one comparison card', ((r.detail_fetch_template as { arguments?: { selected_ids?: unknown[] } }).arguments!.selected_ids as unknown[]).length === 5) }
   { const r = await mcp.handleDiscover({ category: 'phone_stand', ship_to_region: 'US', max_price: 50 })   // SG-only 被目的地过滤
     const cands = r.candidates as Array<Record<string, unknown>> | undefined
     ok('D-6 sale_regions destination filter (SG-only listing excluded for US)', Array.isArray(cands) && cands.length === 1 && cands[0].product_id === 'prd_all', JSON.stringify(r).slice(0, 300)) }
