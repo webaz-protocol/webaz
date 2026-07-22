@@ -25,6 +25,16 @@
  * No money moves, no order is created here — the human still Passkey-approves afterwards. Safety: a
  * 'deferred' rail can never create an order (order-submit-exec hard-闸), so a request stuck before this
  * step simply cannot execute.
+ *
+ * KNOWN LIMITATION (pre-existing, whole direct_p2p flow — not introduced here): params_hash binds the
+ * direct_receive_account_id (the account IDENTITY), not the account's mutable CONTENT (instruction/QR/
+ * currency/label editable via PUT /api/direct-receive/accounts/:id). So a chosen direct option can
+ * never silently switch to a DIFFERENT account (a deactivated/changed id → resolveDirectReceive NONE →
+ * create rejects DIRECT_RECEIVE_ACCOUNT_INVALID), but the SAME account's content edited in the
+ * choice→Passkey→create window would flow through under the bound id. The buyer always pays per the
+ * instruction shown on the final order (off-protocol), so this is a review-vs-final integrity gap, not
+ * a fund misdirection to a third party. Binding account-content into params_hash is a shared-hash change
+ * (migration-sensitive, affects the agent direct_p2p flow too) — tracked as a follow-up, not this PR.
  */
 import type Database from 'better-sqlite3'
 import { computeBuyerQuote } from './buyer-quote.js'
