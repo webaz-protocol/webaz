@@ -23,12 +23,15 @@
  *   - 金额/费率全程 BigInt 比较,绝不 Number() —— 6dp units 的 1 unit 误差就是钱。
  *
  * 范围边界(刻意不做,留后续 PR):
- *   - Released/Resolved 只镜像 + log(),结算映射(担保释放→打款/退款记账)是 PR-B5。
+ *   - Released:B5 已接线 —— 镜像后调 applyUsdcEscrowRelease 收敛状态 + 纯记账镜像(零 wallets 写)。
+ *   - Resolved:B7 才接(链上仲裁裁决消费);现阶段镜像 + alertAdmins(arbiter key 系统外使用=事故级)。
  *   - Disputed 只镜像 + alertAdmins,链上仲裁裁决消费是 PR-B7。
  */
 import type Database from 'better-sqlite3'
 import { createPublicClient, http, parseAbiItem } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
+import { alertUsdcAdmins, applyUsdcEscrowRelease } from '../../usdc-escrow-settle.js'
+import type { UsdcSettleDeps } from '../../usdc-escrow-settle.js'
 
 // ─── 可调参数(导出,便于测试引用/覆盖)─────────────────────────
 export const CONFIRMATIONS = 12n
@@ -55,7 +58,8 @@ export interface WatcherChainClient {
 
 export interface WatcherDeps {
   db: Database.Database
-  transition: (db: Database.Database, orderId: string, to: 'paid', actorId: string, evidence: string[], note: string) => { success: boolean; error?: string }
+  transition: (db: Database.Database, orderId: string, to: 'paid' | 'confirmed' | 'completed', actorId: string, evidence: string[], note: string) => { success: boolean; error?: string }
+  settleOrder: (orderId: string) => void   // B5:Released 收口调 server.ts settleOrder(usdc 分支=记账镜像)
   generateId: (p: string) => string
   contractAddress: string
   client?: WatcherChainClient          // 测试注入;缺省用 viem createPublicClient(env BASE_RPC_URL + NETWORK)
@@ -111,16 +115,9 @@ function buildDefaultClient(): WatcherChainClient {
   }
 }
 
-/** 仿 server.ts 热钱包告警先例(L7906-7916):写全体 admin 的 notifications + console.error 兜底。 */
+/** 全体 admin 告警:复用 usdc-escrow-settle 的 alertUsdcAdmins(B5 抽出,消除重复实现)。 */
 function alertAdmins(deps: WatcherDeps, title: string, body: string): void {
-  try {
-    const admins = deps.db.prepare("SELECT id FROM users WHERE role = 'admin'").all() as Array<{ id: string }>
-    for (const a of admins) {
-      deps.db.prepare('INSERT INTO notifications (id, user_id, title, body, order_id) VALUES (?,?,?,?,NULL)')
-        .run(deps.generateId('ntf'), a.id, title, body)
-    }
-  } catch { /* 通知失败不阻断 watcher 主流程 */ }
-  console.error('[usdc-escrow watcher]', title, body)
+  alertUsdcAdmins(deps.db, deps.generateId, title, body)
 }
 
 /** 镜像一条链上事件到 usdc_escrow_chain_events(append-only,INSERT OR IGNORE 天然幂等)。 */
@@ -270,8 +267,16 @@ function processLog(deps: WatcherDeps, l: WatcherLog): void {
       alertAdmins(deps, '🚨 USDC 担保:链上争议', `order_key ${orderKey} 发起链上争议(tx ${l.transactionHash})—— 链上仲裁裁决消费是 PR-B7,现阶段需人工知悉。`)
       break
     case 'Released':
+      // B5:镜像后收敛状态 + 纯记账镜像(零 wallets 写)。payload 逐字序列化(bigint→string,与镜像同款)。
+      applyUsdcEscrowRelease(
+        deps.db,
+        { transition: deps.transition as UsdcSettleDeps['transition'], settleOrder: deps.settleOrder, generateId: deps.generateId },
+        { order_key: orderKey, tx_hash: l.transactionHash.toLowerCase(), payload_json: JSON.stringify(l.args, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) },
+        (t, b) => alertAdmins(deps, t, b),
+      )
+      break
     case 'Resolved':
-      log(`[usdc-escrow watcher] mirrored ${l.eventName} for order_key ${orderKey} (tx ${l.transactionHash}) — 结算映射是 PR-B5,本 PR 不转移任何订单/资金状态`)
+      alertAdmins(deps, '🚨 USDC 担保:链上仲裁裁决', `order_key ${orderKey} 出现链上 Resolved(tx ${l.transactionHash})但 B7 未接线 —— arbiter key 在系统外被使用,立即人工核。`)
       break
     default:
       log(`[usdc-escrow watcher] unknown event ${l.eventName} mirrored, ignored`)

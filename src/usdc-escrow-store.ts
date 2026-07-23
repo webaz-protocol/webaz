@@ -48,7 +48,7 @@ export function initUsdcEscrowSchema(db: Database.Database): void {
     auto_release_at TEXT NOT NULL,            -- ISO;合约里为 unix 秒(voucher 快照的人读镜像)
     voucher_sig     TEXT NOT NULL,            -- EIP-712 signature hex
     auth_expires_at TEXT NOT NULL,
-    status          TEXT NOT NULL DEFAULT 'issued',  -- issued | funded | void
+    status          TEXT NOT NULL DEFAULT 'issued',  -- issued | funded | released | void(B5:Released 消费后 funded→released)
     created_at      TEXT DEFAULT (datetime('now'))
   )`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_uei_key ON usdc_escrow_intents(order_key)`)
@@ -99,6 +99,19 @@ export function initUsdcEscrowSchema(db: Database.Database): void {
     id                 TEXT PRIMARY KEY,      -- 恒为 'main'
     last_scanned_block INTEGER NOT NULL DEFAULT 0,
     updated_at         TEXT
+  )`)
+
+  // B5 费用镜像:链上 pull-payment 平台费的【只读镜像】(不是应收 —— direct_p2p 的 fee AR
+  // 语义不适用,钱已在合约 accruedFees 收讫)。写入仅经 settleUsdcEscrowAtCompletion,
+  // INSERT OR IGNORE 幂等(order_id PK = 一单一行的幂等锚)。
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS usdc_escrow_fee_ledger (
+    order_id     TEXT PRIMARY KEY,          -- 一单一行(幂等锚)
+    order_key    TEXT NOT NULL,
+    amount_units INTEGER NOT NULL,          -- feePaid(USDC 6dp;链上已收讫,本行仅镜像)
+    auto_release INTEGER NOT NULL DEFAULT 0,
+    tx_hash      TEXT NOT NULL,
+    created_at   TEXT DEFAULT (datetime('now'))
   )`)
 }
 
