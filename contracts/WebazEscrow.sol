@@ -35,8 +35,26 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
  *
  * ── Conservation ──
  *  - totalLocked == Σ amount over escrows in state Funded|Disputed, at all times.
- *  - usdc.balanceOf(this) >= totalLocked at all times (excess = unattributed inflow, ignored).
- *  - Every terminal transition pays out exactly `amount`: buyerRefund + sellerPay + fee == amount.
+ *  - usdc.balanceOf(this) >= totalLocked + accruedFees at all times; the excess above that is
+ *    unattributed inflow, recoverable ONLY to `treasury` via rescueExcessUsdc (bounded — it can
+ *    never touch locked escrows or accrued fees).
+ *  - Every terminal transition accounts for exactly `amount`: buyerRefund + sellerPay + fee == amount.
+ *  - Platform fees are PULL-payment (accruedFees → withdrawFees() → treasury): a fee transfer can
+ *    therefore NEVER block a buyer refund or seller payout (treasury blacklist isolation).
+ *
+ * ── USDC blacklist (Circle denylist) residual risk — explicitly accepted at deploy ──
+ *  - seller blacklisted: release/autoRelease revert → buyer flags (or arbiter flags any time) and
+ *    arbiterResolve(amount) refunds the buyer in full without touching the seller address.
+ *  - buyer blacklisted: refund path reverts → arbiterResolve(0) pays the seller without touching
+ *    the buyer address. (With pull-fees, refund==amount touches ONLY the buyer; refund==0 touches
+ *    ONLY the seller — each ruling can route around one blacklisted side.)
+ *  - BOTH parties blacklisted: funds stay locked (bounded by perTxCap). Accepted.
+ *
+ * ── Deadline semantics (product contract) ──
+ *  - autoReleaseAt is EXCLUSIVE for the buyer: at t == autoReleaseAt the buyer can no longer
+ *    flagDispute and anyone may autoRelease (same-block ordering races are possible on Base).
+ *    The backend/UI MUST surface the deadline as exclusive with a safety margin; the platform
+ *    arbiter can always freeze a Funded escrow before payout as the watchtower of last resort.
  */
 contract WebazEscrow is EIP712, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -85,6 +103,7 @@ contract WebazEscrow is EIP712, ReentrancyGuard {
     mapping(bytes32 => EscrowRec) public escrows; // orderKey => record (orderKey = keccak256(orderId))
     mapping(bytes32 => bool) public consumedAuthorization; // EIP-712 digest replay guard
     uint256 public totalLocked; // Σ Funded|Disputed amounts (conservation anchor)
+    uint256 public accruedFees; // platform fees accrued in-contract, pulled via withdrawFees()
 
     // ── events ──
     event Deposited(
@@ -103,6 +122,8 @@ contract WebazEscrow is EIP712, ReentrancyGuard {
     event TreasuryTransferred(address indexed oldTreasury, address indexed newTreasury);
     event SignerRotated(address indexed oldSigner, address indexed newSigner);
     event NonEscrowTokenRescued(address indexed token, address indexed to, uint256 amount);
+    event FeesWithdrawn(address indexed treasury, uint256 amount);
+    event ExcessUsdcRescued(address indexed treasury, uint256 amount);
 
     // ── errors ──
     error NotOwner();
@@ -125,6 +146,8 @@ contract WebazEscrow is EIP712, ReentrancyGuard {
     error RefundExceedsAmount();
     error OverCapCeiling();
     error CannotRescueEscrowToken();
+    error NothingToWithdraw();
+    error DepositShortfall();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -203,7 +226,10 @@ contract WebazEscrow is EIP712, ReentrancyGuard {
             state: EscrowState.Funded
         });
         totalLocked += amount;
+        // 实收校验:防部署参数配错成 fee-on-transfer/no-op token 造成假入账(Codex B1-R1 High-1)。
+        uint256 balBefore = usdc.balanceOf(address(this));
         usdc.safeTransferFrom(msg.sender, address(this), amount);
+        if (usdc.balanceOf(address(this)) - balBefore != amount) revert DepositShortfall();
         emit Deposited(orderKey, msg.sender, seller, amount, feeBps, autoReleaseAt);
     }
 
@@ -269,9 +295,9 @@ contract WebazEscrow is EIP712, ReentrancyGuard {
 
         e.state = buyerRefund == amount ? EscrowState.Refunded : EscrowState.Resolved;
         totalLocked -= amount;
+        if (fee > 0) accruedFees += fee; // pull-payment: fee can never block a party payout
         if (buyerRefund > 0) usdc.safeTransfer(e.buyer, buyerRefund);
         if (sellerPay > 0) usdc.safeTransfer(e.seller, sellerPay);
-        if (fee > 0) usdc.safeTransfer(treasury, fee);
         emit Resolved(orderKey, buyerRefund, sellerPay, fee);
     }
 
@@ -338,6 +364,25 @@ contract WebazEscrow is EIP712, ReentrancyGuard {
         authorizationSigner = newSigner;
     }
 
+    /// @notice Pull accrued platform fees to the CURRENT treasury. Callable by anyone (funds can
+    ///         only ever land at `treasury`; rotate treasury first if it is blacklisted).
+    function withdrawFees() external nonReentrant {
+        uint256 amount = accruedFees;
+        if (amount == 0) revert NothingToWithdraw();
+        accruedFees = 0;
+        usdc.safeTransfer(treasury, amount);
+        emit FeesWithdrawn(treasury, amount);
+    }
+
+    /// @notice Recover raw USDC sent here by mistake — bounded to the surplus above every locked
+    ///         escrow and all accrued fees, and it can ONLY go to `treasury` (no arbitrary sink).
+    function rescueExcessUsdc() external onlyOwner nonReentrant {
+        uint256 excess = usdc.balanceOf(address(this)) - totalLocked - accruedFees;
+        if (excess == 0) revert NothingToWithdraw();
+        usdc.safeTransfer(treasury, excess);
+        emit ExcessUsdcRescued(treasury, excess);
+    }
+
     /// @notice Rescue tokens sent here by mistake. The escrow token itself can NEVER be rescued.
     function rescueToken(address token, address to, uint256 amount) external onlyOwner {
         if (token == address(usdc)) revert CannotRescueEscrowToken();
@@ -361,8 +406,8 @@ contract WebazEscrow is EIP712, ReentrancyGuard {
         uint256 sellerPay = amount - fee;
         e.state = EscrowState.Released;
         totalLocked -= amount;
+        if (fee > 0) accruedFees += fee; // pull-payment (treasury blacklist can never block the seller)
         usdc.safeTransfer(e.seller, sellerPay);
-        if (fee > 0) usdc.safeTransfer(treasury, fee);
         emit Released(orderKey, auto_, sellerPay, fee);
     }
 }

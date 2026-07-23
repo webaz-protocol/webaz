@@ -184,19 +184,26 @@ contract WebazEscrowTest is Test {
         vm.prank(buyer);
         esc.buyerRelease(orderId);
         assertEq(usdc.balanceOf(seller), 20e6 - (20e6 * 200) / 10_000);
+        assertEq(esc.accruedFees(), (20e6 * 200) / 10_000); // fee accrued in-contract (pull)
     }
 
     // ───────────────────────── release ─────────────────────────
 
-    function test_buyerRelease_paysSellerMinusFee() public {
+    function test_buyerRelease_paysSellerMinusFee_feeIsPull() public {
         _deposit(orderId, 50e6, 200);
         vm.prank(buyer);
         esc.buyerRelease(orderId);
         assertEq(usdc.balanceOf(seller), 49e6); // 50 − 2%
-        assertEq(usdc.balanceOf(treasury), 1e6);
-        assertEq(usdc.balanceOf(address(esc)), 0);
+        assertEq(usdc.balanceOf(treasury), 0); // pull-payment: nothing pushed
+        assertEq(esc.accruedFees(), 1e6);
+        assertEq(usdc.balanceOf(address(esc)), 1e6); // fee held until withdrawFees
         assertEq(esc.totalLocked(), 0);
         assertTrue(_state(orderId) == WebazEscrow.EscrowState.Released);
+        esc.withdrawFees(); // anyone; lands at treasury only
+        assertEq(usdc.balanceOf(treasury), 1e6);
+        assertEq(esc.accruedFees(), 0);
+        vm.expectRevert(WebazEscrow.NothingToWithdraw.selector);
+        esc.withdrawFees();
     }
 
     function test_buyerRelease_onlyBuyer() public {
@@ -286,8 +293,8 @@ contract WebazEscrowTest is Test {
         uint256 sellerBound = 25e6;
         uint256 fee = (sellerBound * 200) / 10_000;
         assertEq(usdc.balanceOf(seller), sellerBound - fee);
-        assertEq(usdc.balanceOf(treasury), fee);
-        assertEq(usdc.balanceOf(address(esc)), 0);
+        assertEq(esc.accruedFees(), fee); // pull — treasury untouched in the ruling tx
+        assertEq(usdc.balanceOf(address(esc)), fee);
         assertTrue(_state(orderId) == WebazEscrow.EscrowState.Resolved);
     }
 
@@ -318,9 +325,9 @@ contract WebazEscrowTest is Test {
         vm.prank(arbiter);
         esc.arbiterResolve(orderId, refund);
         uint256 paidOut =
-            (usdc.balanceOf(buyer) - buyerBefore) + usdc.balanceOf(seller) + usdc.balanceOf(treasury);
+            (usdc.balanceOf(buyer) - buyerBefore) + usdc.balanceOf(seller) + esc.accruedFees();
         assertEq(paidOut, amount); // refund + sellerPay + fee == amount, exactly
-        assertEq(usdc.balanceOf(address(esc)), 0);
+        assertEq(usdc.balanceOf(address(esc)), esc.accruedFees());
         assertEq(esc.totalLocked(), 0);
     }
 
@@ -330,8 +337,87 @@ contract WebazEscrowTest is Test {
         _deposit(orderId, amount, feeBps);
         vm.prank(buyer);
         esc.buyerRelease(orderId);
-        assertEq(usdc.balanceOf(seller) + usdc.balanceOf(treasury), amount);
+        assertEq(usdc.balanceOf(seller) + esc.accruedFees(), amount);
         assertEq(esc.totalLocked(), 0);
+    }
+
+    // ───────────────────────── audit R1 additions ─────────────────────────
+
+    function test_deposit_feeOnTransferTokenRejected() public {
+        // 部署参数配错成 fee-on-transfer token → 实收 < amount → 拒绝入账(假托管防线)
+        MockFeeOnTransferToken fot = new MockFeeOnTransferToken();
+        WebazEscrow esc2 = new WebazEscrow(address(this), arbiter, treasury, signer, address(fot), CAP_CEILING, CAP);
+        fot.mint(buyer, 100e6);
+        vm.prank(buyer);
+        fot.approve(address(esc2), type(uint256).max);
+        uint64 releaseAt = uint64(block.timestamp + 14 days);
+        uint256 exp = block.timestamp + 1 hours;
+        bytes32 structHash =
+            keccak256(abi.encode(DEPOSIT_TYPEHASH, orderId, buyer, seller, uint256(10e6), uint256(200), uint256(releaseAt), exp));
+        bytes32 digest = MessageHashUtils.toTypedDataHash(esc2.domainSeparator(), structHash);
+        (uint8 v, bytes32 r, bytes32 sg) = vm.sign(signerPk, digest);
+        vm.prank(buyer);
+        vm.expectRevert(WebazEscrow.DepositShortfall.selector);
+        esc2.deposit(orderId, seller, 10e6, 200, releaseAt, exp, abi.encodePacked(r, sg, v));
+    }
+
+    function test_blacklistedSeller_buyerStillMadeWholeViaArbiter() public {
+        // Circle denylist 模拟:seller 被黑 → release 卡死,但 arbiter 全额退款只碰 buyer,资金不搁浅
+        MockBlocklistUSDC bl = new MockBlocklistUSDC();
+        WebazEscrow esc2 = new WebazEscrow(address(this), arbiter, treasury, signer, address(bl), CAP_CEILING, CAP);
+        bl.mint(buyer, 100e6);
+        vm.prank(buyer);
+        bl.approve(address(esc2), type(uint256).max);
+        uint64 releaseAt = uint64(block.timestamp + 14 days);
+        uint256 exp = block.timestamp + 1 hours;
+        bytes32 structHash =
+            keccak256(abi.encode(DEPOSIT_TYPEHASH, orderId, buyer, seller, uint256(20e6), uint256(200), uint256(releaseAt), exp));
+        bytes32 digest = MessageHashUtils.toTypedDataHash(esc2.domainSeparator(), structHash);
+        (uint8 v, bytes32 r, bytes32 sg) = vm.sign(signerPk, digest);
+        vm.prank(buyer);
+        esc2.deposit(orderId, seller, 20e6, 200, releaseAt, exp, abi.encodePacked(r, sg, v));
+
+        bl.setBlocked(seller, true);
+        vm.prank(buyer);
+        vm.expectRevert("blocked");
+        esc2.buyerRelease(orderId); // push to seller blocked — state must roll back
+        assertEq(uint256(_stateOf(esc2, orderId)), uint256(WebazEscrow.EscrowState.Funded));
+        vm.prank(buyer);
+        esc2.flagDispute(orderId);
+        uint256 before = bl.balanceOf(buyer);
+        vm.prank(arbiter);
+        esc2.arbiterResolve(orderId, 20e6); // full refund touches ONLY the buyer → succeeds
+        assertEq(bl.balanceOf(buyer) - before, 20e6);
+    }
+
+    function test_rescueExcessUsdc_boundedToSurplus() public {
+        _deposit(orderId, 40e6, 200); // locked 40
+        usdc.mint(attacker, 7e6);
+        vm.prank(attacker);
+        usdc.transfer(address(esc), 7e6); // raw mistaken inflow
+        esc.rescueExcessUsdc();
+        assertEq(usdc.balanceOf(treasury), 7e6); // exactly the surplus, only to treasury
+        assertEq(usdc.balanceOf(address(esc)), 40e6); // locked escrow untouched
+        vm.expectRevert(WebazEscrow.NothingToWithdraw.selector);
+        esc.rescueExcessUsdc();
+        vm.prank(attacker);
+        vm.expectRevert(WebazEscrow.NotOwner.selector);
+        esc.rescueExcessUsdc();
+    }
+
+    function test_deadline_exactBoundary_buyerLoses_autoWins() public {
+        uint64 releaseAt = _deposit(orderId, 10e6, 200);
+        vm.warp(releaseAt); // t == autoReleaseAt:买家权利已结束(exclusive),任何人可 autoRelease
+        vm.prank(buyer);
+        vm.expectRevert(WebazEscrow.AutoReleaseWindowPassed.selector);
+        esc.flagDispute(orderId);
+        vm.prank(attacker);
+        esc.autoRelease(orderId);
+        assertTrue(_state(orderId) == WebazEscrow.EscrowState.Released);
+    }
+
+    function _stateOf(WebazEscrow e2, bytes32 oid) internal view returns (WebazEscrow.EscrowState st) {
+        (,,,,, st) = e2.escrows(_key(oid));
     }
 
     // ───────────────────────── governance ─────────────────────────
@@ -405,5 +491,32 @@ contract WebazEscrowTest is Test {
         esc.autoRelease(orderId);
         vm.stopPrank();
         assertEq(usdc.balanceOf(address(esc)), 40e6);
+    }
+}
+
+
+// ── audit R1 mocks ──
+contract MockFeeOnTransferToken is MockUSDC {
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        super.transferFrom(from, to, amount - amount / 10); // 10% burn on transfer
+        return true;
+    }
+}
+
+contract MockBlocklistUSDC is MockUSDC {
+    mapping(address => bool) public blocked;
+
+    function setBlocked(address who, bool b) external {
+        blocked[who] = b;
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        require(!blocked[to] && !blocked[msg.sender], "blocked");
+        return super.transfer(to, amount);
+    }
+
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        require(!blocked[to] && !blocked[from], "blocked");
+        return super.transferFrom(from, to, amount);
     }
 }
