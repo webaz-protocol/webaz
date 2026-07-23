@@ -222,7 +222,9 @@ registerSearchRoutes(app, {
   parsePlatformUrl: () => null,
   searchByExternalLink: ({ external_title }) => ({
     matched_by: 'product_title_exact',
-    products: allProducts.filter(product => String(product.title) === String(external_title)),
+    products: String(external_title) === 'Reviewed Phone Stand'
+      ? allProducts.filter(product => [ids.live, ids.unreviewed].includes(String(product.id)))
+      : allProducts.filter(product => String(product.title) === String(external_title)),
   }),
   detectShareCommandFormat: () => null,
   formatProductForAgent: product => product,
