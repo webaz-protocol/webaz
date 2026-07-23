@@ -419,7 +419,7 @@ import { initBuildReputationSchema } from '../layer2-business/L2-9-contribution/
 import { initGithubCredentialStoreSchema } from '../layer2-business/L2-9-contribution/github-credential-store.js'
 import { initIdentityBindingSchema } from '../layer2-business/L2-9-contribution/identity-binding-store.js'
 import { initIdentityClaimChallengeSchema } from '../layer2-business/L2-9-contribution/identity-claim-challenge-store.js'
-import { initAdminCoordinationSchema } from '../layer2-business/L2-9-contribution/admin-coordination-store.js'
+import { initAdminCoordinationSchema } from '../layer2-business/L2-9-contribution/admin-coordination-store.js'; import { initWazSunsetSchema } from '../waz-sunset-store.js'
 import { registerContributionIdentityRoutes } from './routes/contribution-identity.js'
 import { registerContributionScoreRoutes } from './routes/contribution-score.js'
 import { registerContributionFactsRoutes } from './routes/contribution-facts.js'
@@ -2366,7 +2366,7 @@ initAdminAuditLogSchema(db)
 // admin/agent coordination contribution — operator-claim + agent-mandate event logs + fact-source link
 // (schema only). Placed HERE because it FKs users + contribution_facts (both created above) AND
 // admin_audit_log (created just above). No ingestion runs at boot.
-initAdminCoordinationSchema(db)
+initAdminCoordinationSchema(db); initWazSunsetSchema(db)   // WAZ 退役 PR-A2 冲正台账(append-only)
 
 // Bootstrap admin（env BOOTSTRAP_ADMIN_NAME → 该用户升为 admin，幂等）
 ;(() => {
