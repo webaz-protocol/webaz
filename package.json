@@ -200,6 +200,8 @@
     "test:direct-pay-fault-refund": "tsx scripts/test-direct-pay-fault-refund.ts",
     "test:reputation-single-source": "tsx scripts/test-reputation-single-source.ts",
     "test:acp-feed-images": "tsx scripts/test-acp-feed-images.ts",
+    "test:acp-strict-export": "tsx scripts/test-acp-strict-export.ts",
+    "export:acp-strict-feed": "tsx scripts/export-acp-strict-feed.ts",
     "test:order-timeline-render": "tsx scripts/test-order-timeline-render.ts",
     "test:legacy-arbitrator-role-sweep": "tsx scripts/test-legacy-arbitrator-role-sweep.ts",
     "test:arbitration-entry-frontend": "tsx scripts/test-arbitration-entry-frontend.ts",
