@@ -92,6 +92,18 @@ const H = (rows: Array<[string | null, string, string, string]>): Array<Record<s
   ok('4b. 正常完成徽章不受影响', done.includes('已完成') && done.includes('badge-green'), done)
 }
 
+// ═══ ④b 处置来源专用标签:disputed→completed=仲裁结案;return_pending→completed=退货已结算 ═══
+{
+  const ordArb = { status: 'completed', payment_rail: 'escrow', settled_fault_at: null }
+  const histArb = H([[null, 'created', 't1', 'b'], ['paid', 'disputed', 't2', 'b'], ['disputed', 'completed', 't3', '系统']])
+  const sArb = stepper(ordArb, histArb)
+  ok('4c. disputed→completed banner = 仲裁结案(非"订单进入争议")', sArb.includes('仲裁结案') && !sArb.includes('订单进入争议'), sArb.slice(0, 250))
+  const ordRet = { status: 'completed', payment_rail: 'escrow', settled_fault_at: '2026-07-01' }
+  const histRet = H([[null, 'created', 't1', 'b'], ['delivery_failed', 'return_pending', 't2', '系统'], ['return_pending', 'completed', 't3', '系统']])
+  const sRet = stepper(ordRet, histRet)
+  ok('4d. return_pending→completed banner = 退货流程已结算(非"等待退货确认")', sRet.includes('退货流程已结算') && !sRet.includes('等待退货确认'), sRet.slice(0, 250))
+}
+
 // ═══ ⑤ 其余异常状态时间线抑制(delivery_failed / return_pending / declined_nofault)═══
 {
   for (const st of ['delivery_failed', 'return_pending', 'declined_nofault', 'resolved_for_seller']) {

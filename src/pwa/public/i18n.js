@@ -2747,6 +2747,7 @@ const _EN = {
   '未派送成功待处理': 'Undeliverable — pending',
   '等待退货确认': 'Awaiting return confirmation',
   '卖家无责拒单': 'Seller no-fault decline',
+  '仲裁结案': 'Arbitration closed',
   '查看下方时间线了解流转详情': 'See timeline below for details',
   '请尽快完成付款': 'Please complete payment',
   '等待买家付款': 'Waiting for buyer payment',

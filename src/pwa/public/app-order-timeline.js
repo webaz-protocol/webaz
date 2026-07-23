@@ -34,12 +34,15 @@ function orderStageTimeline(order, history) {
       delivery_failed: t('未派送成功待处理'), return_pending: t('等待退货确认'),
       declined_nofault: t('卖家无责拒单'), resolved_for_seller: t('卖家胜诉'),
     }
+    // 处置来源专用标签:banner 描述的是「经由该状态收口」的终局,不是当前活跃状态 ——
+    // disputed→completed 是仲裁结案(不是"进入争议"),return_pending→completed 是退货已结算(不是"等待确认")。
+    const disposalLabelMap = { disputed: t('仲裁结案'), return_pending: t('退货流程已结算') }
     const c = colorMap[bannerStatus] || '#6b7280'
     const sub = disposalFrom ? t('系统已按协议处置并关闭订单') : t('查看下方时间线了解流转详情')
     return `<div style="background:#fff;border:0.5px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:10px">
       <div style="width:8px;height:8px;border-radius:50%;background:${c};flex-shrink:0"></div>
       <div style="flex:1">
-        <div style="font-size:14px;font-weight:600;color:#1f2937">${(order.payment_rail === 'direct_p2p' && ((window.dpTerminalLabel && window.dpTerminalLabel(bannerStatus)) || (window.dpNegotiationLabel && window.dpNegotiationLabel(bannerStatus)) || (window.dpAcceptLabel && window.dpAcceptLabel(bannerStatus)))) || labelMap[bannerStatus] || bannerStatus}${disposalFrom ? ` · ${t('已关单')}` : ''}</div>
+        <div style="font-size:14px;font-weight:600;color:#1f2937">${(disposalFrom && disposalLabelMap[disposalFrom]) || (order.payment_rail === 'direct_p2p' && ((window.dpTerminalLabel && window.dpTerminalLabel(bannerStatus)) || (window.dpNegotiationLabel && window.dpNegotiationLabel(bannerStatus)) || (window.dpAcceptLabel && window.dpAcceptLabel(bannerStatus)))) || labelMap[bannerStatus] || bannerStatus}${disposalFrom ? ` · ${t('已关单')}` : ''}</div>
         <div style="font-size:11px;color:#8e8e93;margin-top:2px">${sub}</div>
       </div>
     </div>`

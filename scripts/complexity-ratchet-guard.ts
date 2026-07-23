@@ -91,7 +91,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-notif-templates.js':            22,
   'src/pwa/public/app-notif-templates-orders.js':     43,
   'src/pwa/public/app-notif-templates-lifecycle.js':  38,   // 2026-07 订单流遍历审计:执法/裁定/undeliverable/协商取消模板(新文件基线)
-  'src/pwa/public/app-order-timeline.js':            201,   // 2026-07 时间线渲染域(stepper+物流追踪,从 app.js 抽出)
+  'src/pwa/public/app-order-timeline.js':            204,   // 2026-07 时间线渲染域(stepper+物流追踪,从 app.js 抽出;同 PR 内定稿基线)
   'src/pwa/public/app-order-errors.js':               50,
   'src/pwa/public/app-arbitrator-entry.js':           10,
   'src/pwa/public/app-arbitrator-admin.js':           87,
