@@ -32,6 +32,7 @@ import { buildEconomicParticipation } from '../economic-participation.js'
 import { buildNegativeSpace } from '../negative-space.js'
 import { buildAcpProductFeed } from '../acp-feed.js'
 import { remoteMcpEnabled, remoteMcpManifest } from './mcp-remote.js'
+import { registerOpenAiAppsChallengeRoute } from './openai-apps-challenge.js'
 
 export interface PublicUtilsDeps {
   db: Database.Database
@@ -48,6 +49,7 @@ export interface PublicUtilsDeps {
 export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDeps): void {
   const { db, MASTER_SEED, NODE_ENV, SERVICE_START_MS, rateLimitOk,
           generateManifest, getUser, logError, issuerAddress } = deps
+  registerOpenAiAppsChallengeRoute(app)
 
   app.get('/api/health', async (_req, res) => {
     const t0 = Date.now()

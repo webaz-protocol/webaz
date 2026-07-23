@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (822 endpoints, 20 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (823 endpoints, 20 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -54,6 +54,13 @@
     "/.well-known/oauth-protected-resource/mcp": {
       "get": {
         "summary": "GET /.well-known/oauth-protected-resource/mcp",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/.well-known/openai-apps-challenge": {
+      "get": {
+        "summary": "GET /.well-known/openai-apps-challenge",
         "tags": [],
         "security": []
       }
