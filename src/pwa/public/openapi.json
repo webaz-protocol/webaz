@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (823 endpoints, 20 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (826 endpoints, 20 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -9149,6 +9149,25 @@
             "bearerAuth": []
           }
         ]
+      }
+    },
+    "/api/usdc-escrow/payout-addresses": {
+      "get": {
+        "summary": "GET /api/usdc-escrow/payout-addresses",
+        "tags": [],
+        "security": []
+      },
+      "post": {
+        "summary": "POST /api/usdc-escrow/payout-addresses",
+        "tags": [],
+        "security": []
+      }
+    },
+    "/api/usdc-escrow/payout-addresses/:id/retire": {
+      "post": {
+        "summary": "POST /api/usdc-escrow/payout-addresses/:id/retire",
+        "tags": [],
+        "security": []
       }
     },
     "/api/users/:id/auctions": {
