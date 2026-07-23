@@ -35,7 +35,7 @@ import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain
 import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema, initCartItemsSchema, initFollowsSchema, initPushSubscriptionsSchema, initUserSessionsSchema, initUserBlocklistSchema, initImportLogsSchema, initErrorLogSchema, initSecondhandItemsSchema, initProductTrialCampaignsSchema, initProductTrialClaimsSchema, initReturnRequestsSchema, initReturnMessagesSchema, initProductVariantsSchema, initEditorPicksSchema, initKycRecordsSchema, initWebauthnSchema, initClaimVerificationBaseSchema, initClaimVerifierSuspensionsSchema, initProductClaimSchema, initReviewClaimSchema, initSecondhandClaimSchema, initAuctionClaimSchema, initWishClaimSchema, initShareableClickLogSchema, initCommissionAuditLogSchema, initRegistrationAuditLogSchema, initProductExternalLinksBaseSchema, initLinkChallengesSchema, initVerifyTasksSchema, initVerifySubmissionsSchema, initVerifierStatsSchema, initRegisterListSearchColumns, initPendingCommissionEscrowSchema, initRecommendationAnchorSchema, initAgentGatewaySchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js' ; import { effectiveReturnDays } from '../trade-terms.js'  // RFC-026:清算窗与退货窗同源(冻结快照)
-import { applyWalletDelta, creditColumns } from '../ledger.js'
+import { applyWalletDelta, creditColumns } from '../ledger.js'; import { wazEscrowChannelOn, settleAuctionRailDisabledRefund } from '../waz-escrow-channel.js'   // WAZ 退役渠道单一真值 + 拍卖资金归还终局
 import { computeSettlementSplit } from '../settlement-math.js'
 import { initSnfSchema, snfSend, snfPullInbox, snfListInbox, snfAck, snfPendingCount, snfVerify, snfDesignate, snfGetDesignation, snfCleanup, snfNack, snfListDeadLetter, snfRevive } from '../layer2-business/L2-7-snf/snf-engine.js'
 import { initExternalAnchorSchema, createAnchor, verifyAnchorSignature, revokeAnchor, issueOwnershipToken, submitVerification, getAnchor, listAnchorsByProduct, listAnchorsBySeller, distributeAnchorRewards, ANCHOR_VERIFICATION_FEE_RECOMMENDED } from '../layer1-agent/L1-2-external-anchor/anchor-engine.js'
@@ -850,9 +850,7 @@ const DEFAULT_PARAMS: Array<{ key: string; value: string; type: string; descript
   { key: 'max_quota_duration_hours', value: '72', type: 'number', description: 'PR#18 build_task 扩容授权:最长有效期(小时)', category: 'limit', min: 1, max: 2160 },
   { key: 'export_csv_limit', value: '5000', type: 'number', description: '订单导出 CSV 行数上限', category: 'limit', min: 100, max: 50000 },
   { key: 'return_window_extension_days', value: '0', type: 'number', description: '退货窗口全局延长天数', category: 'general', min: 0, max: 90 },
-  // 2026-07-23 WAZ 退役:模拟托管轨(escrow)渠道开关 — 0=下架(支付选项隐藏 + escrow 建单/购物车批量下单 409 RAIL_DISABLED),1=admin 恢复。默认关。
-  { key: 'payment_rail_waz_escrow_enabled', value: '0', type: 'number', description: 'WAZ 模拟托管轨渠道开关(0=下架:支付选项隐藏+建单 409 RAIL_DISABLED;1=恢复)— 2026-07-23 WAZ 退役默认关', category: 'system', min: 0, max: 1 },
-  // Wave G-2: USDC / 链上配置
+  { key: 'payment_rail_waz_escrow_enabled', value: '0', type: 'number', description: 'WAZ 模拟托管轨渠道开关(0=下架:支付选项隐藏+建单 409 RAIL_DISABLED;1=admin 恢复)— 2026-07-23 WAZ 退役默认关', category: 'system', min: 0, max: 1 },   // Wave G-2: USDC / 链上配置 ↓
   { key: 'waz_usdc_rate', value: '1.0', type: 'number', description: '1 USDC 兑换多少 WAZ', category: 'fee', min: 0.0001, max: 1000 },
   { key: 'usdc_min_deposit', value: '0.01', type: 'number', description: '最低充值 USDC（小于忽略）', category: 'limit', min: 0, max: 1000 },
   { key: 'usdc_min_withdraw_waz', value: '10', type: 'number', description: '最低提现 WAZ', category: 'limit', min: 0, max: 100000 },
@@ -5482,13 +5480,7 @@ const RFQ_ORDER_DEADLINES = {
 // P3c 核心：award → 自动建 order（不冲正，幂等 — 已建过则不重）
 // 返回：{ ok, order_id?, error? }
 function awardBidAndCreateOrder(rfq: Record<string, unknown>, winner: Record<string, unknown>): { ok: boolean; order_id?: string; error?: string } {
-  // WAZ 退役(2026-07-23)硬闸:渠道关 → RFQ 中标绝不建 escrow 单/抽买家本金(Codex #514 R1 BLOCKER-1)。
-  //   manual award(rfqs.ts)把错误透传给调用方;first_match/auto-bid 记日志跳过;到期 cron 的失败
-  //   fallback 会标 expired 并退还全部押金(存量 RFQ 自愈,资金不搁浅)。只挡新建单,不碰任何退款路径。
-  if (Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1) {
-    return { ok: false, error: 'WAZ 模拟托管轨已下架(RAIL_DISABLED),RFQ 不可中标建单;RFQ 到期后押金将自动退还' }
-  }
-  const rfqId = String(rfq.id)
+  if (!wazEscrowChannelOn(getProtocolParam)) return { ok: false, error: 'WAZ 模拟托管轨已下架(RAIL_DISABLED),RFQ 不可中标建单;RFQ 到期后押金将自动退还' }; const rfqId = String(rfq.id)   // WAZ 退役硬闸(Codex #514 R1 BLOCKER-1):渠道关→不建单不抽本金;manual 透传错误,first_match/auto-bid 跳过,到期 cron 失败 fallback 退全部押金(存量自愈);不碰退款路径
   const bidId = String(winner.id)
   const buyerId = String(rfq.buyer_id)
   const sellerId = String(winner.seller_id)
@@ -5904,30 +5896,7 @@ function settleAuctionInner(aucId: string): { ok: boolean; order_id?: string; re
     return { ok: true, result: 'reserve_not_met' }
   }
 
-  // WAZ 退役(2026-07-23)硬闸:渠道关 → 拍卖结算绝不建 escrow 单/抽买家本金(Codex #514 R1 BLOCKER-4)。
-  //   资金不搁浅:走既有退款机制收终局 —— 标 cancelled + 退中标者/其他 bid 押金 + 退卖家担保金 + 商品回架。
-  if (Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1) {
-    db.transaction(() => {
-      const cur = db.prepare("SELECT status FROM auctions WHERE id = ?").get(aucId) as { status: string } | undefined
-      if (!cur || cur.status !== 'open') throw new Error('concurrent_settle_skip')
-      db.prepare("UPDATE auctions SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?").run(aucId)
-      if (sellerStake > 0) db.prepare('UPDATE wallets SET balance = balance + ?, staked = staked - ? WHERE user_id = ?').run(sellerStake, sellerStake, auc.seller_id)
-      const bids = db.prepare("SELECT id, buyer_id, stake_locked FROM auction_bids WHERE auction_id = ? AND status = 'active'").all(aucId) as Array<{ id: string; buyer_id: string; stake_locked: number }>
-      for (const b of bids) {
-        db.prepare("UPDATE auction_bids SET status = 'cancelled', resolved_at = datetime('now') WHERE id = ?").run(b.id)
-        if (b.stake_locked > 0) db.prepare('UPDATE wallets SET balance = balance + ?, staked = staked - ? WHERE user_id = ?').run(b.stake_locked, b.stake_locked, b.buyer_id)
-      }
-      if (auc.product_id) db.prepare("UPDATE products SET status = 'active', updated_at = datetime('now') WHERE id = ? AND status = 'auction_pending'").run(auc.product_id)
-    })()
-    try {
-      db.prepare(`INSERT INTO notifications (id, user_id, type, title, body, created_at)
-                  VALUES (?,?,'auction_cancelled',?,?,datetime('now'))`)
-        .run(generateId('ntf'), String(winner.buyer_id), `拍卖已取消:WAZ 托管轨已下架`, `拍卖 ${String(auc.title).slice(0, 30)} · 押金已全额退还`)
-    } catch {}
-    return { ok: false, result: 'rail_disabled_refund' }
-  }
-
-  // 3) 成交：建单
+  if (!wazEscrowChannelOn(getProtocolParam)) return settleAuctionRailDisabledRefund(db, generateId, aucId, auc, winner)   // 3) 成交:建单 —— WAZ 退役硬闸先行(Codex #514 R1 BLOCKER-4):渠道关→资金归还终局(cancelled+全退+回架),绝不建 escrow 单;无人出价/未达保留价退款分支在上方不受渠道影响
   const buyerId = String(winner.buyer_id)
   const sellerId = String(auc.seller_id)
   const qty = Math.max(1, Math.floor(Number(auc.qty || 1)))

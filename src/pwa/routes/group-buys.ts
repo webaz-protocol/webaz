@@ -26,6 +26,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { wazEscrowChannelOn } from '../../waz-escrow-channel.js'   // WAZ 退役渠道开关单一真值
 
 const VALID_GB_DISCOUNT_MIN = 0.05
 const VALID_GB_DISCOUNT_MAX = 0.50
@@ -40,11 +41,6 @@ export interface GroupBuysDeps {
   getProtocolParam: <T>(key: string, fallback: T) => T
 }
 
-// WAZ 退役(2026-07-23):团购全程 WAZ escrow(join 锁本金/成团建 escrow 单)。渠道关(默认)=
-//   join 硬拒 + 结算强制走"全员退款"分支(存量参与者资金退回,绝不建新 escrow 单)。fail-closed。
-function wazEscrowChannelOn(getProtocolParam: <T>(key: string, fallback: T) => T): boolean {
-  return Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) === 1
-}
 
 /** 结算团购 — 成团创建订单 + 退差价；未达成全员退款。export 仅供 cron。 */
 export function settleGroupBuy(

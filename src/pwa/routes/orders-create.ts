@@ -31,7 +31,7 @@ import type Database from 'better-sqlite3'
 import { buildCartMandate, buildPaymentMandate, signMandate } from './ap2-mandate.js'
 // RFC-014 PR3 — 金额走整数 base-units;钱包写绝对值(防 REAL 浮点加法 dust)。
 import { toUnits, toDecimal, mulQty, mulRate } from '../../money.js'
-import { createDirectPayResponse } from '../../direct-pay-create.js'; import { isDeferredRail } from '../../direct-pay-rails.js'   // PR-4c direct_p2p 建单分叉 + RFC-029 Design A 纵深防御('deferred' 绝不建单)
+import { createDirectPayResponse } from '../../direct-pay-create.js'; import { isDeferredRail } from '../../direct-pay-rails.js'; import { wazEscrowChannelOn, WAZ_RAIL_DISABLED } from '../../waz-escrow-channel.js'   // PR-4c direct_p2p 建单分叉 + RFC-029 Design A 纵深防御('deferred' 绝不建单)
 import { applyWalletDelta } from '../../ledger.js'; import { gateShippingForCreate } from '../../shipping-templates.js'; import { buildTradeTermsSnapshot, writeTradeTermsSnapshot } from '../../trade-terms.js'; import { gateSaleRegionForCreate } from '../../sale-regions.js'; import { promisedEtaForOrder } from '../../delivery-eta.js'  // PR-2 运费守门 + S0 条款快照 + S1 可售门(意愿/合规先于物流)+ BUG-02 F2 promised ETA
 import { dbOne, dbRun } from '../../layer0-foundation/L0-1-database/db.js'; import { AgentSpendCapExceeded, getAgentSpendCapViolation } from '../../agent-spend-cap.js'; import { hasInvalidPurchaseCredential, readStrictBearerCredential } from '../bearer-auth.js'; import { consumePriceSession, PriceSessionConsumeError } from '../../price-session-consume.js'; import { MAX_PER_ORDER } from '../../order-limits.js'; import { resolveDraftLink } from '../order-draft-link.js'; import { resolveBuyerAddressSnapshot } from '../address-book.js'  // RFC-016 异步 DB seam(下单事务外预检;事务内同步)+ RFC-025 共享限购常量
 
@@ -269,12 +269,8 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     const donationAmount = toDecimal(donationAmountU); const shippingFee = toDecimal(_ship.feeU)
     // PR-4c:direct_p2p 分叉 —— 本金不入协议,跳过下方 escrow 预检/事务,改走直付建单(生产门+收款指令门+原子建单,仅锁卖家 fee-stake)。
     if (String(req.body?.payment_rail || '') === 'direct_p2p') return void createDirectPayResponse(res, db, { generateId, transition, appendOrderEvent, getProtocolParam }, { product, buyerId: user.id as string, reqQty, basePrice, totalAmount, totalAmountU, shippingAddress, directReceiveAccountId: (typeof req.body?.direct_receive_account_id === 'string' && req.body.direct_receive_account_id) ? String(req.body.direct_receive_account_id) : undefined, agentApiKey: apiKey, draftId: _dl.kind === 'link' ? _dl.draftId : undefined, consumePriceSession: () => consumePriceSession(db, typeof session_token === 'string' ? session_token : undefined), opts: { variantId: variant_id, hasVariants: Number(product.has_variants) === 1, flashActive: !!flashSale, couponCode: coupon_code, buyInsurance: !!buy_insurance, donationPct: donationPctNum, isGift: !!is_gift, anonymous: anonymousFlag === 1, deliveryWindow: !!delivery_window }, shipping: { region: _ship.region, fee: _ship.fee, estDays: _ship.estDays, quoteRequired: _ship.quoteRequired, freeThresholdApplied: _ship.freeThresholdApplied } })
-    // WAZ 退役(2026-07-23)硬闸:此行以下全是 WAZ escrow 建单路径(含"省略 payment_rail 默认落 escrow"的
-    //   历史兜底)。渠道开关默认关 —— 菜单层(sellerSupportedPaymentOptions)不出选项是第一层,此闸堵直接
-    //   POST 与一切 fallthrough:fail-closed,param 显式 =1 才放行。
-    if (Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1) return void res.status(409).json({ error: 'WAZ 模拟托管轨已下架,请选择卖家支持的直付方式下单', error_code: 'RAIL_DISABLED' })
-    // 友好预检查(读):真正的守恒在下面的同步事务内(applyWalletDelta 绝对值落库)。
-    const wallet = await dbOne<{ balance: number }>('SELECT balance FROM wallets WHERE user_id = ?', [user.id])
+    if (!wazEscrowChannelOn(getProtocolParam)) return void res.status(409).json(WAZ_RAIL_DISABLED)   // WAZ 退役硬闸(默认关,fail-closed):此行以下全是 escrow 建单路径 —— 堵直接 POST 与"省略 rail 默认落 escrow"的一切 fallthrough;菜单层(sellerSupportedPaymentOptions)同真值
+    const wallet = await dbOne<{ balance: number }>('SELECT balance FROM wallets WHERE user_id = ?', [user.id])   // 友好预检查(读):真正的守恒在下面的同步事务内(applyWalletDelta 绝对值落库)
     if (!wallet) return void res.status(500).json({ error: '钱包记录缺失', error_code: 'WALLET_MISSING' })
     if (toUnits(wallet.balance) < totalAmountU + donationAmountU) return void res.json({ error: `余额不足：需 ${(totalAmount + donationAmount).toFixed(2)} WAZ（含 ${donationAmount} WAZ 捐赠），当前 ${wallet.balance} WAZ` })
     const now = new Date()

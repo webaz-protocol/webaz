@@ -57,15 +57,16 @@ try { checkoutSelectedCart(cartArgs); ok('cart: 0 → throws', false) } catch (e
   ok('cart: explicit 0 → RAIL_DISABLED (same as absent)', e instanceof CartCheckoutError && e.errorCode === 'RAIL_DISABLED')
 }
 
-// ── 2. orders-create:escrow 硬闸源码锁(位置 = direct_p2p 分叉之后、钱包预检之前;fail-closed !== 1) ──
+// ── 2. orders-create:escrow 硬闸源码锁(共享真值 wazEscrowChannelOn;位置 = direct_p2p 分叉之后、钱包预检之前)──
+const CHN = readFileSync(new URL('../src/waz-escrow-channel.ts', import.meta.url), 'utf8')
+ok('waz-escrow-channel: single truth is fail-closed (=== 1, fallback 0)', /payment_rail_waz_escrow_enabled', 0\)\) === 1/.test(CHN) && /RAIL_DISABLED/.test(CHN))
 const OC = readFileSync(new URL('../src/pwa/routes/orders-create.ts', import.meta.url), 'utf8')
 const iDirect = OC.indexOf("=== 'direct_p2p') return void createDirectPayResponse")
-const iGate = OC.indexOf("getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1")
+const iGate = OC.indexOf('if (!wazEscrowChannelOn(getProtocolParam)) return void res.status(409).json(WAZ_RAIL_DISABLED)')
 const iWallet = OC.indexOf('SELECT balance FROM wallets WHERE user_id = ?')
-ok('orders-create: gate exists, fail-closed (!== 1), fallback 0', iGate > 0)
+ok('orders-create: gate exists (shared truth, 409 WAZ_RAIL_DISABLED)', iGate > 0)
 ok('orders-create: gate sits AFTER direct_p2p fork and BEFORE the escrow wallet precheck', iDirect > 0 && iWallet > iGate && iGate > iDirect,
   `direct=${iDirect} gate=${iGate} wallet=${iWallet}`)
-ok('orders-create: gate returns 409 RAIL_DISABLED', /payment_rail_waz_escrow_enabled', 0\)\) !== 1\) return void res\.status\(409\)\.json\(\{[^}]*RAIL_DISABLED/.test(OC))
 
 // ── 3. buyer-quote:显式 escrow 在 quote 即拒;escrow 建议(next_steps)只在渠道开时给 ──
 const BQ = readFileSync(new URL('../src/pwa/buyer-quote.ts', import.meta.url), 'utf8')
@@ -165,14 +166,14 @@ ok('group-buy: off + target met → FORCED full refund, zero orders created', gb
 
 // RFQ 中标 helper / 拍卖结算 / MCP local place_order:server 内部函数不可 import → 源码锁
 const iAwardFn = SV.indexOf('function awardBidAndCreateOrder')
-const iAwardGate = SV.indexOf("payment_rail_waz_escrow_enabled', 0)) !== 1", iAwardFn)
+const iAwardGate = SV.indexOf('!wazEscrowChannelOn(getProtocolParam)', iAwardFn)
 const iAwardInsert = SV.indexOf('INSERT INTO orders', iAwardFn)
 ok('server: awardBidAndCreateOrder gated at top, before its orders INSERT', iAwardFn > 0 && iAwardGate > iAwardFn && iAwardInsert > iAwardGate, `fn=${iAwardFn} gate=${iAwardGate} ins=${iAwardInsert}`)
 const iSettleFn = SV.indexOf('function settleAuctionInner')
-const iSettleGate = SV.indexOf("payment_rail_waz_escrow_enabled', 0)) !== 1", iSettleFn)
-const iSettleRefund = SV.indexOf("'rail_disabled_refund'", iSettleFn)
+const iSettleGate = SV.indexOf('settleAuctionRailDisabledRefund(db, generateId, aucId, auc, winner)', iSettleFn)
 const iSettleInsert = SV.indexOf('INSERT INTO orders', iSettleFn)
-ok('server: settleAuctionInner off-branch refunds all stakes BEFORE the settle INSERT', iSettleFn > 0 && iSettleGate > iSettleFn && iSettleRefund > iSettleGate && iSettleInsert > iSettleGate, `fn=${iSettleFn} gate=${iSettleGate} ins=${iSettleInsert}`)
+ok('server: settleAuctionInner routes to the fund-return terminal BEFORE the settle INSERT', iSettleFn > 0 && iSettleGate > iSettleFn && iSettleInsert > iSettleGate, `fn=${iSettleFn} gate=${iSettleGate} ins=${iSettleInsert}`)
+ok('channel module: auction refund terminal keeps the CAS reread (idempotence) + never rescues into an order', /settleAuctionRailDisabledRefund/.test(CHN) && /cur\.status !== 'open'\) throw new Error\('concurrent_settle_skip'\)/.test(CHN) && !/INSERT INTO orders/.test(CHN))
 const MCP = readFileSync(new URL('../src/layer1-agent/L1-1-mcp-server/server.ts', import.meta.url), 'utf8')
 ok('mcp local place_order: reads protocol_params fail-closed before its orders INSERT',
   /SELECT value FROM protocol_params WHERE key = 'payment_rail_waz_escrow_enabled'/.test(MCP) && /railParam\?\.value \?\? 0\) !== 1\) return \{ error/.test(MCP))
