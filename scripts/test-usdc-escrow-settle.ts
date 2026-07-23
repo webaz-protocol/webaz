@@ -6,17 +6,22 @@
  * usdc 分支【逐字同构】(真被测函数 settleUsdcEscrowAtCompletion 在内 —— 不桩被测判定者)。
  * Proves:
  *   1. happy(delivered + intents funded + 非孤儿 Released, auto_=false, 守恒)→ completed;fee_ledger
- *      1 行(amount=feePaid, auto_release=0);intents='released';买家+卖家 wallets 全字段前后相等(零写);
- *      order_state_history 有 delivered→confirmed(actor=买家)与 confirmed→completed。
+ *      1 行(amount=feePaid, auto_release=0);intents='released';【全】wallets 表逐行 + 行数前后字节相等
+ *      (任何 principal 被记账即 CI 红);order_state_history 有 delivered→confirmed(actor=买家)与 confirmed→completed。
  *   2. auto_=true → confirmed 行 actor_id='sys_protocol'。
  *   3. 守恒不符 → 状态不动(delivered)、无 fee 行、admin 告警。
  *   4. 提前释放(shipped)→ alert、不动;快进 delivered → sweepPendingUsdcEscrowReleases → completed。
  *   5. 幂等重放(对已 completed 单再调)→ fee 行仍 1、history 不增、无新告警。
- *   6. 铁律 pin:无 Released 镜像行时 settleUsdcEscrowAtCompletion → throw;外层事务回滚(状态没变)。
+ *   6. 铁律 pin:无 Released 镜像行时 settleUsdcEscrowAtCompletion → throw(消息含 USDC_ESCROW_NO_RELEASE_EVENT);外层事务回滚。
  *   7. 未知 order_key Released → alert only。
  *   8. cancelled 单收到 Released → alert、仍 cancelled。
  *   9. stalled(paid 超 accept_deadline)→ sweepStalledUsdcEscrowOrders 后 admin 1 条;再 sweep 不重复。
  *   10. 崩溃恢复(order 'confirmed' + Released 镜像在)→ sweep → completed + 记账齐。
+ *   11. 孤儿标记的 Released 镜像行存在 → settleUsdcEscrowAtCompletion throw(消息含 USDC_ESCROW_NO_RELEASE_EVENT;钉 LEFT JOIN 排除)。
+ *   12. completed-backfill:order 'completed' + Released 镜像 + 无 fee 行 + intent 'funded' → 直调补记账(fee 行 + released),不改状态、不告警。
+ *   13. Fix A:守恒不符的 delivered 单 sweep 两次 → 该 (order,title) admin 通知恰好 1 条(去重)。
+ *   14. Fix B:买家 role 存入后翻 buyer→seller → applyUsdcEscrowRelease(auto=false)仍收敛 completed;delivered→confirmed 行 actor_id='sys_protocol'。
+ *   15. 乱序收敛:intent 'issued' 时 Released → 仅告警;存入自愈(intent funded + order delivered)后 sweep → completed。
  * Usage: npm run test:usdc-escrow-settle
  */
 import { mkdtempSync } from 'node:fs'
@@ -97,20 +102,32 @@ const histCount = (id: string, from: string, to: string): number =>
 const histActor = (id: string, from: string, to: string): string | undefined =>
   (db.prepare('SELECT actor_id FROM order_state_history WHERE order_id = ? AND from_status = ? AND to_status = ? ORDER BY rowid DESC LIMIT 1').get(id, from, to) as { actor_id: string } | undefined)?.actor_id
 const walletSnap = (uid: string): string => JSON.stringify(db.prepare('SELECT * FROM wallets WHERE user_id = ?').get(uid))
+// FULL wallets-table snapshot (ALL rows, ORDER BY user_id) — a credit to ANY principal
+// (sys_protocol/logistics/buyer/seller/…), UPDATE or new INSERT, changes the bytes or the row count.
+const walletsFullSnap = (): string => JSON.stringify(db.prepare('SELECT * FROM wallets ORDER BY user_id').all())
+const walletsRowCount = (): number => (db.prepare('SELECT COUNT(*) n FROM wallets').get() as { n: number }).n
+// Mark a mirrored chain event as an orphan (reorg replacement) so the settle LEFT JOIN excludes it.
+const orphanEvent = (tx: string, reason = 'reorg:test'): void => {
+  const row = db.prepare('SELECT id FROM usdc_escrow_chain_events WHERE tx_hash = ?').get(tx) as { id: string }
+  db.prepare('INSERT INTO usdc_escrow_event_orphans (event_id, reason) VALUES (?,?)').run(row.id, reason)
+}
+const histTotal = (id: string): number => (db.prepare('SELECT COUNT(*) n FROM order_state_history WHERE order_id = ?').get(id) as { n: number }).n
+const notifCountFor = (orderId: string, title: string): number =>
+  (db.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id = 'admin1' AND order_id = ? AND title = ?").get(orderId, title) as { n: number }).n
 
 // ══════════ case 1: happy path (delivered, auto_=false, conservation holds) ══════════
 {
   const OID = 'ord1'; const OK = '0x' + '1'.repeat(64); const TX = '0xtx1'
   mkOrder(OID, 'delivered'); mkIntent(OID, OK, { amount: 10_000_000 })
   const ev = seedReleased(OK, TX, 9_500_000n, 500_000n, false)
-  const bSnap = walletSnap('buyer1'), sSnap = walletSnap('seller1')
+  const walletsBefore = walletsFullSnap(); const walletsRowsBefore = walletsRowCount()
   const notifBefore = notifCountAdmin()
   applyUsdcEscrowRelease(db, deps, ev, alert)
   ok('case1: delivered + Released → completed', orderStatus(OID) === 'completed', orderStatus(OID))
   ok('case1: fee_ledger 1 row (amount=feePaid, auto_release=0)', feeCount(OID) === 1 && feeRow(OID)?.amount_units === 500_000 && feeRow(OID)?.auto_release === 0, JSON.stringify(feeRow(OID)))
   ok('case1: intents → released', intentStatus(OID) === 'released')
-  ok('case1: ZERO wallets writes — buyer full-row snapshot identical', walletSnap('buyer1') === bSnap)
-  ok('case1: ZERO wallets writes — seller full-row snapshot identical', walletSnap('seller1') === sSnap)
+  ok('case1: ZERO wallets writes — FULL wallets-table snapshot byte-identical (a credit to ANY principal fails CI)', walletsFullSnap() === walletsBefore)
+  ok('case1: ZERO wallets writes — wallets row count unchanged (no new principal row inserted)', walletsRowCount() === walletsRowsBefore)
   ok('case1: history delivered→confirmed by the BUYER (not sys)', histCount(OID, 'delivered', 'confirmed') === 1 && histActor(OID, 'delivered', 'confirmed') === 'buyer1')
   ok('case1: history confirmed→completed present', histCount(OID, 'confirmed', 'completed') === 1)
   ok('case1: no admin alert on the happy path', notifCountAdmin() === notifBefore)
@@ -177,14 +194,15 @@ const walletSnap = (uid: string): string => JSON.stringify(db.prepare('SELECT * 
 {
   const OID = 'ord6'; const OK = '0x' + '6'.repeat(64)
   mkOrder(OID, 'delivered'); mkIntent(OID, OK, { amount: 10_000_000 })   // NO seedReleased → no mirror row
-  let threw = false
+  let threw = false; let msg6 = ''
   try {
     db.transaction(() => {
       tr(db, OID, 'confirmed', 'buyer1', [], 'fixture: pretend some path advanced it')   // mutate within tx
       settleUsdcEscrowAtCompletion(db, { id: OID }, genId)                                 // must throw (no mirror)
     })()
-  } catch { threw = true }
+  } catch (e) { threw = true; msg6 = (e as Error).message }
   ok('case6: settleUsdcEscrowAtCompletion throws when no non-orphan Released mirror exists', threw)
+  ok('case6: throw message pins the iron-guard code USDC_ESCROW_NO_RELEASE_EVENT', msg6.includes('USDC_ESCROW_NO_RELEASE_EVENT'), msg6)
   ok('case6: outer transaction rolled back — order still delivered (never fake-completed)', orderStatus(OID) === 'delivered', orderStatus(OID))
   ok('case6: no fee row written', feeCount(OID) === 0)
 }
@@ -231,6 +249,75 @@ const walletSnap = (uid: string): string => JSON.stringify(db.prepare('SELECT * 
   ok('case10: crash-recovery confirmed order → completed', orderStatus(OID) === 'completed', orderStatus(OID))
   ok('case10: fee_ledger 1 row + intents released (accounting complete)', feeCount(OID) === 1 && intentStatus(OID) === 'released')
   ok('case10: history confirmed→completed present', histCount(OID, 'confirmed', 'completed') === 1)
+}
+
+// ══════════ case 11: orphan-marked Released mirror EXISTS → settleUsdcEscrowAtCompletion throws (LEFT JOIN orphan-exclusion) ══════════
+{
+  const OID = 'ord11'; const OK = '0x' + 'b'.repeat(64); const TX = '0xtx11'
+  mkOrder(OID, 'delivered'); mkIntent(OID, OK, { amount: 10_000_000 })
+  seedReleased(OK, TX, 9_500_000n, 500_000n, false)   // mirror row EXISTS…
+  orphanEvent(TX)                                       // …but orphan-marked → the settle LEFT JOIN must exclude it
+  let msg11 = ''
+  try { db.transaction(() => { settleUsdcEscrowAtCompletion(db, { id: OID }, genId) })() } catch (e) { msg11 = (e as Error).message }
+  ok('case11: orphan-marked Released mirror → throws USDC_ESCROW_NO_RELEASE_EVENT (orphan-exclusion is the mechanism)', msg11.includes('USDC_ESCROW_NO_RELEASE_EVENT'), msg11)
+  ok('case11: no fee row (fake-complete refused)', feeCount(OID) === 0)
+  ok('case11: order stays delivered', orderStatus(OID) === 'delivered')
+}
+
+// ══════════ case 12: completed-backfill recovery — order 'completed' + Released mirror + NO fee row + intent 'funded' → applyUsdcEscrowRelease backfills accounting, no state change, no alert ══════════
+{
+  const OID = 'ord12'; const OK = '0x' + 'c'.repeat(64); const TX = '0xtx12'
+  mkOrder(OID, 'completed'); mkIntent(OID, OK, { amount: 10_000_000, status: 'funded' })   // manually completed, accounting NOT yet done
+  const ev = seedReleased(OK, TX, 9_500_000n, 500_000n, false)
+  const notifBefore = notifCountAdmin(); const histBefore = histTotal(OID)
+  applyUsdcEscrowRelease(db, deps, ev, alert)   // sweep won't select completed — driver called directly, as the watcher rescan would
+  ok('case12: completed-backfill → fee row appears', feeCount(OID) === 1 && feeRow(OID)?.amount_units === 500_000)
+  ok('case12: completed-backfill → intent released', intentStatus(OID) === 'released')
+  ok('case12: no state change (stays completed)', orderStatus(OID) === 'completed')
+  ok('case12: no new history rows (pure accounting backfill)', histTotal(OID) === histBefore)
+  ok('case12: no admin alert', notifCountAdmin() === notifBefore)
+}
+
+// ══════════ case 13 (Fix A pin): conservation-mismatch delivered order → sweep TWICE → exactly ONE admin notification for (order,title) ══════════
+{
+  const OID = 'ord13'; const OK = '0x' + 'd'.repeat(64); const TX = '0xtx13'
+  mkOrder(OID, 'delivered'); mkIntent(OID, OK, { amount: 10_000_000 })
+  seedReleased(OK, TX, 9_000_000n, 500_000n, false)   // 9_000_000+500_000 = 9_500_000 ≠ 10_000_000 → persistent throw
+  const title = '🚨 USDC 担保:释放结算失败'
+  sweepPendingUsdcEscrowReleases(db, deps, alert)
+  sweepPendingUsdcEscrowReleases(db, deps, alert)
+  ok('case13 (Fix A): two sweeps over a persistently-failing delivered order → EXACTLY ONE notification for (order,title)', notifCountFor(OID, title) === 1, `count=${notifCountFor(OID, title)}`)
+  ok('case13: order stays delivered (never fake-completed)', orderStatus(OID) === 'delivered')
+  ok('case13: no fee row', feeCount(OID) === 0)
+}
+
+// ══════════ case 14 (Fix B pin): buyer's role flipped buyer→seller after deposit → applyUsdcEscrowRelease(auto=false) still converges; confirmed row actor='sys_protocol' ══════════
+{
+  const OID = 'ord14'; const OK = '0x' + 'e'.repeat(64); const TX = '0xtx14'
+  mkOrder(OID, 'delivered'); mkIntent(OID, OK, { amount: 10_000_000 })
+  const ev = seedReleased(OK, TX, 9_500_000n, 500_000n, false)
+  db.prepare("UPDATE users SET role = 'seller' WHERE id = 'buyer1'").run()   // role changed AFTER deposit → buyer actor now rejected
+  applyUsdcEscrowRelease(db, deps, ev, alert)   // auto=false → first tries buyer actor, then sys_protocol fallback
+  ok('case14 (Fix B): role-flipped buyer → order still converges to completed', orderStatus(OID) === 'completed', orderStatus(OID))
+  ok('case14: delivered→confirmed actor_id=sys_protocol (buyer actor rejected, system converges on the on-chain signature)', histActor(OID, 'delivered', 'confirmed') === 'sys_protocol', histActor(OID, 'delivered', 'confirmed'))
+  ok('case14: fee row + intent released (accounting complete)', feeCount(OID) === 1 && intentStatus(OID) === 'released')
+  db.prepare("UPDATE users SET role = 'buyer' WHERE id = 'buyer1'").run()   // restore for later cases
+}
+
+// ══════════ case 15 (ordering convergence): Released applied while intent 'issued' → alert only; then deposit self-heals (intent funded + order delivered) → sweep → completed ══════════
+{
+  const OID = 'ord15'; const OK = '0x' + '1'.repeat(63) + '2'; const TX = '0xtx15'
+  mkOrder(OID, 'paid'); mkIntent(OID, OK, { amount: 10_000_000, status: 'issued' })   // Released arrives before Deposited is confirmed
+  const ev = seedReleased(OK, TX, 9_500_000n, 500_000n, false)
+  const notifBefore = notifCountAdmin()
+  applyUsdcEscrowRelease(db, deps, ev, alert)
+  ok('case15: Released while intent issued → alert only, no state change, no fee row', orderStatus(OID) === 'paid' && notifCountAdmin() === notifBefore + 1 && feeCount(OID) === 0)
+  // deposit self-heals: intent → funded and order fast-forwards to delivered (fixture)
+  db.prepare("UPDATE usdc_escrow_intents SET status = 'funded' WHERE order_id = ?").run(OID)
+  db.prepare("UPDATE orders SET status = 'delivered' WHERE id = ?").run(OID)
+  sweepPendingUsdcEscrowReleases(db, deps, alert)
+  ok('case15: after deposit self-heals, sweep drives → completed (self-heal loop end-to-end)', orderStatus(OID) === 'completed', orderStatus(OID))
+  ok('case15: fee row + intent released', feeCount(OID) === 1 && intentStatus(OID) === 'released')
 }
 
 if (fail > 0) { console.error(`\n❌ usdc-escrow-settle FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

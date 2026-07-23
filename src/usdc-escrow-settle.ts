@@ -38,13 +38,27 @@ interface OrderRow { id: string; status: string; buyer_id: string }
 /**
  * 全体 admin 告警(从 watcher 私有 alertAdmins 抽出,watcher 改 import 复用,消除重复实现)。
  * 写全体 admin 的 notifications + console.error 兜底;通知失败绝不阻断结算主流程。
+ *
+ * dedupeOrderId(可选):sweep 可达的失败告警会被 60s 一次的重驱路径无界重放(见
+ * sweepPendingUsdcEscrowReleases + applyUsdcEscrowRelease 的 delivered/confirmed/completed catch)——
+ * 传入 order id 后,notifications 用 order_id=dedupeOrderId 落行,且跳过任何已有
+ * (user_id, order_id=dedupeOrderId, title) 通知的 admin(与 sweepStalledUsdcEscrowOrders 同款去重),
+ * 把每 tick 一条的无界写收敛为一单一题一行。console.error 仍每次都发(廉价、可 grep)。
+ * 不传(默认)= 老行为:order_id=NULL、不去重(watcher 有界路径的告警走这条)。
  */
-export function alertUsdcAdmins(db: Database.Database, generateId: (p: string) => string, title: string, body: string): void {
+export function alertUsdcAdmins(db: Database.Database, generateId: (p: string) => string, title: string, body: string, dedupeOrderId?: string): void {
   try {
     const admins = db.prepare("SELECT id FROM users WHERE role = 'admin'").all() as Array<{ id: string }>
     for (const a of admins) {
-      db.prepare('INSERT INTO notifications (id, user_id, title, body, order_id) VALUES (?,?,?,?,NULL)')
-        .run(generateId('ntf'), a.id, title, body)
+      if (dedupeOrderId) {
+        const exists = db.prepare('SELECT 1 FROM notifications WHERE user_id = ? AND order_id = ? AND title = ?').get(a.id, dedupeOrderId, title)
+        if (exists) continue
+        db.prepare('INSERT INTO notifications (id, user_id, title, body, order_id) VALUES (?,?,?,?,?)')
+          .run(generateId('ntf'), a.id, title, body, dedupeOrderId)
+      } else {
+        db.prepare('INSERT INTO notifications (id, user_id, title, body, order_id) VALUES (?,?,?,?,NULL)')
+          .run(generateId('ntf'), a.id, title, body)
+      }
     }
   } catch { /* 通知失败不阻断主流程 */ }
   console.error('[usdc-escrow settle]', title, body)
@@ -102,6 +116,9 @@ export function applyUsdcEscrowRelease(
   alertAdmins: (title: string, body: string) => void,
 ): void {
   const orderKey = ev.order_key.toLowerCase()
+  // 下列前置告警走【未去重】的 alertAdmins wrapper:无 intent / issued 未存入 / intent 无订单
+  // 都不落入 sweepPendingUsdcEscrowReleases 的选择集(它 JOIN intents+orders 且要求 delivered/confirmed),
+  // 由 watcher rescan 窗口天然有界,不需按单去重。
   const intent = db.prepare("SELECT order_id, order_key, amount_units, status FROM usdc_escrow_intents WHERE order_key = ?").get(orderKey) as IntentRow | undefined
   if (!intent) {
     alertAdmins('🚨 USDC 担保:未知释放', `order_key ${orderKey} 链上释放(tx ${ev.tx_hash})但无对应 intent —— 人工核。`)
@@ -127,14 +144,21 @@ export function applyUsdcEscrowRelease(
       try {
         db.transaction(() => {
           const actor = auto ? 'sys_protocol' : order.buyer_id
-          const r1 = deps.transition(db, order.id, 'confirmed', actor, [], `链上担保已释放(tx ${ev.tx_hash}, auto=${auto})`)
+          let r1 = deps.transition(db, order.id, 'confirmed', actor, [], `链上担保已释放(tx ${ev.tx_hash}, auto=${auto})`)
+          // Fix B:链上 buyerRelease 签名【即】买家授权,DB actor 只是归因。若账号角色在存入后变更
+          // (buyer→seller),以 buyer 作 actor 的 delivered→confirmed 会被 allowedRoles 永久拒绝而卡死收敛。
+          // 首次(buyer actor,即 !auto)失败即以 sys_protocol 代收敛重试【一次】(仅这一步;事务内同步)。
+          if (!r1.success && !auto) {
+            r1 = deps.transition(db, order.id, 'confirmed', 'sys_protocol', [], `链上担保已释放(tx ${ev.tx_hash}, auto=${auto})(买家链上签名释放;账号角色已变更,system 代收敛)`)
+          }
           if (!r1.success) throw new Error(`delivered→confirmed 失败:${r1.error}`)
           deps.settleOrder(order.id)   // 其 usdc 分支做铁律守卫 + 记账(嵌套事务 = savepoint,合法)
           const r2 = deps.transition(db, order.id, 'completed', 'sys_protocol', [], '链上结算完成')
           if (!r2.success) throw new Error(`confirmed→completed 失败:${r2.error}`)
         })()
       } catch (e) {
-        alertAdmins('🚨 USDC 担保:释放结算失败', `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— ${(e as Error).message};状态未变,人工核。`)
+        // Fix A:sweep 可达失败 → 直接调 5-arg 去重 helper(标题稳定、按 order 去重),避免 60s 重驱无界轰炸。
+        alertUsdcAdmins(db, deps.generateId, '🚨 USDC 担保:释放结算失败', `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— ${(e as Error).message};状态未变,人工核。`, order.id)
       }
       break
     }
@@ -147,7 +171,8 @@ export function applyUsdcEscrowRelease(
           if (!r2.success) throw new Error(`confirmed→completed 失败:${r2.error}`)
         })()
       } catch (e) {
-        alertAdmins('🚨 USDC 担保:释放结算失败(恢复)', `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— ${(e as Error).message};人工核。`)
+        // Fix A:sweep 可达失败 → 去重 helper(同上)。
+        alertUsdcAdmins(db, deps.generateId, '🚨 USDC 担保:释放结算失败(恢复)', `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— ${(e as Error).message};人工核。`, order.id)
       }
       break
     }
@@ -159,10 +184,13 @@ export function applyUsdcEscrowRelease(
           db.transaction(() => { settleUsdcEscrowAtCompletion(db, order, deps.generateId) })()
         }
       } catch (e) {
-        alertAdmins('🚨 USDC 担保:completed 补记账失败', `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— ${(e as Error).message};人工核。`)
+        // Fix A:watcher rescan 可反复驱动本 backfill catch → 去重 helper(标题稳定、按 order 去重)。
+        alertUsdcAdmins(db, deps.generateId, '🚨 USDC 担保:completed 补记账失败', `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— ${(e as Error).message};人工核。`, order.id)
       }
       break
     }
+    // 以下告警走【未去重】的 alertAdmins wrapper:它们由 watcher rescan 窗口 / sweep 选取条件天然有界
+    // (sweep 只选 delivered/confirmed 且有非孤儿 Released 镜像的单,下列状态不入其选择集),无需按单去重。
     case 'disputed':
       alertAdmins('🚨 USDC 担保:链上释放但订单争议中', `order ${order.id}(order_key ${orderKey})处于 disputed,tx ${ev.tx_hash} —— 链上仲裁消费是 B7,现阶段人工核(不动状态)。`)
       break
