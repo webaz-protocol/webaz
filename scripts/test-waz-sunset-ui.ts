@@ -90,6 +90,18 @@ ok('users/:id private_stats routed through projectWalletForSunset', /projectWall
 const CHN2 = readFileSync(new URL('../src/waz-escrow-channel.ts', import.meta.url), 'utf8')
 ok('shared projection helper is fail-closed and zeroes every field', /projectWalletForSunset/.test(CHN2) && /balance: 0, staked: 0, escrowed: 0, earned: 0, fee_staked: 0/.test(CHN2))
 
+// ── ①c 三个残余读面(Codex #516 R2):agent wallet 视图 / me export / trusted KPI ──
+const { walletAgentView } = await import('../src/pwa/wallet-agent-view.js')
+const wavOff = walletAgentView(db, 'w1', gp)
+ok('agent wallet view: off → zeroed + waz_sunset (refund landings kept)', wavOff.waz_sunset === true && wavOff.available_balance === 0 && wavOff.in_escrow === 0, JSON.stringify(wavOff))
+cp['payment_rail_waz_escrow_enabled'] = 1
+ok('agent wallet view: on → live balances', walletAgentView(db, 'w1', gp).available_balance === 12.5)
+cp['payment_rail_waz_escrow_enabled'] = 0
+const MD = readFileSync(new URL('../src/pwa/routes/me-data.ts', import.meta.url), 'utf8')
+ok('me export: wallet routed through projectWalletForSunset', /data\.wallet = projectWalletForSunset\(getProtocolParam,/.test(MD))
+const TK = readFileSync(new URL('../src/pwa/routes/trusted-kpi.ts', import.meta.url), 'utf8')
+ok('trusted KPI: total_earned_waz zeroed while channel off (both endpoints)', (TK.match(/total_earned_waz: wazEscrowChannelOn\(getProtocolParam\) \? Number\(wal\?\.earned \|\| 0\) : 0/g) || []).length === 2)
+
 // ── ② withdraw / connect 断供 ──
 const wd = await call('POST', '/api/wallet/withdraw', { to_address: '0x' + 'b'.repeat(40), amount: 50 })
 ok('withdraw: off → 409 RAIL_DISABLED', wd.status === 409 && wd.json.error_code === 'RAIL_DISABLED', JSON.stringify(wd))

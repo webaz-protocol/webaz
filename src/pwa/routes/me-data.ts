@@ -14,17 +14,19 @@
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
+import { projectWalletForSunset } from '../../waz-escrow-channel.js'   // WAZ 退役:导出零化投影
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
 import { projectDirectPayTargetForViewer } from '../direct-pay-order-redaction.js'  // 披露门:自导出的 orders 也按查看者投影,不得旁路
 
 export interface MeDataDeps {
   db: Database.Database
   auth: (req: Request, res: Response) => Record<string, unknown> | null
+  getProtocolParam: <T>(key: string, fallback: T) => T
 }
 
 export function registerMeDataRoutes(app: Application, deps: MeDataDeps): void {
   // db 走 RFC-016 异步 seam(dbOne/dbAll);deps.db 仅供披露门(requireBothDisclosuresAcked 是同步 gate)
-  const { auth, db } = deps
+  const { auth, db, getProtocolParam } = deps
 
   // COP 飞轮: 完成订单 7d 引导发笔记
   app.get('/api/me/note-prompts', async (req, res) => {
@@ -77,7 +79,7 @@ export function registerMeDataRoutes(app: Application, deps: MeDataDeps): void {
     try {
       // P2-E:reputation = 真实台账 reputation_scores.total_points(旧 users.reputation 静止列废弃不读)
       data.profile = await dbOne(`SELECT u.id, u.name, u.handle, u.role, u.region, u.bio, u.search_anchor, u.email, u.phone, u.permanent_code, u.created_at, COALESCE(rs.total_points, 0) AS reputation FROM users u LEFT JOIN reputation_scores rs ON rs.user_id = u.id WHERE u.id = ?`, [uid])
-      data.wallet = await dbOne(`SELECT balance, staked, escrowed, earned FROM wallets WHERE user_id = ?`, [uid])
+      data.wallet = projectWalletForSunset(getProtocolParam, await dbOne(`SELECT balance, staked, escrowed, earned FROM wallets WHERE user_id = ?`, [uid]))   // WAZ 退役:渠道关 → 导出零化(冲正后真值本就为 0;waz_sunset 标记如实)
       data.orders = await dbAll(`SELECT * FROM orders WHERE buyer_id = ? OR seller_id = ? ORDER BY created_at DESC LIMIT 1000`, [uid, uid])
       for (const o of data.orders as Array<Record<string, unknown>>) projectDirectPayTargetForViewer(db, o, uid)  // 披露门:自导出按查看者投影(买家行=ack 门/卖家行=收款方保留),JSON + CSV 同源
       data.shareables = await dbAll(`SELECT * FROM shareables WHERE owner_id = ? AND status != 'removed'`, [uid])

@@ -3949,7 +3949,7 @@ registerAgentGovernanceRoutes(app, {
 
 // ─── 2026-05-22 COP 飞轮 + COP P0-1 数据导出 ─────────────
 // #1013 Phase 39: 2 endpoints (note-prompts + export) 已迁出到 routes/me-data.ts
-registerMeDataRoutes(app, { db, auth })
+registerMeDataRoutes(app, { db, auth, getProtocolParam })
 
 // cron 任务：14 天后停用账户凭证并匿名化选定 PII（保留必要交易/合规/审计记录）
 function processAccountDeletions(): { wiped: number } {
@@ -4271,7 +4271,7 @@ registerFeedbackRoutes(app, { db, generateId, auth, broadcastSystemEvent, detect
 
 // ─── Wave D-5: trusted 角色 KPI 仪表盘 ───────────────────
 // #1013 Phase 22: 2 endpoints 已迁出到 routes/trusted-kpi.ts
-registerTrustedKpiRoutes(app, { db, auth })
+registerTrustedKpiRoutes(app, { db, auth, getProtocolParam })
 
 // ─── Wave D-4: 限时促销 ──────────────────────────────────
 // #1013 Phase 23: 5 endpoints + getActiveFlashSale 已迁出到 routes/flash-sales.ts

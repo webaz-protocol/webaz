@@ -282,7 +282,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/announcements/active` | 🔐 |  | 列出对当前用户可见的活跃公告（按角色 + 区域过滤） | src/pwa/routes/announcements.ts:79 |
 | POST | `/api/arbitrator/apply` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:93 |
 | GET | `/api/arbitrator/eligibility` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:83 |
-| GET | `/api/arbitrator/me/kpi` | 🔐 |  | Arbitrator KPI（仲裁累计 + 裁决分布 + pending） | src/pwa/routes/trusted-kpi.ts:70 |
+| GET | `/api/arbitrator/me/kpi` | 🔐 |  | Arbitrator KPI（仲裁累计 + 裁决分布 + pending） | src/pwa/routes/trusted-kpi.ts:72 |
 | GET | `/api/arbitrator/pending-count` | 🔐 |  | 非仲裁员返回 0(不报错,前端 badge 拉取对所有人无害)。 | src/pwa/routes/disputes-read.ts:56 |
 | GET | `/api/arbitrator/status` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:88 |
 | POST | `/api/arbitrator/withdraw-application` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:144 |
@@ -497,8 +497,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/me/delete-cancel` | 🔐 |  |  | src/pwa/routes/account-deletion.ts:58 |
 | POST | `/api/me/delete-request` | 🔐 |  |  | src/pwa/routes/account-deletion.ts:33 |
 | GET | `/api/me/delete-status` | 🔐 |  |  | src/pwa/routes/account-deletion.ts:70 |
-| GET | `/api/me/export` | 🔐 |  | COP P0-1: 数据导出（用户主权） | src/pwa/routes/me-data.ts:69 |
-| GET | `/api/me/note-prompts` | 🔐 |  | COP 飞轮: 完成订单 7d 引导发笔记 | src/pwa/routes/me-data.ts:30 |
+| GET | `/api/me/export` | 🔐 |  | COP P0-1: 数据导出（用户主权） | src/pwa/routes/me-data.ts:71 |
+| GET | `/api/me/note-prompts` | 🔐 |  | COP 飞轮: 完成订单 7d 引导发笔记 | src/pwa/routes/me-data.ts:32 |
 | GET | `/api/me/notify-claim-tasks` | 🔐 |  |  | src/pwa/routes/claim-verify.ts:534 |
 | POST | `/api/me/notify-claim-tasks` | 🔐 |  | 通知偏好 | src/pwa/routes/claim-verify.ts:528 |
 | GET | `/api/me/operator-claim-confirmations` | 🔐 |  | ── contributor: claims pointing at ME awaiting my confirmation ── | src/pwa/routes/admin-operator-claims.ts:99 |
@@ -775,7 +775,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/verifier/appeal` | 🔐 |  |  | src/pwa/routes/verifier-user.ts:154 |
 | POST | `/api/verifier/apply` | 🔐 |  |  | src/pwa/routes/verifier-user.ts:70 |
 | GET | `/api/verifier/eligibility` | 🔐 |  |  | src/pwa/routes/verifier-user.ts:47 |
-| GET | `/api/verifier/me/kpi` | 🔐 |  | Verifier KPI（白名单 tier / 配额 / 准确率 / 窗口奖励） | src/pwa/routes/trusted-kpi.ts:27 |
+| GET | `/api/verifier/me/kpi` | 🔐 |  | Verifier KPI（白名单 tier / 配额 / 准确率 / 窗口奖励） | src/pwa/routes/trusted-kpi.ts:29 |
 | GET | `/api/verifier/status` | 🔐 |  |  | src/pwa/routes/verifier-user.ts:52 |
 | POST | `/api/verifier/withdraw-application` | 🔐 |  |  | src/pwa/routes/verifier-user.ts:132 |
 | POST | `/api/verify-price` | 🔐 |  |  | src/pwa/routes/checkout-helpers.ts:70 |

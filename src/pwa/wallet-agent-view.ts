@@ -9,9 +9,12 @@
  * 诚实披露:escrow 轨当前为模拟 WAZ 测试流程(ESCROW-WAZ-SIM),响应如实标注。
  */
 import type Database from 'better-sqlite3'
+import { wazEscrowChannelOn } from '../waz-escrow-channel.js'   // WAZ 退役:渠道关 → 余额零化投影
 
-export function walletAgentView(db: Database.Database, humanId: string): Record<string, unknown> {
-  const w = db.prepare('SELECT balance, escrowed FROM wallets WHERE user_id = ?').get(humanId) as { balance: number; escrowed: number } | undefined
+export function walletAgentView(db: Database.Database, humanId: string, getProtocolParam: <T>(key: string, fallback: T) => T): Record<string, unknown> {
+  // WAZ 退役(Codex #516 R2-1):渠道关(默认)→ 可用/托管余额零化 + waz_sunset 标记(退款着陆列表保留 —— 那是订单事实)
+  const sunset = !wazEscrowChannelOn(getProtocolParam)
+  const w = sunset ? { balance: 0, escrowed: 0 } : db.prepare('SELECT balance, escrowed FROM wallets WHERE user_id = ?').get(humanId) as { balance: number; escrowed: number } | undefined
   // 最近退款着陆:escrow 轨退货 refunded = 资金已从托管释放回买家(按订单核对;金额为订单币面值)
   const refunds = (db.prepare(`SELECT rr.order_id, rr.refund_amount, rr.resolved_at FROM return_requests rr
       WHERE rr.buyer_id = ? AND rr.status = 'refunded' ORDER BY rr.resolved_at DESC LIMIT 5`)
@@ -20,6 +23,7 @@ export function walletAgentView(db: Database.Database, humanId: string): Record<
       status: 'completed', completed_at: r.resolved_at == null ? null : String(r.resolved_at),
     }))
   return {
+    ...(sunset ? { waz_sunset: true } : {}),
     available_balance: w ? Number(w.balance) : 0,
     in_escrow: w ? Number(w.escrowed) : 0,
     currency: 'WAZ',

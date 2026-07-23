@@ -620,7 +620,7 @@ export function registerAgentGrantsRoutes(app: Application, deps: AgentGrantsDep
   // RFC-026 PR-3 — 钱包最小只读(safe scope wallet_read_minimal;OAuth 钱包面永远只读)
   app.get('/api/agent/wallet', requireAgentGrantScope('wallet_read_minimal'), async (req, res) => {
     const p = (req as Request & { agentGrant?: GrantPrincipal }).agentGrant!
-    res.json(walletAgentView(db, p.human_id))
+    res.json(walletAgentView(db, p.human_id, getProtocolParam))
   })
 
   // RFC-026 PR-2 — 审批状态只读(safe scope approval_requests_read;只看本人;零 PII)

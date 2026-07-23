@@ -12,16 +12,18 @@
  */
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
+import { wazEscrowChannelOn } from '../../waz-escrow-channel.js'   // WAZ 退役:earned KPI 零化
 import { dbOne } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
 
 export interface TrustedKpiDeps {
   db: Database.Database
   auth: (req: Request, res: Response) => Record<string, unknown> | null
+  getProtocolParam: <T>(key: string, fallback: T) => T
 }
 
 export function registerTrustedKpiRoutes(app: Application, deps: TrustedKpiDeps): void {
   // db 已走 RFC-016 异步 seam(dbOne),不再直接用 deps.db
-  const { auth } = deps
+  const { auth, getProtocolParam } = deps
 
   // Verifier KPI（白名单 tier / 配额 / 准确率 / 窗口奖励）
   app.get('/api/verifier/me/kpi', async (req, res) => {
@@ -62,7 +64,7 @@ export function registerTrustedKpiRoutes(app: Application, deps: TrustedKpiDeps)
         votes: windowVotes,
         rep_points: earnedEvents,
       },
-      total_earned_waz: Number(wal?.earned || 0),
+      total_earned_waz: wazEscrowChannelOn(getProtocolParam) ? Number(wal?.earned || 0) : 0,   // WAZ 退役:渠道关 → 0(冲正后真值亦 0)
     })
   })
 
@@ -101,7 +103,7 @@ export function registerTrustedKpiRoutes(app: Application, deps: TrustedKpiDeps)
       },
       window_total: windowTotal,
       pending,
-      total_earned_waz: Number(wal?.earned || 0),
+      total_earned_waz: wazEscrowChannelOn(getProtocolParam) ? Number(wal?.earned || 0) : 0,   // WAZ 退役:渠道关 → 0(冲正后真值亦 0)
     })
   })
 }
