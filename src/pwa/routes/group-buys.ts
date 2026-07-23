@@ -37,6 +37,13 @@ export interface GroupBuysDeps {
   isTrustedRole: (user: Record<string, unknown>) => boolean
   errorRes: (res: Response, status: number, code: string, msg: string) => void
   broadcastSystemEvent: (type: string, icon: string, summary: string, refId?: string | null) => void
+  getProtocolParam: <T>(key: string, fallback: T) => T
+}
+
+// WAZ 退役(2026-07-23):团购全程 WAZ escrow(join 锁本金/成团建 escrow 单)。渠道关(默认)=
+//   join 硬拒 + 结算强制走"全员退款"分支(存量参与者资金退回,绝不建新 escrow 单)。fail-closed。
+function wazEscrowChannelOn(getProtocolParam: <T>(key: string, fallback: T) => T): boolean {
+  return Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) === 1
 }
 
 /** 结算团购 — 成团创建订单 + 退差价；未达成全员退款。export 仅供 cron。 */
@@ -45,12 +52,14 @@ export function settleGroupBuy(
   generateId: (prefix: string) => string,
   broadcastSystemEvent: (type: string, icon: string, summary: string, refId?: string | null) => void,
   gbId: string,
+  getProtocolParam: <T>(key: string, fallback: T) => T,
 ): void {
   const gb = db.prepare('SELECT * FROM group_buys WHERE id = ? AND status = \'active\'').get(gbId) as Record<string, unknown> | undefined
   if (!gb) return
   const participants = db.prepare(`SELECT * FROM group_buy_participants WHERE group_buy_id = ? AND status = 'pending'`).all(gbId) as Array<Record<string, unknown>>
   const joined = participants.length
-  const targetMet = joined >= Number(gb.target_count)
+  // WAZ 退役硬闸(Codex #514 R1 BLOCKER-2):渠道关 → 即使成团也不建 escrow 单,强制全员退款收终局。
+  const targetMet = joined >= Number(gb.target_count) && wazEscrowChannelOn(getProtocolParam)
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(gb.product_id as string) as Record<string, unknown> | undefined
   if (!product) return
   const originalPrice = Number(product.price)
@@ -96,19 +105,22 @@ export function sweepExpiredGroupBuys(
   db: Database.Database,
   generateId: (prefix: string) => string,
   broadcastSystemEvent: (type: string, icon: string, summary: string, refId?: string | null) => void,
+  getProtocolParam: <T>(key: string, fallback: T) => T,
 ): void {
   const expired = db.prepare(`SELECT id FROM group_buys WHERE status = 'active' AND ends_at <= datetime('now')`).all() as Array<{ id: string }>
   for (const e of expired) {
-    try { settleGroupBuy(db, generateId, broadcastSystemEvent, e.id) } catch (err) { console.error('[gb sweep]', err) }
+    try { settleGroupBuy(db, generateId, broadcastSystemEvent, e.id, getProtocolParam) } catch (err) { console.error('[gb sweep]', err) }
   }
 }
 
 export function registerGroupBuysRoutes(app: Application, deps: GroupBuysDeps): void {
-  const { db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent } = deps
+  const { db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent, getProtocolParam } = deps
 
   // 卖家开团
   app.post('/api/group-buys', async (req, res) => {
     const user = auth(req, res); if (!user) return
+    // WAZ 退役:渠道关时开团只会产生永不能成团的死团(join 已拒)→ 一并如实拒绝
+    if (!wazEscrowChannelOn(getProtocolParam)) return void res.status(409).json({ error: 'WAZ 模拟托管轨已下架,团购暂不可创建', error_code: 'RAIL_DISABLED' })
     const { product_id, variant_id, target_count, discount_pct, duration_hours } = req.body || {}
     if (!product_id) return void res.status(400).json({ error: 'product_id 必填' })
     const p = await dbOne<{ id: string; seller_id: string; price: number; has_variants: number }>('SELECT id, seller_id, price, has_variants FROM products WHERE id = ? AND status = \'active\'', [product_id])
@@ -172,6 +184,8 @@ export function registerGroupBuysRoutes(app: Application, deps: GroupBuysDeps): 
   app.post('/api/group-buys/:id/join', async (req, res) => {
     const user = auth(req, res); if (!user) return
     if (isTrustedRole(user)) return void errorRes(res, 403, 'TRUSTED_ROLE_NO_TRADE', '受信角色无购物功能')
+    // WAZ 退役硬闸(Codex #514 R1 BLOCKER-2):渠道关 → 拒收新本金(join 即锁 escrow)。fail-closed。
+    if (!wazEscrowChannelOn(getProtocolParam)) return void res.status(409).json({ error: 'WAZ 模拟托管轨已下架,团购暂不可加入', error_code: 'RAIL_DISABLED' })
     const { shipping_address } = req.body || {}
     if (!shipping_address) return void res.status(400).json({ error: '请填写收货地址' })
     const gb = await dbOne<{ id: string; seller_id: string; product_id: string; status: string; target_count: number; ends_at: string; discount_pct: number }>('SELECT id, seller_id, product_id, status, target_count, ends_at, discount_pct FROM group_buys WHERE id = ?', [req.params.id])
@@ -194,7 +208,7 @@ export function registerGroupBuysRoutes(app: Application, deps: GroupBuysDeps): 
     })()
     const joined = (await dbOne<{ n: number }>(`SELECT COUNT(*) as n FROM group_buy_participants WHERE group_buy_id = ? AND status != 'refunded'`, [gb.id]))!.n
     if (joined >= gb.target_count) {
-      try { settleGroupBuy(db, generateId, broadcastSystemEvent, gb.id) } catch (e) { console.error('[gb settle]', e) }
+      try { settleGroupBuy(db, generateId, broadcastSystemEvent, gb.id, getProtocolParam) } catch (e) { console.error('[gb settle]', e) }
     }
     try { broadcastSystemEvent('group_buy_join', '👥', `团购 ${gb.id} 新成员 (${joined}/${gb.target_count})`, gb.id) } catch {}
     res.json({ success: true, id, joined_count: joined, target_count: gb.target_count })

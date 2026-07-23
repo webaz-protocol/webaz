@@ -4691,10 +4691,10 @@ db.exec(`
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_gb_status ON group_buys(status, ends_at)') } catch {}
 
 // #1013 Phase 28: 5 endpoints + settleGroupBuy + sweep cron 已迁出到 routes/group-buys.ts
-registerGroupBuysRoutes(app, { db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent })
+registerGroupBuysRoutes(app, { db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent, getProtocolParam })
 
 // Cron: 过期未成团 → 失败结算（function 已迁出到 routes/group-buys.ts）
-setInterval(() => sweepExpiredGroupBuysRaw(db, generateId, broadcastSystemEvent), 60_000)
+setInterval(() => sweepExpiredGroupBuysRaw(db, generateId, broadcastSystemEvent, getProtocolParam), 60_000)
 
 // I-2: admin 全平台数据导出
 const ADMIN_EXPORT_LIMIT = 20000
@@ -5482,6 +5482,12 @@ const RFQ_ORDER_DEADLINES = {
 // P3c 核心：award → 自动建 order（不冲正，幂等 — 已建过则不重）
 // 返回：{ ok, order_id?, error? }
 function awardBidAndCreateOrder(rfq: Record<string, unknown>, winner: Record<string, unknown>): { ok: boolean; order_id?: string; error?: string } {
+  // WAZ 退役(2026-07-23)硬闸:渠道关 → RFQ 中标绝不建 escrow 单/抽买家本金(Codex #514 R1 BLOCKER-1)。
+  //   manual award(rfqs.ts)把错误透传给调用方;first_match/auto-bid 记日志跳过;到期 cron 的失败
+  //   fallback 会标 expired 并退还全部押金(存量 RFQ 自愈,资金不搁浅)。只挡新建单,不碰任何退款路径。
+  if (Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1) {
+    return { ok: false, error: 'WAZ 模拟托管轨已下架(RAIL_DISABLED),RFQ 不可中标建单;RFQ 到期后押金将自动退还' }
+  }
   const rfqId = String(rfq.id)
   const bidId = String(winner.id)
   const buyerId = String(rfq.buyer_id)
@@ -5896,6 +5902,29 @@ function settleAuctionInner(aucId: string): { ok: boolean; order_id?: string; re
       if (auc.product_id) db.prepare("UPDATE products SET status = 'active', updated_at = datetime('now') WHERE id = ? AND status = 'auction_pending'").run(auc.product_id)
     })()
     return { ok: true, result: 'reserve_not_met' }
+  }
+
+  // WAZ 退役(2026-07-23)硬闸:渠道关 → 拍卖结算绝不建 escrow 单/抽买家本金(Codex #514 R1 BLOCKER-4)。
+  //   资金不搁浅:走既有退款机制收终局 —— 标 cancelled + 退中标者/其他 bid 押金 + 退卖家担保金 + 商品回架。
+  if (Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1) {
+    db.transaction(() => {
+      const cur = db.prepare("SELECT status FROM auctions WHERE id = ?").get(aucId) as { status: string } | undefined
+      if (!cur || cur.status !== 'open') throw new Error('concurrent_settle_skip')
+      db.prepare("UPDATE auctions SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?").run(aucId)
+      if (sellerStake > 0) db.prepare('UPDATE wallets SET balance = balance + ?, staked = staked - ? WHERE user_id = ?').run(sellerStake, sellerStake, auc.seller_id)
+      const bids = db.prepare("SELECT id, buyer_id, stake_locked FROM auction_bids WHERE auction_id = ? AND status = 'active'").all(aucId) as Array<{ id: string; buyer_id: string; stake_locked: number }>
+      for (const b of bids) {
+        db.prepare("UPDATE auction_bids SET status = 'cancelled', resolved_at = datetime('now') WHERE id = ?").run(b.id)
+        if (b.stake_locked > 0) db.prepare('UPDATE wallets SET balance = balance + ?, staked = staked - ? WHERE user_id = ?').run(b.stake_locked, b.stake_locked, b.buyer_id)
+      }
+      if (auc.product_id) db.prepare("UPDATE products SET status = 'active', updated_at = datetime('now') WHERE id = ? AND status = 'auction_pending'").run(auc.product_id)
+    })()
+    try {
+      db.prepare(`INSERT INTO notifications (id, user_id, type, title, body, created_at)
+                  VALUES (?,?,'auction_cancelled',?,?,datetime('now'))`)
+        .run(generateId('ntf'), String(winner.buyer_id), `拍卖已取消:WAZ 托管轨已下架`, `拍卖 ${String(auc.title).slice(0, 30)} · 押金已全额退还`)
+    } catch {}
+    return { ok: false, result: 'rail_disabled_refund' }
   }
 
   // 3) 成交：建单
@@ -6475,7 +6504,7 @@ registerCheckoutHelpersRoutes(app, {
 
 // ─── M8 二手板块 ────────────────────────────────────────────
 // #1013 Phase 27: 6 endpoints + 4 SH_* sets + addHours 已迁出到 routes/secondhand.ts
-registerSecondhandRoutes(app, { db, generateId, auth, errorRes })
+registerSecondhandRoutes(app, { db, generateId, auth, errorRes, getProtocolParam })
 
 // 7. 面交完成确认（绕开物流状态机；仅 in-person 订单）
 // POST /api/orders/:id/confirm-in-person — Phase 84 已迁出

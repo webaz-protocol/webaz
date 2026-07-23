@@ -8,6 +8,9 @@
  *     orders-create escrow 路径硬闸位于 direct_p2p 分叉之后、钱包预检之前(源码锁)。
  *  3. 报价层:buyer-quote 显式 escrow 在 quote 即拒(不冻结死路草稿);escrow next_steps 建议只在渠道开时给(源码锁)。
  *  4. 双语:RAIL_DISABLED 进 orderErrorLookup + i18n _EN;param 已注册进 DEFAULT_PARAMS(默认 '0')。
+ *  5. 垂直建单面(Codex #514 R1):二手下单 409(钱包/物品原封不动);团购创建/加入 409、渠道关时结算
+ *     强制全员退款绝不建单(行为测试);RFQ 中标 helper、拍卖结算、MCP local place_order 的闸(源码锁,
+ *     server.ts 内部函数不可 import)。存量退款/争议路径一概不门控。
  * Usage: npm run test:waz-escrow-rail-gate
  */
 import { mkdtempSync, readFileSync } from 'node:fs'
@@ -84,6 +87,96 @@ const CPY = readFileSync(new URL('../src/pwa/order-submit-choose-payment.ts', im
 ok('choose-payment: re-validates against sellerSupportedPaymentOptions (menu gate covers the choose path)', /sellerSupportedPaymentOptions\(db, \{/.test(CPY))
 const DPO = readFileSync(new URL('../src/direct-pay-payment-options.ts', import.meta.url), 'utf8')
 ok('payment-options: escrow push is channel-gated fail-closed', /payment_rail_waz_escrow_enabled', 0\)\) === 1/.test(DPO))
+
+// ── 5. 垂直建单面(Codex #514 R1 BLOCKERs)──────────────────────────────────────────────
+const express = (await import('express')).default
+const { registerSecondhandRoutes } = await import('../src/pwa/routes/secondhand.js')
+const { registerGroupBuysRoutes, settleGroupBuy } = await import('../src/pwa/routes/group-buys.js')
+
+let seq = 0
+const genId = (p: string): string => `${p}_${++seq}`
+const mkUser = (id: string, bal = 100): void => {
+  db.prepare("INSERT INTO users (id,name,role,api_key) VALUES (?,?,'buyer',?)").run(id, id, 'k_' + id)
+  db.prepare('INSERT INTO wallets (user_id, balance) VALUES (?,?)').run(id, bal)
+}
+mkUser('shBuyer'); mkUser('shSeller'); mkUser('gbSeller'); mkUser('gbA'); mkUser('gbB')
+const testAuth = (req: { headers: Record<string, unknown> }, res: { status: (n: number) => { json: (b: unknown) => void } }): Record<string, unknown> | null => {
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(String(req.headers['x-test-user'] || '')) as Record<string, unknown> | undefined
+  if (!u) { res.status(401).json({ error: 'login required' }); return null }
+  return u
+}
+const app = express(); app.use(express.json())
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+registerSecondhandRoutes(app, { db, generateId: genId, auth: testAuth as any, errorRes: () => {}, getProtocolParam: gp })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+registerGroupBuysRoutes(app, { db, generateId: genId, auth: testAuth as any, isTrustedRole: () => false, errorRes: () => {}, broadcastSystemEvent: () => {}, getProtocolParam: gp })
+const srv = app.listen(0)
+const port = (srv.address() as { port: number }).port
+const post = async (path: string, body: Record<string, unknown>, userId: string): Promise<{ status: number; json: Record<string, unknown> }> => {
+  const r = await fetch(`http://127.0.0.1:${port}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-test-user': userId }, body: JSON.stringify(body) })
+  return { status: r.status, json: await r.json() as Record<string, unknown> }
+}
+
+// 二手:渠道关 → 409;物品仍 available、买家钱包分文未动
+delete cp['payment_rail_waz_escrow_enabled']
+db.prepare("INSERT INTO secondhand_items (id, seller_id, title, category, condition_grade, price, status, fulfillment) VALUES ('sh1','shSeller','旧键盘','computer','like_new',30,'available','shipping')").run()
+const shOff = await post('/api/secondhand/sh1/order', { shipping_address: 'addr', fulfillment_mode: 'shipping' }, 'shBuyer')
+const shWallet = db.prepare('SELECT balance, escrowed FROM wallets WHERE user_id = ?').get('shBuyer') as { balance: number; escrowed: number }
+ok('secondhand: off → 409 RAIL_DISABLED', shOff.status === 409 && shOff.json.error_code === 'RAIL_DISABLED', JSON.stringify(shOff))
+ok('secondhand: off → item untouched + wallet untouched', (db.prepare("SELECT status FROM secondhand_items WHERE id='sh1'").get() as { status: string }).status === 'available' && shWallet.balance === 100 && Number(shWallet.escrowed || 0) === 0)
+cp['payment_rail_waz_escrow_enabled'] = 1
+const shOn = await post('/api/secondhand/sh1/order', { shipping_address: 'addr', fulfillment_mode: 'shipping' }, 'shBuyer')
+// 渠道开 → 请求穿过闸进入真实建单路径(本最小 fixture 缺 users.sponsor_id 列,路径内 catch 回滚打
+// "[secondhand order] no such column" 日志属预期噪音)。被测对象是闸,不桩闸;完整下单语义由二手全量套件覆盖。
+ok('secondhand: on → gate passes (not RAIL_DISABLED; request reaches the real create path)', shOn.json.error_code !== 'RAIL_DISABLED', JSON.stringify(shOn))
+
+// 团购:渠道关 → 创建/加入 409;渠道关时结算 = 即使满员也强制全员退款、绝不建单
+// (group_buys 两表建在 server.ts inline,不在 schema helpers → 测试镜像建表)
+db.exec(`CREATE TABLE IF NOT EXISTS group_buys (
+  id TEXT PRIMARY KEY, seller_id TEXT NOT NULL, product_id TEXT NOT NULL, variant_id TEXT,
+  target_count INTEGER NOT NULL, discount_pct REAL NOT NULL, ends_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active', created_at TEXT DEFAULT (datetime('now')), settled_at TEXT)`)
+db.exec(`CREATE TABLE IF NOT EXISTS group_buy_participants (
+  id TEXT PRIMARY KEY, group_buy_id TEXT NOT NULL, buyer_id TEXT NOT NULL, shipping_address TEXT NOT NULL,
+  escrow_amount REAL NOT NULL, order_id TEXT, status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT DEFAULT (datetime('now')), UNIQUE(group_buy_id, buyer_id))`)
+delete cp['payment_rail_waz_escrow_enabled']
+db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('gbP','gbSeller','团品','d',20,50,'active')").run()
+const gbCreateOff = await post('/api/group-buys', { product_id: 'gbP', target_count: 2, discount_pct: 0.1 }, 'gbSeller')
+ok('group-buy: off → create 409 RAIL_DISABLED', gbCreateOff.status === 409 && gbCreateOff.json.error_code === 'RAIL_DISABLED', JSON.stringify(gbCreateOff))
+db.prepare("INSERT INTO group_buys (id, seller_id, product_id, target_count, discount_pct, ends_at, status) VALUES ('gb1','gbSeller','gbP',2,0.1,datetime('now','+1 day'),'active')").run()
+const gbJoinOff = await post('/api/group-buys/gb1/join', { shipping_address: 'addr' }, 'gbA')
+ok('group-buy: off → join 409 RAIL_DISABLED (no new principal enters escrow)', gbJoinOff.status === 409 && gbJoinOff.json.error_code === 'RAIL_DISABLED', JSON.stringify(gbJoinOff))
+// 存量参与者(渠道开时已入 escrow)→ 渠道关时结算:满员也全员退款,不建 escrow 单
+for (const [pid, uid] of [['gbp1', 'gbA'], ['gbp2', 'gbB']] as const) {
+  db.prepare("INSERT INTO group_buy_participants (id, group_buy_id, buyer_id, shipping_address, escrow_amount, status) VALUES (?,?,?,'addr',20,'pending')").run(pid, 'gb1', uid)
+  db.prepare('UPDATE wallets SET balance = balance - 20, escrowed = escrowed + 20 WHERE user_id = ?').run(uid)
+}
+const ordersBefore = (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n
+settleGroupBuy(db, genId, () => {}, 'gb1', gp)
+const gbAfter = db.prepare("SELECT status FROM group_buys WHERE id='gb1'").get() as { status: string }
+const gbAWallet = db.prepare('SELECT balance, escrowed FROM wallets WHERE user_id = ?').get('gbA') as { balance: number; escrowed: number }
+ok('group-buy: off + target met → FORCED full refund, zero orders created', gbAfter.status === 'failed' && (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === ordersBefore && gbAWallet.balance === 100 && Number(gbAWallet.escrowed) === 0,
+  JSON.stringify({ gbAfter, gbAWallet }))
+
+// RFQ 中标 helper / 拍卖结算 / MCP local place_order:server 内部函数不可 import → 源码锁
+const iAwardFn = SV.indexOf('function awardBidAndCreateOrder')
+const iAwardGate = SV.indexOf("payment_rail_waz_escrow_enabled', 0)) !== 1", iAwardFn)
+const iAwardInsert = SV.indexOf('INSERT INTO orders', iAwardFn)
+ok('server: awardBidAndCreateOrder gated at top, before its orders INSERT', iAwardFn > 0 && iAwardGate > iAwardFn && iAwardInsert > iAwardGate, `fn=${iAwardFn} gate=${iAwardGate} ins=${iAwardInsert}`)
+const iSettleFn = SV.indexOf('function settleAuctionInner')
+const iSettleGate = SV.indexOf("payment_rail_waz_escrow_enabled', 0)) !== 1", iSettleFn)
+const iSettleRefund = SV.indexOf("'rail_disabled_refund'", iSettleFn)
+const iSettleInsert = SV.indexOf('INSERT INTO orders', iSettleFn)
+ok('server: settleAuctionInner off-branch refunds all stakes BEFORE the settle INSERT', iSettleFn > 0 && iSettleGate > iSettleFn && iSettleRefund > iSettleGate && iSettleInsert > iSettleGate, `fn=${iSettleFn} gate=${iSettleGate} ins=${iSettleInsert}`)
+const MCP = readFileSync(new URL('../src/layer1-agent/L1-1-mcp-server/server.ts', import.meta.url), 'utf8')
+ok('mcp local place_order: reads protocol_params fail-closed before its orders INSERT',
+  /SELECT value FROM protocol_params WHERE key = 'payment_rail_waz_escrow_enabled'/.test(MCP) && /railParam\?\.value \?\? 0\) !== 1\) return \{ error/.test(MCP))
+// 团购结算的强制退款语义源码锁(targetMet 与渠道合取)
+const GB = readFileSync(new URL('../src/pwa/routes/group-buys.ts', import.meta.url), 'utf8')
+ok('group-buys: settle targetMet is conjunctive with the channel switch', /joined >= Number\(gb\.target_count\) && wazEscrowChannelOn\(getProtocolParam\)/.test(GB))
+
+srv.close()
 
 if (fail > 0) { console.error(`\n❌ waz-escrow-rail-gate FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ waz-escrow-rail-gate: channel switch default OFF — menu delisted + quote rejects + create/cart 409 RAIL_DISABLED, bilingual mapped, param registered\n  ✅ pass ${pass}`)
