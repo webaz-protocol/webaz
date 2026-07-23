@@ -1,6 +1,7 @@
 // @ts-nocheck — body 为 ES5 风格运行时脚本(el() 可选参/动态 state),完整类型标注另行任务;语法错误仍会上报。生成器会剥离本行。
 
 var __lastSearch=null   // B1:缓存上一次搜索页 out —— 供详情页【← 返回列表】原地回退,不再固定住
+var __lastSearchPublic=false   // 公开/完整 surface 严格隔离,禁止从公开详情恢复旧下单卡
 var __autoFillAttempts=0   // 审计F1:跨渲染尝试上限 —— 终止性不再依赖服务端隐式不变量
 // i18n:ETA/到期择取 —— zh 用服务端 display_*(逐字不变);en 用客户端双语 etaDisplay + 到期后缀英化。
 function __i18nExp(disp, iso){ var d=String(disp||iso||''); if(!d) return ''; return webazLocale()==='en' ? d.replace('(新加坡时间)',' (SGT)') : d }
@@ -13,6 +14,7 @@ function renderBody(oai, out){
   //   砸成"0 命中"或覆盖审批面板;非 product 模型直接忽略,保留当前 DOM。
   if(out.schema_version&&String(out.schema_version).indexOf('webaz.product_')!==0){ return }
   var publicOnly=out.public_commerce===true
+  if(__lastSearch&&__lastSearchPublic!==publicOnly) __lastSearch=null
   function addPublicProductAction(row,host,pid){
     var url=String(out.public_product_url_template||'').replace('{product_id}',encodeURIComponent(String(pid||'')))
     var safe=typeof safeWebazHref==='function'?safeWebazHref(url):''
@@ -133,7 +135,7 @@ function renderBody(oai, out){
   }
 
   // ①搜索页
-  __lastSearch = out   // B1:缓存供详情页【返回列表】原地回退
+  __lastSearch = out; __lastSearchPublic = publicOnly   // B1:缓存绑定当前 surface
   var sellers=out.sellers||{}
   var state={sort:'default',selected:{},open:{},hint:null,approval:null,chainBusy:false}
   // A3-6:宿主 widgetState 恢复(ChatGPT 持久化每条消息的组件态)—— 刷新/重挂载后报价/审批面板不丢。
@@ -229,7 +231,7 @@ function renderBody(oai, out){
       if(stockChip) chips.appendChild(el('span','chip warn',stockChip))
       ;(p.decision_flags||[]).forEach(function(f){ var lb=(webazLocale()==='en'&&f.label_en)?f.label_en:(f.label||f.code); if(stockChip&&lb===stockChip) return; chips.appendChild(el('span','chip'+(f.severity==='warning'?' warn':''),lb)) })   // i18n:en 用 label_en   // R2-3:同义徽标只渲染一次
       c.appendChild(chips)
-      var seller=sellers[p.seller_ref]||{}
+      var seller=publicOnly?(p.seller||{}):(sellers[p.seller_ref]||{})
       c.appendChild(el('div','meta',(seller.name||'')+L(' · 已售 ',' · sold ')+(p.sales_count||0)))
       var m=el('div','more')
       m.appendChild(el('div',null,p.summary||''))
@@ -262,11 +264,12 @@ function renderBody(oai, out){
       c.appendChild(row)
       g.appendChild(c)
     })
-    if(out.more_url&&__total>__shown){   // A4:第 6 格 = 前往 WebAZ 查看更多(不翻页,宁缺毋滥)
+    var __moreHref=out.more_url?(publicOnly?safeWebazHref(String(out.more_url)):String(out.more_url)):null
+    if(__moreHref&&__total>__shown){   // A4:第 6 格 = 前往 WebAZ 查看更多(不翻页,宁缺毋滥)
       var mc=el('div','card'); mc.appendChild(el('b',null,L('还有 ','Plus ')+(__total-__shown)+L(' 款',' ')))
-      var mUrl=el('div','recreason',String(out.more_url)); mUrl.style.display='none'
+      var mUrl=el('div','recreason',String(__moreHref)); mUrl.style.display='none'
       var mb=el('button','primary',L('前往 WebAZ 查看更多','See more on WebAZ'))
-      mb.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,String(out.more_url)) }catch(e){ op=false } if(!op){ mUrl.style.display='block'; doCopy(String(out.more_url),mb,mUrl) } }))
+      mb.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,String(__moreHref)) }catch(e){ op=false } if(!op){ mUrl.style.display='block'; doCopy(String(__moreHref),mb,mUrl) } }))
       var mr=el('div','row'); mr.appendChild(mb); mc.appendChild(mr); mc.appendChild(mUrl)
       g.appendChild(mc)
     }

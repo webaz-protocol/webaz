@@ -59,6 +59,12 @@ const renderBody = ctx.__render as (oai: unknown, out: unknown) => void
 
 const oai = { callTool() {} }
 const SEARCH = { products: [{ id: 'prd_a', title: 'AAA', price: { amount_minor: 11_500_000, display: '11.5 USDC' }, summary: 'sa', return_days: 7 }, { id: 'prd_b', title: 'BBB', price: { amount_minor: 9_200_000, display: '9.2 USDC' }, summary: 'sb', return_days: 7 }], sellers: {}, result_handle: 'rh1' }
+const PUBLIC_SEARCH = {
+  products: SEARCH.products.map(product => ({ ...product, seller: { name: 'Public seller', level: 'new', rep_points: 0 } })),
+  result_handle: SEARCH.result_handle,
+  public_commerce: true,
+  public_product_url_template: 'https://webaz.xyz/#product/{product_id}',
+}
 
 try {
   // ── initial search render: cards present, not open, button says 展开 ──
@@ -223,9 +229,11 @@ try {
   ;(ctxPublic.__render as (o: unknown, out: unknown) => void)({
     callTool: (n: string, a: unknown) => { publicCalls.push([n, a]) },
     openExternal: ({ href }: { href: string }) => { opened.push(href) },
-  }, { ...SEARCH, public_commerce: true, public_product_url_template: 'https://webaz.xyz/#product/{product_id}' })
+  }, PUBLIC_SEARCH)
   ok('P-1 public card replaces every 准备下单 action with 在 WebAZ 查看',
-    !treeTextG(rnPublic).includes('准备下单') && !!findByText(cardFor(rnPublic, 'prd_a')!, '在 WebAZ 查看'))
+    !treeTextG(rnPublic).includes('准备下单')
+    && treeTextG(rnPublic).includes('Public seller')
+    && !!findByText(cardFor(rnPublic, 'prd_a')!, '在 WebAZ 查看'))
   fire(findByText(cardFor(rnPublic, 'prd_a')!, '在 WebAZ 查看')!)
   ok('P-2 public card opens the exact allowlisted WebAZ product deep link',
     opened[0] === 'https://webaz.xyz/#product/prd_a')
@@ -234,6 +242,26 @@ try {
   fire(findByText(cardFor(rnPublic, 'prd_a')!, '详情')!)
   ok('P-4 public card retains read-only on-demand detail via webaz_search',
     publicCalls.some(([name]) => name === 'webaz_search'))
+
+  const rnCross = mk('div'); rnCross.setAttribute('id', 'root')
+  const docCross = { getElementById: (id: string) => (id === 'root' ? rnCross : null), createElement: (t: string) => mk(t) }
+  const ctxCross: Record<string, unknown> = { document: docCross, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON, encodeURIComponent }
+  ctxCross.globalThis = ctxCross; ctxCross.self = ctxCross; vm.createContext(ctxCross)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctxCross)
+  const crossCalls: Array<[string, unknown]> = []
+  const crossRender = ctxCross.__render as (o: unknown, out: unknown) => void
+  crossRender({ callTool: (name: string, args: unknown) => { crossCalls.push([name, args]) } }, SEARCH)
+  crossRender({ callTool: (name: string, args: unknown) => { crossCalls.push([name, args]) } }, {
+    schema_version: 'webaz.product_detail.model.v1',
+    public_commerce: true,
+    public_product_url_template: 'https://webaz.xyz/#product/{product_id}',
+    products: [{ id: 'prd_a', title: 'AAA', description: 'full desc', price: { display: '11.5 USDC' } }],
+  })
+  const crossBack = findByText(rnCross, '← 返回列表')
+  if (crossBack) fire(crossBack)
+  ok('P-5 public detail cannot restore a cached non-public order card',
+    !treeTextG(rnCross).includes('准备下单')
+    && !crossCalls.some(([name]) => /quote|draft|submit|order|place/.test(name)))
 
   const rnPublicState = mk('div'); rnPublicState.setAttribute('id', 'root')
   const docPublicState = { getElementById: (id: string) => (id === 'root' ? rnPublicState : null), createElement: (t: string) => mk(t) }
@@ -248,9 +276,9 @@ try {
     },
     setWidgetState: (state: unknown) => { savedStates.push(state) },
     callTool: (name: string, args: unknown) => { restoredCalls.push([name, args]) },
-  }, { ...SEARCH, public_commerce: true, public_product_url_template: 'https://webaz.xyz/#product/{product_id}' })
+  }, PUBLIC_SEARCH)
   const publicStateText = treeTextG(rnPublicState)
-  ok('P-5 public widget clears and never restores stale quote/approval state',
+  ok('P-6 public widget clears and never restores stale quote/approval state',
     savedStates.some(state => JSON.stringify(state) === '{}')
     && !/STALE_QUOTE|apr_stale|approval|批准|报价/.test(publicStateText)
     && !restoredCalls.some(([name]) => /quote|draft|submit|order|approval/.test(name)))
@@ -263,10 +291,15 @@ try {
   const badOpened: string[] = []
   ;(ctxBadUrl.__render as (o: unknown, out: unknown) => void)({
     openExternal: ({ href }: { href: string }) => { badOpened.push(href) },
-  }, { ...SEARCH, public_commerce: true, public_product_url_template: 'https://evil.example/#product/{product_id}' })
+  }, {
+    ...PUBLIC_SEARCH,
+    total_count: 3,
+    more_url: 'https://evil.example/#discover',
+    public_product_url_template: 'https://evil.example/#product/{product_id}',
+  })
   const badButton = findByText(cardFor(rnBadUrl, 'prd_a')!, '在 WebAZ 查看')
   if (badButton) fire(badButton)
-  ok('P-6 untrusted public product URL is disabled and never opened or copied',
+  ok('P-7 untrusted public product/more URLs are disabled and never opened or copied',
     badOpened.length === 0 && !treeTextG(rnBadUrl).includes('evil.example'))
 } catch (e) { fail++; fails.push('✗ THREW: ' + ((e as Error).stack || (e as Error).message)) }
 try { rmSync(__tmpHome, { recursive: true, force: true }) } catch { /* temp HOME cleanup */ }

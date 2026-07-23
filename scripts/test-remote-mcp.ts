@@ -135,6 +135,30 @@ async function main() {
     const blockedText = (blockedJson?.result?.content || []).map(c => c.text || '').join('')
     ok('4h. shopping_v1 rejects a cached out-of-scope tool call by name',
       blocked.status === 200 && /TOOL_NOT_AVAILABLE_ON_SURFACE/.test(blockedText), blockedText.slice(0, 160))
+    const savedOauth = process.env.WEBAZ_OAUTH
+    process.env.WEBAZ_OAUTH = '1'
+    const blockedOauth = await rpc(base, { jsonrpc: '2.0', id: 27, method: 'tools/call', params: { name: 'webaz_quote_order', arguments: {} } }, {}, '?surface=shopping_v1')
+    if (savedOauth === undefined) delete process.env.WEBAZ_OAUTH; else process.env.WEBAZ_OAUTH = savedOauth
+    const blockedOauthJson = await blockedOauth.json().catch(() => null) as { result?: { content?: Array<{ text?: string }>; _meta?: unknown } } | null
+    const blockedOauthText = (blockedOauthJson?.result?.content || []).map(c => c.text || '').join('')
+    ok('4i. shopping_v1 hidden tool is hard-rejected before OAuth challenge',
+      blockedOauth.status === 200
+      && /TOOL_NOT_AVAILABLE_ON_SURFACE/.test(blockedOauthText)
+      && !blockedOauth.headers.get('www-authenticate')
+      && blockedOauthJson?.result?._meta === undefined,
+      blockedOauthText.slice(0, 160))
+    const blockedDpop = await rpc(base,
+      { jsonrpc: '2.0', id: 28, method: 'tools/call', params: { name: 'webaz_quote_order', arguments: {} } },
+      { Authorization: 'DPoP fake-token', DPoP: 'fake-proof' },
+      '?surface=shopping_v1')
+    const blockedDpopJson = await blockedDpop.json().catch(() => null) as { result?: { content?: Array<{ text?: string }>; _meta?: unknown } } | null
+    const blockedDpopText = (blockedDpopJson?.result?.content || []).map(c => c.text || '').join('')
+    ok('4j. shopping_v1 hidden tool is hard-rejected before DPoP validation/challenge',
+      blockedDpop.status === 200
+      && /TOOL_NOT_AVAILABLE_ON_SURFACE/.test(blockedDpopText)
+      && !blockedDpop.headers.get('www-authenticate')
+      && blockedDpopJson?.result?._meta === undefined,
+      blockedDpopText.slice(0, 160))
   }
   {
     const g = await fetch(`${base}/mcp`)

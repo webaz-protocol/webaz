@@ -24,8 +24,8 @@
  */
 
 export const KNOWN_STALE_WIDGET_HASHES: Readonly<Record<string, readonly string[]>> = {
-  'webaz-products':            ['c4bd5e13bb', 'e87312858c', '8edeb847f3', '212893345f', 'bfff65173b', '62376d0873', '1cdf9b1eb9', '36df144409', '31780e8528', 'eec0686d7d', '90fcef824f', '9d8f6e850e', '773b62e28f', 'bef81e60b3'],
-  'webaz-products-mcp':        ['b9b8e577a8', '4d42fe0623', '9e1ebdac31', '97a9101d7c', '2a96b6e19a', 'f7acafe890', 'f20a304140', '2d204e46da', 'fd21fdaee4', 'dd693cdbe6', '19c11926ba', '85a1c76d5f', '8d3cb88687', '950e881d2a'],
+  'webaz-products':            ['c4bd5e13bb', 'bc1a887d88', 'bfff65173b', '62376d0873', '1cdf9b1eb9', '36df144409', '31780e8528', 'eec0686d7d', '90fcef824f', '9d8f6e850e', '773b62e28f', 'bef81e60b3', '7688ad9e16', '68f0735704'],
+  'webaz-products-mcp':        ['b9b8e577a8', '334fe638ce', '2a96b6e19a', 'f7acafe890', 'f20a304140', '2d204e46da', 'fd21fdaee4', 'dd693cdbe6', '19c11926ba', '85a1c76d5f', '8d3cb88687', '950e881d2a', '79ee2224e5', '4a16e097bc'],
   'webaz-quote-approval':      ['6a2e96dfb1', '4e4d16d232', 'a1bb13f641', '176e2de4e7', '82c5fb2d46', 'ddfed02d36', '4530e921c8', '324582b212', '6704563394'],
   'webaz-quote-approval-mcp':  ['9f5a3ea6f7', '2395886fc7', 'efba433258', 'fb414f1c0c', 'a22bdea384', '86c5302705', '181c26cdcf', '727c11f0ea', 'a2cc799c4c'],
   'webaz-order-timeline':      ['5ea1e0d365', '1e1d9f3a1b', '4c3103b1f4', '9f0cf3187f', '6ed5bd5cd7', '22fcea1f21'],

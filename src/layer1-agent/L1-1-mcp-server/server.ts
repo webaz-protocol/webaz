@@ -2280,9 +2280,20 @@ function toolsForTransport(isolated: boolean, surface: ToolSurface = 'full'): ty
   const base = isolated ? TOOLS_ANNOTATED.filter(t => !LOCAL_ONLY_TOOLS.has(t.name)) : TOOLS_ANNOTATED
   const filtered = filterToolsBySurface(base, surface)
   if (surface !== 'shopping_v1') return filtered
-  const reviewed = filtered.map(tool => tool.name !== 'webaz_search' ? tool : {
-    ...tool,
-    description: `Find reviewed, active WebAZ retail products. No login required.
+  const reviewed = filtered.map(tool => {
+    if (tool.name !== 'webaz_search') return tool
+    const outputSchema = tool.outputSchema as Record<string, unknown> | undefined
+    const properties = outputSchema?.properties as Record<string, unknown> | undefined
+    const productsSchema = properties?.products as Record<string, unknown> | undefined
+    const productItems = productsSchema?.items as Record<string, unknown> | undefined
+    const productProperties = productItems?.properties as Record<string, unknown> | undefined
+    const publicProperties = { ...properties }
+    const publicProductProperties = { ...productProperties }
+    delete publicProperties.sellers
+    delete publicProductProperties.seller_ref
+    return {
+      ...tool,
+      description: `Find reviewed, active WebAZ retail products. No login required.
 
 Use one or two distinctive product terms from the shopper's request, plus optional category, max_price,
 ship_to, return and handling filters. This reviewed public surface tries exact title/SKU/anchor matching
@@ -2291,8 +2302,78 @@ external shopping links/share text, result_handle detail lookup, sorting and com
 
 This release is discovery-only: never claim that it creates an order, charges, reserves stock, or accesses
 private account data. Product cards link to WebAZ for any action beyond discovery.`,
+      ...(outputSchema ? {
+        outputSchema: {
+          ...outputSchema,
+          properties: {
+            ...publicProperties,
+            ...(productsSchema ? {
+              products: {
+                ...productsSchema,
+                ...(productItems ? {
+                  items: {
+                    ...productItems,
+                    properties: {
+                      ...publicProductProperties,
+                      seller: {
+                        type: 'object',
+                        description: 'public seller summary {name,level,rep_points}; no internal seller id',
+                      },
+                    },
+                  },
+                } : {}),
+              },
+            } : {}),
+            public_commerce: { type: 'boolean', description: 'true only on the reviewed discovery-only public plugin surface' },
+            public_product_url_template: { type: 'string', description: 'server-issued WebAZ product deep-link template used by the discovery-only card' },
+          },
+        },
+      } : {}),
+    }
   })
   return withSecuritySchemeMetaMirror(reviewed as typeof TOOLS_ANNOTATED)
+}
+
+function deidentifyPublicCommerceSellers(value: Record<string, unknown>): Record<string, unknown> {
+  const sanitizeProducts = (
+    owner: Record<string, unknown>,
+    productsKey: string,
+    sellersKey: string,
+  ): Record<string, unknown> => {
+    const products = Array.isArray(owner[productsKey]) ? owner[productsKey] as Array<unknown> : null
+    const sellers = owner[sellersKey] && typeof owner[sellersKey] === 'object' && !Array.isArray(owner[sellersKey])
+      ? owner[sellersKey] as Record<string, unknown>
+      : {}
+    const clean = { ...owner }
+    delete clean[sellersKey]
+    if (!products) return clean
+    clean[productsKey] = products.map(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return item
+      const product = item as Record<string, unknown>
+      const sellerRef = typeof product.seller_ref === 'string' ? product.seller_ref : ''
+      const rawSeller = sellerRef && sellers[sellerRef] && typeof sellers[sellerRef] === 'object' && !Array.isArray(sellers[sellerRef])
+        ? sellers[sellerRef] as Record<string, unknown>
+        : {}
+      const seller = {
+        name: typeof rawSeller.name === 'string' ? rawSeller.name : null,
+        level: typeof rawSeller.level === 'string' ? rawSeller.level : null,
+        rep_points: Number.isFinite(Number(rawSeller.rep_points)) ? Number(rawSeller.rep_points) : null,
+      }
+      const cleanProduct: Record<string, unknown> = { ...product, seller }
+      delete cleanProduct.seller_ref
+      return cleanProduct
+    })
+    return clean
+  }
+
+  let clean = sanitizeProducts(value, 'products', 'sellers')
+  if (clean.recovery && typeof clean.recovery === 'object' && !Array.isArray(clean.recovery)) {
+    clean = {
+      ...clean,
+      recovery: sanitizeProducts(clean.recovery as Record<string, unknown>, 'related_products', 'related_sellers'),
+    }
+  }
+  return clean
 }
 
 // ─── 工具处理函数 ─────────────────────────────────────────────
@@ -2790,7 +2871,9 @@ export async function handleSearch(args: Record<string, unknown>) {
       if (!look || look.found !== true || httpStatus === 410 || look.status === 'retired' || look.status === 'reclaimable') {
         const note = httpStatus === 410 || look?.hint === 'archived'
           ? 'This anchor is archived (its product was delisted). Ask the seller for a current link, or search by full product title. / 该口令已归档(商品下架),请向卖家索取新链接或用完整标题搜索。'
-          : 'No such anchor (or it was reset). Check the code, or search by full product title / webaz_discover. / 口令不存在或已重置,请核对,或用完整标题 / webaz_discover 搜索。'
+          : publicCommerce
+            ? 'No such anchor (or it was reset). Check the code, or retry webaz_search with the full product title. / 口令不存在或已重置,请核对,或用完整标题重新搜索。'
+            : 'No such anchor (or it was reset). Check the code, or search by full product title / webaz_discover. / 口令不存在或已重置,请核对,或用完整标题 / webaz_discover 搜索。'
         return { schema_version: SCHEMA_PRODUCT_SEARCH, mode: 'agent', found: 0, count: 0, products: [], matched_by: 'anchor_not_found', recovery: { reason: 'anchor_not_found', anchor: code, note } }
       }
       const prod = look.product as Record<string, unknown> | null
@@ -2846,7 +2929,9 @@ export async function handleSearch(args: Record<string, unknown>) {
         count: rawProducts.length,
         sellers: sellersIndex(rawProducts),
         products: rawProducts.map(p => projectProductModel(p)),
-        ...(rawProducts.length ? { hint: '下单前用 webaz_verify_price 锁价。' } : { hint: '未找到关联商品。可改用 query 参数做关键词搜索。' }),
+        ...(rawProducts.length
+          ? { hint: publicCommerce ? '查看商品卡或在 WebAZ 打开商品页了解详情。' : '下单前用 webaz_verify_price 锁价。' }
+          : { hint: '未找到关联商品。可改用 query 参数做关键词搜索。' }),
       }
     } catch (e) {
       return { error: `链接搜索网络错误：${(e as Error).message}` }
@@ -2897,7 +2982,9 @@ export async function handleSearch(args: Record<string, unknown>) {
       ].filter(Boolean).join(' ')
       const totalN = Number((r as Record<string, unknown>).total_count)
       return { ...r, found: products.length, ...(rec ? { recommendation: rec } : {}),
-        ...(Number.isFinite(totalN) && totalN > products.length ? { more_url: `${WEBAZ_API_URL}/#discover` } : {}),   // A4:第 6 格跳转 webaz 看更多
+        ...(Number.isFinite(totalN) && totalN > products.length
+          ? { more_url: publicCommerce ? 'https://webaz.xyz/#discover' : `${WEBAZ_API_URL}/#discover` }
+          : {}),   // A4:第 6 格跳转 webaz 看更多;公开插件只发 canonical WebAZ URL
         model_conduct: conduct }
     }
     // ★ 可恢复建议(调用契约 PR-C:0 命中不再导向"无 query 全目录浏览" —— 那是本次事故的制度化根因;
@@ -6470,6 +6557,7 @@ export function buildMcpServer(opts: {
 
     if (name === 'webaz_search' && (opts.surface ?? 'full') === 'shopping_v1'
         && result && typeof result === 'object' && !Array.isArray(result)) {
+      result = deidentifyPublicCommerceSellers(result as Record<string, unknown>)
       const reviewed = result as Record<string, unknown>
       reviewed.public_commerce = true
       reviewed.public_product_url_template = 'https://webaz.xyz/#product/{product_id}'

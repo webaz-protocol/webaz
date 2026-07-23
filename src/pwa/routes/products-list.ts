@@ -503,10 +503,15 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     if (outside.length) {
       return void res.status(400).json({ error: 'selected_ids must come from the SAME search result the handle was issued for', error_code: 'SELECTED_IDS_NOT_IN_HANDLE', retryable: true, hint: 'ids outside the handle set are rejected — search again for other products' })
     }
-    const ph = (selected_ids as string[]).map(() => '?').join(',')
     const policy = public_commerce === true ? publicCommerceSqlFilter('p') : null
+    // A handle issued on another surface may contain candidates that the reviewed public plugin cannot
+    // expose. For public fetches, revalidate the ENTIRE handle set so total_count/more_url cannot reveal
+    // or count hidden products; selected rows are then projected from that reviewed set.
+    const selectedIdList = selected_ids as string[]
+    const queryIds = policy ? [...new Set(allowed)] : selectedIdList
+    const ph = queryIds.map(() => '?').join(',')
     // 与 /api/products 搜索完全同源的公共可见性谓词(Codex H-1):active + stock>0 + 卖家未暂停 + 外链治理
-    const liveRows = await dbAll<Record<string, unknown>>(
+    const allLiveRows = await dbAll<Record<string, unknown>>(
       `SELECT p.*, u.name as seller_name, u.created_at as seller_created_at,
         COALESCE((SELECT total_points FROM reputation_scores WHERE user_id = p.seller_id), 0) as rep_points,
         COALESCE((SELECT level FROM reputation_scores WHERE user_id = p.seller_id), 'new') as rep_level,
@@ -519,7 +524,9 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
           AND NOT EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.verified = 1 AND (pel.revoked IS NULL OR pel.revoked = 0))
         )
         ${policy ? `AND ${policy.clause}` : ''}`,
-      [...(selected_ids as string[]), ...(policy?.params ?? [])])
+      [...queryIds, ...(policy?.params ?? [])])
+    const selectedIdSet = new Set(selectedIdList)
+    const liveRows = policy ? allLiveRows.filter(row => selectedIdSet.has(String(row.id))) : allLiveRows
     const liveIds = new Set(liveRows.map(r => String(r.id)))
     let fxD: Record<string, unknown> | null = null
     try { const snap = await getUsdRates(); fxD = { base: snap.base, rates: snap.rates, as_of: snap.as_of, stale: snap.stale, note: 'display-only conversion — never a settlement path' } } catch { fxD = null }
@@ -536,8 +543,8 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     if (wantCard) {
       // total 诚实口径(Codex L):被 revalidation 剔除的 unavailable 项不计入 total —— "还有 N 款"只指
       //   句柄集里【未展示的真实候选】,不把下架品谎报成"更多"。
-      const unavailN = (selected_ids as string[]).length - liveRows.length
-      const totalHonest = allowed.length - unavailN
+      const unavailN = selectedIdList.length - liveRows.length
+      const totalHonest = policy ? allLiveRows.length : allowed.length - unavailN
       return void res.json({
         schema_version: SCHEMA_PRODUCT_SEARCH,
         mode: 'agent', sort: 'newest',
@@ -552,7 +559,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
           const f = formatProductForAgent(r, req)
           return projectProductModel({ ...r, title: f.title, estimated_days: f.estimated_days, agent_summary: f.agent_summary }, null)
         }),
-        ...(selected_ids.length !== liveRows.length ? { unavailable_ids: (selected_ids as string[]).filter(id => !liveIds.has(id)), unavailable_note: 'no longer active/available — live re-check, cached data is never served' } : {}),
+        ...(selectedIdList.length !== liveRows.length ? { unavailable_ids: selectedIdList.filter(id => !liveIds.has(id)), unavailable_note: 'no longer active/available — live re-check, cached data is never served' } : {}),
       })
     }
     res.json({

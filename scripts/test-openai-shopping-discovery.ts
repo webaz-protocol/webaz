@@ -29,6 +29,14 @@ const ids = {
   out: 'prd_dddddddddddddddddddddddddddddddd',
   revoked: 'prd_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
   unreviewed: 'prd_ffffffffffffffffffffffffffffffff',
+  lamps: [
+    'prd_11111111111111111111111111111111',
+    'prd_22222222222222222222222222222222',
+    'prd_33333333333333333333333333333333',
+    'prd_44444444444444444444444444444444',
+    'prd_55555555555555555555555555555555',
+    'prd_66666666666666666666666666666666',
+  ],
 }
 
 delete process.env.WEBAZ_PUBLIC_COMMERCE_ALLOWED_PRODUCT_IDS
@@ -164,6 +172,10 @@ const eligible = db.prepare(`
 `).all(...policy.params) as Array<{ id: string }>
 ok('policy matrix allows only reviewed live physical goods',
   JSON.stringify(eligible.map(row => row.id)) === JSON.stringify([ids.live]))
+ids.lamps.forEach((id, index) =>
+  addProduct(id, 'seller-live', `Reviewed Desk Lamp ${index + 1}`, 'retail', 5))
+process.env.WEBAZ_PUBLIC_COMMERCE_ALLOWED_PRODUCT_IDS =
+  [ids.live, ids.digital, ids.paused, ids.out, ids.revoked, ...ids.lamps].join(',')
 
 const app = express()
 app.use(express.json())
@@ -180,6 +192,7 @@ registerProductsListRoutes(app, {
   PRODUCT_LIMITS: { pwa: 30, agent: 200, raw: 500 },
   TRENDING_SCORE_EXPR: 'p.price',
   findProductsByAlias: (input: string) => {
+    if (input === 'mixed-handle') return new Set([ids.live, ids.unreviewed])
     const matches = db.prepare(`
       SELECT id FROM products WHERE (id = ? OR title = ?) AND status = 'active'
     `).all(input, input) as Array<{ id: string }>
@@ -207,7 +220,10 @@ registerSearchRoutes(app, {
   extractUrlFromText: () => null,
   extractTitleFromText: text => text,
   parsePlatformUrl: () => null,
-  searchByExternalLink: () => ({ matched_by: 'product_title_exact', products: allProducts }),
+  searchByExternalLink: ({ external_title }) => ({
+    matched_by: 'product_title_exact',
+    products: allProducts.filter(product => String(product.title) === String(external_title)),
+  }),
   detectShareCommandFormat: () => null,
   formatProductForAgent: product => product,
 })
@@ -253,6 +269,15 @@ ok('shopping_v1 wire advertises exactly one anonymous discovery tool',
     === JSON.stringify([{ type: 'noauth' }])
   && /discovery-only/.test(listed.tools[0]?.description ?? ''),
   JSON.stringify(listed.tools))
+const publicOutputSchema = listed.tools[0]?.outputSchema as Record<string, unknown> | undefined
+const publicOutputProperties = publicOutputSchema?.properties as Record<string, unknown> | undefined
+const publicProductProperties = (((publicOutputProperties?.products as Record<string, unknown> | undefined)
+  ?.items as Record<string, unknown> | undefined)?.properties as Record<string, unknown> | undefined)
+ok('shopping_v1 schema exposes an inline public seller summary and no internal seller reference/map',
+  !!publicProductProperties?.seller
+  && !publicProductProperties?.seller_ref
+  && !publicOutputProperties?.sellers,
+  JSON.stringify(publicOutputSchema))
 
 const callShopping = async (args: Record<string, unknown>): Promise<Record<string, unknown>> =>
   payloadOf(await shopping.callTool({ name: 'webaz_search', arguments: args }) as Record<string, unknown>)
@@ -286,6 +311,34 @@ const external = await callShopping({ paste_text: 'Reviewed Phone Stand' })
 ok('external-link search is narrowed by the real public-commerce route',
   JSON.stringify(productIdsOf(external)) === JSON.stringify([ids.live]),
   JSON.stringify(external).slice(0, 500))
+ok('public external-link result never instructs a hidden transaction tool',
+  !JSON.stringify(external).includes('webaz_verify_price'),
+  JSON.stringify(external).slice(0, 500))
+
+const multi = await callShopping({ query: 'Reviewed Desk Lamp' })
+ok('public more-results link is the canonical WebAZ discovery URL',
+  productIdsOf(multi).length === 5
+  && multi.more_url === 'https://webaz.xyz/#discover',
+  JSON.stringify(multi).slice(0, 500))
+const publicEntryOutputs = [keyword, detail, reviewedAnchor, hiddenAnchor, external, multi]
+ok('all public search entry modes expose only de-identified public seller summaries',
+  publicEntryOutputs.every(output => {
+    const wire = JSON.stringify(output)
+    const products = (output.products ?? []) as Array<Record<string, unknown>>
+    return !wire.includes('seller-live')
+      && !Object.hasOwn(output, 'sellers')
+      && products.every(product => {
+        const seller = product.seller as Record<string, unknown> | undefined
+        return !Object.hasOwn(product, 'seller_ref')
+          && !!seller
+          && Object.keys(seller).every(key => ['name', 'level', 'rep_points'].includes(key))
+      })
+  }),
+  JSON.stringify(publicEntryOutputs.map(output => ({
+    matched_by: output.matched_by,
+    sellers: output.sellers,
+    products: output.products,
+  }))).slice(0, 5000))
 
 const recovery = await callShopping({ query: 'no-such-reviewed-product' })
 ok('reviewed catalog no-match remains empty and gives reviewed recovery',
@@ -303,6 +356,21 @@ ok('cached hidden order-tool call is rejected before quote/order execution',
   /TOOL_NOT_AVAILABLE_ON_SURFACE/.test(blockedText))
 
 const full = await connect('full')
+const mixed = payloadOf(await full.callTool({
+  name: 'webaz_search',
+  arguments: { query: 'mixed-handle' },
+}) as Record<string, unknown>)
+const mixedHandle = String(mixed.result_handle ?? '')
+const reviewedFromMixedHandle = await callShopping({
+  result_handle: mixedHandle,
+  selected_ids: [ids.live],
+  card: true,
+})
+ok('public fetch revalidates the whole cross-surface handle before total/more metadata',
+  reviewedFromMixedHandle.total_count === 1
+  && reviewedFromMixedHandle.more_url === undefined
+  && JSON.stringify(productIdsOf(reviewedFromMixedHandle)) === JSON.stringify([ids.live]),
+  JSON.stringify(reviewedFromMixedHandle).slice(0, 500))
 const forged = payloadOf(await full.callTool({
   name: 'webaz_search',
   arguments: {
@@ -312,7 +380,9 @@ const forged = payloadOf(await full.callTool({
 }) as Record<string, unknown>)
 ok('caller-forged surface marker cannot force public mode on a full server',
   JSON.stringify(productIdsOf(forged)) === JSON.stringify([ids.unreviewed])
-  && forged.public_commerce !== true,
+  && forged.public_commerce !== true
+  && JSON.stringify(forged).includes('seller-live')
+  && Object.hasOwn(forged, 'sellers'),
   JSON.stringify(forged).slice(0, 500))
 
 await full.close()

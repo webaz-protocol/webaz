@@ -51,8 +51,6 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
       recovery: { type: 'object', description: '0 hits: labeled catalog sample + next_step' },
       result_handle: { type: 'string', description: 'selection handle (10-min TTL) — pass back with selected_ids (≤5): >1 = card, 1 = detail' },
       detail_required_for_card: { type: 'boolean', description: 'render via result_handle + selected_ids (>1 id = comparison card)' },
-      public_commerce: { type: 'boolean', description: 'true only on the reviewed discovery-only public plugin surface' },
-      public_product_url_template: { type: 'string', description: 'server-issued WebAZ product deep-link template used by the discovery-only card' },
       ...err,
     },
   },
