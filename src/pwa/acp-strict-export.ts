@@ -4,9 +4,13 @@
  * 与 /.well-known/webaz-acp-feed.json(发现投影,全商品+WAZ 标价+逐条非合规声明)不同,本模块产出
  * 【严格按 OpenAI ACP file-upload products spec】的导出物,供批准后经 SFTP 提交。诚实三门:
  *
- *   1. 【只含可真实成交的商品】:卖家必须通过 Rail 1 全套门禁(readDirectPayLaunchReadiness
- *      ready=true:全局开放 + KYB + 制裁 + AML + 保证金/缓交 + 收款说明 + 未暂停)。
+ *   1. 【只含可真实成交的商品】(Codex #513 R1 对齐到真实建单门):卖家过 Rail 1 全套门禁
+ *      (readDirectPayLaunchReadiness ready=true:全局开放 + KYB + 制裁 + AML + 保证金/缓交 +
+ *      收款说明 + 未暂停)之外,逐品还须过【与买家 availability 路由同源】的
+ *      directPayProductAvailability(qty=1 基准额:单笔帽 + 逐品验证/店铺豁免 + 缓交额度),
+ *      且 简单商品(无规格,镜像 create 的 SIMPLE_PRODUCT_ONLY)、有库存(stock>0)。
  *      不可真实购买的商品绝不进 strict feed —— 宁可少投,不投「点进来买不了」的坑。
+ *      (price = 商品单价,ACP feed 语义;运费在下单时按地址结算,不进 price 字段。)
  *   2. 【价格 = USD 表示的 USDC 结算值】:ACP 强制 ISO 4217,USDC 非 ISO 币种;USDC 1:1 锚定 USD,
  *      USD 表示零汇率漂移(商品真值计价即 USDC)。WAZ 标价经 live waz_usdc_rate 换算,绝不写死 1:1。
  *      目标地区法币(如 SGD)是换算参考价,在商品落地页展示,不进 price 字段。
@@ -18,8 +22,10 @@
  */
 import type Database from 'better-sqlite3'
 import { readDirectPayLaunchReadiness } from '../direct-pay-launch-readiness.js'
+import { directPayProductAvailability } from '../direct-pay-availability-check.js'
 import { resolveImageUrl, targetCountries } from './acp-feed.js'
-import { effectiveSaleRegionsRule } from '../sale-regions.js'
+import { effectiveSaleRegionsRule, parsePlatformBlocklist } from '../sale-regions.js'
+import { toUnits } from '../money.js'
 
 const BASE = 'https://webaz.xyz'
 
@@ -32,6 +38,7 @@ interface StrictRow {
   id: string; title: string; description: string; price: number; stock: number
   category: string | null; images: string | null; brand: string | null; model: string | null
   product_type: string | null; seller_id: string; seller_name: string | null; sale_regions: string | null
+  has_variants: number | null
 }
 
 export interface StrictAcpExport {
@@ -43,8 +50,11 @@ export interface StrictAcpExport {
     sellers_scanned: number
     sellers_ready: number
     excluded_seller_not_ready: number   // 卖家未过 Rail 1 门禁 → 整店剔除
+    excluded_out_of_stock: number       // 无库存 = 此刻不可成交(建单会拒)
+    excluded_variant_product: number    // 有规格商品(direct_p2p v1 SIMPLE_PRODUCT_ONLY)
+    excluded_direct_pay_unavailable: number // 逐品可用性谓词拒(单笔帽/逐品验证/缓交额度)
     excluded_no_image: number           // 无公网可加载图片(spec 必填)
-    excluded_no_target_countries: number // 推导不出 ISO 目标国(spec 必填)
+    excluded_no_target_countries: number // 推导不出 ISO 目标国(spec 必填,已扣平台合规 blocklist)
     waz_usdc_rate: number
   }
 }
@@ -60,9 +70,15 @@ export function buildStrictAcpExport(
   const rate = Number(getProtocolParam<number>('waz_usdc_rate', 1.0))
   const emptyStats = (n = 0): StrictAcpExport['stats'] => ({
     products_scanned: n, sellers_scanned: 0, sellers_ready: 0,
-    excluded_seller_not_ready: 0, excluded_no_image: 0, excluded_no_target_countries: 0, waz_usdc_rate: rate,
+    excluded_seller_not_ready: 0, excluded_out_of_stock: 0, excluded_variant_product: 0,
+    excluded_direct_pay_unavailable: 0, excluded_no_image: 0, excluded_no_target_countries: 0, waz_usdc_rate: rate,
   })
   if (!(Number.isFinite(rate) && rate > 0)) return { ok: false, reason: 'waz_usdc_rate 非法(<=0)——拒绝导出错误价格', items: [], stats: emptyStats() }
+
+  // 平台合规 blocklist(与建单门 gateSaleRegionForCreate 同一真相源);坏配置 → fail-closed(镜像建单 503)。
+  const parsedBlock = parsePlatformBlocklist(getProtocolParam<string>('trade.platform_region_blocklist', '[]'))
+  if (!parsedBlock.ok) return { ok: false, reason: 'trade.platform_region_blocklist 配置异常 —— 拒绝导出可能违反平台合规的目标国', items: [], stats: emptyStats() }
+  const platformBlock = new Set(parsedBlock.list)
 
   // 全局门:平台侧 Rail 1 未开放 → 整体 fail-closed(空导出 + 原因),绝不投「无法成交」的 feed。
   const globalReadiness = readDirectPayLaunchReadiness(db, { getProtocolParam })
@@ -72,7 +88,7 @@ export function buildStrictAcpExport(
 
   const rows = db.prepare(`
     SELECT p.id, p.title, p.description, p.price, p.stock, p.category, p.images, p.brand, p.model,
-           p.product_type, p.seller_id, u.name AS seller_name, p.sale_regions
+           p.product_type, p.seller_id, u.name AS seller_name, p.sale_regions, p.has_variants
     FROM products p
     LEFT JOIN users u ON u.id = p.seller_id
     WHERE p.status = 'active'
@@ -96,13 +112,22 @@ export function buildStrictAcpExport(
 
   for (const p of rows) {
     if (!isSellerReady(p.seller_id)) { stats.excluded_seller_not_ready++; continue }
+    // 此刻不可成交 → 不进 strict feed(建单在 direct-pay 前就拒库存不足;Codex R1 HIGH)。
+    if (!(Number(p.stock) > 0)) { stats.excluded_out_of_stock++; continue }
+    // direct_p2p v1 仅简单商品(镜像 create 的 DIRECT_PAY_SIMPLE_PRODUCT_ONLY)。
+    if (Number(p.has_variants) === 1) { stats.excluded_variant_product++; continue }
+    // 逐品可用性:与买家 availability 路由同一谓词、同一 qty=1 基准额口径(单笔帽+逐品验证/豁免+缓交额度)。
+    const avail = directPayProductAvailability(db, { productId: p.id, sellerId: p.seller_id, amountUnits: toUnits(Number(p.price) || 0), getProtocolParam })
+    if (!avail.available) { stats.excluded_direct_pay_unavailable++; continue }
 
     let imgs: string[] = []
     try { const arr = JSON.parse(p.images || '[]'); if (Array.isArray(arr)) imgs = arr.map(resolveImageUrl).filter((x): x is string => !!x) } catch { /* malformed → no images */ }
     if (!imgs.length) { stats.excluded_no_image++; continue }
 
-    const tc = targetCountries(db, p.sale_regions, p.seller_id, storeRuleCache)
-    if (!tc) { stats.excluded_no_target_countries++; continue }
+    // 目标国 = 可如实推导的 ISO 列表 − 平台合规 blocklist(建单门会拒的地区绝不对外声称可卖)。
+    const tcRaw = targetCountries(db, p.sale_regions, p.seller_id, storeRuleCache)
+    const tc = tcRaw ? tcRaw.filter((c) => !platformBlock.has(c)) : null
+    if (!tc || !tc.length) { stats.excluded_no_target_countries++; continue }
 
     const usd = Math.round((Number(p.price) / rate) * 100) / 100
 
@@ -113,8 +138,8 @@ export function buildStrictAcpExport(
       url: `${BASE}/#order-product/${p.id}`,
       brand: (p.brand ? String(p.brand) : 'Unbranded').slice(0, 70),
       image_url: imgs[0],
-      price: `${usd.toFixed(2)} USD`,        // spec 形状:数字 + ISO 4217 代码;USD = USDC 结算值 1:1 表示
-      availability: Number(p.stock) > 0 ? 'in_stock' : 'out_of_stock',
+      price: `${usd.toFixed(2)} USD`,        // spec 形状:数字 + ISO 4217 代码;USD = USDC 结算值 1:1 表示(商品单价,不含运费)
+      availability: 'in_stock',              // stock<=0 已整条剔除(strict feed 只含此刻可成交的)
       seller_name: (p.seller_name || p.seller_id).slice(0, 70),
       seller_url: `${BASE}/#u/${p.seller_id}`,
       is_eligible_search: true,
