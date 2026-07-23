@@ -33,6 +33,7 @@ import { issueResultHandle } from '../mcp-result-handle.js'  // result_handle �
 import { genuineSalePredicate } from '../../layer0-foundation/L0-2-state-machine/genuine-sale.js'  // RFC-018 PR4: 真实成交(排除全额退货)
 import { SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL, projectProductModel, projectProductDetail, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1/2: agent 模式 Model Projection + 按需详情
 import { getUsdRates } from '../../fx-rates.js'  // USDC→本地法币显示换算(display-only,绝非结算路径)
+import { publicCommerceSqlFilter } from '../../public-commerce-policy.js'
 
 export interface ProductsListDeps {
   db: Database.Database
@@ -162,6 +163,13 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
           AND NOT EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.verified = 1 AND (pel.revoked IS NULL OR pel.revoked = 0))
         )`
     const params: unknown[] = []
+    // Narrowing-only distribution selector. A direct API caller may request the
+    // smaller reviewed catalog, but can never use it to widen access.
+    if (req.query.public_commerce === '1') {
+      const policy = publicCommerceSqlFilter('p')
+      where += ` AND ${policy.clause}`
+      params.push(...policy.params)
+    }
     if (me?.id) {
       where += ` AND u.id NOT IN (SELECT blocked_id FROM user_blocklist WHERE blocker_id = ?)`
       params.push(me.id)
@@ -465,7 +473,13 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       for (const [k, v] of resultFetchRate) if (now >= v.resetAt) resultFetchRate.delete(k)
       if (resultFetchRate.size > 50_000) resultFetchRate.clear()
     }
-    const { result_handle, selected_ids, full_terms, card } = (req.body ?? {}) as { result_handle?: unknown; selected_ids?: unknown; full_terms?: unknown; card?: unknown }
+    const { result_handle, selected_ids, full_terms, card, public_commerce } = (req.body ?? {}) as {
+      result_handle?: unknown
+      selected_ids?: unknown
+      full_terms?: unknown
+      card?: unknown
+      public_commerce?: unknown
+    }
     if (typeof result_handle !== 'string' || !/^res_[0-9a-f]{32}$/.test(result_handle)) {
       return void res.status(400).json({ error: 'result_handle required', error_code: 'RESULT_HANDLE_INVALID', retryable: false, next_steps: [{ action: 'search_again', tool: 'webaz_search' }] })
     }
@@ -489,9 +503,15 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     if (outside.length) {
       return void res.status(400).json({ error: 'selected_ids must come from the SAME search result the handle was issued for', error_code: 'SELECTED_IDS_NOT_IN_HANDLE', retryable: true, hint: 'ids outside the handle set are rejected — search again for other products' })
     }
-    const ph = (selected_ids as string[]).map(() => '?').join(',')
+    const policy = public_commerce === true ? publicCommerceSqlFilter('p') : null
+    // A handle issued on another surface may contain candidates that the reviewed public plugin cannot
+    // expose. For public fetches, revalidate the ENTIRE handle set so total_count/more_url cannot reveal
+    // or count hidden products; selected rows are then projected from that reviewed set.
+    const selectedIdList = selected_ids as string[]
+    const queryIds = policy ? [...new Set(allowed)] : selectedIdList
+    const ph = queryIds.map(() => '?').join(',')
     // 与 /api/products 搜索完全同源的公共可见性谓词(Codex H-1):active + stock>0 + 卖家未暂停 + 外链治理
-    const liveRows = await dbAll<Record<string, unknown>>(
+    const allLiveRows = await dbAll<Record<string, unknown>>(
       `SELECT p.*, u.name as seller_name, u.created_at as seller_created_at,
         COALESCE((SELECT total_points FROM reputation_scores WHERE user_id = p.seller_id), 0) as rep_points,
         COALESCE((SELECT level FROM reputation_scores WHERE user_id = p.seller_id), 'new') as rep_level,
@@ -502,8 +522,11 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
         AND NOT (
           EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.revoked = 1)
           AND NOT EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.verified = 1 AND (pel.revoked IS NULL OR pel.revoked = 0))
-        )`,
-      selected_ids as string[])
+        )
+        ${policy ? `AND ${policy.clause}` : ''}`,
+      [...queryIds, ...(policy?.params ?? [])])
+    const selectedIdSet = new Set(selectedIdList)
+    const liveRows = policy ? allLiveRows.filter(row => selectedIdSet.has(String(row.id))) : allLiveRows
     const liveIds = new Set(liveRows.map(r => String(r.id)))
     let fxD: Record<string, unknown> | null = null
     try { const snap = await getUsdRates(); fxD = { base: snap.base, rates: snap.rates, as_of: snap.as_of, stale: snap.stale, note: 'display-only conversion — never a settlement path' } } catch { fxD = null }
@@ -520,8 +543,8 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     if (wantCard) {
       // total 诚实口径(Codex L):被 revalidation 剔除的 unavailable 项不计入 total —— "还有 N 款"只指
       //   句柄集里【未展示的真实候选】,不把下架品谎报成"更多"。
-      const unavailN = (selected_ids as string[]).length - liveRows.length
-      const totalHonest = allowed.length - unavailN
+      const unavailN = selectedIdList.length - liveRows.length
+      const totalHonest = policy ? allLiveRows.length : allowed.length - unavailN
       return void res.json({
         schema_version: SCHEMA_PRODUCT_SEARCH,
         mode: 'agent', sort: 'newest',
@@ -536,7 +559,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
           const f = formatProductForAgent(r, req)
           return projectProductModel({ ...r, title: f.title, estimated_days: f.estimated_days, agent_summary: f.agent_summary }, null)
         }),
-        ...(selected_ids.length !== liveRows.length ? { unavailable_ids: (selected_ids as string[]).filter(id => !liveIds.has(id)), unavailable_note: 'no longer active/available — live re-check, cached data is never served' } : {}),
+        ...(selectedIdList.length !== liveRows.length ? { unavailable_ids: selectedIdList.filter(id => !liveIds.has(id)), unavailable_note: 'no longer active/available — live re-check, cached data is never served' } : {}),
       })
     }
     res.json({

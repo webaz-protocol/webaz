@@ -305,6 +305,7 @@
     "test:mcp-model-projection": "tsx scripts/test-mcp-model-projection.ts",
     "test:mcp-result-handle": "tsx scripts/test-mcp-result-handle.ts",
     "test:mcp-tool-surfaces": "tsx scripts/test-mcp-tool-surfaces.ts",
+    "test:openai-shopping-discovery": "tsx scripts/test-openai-shopping-discovery.ts",
     "test:mcp-definition-budget": "tsx scripts/test-mcp-definition-budget.ts",
     "test:mcp-quote-approval-ui": "tsx scripts/test-mcp-quote-approval-ui.ts",
     "test:phase3b-ui-hotfix": "tsx scripts/test-phase3b-ui-hotfix.ts",

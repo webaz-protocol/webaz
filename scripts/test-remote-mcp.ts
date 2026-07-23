@@ -118,9 +118,9 @@ async function main() {
     const rp = await rpc(base, { jsonrpc: '2.0', id: 25, method: 'tools/list' }, {}, '?surface=shopping_v1')
     const pj = await rp.json().catch(() => null) as { result?: { tools?: Array<{ name: string }> } } | null
     const pnames = [...new Set((pj?.result?.tools || []).map(t => t.name))].sort()
-    ok('4f. shopping_v1 public-plugin surface is exactly the reviewed seven tools',
-      JSON.stringify(pnames) === JSON.stringify(['webaz_buyer_orders', 'webaz_connection_status', 'webaz_discover', 'webaz_order_draft', 'webaz_quote_order', 'webaz_search', 'webaz_submit_order_request']), pnames.join(','))
-    // surface 只裁可见性,不裁授权:buyer 默认面上按名调用面外工具照常分发(错误也是业务错误而非"未知工具")
+    ok('4f. shopping_v1 public-plugin surface is exactly the reviewed discovery tool',
+      JSON.stringify(pnames) === JSON.stringify(['webaz_search']), pnames.join(','))
+    // buyer 默认面只裁可见性,不裁授权;shopping_v1 是公开审核硬边界。
     // 确定性业务证明:非法 kind 触发 handleLeaderboard 自己的枚举校验文案 —— 只有真 handler 被分发才会出现,
     //   与上游 /leaderboard 可达性无关,也不可能混淆为 unknown-tool(任何语言)。
     const ct = await rpc(base, { jsonrpc: '2.0', id: 24, method: 'tools/call', params: { name: 'webaz_leaderboard', arguments: { kind: 'bogus_kind' } } })
@@ -128,8 +128,37 @@ async function main() {
     const ctext = (cj?.result?.content || []).map(c => c.text || '').join('')
     let cparsed: Record<string, unknown> | null = null
     try { cparsed = JSON.parse(ctext) } catch { cparsed = null }
-    ok('4f. call-through: out-of-surface tool reaches its REAL handler (leaderboard kind-enum validation fires; 200, no JSON-RPC error, not unknown-tool)',
+    ok('4g. buyer surface call-through still reaches its REAL handler',
       ct.status === 200 && !cj?.error && !!cparsed && /kind 必须是/.test(String(cparsed?.error ?? '')) && !/未知工具|Unknown tool/i.test(String(cparsed?.error ?? '').replace(/kind 必须是.*/, '')), ctext.slice(0, 160))
+    const blocked = await rpc(base, { jsonrpc: '2.0', id: 26, method: 'tools/call', params: { name: 'webaz_quote_order', arguments: {} } }, {}, '?surface=shopping_v1')
+    const blockedJson = await blocked.json().catch(() => null) as { result?: { content?: Array<{ text?: string }> } } | null
+    const blockedText = (blockedJson?.result?.content || []).map(c => c.text || '').join('')
+    ok('4h. shopping_v1 rejects a cached out-of-scope tool call by name',
+      blocked.status === 200 && /TOOL_NOT_AVAILABLE_ON_SURFACE/.test(blockedText), blockedText.slice(0, 160))
+    const savedOauth = process.env.WEBAZ_OAUTH
+    process.env.WEBAZ_OAUTH = '1'
+    const blockedOauth = await rpc(base, { jsonrpc: '2.0', id: 27, method: 'tools/call', params: { name: 'webaz_quote_order', arguments: {} } }, {}, '?surface=shopping_v1')
+    if (savedOauth === undefined) delete process.env.WEBAZ_OAUTH; else process.env.WEBAZ_OAUTH = savedOauth
+    const blockedOauthJson = await blockedOauth.json().catch(() => null) as { result?: { content?: Array<{ text?: string }>; _meta?: unknown } } | null
+    const blockedOauthText = (blockedOauthJson?.result?.content || []).map(c => c.text || '').join('')
+    ok('4i. shopping_v1 hidden tool is hard-rejected before OAuth challenge',
+      blockedOauth.status === 200
+      && /TOOL_NOT_AVAILABLE_ON_SURFACE/.test(blockedOauthText)
+      && !blockedOauth.headers.get('www-authenticate')
+      && blockedOauthJson?.result?._meta === undefined,
+      blockedOauthText.slice(0, 160))
+    const blockedDpop = await rpc(base,
+      { jsonrpc: '2.0', id: 28, method: 'tools/call', params: { name: 'webaz_quote_order', arguments: {} } },
+      { Authorization: 'DPoP fake-token', DPoP: 'fake-proof' },
+      '?surface=shopping_v1')
+    const blockedDpopJson = await blockedDpop.json().catch(() => null) as { result?: { content?: Array<{ text?: string }>; _meta?: unknown } } | null
+    const blockedDpopText = (blockedDpopJson?.result?.content || []).map(c => c.text || '').join('')
+    ok('4j. shopping_v1 hidden tool is hard-rejected before DPoP validation/challenge',
+      blockedDpop.status === 200
+      && /TOOL_NOT_AVAILABLE_ON_SURFACE/.test(blockedDpopText)
+      && !blockedDpop.headers.get('www-authenticate')
+      && blockedDpopJson?.result?._meta === undefined,
+      blockedDpopText.slice(0, 160))
   }
   {
     const g = await fetch(`${base}/mcp`)

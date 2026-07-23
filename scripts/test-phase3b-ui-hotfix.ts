@@ -143,7 +143,7 @@ ok('A3-10 F5 label swapped by related banner in related mode', /out\.__related_n
 
 // A4(Holden 铁律):恒 ≤5 精准结果,无翻页 UI,第 6 格 = 前往 WebAZ 查看更多
 ok('A4 no pagination UI (下一页/上一页 removed)', !/'下一页'/.test(PRODUCT_RESULTS_WIDGET_HTML) && !/'上一页'/.test(PRODUCT_RESULTS_WIDGET_HTML))
-ok('A4 6th slot = 前往 WebAZ 查看更多 (openWebaz + copy fallback, server more_url data)', /前往 WebAZ 查看更多/.test(PRODUCT_RESULTS_WIDGET_HTML) && /openWebaz\(oai,String\(out\.more_url\)\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
+ok('A4 6th slot = 前往 WebAZ 查看更多 (public URL canonicalized before open/copy)', /前往 WebAZ 查看更多/.test(PRODUCT_RESULTS_WIDGET_HTML) && /publicOnly\?safeWebazHref\(String\(out\.more_url\)\):String\(out\.more_url\)/.test(PRODUCT_RESULTS_WIDGET_HTML) && /openWebaz\(oai,String\(__moreHref\)\)/.test(PRODUCT_RESULTS_WIDGET_HTML))
 ok('A4 F5 label has no 翻页 wording', !/翻页查看更多/.test(PRODUCT_RESULTS_WIDGET_HTML))
 
 // ── Self-containment lock: ProductResults must stay URL-literal-free + zero request-capability tokens (incl. in comments) ──

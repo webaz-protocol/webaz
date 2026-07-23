@@ -6,7 +6,7 @@
  * 锁:①buyer/seller 面成员全部真实存在(防拼写错静默缩面);②面内容精确锁(计数+关键工具);
  *    ③in-memory 服务端 listTools 按 surface 过滤,stdio 恒全量;④定义体积:buyer ≤ 50% full(基准打印);
  *    ⑤webaz_info 默认瘦身(禁重复 tools 清单)/{full:true} 与 resource webaz://guide/info 完整还原;
- *    ⑥surface 只裁可见性:CallTool 对面外工具照常分发(e2e 版在 test-remote-mcp 4f)。
+ *    ⑥buyer/seller 只裁可见性;公开审核的 shopping_v1 对面外 tools/call 硬拒。
  */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -28,11 +28,8 @@ let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
 const allNames = new Set(Object.keys(TOOL_ANNOTATIONS))
-const SHOPPING_V1_EXPECTED = [
-  'webaz_buyer_orders', 'webaz_connection_status', 'webaz_discover', 'webaz_order_draft',
-  'webaz_quote_order', 'webaz_search', 'webaz_submit_order_request',
-]
-ok('T-0 shopping_v1 is the exact reviewed seven-tool buyer contract',
+const SHOPPING_V1_EXPECTED = ['webaz_search']
+ok('T-0 shopping_v1 is the exact reviewed discovery-only contract',
   JSON.stringify([...SHOPPING_V1_SURFACE_TOOLS].sort()) === JSON.stringify(SHOPPING_V1_EXPECTED)
   && [...SHOPPING_V1_SURFACE_TOOLS].every(n => allNames.has(n)))
 ok('T-1 every buyer-surface member is a REAL tool (typo → silent shrink forbidden)', [...BUYER_SURFACE_TOOLS].every(n => allNames.has(n)), [...BUYER_SURFACE_TOOLS].filter(n => !allNames.has(n)).join(','))
@@ -63,12 +60,22 @@ const seller = await listVia({ isolated: true, surface: 'seller' })
 ok('T-6 stdio (no surface) = full local set (55)', stdio.length === 55, String(stdio.length))
 ok('T-7 remote full = 54 (webaz_pair hidden)', full.length === 54, String(full.length))
 ok('T-7a remote shopping_v1 = exact reviewed set in deterministic registry order',
-  shopping.length === 7 && JSON.stringify(shopping.map(t => t.name).sort()) === JSON.stringify(SHOPPING_V1_EXPECTED), shopping.map(t => t.name).join(','))
+  shopping.length === 1 && JSON.stringify(shopping.map(t => t.name).sort()) === JSON.stringify(SHOPPING_V1_EXPECTED), shopping.map(t => t.name).join(','))
 ok('T-7b every reviewed tool carries complete annotations',
   shopping.every(t => ['readOnlyHint', 'destructiveHint', 'openWorldHint'].every(k => typeof t.annotations?.[k] === 'boolean')))
-ok('T-7c exactly five reviewed tools render the existing buyer cards',
+ok('T-7c the sole reviewed tool renders the existing product card',
   JSON.stringify(shopping.filter(t => typeof t._meta?.['openai/outputTemplate'] === 'string').map(t => t.name).sort())
-    === JSON.stringify(['webaz_buyer_orders', 'webaz_order_draft', 'webaz_quote_order', 'webaz_search', 'webaz_submit_order_request']))
+    === JSON.stringify(['webaz_search']))
+{
+  const [ct, st] = InMemoryTransport.createLinkedPair()
+  await mcp.buildMcpServer({ isolated: true, surface: 'shopping_v1' }).connect(st)
+  const c = new Client({ name: 'shopping-call-boundary', version: '0' }, { capabilities: {} })
+  await c.connect(ct)
+  const blocked = await c.callTool({ name: 'webaz_quote_order', arguments: {} }) as Record<string, unknown>
+  const text = (blocked.content as Array<{ text?: string }> | undefined)?.map(item => item.text ?? '').join('') ?? ''
+  ok('T-7d cached out-of-scope calls are rejected before their handler',
+    /TOOL_NOT_AVAILABLE_ON_SURFACE/.test(text), text.slice(0, 160))
+}
 ok('T-8 remote buyer = exact buyer set', buyer.length === 21 && buyer.every(t => BUYER_SURFACE_TOOLS.has(t.name)))
 ok('T-9 remote seller = exact seller set', seller.length === 23 && seller.every(t => SELLER_SURFACE_TOOLS.has(t.name)))
 

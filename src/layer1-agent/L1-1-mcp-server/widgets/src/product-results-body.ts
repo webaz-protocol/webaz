@@ -1,6 +1,7 @@
 // @ts-nocheck — body 为 ES5 风格运行时脚本(el() 可选参/动态 state),完整类型标注另行任务;语法错误仍会上报。生成器会剥离本行。
 
 var __lastSearch=null   // B1:缓存上一次搜索页 out —— 供详情页【← 返回列表】原地回退,不再固定住
+var __lastSearchPublic=false   // 公开/完整 surface 严格隔离,禁止从公开详情恢复旧下单卡
 var __autoFillAttempts=0   // 审计F1:跨渲染尝试上限 —— 终止性不再依赖服务端隐式不变量
 // i18n:ETA/到期择取 —— zh 用服务端 display_*(逐字不变);en 用客户端双语 etaDisplay + 到期后缀英化。
 function __i18nExp(disp, iso){ var d=String(disp||iso||''); if(!d) return ''; return webazLocale()==='en' ? d.replace('(新加坡时间)',' (SGT)') : d }
@@ -12,6 +13,23 @@ function renderBody(oai, out){
   // 审计F2:本渲染器只认 product 系模型 —— 晚到的 draft/approval 通知(超时后宿主回灌)绝不允许把卡
   //   砸成"0 命中"或覆盖审批面板;非 product 模型直接忽略,保留当前 DOM。
   if(out.schema_version&&String(out.schema_version).indexOf('webaz.product_')!==0){ return }
+  var publicOnly=out.public_commerce===true
+  if(__lastSearch&&__lastSearchPublic!==publicOnly) __lastSearch=null
+  function addPublicProductAction(row,host,pid){
+    var url=String(out.public_product_url_template||'').replace('{product_id}',encodeURIComponent(String(pid||'')))
+    var safe=typeof safeWebazHref==='function'?safeWebazHref(url):''
+    var btn=el('button','primary',L('在 WebAZ 查看','View on WebAZ'))
+    if(!safe){ btn.disabled=true }
+    btn.addEventListener('click',onceGuard(function(){
+      var opened=false
+      try{ opened=openWebaz(oai,safe) }catch(e){ opened=false }
+      if(opened){ btn.textContent=L('已打开 ↗','Opened ↗'); return }
+      var fallback=el('div','recreason',safe)
+      host.appendChild(fallback)
+      webazCopy(safe,btn,fallback)
+    }))
+    row.appendChild(btn)
+  }
 
   // ③详情形态 —— 完整描述/规格(卡内不可得,按需经 tool 拉取);顶部【← 返回列表】回到搜索页(修"固定住/回不去")。
   if(out.schema_version==='webaz.product_detail.model.v1'){
@@ -67,9 +85,11 @@ function renderBody(oai, out){
         c.appendChild(__dt) }
       c.appendChild(m)
       // A2.1:详情卡可操作 —— 就地报价(与列表 prepareOrder 同 consume 纪律);无 callTool 宿主给可复制短语。
-      var __ph=L('为「','Prepare order for "')+(p.title||p.id)+L('」准备下单(product_id=','" (product_id=')+p.id+')'
       var __act=el('div','row')
-      if(typeof oai.callTool==='function'){
+      if(publicOnly){
+        addPublicProductAction(__act,c,p.id)
+      } else if(typeof oai.callTool==='function'){
+        var __ph=L('为「','Prepare order for "')+(p.title||p.id)+L('」准备下单(product_id=','" (product_id=')+p.id+')'
         var __pd=el('button','primary',L('准备下单','Prepare order'))
         __pd.addEventListener('click',onceGuard(function(){
           var __h=el('div','hint',null); __h.textContent=L('正在获取报价…若无更新请把这句话发给我:','Getting quote… if nothing updates, send me this:')+__ph; c.appendChild(__h)
@@ -80,7 +100,10 @@ function renderBody(oai, out){
           })
         },3000))
         __act.appendChild(__pd)
-      } else { __act.appendChild(el('div','meta',L('下单:把这句话发给我 —— ','To order, send me: ')+__ph)) }
+      } else {
+        var __ph2=L('为「','Prepare order for "')+(p.title||p.id)+L('」准备下单(product_id=','" (product_id=')+p.id+')'
+        __act.appendChild(el('div','meta',L('下单:把这句话发给我 —— ','To order, send me: ')+__ph2))
+      }
       c.appendChild(__act); dg.appendChild(c)
     })
     if(out.unavailable_ids&&out.unavailable_ids.length) dg.appendChild(el('div','meta',L('已不可购: ','No longer available: ')+out.unavailable_ids.join(', ')))
@@ -96,7 +119,9 @@ function renderBody(oai, out){
       renderBody(oai,{ schema_version:'webaz.product_search.model.v1', products:rec.related_products, sellers:rec.related_sellers||{}, count:rec.related_products.length, total_count:rec.related_products.length, __related_note:L('精确匹配 0 命中 —— 以下是标题包含「','0 exact matches — related products with the term "')+String(rec.related_query||'')+L('」的相关商品(非精确命中)','" in the title (related, not exact)') })
       return
     }
-    root.appendChild(el('div',null,L('精确匹配 0 命中(WebAZ 搜索是协议级严格匹配)。','0 exact matches (WebAZ search is strict).')))
+    root.appendChild(el('div',null,publicOnly
+      ? L('当前审核商品中没有匹配项。','No reviewed products matched.')
+      : L('精确匹配 0 命中(WebAZ 搜索是协议级严格匹配)。','0 exact matches (WebAZ search is strict).')))
     if(rec.catalog_sample&&rec.catalog_sample.length){
       root.appendChild(el('div','note',L('以下是目录样本(非搜索结果):','Catalog sample (not search results):')))
       var g0=el('div','grid')
@@ -110,12 +135,15 @@ function renderBody(oai, out){
   }
 
   // ①搜索页
-  __lastSearch = out   // B1:缓存供详情页【返回列表】原地回退
+  __lastSearch = out; __lastSearchPublic = publicOnly   // B1:缓存绑定当前 surface
   var sellers=out.sellers||{}
   var state={sort:'default',selected:{},open:{},hint:null,approval:null,chainBusy:false}
   // A3-6:宿主 widgetState 恢复(ChatGPT 持久化每条消息的组件态)—— 刷新/重挂载后报价/审批面板不丢。
-  try{ var __ws=oai.widgetState; if(__ws&&typeof __ws==='object'){ if(__ws.q&&__ws.q.pid) state.quote=__ws.q; if(__ws.a&&__ws.a.request_id) state.approval=__ws.a } }catch(e){}
-  function persist(){ try{ if(typeof oai.setWidgetState==='function') oai.setWidgetState({ q: state.quote, a: state.approval }) }catch(e){} }
+  try{
+    if(publicOnly){ if(typeof oai.setWidgetState==='function') oai.setWidgetState({}) }
+    else { var __ws=oai.widgetState; if(__ws&&typeof __ws==='object'){ if(__ws.q&&__ws.q.pid) state.quote=__ws.q; if(__ws.a&&__ws.a.request_id) state.approval=__ws.a } }
+  }catch(e){}
+  function persist(){ try{ if(typeof oai.setWidgetState==='function') oai.setWidgetState(publicOnly?{}:{ q: state.quote, a: state.approval }) }catch(e){} }
   // fail-visible:widget→host 回调(callTool/sendFollowUp)在部分宿主(如 ChatGPT)可能静默不生效
   // (点了详情/准备下单没反应或永久卡)。铁律:任何这类动作都 ①永不永久卡 loading ②始终留一条可见的
   // 手动路径 —— 展示一句可【复制发给模型】的话,让用户在任何宿主上都能继续。绝不假装成功、绝不碰钱路。
@@ -172,7 +200,9 @@ function renderBody(oai, out){
     root.appendChild(bar)
     // F5(Round1 UI hotfix):卡片显式标注真实展示数 —— 卡片只展示严格匹配命中,绝不虚构;模型叙述的"找到N款/推荐"可能来自更广候选集(discover),两者口径不同。
     var __shown=products.length, __total=(out.total_count!=null?out.total_count:(out.count!=null?out.count:__shown))   // A2.2:优先服务端总命中数
-    root.appendChild(el('div','note',out.__related_note?String(out.__related_note):(L('精确匹配 · 本卡展示 ','Exact match · showing ')+__shown+L(' 款',' ')+((__total>__shown)?(L('(共 ','(')+__total+L(' 命中)',' total)')):'')+L(' —— 模型文字里的"找到/推荐 N 款"可能来自更广候选集,以本卡商品为准',' — the model text "found/recommended N" may draw from a wider set; this card is authoritative'))))
+    root.appendChild(el('div','note',publicOnly
+      ? (L('审核商品 · 本卡展示 ','Reviewed products · showing ')+__shown+L(' 款',' ')+((__total>__shown)?(L('(共 ','(')+__total+L(' 命中)',' total)')):''))
+      : (out.__related_note?String(out.__related_note):(L('精确匹配 · 本卡展示 ','Exact match · showing ')+__shown+L(' 款',' ')+((__total>__shown)?(L('(共 ','(')+__total+L(' 命中)',' total)')):'')+L(' —— 模型文字里的"找到/推荐 N 款"可能来自更广候选集,以本卡商品为准',' — the model text "found/recommended N" may draw from a wider set; this card is authoritative')))))
     var list=products.slice()
     var priceOf=function(p){ return (p.price&&p.price.amount_minor)||0 }
     if(state.sort==='price_asc') list.sort(function(a,b){return priceOf(a)-priceOf(b)})
@@ -201,7 +231,7 @@ function renderBody(oai, out){
       if(stockChip) chips.appendChild(el('span','chip warn',stockChip))
       ;(p.decision_flags||[]).forEach(function(f){ var lb=(webazLocale()==='en'&&f.label_en)?f.label_en:(f.label||f.code); if(stockChip&&lb===stockChip) return; chips.appendChild(el('span','chip'+(f.severity==='warning'?' warn':''),lb)) })   // i18n:en 用 label_en   // R2-3:同义徽标只渲染一次
       c.appendChild(chips)
-      var seller=sellers[p.seller_ref]||{}
+      var seller=publicOnly?(p.seller||{}):(sellers[p.seller_ref]||{})
       c.appendChild(el('div','meta',(seller.name||'')+L(' · 已售 ',' · sold ')+(p.sales_count||0)))
       var m=el('div','more')
       m.appendChild(el('div',null,p.summary||''))
@@ -220,21 +250,26 @@ function renderBody(oai, out){
       //   走 follow-up 让模型编排:webaz_quote_order 是 model-only(app 直调会被标准 host 拒绝并吞掉→按钮永久卡死),
       //   故 widget 绝不 callTool 它;发结构化 follow-up(携准确 product_id)由模型跑 报价→草稿→提交,正式建单永远在人类
       //   Passkey 路径。widget 绝不直达钱路/不建单/不动资金。点击即 disabled 防误触;幂等由服务端 intent_hash 唯一索引兜底。
-      var pd=el('button','primary',L('准备下单','Prepare order'))
-      if(state.busy) pd.disabled=true   // F4 single-flight:进行中禁用,防重复报价
-      pd.addEventListener('click',onceGuard(function(){ prepareOrder(p.id,p.title) }))   // 就地消费报价;失败留可复制手动路径
-      row.appendChild(pd)
+      if(publicOnly){
+        addPublicProductAction(row,c,p.id)
+      } else {
+        var pd=el('button','primary',L('准备下单','Prepare order'))
+        if(state.busy) pd.disabled=true   // F4 single-flight:进行中禁用,防重复报价
+        pd.addEventListener('click',onceGuard(function(){ prepareOrder(p.id,p.title) }))   // 就地消费报价;失败留可复制手动路径
+        row.appendChild(pd)
+      }
       var sel=el('button',null,state.selected[p.id]?L('已选✓','Selected ✓'):L('比较','Compare'))
       sel.addEventListener('click',function(){ state.selected[p.id]=!state.selected[p.id]; render() })   // 本地选择
       row.appendChild(sel)
       c.appendChild(row)
       g.appendChild(c)
     })
-    if(out.more_url&&__total>__shown){   // A4:第 6 格 = 前往 WebAZ 查看更多(不翻页,宁缺毋滥)
+    var __moreHref=out.more_url?(publicOnly?safeWebazHref(String(out.more_url)):String(out.more_url)):null
+    if(__moreHref&&__total>__shown){   // A4:第 6 格 = 前往 WebAZ 查看更多(不翻页,宁缺毋滥)
       var mc=el('div','card'); mc.appendChild(el('b',null,L('还有 ','Plus ')+(__total-__shown)+L(' 款',' ')))
-      var mUrl=el('div','recreason',String(out.more_url)); mUrl.style.display='none'
+      var mUrl=el('div','recreason',String(__moreHref)); mUrl.style.display='none'
       var mb=el('button','primary',L('前往 WebAZ 查看更多','See more on WebAZ'))
-      mb.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,String(out.more_url)) }catch(e){ op=false } if(!op){ mUrl.style.display='block'; doCopy(String(out.more_url),mb,mUrl) } }))
+      mb.addEventListener('click',onceGuard(function(){ var op=false; try{ op=openWebaz(oai,String(__moreHref)) }catch(e){ op=false } if(!op){ mUrl.style.display='block'; doCopy(String(__moreHref),mb,mUrl) } }))
       var mr=el('div','row'); mr.appendChild(mb); mc.appendChild(mr); mc.appendChild(mUrl)
       g.appendChild(mc)
     }
@@ -244,19 +279,24 @@ function renderBody(oai, out){
       var cmp=el('div','cmp'); cmp.style.display='block'
       var t=document.createElement('table')
       var head=document.createElement('tr')
-      ;[L('商品','Item'),L('价格','Price'),L('退货','Return'),L('保修','Warranty'),L('发货','Dispatch'),L('已售','Sold'),L('下单','Order')].forEach(function(h){ head.appendChild(el('th',null,h)) })
+      ;[L('商品','Item'),L('价格','Price'),L('退货','Return'),L('保修','Warranty'),L('发货','Dispatch'),L('已售','Sold'),publicOnly?L('查看','View'):L('下单','Order')].forEach(function(h){ head.appendChild(el('th',null,h)) })
       t.appendChild(head)
       chosen.forEach(function(p){
         var tr=document.createElement('tr')
         ;[p.title,(p.price&&p.price.display)||'',p.return_days!=null?p.return_days+L('天',' days'):'—',p.warranty_days!=null?p.warranty_days+L('天',' days'):'—',p.handling_hours!=null?p.handling_hours+'h':'—',p.sales_count||0].forEach(function(v){ tr.appendChild(el('td',null,v)) })
-        var actTd=document.createElement('td'); var buyBtn=el('button','mini',L('准备下单','Prepare order'))   // 比较完直接选它下单(走硬化后的 prepareOrder)
-        buyBtn.addEventListener('click',onceGuard(function(){ prepareOrder(p.id,p.title) }))
-        actTd.appendChild(buyBtn); tr.appendChild(actTd)
+        var actTd=document.createElement('td')
+        if(publicOnly){ addPublicProductAction(actTd,actTd,p.id) }
+        else {
+          var buyBtn=el('button','mini',L('准备下单','Prepare order'))   // 比较完直接选它下单(走硬化后的 prepareOrder)
+          buyBtn.addEventListener('click',onceGuard(function(){ prepareOrder(p.id,p.title) }))
+          actTd.appendChild(buyBtn)
+        }
+        tr.appendChild(actTd)
         t.appendChild(tr)
       })
       cmp.appendChild(t); root.appendChild(cmp)
     }
-    if(state.quote){   // F4:报价就地态 —— 真实金额/ETA/到期,不再"正在获取报价"永久卡。继续下单=可复制一句话(模型编排 draft→submit → 下单卡),本卡保持零 URL 自包含。
+    if(!publicOnly&&state.quote){   // F4:报价就地态 —— 真实金额/ETA/到期,不再"正在获取报价"永久卡。继续下单=可复制一句话(模型编排 draft→submit → 下单卡),本卡保持零 URL 自包含。
       var qp=el('div','hint'); var qs=state.quote.sc||{}
       qp.appendChild(el('span',null,L('✓ 已获取报价:','✓ Quote ready: ')+(state.quote.title||'')))
       qp.appendChild(el('div','recreason',((qs.price&&qs.price.display)||'')+L(' · 预计送达 ',' · ETA ')+(webazLocale()==='en'?etaDisplay(qs.shipping&&qs.shipping.estimated_days,(qs.destination&&qs.destination.region)):(qs.display_eta||etaDisplay(qs.shipping&&qs.shipping.estimated_days,(qs.destination&&qs.destination.region))))+((qs.display_expires_at||qs.expires_at)?(L(' · 到期 ',' · expires ')+__i18nExp(qs.display_expires_at,qs.expires_at)):'')))
@@ -291,7 +331,7 @@ function renderBody(oai, out){
       qp.appendChild(el('div','meta',L('报价不扣款 · 草稿/提交/Passkey 在下单卡完成 · 正式建单需你在 webaz.xyz 用 Passkey 批准','Quotes never charge · draft/submit/Passkey on the order card · real orders need Passkey on webaz.xyz')))
       root.appendChild(qp)
     }
-    if(state.approval){   // A3-7(Holden):默认极简一行 —— 长 ID/完整 URL 收进「详情」;复制失败自动展开供手选(fail-visible 不打折)。
+    if(!publicOnly&&state.approval){   // A3-7(Holden):默认极简一行 —— 长 ID/完整 URL 收进「详情」;复制失败自动展开供手选(fail-visible 不打折)。
       var ap=el('div','hint')
       var __apDet=el('div',null,null); __apDet.style.display='none'
       function __openDet(){ __apDet.style.display='block'; return __apDet }
@@ -343,7 +383,9 @@ function renderBody(oai, out){
       }
       root.appendChild(hb)
     }
-    root.appendChild(el('div','note',L('报价不会扣款 · 草稿不锁库存 · 正式下单需你在 webaz.xyz 用 Passkey 批准 · ≈ 法币换算仅显示参考,非结算','Quotes never charge · drafts do not hold stock · ordering needs Passkey on webaz.xyz · ≈ fiat is display-only, not settlement')))
+    root.appendChild(el('div','note',publicOnly
+      ? L('公开插件仅用于发现商品 · 价格和库存以 WebAZ 商品页实时信息为准 · ≈ 法币换算仅供参考','Public plugin is discovery-only · verify live price and stock on WebAZ · ≈ fiat is display-only')
+      : L('报价不会扣款 · 草稿不锁库存 · 正式下单需你在 webaz.xyz 用 Passkey 批准 · ≈ 法币换算仅显示参考,非结算','Quotes never charge · drafts do not hold stock · ordering needs Passkey on webaz.xyz · ≈ fiat is display-only, not settlement')))
     try{ window.scrollTo(0, __sy) }catch(e){}   // B1:render 后恢复滚动位置(排序/比较/收起不跳顶)
   }
   render()

@@ -4,10 +4,8 @@
  * 背景(Phase 0 审计):tools/list 对所有客户端全量下发 54 工具 ≈101KB 定义(≈25-35k token),
  * 普通买家会话同时看到卖家/仲裁/治理/贡献工具 —— 定义 token、选择难度、误调概率全部为此买单。
  *
- * 语义边界(铁则):surface 只影响 tools/list 的【可见性】,绝不影响授权 —— tools/call 对任何
- * 已知工具照常分发,权限仍由 call 时的 bearer/scope/api_key/Passkey 门决定(与 PR-1..2 一致)。
- * 因此 surface 不是安全机制,只是 token/DX 优化;缓存了旧全量清单的客户端(如 ChatGPT connector)
- * 按名调用一切照旧。
+ * buyer/seller surface 只影响 tools/list 可见性。shopping_v1 是公开审核分发边界:
+ * tools/list 与 tools/call 使用同一 allowlist,缓存旧清单也不能调用审核范围外工具。
  *
  * 选面规则(mcp-remote 边缘,stdio 永远全量):
  *   1. /mcp?surface=shopping_v1|buyer|seller|full 显式选面(用户在 connector URL 里配置,全客户端兼容);
@@ -17,13 +15,19 @@
  */
 
 export type ToolSurface = 'shopping_v1' | 'buyer' | 'seller' | 'full'
+const TOOL_SURFACE_ARG = '__tool_surface__'
 
-// 公开购物插件 v1:最小买家闭环。此集合是对外审核契约,新增/删除成员必须走插件新版本审核。
-// search 同时承担列表/详情/商品卡;discover 返回候选并引导 search 渲染标准卡。
+/** Server-owned call context. buildMcpServer overwrites caller input on every call. */
+export function stampToolSurface(args: Record<string, unknown>, surface: ToolSurface): void {
+  args[TOOL_SURFACE_ARG] = surface
+}
+export function isPublicCommerceToolCall(args: Record<string, unknown>): boolean {
+  return args[TOOL_SURFACE_ARG] === 'shopping_v1'
+}
+
+// 公开插件首版仅做免登录商品发现。search 同时承担列表、口令、外链精确识别、详情和商品卡。
 export const SHOPPING_V1_SURFACE_TOOLS: ReadonlySet<string> = new Set([
-  'webaz_search', 'webaz_discover', 'webaz_quote_order',
-  'webaz_order_draft', 'webaz_submit_order_request',
-  'webaz_buyer_orders', 'webaz_connection_status',
+  'webaz_search',
 ])
 
 // 买家核心面:发现→报价→草稿→提交→审批→订单→售后 全链 + 账户身份读(21)
@@ -64,4 +68,9 @@ export function filterToolsBySurface<T extends { name: string }>(tools: T[], sur
     ? SHOPPING_V1_SURFACE_TOOLS
     : surface === 'buyer' ? BUYER_SURFACE_TOOLS : SELLER_SURFACE_TOOLS
   return tools.filter(t => set.has(t.name))
+}
+
+/** Public distribution is the sole hard call boundary; private/full bundles retain legacy behavior. */
+export function toolAllowedForSurface(toolName: string, surface: ToolSurface): boolean {
+  return surface !== 'shopping_v1' || SHOPPING_V1_SURFACE_TOOLS.has(toolName)
 }

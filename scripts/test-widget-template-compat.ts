@@ -22,8 +22,11 @@ for (const [name, hashes] of Object.entries(KNOWN_STALE_WIDGET_HASHES)) {
   }
 }
 
-// C-2 the live-reproduced stale set (8cdd3db era, cached by the 2026-07-19 connector connect)
+// C-2 live-reproduced and production-cached hashes must survive normal retention pruning.
 ok('C-2 products c4bd5e13bb covered', !!matchKnownStaleWidgetUri('ui://widget/webaz-products.c4bd5e13bb.html'))
+ok('C-2 products bc1a887d88 covered', !!matchKnownStaleWidgetUri('ui://widget/webaz-products.bc1a887d88.html'))
+ok('C-2 products-mcp b9b8e577a8 covered', !!matchKnownStaleWidgetUri('ui://widget/webaz-products-mcp.b9b8e577a8.html'))
+ok('C-2 products-mcp 334fe638ce covered', !!matchKnownStaleWidgetUri('ui://widget/webaz-products-mcp.334fe638ce.html'))
 ok('C-2 quote 6a2e96dfb1 covered', !!matchKnownStaleWidgetUri('ui://widget/webaz-quote-approval.6a2e96dfb1.html'))
 ok('C-2 timeline 5ea1e0d365 covered', !!matchKnownStaleWidgetUri('ui://widget/webaz-order-timeline.5ea1e0d365.html'))
 

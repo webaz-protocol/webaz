@@ -18,7 +18,7 @@ import type { Express, Request, Response } from 'express'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { LATEST_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS } from '@modelcontextprotocol/sdk/types.js'  // BUG-09: drift-proof version advertisement
 import { buildMcpServer } from '../../layer1-agent/L1-1-mcp-server/server.js'
-import { resolveSurface } from '../../layer1-agent/L1-1-mcp-server/tool-surfaces.js'  // MCP Token PR-3
+import { resolveSurface, toolAllowedForSurface } from '../../layer1-agent/L1-1-mcp-server/tool-surfaces.js'  // MCP Token PR-3
 import { oauthEnabled } from './oauth-discovery.js'
 import { OAUTH_SCOPE_CAPABILITIES } from './oauth-approve.js'
 import { verifyGrantToken, verifyGrantIdentity } from '../../runtime/agent-grant-verifier.js'
@@ -85,6 +85,10 @@ function isAuthOnlyToolCall(body: unknown): boolean {
 // anonymous handshake/discovery and must stay reachable during a client's setup phase.
 function isToolCall(body: unknown): boolean {
   return (body as { method?: unknown } | null)?.method === 'tools/call'
+}
+function toolNameForCall(body: unknown): string | null {
+  const b = body as { method?: unknown; params?: { name?: unknown } } | null
+  return b?.method === 'tools/call' && typeof b.params?.name === 'string' ? b.params.name : null
 }
 function scopeForAuthOnlyCall(body: unknown): string {
   const b = body as { params?: { name?: unknown; arguments?: { action?: unknown } } } | null
@@ -299,11 +303,34 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
       const dpopMatch = /^DPoP ([^\s]+)$/i.exec(authz)
       const dpopBearer = dpopMatch?.[1] ?? ''
       const credential = dpopBearer || bearer
+      const bodyId = (req.body as { id?: number | string | null } | null)?.id ?? null
+      // Public plugin distribution is a hard reviewed boundary, not an auth surface. Resolve it before
+      // OAuth/DPoP so a cached hidden tool can never trigger a misleading login or scope-expansion prompt.
+      const surface = resolveSurface(req.query.surface, credential ? (credential.startsWith('gtk_') || credential.startsWith('oat_') ? 'grant' : 'api_key') : 'none')
+      if (!surface) {
+        return void res.status(400).json({ jsonrpc: '2.0', id: bodyId,
+          error: { code: -32602, message: 'invalid surface — expected exactly one of shopping_v1, buyer, seller, or full' } })
+      }
+      const requestedTool = toolNameForCall(req.body)
+      if (requestedTool && !toolAllowedForSurface(requestedTool, surface)) {
+        const denied = {
+          error: `tool ${requestedTool} is not available on the reviewed public shopping surface`,
+          error_code: 'TOOL_NOT_AVAILABLE_ON_SURFACE',
+        }
+        return void res.status(200).json({
+          jsonrpc: '2.0',
+          id: bodyId,
+          result: {
+            content: [{ type: 'text', text: JSON.stringify(denied) }],
+            structuredContent: denied,
+            isError: true,
+          },
+        })
+      }
       // RFC-023 PR-5:匿名调用注定需要身份的工具 → 401 + WWW-Authenticate 指回 protected-resource
       //   metadata,合规 MCP 客户端据此自启 OAuth 流(MCP Authorization spec)。仅 WEBAZ_OAUTH=1 时
       //   挑战(关着时 metadata 404,不能把客户端指向不存在的文档);带任何 Bearer 的请求照旧进工具层
       //   (无效凭证的语义化 error_code 在那里,PR-4)。匿名【读】面完全不受影响(I-2)。
-      const bodyId = (req.body as { id?: number | string | null } | null)?.id ?? null
       let gatewayContext: AgentGatewayContext | undefined
       if (oauthEnabled() && dpopBearer && isToolCall(req.body)) {
         // RFC-9449 sender-constrained access uses the DPoP authorization scheme. Ordinary ChatGPT OAuth
@@ -391,11 +418,6 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
       //   pairing 文件;匿名远程 = 真 network_readonly。修 Codex 两个 P0(跨请求越权 + pairing 竞态)。
       // MCP Token PR-3:工具面选择 —— ?surface=shopping_v1|buyer|seller|full 显式 > api_key bearer(full)> 默认 buyer。
       //   只影响 tools/list 可见性(定义 ~101KB→buyer ~40KB);按名 tools/call 一切照旧(授权在 call 时)。
-      const surface = resolveSurface(req.query.surface, credential ? (isGrantBearer ? 'grant' : 'api_key') : 'none')
-      if (!surface) {
-        return void res.status(400).json({ jsonrpc: '2.0', id: bodyId,
-          error: { code: -32602, message: 'invalid surface — expected exactly one of shopping_v1, buyer, seller, or full' } })
-      }
       const server = buildMcpServer({
         isolated: true,
         surface,

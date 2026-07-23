@@ -325,7 +325,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/charity/leaderboard` |  |  | 慈善排行 | src/pwa/routes/charity.ts:843 |
 | GET | `/api/charity/me` | 🔐 |  | GET /api/charity/me — 我的慈善档案 | src/pwa/routes/charity.ts:499 |
 | GET | `/api/charity/stories` |  |  | GET /api/charity/stories — 公开披露的故事板 | src/pwa/routes/charity.ts:521 |
-| GET | `/api/check-url` | 🔐 |  |  | src/pwa/routes/search.ts:175 |
+| GET | `/api/check-url` | 🔐 |  |  | src/pwa/routes/search.ts:204 |
 | POST | `/api/checkin` | 🔐 |  |  | src/pwa/routes/checkin-tasks.ts:78 |
 | GET | `/api/checkin/status` | 🔐 |  |  | src/pwa/routes/checkin-tasks.ts:38 |
 | GET | `/api/checkout/tax-preview` | 🔐 |  |  | src/pwa/routes/checkout-helpers.ts:30 |
@@ -354,7 +354,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | PATCH | `/api/coupons/:id` | 🔐 |  |  | src/pwa/routes/coupons.ts:164 |
 | GET | `/api/coupons/available` | 🔐 |  | buyer 视角：全平台 + 已购卖家店铺/单品券 + 历史 | src/pwa/routes/coupons.ts:116 |
 | GET | `/api/coupons/mine` | 🔐 |  |  | src/pwa/routes/coupons.ts:156 |
-| GET | `/api/coupons/preview` | 🔐 |  |  | src/pwa/routes/search.ts:40 |
+| GET | `/api/coupons/preview` | 🔐 |  |  | src/pwa/routes/search.ts:41 |
 | GET | `/api/creator/stats` | 🔐 |  | 里程碑 L3：创作者贡献仪表盘 | src/pwa/routes/shareables.ts:216 |
 | GET | `/api/direct-pay/availability` | 🔐 |  | GET /api/direct-pay/availability?product_id=... — 该商品(以 qty=1 计)当前是否可直付 + 不可用原因( | src/pwa/routes/direct-pay-availability.ts:40 |
 | POST | `/api/direct-pay/disclosure-acks` | 🔐 |  | stage:'both' —— 单 stage token 冒充不了 both,both token 也重放不了单 stage(一次性消费 + validate | src/pwa/routes/direct-pay-disclosure-acks.ts:53 |
@@ -510,7 +510,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/me/seller/trial-campaigns` | 🔐 |  | 卖家：我的测评活动列表（含每个的 claims 计数） | src/pwa/routes/trial.ts:329 |
 | GET | `/api/me/task-proposals` | 🔐 |  | proposer-facing read: the caller's OWN proposals + status + public_reply (agent- | src/pwa/routes/task-proposals.ts:72 |
 | GET | `/api/me/trial-claims` | 🔐 |  | 买家：我的测评列表 | src/pwa/routes/trial.ts:316 |
-| GET | `/api/my-products` | 🔐 |  |  | src/pwa/routes/search.ts:51 |
+| GET | `/api/my-products` | 🔐 |  |  | src/pwa/routes/search.ts:52 |
 | GET | `/api/nearby` | 🔐 |  | window: 24h / 7d / 30d | src/pwa/routes/buyer-feeds.ts:183 |
 | GET | `/api/notes` |  |  | sort=following: 需登录，仅显示 follows.followee_id 的笔记 | src/pwa/routes/shareables.ts:322 |
 | POST | `/api/notes/photo` | 🔐 |  | Phase C2 笔记图片上传 — raw blob，sha256 重算，返回 hash + dedup | src/pwa/routes/shareables.ts:51 |
@@ -579,7 +579,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/product-actions/:id/approve` | 🔐 |  | gate token 的 purpose_data,故"不开窗的 token"无法被复用去开窗。裸 api_key 永远过不了(consumeGateToken | src/pwa/routes/product-actions.ts:60 |
 | POST | `/api/product-actions/request` | 🔐 |  | 提交:owner-key 建 pending 删除请求 → 返回 approve_url(人去 Passkey)。绝不执行删除。 | src/pwa/routes/product-actions.ts:38 |
 | POST | `/api/product-share/touch` | 🔐 |  | 商品分享归因落库（前端登录后首次进入带 share_id 时调用） | src/pwa/routes/share-redirects.ts:129 |
-| GET | `/api/products` |  |  |  | src/pwa/routes/products-list.ts:63 |
+| GET | `/api/products` |  |  |  | src/pwa/routes/products-list.ts:64 |
 | POST | `/api/products` | 🔐 |  |  | src/pwa/routes/products-create.ts:307 |
 | DELETE | `/api/products/:id` | 🔐 |  | 硬删（仅 deleted 状态 + 无进行中订单） | src/pwa/routes/products-crud.ts:74 |
 | GET | `/api/products/:id` |  |  | 卖家可查看自己的非上架商品（编辑页用），其他人只能看 active | src/pwa/routes/products-crud.ts:36 |
@@ -619,7 +619,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/products/:product_id/waitlist/check` | 🔐 |  |  | src/pwa/routes/waitlist.ts:71 |
 | GET | `/api/products/:product_id/waitlist/count` | 🔐 |  | seller 查 waitlist count（决定备多少货） | src/pwa/routes/waitlist.ts:78 |
 | POST | `/api/products/extract-aliases` | 🔐 |  | M7.2-5: 从外部原文提取候选 alias | src/pwa/routes/products-aliases.ts:36 |
-| POST | `/api/products/result-fetch` |  |  | 资源滥用护栏(Codex M-4):无鉴权端点按 IP 限流(默认 60 req/min,WEBAZ_RESULT_FETCH_RPM 可调)。 | src/pwa/routes/products-list.ts:453 |
+| POST | `/api/products/result-fetch` |  |  | 资源滥用护栏(Codex M-4):无鉴权端点按 IP 限流(默认 60 req/min,WEBAZ_RESULT_FETCH_RPM 可调)。 | src/pwa/routes/products-list.ts:461 |
 | GET | `/api/profile` | 🔐 |  |  | src/pwa/routes/auth-read.ts:48 |
 | PATCH | `/api/profile` | 🔐 |  | 通用 profile patch（search_anchor / bio / feed_visible） | src/pwa/routes/profile-prefs.ts:99 |
 | POST | `/api/profile/add-role` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:42 |
@@ -683,8 +683,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/rfqs/:id/award` | 🔐 |  | 买家：选定 winning bid | src/pwa/routes/rfqs.ts:477 |
 | POST | `/api/rfqs/:id/bids` | 🔐 |  |  | src/pwa/routes/rfqs.ts:270 |
 | GET | `/api/rfqs/mine` | 🔐 |  |  | src/pwa/routes/rfqs.ts:195 |
-| POST | `/api/search-by-link` |  |  |  | src/pwa/routes/search.ts:66 |
-| GET | `/api/search-fuzzy` |  |  |  | src/pwa/routes/search.ts:118 |
+| POST | `/api/search-by-link` |  |  |  | src/pwa/routes/search.ts:67 |
+| GET | `/api/search-fuzzy` |  |  |  | src/pwa/routes/search.ts:147 |
 | GET | `/api/secondhand` |  |  | 2. 列表（市场入口） | src/pwa/routes/secondhand.ts:78 |
 | POST | `/api/secondhand` | 🔐 |  | 1. 发布 | src/pwa/routes/secondhand.ts:56 |
 | GET | `/api/secondhand/:id` |  |  | 4. 详情（view_count++）+ 同卖家其他在售 | src/pwa/routes/secondhand.ts:138 |

@@ -41,7 +41,13 @@ import { resolveProductMatch } from '../../pwa/product-alias-match.js'  // A4:�
 import { matchKnownStaleWidgetUri, isUnknownVersionedWidgetUri } from './widget-template-compat.js'  // B-2 收官:已知历史 hash 显式 allowlist(绝不通配回落)
 import { withSecuritySchemes, withSecuritySchemeMetaMirror } from './tool-security-schemes.js'  // OpenAI per-tool securitySchemes(oauth2 仅 grant-reachable / 余 noauth)
 import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
-import { filterToolsBySurface, type ToolSurface } from './tool-surfaces.js'
+import {
+  filterToolsBySurface,
+  isPublicCommerceToolCall,
+  stampToolSurface,
+  toolAllowedForSurface,
+  type ToolSurface,
+} from './tool-surfaces.js'
 import { PRODUCT_RESULTS_WIDGET_HTML, QUOTE_APPROVAL_WIDGET_HTML, ORDER_TIMELINE_WIDGET_HTML, PRODUCT_RESULTS_WIDGET_MCP_HTML, QUOTE_APPROVAL_WIDGET_MCP_HTML, ORDER_TIMELINE_WIDGET_MCP_HTML } from './ui-widgets.js'  // MCP UI PR-4..6 + PR-A:legacy + 标准双轨组件
 import { CANONICAL_CATEGORIES, productTermSmell } from '../../pwa/agent-categories.js'  // P0 PR-AB:静态注册表 + 商品词校验单源(recovery 短词分类器共用)
 import { REQUEST_READINESS_GUIDE } from '../../pwa/agent-request-readiness.js'  // R0:请求就绪门编排指引(资源+GET 双通道)
@@ -2272,9 +2278,102 @@ const LOCAL_ONLY_TOOLS = new Set(['webaz_pair'])
 // handler runs OUTSIDE the per-call isolationALS scope (that wraps CallTool only).
 function toolsForTransport(isolated: boolean, surface: ToolSurface = 'full'): typeof TOOLS_ANNOTATED {
   const base = isolated ? TOOLS_ANNOTATED.filter(t => !LOCAL_ONLY_TOOLS.has(t.name)) : TOOLS_ANNOTATED
-  // MCP Token PR-3:surface 只裁 tools/list 可见性(定义 token/选择难度);CallTool 分发与授权不变。
   const filtered = filterToolsBySurface(base, surface)
-  return surface === 'shopping_v1' ? withSecuritySchemeMetaMirror(filtered) : filtered
+  if (surface !== 'shopping_v1') return filtered
+  const reviewed = filtered.map(tool => {
+    if (tool.name !== 'webaz_search') return tool
+    const outputSchema = tool.outputSchema as Record<string, unknown> | undefined
+    const properties = outputSchema?.properties as Record<string, unknown> | undefined
+    const productsSchema = properties?.products as Record<string, unknown> | undefined
+    const productItems = productsSchema?.items as Record<string, unknown> | undefined
+    const productProperties = productItems?.properties as Record<string, unknown> | undefined
+    const publicProperties = { ...properties }
+    const publicProductProperties = { ...productProperties }
+    delete publicProperties.sellers
+    delete publicProductProperties.seller_ref
+    return {
+      ...tool,
+      description: `Find reviewed, active WebAZ retail products. No login required.
+
+Use one or two distinctive product terms from the shopper's request, plus optional category, max_price,
+ship_to, return and handling filters. This reviewed public surface tries exact title/SKU/anchor matching
+first, then a bounded title/description/category/brand keyword match. It also supports WebAZ @anchors,
+external shopping links/share text, result_handle detail lookup, sorting and comparison cards.
+
+This release is discovery-only: never claim that it creates an order, charges, reserves stock, or accesses
+private account data. Product cards link to WebAZ for any action beyond discovery.`,
+      ...(outputSchema ? {
+        outputSchema: {
+          ...outputSchema,
+          properties: {
+            ...publicProperties,
+            ...(productsSchema ? {
+              products: {
+                ...productsSchema,
+                ...(productItems ? {
+                  items: {
+                    ...productItems,
+                    properties: {
+                      ...publicProductProperties,
+                      seller: {
+                        type: 'object',
+                        description: 'public seller summary {name,level,rep_points}; no internal seller id',
+                      },
+                    },
+                  },
+                } : {}),
+              },
+            } : {}),
+            public_commerce: { type: 'boolean', description: 'true only on the reviewed discovery-only public plugin surface' },
+            public_product_url_template: { type: 'string', description: 'server-issued WebAZ product deep-link template used by the discovery-only card' },
+          },
+        },
+      } : {}),
+    }
+  })
+  return withSecuritySchemeMetaMirror(reviewed as typeof TOOLS_ANNOTATED)
+}
+
+function deidentifyPublicCommerceSellers(value: Record<string, unknown>): Record<string, unknown> {
+  const sanitizeProducts = (
+    owner: Record<string, unknown>,
+    productsKey: string,
+    sellersKey: string,
+  ): Record<string, unknown> => {
+    const products = Array.isArray(owner[productsKey]) ? owner[productsKey] as Array<unknown> : null
+    const sellers = owner[sellersKey] && typeof owner[sellersKey] === 'object' && !Array.isArray(owner[sellersKey])
+      ? owner[sellersKey] as Record<string, unknown>
+      : {}
+    const clean = { ...owner }
+    delete clean[sellersKey]
+    if (!products) return clean
+    clean[productsKey] = products.map(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return item
+      const product = item as Record<string, unknown>
+      const sellerRef = typeof product.seller_ref === 'string' ? product.seller_ref : ''
+      const rawSeller = sellerRef && sellers[sellerRef] && typeof sellers[sellerRef] === 'object' && !Array.isArray(sellers[sellerRef])
+        ? sellers[sellerRef] as Record<string, unknown>
+        : {}
+      const seller = {
+        name: typeof rawSeller.name === 'string' ? rawSeller.name : null,
+        level: typeof rawSeller.level === 'string' ? rawSeller.level : null,
+        rep_points: Number.isFinite(Number(rawSeller.rep_points)) ? Number(rawSeller.rep_points) : null,
+      }
+      const cleanProduct: Record<string, unknown> = { ...product, seller }
+      delete cleanProduct.seller_ref
+      return cleanProduct
+    })
+    return clean
+  }
+
+  let clean = sanitizeProducts(value, 'products', 'sellers')
+  if (clean.recovery && typeof clean.recovery === 'object' && !Array.isArray(clean.recovery)) {
+    clean = {
+      ...clean,
+      recovery: sanitizeProducts(clean.recovery as Record<string, unknown>, 'related_products', 'related_sellers'),
+    }
+  }
+  return clean
 }
 
 // ─── 工具处理函数 ─────────────────────────────────────────────
@@ -2738,6 +2837,10 @@ export function recommendationPassthrough(args: Record<string, unknown>, product
 }
 
 export async function handleSearch(args: Record<string, unknown>) {
+  const publicCommerce = isPublicCommerceToolCall(args)
+  if (publicCommerce && toolBackend('webaz_search') !== 'network') {
+    return { error: 'the reviewed public catalog is available only from the deployed WebAZ service', error_code: 'PUBLIC_COMMERCE_REQUIRES_NETWORK' }
+  }
   // MCP Token PR-2:result_handle 按需详情 —— 选择集句柄 + ≤5 个 id → 服务端活读详情投影
   //   (webaz.product_detail.model.v1)。句柄只在网络路径签发/兑付;数据永远按 id 现读 + 重跑
   //   active 谓词,不存在缓存陈货或权限绕过面。
@@ -2745,7 +2848,7 @@ export async function handleSearch(args: Record<string, unknown>) {
     if (toolBackend('webaz_search') !== 'network') {
       return { error: 'result_handle detail fetch is a network-mode surface (handles are issued by webaz.xyz search)', error_code: 'RESULT_HANDLE_INVALID' }
     }
-    return await apiCall('/api/products/result-fetch', { method: 'POST', body: { result_handle: args.result_handle, selected_ids: args.selected_ids, full_terms: args.full_terms === true, ...(typeof args.card === 'boolean' ? { card: args.card } : {}) } })   // 方案A:多选默认标准卡;card 仅作显式覆盖透传(true 强制卡/false 强制详情)
+    return await apiCall('/api/products/result-fetch', { method: 'POST', body: { result_handle: args.result_handle, selected_ids: args.selected_ids, full_terms: args.full_terms === true, ...(publicCommerce ? { public_commerce: true } : {}), ...(typeof args.card === 'boolean' ? { card: args.card } : {}) } })   // 方案A:多选默认标准卡;card 仅作显式覆盖透传(true 强制卡/false 强制详情)
   }
   // 口令 / anchor 直达(AI Match 语义):@code → /api/anchor/:code/lookup 精确解析单品,复用 A4 exact-first 投影成卡片。
   //   仅接线已有端点,不改匹配语义;无效/归档/无在售商品 → 诚实 found:0 + 引导(宁缺毋滥)。
@@ -2768,7 +2871,9 @@ export async function handleSearch(args: Record<string, unknown>) {
       if (!look || look.found !== true || httpStatus === 410 || look.status === 'retired' || look.status === 'reclaimable') {
         const note = httpStatus === 410 || look?.hint === 'archived'
           ? 'This anchor is archived (its product was delisted). Ask the seller for a current link, or search by full product title. / 该口令已归档(商品下架),请向卖家索取新链接或用完整标题搜索。'
-          : 'No such anchor (or it was reset). Check the code, or search by full product title / webaz_discover. / 口令不存在或已重置,请核对,或用完整标题 / webaz_discover 搜索。'
+          : publicCommerce
+            ? 'No such anchor (or it was reset). Check the code, or retry webaz_search with the full product title. / 口令不存在或已重置,请核对,或用完整标题重新搜索。'
+            : 'No such anchor (or it was reset). Check the code, or search by full product title / webaz_discover. / 口令不存在或已重置,请核对,或用完整标题 / webaz_discover 搜索。'
         return { schema_version: SCHEMA_PRODUCT_SEARCH, mode: 'agent', found: 0, count: 0, products: [], matched_by: 'anchor_not_found', recovery: { reason: 'anchor_not_found', anchor: code, note } }
       }
       const prod = look.product as Record<string, unknown> | null
@@ -2776,7 +2881,7 @@ export async function handleSearch(args: Record<string, unknown>) {
         return { schema_version: SCHEMA_PRODUCT_SEARCH, mode: 'agent', found: 0, count: 0, products: [], matched_by: 'anchor_no_product', recovery: { reason: 'anchor_no_active_product', anchor: code, note: 'This anchor has no purchasable product right now. / 该口令暂无在售关联商品。' } }
       }
       // 复用已部署 A4 exact-first:按精确标题搜,再按 target id 过滤(兜底同名碰撞)。零新投影。
-      const aqs = new URLSearchParams({ mode: 'agent', limit: '5' }); aqs.set('q', String(prod.title))
+      const aqs = new URLSearchParams({ mode: 'agent', limit: '5' }); aqs.set('q', String(prod.title)); if (publicCommerce) aqs.set('public_commerce', '1')
       const r = await apiCall('/api/products?' + aqs.toString()).catch(() => null) as Record<string, unknown> | null
       const all = (r && !('error' in r) ? (r.products as Array<Record<string, unknown>> | undefined) : undefined) ?? []
       const hit = all.filter(pp => String(pp.id) === String(prod.id))
@@ -2792,6 +2897,7 @@ export async function handleSearch(args: Record<string, unknown>) {
     const body: Record<string, unknown> = {}
     if (args.paste_text)    body.text          = args.paste_text
     if (args.external_link) body.external_link = args.external_link
+    if (publicCommerce) body.public_commerce = true
     try {
       const resp = await fetch(`${apiUrl}/api/search-by-link`, {
         method:  'POST',
@@ -2823,7 +2929,9 @@ export async function handleSearch(args: Record<string, unknown>) {
         count: rawProducts.length,
         sellers: sellersIndex(rawProducts),
         products: rawProducts.map(p => projectProductModel(p)),
-        ...(rawProducts.length ? { hint: '下单前用 webaz_verify_price 锁价。' } : { hint: '未找到关联商品。可改用 query 参数做关键词搜索。' }),
+        ...(rawProducts.length
+          ? { hint: publicCommerce ? '查看商品卡或在 WebAZ 打开商品页了解详情。' : '下单前用 webaz_verify_price 锁价。' }
+          : { hint: '未找到关联商品。可改用 query 参数做关键词搜索。' }),
       }
     } catch (e) {
       return { error: `链接搜索网络错误：${(e as Error).message}` }
@@ -2847,7 +2955,11 @@ export async function handleSearch(args: Record<string, unknown>) {
   // (同款协议级 strict alias 引擎,公开读,不传 fuzzy)。让 agent 搜到的是全网真实在售商品。
   if (toolBackend('webaz_search') === 'network') {
     const qs = new URLSearchParams({ mode: 'agent', limit: String(limit) })
-    if (query)                  qs.set('q', query)
+    if (publicCommerce) qs.set('public_commerce', '1')
+    if (query) {
+      qs.set('q', query)
+      if (publicCommerce) qs.set('fuzzy', 'true')
+    }
     if (category)               qs.set('category', String(category))
     if (maxPrice != null)       qs.set('max_price', String(maxPrice))
     if (minReturnDays != null)  qs.set('min_return_days', String(minReturnDays))
@@ -2870,7 +2982,9 @@ export async function handleSearch(args: Record<string, unknown>) {
       ].filter(Boolean).join(' ')
       const totalN = Number((r as Record<string, unknown>).total_count)
       return { ...r, found: products.length, ...(rec ? { recommendation: rec } : {}),
-        ...(Number.isFinite(totalN) && totalN > products.length ? { more_url: `${WEBAZ_API_URL}/#discover` } : {}),   // A4:第 6 格跳转 webaz 看更多
+        ...(Number.isFinite(totalN) && totalN > products.length
+          ? { more_url: publicCommerce ? 'https://webaz.xyz/#discover' : `${WEBAZ_API_URL}/#discover` }
+          : {}),   // A4:第 6 格跳转 webaz 看更多;公开插件只发 canonical WebAZ URL
         model_conduct: conduct }
     }
     // ★ 可恢复建议(调用契约 PR-C:0 命中不再导向"无 query 全目录浏览" —— 那是本次事故的制度化根因;
@@ -2894,13 +3008,18 @@ export async function handleSearch(args: Record<string, unknown>) {
       let relatedSellers: Record<string, unknown> = {}
       if (shortTerm) {
         const rqs = new URLSearchParams({ mode: 'agent', limit: '5', sort: 'newest', fuzzy: 'true' })
+        if (publicCommerce) rqs.set('public_commerce', '1')
         rqs.set('q', q)
         const rr = await apiCall('/api/products?' + rqs.toString()).catch(() => ({}))
         related = ((rr as Record<string, unknown>).products as Array<Record<string, unknown>> | undefined) ?? []
         relatedSellers = ((rr as Record<string, unknown>).sellers as Record<string, unknown> | undefined) ?? {}
       }
       const sample: Array<Record<string, unknown>> = []
-      recovery = {
+      recovery = publicCommerce ? {
+        reason: 'reviewed_catalog_no_match',
+        note: 'No reviewed product matched these terms and filters. Try one shorter product term, a category, or a WebAZ @anchor. / 当前审核商品中没有匹配项,请改用一个更短的商品词、类目或 WebAZ 口令。',
+        next_step: { tool: 'webaz_search', description: 'retry once with one shorter product term or a category/max_price filter; do not invent products' },
+      } : {
         reason: 'strict_no_match',
         ...(related.length ? { related_products: related, related_sellers: relatedSellers, related_query: q, related_note: 'titles CONTAINING the query (NOT exact matches) — the strict result set is still 0' } : {}),
         note: 'webaz_search is STRICT (exact title/SKU) — no fuzzy fallback. For a natural-language product need, switch to webaz_discover (structured intent). Do NOT retry webaz_search with shorter words. / 精确匹配 0 命中;自然语言需求请改用 webaz_discover(结构化意图),勿用更短词重试 search。',
@@ -6354,6 +6473,7 @@ export function buildMcpServer(opts: {
     // 权威源是上面的 isolationALS.run(整条 async 栈可见);此 args 标记为二道防线(defense in depth)。
     if (opts.isolated) (args as Record<string, unknown>).__isolated__ = true
     else delete (args as Record<string, unknown>).__isolated__
+    stampToolSurface(args as Record<string, unknown>, opts.surface ?? 'full')
     // RFC-023 PR-4:远程 grant 凭证注入(见 buildMcpServer 头注)。服务端强制、每请求覆盖调用方伪造值。
     if (opts.grantBearer) (args as Record<string, unknown>).__grant_bearer__ = opts.grantBearer
     else delete (args as Record<string, unknown>).__grant_bearer__
@@ -6363,10 +6483,13 @@ export function buildMcpServer(opts: {
     let result: unknown
 
     try {
+      if (!toolAllowedForSurface(name, opts.surface ?? 'full')) {
+        result = { error: `tool ${name} is not available on the reviewed public shopping surface`, error_code: 'TOOL_NOT_AVAILABLE_ON_SURFACE' }
+      }
       // ─── RFC-003 Batch 0 安全网:NETWORK 模式下未迁移的工具【硬失败】,不静默落本地沙盒 ───
       // 例外:info / register(NETWORK_SELF_AWARE)有专门 network-aware 处理,照常放行。
-      let handled = false
-      if (isNetworkMode() && !toolAllowedInNetworkMode(name)) {
+      let handled = result !== undefined
+      if (!handled && isNetworkMode() && !toolAllowedInNetworkMode(name)) {
         result = networkMigrationPending(name)
         handled = true
       }
@@ -6432,6 +6555,13 @@ export function buildMcpServer(opts: {
       result = { error: `执行出错：${(err as Error).message}` }
     }
 
+    if (name === 'webaz_search' && (opts.surface ?? 'full') === 'shopping_v1'
+        && result && typeof result === 'object' && !Array.isArray(result)) {
+      result = deidentifyPublicCommerceSellers(result as Record<string, unknown>)
+      const reviewed = result as Record<string, unknown>
+      reviewed.public_commerce = true
+      reviewed.public_product_url_template = 'https://webaz.xyz/#product/{product_id}'
+    }
 
     // RFC-003 P0: 给每个工具结果盖模式戳(诚实可见,防把 sandbox 当 live 网络)
     // P3: handler 可自行预设 _mode(如 register 在 network 模式返回引导,不是 sandbox 结果)→ 不覆盖。

@@ -59,6 +59,12 @@ const renderBody = ctx.__render as (oai: unknown, out: unknown) => void
 
 const oai = { callTool() {} }
 const SEARCH = { products: [{ id: 'prd_a', title: 'AAA', price: { amount_minor: 11_500_000, display: '11.5 USDC' }, summary: 'sa', return_days: 7 }, { id: 'prd_b', title: 'BBB', price: { amount_minor: 9_200_000, display: '9.2 USDC' }, summary: 'sb', return_days: 7 }], sellers: {}, result_handle: 'rh1' }
+const PUBLIC_SEARCH = {
+  products: SEARCH.products.map(product => ({ ...product, seller: { name: 'Public seller', level: 'new', rep_points: 0 } })),
+  result_handle: SEARCH.result_handle,
+  public_commerce: true,
+  public_product_url_template: 'https://webaz.xyz/#product/{product_id}',
+}
 
 try {
   // ── initial search render: cards present, not open, button says 展开 ──
@@ -212,6 +218,89 @@ try {
   const treeText = (n: N): string => (n.textContent && n.children.length === 0 ? n.textContent : '') + (n.children || []).map(treeText).join(' ')
   ok('B3-7 recommended card shows the 🌟 AI 推荐 badge (not "WebAZ 推荐")', !!findByText(recCard, '🌟 AI 推荐', 'DIV') && !treeText(rn3).includes('WebAZ 推荐'))
   ok('B3-8 recommended card shows the reason', !!findByText(recCard, '“容量适中并附挂钩”', 'DIV'))
+
+  // Public shopping distribution is discovery-only: cards must never surface or call hidden order tools.
+  const rnPublic = mk('div'); rnPublic.setAttribute('id', 'root')
+  const docPublic = { getElementById: (id: string) => (id === 'root' ? rnPublic : null), createElement: (t: string) => mk(t) }
+  const ctxPublic: Record<string, unknown> = { document: docPublic, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON, encodeURIComponent }
+  ctxPublic.globalThis = ctxPublic; ctxPublic.self = ctxPublic; vm.createContext(ctxPublic)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctxPublic)
+  const publicCalls: Array<[string, unknown]> = []; const opened: string[] = []
+  ;(ctxPublic.__render as (o: unknown, out: unknown) => void)({
+    callTool: (n: string, a: unknown) => { publicCalls.push([n, a]) },
+    openExternal: ({ href }: { href: string }) => { opened.push(href) },
+  }, PUBLIC_SEARCH)
+  ok('P-1 public card replaces every 准备下单 action with 在 WebAZ 查看',
+    !treeTextG(rnPublic).includes('准备下单')
+    && treeTextG(rnPublic).includes('Public seller')
+    && !!findByText(cardFor(rnPublic, 'prd_a')!, '在 WebAZ 查看'))
+  fire(findByText(cardFor(rnPublic, 'prd_a')!, '在 WebAZ 查看')!)
+  ok('P-2 public card opens the exact allowlisted WebAZ product deep link',
+    opened[0] === 'https://webaz.xyz/#product/prd_a')
+  ok('P-3 public card never calls quote/draft/submit/order tools',
+    !publicCalls.some(([name]) => /quote|draft|submit|order|place/.test(name)))
+  fire(findByText(cardFor(rnPublic, 'prd_a')!, '详情')!)
+  ok('P-4 public card retains read-only on-demand detail via webaz_search',
+    publicCalls.some(([name]) => name === 'webaz_search'))
+
+  const rnCross = mk('div'); rnCross.setAttribute('id', 'root')
+  const docCross = { getElementById: (id: string) => (id === 'root' ? rnCross : null), createElement: (t: string) => mk(t) }
+  const ctxCross: Record<string, unknown> = { document: docCross, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON, encodeURIComponent }
+  ctxCross.globalThis = ctxCross; ctxCross.self = ctxCross; vm.createContext(ctxCross)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctxCross)
+  const crossCalls: Array<[string, unknown]> = []
+  const crossRender = ctxCross.__render as (o: unknown, out: unknown) => void
+  crossRender({ callTool: (name: string, args: unknown) => { crossCalls.push([name, args]) } }, SEARCH)
+  crossRender({ callTool: (name: string, args: unknown) => { crossCalls.push([name, args]) } }, {
+    schema_version: 'webaz.product_detail.model.v1',
+    public_commerce: true,
+    public_product_url_template: 'https://webaz.xyz/#product/{product_id}',
+    products: [{ id: 'prd_a', title: 'AAA', description: 'full desc', price: { display: '11.5 USDC' } }],
+  })
+  const crossBack = findByText(rnCross, '← 返回列表')
+  if (crossBack) fire(crossBack)
+  ok('P-5 public detail cannot restore a cached non-public order card',
+    !treeTextG(rnCross).includes('准备下单')
+    && !crossCalls.some(([name]) => /quote|draft|submit|order|place/.test(name)))
+
+  const rnPublicState = mk('div'); rnPublicState.setAttribute('id', 'root')
+  const docPublicState = { getElementById: (id: string) => (id === 'root' ? rnPublicState : null), createElement: (t: string) => mk(t) }
+  const ctxPublicState: Record<string, unknown> = { document: docPublicState, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON, encodeURIComponent }
+  ctxPublicState.globalThis = ctxPublicState; ctxPublicState.self = ctxPublicState; vm.createContext(ctxPublicState)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctxPublicState)
+  const restoredCalls: Array<[string, unknown]> = []; const savedStates: unknown[] = []
+  ;(ctxPublicState.__render as (o: unknown, out: unknown) => void)({
+    widgetState: {
+      q: { pid: 'prd_a', title: 'STALE_QUOTE', sc: { price: { display: '999 USDC' } } },
+      a: { request_id: 'apr_stale', status: 'approved' },
+    },
+    setWidgetState: (state: unknown) => { savedStates.push(state) },
+    callTool: (name: string, args: unknown) => { restoredCalls.push([name, args]) },
+  }, PUBLIC_SEARCH)
+  const publicStateText = treeTextG(rnPublicState)
+  ok('P-6 public widget clears and never restores stale quote/approval state',
+    savedStates.some(state => JSON.stringify(state) === '{}')
+    && !/STALE_QUOTE|apr_stale|approval|批准|报价/.test(publicStateText)
+    && !restoredCalls.some(([name]) => /quote|draft|submit|order|approval/.test(name)))
+
+  const rnBadUrl = mk('div'); rnBadUrl.setAttribute('id', 'root')
+  const docBadUrl = { getElementById: (id: string) => (id === 'root' ? rnBadUrl : null), createElement: (t: string) => mk(t) }
+  const ctxBadUrl: Record<string, unknown> = { document: docBadUrl, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON, encodeURIComponent }
+  ctxBadUrl.globalThis = ctxBadUrl; ctxBadUrl.self = ctxBadUrl; vm.createContext(ctxBadUrl)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctxBadUrl)
+  const badOpened: string[] = []
+  ;(ctxBadUrl.__render as (o: unknown, out: unknown) => void)({
+    openExternal: ({ href }: { href: string }) => { badOpened.push(href) },
+  }, {
+    ...PUBLIC_SEARCH,
+    total_count: 3,
+    more_url: 'https://evil.example/#discover',
+    public_product_url_template: 'https://evil.example/#product/{product_id}',
+  })
+  const badButton = findByText(cardFor(rnBadUrl, 'prd_a')!, '在 WebAZ 查看')
+  if (badButton) fire(badButton)
+  ok('P-7 untrusted public product/more URLs are disabled and never opened or copied',
+    badOpened.length === 0 && !treeTextG(rnBadUrl).includes('evil.example'))
 } catch (e) { fail++; fails.push('✗ THREW: ' + ((e as Error).stack || (e as Error).message)) }
 try { rmSync(__tmpHome, { recursive: true, force: true }) } catch { /* temp HOME cleanup */ }
 
