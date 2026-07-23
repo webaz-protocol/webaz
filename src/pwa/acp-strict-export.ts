@@ -25,6 +25,8 @@ import { readDirectPayLaunchReadiness } from '../direct-pay-launch-readiness.js'
 import { directPayProductAvailability } from '../direct-pay-availability-check.js'
 import { resolveImageUrl, targetCountries } from './acp-feed.js'
 import { effectiveSaleRegionsRule, parsePlatformBlocklist } from '../sale-regions.js'
+import { effectiveShippingTemplate, resolveShipping, quoteOutsideTemplateOk } from '../shipping-templates.js'
+import { getActiveFlashSale } from './routes/flash-sales.js'
 import { toUnits } from '../money.js'
 
 const BASE = 'https://webaz.xyz'
@@ -38,7 +40,7 @@ interface StrictRow {
   id: string; title: string; description: string; price: number; stock: number
   category: string | null; images: string | null; brand: string | null; model: string | null
   product_type: string | null; seller_id: string; seller_name: string | null; sale_regions: string | null
-  has_variants: number | null
+  has_variants: number | null; shipping_template: string | null; shipping_quote_ok: number | null
 }
 
 export interface StrictAcpExport {
@@ -53,8 +55,9 @@ export interface StrictAcpExport {
     excluded_out_of_stock: number       // 无库存 = 此刻不可成交(建单会拒)
     excluded_variant_product: number    // 有规格商品(direct_p2p v1 SIMPLE_PRODUCT_ONLY)
     excluded_direct_pay_unavailable: number // 逐品可用性谓词拒(单笔帽/逐品验证/缓交额度)
+    excluded_flash_sale: number         // 生效中闪购(direct-pay create 对 flash_sale 硬拒 UNSUPPORTED_OPTION)
     excluded_no_image: number           // 无公网可加载图片(spec 必填)
-    excluded_no_target_countries: number // 推导不出 ISO 目标国(spec 必填,已扣平台合规 blocklist)
+    excluded_no_target_countries: number // 推导不出 ISO 目标国(spec 必填,已扣平台 blocklist + 运费不可达地区)
     waz_usdc_rate: number
   }
 }
@@ -71,7 +74,7 @@ export function buildStrictAcpExport(
   const emptyStats = (n = 0): StrictAcpExport['stats'] => ({
     products_scanned: n, sellers_scanned: 0, sellers_ready: 0,
     excluded_seller_not_ready: 0, excluded_out_of_stock: 0, excluded_variant_product: 0,
-    excluded_direct_pay_unavailable: 0, excluded_no_image: 0, excluded_no_target_countries: 0, waz_usdc_rate: rate,
+    excluded_direct_pay_unavailable: 0, excluded_flash_sale: 0, excluded_no_image: 0, excluded_no_target_countries: 0, waz_usdc_rate: rate,
   })
   if (!(Number.isFinite(rate) && rate > 0)) return { ok: false, reason: 'waz_usdc_rate 非法(<=0)——拒绝导出错误价格', items: [], stats: emptyStats() }
 
@@ -88,7 +91,8 @@ export function buildStrictAcpExport(
 
   const rows = db.prepare(`
     SELECT p.id, p.title, p.description, p.price, p.stock, p.category, p.images, p.brand, p.model,
-           p.product_type, p.seller_id, u.name AS seller_name, p.sale_regions, p.has_variants
+           p.product_type, p.seller_id, u.name AS seller_name, p.sale_regions, p.has_variants,
+           p.shipping_template, p.shipping_quote_ok
     FROM products p
     LEFT JOIN users u ON u.id = p.seller_id
     WHERE p.status = 'active'
@@ -119,14 +123,25 @@ export function buildStrictAcpExport(
     // 逐品可用性:与买家 availability 路由同一谓词、同一 qty=1 基准额口径(单笔帽+逐品验证/豁免+缓交额度)。
     const avail = directPayProductAvailability(db, { productId: p.id, sellerId: p.seller_id, amountUnits: toUnits(Number(p.price) || 0), getProtocolParam })
     if (!avail.available) { stats.excluded_direct_pay_unavailable++; continue }
+    // 生效中闪购:direct-pay create 对 flashActive 硬拒(DIRECT_PAY_UNSUPPORTED_OPTION)→ 不可经直付成交,剔除。
+    if (getActiveFlashSale(db, p.id, null)) { stats.excluded_flash_sale++; continue }
 
     let imgs: string[] = []
     try { const arr = JSON.parse(p.images || '[]'); if (Array.isArray(arr)) imgs = arr.map(resolveImageUrl).filter((x): x is string => !!x) } catch { /* malformed → no images */ }
     if (!imgs.length) { stats.excluded_no_image++; continue }
 
-    // 目标国 = 可如实推导的 ISO 列表 − 平台合规 blocklist(建单门会拒的地区绝不对外声称可卖)。
+    // 目标国 = 可如实推导的 ISO 列表 − 平台合规 blocklist − 运费不可达地区(建单门会拒的地区绝不对外声称可卖):
+    //   有运费模板时,镜像 gateShippingForCreate 的 direct_p2p 分支:region 被模板覆盖 OR 卖家开了询价
+    //   (quoteOutsideTemplateOk)才可达;无模板 = 原行为全可达(gate 返回 fee 0)。
     const tcRaw = targetCountries(db, p.sale_regions, p.seller_id, storeRuleCache)
-    const tc = tcRaw ? tcRaw.filter((c) => !platformBlock.has(c)) : null
+    let tc = tcRaw ? tcRaw.filter((c) => !platformBlock.has(c)) : null
+    if (tc && tc.length) {
+      const tpl = effectiveShippingTemplate(db, { shipping_template: p.shipping_template }, p.seller_id)
+      if (tpl) {
+        const quoteOk = quoteOutsideTemplateOk(db, { shipping_quote_ok: p.shipping_quote_ok }, p.seller_id)
+        tc = tc.filter((c) => resolveShipping(tpl, c).covered || quoteOk)
+      }
+    }
     if (!tc || !tc.length) { stats.excluded_no_target_countries++; continue }
 
     const usd = Math.round((Number(p.price) / rate) * 100) / 100

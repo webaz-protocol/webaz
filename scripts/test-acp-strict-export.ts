@@ -10,6 +10,7 @@ process.env.HOME = mkdtempSync(join(tmpdir(), 'acpstrict-'))
 import { gzipSync, gunzipSync } from 'node:zlib'
 
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
+const { initFlashSalesSchema } = await import('../src/runtime/webaz-schema-helpers.js')
 const { requestDeferral, approveDeferral } = await import('../src/direct-receive-deferral.js')
 const { toUnits } = await import('../src/money.js')
 const { buildStrictAcpExport } = await import('../src/pwa/acp-strict-export.js')
@@ -19,6 +20,7 @@ const expect = (n: string, c: boolean, h?: unknown): void => { if (c) { pass++; 
 
 const db = initDatabase()
 db.pragma('foreign_keys = OFF')
+initFlashSalesSchema(db)
 try { db.exec('ALTER TABLE products ADD COLUMN sale_regions TEXT') } catch { /* 已有 */ }
 try { db.exec('ALTER TABLE users ADD COLUMN store_sale_regions TEXT') } catch { /* 已有 */ }
 // 缓交额度窗口统计要读的订单列(生产由 server 启动迁移补;fresh fixture 手补)
@@ -32,9 +34,18 @@ const HASH = 'b569fecf0f5998fbea7a61c20ec627891e448d79a43e066d97cc6a514a6dad47'
 for (const u of ['seller_rdy', 'seller_raw']) db.prepare("INSERT INTO users (id,name,role,api_key) VALUES (?,?,?,?)").run(u, u, 'seller', 'k_' + u)
 const insP = db.prepare('INSERT INTO products (id,seller_id,title,description,price,currency,stock,category,status,images,sale_regions,brand,model,has_variants) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
 const IMG = JSON.stringify([HASH])
+const SR_SGUS = JSON.stringify({ mode: 'list', include: ['SG', 'US'] })
 insP.run('prd_ok', 'seller_rdy', '可成交品', '<b>desc</b>', 10, 'WAZ', 5, 'cat', 'active', JSON.stringify([HASH, 'https://cdn.example/b.jpg']), null, 'BrandX', 'M-1', 0)
 insP.run('prd_ok2', 'seller_rdy', '可成交品2', 'd', 20, 'WAZ', 3, 'cat', 'active', IMG, null, null, null, 0)
-insP.run('prd_regions', 'seller_rdy', '跨境品', 'd', 10, 'WAZ', 5, 'cat', 'active', IMG, JSON.stringify({ mode: 'list', include: ['SG', 'US'] }), null, null, 0)
+insP.run('prd_regions', 'seller_rdy', '跨境品', 'd', 10, 'WAZ', 5, 'cat', 'active', IMG, SR_SGUS, null, null, 0)
+insP.run('prd_flash', 'seller_rdy', '闪购品', 'd', 10, 'WAZ', 5, 'cat', 'active', IMG, null, null, null, 0)
+insP.run('prd_ship', 'seller_rdy', '限运品', 'd', 10, 'WAZ', 5, 'cat', 'active', IMG, SR_SGUS, null, null, 0)
+insP.run('prd_noship', 'seller_rdy', '不可运品', 'd', 10, 'WAZ', 5, 'cat', 'active', IMG, null, null, null, 0)
+// 运费模板:prd_ship 只覆盖 SG(US 不可达且未开询价);prd_noship 只覆盖 XX(默认目标 SG 不可达)
+db.prepare("UPDATE products SET shipping_template = ? WHERE id = 'prd_ship'").run(JSON.stringify([{ region: 'SG', fee: 2 }]))
+db.prepare("UPDATE products SET shipping_template = ? WHERE id = 'prd_noship'").run(JSON.stringify([{ region: 'XX', fee: 2 }]))
+// 生效中闪购(direct-pay create 硬拒 flashActive)
+db.prepare("INSERT INTO flash_sales (id, seller_id, product_id, sale_price, original_price, starts_at, ends_at, is_active) VALUES ('fs1','seller_rdy','prd_flash',8,10,datetime('now','-1 hour'),datetime('now','+1 hour'),1)").run()
 insP.run('prd_unver', 'seller_rdy', '未验证品', 'd', 10, 'WAZ', 5, 'cat', 'active', IMG, null, null, null, 0)
 insP.run('prd_var', 'seller_rdy', '有规格品', 'd', 10, 'WAZ', 5, 'cat', 'active', IMG, null, null, null, 1)
 insP.run('prd_out', 'seller_rdy', '无库存品', 'd', 20, 'WAZ', 0, 'cat', 'active', IMG, null, null, null, 0)
@@ -42,7 +53,7 @@ insP.run('prd_noimg', 'seller_rdy', '缺图品', 'd', 10, 'WAZ', 5, 'cat', 'acti
 insP.run('prd_notc', 'seller_rdy', '无目标国品', 'd', 10, 'WAZ', 5, 'cat', 'active', IMG, JSON.stringify({ mode: 'all', exclude: ['SG'] }), null, null, 0)
 insP.run('prd_raw', 'seller_raw', '未就绪店的品', 'd', 10, 'WAZ', 5, 'cat', 'active', IMG, null, null, null, 0)
 // 逐品验证(真实谓词 productStoreVerified;seller_rdy 不给店铺豁免,逐品门真实生效)
-for (const pid of ['prd_ok', 'prd_ok2', 'prd_regions', 'prd_out', 'prd_noimg', 'prd_notc', 'prd_var']) {
+for (const pid of ['prd_ok', 'prd_ok2', 'prd_regions', 'prd_out', 'prd_noimg', 'prd_notc', 'prd_var', 'prd_flash', 'prd_ship', 'prd_noship']) {
   db.prepare("INSERT INTO product_verifications (id, product_id, seller_id, code, status, reviewed_by, reviewed_at) VALUES (?,?,?,?, 'verified','admin1',datetime('now'))").run('pv_' + pid, pid, 'seller_rdy', 'wzv_' + pid)
 }
 
@@ -64,13 +75,15 @@ const r = buildStrictAcpExport(db, { getProtocolParam: gp })
 const by = (id: string): Record<string, unknown> => r.items.find((i) => i.item_id === id) || {}
 
 expect('全局开放后 ok=true', r.ok === true, r.reason)
-expect('入选 = 3 条(prd_ok/prd_ok2/prd_regions)', r.items.length === 3 && ['prd_ok', 'prd_ok2', 'prd_regions'].every((id) => r.items.some((i) => i.item_id === id)), r.items.map((i) => i.item_id))
+expect('入选 = 4 条(prd_ok/prd_ok2/prd_regions/prd_ship)', r.items.length === 4 && ['prd_ok', 'prd_ok2', 'prd_regions', 'prd_ship'].every((id) => r.items.some((i) => i.item_id === id)), r.items.map((i) => i.item_id))
 expect('未过门禁的店整店剔除,计数=1', r.stats.excluded_seller_not_ready === 1, r.stats)
 expect('无库存剔除,计数=1(不再当 out_of_stock 导出)', r.stats.excluded_out_of_stock === 1 && !r.items.some((i) => i.item_id === 'prd_out'), r.stats)
 expect('有规格品剔除(SIMPLE_PRODUCT_ONLY),计数=1', r.stats.excluded_variant_product === 1, r.stats)
 expect('未验证品被逐品可用性谓词剔除,计数=1', r.stats.excluded_direct_pay_unavailable === 1 && !r.items.some((i) => i.item_id === 'prd_unver'), r.stats)
+expect('生效中闪购剔除(create 硬拒 flashActive),计数=1', r.stats.excluded_flash_sale === 1 && !r.items.some((i) => i.item_id === 'prd_flash'), r.stats)
 expect('缺图剔除,计数=1', r.stats.excluded_no_image === 1, r.stats)
-expect('推导不出目标国剔除,计数=1', r.stats.excluded_no_target_countries === 1, r.stats)
+expect('目标国剔除 = 2(推导不出 prd_notc + 运费全不可达 prd_noship)', r.stats.excluded_no_target_countries === 2 && !r.items.some((i) => i.item_id === 'prd_noship'), r.stats)
+expect('运费模板只覆盖 SG 且未开询价 → prd_ship 目标国扣成 ["SG"]', JSON.stringify(by('prd_ship').target_countries) === '["SG"]', by('prd_ship').target_countries)
 
 // ── 2. 价格口径:USD = WAZ / waz_usdc_rate ──
 expect('rate=2:WAZ 10 → "5.00 USD"', by('prd_ok').price === '5.00 USD', by('prd_ok').price)
@@ -103,6 +116,19 @@ cp['trade.platform_region_blocklist'] = '{broken'
 const rB3 = buildStrictAcpExport(db, { getProtocolParam: gp })
 expect('blocklist 配置坏 → fail-closed(镜像建单 503)', rB3.ok === false && rB3.items.length === 0, rB3.reason)
 delete cp['trade.platform_region_blocklist']
+
+// ── 4b. 单笔帽逐品生效(amountUnits 真按 item 价格流入谓词)──
+cp['direct_pay.per_tx_cap_units'] = toUnits(15)
+const rCap = buildStrictAcpExport(db, { getProtocolParam: gp })
+expect('cap=15:WAZ 10 在、WAZ 20 被单笔帽剔除', rCap.items.some((i) => i.item_id === 'prd_ok') && !rCap.items.some((i) => i.item_id === 'prd_ok2') && rCap.stats.excluded_direct_pay_unavailable >= 2, rCap.stats)
+cp['direct_pay.per_tx_cap_units'] = toUnits(1000)
+
+// ── 4c. 卖家开询价 → 模板未覆盖地区恢复可达 ──
+db.prepare("UPDATE products SET shipping_quote_ok = 1 WHERE id = 'prd_ship'").run()
+const rQ = buildStrictAcpExport(db, { getProtocolParam: gp })
+const shipQ = rQ.items.find((i) => i.item_id === 'prd_ship') || {}
+expect('询价开启 → prd_ship 目标国恢复 ["SG","US"](镜像 gateShippingForCreate 询价分支)', JSON.stringify((shipQ as Record<string, unknown>).target_countries) === '["SG","US"]', shipQ)
+db.prepare("UPDATE products SET shipping_quote_ok = NULL WHERE id = 'prd_ship'").run()
 
 // ── 5. jsonl.gz 往返 + 纯读 ──
 const jsonl = r.items.map((i) => JSON.stringify(i)).join('\n') + '\n'
