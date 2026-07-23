@@ -26,7 +26,17 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 initReputationSchema(db); initDisputeSchema(db)
-db.prepare("CREATE TABLE IF NOT EXISTS user_moderation (user_id TEXT PRIMARY KEY)").run()
+db.prepare("CREATE TABLE IF NOT EXISTS user_moderation (user_id TEXT PRIMARY KEY, suspended INTEGER, reason TEXT, suspended_by TEXT, suspended_at TEXT)").run()
+// admin profile 端点依赖面(空表/列即可)
+db.exec(`CREATE TABLE IF NOT EXISTS verifier_whitelist (user_id TEXT PRIMARY KEY, tier TEXT, daily_quota INTEGER, tasks_today INTEGER, quota_reset_at TEXT, granted_by TEXT, stake_amount REAL, cooldown_until TEXT, error_count_180d INTEGER, is_system INTEGER, added_at TEXT);
+  CREATE TABLE IF NOT EXISTS verifier_stats (user_id TEXT PRIMARY KEY, verify_rights INTEGER, tasks_done INTEGER, tasks_correct INTEGER, tasks_wrong INTEGER, suspended_until TEXT);
+  CREATE TABLE IF NOT EXISTS verifier_applications (id TEXT PRIMARY KEY, user_id TEXT, status TEXT, decision_note TEXT, applied_at TEXT, reviewed_at TEXT);
+  CREATE TABLE IF NOT EXISTS verifier_appeals (id TEXT PRIMARY KEY, user_id TEXT, status TEXT, created_at TEXT, reviewed_at TEXT);
+  CREATE TABLE IF NOT EXISTS admin_audit_log (id TEXT PRIMARY KEY, admin_id TEXT, action TEXT, target_type TEXT, target_id TEXT, detail TEXT, created_at TEXT DEFAULT (datetime('now')));
+  CREATE TABLE IF NOT EXISTS verify_submissions (id TEXT PRIMARY KEY, verifier_id TEXT, task_id TEXT, verdict TEXT, is_correct INTEGER, claimed_at TEXT, submitted_at TEXT, created_at TEXT);
+  CREATE TABLE IF NOT EXISTS task_completions (user_id TEXT, task_key TEXT, reward REAL, claimed_at TEXT)`)
+for (const c of ['roles TEXT', 'failed_attempts INTEGER', 'locked_until TEXT', 'password_hash TEXT', 'phone_verified INTEGER', 'l1_share_override REAL', 'updated_at TEXT', 'deposit_address TEXT']) { try { db.exec(`ALTER TABLE users ADD COLUMN ${c}`) } catch { /* 已有 */ } }
+try { db.exec('ALTER TABLE wallets ADD COLUMN deposit_address TEXT') } catch { /* 已有 */ }
 try { db.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0') } catch { /* 已有 */ }
 try { db.exec('ALTER TABLE orders ADD COLUMN payment_rail TEXT') } catch { /* 已有 */ }
 db.exec('CREATE TABLE IF NOT EXISTS return_requests (id TEXT PRIMARY KEY, order_id TEXT, status TEXT, refund_amount REAL)')   // genuineSalePredicate 依赖
@@ -100,6 +110,35 @@ db.prepare("INSERT INTO reputation_scores (user_id, total_points, transactions_d
   } finally { server.close() }
 }
 
+// ═══ ③b admin 面板:第三展示面同样读真值 + 无台账行=0(非 null;Codex R1 HIGH:Number(x)??0 优先级坑)═══
+{
+  const { registerAdminUsersQueryRoutes } = await import('../src/pwa/routes/admin-users-query.js')
+  const app = express(); app.use(express.json())
+  const admin = { id: 'adm1', role: 'admin', admin_type: 'root' }
+  const noop = (): void => {}
+  registerAdminUsersQueryRoutes(app, {
+    requireUsersAdmin: (_req: Request, _res: Response) => admin,
+    adminCanOperateOn: () => true, isRootAdmin: () => true, isAllowedSponsor: () => false,
+    maskApiKey: (k: string) => String(k || '').slice(0, 4) + '***', computeLightTags: () => [],
+    getAdminScope: () => ({ scope: 'all' }), getSellerDailyLimit: () => 99, todayStartISO: () => new Date().toISOString(),
+    broadcastSystemEvent: noop, INTERNAL_AUDITOR_ID: 'aud', logAdminAction: noop,
+  } as never)
+  let server!: Server
+  const port: number = await new Promise(r => { server = createServer(app); server.listen(0, () => r((server.address() as { port: number }).port)) })
+  const get = (path: string): Promise<{ status: number; json: Record<string, unknown> }> => new Promise((resolve, reject) => {
+    const rq = httpRequest({ host: '127.0.0.1', port, method: 'GET', path }, res => { let d = ''; res.on('data', ch => d += ch); res.on('end', () => { try { resolve({ status: res.statusCode || 0, json: d ? JSON.parse(d) : {} }) } catch { resolve({ status: res.statusCode || 0, json: {} }) } }) })
+    rq.on('error', reject); rq.end()
+  })
+  try {
+    const pReal = await get('/api/admin/users/usr_real/profile')
+    const bReal = (pReal.json as { basic?: { reputation?: unknown } }).basic
+    ok('3d. admin 面板 reputation = 真值 350', pReal.status === 200 && bReal?.reputation === 350, JSON.stringify({ status: pReal.status, rep: bReal?.reputation }))
+    const pZero = await get('/api/admin/users/usr_zero/profile')
+    const bZero = (pZero.json as { basic?: { reputation?: unknown } }).basic
+    ok('3e. 无台账行 → admin reputation = 0(严格数字,非 null/NaN)', pZero.status === 200 && bZero?.reputation === 0, JSON.stringify({ status: pZero.status, rep: bZero?.reputation }))
+  } finally { server.close() }
+}
+
 // ═══ ④ 源码级:被改文件不再读静止列 ═══
 {
   const EL = readFileSync('src/pwa/eligibility.ts', 'utf8')
@@ -110,6 +149,8 @@ db.prepare("INSERT INTO reputation_scores (user_id, total_points, transactions_d
     const s = readFileSync(f, 'utf8')
     ok(`4c. ${f} 用 reputation_scores JOIN`, s.includes('LEFT JOIN reputation_scores'))
   }
+  const ADM = readFileSync('src/pwa/routes/admin-users-query.ts', 'utf8')
+  ok('4d. admin-users-query 读 reputation_scores 且不再投影 user.reputation', ADM.includes('FROM reputation_scores') && !ADM.includes('reputation: user.reputation'))
 }
 
 if (fail > 0) { console.error(`\n❌ reputation-single-source FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

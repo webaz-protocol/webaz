@@ -391,7 +391,7 @@ export function registerAdminUsersQueryRoutes(app: Application, deps: AdminUsers
         email: user.email, email_verified: !!user.email_verified,
         phone: user.phone, phone_verified: !!user.phone_verified,
         has_password: !!user.password_hash,
-        reputation: Number(((await dbOne<{ total_points: number }>('SELECT total_points FROM reputation_scores WHERE user_id = ?', [id]))?.total_points) ?? 0),   // P2-E 真实台账(users.reputation 静止列废弃)
+        reputation: Number((await dbOne<{ total_points: number }>('SELECT total_points FROM reputation_scores WHERE user_id = ?', [id]))?.total_points ?? 0),   // P2-E 真实台账(users.reputation 静止列废弃);?? 在 Number 之内(Number(undefined)=NaN 不触发 ??)
         failed_attempts: user.failed_attempts ?? 0,
         locked_until: user.locked_until,
         l1_share_override:   Number(user.l1_share_override ?? 0),
