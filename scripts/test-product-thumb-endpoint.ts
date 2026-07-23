@@ -36,7 +36,11 @@ ok('2a. PUBLIC (no auth() gate in the block)', !blk.includes('auth(req'))
 ok('2b. :hash format guard (64-hex)', /\[0-9a-f\]\{64\}/i.test(blk))
 ok('2c. active-only', blk.includes("status !== 'active'"))
 ok('2d. whitelist applied to stored value', blk.includes('THUMB_DATA_URI_RE.exec(m.thumbnail_data_uri)'))
-ok('2e. Content-Type FORCED from parsed subtype (not echoed)', blk.includes('`image/${parsed[1]}`'))
+// 2e(2026-07 A0 ?format=jpeg 转码后):Content-Type 来自「白名单 subtype 链」——初始化自 parsed[1],
+//   唯一的其他赋值是转码成功后的 'jpeg'(与实际发出的字节一致)。绝不 echo 存储值。
+ok('2e. Content-Type FORCED from whitelisted subtype chain (not echoed)', blk.includes('let outSubtype = parsed[1]') && blk.includes('`image/${outSubtype}`'))
+ok("2e-2. transcode can only narrow to 'jpeg' (no other assignment)", /outSubtype = 'jpeg'/.test(blk) && !/outSubtype = (?!parsed\[1\]|'jpeg')/.test(blk))
+ok('2e-3. sharp lazy-loaded inside handler + decode pixel guard', blk.includes("await import('sharp')") && blk.includes('limitInputPixels'))
 ok('2f. X-Content-Type-Options: nosniff', blk.includes("'X-Content-Type-Options', 'nosniff'"))
 ok('2g. short revalidatable cache — NOT long/immutable (honors takedown)', blk.includes('max-age=300') && blk.includes('must-revalidate') && !blk.includes('immutable') && !blk.includes('31536000'))
 ok('2h. size guard', /buf\.length > 64 \* 1024/.test(blk))

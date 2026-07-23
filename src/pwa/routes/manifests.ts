@@ -33,6 +33,14 @@ const THUMB_MAX_BYTES = 12000   // ~12KB base64 ≈ 9KB 原始图
 // seller can't smuggle scriptable content that the public /thumb endpoint would serve (stored-XSS guard).
 const THUMB_DATA_URI_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/
 
+// /thumb?format=jpeg 转码结果缓存:hash 内容不可变 → 每 hash 至多付一次转码 CPU。
+//   有界两重(Codex #510 R2):项数 FIFO ≤512,且【单项 >64KB 的转码结果不入缓存】(tiny webp 可能膨胀成
+//   ~200KB JPEG;不缓存时照常下发,只是该 hash 每次重转)→ 内存上界 512×64KB = 32MB 真实成立。
+//   takedown 不受影响:每次请求先查 DB 状态/白名单再碰缓存。
+const thumbJpegCache = new Map<string, Buffer>()
+const THUMB_JPEG_CACHE_MAX = 512
+const THUMB_JPEG_CACHE_ITEM_MAX = 64 * 1024
+
 function verifyManifestSig(hash: string, ownerId: string, contentType: string, byteSize: number, signedAt: string, apiKey: string, signature: string): boolean {
   const payload = `${hash}|${ownerId}|${contentType}|${byteSize}|${signedAt}`
   const expected = crypto.createHmac('sha256', apiKey).update(payload).digest('hex')
@@ -131,7 +139,29 @@ export function registerManifestsRoutes(app: Application, deps: ManifestsDeps): 
     let buf: Buffer
     try { buf = Buffer.from(m.thumbnail_data_uri.slice(m.thumbnail_data_uri.indexOf(',') + 1), 'base64') } catch { return void res.status(404).end() }
     if (buf.length === 0 || buf.length > 64 * 1024) return void res.status(404).end()
-    res.setHeader('Content-Type', `image/${parsed[1]}`)
+    // ?format=jpeg:按需转码(ACP product feed 只收 JPEG/PNG,存量缩略图多为 webp)。
+    //   - 仅在存储格式非 jpeg 时转;sharp 懒加载(不进 boot 路径);转码失败 → 降级发原格式(仍是白名单光栅图),不 500。
+    //   - 输出 Content-Type 永远反映【实际发出的字节】格式,绝不假报。
+    //   - DoS 收敛(Codex #510 R1):hash 内容不可变 → 转码结果按 hash 有界缓存(每 hash 只付一次 CPU;
+    //     状态/白名单检查在缓存命中前已过,takedown 仍即时生效);limitInputPixels 限制解码像素
+    //     (≤64KB 的 webp 也可能声明超大画幅);任意多余 query 只影响 CDN 缓存键,进程内代价 = 一次 Map 查。
+    let outSubtype = parsed[1]
+    if (String(req.query.format || '').toLowerCase() === 'jpeg' && outSubtype !== 'jpeg') {
+      const cached = thumbJpegCache.get(hash)
+      if (cached) { buf = cached; outSubtype = 'jpeg' }
+      else {
+        try {
+          const sharp = (await import('sharp')).default
+          const jpeg = await sharp(buf, { limitInputPixels: 1_000_000 }).jpeg({ quality: 82 }).toBuffer()
+          buf = jpeg; outSubtype = 'jpeg'
+          if (jpeg.length <= THUMB_JPEG_CACHE_ITEM_MAX) {
+            thumbJpegCache.set(hash, jpeg)
+            if (thumbJpegCache.size > THUMB_JPEG_CACHE_MAX) { const oldest = thumbJpegCache.keys().next().value; if (oldest) thumbJpegCache.delete(oldest) }
+          }
+        } catch { /* 转码不可用/失败 → 原格式降级 */ }
+      }
+    }
+    res.setHeader('Content-Type', `image/${outSubtype}`)
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate')
     res.send(buf)
