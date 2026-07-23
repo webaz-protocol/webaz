@@ -41,7 +41,7 @@ window.orderErrorLookup = (code) => ({
   HUMAN_PRESENCE_REQUIRED: t('需现场真人 Passkey 确认'),
   PASSKEY_REQUIRED_FOR_DIRECT_PAY: t('直付需要先注册 Passkey'),
   // 通用(RAIL_DISABLED=WAZ 退役渠道开关关闭时 escrow 建单/购物车被拒)
-  RAIL_DISABLED: t('WAZ 模拟托管轨已下架,请选择直付方式下单'), ORDER_NOT_FOUND: t('订单不存在'),
+  RAIL_DISABLED: t('WAZ 模拟托管轨已下架,请选择直付方式下单'), USDC_ESCROW_CONFIRM_NOT_WIRED: t('USDC 担保订单经链上释放完成收货(功能接线中)'), ORDER_NOT_FOUND: t('订单不存在'),
   MISSING_ORDER_ID: t('缺少订单号'),
   INVALID_STAGE: t('无效的披露阶段参数'),
 }[code])

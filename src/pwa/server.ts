@@ -6811,7 +6811,7 @@ function settleOrder(orderId: string) {
   // Bug-C fix：所有资金/PV/状态写入包在单一事务内，避免迁 PG / 多 worker 后出现部分提交
   // 内部 try/catch 用于非关键 hook（settlePinRewards / metrics 更新）失败不回滚资金主流程
   db.transaction(() => {
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<string, unknown>; if (order && order.payment_rail === 'direct_p2p') { settleDirectPayFeeAtCompletion(db, order as unknown as { id: string; seller_id: string; total_amount: number; source: string | null }, generateId('dpfr')); return }  // Rail1 直付:跳过 escrow 结算;平台费=链下应收(释放遗留模拟 stake + accrue,fail-closed 同原子边界)
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<string, unknown>; if (order && order.payment_rail === 'direct_p2p') { settleDirectPayFeeAtCompletion(db, order as unknown as { id: string; seller_id: string; total_amount: number; source: string | null }, generateId('dpfr')); return }; if (order && order.payment_rail === 'usdc_escrow') return  // Rail1 直付:跳过 escrow 结算,平台费=链下应收 | B3 硬闸(Codex #520 R1 P0):usdc_escrow 本金/费全在链上(pull-fee),WAZ 域零结算 —— 绝不跑下方 escrow 释放数学(B5 接费台账镜像)
     const total = order.total_amount as number
     const isSecondhand = order.source === 'secondhand'
     const isInPerson = order.fulfillment_mode === 'in_person'

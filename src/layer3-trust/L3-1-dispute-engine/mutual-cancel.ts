@@ -16,6 +16,7 @@
  *  4. 无责:不触碰任何信誉/罚没/手续费科目;托管退款镜像既有 refund_buyer 的守恒写法(仅 escrowed→balance)。
  */
 import Database from 'better-sqlite3'
+import { railOutsideWazCustody } from '../../direct-pay-rails.js'
 import { transition } from '../../layer0-foundation/L0-2-state-machine/engine.js'
 import { toUnits, toDecimal } from '../../money.js'
 import { applyWalletDelta, walletUnits } from '../../ledger.js'
@@ -120,7 +121,7 @@ export function declineMutualCancel(db: Database.Database, orderId: string, user
 function settleMutualCancel(db: Database.Database, order: OrderRow, disputeId: string): MutualCancelResult {
   const sys = db.prepare("SELECT id FROM users WHERE id = 'sys_protocol'").get() as { id: string } | undefined
   if (!sys) return { ok: false, error: 'sys_protocol 用户不存在', error_code: 'SYS_MISSING' }
-  const nonCustodial = order.payment_rail === 'direct_p2p'
+  const nonCustodial = railOutsideWazCustody(order.payment_rail)   // B3:usdc_escrow 同为非 WAZ 托管(链上资金,零 WAZ 移动)
   let detail: Record<string, unknown>
   if (nonCustodial) {
     detail = { non_custodial: true, buyer_refund: 0, seller_stake_returned: 0, note: '非托管(直付)单:协议不持货款 → 零资金,仅关单' }

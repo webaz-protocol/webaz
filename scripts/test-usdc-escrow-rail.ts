@@ -24,6 +24,8 @@ const { applyWebazRuntimeSchema } = await import('../src/runtime/apply-webaz-run
 const { sellerSupportedPaymentOptions } = await import('../src/direct-pay-payment-options.js')
 const { createUsdcEscrowResponse, usdcEscrowSellerAvailable } = await import('../src/usdc-escrow-create.js')
 const { toUnits } = await import('../src/money.js')
+const { computeBuyerQuote } = await import('../src/pwa/buyer-quote.js')
+const { railOutsideWazCustody } = await import('../src/direct-pay-rails.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -31,7 +33,8 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 applyWebazRuntimeSchema(db)
 for (const col of ['payment_rail TEXT', 'snapshot_commission_rate REAL', 'buyer_region TEXT', 'draft_id TEXT', 'ship_to_region TEXT', 'shipping_fee REAL', 'shipping_est_days TEXT']) { try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
-db.prepare("INSERT INTO users (id,name,role,api_key,region) VALUES ('sU','sU','seller','k_sU','global'),('bU','bU','buyer','k_bU','global')").run()
+for (const col of ['default_address_text TEXT', 'default_address_region TEXT']) { try { db.exec(`ALTER TABLE users ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
+db.prepare("INSERT INTO users (id,name,role,api_key,region,default_address_text,default_address_region) VALUES ('sU','sU','seller','k_sU','global',NULL,NULL),('bU','bU','buyer','k_bU','global','1 Test St / SG','SG')").run()
 db.prepare('INSERT INTO wallets (user_id, balance) VALUES (?, 0), (?, 0)').run('sU', 'bU')
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('pU','sU','U品','d',30,5,'active')").run()
 
@@ -96,6 +99,38 @@ ok('open-cap: second in-flight order 429', create().code === 429 && create().bod
 delete cp['usdc_escrow.max_open_per_buyer_seller']
 db.prepare("UPDATE products SET stock = 0 WHERE id='pU'").run()
 ok('stock race: CAS failure → 409 + rollback (no new order row)', (() => { const n0 = (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n; const r = create(); return r.body.error_code === 'PRODUCT_STOCK_RACE' && (db.prepare('SELECT COUNT(*) n FROM orders').get() as { n: number }).n === n0 })())
+
+// ── ④b 真 quote 行为(Codex #520 R1-4:不再只靠源码断言)──
+type QInput = Parameters<typeof computeBuyerQuote>[3]
+const quote = (rail: string): { ok: boolean; code?: string } => {
+  const r = computeBuyerQuote(db, { generateId: genId, getProtocolParam: gp }, 'bU', { product_id: 'pU', quantity: 1, payment_rail: rail } as QInput)
+  return r.ok === true ? { ok: true } : { ok: false, code: (r as { body: { error_code?: string } }).body?.error_code }
+}
+db.prepare("UPDATE products SET stock = 5 WHERE id='pU'").run()
+cp['payment_rail_usdc_escrow_enabled'] = 0
+ok('quote: off → PAYMENT_RAIL_DISABLED', quote('usdc_escrow').code === 'PAYMENT_RAIL_DISABLED')
+cp['payment_rail_usdc_escrow_enabled'] = 1
+ok('quote: ready seller → usdc_escrow quote succeeds', quote('usdc_escrow').ok === true, JSON.stringify(quote('usdc_escrow')))
+cp['usdc_escrow.per_tx_cap'] = 10
+ok('quote: over cap → PURCHASE_LIMIT_EXCEEDED (same truth as menu/create)', quote('usdc_escrow').code === 'PURCHASE_LIMIT_EXCEEDED')
+ok('menu: over cap → option withheld (no offer-then-reject)', !menu().includes('usdc_escrow'))
+delete cp['usdc_escrow.per_tx_cap']
+
+// ── ④c 下游钱路隔离(Codex #520 R1 P0):usdc_escrow 绝不落 WAZ escrow 结算/退款数学 ──
+ok('predicate: railOutsideWazCustody covers both non-WAZ rails only', railOutsideWazCustody('direct_p2p') && railOutsideWazCustody('usdc_escrow') && !railOutsideWazCustody('escrow') && !railOutsideWazCustody('deferred'))
+const SV2 = readFileSync(new URL('../src/pwa/server.ts', import.meta.url), 'utf8')
+const iSettleFn2 = SV2.indexOf('function settleOrder(orderId: string)')
+const iUsdcGuard = SV2.indexOf("payment_rail === 'usdc_escrow') return", iSettleFn2)
+const iEscrowMath = SV2.indexOf('const total = order.total_amount as number', iSettleFn2)
+ok('settleOrder: usdc_escrow returns BEFORE any WAZ escrow math', iSettleFn2 > 0 && iUsdcGuard > iSettleFn2 && iEscrowMath > iUsdcGuard, `fn=${iSettleFn2} guard=${iUsdcGuard} math=${iEscrowMath}`)
+const OA = readFileSync(new URL('../src/pwa/routes/orders-action.ts', import.meta.url), 'utf8')
+ok('orders-action: confirm blocked for usdc_escrow until on-chain release wiring (never fake-completes)', /toStatus === 'confirmed' && order\.payment_rail === 'usdc_escrow'/.test(OA) && /USDC_ESCROW_CONFIRM_NOT_WIRED/.test(OA))
+const DE = readFileSync(new URL('../src/layer3-trust/L3-1-dispute-engine/dispute-engine.ts', import.meta.url), 'utf8')
+ok('dispute-engine: non-custodial branch keyed on railOutsideWazCustody', /nonCustodial = !!ord0 && railOutsideWazCustody\(ord0\.payment_rail\)/.test(DE))
+const MC = readFileSync(new URL('../src/layer3-trust/L3-1-dispute-engine/mutual-cancel.ts', import.meta.url), 'utf8')
+ok('mutual-cancel: same predicate (zero WAZ movement for on-chain rail)', /nonCustodial = railOutsideWazCustody\(order\.payment_rail\)/.test(MC))
+const RT = readFileSync(new URL('../src/pwa/routes/returns.ts', import.meta.url), 'utf8')
+ok('returns: both rail forks routed through the shared predicate', (RT.match(/railOutsideWazCustody\(railRow\?\.payment_rail\)/g) || []).length === 2)
 
 // ── ⑤ 源码锁 ──
 const RAILS = readFileSync(new URL('../src/direct-pay-rails.ts', import.meta.url), 'utf8')

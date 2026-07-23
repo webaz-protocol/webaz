@@ -582,6 +582,11 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
 
     const fromStatus = order.status as string
     let newStatus = toStatus
+    if (toStatus === 'confirmed' && order.payment_rail === 'usdc_escrow') {
+      // B3 硬闸(Codex #520 R1 P0):链上担保单的"完成"由 buyerRelease/autoRelease 链上事件驱动(B5/B6),
+      //   app 内 confirm 若触发 WAZ settleOrder = 假完成。接线前一律拒,绝不静默落 WAZ 结算。
+      return void res.status(409).json({ error: 'USDC 担保订单的确认收货经链上释放完成(功能接线中),暂不支持此操作', error_code: 'USDC_ESCROW_CONFIRM_NOT_WIRED' })
+    }
     if (toStatus === 'confirmed') {
       try {
         db.transaction(() => {

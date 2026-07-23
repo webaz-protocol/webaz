@@ -22,6 +22,12 @@ export function isRealRail(r: unknown): r is 'escrow' | 'direct_p2p' | 'usdc_esc
   return r === 'escrow' || r === 'direct_p2p' || r === 'usdc_escrow'
 }
 
+/** 该轨的本金【不在】WAZ 钱包托管域(direct_p2p=场外收款;usdc_escrow=链上合约)——
+ *  一切 WAZ escrow 资金结算/退款/made-whole 数学绝不适用这些轨(零 WAZ 资金移动)。 */
+export function railOutsideWazCustody(r: unknown): boolean {
+  return r === 'direct_p2p' || r === 'usdc_escrow'
+}
+
 /** True for the not-yet-chosen sentinel. */
 export function isDeferredRail(r: unknown): boolean {
   return String(r) === RAIL_DEFERRED

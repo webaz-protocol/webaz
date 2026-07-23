@@ -14,6 +14,7 @@
  */
 
 import Database from 'better-sqlite3'
+import { railOutsideWazCustody } from '../../direct-pay-rails.js'   // B3:非 WAZ 托管轨谓词(direct_p2p + usdc_escrow)
 import { generateId } from '../../layer0-foundation/L0-1-database/schema.js'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 seam(纯读)
 import { transition } from '../../layer0-foundation/L0-2-state-machine/engine.js'
@@ -358,9 +359,10 @@ export function arbitrateDispute(
     return { success: false, error: '仅 active 仲裁员(arbitrator_whitelist)或系统可裁定' }
   }
 
-  // 非托管(直付)订单:协议不持货款 → 走【只信誉、不动资金】路径,绝不跑 executeSettlement/executeLiabilitySplit 的托管资金链。
+  // 非 WAZ 托管轨(直付=场外 / usdc_escrow=链上合约):协议不持 WAZ 货款 → 走【只信誉、不动资金】路径,
+  //   绝不跑 executeSettlement/executeLiabilitySplit 的托管资金链(链上资金处置由 arbiter key 在 B7 接线)。
   const ord0 = db.prepare('SELECT payment_rail FROM orders WHERE id = ?').get(dispute.order_id) as { payment_rail: string | null } | undefined
-  const nonCustodial = !!ord0 && ord0.payment_rail === 'direct_p2p'
+  const nonCustodial = !!ord0 && railOutsideWazCustody(ord0.payment_rail)
 
   // 执行资金处置(非托管 → 零资金终结)
   const settlement = nonCustodial

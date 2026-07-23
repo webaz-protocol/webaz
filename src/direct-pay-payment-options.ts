@@ -25,7 +25,7 @@ import type Database from 'better-sqlite3'
 import { directPayProductAvailability } from './direct-pay-availability-check.js'
 import { resolveDirectReceive } from './direct-receive-resolve.js'
 import { listSellerAccounts } from './direct-receive-accounts.js'
-import { usdcEscrowSellerAvailable } from './usdc-escrow-create.js'   // B3:USDC 合约担保轨可用谓词(菜单与建单同真值)
+import { usdcEscrowSellerAvailable, usdcEscrowPerTxCapUnits } from './usdc-escrow-create.js'   // B3:USDC 合约担保轨可用谓词(菜单与建单同真值)
 
 export interface PaymentOption {
   option_id: string                       // stable per option: 'escrow' | 'direct:legacy' | 'direct:<account_id>'
@@ -62,7 +62,7 @@ export function sellerSupportedPaymentOptions(db: Database.Database, args: Payme
   // ONLY concrete active accounts are offered (each hash-bindable via its account id). The null-account
   // legacy path is intentionally excluded — see the module header (Codex BLOCKER / MA5).
   // USDC 合约担保(B3):渠道开 + 合约已配 + 卖家 active 收款地址 + KYB/制裁 → 可选。本金进链上合约。
-  if (usdcEscrowSellerAvailable(db, args.sellerId, args.getProtocolParam)) {
+  if (usdcEscrowSellerAvailable(db, args.sellerId, args.getProtocolParam) && args.amountUnits <= usdcEscrowPerTxCapUnits(args.getProtocolParam)) {   // cap 同真值:超上限不出选项(Codex #520 R1-3)
     options.push({ option_id: 'usdc_escrow', rail: 'usdc_escrow', method: 'USDC (Base)', recipient_label: null, direct_receive_account_id: null, settlement_note: USDC_ESCROW_NOTE, recommended: false })
   }
   const avail = directPayProductAvailability(db, args)
