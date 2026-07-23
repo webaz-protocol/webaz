@@ -113,29 +113,34 @@ try {
     && JSON.stringify([...selArr].sort()) === JSON.stringify([...ids].sort())   // 精确集合相等,不多不少
     && tmpl.tool === 'webaz_search' && tmpl.arguments?.result_handle === handle
     && Array.isArray(tmplSel) && tmplSel.length === Math.min(5, ids.length) && tmplSel.length >= 1   // 预填 UP TO 5(不缩 1、不越 5)
-    && tmplSel.every(x => ids.includes(String(x))),   // 全是本页真 id —— 无占位符、无越界
+    && tmplSel.every(x => ids.includes(String(x)))   // 全是本页真 id —— 无占位符、无越界
+    && JSON.stringify(Object.keys(tmpl.arguments ?? {}).sort()) === JSON.stringify(['result_handle', 'selected_ids']),   // 模板只含 schema 已声明参数(strict 宿主会剥/拒未声明参数)
     JSON.stringify({ drc: s1.detail_required_for_card, sr: s1.selection_required, sel: selArr, tmplSel }).slice(0, 260))
 
-  // H-2 按需详情:活读 + 截断 + 零内部字段 + 预算
-  const d1r = await call({ result_handle: handle, selected_ids: ids.slice(0, 2) })
+  // H-2 按需详情(方案A:单选=详情;多选默认=标准卡)。单 id → detail model + 截断/预算/零内部字段。
+  const d1r = await call({ result_handle: handle, selected_ids: [ids[0]] })
   const d1 = scOf(d1r)
   const d1j = JSON.stringify(d1)
   const dp = (d1.products as Array<Record<string, unknown>>) ?? []
-  ok('H-2a detail fetch → webaz.product_detail.model.v1, 2 items, live data', d1.schema_version === 'webaz.product_detail.model.v1' && dp.length === 2, d1j.slice(0, 200))
+  ok('H-2a SINGLE-id fetch → webaz.product_detail.model.v1, 1 item, live data (multi-select defaults to the card — see H-2e)', d1.schema_version === 'webaz.product_detail.model.v1' && dp.length === 1, d1j.slice(0, 200))
   ok('H-2b description byte-capped (≤900B UTF-8) + flag; specs surfaced', dp.every(p => Buffer.byteLength(String(p.description), 'utf8') <= 900 && p.description_truncated === true) && !!dp[0].specs)
   ok('H-2c NO internal fields in detail projection', !FORBIDDEN.test(d1j), d1j.slice(0, 200))
-  const perItem = Math.round(d1j.length / dp.length)
-  ok('H-2d detail budget ≤1600B/item', perItem <= 1600, `perItem=${perItem}`)
+  const perItem = Math.round(JSON.stringify(dp).length / dp.length)   // 只量商品体(信封 fx/sellers 是固定成本,单件不摊薄)
+  ok('H-2d detail budget ≤1600B/item (product body)', perItem <= 1600, `perItem=${perItem}`)
 
-  // H-2e card:true(RFC-029 多卡稳定化):同一 handle → 标准搜索卡模型(product_search.model.v1),
-  //   total_count = 句柄全集(>展示数时带 more_url「前往 WebAZ」),products 是搜索投影(price 对象),
-  //   卡片格式由响应 schema 确定 —— 不再依赖模型选择渲染形态。detail 路径(card 省略)原样不变(H-2a 已锁)。
-  const c1 = scOf(await call({ result_handle: handle, selected_ids: ids.slice(0, 2), card: true }))
+  // H-2e 方案A核心(host-proof):多选【无任何额外参数】→ 默认标准搜索卡(product_search.model.v1)。
+  //   渲染形态由选择集大小决定,不依赖 schema 未声明参数(strict 宿主会剥/拒 → 曾致素详情平铺)。
+  //   card:true/false 仍可显式覆盖(声明外兼容),但契约不再依赖。
+  const c1 = scOf(await call({ result_handle: handle, selected_ids: ids.slice(0, 2) }))
   const cp = (c1.products as Array<Record<string, unknown>>) ?? []
-  ok('H-2e card:true → product_search.model.v1 with search projection rows', c1.schema_version === 'webaz.product_search.model.v1' && cp.length === 2 && typeof (cp[0].price as Record<string, unknown>)?.amount_minor === 'number', JSON.stringify(c1).slice(0, 200))
-  ok('H-2f card:true → result_handle echoed (widget Detail buttons work) + honest total_count + more_url jump when more real candidates than shown', c1.result_handle === handle && c1.total_count === ids.length && (ids.length > 2 ? /webaz\.xyz/.test(String(c1.more_url)) : true))
-  ok('H-2g card:true response carries NO internal fields', !FORBIDDEN.test(JSON.stringify(c1)))
-  ok('H-2e detail summary text carries the ids (text-only clients keep working)', ids.slice(0, 2).every(id => String((d1r.content as Array<{ text: string }>)[0].text).includes(id)))
+  ok('H-2e MULTI-select (no extra params) → product_search.model.v1 standard card by DEFAULT', c1.schema_version === 'webaz.product_search.model.v1' && cp.length === 2 && typeof (cp[0].price as Record<string, unknown>)?.amount_minor === 'number', JSON.stringify(c1).slice(0, 200))
+  ok('H-2f card → result_handle echoed (widget Detail buttons work) + honest total_count + more_url jump when more real candidates than shown', c1.result_handle === handle && c1.total_count === ids.length && (ids.length > 2 ? /webaz\.xyz/.test(String(c1.more_url)) : true))
+  ok('H-2g card response carries NO internal fields', !FORBIDDEN.test(JSON.stringify(c1)))
+  ok('H-2h multi-select + full_terms:true → FULL detail model (the explicit escape hatch for comparing complete terms)', scOf(await call({ result_handle: handle, selected_ids: ids.slice(0, 2), full_terms: true })).schema_version === 'webaz.product_detail.model.v1')
+  ok('H-2i card:false explicit override → detail model for multi (declared-out compat)', scOf(await call({ result_handle: handle, selected_ids: ids.slice(0, 2), card: false })).schema_version === 'webaz.product_detail.model.v1')
+  ok('H-2j single + card:true override → one-product standard card (widget renders a 1-item search card)', scOf(await call({ result_handle: handle, selected_ids: [ids[0]], card: true })).schema_version === 'webaz.product_search.model.v1')
+  ok('H-2k full_terms:true ALWAYS wins over card:true (the full-terms escape hatch is inviolable)', scOf(await call({ result_handle: handle, selected_ids: ids.slice(0, 2), full_terms: true, card: true })).schema_version === 'webaz.product_detail.model.v1')
+  ok('H-2e detail summary text carries the id (text-only clients keep working)', String((d1r.content as Array<{ text: string }>)[0].text).includes(ids[0]))
   ok('H-2f detail envelope carries the fx display table (stale-flagged, display-only note)',
     !!(d1.fx as Record<string, unknown>)?.rates && typeof (d1.fx as Record<string, unknown>)?.stale === 'boolean' && /display-only/.test(String((d1.fx as Record<string, unknown>)?.note)), JSON.stringify(d1.fx ?? null))
 

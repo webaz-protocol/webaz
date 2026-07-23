@@ -423,7 +423,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       // 契约:泛搜索有多个结果时,渲染 UP TO 5 一张对比卡(而非缩成 1)。selected_ids 预填本页前 5 个 id
       //   (只是"渲染这几个",不为任一背书);完整条款仍只在选定/下单前取。
       detail_fetch_template: { tool: 'webaz_search', arguments: { result_handle: resultHandle, selected_ids: rows.slice(0, 5).map(r => String(r.id)) } },
-      detail_usage: 'When multiple results match, display UP TO 5 in ONE comparison card (do NOT narrow to a single product). Fetch details for the whole shown set via detail_fetch_template; fetch FULL terms only after the buyer selects a product or before quote/order confirmation — never bulk-fetch full terms for every result.',
+      detail_usage: 'When multiple results match, display UP TO 5 in ONE comparison card (do NOT narrow to a single product): call detail_fetch_template as given — selecting MORE THAN ONE id renders the standard comparison card by default. Per-product detail = one id; FULL terms (full_terms:true) only after the buyer selects a product or before quote/order confirmation — never bulk-fetch full terms for every result.',
     } : {}
     res.json({
       schema_version: SCHEMA_PRODUCT_SEARCH,
@@ -511,7 +511,13 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     //   discover 的 detail_fetch_template 用它:宿主渲染打磨过的对比卡(AI 推荐/决策徽标/第 6 槽「前往 WebAZ」),
     //   而非详情模型的素平铺 —— 卡片格式从此由响应 schema 确定,不依赖模型选择。total_count = 句柄全集
     //   (>展示数时 widget 自动出 WebAZ 跳转钮)。详情/完整条款仍走原详情模型(card 省略/false)。
-    if (card === true) {
+    // 方案 A(host-proof 默认,Holden 拍板):渲染形态由【选择集大小】决定,不依赖任何未声明参数 ——
+    //   多选(>1)且非 full_terms → 默认返回【标准搜索卡】(对比语义);单选或 full_terms → 详情模型。
+    //   schema-strict 宿主(ChatGPT strict function-calling)会剥掉/拒绝未声明参数,card:true 曾因此
+    //   静默失效 → 素详情平铺。card 参数保留为显式覆盖(card:true 强制卡 / card:false 强制详情),
+    //   但契约不再依赖它。
+    const wantCard = full_terms !== true && card !== false && ((selected_ids as string[]).length > 1 || card === true)   // full_terms 逃生口永远赢(Codex R1 MED-1)
+    if (wantCard) {
       // total 诚实口径(Codex L):被 revalidation 剔除的 unavailable 项不计入 total —— "还有 N 款"只指
       //   句柄集里【未展示的真实候选】,不把下架品谎报成"更多"。
       const unavailN = (selected_ids as string[]).length - liveRows.length
