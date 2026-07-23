@@ -125,10 +125,14 @@ const shWallet = db.prepare('SELECT balance, escrowed FROM wallets WHERE user_id
 ok('secondhand: off → 409 RAIL_DISABLED', shOff.status === 409 && shOff.json.error_code === 'RAIL_DISABLED', JSON.stringify(shOff))
 ok('secondhand: off → item untouched + wallet untouched', (db.prepare("SELECT status FROM secondhand_items WHERE id='sh1'").get() as { status: string }).status === 'available' && shWallet.balance === 100 && Number(shWallet.escrowed || 0) === 0)
 cp['payment_rail_waz_escrow_enabled'] = 1
+for (const col of ['sponsor_id TEXT', 'sponsor_path TEXT']) { try { db.exec(`ALTER TABLE users ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
+// orders 的 server-inline 增量列 + notifications(最小 fixture 手动补齐,与生产同名)
+for (const col of ['snapshot_commission_rate REAL', 'buyer_region TEXT', 'source TEXT', 'fulfillment_mode TEXT']) { try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
+const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
+initNotificationSchema(db)
 const shOn = await post('/api/secondhand/sh1/order', { shipping_address: 'addr', fulfillment_mode: 'shipping' }, 'shBuyer')
-// 渠道开 → 请求穿过闸进入真实建单路径(本最小 fixture 缺 users.sponsor_id 列,路径内 catch 回滚打
-// "[secondhand order] no such column" 日志属预期噪音)。被测对象是闸,不桩闸;完整下单语义由二手全量套件覆盖。
-ok('secondhand: on → gate passes (not RAIL_DISABLED; request reaches the real create path)', shOn.json.error_code !== 'RAIL_DISABLED', JSON.stringify(shOn))
+const shOnWallet = db.prepare('SELECT balance, escrowed FROM wallets WHERE user_id = ?').get('shBuyer') as { balance: number; escrowed: number }
+ok('secondhand: on → REAL order created through the gate (wallet debited into escrow)', shOn.json.success === true && shOnWallet.balance === 70 && Number(shOnWallet.escrowed) === 30, JSON.stringify({ shOn, shOnWallet }))
 
 // 团购:渠道关 → 创建/加入 409;渠道关时结算 = 即使满员也强制全员退款、绝不建单
 // (group_buys 两表建在 server.ts inline,不在 schema helpers → 测试镜像建表)
@@ -177,6 +181,33 @@ const GB = readFileSync(new URL('../src/pwa/routes/group-buys.ts', import.meta.u
 ok('group-buys: settle targetMet is conjunctive with the channel switch', /joined >= Number\(gb\.target_count\) && wazEscrowChannelOn\(getProtocolParam\)/.test(GB))
 
 srv.close()
+
+// ── 6. MCP local/sandbox place_order(Codex #514 R2 HIGH):渠道关 → RAIL_DISABLED 且【绝不消费】
+//      一次性锁价 token(闸必须先于 price_sessions.used_at 写)。行为 + 源码顺序双锁。──────────
+process.env.WEBAZ_MODE = 'sandbox'   // 此前未 import 过 mcp 模块;sandbox 走本地直建路径(被测分支)
+const mcpMod = await import('../src/layer1-agent/L1-1-mcp-server/server.js') as unknown as { handlePlaceOrder: (a: Record<string, unknown>) => Promise<Record<string, unknown>> }
+db.exec(`CREATE TABLE IF NOT EXISTS price_sessions (token TEXT PRIMARY KEY, product_id TEXT NOT NULL, user_id TEXT NOT NULL,
+  price REAL NOT NULL, quantity INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT)`)
+mkUser('mcpBuyer')
+db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('mcpSeller','mcpSeller','seller','k_mcpSeller')").run()
+db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('mcpP','mcpSeller','MCP品','d',10,5,'active')").run()
+db.prepare("INSERT INTO price_sessions (token, product_id, user_id, price, quantity, created_at, expires_at) VALUES ('ps_tok','mcpP','mcpBuyer',10,1,datetime('now'),datetime('now','+10 minutes'))").run()
+// protocol_params 本地库无该行 → fail-closed 默认关(这就是 sandbox 现实:server DEFAULT_PARAMS 不在此库)
+const mcpOff = await mcpMod.handlePlaceOrder({ api_key: 'k_mcpBuyer', product_id: 'mcpP', quantity: 1, session_token: 'ps_tok', shipping_address: 'addr' })
+const psRow = db.prepare("SELECT used_at FROM price_sessions WHERE token='ps_tok'").get() as { used_at: string | null }
+const mcpWallet = db.prepare('SELECT balance, escrowed FROM wallets WHERE user_id = ?').get('mcpBuyer') as { balance: number; escrowed: number }
+ok('mcp local: off → RAIL_DISABLED', mcpOff.error_code === 'RAIL_DISABLED', JSON.stringify(mcpOff))
+ok('mcp local: off → price session NOT consumed (used_at stays NULL)', psRow.used_at === null, JSON.stringify(psRow))
+ok('mcp local: off → wallet + orders untouched', mcpWallet.balance === 100 && Number(mcpWallet.escrowed || 0) === 0)
+// 源码顺序锁:闸必须位于 session 消费写(UPDATE price_sessions SET used_at)之前
+const iMcpFn = MCP.indexOf('export async function handlePlaceOrder')
+const iMcpGate = MCP.indexOf("payment_rail_waz_escrow_enabled'", iMcpFn)
+const iMcpConsume = MCP.indexOf('UPDATE price_sessions SET used_at', iMcpFn)
+ok('mcp local: gate sits BEFORE the one-shot session consumption in source', iMcpFn > 0 && iMcpGate > iMcpFn && iMcpConsume > iMcpGate, `fn=${iMcpFn} gate=${iMcpGate} consume=${iMcpConsume}`)
+// 渠道开(本地库写入 param 行)→ 同一 token 仍有效可用,穿闸进入真实路径
+db.prepare("INSERT INTO protocol_params (key, value, type, description, category) VALUES ('payment_rail_waz_escrow_enabled','1','number','t','system')").run()
+const mcpOn = await mcpMod.handlePlaceOrder({ api_key: 'k_mcpBuyer', product_id: 'mcpP', quantity: 1, session_token: 'ps_tok', shipping_address: 'addr' })
+ok('mcp local: on → gate passes and the preserved token is honored (order or non-RAIL error)', mcpOn.error_code !== 'RAIL_DISABLED', JSON.stringify(mcpOn).slice(0, 200))
 
 if (fail > 0) { console.error(`\n❌ waz-escrow-rail-gate FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ waz-escrow-rail-gate: channel switch default OFF — menu delisted + quote rejects + create/cart 409 RAIL_DISABLED, bilingual mapped, param registered\n  ✅ pass ${pass}`)

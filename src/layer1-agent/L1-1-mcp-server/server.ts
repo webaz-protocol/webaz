@@ -3825,6 +3825,14 @@ export async function handlePlaceOrder(args: Record<string, unknown>) {
     return { error: `只有 buyer 角色可以下单，你的角色是：${user.role}` }
   }
 
+  // WAZ 退役(2026-07-23)硬闸:local/sandbox 直建路径与 /api/orders 的 escrow 闸同真值(Codex #514 R1 HIGH-5)。
+  //   必须在【任何一次性状态写】之前(尤其 price_sessions.used_at 消费,R2 HIGH):渠道关时锁价 token
+  //   绝不能被白白烧掉。本地库直接读 protocol_params;行缺失/表缺失一律 fail-closed(默认关)。
+  try {
+    const railParam = db.prepare("SELECT value FROM protocol_params WHERE key = 'payment_rail_waz_escrow_enabled'").get() as { value: string } | undefined
+    if (Number(railParam?.value ?? 0) !== 1) return { error: 'WAZ 模拟托管轨已下架 — 请在 NETWORK 模式使用 payment_rail=direct_p2p 下单', error_code: 'RAIL_DISABLED' }
+  } catch { return { error: 'WAZ 模拟托管轨已下架 — 请在 NETWORK 模式使用 payment_rail=direct_p2p 下单', error_code: 'RAIL_DISABLED' } }
+
   let injectedDefaultSandbox = false
   // RFC-025 PR-2.5:sandbox 路径同款默认地址兜底(与 network 路径语义一致;全文不回流 agent)。
   if (args.shipping_address == null) {
@@ -3898,13 +3906,6 @@ export async function handlePlaceOrder(args: Record<string, unknown>) {
     for (let i = 0; i < 5; i++) s += ALPHABET[buf[i] % ALPHABET.length]
     recipientCode = 'PR-' + s
   }
-
-  // WAZ 退役(2026-07-23)硬闸:local/sandbox 直建路径与 /api/orders 的 escrow 闸同真值(Codex #514 R1 HIGH-5)。
-  //   本地库直接读 protocol_params;行缺失/表缺失一律 fail-closed(默认关)。
-  try {
-    const railParam = db.prepare("SELECT value FROM protocol_params WHERE key = 'payment_rail_waz_escrow_enabled'").get() as { value: string } | undefined
-    if (Number(railParam?.value ?? 0) !== 1) return { error: 'WAZ 模拟托管轨已下架 — 请在 NETWORK 模式使用 payment_rail=direct_p2p 下单', error_code: 'RAIL_DISABLED' }
-  } catch { return { error: 'WAZ 模拟托管轨已下架 — 请在 NETWORK 模式使用 payment_rail=direct_p2p 下单', error_code: 'RAIL_DISABLED' } }
 
   const now = new Date()
   const orderId = generateId('ord')
