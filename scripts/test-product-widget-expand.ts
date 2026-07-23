@@ -234,6 +234,40 @@ try {
   fire(findByText(cardFor(rnPublic, 'prd_a')!, '详情')!)
   ok('P-4 public card retains read-only on-demand detail via webaz_search',
     publicCalls.some(([name]) => name === 'webaz_search'))
+
+  const rnPublicState = mk('div'); rnPublicState.setAttribute('id', 'root')
+  const docPublicState = { getElementById: (id: string) => (id === 'root' ? rnPublicState : null), createElement: (t: string) => mk(t) }
+  const ctxPublicState: Record<string, unknown> = { document: docPublicState, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON, encodeURIComponent }
+  ctxPublicState.globalThis = ctxPublicState; ctxPublicState.self = ctxPublicState; vm.createContext(ctxPublicState)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctxPublicState)
+  const restoredCalls: Array<[string, unknown]> = []; const savedStates: unknown[] = []
+  ;(ctxPublicState.__render as (o: unknown, out: unknown) => void)({
+    widgetState: {
+      q: { pid: 'prd_a', title: 'STALE_QUOTE', sc: { price: { display: '999 USDC' } } },
+      a: { request_id: 'apr_stale', status: 'approved' },
+    },
+    setWidgetState: (state: unknown) => { savedStates.push(state) },
+    callTool: (name: string, args: unknown) => { restoredCalls.push([name, args]) },
+  }, { ...SEARCH, public_commerce: true, public_product_url_template: 'https://webaz.xyz/#product/{product_id}' })
+  const publicStateText = treeTextG(rnPublicState)
+  ok('P-5 public widget clears and never restores stale quote/approval state',
+    savedStates.some(state => JSON.stringify(state) === '{}')
+    && !/STALE_QUOTE|apr_stale|approval|批准|报价/.test(publicStateText)
+    && !restoredCalls.some(([name]) => /quote|draft|submit|order|approval/.test(name)))
+
+  const rnBadUrl = mk('div'); rnBadUrl.setAttribute('id', 'root')
+  const docBadUrl = { getElementById: (id: string) => (id === 'root' ? rnBadUrl : null), createElement: (t: string) => mk(t) }
+  const ctxBadUrl: Record<string, unknown> = { document: docBadUrl, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON, encodeURIComponent }
+  ctxBadUrl.globalThis = ctxBadUrl; ctxBadUrl.self = ctxBadUrl; vm.createContext(ctxBadUrl)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctxBadUrl)
+  const badOpened: string[] = []
+  ;(ctxBadUrl.__render as (o: unknown, out: unknown) => void)({
+    openExternal: ({ href }: { href: string }) => { badOpened.push(href) },
+  }, { ...SEARCH, public_commerce: true, public_product_url_template: 'https://evil.example/#product/{product_id}' })
+  const badButton = findByText(cardFor(rnBadUrl, 'prd_a')!, '在 WebAZ 查看')
+  if (badButton) fire(badButton)
+  ok('P-6 untrusted public product URL is disabled and never opened or copied',
+    badOpened.length === 0 && !treeTextG(rnBadUrl).includes('evil.example'))
 } catch (e) { fail++; fails.push('✗ THREW: ' + ((e as Error).stack || (e as Error).message)) }
 try { rmSync(__tmpHome, { recursive: true, force: true }) } catch { /* temp HOME cleanup */ }
 

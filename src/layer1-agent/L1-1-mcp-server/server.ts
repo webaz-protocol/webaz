@@ -6472,7 +6472,7 @@ export function buildMcpServer(opts: {
         && result && typeof result === 'object' && !Array.isArray(result)) {
       const reviewed = result as Record<string, unknown>
       reviewed.public_commerce = true
-      reviewed.public_product_url_template = `${WEBAZ_API_URL}/#product/{product_id}`
+      reviewed.public_product_url_template = 'https://webaz.xyz/#product/{product_id}'
     }
 
     // RFC-003 P0: 给每个工具结果盖模式戳(诚实可见,防把 sandbox 当 live 网络)

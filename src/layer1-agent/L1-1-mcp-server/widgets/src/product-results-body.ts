@@ -15,15 +15,16 @@ function renderBody(oai, out){
   var publicOnly=out.public_commerce===true
   function addPublicProductAction(row,host,pid){
     var url=String(out.public_product_url_template||'').replace('{product_id}',encodeURIComponent(String(pid||'')))
+    var safe=typeof safeWebazHref==='function'?safeWebazHref(url):''
     var btn=el('button','primary',L('在 WebAZ 查看','View on WebAZ'))
-    if(!url){ btn.disabled=true }
+    if(!safe){ btn.disabled=true }
     btn.addEventListener('click',onceGuard(function(){
       var opened=false
-      try{ opened=openWebaz(oai,url) }catch(e){ opened=false }
+      try{ opened=openWebaz(oai,safe) }catch(e){ opened=false }
       if(opened){ btn.textContent=L('已打开 ↗','Opened ↗'); return }
-      var fallback=el('div','recreason',url)
+      var fallback=el('div','recreason',safe)
       host.appendChild(fallback)
-      webazCopy(url,btn,fallback)
+      webazCopy(safe,btn,fallback)
     }))
     row.appendChild(btn)
   }
@@ -136,8 +137,11 @@ function renderBody(oai, out){
   var sellers=out.sellers||{}
   var state={sort:'default',selected:{},open:{},hint:null,approval:null,chainBusy:false}
   // A3-6:宿主 widgetState 恢复(ChatGPT 持久化每条消息的组件态)—— 刷新/重挂载后报价/审批面板不丢。
-  try{ var __ws=oai.widgetState; if(__ws&&typeof __ws==='object'){ if(__ws.q&&__ws.q.pid) state.quote=__ws.q; if(__ws.a&&__ws.a.request_id) state.approval=__ws.a } }catch(e){}
-  function persist(){ try{ if(typeof oai.setWidgetState==='function') oai.setWidgetState({ q: state.quote, a: state.approval }) }catch(e){} }
+  try{
+    if(publicOnly){ if(typeof oai.setWidgetState==='function') oai.setWidgetState({}) }
+    else { var __ws=oai.widgetState; if(__ws&&typeof __ws==='object'){ if(__ws.q&&__ws.q.pid) state.quote=__ws.q; if(__ws.a&&__ws.a.request_id) state.approval=__ws.a } }
+  }catch(e){}
+  function persist(){ try{ if(typeof oai.setWidgetState==='function') oai.setWidgetState(publicOnly?{}:{ q: state.quote, a: state.approval }) }catch(e){} }
   // fail-visible:widget→host 回调(callTool/sendFollowUp)在部分宿主(如 ChatGPT)可能静默不生效
   // (点了详情/准备下单没反应或永久卡)。铁律:任何这类动作都 ①永不永久卡 loading ②始终留一条可见的
   // 手动路径 —— 展示一句可【复制发给模型】的话,让用户在任何宿主上都能继续。绝不假装成功、绝不碰钱路。
@@ -289,7 +293,7 @@ function renderBody(oai, out){
       })
       cmp.appendChild(t); root.appendChild(cmp)
     }
-    if(state.quote){   // F4:报价就地态 —— 真实金额/ETA/到期,不再"正在获取报价"永久卡。继续下单=可复制一句话(模型编排 draft→submit → 下单卡),本卡保持零 URL 自包含。
+    if(!publicOnly&&state.quote){   // F4:报价就地态 —— 真实金额/ETA/到期,不再"正在获取报价"永久卡。继续下单=可复制一句话(模型编排 draft→submit → 下单卡),本卡保持零 URL 自包含。
       var qp=el('div','hint'); var qs=state.quote.sc||{}
       qp.appendChild(el('span',null,L('✓ 已获取报价:','✓ Quote ready: ')+(state.quote.title||'')))
       qp.appendChild(el('div','recreason',((qs.price&&qs.price.display)||'')+L(' · 预计送达 ',' · ETA ')+(webazLocale()==='en'?etaDisplay(qs.shipping&&qs.shipping.estimated_days,(qs.destination&&qs.destination.region)):(qs.display_eta||etaDisplay(qs.shipping&&qs.shipping.estimated_days,(qs.destination&&qs.destination.region))))+((qs.display_expires_at||qs.expires_at)?(L(' · 到期 ',' · expires ')+__i18nExp(qs.display_expires_at,qs.expires_at)):'')))
@@ -324,7 +328,7 @@ function renderBody(oai, out){
       qp.appendChild(el('div','meta',L('报价不扣款 · 草稿/提交/Passkey 在下单卡完成 · 正式建单需你在 webaz.xyz 用 Passkey 批准','Quotes never charge · draft/submit/Passkey on the order card · real orders need Passkey on webaz.xyz')))
       root.appendChild(qp)
     }
-    if(state.approval){   // A3-7(Holden):默认极简一行 —— 长 ID/完整 URL 收进「详情」;复制失败自动展开供手选(fail-visible 不打折)。
+    if(!publicOnly&&state.approval){   // A3-7(Holden):默认极简一行 —— 长 ID/完整 URL 收进「详情」;复制失败自动展开供手选(fail-visible 不打折)。
       var ap=el('div','hint')
       var __apDet=el('div',null,null); __apDet.style.display='none'
       function __openDet(){ __apDet.style.display='block'; return __apDet }

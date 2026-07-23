@@ -1,18 +1,15 @@
 #!/usr/bin/env tsx
-import Database from 'better-sqlite3'
 import express from 'express'
 import type { Server as HttpServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { setSeamDb } from '../src/layer0-foundation/L0-1-database/db.js'
 import {
   publicCommerceSqlFilter,
   PUBLIC_COMMERCE_ALLOWED_PRODUCT_IDS_MAX,
   readPublicCommerceAllowedProductIds,
 } from '../src/public-commerce-policy.js'
-import { registerSearchRoutes } from '../src/pwa/routes/search.js'
 
 let pass = 0
 const failures: string[] = []
@@ -20,6 +17,10 @@ const ok = (name: string, condition: boolean, detail = ''): void => {
   if (condition) pass++
   else failures.push(`FAIL ${name}${detail ? `: ${detail}` : ''}`)
 }
+const payloadOf = (result: Record<string, unknown>): Record<string, unknown> =>
+  (result.structuredContent ?? {}) as Record<string, unknown>
+const productIdsOf = (result: Record<string, unknown>): string[] =>
+  ((result.products ?? []) as Array<Record<string, unknown>>).map(product => String(product.id ?? ''))
 
 const ids = {
   live: 'prd_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -29,11 +30,18 @@ const ids = {
   revoked: 'prd_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
   unreviewed: 'prd_ffffffffffffffffffffffffffffffff',
 }
+
 delete process.env.WEBAZ_PUBLIC_COMMERCE_ALLOWED_PRODUCT_IDS
 ok('missing allowlist is fail-closed', readPublicCommerceAllowedProductIds().length === 0)
 ok('malformed allowlist is fail-closed', readPublicCommerceAllowedProductIds('["broken"').length === 0)
 ok('invalid member invalidates the whole allowlist',
   readPublicCommerceAllowedProductIds(`${ids.live},not-a-product`).length === 0)
+ok('empty CSV member invalidates the whole allowlist',
+  [
+    `${ids.live},`,
+    `,${ids.live}`,
+    `${ids.live},,${ids.revoked}`,
+  ].every(value => readPublicCommerceAllowedProductIds(value).length === 0))
 const oversizedAllowlist = Array.from(
   { length: PUBLIC_COMMERCE_ALLOWED_PRODUCT_IDS_MAX + 1 },
   (_, index) => `prd_${String(index).padStart(8, '0')}`,
@@ -43,27 +51,100 @@ ok('oversized allowlist is fail-closed',
 process.env.WEBAZ_PUBLIC_COMMERCE_ALLOWED_PRODUCT_IDS =
   [ids.live, ids.digital, ids.paused, ids.out, ids.revoked].join(',')
 
-const db = new Database(':memory:')
+const oldHome = process.env.HOME
+const oldUserProfile = process.env.USERPROFILE
+const oldMode = process.env.WEBAZ_MODE
+const oldApiUrl = process.env.WEBAZ_API_URL
+const testHome = mkdtempSync(join(tmpdir(), 'webaz-openai-shopping-'))
+process.env.HOME = testHome
+process.env.USERPROFILE = testHome
+process.env.WEBAZ_MODE = 'network'
+delete process.env.WEBAZ_API_KEY
+
+const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
+const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')
+const { applyWebazRuntimeSchema } = await import('../src/runtime/apply-webaz-runtime-schema.js')
+const { initMcpResultCacheSchema, initUserModerationSchema } =
+  await import('../src/runtime/webaz-schema-helpers.js')
+const { registerProductsListRoutes } = await import('../src/pwa/routes/products-list.js')
+const { registerSearchRoutes } = await import('../src/pwa/routes/search.js')
+
+const db = initDatabase()
+db.pragma('foreign_keys = OFF')
 setSeamDb(db)
+initUserModerationSchema(db)
+applyWebazRuntimeSchema(db)
+initMcpResultCacheSchema(db)
+for (const column of ['listing_paused INTEGER DEFAULT 0']) {
+  try { db.exec(`ALTER TABLE users ADD COLUMN ${column}`) } catch { /* existing runtime column */ }
+}
+for (const column of [
+  'product_type TEXT',
+  'category_id TEXT',
+  'claim_loss_count INTEGER DEFAULT 0',
+  'return_days INTEGER DEFAULT 0',
+  'warranty_days INTEGER DEFAULT 0',
+  'handling_hours INTEGER DEFAULT 0',
+  'specs TEXT',
+]) {
+  try { db.exec(`ALTER TABLE products ADD COLUMN ${column}`) } catch { /* existing runtime column */ }
+}
 db.exec(`
-  CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, listing_paused INTEGER DEFAULT 0);
-  CREATE TABLE products (
-    id TEXT PRIMARY KEY, seller_id TEXT, product_type TEXT, status TEXT, stock INTEGER
+  CREATE TABLE IF NOT EXISTS product_categories (id TEXT PRIMARY KEY, seasonal_months TEXT);
+  CREATE TABLE IF NOT EXISTS order_ratings (id TEXT, product_id TEXT, buyer_id TEXT, stars INTEGER);
+  CREATE TABLE IF NOT EXISTS dispute_cases (id TEXT, seller_id TEXT, winner TEXT);
+  CREATE TABLE IF NOT EXISTS product_trial_campaigns (
+    id TEXT, product_id TEXT, status TEXT, quota_total INTEGER, quota_claimed INTEGER
   );
-  CREATE TABLE product_external_links (
-    product_id TEXT, verified INTEGER DEFAULT 0, revoked INTEGER DEFAULT 0
+  CREATE TABLE IF NOT EXISTS product_external_links (
+    id TEXT, product_id TEXT, external_title TEXT, verified INTEGER, revoked INTEGER
   );
+  CREATE TABLE IF NOT EXISTS user_blocklist (blocker_id TEXT, blocked_id TEXT);
 `)
-db.prepare('INSERT INTO users VALUES (?,?,?)').run('seller-live', 'Live', 0)
-db.prepare('INSERT INTO users VALUES (?,?,?)').run('seller-paused', 'Paused', 1)
-const insertProduct = db.prepare('INSERT INTO products VALUES (?,?,?,?,?)')
-insertProduct.run(ids.live, 'seller-live', 'retail', 'active', 5)
-insertProduct.run(ids.digital, 'seller-live', 'digital', 'active', 5)
-insertProduct.run(ids.paused, 'seller-paused', 'retail', 'active', 5)
-insertProduct.run(ids.out, 'seller-live', 'retail', 'active', 0)
-insertProduct.run(ids.revoked, 'seller-live', 'retail', 'active', 5)
-insertProduct.run(ids.unreviewed, 'seller-live', 'retail', 'active', 5)
-db.prepare('INSERT INTO product_external_links VALUES (?,?,?)').run(ids.revoked, 0, 1)
+for (const column of ['verified INTEGER', 'revoked INTEGER']) {
+  try { db.exec(`ALTER TABLE product_external_links ADD COLUMN ${column}`) } catch { /* existing runtime column */ }
+}
+
+db.prepare("INSERT INTO users (id,name,role,api_key,listing_paused) VALUES ('seller-live','Live','seller','k_live',0)").run()
+db.prepare("INSERT INTO users (id,name,role,api_key,listing_paused) VALUES ('seller-paused','Paused','seller','k_paused',1)").run()
+const insertProduct = db.prepare(`
+  INSERT INTO products (
+    id,seller_id,title,description,price,currency,stock,category,status,
+    return_days,warranty_days,handling_hours,product_type,specs
+  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+`)
+const addProduct = (
+  id: string,
+  sellerId: string,
+  title: string,
+  productType: string,
+  stock: number,
+): void => {
+  insertProduct.run(
+    id, sellerId, title, `${title} description`, 20, 'USDC', stock,
+    'phone_stand', 'active', 7, 90, 24, productType, JSON.stringify({ material: 'metal' }),
+  )
+}
+addProduct(ids.live, 'seller-live', 'Reviewed Phone Stand', 'retail', 5)
+addProduct(ids.digital, 'seller-live', 'Digital Phone Stand Guide', 'digital', 5)
+addProduct(ids.paused, 'seller-paused', 'Paused Phone Stand', 'retail', 5)
+addProduct(ids.out, 'seller-live', 'Out Phone Stand', 'retail', 0)
+addProduct(ids.revoked, 'seller-live', 'Revoked Phone Stand', 'retail', 5)
+addProduct(ids.unreviewed, 'seller-live', 'Unreviewed Phone Stand', 'retail', 5)
+
+const externalLinkColumns = db.prepare('PRAGMA table_info(product_external_links)').all() as
+  Array<{ name: string; notnull: number; dflt_value: unknown }>
+const externalLinkExtras = externalLinkColumns
+  .filter(column =>
+    column.notnull === 1
+    && column.dflt_value == null
+    && !['id', 'product_id', 'verified', 'revoked'].includes(column.name))
+  .map(column => column.name)
+db.prepare(`
+  INSERT INTO product_external_links (
+    id, product_id, verified, revoked${externalLinkExtras.map(name => `, ${name}`).join('')}
+  ) VALUES ('pel_revoked', ?, 0, 1${externalLinkExtras.map(() => ", 'test'").join('')})
+`).run(ids.revoked)
 
 const policy = publicCommerceSqlFilter('p')
 const eligible = db.prepare(`
@@ -84,39 +165,41 @@ const eligible = db.prepare(`
 ok('policy matrix allows only reviewed live physical goods',
   JSON.stringify(eligible.map(row => row.id)) === JSON.stringify([ids.live]))
 
-const routeSource = readFileSync(new URL('../src/pwa/routes/products-list.ts', import.meta.url), 'utf8')
-const serverSource = readFileSync(new URL('../src/layer1-agent/L1-1-mcp-server/server.ts', import.meta.url), 'utf8')
-ok('normal search, recovery, anchor and result-fetch all carry the narrowing selector',
-  serverSource.includes("qs.set('public_commerce', '1')")
-  && serverSource.includes("aqs.set('public_commerce', '1')")
-  && serverSource.includes("rqs.set('public_commerce', '1')")
-  && serverSource.includes('{ public_commerce: true }')
-  && serverSource.includes('body.public_commerce = true'))
-ok('catalog and result-fetch independently apply the reviewed policy',
-  (routeSource.match(/publicCommerceSqlFilter\('p'\)/g) ?? []).length === 2
-  && routeSource.includes("req.query.public_commerce === '1'")
-  && routeSource.includes('public_commerce === true'))
-
 const app = express()
 app.use(express.json())
-const catalogQueries: Array<Record<string, unknown>> = []
-app.get('/api/products', (req, res) => {
-  catalogQueries.push({ ...req.query })
-  const reviewed = req.query.public_commerce === '1' && req.query.fuzzy === 'true'
-  res.json({
-    schema_version: 'webaz.product_search.model.v1',
-    count: reviewed ? 1 : 0,
-    total_count: reviewed ? 1 : 0,
-    sellers: {},
-    products: reviewed ? [{
-      id: ids.live,
-      title: 'Reviewed Phone Stand',
-      price: { amount_minor: 20_000_000, currency: 'USDC', display: '20.00 USDC' },
-      stock_status: 'in_stock',
-    }] : [],
-  })
+registerProductsListRoutes(app, {
+  db,
+  getUser: () => null,
+  VALID_PRODUCT_TYPES: new Set(['retail', 'wholesale', 'service', 'digital']),
+  RAW_MODE_MIN_TRUST: 30,
+  getAgentTrustCached: () => null,
+  VALID_SORTS: new Set([
+    'trending', 'newest', 'rating', 'price_asc', 'price_desc',
+    'random', 'recommended', 'seller_win_rate',
+  ]),
+  PRODUCT_LIMITS: { pwa: 30, agent: 200, raw: 500 },
+  TRENDING_SCORE_EXPR: 'p.price',
+  findProductsByAlias: (input: string) => {
+    const matches = db.prepare(`
+      SELECT id FROM products WHERE (id = ? OR title = ?) AND status = 'active'
+    `).all(input, input) as Array<{ id: string }>
+    return new Set(matches.map(match => match.id))
+  },
+  decodeProductCursor: (cursor: string) => {
+    try {
+      const [score, id] = Buffer.from(cursor, 'base64url').toString().split(':')
+      return { score: Number(score), id }
+    } catch { return null }
+  },
+  encodeProductCursor: (score: number, id: string) =>
+    Buffer.from(`${score}:${id}`).toString('base64url'),
+  MASTER_SEED: 'test-seed',
+  formatProductForAgent: (product: Record<string, unknown>) => ({
+    ...product,
+    agent_summary: `${product.title}`,
+  }),
 })
-const allProducts = Object.values(ids).map(id => ({ id }))
+const allProducts = db.prepare('SELECT * FROM products ORDER BY id').all() as Array<Record<string, unknown>>
 registerSearchRoutes(app, {
   db,
   auth: (_req, res) => { res.status(401).json({ error: 'unauthorized' }); return null },
@@ -126,7 +209,17 @@ registerSearchRoutes(app, {
   parsePlatformUrl: () => null,
   searchByExternalLink: () => ({ matched_by: 'product_title_exact', products: allProducts }),
   detectShareCommandFormat: () => null,
-  formatProductForAgent: row => row,
+  formatProductForAgent: product => product,
+})
+app.get('/api/anchor/:code/lookup', (req, res) => {
+  const map: Record<string, string> = {
+    reviewed: ids.live,
+    hidden12: ids.unreviewed,
+  }
+  const productId = map[String(req.params.code)]
+  if (!productId) return void res.status(404).json({ found: false })
+  const product = db.prepare('SELECT id, title FROM products WHERE id = ?').get(productId)
+  res.json({ found: true, status: 'active', product })
 })
 
 let http!: HttpServer
@@ -135,86 +228,104 @@ const listenError = await new Promise<Error | null>(resolve => {
   http.once('listening', () => resolve(null))
   http.once('error', (error: Error) => resolve(error))
 })
-if (listenError) {
-  if ((listenError as NodeJS.ErrnoException).code === 'EPERM' && process.env.CI !== 'true') {
-    console.log('openai shopping discovery: HTTP route matrix skipped locally; CI must execute it')
-  } else {
-    throw listenError
-  }
-} else {
-  const base = `http://127.0.0.1:${(http.address() as AddressInfo).port}`
-  const post = (body: Record<string, unknown>) => fetch(`${base}/api/search-by-link`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  const full = await post({ text: 'exact title' })
-  const fullJson = await full.json() as { products?: Array<{ id: string }> }
-  ok('full/PWA external-link behavior remains unchanged',
-    full.status === 200 && fullJson.products?.length === allProducts.length)
+if (listenError) throw listenError
 
-  const reviewed = await post({ text: 'exact title', public_commerce: true })
-  const reviewedJson = await reviewed.json() as { products?: Array<{ id: string }> }
-  ok('public plugin external-link response excludes every ineligible class',
-    reviewed.status === 200
-    && JSON.stringify(reviewedJson.products?.map(product => product.id)) === JSON.stringify([ids.live]))
+const base = `http://127.0.0.1:${(http.address() as AddressInfo).port}`
+process.env.WEBAZ_API_URL = base
+const mcp = await import('../src/layer1-agent/L1-1-mcp-server/server.js')
+const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
+const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js')
 
-  const oldHome = process.env.HOME
-  const oldUserProfile = process.env.USERPROFILE
-  const oldMode = process.env.WEBAZ_MODE
-  const oldApiUrl = process.env.WEBAZ_API_URL
-  const mcpHome = mkdtempSync(join(tmpdir(), 'webaz-openai-shopping-'))
-  process.env.HOME = mcpHome
-  process.env.USERPROFILE = mcpHome
-  process.env.WEBAZ_MODE = 'network'
-  process.env.WEBAZ_API_URL = base
-  const mcp = await import('../src/layer1-agent/L1-1-mcp-server/server.js')
-  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
-  const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js')
+const connect = async (surface: 'shopping_v1' | 'full') => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
-  await mcp.buildMcpServer({ isolated: true, surface: 'shopping_v1' }).connect(serverTransport)
-  const client = new Client({ name: 'openai-shopping-discovery', version: '0' }, { capabilities: {} })
+  await mcp.buildMcpServer({ isolated: true, surface }).connect(serverTransport)
+  const client = new Client({ name: `openai-${surface}`, version: '0' }, { capabilities: {} })
   await client.connect(clientTransport)
-
-  const listed = await client.listTools()
-  ok('shopping_v1 wire advertises exactly one anonymous discovery tool',
-    listed.tools.length === 1
-    && listed.tools[0]?.name === 'webaz_search'
-    && JSON.stringify((listed.tools[0]?._meta as Record<string, unknown> | undefined)?.securitySchemes) === JSON.stringify([{ type: 'noauth' }])
-    && /discovery-only/.test(listed.tools[0]?.description ?? ''),
-    JSON.stringify(listed.tools))
-
-  const searched = await client.callTool({
-    name: 'webaz_search',
-    arguments: { query: 'phone stand', max_price: 50 },
-  }) as Record<string, unknown>
-  const searchPayload = (searched.structuredContent ?? {}) as Record<string, unknown>
-  ok('real shopping_v1 call adds reviewed-catalog + keyword fallback selectors and returns public marker',
-    catalogQueries.some(query =>
-      query.public_commerce === '1'
-      && query.fuzzy === 'true'
-      && query.q === 'phone stand'
-      && query.max_price === '50')
-    && searchPayload.public_commerce === true
-    && searchPayload.public_product_url_template === `${base}/#product/{product_id}`
-    && (searchPayload.products as Array<{ id?: string }> | undefined)?.[0]?.id === ids.live)
-
-  const blocked = await client.callTool({ name: 'webaz_quote_order', arguments: { product_id: ids.live } }) as Record<string, unknown>
-  const blockedText = (blocked.content as Array<{ text?: string }> | undefined)?.map(item => item.text ?? '').join('') ?? ''
-  ok('cached hidden order-tool call is rejected before quote/order execution',
-    /TOOL_NOT_AVAILABLE_ON_SURFACE/.test(blockedText))
-
-  await client.close()
-  rmSync(mcpHome, { recursive: true, force: true })
-  if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome
-  if (oldUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = oldUserProfile
-  if (oldMode === undefined) delete process.env.WEBAZ_MODE; else process.env.WEBAZ_MODE = oldMode
-  if (oldApiUrl === undefined) delete process.env.WEBAZ_API_URL; else process.env.WEBAZ_API_URL = oldApiUrl
-  await new Promise<void>(resolve => http.close(() => resolve()))
+  return client
 }
 
-delete process.env.WEBAZ_PUBLIC_COMMERCE_ALLOWED_PRODUCT_IDS
+const shopping = await connect('shopping_v1')
+const listed = await shopping.listTools()
+ok('shopping_v1 wire advertises exactly one anonymous discovery tool',
+  listed.tools.length === 1
+  && listed.tools[0]?.name === 'webaz_search'
+  && JSON.stringify((listed.tools[0]?._meta as Record<string, unknown> | undefined)?.securitySchemes)
+    === JSON.stringify([{ type: 'noauth' }])
+  && /discovery-only/.test(listed.tools[0]?.description ?? ''),
+  JSON.stringify(listed.tools))
+
+const callShopping = async (args: Record<string, unknown>): Promise<Record<string, unknown>> =>
+  payloadOf(await shopping.callTool({ name: 'webaz_search', arguments: args }) as Record<string, unknown>)
+
+const keyword = await callShopping({ query: 'phone stand', max_price: 50 })
+ok('real MCP keyword search returns only the reviewed live retail product',
+  JSON.stringify(productIdsOf(keyword)) === JSON.stringify([ids.live])
+  && keyword.public_commerce === true
+  && keyword.public_product_url_template === 'https://webaz.xyz/#product/{product_id}',
+  JSON.stringify(keyword).slice(0, 500))
+const handle = String(keyword.result_handle ?? '')
+ok('public keyword search issues a real result handle', /^res_[0-9a-f]{32}$/.test(handle), handle)
+
+const detail = await callShopping({ result_handle: handle, selected_ids: [ids.live] })
+ok('real result_handle detail re-applies the reviewed policy',
+  JSON.stringify(productIdsOf(detail)) === JSON.stringify([ids.live]),
+  JSON.stringify(detail).slice(0, 500))
+
+const reviewedAnchor = await callShopping({ query: '@reviewed' })
+ok('reviewed anchor resolves through the real public product route',
+  reviewedAnchor.matched_by === 'anchor'
+  && JSON.stringify(productIdsOf(reviewedAnchor)) === JSON.stringify([ids.live]),
+  JSON.stringify(reviewedAnchor).slice(0, 500))
+const hiddenAnchor = await callShopping({ query: '@hidden12' })
+ok('anchor cannot expose a product outside the reviewed allowlist',
+  productIdsOf(hiddenAnchor).length === 0
+  && hiddenAnchor.matched_by === 'anchor_stale',
+  JSON.stringify(hiddenAnchor).slice(0, 500))
+
+const external = await callShopping({ paste_text: 'Reviewed Phone Stand' })
+ok('external-link search is narrowed by the real public-commerce route',
+  JSON.stringify(productIdsOf(external)) === JSON.stringify([ids.live]),
+  JSON.stringify(external).slice(0, 500))
+
+const recovery = await callShopping({ query: 'no-such-reviewed-product' })
+ok('reviewed catalog no-match remains empty and gives reviewed recovery',
+  productIdsOf(recovery).length === 0
+  && (recovery.recovery as Record<string, unknown> | undefined)?.reason === 'reviewed_catalog_no_match',
+  JSON.stringify(recovery).slice(0, 500))
+
+const blocked = await shopping.callTool({
+  name: 'webaz_quote_order',
+  arguments: { product_id: ids.live },
+}) as Record<string, unknown>
+const blockedText = (blocked.content as Array<{ text?: string }> | undefined)
+  ?.map(item => item.text ?? '').join('') ?? ''
+ok('cached hidden order-tool call is rejected before quote/order execution',
+  /TOOL_NOT_AVAILABLE_ON_SURFACE/.test(blockedText))
+
+const full = await connect('full')
+const forged = payloadOf(await full.callTool({
+  name: 'webaz_search',
+  arguments: {
+    query: 'Unreviewed Phone Stand',
+    __tool_surface__: 'shopping_v1',
+  },
+}) as Record<string, unknown>)
+ok('caller-forged surface marker cannot force public mode on a full server',
+  JSON.stringify(productIdsOf(forged)) === JSON.stringify([ids.unreviewed])
+  && forged.public_commerce !== true,
+  JSON.stringify(forged).slice(0, 500))
+
+await full.close()
+await shopping.close()
+await new Promise<void>(resolve => http.close(() => resolve()))
 db.close()
+delete process.env.WEBAZ_PUBLIC_COMMERCE_ALLOWED_PRODUCT_IDS
+if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome
+if (oldUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = oldUserProfile
+if (oldMode === undefined) delete process.env.WEBAZ_MODE; else process.env.WEBAZ_MODE = oldMode
+if (oldApiUrl === undefined) delete process.env.WEBAZ_API_URL; else process.env.WEBAZ_API_URL = oldApiUrl
+rmSync(testHome, { recursive: true, force: true })
+
 if (failures.length) {
   console.error(failures.join('\n'))
   process.exit(1)

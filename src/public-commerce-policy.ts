@@ -18,7 +18,9 @@ export function readPublicCommerceAllowedProductIds(
   if (trimmed.startsWith('[')) {
     try { values = JSON.parse(trimmed) } catch { return [] }
   } else {
-    values = trimmed.split(',').map(value => value.trim()).filter(Boolean)
+    const csv = trimmed.split(',').map(value => value.trim())
+    if (csv.some(value => value.length === 0)) return []
+    values = csv
   }
   if (!Array.isArray(values) ||
     values.length > PUBLIC_COMMERCE_ALLOWED_PRODUCT_IDS_MAX ||
