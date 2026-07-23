@@ -44,6 +44,8 @@ ok('legal one-tool claim is bound to the runtime surface and annotation',
   && TOOL_ANNOTATIONS.webaz_search?.destructiveHint === false)
 ok('privacy discloses automatic Anthropic feedback and configured comment moderation',
   /Feedback submissions are sent to Anthropic[\s\S]*comments may be sent to Anthropic/i.test(privacy))
+ok('comment moderation sanitizes content before the Anthropic call',
+  /piiSanitize\(text\)\.slice\(0, 500\)/.test(read('src/pwa/server.ts')))
 ok('privacy discloses admin-invoked AI account-risk review and its advisory role',
   /administrator may invoke an Anthropic-assisted account-risk summary/i.test(privacy)
   && /supports human review and does not itself make the final account decision/i.test(privacy))
@@ -54,12 +56,16 @@ ok('privacy lists financial, location, OAuth and delegation data categories',
   /Wallet, ledger, deposit, withdrawal, collateral, commission/i.test(privacy)
   && /Coarse location coordinates/i.test(privacy)
   && /OAuth grants, delegated-agent permissions/i.test(privacy))
+ok('privacy lists email delivery and fulfillment recipients',
+  /Resend[\s\S]*verification and service-email delivery/i.test(privacy)
+  && /Order counterparties and fulfillment participants[\s\S]*recipient, address, phone/i.test(privacy))
 ok('privacy discloses public identifiers without an absolute no-PII promise',
   /Public product results may include product IDs and public seller identifiers/i.test(privacy)
   && /cannot guarantee removal of every identifier/i.test(privacy))
 ok('privacy retention and deletion wording matches bounded implementation',
   /does not currently publish or implement one protocol-wide retention period/i.test(privacy)
   && /implemented 14-day job/i.test(privacy)
+  && /disables the account's password and API key[\s\S]*revokes active sessions/i.test(privacy)
   && /does not erase every linked order, dispute, KYC, audit, security, or other record/i.test(privacy))
 ok('privacy describes bounded JSON export and orders-only CSV',
   /JSON export containing bounded snapshots/i.test(privacy)
@@ -68,7 +74,7 @@ ok('privacy accurately limits Passkey protection to selected high-risk operation
   /Passkey human-presence gates protect selected high-risk operations/i.test(privacy)
   && /not every profile or address update requires a Passkey/i.test(privacy))
 ok('account-deletion API notice matches the bounded anonymization policy',
-  /14 天后将匿名化选定的档案和地址字段/.test(deletionRoute)
+  /14 天后将停用账户凭证并匿名化选定的档案和地址字段/.test(deletionRoute)
   && /关联订单、争议、KYC、审计及安全记录不会全部删除/.test(deletionRoute)
   && !/PII 永久擦除/.test(deletionRoute))
 
@@ -111,6 +117,9 @@ ok('canonical Markdown carries the same critical privacy and terms facts',
   && privacyMdFlat.includes('Feedback submissions are sent to Anthropic')
   && privacyMdFlat.includes('administrator may invoke an Anthropic-assisted account-risk summary')
   && privacyMdFlat.includes('WebAZ authentication API key in browser storage, including IndexedDB')
+  && privacyMdFlat.includes('Resend** delivers verification and service email')
+  && privacyMdFlat.includes('Order counterparties and fulfillment participants')
+  && privacyMdFlat.includes("disables the account's password and API key")
   && privacyMdFlat.includes('does not erase every linked order, dispute, KYC, audit, security, or other record')
   && termsMdFlat.includes('Direct Pay is available only where deployment controls and seller eligibility gates pass')
   && termsMdFlat.includes('No general order-dispute appeal is currently implemented')

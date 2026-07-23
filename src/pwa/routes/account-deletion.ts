@@ -4,7 +4,7 @@
  * 由 #1013 Phase 37 从 src/pwa/server.ts 抽出。
  *
  * 3 endpoints:
- *   POST /api/me/delete-request    申请注销（7d 冷却 + 14d 后选定档案/地址字段匿名化）
+ *   POST /api/me/delete-request    申请注销（7d 冷却 + 14d 后停用凭证并匿名化选定字段）
  *   POST /api/me/delete-cancel     冷却期内撤销
  *   GET  /api/me/delete-status     查注销请求状态
  *
@@ -51,7 +51,7 @@ export function registerAccountDeletionRoutes(app: Application, deps: AccountDel
       ok: true,
       cooldown_days: 7,
       wipe_after_days: 14,
-      notice: '账号已进入注销冷却期。7 天内可撤销；14 天后将匿名化选定的档案和地址字段，关联订单、争议、KYC、审计及安全记录不会全部删除。',
+      notice: '账号已进入注销冷却期。7 天内可撤销；14 天后将停用账户凭证并匿名化选定的档案和地址字段，关联订单、争议、KYC、审计及安全记录不会全部删除。',
     })
   })
 

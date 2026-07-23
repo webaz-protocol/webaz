@@ -54,14 +54,16 @@
       <ul>
         <li><strong>Cloudflare</strong> — DNS, CDN, bot protection, and email routing.</li>
         <li><strong>Railway</strong> — application and database hosting.</li>
+        <li><strong>Resend</strong> — verification and service-email delivery, using the destination email address and required message content.</li>
         <li><strong>Anthropic and user-selected AI providers</strong> — the content described above.</li>
         <li><strong>Connected clients</strong>, such as ChatGPT — tool inputs and results needed for the user's request under that client's terms.</li>
+        <li><strong>Order counterparties and fulfillment participants</strong> — recipient, address, phone, and order information needed to fulfill an order in which they participate.</li>
       </ul>
       <p>Data may be disclosed when required by valid legal process, limited to what is required.</p>
 
       <h2>7. Retention and deletion / 留存与删除</h2>
       <p>WebAZ does not currently publish or implement one protocol-wide retention period. Records remain until feature-specific deletion, deactivation, anonymization, or operational removal occurs.</p>
-      <p>After an eligible account-deletion request reaches the implemented 14-day job, WebAZ anonymizes selected profile fields and overwrites recipient, phone, and address-detail fields in saved addresses. It does not erase every linked order, dispute, KYC, audit, security, or other record.</p>
+      <p>After an eligible account-deletion request reaches the implemented 14-day job, WebAZ anonymizes selected profile fields and overwrites recipient, phone, and address-detail fields in saved addresses. It also disables the account's password and API key, revokes active sessions, delegated-agent grants, OAuth access and refresh tokens, pending authorization codes, and push subscriptions. It does not erase every linked order, dispute, KYC, audit, security, or other record.</p>
 
       <h2>8. Access, correction, and requests / 访问、更正与请求</h2>
       <p>Authenticated users can obtain a JSON export containing bounded snapshots of listed account categories; limits apply, and CSV export contains orders only. This is not a complete database export. Users can edit supported profile and address fields in the app.</p>

@@ -87,9 +87,13 @@ WebAZ does not sell personal data or provide it to third parties for advertising
 
 - **Cloudflare** provides DNS, CDN, bot protection, and email routing.
 - **Railway** hosts the application and database.
+- **Resend** delivers verification and service email and processes the destination email
+  address and message content needed for delivery.
 - **Anthropic** and user-selected AI providers process the content described above.
 - **Connected clients**, such as ChatGPT, receive tool inputs and results needed for the
   user's request under that client's own terms.
+- **Order counterparties and fulfillment participants** receive the recipient, address,
+  phone, and order information needed to fulfill an order in which they participate.
 - Data may be disclosed when required by valid legal process, limited to what is required.
 
 ## 7. Retention and deletion / 留存与删除
@@ -100,8 +104,10 @@ occurs.
 
 After an eligible account-deletion request reaches the implemented 14-day job, WebAZ
 anonymizes selected profile fields and overwrites recipient, phone, and address-detail fields
-in saved addresses. It does not erase every linked order, dispute, KYC, audit, security, or
-other record.
+in saved addresses. It also disables the account's password and API key, revokes active
+sessions, delegated-agent grants, OAuth access and refresh tokens, pending authorization
+codes, and push subscriptions. It does not erase every linked order, dispute, KYC, audit,
+security, or other record.
 
 ## 8. Access, correction, and requests / 访问、更正与请求
 
