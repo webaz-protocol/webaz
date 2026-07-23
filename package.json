@@ -199,6 +199,7 @@
     "test:enforcement-notifications": "tsx scripts/test-enforcement-notifications.ts",
     "test:direct-pay-fault-refund": "tsx scripts/test-direct-pay-fault-refund.ts",
     "test:reputation-single-source": "tsx scripts/test-reputation-single-source.ts",
+    "test:acp-feed-images": "tsx scripts/test-acp-feed-images.ts",
     "test:order-timeline-render": "tsx scripts/test-order-timeline-render.ts",
     "test:legacy-arbitrator-role-sweep": "tsx scripts/test-legacy-arbitrator-role-sweep.ts",
     "test:arbitration-entry-frontend": "tsx scripts/test-arbitration-entry-frontend.ts",
@@ -419,6 +420,7 @@
     "express": "^5.2.1",
     "pg": "^8.21.0",
     "qrcode": "^1.5.4",
+    "sharp": "^0.35.3",
     "undici": "^8.5.0",
     "viem": "^2.55.2",
     "zod": "^4.4.3"

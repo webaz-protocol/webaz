@@ -131,7 +131,18 @@ export function registerManifestsRoutes(app: Application, deps: ManifestsDeps): 
     let buf: Buffer
     try { buf = Buffer.from(m.thumbnail_data_uri.slice(m.thumbnail_data_uri.indexOf(',') + 1), 'base64') } catch { return void res.status(404).end() }
     if (buf.length === 0 || buf.length > 64 * 1024) return void res.status(404).end()
-    res.setHeader('Content-Type', `image/${parsed[1]}`)
+    // ?format=jpeg:按需转码(ACP product feed 只收 JPEG/PNG,存量缩略图多为 webp)。
+    //   - 仅在存储格式非 jpeg 时转;sharp 懒加载(不进 boot 路径);转码失败 → 降级发原格式(仍是白名单光栅图),不 500。
+    //   - 输出 Content-Type 永远反映【实际发出的字节】格式,绝不假报。
+    let outSubtype = parsed[1]
+    if (String(req.query.format || '').toLowerCase() === 'jpeg' && outSubtype !== 'jpeg') {
+      try {
+        const sharp = (await import('sharp')).default
+        buf = await sharp(buf).jpeg({ quality: 82 }).toBuffer()
+        outSubtype = 'jpeg'
+      } catch { /* 转码不可用/失败 → 原格式降级 */ }
+    }
+    res.setHeader('Content-Type', `image/${outSubtype}`)
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate')
     res.send(buf)
