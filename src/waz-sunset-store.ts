@@ -16,6 +16,7 @@
 import type Database from 'better-sqlite3'
 import { toDecimal, type Units } from './money.js'
 import { applyWalletDelta, creditColumns, walletUnits, type WalletField } from './ledger.js'
+import { VALID_TRANSITIONS } from './layer0-foundation/L0-2-state-machine/transitions.js'
 
 /** 冲正台账(append-only,BEFORE UPDATE/DELETE → ABORT)。server boot 与 runtime 组合根都会建。 */
 export function initWazSunsetSchema(db: Database.Database): void {
@@ -37,8 +38,9 @@ export function initWazSunsetSchema(db: Database.Database): void {
            BEGIN SELECT RAISE(ABORT, 'waz_sunset_corrections is append-only'); END`)
 }
 
-// 订单终态(与状态机一致的字面集合;清零只关心"escrow 资金是否还可能移动")
-const TERMINAL_ORDER_STATUSES = new Set(['completed', 'cancelled', 'refunded', 'closed', 'fault_seller', 'fault_buyer', 'fault_neutral'])
+// 非终态 = 状态机里仍有出边的状态(从 VALID_TRANSITIONS 派生,零手写零漂移 —— Codex #515 R1 C-1:
+// 手写集合曾把 fault_seller/fault_buyer 当终态,而引擎在这些状态仍会动 escrow)。
+const NON_TERMINAL_ORDER_STATUSES = new Set(Object.keys(VALID_TRANSITIONS).map(k => k.split('→')[0]))
 
 export interface SunsetBlocker { kind: string; ref: string; detail: string }
 
@@ -51,7 +53,17 @@ export function wazSunsetInventory(db: Database.Database): SunsetBlocker[] {
   }
   for (const o of q<{ id: string; status: string; escrow_amount: number }>(
     `SELECT id, status, escrow_amount FROM orders WHERE COALESCE(payment_rail,'escrow') != 'direct_p2p' AND COALESCE(escrow_amount,0) > 0`)) {
-    if (!TERMINAL_ORDER_STATUSES.has(String(o.status))) blockers.push({ kind: 'order_in_flight', ref: o.id, detail: `status=${o.status} escrow=${o.escrow_amount}` })
+    if (NON_TERMINAL_ORDER_STATUSES.has(String(o.status))) blockers.push({ kind: 'order_in_flight', ref: o.id, detail: `status=${o.status} escrow=${o.escrow_amount}` })
+  }
+  // Direct Pay fee-stake(卖家 fee_staked 的锁定行):locked 行后续会结算/释放/罚没 fee_staked —— 清零后
+  // 这些动作会把余额变负或凭空变钱(Codex #515 R1 C-2)。必须先收敛(结算完/释放/罚没)。
+  for (const f of q<{ id: string; order_id: string; amount: number }>(`SELECT id, order_id, amount FROM direct_pay_fee_stakes WHERE status = 'locked'`)) {
+    blockers.push({ kind: 'fee_stake_locked', ref: f.id, detail: `order=${f.order_id} amount=${f.amount}` })
+  }
+  // RFC-018 清算期佣金:pending 行到期/激活会给用户 balance/earned 记账,清零后把 WAZ"变回来"
+  // (Codex #515 R1 C-3)。含 matures_at NULL(opt-out escrow)与非 NULL 两类。
+  for (const c of q<{ id: number; recipient_user_id: string; amount: number }>(`SELECT id, recipient_user_id, amount FROM pending_commission_escrow WHERE status = 'pending'`)) {
+    blockers.push({ kind: 'pending_commission', ref: String(c.id), detail: `user=${c.recipient_user_id} amount=${c.amount}` })
   }
   for (const r of q<{ id: string; status: string }>(`SELECT id, status FROM rfqs WHERE status = 'open'`)) {
     blockers.push({ kind: 'rfq_open', ref: r.id, detail: '等到期 cron 退押金或手动取消' })
@@ -74,12 +86,14 @@ export function wazSunsetInventory(db: Database.Database): SunsetBlocker[] {
   return blockers
 }
 
-// 基金池清单(单行池表;列/表名全是代码字面量,经 creditColumns 绝对值清零)
+// 基金池清单(单行池表;列/表名全是代码字面量,经 creditColumns 绝对值清零)。
+// 映射对照真实 DDL(Codex #515 R1 H-4):global_fund/protocol_reserve_pool 是 id=1,
+// global_fund 的钱在 pool_balance + pv_escrow_reserve(守恒:pool+reserve+wallets)。
 const FUND_POOLS: Array<{ table: string; where: string; args: unknown[]; cols: string[] }> = [
   { table: 'charity_fund', where: "id = 'main'", args: [], cols: ['balance'] },
   { table: 'commission_reserve', where: "id = 'main'", args: [], cols: ['balance'] },
-  { table: 'global_fund', where: "id = 'main'", args: [], cols: ['balance'] },
-  { table: 'protocol_reserve_pool', where: "id = 'main'", args: [], cols: ['balance'] },
+  { table: 'global_fund', where: 'id = 1', args: [], cols: ['pool_balance', 'pv_escrow_reserve'] },
+  { table: 'protocol_reserve_pool', where: 'id = 1', args: [], cols: ['balance'] },
   { table: 'penalty_fund', where: "id = 'main'", args: [], cols: ['balance'] },
 ]
 
@@ -103,7 +117,6 @@ export function runWazSunsetZeroing(
   const { runId, reason } = opts
   const includeFunds = opts.includeFunds === true
   const commit = opts.commit === true
-  initWazSunsetSchema(db)
   const blockers = wazSunsetInventory(db)
 
   // ── 计划(读):所有非零钱包字段(escrowed 除外 —— 有值即 blocker)+ 可选基金池 ──
@@ -123,8 +136,10 @@ export function runWazSunsetZeroing(
     }
   }
 
+  // dry-run 严格零写入:连 DDL 都不发(Codex #515 R1 M-5);建表只发生在 commit 分支。
   if (!commit) return { runId, committed: false, blockers, plan, residual: verifyResidual(db, includeFunds) }
   if (blockers.length > 0) throw new Error(`WAZ sunset blocked: ${blockers.length} in-flight item(s) — converge them first (fail-closed)`)
+  initWazSunsetSchema(db)
 
   // ── 清零(单事务原子):负 delta + 冲正行;绝不动历史流水 ──
   const ins = db.prepare(`INSERT INTO waz_sunset_corrections (id, run_id, subject, field, before_units, delta_units, reason) VALUES (?,?,?,?,?,?,?)`)
