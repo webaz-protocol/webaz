@@ -39,6 +39,13 @@ async function main(): Promise<void> {
   const j = await res.json() as { result?: { tools?: Array<{ name: string; securitySchemes?: Scheme[] }> } }
   const tools = j.result?.tools ?? []
   const byName: Record<string, Scheme[] | undefined> = Object.fromEntries(tools.map(t => [t.name, t.securitySchemes]))
+  const shoppingRes = await fetch(`http://127.0.0.1:${port}/mcp?surface=shopping_v1`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
+  })
+  const shoppingJson = await shoppingRes.json() as { result?: { tools?: Array<{ name: string; securitySchemes?: Scheme[] }> } }
+  const shoppingTools = shoppingJson.result?.tools ?? []
 
   // COARSE OAuth scopes (what the client requests at /oauth/authorize) — NOT internal fine capabilities.
   const OAUTH: Record<string, string[]> = {
@@ -69,6 +76,9 @@ async function main(): Promise<void> {
   // The REMOTE wire is the isolated surface: it excludes LOCAL_ONLY tools (webaz_pair), so excludes webaz_pair.
   ok('1. all 54 remote-visible tools carry a non-empty securitySchemes array on the WIRE (webaz_pair local-only hidden)', tools.length === 54 && tools.every(t => Array.isArray(t.securitySchemes) && t.securitySchemes.length > 0))
   ok('1b. webaz_pair (local-only pairing) is NOT advertised on the remote tools/list', !byName['webaz_pair'])
+  ok('1c. shopping_v1 raw WIRE is exactly seven reviewed tools, all with explicit security schemes',
+    JSON.stringify(shoppingTools.map(t => t.name).sort()) === JSON.stringify(['webaz_buyer_orders', 'webaz_connection_status', 'webaz_discover', 'webaz_order_draft', 'webaz_quote_order', 'webaz_search', 'webaz_submit_order_request'])
+    && shoppingTools.every(t => Array.isArray(t.securitySchemes) && t.securitySchemes.length > 0))
 
   for (const [name, scopes] of Object.entries(OAUTH)) {
     const ss = byName[name]

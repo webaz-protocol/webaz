@@ -59,11 +59,14 @@ Registration currently uses invitations for Sybil resistance. A key requires a *
 
 | Surface | Tools | How you get it |
 |---|---|---|
+| `shopping_v1` (7) | stable public shopping plugin contract: search · discover · quote → draft → submit-for-human-approval · buyer orders · connection status | `/mcp?surface=shopping_v1` |
 | `buyer` (21) | the core shopping chain: info/register/connection_status · search/discover/price_history · verify_price/place_order/get_status · quote→draft→submit · buyer_orders/buyer_action/approvals/prepare_case · order_chat/wallet_view/address/default_address/notifications | **default** for anonymous and OAuth/delegation connections |
 | `seller` (23) | listing/fulfilment/account ops (list_product, upload_product_image, p2p_product, get_agent_order, order_action_request, update_order, wallet, mykey/profile/keys, trial, shareables, share_link …) | `/mcp?surface=seller` |
 | `full` (54) | everything (adds RFQ/secondhand/auction, dispute/claim_verify, contribute/charity/leaderboard, skills …) | `/mcp?surface=full`, or automatically when connecting with an api_key bearer |
 
 **Surface affects tools/list visibility ONLY — never authorization.** Any known tool called by name still dispatches, and every call-time gate (OAuth scope, api_key, Passkey) is unchanged. **Migration:** clients that relied on the old full anonymous list should add `?surface=full` to their connector URL (existing connectors with a cached manifest keep working — calls by name are unaffected). stdio (`npx -y @seasonkoh/webaz`) always exposes the full local set.
+
+`shopping_v1` is intentionally versioned and frozen for public review. Its seven advertised tools are the minimum buyer loop; changing that set or any published tool metadata requires a new reviewed plugin version. Handler fixes and backward-compatible live results continue to share the canonical implementations used by the other surfaces.
 
 **QuoteAndApproval (PR-5):** `webaz_quote_order` / `webaz_order_draft` / `webaz_submit_order_request` declare `openai/outputTemplate` → `ui://widget/webaz-quote-approval.html` — one component rendering quote → draft → Passkey-approval states with USDC pricing + display-only fiat estimates (`fiat_estimate` with `≈`, `estimated`, `stale`), rail-honesty notes (simulated escrow ≠ real USDC custody; Direct Pay = WebAZ holds no principal), the three no-charge/no-stock/Passkey disclosures, and an explicit duplicate-purchase warning card. Consumer projections: `webaz.order_quote/order_draft/order_approval.model.v1` — **WAZ is never a consumer-facing currency**; protocol-recorded units stay server-side.
 
