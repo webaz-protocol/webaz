@@ -85,10 +85,12 @@ export function registerRatingsRoutes(app: Application, deps: RatingsDeps): void
   // seller → buyer 反向评价
   app.post('/api/orders/:order_id/buyer-rating', async (req, res) => {
     const user = auth(req, res); if (!user) return
-    const order = await dbOne<{ id: string; buyer_id: string; seller_id: string; status: string }>('SELECT id, buyer_id, seller_id, status FROM orders WHERE id = ?', [req.params.order_id])
+    const order = await dbOne<{ id: string; buyer_id: string; seller_id: string; status: string; settled_fault_at: string | null }>('SELECT id, buyer_id, seller_id, status, settled_fault_at FROM orders WHERE id = ?', [req.params.order_id])
     if (!order) return void res.status(404).json({ error: '订单不存在' })
     if (order.seller_id !== user.id) return void res.status(403).json({ error: '仅卖家可评价买家' })
     if (order.status !== 'completed') return void res.status(400).json({ error: '订单完成后才能评价' })
+    // 与正向评价同门:处置关单(settled_fault_at 非空)无真实成交,双向都不可评(防违约关单刷买家声誉)
+    if (order.settled_fault_at) return void res.status(400).json({ error: '该订单为处置关单(非正常成交),不可评价' })
     const existing = await dbOne('SELECT order_id FROM buyer_ratings WHERE order_id = ?', [order.id])
     if (existing) return void res.status(400).json({ error: '已评价过，每单仅可评一次' })
     const stars = Number(req.body?.stars)

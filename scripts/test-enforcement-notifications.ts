@@ -165,9 +165,13 @@ const notifBodies = (uid: string, orderId: string): string =>
   ok('7b. 无关单 B 双方也收到通知', notifKeys('b1', oB).length >= 2 && notifKeys('s1', oB).length >= 2, JSON.stringify(notifKeys('b1', oB)))
 }
 
-// ═══ ⑧ 处置关单不可评价(Codex R1 HIGH:completed 重载 → 违约关单曾可刷评价进声誉)═══
+// ═══ ⑧ 处置关单不可评价 — 双向端点(Codex R1 HIGH + R2 HIGH 反向评价旁路;真实表,正常单必须真成功)═══
 {
   const { registerRatingsRoutes } = await import('../src/pwa/routes/ratings.js')
+  const { initOrderRatingsSchema, initBuyerRatingsSchema } = await import('../src/runtime/webaz-schema-helpers.js')
+  initOrderRatingsSchema(db); initBuyerRatingsSchema(db)
+  for (const c of ['dim_quality INTEGER', 'dim_speed INTEGER', 'dim_service INTEGER', 'hidden_until TEXT'])
+    { try { db.exec(`ALTER TABLE order_ratings ADD COLUMN ${c}`) } catch { /* 已有 */ } }
   const faultClosed = mkOrder('completed', 'direct_p2p')
   db.prepare("UPDATE orders SET settled_fault_at = datetime('now') WHERE id = ?").run(faultClosed)
   const genuine = mkOrder('completed', 'escrow')
@@ -182,16 +186,20 @@ const notifBodies = (uid: string, orderId: string): string =>
   } as never)
   let server!: Server
   const port: number = await new Promise(r => { server = createServer(app); server.listen(0, () => r((server.address() as { port: number }).port)) })
-  const rate = (oid: string): Promise<{ status: number; json: Record<string, unknown> }> => new Promise((resolve, reject) => {
+  const rate = (path: string, uid: string): Promise<{ status: number; json: Record<string, unknown> }> => new Promise((resolve, reject) => {
     const payload = JSON.stringify({ stars: 5 })
-    const rq = httpRequest({ host: '127.0.0.1', port, method: 'POST', path: `/api/orders/${oid}/rating`, headers: { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(payload)), 'x-test-uid': 'b1' } }, res => { let d = ''; res.on('data', ch => d += ch); res.on('end', () => { try { resolve({ status: res.statusCode || 0, json: d ? JSON.parse(d) : {} }) } catch { resolve({ status: res.statusCode || 0, json: {} }) } }) })
+    const rq = httpRequest({ host: '127.0.0.1', port, method: 'POST', path, headers: { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(payload)), 'x-test-uid': uid } }, res => { let d = ''; res.on('data', ch => d += ch); res.on('end', () => { try { resolve({ status: res.statusCode || 0, json: d ? JSON.parse(d) : {} }) } catch { resolve({ status: res.statusCode || 0, json: {} }) } }) })
     rq.on('error', reject); rq.write(payload); rq.end()
   })
   try {
-    const rf = await rate(faultClosed)
-    ok('8a. 处置关单(settled_fault_at)评价被拒 400', rf.status === 400 && String(rf.json.error).includes('处置关单'), JSON.stringify(rf))
-    const rg = await rate(genuine)
-    ok('8b. 正常 completed 通过处置门(非 400 处置关单错误)', !(rg.status === 400 && String(rg.json.error).includes('处置关单')), JSON.stringify(rg))
+    const rf = await rate(`/api/orders/${faultClosed}/rating`, 'b1')
+    ok('8a. 处置关单:买家→卖家评价被拒 400', rf.status === 400 && String(rf.json.error).includes('处置关单'), JSON.stringify(rf))
+    const rfb = await rate(`/api/orders/${faultClosed}/buyer-rating`, 's1')
+    ok('8b. 处置关单:卖家→买家反向评价同样被拒 400(R2 HIGH)', rfb.status === 400 && String(rfb.json.error).includes('处置关单'), JSON.stringify(rfb))
+    const rg = await rate(`/api/orders/${genuine}/rating`, 'b1')
+    ok('8c. 正常 completed 正向评价真成功(200)', rg.status === 200 && rg.json.success === true, JSON.stringify(rg))
+    const rgb = await rate(`/api/orders/${genuine}/buyer-rating`, 's1')
+    ok('8d. 正常 completed 反向评价真成功(200)', rgb.status === 200 && rgb.json.success === true, JSON.stringify(rgb))
   } finally { server.close() }
 }
 
