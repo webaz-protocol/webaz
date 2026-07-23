@@ -34,9 +34,12 @@ const THUMB_MAX_BYTES = 12000   // ~12KB base64 ≈ 9KB 原始图
 const THUMB_DATA_URI_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/
 
 // /thumb?format=jpeg 转码结果缓存:hash 内容不可变 → 每 hash 至多付一次转码 CPU。
-//   有界(FIFO 逐出);≤64KB 输入 × 512 项 ≤ ~32MB 上界。takedown 不受影响:每次请求先查 DB 状态再碰缓存。
+//   有界两重(Codex #510 R2):项数 FIFO ≤512,且【单项 >64KB 的转码结果不入缓存】(tiny webp 可能膨胀成
+//   ~200KB JPEG;不缓存时照常下发,只是该 hash 每次重转)→ 内存上界 512×64KB = 32MB 真实成立。
+//   takedown 不受影响:每次请求先查 DB 状态/白名单再碰缓存。
 const thumbJpegCache = new Map<string, Buffer>()
 const THUMB_JPEG_CACHE_MAX = 512
+const THUMB_JPEG_CACHE_ITEM_MAX = 64 * 1024
 
 function verifyManifestSig(hash: string, ownerId: string, contentType: string, byteSize: number, signedAt: string, apiKey: string, signature: string): boolean {
   const payload = `${hash}|${ownerId}|${contentType}|${byteSize}|${signedAt}`
@@ -151,8 +154,10 @@ export function registerManifestsRoutes(app: Application, deps: ManifestsDeps): 
           const sharp = (await import('sharp')).default
           const jpeg = await sharp(buf, { limitInputPixels: 1_000_000 }).jpeg({ quality: 82 }).toBuffer()
           buf = jpeg; outSubtype = 'jpeg'
-          thumbJpegCache.set(hash, jpeg)
-          if (thumbJpegCache.size > THUMB_JPEG_CACHE_MAX) { const oldest = thumbJpegCache.keys().next().value; if (oldest) thumbJpegCache.delete(oldest) }
+          if (jpeg.length <= THUMB_JPEG_CACHE_ITEM_MAX) {
+            thumbJpegCache.set(hash, jpeg)
+            if (thumbJpegCache.size > THUMB_JPEG_CACHE_MAX) { const oldest = thumbJpegCache.keys().next().value; if (oldest) thumbJpegCache.delete(oldest) }
+          }
         } catch { /* 转码不可用/失败 → 原格式降级 */ }
       }
     }

@@ -476,13 +476,13 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/logistics/orders` | 🔐 |  |  | src/pwa/routes/logistics.ts:33 |
 | GET | `/api/logistics/return-pickups` | 🔐 |  |  | src/pwa/routes/returns.ts:450 |
 | GET | `/api/manifest` |  |  |  | src/pwa/routes/public-utils.ts:468 |
-| POST | `/api/manifests` | 🔐 |  |  | src/pwa/routes/manifests.ts:57 |
-| GET | `/api/manifests/:hash` | 🔐 |  |  | src/pwa/routes/manifests.ts:106 |
-| PATCH | `/api/manifests/:hash/takedown` | 🔐 |  |  | src/pwa/routes/manifests.ts:187 |
-| GET | `/api/manifests/:hash/thumb` |  |  | Only the low-res thumbnail is exposed (never full-res / metadata / other columns | src/pwa/routes/manifests.ts:128 |
-| GET | `/api/manifests/by-anchor/:anchor` | 🔐 |  |  | src/pwa/routes/manifests.ts:176 |
-| GET | `/api/manifests/by-product/:pid` | 🔐 |  |  | src/pwa/routes/manifests.ts:165 |
-| GET | `/api/manifests/me` | 🔐 |  |  | src/pwa/routes/manifests.ts:95 |
+| POST | `/api/manifests` | 🔐 |  |  | src/pwa/routes/manifests.ts:60 |
+| GET | `/api/manifests/:hash` | 🔐 |  |  | src/pwa/routes/manifests.ts:109 |
+| PATCH | `/api/manifests/:hash/takedown` | 🔐 |  |  | src/pwa/routes/manifests.ts:192 |
+| GET | `/api/manifests/:hash/thumb` |  |  | Only the low-res thumbnail is exposed (never full-res / metadata / other columns | src/pwa/routes/manifests.ts:131 |
+| GET | `/api/manifests/by-anchor/:anchor` | 🔐 |  |  | src/pwa/routes/manifests.ts:181 |
+| GET | `/api/manifests/by-product/:pid` | 🔐 |  |  | src/pwa/routes/manifests.ts:170 |
+| GET | `/api/manifests/me` | 🔐 |  |  | src/pwa/routes/manifests.ts:98 |
 | POST | `/api/mcp-telemetry` |  |  |  | src/pwa/routes/public-utils.ts:74 |
 | GET | `/api/me` | 🔐 |  |  | src/pwa/routes/auth-read.ts:29 |
 | GET | `/api/me/agents` | 🔐 |  | /api/me/agents — 列出本账号所有 agent + declaration / strikes | src/pwa/routes/agent-governance.ts:61 |
