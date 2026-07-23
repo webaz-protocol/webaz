@@ -93,7 +93,8 @@ ok('deleted accounts cannot return through login, recovery, or admin Bearer path
 ok('final deletion rechecks commerce responsibilities before revoking access',
   /hasPendingOrders[\s\S]*hasOpenDisputes[\s\S]*wallet\.balance > 0\.01[\s\S]*return false/.test(deletionFinalizeSource))
 ok('deleted sellers cannot accept new orders and their active listings are paused',
-  /u\.deleted_at IS NULL AND COALESCE\(u\.listing_paused, 0\) = 0/.test(ordersCreateSource)
+  /p\.status = 'active' AND u\.deleted_at IS NULL/.test(ordersCreateSource)
+  && /trg_orders_reject_deleted_seller[\s\S]*BEFORE INSERT ON orders[\s\S]*deleted_at IS NOT NULL/.test(deletionFinalizeSource)
   && /UPDATE products SET status = 'paused'/.test(deletionFinalizeSource))
 ok('final deletion closes the live client and cannot restore public identity or sponsor eligibility',
   /disconnectDeletedAccountClient\(sseClients, c\.user_id\)/.test(serverSource)

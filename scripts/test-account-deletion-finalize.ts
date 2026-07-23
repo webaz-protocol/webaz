@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 import Database from 'better-sqlite3'
-import { disconnectDeletedAccountClient, finalizeAccountDeletion } from '../src/pwa/account-deletion-finalize.js'
+import { disconnectDeletedAccountClient, finalizeAccountDeletion, initDeletedSellerOrderGuard } from '../src/pwa/account-deletion-finalize.js'
 
 let pass = 0
 const ok = (condition: boolean, message: string): void => {
@@ -47,6 +47,7 @@ function fixture(): Database.Database {
   db.prepare(`INSERT INTO verification_codes VALUES (?,?)`).run('u1', null)
   db.prepare(`INSERT INTO user_sessions VALUES (?,?)`).run('u1', null)
   db.prepare(`INSERT INTO push_subscriptions VALUES (?)`).run('u1')
+  initDeletedSellerOrderGuard(db)
   return db
 }
 
@@ -79,6 +80,9 @@ let ended = 0
 const clients = new Map<string, { end: () => void }>([['u1', { end: () => { ended++ } }]])
 disconnectDeletedAccountClient(clients, 'u1')
 ok(ended === 1 && !clients.has('u1'), 'finalized account SSE client must be closed and removed')
+let deletedSellerRejected = false
+try { db.prepare(`INSERT INTO orders VALUES (?,?,?)`).run('u2', 'u1', 'created') } catch { deletedSellerRejected = true }
+ok(deletedSellerRejected, 'database guard must reject every order insert for a deleted seller')
 
 for (const setup of [
   (blocked: Database.Database) => blocked.prepare(`INSERT INTO orders VALUES (?,?,?)`).run('u1', 'u2', 'paid'),

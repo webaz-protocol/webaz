@@ -15,6 +15,15 @@ export function disconnectDeletedAccountClient(
   if (client) { try { client.end() } catch {}; clients.delete(userId) }
 }
 
+export function initDeletedSellerOrderGuard(db: Database.Database): void {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_orders_reject_deleted_seller
+    BEFORE INSERT ON orders
+    WHEN EXISTS (SELECT 1 FROM users WHERE id = NEW.seller_id AND deleted_at IS NOT NULL)
+    BEGIN SELECT RAISE(ABORT, 'SELLER_ACCOUNT_DELETED'); END
+  `)
+}
+
 /**
  * Finalize an eligible deletion request atomically. Historical commerce,
  * compliance, and audit rows remain, but every live account credential is

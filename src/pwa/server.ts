@@ -23,7 +23,7 @@ import crypto from 'crypto'; import { deriveHandleBase } from '../handle-policy.
 
 import { initDatabase, generateId } from '../layer0-foundation/L0-1-database/schema.js'
 import { setSeamDb } from '../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
-import { disconnectDeletedAccountClient, finalizeAccountDeletion } from './account-deletion-finalize.js'
+import { disconnectDeletedAccountClient, finalizeAccountDeletion, initDeletedSellerOrderGuard } from './account-deletion-finalize.js'
 import { initSystemUser, transition, getOrderStatus, checkTimeouts, settleFault } from '../layer0-foundation/L0-2-state-machine/engine.js'; import { genuineSalePredicate } from '../layer0-foundation/L0-2-state-machine/genuine-sale.js'; import { checkVerifierEligibility as checkVerifierEligibilityImpl, checkArbitratorEligibility as checkArbitratorEligibilityImpl } from './eligibility.js'; import { settleDirectPayFeeAtCompletion } from '../direct-pay-fee-ar.js'  // RFC-018 PR4 genuine-sale SSOT + Direct Pay Rail 1 平台费链下应收(完成时释放遗留模拟 stake + accrue)
 import { endpointToAction, endpointToReadAction } from './endpoint-actions.js'
 import { migrateProtocolToPublicLaunch, seedPublicLaunchConsentV12 } from './public-launch-migrations.js'
@@ -517,7 +517,7 @@ initAnchorRegistrySchema(db)
 // src/runtime/webaz-schema-helpers.ts)；该 helper 同时建 permanent_code/region + 11 个
 // products 结构化字段(纯非钱列,从下方各 inline 块单点收口到此处,CREATE-before-ALTER 不变)。
 initRegisterListSearchColumns(db)
-try { db.exec("ALTER TABLE users ADD COLUMN deleted_at TEXT") } catch {}
+try { db.exec("ALTER TABLE users ADD COLUMN deleted_at TEXT") } catch {}; initDeletedSellerOrderGuard(db)
 try { db.exec("ALTER TABLE users ADD COLUMN search_anchor TEXT") } catch {}
 
 // E1 一次性迁移：把 users.search_anchor 旧数据搬进 anchor_registry（target_kind='user'）
