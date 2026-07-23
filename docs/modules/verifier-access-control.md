@@ -63,7 +63,7 @@ trial-1 ── trial-2 ── trial-3 ── active-1 ── active-2
 | 零仲裁判输违约 | 必须 | `disputes.verdict` |
 | 账户未曾被 admin 暂停 | 必须 | `user_moderation.suspended` |
 | 钱包余额（不含质押）| ≥ 200 WAZ | `wallets.balance` |
-| reputation 分 | ≥ 110 | `users.reputation`（初始 100） |
+| reputation 分 | ≥ 110 | `reputation_scores.total_points`（事件流真实台账;P2-E 起 `users.reputation` 静止列已废弃不读） |
 | 若有被告记录，按时响应率 | ≥ 80%（或无被告记录）| `disputes` |
 
 ---
