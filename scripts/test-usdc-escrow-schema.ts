@@ -10,7 +10,7 @@
  *   ④ append-only 纪律(代码层):chain_events 重复 (tx,log) INSERT 抛 UNIQUE。
  * Usage: npm run test:usdc-escrow-schema
  */
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -43,10 +43,16 @@ try { db.prepare("UPDATE usdc_escrow_chain_events SET block_hash='0xEVIL' WHERE 
 try { db.prepare("DELETE FROM usdc_escrow_chain_events WHERE id='e1'").run() } catch { delThrew = true }
 ok('chain_events is TRULY append-only (UPDATE/DELETE ABORT)', updThrew && delThrew)
 db.prepare("INSERT INTO usdc_escrow_event_orphans (event_id, reason) VALUES ('e1','reorg: block_hash mismatch')").run()
-let orphDupThrew = false; let orphUpdThrew = false
+let orphDupThrew = false; let orphUpdThrew = false; let orphDelThrew = false
 try { db.prepare("INSERT INTO usdc_escrow_event_orphans (event_id, reason) VALUES ('e1','again')").run() } catch { orphDupThrew = true }
 try { db.prepare("UPDATE usdc_escrow_event_orphans SET reason='x' WHERE event_id='e1'").run() } catch { orphUpdThrew = true }
-ok('orphan marker: one-shot per event + append-only', orphDupThrew && orphUpdThrew)
+try { db.prepare("DELETE FROM usdc_escrow_event_orphans WHERE event_id='e1'").run() } catch { orphDelThrew = true }
+ok('orphan marker: one-shot per event + append-only (UPDATE & DELETE ABORT)', orphDupThrew && orphUpdThrew && orphDelThrew)
+// PG parity 静态钉:生成器登记 + 产物双表双触发器
+const GEN = readFileSync(new URL('../scripts/gen-pg-schema.ts', import.meta.url), 'utf8')
+ok('gen-pg-schema registers both append-only tables', GEN.includes("'usdc_escrow_chain_events'") && GEN.includes("'usdc_escrow_event_orphans'"))
+const PG = readFileSync(new URL('../db/schema.pg.sql', import.meta.url), 'utf8')
+ok('pg artifact carries guard triggers for both tables', ['usdc_escrow_chain_events', 'usdc_escrow_event_orphans'].every(t => (PG.match(new RegExp(t, 'g')) || []).length >= 3))
 // intents 字段形状与合约对齐(orderKey/amount 6dp units/fee_bps/auto_release_at)
 const intentCols = (db.prepare('PRAGMA table_info(usdc_escrow_intents)').all() as { name: string }[]).map(c => c.name)
 ok('intents columns align with the contract voucher fields', ['order_id', 'order_key', 'contract_addr', 'buyer_id', 'seller_id', 'seller_addr', 'amount_units', 'fee_bps', 'auto_release_at', 'voucher_sig', 'auth_expires_at', 'status'].every(c => intentCols.includes(c)), JSON.stringify(intentCols))
