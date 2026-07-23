@@ -392,6 +392,10 @@ export function registerRemoteMcpRoutes(app: Express, deps: RemoteMcpDeps) {
       // MCP Token PR-3:工具面选择 —— ?surface=shopping_v1|buyer|seller|full 显式 > api_key bearer(full)> 默认 buyer。
       //   只影响 tools/list 可见性(定义 ~101KB→buyer ~40KB);按名 tools/call 一切照旧(授权在 call 时)。
       const surface = resolveSurface(req.query.surface, credential ? (isGrantBearer ? 'grant' : 'api_key') : 'none')
+      if (!surface) {
+        return void res.status(400).json({ jsonrpc: '2.0', id: bodyId,
+          error: { code: -32602, message: 'invalid surface — expected exactly one of shopping_v1, buyer, seller, or full' } })
+      }
       const server = buildMcpServer({
         isolated: true,
         surface,

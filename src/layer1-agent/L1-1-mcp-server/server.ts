@@ -39,7 +39,7 @@ import { NETWORK_TOOLS, NETWORK_SELF_AWARE, toolAllowedInNetworkMode, resolveMod
 import { annotateTools } from './tool-annotations.js'
 import { resolveProductMatch } from '../../pwa/product-alias-match.js'  // A4:商品匹配单一真相源(exact-first 排他,网络/本地同用)  // 标准 MCP annotations(readOnly/destructive/openWorld)——stdio+Remote 共用
 import { matchKnownStaleWidgetUri, isUnknownVersionedWidgetUri } from './widget-template-compat.js'  // B-2 收官:已知历史 hash 显式 allowlist(绝不通配回落)
-import { withSecuritySchemes } from './tool-security-schemes.js'  // OpenAI per-tool securitySchemes(oauth2 仅 grant-reachable / 余 noauth)
+import { withSecuritySchemes, withSecuritySchemeMetaMirror } from './tool-security-schemes.js'  // OpenAI per-tool securitySchemes(oauth2 仅 grant-reachable / 余 noauth)
 import { withOutputSchemas } from './tool-output-schemas.js'  // MCP Token PR-1:三核心工具的版本化 outputSchema
 import { filterToolsBySurface, type ToolSurface } from './tool-surfaces.js'
 import { PRODUCT_RESULTS_WIDGET_HTML, QUOTE_APPROVAL_WIDGET_HTML, ORDER_TIMELINE_WIDGET_HTML, PRODUCT_RESULTS_WIDGET_MCP_HTML, QUOTE_APPROVAL_WIDGET_MCP_HTML, ORDER_TIMELINE_WIDGET_MCP_HTML } from './ui-widgets.js'  // MCP UI PR-4..6 + PR-A:legacy + 标准双轨组件
@@ -2273,7 +2273,8 @@ const LOCAL_ONLY_TOOLS = new Set(['webaz_pair'])
 function toolsForTransport(isolated: boolean, surface: ToolSurface = 'full'): typeof TOOLS_ANNOTATED {
   const base = isolated ? TOOLS_ANNOTATED.filter(t => !LOCAL_ONLY_TOOLS.has(t.name)) : TOOLS_ANNOTATED
   // MCP Token PR-3:surface 只裁 tools/list 可见性(定义 token/选择难度);CallTool 分发与授权不变。
-  return filterToolsBySurface(base, surface)
+  const filtered = filterToolsBySurface(base, surface)
+  return surface === 'shopping_v1' ? withSecuritySchemeMetaMirror(filtered) : filtered
 }
 
 // ─── 工具处理函数 ─────────────────────────────────────────────

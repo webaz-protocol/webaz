@@ -40,9 +40,10 @@ ok('T-2 every seller-surface member is a REAL tool', [...SELLER_SURFACE_TOOLS].e
 ok('T-3 buyer surface count lock = 21 (core shopping chain complete)',
   BUYER_SURFACE_TOOLS.size === 21 && ['webaz_search', 'webaz_discover', 'webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request', 'webaz_buyer_orders', 'webaz_approval_requests', 'webaz_buyer_action_request', 'webaz_order_chat', 'webaz_wallet_view', 'webaz_prepare_case'].every(n => BUYER_SURFACE_TOOLS.has(n)))
 ok('T-4 seller surface count lock = 23 + no arbitration/governance', SELLER_SURFACE_TOOLS.size === 23 && !SELLER_SURFACE_TOOLS.has('webaz_dispute') && !SELLER_SURFACE_TOOLS.has('webaz_contribute'))
-ok('T-5 resolveSurface precedence: explicit > api_key(full) > default buyer; invalid → fallback',
+ok('T-5 resolveSurface precedence: explicit > api_key(full) > default buyer; supplied invalid values fail closed',
   resolveSurface('shopping_v1', 'api_key') === 'shopping_v1' && resolveSurface('seller', 'api_key') === 'seller' && resolveSurface(undefined, 'api_key') === 'full'
-  && resolveSurface(undefined, 'grant') === 'buyer' && resolveSurface(undefined, 'none') === 'buyer' && resolveSurface('hax', 'none') === 'buyer')
+  && resolveSurface(undefined, 'grant') === 'buyer' && resolveSurface(undefined, 'none') === 'buyer'
+  && resolveSurface('hax', 'none') === null && resolveSurface('', 'none') === null && resolveSurface(['shopping_v1'], 'none') === null)
 
 type ListedTool = { name: string; description?: string; inputSchema?: unknown; outputSchema?: unknown; annotations?: Record<string, unknown>; _meta?: Record<string, unknown> }
 const listVia = async (opts: Record<string, unknown>): Promise<ListedTool[]> => {

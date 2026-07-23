@@ -51,9 +51,10 @@ export const SELLER_SURFACE_TOOLS: ReadonlySet<string> = new Set([
 
 const VALID_SURFACES = new Set<string>(['shopping_v1', 'buyer', 'seller', 'full'])
 
-/** 边缘选面:显式参数 > api_key bearer(full)> 默认 buyer。非法参数按默认处理(不 400,防连接器坏配置死链)。 */
-export function resolveSurface(explicit: unknown, bearerKind: 'api_key' | 'grant' | 'none'): ToolSurface {
+/** 边缘选面:显式参数 > api_key bearer(full)> 默认 buyer。已提供但非法的参数 fail-closed。 */
+export function resolveSurface(explicit: unknown, bearerKind: 'api_key' | 'grant' | 'none'): ToolSurface | null {
   if (typeof explicit === 'string' && VALID_SURFACES.has(explicit)) return explicit as ToolSurface
+  if (explicit !== undefined) return null
   return bearerKind === 'api_key' ? 'full' : 'buyer'
 }
 
