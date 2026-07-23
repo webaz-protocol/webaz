@@ -12,14 +12,14 @@
  * NEVER create an order. Execution refuses it until the buyer's confirm-stage choice replaces it
  * with a real rail. This module is pure constants/predicates — no DB, no side effects.
  */
-export type PaymentRail = 'escrow' | 'direct_p2p' | 'deferred'
+export type PaymentRail = 'escrow' | 'direct_p2p' | 'usdc_escrow' | 'deferred'
 
 /** Sentinel: the buyer has not chosen a payment rail yet (Design A confirm-stage choice pending). */
 export const RAIL_DEFERRED = 'deferred'
 
-/** The two rails that can actually create/execute an order. `deferred` is NOT one of them. */
-export function isRealRail(r: unknown): r is 'escrow' | 'direct_p2p' {
-  return r === 'escrow' || r === 'direct_p2p'
+/** The rails that can actually create/execute an order. `deferred` is NOT one of them. */
+export function isRealRail(r: unknown): r is 'escrow' | 'direct_p2p' | 'usdc_escrow' {
+  return r === 'escrow' || r === 'direct_p2p' || r === 'usdc_escrow'
 }
 
 /** True for the not-yet-chosen sentinel. */

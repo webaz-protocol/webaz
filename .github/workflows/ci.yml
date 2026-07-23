@@ -889,6 +889,7 @@ jobs:
       - run: npm run test:waz-sunset-script
       - run: npm run test:waz-sunset-ui
       - run: npm run test:usdc-escrow-schema
+      - run: npm run test:usdc-escrow-rail
       - run: npm run test:choose-payment
       - run: npm run test:choose-payment-ui
       - run: npm run test:order-draft

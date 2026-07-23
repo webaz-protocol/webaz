@@ -25,10 +25,11 @@ import type Database from 'better-sqlite3'
 import { directPayProductAvailability } from './direct-pay-availability-check.js'
 import { resolveDirectReceive } from './direct-receive-resolve.js'
 import { listSellerAccounts } from './direct-receive-accounts.js'
+import { usdcEscrowSellerAvailable } from './usdc-escrow-create.js'   // B3:USDC 合约担保轨可用谓词(菜单与建单同真值)
 
 export interface PaymentOption {
   option_id: string                       // stable per option: 'escrow' | 'direct:legacy' | 'direct:<account_id>'
-  rail: 'escrow' | 'direct_p2p'
+  rail: 'escrow' | 'direct_p2p' | 'usdc_escrow'
   method: string | null                   // seller-declared method label (PayNow / bank / USDC …); null for legacy/escrow
   recipient_label: string | null          // seller-declared display label; never the raw receiving instruction
   direct_receive_account_id: string | null
@@ -37,6 +38,7 @@ export interface PaymentOption {
 }
 
 const ESCROW_NOTE = '模拟托管测试轨 —— 批准后从你的钱包扣款入(模拟)托管;金额以 USDC 显示为别名,不代表真实 USDC 或法币结算'
+const USDC_ESCROW_NOTE = '链上担保:你的 USDC 存入 WebAZ 担保合约,确认收货(或超时无争议)才放款给卖家;争议由仲裁裁决退款/放款。平台不经手本金'
 const DIRECT_NOTE = '直付:你按卖家收款说明直接付卖家;WebAZ 不托管本金,实际付款方式/币种以确认页面为准'
 
 export interface PaymentOptionsArgs {
@@ -59,6 +61,10 @@ export function sellerSupportedPaymentOptions(db: Database.Database, args: Payme
   // Direct-pay options only when the product/seller gate passes (same predicate the create path uses).
   // ONLY concrete active accounts are offered (each hash-bindable via its account id). The null-account
   // legacy path is intentionally excluded — see the module header (Codex BLOCKER / MA5).
+  // USDC 合约担保(B3):渠道开 + 合约已配 + 卖家 active 收款地址 + KYB/制裁 → 可选。本金进链上合约。
+  if (usdcEscrowSellerAvailable(db, args.sellerId, args.getProtocolParam)) {
+    options.push({ option_id: 'usdc_escrow', rail: 'usdc_escrow', method: 'USDC (Base)', recipient_label: null, direct_receive_account_id: null, settlement_note: USDC_ESCROW_NOTE, recommended: false })
+  }
   const avail = directPayProductAvailability(db, args)
   if (avail.available) {
     const dflt = resolveDirectReceive(db, args.sellerId)   // the auto-pick used when the buyer makes no explicit choice
