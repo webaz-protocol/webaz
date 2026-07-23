@@ -177,6 +177,9 @@ export function buildBuyerOrderFull(db: Database.Database, humanId: string, orde
   return { ok: true, response: {
     order: { ...base, quantity: numOrNull(Number(o.quantity)), created_at: String(o.created_at ?? ''), product_title: prodTitle },
     ...(sinceRaw ? { incremental: { since: sinceRaw, timeline_new: timeline.length, note: 'timeline below contains ONLY entries newer than updated_since' } } : {}),
+    // completed 被重载:判责/无责拒单/退货默认退款处置也终于 completed。completed_via = completed 事件的
+    // from_status(confirmed=真实成交;fault_*/declined_nofault/return_pending/disputed=处置关单),agent 不必自己扒 timeline 推断。
+    ...(status === 'completed' ? { completed_via: timelineAll.find(t2 => t2.to === 'completed')?.from ?? null } : {}),
     timeline,
     order_time_terms: orderTimeTerms(o.trade_terms_snapshot),
     logistics: {

@@ -16,6 +16,7 @@ const DP = P('app-direct-pay.js')      // the Direct Pay UI domain module (all l
 // comment-stripped view (for NEGATIVE assertions — the honest disclaimer comments name the very things we forbid)
 const DPCODE = DP.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
 const APP = P('app.js')                // hooks live here
+const TLJS = P('app-order-timeline.js')   // 2026-07:订单时间线渲染域(stepper+物流追踪)从 app.js 抽出
 const FEEOPS = P('app-direct-pay-fee-ops.js')   // PR-B: Direct Pay 商户运营 hub + 平台服务费(预充值)账户
 const I18N = P('i18n.js')
 const HTML = P('index.html')
@@ -458,7 +459,7 @@ ok("25d. amount uses '应付' (bilingual EN present)", /t\('应付'\)/.test(PAY)
 ok('25e. D2 (pre_confirm) ack dialog injects the confirmed amount', /pre_confirm' && _pay/.test(DP))
 ok('25f. after acks, create flow opens the fused payment modal (not a passive 我知道了 confirm)', /window\.dpShowPaymentModal\(o\.order\)/.test(DP))
 ok('25g. order-detail box delegates to the visibility renderer (dpRenderPaymentInfo)', /window\.dpRenderPaymentInfo\(box,/.test(DP))
-ok('25h. timeline maps direct_pay_window → 待支付 step (not idx 0)', /direct_pay_window: 1/.test(APP) && /direct_expired_unconfirmed: 1/.test(APP))
+ok('25h. timeline maps direct_pay_window → 待支付 step (not idx 0)', /direct_pay_window: 1/.test(TLJS) && /direct_expired_unconfirmed: 1/.test(TLJS))
 
 // ── 26. payment-info visibility lifecycle (PR-2): pending=5-min window+lightweight re-reveal; other states=hidden+Passkey二次验证+risk. ──
 const RVL = P('app-direct-pay-reveal.js')
@@ -568,7 +569,7 @@ for (const k of ['付款参考', '付款时请在附言/备注填入(便于卖�
   ok('30a. timeline notes escaped (memo stored-XSS closed)', /💬 \$\{escHtml\(h\.notes\)\}/.test(tl) && !/💬 \$\{h\.notes\}/.test(tl))
   ok('30b. timeline evidence description escaped', /📎 \$\{escHtml\(e\.description\)\}/.test(tl) && !/📎 \$\{e\.description\}/.test(tl))
   ok('30c. timeline actor name/role escaped', /\$\{escHtml\(h\.actor_name\)\}/.test(tl) && !/>\$\{h\.actor_name\}/.test(tl))
-  ok('30d. tracking-timeline actor name/notes already escaped', /actor\?\.name \? ' · ' \+ escHtml\(actor\.name\)/.test(APP) && /💬 \$\{escHtml\(actor\.notes\)\}/.test(APP))
+  ok('30d. tracking-timeline actor name/notes already escaped', /actor\?\.name \? ' · ' \+ escHtml\(actor\.name\)/.test(TLJS) && /💬 \$\{escHtml\(actor\.notes\)\}/.test(TLJS))
   // order-detail body: seller-controlled product title + buyer-controlled shipping address must be escaped (self-audit findings)
   // 锚在 商品 label 收尾 + value 开头(对 label/value 加 style 属性稳健;product 详情行唯一)。窗口 1800:实测
   //   shipping_address 断言在 ~856 处,900 只剩 44 字余量——中间行随手加个 badge 就把 30f 挤出窗产生假红。
@@ -591,7 +592,7 @@ for (const k of ['付款参考', '付款时请在附言/备注填入(便于卖�
   ok('31c. direct_p2p terminal labels use reputation semantics (胜诉/责任)', /买家胜诉\(信誉裁决\)/.test(LBL) && /卖家胜诉\(信誉裁决\)/.test(LBL))
   ok('31d. direct_p2p arb note + ruling options are reputation-only (胜诉/责任, no refund/release)', /非托管\(直付\)争议:仅信誉裁决,不发生退款/.test(LBL) && /判买家胜诉\(信誉裁决\)/.test(LBL) && /判卖家胜诉\(信誉裁决\)/.test(LBL))
   ok('31e. statusBadge rail-aware via dpTerminalBadge; orderStatusBadges passes order.payment_rail', /function statusBadge\(status, rail\)/.test(APP) && /rail === 'direct_p2p' && \(+window\.dpTerminalBadge/.test(APP) && /statusBadge\(order\.status, order\.payment_rail\)/.test(APP))
-  ok('31f. timeline banner rail-aware via dpTerminalLabel', /order\.payment_rail === 'direct_p2p' && \(+window\.dpTerminalLabel/.test(APP))
+  ok('31f. timeline banner rail-aware via dpTerminalLabel', /order\.payment_rail === 'direct_p2p' && \(+window\.dpTerminalLabel/.test(TLJS))
   ok('31g. arbitrator panel uses dpArbFeeNote + dpArbRulingOptions (rail + can_dismiss_to_negotiation)', /window\.dpArbFeeNote\(dispute\.payment_rail\)/.test(APP) && /window\.dpArbRulingOptions\(dispute\.payment_rail, dispute\.can_dismiss_to_negotiation\)/.test(APP))
   const ENG = readFileSync('src/layer3-trust/L3-1-dispute-engine/dispute-engine.ts', 'utf8')
   ok('31h. dispute DTO exposes payment_rail (getDisputeDetails + getOrderDispute)', (ENG.match(/o\.payment_rail as payment_rail/g) || []).length >= 2)
@@ -653,7 +654,8 @@ for (const k of ['付款参考', '付款时请在附言/备注填入(便于卖�
   ok('36-dto. /api/orders/:id exposes can_withdraw_payment_query_dispute from latest disputed from_status', /can_withdraw_payment_query_dispute\s*=[\s\S]{0,160}disputedFroms\[disputedFroms\.length - 1\] === 'payment_query'/.test(readFileSync('src/pwa/routes/orders-read.ts', 'utf8')))
   ok('36e. dpNegotiationBadge + dpNegotiationLabel for payment_query', /dpNegotiationBadge = \(status\) => status === 'payment_query'/.test(NEG) && /dpNegotiationLabel = \(status\) => status === 'payment_query'/.test(NEG))
   ok('36f. dpNegotiationCard shown only for payment_query', /dpNegotiationCard = \(order\) => \(!order \|\| order\.status !== 'payment_query'\)/.test(NEG))
-  ok('36g. statusBadge + timeline banner wired to negotiation label; ANOMALY includes payment_query', /window\.dpNegotiationBadge && window\.dpNegotiationBadge\(status\)/.test(APP) && /window\.dpNegotiationLabel && window\.dpNegotiationLabel\(order\.status\)/.test(APP) && /'disputed', 'payment_query'/.test(APP))
+  // banner 现以 bannerStatus(=处置来源或当前状态)喂标签函数(2026-07 处置型 completed 修复);badge 仍在 app.js
+  ok('36g. statusBadge + timeline banner wired to negotiation label; ANOMALY includes payment_query', /window\.dpNegotiationBadge && window\.dpNegotiationBadge\(status\)/.test(APP) && /window\.dpNegotiationLabel && window\.dpNegotiationLabel\(bannerStatus\)/.test(TLJS) && /'disputed', 'payment_query'/.test(TLJS))
   ok('36h. order detail renders the negotiation card', /window\.dpNegotiationCard \? window\.dpNegotiationCard\(order\)/.test(APP))
   for (const k of ['货款协商中', '确认已收到货款(恢复订单)', '撤回仲裁 · 回到协商']) ok(`36-i18n EN present: ${k.slice(0, 8)}`, new RegExp(`'${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'\\s*:`).test(I18N))
 }

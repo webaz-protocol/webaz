@@ -30,7 +30,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 // Lower a ceiling when you trim the file; never raise one.
 const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/server.ts': 8394,
-  'src/pwa/public/app.js': 25710,
+  'src/pwa/public/app.js': 25549,   // 2026-07 订单时间线域抽出 app-order-timeline.js(25710→);+2 行 isGenuineCompleted 售后门
   'src/pwa/public/app-api-async.js': 32,   // P0-A A4 读/写分离超时助手(从 app.js 拆出)
   'src/pwa/public/app-cart-actions.js': 121,
   'src/pwa/public/app-address-book-checkout.js': 54,
@@ -90,6 +90,8 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-direct-pay-reconcile.js':       19,
   'src/pwa/public/app-notif-templates.js':            22,
   'src/pwa/public/app-notif-templates-orders.js':     43,
+  'src/pwa/public/app-notif-templates-lifecycle.js':  38,   // 2026-07 订单流遍历审计:执法/裁定/undeliverable/协商取消模板(新文件基线)
+  'src/pwa/public/app-order-timeline.js':            208,   // 2026-07 时间线渲染域(stepper+物流追踪,从 app.js 抽出;同 PR 内定稿基线)
   'src/pwa/public/app-order-errors.js':               50,
   'src/pwa/public/app-arbitrator-entry.js':           10,
   'src/pwa/public/app-arbitrator-admin.js':           87,

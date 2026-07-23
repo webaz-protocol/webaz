@@ -13,12 +13,14 @@ import { initDatabase } from './layer0-foundation/L0-1-database/schema.js'
 import { initSystemUser, checkTimeouts } from './layer0-foundation/L0-2-state-machine/engine.js'
 import { initDisputeSchema, checkDisputeTimeouts } from './layer3-trust/L3-1-dispute-engine/dispute-engine.js'
 import { initReputationSchema, recordViolationReputation, recordDisputeReputation } from './layer4-economics/L4-3-reputation/reputation-engine.js'
+import { initNotificationSchema, notifyEnforcementTransitions } from './layer2-business/L2-6-notifications/notification-engine.js'
 
 const INTERVAL_MS = 5 * 60 * 1000   // 5 分钟
 const db = initDatabase()
 initSystemUser(db)
 initDisputeSchema(db)
 initReputationSchema(db)
+initNotificationSchema(db)
 
 function timestamp() {
   return new Date().toLocaleString('zh-CN', { hour12: false })
@@ -56,6 +58,8 @@ async function enforce() {
         const faultMatch = d.action.match(/→ (fault_\w+)/)
         if (faultMatch) recordViolationReputation(db, d.orderId, faultMatch[1])
       })
+      // 与 PWA runEnforcement 同口径:按本轮实际转移对通知当事方(无规则的转移静默跳过)
+      notifyEnforcementTransitions(db, orderResult.details)
     }
 
     if (disputeResult.processed > 0) {

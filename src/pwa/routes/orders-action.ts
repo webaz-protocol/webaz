@@ -25,7 +25,7 @@ import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import type { OrderStatus } from '../../layer0-foundation/L0-2-state-machine/transitions.js'
 import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js'
-import { createNotification, notifyDeclineContestCase } from '../../layer2-business/L2-6-notifications/notification-engine.js'
+import { createNotification, notifyDeclineContestCase, notifyEnforcementTransitions } from '../../layer2-business/L2-6-notifications/notification-engine.js'
 import { executeSellerOrderAction } from '../order-action-exec.js'  // RFC-021 PR3 共享执行器(api_key 路径 strictTracking=false)
 import { settleDeclinedNoFault, settleUndeliverableEscrow } from '../../layer0-foundation/L0-2-state-machine/engine.js'   // PR-B3b:退货确认成本扣除结算(直连域 helper,与 releaseFeeStake 等同模式)
 import { toUnits } from '../../money.js'   // PR-B3b:卖家申报退程运费 → 整数 base-units
@@ -755,12 +755,15 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     const r = checkTimeouts(db, { settleConfirmed: settleOrder, recordUndeliverableFault: (oid: string) => recordViolationReputation(db, oid, 'fault_buyer') })   // PR-B3b:与 runEnforcement 同全套回调
     const after = (await dbOne<{ status: string }>('SELECT status FROM orders WHERE id = ?', [req.params.id]))!
     const touched = r.details.find((d: { orderId: string; action: string }) => d.orderId === req.params.id) || null
-    if (touched) {
-      const faultMatch = touched.action.match(/→ (fault_\w+)/)
+    // checkTimeouts 是全表扫描:本次触发可能顺带判责【其他】逾期订单。信誉/通知必须对 details 全量发射,
+    // 否则那些订单已离开可扫状态,下轮 cron 不再命中 → 信誉记录永久丢失、当事方永远不知情。
+    for (const d of r.details) {
+      const faultMatch = d.action.match(/→ (fault_\w+)/)
       if (faultMatch) {
-        try { recordViolationReputation(db, req.params.id, faultMatch[1]) } catch {}
+        try { recordViolationReputation(db, d.orderId, faultMatch[1]) } catch {}
       }
     }
+    try { notifyEnforcementTransitions(db, r.details) } catch {}
     res.json({
       before_status: beforeStatus,
       after_status: after.status,

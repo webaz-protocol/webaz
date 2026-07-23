@@ -18,7 +18,7 @@ import { generateId } from '../../layer0-foundation/L0-1-database/schema.js'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 seam(纯读)
 import { transition } from '../../layer0-foundation/L0-2-state-machine/engine.js'
 import { resolveDeclineContestDispute } from './decline-contest-resolve.js'   // PR3 唯一裁决器(超时硬兜底入口)
-import { notifyDeclineContestEscalated } from '../../layer2-business/L2-6-notifications/notification-engine.js'   // 四段式升级通知
+import { notifyDeclineContestEscalated, notifyTransition } from '../../layer2-business/L2-6-notifications/notification-engine.js'   // 四段式升级通知 + 裁定终态通知
 // RFC-014 PR5 — 争议资金处置走整数 base-units + 绝对值落库 + allocate 精确拆分。
 import { toUnits, toDecimal, mulRate, allocate } from '../../money.js'
 import { applyWalletDelta, debitStakeThenBalance, walletUnits } from '../../ledger.js'
@@ -417,6 +417,16 @@ export function arbitrateDispute(
     JSON.stringify(nonCustodial ? [] : (liabilityParties ?? [])),
     disputeId
   )
+
+  // 裁定终态通知:统一发射点(仲裁员手动裁定 + checkDisputeTimeouts 自动裁定都经本函数)。
+  // 读裁定后的真实订单终态(refunded_full/resolved_for_seller/refunded_partial,两轨同名终态),
+  // 走 RULES 的 rail-fork 文案;失败只警告(裁定已落库,通知尽力送达)。
+  try {
+    const post = db.prepare('SELECT status FROM orders WHERE id = ?').get(dispute.order_id) as { status: string } | undefined
+    if (post && ['refunded_full', 'resolved_for_seller', 'refunded_partial', 'dispute_dismissed'].includes(post.status)) {
+      notifyTransition(db, dispute.order_id, 'disputed', post.status)
+    }
+  } catch (e) { console.warn('[arbitrate notify]', (e as Error).message) }
 
   return {
     success: true,

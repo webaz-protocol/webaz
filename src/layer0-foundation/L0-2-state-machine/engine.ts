@@ -182,12 +182,14 @@ export function checkTimeouts(db: Database.Database, opts?: {
   recordUndeliverableFault?: (orderId: string) => void
 }): {
   processed: number
-  details: Array<{ orderId: string; action: string }>
+  // transitions = 本轮对该订单实际执行的转移对(按序)。供调用方(runEnforcement/cron)喂给
+  // notifyEnforcementTransitions 统一发通知 —— engine(L0)不 import 通知层,保持分层。
+  details: Array<{ orderId: string; action: string; transitions?: Array<[string, string]> }>
 } {
   const now = new Date().toISOString()
   const settleConfirmed = opts?.settleConfirmed
   const recordUndeliverableFault = opts?.recordUndeliverableFault
-  const details: Array<{ orderId: string; action: string }> = []
+  const details: Array<{ orderId: string; action: string; transitions?: Array<[string, string]> }> = []
 
   // 找出所有进行中的订单
   // M7.4：跳过 claim 验证进行中的订单（has_pending_claim=1）— auto-confirm / 判责暂缓
@@ -221,7 +223,7 @@ export function checkTimeouts(db: Database.Database, opts?: {
           if (!r2.success) throw new Error(r2.error || 'auto-complete transition failed')
           settleConfirmed(order.id)   // = settleOrder:两轨各自正确结算(escrow 释放+佣金 / direct_p2p accrueFee)
         })()
-        details.push({ orderId: order.id, action: `${order.status} → completed（逾期自动确认结算）` })
+        details.push({ orderId: order.id, action: `${order.status} → completed（逾期自动确认结算）`, transitions: [['delivered', 'confirmed'], ['confirmed', 'completed']] })
       } catch (e) {
         console.error(`[auto-confirm settle] order=${order.id}`, e)
       }
@@ -246,7 +248,7 @@ export function checkTimeouts(db: Database.Database, opts?: {
             if (!r2.success) throw new Error(r2.error || 'completion transition failed')
             recordUndeliverableFault(order.id)   // 回调在【事务内】(审计 F:commit 后回调抛错=声誉永久丢失,订单已进终态不再复扫;tx 内抛错→整体回滚→下轮重试)
           })()
-          details.push({ orderId: order.id, action: `delivery_failed ⇒ 买家责任落定并收口(completed,direct_p2p 仅声誉)` })
+          details.push({ orderId: order.id, action: `delivery_failed ⇒ 买家责任落定并收口(completed,direct_p2p 仅声誉)`, transitions: [['delivery_failed', 'fault_buyer'], ['fault_buyer', 'completed']] })
         } else {
           const windowH = protocolParamNumber(db, 'goods_return_confirm_window_hours', 120)
           const grIso = new Date(Date.now() + Math.max(1, windowH) * 3600 * 1000).toISOString()
@@ -256,7 +258,7 @@ export function checkTimeouts(db: Database.Database, opts?: {
             db.prepare('UPDATE orders SET goods_return_deadline = ? WHERE id = ? AND goods_return_deadline IS NULL').run(grIso, order.id)   // I3:IS NULL 不重写
             recordUndeliverableFault(order.id)   // 同上:声誉写与状态转移同一原子边界
           })()
-          details.push({ orderId: order.id, action: `delivery_failed ⇒ 买家责任落定,escrow 持有等货物返还(return_pending)` })
+          details.push({ orderId: order.id, action: `delivery_failed ⇒ 买家责任落定,escrow 持有等货物返还(return_pending)`, transitions: [['delivery_failed', 'return_pending']] })
         }
       } catch (e) {
         console.error(`[undeliverable finalize] order=${order.id}`, e)
@@ -278,7 +280,7 @@ export function checkTimeouts(db: Database.Database, opts?: {
           const r = transition(db, order.id, 'completed', systemUser.id, [], '卖家逾期未确认收到退货 → 默认全款退买家')
           if (!r.success) throw new Error(r.error || 'return_pending completion failed')
         })()
-        details.push({ orderId: order.id, action: `return_pending ⇒ 卖家逾期未确认,默认全款退买家(completed)` })
+        details.push({ orderId: order.id, action: `return_pending ⇒ 卖家逾期未确认,默认全款退买家(completed)`, transitions: [['return_pending', 'completed']] })
       } catch (e) {
         console.error(`[return_pending default settle] order=${order.id}`, e)
       }
@@ -296,10 +298,12 @@ export function checkTimeouts(db: Database.Database, opts?: {
     )
 
     if (result.success) {
-      details.push({
+      const entry: { orderId: string; action: string; transitions: Array<[string, string]> } = {
         orderId: order.id,
-        action: `${order.status} → ${autoNextState}（超时自动判责）`
-      })
+        action: `${order.status} → ${autoNextState}（超时自动判责）`,
+        transitions: [[order.status, autoNextState]],
+      }
+      details.push(entry)
 
       // 如果判责状态可以自动完成，继续执行 — 资金处置 + 状态转移在一个事务内
       const completionKey = `${autoNextState}→completed`
@@ -307,6 +311,7 @@ export function checkTimeouts(db: Database.Database, opts?: {
         try {
           settleFault(db, order.id, autoNextState as OrderStatus)
           transition(db, order.id, 'completed', systemUser.id, [], '系统自动执行处置')
+          entry.transitions.push([autoNextState, 'completed'])
         } catch (e) {
           console.error(`[settleFault] order=${order.id} state=${autoNextState}`, e)
         }
@@ -330,7 +335,7 @@ export function checkTimeouts(db: Database.Database, opts?: {
       settleFault(db, o.id, 'fault_seller')
       transition(db, o.id, 'completed', sys.id, [], 'RFC-007：客观拒单举证窗口逾期未仲裁 → 终结为违约')
       db.prepare('UPDATE orders SET decline_objective_pending = 0 WHERE id = ?').run(o.id)
-      details.push({ orderId: o.id, action: '临时判责 → fault_seller（举证逾期终结）' })
+      details.push({ orderId: o.id, action: '临时判责 → fault_seller（举证逾期终结）', transitions: [['fault_seller', 'completed']] })
     } catch (e) {
       console.error(`[decline finalize] order=${o.id}`, e)
     }

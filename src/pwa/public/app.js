@@ -840,7 +840,11 @@ async function render(page, params) {
 // M7.4：order 含 has_pending_claim=1 时附加一枚"验证中"chip
 function orderStatusBadges(order) {
   if (!order) return ''
-  const main = statusBadge(order.status, order.payment_rail)
+  // completed 被重载:判责/无责拒单/退货默认退款等处置也终于 completed(settled_fault_at 非空)。
+  // 这类单不是"已完成"的成功交易 → 中性「已关单」,具体原因由详情页处置 banner 说明。
+  const main = (order.status === 'completed' && order.settled_fault_at)
+    ? `<span class="badge badge-gray">${t('已关单')}</span>`
+    : statusBadge(order.status, order.payment_rail)
   if (Number(order.has_pending_claim) === 1) {
     return `${main} <span style="display:inline-block;font-size:10px;background:#eef2ff;color:#3730a3;padding:2px 8px;border-radius:99px;font-weight:600;margin-left:4px">🔎 ${t('验证中')}</span>`
   }
@@ -12077,173 +12081,6 @@ window.copyTracking = (tn, btn) => {
   } catch { alert(tn) }
 }
 
-function orderStageTimeline(order, history) {
-  const STAGES = [
-    { key: 'created',    label: t('下单'),  icon: '📝' },
-    { key: 'paid',       label: t('付款'),  icon: '💳' },
-    { key: 'accepted',   label: t('接单'),  icon: '✋' },
-    { key: 'shipped',    label: t('发货'),  icon: '📦' },
-    { key: 'delivered',  label: t('送达'),  icon: '🚚' },
-    { key: 'completed',  label: t('完成'),  icon: '✓' },
-  ]
-  // 异常状态：单独 banner，不画时间线（防误导）
-  const ANOMALY = ['disputed', 'payment_query', 'cancelled', 'fault_seller', 'fault_buyer', 'fault_logistics', 'refunded_partial', 'refunded_full', 'dispute_dismissed', 'expired']
-  if (ANOMALY.includes(order.status)) {
-    const colorMap = {
-      disputed: '#f59e0b', payment_query: '#f59e0b', cancelled: '#6b7280',
-      fault_seller: '#dc2626', fault_buyer: '#dc2626', fault_logistics: '#dc2626',
-      refunded_full: '#16a34a', refunded_partial: '#3b82f6', dispute_dismissed: '#6b7280', expired: '#9ca3af',
-    }
-    const labelMap = {
-      disputed: t('订单进入争议'), cancelled: t('订单已取消'),
-      fault_seller: t('卖家违约'), fault_buyer: t('买家违约'), fault_logistics: t('物流违约'),
-      refunded_full: t('已全额退款'), refunded_partial: t('部分退款'),
-      dispute_dismissed: t('争议已驳回'), expired: t('订单已超时'),
-    }
-    const c = colorMap[order.status] || '#6b7280'
-    return `<div style="background:#fff;border:0.5px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:10px">
-      <div style="width:8px;height:8px;border-radius:50%;background:${c};flex-shrink:0"></div>
-      <div style="flex:1">
-        <div style="font-size:14px;font-weight:600;color:#1f2937">${(order.payment_rail === 'direct_p2p' && ((window.dpTerminalLabel && window.dpTerminalLabel(order.status)) || (window.dpNegotiationLabel && window.dpNegotiationLabel(order.status)) || (window.dpAcceptLabel && window.dpAcceptLabel(order.status)))) || labelMap[order.status] || order.status}</div>
-        <div style="font-size:11px;color:#8e8e93;margin-top:2px">${t('查看下方时间线了解流转详情')}</div>
-      </div>
-    </div>`
-  }
-  // 正常流：用 history 找每个阶段的完成时间
-  // shipped 涵盖 shipped/picked_up/in_transit；delivered 是 delivered；completed = confirmed/completed
-  const histByStatus = {}
-  for (const h of (history || [])) {
-    if (!histByStatus[h.to_status]) histByStatus[h.to_status] = h.created_at
-  }
-  const completedAt = (stageKey) => {
-    if (stageKey === 'created')   return order.created_at
-    if (stageKey === 'shipped')   return histByStatus['shipped'] || histByStatus['picked_up'] || histByStatus['in_transit']
-    if (stageKey === 'completed') return histByStatus['completed'] || histByStatus['confirmed']
-    return histByStatus[stageKey]
-  }
-  // "当前" = 正在等待的下一阶段（不是已完成的最后阶段）
-  // created → 等付款；paid → 等接单；accepted → 等发货；shipped/in_transit → 等送达；
-  // delivered → 等买家确认；confirmed/completed → 全部完成
-  const statusToIdx = { created: 1, direct_pay_window: 1, direct_expired_unconfirmed: 1, paid: 2, accepted: 3, shipped: 4, picked_up: 4, in_transit: 4, delivered: 5, confirmed: 6, completed: 6 }
-  let currentIdx = statusToIdx[order.status] ?? 0
-
-  const dot = (s, i) => {
-    const done = i < currentIdx
-    const active = i === currentIdx
-    const future = i > currentIdx
-    const bg = done ? '#16a34a' : active ? '#007aff' : '#e5e7eb'
-    const fg = done || active ? '#fff' : '#9ca3af'
-    const ts = completedAt(s.key)
-    return `<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:0;position:relative">
-      <div style="width:28px;height:28px;border-radius:50%;background:${bg};color:${fg};display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;${active ? 'box-shadow:0 0 0 4px rgba(0,122,255,0.2);' : ''}z-index:1">${done ? '✓' : s.icon}</div>
-      <div style="font-size:11px;color:${done || active ? '#1f2937' : '#9ca3af'};font-weight:${active ? '600' : '500'};margin-top:4px;text-align:center;white-space:nowrap">${s.label}</div>
-      ${ts ? `<div style="font-size:9px;color:#9ca3af;margin-top:1px">${new Date(ts).toLocaleString(window._lang === 'en' ? 'en-US' : 'zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>` : ''}
-    </div>`
-  }
-  const connector = (i) => {
-    const c = i < currentIdx ? '#16a34a' : '#e5e7eb'
-    return `<div style="flex:0 0 auto;height:2px;background:${c};align-self:flex-start;margin-top:14px;min-width:8px;flex:1;max-width:40px"></div>`
-  }
-  const cells = []
-  STAGES.forEach((s, i) => {
-    cells.push(dot(s, i))
-    if (i < STAGES.length - 1) cells.push(connector(i))
-  })
-  return `<div style="background:#fff;border:0.5px solid #e5e7eb;border-radius:12px;padding:14px 12px;margin-bottom:10px;overflow-x:auto">
-    <div style="display:flex;align-items:flex-start;min-width:fit-content">${cells.join('')}</div>
-  </div>`
-}
-
-// 2026-05-22 物流追踪时间轴 — 竖直 timeline，含 history + 未来截止提示
-// 与顶部紧凑 stepper 互补：stepper 给总览，timeline 给细节
-function orderTrackingTimeline(order, history, trackingInfo, STATUS_ZH) {
-  // 异常订单不显示物流时间线（争议/取消等）— 由顶部 stepper 异常 banner 兜底
-  const ANOMALY = ['disputed', 'payment_query', 'cancelled', 'fault_seller', 'fault_buyer', 'fault_logistics', 'refunded_partial', 'refunded_full', 'dispute_dismissed', 'expired']
-  if (ANOMALY.includes(order.status)) return ''
-
-  // 已完成节点 lookup
-  const histByStatus = {}
-  const actorByStatus = {}
-  for (const h of history) {
-    if (!histByStatus[h.to_status]) {
-      histByStatus[h.to_status] = h.created_at
-      actorByStatus[h.to_status] = { name: h.actor_name, role: h.actor_role, notes: h.notes, evidence: h.evidence_items || [] }
-    }
-  }
-  // 节点定义（buyer 视角友好）
-  const NODES = [
-    { key: 'paid',       icon: '💳', label: t('已付款'),     deadline: null },
-    { key: 'accepted',   icon: '✋', label: t('卖家接单'),   deadline: order.accept_deadline },
-    { key: 'shipped',    icon: '📦', label: t('卖家发货'),   deadline: order.ship_deadline },
-    { key: 'picked_up',  icon: '🚛', label: t('物流揽收'),   deadline: order.pickup_deadline },
-    { key: 'in_transit', icon: '🛣',  label: t('运输中'),     deadline: null },   // 中间态，无独立 deadline
-    { key: 'delivered',  icon: '📬', label: t('已送达'),     deadline: order.delivery_deadline },
-    { key: 'confirmed',  icon: '✓',  label: t('买家确认'),   deadline: order.confirm_deadline },
-  ]
-  const statusToIdx = { created: -1, paid: 0, accepted: 1, shipped: 2, picked_up: 3, in_transit: 4, delivered: 5, confirmed: 6, completed: 6 }
-  const currentIdx = statusToIdx[order.status] ?? -1
-  const now = Date.now()
-
-  const rows = NODES.map((n, i) => {
-    const done = histByStatus[n.key] || (n.key === 'confirmed' && (histByStatus.completed || histByStatus.confirmed))
-    const isCurrent = i === currentIdx + 1 && !done  // 下一个待办
-    const isOverdue = !done && n.deadline && new Date(n.deadline).getTime() < now
-
-    // dot 颜色
-    let dotBg, dotFg, dotInner
-    if (done) {
-      dotBg = '#16a34a'; dotFg = '#fff'; dotInner = '✓'
-    } else if (isOverdue) {
-      dotBg = '#dc2626'; dotFg = '#fff'; dotInner = '!'
-    } else if (isCurrent) {
-      dotBg = '#007aff'; dotFg = '#fff'; dotInner = n.icon
-    } else {
-      dotBg = '#e5e7eb'; dotFg = '#9ca3af'; dotInner = n.icon
-    }
-
-    // 右侧文案
-    let sub = ''
-    if (done) {
-      const actor = actorByStatus[n.key]
-      sub = `<div style="font-size:11px;color:#6b7280;margin-top:2px">${fmtTime(done)}${actor?.name ? ' · ' + escHtml(actor.name) : ''}</div>`
-      if (actor?.notes) sub += `<div style="font-size:11px;color:#6b7280;margin-top:2px">💬 ${escHtml(actor.notes)}</div>`
-      // 物流证据（快递单号等）
-      const ev = trackingInfo.find(ti => ti.status === n.key)
-      if (ev && ev.evidence && ev.evidence.length > 0) {
-        sub += (ev.evidence || []).map(e => {
-          const label = (n.key === 'picked_up' && !e.startsWith('快递单号：')) ? `快递单号：${e}` : e
-          return trackingEvidenceLine(label)
-        }).join('')
-      }
-    } else if (isOverdue) {
-      sub = `<div style="font-size:11px;color:#dc2626;font-weight:600;margin-top:2px">⚠ ${t('已超时')} · ${fmtTime(n.deadline)}</div>`
-    } else if (isCurrent && n.deadline) {
-      sub = `<div style="font-size:11px;color:#007aff;margin-top:2px">⏳ ${fmtCountdown(n.deadline)}</div>`
-    } else if (isCurrent) {
-      sub = `<div style="font-size:11px;color:#007aff;margin-top:2px">⏳ ${t('进行中')}</div>`
-    } else if (n.deadline) {
-      sub = `<div style="font-size:11px;color:#9ca3af;margin-top:2px">${t('预计')} ${fmtTime(n.deadline)}</div>`
-    }
-
-    // 连接线（除最后一个节点都有）
-    const lineColor = done ? '#16a34a' : '#e5e7eb'
-    const connector = i < NODES.length - 1
-      ? `<div style="position:absolute;left:13px;top:28px;width:2px;height:calc(100% - 4px);background:${lineColor}"></div>`
-      : ''
-
-    return `<div style="position:relative;padding-left:38px;padding-bottom:14px">
-      ${connector}
-      <div style="position:absolute;left:0;top:0;width:28px;height:28px;border-radius:50%;background:${dotBg};color:${dotFg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;${isCurrent ? 'box-shadow:0 0 0 4px rgba(0,122,255,0.2)' : ''}">${dotInner}</div>
-      <div style="font-size:13px;color:${done ? '#1f2937' : isOverdue ? '#dc2626' : isCurrent ? '#1f2937' : '#9ca3af'};font-weight:${isCurrent || done ? '600' : '500'}">${n.label}</div>
-      ${sub}
-    </div>`
-  }).join('')
-
-  return `<div class="card">
-    <div class="action-title">🚚 ${t('物流追踪')}</div>
-    <div style="padding:8px 4px 0">${rows}</div>
-  </div>`
-}
 
 // 倒计时格式化 — 把 deadline 转成"剩 N 天 N 小时"
 function fmtCountdown(deadlineIso) {
@@ -12334,6 +12171,8 @@ async function renderOrderDetail(app, orderId) {
     if (!fullDispute.error) dispute = fullDispute
   }
   const isBuyer    = order.buyer_id    === state.user?.id
+  // completed 被重载:处置关单(settled_fault_at 非空)不是真实成交 → 售后动作面(收据/分享/测评/退货/评价/笔记)一律不开
+  const isGenuineCompleted = order.status === 'completed' && !order.settled_fault_at
   const isSeller   = order.seller_id   === state.user?.id
   // 物流方：已分配的 or 尚未分配（可自行揽收）
   const isLogistic = state.user?.role === 'logistics' &&
@@ -12405,7 +12244,7 @@ async function renderOrderDetail(app, orderId) {
       <button class="btn btn-gray btn-sm" style="width:auto" onclick="history.back()">${t('← 返回')}</button>
       <div style="display:flex;gap:6px;align-items:center">
         <span id="chain-badge-${orderId}" style="font-size:10px;color:#9ca3af;background:#f3f4f6;padding:3px 8px;border-radius:99px;cursor:pointer" onclick="openChainViewer('${orderId}')">${t('验证中…')}</span>
-        ${order.status === 'completed' ? `<button class="btn btn-outline btn-sm" style="width:auto;font-size:11px;padding:4px 10px" onclick="printOrderReceipt('${order.id}')">🧾 ${t('打印收据')}</button>` : ''}
+        ${isGenuineCompleted ? `<button class="btn btn-outline btn-sm" style="width:auto;font-size:11px;padding:4px 10px" onclick="printOrderReceipt('${order.id}')">🧾 ${t('打印收据')}</button>` : ''}
       </div>
     </div>
 
@@ -12454,38 +12293,38 @@ async function renderOrderDetail(app, orderId) {
       ${sellerDeclineContestPanel(order, orderId, isSeller)}
     </div>
 
-    ${(isBuyer && order.status === 'completed' && product?.id) ? `
+    ${(isBuyer && isGenuineCompleted && product?.id) ? `
     <div class="card" style="background:linear-gradient(135deg,#ecfdf5,#dbeafe)">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">🔗 ${t('分享这件商品')}</div>
       <div style="font-size:12px;color:#6b7280;margin-bottom:10px">${t('写笔记 / 复制链接 / 生成口令 — 一站完成')}</div>
       <button class="btn btn-primary btn-sm" style="width:auto" onclick="navigate('#promoter?product=${product.id}&source=order')">${t('去分享中心 →')}</button>
     </div>` : ''}
 
-    ${(isBuyer && (order.status === 'completed' || order.status === 'confirmed') && product?.id) ? `
+    ${(isBuyer && (isGenuineCompleted || order.status === 'confirmed') && product?.id) ? `
     <div class="card" id="trial-card-${order.id}" style="background:linear-gradient(135deg,#faf5ff,#fdf2f8);border-color:#ddd6fe">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#6b21a8">🎁 ${t('测评免单')}</div>
       <div id="trial-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${(isBuyer && order.status === 'completed' && Number(order.effective_return_days ?? product?.return_days ?? 0) > 0) ? `
+    ${(isBuyer && isGenuineCompleted && Number(order.effective_return_days ?? product?.return_days ?? 0) > 0) ? `
     <div class="card" id="ret-card-${order.id}">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">↩ ${t('退货')}</div>
       <div id="ret-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${(isSeller && order.status === 'completed') ? `
+    ${(isSeller && isGenuineCompleted) ? `
     <div class="card" id="ret-card-${order.id}">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">↩ ${t('退货处理')}</div>
       <div id="ret-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${((isBuyer || isSeller) && order.status === 'completed') ? `
+    ${((isBuyer || isSeller) && isGenuineCompleted) ? `
     <div class="card" id="rate-card-${order.id}">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">⭐ ${t('交易评价')}</div>
       <div id="rate-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${(isBuyer && order.status === 'completed') ? `
+    ${(isBuyer && isGenuineCompleted) ? `
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div>
@@ -12504,15 +12343,15 @@ async function renderOrderDetail(app, orderId) {
 
   // Wave B-3: 退货 widget — 异步加载（仅 completed 订单可退）
   // 买家:有退货窗口可申请/查看;卖家:有退货申请时内联查看+处理(accept/reject/received),无申请则隐藏卡
-  if (((isBuyer && Number(order.effective_return_days ?? product?.return_days ?? 0) > 0) || isSeller) && order.status === 'completed') {   // RFC-026 冻结退货窗(服务端生效值优先)
+  if (((isBuyer && Number(order.effective_return_days ?? product?.return_days ?? 0) > 0) || isSeller) && isGenuineCompleted) {   // RFC-026 冻结退货窗(服务端生效值优先)
     try { await renderReturnWidgetForOrder(order, product) } catch (e) { console.error(e) }
   }
   // Wave C-3: 评价 widget
-  if ((isBuyer || isSeller) && order.status === 'completed') {
+  if ((isBuyer || isSeller) && isGenuineCompleted) {
     try { await renderRatingWidget(order, isBuyer, isSeller) } catch (e) { console.error(e) }
   }
   // 2026-05-24 #982：测评免单 widget — 买家可申请名额
-  if (isBuyer && (order.status === 'completed' || order.status === 'confirmed') && product?.id) {
+  if (isBuyer && (isGenuineCompleted || order.status === 'confirmed') && product?.id) {
     try { await renderTrialClaimWidget(order, product) } catch (e) { console.error(e) }
   }
 }
