@@ -1,6 +1,7 @@
+#!/usr/bin/env tsx
 /**
- * Public legal/support page contract.
- * These static documents are plugin-submission URLs and must remain complete, public, and contactable.
+ * Public legal/support page contract for plugin submission.
+ * Locks behavior-level disclosures and rejects previously overbroad promises.
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -9,30 +10,96 @@ const ROOT = resolve(import.meta.dirname, '..')
 let pass = 0
 let fail = 0
 const problems: string[] = []
-const ok = (name: string, condition: boolean) => {
+const ok = (name: string, condition: boolean): void => {
   if (condition) { pass++; return }
-  fail++; problems.push(name)
+  fail++
+  problems.push(name)
 }
-const read = (path: string) => readFileSync(resolve(ROOT, path), 'utf8')
+const read = (path: string): string => readFileSync(resolve(ROOT, path), 'utf8')
 const privacy = read('src/pwa/public/privacy/index.html')
 const terms = read('src/pwa/public/terms/index.html')
 const support = read('src/pwa/public/support/index.html')
+const privacyMd = read('docs/PRIVACY-POLICY.md')
+const termsMd = read('docs/TERMS-OF-SERVICE.md')
+const allPublic = [privacy, terms, support]
+const privacyMdFlat = privacyMd.replace(/\s+/g, ' ')
+const termsMdFlat = termsMd.replace(/\s+/g, ' ')
 
-ok('privacy is a complete published policy, not a teaser', /What we collect[\s\S]*Sharing &amp; third parties[\s\S]*Your rights[\s\S]*Cookies &amp; tracking[\s\S]*Children/.test(privacy))
-ok('privacy includes the real support contact', privacy.includes('contact@webaz.xyz'))
-ok('public pages identify the verified individual publisher consistently', [privacy, terms, support].every(page => page.includes('XU FENGNA')))
-ok('privacy does not claim legal review', !/counsel[- ]reviewed|approved by counsel|lawyer[- ]reviewed/i.test(privacy))
-ok('terms contains all 15 sections', Array.from({ length: 15 }, (_, i) => terms.includes(`§${i + 1}`)).every(Boolean))
-ok('terms retain the source material terms, not only headings', ['Business Source License 1.1', 'L1 70% / L2 20% / L3 10%', 'USD 100', 'Severability'].every(term => terms.includes(term)))
-ok('terms describe multi-tier order attribution without the contradictory no-downline claim', terms.includes('No payment for recruitment or headcount') && !terms.includes('No team or downline commission'))
-ok('terms honestly disclose Direct Pay and simulated escrow', /non-custodial[\s\S]*escrow rail remains simulated/i.test(terms))
-ok('terms link the published privacy page', terms.includes('href="/privacy"'))
-ok('support includes the public contact and safety warning', support.includes('mailto:contact@webaz.xyz') && /Do not send passwords/.test(support))
-ok('support links all public legal endpoints', support.includes('href="/privacy"') && support.includes('href="/terms"'))
-ok('all pages are mobile-aware and static', [privacy, terms, support].every(page => page.includes('width=device-width') && !/<script\b/i.test(page)))
+ok('all pages identify the verified individual publisher',
+  allPublic.every(page => page.includes('XU FENGNA')))
+ok('all pages publish the support contact',
+  allPublic.every(page => page.includes('contact@webaz.xyz')))
+ok('all pages are mobile-aware static documents',
+  allPublic.every(page => page.includes('width=device-width') && !/<script\b/i.test(page)))
+
+ok('privacy precisely describes the submitted one-tool anonymous read-only surface',
+  /shopping_v1[\s\S]*anonymous and read-only[\s\S]*only <code>webaz_search<\/code>/i.test(privacy)
+  && /does not connect accounts[\s\S]*create orders[\s\S]*checkout or payment/i.test(privacy))
+ok('privacy discloses automatic Anthropic feedback and configured comment moderation',
+  /Feedback submissions are sent to Anthropic[\s\S]*comments may be sent to Anthropic/i.test(privacy))
+ok('privacy discloses browser-selected AI provider storage and direct requests',
+  /keys, endpoints, and model settings are stored in browser storage/i.test(privacy))
+ok('privacy discloses public identifiers without an absolute no-PII promise',
+  /Public product results may include product IDs and public seller identifiers/i.test(privacy)
+  && /cannot guarantee removal of every identifier/i.test(privacy))
+ok('privacy retention and deletion wording matches bounded implementation',
+  /does not currently publish or implement one protocol-wide retention period/i.test(privacy)
+  && /implemented 14-day job/i.test(privacy)
+  && /does not erase every linked order, dispute, KYC, audit, security, or other record/i.test(privacy))
+ok('privacy describes bounded JSON export and orders-only CSV',
+  /JSON export containing bounded snapshots/i.test(privacy)
+  && /CSV export contains orders only/i.test(privacy))
+
+ok('terms contains all 15 sections',
+  Array.from({ length: 15 }, (_, index) => terms.includes(`§${index + 1}`)).every(Boolean))
+ok('terms limit the OpenAI app to anonymous read-only product discovery',
+  /anonymous, read-only discovery of reviewed physical goods/i.test(terms)
+  && /does not create orders, reserve inventory, connect accounts, process checkout, or transfer funds/i.test(terms))
+ok('terms state Direct Pay is conditional and cannot refund principal',
+  /Direct Pay is available only where deployment controls and seller eligibility gates pass/i.test(terms)
+  && /does not receive, route, or hold transaction principal/i.test(terms)
+  && /cannot transfer or refund principal/i.test(terms))
+ok('terms do not invent an order appeal',
+  /No general order-dispute appeal is currently implemented/i.test(terms))
+ok('terms describe the current reward clamp, self-L1, and referral facts',
+  /clamps every region to at most L1/i.test(terms)
+  && /eligible buyer may be their own L1/i.test(terms)
+  && /invitation and referral features exist/i.test(terms))
+ok('terms preserve the license, liability amount, and severability',
+  ['Business Source License 1.1', 'USD 100', 'Severability'].every(value => terms.includes(value)))
+ok('terms avoid undefined exclusive domicile venue',
+  /court or forum having jurisdiction/i.test(terms)
+  && !/operator'?s domicile|courts of the operator/i.test(terms))
+
+ok('support covers app-search diagnostics and warns against sensitive submissions',
+  /app-search problems[\s\S]*search terms, product link, approximate time, platform, and device/i.test(support)
+  && /Do not send passwords[\s\S]*KYC material[\s\S]*QR codes[\s\S]*payment proofs/i.test(support))
+ok('support states conditional Direct Pay and no principal refund power',
+  /only where Direct Pay is enabled/i.test(support)
+  && /cannot reverse or refund that principal/i.test(support))
+ok('support links both public legal pages',
+  support.includes('href="/privacy"') && support.includes('href="/terms"'))
+
+ok('canonical Markdown carries the same critical privacy and terms facts',
+  /shopping_v1[\s\S]*anonymous and read-only[\s\S]*webaz_search/i.test(privacyMd)
+  && privacyMdFlat.includes('Feedback submissions are sent to Anthropic')
+  && privacyMdFlat.includes('does not erase every linked order, dispute, KYC, audit, security, or other record')
+  && termsMdFlat.includes('Direct Pay is available only where deployment controls and seller eligibility gates pass')
+  && termsMdFlat.includes('No general order-dispute appeal is currently implemented'))
+
+const forbidden = [
+  /Direct Pay is (?:live|the current real-payment rail)/i,
+  /No PII in the public record/i,
+  /personal data is wiped except/i,
+  /after exhausting the protocol(?:'s)? appeal mechanism/i,
+  /operator'?s domicile/i,
+  /operator may unilaterally substitute/i,
+]
+ok('public and canonical documents reject prior overbroad claims',
+  forbidden.every(pattern => !pattern.test([privacy, terms, support, privacyMd, termsMd].join('\n'))))
 
 if (fail) {
-  console.error(`public-legal-pages FAILED (${pass} pass, ${fail} fail)\n${problems.map(p => `- ${p}`).join('\n')}`)
+  console.error(`public-legal-pages FAILED (${pass} pass, ${fail} fail)\n${problems.map(problem => `- ${problem}`).join('\n')}`)
   process.exit(1)
 }
 console.log(`public-legal-pages passed (${pass} assertions)`)
