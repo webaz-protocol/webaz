@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (823 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (826 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -761,6 +761,9 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/tokenomics/status` |  |  |  | src/pwa/routes/dashboards.ts:26 |
 | GET | `/api/trial-campaigns/:campaign_id/claims` | 🔐 |  | 卖家：查看某活动的 claims 详情 | src/pwa/routes/trial.ts:343 |
 | POST | `/api/trial-claims/:claim_id/link-note` | 🔐 |  | 买家关联笔记 | src/pwa/routes/trial.ts:287 |
+| GET | `/api/usdc-escrow/payout-addresses` |  |  |  | src/pwa/routes/usdc-payout-address.ts:34 |
+| POST | `/api/usdc-escrow/payout-addresses` |  |  |  | src/pwa/routes/usdc-payout-address.ts:39 |
+| POST | `/api/usdc-escrow/payout-addresses/:id/retire` |  |  |  | src/pwa/routes/usdc-payout-address.ts:46 |
 | GET | `/api/users/:id/auctions` |  |  | 用户进行中拍卖（公开：open） | src/pwa/routes/users-public.ts:157 |
 | GET | `/api/users/:id/bookmarked-shareables` | 🔐 |  | 我收藏过的 shareables（仅 owner 自己可见） | src/pwa/routes/shareables-interactions.ts:198 |
 | GET | `/api/users/:id/liked-shareables` | 🔐 |  | 用户赞过的 shareables（仅 owner 可见） | src/pwa/routes/users-public.ts:198 |
