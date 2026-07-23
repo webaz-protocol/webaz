@@ -189,10 +189,14 @@ process.env.WEBAZ_MODE = 'sandbox'   // 此前未 import 过 mcp 模块;sandbox 
 const mcpMod = await import('../src/layer1-agent/L1-1-mcp-server/server.js') as unknown as { handlePlaceOrder: (a: Record<string, unknown>) => Promise<Record<string, unknown>> }
 db.exec(`CREATE TABLE IF NOT EXISTS price_sessions (token TEXT PRIMARY KEY, product_id TEXT NOT NULL, user_id TEXT NOT NULL,
   price REAL NOT NULL, quantity INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT)`)
+// MCP 本地 INSERT 用到的 server-inline 增量列(最小 fixture 补齐,与生产 ALTER 同名)
+for (const col of ['anonymous_recipient INTEGER DEFAULT 0', 'recipient_code TEXT', 'donation_amount REAL DEFAULT 0', 'l1_uid TEXT', 'l2_uid TEXT', 'l3_uid TEXT']) { try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
 mkUser('mcpBuyer')
-db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('mcpSeller','mcpSeller','seller','k_mcpSeller')").run()
+db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('mcpSeller','mcpSeller','seller','k_mcpSeller')").run()   // 故意不给 wallet:穿闸后在卖家 stake 预检优雅止步(SELLER_INSUFFICIENT_BALANCE),不再深入状态机
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('mcpP','mcpSeller','MCP品','d',10,5,'active')").run()
-db.prepare("INSERT INTO price_sessions (token, product_id, user_id, price, quantity, created_at, expires_at) VALUES ('ps_tok','mcpP','mcpBuyer',10,1,datetime('now'),datetime('now','+10 minutes'))").run()
+// expires_at 必须带时区(toISOString):SQLite datetime('now') 无时区,JS 在非 UTC 时区会把它当本地时间
+// 解析成"已过期",本地(SGT)与 CI(UTC)行为分叉 —— 正是 CI 抓到的坑。
+db.prepare("INSERT INTO price_sessions (token, product_id, user_id, price, quantity, created_at, expires_at) VALUES ('ps_tok','mcpP','mcpBuyer',10,1,?,?)").run(new Date().toISOString(), new Date(Date.now() + 10 * 60_000).toISOString())
 // protocol_params 本地库无该行 → fail-closed 默认关(这就是 sandbox 现实:server DEFAULT_PARAMS 不在此库)
 const mcpOff = await mcpMod.handlePlaceOrder({ api_key: 'k_mcpBuyer', product_id: 'mcpP', quantity: 1, session_token: 'ps_tok', shipping_address: 'addr' })
 const psRow = db.prepare("SELECT used_at FROM price_sessions WHERE token='ps_tok'").get() as { used_at: string | null }
@@ -205,10 +209,13 @@ const iMcpFn = MCP.indexOf('export async function handlePlaceOrder')
 const iMcpGate = MCP.indexOf("payment_rail_waz_escrow_enabled'", iMcpFn)
 const iMcpConsume = MCP.indexOf('UPDATE price_sessions SET used_at', iMcpFn)
 ok('mcp local: gate sits BEFORE the one-shot session consumption in source', iMcpFn > 0 && iMcpGate > iMcpFn && iMcpConsume > iMcpGate, `fn=${iMcpFn} gate=${iMcpGate} consume=${iMcpConsume}`)
-// 渠道开(本地库写入 param 行)→ 同一 token 仍有效可用,穿闸进入真实路径
+// 渠道开(本地库写入 param 行)→ 同一 token 仍有效:穿闸、session 被真实消费、走到建单路径
+// (在卖家 stake 预检优雅止步 —— 证明闸后的路径畅通,又不依赖最小 fixture 之外的深层状态机表)
 db.prepare("INSERT INTO protocol_params (key, value, type, description, category) VALUES ('payment_rail_waz_escrow_enabled','1','number','t','system')").run()
 const mcpOn = await mcpMod.handlePlaceOrder({ api_key: 'k_mcpBuyer', product_id: 'mcpP', quantity: 1, session_token: 'ps_tok', shipping_address: 'addr' })
-ok('mcp local: on → gate passes and the preserved token is honored (order or non-RAIL error)', mcpOn.error_code !== 'RAIL_DISABLED', JSON.stringify(mcpOn).slice(0, 200))
+const psRowOn = db.prepare("SELECT used_at FROM price_sessions WHERE token='ps_tok'").get() as { used_at: string | null }
+ok('mcp local: on → gate passes, preserved token honored & consumed, stops at seller-stake precheck',
+  mcpOn.error_code === 'SELLER_INSUFFICIENT_BALANCE' && psRowOn.used_at !== null, JSON.stringify({ mcpOn, psRowOn }).slice(0, 300))
 
 if (fail > 0) { console.error(`\n❌ waz-escrow-rail-gate FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
 console.log(`✅ waz-escrow-rail-gate: channel switch default OFF — menu delisted + quote rejects + create/cart 409 RAIL_DISABLED, bilingual mapped, param registered\n  ✅ pass ${pass}`)

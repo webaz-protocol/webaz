@@ -116,7 +116,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/admin/governance/applications` | 🔐 | 👑 | GET /api/admin/governance/applications — 列出 pending_onboarding(可筛 quiz_passed +  | src/pwa/routes/governance-onboarding.ts:360 |
 | GET | `/api/admin/governance/auto-deactivations` | 🔐 | 👑 | spec §6.2 公示触发原因(透明 — 元规则 #1) | src/pwa/routes/governance-onboarding.ts:743 |
 | POST | `/api/admin/governance/resolve-appeal` | 🔐 | 👑 | accept → 恢复 active(spec §7.2) ;reject → 维持 inactive,公开理由 | src/pwa/routes/governance-onboarding.ts:781 |
-| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:5238 |
+| POST | `/api/admin/governance/run-auto-deactivate` | 🔐 | 👑 | Useful for ops + testing. The scheduled cron also runs every N hours. | src/pwa/server.ts:5236 |
 | GET | `/api/admin/health` | 🔐 | 👑 |  | src/pwa/routes/admin-health.ts:33 |
 | GET | `/api/admin/hot-wallet` |  |  | Legacy x-admin-key 入口：仅余额 | src/pwa/routes/admin-wallet-ops.ts:74 |
 | GET | `/api/admin/hot-wallet/status` | 🔐 | 👑 | P2-5: protocol 权限（区域 admin 看不到全局热钱包） | src/pwa/routes/admin-wallet-ops.ts:48 |
@@ -450,11 +450,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/governance/onboarding/resign` | 🔐 |  | confirm_text 必须等于 'RESIGN arbitrator' 或 'RESIGN verifier'(type-to-confirm 防误触) | src/pwa/routes/governance-onboarding.ts:554 |
 | GET | `/api/governance/params` |  |  | ─── 治理参数 ──────────────────────────────────────────────── | src/pwa/routes/payments-governance.ts:52 |
 | GET | `/api/governance/params/:key/history` |  |  |  | src/pwa/routes/payments-governance.ts:75 |
-| POST | `/api/group-buys` | 🔐 |  | 卖家开团 | src/pwa/routes/group-buys.ts:120 |
-| GET | `/api/group-buys/:id` |  |  | 详情 + participants | src/pwa/routes/group-buys.ts:164 |
-| POST | `/api/group-buys/:id/join` | 🔐 |  | 加入团购 | src/pwa/routes/group-buys.ts:184 |
-| DELETE | `/api/group-buys/:id/leave` | 🔐 |  | 离开团购 | src/pwa/routes/group-buys.ts:218 |
-| GET | `/api/group-buys/live` |  |  | 公开列表 | src/pwa/routes/group-buys.ts:149 |
+| POST | `/api/group-buys` | 🔐 |  | 卖家开团 | src/pwa/routes/group-buys.ts:116 |
+| GET | `/api/group-buys/:id` |  |  | 详情 + participants | src/pwa/routes/group-buys.ts:160 |
+| POST | `/api/group-buys/:id/join` | 🔐 |  | 加入团购 | src/pwa/routes/group-buys.ts:180 |
+| DELETE | `/api/group-buys/:id/leave` | 🔐 |  | 离开团购 | src/pwa/routes/group-buys.ts:214 |
+| GET | `/api/group-buys/live` |  |  | 公开列表 | src/pwa/routes/group-buys.ts:145 |
 | GET | `/api/growth/tasks` | 🔐 |  |  | src/pwa/routes/growth.ts:201 |
 | POST | `/api/growth/tasks/:id/claim` | 🔐 |  |  | src/pwa/routes/growth.ts:207 |
 | POST | `/api/growth/tasks/:id/reset` | 🔐 |  |  | src/pwa/routes/growth.ts:229 |
