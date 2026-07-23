@@ -2744,7 +2744,7 @@ export async function handleSearch(args: Record<string, unknown>) {
     if (toolBackend('webaz_search') !== 'network') {
       return { error: 'result_handle detail fetch is a network-mode surface (handles are issued by webaz.xyz search)', error_code: 'RESULT_HANDLE_INVALID' }
     }
-    return await apiCall('/api/products/result-fetch', { method: 'POST', body: { result_handle: args.result_handle, selected_ids: args.selected_ids, full_terms: args.full_terms === true, ...(args.card === true ? { card: true } : {}) } })   // card:true → 标准搜索卡模型(多卡稳定化)
+    return await apiCall('/api/products/result-fetch', { method: 'POST', body: { result_handle: args.result_handle, selected_ids: args.selected_ids, full_terms: args.full_terms === true, ...(typeof args.card === 'boolean' ? { card: args.card } : {}) } })   // 方案A:多选默认标准卡;card 仅作显式覆盖透传(true 强制卡/false 强制详情)
   }
   // 口令 / anchor 直达(AI Match 语义):@code → /api/anchor/:code/lookup 精确解析单品,复用 A4 exact-first 投影成卡片。
   //   仅接线已有端点,不改匹配语义;无效/归档/无在售商品 → 诚实 found:0 + 引导(宁缺毋滥)。
