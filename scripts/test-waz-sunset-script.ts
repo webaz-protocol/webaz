@@ -58,8 +58,16 @@ db.prepare("INSERT INTO pending_commission_escrow (recipient_user_id, order_id, 
 db.prepare("INSERT INTO rfqs (id,status) VALUES ('rfqX','open')").run()                                  // ← blocker
 db.prepare("INSERT INTO bids (id,status,stake_locked) VALUES ('bidX','active',3)").run()                 // ← blocker
 db.prepare("INSERT INTO withdrawal_requests (id,status) VALUES ('wdX','pending')").run()                 // ← blocker
-db.prepare("INSERT INTO verify_tasks (id,product_id,url,status,fee_locked,expires_at) VALUES ('vtX','p','https://x','open',2,'2099-01-01')").run()   // ← blocker(R2 H-2)
+// R2 H-2:verify_tasks 三个未终结态全覆盖(open / code_issued / settling)
+for (const [vid, vst] of [['vtA', 'open'], ['vtB', 'code_issued'], ['vtC', 'settling']] as const) {
+  db.prepare("INSERT INTO verify_tasks (id,product_id,url,status,fee_locked,expires_at) VALUES (?,?,?,?,2,'2099-01-01')").run(vid, 'p', 'https://x', vst)   // ← blockers
+}
 db.prepare("INSERT INTO product_trial_campaigns (id, product_id, seller_id, quota_total, reach_threshold, status) VALUES ('ptcX','p','u2',5,50,'active')").run()   // ← blocker(R2 H-1)
+// R2 H-1:pending claim 两态全覆盖(pending_note / pending_threshold)
+// UNIQUE(buyer_id, product_id) → 两个 claim 用不同 buyer(u1 / u3)
+for (const [cid, buyer, cst] of [['pclA', 'u1', 'pending_note'], ['pclB', 'u3', 'pending_threshold']] as const) {
+  db.prepare("INSERT INTO product_trial_claims (id, campaign_id, product_id, seller_id, buyer_id, order_id, status) VALUES (?,?,?,?,?,?,?)").run(cid, 'ptcX', 'p', 'u2', buyer, 'ordX', cst)   // ← blockers
+}
 db.prepare("INSERT INTO charity_fund (id,balance) VALUES ('main',42)").run()
 db.prepare("INSERT INTO charity_fund_txns (id,kind,amount) VALUES ('cft1','donation',42)").run()
 db.prepare('INSERT INTO global_fund (id,pool_balance,pv_escrow_reserve) VALUES (1,5,7)').run()
@@ -69,7 +77,9 @@ db.prepare('INSERT INTO protocol_reserve_pool (id,balance) VALUES (1,3)').run()
 const inv = wazSunsetInventory(db)
 const kinds = new Set(inv.map(b => b.kind))
 ok('inventory: all blocker kinds detected (incl. fee-stake / pending-commission / fault_* non-terminal)',
-  ['wallet_escrowed', 'order_in_flight', 'rfq_open', 'bid_stake_active', 'withdrawal_pending', 'fee_stake_locked', 'pending_commission', 'verify_task_open', 'trial_campaign_active'].every(k => kinds.has(k))
+  ['wallet_escrowed', 'order_in_flight', 'rfq_open', 'bid_stake_active', 'withdrawal_pending', 'fee_stake_locked', 'pending_commission', 'verify_task_open', 'trial_campaign_active', 'trial_claim_pending'].every(k => kinds.has(k))
+  && ['vtA', 'vtB', 'vtC'].every(r => inv.some(b => b.kind === 'verify_task_open' && b.ref === r))
+  && ['pclA', 'pclB'].every(r => inv.some(b => b.kind === 'trial_claim_pending' && b.ref === r))
   && inv.some(b => b.kind === 'order_in_flight' && b.ref === 'ordF'), JSON.stringify([...kinds]))
 let threw = false
 try { runWazSunsetZeroing(db, { runId: 'r0', reason: 't', commit: true }) } catch { threw = true }
@@ -84,8 +94,9 @@ db.prepare("UPDATE pending_commission_escrow SET status='expired' WHERE recipien
 db.prepare("UPDATE rfqs SET status='expired' WHERE id='rfqX'").run()
 db.prepare("UPDATE bids SET status='cancelled' WHERE id='bidX'").run()
 db.prepare("UPDATE withdrawal_requests SET status='rejected' WHERE id='wdX'").run()
-db.prepare("UPDATE verify_tasks SET status='settled' WHERE id='vtX'").run()
+db.prepare("UPDATE verify_tasks SET status='settled' WHERE id IN ('vtA','vtB','vtC')").run()
 db.prepare("UPDATE product_trial_campaigns SET status='closed' WHERE id='ptcX'").run()
+db.prepare("UPDATE product_trial_claims SET status='expired' WHERE id IN ('pclA','pclB')").run()
 ok('inventory clean after convergence', wazSunsetInventory(db).length === 0, JSON.stringify(wazSunsetInventory(db)))
 
 // ── ② dry-run 零写入 ──
