@@ -7,8 +7,9 @@
  *   - 收款地址是卖家自报的链上地址(EIP-55 校验后存 canonical 形式),retire 不 DELETE;
  *   - intents 表 = 后端签发 voucher 的快照(经济参数与合约 EIP-712 一致),一单一行。
  *
- * chain_events 无 DB 触发器(orphaned 标记需要 UPDATE,与 gen-pg-schema 的全量 append-only
- * 守卫不兼容)—— append-only 纪律由代码层守(watcher 只 INSERT + 只改 orphaned),测试锁行为。
+ * chain_events 与 orphan 标记均为【真 append-only】(BEFORE UPDATE/DELETE → ABORT,PG parity 经
+ * gen-pg-schema APPEND_ONLY_TABLES 同步):重组不改行 —— 往 usdc_escrow_event_orphans 加一行标记,
+ * 读侧 join 排除(与 admin 冲正记账同哲学:更正=加行,绝不改历史)。
  */
 import type Database from 'better-sqlite3'
 import { getAddress } from 'viem'
@@ -56,11 +57,26 @@ export function initUsdcEscrowSchema(db: Database.Database): void {
     block_number INTEGER NOT NULL,
     block_hash   TEXT NOT NULL,
     payload_json TEXT NOT NULL,
-    orphaned     INTEGER NOT NULL DEFAULT 0,  -- 重组标记(append-only 更正;唯一允许 UPDATE 的列)
     created_at   TEXT DEFAULT (datetime('now')),
     UNIQUE(tx_hash, log_index)
   )`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_uece_key ON usdc_escrow_chain_events(order_key, orphaned)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_uece_key ON usdc_escrow_chain_events(order_key)`)
+  db.exec(`CREATE TRIGGER IF NOT EXISTS trg_uece_no_update BEFORE UPDATE ON usdc_escrow_chain_events
+           BEGIN SELECT RAISE(ABORT, 'usdc_escrow_chain_events is append-only'); END`)
+  db.exec(`CREATE TRIGGER IF NOT EXISTS trg_uece_no_delete BEFORE DELETE ON usdc_escrow_chain_events
+           BEGIN SELECT RAISE(ABORT, 'usdc_escrow_chain_events is append-only'); END`)
+
+  // 重组孤儿标记:加行不改行(读侧 LEFT JOIN 排除;event_id 双保险 UNIQUE 防重复标记)
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS usdc_escrow_event_orphans (
+    event_id   TEXT PRIMARY KEY,              -- → usdc_escrow_chain_events.id
+    reason     TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`)
+  db.exec(`CREATE TRIGGER IF NOT EXISTS trg_ueeo_no_update BEFORE UPDATE ON usdc_escrow_event_orphans
+           BEGIN SELECT RAISE(ABORT, 'usdc_escrow_event_orphans is append-only'); END`)
+  db.exec(`CREATE TRIGGER IF NOT EXISTS trg_ueeo_no_delete BEFORE DELETE ON usdc_escrow_event_orphans
+           BEGIN SELECT RAISE(ABORT, 'usdc_escrow_event_orphans is append-only'); END`)
 
   db.exec(`
   CREATE TABLE IF NOT EXISTS usdc_escrow_watcher_state (

@@ -24,9 +24,10 @@ export function registerUsdcPayoutAddressRoutes(app: Application, deps: UsdcPayo
   const sellerGate = (req: Request, res: Response): Record<string, unknown> | null => {
     const user = auth(req, res); if (!user) return null
     if (isTrustedRole(user)) { res.status(403).json({ error: '受信角色无交易面', error_code: 'TRUSTED_ROLE_NO_TRADE' }); return null }
-    // 多角色账号:persisted roles 含 seller 即可(与 direct-receive-accounts 同口径,active_role 无关)
-    let roles: string[] = []
-    try { roles = JSON.parse((user.roles as string) || JSON.stringify([user.role])) } catch { roles = [String(user.role)] }
+    // 多角色账号:persisted roles 含 seller 即可(active_role 无关)。JSON.parse 产物必须是数组 ——
+    // 否则(如 roles 存成字符串 "reseller")String.includes 子串匹配会放行非卖家(Codex #519 R1 High)。
+    let roles: string[]
+    try { const parsed: unknown = JSON.parse((user.roles as string) || JSON.stringify([user.role])); roles = Array.isArray(parsed) ? parsed.map(String) : [String(user.role)] } catch { roles = [String(user.role)] }
     if (!roles.includes('seller')) { res.status(403).json({ error: '仅卖家可管理收款地址', error_code: 'SELLER_ONLY' }); return null }
     return user
   }
