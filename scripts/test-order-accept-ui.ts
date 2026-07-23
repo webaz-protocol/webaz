@@ -9,13 +9,14 @@ let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
 const APP = readFileSync('src/pwa/public/app.js', 'utf8')
+const TLJS = readFileSync('src/pwa/public/app-order-timeline.js', 'utf8')   // 2026-07:时间线域从 app.js 抽出;banner 以 bannerStatus 喂标签
 const UI = readFileSync('src/pwa/public/app-order-accept-ui.js', 'utf8')
 const I18N = readFileSync('src/pwa/public/i18n.js', 'utf8')
 const HTML = readFileSync('src/pwa/public/index.html', 'utf8')
 
 // ── ① app.js 接线锚(7 处 hook,全部净零行原位)──
 ok('1. badge chain includes dpAcceptBadge', /window\.dpAcceptBadge && window\.dpAcceptBadge\(status\)/.test(APP))
-ok('2. label chain includes dpAcceptLabel', /window\.dpAcceptLabel && window\.dpAcceptLabel\(order\.status\)/.test(APP))
+ok('2. label chain includes dpAcceptLabel', /window\.dpAcceptLabel && window\.dpAcceptLabel\(bannerStatus\)/.test(TLJS))
 ok('3. buy sheet renders region block after rail selector', /dpRailSelectorHtml\(prod\.id, prod\.price\) : ''\}\$\{window\.shipRegionBlockHtml \? window\.shipRegionBlockHtml\(prod\.id\) : ''\}/.test(APP))
 ok('4. buyOrder posts ship_to_region via shipSelectedRegion', /ship_to_region: \(window\.shipSelectedRegion \? window\.shipSelectedRegion\(\) : undefined\)/.test(APP))
 ok('5. order detail injects dpPendingAcceptCard', /window\.dpPendingAcceptCard \? window\.dpPendingAcceptCard\(order, isBuyer, isSeller\)/.test(APP))
