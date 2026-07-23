@@ -887,6 +887,7 @@ jobs:
       - run: npm run test:waz-escrow-rail-gate
       - run: npm run test:waz-sunset-vertical
       - run: npm run test:waz-sunset-script
+      - run: npm run test:waz-sunset-ui
       - run: npm run test:choose-payment
       - run: npm run test:choose-payment-ui
       - run: npm run test:order-draft

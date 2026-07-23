@@ -125,7 +125,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-shop.js': 1145,
   'src/pwa/public/app-shop-rulings.js': 59,
   'src/pwa/public/app-account.js': 977,
-  'src/pwa/public/app-profile.js': 1692,
+  'src/pwa/public/app-profile.js': 1654,   // 2026-07-23 WAZ 退役:钱包卡/余额块/账户 section 下架(1692→)
   'src/pwa/public/app-discover.js': 1296,
   'src/pwa/public/app-discover-new-filters.js': 39,
   'src/pwa/public/app-contribution.js': 836,

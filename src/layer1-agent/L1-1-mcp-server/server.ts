@@ -4258,6 +4258,12 @@ async function handleWallet(args: Record<string, unknown>): Promise<Record<strin
   if ('error' in auth) return auth
   const { user } = auth
 
+  // WAZ 退役(2026-07-23):local/sandbox 视图与 /api/wallet 同真值(直读 protocol_params,fail-closed)
+  try {
+    const railParam = db.prepare("SELECT value FROM protocol_params WHERE key = 'payment_rail_waz_escrow_enabled'").get() as { value: string } | undefined
+    if (Number(railParam?.value ?? 0) !== 1) return { waz_sunset: true, notice: 'WAZ 模拟货币已退役,历史余额已按冲正清零;真实交易请使用直付(Direct Pay)。', balance: 0, staked: 0, escrowed: 0, earned: 0 }
+  } catch { return { waz_sunset: true, notice: 'WAZ 模拟货币已退役。', balance: 0, staked: 0, escrowed: 0, earned: 0 } }
+
   const wallet = db
     .prepare('SELECT * FROM wallets WHERE user_id = ?')
     .get(user.id) as Record<string, number> | undefined

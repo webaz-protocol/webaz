@@ -51,6 +51,11 @@ export function registerWalletReadRoutes(app: Application, deps: WalletReadDeps)
   app.get('/api/wallet', async (req, res) => {
     const user = auth(req, res); if (!user) return
     if (isTrustedRole(user as Record<string, unknown>)) return void res.status(403).json({ error: '受信角色无钱包', error_code: 'TRUSTED_ROLE_NO_WALLET' })
+    // WAZ 退役(2026-07-23):渠道关(默认)→ 钱包信息面从源头断供:零余额 DTO + 双语 notice,不派生充值地址。
+    //   MCP webaz_wallet(network 模式)转发本端点,agent 面自动同真值。fail-closed。
+    if (Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1) {
+      return void res.json({ waz_sunset: true, notice: 'WAZ 模拟货币已退役,历史余额已按 append-only 冲正清零;真实交易请使用直付(Direct Pay)。 / WAZ (simulated) has been retired; balances were zeroed via append-only corrections. Use Direct Pay for real transactions.', balance: 0, staked: 0, escrowed: 0, earned: 0, fee_staked: 0 })
+    }
     const wallet = await dbOne<Record<string, unknown>>('SELECT * FROM wallets WHERE user_id = ?', [user.id])
     if (!wallet) return void res.status(500).json({ error: '钱包记录缺失', error_code: 'WALLET_MISSING' })
 

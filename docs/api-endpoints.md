@@ -789,19 +789,19 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/waitlist` | 🔐 |  |  | src/pwa/routes/waitlist.ts:56 |
 | GET | `/api/wallet` | 🔐 |  | 钱包状态 | src/pwa/routes/wallet-read.ts:51 |
 | POST | `/api/wallet/connect/challenge` | 🔐 |  |  | src/pwa/routes/wallet-write.ts:55 |
-| POST | `/api/wallet/connect/verify` | 🔐 |  |  | src/pwa/routes/wallet-write.ts:66 |
-| GET | `/api/wallet/deposit-qr` | 🔐 |  | 充值地址 QR — SVG（轻量 + 矢量，移动端扫码体验最佳） | src/pwa/routes/wallet-read.ts:66 |
-| GET | `/api/wallet/deposits` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:175 |
-| GET | `/api/wallet/income` | 🔐 |  | 收入构成:销售 / 分享归因 / PV 记录(若适用) | src/pwa/routes/wallet-read.ts:201 |
-| GET | `/api/wallet/rate` |  |  | 公开汇率 | src/pwa/routes/wallet-read.ts:84 |
-| POST | `/api/wallet/topup` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:242 |
-| GET | `/api/wallet/whitelist` | 🔐 |  | 白名单 GET / POST / DELETE | src/pwa/routes/wallet-read.ts:98 |
-| POST | `/api/wallet/whitelist` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:115 |
-| DELETE | `/api/wallet/whitelist/:id` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:144 |
-| POST | `/api/wallet/withdraw` | 🔐 |  | 保持整体同步,Phase 3 随资金路径整体迁 pg(BEGIN + SELECT...FOR UPDATE 行锁),不在此引入 await 间隙。 | src/pwa/routes/wallet-write.ts:116 |
-| POST | `/api/wallet/withdraw/:id/confirm` | 🔐 |  | 大额提现：邮件验证码确认 | src/pwa/routes/wallet-write.ts:233 |
-| GET | `/api/wallet/withdrawals` | 🔐 |  | 我的提现记录 | src/pwa/routes/wallet-read.ts:153 |
-| POST | `/api/wallet/withdrawals/:id/cancel` | 🔐 |  | 用户取消尚未 approve 的 withdrawal — 余额自动退回 | src/pwa/routes/wallet-write.ts:261 |
+| POST | `/api/wallet/connect/verify` | 🔐 |  |  | src/pwa/routes/wallet-write.ts:67 |
+| GET | `/api/wallet/deposit-qr` | 🔐 |  | 充值地址 QR — SVG（轻量 + 矢量，移动端扫码体验最佳） | src/pwa/routes/wallet-read.ts:71 |
+| GET | `/api/wallet/deposits` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:180 |
+| GET | `/api/wallet/income` | 🔐 |  | 收入构成:销售 / 分享归因 / PV 记录(若适用) | src/pwa/routes/wallet-read.ts:206 |
+| GET | `/api/wallet/rate` |  |  | 公开汇率 | src/pwa/routes/wallet-read.ts:89 |
+| POST | `/api/wallet/topup` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:247 |
+| GET | `/api/wallet/whitelist` | 🔐 |  | 白名单 GET / POST / DELETE | src/pwa/routes/wallet-read.ts:103 |
+| POST | `/api/wallet/whitelist` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:120 |
+| DELETE | `/api/wallet/whitelist/:id` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:149 |
+| POST | `/api/wallet/withdraw` | 🔐 |  | 保持整体同步,Phase 3 随资金路径整体迁 pg(BEGIN + SELECT...FOR UPDATE 行锁),不在此引入 await 间隙。 | src/pwa/routes/wallet-write.ts:117 |
+| POST | `/api/wallet/withdraw/:id/confirm` | 🔐 |  | 大额提现：邮件验证码确认 | src/pwa/routes/wallet-write.ts:237 |
+| GET | `/api/wallet/withdrawals` | 🔐 |  | 我的提现记录 | src/pwa/routes/wallet-read.ts:158 |
+| POST | `/api/wallet/withdrawals/:id/cancel` | 🔐 |  | 用户取消尚未 approve 的 withdrawal — 余额自动退回 | src/pwa/routes/wallet-write.ts:265 |
 | POST | `/api/webauthn/auth/finish` | 🔐 |  | 4. 认证：finish — 验证签名 + 颁发短 gate token | src/pwa/routes/webauthn.ts:144 |
 | POST | `/api/webauthn/auth/start` | 🔐 |  | 3. 认证：start — 生成 challenge（指定 purpose + 业务数据；同一 challenge 不可复用） | src/pwa/routes/webauthn.ts:119 |
 | GET | `/api/webauthn/credentials` | 🔐 |  | 列出 / 删除 credential | src/pwa/routes/webauthn.ts:189 |

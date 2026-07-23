@@ -126,6 +126,8 @@ const _EN = {
   '入账流水': 'Credit record',
   // ── 交易流程错误码双语(app-order-errors.js orderErrorLookup;test-order-errors.ts 守 parity)──
   'WAZ 模拟托管轨已下架,请选择直付方式下单': 'The WAZ simulated escrow rail has been retired — please order with a Direct Pay method',
+  'WAZ 已退役': 'WAZ retired',
+  'WAZ 模拟货币已退役,历史余额已按冲正清零;真实交易请使用直付(Direct Pay)。': 'WAZ (the simulated currency) has been retired; historical balances were zeroed via corrections. Use Direct Pay for real transactions.',
   '只能操作自己的订单': 'You can only act on your own order',
   '你不是本订单的卖家': 'You are not the seller of this order',
   '你不是本订单的物流方': 'You are not the logistics party for this order',
