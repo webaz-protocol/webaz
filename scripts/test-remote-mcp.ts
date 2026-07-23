@@ -115,6 +115,11 @@ async function main() {
     const snames = new Set((sj?.result?.tools || []).map(t => t.name))
     ok('4e. seller surface = 23 (listing/fulfilment/account ops; no arbitration/governance)',
       snames.size === 23 && snames.has('webaz_list_product') && snames.has('webaz_get_agent_order') && !snames.has('webaz_dispute') && !snames.has('webaz_contribute'), String(snames.size))
+    const rp = await rpc(base, { jsonrpc: '2.0', id: 25, method: 'tools/list' }, {}, '?surface=shopping_v1')
+    const pj = await rp.json().catch(() => null) as { result?: { tools?: Array<{ name: string }> } } | null
+    const pnames = [...new Set((pj?.result?.tools || []).map(t => t.name))].sort()
+    ok('4f. shopping_v1 public-plugin surface is exactly the reviewed seven tools',
+      JSON.stringify(pnames) === JSON.stringify(['webaz_buyer_orders', 'webaz_connection_status', 'webaz_discover', 'webaz_order_draft', 'webaz_quote_order', 'webaz_search', 'webaz_submit_order_request']), pnames.join(','))
     // surface 只裁可见性,不裁授权:buyer 默认面上按名调用面外工具照常分发(错误也是业务错误而非"未知工具")
     // 确定性业务证明:非法 kind 触发 handleLeaderboard 自己的枚举校验文案 —— 只有真 handler 被分发才会出现,
     //   与上游 /leaderboard 可达性无关,也不可能混淆为 unknown-tool(任何语言)。

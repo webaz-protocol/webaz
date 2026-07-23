@@ -57,3 +57,13 @@ interface NamedTool { readonly name: string }
 export function withSecuritySchemes<T extends NamedTool>(tools: readonly T[]): (T & { securitySchemes: McpSecurityScheme[] })[] {
   return tools.map(tool => ({ ...tool, securitySchemes: securitySchemesFor(tool.name) }))
 }
+
+/** OpenAI legacy-client compatibility mirror, applied only to the reviewed public plugin surface. */
+export function withSecuritySchemeMetaMirror<T extends { readonly securitySchemes: McpSecurityScheme[]; readonly _meta?: unknown }>(tools: readonly T[]): (T & { _meta: Record<string, unknown> })[] {
+  return tools.map(tool => {
+    const meta = tool._meta && typeof tool._meta === 'object' && !Array.isArray(tool._meta)
+      ? tool._meta as Record<string, unknown>
+      : {}
+    return { ...tool, _meta: { ...meta, securitySchemes: tool.securitySchemes } }
+  })
+}
