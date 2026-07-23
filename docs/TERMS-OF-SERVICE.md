@@ -2,7 +2,7 @@
 
 > **Status**: effective for users of the publicly launched WebAZ service. Direct Pay is the current real-payment rail; WebAZ is non-custodial and does not hold transaction principal. The escrow rail remains simulated while additional payment methods are added.
 >
-> **Last updated**: 2026-07-16
+> **Last updated**: 2026-07-23
 > **Companion docs**: `docs/LEGAL-DISCLOSURES.md` (operator's good-faith legal interpretation) + `docs/CHARTER.md` (project constitution)
 
 ---
@@ -92,7 +92,7 @@ WebAZ operator warrants the following as of the date of these Terms, code-enforc
 | **No joining fees ever** | Code: there is no fee-collection endpoint for membership |
 | **No income from recruitment** | Code: `settleCommission()` triggers only on real product order, never on user signup |
 | **No static / passive income** | Code: no "monthly reward" / "system distribution" / "team bonus" mechanism exists |
-| **No team / downline commission** | Code: L1 earns only from L1's direct referrals' purchases, not from L2 / L3 cascades |
+| **No payment for recruitment or headcount** | Code: L1 / L2 / L3 attribution can pay only from a completed product order; signup, placement, and team size never create commission |
 | **Per-jurisdiction caps** | Code: `region_config.max_levels` checked at runtime, slashing excess |
 
 This warranty does NOT extend to the determination of whether WebAZ qualifies as an MLM under any specific local statute. That is a question of statutory interpretation in your jurisdiction.

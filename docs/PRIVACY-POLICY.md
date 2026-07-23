@@ -1,11 +1,12 @@
 # WebAZ Privacy Policy / 隐私政策
 
-> **STATUS: DRAFT (v0) — pending legal counsel review (#1084).** Not yet the published policy.
-> Tier-1 launch prep #937 A5. Expands TERMS-OF-SERVICE §7 into a standalone policy, grounded in
+> **Status: published privacy policy (v1).** This document describes current WebAZ operational
+> practices. It is not legal advice and does not claim external legal review.
+> Expands TERMS-OF-SERVICE §7 into a standalone policy, grounded in
 > the system's *actual* data practices (code + `protocol_params`). Any claim here must match
 > behavior — update this file when data handling changes. Contact: **contact@webaz.xyz**.
 >
-> Effective date: _TBD on publication._ Jurisdiction-specific rights: see LEGAL-DISCLOSURES.md.
+> Effective date: 2026-07-23. Jurisdiction-specific rights: see LEGAL-DISCLOSURES.md.
 
 ---
 
@@ -17,11 +18,16 @@
 
 **Authentication** — Passkey / WebAuthn credentials are stored as **public keys only**; biometric data never leaves your device and is never sent to or stored by WebAZ.
 
-**Operational / security metadata** — anonymized **IP hash** and **user-agent hash** (not raw IP/UA), order and protocol audit trails, dispute records. Retained for fraud prevention, abuse limits, and dispute resolution.
+**Operational / security metadata** — connection IP and browser user-agent may be processed for active
+sessions, security diagnostics, and rate limits. Registration, click-deduplication, and similar audit records
+use **IP / user-agent hashes** where the raw values are not needed. Order and protocol audit trails and dispute
+records are retained for fraud prevention, abuse limits, and dispute resolution.
 
-**KYC** — collected **only** when a withdrawal meets the KYC threshold (anti-money-laundering); not required for normal use.
+**KYC / KYB and screening records** — processed only when a regulated or risk-gated capability requires them,
+such as seller Direct Pay onboarding or a threshold withdrawal. They are not required for ordinary catalog browsing.
 
-We do **not** collect more than the above to operate the protocol.
+**AI-assisted features** — if you explicitly invoke an AI-assisted feature, the text or image needed for that
+request may be sent to the configured AI provider. Do not include unnecessary personal or confidential data.
 
 ## 2. Why we process it / 处理目的
 
@@ -30,7 +36,8 @@ Provide and secure the service; fulfill orders; prevent fraud/abuse (rate limits
 ## 3. How it's protected / 如何保护
 
 - **No PII in the public record.** The public dispute archive (`dispute_cases`) is **PII-redacted**; the live case is visible only to the parties + the assigned arbitrator.
-- Operational identifiers are stored **hashed/anonymized** (IP, UA), not as raw values; PII is never placed in URLs/query strings.
+- Audit identifiers are hashed/anonymized where raw values are not needed. Limited raw session/security
+  metadata may be retained as described above. PII is never intentionally placed in URLs or query strings.
 - Fund-moving and identity/PII-changing actions are gated (Passkey human-presence + scoped agent permissions).
 
 ## 4. Sharing & third parties / 共享与第三方
@@ -40,7 +47,11 @@ Provide and secure the service; fulfill orders; prevent fraud/abuse (rate limits
   - **Cloudflare** — CDN / DNS / email routing (e.g., `contact@webaz.xyz`).
   - **Cloudflare Turnstile** — bot / abuse check at sensitive entry points.
   - **Railway** — application + database hosting.
+  - **Anthropic, OpenAI, or a user-selected AI provider** — only when an AI-assisted feature is invoked;
+    the selected provider processes the submitted prompt/content under its own terms.
   Each processes data only to provide its function.
+- **Connected clients** — if you connect WebAZ to ChatGPT or another agent client, that client receives the
+  tool inputs and results needed to perform your request under the client's own privacy terms.
 - **Legal disclosure** — we may disclose data when required by valid legal process; we limit such disclosure to what is required.
 
 ## 5. Retention / 留存
@@ -72,4 +83,4 @@ WebAZ is not directed to children under the age required by your jurisdiction; w
 Material changes will be announced and (for the rewards program) re-consented per the consent-version mechanism. Questions or requests: **contact@webaz.xyz**.
 
 ---
-*Draft maintained alongside the code: when data collection, processors, retention, or redaction behavior changes, update this file in the same PR. Pending counsel sign-off (#1084) before this replaces TERMS-OF-SERVICE §7 as the canonical privacy statement.*
+*Maintained alongside the code: when data collection, processors, retention, or redaction behavior changes, update this file in the same PR.*
