@@ -83,6 +83,19 @@ export function wazSunsetInventory(db: Database.Database): SunsetBlocker[] {
   for (const wd of q<{ id: string; status: string }>(`SELECT id, status FROM withdrawal_requests WHERE status IN ('pending','approved','processing')`)) {
     blockers.push({ kind: 'withdrawal_pending', ref: wd.id, detail: `status=${wd.status};先由 admin 处理完毕` })
   }
+  // 试用免单(Codex #515 R2 H-1):active campaign 仍可产生新 claim;pending claim 评估通过会把 WAZ 从
+  // 卖家转给买家 —— 清零后即凭空动钱。先关停 campaign / 收敛 claim。
+  for (const t of q<{ id: string }>(`SELECT id FROM product_trial_campaigns WHERE status = 'active'`)) {
+    blockers.push({ kind: 'trial_campaign_active', ref: t.id, detail: '先关停试用活动' })
+  }
+  for (const t of q<{ id: string; status: string }>(`SELECT id, status FROM product_trial_claims WHERE status IN ('pending_note','pending_threshold')`)) {
+    blockers.push({ kind: 'trial_claim_pending', ref: t.id, detail: `status=${t.status}` })
+  }
+  // 商品/外链验证任务(Codex #515 R2 H-2):fee 在建任务时已离开钱包、只存在 verify_tasks.fee_locked,
+  // 清零看不见;settleTask 之后会给 verifier 钱包入账。未终结任务必须先结完。
+  for (const v of q<{ id: string; status: string; fee_locked: number }>(`SELECT id, status, COALESCE(fee_locked,0) fee_locked FROM verify_tasks WHERE status IN ('code_issued','open','settling')`)) {
+    blockers.push({ kind: 'verify_task_open', ref: v.id, detail: `status=${v.status} fee_locked=${v.fee_locked}` })
+  }
   return blockers
 }
 
