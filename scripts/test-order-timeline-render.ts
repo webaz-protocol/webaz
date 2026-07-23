@@ -104,6 +104,14 @@ const H = (rows: Array<[string | null, string, string, string]>): Array<Record<s
   ok('4d. return_pending→completed banner = 退货流程已结算(非"等待退货确认")', sRet.includes('退货流程已结算') && !sRet.includes('等待退货确认'), sRet.slice(0, 250))
 }
 
+// ═══ ④c 兜底:history 缺失但 settled_fault_at 非空 → 同样按处置关单(Codex R1 MED)═══
+{
+  const ord = { status: 'completed', payment_rail: 'escrow', settled_fault_at: '2026-07-01' }
+  ok('4e. 无 history + settled_fault_at → 时间线空', timeline(ord, [], []) === '')
+  const s = stepper(ord, [])
+  ok('4f. 无 history + settled_fault_at → stepper 走处置 banner', s.includes('系统已按协议处置并关闭订单'), s.slice(0, 250))
+}
+
 // ═══ ⑤ 其余异常状态时间线抑制(delivery_failed / return_pending / declined_nofault)═══
 {
   for (const st of ['delivery_failed', 'return_pending', 'declined_nofault', 'resolved_for_seller']) {

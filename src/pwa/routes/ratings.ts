@@ -50,10 +50,13 @@ export function registerRatingsRoutes(app: Application, deps: RatingsDeps): void
   app.post('/api/orders/:order_id/rating', async (req, res) => {
     const user = auth(req, res); if (!user) return
     if (isTrustedRole(user)) return void errorRes(res, 403, 'TRUSTED_ROLE_NO_TRADE', '受信角色无购物功能')
-    const order = await dbOne<{ id: string; buyer_id: string; seller_id: string; product_id: string; status: string }>('SELECT id, buyer_id, seller_id, product_id, status FROM orders WHERE id = ?', [req.params.order_id])
+    const order = await dbOne<{ id: string; buyer_id: string; seller_id: string; product_id: string; status: string; settled_fault_at: string | null }>('SELECT id, buyer_id, seller_id, product_id, status, settled_fault_at FROM orders WHERE id = ?', [req.params.order_id])
     if (!order) return void res.status(404).json({ error: '订单不存在' })
     if (order.buyer_id !== user.id) return void res.status(403).json({ error: '仅买家可评价' })
     if (order.status !== 'completed') return void res.status(400).json({ error: '订单完成后才能评价' })
+    // completed 被重载:判责/无责拒单/退货收口等处置也终于 completed(settled_fault_at 非空)——
+    // 无真实成交,不产生可评价对象(镜像 genuineSalePredicate 语义;否则违约关单可刷评价进声誉)。
+    if (order.settled_fault_at) return void res.status(400).json({ error: '该订单为处置关单(非正常成交),不可评价' })
     const existing = await dbOne('SELECT order_id FROM order_ratings WHERE order_id = ?', [order.id])
     if (existing) return void res.status(400).json({ error: '已评价过，每单仅可评一次' })
     const stars = Number(req.body?.stars)

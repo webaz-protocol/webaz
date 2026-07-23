@@ -176,8 +176,9 @@ const RULES: Record<string, NotifRule> = {
   'accepted→fault_seller': {
     recipients: ['buyer', 'seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_accepted_fault_seller_dp' : 'ord_accepted_fault_seller',
     title: '⏰ 卖家超时未发货',
+    // 本转移只由超时自动判责触发,且随即 fault_seller→completed 终态 —— 文案不得承诺"可发起争议"(completed 无争议入口)
     body: ctx => ctx.paymentRail === 'direct_p2p'
-      ? `卖家超时未发货，订单已判卖家违约(直付非托管:平台无资金可退,违约已记入卖家信誉;退款请与卖家场外协商,协商未果可发起争议)。`
+      ? `卖家超时未发货,订单已判卖家违约并关闭(直付非托管:平台无资金可退,违约已记入卖家信誉;如已场外付款,请通过订单聊天与卖家协商退款)。`
       : `卖家超时未发货，订单已判违约，资金退回。`,
   },
   'in_transit→fault_logistics': {

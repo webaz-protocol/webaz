@@ -15,9 +15,12 @@ function orderStageTimeline(order, history) {
   // 异常状态：单独 banner，不画时间线（防误导）
   const ANOMALY = ['disputed', 'payment_query', 'cancelled', 'fault_seller', 'fault_buyer', 'fault_logistics', 'refunded_partial', 'refunded_full', 'dispute_dismissed', 'expired', 'delivery_failed', 'return_pending', 'declined_nofault', 'resolved_for_seller']
   // completed 被重载:判责/无责拒单/退货默认退款等处置也终于 completed。用 completed 事件的 from_status
-  // 还原真实终局(只有 confirmed→completed 是成功交易),处置型 completed 一律走异常 banner,绝不画满格成功。
+  // 还原真实终局(只有 confirmed→completed 是成交),处置型 completed 一律走异常 banner,绝不画满格成功。
+  // history 缺失/脏数据兜底:settled_fault_at 非空同样按处置关单('disposed' = 来源未知的通用标签)。
   const completedRow = (history || []).find(h => h.to_status === 'completed')
-  const disposalFrom = (order.status === 'completed' && completedRow && completedRow.from_status !== 'confirmed') ? completedRow.from_status : null
+  const disposalFrom = (order.status !== 'completed') ? null
+    : (completedRow && completedRow.from_status !== 'confirmed') ? completedRow.from_status
+      : (!completedRow && order.settled_fault_at) ? 'disposed' : null
   if (ANOMALY.includes(order.status) || disposalFrom) {
     const bannerStatus = disposalFrom || order.status
     const colorMap = {
@@ -36,13 +39,13 @@ function orderStageTimeline(order, history) {
     }
     // 处置来源专用标签:banner 描述的是「经由该状态收口」的终局,不是当前活跃状态 ——
     // disputed→completed 是仲裁结案(不是"进入争议"),return_pending→completed 是退货已结算(不是"等待确认")。
-    const disposalLabelMap = { disputed: t('仲裁结案'), return_pending: t('退货流程已结算') }
+    const disposalLabelMap = { disputed: t('仲裁结案'), return_pending: t('退货流程已结算'), disposed: t('系统已按协议处置并关闭订单') }
     const c = colorMap[bannerStatus] || '#6b7280'
     const sub = disposalFrom ? t('系统已按协议处置并关闭订单') : t('查看下方时间线了解流转详情')
     return `<div style="background:#fff;border:0.5px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:10px">
       <div style="width:8px;height:8px;border-radius:50%;background:${c};flex-shrink:0"></div>
       <div style="flex:1">
-        <div style="font-size:14px;font-weight:600;color:#1f2937">${(disposalFrom && disposalLabelMap[disposalFrom]) || (order.payment_rail === 'direct_p2p' && ((window.dpTerminalLabel && window.dpTerminalLabel(bannerStatus)) || (window.dpNegotiationLabel && window.dpNegotiationLabel(bannerStatus)) || (window.dpAcceptLabel && window.dpAcceptLabel(bannerStatus)))) || labelMap[bannerStatus] || bannerStatus}${disposalFrom ? ` · ${t('已关单')}` : ''}</div>
+        <div style="font-size:14px;font-weight:600;color:#1f2937">${(disposalFrom && disposalLabelMap[disposalFrom]) || (order.payment_rail === 'direct_p2p' && ((window.dpTerminalLabel && window.dpTerminalLabel(bannerStatus)) || (window.dpNegotiationLabel && window.dpNegotiationLabel(bannerStatus)) || (window.dpAcceptLabel && window.dpAcceptLabel(bannerStatus)))) || labelMap[bannerStatus] || bannerStatus}${disposalFrom && disposalFrom !== 'disposed' ? ` · ${t('已关单')}` : ''}</div>
         <div style="font-size:11px;color:#8e8e93;margin-top:2px">${sub}</div>
       </div>
     </div>`
@@ -104,7 +107,8 @@ function orderTrackingTimeline(order, history, trackingInfo, STATUS_ZH) {
   // completed 被重载:判责/退款处置也终于 completed。只有 confirmed→completed 才是"买家确认过"的成功交易;
   // 其他来源(fault_*/declined_nofault/return_pending/disputed 直达)一律按异常处理,交顶部 banner 说明,绝不画成功时间线。
   const completedRow = (history || []).find(h => h.to_status === 'completed')
-  if (order.status === 'completed' && completedRow && completedRow.from_status !== 'confirmed') return ''
+  // 兜底同 stepper:history 缺失但 settled_fault_at 非空 = 处置关单,同样不画成功时间线
+  if (order.status === 'completed' && ((completedRow && completedRow.from_status !== 'confirmed') || (!completedRow && order.settled_fault_at))) return ''
 
   // 已完成节点 lookup
   const histByStatus = {}

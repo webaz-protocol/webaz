@@ -12171,6 +12171,8 @@ async function renderOrderDetail(app, orderId) {
     if (!fullDispute.error) dispute = fullDispute
   }
   const isBuyer    = order.buyer_id    === state.user?.id
+  // completed 被重载:处置关单(settled_fault_at 非空)不是真实成交 → 售后动作面(收据/分享/测评/退货/评价/笔记)一律不开
+  const isGenuineCompleted = order.status === 'completed' && !order.settled_fault_at
   const isSeller   = order.seller_id   === state.user?.id
   // 物流方：已分配的 or 尚未分配（可自行揽收）
   const isLogistic = state.user?.role === 'logistics' &&
@@ -12242,7 +12244,7 @@ async function renderOrderDetail(app, orderId) {
       <button class="btn btn-gray btn-sm" style="width:auto" onclick="history.back()">${t('← 返回')}</button>
       <div style="display:flex;gap:6px;align-items:center">
         <span id="chain-badge-${orderId}" style="font-size:10px;color:#9ca3af;background:#f3f4f6;padding:3px 8px;border-radius:99px;cursor:pointer" onclick="openChainViewer('${orderId}')">${t('验证中…')}</span>
-        ${order.status === 'completed' ? `<button class="btn btn-outline btn-sm" style="width:auto;font-size:11px;padding:4px 10px" onclick="printOrderReceipt('${order.id}')">🧾 ${t('打印收据')}</button>` : ''}
+        ${isGenuineCompleted ? `<button class="btn btn-outline btn-sm" style="width:auto;font-size:11px;padding:4px 10px" onclick="printOrderReceipt('${order.id}')">🧾 ${t('打印收据')}</button>` : ''}
       </div>
     </div>
 
@@ -12291,38 +12293,38 @@ async function renderOrderDetail(app, orderId) {
       ${sellerDeclineContestPanel(order, orderId, isSeller)}
     </div>
 
-    ${(isBuyer && order.status === 'completed' && product?.id) ? `
+    ${(isBuyer && isGenuineCompleted && product?.id) ? `
     <div class="card" style="background:linear-gradient(135deg,#ecfdf5,#dbeafe)">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">🔗 ${t('分享这件商品')}</div>
       <div style="font-size:12px;color:#6b7280;margin-bottom:10px">${t('写笔记 / 复制链接 / 生成口令 — 一站完成')}</div>
       <button class="btn btn-primary btn-sm" style="width:auto" onclick="navigate('#promoter?product=${product.id}&source=order')">${t('去分享中心 →')}</button>
     </div>` : ''}
 
-    ${(isBuyer && (order.status === 'completed' || order.status === 'confirmed') && product?.id) ? `
+    ${(isBuyer && (isGenuineCompleted || order.status === 'confirmed') && product?.id) ? `
     <div class="card" id="trial-card-${order.id}" style="background:linear-gradient(135deg,#faf5ff,#fdf2f8);border-color:#ddd6fe">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px;color:#6b21a8">🎁 ${t('测评免单')}</div>
       <div id="trial-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${(isBuyer && order.status === 'completed' && Number(order.effective_return_days ?? product?.return_days ?? 0) > 0) ? `
+    ${(isBuyer && isGenuineCompleted && Number(order.effective_return_days ?? product?.return_days ?? 0) > 0) ? `
     <div class="card" id="ret-card-${order.id}">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">↩ ${t('退货')}</div>
       <div id="ret-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${(isSeller && order.status === 'completed') ? `
+    ${(isSeller && isGenuineCompleted) ? `
     <div class="card" id="ret-card-${order.id}">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">↩ ${t('退货处理')}</div>
       <div id="ret-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${((isBuyer || isSeller) && order.status === 'completed') ? `
+    ${((isBuyer || isSeller) && isGenuineCompleted) ? `
     <div class="card" id="rate-card-${order.id}">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">⭐ ${t('交易评价')}</div>
       <div id="rate-area-${order.id}" style="font-size:12px;color:#6b7280">${loading$()}</div>
     </div>` : ''}
 
-    ${(isBuyer && order.status === 'completed') ? `
+    ${(isBuyer && isGenuineCompleted) ? `
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div>
@@ -12341,15 +12343,15 @@ async function renderOrderDetail(app, orderId) {
 
   // Wave B-3: 退货 widget — 异步加载（仅 completed 订单可退）
   // 买家:有退货窗口可申请/查看;卖家:有退货申请时内联查看+处理(accept/reject/received),无申请则隐藏卡
-  if (((isBuyer && Number(order.effective_return_days ?? product?.return_days ?? 0) > 0) || isSeller) && order.status === 'completed') {   // RFC-026 冻结退货窗(服务端生效值优先)
+  if (((isBuyer && Number(order.effective_return_days ?? product?.return_days ?? 0) > 0) || isSeller) && isGenuineCompleted) {   // RFC-026 冻结退货窗(服务端生效值优先)
     try { await renderReturnWidgetForOrder(order, product) } catch (e) { console.error(e) }
   }
   // Wave C-3: 评价 widget
-  if ((isBuyer || isSeller) && order.status === 'completed') {
+  if ((isBuyer || isSeller) && isGenuineCompleted) {
     try { await renderRatingWidget(order, isBuyer, isSeller) } catch (e) { console.error(e) }
   }
   // 2026-05-24 #982：测评免单 widget — 买家可申请名额
-  if (isBuyer && (order.status === 'completed' || order.status === 'confirmed') && product?.id) {
+  if (isBuyer && (isGenuineCompleted || order.status === 'confirmed') && product?.id) {
     try { await renderTrialClaimWidget(order, product) } catch (e) { console.error(e) }
   }
 }

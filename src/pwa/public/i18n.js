@@ -7359,7 +7359,7 @@ const _EN = {
   '卖家超时未接单,订单已自动取消,{amount} WAZ 退款处理中。': 'The seller failed to accept in time; the order auto-cancelled and your {amount} WAZ refund is processing.',
   '卖家超时未发货': 'Seller failed to ship in time',
   '卖家超时未发货,订单已判违约,资金退回。': 'The seller failed to ship in time; the order was ruled a default and funds returned.',
-  '卖家超时未发货,订单已判卖家违约(直付非托管:平台无资金可退,违约已记入卖家信誉;退款请与卖家场外协商,协商未果可发起争议)。': 'The seller failed to ship in time and was ruled in default. Direct Pay is non-custodial: the platform holds no funds to refund — the default is recorded on the seller reputation; negotiate the refund off-protocol, or open a dispute if that fails.',
+  '卖家超时未发货,订单已判卖家违约并关闭(直付非托管:平台无资金可退,违约已记入卖家信誉;如已场外付款,请通过订单聊天与卖家协商退款)。': 'The seller failed to ship in time; the order was ruled a seller default and closed. Direct Pay is non-custodial: the platform holds no funds to refund — the default is recorded on the seller reputation; if you already paid off-protocol, use the order chat to negotiate the refund with the seller.',
   '物流超时': 'Logistics timed out',
   '物流方超时未完成投递,已自动记录违约。': 'The carrier failed to deliver in time; the default was recorded automatically.',
   '卖家未收到货款': 'Seller reports payment not received',
