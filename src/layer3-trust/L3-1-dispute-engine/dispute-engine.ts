@@ -18,7 +18,8 @@ import { generateId } from '../../layer0-foundation/L0-1-database/schema.js'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 seam(纯读)
 import { transition } from '../../layer0-foundation/L0-2-state-machine/engine.js'
 import { resolveDeclineContestDispute } from './decline-contest-resolve.js'   // PR3 唯一裁决器(超时硬兜底入口)
-import { notifyDeclineContestEscalated, notifyTransition } from '../../layer2-business/L2-6-notifications/notification-engine.js'   // 四段式升级通知 + 裁定终态通知
+import { notifyDeclineContestEscalated, notifyTransition, notifyFaultRefundRuled } from '../../layer2-business/L2-6-notifications/notification-engine.js'   // 四段式升级通知 + 裁定终态通知 + 退款申索裁定通知
+import { resolveFaultRefundClaim } from './fault-refund-resolve.js'   // P1-D 退款申索唯一裁决器(超时兜底入口)
 // RFC-014 PR5 — 争议资金处置走整数 base-units + 绝对值落库 + allocate 精确拆分。
 import { toUnits, toDecimal, mulRate, allocate } from '../../money.js'
 import { applyWalletDelta, debitStakeThenBalance, walletUnits } from '../../ledger.js'
@@ -816,6 +817,22 @@ export function checkDisputeTimeouts(db: Database.Database): {
         resolveDeclineContestDispute(db, dispute.id, 'sys_protocol', 'decline_fault_confirmed', '仲裁窗口 + admin 兜底窗口均超时,协议自动判卖家违约(卖家担客观无责举证责任)', 'timeout_auto')
         details.push({ disputeId: dispute.id, action: 'decline_contest 超时自动判违约', orderId: dispute.order_id })
       } catch (e) { console.warn('[dc-timeout-auto]', (e as Error).message) }
+      continue
+    }
+    // P1-D:退款申索(fault_refund_claim)绝不走通用自动裁决 —— arbitrateDispute 的结算路径会对
+    //   completed 终态订单做非法转移。超时兜底走唯一裁决器 timeout_auto(信誉裁决,零资金零状态):
+    //   被诉方(卖家)respond_deadline 内沉默,或过 arbitrate_deadline 仍无人裁 → 判买家申索成立。
+    //   details 不带 winnerId/loserId:信誉由裁决器内 recordDisputeReputation 单点发射,防 cron 双记。
+    if ((dispute as DisputeRecord & { dispute_type?: string }).dispute_type === 'fault_refund_claim') {
+      const rd = dispute.respond_deadline, ad = dispute.arbitrate_deadline
+      const due = (dispute.status === 'open' && rd && now > rd) || (ad && now > ad)
+      if (due) {
+        try {
+          const r = resolveFaultRefundClaim(db, dispute.id, 'sys_protocol', 'refund_failed_confirmed', '被诉方超时未回应/仲裁窗口超时,协议自动裁定买家申索成立(卖家未场外退款)', 'timeout_auto')
+          try { notifyFaultRefundRuled(db, r.orderId, r.decision) } catch (e) { console.warn('[frc-timeout notify]', (e as Error).message) }
+          details.push({ disputeId: dispute.id, action: 'fault_refund_claim 超时自动裁定(买家申索成立)', orderId: dispute.order_id })
+        } catch (e) { console.warn('[frc-timeout-auto]', (e as Error).message) }
+      }
       continue
     }
     // task #1093 stage 6: skip auto-judge if arbitrator paused the clock (playbook §2.1)

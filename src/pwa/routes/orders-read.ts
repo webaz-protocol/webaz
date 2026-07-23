@@ -23,6 +23,7 @@ import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'  /
 import { projectDirectPayTargetForViewer } from '../direct-pay-order-redaction.js'  // 收款目标披露门:按查看者一次分派(买家=ack 门/卖家=收款方保留/第三方=剥离),所有 orders reader 必过
 import { getMutualCancelState } from '../../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'  // 协商取消(无责合意)可达性 + 当前提议(仅 disputed 计算,UI 便利字段)
 import { getCancelRefundState } from '../../direct-pay-cancel-refund.js'  // 直付取消退款握手状态(仅 direct_p2p+accepted 计算,UI 便利字段)
+import { getFaultRefundState } from '../../direct-pay-fault-refund.js'  // P1-D 判责关单退款握手状态(仅 direct_p2p+处置关单计算)
 import { isEligibleArbitrator } from '../arbitrator-lifecycle.js'  // 白名单仲裁员可查【争议中】订单(裁定所需);不看 legacy role==='arbitrator'
 import { getQrImageForOwner } from '../../direct-receive-account-qr.js'  // Rail1 D2:ack 门后按订单快照 qr_ref 取收款码字节((ref,seller_id) 域内)
 import { readTradeTermsSnapshot, effectiveReturnDays } from '../../trade-terms.js'  // S0:下单冻结的交易条款(时效/退货/清关/税责),争议书面依据
@@ -254,6 +255,13 @@ export function registerOrdersReadRoutes(app: Application, deps: OrdersReadDeps)
     if (order.status === 'disputed') {
       const mc = getMutualCancelState(db, req.params.id, user.id as string)
       order.mutual_cancel = mc.ok ? { proposal: mc.proposal ?? null, can_propose: !!mc.can_propose, can_accept: !!mc.can_accept, can_decline: !!mc.can_decline, can_withdraw: !!mc.can_withdraw } : null
+    }
+
+    // P1-D 判责关单退款握手状态 —— 仅 direct_p2p + 处置关单(completed + settled_fault_at)计算。
+    //   party-gated(域内,含 fault_seller 来源/曾付款资格谓词);非当事方拿 null。边界在 direct-fault-refund 路由。
+    if (order.payment_rail === 'direct_p2p' && order.status === 'completed' && order.settled_fault_at) {
+      const fr = getFaultRefundState(db, req.params.id, user.id as string)
+      order.fault_refund = fr.ok ? { eligible: !!fr.eligible, request: fr.request ?? null, claim: fr.claim ?? null, can_request: !!fr.can_request, can_respond: !!fr.can_respond, can_confirm: !!fr.can_confirm, can_withdraw: !!fr.can_withdraw, can_escalate: !!fr.can_escalate } : null
     }
 
     // 直付取消退款握手状态(审计项 C)—— 仅 direct_p2p + accepted(付款后·发货前)计算,供订单页同步渲染。

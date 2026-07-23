@@ -62,7 +62,7 @@ import {
   addPartyEvidence,
   type EvidenceType, type LiabilityEntry,
 } from '../layer3-trust/L3-1-dispute-engine/dispute-engine.js'
-import { initMutualCancelSchema } from '../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'; import { registerMutualCancelRoutes } from './routes/mutual-cancel.js'; import { initDirectPayCancelRefundSchema } from '../direct-pay-cancel-refund.js'; import { registerDirectPayCancelRefundRoutes } from './routes/direct-pay-cancel-refund.js'; import { registerDirectPayReturnsRoutes } from './routes/direct-pay-returns.js'; import { registerDirectPayPendingAcceptRoutes } from './routes/direct-pay-pending-accept.js'; import { registerShippingTemplateRoutes } from './routes/shipping-templates.js'; import { registerBondSellerRoutes } from './routes/bond-seller.js'  // 协商取消(disputed) + 直付取消退款握手(accepted):域 schema + 端点
+import { initMutualCancelSchema } from '../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'; import { registerMutualCancelRoutes } from './routes/mutual-cancel.js'; import { initDirectPayCancelRefundSchema } from '../direct-pay-cancel-refund.js'; import { registerDirectPayCancelRefundRoutes } from './routes/direct-pay-cancel-refund.js'; import { initDirectPayFaultRefundSchema } from '../direct-pay-fault-refund.js'; import { registerDirectFaultRefundRoutes } from './routes/direct-fault-refund.js'; import { registerDirectPayReturnsRoutes } from './routes/direct-pay-returns.js'; import { registerDirectPayPendingAcceptRoutes } from './routes/direct-pay-pending-accept.js'; import { registerShippingTemplateRoutes } from './routes/shipping-templates.js'; import { registerBondSellerRoutes } from './routes/bond-seller.js'  // 协商取消(disputed) + 直付取消退款握手(accepted):域 schema + 端点
 import {
   initNotificationSchema,
   notifyTransition,
@@ -478,7 +478,7 @@ const activeClaimTaskCountForVerifier = (userId: string) => activeClaimTaskCount
 const settleClaimTask = (taskId: string) => settleClaimTaskRaw(db, generateId, taskId)
 const notifyEligibleVerifiers = (args: Parameters<typeof notifyEligibleVerifiersRaw>[2]) => notifyEligibleVerifiersRaw(db, generateId, args)
 initSystemUser(db)
-initDisputeSchema(db); initMutualCancelSchema(db); initDirectPayCancelRefundSchema(db)   // + mutual_cancel_proposals / direct_pay_cancel_requests 表
+initDisputeSchema(db); initMutualCancelSchema(db); initDirectPayCancelRefundSchema(db); initDirectPayFaultRefundSchema(db)   // + mutual_cancel_proposals / direct_pay_cancel_requests / direct_fault_refund_requests 表
 initNotificationSchema(db)
 initSkillSchema(db)
 initSkillMarketSchema(db)
@@ -5494,7 +5494,7 @@ registerDisputesWriteRoutes(app, {
   settleCommission, depositToFund, calculatePv,
   recordDisputeReputation, issueAgentStrike, publishDisputeCase, logAdminAction, snfSend,
   getProtocolParam, notifyTransition,
-}); registerMutualCancelRoutes(app, { db, auth, generateId, errorRes }); registerDirectPayCancelRefundRoutes(app, { db, auth, generateId, errorRes, consumeGateToken }); registerDirectPayReturnsRoutes(app, { db, auth, generateId, errorRes, consumeGateToken }); registerDirectPayPendingAcceptRoutes(app, { db, auth, errorRes, getProtocolParam }); registerShippingTemplateRoutes(app, { db, auth, errorRes }); registerBondSellerRoutes(app, { db, auth, generateId, errorRes, getProtocolParam })  // 协商取消(disputed)+ 直付取消退款握手(accepted):关单手术均内部 db.transaction 原子
+}); registerMutualCancelRoutes(app, { db, auth, generateId, errorRes }); registerDirectPayCancelRefundRoutes(app, { db, auth, generateId, errorRes, consumeGateToken }); registerDirectFaultRefundRoutes(app, { db, auth, generateId, errorRes, consumeGateToken }); registerDirectPayReturnsRoutes(app, { db, auth, generateId, errorRes, consumeGateToken }); registerDirectPayPendingAcceptRoutes(app, { db, auth, errorRes, getProtocolParam }); registerShippingTemplateRoutes(app, { db, auth, errorRes }); registerBondSellerRoutes(app, { db, auth, generateId, errorRes, getProtocolParam })  // 协商取消(disputed)+ 直付取消退款握手(accepted):关单手术均内部 db.transaction 原子
 
 // lightAuthGuard：轻量 Authorization 头守门（在 raw 解析之前挡掉无 auth 请求）
 // 被 Phase 13 shareables（视频上传）+ Phase 87 disputes evidence-blob 共享

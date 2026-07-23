@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (815 endpoints, 20 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (822 endpoints, 20 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -6425,6 +6425,97 @@
     "/api/orders/:id/direct-pay-qr": {
       "get": {
         "summary": "取【当时那一版】图字节。未 ack / 非买家 / 无 QR / 非 direct_p2p → 统一 404(不枚举,不泄露)。图字节不入 order JSON。",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/fault-refund": {
+      "get": {
+        "summary": "GET /api/orders/:id/fault-refund",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/fault-refund/confirm": {
+      "post": {
+        "summary": "POST /api/orders/:id/fault-refund/confirm",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/fault-refund/decline": {
+      "post": {
+        "summary": "POST /api/orders/:id/fault-refund/decline",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/fault-refund/escalate": {
+      "post": {
+        "summary": "POST /api/orders/:id/fault-refund/escalate",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/fault-refund/mark-refunded": {
+      "post": {
+        "summary": "POST /api/orders/:id/fault-refund/mark-refunded",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/fault-refund/request": {
+      "post": {
+        "summary": "POST /api/orders/:id/fault-refund/request",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/fault-refund/withdraw": {
+      "post": {
+        "summary": "POST /api/orders/:id/fault-refund/withdraw",
         "tags": [
           "order"
         ],
