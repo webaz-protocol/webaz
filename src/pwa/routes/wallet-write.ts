@@ -65,6 +65,7 @@ export function registerWalletWriteRoutes(app: Application, deps: WalletWriteDep
   })
 
   app.post('/api/wallet/connect/verify', async (req, res) => {
+    if (Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1) return void res.status(409).json({ error: 'WAZ 已退役,钱包绑定已关闭', error_code: 'RAIL_DISABLED' })   // WAZ 退役:关停前发的 5min challenge 也不能在关停后 verify 入白名单(Codex #516 R1 P2)
     const user = auth(req, res); if (!user) return
     // H-2 P1-1: 防御性 — 受信角色不应能绑钱包
     if (isTrustedRole(user as Record<string, unknown>)) return void res.status(403).json({ error: '受信角色无钱包' })

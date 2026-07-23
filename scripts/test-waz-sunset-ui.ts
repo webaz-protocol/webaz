@@ -23,6 +23,7 @@ const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js
 const { applyWebazRuntimeSchema } = await import('../src/runtime/apply-webaz-runtime-schema.js')
 const { registerWalletReadRoutes } = await import('../src/pwa/routes/wallet-read.js')
 const { registerWalletWriteRoutes } = await import('../src/pwa/routes/wallet-write.js')
+const { registerAuthReadRoutes } = await import('../src/pwa/routes/auth-read.js')
 const express = (await import('express')).default
 
 let pass = 0, fail = 0; const fails: string[] = []
@@ -32,6 +33,8 @@ const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 applyWebazRuntimeSchema(db)
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('w1','w1','buyer','k_w1')").run()
 try { db.exec('ALTER TABLE wallets ADD COLUMN deposit_address TEXT') } catch { /* 已存在 */ }
+db.exec('CREATE TABLE IF NOT EXISTS region_config (region TEXT PRIMARY KEY, max_levels INTEGER, pv_enabled INTEGER, active INTEGER)')
+for (const col of ['total_left_pv REAL DEFAULT 0', 'total_right_pv REAL DEFAULT 0', 'permanent_code TEXT', 'handle TEXT', 'handle_last_created_at TEXT', 'handle_change_log TEXT', 'bio TEXT', 'search_anchor TEXT', 'feed_visible INTEGER', 'default_address_text TEXT', 'default_address_region TEXT', 'default_address_json TEXT']) { try { db.exec(`ALTER TABLE users ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
 db.prepare("INSERT INTO wallets (user_id, balance, staked, earned, deposit_address) VALUES ('w1', 12.5, 3, 40, '0x' + 'c')").run()
 
 const cp: Record<string, unknown> = {}
@@ -52,6 +55,7 @@ const commonDeps: any = {
 }
 registerWalletReadRoutes(app, commonDeps)
 registerWalletWriteRoutes(app, commonDeps)
+registerAuthReadRoutes(app, { ...commonDeps, safeRoles: () => ['buyer'], getRegionMaxLevels: () => 1, userMlmGate: () => ({ payoutLevels: 1, mlmUiVisible: false }), getUserLevel: () => null })
 const srv = app.listen(0)
 const port = (srv.address() as { port: number }).port
 const call = async (method: string, path: string, body?: Record<string, unknown>): Promise<{ status: number; json: Record<string, unknown> }> => {
@@ -69,11 +73,30 @@ const on = await call('GET', '/api/wallet')
 ok('wallet read: channel on → real balances restored (admin escape hatch)', on.json.waz_sunset === undefined && Number(on.json.balance) === 12.5, JSON.stringify(on.json))
 cp['payment_rail_waz_escrow_enabled'] = 0
 
+// ── ①b 旁路读面(/api/me、/api/profile)同真值零化(Codex #516 R1 P1)──
+const meOff = await call('GET', '/api/me')
+const meW = meOff.json.wallet as Record<string, unknown>
+ok('me: off → wallet projection zeroed with waz_sunset flag', meW.waz_sunset === true && meW.balance === 0 && meW.fee_staked === 0, JSON.stringify(meW))
+const profOff = await call('GET', '/api/profile')
+const profW = profOff.json.wallet as Record<string, unknown>
+ok('profile: off → wallet projection zeroed', profW.waz_sunset === true && profW.balance === 0)
+cp['payment_rail_waz_escrow_enabled'] = 1
+const meOn = await call('GET', '/api/me')
+ok('me: on → live wallet restored', Number((meOn.json.wallet as Record<string, unknown>).balance) === 12.5)
+cp['payment_rail_waz_escrow_enabled'] = 0
+// users-public private_stats + MCP webaz_profile 源码锁(共享 projectWalletForSunset)
+const UP = readFileSync(new URL('../src/pwa/routes/users-public.ts', import.meta.url), 'utf8')
+ok('users/:id private_stats routed through projectWalletForSunset', /projectWalletForSunset\(getProtocolParam,/.test(UP))
+const CHN2 = readFileSync(new URL('../src/waz-escrow-channel.ts', import.meta.url), 'utf8')
+ok('shared projection helper is fail-closed and zeroes every field', /projectWalletForSunset/.test(CHN2) && /balance: 0, staked: 0, escrowed: 0, earned: 0, fee_staked: 0/.test(CHN2))
+
 // ── ② withdraw / connect 断供 ──
 const wd = await call('POST', '/api/wallet/withdraw', { to_address: '0x' + 'b'.repeat(40), amount: 50 })
 ok('withdraw: off → 409 RAIL_DISABLED', wd.status === 409 && wd.json.error_code === 'RAIL_DISABLED', JSON.stringify(wd))
 const cc = await call('POST', '/api/wallet/connect/challenge', {})
-ok('connect: off → 409 RAIL_DISABLED', cc.status === 409 && cc.json.error_code === 'RAIL_DISABLED')
+ok('connect challenge: off → 409 RAIL_DISABLED', cc.status === 409 && cc.json.error_code === 'RAIL_DISABLED')
+const cv = await call('POST', '/api/wallet/connect/verify', {})
+ok('connect verify: off → 409 RAIL_DISABLED (pre-shutdown challenge cannot be redeemed)', cv.status === 409 && cv.json.error_code === 'RAIL_DISABLED', JSON.stringify(cv))
 cp['payment_rail_waz_escrow_enabled'] = 1
 const wdOn = await call('POST', '/api/wallet/withdraw', { to_address: '0x' + 'b'.repeat(40), amount: 50 })
 ok('withdraw: on → gate passes (later validation fires instead)', wdOn.json.error_code !== 'RAIL_DISABLED', JSON.stringify(wdOn))
@@ -100,6 +123,8 @@ const iView = MCP.indexOf("// ─── action === 'view'")
 const iMcpGate = MCP.indexOf("payment_rail_waz_escrow_enabled'", iView)
 const iWalletSelect = MCP.indexOf('SELECT * FROM wallets WHERE user_id', iView)
 ok('mcp local view: sunset gate before the wallet read, fail-closed', iView > 0 && iMcpGate > iView && iWalletSelect > iMcpGate)
+ok('mcp local wallet DTO carries the full field set incl. fee_staked (shape parity with /api/wallet)', (MCP.match(/waz_sunset: true[^}]*fee_staked: 0/g) || []).length >= 3)
+ok('mcp webaz_profile sandbox view zeroes the wallet projection', /webaz_profile|profile/.test(MCP) && /wallet = \{ waz_sunset: true, balance: 0, staked: 0, escrowed: 0, earned: 0, fee_staked: 0 \}/.test(MCP))
 ok("mcp network view: forwards /api/wallet (inherits the sunset DTO)", /if \(action === 'view'\)\s+return await apiCall\('\/api\/wallet'/.test(MCP))
 
 // ── ⑤ 契约登记 ──
