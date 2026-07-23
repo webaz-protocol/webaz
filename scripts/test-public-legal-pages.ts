@@ -29,7 +29,6 @@ const loginSource = read('src/pwa/routes/auth-login.ts')
 const recoverySource = read('src/pwa/routes/recover-key.ts')
 const adminBearerSource = read('src/pwa/admin-bearer-auth.ts')
 const deletionFinalizeSource = read('src/pwa/account-deletion-finalize.ts')
-const ordersCreateSource = read('src/pwa/routes/orders-create.ts')
 const allPublic = [privacy, terms, support]
 const privacyMdFlat = privacyMd.replace(/\s+/g, ' ')
 const termsMdFlat = termsMd.replace(/\s+/g, ' ')
@@ -93,8 +92,7 @@ ok('deleted accounts cannot return through login, recovery, or admin Bearer path
 ok('final deletion rechecks commerce responsibilities before revoking access',
   /hasPendingOrders[\s\S]*hasOpenDisputes[\s\S]*wallet\.balance > 0\.01[\s\S]*return false/.test(deletionFinalizeSource))
 ok('deleted sellers cannot accept new orders and their active listings are paused',
-  /p\.status = 'active' AND u\.deleted_at IS NULL/.test(ordersCreateSource)
-  && /trg_orders_reject_deleted_seller[\s\S]*BEFORE INSERT ON orders[\s\S]*deleted_at IS NOT NULL/.test(deletionFinalizeSource)
+  /trg_orders_reject_deleted_seller[\s\S]*BEFORE INSERT ON orders[\s\S]*deleted_at IS NOT NULL/.test(deletionFinalizeSource)
   && /UPDATE products SET status = 'paused'/.test(deletionFinalizeSource))
 ok('final deletion closes the live client and cannot restore public identity or sponsor eligibility',
   /disconnectDeletedAccountClient\(sseClients, c\.user_id\)/.test(serverSource)

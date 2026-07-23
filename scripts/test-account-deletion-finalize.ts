@@ -53,6 +53,8 @@ function fixture(): Database.Database {
 
 const at = '2026-07-23T10:00:00.000Z'
 const db = fixture()
+db.prepare(`INSERT INTO orders VALUES (?,?,?)`).run('u2', 'u1', 'completed')
+ok((db.prepare(`SELECT COUNT(*) n FROM orders`).get() as { n: number }).n === 1, 'database guard must allow an active seller order')
 ok(finalizeAccountDeletion(db, {
   userId: 'u1', anonymousName: 'anon_test', replacementApiKey: 'deleted_new', finalizedAt: at,
 }), 'eligible deletion should finalize')

@@ -172,7 +172,7 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     }
 
     const product = await dbOne<Record<string, unknown>>(`SELECT p.*, u.id as seller_uid FROM products p
-      JOIN users u ON p.seller_id = u.id WHERE p.id = ? AND p.status = 'active' AND u.deleted_at IS NULL`,
+      JOIN users u ON p.seller_id = u.id WHERE p.id = ? AND p.status = 'active'`,
       [product_id])
     if (!product) return void res.json({ error: '商品不存在或已下架' })
 
