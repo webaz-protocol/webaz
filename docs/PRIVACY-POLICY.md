@@ -106,8 +106,8 @@ After an eligible account-deletion request reaches the implemented 14-day job, W
 anonymizes selected profile fields and overwrites recipient, phone, and address-detail fields
 in saved addresses. It also disables the account's password and API key, revokes active
 sessions, delegated-agent grants, OAuth access and refresh tokens, pending authorization
-codes, and push subscriptions. It does not erase every linked order, dispute, KYC, audit,
-security, or other record.
+codes, verification and recovery codes, and push subscriptions. It does not erase every
+linked order, dispute, KYC, audit, security, or other record.
 
 ## 8. Access, correction, and requests / 访问、更正与请求
 

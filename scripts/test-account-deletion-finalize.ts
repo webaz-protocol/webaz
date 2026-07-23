@@ -25,6 +25,7 @@ function fixture(): Database.Database {
     CREATE TABLE oauth_access_tokens (grant_id TEXT, revoked_at TEXT);
     CREATE TABLE oauth_refresh_tokens (grant_id TEXT, revoked_at TEXT);
     CREATE TABLE oauth_auth_codes (user_id TEXT, consumed_at TEXT);
+    CREATE TABLE verification_codes (user_id TEXT, used_at TEXT);
     CREATE TABLE user_sessions (user_id TEXT, revoked_at TEXT);
     CREATE TABLE push_subscriptions (user_id TEXT);
   `)
@@ -37,6 +38,7 @@ function fixture(): Database.Database {
   db.prepare(`INSERT INTO oauth_access_tokens VALUES (?,?)`).run('g1', null)
   db.prepare(`INSERT INTO oauth_refresh_tokens VALUES (?,?)`).run('g1', null)
   db.prepare(`INSERT INTO oauth_auth_codes VALUES (?,?)`).run('u1', null)
+  db.prepare(`INSERT INTO verification_codes VALUES (?,?)`).run('u1', null)
   db.prepare(`INSERT INTO user_sessions VALUES (?,?)`).run('u1', null)
   db.prepare(`INSERT INTO push_subscriptions VALUES (?)`).run('u1')
   return db
@@ -57,6 +59,7 @@ ok((db.prepare(`SELECT revoked_reason FROM agent_delegation_grants WHERE grant_i
 ok((db.prepare(`SELECT revoked_at FROM oauth_access_tokens`).get() as { revoked_at: string }).revoked_at === at, 'OAuth access tokens must be revoked')
 ok((db.prepare(`SELECT revoked_at FROM oauth_refresh_tokens`).get() as { revoked_at: string }).revoked_at === at, 'OAuth refresh tokens must be revoked')
 ok((db.prepare(`SELECT consumed_at FROM oauth_auth_codes`).get() as { consumed_at: string }).consumed_at === at, 'pending authorization codes must be consumed')
+ok((db.prepare(`SELECT used_at FROM verification_codes`).get() as { used_at: string }).used_at === at, 'pending recovery codes must be consumed')
 ok((db.prepare(`SELECT COUNT(*) n FROM push_subscriptions`).get() as { n: number }).n === 0, 'push subscriptions must be removed')
 ok((db.prepare(`SELECT recipient FROM user_addresses`).get() as { recipient: string }).recipient === '[已注销]', 'saved address must be anonymized')
 ok((db.prepare(`SELECT pii_wiped_at FROM account_deletion_requests`).get() as { pii_wiped_at: string }).pii_wiped_at === at, 'request must be marked finalized')
@@ -78,6 +81,7 @@ ok(threw, 'injected failure must surface')
 ok((rollbackDb.prepare(`SELECT status FROM agent_delegation_grants WHERE grant_id='g1'`).get() as { status: string }).status === 'active', 'grant revocation must roll back')
 ok((rollbackDb.prepare(`SELECT revoked_at FROM oauth_access_tokens`).get() as { revoked_at: string | null }).revoked_at === null, 'OAuth revocation must roll back')
 ok((rollbackDb.prepare(`SELECT revoked_at FROM user_sessions`).get() as { revoked_at: string | null }).revoked_at === null, 'session revocation must roll back')
+ok((rollbackDb.prepare(`SELECT used_at FROM verification_codes`).get() as { used_at: string | null }).used_at === null, 'recovery-code consumption must roll back')
 ok((rollbackDb.prepare(`SELECT COUNT(*) n FROM push_subscriptions`).get() as { n: number }).n === 1, 'push deletion must roll back')
 
 console.log(`account-deletion-finalize passed (${pass} assertions)`)

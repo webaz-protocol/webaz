@@ -43,7 +43,7 @@ export function registerRecoverKeyRoutes(app: Application, deps: RecoverKeyDeps)
     return { display, handleRef: display.replace(/^@/, '').toLowerCase() }
   }
   // (handle = ? OR name = ?) 子句 + 参数,排除 sys/auditor。
-  const ACCOUNT_MATCH = "(lower(coalesce(handle, '')) = ? OR name = ?) AND id NOT IN ('sys_protocol', ?)"
+  const ACCOUNT_MATCH = "(lower(coalesce(handle, '')) = ? OR name = ?) AND deleted_at IS NULL AND id NOT IN ('sys_protocol', ?)"
 
   // IP 级速率（5/min）— 防爆破列举账户
   const recoverKeyHits = new Map<string, { count: number; firstAt: number }>()
@@ -145,7 +145,7 @@ export function registerRecoverKeyRoutes(app: Application, deps: RecoverKeyDeps)
     const row = findActiveCode('email', target, 'recover_key')
     if (!row) return void res.json({ error: '验证码已过期或未发送，请重新开始' })
 
-    const user = await dbOne<{ id: string; name: string; handle: string | null; api_key: string }>(`SELECT id, name, handle, api_key FROM users WHERE id = ?`, [row.user_id])
+    const user = await dbOne<{ id: string; name: string; handle: string | null; api_key: string }>(`SELECT id, name, handle, api_key FROM users WHERE id = ? AND deleted_at IS NULL`, [row.user_id])
     const { display, handleRef } = accountRef(name)
     const refMatches = !!user && (user.name === display || String(user.handle || '').toLowerCase() === handleRef)
     if (!user || !refMatches) return void res.json({ error: '名称 / @用户名与验证码不匹配' })

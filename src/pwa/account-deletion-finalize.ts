@@ -30,6 +30,8 @@ export function finalizeAccountDeletion(
       .run(input.finalizedAt, input.userId)
     db.prepare(`UPDATE oauth_auth_codes SET consumed_at = COALESCE(consumed_at, ?) WHERE user_id = ?`)
       .run(input.finalizedAt, input.userId)
+    db.prepare(`UPDATE verification_codes SET used_at = COALESCE(used_at, ?) WHERE user_id = ?`)
+      .run(input.finalizedAt, input.userId)
     db.prepare(`
       UPDATE agent_delegation_grants
       SET status = 'revoked', revoked_at = ?, revoked_reason = 'account_deleted'

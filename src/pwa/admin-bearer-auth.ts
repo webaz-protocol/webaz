@@ -28,7 +28,7 @@ export function resolveBearerProtocolAdmin(
   const key = authz.slice('Bearer '.length).trim()
   if (!key) return null
 
-  const u = db.prepare('SELECT * FROM users WHERE api_key = ?').get(key) as Record<string, unknown> | undefined
+  const u = db.prepare('SELECT * FROM users WHERE api_key = ? AND deleted_at IS NULL').get(key) as Record<string, unknown> | undefined
   if (!u) return null
 
   const mod = db.prepare('SELECT suspended FROM user_moderation WHERE user_id = ?').get(u.id) as { suspended: number } | undefined

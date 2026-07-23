@@ -15,7 +15,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const db: any = new Database(':memory:')
-db.exec(`CREATE TABLE users (id TEXT PRIMARY KEY, role TEXT, roles TEXT, admin_type TEXT, admin_permissions TEXT, api_key TEXT)`)
+db.exec(`CREATE TABLE users (id TEXT PRIMARY KEY, role TEXT, roles TEXT, admin_type TEXT, admin_permissions TEXT, api_key TEXT, deleted_at TEXT)`)
 db.exec(`CREATE TABLE user_moderation (user_id TEXT PRIMARY KEY, suspended INTEGER)`)
 db.exec(`CREATE TABLE user_sessions (id TEXT PRIMARY KEY, api_key TEXT, revoked_at TEXT, created_at TEXT DEFAULT (datetime('now')))`)
 // root protocol-admin (no session row → not revoked → allowed)
@@ -30,6 +30,8 @@ db.prepare("INSERT INTO user_moderation (user_id,suspended) VALUES ('usr_susp',1
 // protocol-admin with a REVOKED session
 db.prepare("INSERT INTO users (id,role,admin_type,api_key) VALUES ('usr_revoked','admin','root','key_revoked')").run()
 db.prepare("INSERT INTO user_sessions (id,api_key,revoked_at) VALUES ('ses1','key_revoked',datetime('now'))").run()
+// deleted protocol-admin must never pass even if a stale key remains in a fixture/partial migration
+db.prepare("INSERT INTO users (id,role,admin_type,api_key,deleted_at) VALUES ('usr_deleted','admin','root','key_deleted',datetime('now'))").run()
 
 // mirrors central hasAdminPermission semantics: root ⇒ all; regional ⇒ admin_permissions includes all|protocol
 const isProtocolAdmin = (u: any): boolean => {
@@ -59,6 +61,8 @@ const resolve = (req: any) => resolveBearerProtocolAdmin(db, req, isProtocolAdmi
 // 4) revoked-session protocol-admin bearer → null
 { const u = resolve(bearer('key_revoked'))
   ok('revoked-session protocol-admin → null', u === null) }
+{ const u = resolve(bearer('key_deleted'))
+  ok('deleted protocol-admin → null', u === null) }
 
 // 5) admin but NO protocol permission → null
 { const u = resolve(bearer('key_regional'))

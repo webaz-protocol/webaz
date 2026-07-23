@@ -25,6 +25,9 @@ const privacyMd = read('docs/PRIVACY-POLICY.md')
 const termsMd = read('docs/TERMS-OF-SERVICE.md')
 const deletionRoute = read('src/pwa/routes/account-deletion.ts')
 const serverSource = read('src/pwa/server.ts')
+const loginSource = read('src/pwa/routes/auth-login.ts')
+const recoverySource = read('src/pwa/routes/recover-key.ts')
+const adminBearerSource = read('src/pwa/admin-bearer-auth.ts')
 const allPublic = [privacy, terms, support]
 const privacyMdFlat = privacyMd.replace(/\s+/g, ' ')
 const termsMdFlat = termsMd.replace(/\s+/g, ' ')
@@ -80,6 +83,11 @@ ok('account-deletion API notice matches the bounded anonymization policy',
   && !/PII 永久擦除/.test(deletionRoute))
 ok('deleted accounts cannot authenticate through the shared API-key resolver',
   /SELECT \* FROM users WHERE api_key = \? AND deleted_at IS NULL/.test(serverSource))
+ok('deleted accounts cannot return through login, recovery, or admin Bearer paths',
+  (loginSource.match(/deleted_at IS NULL/g) || []).length === 2
+  && /ACCOUNT_MATCH = [^\n]*deleted_at IS NULL/.test(recoverySource)
+  && /WHERE id = \? AND deleted_at IS NULL/.test(recoverySource)
+  && /api_key = \? AND deleted_at IS NULL/.test(adminBearerSource))
 
 ok('terms contains all 15 sections',
   Array.from({ length: 15 }, (_, index) => terms.includes(`§${index + 1}`)).every(Boolean))
