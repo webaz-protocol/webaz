@@ -18,12 +18,12 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 // 1) 订单详情对卖家也渲染退货卡 + 走 widget 水合(direct_p2p 非托管无退款 → 该卡对 direct_p2p 不渲染)
 ok('order detail renders a seller return card (isSeller && completed; direct_p2p un-gated since contract v15)',
-  /\$\{\(isSeller && order\.status === 'completed'\) \? `[\s\S]{0,160}ret-card-\$\{order\.id\}/.test(app))
+  /\$\{\(isSeller && isGenuineCompleted\) \? `[\s\S]{0,160}ret-card-\$\{order\.id\}/.test(app))   // 2026-07:处置关单(settled_fault_at)不开售后面 → isGenuineCompleted 门
 ok('return cards UN-gated for direct_p2p (v15: off-protocol refund handshake replaces the block)',
   (app.match(/order\.status === 'completed'[^`]*order\.payment_rail !== 'direct_p2p'/g) || []).length === 0
   && /window\.dpReturnHandshake \? window\.dpReturnHandshake\(item, isBuyer, isSellerView, order\)/.test(app))
 ok('hydration calls renderReturnWidgetForOrder for seller too',
-  /\(\(isBuyer && Number\(order\.effective_return_days \?\? product\?\.return_days \?\? 0\) > 0\) \|\| isSeller\) && order\.status === 'completed'[\s\S]{0,160}renderReturnWidgetForOrder\(order, product\)/.test(app))   // RFC-026:服务端生效退货窗优先
+  /\(\(isBuyer && Number\(order\.effective_return_days \?\? product\?\.return_days \?\? 0\) > 0\) \|\| isSeller\) && isGenuineCompleted[\s\S]{0,160}renderReturnWidgetForOrder\(order, product\)/.test(app))   // RFC-026:服务端生效退货窗优先
 
 // 2) widget:卖家无退货申请 → 隐藏整卡(不显示"申请退货")
 const widget = app.slice(app.indexOf('async function renderReturnWidgetForOrder'), app.indexOf('async function renderReturnWidgetForOrder') + 5200)
