@@ -42,7 +42,7 @@ function availability(stock: unknown): string {
 //   - 加 ?format=jpeg(ACP 只收 JPEG/PNG,webp 存量由端点转码)。
 // 旧实现对裸 hash 拼出 https://webaz.xyz/<hash>(SPA 壳 HTML,非图片)—— 生产 108/108 坏链的病根;
 //   未知形状一律 null,绝不拼域名造坏链。
-function resolveImageUrl(raw: unknown): string | null {
+export function resolveImageUrl(raw: unknown): string | null {
   if (typeof raw !== 'string' || !raw.trim()) return null
   const s = raw.trim()
   if (/^[0-9a-f]{64}$/i.test(s)) return `${BASE}/api/manifests/${s.toLowerCase()}/thumb?format=jpeg`
@@ -59,7 +59,7 @@ function resolveImageUrl(raw: unknown): string | null {
 //   自定义大区码(如 'SEA')非 ISO alpha-2,过滤 —— 宁可少报不虚报。店铺级规则按 seller 缓存(避免 5000 行 N+1)。
 const ISO_ALPHA2 = /^[A-Z]{2}$/
 type SaleRule = ReturnType<typeof effectiveSaleRegionsRule>
-function targetCountries(db: Database.Database, saleRegions: string | null, sellerId: string, storeRuleCache: Map<string, SaleRule>): string[] | null {
+export function targetCountries(db: Database.Database, saleRegions: string | null, sellerId: string, storeRuleCache: Map<string, SaleRule>): string[] | null {
   let rule: SaleRule = null
   try {
     if (saleRegions) rule = effectiveSaleRegionsRule(db, { sale_regions: saleRegions }, sellerId)

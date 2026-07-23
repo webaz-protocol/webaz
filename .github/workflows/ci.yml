@@ -812,6 +812,7 @@ jobs:
       - run: npm run test:direct-pay-fault-refund
       - run: npm run test:reputation-single-source
       - run: npm run test:acp-feed-images
+      - run: npm run test:acp-strict-export
       - run: npm run test:order-timeline-render
       - run: npm run test:direct-pay-pending-accept
       - run: npm run test:shipping-templates
