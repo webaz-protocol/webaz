@@ -34,11 +34,11 @@ export function registerAuthLoginRoutes(app: Application, deps: AuthLoginDeps): 
 
     const ref = name.trim().replace(/^@/, '').toLowerCase()
     let matches = await dbAll<Record<string, unknown>>(
-      "SELECT * FROM users WHERE handle = ? AND id NOT IN ('sys_protocol', ?)", [ref, INTERNAL_AUDITOR_ID]
+      "SELECT * FROM users WHERE handle = ? AND deleted_at IS NULL AND id NOT IN ('sys_protocol', ?)", [ref, INTERNAL_AUDITOR_ID]
     )
     if (matches.length === 0) {
       matches = await dbAll<Record<string, unknown>>(
-        "SELECT * FROM users WHERE name = ? AND id NOT IN ('sys_protocol', ?)", [name.trim(), INTERNAL_AUDITOR_ID]
+        "SELECT * FROM users WHERE name = ? AND deleted_at IS NULL AND id NOT IN ('sys_protocol', ?)", [name.trim(), INTERNAL_AUDITOR_ID]
       )
     }
 

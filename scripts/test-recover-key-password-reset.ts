@@ -22,7 +22,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const db: any = new Database(':memory:')
-db.exec(`CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, handle TEXT, role TEXT DEFAULT 'buyer', email TEXT, email_verified INTEGER DEFAULT 0, phone TEXT, api_key TEXT, password_hash TEXT, failed_attempts INTEGER DEFAULT 0, locked_until TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT)`)
+db.exec(`CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, handle TEXT, role TEXT DEFAULT 'buyer', email TEXT, email_verified INTEGER DEFAULT 0, phone TEXT, api_key TEXT, password_hash TEXT, failed_attempts INTEGER DEFAULT 0, locked_until TEXT, deleted_at TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT)`)
 db.exec(`CREATE TABLE verification_codes (id TEXT PRIMARY KEY, user_id TEXT, channel TEXT, target TEXT, code TEXT, purpose TEXT, attempts INTEGER DEFAULT 0, expires_at TEXT, used_at TEXT)`)
 db.prepare("INSERT INTO users (id,name,handle,email,email_verified,api_key) VALUES ('usr_alice','Alice','holden','alice@example.com',1,'key_alice_secret')").run()
 setSeamDb(db)
@@ -104,6 +104,16 @@ async function main(): Promise<void> {
     const r = await post('/api/recover-key/confirm', { name: 'Alice', email: 'alice@example.com', code: '666666', new_password: 'unlock-me-please' })
     const ls = lockState()
     ok('reset clears lock state (failed_attempts=0, locked_until=NULL)', r.json?.password_reset === true && ls.a === 0 && ls.l == null, JSON.stringify(ls)) }
+
+  // 8) deleted accounts cannot use a code issued before deletion or start a new recovery
+  { seedCode('777777'); db.prepare("UPDATE users SET deleted_at=datetime('now'), password_hash=NULL WHERE id='usr_alice'").run()
+    const r = await post('/api/recover-key/confirm', { name: 'Alice', email: 'alice@example.com', code: '777777', new_password: 'must-not-return' })
+    ok('deleted account cannot confirm a pre-issued recovery code', !r.json?.success && pwHash() == null, JSON.stringify(r.json))
+    const hint = await post('/api/recover-key', { name: '@holden' })
+    ok('deleted account is absent from recovery hints', hint.json?.found === undefined && /未找到/.test(hint.json?.error || ''), JSON.stringify(hint.json))
+    issueCalls.length = 0
+    await post('/api/recover-key/start', { name: '@holden', email: 'alice@example.com' })
+    ok('deleted account cannot receive a new recovery code', issueCalls.length === 0, JSON.stringify(issueCalls)) }
   server.close()
 
   if (fail === 0) {

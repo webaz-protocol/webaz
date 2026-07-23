@@ -23,6 +23,7 @@ import crypto from 'crypto'; import { deriveHandleBase } from '../handle-policy.
 
 import { initDatabase, generateId } from '../layer0-foundation/L0-1-database/schema.js'
 import { setSeamDb } from '../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { disconnectDeletedAccountClient, finalizeAccountDeletion, initDeletedSellerOrderGuard } from './account-deletion-finalize.js'
 import { initSystemUser, transition, getOrderStatus, checkTimeouts, settleFault } from '../layer0-foundation/L0-2-state-machine/engine.js'; import { genuineSalePredicate } from '../layer0-foundation/L0-2-state-machine/genuine-sale.js'; import { checkVerifierEligibility as checkVerifierEligibilityImpl, checkArbitratorEligibility as checkArbitratorEligibilityImpl } from './eligibility.js'; import { settleDirectPayFeeAtCompletion } from '../direct-pay-fee-ar.js'  // RFC-018 PR4 genuine-sale SSOT + Direct Pay Rail 1 平台费链下应收(完成时释放遗留模拟 stake + accrue)
 import { endpointToAction, endpointToReadAction } from './endpoint-actions.js'
 import { migrateProtocolToPublicLaunch, seedPublicLaunchConsentV12 } from './public-launch-migrations.js'
@@ -516,6 +517,7 @@ initAnchorRegistrySchema(db)
 // src/runtime/webaz-schema-helpers.ts)；该 helper 同时建 permanent_code/region + 11 个
 // products 结构化字段(纯非钱列,从下方各 inline 块单点收口到此处,CREATE-before-ALTER 不变)。
 initRegisterListSearchColumns(db)
+try { db.exec("ALTER TABLE users ADD COLUMN deleted_at TEXT") } catch {}; initDeletedSellerOrderGuard(db)
 try { db.exec("ALTER TABLE users ADD COLUMN search_anchor TEXT") } catch {}
 
 // E1 一次性迁移：把 users.search_anchor 旧数据搬进 anchor_registry（target_kind='user'）
@@ -2198,14 +2200,14 @@ function resolveInviteCodeRef(raw: string | null | undefined): { userId: string;
   if (!m) return null
   const code = m[1].toUpperCase()
   const side: 'left' | 'right' | null = m[2] ? (m[2].toLowerCase() === 'l' ? 'left' : 'right') : null
-  const r = db.prepare("SELECT id FROM users WHERE permanent_code = ? AND id NOT IN ('sys_protocol', ?) LIMIT 1").get(code, INTERNAL_AUDITOR_ID) as { id: string } | undefined
+  const r = db.prepare("SELECT id FROM users WHERE permanent_code = ? AND deleted_at IS NULL AND id NOT IN ('sys_protocol', ?) LIMIT 1").get(code, INTERNAL_AUDITOR_ID) as { id: string } | undefined
   if (!r) return null
   return { userId: r.id, code, side }
 }
 
 // 一次性回填：现有用户补齐 permanent_code + handle（启动时跑）
 try {
-  const rows = db.prepare("SELECT id, name FROM users WHERE permanent_code IS NULL OR handle IS NULL").all() as { id: string; name: string }[]
+  const rows = db.prepare("SELECT id, name FROM users WHERE deleted_at IS NULL AND (permanent_code IS NULL OR handle IS NULL)").all() as { id: string; name: string }[]
   let backfilled = 0
   for (const r of rows) {
     const code = db.prepare("SELECT permanent_code, handle FROM users WHERE id = ?").get(r.id) as { permanent_code: string | null; handle: string | null }
@@ -3620,7 +3622,7 @@ setPushCallback((userId: string, notif: Notification) => {
 function getUser(req: Request) {
   const key = req.headers.authorization?.replace('Bearer ', '') ?? (req.body?.api_key as string)
   if (!key) return null
-  return db.prepare('SELECT * FROM users WHERE api_key = ?').get(key) as Record<string, unknown> | null
+  return db.prepare('SELECT * FROM users WHERE api_key = ? AND deleted_at IS NULL').get(key) as Record<string, unknown> | null
 }
 
 function recordSession(userId: string, apiKey: string, req: Request): string {
@@ -3926,7 +3928,6 @@ db.exec(`
   )
 `)
 try { db.exec("ALTER TABLE users ADD COLUMN deleted_requested_at TEXT") } catch {}
-try { db.exec("ALTER TABLE users ADD COLUMN deleted_at TEXT") } catch {}
 
 // 账号注销 (#1013 Phase 37) — 3 endpoints 已迁出到 routes/account-deletion.ts
 registerAccountDeletionRoutes(app, { db, auth })
@@ -3950,7 +3951,7 @@ registerAgentGovernanceRoutes(app, {
 // #1013 Phase 39: 2 endpoints (note-prompts + export) 已迁出到 routes/me-data.ts
 registerMeDataRoutes(app, { db, auth })
 
-// cron 任务：真正擦除（14 天后 PII，注销条件不再持有公共物品的所有权）
+// cron 任务：14 天后停用账户凭证并匿名化选定 PII（保留必要交易/合规/审计记录）
 function processAccountDeletions(): { wiped: number } {
   const candidates = db.prepare(`
     SELECT user_id FROM account_deletion_requests
@@ -3961,13 +3962,12 @@ function processAccountDeletions(): { wiped: number } {
   let wiped = 0
   for (const c of candidates) {
     try {
-      // 笔记/订单作者匿名化（保留公共物品）
       const anon = 'anon_' + Math.random().toString(36).slice(2, 8)
-      db.prepare(`UPDATE users SET name = ?, handle = NULL, email = NULL, phone = NULL, bio = NULL, search_anchor = NULL, deleted_at = datetime('now'), feed_visible = 0 WHERE id = ?`).run(anon, c.user_id)
-      // #1017 fix: 实际表是 user_addresses，列名是 recipient/phone（不带 _name/_phone 后缀）
-      db.prepare(`UPDATE user_addresses SET recipient = '[已注销]', phone = '[已注销]', detail = '[已注销]' WHERE user_id = ?`).run(c.user_id)
-      db.prepare(`UPDATE account_deletion_requests SET pii_wiped_at = datetime('now') WHERE user_id = ?`).run(c.user_id)
-      wiped++
+      if (finalizeAccountDeletion(db, {
+        userId: c.user_id, anonymousName: anon,
+        replacementApiKey: generateSecureKey('deleted'),
+        finalizedAt: new Date().toISOString(),
+      })) { disconnectDeletedAccountClient(sseClients, c.user_id); wiped++ }
     } catch (e) { console.warn('[deletion]', c.user_id, (e as Error).message) }
   }
   return { wiped }
@@ -4741,7 +4741,7 @@ registerReferralRoutes(app, {
 // 默认：必须有 ≥ 1 笔 completed 订单（verified buyer）才能 sponsor
 // admin override：l1_share_override = 1 (强允) / -1 (强禁) / 0 (auto)
 function isAllowedSponsor(userId: string): boolean {
-  const u = db.prepare("SELECT l1_share_override FROM users WHERE id = ?").get(userId) as { l1_share_override: number } | undefined
+  const u = db.prepare("SELECT l1_share_override FROM users WHERE id = ? AND deleted_at IS NULL").get(userId) as { l1_share_override: number } | undefined
   if (!u) return false
   if (u.l1_share_override === 1)  return true
   if (u.l1_share_override === -1) return false
@@ -7118,7 +7118,7 @@ async function llmModerateComment(text: string): Promise<{ ok: boolean; reason?:
         max_tokens: 80,
         messages: [{
           role: 'user',
-          content: `你是仲裁判例评论审核员。判断以下评论是否包含：辱骂 / 人身攻击 / 虚假指控 / 煽动性语言 / 广告。只输出 JSON：{"ok":true|false,"reason":"若 false 给出 ≤20 字理由"}。\n评论：${text.slice(0, 500)}`,
+          content: `你是仲裁判例评论审核员。判断以下评论是否包含：辱骂 / 人身攻击 / 虚假指控 / 煽动性语言 / 广告。只输出 JSON：{"ok":true|false,"reason":"若 false 给出 ≤20 字理由"}。\n评论：${piiSanitize(text).slice(0, 500)}`,
         }],
       }),
       new Promise<never>((_, rej) => setTimeout(() => rej(new Error('moderation_timeout')), 3500)),

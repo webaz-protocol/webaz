@@ -1,209 +1,117 @@
 # WebAZ Terms of Service / WebAZ 服务条款
 
-> **Status**: effective for users of the publicly launched WebAZ service. Direct Pay is the current real-payment rail; WebAZ is non-custodial and does not hold transaction principal. The escrow rail remains simulated while additional payment methods are added.
+> Last updated: 2026-07-23
 >
-> **Last updated**: 2026-07-16
-> **Companion docs**: `docs/LEGAL-DISCLOSURES.md` (operator's good-faith legal interpretation) + `docs/CHARTER.md` (project constitution)
-
----
+> Publisher and operator: **XU FENGNA (individual)**
+>
+> Contact: **contact@webaz.xyz**
 
 ## §1 Acceptance / 接受条款
 
-By registering an account or using WebAZ services, you agree to these Terms. If you do not agree, do not use the service.
+By registering an account or using WebAZ, you agree to these Terms. If you do not agree, do
+not use the service. Material changes are published through WebAZ's notice process.
 
-Material changes to these Terms follow `docs/CHARTER.md §6` (RFC + public notice). Continued use after notice period = acceptance of revised Terms.
+## §2 Nature and OpenAI app scope / 服务性质与 OpenAI 应用范围
 
----
+WebAZ is an agent-native commerce protocol distributed under Business Source License 1.1,
+with the repository's stated conversion to MIT on 2030-05-18. It is software and is not a
+bank, broker, law firm, court, or government entity.
 
-## §2 Nature of WebAZ / WebAZ 的性质
+The submitted OpenAI app performs anonymous, read-only discovery of reviewed physical goods
+through one tool, `webaz_search`. It does not create an order, reserve inventory, connect an
+account, process checkout, or transfer funds. Product links open WebAZ, where any later
+activity occurs separately.
 
-WebAZ is an **agent-native decentralized commerce protocol** operating under Business Source License 1.1 (auto-converting to MIT on 2030-05-18). It is:
-- **Software protocol**, not a financial institution / bank / broker
-- **Source-available**, not closed-source
-- **Operator-administered in phase A**, transitioning to community-administered governance (phase D DAO) per `CHARTER §3.3`
-- **Publicly launched and evolving**: Direct Pay is live; additional payment rails and progressive governance remain under development
+## §3 Account and agent responsibility / 账户与 Agent 责任
 
-You acknowledge WebAZ is **NOT**:
-- A regulated financial service
-- A licensed legal service / law firm / court substitute
-- A registered MLM / direct-selling company (see §6)
-- A government entity or quasi-judicial body
+You are responsible for your account credentials and the agents you authorize. Agent actions
+are attributed to your account for protocol purposes. Operations marked as requiring human
+presence require a real Passkey ceremony and cannot be replaced by an agent.
 
----
+## §4 Orders, payment rails, and Direct Pay / 订单、支付轨道与直付
 
-## §3 Account responsibility / 账户责任
+WebAZ code includes simulated WAZ escrow and conditional Direct Pay features. Direct Pay is
+available only where deployment controls and seller eligibility gates pass.
 
-- You are responsible for the credentials of your account, including your WebAuthn Passkey
-- Iron-Rule operations (see `../SECURITY.md`) require a real human Passkey signature; if an AI agent operates under your account, **you are the custodian** and bear full responsibility for agent actions
-- If you delegate operations to an AI agent (OpenAI Operator, Anthropic Claude, etc.), that delegation does not transfer liability away from you
+When enabled, Direct Pay displays seller-provided off-platform payment instructions and
+records order and evidence state. WebAZ does not receive, route, or hold transaction
+principal, verify that payment occurred, or execute a refund of that principal. Buyers and
+sellers are responsible for the external payment method they choose.
 
----
+## §5 Disputes / 争议
 
-## §4 Dispute resolution: private ADR / 争议解决:私人 ADR
+WebAZ provides an internal evidence and ruling workflow. WebAZ does not require or verify
+judicial or legal-professional qualifications for protocol arbitrators. They do not act as a
+court or as legal counsel, and a ruling is not a court judgment.
 
-By placing an order on WebAZ, both buyer and seller **explicitly consent** to the following:
+For Direct Pay, a ruling affects WebAZ records and reputation only and cannot transfer or
+refund principal. No general order-dispute appeal is currently implemented. Nothing in this
+workflow removes remedies available under applicable law.
 
-1. **Initial dispute resolution** between order parties is handled via WebAZ's built-in dispute mechanism (see `docs/ARBITRATION-PLAYBOOK.md`)
-2. The dispute mechanism is **private contractually-agreed alternative dispute resolution (ADR)** — **NOT** a substitute for court litigation
-3. Arbitrators are **protocol-onboarded community members**, NOT licensed legal practitioners; their decisions are NOT held out as judicial determinations
-4. Decisions bind parties to the protocol's **escrow / refund / reputation** outcomes only; they do not determine criminal liability or statutory rights outside the protocol
-5. Either party may, after exhausting the protocol's appeal mechanism, **still seek court remedy** for matters outside the protocol's scope
+## §6 Product-attribution rewards / 商品归因奖励
 
-You waive the right to claim that WebAZ's dispute mechanism alone is a substitute for judicial process. Your courthouse rights remain.
+Outside the submitted OpenAI app, WebAZ contains an optional product-attribution reward
+mechanism with nominal L1 70% / L2 20% / L3 10% allocation. Current startup enforcement
+clamps every region to at most L1; nonpayable portions route to reserve. An eligible buyer may
+be their own L1, and invitation and referral features exist.
 
-**Jurisdiction notice**: in some jurisdictions, the operator restricts who may serve as an arbitrator and what dispute amounts the mechanism handles. See `docs/LEGAL-DISCLOSURES.md §6` for the geo-restriction matrix.
-
----
-
-## §5 Commission, referral, PV / 三级奖励、推荐、PV
-
-### What we offer
-
-WebAZ has a multi-tier commission mechanism (L1 70% / L2 20% / L3 10%) attached to actual product sales, capped per-jurisdiction by `region_config.max_levels`. The mechanism is **opt-in** (per RFC-002, in implementation): users must explicitly activate to participate.
-
-### What this is NOT
-
-You acknowledge and agree that the commission mechanism:
-- **Is NOT a multi-level marketing scheme.** No joining fees ever; no income from headcount; no static / unearned income (see `docs/PARTICIPATION-ATTRIBUTION-COMPLIANCE.md`)
-- **Is NOT a get-rich-quick scheme** or investment vehicle
-- **Has NO guaranteed returns.** All commission depends on real third-party purchase events
-- **Is NOT a "recruiting" or "team building" system.** WebAZ enforces de-MLM linguistic discipline at PR-review level (see `docs/PARTICIPATION-ATTRIBUTION-COMPLIANCE.md` for structural analysis)
-
-### Region restrictions
-
-- Some jurisdictions have **`max_levels = 0`**: commission mechanism is fully disabled in those jurisdictions; commission flow routes to public-good fund instead
-- Some jurisdictions have **`max_levels = 1`**: only direct L1 sharing is permitted
-- See `docs/LEGAL-DISCLOSURES.md §6` for the current jurisdiction matrix
-
-If you are in a `max_levels = 0` jurisdiction, you may still use WebAZ as a buyer / seller — only the commission feature is restricted.
-
-### Your responsibility
-
-You must accurately declare your jurisdiction at registration. Circumventing geo-restrictions (VPN, false declaration) is a **breach of these Terms** and may result in account suspension + forfeit of any accrued commission balance.
-
----
-
-## §6 No MLM warranty / 反 MLM 承诺
-
-WebAZ operator warrants the following as of the date of these Terms, code-enforced where possible:
-
-| Warranty | Enforced by |
-|---|---|
-| **No joining fees ever** | Code: there is no fee-collection endpoint for membership |
-| **No income from recruitment** | Code: `settleCommission()` triggers only on real product order, never on user signup |
-| **No static / passive income** | Code: no "monthly reward" / "system distribution" / "team bonus" mechanism exists |
-| **No team / downline commission** | Code: L1 earns only from L1's direct referrals' purchases, not from L2 / L3 cascades |
-| **Per-jurisdiction caps** | Code: `region_config.max_levels` checked at runtime, slashing excess |
-
-This warranty does NOT extend to the determination of whether WebAZ qualifies as an MLM under any specific local statute. That is a question of statutory interpretation in your jurisdiction.
-
----
+Signup or headcount alone does not settle a commission. Rewards are not guaranteed and depend
+on eligible completed product orders. These Terms make no claim that the mechanism has any
+particular legal classification.
 
 ## §7 Privacy / 隐私
 
-WebAZ follows the principles set out in `docs/CHARTER.md §2 #3 (No data theft)`. In particular:
-- **No PII sale or sharing** with third parties for marketing
-- **No GMV / wallet balance / individual identity** displayed in public leaderboards
-- **Region group** only (`APAC` / `EMEA` / etc.) — not country-level — for any public leaderboard
-- **PII redaction** in published case studies (`dispute_cases` table)
-- Some operational metadata (IP hash, UA hash, order audit trail) is retained for fraud prevention + audit; retention period is documented in `protocol_params`
+WebAZ does not sell personal data or provide it to third parties for advertising. Public
+surfaces may include the identifiers and profile information described in the
+[Privacy Policy](/privacy). Some operational, security, order, dispute, KYC, and audit records
+remain subject to feature-specific retention and deletion behavior.
 
-Users in jurisdictions with formal data-protection regimes (GDPR, CCPA, etc.) have additional rights set by those regimes; WebAZ implements those where applicable.
+## §8 Acceptable use / 可接受使用
 
----
+Do not use WebAZ to commit fraud, impersonate another person, evade regional controls, attack
+the service, publish unlawful content, or obtain data you are not authorized to access.
 
-## §8 Agent operator responsibility / Agent 运营者责任
+## §9 Suspension and termination / 暂停与终止
 
-If you operate one or more AI agents under your account:
-
-1. You are the **custodian** of any agent you configure
-2. Agent's actions are imputed to your account for protocol purposes
-3. WebAZ has Iron-Rule operations (see `../SECURITY.md`) that **cannot** be performed by an agent on your behalf — these always require human Passkey
-4. If your agent triggers a dispute, you (not the agent) are responsible for resolving it through WebAZ's mechanism
-
-WebAZ tracks per-agent risk metrics (see `docs/AGENT-GOVERNANCE.md`). Sustained high-risk behavior may result in agent revocation.
-
----
-
-## §9 Termination / 终止
-
-The operator may suspend or terminate your account if:
-- You materially breach these Terms (e.g., circumventing geo-restrictions, attempting fraud)
-- You violate a meta-rule (`META-RULES-FULL.md`) in a manner that affects others
-- Required by applicable law or court order in any relevant jurisdiction
-
-You may terminate your participation at any time by ceasing to use WebAZ and (where applicable) withdrawing your balances per protocol mechanism.
-
-**Forfeit of pending commission**: pending commission attributable to a closed account at the time of breach-based termination is routed to the public-good fund (`charity_fund`) per protocol design.
-
----
+The operator may suspend or terminate access for material breach, attempted fraud, security
+abuse, or legal requirements. You may stop using WebAZ at any time. Withdrawal or settlement
+of any balance remains subject to the applicable protocol state and controls.
 
 ## §10 Disclaimer of warranties / 免责声明
 
-WebAZ IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION:
-- Merchantability
-- Fitness for a particular purpose
-- Title
-- Non-infringement
-
-THE OPERATOR DOES NOT WARRANT THAT:
-- WebAZ will meet your specific requirements
-- WebAZ will be uninterrupted, timely, secure, or error-free
-- Results obtained from using WebAZ will be accurate or reliable
-
----
+WEBAZ IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
+The operator does not promise uninterrupted, error-free, or accurate operation.
 
 ## §11 Limitation of liability / 责任限制
 
-TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE OPERATOR (INCLUDING MAINTAINERS, CONTRIBUTORS, AND ANY ASSOCIATED ENTITIES) SHALL NOT BE LIABLE FOR:
-- INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES
-- LOSS OF PROFITS, REVENUE, DATA, GOODWILL, OR OTHER INTANGIBLE LOSSES
-- DAMAGES RESULTING FROM YOUR USE OR INABILITY TO USE WebAZ
-- DAMAGES RESULTING FROM UNAUTHORIZED ACCESS TO YOUR DATA OR CREDENTIALS
+To the extent permitted by applicable law, aggregate operator liability is limited to the
+greater of amounts paid directly to the operator, excluding peer-to-peer payments, during the
+preceding 12 months or USD 100. This does not limit liability or remedies that cannot lawfully
+be excluded.
 
-The operator's aggregate liability to you for any claim arising from or related to these Terms shall not exceed the greater of (a) the amount you have paid to the operator (excluding peer-to-peer transactions on WebAZ) in the 12 months preceding the claim, or (b) USD 100.
+## §12 Applicable law and forum / 适用法律与争议地点
 
-This limitation is essential to the operator's willingness to provide an evolving, non-custodial commerce protocol.
+Applicable law governs each dispute with the operator, and a claim may be brought before a
+court or forum having jurisdiction. Parties are encouraged to contact
+**contact@webaz.xyz** first, but this does not create a mandatory exclusive forum or waive
+non-waivable rights.
 
----
+## §13 Changes / 修改
 
-## §12 Governing law and venue / 适用法律 + 司法管辖
-
-These Terms are interpreted under the law of the operator's domicile, **without** giving effect to its conflict-of-law principles.
-
-For disputes between you and the operator NOT covered by WebAZ's internal dispute mechanism (e.g., breach of these Terms, billing disputes with the platform itself):
-- You agree to first attempt resolution by informal negotiation via `<contact@webaz.xyz>` within 30 days
-- If unresolved, disputes shall be resolved in the courts of the operator's domicile, unless a different forum is mandatory under applicable consumer protection law in your jurisdiction
-
-This venue clause does not waive any non-waivable rights you have under your home jurisdiction's consumer protection law.
-
----
-
-## §13 Modifications / 修改
-
-The operator may modify these Terms at any time. Material modifications:
-- Are subject to `docs/CHARTER §6` RFC procedure
-- Will be announced via on-platform notice and the project's public communication channels
-- Take effect after the public-notice period set forth in `CHARTER §3.1` (typically 14 days; 60 days for constitutional-level changes)
-
-You are responsible for reviewing posted notices. Continued use after the notice period = acceptance.
-
----
+The operator may amend these Terms through the published notice process. Continued use after
+an applicable notice period constitutes acceptance to the extent permitted by law.
 
 ## §14 Contact / 联系
 
-- Email: `contact@webaz.xyz`
-- GitHub: `https://github.com/webaz-protocol/webaz`
-- Public-good fund inquiries: `<charity@webaz.xyz>` (forwarded via Cloudflare Email Routing)
-
----
+- Email: **contact@webaz.xyz**
+- GitHub: **https://github.com/webaz-protocol/webaz**
 
 ## §15 Severability / 可分离性
 
-If any provision of these Terms is held invalid or unenforceable in any jurisdiction, the remaining provisions remain in effect. The operator may unilaterally substitute a valid provision that achieves the original intent as closely as permitted.
+If a provision is invalid or unenforceable, the remaining provisions continue only to the
+extent permitted by applicable law. Any replacement provision requires a published amendment
+or operation of applicable law; the operator does not unilaterally substitute unpublished
+terms.
 
----
-
-**By using WebAZ after W8 launch, you confirm you have read and understood these Terms.**
-
-**使用 WebAZ(W8 launch 之后)即代表你已阅读并理解本服务条款。**
+**By using WebAZ, you confirm that you have read and understood these Terms.**
