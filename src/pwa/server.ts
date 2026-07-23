@@ -66,6 +66,7 @@ import { initMutualCancelSchema } from '../layer3-trust/L3-1-dispute-engine/mutu
 import {
   initNotificationSchema,
   notifyTransition,
+  notifyEnforcementTransitions,
   getNotifications,
   getUnreadCount,
   markRead,
@@ -7758,6 +7759,8 @@ function runEnforcement() {
         const faultMatch = d.action.match(/→ (fault_\w+)/)
         if (faultMatch) recordViolationReputation(db, d.orderId, faultMatch[1])
       })
+      // 自动执法全程静默是事故源(买家场外付款后卖家超时被关单却无人知晓)—— 按本轮实际转移对发通知
+      notifyEnforcementTransitions(db, orderResult.details)
     }
 
     if (disputeResult.processed > 0) {

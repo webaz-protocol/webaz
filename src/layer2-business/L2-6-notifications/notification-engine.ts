@@ -211,6 +211,121 @@ const RULES: Record<string, NotifRule> = {
     title: '🚫 直付订单已取消(协商)',
     body: ctx => `「${ctx.productTitle}」订单已取消(货款协商未达成)。直付非托管,无平台退款。`,
   },
+
+  // ── 2026-07 订单流遍历审计:补齐静默转移(自动执法/裁定/undeliverable/直付取消)────────────
+  //   铁律不变:direct_p2p 非托管,凡涉资金语义必须 rail-fork,绝不写"已退款/资金释放"假话。
+  'created→cancelled': {
+    recipients: ['buyer'], key: 'ord_created_cancelled',
+    title: '🚫 订单已取消',
+    body: ctx => `订单「${ctx.productTitle}」已取消(付款前)。`,
+  },
+  'shipped→fault_logistics': {
+    recipients: ['buyer', 'seller'], key: 'ord_shipped_fault_logistics',
+    title: '⏰ 物流超时',
+    body: () => `物流方超时未揽收，已自动记录违约。`,
+  },
+  'picked_up→fault_logistics': {
+    recipients: ['buyer', 'seller'], key: 'ord_picked_up_fault_logistics',
+    title: '⏰ 物流超时',
+    body: () => `物流方超时未投递，已自动记录违约。`,
+  },
+  'fault_seller→completed': {
+    recipients: ['buyer', 'seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_fault_seller_completed_dp' : 'ord_fault_seller_completed',
+    title: '⚖️ 卖家违约处置完成,订单已关闭',
+    body: ctx => ctx.paymentRail === 'direct_p2p'
+      ? `订单「${ctx.productTitle}」已按卖家违约关闭。直付非托管:平台不持货款、无平台退款 —— 如你已场外付款,请通过订单聊天与卖家协商退款;卖家违约已记入信誉。`
+      : `订单「${ctx.productTitle}」违约处置完成:${ctx.totalAmount} WAZ 已全额退回买家,卖家质押已按违约罚没。`,
+  },
+  'fault_logistics→completed': {
+    recipients: ['buyer', 'seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_fault_logistics_completed_dp' : 'ord_fault_logistics_completed',
+    title: '⚖️ 物流违约处置完成,订单已关闭',
+    body: ctx => ctx.paymentRail === 'direct_p2p'
+      ? `订单「${ctx.productTitle}」已按物流违约关闭(非托管:不涉平台资金;违约已记录)。`
+      : `订单「${ctx.productTitle}」物流违约处置完成,已按协议从物流质押赔付/退款。`,
+  },
+  'fault_buyer→completed': {
+    recipients: ['buyer', 'seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_fault_buyer_completed_dp' : 'ord_fault_buyer_completed',
+    title: '⚖️ 买家责任处置完成,订单已关闭',
+    body: ctx => ctx.paymentRail === 'direct_p2p'
+      ? `订单「${ctx.productTitle}」已按买家责任关闭(非托管:不涉平台资金,仅信誉记录)。`
+      : `订单「${ctx.productTitle}」买家责任处置完成,资金已按协议结算给卖家。`,
+  },
+  // undeliverable(PR-B):举证 → 买家窗口 → 落定/退货持有/默认退款,全链当事方须知情
+  'shipped→delivery_failed': {
+    recipients: ['buyer'], key: 'ord_delivery_failed_reported',
+    title: '📮 卖家举证未派送成功',
+    body: ctx => `订单「${ctx.productTitle}」:卖家/物流举证包裹按订单地址投递被退回/拒收。如你认为举证不实,请在窗口内发起争议;逾期未争议将落定为买家责任。`,
+  },
+  'picked_up→delivery_failed': {
+    recipients: ['buyer'], key: 'ord_delivery_failed_reported',
+    title: '📮 卖家举证未派送成功',
+    body: ctx => `订单「${ctx.productTitle}」:卖家/物流举证包裹按订单地址投递被退回/拒收。如你认为举证不实,请在窗口内发起争议;逾期未争议将落定为买家责任。`,
+  },
+  'in_transit→delivery_failed': {
+    recipients: ['buyer'], key: 'ord_delivery_failed_reported',
+    title: '📮 卖家举证未派送成功',
+    body: ctx => `订单「${ctx.productTitle}」:卖家/物流举证包裹按订单地址投递被退回/拒收。如你认为举证不实,请在窗口内发起争议;逾期未争议将落定为买家责任。`,
+  },
+  'delivery_failed→fault_buyer': {
+    recipients: ['buyer', 'seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_delivery_failed_fault_buyer_dp' : 'ord_delivery_failed_fault_buyer',
+    title: '⚖️ 未派送成功责任落定',
+    body: ctx => ctx.paymentRail === 'direct_p2p'
+      ? `订单「${ctx.productTitle}」:买家未在窗口内争议,责任落定为买家,订单关闭(非托管:仅信誉记录,不涉资金)。`
+      : `订单「${ctx.productTitle}」:买家未在窗口内争议,未派送成功责任落定为买家。`,
+  },
+  'delivery_failed→return_pending': {
+    recipients: ['buyer', 'seller'], key: 'ord_delivery_failed_return_pending',
+    title: '📦 等待退货确认',
+    body: ctx => `订单「${ctx.productTitle}」责任已落定,托管资金保持锁定等待货物退回:卖家确认收到退货后按成本扣除结算;卖家逾期未确认将默认全款退回买家。`,
+  },
+  'return_pending→completed': {
+    recipients: ['buyer', 'seller'], key: 'ord_return_pending_completed',
+    title: '✅ 退货流程已结算',
+    body: ctx => `订单「${ctx.productTitle}」退货流程收口,托管资金已按协议结算(卖家确认收货=扣除退程成本后退款;卖家逾期未确认=默认全款退回买家)。`,
+  },
+  'picked_up→disputed': {
+    recipients: ['seller', 'logistics'], key: 'ord_picked_up_disputed',
+    title: '⚠️ 发生争议',
+    body: ctx => `订单「${ctx.productTitle}」出现争议，请提交相关证据。`,
+  },
+  // 细粒度裁定终态(模块 B):arbitrateDispute 统一发射(手动裁定 + 超时自动裁定同一路径)
+  'disputed→resolved_for_seller': {
+    recipients: ['buyer', 'seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_disputed_resolved_seller_dp' : 'ord_disputed_resolved_seller',
+    title: '⚖️ 争议裁定：卖家胜诉',
+    body: ctx => ctx.paymentRail === 'direct_p2p'
+      ? `订单「${ctx.productTitle}」争议已裁定卖家胜诉(直付为信誉裁决,不涉资金流转)。`
+      : `订单「${ctx.productTitle}」争议已裁定卖家胜诉,资金已释放给卖家。`,
+  },
+  'disputed→refunded_partial': {
+    recipients: ['buyer', 'seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_disputed_refunded_partial_dp' : 'ord_disputed_refunded_partial',
+    title: '⚖️ 争议裁定：部分退款',
+    body: ctx => ctx.paymentRail === 'direct_p2p'
+      ? `订单「${ctx.productTitle}」争议已裁定部分责任(直付为信誉裁决,非托管不涉平台退款)。`
+      : `订单「${ctx.productTitle}」争议已裁定,已按裁定部分退款给买家。`,
+  },
+  'disputed→refunded_full': {
+    recipients: ['buyer', 'seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_disputed_refunded_full_dp' : 'ord_disputed_refunded_full',
+    title: '⚖️ 争议裁定：支持买家',
+    body: ctx => ctx.paymentRail === 'direct_p2p'
+      ? `订单「${ctx.productTitle}」争议已裁定支持买家。直付非托管:平台无资金可退,退款由双方场外处理;卖家信誉处罚已记录。`
+      : `订单「${ctx.productTitle}」争议已裁定全额退款,${ctx.totalAmount} WAZ 已退回买家。`,
+  },
+  'disputed→dispute_dismissed': {
+    recipients: ['buyer', 'seller'], key: 'ord_disputed_dismissed',
+    title: '⚖️ 争议已驳回',
+    body: ctx => `订单「${ctx.productTitle}」的争议被驳回(无效),订单维持原结论。`,
+  },
+  // 直付付款前/超时未确认的买家主动取消(专属 cron 的超时关单另有 dp_* 模板,不经本表)
+  'direct_pay_window→cancelled': {
+    recipients: ['seller'], key: 'ord_dpw_cancelled',
+    title: '🚫 直付订单已取消',
+    body: ctx => `买家在付款前取消了订单「${ctx.productTitle}」,平台费质押已释放,库存已回补。`,
+  },
+  'direct_expired_unconfirmed→cancelled': {
+    recipients: ['seller'], key: 'ord_deu_cancelled',
+    title: '🚫 直付订单已关闭',
+    body: ctx => `订单「${ctx.productTitle}」已关闭(付款窗口超时,买家确认未付款)。`,
+  },
 }
 
 // ─── 主入口：状态变更后调用 ───────────────────────────────────
@@ -241,6 +356,24 @@ export function notifyTransition(
 
   for (const userId of recipientIds) {
     createNotification(db, userId, orderId, type, title, body, { templateKey, params })
+  }
+}
+
+/**
+ * 自动执法通知统一发射点:checkTimeouts 的 details 携带本轮实际执行的转移对(engine L0 不 import 通知层),
+ * 调用方(PWA runEnforcement / 独立 cron / force-timeout 路由)把 details 原样喂进来,逐对走 RULES。
+ * 无 RULES 键的转移静默跳过(与 notifyTransition 语义一致);单条失败不阻断其余(执法已落库,通知尽力送达)。
+ */
+export function notifyEnforcementTransitions(
+  db: Database.Database,
+  details: Array<{ orderId: string; transitions?: Array<[string, string]> }>,
+): void {
+  for (const d of details) {
+    for (const [from, to] of d.transitions ?? []) {
+      try { notifyTransition(db, d.orderId, from, to) } catch (e) {
+        console.warn(`[enforce-notify] order=${d.orderId} ${from}→${to}:`, (e as Error).message)
+      }
+    }
   }
 }
 
