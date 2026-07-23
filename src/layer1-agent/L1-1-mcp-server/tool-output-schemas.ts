@@ -50,7 +50,7 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
       },
       recovery: { type: 'object', description: '0 hits: labeled catalog sample + next_step' },
       result_handle: { type: 'string', description: 'selection handle (10-min TTL) — pass back with selected_ids (≤5) for detail projections' },
-      detail_required_for_card: { type: 'boolean', description: 'fetch detail (result_handle + selected_ids) before a full card' },
+      detail_required_for_card: { type: 'boolean', description: 'render via result_handle + selected_ids (>1 id = comparison card)' },
       ...err,
     },
   },

@@ -516,7 +516,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
     //   schema-strict 宿主(ChatGPT strict function-calling)会剥掉/拒绝未声明参数,card:true 曾因此
     //   静默失效 → 素详情平铺。card 参数保留为显式覆盖(card:true 强制卡 / card:false 强制详情),
     //   但契约不再依赖它。
-    const wantCard = card === true || (card !== false && (selected_ids as string[]).length > 1 && full_terms !== true)
+    const wantCard = full_terms !== true && card !== false && ((selected_ids as string[]).length > 1 || card === true)   // full_terms 逃生口永远赢(Codex R1 MED-1)
     if (wantCard) {
       // total 诚实口径(Codex L):被 revalidation 剔除的 unavailable 项不计入 total —— "还有 N 款"只指
       //   句柄集里【未展示的真实候选】,不把下架品谎报成"更多"。

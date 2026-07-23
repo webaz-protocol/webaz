@@ -717,7 +717,7 @@ Returns structuredContent (webaz.product_search.model.v1): decision fields + dec
           },
         },
         limit: { type: 'number', description: 'Result limit, default 5 (page). Use cursor for more pages. Unconstrained browse (no query/category/filter) is capped at 8.' },
-        result_handle: { type: 'string', description: 'Detail-fetch mode: a result_handle from a previous search page (10-min TTL). With selected_ids, returns full detail projections (description/specs/terms) for up to 5 chosen products — live re-read, never cached data.' },
+        result_handle: { type: 'string', description: 'A result_handle from a previous search/discover page (10-min TTL). With selected_ids: >1 id renders the standard comparison card; 1 id returns its detail projection — live re-read, never cached data.' },
         selected_ids: { type: 'array', items: { type: 'string' }, description: 'With result_handle: 1..5 product ids chosen FROM that result page.' },
         full_terms: { type: 'boolean', description: 'Detail-fetch mode only: return COMPLETE, untruncated terms (full specs / return_condition / ship_regions / variants). Use when a detail projection shows terms_complete:false or any *_truncated:true (or before an order confirmation that needs the full terms).' },
         sort: { type: 'string', enum: ['trending', 'newest', 'rating', 'price_asc', 'price_desc', 'random'], description: 'Sort: trending=composite (default) / newest / rating / price_asc / price_desc / random' },

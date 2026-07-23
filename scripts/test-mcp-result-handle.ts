@@ -113,7 +113,8 @@ try {
     && JSON.stringify([...selArr].sort()) === JSON.stringify([...ids].sort())   // 精确集合相等,不多不少
     && tmpl.tool === 'webaz_search' && tmpl.arguments?.result_handle === handle
     && Array.isArray(tmplSel) && tmplSel.length === Math.min(5, ids.length) && tmplSel.length >= 1   // 预填 UP TO 5(不缩 1、不越 5)
-    && tmplSel.every(x => ids.includes(String(x))),   // 全是本页真 id —— 无占位符、无越界
+    && tmplSel.every(x => ids.includes(String(x)))   // 全是本页真 id —— 无占位符、无越界
+    && JSON.stringify(Object.keys(tmpl.arguments ?? {}).sort()) === JSON.stringify(['result_handle', 'selected_ids']),   // 模板只含 schema 已声明参数(strict 宿主会剥/拒未声明参数)
     JSON.stringify({ drc: s1.detail_required_for_card, sr: s1.selection_required, sel: selArr, tmplSel }).slice(0, 260))
 
   // H-2 按需详情(方案A:单选=详情;多选默认=标准卡)。单 id → detail model + 截断/预算/零内部字段。
@@ -137,6 +138,8 @@ try {
   ok('H-2g card response carries NO internal fields', !FORBIDDEN.test(JSON.stringify(c1)))
   ok('H-2h multi-select + full_terms:true → FULL detail model (the explicit escape hatch for comparing complete terms)', scOf(await call({ result_handle: handle, selected_ids: ids.slice(0, 2), full_terms: true })).schema_version === 'webaz.product_detail.model.v1')
   ok('H-2i card:false explicit override → detail model for multi (declared-out compat)', scOf(await call({ result_handle: handle, selected_ids: ids.slice(0, 2), card: false })).schema_version === 'webaz.product_detail.model.v1')
+  ok('H-2j single + card:true override → one-product standard card (widget renders a 1-item search card)', scOf(await call({ result_handle: handle, selected_ids: [ids[0]], card: true })).schema_version === 'webaz.product_search.model.v1')
+  ok('H-2k full_terms:true ALWAYS wins over card:true (the full-terms escape hatch is inviolable)', scOf(await call({ result_handle: handle, selected_ids: ids.slice(0, 2), full_terms: true, card: true })).schema_version === 'webaz.product_detail.model.v1')
   ok('H-2e detail summary text carries the id (text-only clients keep working)', String((d1r.content as Array<{ text: string }>)[0].text).includes(ids[0]))
   ok('H-2f detail envelope carries the fx display table (stale-flagged, display-only note)',
     !!(d1.fx as Record<string, unknown>)?.rates && typeof (d1.fx as Record<string, unknown>)?.stale === 'boolean' && /display-only/.test(String((d1.fx as Record<string, unknown>)?.note)), JSON.stringify(d1.fx ?? null))
