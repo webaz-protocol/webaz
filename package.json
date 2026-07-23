@@ -196,6 +196,8 @@
     "test:bond-deferral-closure": "tsx scripts/test-bond-deferral-closure.ts",
     "test:agent-strike-ui": "tsx scripts/test-agent-strike-ui.ts",
     "test:notif-order-templates": "tsx scripts/test-notif-order-templates.ts",
+    "test:enforcement-notifications": "tsx scripts/test-enforcement-notifications.ts",
+    "test:order-timeline-render": "tsx scripts/test-order-timeline-render.ts",
     "test:legacy-arbitrator-role-sweep": "tsx scripts/test-legacy-arbitrator-role-sweep.ts",
     "test:arbitration-entry-frontend": "tsx scripts/test-arbitration-entry-frontend.ts",
     "test:arbitrator-admin-ui": "tsx scripts/test-arbitrator-admin-ui.ts",

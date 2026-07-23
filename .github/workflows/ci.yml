@@ -808,6 +808,8 @@ jobs:
       - run: npm run test:direct-pay-cancel-refund
       - run: npm run test:direct-pay-returns
       - run: npm run test:notif-order-templates
+      - run: npm run test:enforcement-notifications
+      - run: npm run test:order-timeline-render
       - run: npm run test:direct-pay-pending-accept
       - run: npm run test:shipping-templates
       - run: npm run test:shipping-quote
