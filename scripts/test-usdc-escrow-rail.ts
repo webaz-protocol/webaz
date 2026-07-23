@@ -35,7 +35,7 @@ const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail
 
 const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 applyWebazRuntimeSchema(db)
-for (const col of ['payment_rail TEXT', 'snapshot_commission_rate REAL', 'buyer_region TEXT', 'draft_id TEXT', 'ship_to_region TEXT', 'shipping_fee REAL', 'shipping_est_days TEXT']) { try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
+for (const col of ['payment_rail TEXT', 'snapshot_commission_rate REAL', 'buyer_region TEXT', 'draft_id TEXT', 'ship_to_region TEXT', 'shipping_fee REAL', 'shipping_est_days TEXT', 'settled_fault_at TEXT']) { try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
 for (const col of ['default_address_text TEXT', 'default_address_region TEXT']) { try { db.exec(`ALTER TABLE users ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
 db.prepare("INSERT INTO users (id,name,role,api_key,region,default_address_text,default_address_region) VALUES ('sU','sU','seller','k_sU','global',NULL,NULL),('bU','bU','buyer','k_bU','global','1 Test St / SG','SG'),('sys_protocol','sys','system','k_sys','global',NULL,NULL)").run()
 db.prepare('INSERT INTO wallets (user_id, balance) VALUES (?, 0), (?, 0)').run('sU', 'bU')
@@ -146,6 +146,20 @@ db.prepare('UPDATE orders SET pay_deadline = ? WHERE id = ?').run(new Date(Date.
 const { checkTimeouts } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
 try { checkTimeouts(db) } catch { /* fixture 缺表的无关分支容忍 */ }
 ok('generic checkTimeouts YIELDS on usdc created orders (no restock-less cancel)', (db.prepare('SELECT status FROM orders WHERE id = ?').get(newOrderId) as { status: string }).status === 'created')
+// B4 复审 sibling pin:通用 checkTimeouts 必须对本轨【所有】状态让位,不止 created ——
+//   paid + accept_deadline 过期的 usdc_escrow 单若走通用判责:零资金 settleFault 会盖 settled_fault_at
+//   把订单标成已了结,而链上真钱仍锁着、autoRelease 到期把钱放给有责方(与 created 的库存泄漏同源倒挂)。
+db.prepare("UPDATE products SET stock = 5 WHERE id='pU'").run()
+const paidRes = create()
+const paidOrderId = String(paidRes.body.order_id)
+db.prepare("UPDATE orders SET status = 'paid', accept_deadline = ?, settled_fault_at = NULL WHERE id = ?")
+  .run(new Date(Date.now() - 3600_000).toISOString(), paidOrderId)
+try { checkTimeouts(db) } catch { /* fixture 缺表的无关分支容忍 */ }
+{
+  const row = db.prepare('SELECT status, settled_fault_at FROM orders WHERE id = ?').get(paidOrderId) as { status: string; settled_fault_at: string | null }
+  ok('generic checkTimeouts YIELDS on usdc PAID orders too (no zero-fund settleFault while real money is on-chain)',
+    row.status === 'paid' && row.settled_fault_at === null, JSON.stringify(row))
+}
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 const swept = sweepExpiredUsdcEscrowOrders(db, { transition: transition as any })
 ok('sweep: expired created order cancelled + stock RESTORED (atomic, sole restock entry)',

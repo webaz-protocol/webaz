@@ -205,9 +205,11 @@ export function checkTimeouts(db: Database.Database, opts?: {
     if (!transitionKey) continue
 
     const [, autoNextState] = transitionKey
-    // usdc_escrow 的 created(链上存入窗)超时由专属清扫收口(usdc-escrow-timeouts.ts:取消+回补原子)——
-    //   通用分支只 transition 不回补,抢先执行 = 永久库存泄漏(B3 复审 Break-B)。让位,绝不双头处理。
-    if (order.payment_rail === 'usdc_escrow' && order.status === 'created') continue
+    // usdc_escrow:B5 定义本轨超时语义前,通用执法一律让位(fail-closed)——
+    //   created 由专属清扫收口(usdc-escrow-timeouts.ts:取消+回补原子;B3 复审 Break-B);
+    //   paid 及之后若走通用判责,零资金 settleFault 会把订单标成已了结而链上真钱仍锁着、
+    //   autoRelease 到期还会把钱放给有责方(B4 复审:与 B3 封零资金仲裁同一倒挂)。
+    if (order.payment_rail === 'usdc_escrow') continue
     const systemUser = getSystemUser(db)
 
     // ── delivered→confirmed 超时 = 买家逾期未确认 → 自动确认收货(非判责)──────────────────────

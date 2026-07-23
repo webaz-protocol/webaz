@@ -10,6 +10,12 @@
  * chain_events 与 orphan 标记均为【真 append-only】(BEFORE UPDATE/DELETE → ABORT,PG parity 经
  * gen-pg-schema APPEND_ONLY_TABLES 同步):重组不改行 —— 往 usdc_escrow_event_orphans 加一行标记,
  * 读侧 join 排除(与 admin 冲正记账同哲学:更正=加行,绝不改历史)。
+ *
+ * chain_events 去重键 = UNIQUE(tx_hash, log_index, block_hash)【三键,B4 审计加宽】:仅 (tx_hash,
+ * log_index) 二键会让"同位重组"——同一 tx 在同一 logIndex 被重新打包进【新 block_hash】的区块——
+ * 的新 canonical 行永远进不了镜像(mirrorEvent 的 INSERT OR IGNORE 静默丢弃),镜像只剩被标孤儿的
+ * 重组前行,违背"镜像=链上真相"且饿死下游结算对账(只读非孤儿行)。加入 block_hash 后,同位重组的
+ * 替换行按不同三元组作为【新行】落盘,老行照旧被 orphans 标记排除,两行并存、读侧取 canonical。
  */
 import type Database from 'better-sqlite3'
 import { getAddress } from 'viem'
@@ -47,6 +53,16 @@ export function initUsdcEscrowSchema(db: Database.Database): void {
   )`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_uei_key ON usdc_escrow_intents(order_key)`)
 
+  // 一次性守卫重建(B4 审计):旧 UNIQUE(tx_hash,log_index) 使同位重组的新 canonical 行永远进不了镜像
+  // (INSERT OR IGNORE 静默丢弃)——加宽为 UNIQUE(tx_hash,log_index,block_hash)。本表自出生全环境为空
+  // (轨道全暗),仅空表才重建;万一非空(理论不可能)保留旧表并大声报错,绝不动数据。
+  const existing = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='usdc_escrow_chain_events'").get() as { sql: string } | undefined
+  if (existing && !existing.sql.includes('UNIQUE(tx_hash, log_index, block_hash)')) {
+    const n = (db.prepare('SELECT COUNT(*) n FROM usdc_escrow_chain_events').get() as { n: number }).n
+    if (n === 0) db.exec('DROP TABLE usdc_escrow_chain_events')
+    else console.error('[usdc-escrow-store] chain_events has legacy UNIQUE shape AND data — refusing to rebuild; mirror dedup stays legacy (manual migration required)')
+  }
+
   db.exec(`
   CREATE TABLE IF NOT EXISTS usdc_escrow_chain_events (
     id           TEXT PRIMARY KEY,
@@ -58,7 +74,7 @@ export function initUsdcEscrowSchema(db: Database.Database): void {
     block_hash   TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     created_at   TEXT DEFAULT (datetime('now')),
-    UNIQUE(tx_hash, log_index)
+    UNIQUE(tx_hash, log_index, block_hash)     -- 三键(B4):同位重组的新 canonical 行按新 block_hash 作为新行落盘
   )`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_uece_key ON usdc_escrow_chain_events(order_key)`)
   db.exec(`CREATE TRIGGER IF NOT EXISTS trg_uece_no_update BEFORE UPDATE ON usdc_escrow_chain_events

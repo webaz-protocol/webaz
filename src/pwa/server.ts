@@ -419,7 +419,7 @@ import { initBuildReputationSchema } from '../layer2-business/L2-9-contribution/
 import { initGithubCredentialStoreSchema } from '../layer2-business/L2-9-contribution/github-credential-store.js'
 import { initIdentityBindingSchema } from '../layer2-business/L2-9-contribution/identity-binding-store.js'
 import { initIdentityClaimChallengeSchema } from '../layer2-business/L2-9-contribution/identity-claim-challenge-store.js'
-import { initAdminCoordinationSchema } from '../layer2-business/L2-9-contribution/admin-coordination-store.js'; import { initWazSunsetSchema } from '../waz-sunset-store.js'; import { initUsdcEscrowSchema } from '../usdc-escrow-store.js'; import { registerUsdcPayoutAddressRoutes } from './routes/usdc-payout-address.js'
+import { initAdminCoordinationSchema } from '../layer2-business/L2-9-contribution/admin-coordination-store.js'; import { initWazSunsetSchema } from '../waz-sunset-store.js'; import { initUsdcEscrowSchema } from '../usdc-escrow-store.js'; import { registerUsdcPayoutAddressRoutes } from './routes/usdc-payout-address.js'; import { startUsdcEscrowWatcher } from './internal/usdc-escrow-watcher.js'
 import { registerContributionIdentityRoutes } from './routes/contribution-identity.js'
 import { registerContributionScoreRoutes } from './routes/contribution-score.js'
 import { registerContributionFactsRoutes } from './routes/contribution-facts.js'
@@ -4692,7 +4692,7 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_gb_status ON group_buys(status, en
 registerGroupBuysRoutes(app, { db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent, getProtocolParam })
 
 // Cron: 过期未成团 → 失败结算（function 已迁出到 routes/group-buys.ts）
-setInterval(() => sweepExpiredGroupBuysRaw(db, generateId, broadcastSystemEvent, getProtocolParam), 60_000); setInterval(() => { try { sweepExpiredUsdcEscrowOrders(db, { transition }) } catch (e) { console.error('[usdc sweep cron]', e) } }, 60_000)   // B3 R2:usdc 付款窗到期取消+回补(通用超时引擎不回补)
+setInterval(() => sweepExpiredGroupBuysRaw(db, generateId, broadcastSystemEvent, getProtocolParam), 60_000); setInterval(() => { try { sweepExpiredUsdcEscrowOrders(db, { transition }) } catch (e) { console.error('[usdc sweep cron]', e) } }, 60_000); if (process.env.USDC_ESCROW_CONTRACT) startUsdcEscrowWatcher({ db, transition, generateId, contractAddress: process.env.USDC_ESCROW_CONTRACT })   // B3 R2 sweep + B4 watcher(env 缺失空转)
 
 // I-2: admin 全平台数据导出
 const ADMIN_EXPORT_LIMIT = 20000

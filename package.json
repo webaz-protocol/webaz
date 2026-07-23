@@ -343,6 +343,7 @@
     "test:waz-sunset-ui": "tsx scripts/test-waz-sunset-ui.ts",
     "test:usdc-escrow-schema": "tsx scripts/test-usdc-escrow-schema.ts",
     "test:usdc-escrow-rail": "tsx scripts/test-usdc-escrow-rail.ts",
+    "test:usdc-escrow-watcher": "tsx scripts/test-usdc-escrow-watcher.ts",
     "ops:waz-sunset": "tsx scripts/ops-waz-sunset.ts",
     "test:choose-payment": "tsx scripts/test-choose-payment.ts",
     "test:choose-payment-ui": "tsx scripts/test-choose-payment-ui.ts",
