@@ -7419,6 +7419,10 @@ const _EN = {
   '协商取消被拒绝': 'Mutual cancellation declined',
   '订单「{product}」:对方拒绝了协商取消提议,订单维持原状态。': 'Order "{product}": the other party declined the mutual-cancellation proposal; the order stays as is.',
   // ── P1-D 判责关单退款握手(直付)UI + 通知句对 ──
+  '退款申索仲裁裁决(信誉裁决,不涉资金)': 'Refund-claim ruling (reputation only, no funds)',
+  '买家申索成立 —— 卖家未场外退款,追加信誉处罚': 'Uphold buyer claim — seller failed to refund off-protocol; extra reputation penalty',
+  '卖家退款成立 —— 申索不成立,发起方按争议败诉记录': 'Confirm seller refund — claim dismissed; initiator takes a dispute-lost record',
+  '买家申索成立(卖家未退款)': 'Buyer claim upheld (no refund)',
   '违约关单退款(直付)': 'Default-closure refund (Direct Pay)',
   '本单因卖家违约被系统关闭。直付非托管:平台不持货款、不能代退,退款由卖家在协议外完成,双方在此握手留档;卖家不配合可举证仲裁(信誉裁决)。': 'This order was closed by the system as a seller default. Direct Pay is non-custodial: the platform holds no funds and cannot refund — the seller refunds off-protocol and both sides record the handshake here; if the seller does not cooperate you can escalate to evidence-based arbitration (reputation ruling).',
   '退款申索已裁定': 'Refund claim ruled',

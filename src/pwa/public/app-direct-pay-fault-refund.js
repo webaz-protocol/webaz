@@ -98,6 +98,34 @@ window.dpFrEscalate = async (oid) => {
   dpFrToast(t('退款申索已提交仲裁'), 'success'); dpFrReload(oid)
 }
 
+// ── 统一仲裁台:fault_refund_claim 两选裁决表单(app.js 裁决区按 dispute_type 分流到此;复用 handleArbitrate,
+//    后端 arbitrate 路由分流到唯一 resolver:信誉裁决,零资金零订单转移)──
+window.frcRulingForm = function (dispute) {
+  var radio = function (val, label) {
+    return '<label style="display:flex;align-items:flex-start;gap:8px;padding:8px;border:1px solid #fde68a;border-radius:6px;cursor:pointer;font-size:13px"><input type="radio" name="arb-ruling-radio" value="' + val + '" style="margin-top:2px"> <span>' + label + '</span></label>'
+  }
+  return '' +
+    '<div style="margin-top:12px;border:1px solid #fde68a;background:#fffbeb;border-radius:8px;padding:12px">' +
+      '<div style="font-weight:600;font-size:13px;color:#92400e;margin-bottom:8px">⚖ ' + t('退款申索仲裁裁决(信誉裁决,不涉资金)') + '</div>' +
+      '<div id="arbitrate-msg"></div>' +
+      '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">' +
+        radio('refund_failed_confirmed', t('买家申索成立 —— 卖家未场外退款,追加信誉处罚')) +
+        radio('refund_confirmed', t('卖家退款成立 —— 申索不成立,发起方按争议败诉记录')) +
+      '</div>' +
+      '<textarea class="form-control" id="arb-reason" rows="3" placeholder="' + t('裁定理由(必填)') + '" style="width:100%;margin-bottom:8px"></textarea>' +
+      '<button class="btn btn-primary btn-sm" style="width:auto" onclick="handleArbitrate(\'' + dispute.id + '\')">' + t('确认裁定') + '</button>' +
+    '</div>'
+}
+// 裁定结果 chip 标签:装饰 dpRulingLabel(frc 案必为 direct_p2p,通用 chip 走 dpRulingLabel 分支)
+;(function () {
+  var prev = window.dpRulingLabel
+  window.dpRulingLabel = function (ruling) {
+    if (ruling === 'refund_failed_confirmed') return t('买家申索成立(卖家未退款)')
+    if (ruling === 'refund_confirmed') return t('卖家退款成立(申索不成立)')
+    return prev ? prev(ruling) : null
+  }
+})()
+
 // ── 通知 i18n 模板(域内聚注册;服务端落库 template_key+params,此处按 viewer locale 渲染)──
 ;(function () {
   const S = window._notifSub
