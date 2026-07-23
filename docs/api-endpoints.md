@@ -546,12 +546,12 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/orders/:id/pending-accept/confirm-quote` | 🔐 |  | CAS:仅 pending_accept 且已报价;总额变更与状态转移同一 db.transaction(要么全生效要么全回滚)。 | src/pwa/routes/direct-pay-pending-accept.ts:153 |
 | POST | `/api/orders/:id/pending-accept/decline` | 🔐 |  | 卖家谢绝(无法发货/物流不可达等;理由可选,买家可见)→ 无责取消 + 回补库存 | src/pwa/routes/direct-pay-pending-accept.ts:105 |
 | POST | `/api/orders/:id/pending-accept/quote` | 🔐 |  | 可重复报价(买家确认前修正);每次报价重置响应窗(param direct_pay.quote_confirm_hours,默认 48h)。 | src/pwa/routes/direct-pay-pending-accept.ts:127 |
-| GET | `/api/orders/:order_id/buyer-rating` | 🔐 |  | 查 seller → buyer 评价（双盲遮蔽：buyer 看不到，除非自己也评过 OR 窗口到期） | src/pwa/routes/ratings.ts:113 |
-| POST | `/api/orders/:order_id/buyer-rating` | 🔐 |  | seller → buyer 反向评价 | src/pwa/routes/ratings.ts:83 |
-| GET | `/api/orders/:order_id/rating` | 🔐 |  | 查 buyer → seller 评价（双盲遮蔽：seller 视角同样） | src/pwa/routes/ratings.ts:132 |
+| GET | `/api/orders/:order_id/buyer-rating` | 🔐 |  | 查 seller → buyer 评价（双盲遮蔽：buyer 看不到，除非自己也评过 OR 窗口到期） | src/pwa/routes/ratings.ts:118 |
+| POST | `/api/orders/:order_id/buyer-rating` | 🔐 |  | seller → buyer 反向评价 | src/pwa/routes/ratings.ts:86 |
+| GET | `/api/orders/:order_id/rating` | 🔐 |  | 查 buyer → seller 评价（双盲遮蔽：seller 视角同样） | src/pwa/routes/ratings.ts:137 |
 | POST | `/api/orders/:order_id/rating` | 🔐 |  | buyer → seller 评价（一单一评，仅 completed 订单可评） | src/pwa/routes/ratings.ts:50 |
-| POST | `/api/orders/:order_id/rating/followup` | 🔐 |  | W3 买家追问 — 在卖家 reply 后可追问一次 | src/pwa/routes/ratings.ts:169 |
-| POST | `/api/orders/:order_id/rating/reply` | 🔐 |  |  | src/pwa/routes/ratings.ts:150 |
+| POST | `/api/orders/:order_id/rating/followup` | 🔐 |  | W3 买家追问 — 在卖家 reply 后可追问一次 | src/pwa/routes/ratings.ts:174 |
+| POST | `/api/orders/:order_id/rating/reply` | 🔐 |  |  | src/pwa/routes/ratings.ts:155 |
 | GET | `/api/orders/:order_id/return-request` | 🔐 |  | P1-5: 订单级直查 | src/pwa/routes/returns.ts:194 |
 | POST | `/api/orders/:order_id/return-request` | 🔐 |  | buyer 发起退货 | src/pwa/routes/returns.ts:127 |
 | POST | `/api/orders/batch-ship` | 🔐 |  | C-4: 卖家批量发货 | src/pwa/routes/orders-action.ts:91 |
@@ -597,7 +597,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/products/:product_id/qa` | 🔐 |  | ─── Wave A-2: 商品 Q&A ───────────────────────────────── | src/pwa/routes/wishlist-qa.ts:88 |
 | POST | `/api/products/:product_id/qa/:qa_id/answer` | 🔐 |  |  | src/pwa/routes/wishlist-qa.ts:108 |
 | POST | `/api/products/:product_id/qa/:qa_id/helpful` | 🔐 |  |  | src/pwa/routes/wishlist-qa.ts:137 |
-| GET | `/api/products/:product_id/ratings` |  |  | 公开：商品评价 + 聚合（仅展示双盲已揭晓的） | src/pwa/routes/ratings.ts:184 |
+| GET | `/api/products/:product_id/ratings` |  |  | 公开：商品评价 + 聚合（仅展示双盲已揭晓的） | src/pwa/routes/ratings.ts:189 |
 | DELETE | `/api/products/:product_id/trial-campaign` | 🔐 |  | 卖家关闭活动（仍允许 pending claims 完成评估） | src/pwa/routes/trial.ts:199 |
 | GET | `/api/products/:product_id/trial-campaign` |  |  | 公开查询商品的活动状态（任何人） | src/pwa/routes/trial.ts:209 |
 | POST | `/api/products/:product_id/trial-campaign` | 🔐 |  | 卖家：开/更新活动 | src/pwa/routes/trial.ts:159 |
@@ -690,11 +690,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/seller/shipping-settings` | 🔐 |  | 卖家读自己的店铺级设置(设置 UI 回显):接单模式 + 运费模板 + 询价开关。 | src/pwa/routes/shipping-templates.ts:127 |
 | POST | `/api/seller/shipping-template` | 🔐 |  |  | src/pwa/routes/shipping-templates.ts:28 |
 | POST | `/api/seller/withdraw-quota-application` | 🔐 |  |  | src/pwa/routes/seller-quota.ts:217 |
-| GET | `/api/sellers/:seller_id/ratings` |  |  | 公开：卖家评价聚合（卖家主页）。注册在 /me 之后(见上面注释)。 | src/pwa/routes/ratings.ts:258 |
+| GET | `/api/sellers/:seller_id/ratings` |  |  | 公开：卖家评价聚合（卖家主页）。注册在 /me 之后(见上面注释)。 | src/pwa/routes/ratings.ts:263 |
 | GET | `/api/sellers/me/analytics` | 🔐 |  | 卖家销售分析 (Wave C-5) | src/pwa/routes/analytics.ts:155 |
 | GET | `/api/sellers/me/direct-pay-report` | 🔐 |  | from/to 均可选(闭区间,按日期比较 substr(created_at,1,10));返回汇总 + 按月 + 逐单(含平台费明细)。 | src/pwa/routes/seller-directpay-report.ts:39 |
 | GET | `/api/sellers/me/flash-sales` | 🔐 |  | seller 自己的 flash sales（全部状态） | src/pwa/routes/flash-sales.ts:109 |
-| GET | `/api/sellers/me/ratings` | 🔐 |  | ⚠️ 必须注册在 /api/sellers/:seller_id/ratings 【之前】,否则 'me' 会被 :seller_id 参数路由抢匹配。 | src/pwa/routes/ratings.ts:212 |
+| GET | `/api/sellers/me/ratings` | 🔐 |  | ⚠️ 必须注册在 /api/sellers/:seller_id/ratings 【之前】,否则 'me' 会被 :seller_id 参数路由抢匹配。 | src/pwa/routes/ratings.ts:217 |
 | GET | `/api/sellers/me/return-stats` | 🔐 |  | 卖家退货仪表盘 | src/pwa/routes/analytics.ts:287 |
 | GET | `/api/share-link` | 🔐 |  | pre-public 去左右码:不再接受/返回 side,放置侧别由注册时系统自动决定。 | src/pwa/routes/referral.ts:67 |
 | POST | `/api/shareables` | 🔐 |  | 创建 shareable — 双路径：笔记模式 / 外链或 native_text 模式 | src/pwa/routes/shareables.ts:93 |
