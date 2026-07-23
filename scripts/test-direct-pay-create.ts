@@ -102,7 +102,7 @@ ok('helper rollback: stock UNCHANGED after failed create', pstock() === stBefore
 
 // ══════ Part B: route integration (POST /api/orders payment_rail=direct_p2p) ══════
 // Phase 4a 控制面参数:可变,便于在同一 app 上分别测 disabled/region/cap/enabled。默认空 = fail-closed(disabled)。
-const cp: Record<string, unknown> = {}
+const cp: Record<string, unknown> = { 'payment_rail_waz_escrow_enabled': 1 }   // WAZ 退役:验证渠道【开着时】语义
 const seedSanctions = (sellerId: string) => db.prepare("INSERT INTO sanctions_screening (id, user_id, status) VALUES (?,?,'clear')").run('sc_' + sellerId, sellerId)
 const seedKyb = (sellerId: string, status = 'approved') => db.prepare("INSERT INTO direct_receive_kyb_reviews (id, user_id, status) VALUES (?,?,?)").run('kyb_' + sellerId, sellerId, status)
 let oc = 0

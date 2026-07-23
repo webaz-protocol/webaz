@@ -75,7 +75,7 @@ const auth = (req: Request, res: Response) => {
   return row
 }
 const app = express(); app.use(express.json())
-const cp: Record<string, unknown> = {}
+const cp: Record<string, unknown> = { 'payment_rail_waz_escrow_enabled': 1 }   // WAZ 退役:验证渠道【开着时】语义
 let loopbackMode: 'real' | 'throw' = 'real'
 const realLoopback = async (apiKey: string, body: Record<string, unknown>) => {
   const resp = await fetch(`http://127.0.0.1:${port}/api/orders`, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(body) })

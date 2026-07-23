@@ -2,7 +2,8 @@
  * RFC-029 Design A — seller-supported payment OPTIONS enumerator (the confirm-page menu source).
  *
  * Given a product/seller/amount, returns the flat list of payment options the BUYER may choose from:
- *   - escrow (the universal fallback — no per-seller escrow opt-out exists today; sim disclosure), plus
+ *   - escrow (WAZ sim rail — channel-gated by `payment_rail_waz_escrow_enabled`, default OFF since the
+ *     2026-07-23 WAZ sunset; when off it is delisted here AND hard-gated at create), plus
  *   - one option per the seller's supported direct-receive method, but ONLY when the direct-pay
  *     product gate passes (directPayProductAvailability) AND a receive destination actually exists.
  *
@@ -47,10 +48,13 @@ export interface PaymentOptionsArgs {
 
 /** The seller-supported + gate-passing payment options for this order (escrow + eligible direct methods). */
 export function sellerSupportedPaymentOptions(db: Database.Database, args: PaymentOptionsArgs): PaymentOption[] {
-  const options: PaymentOption[] = [
-    // Escrow is the universal fallback (no per-seller opt-out today) — always offered, honest sim note.
-    { option_id: 'escrow', rail: 'escrow', method: null, recipient_label: null, direct_receive_account_id: null, settlement_note: ESCROW_NOTE, recommended: false },
-  ]
+  const options: PaymentOption[] = []
+  // WAZ 退役(2026-07-23):escrow 从"universal fallback 永远第一项"改为渠道开关门控,默认关=下架。
+  //   同一 param 也闸建单路径(orders-create escrow 硬闸 / cart-checkout)—— 菜单与建单同真值,
+  //   不会出现"能选不能买 / 不能选却能建单"。choose-payment 重验走本函数,选择路径自动同闸。
+  if (Number(args.getProtocolParam('payment_rail_waz_escrow_enabled', 0)) === 1) {
+    options.push({ option_id: 'escrow', rail: 'escrow', method: null, recipient_label: null, direct_receive_account_id: null, settlement_note: ESCROW_NOTE, recommended: false })
+  }
 
   // Direct-pay options only when the product/seller gate passes (same predicate the create path uses).
   // ONLY concrete active accounts are offered (each hash-bindable via its account id). The null-account

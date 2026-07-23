@@ -884,6 +884,7 @@ jobs:
       - run: npm run test:buyer-quote
       - run: npm run test:rail-choice-defer
       - run: npm run test:payment-options
+      - run: npm run test:waz-escrow-rail-gate
       - run: npm run test:choose-payment
       - run: npm run test:choose-payment-ui
       - run: npm run test:order-draft

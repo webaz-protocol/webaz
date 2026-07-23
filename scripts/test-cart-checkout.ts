@@ -73,6 +73,8 @@ registerCartRoutes(app, {
   },
   isTrustedRole: () => false,
   errorRes: (res: Response, status: number, code: string, msg: string) => { res.status(status).json({ error: msg, error_code: code }) },
+  // WAZ 退役:本测试验证购物车 escrow 渠道【开着时】的批量下单语义(默认关的行为见 test-waz-escrow-rail-gate)
+  getProtocolParam: <T,>(k: string, fb: T): T => (k === 'payment_rail_waz_escrow_enabled' ? 1 as unknown as T : fb),
   broadcastSystemEvent: () => {},
   // This deterministic competing write occurs inside the checkout transaction. The subsequent
   // conditional decrement must fail, and every earlier checkout write must roll back with it.

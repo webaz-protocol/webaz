@@ -64,7 +64,7 @@ const auth = (req: Request, res: Response) => {
   return row
 }
 const app = express(); app.use(express.json())
-registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true })
+registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true, getProtocolParam: <T,>(k: string, fb: T): T => (k === 'payment_rail_waz_escrow_enabled' ? 1 as unknown as T /* WAZ 退役:验证渠道【开着时】语义 */ : fb) })
 const server = app.listen(0)
 process.env.WEBAZ_API_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 const mcp = await import('../src/layer1-agent/L1-1-mcp-server/server.js')

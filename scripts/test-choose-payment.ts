@@ -35,7 +35,7 @@ initUserModerationSchema(db); applyWebazRuntimeSchema(db); initWebauthnSchema(db
 try { db.exec('ALTER TABLE users ADD COLUMN default_address_text TEXT') } catch { /* */ }
 try { db.exec('ALTER TABLE users ADD COLUMN default_address_region TEXT') } catch { /* */ }
 
-const cp: Record<string, unknown> = { 'direct_pay.enabled': true, 'direct_pay.region': 'SG', 'direct_pay.region_allowlist': 'SG', 'direct_pay.per_tx_cap_units': toUnits(1000) }
+const cp: Record<string, unknown> = { 'direct_pay.enabled': true, 'direct_pay.region': 'SG', 'direct_pay.region_allowlist': 'SG', 'direct_pay.per_tx_cap_units': toUnits(1000), 'payment_rail_waz_escrow_enabled': 1 }   // WAZ 退役:验证渠道【开着时】的选择语义
 const gp = <T>(k: string, fb: T): T => (k in cp ? cp[k] as T : fb)
 const deps = { generateId, getProtocolParam: gp }
 

@@ -37,10 +37,11 @@ export interface CartDeps {
   broadcastSystemEvent: (type: string, icon: string, summary: string, refId?: string | null) => void
   checkStockAndMaybeDelist: (productId: string) => void
   addHours: (date: Date, hours: number) => string
+  getProtocolParam: <T>(key: string, fallback: T) => T
 }
 
 export function registerCartRoutes(app: Application, deps: CartDeps): void {
-  const { db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent, checkStockAndMaybeDelist, addHours } = deps
+  const { db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent, checkStockAndMaybeDelist, addHours, getProtocolParam } = deps
 
   app.get('/api/cart', async (req, res) => {
     const user = auth(req, res); if (!user) return
@@ -105,6 +106,7 @@ export function registerCartRoutes(app: Application, deps: CartDeps): void {
         checkStockAndMaybeDelist,
         addHours,
         agentApiKey,
+        getProtocolParam,
       })
     } catch (e) {
       if (e instanceof CartCheckoutError) {

@@ -211,8 +211,16 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
   const rail = input.payment_rail === undefined ? (railChoice ? RAIL_DEFERRED : 'escrow') : String(input.payment_rail)
   const railAllowed = rail === 'escrow' || rail === 'direct_p2p' || (railChoice && isDeferredRail(rail))
   if (!railAllowed) {
-    return qerr(409, 'PAYMENT_RAIL_DISABLED', `rail "${String(rail)}" is not enabled — only escrow and direct_p2p exist`, { next_steps: ['use payment_rail=escrow', 'use payment_rail=direct_p2p'] })
+    return qerr(409, 'PAYMENT_RAIL_DISABLED', `rail "${String(rail)}" is not enabled`, { next_steps: ['use payment_rail=direct_p2p'] })
   }
+  // WAZ 退役(2026-07-23):escrow 渠道开关默认关 —— 显式请求 escrow(或 flag-off 时"省略默认 escrow")在
+  //   quote 阶段即拒,不让草稿冻结一条 exec 必被 RAIL_DISABLED 409 的死路轨道。'deferred' 不在此拦:
+  //   确认页菜单(sellerSupportedPaymentOptions)同 param 门控,选不到 escrow。
+  const wazEscrowOn = Number(deps.getProtocolParam('payment_rail_waz_escrow_enabled', 0)) === 1
+  if (rail === 'escrow' && !wazEscrowOn) {
+    return qerr(409, 'PAYMENT_RAIL_DISABLED', 'the WAZ simulated escrow rail is retired — quote with payment_rail=direct_p2p (or omit payment_rail to choose on the confirm page)', { next_steps: ['use payment_rail=direct_p2p'] })
+  }
+  const escrowAlt = wazEscrowOn ? ['use payment_rail=escrow'] : []   // escrow 建议只在渠道开着时给,不误导
 
   // ── 5. donation(整数基点枚举;direct_p2p v1 不支持 donation/anonymous —— 如实拒绝,不静默清零) ──
   const donationBps = input.donation_bps === undefined ? 0 : input.donation_bps
@@ -263,9 +271,9 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
   // ── 9. direct_p2p 资格(镜像 direct-pay-create 的同一批评估函数;quote 不担保,创建时全部重跑) ──
   let receiveAccountId: string | null = null
   if (rail === 'direct_p2p') {
-    if (Number(product.has_variants) === 1 || variantId) return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', 'direct_p2p v1 supports simple products only (no variants). escrow is available as an alternative — NOT auto-switched.', { next_steps: ['use payment_rail=escrow'] })
-    if (donationBps > 0 || anonymous) return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', `direct_p2p v1 does not support ${donationBps > 0 ? 'donation' : 'anonymous_recipient'}. escrow supports it — NOT auto-switched.`, { next_steps: ['use payment_rail=escrow', 'drop the unsupported option'] })
-    if (flashSale) return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', 'direct_p2p v1 does not support flash-sale-priced products (order creation rejects flashActive). escrow is available — NOT auto-switched.', { next_steps: ['use payment_rail=escrow'] })
+    if (Number(product.has_variants) === 1 || variantId) return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', 'direct_p2p v1 supports simple products only (no variants) — NOT auto-switched.', { next_steps: [...escrowAlt, 'choose_another_offer'] })
+    if (donationBps > 0 || anonymous) return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', `direct_p2p v1 does not support ${donationBps > 0 ? 'donation' : 'anonymous_recipient'} — NOT auto-switched.`, { next_steps: [...escrowAlt, 'drop the unsupported option'] })
+    if (flashSale) return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', 'direct_p2p v1 does not support flash-sale-priced products (order creation rejects flashActive) — NOT auto-switched.', { next_steps: [...escrowAlt, 'choose_another_offer'] })
     const cfg = readDirectPayControlsConfig(deps.getProtocolParam)
     const ctrl = evaluateDirectPayLaunchControls(cfg, {
       amountUnits: totalU,
@@ -280,10 +288,10 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
       const isCap = rawCode === 'DIRECT_PAY_CAP_EXCEEDED'
       return qerr(409, isCap ? 'PURCHASE_LIMIT_EXCEEDED' : (code === rawCode ? code : 'SELLER_NOT_ELIGIBLE'),
         isCap ? 'direct pay per-transaction cap exceeded (or unconfigured)' : (code === rawCode ? String(ctrl.reason ?? 'direct pay not available') : 'seller is not currently eligible for direct pay'),
-        { next_steps: ['use payment_rail=escrow', 'choose_another_offer'] })
+        { next_steps: [...escrowAlt, 'choose_another_offer'] })
     }
     if (!(productStoreVerified(db, productId) || sellerExemptFromPerProduct(db, sellerId))) {
-      return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', 'this product is not yet platform-verified for direct pay. escrow is available — NOT auto-switched.', { next_steps: ['use payment_rail=escrow'] })
+      return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', 'this product is not yet platform-verified for direct pay — NOT auto-switched.', { next_steps: [...escrowAlt, 'choose_another_offer'] })
     }
     if (input.direct_receive_account_id != null) {
       if (typeof input.direct_receive_account_id !== 'string' || !input.direct_receive_account_id) return qerr(400, 'DIRECT_RECEIVE_ACCOUNT_INVALID', 'direct_receive_account_id must be a non-empty string id', { retryable: true })

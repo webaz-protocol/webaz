@@ -269,6 +269,10 @@ export function registerOrdersCreateRoutes(app: Application, deps: OrdersCreateD
     const donationAmount = toDecimal(donationAmountU); const shippingFee = toDecimal(_ship.feeU)
     // PR-4c:direct_p2p 分叉 —— 本金不入协议,跳过下方 escrow 预检/事务,改走直付建单(生产门+收款指令门+原子建单,仅锁卖家 fee-stake)。
     if (String(req.body?.payment_rail || '') === 'direct_p2p') return void createDirectPayResponse(res, db, { generateId, transition, appendOrderEvent, getProtocolParam }, { product, buyerId: user.id as string, reqQty, basePrice, totalAmount, totalAmountU, shippingAddress, directReceiveAccountId: (typeof req.body?.direct_receive_account_id === 'string' && req.body.direct_receive_account_id) ? String(req.body.direct_receive_account_id) : undefined, agentApiKey: apiKey, draftId: _dl.kind === 'link' ? _dl.draftId : undefined, consumePriceSession: () => consumePriceSession(db, typeof session_token === 'string' ? session_token : undefined), opts: { variantId: variant_id, hasVariants: Number(product.has_variants) === 1, flashActive: !!flashSale, couponCode: coupon_code, buyInsurance: !!buy_insurance, donationPct: donationPctNum, isGift: !!is_gift, anonymous: anonymousFlag === 1, deliveryWindow: !!delivery_window }, shipping: { region: _ship.region, fee: _ship.fee, estDays: _ship.estDays, quoteRequired: _ship.quoteRequired, freeThresholdApplied: _ship.freeThresholdApplied } })
+    // WAZ 退役(2026-07-23)硬闸:此行以下全是 WAZ escrow 建单路径(含"省略 payment_rail 默认落 escrow"的
+    //   历史兜底)。渠道开关默认关 —— 菜单层(sellerSupportedPaymentOptions)不出选项是第一层,此闸堵直接
+    //   POST 与一切 fallthrough:fail-closed,param 显式 =1 才放行。
+    if (Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1) return void res.status(409).json({ error: 'WAZ 模拟托管轨已下架,请选择卖家支持的直付方式下单', error_code: 'RAIL_DISABLED' })
     // 友好预检查(读):真正的守恒在下面的同步事务内(applyWalletDelta 绝对值落库)。
     const wallet = await dbOne<{ balance: number }>('SELECT balance FROM wallets WHERE user_id = ?', [user.id])
     if (!wallet) return void res.status(500).json({ error: '钱包记录缺失', error_code: 'WALLET_MISSING' })

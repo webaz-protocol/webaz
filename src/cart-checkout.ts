@@ -42,6 +42,7 @@ interface CheckoutSelectedCartArgs {
   checkStockAndMaybeDelist: (productId: string) => void
   addHours: (date: Date, hours: number) => string
   agentApiKey?: string
+  getProtocolParam: <T>(key: string, fallback: T) => T
 }
 
 export interface CartCheckoutIntent {
@@ -80,6 +81,11 @@ export function normalizeCartSelection(input: unknown): CartCheckoutIntent[] {
 
 export function checkoutSelectedCart(args: CheckoutSelectedCartArgs): CartCheckoutResult {
   const { db, buyerId, shippingAddress, notes, generateId, checkStockAndMaybeDelist, addHours, agentApiKey } = args
+  // WAZ 退役(2026-07-23):购物车批量下单只有 WAZ 托管一条路径 —— 渠道开关关闭(默认)即整体下架。
+  //   fail-closed:param 显式 =1 才放行,与 orders-create 的 escrow 硬闸同真值。
+  if (Number(args.getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1) {
+    throw new CartCheckoutError('WAZ 模拟托管轨已下架,购物车批量下单暂不可用;请到商品页选择直付方式下单', 409, 'RAIL_DISABLED')
+  }
   const selectedItems = normalizeCartSelection(args.selectedItems)
   const selectedIds = selectedItems.map(item => item.product_id)
   const checkout = db.transaction((): CartCheckoutResult => {

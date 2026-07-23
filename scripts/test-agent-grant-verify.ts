@@ -50,7 +50,7 @@ const auth = (req: express.Request, res: express.Response) => {
 
 const app = express()
 app.use(express.json())
-registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true })
+registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true, getProtocolParam: <T,>(k: string, fb: T): T => (k === 'payment_rail_waz_escrow_enabled' ? 1 as unknown as T /* WAZ 退役:验证渠道【开着时】语义 */ : fb) })
 // stub "money/order-style" route guarded by ordinary human auth — must NOT accept grant tokens
 app.get('/api/_test/human-only', (req, res) => { const u = auth(req, res); if (!u) return; res.json({ ok: true, user_id: u.id }) })
 const server = app.listen(0)

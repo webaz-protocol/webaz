@@ -115,7 +115,7 @@ insO.run('ord_dis', 'buyer1', 'seller1', 'prd_3', 'disputed', 10, 10, 10, 'escro
 
 const auth = (_req: express.Request, res: express.Response) => { res.status(401).json({ error: 'no human auth in this test' }); return null }
 const app = express(); app.use(express.json())
-registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true })
+registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true, getProtocolParam: <T,>(k: string, fb: T): T => (k === 'payment_rail_waz_escrow_enabled' ? 1 as unknown as T /* WAZ 退役:投影契约用渠道【开】的 escrow 报价 */ : fb) })
 // products-list:投影/信封为被测对象;排序公式与 i18n 非被测 → 最小真实语义替身(TRENDING=0,format 附 agent_summary)
 registerProductsListRoutes(app, {
   db, getUser: () => null,

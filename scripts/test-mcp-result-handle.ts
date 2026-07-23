@@ -57,7 +57,7 @@ db.prepare("INSERT INTO order_state_history (order_id, from_status, to_status, a
 
 const auth = (_req: express.Request, res: express.Response) => { res.status(401).json({ error: 'no human auth' }); return null }
 const app = express(); app.use(express.json())
-registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true })
+registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true, getProtocolParam: <T,>(k: string, fb: T): T => (k === 'payment_rail_waz_escrow_enabled' ? 1 as unknown as T /* WAZ 退役:验证渠道【开着时】语义 */ : fb) })
 registerProductsListRoutes(app, {
   db, getUser: () => null,
   VALID_PRODUCT_TYPES: new Set(['retail', 'wholesale', 'service', 'digital']),

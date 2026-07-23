@@ -850,6 +850,8 @@ const DEFAULT_PARAMS: Array<{ key: string; value: string; type: string; descript
   { key: 'max_quota_duration_hours', value: '72', type: 'number', description: 'PR#18 build_task 扩容授权:最长有效期(小时)', category: 'limit', min: 1, max: 2160 },
   { key: 'export_csv_limit', value: '5000', type: 'number', description: '订单导出 CSV 行数上限', category: 'limit', min: 100, max: 50000 },
   { key: 'return_window_extension_days', value: '0', type: 'number', description: '退货窗口全局延长天数', category: 'general', min: 0, max: 90 },
+  // 2026-07-23 WAZ 退役:模拟托管轨(escrow)渠道开关 — 0=下架(支付选项隐藏 + escrow 建单/购物车批量下单 409 RAIL_DISABLED),1=admin 恢复。默认关。
+  { key: 'payment_rail_waz_escrow_enabled', value: '0', type: 'number', description: 'WAZ 模拟托管轨渠道开关(0=下架:支付选项隐藏+建单 409 RAIL_DISABLED;1=恢复)— 2026-07-23 WAZ 退役默认关', category: 'system', min: 0, max: 1 },
   // Wave G-2: USDC / 链上配置
   { key: 'waz_usdc_rate', value: '1.0', type: 'number', description: '1 USDC 兑换多少 WAZ', category: 'fee', min: 0.0001, max: 1000 },
   { key: 'usdc_min_deposit', value: '0.01', type: 'number', description: '最低充值 USDC（小于忽略）', category: 'limit', min: 0, max: 1000 },
@@ -6080,7 +6082,7 @@ registerAgentBuyRoutes(app, {
 // #1013 Phase 29: 5 endpoints 已迁出到 routes/cart.ts
 registerCartRoutes(app, {
   db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent,
-  checkStockAndMaybeDelist, addHours,
+  checkStockAndMaybeDelist, addHours, getProtocolParam,
 })
 
 // POST /api/orders/batch-ship — Phase 84 已迁出

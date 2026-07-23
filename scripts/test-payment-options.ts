@@ -3,7 +3,8 @@
  * RFC-029 Design A · PR-2 — seller-supported payment-OPTIONS enumerator + shared availability predicate.
  *
  * Proves:
- *  - escrow is ALWAYS offered (universal fallback), first, with an honest sim note.
+ *  - escrow is offered ONLY while the WAZ sunset channel switch (payment_rail_waz_escrow_enabled) is ON;
+ *    when on it is first, with an honest sim note. Default (param absent/0) = OFF → escrow delisted.
  *  - direct_p2p options appear ONLY when the product/seller gate passes, and mirror resolveDirectReceive's
  *    universe (legacy instruction + each active account) — multi-account AND legacy-only sellers listed.
  *  - the resolveDirectReceive auto-pick is flagged `recommended` (soft default); a recommendation NEVER
@@ -34,7 +35,8 @@ const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 initUserModerationSchema(db); applyWebazRuntimeSchema(db); initWebauthnSchema(db)
 
 // direct-pay controls config (enable + generous cap/region) via getProtocolParam stub
-const cp: Record<string, unknown> = { 'direct_pay.enabled': true, 'direct_pay.region': 'SG', 'direct_pay.region_allowlist': 'SG', 'direct_pay.per_tx_cap_units': toUnits(1000) }
+// WAZ 退役后 escrow 是渠道开关门控(默认关)—— 本文件的历史场景验证"开着时"的完整菜单语义,末尾另验默认关。
+const cp: Record<string, unknown> = { 'direct_pay.enabled': true, 'direct_pay.region': 'SG', 'direct_pay.region_allowlist': 'SG', 'direct_pay.per_tx_cap_units': toUnits(1000), 'payment_rail_waz_escrow_enabled': 1 }
 const gp = <T>(k: string, fb: T): T => (k in cp ? cp[k] as T : fb)
 
 // eligible-seller fixtures (mirror test-direct-pay-create seeds)
@@ -89,5 +91,14 @@ mkSeller('sE'); mkProduct('pE', 'sE'); makeEligible('sE', 'pE')
 const oE = optsFor('pE', 'sE')
 ok('E: eligible but no receive destination → escrow only (no un-payable direct option surfaced)', ids(oE).join() === 'escrow')
 
+// ── WAZ 退役(2026-07-23):渠道开关默认关 → escrow 从菜单消失;direct 选项不受影响 ──
+delete cp['payment_rail_waz_escrow_enabled']   // 回到默认(param 缺省 → fallback 0 → off)
+const oCoff = optsFor('pC', 'sC')
+ok('sunset: default(off) → escrow DELISTED; eligible direct option unaffected', ids(oCoff).join() === 'direct:accC' && rec(oCoff).join() === 'direct:accC')
+const oAoff = optsFor('pA', 'sA')
+ok('sunset: default(off) + ineligible seller → EMPTY menu (no un-orderable escrow surfaced)', oAoff.length === 0)
+cp['payment_rail_waz_escrow_enabled'] = 0
+ok('sunset: explicit 0 → escrow delisted (same as absent)', ids(optsFor('pC', 'sC')).join() === 'direct:accC')
+
 if (fail > 0) { console.error(`\n❌ payment-options FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
-console.log(`✅ payment-options: escrow-always + direct gated by shared availability predicate; mirrors resolveDirectReceive (legacy + active accounts); recommended = auto-pick, never shrinks the menu (MA3)\n  ✅ pass ${pass}`)
+console.log(`✅ payment-options: escrow channel-gated (default OFF since WAZ sunset) + direct gated by shared availability predicate; mirrors resolveDirectReceive (legacy + active accounts); recommended = auto-pick, never shrinks the menu (MA3)\n  ✅ pass ${pass}`)
