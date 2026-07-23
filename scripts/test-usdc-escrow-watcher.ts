@@ -12,8 +12,10 @@
  *   4. amount 不符 → 镜像入、订单仍 created、intents 仍 issued、admin 收到告警。
  *   5. 未知 order_key(无 intents)→ 镜像入 + 告警、无转移。
  *   6. 订单已 cancelled 后 Deposited 确认 → 镜像入 + 告警、订单仍 cancelled。
- *   7. 重组(block_hash 变了)→ orphans 加行、原行未改(append-only)、告警、订单状态未反转。
- *   8. 重组变体(事件消失)→ orphan reason='reorg:log_vanished'。
+ *   7. 重组(block_hash 变了,同一自洽 getLogs 内)→ orphans 加行、原行未改(append-only)、告警、订单状态未反转。
+ *   8. 事件消失 + getBlock 佐证 canonical hash 已变(真重组)→ orphan reason='reorg:log_vanished:<hash>'、订单未反转。
+ *   8b. 事件消失但 getBlock 返回同一 hash(RPC 抖动,区块仍 canonical)→ 无 orphan、无新告警、订单不动。
+ *   8c. 事件消失且 getBlock 抛错(节点滞后)→ 无定论:无 orphan、无告警、tick 不 throw(下 tick 重查)。
  *   9. Released/Disputed/Resolved → 只镜像,订单状态不动;Disputed 有告警,Released/Resolved 无。
  *   10. RPC 异常(fake client throw)→ tick 不 crash、游标不推进。
  *   11. 冷启动:watcher_state 空 → 初始化游标为 safeHead、不处理任何历史事件(零 getLogs 调用)。
@@ -93,13 +95,24 @@ class FakeClient implements WatcherChainClient {
   logs: WatcherLog[]
   throwGetLogs = false
   throwGetBlockNumber = false
+  throwGetBlock = false
   getLogsCalls = 0
+  getBlockCalls = 0
+  // canonical block hash by height — the vanish-corroboration branch reads this via getBlock.
+  blockHashByNumber = new Map<bigint, string>()
   constructor(latest: bigint, logs: WatcherLog[] = []) { this.latest = latest; this.logs = logs }
   async getBlockNumber(): Promise<bigint> { if (this.throwGetBlockNumber) throw new Error('rpc down (getBlockNumber)'); return this.latest }
   async getLogs({ fromBlock, toBlock }: { address: `0x${string}`; events: unknown[]; fromBlock: bigint; toBlock: bigint }): Promise<WatcherLog[]> {
     this.getLogsCalls++
     if (this.throwGetLogs) throw new Error('rpc down (getLogs)')
     return this.logs.filter(l => l.blockNumber >= fromBlock && l.blockNumber <= toBlock)
+  }
+  async getBlock({ blockNumber }: { blockNumber: bigint }): Promise<{ hash: string }> {
+    this.getBlockCalls++
+    if (this.throwGetBlock) throw new Error('rpc down (getBlock)')
+    const hash = this.blockHashByNumber.get(blockNumber)
+    if (hash === undefined) throw new Error(`FakeClient.getBlock: no canonical hash set for height ${blockNumber} (test must set blockHashByNumber)`)
+    return { hash }
   }
 }
 
@@ -206,6 +219,7 @@ const makeDeps = (client: WatcherChainClient, extra: Partial<WatcherDeps> = {}):
 }
 {
   // case 8 — block 3105 (own window, no overlap with case 7's [2999,3006])
+  // vanished log CORROBORATED as a true reorg: getBlock reports a DIFFERENT canonical hash at 3105.
   const OID = 'ordC8'; const OK = '0x' + 'f'.repeat(64); const TX = '0xtxC8'
   mkOrder(OID, 'created'); mkIntent(OID, OK)
   setCursor(3100n)
@@ -215,13 +229,63 @@ const makeDeps = (client: WatcherChainClient, extra: Partial<WatcherDeps> = {}):
   const rowBefore = chainEventRow(TX)
   if (!rowBefore) throw new Error(`case8 setup failed: no mirrored row for ${TX}`)
 
-  // simulate a deeper reorg: the log vanishes entirely from the refetch
+  // simulate a deeper reorg: the log vanishes AND getBlock confirms the height now holds a different block.
   client.logs = []
+  client.blockHashByNumber.set(3105n, '0xblockc8-reorged')   // ≠ mirrored row's 0xblockc8 → true reorg
   client.latest = 3109n
   await runWatcherTick(makeDeps(client))
   const orphan = db.prepare('SELECT reason FROM usdc_escrow_event_orphans WHERE event_id = ?').get(rowBefore.id) as { reason: string } | undefined
-  ok('case8: vanished log → orphan reason=reorg:log_vanished', orphan?.reason === 'reorg:log_vanished', JSON.stringify(orphan))
+  ok('case8: corroborated vanish → orphan reason=reorg:log_vanished:<canonicalHash>', orphan?.reason === 'reorg:log_vanished:0xblockc8-reorged', JSON.stringify(orphan))
+  ok('case8: getBlock was consulted before orphaning', client.getBlockCalls >= 1)
   ok('case8: order status NOT reverted (still paid)', orderStatus(OID) === 'paid')
+}
+{
+  // case 8b — block 3205 (own window): logs vanish from refetch but getBlock returns the SAME hash
+  // as the mirrored row → RPC flake, NOT a reorg → no orphan, no new alert, order untouched.
+  const OID = 'ordC8b'; const OK = '0x' + '1'.repeat(63) + 'b'; const TX = '0xtxC8b'
+  mkOrder(OID, 'created'); mkIntent(OID, OK)
+  setCursor(3200n)
+  const client = new FakeClient(3208n, [depositedLog({ orderKey: OK, tx: TX, blockNumber: 3205n, blockHash: '0xblockC8b' })])
+  await runWatcherTick(makeDeps(client))
+  ok('case8b setup: event applied, order paid', orderStatus(OID) === 'paid')
+  const rowBefore = chainEventRow(TX)
+  if (!rowBefore) throw new Error(`case8b setup failed: no mirrored row for ${TX}`)
+
+  // logs vanish (flaky getLogs) but the block is still canonical with the SAME hash → RPC flake.
+  client.logs = []
+  client.blockHashByNumber.set(3205n, '0xblockc8b')   // === mirrored row's 0xblockc8b (lowercased) → still canonical
+  client.latest = 3209n
+  const notifBefore = notifCountAdmin()
+  await runWatcherTick(makeDeps(client))
+  const orphan = db.prepare('SELECT reason FROM usdc_escrow_event_orphans WHERE event_id = ?').get(rowBefore.id) as { reason: string } | undefined
+  ok('case8b: RPC flake (same canonical hash) → NO orphan row', orphan === undefined, JSON.stringify(orphan))
+  ok('case8b: RPC flake → NO new admin notification', notifCountAdmin() === notifBefore)
+  ok('case8b: order untouched (still paid)', orderStatus(OID) === 'paid')
+}
+{
+  // case 8c — block 3305 (own window): logs vanish and getBlock THROWS → inconclusive →
+  // no orphan, no alert, tick completes without throwing (will re-check next tick).
+  const OID = 'ordC8c'; const OK = '0x' + '2'.repeat(63) + 'c'; const TX = '0xtxC8c'
+  mkOrder(OID, 'created'); mkIntent(OID, OK)
+  setCursor(3300n)
+  const client = new FakeClient(3308n, [depositedLog({ orderKey: OK, tx: TX, blockNumber: 3305n, blockHash: '0xblockC8c' })])
+  await runWatcherTick(makeDeps(client))
+  ok('case8c setup: event applied, order paid', orderStatus(OID) === 'paid')
+  const rowBefore = chainEventRow(TX)
+  if (!rowBefore) throw new Error(`case8c setup failed: no mirrored row for ${TX}`)
+
+  // logs vanish AND getBlock is unavailable (flaky/lagging node) → inconclusive, must not orphan.
+  client.logs = []
+  client.throwGetBlock = true
+  client.latest = 3309n
+  const notifBefore = notifCountAdmin()
+  let threw = false
+  try { await runWatcherTick(makeDeps(client)) } catch { threw = true }
+  const orphan = db.prepare('SELECT reason FROM usdc_escrow_event_orphans WHERE event_id = ?').get(rowBefore.id) as { reason: string } | undefined
+  ok('case8c: getBlock throws → tick completes without throwing', !threw)
+  ok('case8c: inconclusive → NO orphan row', orphan === undefined, JSON.stringify(orphan))
+  ok('case8c: inconclusive → NO new admin notification', notifCountAdmin() === notifBefore)
+  ok('case8c: order untouched (still paid)', orderStatus(OID) === 'paid')
 }
 
 // ══════════ Group D [blocks 4000-4013]: case 9 — Released/Disputed/Resolved only mirror; Disputed alerts, Released/Resolved don't ══════════

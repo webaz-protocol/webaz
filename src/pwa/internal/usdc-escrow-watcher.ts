@@ -11,6 +11,13 @@
  *     重组一律走 usdc_escrow_event_orphans 标记 + alertAdmins,orders 表状态一律不碰,留给
  *     人工核对链上真实状态后手动处置(与 usdc-escrow-timeouts.ts 的"清扫只做该轨确定该做的
  *     一件事"同一克制哲学)。
+ *   - vanish 疑似必须经 getBlock 佐证,防 RPC 抖动误孤儿:存量镜像行在 refetch 里"消失"有两种
+ *     成因——真重组(该高度换了区块),或 flaky/滞后 RPC 节点返回了不完整的 getLogs(常见得多)。
+ *     孤儿标记 append-only 且不可逆(下游结算读排除孤儿),据一次可能残缺的 getLogs 就永久孤儿一条
+ *     有效行是纯误报。所以 vanish 分支必先 client.getBlock(该高度) 佐证:getBlock 抛错=无法定论,
+ *     跳过等下 tick 重查;canonical hash 仍等于 row.block_hash=区块还在链上、只是 getLogs 抖动,跳过;
+ *     仅当 canonical hash 与 row.block_hash 不同才是真重组,才标孤儿 + 告警。block_hash_mismatch
+ *     分支不需佐证:同一次自洽 getLogs 里 (tx,logIndex) 命中却 blockHash 变了,本身就是重组实证。
  *   - 金额/费率全程 BigInt 比较,绝不 Number() —— 6dp units 的 1 unit 误差就是钱。
  *
  * 范围边界(刻意不做,留后续 PR):
@@ -41,6 +48,7 @@ export interface WatcherLog {
 export interface WatcherChainClient {
   getBlockNumber(): Promise<bigint>
   getLogs(args: { address: `0x${string}`; events: unknown[]; fromBlock: bigint; toBlock: bigint }): Promise<WatcherLog[]>
+  getBlock(args: { blockNumber: bigint }): Promise<{ hash: string }>
 }
 
 export interface WatcherDeps {
@@ -94,6 +102,10 @@ function buildDefaultClient(): WatcherChainClient {
         blockHash: String(l.blockHash).toLowerCase(),
       }))
     },
+    async getBlock({ blockNumber }): Promise<{ hash: string }> {
+      const block = await publicClient.getBlock({ blockNumber })
+      return { hash: String(block.hash).toLowerCase() }
+    },
   }
 }
 
@@ -128,11 +140,12 @@ function mirrorEvent(deps: WatcherDeps, orderKey: string, l: WatcherLog): void {
 
 /**
  * 重组检测(对 [fromBlock, toBlock] 窗口内、尚未被标记孤儿的存量镜像行):
- * 在本次 refetch 的 logs 里按 (tx_hash, log_index) 查找 —— 找不到(事件从链上消失)或
- * block_hash 变了(同 tx/log 位置换了区块)都视为重组,标记孤儿 + 告警。绝不改动/反转
- * 任何订单状态(模块头设计决策)。
+ * 在本次 refetch 的 logs 里按 (tx_hash, log_index) 查找 —— block_hash 变了(同 tx/log 位置
+ * 换了区块)是自洽 getLogs 里的重组实证,直接标孤儿 + 告警;而"找不到"(事件从链上消失)只是
+ * 疑似,须先 client.getBlock(该高度) 佐证 canonical hash 才可定论(见模块头:防 RPC 抖动误孤儿)。
+ * 绝不改动/反转任何订单状态(模块头设计决策)。
  */
-function detectReorgs(deps: WatcherDeps, fromBlock: bigint, toBlock: bigint, logs: WatcherLog[]): void {
+async function detectReorgs(deps: WatcherDeps, client: WatcherChainClient, fromBlock: bigint, toBlock: bigint, logs: WatcherLog[]): Promise<void> {
   const existing = deps.db.prepare(`
     SELECT ce.id, ce.order_key, ce.event_name, ce.tx_hash, ce.log_index, ce.block_number, ce.block_hash
     FROM usdc_escrow_chain_events ce
@@ -144,13 +157,7 @@ function detectReorgs(deps: WatcherDeps, fromBlock: bigint, toBlock: bigint, log
   const byKey = new Map<string, WatcherLog>()
   for (const l of logs) byKey.set(`${l.transactionHash.toLowerCase()}:${l.logIndex}`, l)
 
-  for (const row of existing) {
-    const match = byKey.get(`${row.tx_hash.toLowerCase()}:${row.log_index}`)
-    if (match && match.blockHash.toLowerCase() === row.block_hash.toLowerCase()) continue // 正常,未重组
-
-    const reason = match
-      ? `reorg:block_hash_mismatch:${match.blockHash.toLowerCase()}`
-      : 'reorg:log_vanished'
+  const orphan = (row: ChainEventRow, reason: string, bodyTail: string): void => {
     try {
       deps.db.prepare('INSERT OR IGNORE INTO usdc_escrow_event_orphans (event_id, reason) VALUES (?, ?)').run(row.id, reason)
     } catch { /* 已标记过(理论不该发生,双保险) */ }
@@ -158,9 +165,37 @@ function detectReorgs(deps: WatcherDeps, fromBlock: bigint, toBlock: bigint, log
       deps,
       '🚨 USDC 担保:检测到链上重组',
       `事件 ${row.id}(order_key ${row.order_key}, event ${row.event_name}, tx ${row.tx_hash}#${row.log_index})` +
-      (match ? ` 所在区块已变为 ${match.blockHash}` : ' 已从链上消失') +
+      bodyTail +
       ' —— 已标记孤儿(usdc_escrow_event_orphans),不做任何订单状态反转,请人工核对链上真实状态。',
     )
+  }
+
+  for (const row of existing) {
+    const match = byKey.get(`${row.tx_hash.toLowerCase()}:${row.log_index}`)
+    if (match && match.blockHash.toLowerCase() === row.block_hash.toLowerCase()) continue // 正常,未重组
+
+    if (match) {
+      // block_hash 变了:同一次自洽 getLogs 内 (tx,logIndex) 命中却换了区块 —— 重组实证,直接孤儿。
+      orphan(row, `reorg:block_hash_mismatch:${match.blockHash.toLowerCase()}`, ` 所在区块已变为 ${match.blockHash}`)
+      continue
+    }
+
+    // 事件消失:疑似重组,但也可能是 flaky/滞后 RPC 的残缺 getLogs —— 必须 getBlock 佐证后才定论。
+    let canonicalHash: string
+    try {
+      const block = await client.getBlock({ blockNumber: BigInt(row.block_number) })
+      canonicalHash = String(block.hash).toLowerCase()
+    } catch {
+      console.warn(`[usdc-escrow watcher] vanish suspicion for ${row.id} but getBlock failed — skipping, will re-check next tick`)
+      continue // 无法定论:不孤儿、不告警,下 tick 重查
+    }
+    if (canonicalHash === row.block_hash.toLowerCase()) {
+      // 区块仍在链上、hash 未变 —— 只是本次 getLogs 抖动漏返,绝非重组:跳过,不孤儿、不告警。
+      console.warn(`[usdc-escrow watcher] log for ${row.id} absent from refetch but block ${row.block_number} still canonical (${canonicalHash}) — RPC flake, skipping (no orphan)`)
+      continue
+    }
+    // canonical hash 与镜像行不同 —— 真重组:该高度换了区块,原事件确已不在链上。
+    orphan(row, `reorg:log_vanished:${canonicalHash}`, ` 已从链上消失(该高度 ${row.block_number} 的 canonical 区块现为 ${canonicalHash},与镜像行 ${row.block_hash} 不符)`)
   }
 }
 
@@ -289,7 +324,7 @@ export async function runWatcherTick(deps: WatcherDeps): Promise<{ scanned: bool
       return { scanned }   // 不推进游标;本段已落盘的处理(若有)天然幂等,下次重扫
     }
 
-    detectReorgs(deps, fromBlock, toBlock, logs)
+    await detectReorgs(deps, client, fromBlock, toBlock, logs)
     for (const l of logs) processLog(deps, l)
 
     cursor = toBlock
