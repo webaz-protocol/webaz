@@ -28,6 +28,8 @@ const serverSource = read('src/pwa/server.ts')
 const loginSource = read('src/pwa/routes/auth-login.ts')
 const recoverySource = read('src/pwa/routes/recover-key.ts')
 const adminBearerSource = read('src/pwa/admin-bearer-auth.ts')
+const deletionFinalizeSource = read('src/pwa/account-deletion-finalize.ts')
+const ordersCreateSource = read('src/pwa/routes/orders-create.ts')
 const allPublic = [privacy, terms, support]
 const privacyMdFlat = privacyMd.replace(/\s+/g, ' ')
 const termsMdFlat = termsMd.replace(/\s+/g, ' ')
@@ -88,6 +90,15 @@ ok('deleted accounts cannot return through login, recovery, or admin Bearer path
   && /ACCOUNT_MATCH = [^\n]*deleted_at IS NULL/.test(recoverySource)
   && /WHERE id = \? AND deleted_at IS NULL/.test(recoverySource)
   && /api_key = \? AND deleted_at IS NULL/.test(adminBearerSource))
+ok('final deletion rechecks commerce responsibilities before revoking access',
+  /hasPendingOrders[\s\S]*hasOpenDisputes[\s\S]*wallet\.balance > 0\.01[\s\S]*return false/.test(deletionFinalizeSource))
+ok('deleted sellers cannot accept new orders and their active listings are paused',
+  /u\.deleted_at IS NULL AND COALESCE\(u\.listing_paused, 0\) = 0/.test(ordersCreateSource)
+  && /UPDATE products SET status = 'paused'/.test(deletionFinalizeSource))
+ok('final deletion closes the live client and cannot restore public identity or sponsor eligibility',
+  /disconnectDeletedAccountClient\(sseClients, c\.user_id\)/.test(serverSource)
+  && /deleted_at IS NULL AND \(permanent_code IS NULL OR handle IS NULL\)/.test(serverSource)
+  && /l1_share_override FROM users WHERE id = \? AND deleted_at IS NULL/.test(serverSource))
 
 ok('terms contains all 15 sections',
   Array.from({ length: 15 }, (_, index) => terms.includes(`§${index + 1}`)).every(Boolean))

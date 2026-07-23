@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 import Database from 'better-sqlite3'
-import { finalizeAccountDeletion } from '../src/pwa/account-deletion-finalize.js'
+import { disconnectDeletedAccountClient, finalizeAccountDeletion } from '../src/pwa/account-deletion-finalize.js'
 
 let pass = 0
 const ok = (condition: boolean, message: string): void => {
@@ -13,8 +13,13 @@ function fixture(): Database.Database {
   db.exec(`
     CREATE TABLE users (
       id TEXT PRIMARY KEY, name TEXT, handle TEXT, email TEXT, phone TEXT, bio TEXT,
-      search_anchor TEXT, password_hash TEXT, api_key TEXT UNIQUE, deleted_at TEXT, feed_visible INTEGER
+      search_anchor TEXT, password_hash TEXT, api_key TEXT UNIQUE, deleted_at TEXT, feed_visible INTEGER,
+      listing_paused INTEGER DEFAULT 0, listing_paused_reason TEXT, listing_paused_at TEXT
     );
+    CREATE TABLE products (id TEXT PRIMARY KEY, seller_id TEXT, status TEXT, updated_at TEXT);
+    CREATE TABLE orders (buyer_id TEXT, seller_id TEXT, status TEXT);
+    CREATE TABLE disputes (initiator_id TEXT, defendant_id TEXT, status TEXT);
+    CREATE TABLE wallets (user_id TEXT, balance REAL);
     CREATE TABLE user_addresses (user_id TEXT, recipient TEXT, phone TEXT, detail TEXT);
     CREATE TABLE account_deletion_requests (
       user_id TEXT PRIMARY KEY, cancelled_at TEXT, pii_wiped_at TEXT
@@ -29,8 +34,9 @@ function fixture(): Database.Database {
     CREATE TABLE user_sessions (user_id TEXT, revoked_at TEXT);
     CREATE TABLE push_subscriptions (user_id TEXT);
   `)
-  db.prepare(`INSERT INTO users VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+  db.prepare(`INSERT INTO users (id,name,handle,email,phone,bio,search_anchor,password_hash,api_key,deleted_at,feed_visible) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
     .run('u1', 'Alice', 'alice', 'a@example.test', '1', 'bio', '@a', 'hash', 'key_old', null, 1)
+  db.prepare(`INSERT INTO products VALUES (?,?,?,?)`).run('p1', 'u1', 'active', 'old')
   db.prepare(`INSERT INTO user_addresses VALUES (?,?,?,?)`).run('u1', 'Alice', '1', 'Street 1')
   db.prepare(`INSERT INTO account_deletion_requests VALUES (?,?,?)`).run('u1', null, null)
   db.prepare(`INSERT INTO agent_delegation_grants VALUES (?,?,?,?,?)`).run('g1', 'u1', 'active', null, null)
@@ -53,6 +59,8 @@ ok(finalizeAccountDeletion(db, {
 const user = db.prepare(`SELECT * FROM users WHERE id='u1'`).get() as Record<string, unknown>
 ok(user.name === 'anon_test' && user.handle === null && user.email === null && user.phone === null, 'profile must be anonymized')
 ok(user.password_hash === null && user.api_key === 'deleted_new' && user.deleted_at === at, 'login credentials must be disabled')
+ok(user.listing_paused === 1 && user.listing_paused_reason === 'account_deleted', 'deleted seller listings must be paused')
+ok((db.prepare(`SELECT status FROM products WHERE id='p1'`).get() as { status: string }).status === 'paused', 'active seller products must be paused')
 ok((db.prepare(`SELECT revoked_at FROM user_sessions WHERE user_id='u1'`).get() as { revoked_at: string }).revoked_at === at, 'sessions must be revoked')
 ok((db.prepare(`SELECT status FROM agent_delegation_grants WHERE grant_id='g1'`).get() as { status: string }).status === 'revoked', 'active grants must be revoked')
 ok((db.prepare(`SELECT revoked_reason FROM agent_delegation_grants WHERE grant_id='g2'`).get() as { revoked_reason: string }).revoked_reason === 'manual', 'existing revocation metadata must remain')
@@ -66,6 +74,25 @@ ok((db.prepare(`SELECT pii_wiped_at FROM account_deletion_requests`).get() as { 
 ok(!finalizeAccountDeletion(db, {
   userId: 'u1', anonymousName: 'other', replacementApiKey: 'deleted_other', finalizedAt: at,
 }), 'finalization must be idempotent')
+
+let ended = 0
+const clients = new Map<string, { end: () => void }>([['u1', { end: () => { ended++ } }]])
+disconnectDeletedAccountClient(clients, 'u1')
+ok(ended === 1 && !clients.has('u1'), 'finalized account SSE client must be closed and removed')
+
+for (const setup of [
+  (blocked: Database.Database) => blocked.prepare(`INSERT INTO orders VALUES (?,?,?)`).run('u1', 'u2', 'paid'),
+  (blocked: Database.Database) => blocked.prepare(`INSERT INTO disputes VALUES (?,?,?)`).run('u1', 'u2', 'open'),
+  (blocked: Database.Database) => blocked.prepare(`INSERT INTO wallets VALUES (?,?)`).run('u1', 0.02),
+]) {
+  const blockedDb = fixture()
+  setup(blockedDb)
+  ok(!finalizeAccountDeletion(blockedDb, {
+    userId: 'u1', anonymousName: 'anon_test', replacementApiKey: 'deleted_new', finalizedAt: at,
+  }), 'new commerce responsibility must block finalization')
+  ok((blockedDb.prepare(`SELECT deleted_at FROM users WHERE id='u1'`).get() as { deleted_at: string | null }).deleted_at === null, 'blocked finalization must leave account active')
+  ok((blockedDb.prepare(`SELECT status FROM agent_delegation_grants WHERE grant_id='g1'`).get() as { status: string }).status === 'active', 'blocked finalization must leave grants active')
+}
 
 const rollbackDb = fixture()
 rollbackDb.exec(`CREATE TRIGGER fail_user_delete BEFORE UPDATE ON users BEGIN SELECT RAISE(ABORT, 'injected'); END;`)
