@@ -2500,3 +2500,6 @@ export function initMcpResultCacheSchema(db: Database.Database): void {
 
 // WAZ 退役 PR-A2:冲正台账(实现在 waz-sunset-store.ts;re-export 让 applyWebazRuntimeSchema 自动拾取)
 export { initWazSunsetSchema } from '../waz-sunset-store.js'
+
+// USDC 合约担保 PR-B2:链上镜像/收款地址 schema(实现在 usdc-escrow-store.ts)
+export { initUsdcEscrowSchema } from '../usdc-escrow-store.js'
