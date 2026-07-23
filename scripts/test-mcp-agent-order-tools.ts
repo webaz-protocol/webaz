@@ -52,7 +52,7 @@ const app = express(); app.use(express.json())
 //   CLIENT-side allowlist, not just the backend sanitize).
 let lastActionBody: Record<string, unknown> | null = null
 app.use((req, _res, next) => { if (req.method === 'POST' && req.path.endsWith('/action-request')) lastActionBody = req.body as Record<string, unknown>; next() })
-registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true })
+registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true, getProtocolParam: <T,>(k: string, fb: T): T => (k === 'payment_rail_waz_escrow_enabled' ? 1 as unknown as T /* WAZ 退役:验证渠道【开着时】语义 */ : fb) })
 const server = app.listen(0)
 const port = (server.address() as AddressInfo).port
 process.env.WEBAZ_API_URL = `http://127.0.0.1:${port}`

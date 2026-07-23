@@ -37,7 +37,7 @@ const auth = (req: express.Request, res: express.Response) => {
 }
 const app = express()
 app.use(express.json())
-registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true })
+registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true, getProtocolParam: <T,>(k: string, fb: T): T => (k === 'payment_rail_waz_escrow_enabled' ? 1 as unknown as T /* WAZ 退役:验证渠道【开着时】语义 */ : fb) })
 const server = app.listen(0)
 const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 const j = async (path: string, user?: string, method = 'GET') => {

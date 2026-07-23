@@ -52,7 +52,7 @@ db.prepare("INSERT INTO product_variants (id,product_id,sku,options_json,price_o
 const auth = (_req: express.Request, res: express.Response) => { res.status(401).json({ error: 'no human auth in this test' }); return null }
 const app = express(); app.use(express.json())
 let PLATFORM_BLOCKLIST = '[]'
-registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true, getProtocolParam: <T>(key: string, fallback: T): T => (key === 'trade.platform_region_blocklist' ? PLATFORM_BLOCKLIST as unknown as T : fallback) })
+registerAgentGrantsRoutes(app, { db, auth, generateId, rateLimitOk: () => true, getProtocolParam: <T>(key: string, fallback: T): T => (key === 'trade.platform_region_blocklist' ? PLATFORM_BLOCKLIST as unknown as T : key === 'payment_rail_waz_escrow_enabled' ? 1 as unknown as T /* WAZ 退役:本测试验证 escrow 渠道【开着时】的报价语义 */ : fallback) })
 const server = app.listen(0)
 process.env.WEBAZ_API_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 const mcp = await import('../src/layer1-agent/L1-1-mcp-server/server.js')

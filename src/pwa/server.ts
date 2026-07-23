@@ -35,7 +35,7 @@ import { initOrderChainSchema, appendOrderEvent, getOrderChain, verifyOrderChain
 import { initVerifierWhitelistSchema, initMcpToolCallsSchema, initNotePhotoIndexSchema, initUserWishlistSchema, initProductQaSchema, initCouponsSchema, initAnnouncementsSchema, initProductWaitlistSchema, initFlashSalesSchema, initPublicIdeasSchema, initAuctionRemindersSchema, initEmailSubscriptionsSchema, initFeedbackTicketsSchema, initFeedbackMessagesSchema, initDisputeCasesSchema, initDisputeCommentsSchema, initDisputeCommentRepliesSchema, initShareableCommentsSchema, initDisputeFairnessVotesSchema, initOrderRatingsSchema, initBuyerRatingsSchema, initUserAddressesSchema, initP2pShopsSchema, initShareableLikesSchema, initShareableBookmarksSchema, initShareableTagsSchema, initManifestRegistrySchema, initPeerDirectorySchema, initSignalingQueueSchema, initConversationsSchema, initMessagesSchema, initChatReportsSchema, initQuotaIncreaseApplicationsSchema, initVerifierApplicationsSchema, initArbitratorReviewSchema, initVerifierAppealsSchema, initUserModerationSchema, initAdminAuditLogSchema, initVerificationCodesSchema, initAgentCallLogSchema, initAgentReputationSchema, initAgentDeclarationsSchema, initAgentAttestationsSchema, initAgentStrikesSchema, initAgentRevocationsSchema, initProductAliasesSchema, initRegionChangeLogSchema, initCartItemsSchema, initFollowsSchema, initPushSubscriptionsSchema, initUserSessionsSchema, initUserBlocklistSchema, initImportLogsSchema, initErrorLogSchema, initSecondhandItemsSchema, initProductTrialCampaignsSchema, initProductTrialClaimsSchema, initReturnRequestsSchema, initReturnMessagesSchema, initProductVariantsSchema, initEditorPicksSchema, initKycRecordsSchema, initWebauthnSchema, initClaimVerificationBaseSchema, initClaimVerifierSuspensionsSchema, initProductClaimSchema, initReviewClaimSchema, initSecondhandClaimSchema, initAuctionClaimSchema, initWishClaimSchema, initShareableClickLogSchema, initCommissionAuditLogSchema, initRegistrationAuditLogSchema, initProductExternalLinksBaseSchema, initLinkChallengesSchema, initVerifyTasksSchema, initVerifySubmissionsSchema, initVerifierStatsSchema, initRegisterListSearchColumns, initPendingCommissionEscrowSchema, initRecommendationAnchorSchema, initAgentGatewaySchema } from './server-schema.js'
 // RFC-014 PR4 — 正常成交结算走整数 base-units + allocate + 绝对值落库。
 import { toUnits, toDecimal, mulRate, allocate } from '../money.js' ; import { effectiveReturnDays } from '../trade-terms.js'  // RFC-026:清算窗与退货窗同源(冻结快照)
-import { applyWalletDelta, creditColumns } from '../ledger.js'
+import { applyWalletDelta, creditColumns } from '../ledger.js'; import { wazEscrowChannelOn, settleAuctionRailDisabledRefund } from '../waz-escrow-channel.js'   // WAZ 退役渠道单一真值 + 拍卖资金归还终局
 import { computeSettlementSplit } from '../settlement-math.js'
 import { initSnfSchema, snfSend, snfPullInbox, snfListInbox, snfAck, snfPendingCount, snfVerify, snfDesignate, snfGetDesignation, snfCleanup, snfNack, snfListDeadLetter, snfRevive } from '../layer2-business/L2-7-snf/snf-engine.js'
 import { initExternalAnchorSchema, createAnchor, verifyAnchorSignature, revokeAnchor, issueOwnershipToken, submitVerification, getAnchor, listAnchorsByProduct, listAnchorsBySeller, distributeAnchorRewards, ANCHOR_VERIFICATION_FEE_RECOMMENDED } from '../layer1-agent/L1-2-external-anchor/anchor-engine.js'
@@ -850,7 +850,7 @@ const DEFAULT_PARAMS: Array<{ key: string; value: string; type: string; descript
   { key: 'max_quota_duration_hours', value: '72', type: 'number', description: 'PR#18 build_task 扩容授权:最长有效期(小时)', category: 'limit', min: 1, max: 2160 },
   { key: 'export_csv_limit', value: '5000', type: 'number', description: '订单导出 CSV 行数上限', category: 'limit', min: 100, max: 50000 },
   { key: 'return_window_extension_days', value: '0', type: 'number', description: '退货窗口全局延长天数', category: 'general', min: 0, max: 90 },
-  // Wave G-2: USDC / 链上配置
+  { key: 'payment_rail_waz_escrow_enabled', value: '0', type: 'number', description: 'WAZ 模拟托管轨渠道开关(0=下架:支付选项隐藏+建单 409 RAIL_DISABLED;1=admin 恢复)— 2026-07-23 WAZ 退役默认关', category: 'system', min: 0, max: 1 },   // Wave G-2: USDC / 链上配置 ↓
   { key: 'waz_usdc_rate', value: '1.0', type: 'number', description: '1 USDC 兑换多少 WAZ', category: 'fee', min: 0.0001, max: 1000 },
   { key: 'usdc_min_deposit', value: '0.01', type: 'number', description: '最低充值 USDC（小于忽略）', category: 'limit', min: 0, max: 1000 },
   { key: 'usdc_min_withdraw_waz', value: '10', type: 'number', description: '最低提现 WAZ', category: 'limit', min: 0, max: 100000 },
@@ -4689,10 +4689,10 @@ db.exec(`
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_gb_status ON group_buys(status, ends_at)') } catch {}
 
 // #1013 Phase 28: 5 endpoints + settleGroupBuy + sweep cron 已迁出到 routes/group-buys.ts
-registerGroupBuysRoutes(app, { db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent })
+registerGroupBuysRoutes(app, { db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent, getProtocolParam })
 
 // Cron: 过期未成团 → 失败结算（function 已迁出到 routes/group-buys.ts）
-setInterval(() => sweepExpiredGroupBuysRaw(db, generateId, broadcastSystemEvent), 60_000)
+setInterval(() => sweepExpiredGroupBuysRaw(db, generateId, broadcastSystemEvent, getProtocolParam), 60_000)
 
 // I-2: admin 全平台数据导出
 const ADMIN_EXPORT_LIMIT = 20000
@@ -5480,7 +5480,7 @@ const RFQ_ORDER_DEADLINES = {
 // P3c 核心：award → 自动建 order（不冲正，幂等 — 已建过则不重）
 // 返回：{ ok, order_id?, error? }
 function awardBidAndCreateOrder(rfq: Record<string, unknown>, winner: Record<string, unknown>): { ok: boolean; order_id?: string; error?: string } {
-  const rfqId = String(rfq.id)
+  if (!wazEscrowChannelOn(getProtocolParam)) return { ok: false, error: 'WAZ 模拟托管轨已下架(RAIL_DISABLED),RFQ 不可中标建单;RFQ 到期后押金将自动退还' }; const rfqId = String(rfq.id)   // WAZ 退役硬闸(Codex #514 R1 BLOCKER-1):渠道关→不建单不抽本金;manual 透传错误,first_match/auto-bid 跳过,到期 cron 失败 fallback 退全部押金(存量自愈);不碰退款路径
   const bidId = String(winner.id)
   const buyerId = String(rfq.buyer_id)
   const sellerId = String(winner.seller_id)
@@ -5896,7 +5896,7 @@ function settleAuctionInner(aucId: string): { ok: boolean; order_id?: string; re
     return { ok: true, result: 'reserve_not_met' }
   }
 
-  // 3) 成交：建单
+  if (!wazEscrowChannelOn(getProtocolParam)) return settleAuctionRailDisabledRefund(db, generateId, aucId, auc, winner)   // 3) 成交:建单 —— WAZ 退役硬闸先行(Codex #514 R1 BLOCKER-4):渠道关→资金归还终局(cancelled+全退+回架),绝不建 escrow 单;无人出价/未达保留价退款分支在上方不受渠道影响
   const buyerId = String(winner.buyer_id)
   const sellerId = String(auc.seller_id)
   const qty = Math.max(1, Math.floor(Number(auc.qty || 1)))
@@ -6080,7 +6080,7 @@ registerAgentBuyRoutes(app, {
 // #1013 Phase 29: 5 endpoints 已迁出到 routes/cart.ts
 registerCartRoutes(app, {
   db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent,
-  checkStockAndMaybeDelist, addHours,
+  checkStockAndMaybeDelist, addHours, getProtocolParam,
 })
 
 // POST /api/orders/batch-ship — Phase 84 已迁出
@@ -6473,7 +6473,7 @@ registerCheckoutHelpersRoutes(app, {
 
 // ─── M8 二手板块 ────────────────────────────────────────────
 // #1013 Phase 27: 6 endpoints + 4 SH_* sets + addHours 已迁出到 routes/secondhand.ts
-registerSecondhandRoutes(app, { db, generateId, auth, errorRes })
+registerSecondhandRoutes(app, { db, generateId, auth, errorRes, getProtocolParam })
 
 // 7. 面交完成确认（绕开物流状态机；仅 in-person 订单）
 // POST /api/orders/:id/confirm-in-person — Phase 84 已迁出

@@ -45,12 +45,13 @@ export interface SecondhandDeps {
   generateId: (prefix: string) => string
   auth: (req: Request, res: Response) => Record<string, unknown> | null
   errorRes: (res: Response, status: number, code: string, msg: string) => void
+  getProtocolParam: <T>(key: string, fallback: T) => T
 }
 
 export function registerSecondhandRoutes(app: Application, deps: SecondhandDeps): void {
   // db 仍保留:order 下单是 money/escrow 路径(pragma FK-OFF 窗口 + CAS + 钱包扣减),
   // 不能引入 await 否则会在 FK-OFF 窗口被其他请求并发穿插;随 order/资金路径在 Phase 3 一并迁移。
-  const { db, generateId, auth, errorRes } = deps
+  const { db, generateId, auth, errorRes, getProtocolParam } = deps
 
   // 1. 发布
   app.post('/api/secondhand', async (req, res) => {
@@ -192,6 +193,8 @@ export function registerSecondhandRoutes(app: Application, deps: SecondhandDeps)
   // 6. 下单（CAS 锁库存）— money/escrow + pragma FK-OFF 窗口,保持同步,Phase 3 随资金路径迁移
   app.post('/api/secondhand/:id/order', (req, res) => {
     const user = auth(req, res); if (!user) return
+    // WAZ 退役(2026-07-23)硬闸:二手下单是独立 escrow 建单器(Codex #514 R1 BLOCKER-3)。渠道关 → 409,fail-closed。
+    if (Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1) return void res.status(409).json({ error: 'WAZ 模拟托管轨已下架,二手暂不可下单', error_code: 'RAIL_DISABLED' })
     const { shipping_address, notes, fulfillment_mode } = req.body || {}
     const item = db.prepare('SELECT * FROM secondhand_items WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined
     if (!item) return void res.status(404).json({ error: '物品不存在' })

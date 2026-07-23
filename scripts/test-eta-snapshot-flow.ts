@@ -24,7 +24,7 @@ db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller1','S','sell
 // product: product-level estimated_days='30' + a SG shipping template est_days='3-5'
 db.prepare(`INSERT INTO products (id,seller_id,title,description,price,currency,stock,category,status,estimated_days,shipping_template,has_variants) VALUES ('prd1','seller1','Ring','d',10,'WAZ',50,'jewelry','active','30',?,0)`)
   .run(JSON.stringify([{ region: 'SG', fee: 0, est_days: '3-5' }, { region: '*', fee: 5, est_days: '10-20' }]))
-const deps = { generateId, getProtocolParam: <T>(k: string, f: T): T => (k === 'trade.platform_region_blocklist' ? ('[]' as unknown as T) : f) }
+const deps = { generateId, getProtocolParam: <T>(k: string, f: T): T => (k === 'trade.platform_region_blocklist' ? ('[]' as unknown as T) : k === 'payment_rail_waz_escrow_enabled' ? (1 as unknown as T) /* WAZ 退役:验证渠道【开着时】语义 */ : f) }
 
 // ── quote: freeze the SG-resolved ETA (3-5) ──
 const q = computeBuyerQuote(db, deps, 'buyer1', { product_id: 'prd1', quantity: 1 }, 'issue') as { ok: boolean; response: Record<string, unknown> }

@@ -337,6 +337,8 @@
     "test:buyer-quote": "tsx scripts/test-buyer-quote.ts",
     "test:rail-choice-defer": "tsx scripts/test-rail-choice-defer.ts",
     "test:payment-options": "tsx scripts/test-payment-options.ts",
+    "test:waz-escrow-rail-gate": "tsx scripts/test-waz-escrow-rail-gate.ts",
+    "test:waz-sunset-vertical": "tsx scripts/test-waz-sunset-vertical-behaviors.ts",
     "test:choose-payment": "tsx scripts/test-choose-payment.ts",
     "test:choose-payment-ui": "tsx scripts/test-choose-payment-ui.ts",
     "test:order-draft": "tsx scripts/test-order-draft.ts",

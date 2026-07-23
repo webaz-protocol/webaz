@@ -25,7 +25,7 @@ const db = initDatabase(); applyWebazRuntimeSchema(db); db.pragma('foreign_keys 
 for (const c of ['default_address_text TEXT', 'default_address_region TEXT']) { try { db.exec(`ALTER TABLE users ADD COLUMN ${c}`) } catch { /* exists */ } }
 db.prepare("INSERT INTO users (id,name,handle,role,api_key,default_address_text,default_address_region) VALUES ('buyer1','B','b1','buyer','k_b','12 SG Rd','SG')").run()
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller1','S','seller','k_s')").run()
-const deps = { generateId, getProtocolParam: <T>(k: string, f: T): T => (k === 'trade.platform_region_blocklist' ? ('[]' as unknown as T) : f) }
+const deps = { generateId, getProtocolParam: <T>(k: string, f: T): T => (k === 'trade.platform_region_blocklist' ? ('[]' as unknown as T) : k === 'payment_rail_waz_escrow_enabled' ? (1 as unknown as T) /* WAZ 退役:验证渠道【开着时】语义 */ : f) }
 const shipTpl = JSON.stringify([{ region: 'SG', fee: 0, est_days: '3-5' }, { region: '*', fee: 5, est_days: '10-20' }])
 function freshProduct(id: string, price = 10, stock = 50, _rail = 'escrow'): void {
   db.prepare(`INSERT INTO products (id,seller_id,title,description,price,currency,stock,category,status,estimated_days,shipping_template,has_variants) VALUES (?, 'seller1','Ring','d',?,'WAZ',?,'jewelry','active','30',?,0)`).run(id, price, stock, shipTpl)

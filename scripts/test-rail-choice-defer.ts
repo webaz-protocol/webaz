@@ -40,7 +40,7 @@ db.prepare("INSERT INTO users (id,name,handle,role,api_key,default_address_text,
 db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('seller1','S','seller','k_s')").run()
 db.prepare("INSERT INTO products (id,seller_id,title,description,price,currency,stock,category,status,shipping_template,free_shipping_threshold,has_variants,return_days,warranty_days) VALUES ('prd_s','seller1','Stand','d',30,'WAZ',20,'phone_stand','active',?,null,0,7,90)").run(JSON.stringify([{ region: 'SG', fee: 5, est_days: '3-5' }]))
 
-const gp = <T>(_k: string, f: T): T => f
+const gp = <T>(k: string, f: T): T => (k === 'payment_rail_waz_escrow_enabled' ? 1 as unknown as T : f)   // WAZ 退役:本测试验证 escrow 渠道【开着时】的选轨语义
 const deps = { generateId, getProtocolParam: gp }
 type QInput = Parameters<typeof computeBuyerQuote>[3]
 const qInput = (rail?: string): QInput => ({ product_id: 'prd_s', quantity: 1, ...(rail !== undefined ? { payment_rail: rail } : {}) })

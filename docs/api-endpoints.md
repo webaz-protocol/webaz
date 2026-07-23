@@ -315,11 +315,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/build-tasks/:id/claim` | 🔐 |  | task → claim respects auto_claimable. Success appends value_boundary + canonical | src/pwa/routes/build-tasks.ts:64 |
 | POST | `/api/build-tasks/:id/release` | 🔐 |  |  | src/pwa/routes/build-tasks.ts:94 |
 | POST | `/api/build-tasks/:id/submit` | 🔐 |  |  | src/pwa/routes/build-tasks.ts:76 |
-| GET | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:45 |
-| POST | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:60 |
-| DELETE | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:129 |
-| PATCH | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:77 |
-| POST | `/api/cart/checkout` | 🔐 |  | C-1: 购物车批量下单（每个选中商品独立订单） | src/pwa/routes/cart.ts:86 |
+| GET | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:46 |
+| POST | `/api/cart` | 🔐 |  |  | src/pwa/routes/cart.ts:61 |
+| DELETE | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:131 |
+| PATCH | `/api/cart/:product_id` | 🔐 |  |  | src/pwa/routes/cart.ts:78 |
+| POST | `/api/cart/checkout` | 🔐 |  | C-1: 购物车批量下单（每个选中商品独立订单） | src/pwa/routes/cart.ts:87 |
 | GET | `/api/charity/fund` |  |  | GET 基金概况 + 最近流水 | src/pwa/routes/charity.ts:696 |
 | POST | `/api/charity/fund/donate` | 🔐 |  | 任何人捐款给慈善基金 | src/pwa/routes/charity.ts:654 |
 | GET | `/api/charity/leaderboard` |  |  | 慈善排行 | src/pwa/routes/charity.ts:843 |
@@ -450,11 +450,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/governance/onboarding/resign` | 🔐 |  | confirm_text 必须等于 'RESIGN arbitrator' 或 'RESIGN verifier'(type-to-confirm 防误触) | src/pwa/routes/governance-onboarding.ts:554 |
 | GET | `/api/governance/params` |  |  | ─── 治理参数 ──────────────────────────────────────────────── | src/pwa/routes/payments-governance.ts:52 |
 | GET | `/api/governance/params/:key/history` |  |  |  | src/pwa/routes/payments-governance.ts:75 |
-| POST | `/api/group-buys` | 🔐 |  | 卖家开团 | src/pwa/routes/group-buys.ts:110 |
-| GET | `/api/group-buys/:id` |  |  | 详情 + participants | src/pwa/routes/group-buys.ts:152 |
-| POST | `/api/group-buys/:id/join` | 🔐 |  | 加入团购 | src/pwa/routes/group-buys.ts:172 |
-| DELETE | `/api/group-buys/:id/leave` | 🔐 |  | 离开团购 | src/pwa/routes/group-buys.ts:204 |
-| GET | `/api/group-buys/live` |  |  | 公开列表 | src/pwa/routes/group-buys.ts:137 |
+| POST | `/api/group-buys` | 🔐 |  | 卖家开团 | src/pwa/routes/group-buys.ts:116 |
+| GET | `/api/group-buys/:id` |  |  | 详情 + participants | src/pwa/routes/group-buys.ts:160 |
+| POST | `/api/group-buys/:id/join` | 🔐 |  | 加入团购 | src/pwa/routes/group-buys.ts:180 |
+| DELETE | `/api/group-buys/:id/leave` | 🔐 |  | 离开团购 | src/pwa/routes/group-buys.ts:214 |
+| GET | `/api/group-buys/live` |  |  | 公开列表 | src/pwa/routes/group-buys.ts:145 |
 | GET | `/api/growth/tasks` | 🔐 |  |  | src/pwa/routes/growth.ts:201 |
 | POST | `/api/growth/tasks/:id/claim` | 🔐 |  |  | src/pwa/routes/growth.ts:207 |
 | POST | `/api/growth/tasks/:id/reset` | 🔐 |  |  | src/pwa/routes/growth.ts:229 |
@@ -685,12 +685,12 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/rfqs/mine` | 🔐 |  |  | src/pwa/routes/rfqs.ts:195 |
 | POST | `/api/search-by-link` |  |  |  | src/pwa/routes/search.ts:67 |
 | GET | `/api/search-fuzzy` |  |  |  | src/pwa/routes/search.ts:147 |
-| GET | `/api/secondhand` |  |  | 2. 列表（市场入口） | src/pwa/routes/secondhand.ts:78 |
-| POST | `/api/secondhand` | 🔐 |  | 1. 发布 | src/pwa/routes/secondhand.ts:56 |
-| GET | `/api/secondhand/:id` |  |  | 4. 详情（view_count++）+ 同卖家其他在售 | src/pwa/routes/secondhand.ts:138 |
-| PATCH | `/api/secondhand/:id` | 🔐 |  | 5. 编辑（仅 owner；可改 price / description / negotiable / status / fulfillment） | src/pwa/routes/secondhand.ts:155 |
-| POST | `/api/secondhand/:id/order` | 🔐 |  | 6. 下单（CAS 锁库存）— money/escrow + pragma FK-OFF 窗口,保持同步,Phase 3 随资金路径迁移 | src/pwa/routes/secondhand.ts:193 |
-| GET | `/api/secondhand/mine` | 🔐 |  | 3. 我的二手发布 | src/pwa/routes/secondhand.ts:116 |
+| GET | `/api/secondhand` |  |  | 2. 列表（市场入口） | src/pwa/routes/secondhand.ts:79 |
+| POST | `/api/secondhand` | 🔐 |  | 1. 发布 | src/pwa/routes/secondhand.ts:57 |
+| GET | `/api/secondhand/:id` |  |  | 4. 详情（view_count++）+ 同卖家其他在售 | src/pwa/routes/secondhand.ts:139 |
+| PATCH | `/api/secondhand/:id` | 🔐 |  | 5. 编辑（仅 owner；可改 price / description / negotiable / status / fulfillment） | src/pwa/routes/secondhand.ts:156 |
+| POST | `/api/secondhand/:id/order` | 🔐 |  | 6. 下单（CAS 锁库存）— money/escrow + pragma FK-OFF 窗口,保持同步,Phase 3 随资金路径迁移 | src/pwa/routes/secondhand.ts:194 |
+| GET | `/api/secondhand/mine` | 🔐 |  | 3. 我的二手发布 | src/pwa/routes/secondhand.ts:117 |
 | POST | `/api/seller/accept-mode` | 🔐 |  |  | src/pwa/routes/direct-pay-pending-accept.ts:59 |
 | POST | `/api/seller/apply-quota-increase` | 🔐 |  |  | src/pwa/routes/seller-quota.ts:194 |
 | GET | `/api/seller/insights` | 🔐 |  | 数据中心（30d GMV / 7d 曲线 / Top 5 / 客户洞察 / 状态分布） | src/pwa/routes/seller-quota.ts:71 |

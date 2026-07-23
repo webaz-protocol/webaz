@@ -40,8 +40,8 @@ window.orderErrorLookup = (code) => ({
   DISCLOSURE_NOT_ACKED: t('需先完成两次风险披露确认(D1 + D2)'),
   HUMAN_PRESENCE_REQUIRED: t('需现场真人 Passkey 确认'),
   PASSKEY_REQUIRED_FOR_DIRECT_PAY: t('直付需要先注册 Passkey'),
-  // 通用
-  ORDER_NOT_FOUND: t('订单不存在'),
+  // 通用(RAIL_DISABLED=WAZ 退役渠道开关关闭时 escrow 建单/购物车被拒)
+  RAIL_DISABLED: t('WAZ 模拟托管轨已下架,请选择直付方式下单'), ORDER_NOT_FOUND: t('订单不存在'),
   MISSING_ORDER_ID: t('缺少订单号'),
   INVALID_STAGE: t('无效的披露阶段参数'),
 }[code])
