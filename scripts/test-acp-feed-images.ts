@@ -37,6 +37,8 @@ insP.run('prd_data', 'usr_s1', 'dataURI 图', 'd', 10, 'WAZ', 5, 'x', 'active', 
 insP.run('prd_junk', 'usr_s1', '垃圾引用', 'd', 10, 'WAZ', 5, 'x', 'active', JSON.stringify(['not-a-url-or-hash']), null)
 insP.run('prd_multi', 'usr_s1', '多图', 'd', 10, 'WAZ', 5, 'x', 'active', JSON.stringify([HASH_LC, 'https://cdn.example/y.jpg']), null)
 insP.run('prd_regions', 'usr_s2', '跨境规则', 'd', 10, 'WAZ', 5, 'x', 'active', '[]', JSON.stringify({ mode: 'list', include: ['SG', 'US', 'MY', 'SEA'], exclude: ['MY'] }))
+insP.run('prd_excl_sg', 'usr_s2', '排除SG', 'd', 10, 'WAZ', 5, 'x', 'active', '[]', JSON.stringify({ mode: 'all', exclude: ['SG'] }))
+insP.run('prd_no_iso', 'usr_s2', '无ISO目标', 'd', 10, 'WAZ', 5, 'x', 'active', '[]', JSON.stringify({ mode: 'list', include: ['SEA'] }))
 
 const feed = buildAcpProductFeed(db) as { products: Array<Record<string, unknown>>; compatibility: { non_compliant_points: string[] } }
 const by = (id: string): Record<string, unknown> => feed.products.find((p) => p.item_id === id) || {}
@@ -53,7 +55,18 @@ expect('多图:首图 hash → thumb,余图进 additional_image_urls', by('prd_m
 expect('每个 item 发 store_country=SG', feed.products.every((p) => p.store_country === 'SG'))
 expect('无跨境规则 → target_countries 保守 [SG]', JSON.stringify(by('prd_hash').target_countries) === '["SG"]', by('prd_hash').target_countries)
 expect('list 规则 → include−exclude,非 ISO alpha-2(SEA)过滤', JSON.stringify(by('prd_regions').target_countries) === '["SG","US"]', by('prd_regions').target_countries)
+expect('all 模式且 exclude SG → 省略字段,不虚报 SG', !('target_countries' in by('prd_excl_sg')), by('prd_excl_sg').target_countries)
+expect('list 过滤后无 ISO 目标 → 省略字段,不虚报', !('target_countries' in by('prd_no_iso')), by('prd_no_iso').target_countries)
 expect('non_compliant_points 不再声明缺 merchant 字段', !feed.compatibility.non_compliant_points.some((s) => s.includes('target_countries')), feed.compatibility.non_compliant_points)
+
+// ── 前端/后端映射关系锁定(防两侧漂移;差异是刻意的:BASE 前缀 + hash 小写 + ?format=jpeg)──
+const { readFileSync } = await import('fs')
+const w = { productThumbSrc: undefined as unknown as (i: unknown) => string }
+;(globalThis as Record<string, unknown>).__paw = w
+;(0, eval)(readFileSync(new URL('../src/pwa/public/app-product-media.js', import.meta.url), 'utf-8').replace(/window\./g, '__paw.'))
+const feUrl = w.productThumbSrc(JSON.stringify([HASH]))
+expect('前端 hash → /api/manifests/<hash>/thumb(同一端点)', feUrl === `/api/manifests/${HASH}/thumb`, feUrl)
+expect('feed URL = BASE + 前端路径(hash 归一小写)+ ?format=jpeg', by('prd_hash').image_url === `https://webaz.xyz${feUrl.replace(HASH, HASH_LC)}?format=jpeg`, { fe: feUrl, feed: by('prd_hash').image_url })
 
 // ── 公开缩略图端点:?format=jpeg 转码,Content-Type 诚实 ──
 const webpBuf = await sharp({ create: { width: 8, height: 8, channels: 3, background: { r: 200, g: 30, b: 30 } } }).webp().toBuffer()

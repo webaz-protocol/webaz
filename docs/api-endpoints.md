@@ -6,11 +6,11 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 
 | Method | Path | Auth | Admin | Description | Source |
 |---|---|---|---|---|---|
-| GET | `/.well-known/did.json` |  |  | 任何标准 DID resolver(Veramo / SpruceID / KILT / web5 ...)可 GET → 解出 issuer key → 验  | src/pwa/routes/public-utils.ts:408 |
+| GET | `/.well-known/did.json` |  |  | 任何标准 DID resolver(Veramo / SpruceID / KILT / web5 ...)可 GET → 解出 issuer key → 验  | src/pwa/routes/public-utils.ts:409 |
 | GET | `/.well-known/oauth-authorization-server` |  |  | RFC 8414 — Authorization Server Metadata | src/pwa/routes/oauth-discovery.ts:54 |
 | GET | `/.well-known/oauth-protected-resource` |  |  |  | src/pwa/routes/oauth-discovery.ts:50 |
 | GET | `/.well-known/oauth-protected-resource/mcp` |  |  |  | src/pwa/routes/oauth-discovery.ts:51 |
-| GET | `/.well-known/webaz-acp-feed.json` |  |  |  | src/pwa/routes/public-utils.ts:401 |
+| GET | `/.well-known/webaz-acp-feed.json` |  |  |  | src/pwa/routes/public-utils.ts:402 |
 | GET | `/.well-known/webaz-capabilities.json` |  |  | 集成方 agent fetch 此端点即知"我要做的写需要声明哪个 scope / 哪些写无需 scope / 哪些读受约束"。 | src/pwa/routes/public-utils.ts:290 |
 | GET | `/.well-known/webaz-economic.json` |  |  |  | src/pwa/routes/public-utils.ts:382 |
 | GET | `/.well-known/webaz-entities.json` |  |  | RFC-011 §① — agent 可读实体字典(订单状态机 doc=code + 保守公开字段 + 可验证标注)。 | src/pwa/routes/public-utils.ts:300 |
@@ -231,7 +231,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/agent-grants/permission-requests/:request_id` | 🔐 |  | fail-visible: every path responds (404 not-found-or-not-yours = anti-enumeration | src/pwa/routes/agent-grants.ts:903 |
 | GET | `/api/agent-grants/verify` |  |  | Audited (acceptance #8: every grant use logs). Never returns the raw token/api_k | src/pwa/routes/agent-grants.ts:839 |
 | GET | `/api/agent-grants/whoami` | 🎫 grant:read_public |  | end-to-end on a brand-new read-only endpoint that touches NO existing route and  | src/pwa/routes/agent-grants.ts:208 |
-| GET | `/api/agent/acp-feed` |  |  |  | src/pwa/routes/public-utils.ts:402 |
+| GET | `/api/agent/acp-feed` |  |  |  | src/pwa/routes/public-utils.ts:403 |
 | POST | `/api/agent/address/change-request` | 🎫 grant:address_change_request |  |  | src/pwa/routes/agent-grants.ts:589 |
 | GET | `/api/agent/address/masked` | 🎫 grant:address_read_masked |  | RFC-026 PR-5 — 地址:masked 读(region+存在性,绝不截取子串)/ 变更请求(全文进 PII 专表,Passkey 批准才写) | src/pwa/routes/agent-grants.ts:585 |
 | GET | `/api/agent/approval-requests` | 🎫 grant:approval_requests_read |  | RFC-026 PR-2 — 审批状态只读(safe scope approval_requests_read;只看本人;零 PII) | src/pwa/routes/agent-grants.ts:627 |
@@ -405,10 +405,10 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/disputes/cases/:case_id/comments/:comment_id/reply` | 🔐 |  | W5 子回复 — 任意人可对顶层评论回复多次（不受"一人一案一次"限制） | src/pwa/routes/dispute-cases.ts:235 |
 | POST | `/api/disputes/cases/:case_id/fairness` | 🔐 |  | 公正度投票（👍 / 👎）— 一人一案一票 | src/pwa/routes/dispute-cases.ts:268 |
 | GET | `/api/disputes/cases/by-product/:product_id` |  |  | 公开列表（按商品） | src/pwa/routes/dispute-cases.ts:118 |
-| GET | `/api/editor-picks` |  |  |  | src/pwa/routes/public-utils.ts:445 |
+| GET | `/api/editor-picks` |  |  |  | src/pwa/routes/public-utils.ts:446 |
 | POST | `/api/email-subscriptions` |  |  | 2026-05-26 加 role_preference + note 字段（welcome 表单丰富化） | src/pwa/routes/welcome.ts:162 |
 | POST | `/api/email-subscriptions/unsubscribe` |  |  |  | src/pwa/routes/welcome.ts:212 |
-| POST | `/api/error-report` |  |  |  | src/pwa/routes/public-utils.ts:525 |
+| POST | `/api/error-report` |  |  |  | src/pwa/routes/public-utils.ts:526 |
 | POST | `/api/evidence-requests/:requestId/submit` | 🔐 |  | 当事人提交补充证据响应（仲裁员 request 后用） | src/pwa/routes/evidence.ts:83 |
 | DELETE | `/api/evidence/:id` | 🔐 |  | 撤回证据（仅上传者，争议未结案时） | src/pwa/routes/evidence.ts:58 |
 | GET | `/api/evidence/:id/blob` | 🔐 |  | 下载证据 blob（仅参与方/仲裁员） | src/pwa/routes/evidence.ts:35 |
@@ -437,7 +437,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/follows/feed` | 🔐 |  | Wave D-1: 关注卖家动态 feed — new_product + restock 合并 + 去重 | src/pwa/routes/follows.ts:75 |
 | GET | `/api/follows/me` | 🔐 |  |  | src/pwa/routes/follows.ts:59 |
 | GET | `/api/fx/rates` |  |  |  | src/pwa/routes/fx.ts:19 |
-| GET | `/api/governance/onboarding-stats` |  |  | 无 auth — agent / 用户 / 第三方都可读;不暴露 PII | src/pwa/routes/public-utils.ts:473 |
+| GET | `/api/governance/onboarding-stats` |  |  | 无 auth — agent / 用户 / 第三方都可读;不暴露 PII | src/pwa/routes/public-utils.ts:474 |
 | POST | `/api/governance/onboarding/appeal` | 🔐 |  | 必须:source 行 action='auto_deactivate' + window 内 + 未已 appeal + reason 长度 | src/pwa/routes/governance-onboarding.ts:684 |
 | POST | `/api/governance/onboarding/apply` | 🔐 |  |  | src/pwa/routes/governance-onboarding.ts:78 |
 | POST | `/api/governance/onboarding/case-review` | 🔐 |  | 不立即评分 — maintainer 上岗签字前(阶段 3 #1093)对比 expected_verdict | src/pwa/routes/governance-onboarding.ts:300 |
@@ -475,14 +475,14 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/logistics/me/performance` | 🔐 |  | 物流绩效卡 (Wave B-4) | src/pwa/routes/analytics.ts:36 |
 | GET | `/api/logistics/orders` | 🔐 |  |  | src/pwa/routes/logistics.ts:33 |
 | GET | `/api/logistics/return-pickups` | 🔐 |  |  | src/pwa/routes/returns.ts:450 |
-| GET | `/api/manifest` |  |  |  | src/pwa/routes/public-utils.ts:467 |
-| POST | `/api/manifests` | 🔐 |  |  | src/pwa/routes/manifests.ts:52 |
-| GET | `/api/manifests/:hash` | 🔐 |  |  | src/pwa/routes/manifests.ts:101 |
-| PATCH | `/api/manifests/:hash/takedown` | 🔐 |  |  | src/pwa/routes/manifests.ts:173 |
-| GET | `/api/manifests/:hash/thumb` |  |  | Only the low-res thumbnail is exposed (never full-res / metadata / other columns | src/pwa/routes/manifests.ts:123 |
-| GET | `/api/manifests/by-anchor/:anchor` | 🔐 |  |  | src/pwa/routes/manifests.ts:162 |
-| GET | `/api/manifests/by-product/:pid` | 🔐 |  |  | src/pwa/routes/manifests.ts:151 |
-| GET | `/api/manifests/me` | 🔐 |  |  | src/pwa/routes/manifests.ts:90 |
+| GET | `/api/manifest` |  |  |  | src/pwa/routes/public-utils.ts:468 |
+| POST | `/api/manifests` | 🔐 |  |  | src/pwa/routes/manifests.ts:57 |
+| GET | `/api/manifests/:hash` | 🔐 |  |  | src/pwa/routes/manifests.ts:106 |
+| PATCH | `/api/manifests/:hash/takedown` | 🔐 |  |  | src/pwa/routes/manifests.ts:187 |
+| GET | `/api/manifests/:hash/thumb` |  |  | Only the low-res thumbnail is exposed (never full-res / metadata / other columns | src/pwa/routes/manifests.ts:128 |
+| GET | `/api/manifests/by-anchor/:anchor` | 🔐 |  |  | src/pwa/routes/manifests.ts:176 |
+| GET | `/api/manifests/by-product/:pid` | 🔐 |  |  | src/pwa/routes/manifests.ts:165 |
+| GET | `/api/manifests/me` | 🔐 |  |  | src/pwa/routes/manifests.ts:95 |
 | POST | `/api/mcp-telemetry` |  |  |  | src/pwa/routes/public-utils.ts:74 |
 | GET | `/api/me` | 🔐 |  |  | src/pwa/routes/auth-read.ts:29 |
 | GET | `/api/me/agents` | 🔐 |  | /api/me/agents — 列出本账号所有 agent + declaration / strikes | src/pwa/routes/agent-governance.ts:61 |

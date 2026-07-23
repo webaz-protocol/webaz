@@ -34,10 +34,14 @@ function availability(stock: unknown): string {
   return n > 0 ? 'in_stock' : 'out_of_stock'
 }
 
-// 图片引用 → 公网可加载 URL。与前端解析器(app-product-media.js productThumbSrc)同一套规则,单一语义:
-//   64-hex content hash → 公开缩略图端点(?format=jpeg:ACP 只收 JPEG/PNG,webp 存量由端点转码);
-//   http(s) → 原样;根相对路径 → 绝对化;data:/其他 → null(feed 只发可公网 GET 的 URL,绝不拼域名造坏链)。
-// 旧实现对裸 hash 拼出 https://webaz.xyz/<hash>(SPA 壳 HTML,非图片)—— 生产 108/108 坏链的病根。
+// 图片引用 → 公网可加载 URL。引用识别(64-hex hash / http(s) / 根相对)适配自前端 app-product-media.js
+//   productThumbSrc;与前端的差异是【刻意】的,不是漂移(test-acp-feed-images 锁两侧映射关系):
+//   - 仅解析 JSON 数组(feed SQL 源即 JSON 列;前端还兼容 legacy CSV 展示);
+//   - data: URI 不发(前端可直接 <img>,feed 只发可公网 GET 的 URL);
+//   - hash 归一小写(manifest_registry.hash 存小写,SQLite TEXT 等值大小写敏感);
+//   - 加 ?format=jpeg(ACP 只收 JPEG/PNG,webp 存量由端点转码)。
+// 旧实现对裸 hash 拼出 https://webaz.xyz/<hash>(SPA 壳 HTML,非图片)—— 生产 108/108 坏链的病根;
+//   未知形状一律 null,绝不拼域名造坏链。
 function resolveImageUrl(raw: unknown): string | null {
   if (typeof raw !== 'string' || !raw.trim()) return null
   const s = raw.trim()
@@ -47,20 +51,28 @@ function resolveImageUrl(raw: unknown): string | null {
   return null
 }
 
-// target_countries(ISO 3166-1 alpha-2):复用跨境 S1 的 effectiveSaleRegionsRule(商品规则 ?? 店铺规则)。
-//   list 模式 → include 里合法的 2 位码去掉 exclude;all 模式/无规则/解析失败 → 保守 ['SG'](平台辖区)。
-//   自定义大区码(如 'SEA',2-8 位)不符合 ISO alpha-2,过滤掉 —— 宁可少报不虚报。
+// target_countries(ISO 3166-1 alpha-2):复用跨境 S1 的 effectiveSaleRegionsRule 语义(商品规则 ?? 店铺规则)。
+//   诚实三则(Codex #510 R1 HIGH):
+//   1. list 模式 → include 合法 2 位码 − exclude;过滤后为空 → 【省略字段】,不虚报;
+//   2. all 模式 → 只能如实枚举平台辖区 SG,且 SG 被 exclude 时同样【省略】;
+//   3. 无规则/解析失败 → 保守 ['SG'](平台辖区默认)。
+//   自定义大区码(如 'SEA')非 ISO alpha-2,过滤 —— 宁可少报不虚报。店铺级规则按 seller 缓存(避免 5000 行 N+1)。
 const ISO_ALPHA2 = /^[A-Z]{2}$/
-function targetCountries(db: Database.Database, saleRegions: string | null, sellerId: string): string[] {
+type SaleRule = ReturnType<typeof effectiveSaleRegionsRule>
+function targetCountries(db: Database.Database, saleRegions: string | null, sellerId: string, storeRuleCache: Map<string, SaleRule>): string[] | null {
+  let rule: SaleRule = null
   try {
-    const rule = effectiveSaleRegionsRule(db, { sale_regions: saleRegions }, sellerId)
-    if (rule && rule.mode === 'list') {
-      const exclude = new Set(rule.exclude ?? [])
-      const out = (rule.include ?? []).filter((c) => ISO_ALPHA2.test(c) && !exclude.has(c))
-      if (out.length) return out
+    if (saleRegions) rule = effectiveSaleRegionsRule(db, { sale_regions: saleRegions }, sellerId)
+    else {
+      if (!storeRuleCache.has(sellerId)) storeRuleCache.set(sellerId, effectiveSaleRegionsRule(db, { sale_regions: null }, sellerId))
+      rule = storeRuleCache.get(sellerId) ?? null
     }
-  } catch { /* 保守回退 */ }
-  return ['SG']
+  } catch { rule = null }
+  if (!rule) return ['SG']
+  const exclude = new Set((rule.exclude ?? []).map(String))
+  if (rule.mode === 'all') return exclude.has('SG') ? null : ['SG']
+  const out = (rule.include ?? []).filter((c) => ISO_ALPHA2.test(c) && !exclude.has(c))
+  return out.length ? out : null
 }
 
 // description 必须 plain text(spec)→ 去 HTML 标签 + 折叠空白 + 截 5000
@@ -92,6 +104,7 @@ export function buildAcpProductFeed(db: Database.Database, opts: { limit?: numbe
     `).all(limit) as ProductRow[]
   } catch { rows = [] }
 
+  const storeRuleCache = new Map<string, SaleRule>()
   const products = rows.map((p) => {
     let imgs: string[] = []
     try { const arr = JSON.parse(p.images || '[]'); if (Array.isArray(arr)) imgs = arr.map(resolveImageUrl).filter((x): x is string => !!x) } catch { /* malformed → no images */ }
@@ -113,11 +126,12 @@ export function buildAcpProductFeed(db: Database.Database, opts: { limit?: numbe
       is_eligible_search: true,
       is_eligible_checkout: false,
       is_eligible_ads: false,
-      // merchant-level required fields(spec):store_country = 平台辖区(卖家级 store country 未建模);
-      // target_countries 复用跨境 S1 规则,无规则保守 ['SG'] —— 宁可少报不虚报。
+      // merchant-level required field(spec):store_country = 平台辖区(卖家级 store country 未建模)。
       store_country: 'SG',
-      target_countries: targetCountries(db, p.sale_regions, p.seller_id),
     }
+    // target_countries:能如实推导才发;推导不出(规则排除了一切 ISO 目标)→ 省略,绝不虚报。
+    const tc = targetCountries(db, p.sale_regions, p.seller_id, storeRuleCache)
+    if (tc) item.target_countries = tc
     if (imgs.length) { item.image_url = imgs[0]; if (imgs.length > 1) item.additional_image_urls = imgs.slice(1).join(',') }
     if (p.brand) item.brand = String(p.brand).slice(0, 70)
     if (p.model) item.mpn = String(p.model).slice(0, 70)
@@ -152,6 +166,7 @@ export function buildAcpProductFeed(db: Database.Database, opts: { limit?: numbe
       currency: "Each item's price.currency is the escrow rail's SIMULATED display unit, always emitted as WAZ (legacy internal-code rows are normalized to WAZ on read), NOT an ISO 4217 fiat currency. Real purchases currently use WebAZ Direct Pay and the seller's selected off-platform payment method.",
       checkout: 'is_eligible_checkout is false for every item: ACP checkout is not yet wired. Products are DISCOVERABLE via ACP but ACP cannot complete the purchase. Native WebAZ Direct Pay supports real buyer-to-seller payment; the WebAZ state machine records the order and evidence (see RFC-015).',
       images: 'image_url points at the public LOW-RES thumbnail endpoint (JPEG via ?format=jpeg). Full-resolution images are served peer-to-peer by the seller\'s node and have no server-side URL (WebAZ P2P image model).',
+      regions: 'target_countries is derived from seller/product sale-region rules (ISO alpha-2 codes only) and is OMITTED on items where no ISO target can be truthfully derived. The platform compliance blocklist still applies at order time regardless of this field.',
     },
     product_count: products.length,
     products,

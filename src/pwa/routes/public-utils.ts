@@ -392,8 +392,9 @@ export function registerPublicUtilsRoutes(app: Application, deps: PublicUtilsDep
 
   // RFC-015 P0 —— ACP-inspired 商品【发现】投影:把现有商品投影成 OpenAI Agentic Commerce 的 feed 形状,
   //   让 ACP/ChatGPT agent 能【发现】WebAZ 商品(只读,无钱)。【非 strict ACP-ingestable feed】(Codex #151):
-  //   currency=WAZ 非 ISO 4217、is_eligible_checkout 恒 false(ACP /complete 是卡+PSP,WebAZ 未接)、
-  //   不发 target_countries/store_country 等商家必填字段 —— 非合规点逐条见 feed.compatibility。详见 buildAcpProductFeed + RFC-015。
+  //   currency=WAZ 非 ISO 4217、is_eligible_checkout 恒 false(ACP /complete 是卡+PSP,WebAZ 未接)
+  //   —— 非合规点逐条见 feed.compatibility。store_country/target_countries 自 A0(#510)起按辖区/跨境规则诚实发出。
+  //   详见 buildAcpProductFeed + RFC-015。
   const acpFeed = (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'public, max-age=300')
     res.json(buildAcpProductFeed(db))
