@@ -2497,3 +2497,6 @@ export function initMcpResultCacheSchema(db: Database.Database): void {
   // boot 清扫(与 address staging 同范式):过期句柄不留存 —— 表永远只含活跃小行
   db.exec("DELETE FROM mcp_result_cache WHERE expires_at <= datetime('now')")
 }
+
+// WAZ 退役 PR-A2:冲正台账(实现在 waz-sunset-store.ts;re-export 让 applyWebazRuntimeSchema 自动拾取)
+export { initWazSunsetSchema } from '../waz-sunset-store.js'

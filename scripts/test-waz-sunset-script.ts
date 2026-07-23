@@ -1,0 +1,151 @@
+#!/usr/bin/env tsx
+/**
+ * WAZ 退役 PR-A2 — 清零引擎回归锁(src/waz-sunset-store.ts)。
+ * Proves:
+ *   ① fail-closed 盘点:escrowed>0 / 非终态 escrow 单 / open RFQ/拍卖/团购 / active bid 押金 /
+ *     pending 提现 → 全部列为 blocker;commit 硬拒(零写入)。
+ *   ② dry-run 幂等零写入:钱包原样、冲正表空。
+ *   ③ commit:balance/staked/earned/fee_staked 全部经 applyWalletDelta 负 delta 归零;每笔一行
+ *     append-only 冲正(before/delta 快照);单事务;历史流水(charity_fund_txns)原封不动。
+ *   ④ 幂等:二次 commit nothing-to-do(零新冲正行);校验 residual=空。
+ *   ⑤ 基金池默认不动;--include-funds 才清零并记 fund:* 冲正。
+ *   ⑥ 冲正台账 append-only:UPDATE/DELETE 被触发器 ABORT。
+ * Usage: npm run test:waz-sunset-script
+ */
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const tmpHome = mkdtempSync(join(tmpdir(), 'wazsunset-'))
+process.env.HOME = tmpHome; process.env.USERPROFILE = tmpHome
+
+const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
+const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')
+const { applyWebazRuntimeSchema } = await import('../src/runtime/apply-webaz-runtime-schema.js')
+const { runWazSunsetZeroing, wazSunsetInventory, initWazSunsetSchema } = await import('../src/waz-sunset-store.js')
+
+let pass = 0, fail = 0; const fails: string[] = []
+const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
+
+const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
+applyWebazRuntimeSchema(db)
+// 盘点扫描面的 server-inline 表(最小 fixture 镜像建表)
+db.exec(`CREATE TABLE IF NOT EXISTS rfqs (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'open');
+  CREATE TABLE IF NOT EXISTS bids (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'active', stake_locked REAL DEFAULT 0);
+  CREATE TABLE IF NOT EXISTS auctions (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'open');
+  CREATE TABLE IF NOT EXISTS auction_bids (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'active', stake_locked REAL DEFAULT 0);
+  CREATE TABLE IF NOT EXISTS group_buys (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'active');
+  CREATE TABLE IF NOT EXISTS withdrawal_requests (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending');
+  CREATE TABLE IF NOT EXISTS charity_fund (id TEXT PRIMARY KEY, balance REAL DEFAULT 0, total_donated REAL DEFAULT 0);
+  CREATE TABLE IF NOT EXISTS charity_fund_txns (id TEXT PRIMARY KEY, kind TEXT, amount REAL);
+  CREATE TABLE IF NOT EXISTS global_fund (id INTEGER PRIMARY KEY CHECK(id=1), pool_balance REAL DEFAULT 0, pv_escrow_reserve REAL DEFAULT 0);
+  CREATE TABLE IF NOT EXISTS protocol_reserve_pool (id INTEGER PRIMARY KEY CHECK(id=1), balance REAL DEFAULT 0)`)
+try { db.exec('ALTER TABLE orders ADD COLUMN payment_rail TEXT') } catch { /* 已存在 */ }
+
+const mkWallet = (id: string, w: { balance?: number; staked?: number; escrowed?: number; earned?: number; fee_staked?: number }): void => {
+  db.prepare("INSERT INTO users (id,name,role,api_key) VALUES (?,?,'buyer',?)").run(id, id, 'k_' + id)
+  db.prepare('INSERT INTO wallets (user_id, balance, staked, escrowed, earned, fee_staked) VALUES (?,?,?,?,?,?)')
+    .run(id, w.balance ?? 0, w.staked ?? 0, w.escrowed ?? 0, w.earned ?? 0, w.fee_staked ?? 0)
+}
+mkWallet('u1', { balance: 100.5, earned: 250 })
+mkWallet('u2', { balance: 3.14, staked: 7, fee_staked: 2 })
+mkWallet('u3', { escrowed: 10 })                                     // ← blocker
+db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail) VALUES ('ordX','p','u1','u2',1,10,10,10,'paid','escrow')").run()   // ← blocker
+// fault_seller 有出边(fault_seller→completed/declined_nofault)= 非终态 —— R1 C-1 手写集合曾漏它
+db.prepare("INSERT INTO orders (id, product_id, buyer_id, seller_id, quantity, unit_price, total_amount, escrow_amount, status, payment_rail) VALUES ('ordF','p','u1','u2',1,10,10,10,'fault_seller','escrow')").run()   // ← blocker
+db.prepare("INSERT INTO direct_pay_fee_stakes (id, order_id, seller_id, amount, status) VALUES ('fsX','ordX','u2',0.2,'locked')").run()   // ← blocker(R1 C-2)
+db.prepare("INSERT INTO pending_commission_escrow (recipient_user_id, order_id, amount, attribution_path, status, created_at, expires_at) VALUES ('u1','ordX',1.4,'L1','pending',0,0)").run()   // ← blocker(R1 C-3)
+db.prepare("INSERT INTO rfqs (id,status) VALUES ('rfqX','open')").run()                                  // ← blocker
+db.prepare("INSERT INTO bids (id,status,stake_locked) VALUES ('bidX','active',3)").run()                 // ← blocker
+db.prepare("INSERT INTO withdrawal_requests (id,status) VALUES ('wdX','pending')").run()                 // ← blocker
+// R2 H-2:verify_tasks 三个未终结态全覆盖(open / code_issued / settling)
+for (const [vid, vst] of [['vtA', 'open'], ['vtB', 'code_issued'], ['vtC', 'settling']] as const) {
+  db.prepare("INSERT INTO verify_tasks (id,product_id,url,status,fee_locked,expires_at) VALUES (?,?,?,?,2,'2099-01-01')").run(vid, 'p', 'https://x', vst)   // ← blockers
+}
+db.prepare("INSERT INTO product_trial_campaigns (id, product_id, seller_id, quota_total, reach_threshold, status) VALUES ('ptcX','p','u2',5,50,'active')").run()   // ← blocker(R2 H-1)
+// R2 H-1:pending claim 两态全覆盖(pending_note / pending_threshold)
+// UNIQUE(buyer_id, product_id) → 两个 claim 用不同 buyer(u1 / u3)
+for (const [cid, buyer, cst] of [['pclA', 'u1', 'pending_note'], ['pclB', 'u3', 'pending_threshold']] as const) {
+  db.prepare("INSERT INTO product_trial_claims (id, campaign_id, product_id, seller_id, buyer_id, order_id, status) VALUES (?,?,?,?,?,?,?)").run(cid, 'ptcX', 'p', 'u2', buyer, 'ordX', cst)   // ← blockers
+}
+db.prepare("INSERT INTO charity_fund (id,balance) VALUES ('main',42)").run()
+db.prepare("INSERT INTO charity_fund_txns (id,kind,amount) VALUES ('cft1','donation',42)").run()
+db.prepare('INSERT INTO global_fund (id,pool_balance,pv_escrow_reserve) VALUES (1,5,7)').run()
+db.prepare('INSERT INTO protocol_reserve_pool (id,balance) VALUES (1,3)').run()
+
+// ── ① 盘点 + commit 硬拒 ──
+const inv = wazSunsetInventory(db)
+const kinds = new Set(inv.map(b => b.kind))
+ok('inventory: all blocker kinds detected (incl. fee-stake / pending-commission / fault_* non-terminal)',
+  ['wallet_escrowed', 'order_in_flight', 'rfq_open', 'bid_stake_active', 'withdrawal_pending', 'fee_stake_locked', 'pending_commission', 'verify_task_open', 'trial_campaign_active', 'trial_claim_pending'].every(k => kinds.has(k))
+  && ['vtA', 'vtB', 'vtC'].every(r => inv.some(b => b.kind === 'verify_task_open' && b.ref === r))
+  && ['pclA', 'pclB'].every(r => inv.some(b => b.kind === 'trial_claim_pending' && b.ref === r))
+  && inv.some(b => b.kind === 'order_in_flight' && b.ref === 'ordF'), JSON.stringify([...kinds]))
+let threw = false
+try { runWazSunsetZeroing(db, { runId: 'r0', reason: 't', commit: true }) } catch { threw = true }
+const w1 = db.prepare("SELECT balance FROM wallets WHERE user_id='u1'").get() as { balance: number }
+ok('commit with blockers → hard-refused, zero writes', threw && w1.balance === 100.5 && (db.prepare('SELECT COUNT(*) n FROM waz_sunset_corrections').get() as { n: number }).n === 0)
+
+// ── 收敛全部 blocker(模拟正常状态机收敛后的世界)──
+db.prepare("UPDATE wallets SET escrowed=0 WHERE user_id='u3'").run()
+db.prepare("UPDATE orders SET status='completed' WHERE id IN ('ordX','ordF')").run()
+db.prepare("UPDATE direct_pay_fee_stakes SET status='released' WHERE id='fsX'").run()
+db.prepare("UPDATE pending_commission_escrow SET status='expired' WHERE recipient_user_id='u1'").run()
+db.prepare("UPDATE rfqs SET status='expired' WHERE id='rfqX'").run()
+db.prepare("UPDATE bids SET status='cancelled' WHERE id='bidX'").run()
+db.prepare("UPDATE withdrawal_requests SET status='rejected' WHERE id='wdX'").run()
+db.prepare("UPDATE verify_tasks SET status='settled' WHERE id IN ('vtA','vtB','vtC')").run()
+db.prepare("UPDATE product_trial_campaigns SET status='closed' WHERE id='ptcX'").run()
+db.prepare("UPDATE product_trial_claims SET status='expired' WHERE id IN ('pclA','pclB')").run()
+ok('inventory clean after convergence', wazSunsetInventory(db).length === 0, JSON.stringify(wazSunsetInventory(db)))
+
+// ── ② dry-run 零写入 ──
+const dry = runWazSunsetZeroing(db, { runId: 'r1', reason: 'dry', commit: false })
+ok('dry-run: plan enumerates every nonzero field, nothing written',
+  dry.committed === false && dry.plan.length === 5   // u1:balance+earned, u2:balance+staked+fee_staked
+  && (db.prepare("SELECT balance FROM wallets WHERE user_id='u1'").get() as { balance: number }).balance === 100.5
+  && (db.prepare('SELECT COUNT(*) n FROM waz_sunset_corrections').get() as { n: number }).n === 0, JSON.stringify(dry.plan))
+
+// ── ③ commit ──
+const res = runWazSunsetZeroing(db, { runId: 'r2', reason: 'WAZ sunset test', commit: true })
+const allW = db.prepare('SELECT user_id, balance, staked, escrowed, earned, fee_staked FROM wallets ORDER BY user_id').all() as Array<Record<string, number>>
+ok('commit: every wallet field zeroed', allW.every(w => Number(w.balance) === 0 && Number(w.staked) === 0 && Number(w.escrowed) === 0 && Number(w.earned) === 0 && Number(w.fee_staked) === 0), JSON.stringify(allW))
+const corr = db.prepare("SELECT subject, field, before_units, delta_units, reason FROM waz_sunset_corrections WHERE run_id='r2' ORDER BY id").all() as Array<Record<string, unknown>>
+ok('commit: one append-only correction per zeroed field with before/delta snapshot',
+  corr.length === 5 && corr.every(c => Number(c.before_units) > 0 && Number(c.delta_units) === -Number(c.before_units) && c.reason === 'WAZ sunset test'), JSON.stringify(corr))
+ok('commit: residual verify = all zero', res.residual.length === 0, JSON.stringify(res.residual))
+ok('history txns untouched (charity_fund_txns row intact)', (db.prepare("SELECT COUNT(*) n FROM charity_fund_txns WHERE id='cft1'").get() as { n: number }).n === 1)
+ok('fund pools untouched by default (charity_fund.balance stays 42)', (db.prepare("SELECT balance FROM charity_fund WHERE id='main'").get() as { balance: number }).balance === 42)
+
+// ── ④ 幂等 ──
+const again = runWazSunsetZeroing(db, { runId: 'r3', reason: 're-run', commit: true })
+ok('idempotent: second commit is nothing-to-do (zero new corrections)', again.plan.length === 0 && (db.prepare("SELECT COUNT(*) n FROM waz_sunset_corrections WHERE run_id='r3'").get() as { n: number }).n === 0)
+
+// ── ⑤ --include-funds(真实池映射:global_fund id=1 pool_balance+pv_escrow_reserve / protocol_reserve_pool id=1)──
+const funds = runWazSunsetZeroing(db, { runId: 'r4', reason: 'funds too', includeFunds: true, commit: true })
+const gf = db.prepare('SELECT pool_balance, pv_escrow_reserve FROM global_fund WHERE id=1').get() as { pool_balance: number; pv_escrow_reserve: number }
+ok('include-funds: charity + global_fund(pool+pv_escrow_reserve) + protocol_reserve_pool all zeroed with fund:* corrections',
+  (db.prepare("SELECT balance FROM charity_fund WHERE id='main'").get() as { balance: number }).balance === 0
+  && gf.pool_balance === 0 && gf.pv_escrow_reserve === 0
+  && (db.prepare('SELECT balance FROM protocol_reserve_pool WHERE id=1').get() as { balance: number }).balance === 0
+  && funds.plan.some(p => p.subject === 'fund:global_fund' && p.field === 'pv_escrow_reserve')
+  && (db.prepare("SELECT COUNT(*) n FROM waz_sunset_corrections WHERE run_id='r4' AND subject LIKE 'fund:%'").get() as { n: number }).n === 4, JSON.stringify(funds.plan))   // charity + global_fund×2 + protocol_reserve(commission_reserve/penalty_fund 本 fixture 未建表,store 安全跳过)
+
+// ── ⑤b dry-run 严格零写入(连 DDL 都不发):裸库上 dry-run 后不存在冲正表 ──
+const Database2 = (await import('better-sqlite3')).default
+const bare = new Database2(':memory:')
+bare.exec('CREATE TABLE wallets (user_id TEXT PRIMARY KEY, balance REAL DEFAULT 0, staked REAL DEFAULT 0, escrowed REAL DEFAULT 0, earned REAL DEFAULT 0, fee_staked REAL DEFAULT 0)')
+bare.prepare("INSERT INTO wallets (user_id, balance) VALUES ('bx', 9)").run()
+const bareDry = runWazSunsetZeroing(bare, { runId: 'rb', reason: 'bare dry', commit: false })
+ok('dry-run emits ZERO writes incl. DDL (no corrections table created on a bare db)',
+  bareDry.plan.length === 1 && (bare.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name='waz_sunset_corrections'").get() as { n: number }).n === 0)
+
+// ── ⑥ append-only 触发器 ──
+initWazSunsetSchema(db)
+let upThrew = false; let delThrew = false
+try { db.prepare("UPDATE waz_sunset_corrections SET reason='tamper' WHERE run_id='r2'").run() } catch { upThrew = true }
+try { db.prepare("DELETE FROM waz_sunset_corrections WHERE run_id='r2'").run() } catch { delThrew = true }
+ok('corrections ledger is append-only (UPDATE/DELETE ABORT)', upThrew && delThrew)
+
+if (fail > 0) { console.error(`\n❌ waz-sunset-script FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
+console.log(`✅ waz-sunset-script: fail-closed inventory → atomic zeroing via applyWalletDelta + append-only corrections → residual verify; dry-run writes nothing; idempotent; funds opt-in\n  ✅ pass ${pass}`)
