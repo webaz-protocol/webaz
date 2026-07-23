@@ -54,6 +54,7 @@ export function registerWalletWriteRoutes(app: Application, deps: WalletWriteDep
 
   app.post('/api/wallet/connect/challenge', (req, res) => {
     const user = auth(req, res); if (!user) return
+    if (Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1) return void res.status(409).json({ error: 'WAZ 已退役,钱包绑定已关闭', error_code: 'RAIL_DISABLED' })   // WAZ 退役:connect 是提现前置,同闸
     if (isTrustedRole(user as Record<string, unknown>)) return void res.status(403).json({ error: '受信角色无钱包' })
     cleanupWalletChallenges()
     const nonce = generateId('nce').replace(/[^a-zA-Z0-9]/g, '').slice(0, 16) + Date.now().toString(36)
@@ -64,6 +65,7 @@ export function registerWalletWriteRoutes(app: Application, deps: WalletWriteDep
   })
 
   app.post('/api/wallet/connect/verify', async (req, res) => {
+    if (Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1) return void res.status(409).json({ error: 'WAZ 已退役,钱包绑定已关闭', error_code: 'RAIL_DISABLED' })   // WAZ 退役:关停前发的 5min challenge 也不能在关停后 verify 入白名单(Codex #516 R1 P2)
     const user = auth(req, res); if (!user) return
     // H-2 P1-1: 防御性 — 受信角色不应能绑钱包
     if (isTrustedRole(user as Record<string, unknown>)) return void res.status(403).json({ error: '受信角色无钱包' })
@@ -116,6 +118,9 @@ export function registerWalletWriteRoutes(app: Application, deps: WalletWriteDep
   app.post('/api/wallet/withdraw', (req, res) => {
     const user = auth(req, res); if (!user) return
     if (isTrustedRole(user as Record<string, unknown>)) return void res.status(403).json({ error: '受信角色无钱包，不可提现', error_code: 'TRUSTED_ROLE_NO_WALLET' })
+    // WAZ 退役(2026-07-23):渠道关(默认)→ 不再受理【新】提现申请(fail-closed);已提申请的
+    //   confirm/cancel 与 admin 处理不受影响(存量收敛路径绝不门控)。
+    if (Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) !== 1) return void res.status(409).json({ error: 'WAZ 已退役,提现通道已关闭', error_code: 'RAIL_DISABLED' })
     const { to_address: to_address_raw, amount } = req.body
     // P0-1: toLowerCase 后与白名单匹配
     const to_address = typeof to_address_raw === 'string' ? to_address_raw.toLowerCase() : to_address_raw

@@ -9,6 +9,16 @@ export function wazEscrowChannelOn(getProtocolParam: <T>(key: string, fallback: 
   return Number(getProtocolParam('payment_rail_waz_escrow_enabled', 0)) === 1
 }
 
+/** 渠道关时任何"我的 WAZ 余额"展示投影一律零化(/api/me、/api/profile、/api/users/:id owner
+ *  private_stats、MCP webaz_profile 等读侧共用;/api/wallet 有自己的完整 sunset DTO)。 */
+export function projectWalletForSunset(
+  getProtocolParam: <T>(key: string, fallback: T) => T,
+  wallet: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (wazEscrowChannelOn(getProtocolParam)) return wallet ?? null
+  return { waz_sunset: true, balance: 0, staked: 0, escrowed: 0, earned: 0, fee_staked: 0 }
+}
+
 /** orders-create escrow 路径 409 响应体(测试与前端 orderErrorLookup 依赖 error_code 稳定)。 */
 export const WAZ_RAIL_DISABLED = { error: 'WAZ 模拟托管轨已下架,请选择卖家支持的直付方式下单', error_code: 'RAIL_DISABLED' } as const
 

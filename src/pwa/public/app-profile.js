@@ -952,10 +952,6 @@ async function renderTrustedMyHome(app, role) {
         ${card('📦', t('历史记录'),   t('我配送过的'),               '#orders')}
         ${card('💬', t('客户消息'),   t('协调买家 / 卖家'),          '#chats')}
       </div>
-      <div style="font-size:12px;color:#6b7280;font-weight:600;margin:14px 0 6px">💰 ${t('个人')}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-        ${card('💰', t('钱包'),       `${Number(wal.balance).toFixed(2)} WAZ`, '#wallet')}
-      </div>
     `
   } else if (role === 'arbitrator') {
     workGrid = `
@@ -964,10 +960,6 @@ async function renderTrustedMyHome(app, role) {
         ${card('⚖',  t('仲裁台'),     t('待响应 / 仲裁中 / 已结'),  '#seller')}
         ${card('📦', t('记录'),       t('我裁定过的'),               '#orders')}
         ${card('💬', t('双方沟通'),   t('当事方协调'),               '#chats')}
-      </div>
-      <div style="font-size:12px;color:#6b7280;font-weight:600;margin:14px 0 6px">💰 ${t('个人')}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-        ${card('💰', t('钱包'),       `${Number(wal.balance).toFixed(2)} WAZ`, '#wallet')}
       </div>
     `
   }
@@ -1178,14 +1170,6 @@ async function renderSellerMyHome(app) {
           <div style="font-size:11px;opacity:0.85;margin-top:2px">@${escHtml(state.user.handle || '')} · ${t('卖家')}</div>
         </div>
       </div>
-      <button type="button" class="profile-balance" onclick="location.hash='#wallet'">
-        <div>
-          <div style="font-size:10px;opacity:0.85;text-transform:uppercase;letter-spacing:0">${t('钱包余额')}</div>
-          <div style="font-size:22px;font-weight:800;line-height:1.2">${Number(wal.balance).toFixed(2)} <span style="font-size:13px;font-weight:600">WAZ</span></div>
-          ${wal.staked > 0 ? `<div style="font-size:10px;opacity:0.75;margin-top:2px">${t('已锁定')} ${Number(wal.staked).toFixed(2)} WAZ</div>` : ''}
-        </div>
-        <div style="font-size:18px;opacity:0.85">→</div>
-      </button>
     </div>
   `
 
@@ -1223,12 +1207,7 @@ async function renderSellerMyHome(app) {
   const toolGrid = ''
 
   // 卖家账户：只留钱包；个人资料/设置已在 Settings sub-tab
-  const commsGrid = `
-    <div class="hub-section-title">💰 ${t('账户')}</div>
-    <div class="hub-grid">
-      ${card('💰', t('钱包'), `${Number(wal.balance).toFixed(2)} WAZ`, '#wallet')}
-    </div>
-  `
+  const commsGrid = ''   // WAZ 退役:原「账户/钱包」section 下架
 
   // 社交与发现（卖家弱网络 — 同城商家 + 排行）
   const socialGrid = `
@@ -1346,14 +1325,6 @@ async function renderBuyerMyHome(app) {
           <div style="font-size:11px;opacity:0.85;margin-top:2px">@${escHtml(state.user.handle || '')} · ${t('买家')}</div>
         </div>
       </div>
-      <button type="button" class="profile-balance" onclick="location.hash='#wallet'">
-        <div>
-          <div style="font-size:10px;opacity:0.85;text-transform:uppercase;letter-spacing:0">${t('钱包余额')}</div>
-          <div style="font-size:22px;font-weight:800;line-height:1.2">${Number(wal.balance).toFixed(2)} <span style="font-size:13px;font-weight:600">WAZ</span></div>
-          ${wal.staked > 0 ? `<div style="font-size:10px;opacity:0.75;margin-top:2px">${t('已锁定')} ${Number(wal.staked).toFixed(2)} WAZ</div>` : ''}
-        </div>
-        <div style="font-size:18px;opacity:0.85">→</div>
-      </button>
     </div>
   `
 
@@ -1605,7 +1576,6 @@ async function renderMyHome(app, subTab) {
   // 通用入口（通知 / 私信归"消息"tab 专管，此处不重复）
   const commonGrid = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-      ${card('💰', t('钱包'), `${Number(wal.balance).toFixed(2)} WAZ`, '#wallet')}
       ${card('📦', t('订单'), t('我买我卖'), '#orders')}
       ${card('🌸', t('慈善许愿'), `${rep.badge_tier && rep.badge_tier !== 'none' ? rep.badge_tier + ' · ' : ''}${t('威望')} ${Number(rep.prestige_score||0).toFixed(0)}`, '#wishes', pendingRepays || '')}
       ${card('🏆', t('排行榜'), t('热门 / 创作者 / 威望'), '#leaderboard')}
@@ -1665,14 +1635,6 @@ async function renderMyHome(app, subTab) {
           <div style="font-weight:700;font-size:15px">${escHtml(state.user.name || state.user.handle)}</div>
           <div style="font-size:11px;color:#6b7280;margin-top:2px">@${escHtml(state.user.handle || '')} · ${t({buyer:'买家',seller:'卖家',admin:'管理员',logistics:'物流',arbitrator:'仲裁',verifier:'审核员'}[role] || role)}</div>
         </div>
-      </div>
-      <div onclick="location.hash='#wallet'" style="cursor:pointer;padding:10px 12px;background:rgba(255,255,255,0.6);border-radius:8px;display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">${t('钱包余额')}</div>
-          <div style="font-size:22px;font-weight:800;color:#3730a3;line-height:1.2">${Number(wal.balance).toFixed(2)} <span style="font-size:13px;font-weight:600">WAZ</span></div>
-          ${wal.staked > 0 ? `<div style="font-size:10px;color:#9ca3af;margin-top:2px">${t('已锁定')} ${Number(wal.staked).toFixed(2)} WAZ</div>` : ''}
-        </div>
-        <div style="font-size:18px;color:#4f46e5">→</div>
       </div>
     </div>
   `

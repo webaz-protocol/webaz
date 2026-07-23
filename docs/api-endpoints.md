@@ -282,7 +282,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/announcements/active` | 🔐 |  | 列出对当前用户可见的活跃公告（按角色 + 区域过滤） | src/pwa/routes/announcements.ts:79 |
 | POST | `/api/arbitrator/apply` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:93 |
 | GET | `/api/arbitrator/eligibility` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:83 |
-| GET | `/api/arbitrator/me/kpi` | 🔐 |  | Arbitrator KPI（仲裁累计 + 裁决分布 + pending） | src/pwa/routes/trusted-kpi.ts:70 |
+| GET | `/api/arbitrator/me/kpi` | 🔐 |  | Arbitrator KPI（仲裁累计 + 裁决分布 + pending） | src/pwa/routes/trusted-kpi.ts:72 |
 | GET | `/api/arbitrator/pending-count` | 🔐 |  | 非仲裁员返回 0(不报错,前端 badge 拉取对所有人无害)。 | src/pwa/routes/disputes-read.ts:56 |
 | GET | `/api/arbitrator/status` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:88 |
 | POST | `/api/arbitrator/withdraw-application` | 🔐 |  |  | src/pwa/routes/arbitrator.ts:144 |
@@ -485,7 +485,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/manifests/by-product/:pid` | 🔐 |  |  | src/pwa/routes/manifests.ts:170 |
 | GET | `/api/manifests/me` | 🔐 |  |  | src/pwa/routes/manifests.ts:98 |
 | POST | `/api/mcp-telemetry` |  |  |  | src/pwa/routes/public-utils.ts:76 |
-| GET | `/api/me` | 🔐 |  |  | src/pwa/routes/auth-read.ts:29 |
+| GET | `/api/me` | 🔐 |  |  | src/pwa/routes/auth-read.ts:31 |
 | GET | `/api/me/agents` | 🔐 |  | /api/me/agents — 列出本账号所有 agent + declaration / strikes | src/pwa/routes/agent-governance.ts:61 |
 | GET | `/api/me/agents/:apiKeyPrefix/log` | 🔐 |  |  | src/pwa/routes/agent-governance.ts:180 |
 | GET | `/api/me/agents/:apiKeyPrefix/passport` | 🔐 |  | issuer 同时给 did:web:webaz.xyz(标准 DID method)+ 原 did:webaz:0x... 地址(向后兼容)。 | src/pwa/routes/agent-governance.ts:108 |
@@ -497,8 +497,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/me/delete-cancel` | 🔐 |  |  | src/pwa/routes/account-deletion.ts:58 |
 | POST | `/api/me/delete-request` | 🔐 |  |  | src/pwa/routes/account-deletion.ts:33 |
 | GET | `/api/me/delete-status` | 🔐 |  |  | src/pwa/routes/account-deletion.ts:70 |
-| GET | `/api/me/export` | 🔐 |  | COP P0-1: 数据导出（用户主权） | src/pwa/routes/me-data.ts:69 |
-| GET | `/api/me/note-prompts` | 🔐 |  | COP 飞轮: 完成订单 7d 引导发笔记 | src/pwa/routes/me-data.ts:30 |
+| GET | `/api/me/export` | 🔐 |  | COP P0-1: 数据导出（用户主权） | src/pwa/routes/me-data.ts:71 |
+| GET | `/api/me/note-prompts` | 🔐 |  | COP 飞轮: 完成订单 7d 引导发笔记 | src/pwa/routes/me-data.ts:32 |
 | GET | `/api/me/notify-claim-tasks` | 🔐 |  |  | src/pwa/routes/claim-verify.ts:534 |
 | POST | `/api/me/notify-claim-tasks` | 🔐 |  | 通知偏好 | src/pwa/routes/claim-verify.ts:528 |
 | GET | `/api/me/operator-claim-confirmations` | 🔐 |  | ── contributor: claims pointing at ME awaiting my confirmation ── | src/pwa/routes/admin-operator-claims.ts:99 |
@@ -620,7 +620,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/products/:product_id/waitlist/count` | 🔐 |  | seller 查 waitlist count（决定备多少货） | src/pwa/routes/waitlist.ts:78 |
 | POST | `/api/products/extract-aliases` | 🔐 |  | M7.2-5: 从外部原文提取候选 alias | src/pwa/routes/products-aliases.ts:36 |
 | POST | `/api/products/result-fetch` |  |  | 资源滥用护栏(Codex M-4):无鉴权端点按 IP 限流(默认 60 req/min,WEBAZ_RESULT_FETCH_RPM 可调)。 | src/pwa/routes/products-list.ts:461 |
-| GET | `/api/profile` | 🔐 |  |  | src/pwa/routes/auth-read.ts:48 |
+| GET | `/api/profile` | 🔐 |  |  | src/pwa/routes/auth-read.ts:50 |
 | PATCH | `/api/profile` | 🔐 |  | 通用 profile patch（search_anchor / bio / feed_visible） | src/pwa/routes/profile-prefs.ts:99 |
 | POST | `/api/profile/add-role` | 🔐 |  |  | src/pwa/routes/profile-identity.ts:42 |
 | POST | `/api/profile/bind-email` | 🔐 |  | 绑定邮箱 — 步骤 1：发码 | src/pwa/routes/profile-credentials.ts:87 |
@@ -761,21 +761,21 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/tokenomics/status` |  |  |  | src/pwa/routes/dashboards.ts:26 |
 | GET | `/api/trial-campaigns/:campaign_id/claims` | 🔐 |  | 卖家：查看某活动的 claims 详情 | src/pwa/routes/trial.ts:343 |
 | POST | `/api/trial-claims/:claim_id/link-note` | 🔐 |  | 买家关联笔记 | src/pwa/routes/trial.ts:287 |
-| GET | `/api/users/:id/auctions` |  |  | 用户进行中拍卖（公开：open） | src/pwa/routes/users-public.ts:155 |
+| GET | `/api/users/:id/auctions` |  |  | 用户进行中拍卖（公开：open） | src/pwa/routes/users-public.ts:157 |
 | GET | `/api/users/:id/bookmarked-shareables` | 🔐 |  | 我收藏过的 shareables（仅 owner 自己可见） | src/pwa/routes/shareables-interactions.ts:198 |
-| GET | `/api/users/:id/liked-shareables` | 🔐 |  | 用户赞过的 shareables（仅 owner 可见） | src/pwa/routes/users-public.ts:196 |
-| GET | `/api/users/:id/products` |  |  | 用户在售商品（公开：卖家 active 商品） | src/pwa/routes/users-public.ts:183 |
-| GET | `/api/users/:id/public-card` |  |  | 公开卡（未登录可调，分享 banner 用） | src/pwa/routes/users-public.ts:223 |
-| GET | `/api/users/:id/pv-summary` | 🔐 |  | PV 简报：组织图点击节点用 | src/pwa/routes/users-public.ts:71 |
-| GET | `/api/users/:id/reputation` | 🔐 |  | 公开 reputation — 仅 level | src/pwa/routes/users-public.ts:49 |
-| GET | `/api/users/:id/reviews` |  |  | 用户写的测评（公开：作为买家给出的评价） | src/pwa/routes/users-public.ts:168 |
-| GET | `/api/users/:id/secondhand` |  |  | 用户在售二手（公开：available + reserved） | src/pwa/routes/users-public.ts:142 |
-| GET | `/api/users/:id/shareables` |  |  | 用户公开 shareables | src/pwa/routes/users-public.ts:110 |
-| GET | `/api/users/:user_id` | 🔐 |  | 公开用户主页 + D2 信誉徽章墙 | src/pwa/routes/users-public.ts:253 |
+| GET | `/api/users/:id/liked-shareables` | 🔐 |  | 用户赞过的 shareables（仅 owner 可见） | src/pwa/routes/users-public.ts:198 |
+| GET | `/api/users/:id/products` |  |  | 用户在售商品（公开：卖家 active 商品） | src/pwa/routes/users-public.ts:185 |
+| GET | `/api/users/:id/public-card` |  |  | 公开卡（未登录可调，分享 banner 用） | src/pwa/routes/users-public.ts:225 |
+| GET | `/api/users/:id/pv-summary` | 🔐 |  | PV 简报：组织图点击节点用 | src/pwa/routes/users-public.ts:73 |
+| GET | `/api/users/:id/reputation` | 🔐 |  | 公开 reputation — 仅 level | src/pwa/routes/users-public.ts:51 |
+| GET | `/api/users/:id/reviews` |  |  | 用户写的测评（公开：作为买家给出的评价） | src/pwa/routes/users-public.ts:170 |
+| GET | `/api/users/:id/secondhand` |  |  | 用户在售二手（公开：available + reserved） | src/pwa/routes/users-public.ts:144 |
+| GET | `/api/users/:id/shareables` |  |  | 用户公开 shareables | src/pwa/routes/users-public.ts:112 |
+| GET | `/api/users/:user_id` | 🔐 |  | 公开用户主页 + D2 信誉徽章墙 | src/pwa/routes/users-public.ts:255 |
 | POST | `/api/verifier/appeal` | 🔐 |  |  | src/pwa/routes/verifier-user.ts:154 |
 | POST | `/api/verifier/apply` | 🔐 |  |  | src/pwa/routes/verifier-user.ts:70 |
 | GET | `/api/verifier/eligibility` | 🔐 |  |  | src/pwa/routes/verifier-user.ts:47 |
-| GET | `/api/verifier/me/kpi` | 🔐 |  | Verifier KPI（白名单 tier / 配额 / 准确率 / 窗口奖励） | src/pwa/routes/trusted-kpi.ts:27 |
+| GET | `/api/verifier/me/kpi` | 🔐 |  | Verifier KPI（白名单 tier / 配额 / 准确率 / 窗口奖励） | src/pwa/routes/trusted-kpi.ts:29 |
 | GET | `/api/verifier/status` | 🔐 |  |  | src/pwa/routes/verifier-user.ts:52 |
 | POST | `/api/verifier/withdraw-application` | 🔐 |  |  | src/pwa/routes/verifier-user.ts:132 |
 | POST | `/api/verify-price` | 🔐 |  |  | src/pwa/routes/checkout-helpers.ts:70 |
@@ -789,19 +789,19 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/waitlist` | 🔐 |  |  | src/pwa/routes/waitlist.ts:56 |
 | GET | `/api/wallet` | 🔐 |  | 钱包状态 | src/pwa/routes/wallet-read.ts:51 |
 | POST | `/api/wallet/connect/challenge` | 🔐 |  |  | src/pwa/routes/wallet-write.ts:55 |
-| POST | `/api/wallet/connect/verify` | 🔐 |  |  | src/pwa/routes/wallet-write.ts:66 |
-| GET | `/api/wallet/deposit-qr` | 🔐 |  | 充值地址 QR — SVG（轻量 + 矢量，移动端扫码体验最佳） | src/pwa/routes/wallet-read.ts:66 |
-| GET | `/api/wallet/deposits` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:175 |
-| GET | `/api/wallet/income` | 🔐 |  | 收入构成:销售 / 分享归因 / PV 记录(若适用) | src/pwa/routes/wallet-read.ts:201 |
-| GET | `/api/wallet/rate` |  |  | 公开汇率 | src/pwa/routes/wallet-read.ts:84 |
-| POST | `/api/wallet/topup` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:242 |
-| GET | `/api/wallet/whitelist` | 🔐 |  | 白名单 GET / POST / DELETE | src/pwa/routes/wallet-read.ts:98 |
-| POST | `/api/wallet/whitelist` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:115 |
-| DELETE | `/api/wallet/whitelist/:id` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:144 |
-| POST | `/api/wallet/withdraw` | 🔐 |  | 保持整体同步,Phase 3 随资金路径整体迁 pg(BEGIN + SELECT...FOR UPDATE 行锁),不在此引入 await 间隙。 | src/pwa/routes/wallet-write.ts:116 |
-| POST | `/api/wallet/withdraw/:id/confirm` | 🔐 |  | 大额提现：邮件验证码确认 | src/pwa/routes/wallet-write.ts:233 |
-| GET | `/api/wallet/withdrawals` | 🔐 |  | 我的提现记录 | src/pwa/routes/wallet-read.ts:153 |
-| POST | `/api/wallet/withdrawals/:id/cancel` | 🔐 |  | 用户取消尚未 approve 的 withdrawal — 余额自动退回 | src/pwa/routes/wallet-write.ts:261 |
+| POST | `/api/wallet/connect/verify` | 🔐 |  |  | src/pwa/routes/wallet-write.ts:67 |
+| GET | `/api/wallet/deposit-qr` | 🔐 |  | 充值地址 QR — SVG（轻量 + 矢量，移动端扫码体验最佳） | src/pwa/routes/wallet-read.ts:71 |
+| GET | `/api/wallet/deposits` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:180 |
+| GET | `/api/wallet/income` | 🔐 |  | 收入构成:销售 / 分享归因 / PV 记录(若适用) | src/pwa/routes/wallet-read.ts:206 |
+| GET | `/api/wallet/rate` |  |  | 公开汇率 | src/pwa/routes/wallet-read.ts:89 |
+| POST | `/api/wallet/topup` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:247 |
+| GET | `/api/wallet/whitelist` | 🔐 |  | 白名单 GET / POST / DELETE | src/pwa/routes/wallet-read.ts:103 |
+| POST | `/api/wallet/whitelist` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:120 |
+| DELETE | `/api/wallet/whitelist/:id` | 🔐 |  |  | src/pwa/routes/wallet-read.ts:149 |
+| POST | `/api/wallet/withdraw` | 🔐 |  | 保持整体同步,Phase 3 随资金路径整体迁 pg(BEGIN + SELECT...FOR UPDATE 行锁),不在此引入 await 间隙。 | src/pwa/routes/wallet-write.ts:118 |
+| POST | `/api/wallet/withdraw/:id/confirm` | 🔐 |  | 大额提现：邮件验证码确认 | src/pwa/routes/wallet-write.ts:238 |
+| GET | `/api/wallet/withdrawals` | 🔐 |  | 我的提现记录 | src/pwa/routes/wallet-read.ts:158 |
+| POST | `/api/wallet/withdrawals/:id/cancel` | 🔐 |  | 用户取消尚未 approve 的 withdrawal — 余额自动退回 | src/pwa/routes/wallet-write.ts:266 |
 | POST | `/api/webauthn/auth/finish` | 🔐 |  | 4. 认证：finish — 验证签名 + 颁发短 gate token | src/pwa/routes/webauthn.ts:144 |
 | POST | `/api/webauthn/auth/start` | 🔐 |  | 3. 认证：start — 生成 challenge（指定 purpose + 业务数据；同一 challenge 不可复用） | src/pwa/routes/webauthn.ts:119 |
 | GET | `/api/webauthn/credentials` | 🔐 |  | 列出 / 删除 credential | src/pwa/routes/webauthn.ts:189 |

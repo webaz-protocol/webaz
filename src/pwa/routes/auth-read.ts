@@ -12,6 +12,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { projectWalletForSunset } from '../../waz-escrow-channel.js'   // WAZ 退役:渠道关 → wallet 展示零化
 
 export interface AuthReadDeps {
   db: Database.Database
@@ -20,11 +21,12 @@ export interface AuthReadDeps {
   getRegionMaxLevels: (region: string) => number
   userMlmGate: (region: string) => { payoutLevels: any; mlmUiVisible: boolean }
   getUserLevel: (lifetimeScore: number) => unknown
+  getProtocolParam: <T>(key: string, fallback: T) => T
 }
 
 export function registerAuthReadRoutes(app: Application, deps: AuthReadDeps): void {
   // db 已全量走 RFC-016 异步 seam(dbOne),不再直接用 deps.db
-  const { auth, safeRoles, getRegionMaxLevels, userMlmGate } = deps
+  const { auth, safeRoles, getRegionMaxLevels, userMlmGate, getProtocolParam } = deps
 
   app.get('/api/me', async (req, res) => {
     const user = auth(req, res); if (!user) return
@@ -38,7 +40,7 @@ export function registerAuthReadRoutes(app: Application, deps: AuthReadDeps): vo
     const passkeyCount = (await dbOne<{ n: number }>('SELECT COUNT(*) AS n FROM webauthn_credentials WHERE user_id = ?', [user.id]))?.n ?? 0
     res.json({
       ...user, api_key: undefined, password_hash: undefined,
-      roles, wallet: wallet || null, region_max_levels: maxLevels, region_pv_enabled: Number(pvEnabled) === 1 ? 1 : 0,
+      roles, wallet: projectWalletForSunset(getProtocolParam, wallet), region_max_levels: maxLevels, region_pv_enabled: Number(pvEnabled) === 1 ? 1 : 0,
       email_verified: !!user.email_verified,
       has_password: !!user.password_hash,
       has_passkey: Number(passkeyCount) > 0,
@@ -51,7 +53,7 @@ export function registerAuthReadRoutes(app: Application, deps: AuthReadDeps): vo
     const roles = safeRoles(user)
     const pv = await dbOne<{ total_left_pv: number; total_right_pv: number }>("SELECT total_left_pv, total_right_pv FROM users WHERE id = ?", [user.id])
     res.json({
-      id: user.id, name: user.name, role: user.role, roles, api_key: user.api_key, wallet: wallet || null,
+      id: user.id, name: user.name, role: user.role, roles, api_key: user.api_key, wallet: projectWalletForSunset(getProtocolParam, wallet),
       permanent_code: user.permanent_code ?? null,
       handle: user.handle ?? null,
       handle_last_created_at: user.handle_last_created_at ?? null,

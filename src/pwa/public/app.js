@@ -1066,14 +1066,14 @@ function shell(content, activeTab, opts) {
       { id: 'orders',        icon: '📋', label: t('历史记录') },
       // 2026-05-24 消息整合：'通知' → 统一进 #chats（消息中心 sub-tabs 自适应隐藏私信）
       { id: 'chats',         target: 'chats/notifs', icon: '💬', label: t('消息'), chatsBadge: true },
-      { id: 'wallet',        icon: '💰', label: t('钱包') },
+      { id: 'me',            icon: '👤', label: t('我的') },   // WAZ 退役:钱包 tab 下架(verifier 同款)
     ]
   } else if (role === 'arbitrator') {
     tabs = [
       { id: 'seller',        icon: '⚖️', label: t('仲裁台'), arbBadge: true },
       { id: 'orders',        icon: '📋', label: t('记录') },
       { id: 'chats',         target: 'chats/notifs', icon: '💬', label: t('消息'), chatsBadge: true },
-      { id: 'wallet',        icon: '💰', label: t('钱包') },
+      { id: 'me',            icon: '👤', label: t('我的') },   // WAZ 退役:钱包 tab 下架
     ]
   } else if (role === 'verifier') {
     // verifier 受铁律限制：无钱包 / 无交易 — 用 "我的" 替代 wallet
@@ -1149,7 +1149,7 @@ function shell(content, activeTab, opts) {
                🛒
                <span id="cart-badge" style="position:absolute;top:0;right:0;background:#4f46e5;color:#fff;border-radius:99px;font-size:10px;padding:0 4px;min-width:16px;text-align:center;display:${(state.cartCount || 0) > 0 ? 'inline' : 'none'}">${state.cartCount || ''}</span>
              </button>` : ''}
-             ${role === 'seller' ? `<button class="shell-icon-btn shell-wallet-btn" onclick="navigate('#wallet')" title="${t('钱包')}">💰</button>` : ''}
+             ${'' /* WAZ 退役:卖家钱包快捷钮下架 */}
              <button class="shell-user-btn" onclick="openAvatarMenu()" title="${t('快捷菜单')}">
                ${roleBadgeHtml}
                <span style="font-size:13px;color:#6b7280">${state.user.name}</span>
@@ -1242,7 +1242,7 @@ window.openAvatarMenu = function() {
       ${sectionTitle(t('个人'))}
       ${item('🏠', t('我的主页'), '#me')}
       ${item('⚙️', t('设置 / 角色'), '#me/settings')}
-      ${role === 'seller' ? item('💰', t('钱包'), '#wallet') : ''}
+      ${'' /* WAZ 退役:抽屉钱包项下架 */}
       ${!isTrusted ? item('👁', t('公开主页'), '#u/' + u.id) : ''}
       ${item('🤖', t('我的 agents'), '#my-agents')}
 
@@ -17944,8 +17944,8 @@ async function renderWallet(app) {
     GET('/wallet/rate').catch(() => null),
     GET('/payment-methods/for-region?region=' + encodeURIComponent(userRegion)).catch(() => ({ items: [] })),
   ])
-  // 2026-06-01 fix(BUG-PWA-WALLET self-review): 若 /wallet 加载失败,显式错误页(避免静默显示 0 余额误导)
-  if (wallet?._error) {
+  if (wallet?.waz_sunset) { app.innerHTML = shell(`<div class="card" style="margin:40px auto;max-width:460px;text-align:center;padding:32px"><div style="font-size:32px;margin-bottom:12px">🌅</div><h2 style="margin:0 0 8px;font-size:18px">${t('WAZ 已退役')}</h2><p style="color:#6b7280;font-size:14px;margin:0 0 20px">${t('WAZ 模拟货币已退役,历史余额已按冲正清零;真实交易请使用直付(Direct Pay)。')}</p><button class="btn btn-primary" onclick="navigate('#me')">${t('返回')}</button></div>`, 'wallet'); return }   // WAZ 退役(2026-07-23):渠道关 → /api/wallet 返回 sunset DTO,本页只显示退役说明
+  if (wallet?._error) {   // 2026-06-01 fix(BUG-PWA-WALLET self-review): /wallet 加载失败 → 显式错误页(避免静默 0 余额误导)
     app.innerHTML = shell(`
       <div class="card" style="margin:40px auto;max-width:420px;text-align:center;padding:32px">
         <div style="font-size:32px;margin-bottom:12px">⚠️</div>

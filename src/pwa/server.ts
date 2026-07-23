@@ -3823,7 +3823,7 @@ registerAuthRegisterRoutes(app, {
 })
 // #1013 Phase 116: me + profile 已迁出
 registerAuthReadRoutes(app, {
-  db, auth, safeRoles, getRegionMaxLevels, userMlmGate, getUserLevel,
+  db, auth, safeRoles, getRegionMaxLevels, userMlmGate, getUserLevel, getProtocolParam,
 })
 // #1013 Phase 108: agents/me/reputation + admin/agents/:api_key/reputation 已迁出
 // getter for RAW_MODE_MIN_TRUST — 下方 const，避免 TDZ
@@ -3832,7 +3832,7 @@ registerAgentReputationRoutes(app, {
   getRawModeMinTrust: () => RAW_MODE_MIN_TRUST,
 })
 // #1013 Phase 47: 6 公开用户主页 endpoints 已迁出到 routes/users-public.ts
-registerUsersPublicRoutes(app, { db, auth, noteAuthenticityBadges })
+registerUsersPublicRoutes(app, { db, auth, noteAuthenticityBadges, getProtocolParam })
 registerDirectPayDisclosureAckRoutes(app, { db, auth, generateId, consumeGateToken })  // PR-4d
 registerDirectReceivePaymentInstructionRoutes(app, { db, auth, generateId }); registerDirectReceiveAccountsRoutes(app, { db, auth, generateId, consumeGateToken }); registerFeePrepayRequestRoutes(app, { db, auth, generateId })  // PR-4f-a + Phase C1 + fee 预充值申请
 registerDirectPayAvailabilityRoutes(app, { db, auth, getProtocolParam, generateId }); registerSellerDirectPayReportRoutes(app, { db, auth })  // PR-4a + 缓交 + 卖家直付销售统计/对账/平台费明细(只读)
@@ -3949,7 +3949,7 @@ registerAgentGovernanceRoutes(app, {
 
 // ─── 2026-05-22 COP 飞轮 + COP P0-1 数据导出 ─────────────
 // #1013 Phase 39: 2 endpoints (note-prompts + export) 已迁出到 routes/me-data.ts
-registerMeDataRoutes(app, { db, auth })
+registerMeDataRoutes(app, { db, auth, getProtocolParam })
 
 // cron 任务：14 天后停用账户凭证并匿名化选定 PII（保留必要交易/合规/审计记录）
 function processAccountDeletions(): { wiped: number } {
@@ -4271,7 +4271,7 @@ registerFeedbackRoutes(app, { db, generateId, auth, broadcastSystemEvent, detect
 
 // ─── Wave D-5: trusted 角色 KPI 仪表盘 ───────────────────
 // #1013 Phase 22: 2 endpoints 已迁出到 routes/trusted-kpi.ts
-registerTrustedKpiRoutes(app, { db, auth })
+registerTrustedKpiRoutes(app, { db, auth, getProtocolParam })
 
 // ─── Wave D-4: 限时促销 ──────────────────────────────────
 // #1013 Phase 23: 5 endpoints + getActiveFlashSale 已迁出到 routes/flash-sales.ts

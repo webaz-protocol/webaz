@@ -21,16 +21,18 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { projectWalletForSunset } from '../../waz-escrow-channel.js'   // WAZ 退役:owner private_stats wallet 零化
 
 export interface UsersPublicDeps {
   db: Database.Database
   auth: (req: Request, res: Response) => Record<string, unknown> | null
+  getProtocolParam: <T>(key: string, fallback: T) => T
   noteAuthenticityBadges: (row: { owner_id: unknown; related_order_id: unknown; photo_hashes: unknown; created_at: unknown }) => { verified_buyer: boolean; original_photos: boolean }
 }
 
 export function registerUsersPublicRoutes(app: Application, deps: UsersPublicDeps): void {
   // db 已全量走 RFC-016 异步 seam(dbOne/dbAll),不再直接用 deps.db
-  const { auth, noteAuthenticityBadges } = deps
+  const { auth, noteAuthenticityBadges, getProtocolParam } = deps
 
   // ref → user id（usr_xxx / permanent_code / @handle 三态）
   const resolveUserId = async (ref0: string): Promise<string | null> => {
@@ -278,11 +280,13 @@ export function registerUsersPublicRoutes(app: Application, deps: UsersPublicDep
     const isOwner = me.id === target.id
     let privateStats: Record<string, unknown> | null = null
     if (isOwner) {
-      const w = await dbOne<{ balance: number; earned: number }>('SELECT balance, earned FROM wallets WHERE user_id = ?', [me.id])
+      // WAZ 退役(2026-07-23):渠道关 → wallet_* 零化(与 /api/wallet sunset DTO 同真值);PV 是参与记录非余额,保留
+      const w = projectWalletForSunset(getProtocolParam, await dbOne<{ balance: number; earned: number }>('SELECT balance, earned FROM wallets WHERE user_id = ?', [me.id]))
       const pv = await dbOne<{ total_left_pv: number; total_right_pv: number }>("SELECT total_left_pv, total_right_pv FROM users WHERE id = ?", [me.id])
       privateStats = {
-        wallet_balance: Number(w?.balance ?? 0),
-        wallet_earned:  Number(w?.earned  ?? 0),
+        ...(w && (w as Record<string, unknown>).waz_sunset ? { waz_sunset: true } : {}),
+        wallet_balance: Number((w as Record<string, unknown> | null)?.balance ?? 0),
+        wallet_earned:  Number((w as Record<string, unknown> | null)?.earned  ?? 0),
         total_left_pv:  Number(pv?.total_left_pv  ?? 0),
         total_right_pv: Number(pv?.total_right_pv ?? 0),
       }

@@ -340,6 +340,7 @@
     "test:waz-escrow-rail-gate": "tsx scripts/test-waz-escrow-rail-gate.ts",
     "test:waz-sunset-vertical": "tsx scripts/test-waz-sunset-vertical-behaviors.ts",
     "test:waz-sunset-script": "tsx scripts/test-waz-sunset-script.ts",
+    "test:waz-sunset-ui": "tsx scripts/test-waz-sunset-ui.ts",
     "ops:waz-sunset": "tsx scripts/ops-waz-sunset.ts",
     "test:choose-payment": "tsx scripts/test-choose-payment.ts",
     "test:choose-payment-ui": "tsx scripts/test-choose-payment-ui.ts",
