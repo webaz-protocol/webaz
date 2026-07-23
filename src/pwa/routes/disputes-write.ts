@@ -29,6 +29,7 @@
  *           + recordDisputeReputation + issueAgentStrike + publishDisputeCase + logAdminAction + snfSend
  *           + detectFraud + lightAuthGuard + express.raw (传 express 实例)
  */
+import { railOutsideWazCustody } from '../../direct-pay-rails.js'
 import type { Application, Request, Response, NextFunction } from 'express'
 import express from 'express'
 import type Database from 'better-sqlite3'
@@ -233,7 +234,7 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
 
     // 协议层：仲裁员签名的 ruling 入订单链。direct_p2p 非托管=仅信誉裁决,绝不把请求里的退款/赔付金额写进【签名链/timeline】
     //   (即便资金层不动钱,签名链会永久留假语义)→ 强制 non_custodial + 金额/责任方全清。
-    const ncRail = dispute.payment_rail === 'direct_p2p'
+    const ncRail = railOutsideWazCustody(dispute.payment_rail)   // B3:usdc_escrow 同为非 WAZ 托管(签名链绝不写托管退款语义)
     try {
       appendOrderEvent(db, {
         orderId: dispute.order_id as string,

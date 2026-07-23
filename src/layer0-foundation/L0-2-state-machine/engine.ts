@@ -11,6 +11,7 @@
  */
 
 import Database from 'better-sqlite3'
+import { railOutsideWazCustody } from '../../direct-pay-rails.js'   // B3:非 WAZ 托管轨谓词(direct_p2p 场外 + usdc_escrow 链上)—— WAZ escrow 资金数学绝不适用
 import { generateId } from '../L0-1-database/schema.js'
 import { appendOrderEvent } from './order-chain.js'
 import {
@@ -204,6 +205,9 @@ export function checkTimeouts(db: Database.Database, opts?: {
     if (!transitionKey) continue
 
     const [, autoNextState] = transitionKey
+    // usdc_escrow 的 created(链上存入窗)超时由专属清扫收口(usdc-escrow-timeouts.ts:取消+回补原子)——
+    //   通用分支只 transition 不回补,抢先执行 = 永久库存泄漏(B3 复审 Break-B)。让位,绝不双头处理。
+    if (order.payment_rail === 'usdc_escrow' && order.status === 'created') continue
     const systemUser = getSystemUser(db)
 
     // ── delivered→confirmed 超时 = 买家逾期未确认 → 自动确认收货(非判责)──────────────────────
@@ -239,7 +243,7 @@ export function checkTimeouts(db: Database.Database, opts?: {
     if (autoNextState === 'fault_buyer' && order.status === 'delivery_failed') {
       if (!recordUndeliverableFault) continue
       try {
-        if (order.payment_rail === 'direct_p2p') {
+        if (railOutsideWazCustody(order.payment_rail)) {   // B3:usdc_escrow 同走零 WAZ 分支
           db.transaction(() => {
             const r1 = transition(db, order.id, 'fault_buyer', systemUser.id, [], '未派送成功·买家未在窗口内争议,责任落定')
             if (!r1.success) throw new Error(r1.error || 'fault_buyer transition failed')
@@ -273,7 +277,7 @@ export function checkTimeouts(db: Database.Database, opts?: {
       // rail 守卫(审计 F2,防御性):direct_p2p 不可能进 return_pending(rail 分流只送 escrow);若经数据修复/
       //   未来写入者误入,settle 硬门会抛错 → 每轮扫描重抛刷屏且永不收口。此处直接跳过 + 单行错误日志,
       //   留待人工数据修复(不假装结算)。
-      if (order.payment_rail === 'direct_p2p') { console.error(`[return_pending sweep] 不可能状态:direct_p2p 订单 ${order.id} 处于 return_pending,跳过待人工修复`); continue }
+      if (railOutsideWazCustody(order.payment_rail)) { console.error(`[return_pending sweep] 不可能状态:direct_p2p 订单 ${order.id} 处于 return_pending,跳过待人工修复`); continue }
       try {
         db.transaction(() => {
           settleUndeliverableEscrow(db, order.id, 'seller_silent_default')
@@ -423,7 +427,7 @@ export function settleFault(db: Database.Database, orderId: string, faultState: 
     //   退款分支(applyWalletDelta escrowed→balance),买家从无 escrowed → escrowed 转负 + balance 凭空 +total =
     //   【印钱 + 冤枉卖家】。信誉处罚由 cron 侧 recordViolationReputation(timeout_violation)另记,不受此早退影响;
     //   争议路径早已非托管感知(disputes-write.ts ncRail 门),此处补齐【超时/settleFault】这条被漏掉的路径。
-    if (order.payment_rail === 'direct_p2p') {
+    if (railOutsideWazCustody(order.payment_rail)) {   // B3:usdc_escrow 到 fault 同样【零 WAZ 资金】(本金在链上;处置 B7)
       // 库存回补仅【发货前】fault:post-ship 绝不回补【已发出】的货。两条 post-ship 排除:
       //   ① fault_logistics(直付今天不设 pickup/delivery deadline,不可达;显式守卫防未来加 SLA 后幻影回补)。
       //   ② PR-B undeliverable:fault_buyer 且 delivery_failed_deadline 已置(经 delivery_failed 而来=货已发出)。
@@ -659,7 +663,7 @@ export function settleUndeliverableEscrow(
     if (!order) return
     if (order.settled_fault_at) return   // 幂等:已处置
     // escrow-only 硬门:direct_p2p 无托管,任何调用都是接线 bug → fail-loud(绝不假装结算)
-    if (order.payment_rail === 'direct_p2p') throw new Error('settleUndeliverableEscrow 仅限 escrow 轨(direct_p2p 无托管,收口=仅声誉)')
+    if (railOutsideWazCustody(order.payment_rail)) throw new Error('settleUndeliverableEscrow 仅限 WAZ escrow 轨(direct_p2p/usdc_escrow 不在 WAZ 托管域)')
 
     const totalU = toUnits(Number(order.total_amount))
     const buyerId = order.buyer_id as string

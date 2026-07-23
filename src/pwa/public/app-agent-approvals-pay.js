@@ -20,8 +20,8 @@
     var eid = escHtml(String(id))   // request id 已在 aaCard 转义;这里在 name/onclick sink 再转一次(幂等)以贯彻转义纪律
     var recIdx = 0; for (var k = 0; k < opts.length; k++) { if (opts[k].recommended) { recIdx = k; break } }
     var rows = opts.map(function (o, i) {
-      var head = o.rail === 'escrow'
-        ? t('托管(模拟测试轨)')
+      var head = o.rail === 'escrow' ? t('托管(模拟测试轨)')
+        : o.rail === 'usdc_escrow' ? (t('链上担保') + (o.method ? ' · ' + escHtml(String(o.method)) : ''))
         : (t('直付') + (o.method ? ' · ' + escHtml(String(o.method)) : '') + (o.recipient_label ? ' · ' + escHtml(String(o.recipient_label)) : ''))
       return '<label style="display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:6px;cursor:pointer">' +
         '<input type="radio" name="aapay-' + eid + '" value="' + escHtml(String(o.option_id)) + '"' + (i === recIdx ? ' checked' : '') + '>' +

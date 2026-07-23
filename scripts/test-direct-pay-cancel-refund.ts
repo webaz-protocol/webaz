@@ -109,7 +109,7 @@ const rid = (() => { let n = 0; return () => `dpcr_${++n}` })()
     restorePreShipDirectPayStock(db, { fromStatus: bad, productId: 'p', quantity: 1 })
   }
   ok('33. restock guard: ALL post-outbound/disputed origins refused (stock unchanged)', stockOf() === s0)
-  ok('34. restock guard: pre-ship whitelist is exactly the never-outbound set', ['pending_accept', 'direct_pay_window', 'direct_expired_unconfirmed', 'payment_query', 'accepted'].every(st => PRE_SHIP_RESTOCK_STATUSES.has(st)) && PRE_SHIP_RESTOCK_STATUSES.size === 5)
+  ok('34. restock guard: pre-ship whitelist is exactly the never-outbound set', ['created', 'pending_accept', 'direct_pay_window', 'direct_expired_unconfirmed', 'payment_query', 'accepted'].every(st => PRE_SHIP_RESTOCK_STATUSES.has(st)) && PRE_SHIP_RESTOCK_STATUSES.size === 6)   // B3:'created' 加入 = usdc_escrow 存入窗到期(链上未存=必然未出库)
   ok('35. restock guard: pre-ship origin restores and reports true', restorePreShipDirectPayStock(db, { fromStatus: 'direct_pay_window', productId: 'p', quantity: 2 }) === true && stockOf() === s0 + 2)
   db.prepare("UPDATE products SET stock = ? WHERE id='p'").run(s0)   // 复原,不影响后续用例
 }

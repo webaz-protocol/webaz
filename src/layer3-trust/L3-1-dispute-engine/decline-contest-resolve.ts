@@ -53,6 +53,12 @@ export function resolveDeclineContestDispute(
   reason: string,
   source: DcSource,
 ): DcResolveResult {
+  // usdc_escrow:零资金 fault 终结会把链上 autoRelease 送给败诉方(与 arbitrate 拒绝同理)—— B7 前 fail-closed。
+  //   经 dispute → order 查 rail;命中即 throw(DcResolveError,事务未开、零副作用;超时 fallback 有 catch 会重试静默)。
+  {
+    const railRow = db.prepare('SELECT o.payment_rail FROM orders o JOIN disputes d ON d.order_id = o.id WHERE d.id = ?').get(disputeId) as { payment_rail: string | null } | undefined
+    if (railRow?.payment_rail === 'usdc_escrow') throw new DcResolveError('USDC_ESCROW_ARBITRATION_NOT_WIRED', 'USDC 担保争议经链上仲裁裁决(接线中),暂不可协议内终结', 409)
+  }
   if (decision !== 'decline_no_fault_upheld' && decision !== 'decline_fault_confirmed') {
     throw new DcResolveError('BAD_DECISION', "decision 必须为 'decline_no_fault_upheld'(维持无责) 或 'decline_fault_confirmed'(驳回判违约)", 400)
   }

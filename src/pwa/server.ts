@@ -188,7 +188,7 @@ import { registerAnalyticsRoutes } from './routes/analytics.js'
 // M8 二手板块 (#1013 Phase 27) — 6 endpoints
 import { registerSecondhandRoutes } from './routes/secondhand.js'
 // B-3 群组团购 (#1013 Phase 28) — 5 endpoints + settleGroupBuy + sweep cron
-import { registerGroupBuysRoutes, sweepExpiredGroupBuys as sweepExpiredGroupBuysRaw } from './routes/group-buys.js'
+import { registerGroupBuysRoutes, sweepExpiredGroupBuys as sweepExpiredGroupBuysRaw } from './routes/group-buys.js'; import { sweepExpiredUsdcEscrowOrders } from '../usdc-escrow-timeouts.js'
 // 购物车 (#1013 Phase 29) — 5 endpoints
 import { registerCartRoutes } from './routes/cart.js'
 // 成长任务 (#1013 Phase 30) — 4 endpoints
@@ -850,7 +850,7 @@ const DEFAULT_PARAMS: Array<{ key: string; value: string; type: string; descript
   { key: 'max_quota_duration_hours', value: '72', type: 'number', description: 'PR#18 build_task 扩容授权:最长有效期(小时)', category: 'limit', min: 1, max: 2160 },
   { key: 'export_csv_limit', value: '5000', type: 'number', description: '订单导出 CSV 行数上限', category: 'limit', min: 100, max: 50000 },
   { key: 'return_window_extension_days', value: '0', type: 'number', description: '退货窗口全局延长天数', category: 'general', min: 0, max: 90 },
-  { key: 'payment_rail_waz_escrow_enabled', value: '0', type: 'number', description: 'WAZ 模拟托管轨渠道开关(0=下架:支付选项隐藏+建单 409 RAIL_DISABLED;1=admin 恢复)— 2026-07-23 WAZ 退役默认关', category: 'system', min: 0, max: 1 },   // Wave G-2: USDC / 链上配置 ↓
+  { key: 'payment_rail_waz_escrow_enabled', value: '0', type: 'number', description: 'WAZ 模拟托管轨渠道开关(0=下架:支付选项隐藏+建单 409 RAIL_DISABLED;1=admin 恢复)— 2026-07-23 WAZ 退役默认关', category: 'system', min: 0, max: 1 }, /* Wave G-2: USDC / 链上配置 ↓ */ { key: 'payment_rail_usdc_escrow_enabled', value: '0', type: 'number', description: 'USDC 链上合约担保轨开关(B 线;默认关,生产 flip 单独拍板)', category: 'system', min: 0, max: 1 }, { key: 'usdc_escrow.per_tx_cap', value: '50', type: 'number', description: 'USDC 担保单笔上限(USDC;合约 perTxCap 后端镜像,链上仍硬校验)', category: 'limit', min: 1, max: 500 }, { key: 'usdc_escrow.auto_release_days', value: '14', type: 'number', description: 'USDC 担保超时自动放款天数(voucher autoReleaseAt;争议引擎最坏 9d < 14d)', category: 'limit', min: 3, max: 90 }, { key: 'usdc_escrow.pay_window_hours', value: '24', type: 'number', description: 'USDC 担保建单后链上存入窗口(小时);超时取消', category: 'limit', min: 1, max: 168 },
   { key: 'waz_usdc_rate', value: '1.0', type: 'number', description: '1 USDC 兑换多少 WAZ', category: 'fee', min: 0.0001, max: 1000 },
   { key: 'usdc_min_deposit', value: '0.01', type: 'number', description: '最低充值 USDC（小于忽略）', category: 'limit', min: 0, max: 1000 },
   { key: 'usdc_min_withdraw_waz', value: '10', type: 'number', description: '最低提现 WAZ', category: 'limit', min: 0, max: 100000 },
@@ -4692,7 +4692,7 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_gb_status ON group_buys(status, en
 registerGroupBuysRoutes(app, { db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent, getProtocolParam })
 
 // Cron: 过期未成团 → 失败结算（function 已迁出到 routes/group-buys.ts）
-setInterval(() => sweepExpiredGroupBuysRaw(db, generateId, broadcastSystemEvent, getProtocolParam), 60_000)
+setInterval(() => sweepExpiredGroupBuysRaw(db, generateId, broadcastSystemEvent, getProtocolParam), 60_000); setInterval(() => { try { sweepExpiredUsdcEscrowOrders(db, { transition }) } catch (e) { console.error('[usdc sweep cron]', e) } }, 60_000)   // B3 R2:usdc 付款窗到期取消+回补(通用超时引擎不回补)
 
 // I-2: admin 全平台数据导出
 const ADMIN_EXPORT_LIMIT = 20000
@@ -6811,7 +6811,7 @@ function settleOrder(orderId: string) {
   // Bug-C fix：所有资金/PV/状态写入包在单一事务内，避免迁 PG / 多 worker 后出现部分提交
   // 内部 try/catch 用于非关键 hook（settlePinRewards / metrics 更新）失败不回滚资金主流程
   db.transaction(() => {
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<string, unknown>; if (order && order.payment_rail === 'direct_p2p') { settleDirectPayFeeAtCompletion(db, order as unknown as { id: string; seller_id: string; total_amount: number; source: string | null }, generateId('dpfr')); return }  // Rail1 直付:跳过 escrow 结算;平台费=链下应收(释放遗留模拟 stake + accrue,fail-closed 同原子边界)
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<string, unknown>; if (order && order.payment_rail === 'direct_p2p') { settleDirectPayFeeAtCompletion(db, order as unknown as { id: string; seller_id: string; total_amount: number; source: string | null }, generateId('dpfr')); return }; if (order && order.payment_rail === 'usdc_escrow') throw new Error('USDC_ESCROW_SETTLE_NOT_WIRED: on-chain release drives completion (B5); refusing to settle in the WAZ domain')  // Rail1 直付:跳过 escrow 结算,平台费=链下应收 | B3 硬闸:usdc_escrow 到达 settleOrder = 有路径试图假完成 → fail-closed THROW 整体回滚(auto-confirm sweep 有 per-order catch,订单留 delivered 可重试;B5 接真结算)
     const total = order.total_amount as number
     const isSecondhand = order.source === 'secondhand'
     const isInPerson = order.fulfillment_mode === 'in_person'

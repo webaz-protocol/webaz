@@ -29,6 +29,7 @@
  *   - detectFraud (routes/chat.ts) / broadcastSystemEvent (server.ts) — deps
  */
 import type { Application, Request, Response } from 'express'
+import { railOutsideWazCustody } from '../../direct-pay-rails.js'
 import type Database from 'better-sqlite3'
 import { recordRepEvent } from '../../layer4-economics/L4-3-reputation/reputation-engine.js'
 import { effectiveReturnDays } from '../../trade-terms.js'
@@ -248,7 +249,7 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
     // 直付(direct_p2p):同意退货后不走 escrow 钱包退款,进入场外退款握手(await_refund)。取件流照用
     //   (accepted_pickup_pending → picked_up → received 时再进 await_refund)。
     const railRow = await dbOne<{ payment_rail: string | null }>('SELECT payment_rail FROM orders WHERE id = ?', [rr.order_id])
-    const isDirectPay = railRow?.payment_rail === 'direct_p2p'
+    const isDirectPay = railOutsideWazCustody(railRow?.payment_rail)   // B3:usdc_escrow 同走场外/链上退款握手,不碰 WAZ escrow
 
     if (decision === 'accept') {
       if (Number(rr.pickup_requested) === 1) {
@@ -427,7 +428,7 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
     const note = req.body?.note ? String(req.body.note).slice(0, 300) : null
     // 直付:收到退货后进入场外退款握手(不走 escrow 钱包退款)
     const railRow = await dbOne<{ payment_rail: string | null }>('SELECT payment_rail FROM orders WHERE id = ?', [rr.order_id])
-    if (railRow?.payment_rail === 'direct_p2p') {
+    if (railOutsideWazCustody(railRow?.payment_rail)) {   // B3:usdc_escrow 同上
       const r = enterAwaitRefund(db, { returnId: String(rr.id), fromStatus: 'picked_up', sellerResponse: note, messageId: generateId('rmsg') })
       if (!r.ok) return void res.status(409).json({ error: r.error, error_code: r.error_code })
       try {

@@ -160,6 +160,8 @@ export async function approveAndExecuteOrderSubmit(db: Database.Database, deps: 
   if (String(draft.payment_rail) === 'direct_p2p') {
     body.payment_rail = 'direct_p2p'
     if (draft.direct_receive_account_id != null) body.direct_receive_account_id = String(draft.direct_receive_account_id)
+  } else if (String(draft.payment_rail) === 'usdc_escrow') {
+    body.payment_rail = 'usdc_escrow'   // B3:链上担保轨透传(建单门在 /api/orders 的 createUsdcEscrowResponse)
   }
   let lb: OrderLoopbackResult
   try {

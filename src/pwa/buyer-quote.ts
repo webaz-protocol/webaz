@@ -33,7 +33,8 @@ import { sellerBaseBondEntrySatisfied } from '../direct-pay-base-bond-entry.js'
 import { productStoreVerified } from '../product-verification.js'
 import { sellerExemptFromPerProduct } from '../store-verification.js'
 import { getAccount } from '../direct-receive-accounts.js'
-import { RAIL_DEFERRED, isDeferredRail, railChoiceEnabled } from '../direct-pay-rails.js'   // RFC-029 Design A
+import { RAIL_DEFERRED, isDeferredRail, railChoiceEnabled } from '../direct-pay-rails.js'
+import { usdcEscrowSellerAvailable, usdcEscrowPerTxCapUnits } from '../usdc-escrow-create.js'   // B3:USDC 担保轨 quote 资格镜像   // RFC-029 Design A
 import { getActiveFlashSale } from './routes/flash-sales.js'   // BLOCKER-1:报价必须用与建单同一套限时价覆盖
 
 export const QUOTE_TTL_MS = 10 * 60_000        // 与 price_sessions 同 TTL(现行规范 10 分钟)
@@ -209,7 +210,7 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
   //   关闭时行为逐字不变(省略 → escrow,'deferred' 被拒)。'deferred' 是"尚未选择"哨兵,绝不建单(exec/create 硬拒)。
   const railChoice = railChoiceEnabled()
   const rail = input.payment_rail === undefined ? (railChoice ? RAIL_DEFERRED : 'escrow') : String(input.payment_rail)
-  const railAllowed = rail === 'escrow' || rail === 'direct_p2p' || (railChoice && isDeferredRail(rail))
+  const railAllowed = rail === 'escrow' || rail === 'direct_p2p' || rail === 'usdc_escrow' || (railChoice && isDeferredRail(rail))
   if (!railAllowed) {
     return qerr(409, 'PAYMENT_RAIL_DISABLED', `rail "${String(rail)}" is not enabled`, { next_steps: ['use payment_rail=direct_p2p'] })
   }
@@ -268,6 +269,14 @@ export function computeBuyerQuote(db: Database.Database, deps: QuoteDeps, humanI
   const donationU = donationBps > 0 ? mulRate(totalU, donationBps / 10000) : 0
   const payableU = totalU + donationU
 
+  // ── 9a. usdc_escrow 资格(镜像 usdc-escrow-create 同一谓词;quote 不担保,创建时全部重跑) ──
+  if (rail === 'usdc_escrow') {
+    if (!usdcEscrowSellerAvailable(db, sellerId, deps.getProtocolParam)) return qerr(409, 'PAYMENT_RAIL_DISABLED', 'USDC contract escrow is not available for this seller (channel off, unconfigured, no payout address, or seller not cleared)', { next_steps: ['use payment_rail=direct_p2p', 'choose_another_offer'] })
+    if (Number(product.has_variants) === 1 || variantId) return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', 'usdc_escrow v1 supports simple products only (no variants)', { next_steps: ['choose_another_offer'] })
+    if (donationBps > 0 || anonymous) return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', 'usdc_escrow v1 does not support donation/anonymous_recipient', { next_steps: ['drop the unsupported option'] })
+    if (flashSale) return qerr(409, 'DIRECT_PAY_NOT_ELIGIBLE', 'usdc_escrow v1 does not support flash-sale-priced products', { next_steps: ['choose_another_offer'] })
+    if (totalU > usdcEscrowPerTxCapUnits(deps.getProtocolParam)) return qerr(409, 'PURCHASE_LIMIT_EXCEEDED', 'usdc_escrow per-transaction cap exceeded', { next_steps: ['choose_another_offer'] })
+  }
   // ── 9. direct_p2p 资格(镜像 direct-pay-create 的同一批评估函数;quote 不担保,创建时全部重跑) ──
   let receiveAccountId: string | null = null
   if (rail === 'direct_p2p') {
