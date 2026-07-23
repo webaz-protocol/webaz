@@ -212,6 +212,28 @@ try {
   const treeText = (n: N): string => (n.textContent && n.children.length === 0 ? n.textContent : '') + (n.children || []).map(treeText).join(' ')
   ok('B3-7 recommended card shows the 🌟 AI 推荐 badge (not "WebAZ 推荐")', !!findByText(recCard, '🌟 AI 推荐', 'DIV') && !treeText(rn3).includes('WebAZ 推荐'))
   ok('B3-8 recommended card shows the reason', !!findByText(recCard, '“容量适中并附挂钩”', 'DIV'))
+
+  // Public shopping distribution is discovery-only: cards must never surface or call hidden order tools.
+  const rnPublic = mk('div'); rnPublic.setAttribute('id', 'root')
+  const docPublic = { getElementById: (id: string) => (id === 'root' ? rnPublic : null), createElement: (t: string) => mk(t) }
+  const ctxPublic: Record<string, unknown> = { document: docPublic, window: { innerWidth: 1200, pageYOffset: 0, scrollTo() {} }, setTimeout, Promise, URL, console, String, Object, Array, Math, JSON, encodeURIComponent }
+  ctxPublic.globalThis = ctxPublic; ctxPublic.self = ctxPublic; vm.createContext(ctxPublic)
+  vm.runInContext(`${__WIDGET_COMPAT_JS}\n${PRODUCT_RESULTS_BODY_JS}\nthis.__render=renderBody`, ctxPublic)
+  const publicCalls: Array<[string, unknown]> = []; const opened: string[] = []
+  ;(ctxPublic.__render as (o: unknown, out: unknown) => void)({
+    callTool: (n: string, a: unknown) => { publicCalls.push([n, a]) },
+    openExternal: ({ href }: { href: string }) => { opened.push(href) },
+  }, { ...SEARCH, public_commerce: true, public_product_url_template: 'https://webaz.xyz/#product/{product_id}' })
+  ok('P-1 public card replaces every 准备下单 action with 在 WebAZ 查看',
+    !treeTextG(rnPublic).includes('准备下单') && !!findByText(cardFor(rnPublic, 'prd_a')!, '在 WebAZ 查看'))
+  fire(findByText(cardFor(rnPublic, 'prd_a')!, '在 WebAZ 查看')!)
+  ok('P-2 public card opens the exact allowlisted WebAZ product deep link',
+    opened[0] === 'https://webaz.xyz/#product/prd_a')
+  ok('P-3 public card never calls quote/draft/submit/order tools',
+    !publicCalls.some(([name]) => /quote|draft|submit|order|place/.test(name)))
+  fire(findByText(cardFor(rnPublic, 'prd_a')!, '详情')!)
+  ok('P-4 public card retains read-only on-demand detail via webaz_search',
+    publicCalls.some(([name]) => name === 'webaz_search'))
 } catch (e) { fail++; fails.push('✗ THREW: ' + ((e as Error).stack || (e as Error).message)) }
 try { rmSync(__tmpHome, { recursive: true, force: true }) } catch { /* temp HOME cleanup */ }
 

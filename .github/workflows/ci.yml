@@ -846,6 +846,7 @@ jobs:
       - run: npm run test:mcp-model-projection
       - run: npm run test:mcp-result-handle
       - run: npm run test:mcp-tool-surfaces
+      - run: npm run test:openai-shopping-discovery
       - run: npm run test:mcp-definition-budget
       - run: npm run test:mcp-quote-approval-ui
       - run: npm run test:phase3b-ui-hotfix

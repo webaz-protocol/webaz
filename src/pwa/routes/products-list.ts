@@ -33,6 +33,7 @@ import { issueResultHandle } from '../mcp-result-handle.js'  // result_handle �
 import { genuineSalePredicate } from '../../layer0-foundation/L0-2-state-machine/genuine-sale.js'  // RFC-018 PR4: 真实成交(排除全额退货)
 import { SCHEMA_PRODUCT_SEARCH, SCHEMA_PRODUCT_DETAIL, projectProductModel, projectProductDetail, sellersIndex } from '../../agent-model-projection.js'  // MCP Token PR-1/2: agent 模式 Model Projection + 按需详情
 import { getUsdRates } from '../../fx-rates.js'  // USDC→本地法币显示换算(display-only,绝非结算路径)
+import { publicCommerceSqlFilter } from '../../public-commerce-policy.js'
 
 export interface ProductsListDeps {
   db: Database.Database
@@ -162,6 +163,13 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
           AND NOT EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.verified = 1 AND (pel.revoked IS NULL OR pel.revoked = 0))
         )`
     const params: unknown[] = []
+    // Narrowing-only distribution selector. A direct API caller may request the
+    // smaller reviewed catalog, but can never use it to widen access.
+    if (req.query.public_commerce === '1') {
+      const policy = publicCommerceSqlFilter('p')
+      where += ` AND ${policy.clause}`
+      params.push(...policy.params)
+    }
     if (me?.id) {
       where += ` AND u.id NOT IN (SELECT blocked_id FROM user_blocklist WHERE blocker_id = ?)`
       params.push(me.id)
@@ -465,7 +473,13 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       for (const [k, v] of resultFetchRate) if (now >= v.resetAt) resultFetchRate.delete(k)
       if (resultFetchRate.size > 50_000) resultFetchRate.clear()
     }
-    const { result_handle, selected_ids, full_terms, card } = (req.body ?? {}) as { result_handle?: unknown; selected_ids?: unknown; full_terms?: unknown; card?: unknown }
+    const { result_handle, selected_ids, full_terms, card, public_commerce } = (req.body ?? {}) as {
+      result_handle?: unknown
+      selected_ids?: unknown
+      full_terms?: unknown
+      card?: unknown
+      public_commerce?: unknown
+    }
     if (typeof result_handle !== 'string' || !/^res_[0-9a-f]{32}$/.test(result_handle)) {
       return void res.status(400).json({ error: 'result_handle required', error_code: 'RESULT_HANDLE_INVALID', retryable: false, next_steps: [{ action: 'search_again', tool: 'webaz_search' }] })
     }
@@ -490,6 +504,7 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
       return void res.status(400).json({ error: 'selected_ids must come from the SAME search result the handle was issued for', error_code: 'SELECTED_IDS_NOT_IN_HANDLE', retryable: true, hint: 'ids outside the handle set are rejected — search again for other products' })
     }
     const ph = (selected_ids as string[]).map(() => '?').join(',')
+    const policy = public_commerce === true ? publicCommerceSqlFilter('p') : null
     // 与 /api/products 搜索完全同源的公共可见性谓词(Codex H-1):active + stock>0 + 卖家未暂停 + 外链治理
     const liveRows = await dbAll<Record<string, unknown>>(
       `SELECT p.*, u.name as seller_name, u.created_at as seller_created_at,
@@ -502,8 +517,9 @@ export function registerProductsListRoutes(app: Application, deps: ProductsListD
         AND NOT (
           EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.revoked = 1)
           AND NOT EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.verified = 1 AND (pel.revoked IS NULL OR pel.revoked = 0))
-        )`,
-      selected_ids as string[])
+        )
+        ${policy ? `AND ${policy.clause}` : ''}`,
+      [...(selected_ids as string[]), ...(policy?.params ?? [])])
     const liveIds = new Set(liveRows.map(r => String(r.id)))
     let fxD: Record<string, unknown> | null = null
     try { const snap = await getUsdRates(); fxD = { base: snap.base, rates: snap.rates, as_of: snap.as_of, stale: snap.stale, note: 'display-only conversion — never a settlement path' } } catch { fxD = null }

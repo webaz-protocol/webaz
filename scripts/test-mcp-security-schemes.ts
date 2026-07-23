@@ -81,22 +81,12 @@ async function main(): Promise<void> {
     webaz_address: ['address'],   // RFC-026 PR-5
     webaz_buyer_action_request: ['aftersales:request'],   // RFC-026 PR-6
   }
-  const SHOPPING_NAMES = ['webaz_buyer_orders', 'webaz_connection_status', 'webaz_discover', 'webaz_order_draft', 'webaz_quote_order', 'webaz_search', 'webaz_submit_order_request']
+  const SHOPPING_NAMES = ['webaz_search']
   const SHOPPING_ANNOTATIONS: Record<string, [boolean, boolean, boolean]> = {
     webaz_search: [true, false, true],
-    webaz_discover: [false, false, true],
-    webaz_quote_order: [false, false, true],
-    webaz_order_draft: [false, true, true],
-    webaz_submit_order_request: [false, false, true],
-    webaz_buyer_orders: [true, false, true],
-    webaz_connection_status: [true, false, false],
   }
   const SHOPPING_TEMPLATES: Record<string, RegExp> = {
     webaz_search: /^ui:\/\/widget\/webaz-products\.[0-9a-f]{10}\.html$/,
-    webaz_quote_order: /^ui:\/\/widget\/webaz-quote-approval\.[0-9a-f]{10}\.html$/,
-    webaz_order_draft: /^ui:\/\/widget\/webaz-quote-approval\.[0-9a-f]{10}\.html$/,
-    webaz_submit_order_request: /^ui:\/\/widget\/webaz-quote-approval\.[0-9a-f]{10}\.html$/,
-    webaz_buyer_orders: /^ui:\/\/widget\/webaz-order-timeline\.[0-9a-f]{10}\.html$/,
   }
   const API_KEY_ONLY = ['webaz_place_order', 'webaz_update_order', 'webaz_wallet', 'webaz_notifications', 'webaz_default_address']
   const { OAUTH_SCOPES } = await import('../src/pwa/routes/oauth-discovery.js')
@@ -108,18 +98,18 @@ async function main(): Promise<void> {
   // The REMOTE wire is the isolated surface: it excludes LOCAL_ONLY tools (webaz_pair), so excludes webaz_pair.
   ok('1. all 54 remote-visible tools carry a non-empty securitySchemes array on the WIRE (webaz_pair local-only hidden)', tools.length === 54 && tools.every(t => Array.isArray(t.securitySchemes) && t.securitySchemes.length > 0))
   ok('1b. webaz_pair (local-only pairing) is NOT advertised on the remote tools/list', !byName['webaz_pair'])
-  ok('1c. shopping_v1 raw WIRE is exactly seven reviewed tools, all with explicit security schemes',
+  ok('1c. shopping_v1 raw WIRE is exactly one reviewed noauth tool with an explicit security scheme',
     JSON.stringify(shoppingTools.map(t => t.name).sort()) === JSON.stringify(SHOPPING_NAMES)
     && shoppingTools.every(t => Array.isArray(t.securitySchemes) && t.securitySchemes.length > 0))
   ok('1d. shopping_v1 raw WIRE mirrors the canonical securitySchemes into _meta for legacy OpenAI clients',
     shoppingTools.every(t => JSON.stringify(t._meta?.securitySchemes) === JSON.stringify(t.securitySchemes)))
-  ok('1e. shopping_v1 raw WIRE carries the exact reviewed annotations for all seven tools',
+  ok('1e. shopping_v1 raw WIRE carries the exact reviewed annotation',
     shoppingTools.every(t => {
       const expected = SHOPPING_ANNOTATIONS[t.name]
       return !!expected && JSON.stringify([t.annotations?.readOnlyHint, t.annotations?.destructiveHint, t.annotations?.openWorldHint]) === JSON.stringify(expected)
     }))
   const shoppingTemplateTools = shoppingTools.filter(t => typeof t._meta?.['openai/outputTemplate'] === 'string')
-  ok('1f. shopping_v1 raw WIRE binds exactly five tools to the expected content-versioned buyer card families',
+  ok('1f. shopping_v1 raw WIRE binds search to the content-versioned product card',
     JSON.stringify(shoppingTemplateTools.map(t => t.name).sort()) === JSON.stringify(Object.keys(SHOPPING_TEMPLATES).sort())
     && shoppingTemplateTools.every(t => SHOPPING_TEMPLATES[t.name]?.test(String(t._meta?.['openai/outputTemplate']))))
   ok('1g. supplied empty, repeated, or unknown surface parameters fail closed instead of widening tools/list',

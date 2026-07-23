@@ -16,6 +16,7 @@
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { dbOne, dbAll } from '../../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
+import { publicCommerceSqlFilter } from '../../public-commerce-policy.js'
 
 export interface SearchDeps {
   db: Database.Database
@@ -63,7 +64,7 @@ export function registerSearchRoutes(app: Application, deps: SearchDeps): void {
     res.json(products)
   })
 
-  app.post('/api/search-by-link', (req, res) => {
+  app.post('/api/search-by-link', async (req, res) => {
     const text = (req.body?.text || '').toString()
     const ext  = (req.body?.external_link ?? null) as
       | { platform?: string; external_id?: string; external_title?: string; canonical_url?: string }
@@ -102,6 +103,34 @@ export function registerSearchRoutes(app: Application, deps: SearchDeps): void {
       }
     }
 
+    let products = result.products
+    if (req.body?.public_commerce === true) {
+      const candidateIds = [...new Set(
+        (result.products as Array<Record<string, unknown>>)
+          .map(product => String(product.id ?? ''))
+          .filter(Boolean),
+      )]
+      const policy = publicCommerceSqlFilter('p')
+      const eligible = candidateIds.length === 0 ? [] : await dbAll<{ id: string }>(`
+        SELECT p.id FROM products p JOIN users u ON u.id = p.seller_id
+        WHERE p.id IN (${candidateIds.map(() => '?').join(',')})
+          AND p.status = 'active' AND p.stock > 0
+          AND COALESCE(u.listing_paused, 0) = 0
+          AND NOT (
+            EXISTS (SELECT 1 FROM product_external_links pel WHERE pel.product_id = p.id AND pel.revoked = 1)
+            AND NOT EXISTS (
+              SELECT 1 FROM product_external_links pel
+              WHERE pel.product_id = p.id AND pel.verified = 1
+                AND (pel.revoked IS NULL OR pel.revoked = 0)
+            )
+          )
+          AND ${policy.clause}
+      `, [...candidateIds, ...policy.params])
+      const eligibleIds = new Set(eligible.map(row => row.id))
+      products = (result.products as Array<Record<string, unknown>>)
+        .filter(product => eligibleIds.has(String(product.id ?? '')))
+    }
+
     res.json({
       extracted: {
         url,
@@ -110,7 +139,7 @@ export function registerSearchRoutes(app: Application, deps: SearchDeps): void {
         external_id: meta?.external_id ?? null,
       },
       matched_by:   result.matched_by,
-      products:     result.products,
+      products,
       ...(unsupportedHint ? { unsupported_format: true, hint: unsupportedHint } : {}),
     })
   })
