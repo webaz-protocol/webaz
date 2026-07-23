@@ -19,7 +19,7 @@ process.env.WEBAZ_MODE = 'sandbox'; delete process.env.WEBAZ_API_KEY
 const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/schema.js')
 initDatabase()
 const mcp = await import('../src/layer1-agent/L1-1-mcp-server/server.js') as unknown as { buildMcpServer: (o?: Record<string, unknown>) => { connect: (t: unknown) => Promise<void> } }
-const { BUYER_SURFACE_TOOLS, SELLER_SURFACE_TOOLS, resolveSurface } = await import('../src/layer1-agent/L1-1-mcp-server/tool-surfaces.js')
+const { SHOPPING_V1_SURFACE_TOOLS, BUYER_SURFACE_TOOLS, SELLER_SURFACE_TOOLS, resolveSurface } = await import('../src/layer1-agent/L1-1-mcp-server/tool-surfaces.js')
 const { TOOL_ANNOTATIONS } = await import('../src/layer1-agent/L1-1-mcp-server/tool-annotations.js')
 const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
 const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js')
@@ -28,30 +28,47 @@ let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
 
 const allNames = new Set(Object.keys(TOOL_ANNOTATIONS))
+const SHOPPING_V1_EXPECTED = [
+  'webaz_buyer_orders', 'webaz_connection_status', 'webaz_discover', 'webaz_order_draft',
+  'webaz_quote_order', 'webaz_search', 'webaz_submit_order_request',
+]
+ok('T-0 shopping_v1 is the exact reviewed seven-tool buyer contract',
+  JSON.stringify([...SHOPPING_V1_SURFACE_TOOLS].sort()) === JSON.stringify(SHOPPING_V1_EXPECTED)
+  && [...SHOPPING_V1_SURFACE_TOOLS].every(n => allNames.has(n)))
 ok('T-1 every buyer-surface member is a REAL tool (typo → silent shrink forbidden)', [...BUYER_SURFACE_TOOLS].every(n => allNames.has(n)), [...BUYER_SURFACE_TOOLS].filter(n => !allNames.has(n)).join(','))
 ok('T-2 every seller-surface member is a REAL tool', [...SELLER_SURFACE_TOOLS].every(n => allNames.has(n)))
 ok('T-3 buyer surface count lock = 21 (core shopping chain complete)',
   BUYER_SURFACE_TOOLS.size === 21 && ['webaz_search', 'webaz_discover', 'webaz_quote_order', 'webaz_order_draft', 'webaz_submit_order_request', 'webaz_buyer_orders', 'webaz_approval_requests', 'webaz_buyer_action_request', 'webaz_order_chat', 'webaz_wallet_view', 'webaz_prepare_case'].every(n => BUYER_SURFACE_TOOLS.has(n)))
 ok('T-4 seller surface count lock = 23 + no arbitration/governance', SELLER_SURFACE_TOOLS.size === 23 && !SELLER_SURFACE_TOOLS.has('webaz_dispute') && !SELLER_SURFACE_TOOLS.has('webaz_contribute'))
-ok('T-5 resolveSurface precedence: explicit > api_key(full) > default buyer; invalid → fallback',
-  resolveSurface('seller', 'api_key') === 'seller' && resolveSurface(undefined, 'api_key') === 'full'
-  && resolveSurface(undefined, 'grant') === 'buyer' && resolveSurface(undefined, 'none') === 'buyer' && resolveSurface('hax', 'none') === 'buyer')
+ok('T-5 resolveSurface precedence: explicit > api_key(full) > default buyer; supplied invalid values fail closed',
+  resolveSurface('shopping_v1', 'api_key') === 'shopping_v1' && resolveSurface('seller', 'api_key') === 'seller' && resolveSurface(undefined, 'api_key') === 'full'
+  && resolveSurface(undefined, 'grant') === 'buyer' && resolveSurface(undefined, 'none') === 'buyer'
+  && resolveSurface('hax', 'none') === null && resolveSurface('', 'none') === null && resolveSurface(['shopping_v1'], 'none') === null)
 
-const listVia = async (opts: Record<string, unknown>): Promise<Array<{ name: string; description?: string; inputSchema?: unknown; outputSchema?: unknown }>> => {
+type ListedTool = { name: string; description?: string; inputSchema?: unknown; outputSchema?: unknown; annotations?: Record<string, unknown>; _meta?: Record<string, unknown> }
+const listVia = async (opts: Record<string, unknown>): Promise<ListedTool[]> => {
   const [ct, st] = InMemoryTransport.createLinkedPair()
   await mcp.buildMcpServer(opts).connect(st)
   const c = new Client({ name: 'surf-test', version: '0' }, { capabilities: {} })
   await c.connect(ct)
   const { tools } = await c.listTools()
-  return tools as Array<{ name: string }>
+  return tools as ListedTool[]
 }
 
 const stdio = await listVia({})
 const full = await listVia({ isolated: true, surface: 'full' })
+const shopping = await listVia({ isolated: true, surface: 'shopping_v1' })
 const buyer = await listVia({ isolated: true, surface: 'buyer' })
 const seller = await listVia({ isolated: true, surface: 'seller' })
 ok('T-6 stdio (no surface) = full local set (55)', stdio.length === 55, String(stdio.length))
 ok('T-7 remote full = 54 (webaz_pair hidden)', full.length === 54, String(full.length))
+ok('T-7a remote shopping_v1 = exact reviewed set in deterministic registry order',
+  shopping.length === 7 && JSON.stringify(shopping.map(t => t.name).sort()) === JSON.stringify(SHOPPING_V1_EXPECTED), shopping.map(t => t.name).join(','))
+ok('T-7b every reviewed tool carries complete annotations',
+  shopping.every(t => ['readOnlyHint', 'destructiveHint', 'openWorldHint'].every(k => typeof t.annotations?.[k] === 'boolean')))
+ok('T-7c exactly five reviewed tools render the existing buyer cards',
+  JSON.stringify(shopping.filter(t => typeof t._meta?.['openai/outputTemplate'] === 'string').map(t => t.name).sort())
+    === JSON.stringify(['webaz_buyer_orders', 'webaz_order_draft', 'webaz_quote_order', 'webaz_search', 'webaz_submit_order_request']))
 ok('T-8 remote buyer = exact buyer set', buyer.length === 21 && buyer.every(t => BUYER_SURFACE_TOOLS.has(t.name)))
 ok('T-9 remote seller = exact seller set', seller.length === 23 && seller.every(t => SELLER_SURFACE_TOOLS.has(t.name)))
 
