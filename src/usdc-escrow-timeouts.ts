@@ -22,7 +22,7 @@ export function sweepExpiredUsdcEscrowOrders(db: Database.Database, deps: UsdcEs
   let rows: Array<{ id: string; product_id: string; quantity: number }> = []
   try {
     rows = db.prepare(`SELECT id, product_id, quantity FROM orders
-      WHERE payment_rail = 'usdc_escrow' AND status = 'created' AND pay_deadline < datetime('now')`).all() as typeof rows
+      WHERE payment_rail = 'usdc_escrow' AND status = 'created' AND datetime(pay_deadline) < datetime('now')   -- datetime() 归一化:create 写 ISO('T'),裸文本比较会失明到次日 UTC(B3 复审 Break-A)`).all() as typeof rows
   } catch { return out }
   for (const o of rows) {
     try {

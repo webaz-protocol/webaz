@@ -205,6 +205,9 @@ export function checkTimeouts(db: Database.Database, opts?: {
     if (!transitionKey) continue
 
     const [, autoNextState] = transitionKey
+    // usdc_escrow 的 created(链上存入窗)超时由专属清扫收口(usdc-escrow-timeouts.ts:取消+回补原子)——
+    //   通用分支只 transition 不回补,抢先执行 = 永久库存泄漏(B3 复审 Break-B)。让位,绝不双头处理。
+    if (order.payment_rail === 'usdc_escrow' && order.status === 'created') continue
     const systemUser = getSystemUser(db)
 
     // ── delivered→confirmed 超时 = 买家逾期未确认 → 自动确认收货(非判责)──────────────────────

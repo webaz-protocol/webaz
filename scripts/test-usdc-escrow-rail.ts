@@ -140,7 +140,12 @@ db.prepare("UPDATE products SET stock = 5 WHERE id='pU'").run()
 const sweepRes0 = create()
 ok('sweep fixture order created', sweepRes0.body.success === true && (db.prepare("SELECT stock FROM products WHERE id='pU'").get() as { stock: number }).stock === 4)
 const newOrderId = String(sweepRes0.body.order_id)
-db.prepare("UPDATE orders SET pay_deadline = datetime('now','-1 hour') WHERE id = ?").run(newOrderId)
+// 用生产同款 ISO('T')格式回填过期时间 —— 裸文本比较会失明(B3 复审 Break-A 的回归钉)
+db.prepare('UPDATE orders SET pay_deadline = ? WHERE id = ?').run(new Date(Date.now() - 3600_000).toISOString(), newOrderId)
+// 通用超时引擎必须对本轨 created 单让位(它只 transition 不回补;Break-B 回归钉)
+const { checkTimeouts } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
+try { checkTimeouts(db) } catch { /* fixture 缺表的无关分支容忍 */ }
+ok('generic checkTimeouts YIELDS on usdc created orders (no restock-less cancel)', (db.prepare('SELECT status FROM orders WHERE id = ?').get(newOrderId) as { status: string }).status === 'created')
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 const swept = sweepExpiredUsdcEscrowOrders(db, { transition: transition as any })
 ok('sweep: expired created order cancelled + stock RESTORED (atomic, sole restock entry)',
