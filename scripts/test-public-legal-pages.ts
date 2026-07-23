@@ -24,6 +24,7 @@ const support = read('src/pwa/public/support/index.html')
 const privacyMd = read('docs/PRIVACY-POLICY.md')
 const termsMd = read('docs/TERMS-OF-SERVICE.md')
 const deletionRoute = read('src/pwa/routes/account-deletion.ts')
+const serverSource = read('src/pwa/server.ts')
 const allPublic = [privacy, terms, support]
 const privacyMdFlat = privacyMd.replace(/\s+/g, ' ')
 const termsMdFlat = termsMd.replace(/\s+/g, ' ')
@@ -45,7 +46,7 @@ ok('legal one-tool claim is bound to the runtime surface and annotation',
 ok('privacy discloses automatic Anthropic feedback and configured comment moderation',
   /Feedback submissions are sent to Anthropic[\s\S]*comments may be sent to Anthropic/i.test(privacy))
 ok('comment moderation sanitizes content before the Anthropic call',
-  /piiSanitize\(text\)\.slice\(0, 500\)/.test(read('src/pwa/server.ts')))
+  /piiSanitize\(text\)\.slice\(0, 500\)/.test(serverSource))
 ok('privacy discloses admin-invoked AI account-risk review and its advisory role',
   /administrator may invoke an Anthropic-assisted account-risk summary/i.test(privacy)
   && /supports human review and does not itself make the final account decision/i.test(privacy))
@@ -77,6 +78,8 @@ ok('account-deletion API notice matches the bounded anonymization policy',
   /14 天后将停用账户凭证并匿名化选定的档案和地址字段/.test(deletionRoute)
   && /关联订单、争议、KYC、审计及安全记录不会全部删除/.test(deletionRoute)
   && !/PII 永久擦除/.test(deletionRoute))
+ok('deleted accounts cannot authenticate through the shared API-key resolver',
+  /SELECT \* FROM users WHERE api_key = \? AND deleted_at IS NULL/.test(serverSource))
 
 ok('terms contains all 15 sections',
   Array.from({ length: 15 }, (_, index) => terms.includes(`§${index + 1}`)).every(Boolean))
