@@ -10,7 +10,9 @@
  *     自动做反向资金转移(退单/回补库存/撤销 paid),错一次的代价远高于停下来等人工——所以
  *     重组一律走 usdc_escrow_event_orphans 标记 + alertAdmins,orders 表状态一律不碰,留给
  *     人工核对链上真实状态后手动处置(与 usdc-escrow-timeouts.ts 的"清扫只做该轨确定该做的
- *     一件事"同一克制哲学)。
+ *     一件事"同一克制哲学)。重组后原镜像行被标孤儿,而重打包出的替换 log(同 tx+logIndex、
+ *     新 block_hash)会经正常 mirrorEvent 路径落成【新一行】—— chain_events 三键
+ *     UNIQUE(tx_hash,log_index,block_hash) 不再挡它(B4 审计:二键会永久拒收替换行)。
  *   - vanish 疑似必须经 getBlock 佐证,防 RPC 抖动误孤儿:存量镜像行在 refetch 里"消失"有两种
  *     成因——真重组(该高度换了区块),或 flaky/滞后 RPC 节点返回了不完整的 getLogs(常见得多)。
  *     孤儿标记 append-only 且不可逆(下游结算读排除孤儿),据一次可能残缺的 getLogs 就永久孤儿一条
@@ -176,6 +178,9 @@ async function detectReorgs(deps: WatcherDeps, client: WatcherChainClient, fromB
 
     if (match) {
       // block_hash 变了:同一次自洽 getLogs 内 (tx,logIndex) 命中却换了区块 —— 重组实证,直接孤儿。
+      // 老行在此标孤儿;match 这条替换 log 随后由本 tick 的 processLog 循环(detectReorgs 之后)经
+      // mirrorEvent 落成【新一行】—— 同 tx+logIndex、新 block_hash → chain_events 三键 UNIQUE 不阻拦
+      // (B4:二键会永久拒收替换行,镜像只剩孤儿老行)。读侧对账排除孤儿、取 canonical 新行。
       orphan(row, `reorg:block_hash_mismatch:${match.blockHash.toLowerCase()}`, ` 所在区块已变为 ${match.blockHash}`)
       continue
     }

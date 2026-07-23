@@ -5,20 +5,23 @@
  * (行为测试不桩被测判定者)。fixture 表全部照 test-usdc-escrow-rail.ts 的建法抄。
  * Proves:
  *   1. 确认深度足够的 Deposited、参数与 intents 全符 → 订单 created→paid、intents→funded、
- *      镜像行存在、游标推进。
+ *      镜像行存在、游标推进;链上 seller 用 EIP-55 混合大小写而 intent 存小写(钉双向小写比较)、
+ *      created→paid 写入 order_state_history 审计行(钉:回退成裸 UPDATE orders 即 CI 红)。
  *   2. safeHead 之上的新事件(< CONFIRMATIONS 确认)本 tick 不可见 → 订单仍 created。
  *   3. 同一事件重扫(游标回拨模拟覆盖同窗口)→ 幂等:不重复告警/转移,orders/intents 不变,
  *      镜像仍 1 行。
  *   4. amount 不符 → 镜像入、订单仍 created、intents 仍 issued、admin 收到告警。
  *   5. 未知 order_key(无 intents)→ 镜像入 + 告警、无转移。
  *   6. 订单已 cancelled 后 Deposited 确认 → 镜像入 + 告警、订单仍 cancelled。
- *   7. 重组(block_hash 变了,同一自洽 getLogs 内)→ orphans 加行、原行未改(append-only)、告警、订单状态未反转。
+ *   7. 重组(block_hash 变了,同一自洽 getLogs 内)→ orphans 加行、原行未改(append-only)、告警、订单状态未反转;
+ *      替换 log(同 tx+logIndex、新 block_hash)经三键 UNIQUE 落成新 canonical 行(老+新并存、新行未被孤儿标记)。
  *   8. 事件消失 + getBlock 佐证 canonical hash 已变(真重组)→ orphan reason='reorg:log_vanished:<hash>'、订单未反转。
  *   8b. 事件消失但 getBlock 返回同一 hash(RPC 抖动,区块仍 canonical)→ 无 orphan、无新告警、订单不动。
  *   8c. 事件消失且 getBlock 抛错(节点滞后)→ 无定论:无 orphan、无告警、tick 不 throw(下 tick 重查)。
  *   9. Released/Disputed/Resolved → 只镜像,订单状态不动;Disputed 有告警,Released/Resolved 无。
  *   10. RPC 异常(fake client throw)→ tick 不 crash、游标不推进。
  *   11. 冷启动:watcher_state 空 → 初始化游标为 safeHead、不处理任何历史事件(零 getLogs 调用)。
+ *   11b. 冷启动 + USDC_ESCROW_START_BLOCK(< safeHead)→ 游标初始化为该 env 块(非 safeHead)、仍不扫历史。
  *   12. 追赶:游标落后 > MAX_RANGE → 单 tick 多段推进(≤ MAX_RANGES_PER_TICK),最终 cursor=safeHead。
  * Usage: npm run test:usdc-escrow-watcher
  */
@@ -60,6 +63,10 @@ const tr = transition as any
 
 const CONTRACT = ('0x' + '9'.repeat(40))
 const SELLER_ADDR = ('0x' + '3'.repeat(40))
+// EIP-55 mixed-case on-chain form (as viem returns in logs); the intent stores its LOWERCASE.
+// Pins the double-lowercase seller compare in applyDeposited: an all-digit fixture address is
+// case-invariant, so a dropped .toLowerCase() would pass CI yet break every real viem deposit.
+const SELLER_ADDR_CHECKSUM = ('0x' + 'AbCdEf' + '3'.repeat(34))
 const BUYER_ADDR = ('0x' + '1'.repeat(40))
 
 const mkOrder = (id: string, status = 'created'): void => {
@@ -128,9 +135,10 @@ const makeDeps = (client: WatcherChainClient, extra: Partial<WatcherDeps> = {}):
 // ══════════ Group A [blocks 1000-1013]: cases 1 (visible+processed), 2 (below-confirmation invisible), 3 (idempotent rescan) ══════════
 {
   const OID = 'ordA'; const OK = '0x' + 'a'.repeat(64); const TX = '0xtxA'
-  mkOrder(OID, 'created'); mkIntent(OID, OK)
+  // intent stores lowercase seller; on-chain log carries the EIP-55 mixed-case form → pins double-lowercase compare
+  mkOrder(OID, 'created'); mkIntent(OID, OK, { sellerAddr: SELLER_ADDR_CHECKSUM })
   setCursor(1000n)
-  const client = new FakeClient(1010n, [depositedLog({ orderKey: OK, tx: TX, blockNumber: 1009n, blockHash: '0xblockA' })])
+  const client = new FakeClient(1010n, [depositedLog({ orderKey: OK, tx: TX, blockNumber: 1009n, blockHash: '0xblockA', sellerAddr: SELLER_ADDR_CHECKSUM })])
 
   // case 2: confirmations=3n → safeHead=1007n < block 1009 → not yet visible
   const r1 = await runWatcherTick(makeDeps(client))
@@ -144,6 +152,9 @@ const makeDeps = (client: WatcherChainClient, extra: Partial<WatcherDeps> = {}):
   ok('case1: intent → funded', intentStatus(OID) === 'funded')
   ok('case1: chain_events mirror row exists', mirrorCount(TX) === 1)
   ok('case1: cursor advanced to new safeHead(1013)', r2.scanned === true && cursorNow() === 1013n)
+  // audit trail: created→paid went through deps.transition (not a raw UPDATE orders) → order_state_history row exists
+  ok('case1: transition wrote the created→paid audit trail (blocks a regression to raw UPDATE)',
+    (db.prepare("SELECT COUNT(*) n FROM order_state_history WHERE order_id = ? AND from_status = 'created' AND to_status = 'paid'").get(OID) as { n: number }).n === 1)
 
   // case 3: rewind cursor to force the same window to be rescanned → idempotent
   const notifBefore = notifCountAdmin()
@@ -210,12 +221,19 @@ const makeDeps = (client: WatcherChainClient, extra: Partial<WatcherDeps> = {}):
   client.latest = 3009n   // safeHead advances by 1 so cursor(3005) < safeHead(3006) triggers another scan
   const notifBefore = notifCountAdmin()
   await runWatcherTick(makeDeps(client))
-  const rowAfter = chainEventRow(TX)
-  ok('case7: original mirrored row untouched (append-only)', !!rowAfter && rowAfter.block_hash === rowBefore.block_hash && rowAfter.block_hash === '0xblockc7-original')
+  // original row queried by id (there are now 2 rows for this tx+logIndex; a bare tx lookup is non-deterministic)
+  const origRow = db.prepare('SELECT block_hash FROM usdc_escrow_chain_events WHERE id = ?').get(rowBefore.id) as { block_hash: string } | undefined
+  ok('case7: original mirrored row untouched (append-only)', !!origRow && origRow.block_hash === rowBefore.block_hash && origRow.block_hash === '0xblockc7-original')
   const orphan = db.prepare('SELECT reason FROM usdc_escrow_event_orphans WHERE event_id = ?').get(rowBefore.id) as { reason: string } | undefined
   ok('case7: orphan marker recorded with block_hash_mismatch reason', !!orphan && orphan.reason.startsWith('reorg:block_hash_mismatch:'), JSON.stringify(orphan))
   ok('case7: admin alerted about the reorg', notifCountAdmin() === notifBefore + 1)
   ok('case7: order status NOT reverted (still paid)', orderStatus(OID) === 'paid')
+  // Fix 1 (B4 triple-key UNIQUE): the reorg replacement log (same tx+logIndex, new block_hash) lands as a NEW canonical row.
+  ok('case7: old + new canonical rows coexist (triple-key UNIQUE admits the replacement)', mirrorCount(TX) === 2)
+  const newCanonical = db.prepare(
+    "SELECT ce.id FROM usdc_escrow_chain_events ce LEFT JOIN usdc_escrow_event_orphans o ON o.event_id = ce.id WHERE ce.tx_hash = ? AND ce.block_hash = ? AND o.event_id IS NULL",
+  ).get(TX.toLowerCase(), '0xblockc7-replaced') as { id: string } | undefined
+  ok('case7: new canonical (replacement) row present and NOT orphaned (settlement reconciliation reads it)', !!newCanonical && newCanonical.id !== rowBefore.id)
 }
 {
   // case 8 — block 3105 (own window, no overlap with case 7's [2999,3006])
@@ -329,6 +347,18 @@ const makeDeps = (client: WatcherChainClient, extra: Partial<WatcherDeps> = {}):
   ok('case11: cursor initialized to safeHead (6000-3=5997)', cursorNow() === 5997n)
   ok('case11: zero getLogs calls on cold start', client.getLogsCalls === 0)
   ok('case11: pre-existing event NOT mirrored (deploy-predates events out of scope)', mirrorCount('0xtxF11') === 0)
+}
+
+// ══════════ Group F' [block 6100-ish]: case 11b — cold start WITH backfill env: watcher_state empty + USDC_ESCROW_START_BLOCK below safeHead → cursor initialized to the env block (not safeHead), still no history scanned ══════════
+{
+  db.prepare('DELETE FROM usdc_escrow_watcher_state').run()
+  process.env.USDC_ESCROW_START_BLOCK = '6100'   // < safeHead(6200-3=6197) → honored as the backfill floor
+  const client = new FakeClient(6200n)   // confirmations=3n → safeHead=6197
+  const r = await runWatcherTick(makeDeps(client))
+  ok('case11b: cold start with backfill env → scanned=false (cursor seeded, no history processed this tick)', r.scanned === false)
+  ok('case11b: cursor initialized to USDC_ESCROW_START_BLOCK, not safeHead', cursorNow() === BigInt(process.env.USDC_ESCROW_START_BLOCK))
+  ok('case11b: zero getLogs calls on the seeding tick', client.getLogsCalls === 0)
+  delete process.env.USDC_ESCROW_START_BLOCK   // restore: later/earlier cases must not see the backfill floor
 }
 
 // ══════════ Group G [blocks 100,000+, far above every other group]: case 12 — catch-up: cursor far behind → multi-range advance within one tick, bounded by MAX_RANGES_PER_TICK ══════════
