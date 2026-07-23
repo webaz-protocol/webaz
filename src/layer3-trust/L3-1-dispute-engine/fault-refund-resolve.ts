@@ -12,9 +12,12 @@
  *   'refund_confirmed'        卖家举证退款成立 → 卖家胜诉(买家申索不成立)
  *   'refund_failed_confirmed' 卖家未退款成立   → 买家胜诉(卖家信誉追加处罚 + 公开违约留痕)
  * timeout_auto 强制 'refund_failed_confirmed'(被诉方沉默 → 判发起方胜,同通用争议原则)。
+ *
+ * 信誉记录【不在本函数】(Codex R1:L3 不 import L4,分层与通用争议一致):result 带 winnerId/loserId,
+ *   由调用方发射 —— 仲裁路由在同一 db.transaction 内 resolver+recordDisputeReputation(原子,fail-closed);
+ *   超时路径把 winner/loser 写进 checkDisputeTimeouts details,复用 cron/runEnforcement 既有单次记录机制。
  */
 import type Database from 'better-sqlite3'
-import { recordDisputeReputation } from '../../layer4-economics/L4-3-reputation/reputation-engine.js'
 import { arbitratorHasConflict } from '../../pwa/arbitrator-lifecycle.js'
 
 export type FrcDecision = 'refund_confirmed' | 'refund_failed_confirmed'
@@ -25,7 +28,7 @@ export class FrcResolveError extends Error {
   constructor(code: string, message: string, http = 400) { super(message); this.code = code; this.http = http }
 }
 
-export interface FrcResolveResult { orderId: string; decision: FrcDecision; source: FrcSource; buyerId: string; sellerId: string }
+export interface FrcResolveResult { orderId: string; decision: FrcDecision; source: FrcSource; buyerId: string; sellerId: string; winnerId: string; loserId: string }
 
 interface DisputeRow { id: string; order_id: string; initiator_id: string | null; defendant_id: string | null; status: string; dispute_type: string | null; assigned_arbitrators: string | null; audit_log: string | null }
 
@@ -82,13 +85,12 @@ export function resolveFaultRefundClaim(
       .run(effectiveDecision, reason, appendAudit(dispute.audit_log, audit), disputeId)
     if (cas.changes === 0) throw new FrcResolveError('ALREADY_RULED', '本案已被裁决(并发抢占)', 409)
 
-    // 信誉(唯一效果;零资金零状态):败诉方 dispute_lost(-25)/ 胜诉方 dispute_won(+8),与通用争议同刻度
+    // 胜负判定(信誉由调用方发射,见文件头):败诉方 dispute_lost(-25)/ 胜诉方 dispute_won(+8),与通用争议同刻度
     const buyerWins = effectiveDecision === 'refund_failed_confirmed'
     const winnerId = buyerWins ? order.buyer_id : order.seller_id
     const loserId = buyerWins ? order.seller_id : order.buyer_id
-    try { recordDisputeReputation(db, order.id, winnerId, loserId) } catch (e) { console.warn('[frc-resolve rep]', (e as Error).message) }
 
-    return { orderId: order.id, decision: effectiveDecision, source, buyerId: order.buyer_id, sellerId: order.seller_id }
+    return { orderId: order.id, decision: effectiveDecision, source, buyerId: order.buyer_id, sellerId: order.seller_id, winnerId, loserId }
   })
 
   return run()

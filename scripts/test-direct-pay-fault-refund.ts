@@ -16,7 +16,9 @@ const { initDatabase } = await import('../src/layer0-foundation/L0-1-database/sc
 const { setSeamDb } = await import('../src/layer0-foundation/L0-1-database/db.js')
 const { initNotificationSchema } = await import('../src/layer2-business/L2-6-notifications/notification-engine.js')
 const { initReputationSchema } = await import('../src/layer4-economics/L4-3-reputation/reputation-engine.js')
-const { initDisputeSchema, checkDisputeTimeouts } = await import('../src/layer3-trust/L3-1-dispute-engine/dispute-engine.js')
+const { initDisputeSchema, checkDisputeTimeouts, arbitrateDispute, getDisputeDetails } = await import('../src/layer3-trust/L3-1-dispute-engine/dispute-engine.js')
+const { recordDisputeReputation } = await import('../src/layer4-economics/L4-3-reputation/reputation-engine.js')
+const { registerDisputesWriteRoutes } = await import('../src/pwa/routes/disputes-write.js')
 const { initDirectPayFaultRefundSchema, getFaultRefundState, escalateFaultRefund } = await import('../src/direct-pay-fault-refund.js')
 const { resolveFaultRefundClaim } = await import('../src/layer3-trust/L3-1-dispute-engine/fault-refund-resolve.js')
 const { registerDirectFaultRefundRoutes } = await import('../src/pwa/routes/direct-fault-refund.js')
@@ -96,6 +98,11 @@ try {
     ok('1d. 卖家不能替买家发起(403)', r4.status === 403, JSON.stringify(r4.json))
     const r5 = await call('GET', `/api/orders/${o}/fault-refund`, 'b1')
     ok('1e. 状态读 party-gated + eligible', r5.status === 200 && r5.json.eligible === true && r5.json.can_request === true)
+    // 存在性不泄露(Codex R1 BLOCKER 回归锁):非当事方查真实订单 vs 查不存在订单,响应必须完全一致
+    db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('outsider','路人','buyer','ko')").run()
+    const probe1 = await call('GET', `/api/orders/${o}/fault-refund`, 'outsider')
+    const probe2 = await call('GET', `/api/orders/ord_does_not_exist/fault-refund`, 'outsider')
+    ok('1f. 非当事方与不存在订单同响应(无枚举 oracle)', probe1.status === probe2.status && probe1.json.error_code === probe2.json.error_code && probe1.json.error_code === 'NOT_A_PARTY', JSON.stringify({ probe1, probe2 }))
   }
 
   // ═══ ② 握手全链:request → mark → confirm(Passkey)═══
@@ -146,17 +153,25 @@ try {
     ok('4d. 争议行:类型/发起/被诉正确', d?.dispute_type === 'fault_refund_claim' && d?.initiator_id === 'b1' && d?.defendant_id === 's1' && d?.status === 'open')
     const es2 = await call('POST', `/api/orders/${o}/fault-refund/escalate`, 'b1', { notes: '第二次升级应被唯一约束拒绝掉' })
     ok('4e. 申索每单唯一(CLAIM_ALREADY_EXISTS)', es2.status === 409 && es2.json.error_code === 'CLAIM_ALREADY_EXISTS')
-    // 裁决:仲裁员判 refund_failed_confirmed → 信誉 + 订单不动
+    // 引擎 fail-closed(Codex R1 HIGH):任何调用方把 frc 案送进通用 arbitrateDispute 一律硬拒,不达结算路径
+    const gen = arbitrateDispute(db, String(d.id), 'sys_protocol', 'refund_buyer', '误入通用裁决')
+    ok('4f. arbitrateDispute 对 frc 案硬拒(唯一裁决器)', gen.success === false && String(gen.error).includes('唯一裁决器'), JSON.stringify(gen))
+    ok('4f2. 硬拒后争议仍 open、订单仍 completed', (db.prepare('SELECT status FROM disputes WHERE id=?').get(String(d.id)) as { status: string }).status === 'open' && orderStatus(o) === 'completed')
+    // 裁决:镜像路由的原子块(resolver + 信誉同事务)→ 判 refund_failed_confirmed
     const repBefore = (db.prepare("SELECT COUNT(*) n FROM reputation_events WHERE order_id = ?").get(o) as { n: number }).n
     db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('arb1','仲裁员','buyer','ka')").run()
-    const r = resolveFaultRefundClaim(db, String(d.id), 'arb1', 'refund_failed_confirmed', '卖家无退款凭证', 'arbitrator')
-    ok('4f. 裁决成功(买家申索成立)', r.decision === 'refund_failed_confirmed' && r.orderId === o)
+    const r = db.transaction(() => {
+      const rr = resolveFaultRefundClaim(db, String(d.id), 'arb1', 'refund_failed_confirmed', '卖家无退款凭证', 'arbitrator')
+      recordDisputeReputation(db, rr.orderId, rr.winnerId, rr.loserId)
+      return rr
+    })()
+    ok('4g. 裁决成功 + result 带胜负方', r.decision === 'refund_failed_confirmed' && r.winnerId === 'b1' && r.loserId === 's1')
     const repRows = db.prepare("SELECT user_id, event_type, points FROM reputation_events WHERE order_id = ? ORDER BY rowid").all(o) as Array<{ user_id: string; event_type: string; points: number }>
-    ok('4g. 信誉:卖家 dispute_lost(-25)+ 买家 dispute_won(+8)', repRows.length - repBefore === 2 && repRows.some(x => x.user_id === 's1' && x.event_type === 'dispute_lost') && repRows.some(x => x.user_id === 'b1' && x.event_type === 'dispute_won'), JSON.stringify(repRows))
-    ok('4h. ★裁决后订单仍 completed(终态不动)', orderStatus(o) === 'completed')
+    ok('4h. 信誉恰 2 条:卖家 dispute_lost + 买家 dispute_won', repRows.length - repBefore === 2 && repRows.some(x => x.user_id === 's1' && x.event_type === 'dispute_lost') && repRows.some(x => x.user_id === 'b1' && x.event_type === 'dispute_won'), JSON.stringify(repRows))
+    ok('4i. ★裁决后订单仍 completed(终态不动)', orderStatus(o) === 'completed')
     let dbl = ''
     try { resolveFaultRefundClaim(db, String(d.id), 'arb1', 'refund_confirmed', '重复', 'arbitrator') } catch (e) { dbl = (e as { code?: string }).code || '' }
-    ok('4i. 重复裁决拒(ALREADY_RULED)', dbl === 'ALREADY_RULED')
+    ok('4j. 重复裁决拒(ALREADY_RULED)', dbl === 'ALREADY_RULED')
   }
 
   // ═══ ⑤ 超时自动裁定(checkDisputeTimeouts 专用分支,信誉单点不双记)═══
@@ -170,15 +185,62 @@ try {
     const before = (db.prepare("SELECT COUNT(*) n FROM reputation_events WHERE order_id = ?").get(o) as { n: number }).n
     const tr = checkDisputeTimeouts(db)
     const mine = tr.details.find(x => x.disputeId === did)
-    ok('5a. 超时分支命中(details 无 winner/loser → cron 不双记)', !!mine && mine.winnerId === undefined && mine.loserId === undefined, JSON.stringify(mine))
+    ok('5a. 超时分支命中,details 带 winner/loser(走通用争议同一 caller 记录机制)', !!mine && mine.winnerId === 'b1' && mine.loserId === 's1', JSON.stringify(mine))
     const drow = db.prepare('SELECT status, ruling_type FROM disputes WHERE id = ?').get(did) as { status: string; ruling_type: string }
     ok('5b. 自动裁定买家申索成立', drow.status === 'resolved' && drow.ruling_type === 'refund_failed_confirmed')
+    const mid = (db.prepare("SELECT COUNT(*) n FROM reputation_events WHERE order_id = ?").get(o) as { n: number }).n
+    ok('5c1. 引擎自身不记信誉(L3 不碰 L4;由 caller 单点记录)', mid - before === 0)
+    // 模拟 cron/runEnforcement 的既有 caller 记录行为(与通用争议同一段代码路径)
+    for (const det of tr.details) { if (det.winnerId && det.loserId && det.orderId) recordDisputeReputation(db, det.orderId, det.winnerId, det.loserId) }
     const after = (db.prepare("SELECT COUNT(*) n FROM reputation_events WHERE order_id = ?").get(o) as { n: number }).n
-    ok('5c. 信誉恰好 +2 条(resolver 单点,零双记)', after - before === 2)
+    ok('5c2. caller 记录后恰 +2 条(单次扫出,天然不双记)', after - before === 2)
     ok('5d. 双方收 frc_ruled_refund_failed', notifKeys('b1', o).includes('frc_ruled_refund_failed') && notifKeys('s1', o).includes('frc_ruled_refund_failed'))
     ok('5e. ★订单仍 completed', orderStatus(o) === 'completed')
     const tr2 = checkDisputeTimeouts(db)
     ok('5f. 已裁决案不再被扫(幂等)', !tr2.details.find(x => x.disputeId === did))
+  }
+
+  // ═══ ⑤b 路由级裁决:/api/disputes/:id/arbitrate 的 frc 分支(真实分发+resolver+信誉原子)═══
+  {
+    const o = mkOrder({})
+    await call('POST', `/api/orders/${o}/fault-refund/request`, 'b1', {})
+    await call('POST', `/api/orders/${o}/fault-refund/decline`, 's1', {})
+    const es = await call('POST', `/api/orders/${o}/fault-refund/escalate`, 'b1', { notes: '卖家拒绝退款,提交路由级裁决用例' })
+    const did = String(es.json.dispute_id)
+    db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('arb2','路由仲裁员','buyer','ka2')").run()
+    const app2 = express(); app2.use(express.json())
+    const noop = (): void => {}
+    registerDisputesWriteRoutes(app2, {
+      db,
+      auth: (req: Request, res: Response) => { const uid = req.headers['x-test-uid'] as string | undefined; if (!uid) { res.status(401).json({ error: 'login' }); return null } return { id: uid, role: 'buyer' } },
+      generateId: (p: string) => `${p}_dw_${++c}`, detectFraud: () => [],
+      errorRes: (res: Response, status: number, code: string, msg: string) => res.status(status).json({ error: msg, error_code: code }),
+      isEligibleArbitrator: (uid: string) => ({ ok: uid === 'arb2' }),
+      requireHumanPresence: () => ({ ok: true }),   // 人机门桩(装置);frc 分支/resolver/信誉为真实被测体
+      getDisputeDetails, respondToDispute: noop, arbitrateDispute, addPartyEvidence: noop, requestEvidence: noop,
+      markEvidenceExpiry: noop, uploadEvidence: noop, EVIDENCE_MAX_BYTES: 1, EVIDENCE_ALLOWED_MIME: new Set<string>(),
+      appendOrderEvent: noop, FUND_BASE_RATE: () => 0.01, settleCommission: () => ({ redirected: 0 }), depositToFund: noop,
+      calculatePv: () => 0, recordDisputeReputation, issueAgentStrike: noop, publishDisputeCase: noop, logAdminAction: noop,
+      snfSend: noop, getProtocolParam: <T,>(_k: string, f: T): T => f, notifyTransition: noop,
+    } as never)
+    let srv2!: Server
+    const port2: number = await new Promise(r => { srv2 = createServer(app2); srv2.listen(0, () => r((srv2.address() as { port: number }).port)) })
+    const arb = (body: unknown): Promise<{ status: number; json: Record<string, unknown> }> => new Promise((resolve, reject) => {
+      const payload = JSON.stringify(body)
+      const rq = httpRequest({ host: '127.0.0.1', port: port2, method: 'POST', path: `/api/disputes/${did}/arbitrate`, headers: { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(payload)), 'x-test-uid': 'arb2' } }, res => { let dd = ''; res.on('data', ch => dd += ch); res.on('end', () => { try { resolve({ status: res.statusCode || 0, json: dd ? JSON.parse(dd) : {} }) } catch { resolve({ status: res.statusCode || 0, json: {} }) } }) })
+      rq.on('error', reject); rq.write(payload); rq.end()
+    })
+    try {
+      const bad = await arb({ ruling: 'refund_buyer', reason: '通用裁定应被 allowlist 拒' })
+      ok('5g. 路由:frc 案拒通用 ruling(BAD_DECISION,永不落 arbitrateDispute)', bad.status === 400 && bad.json.error_code === 'BAD_DECISION', JSON.stringify(bad.json))
+      const before = (db.prepare("SELECT COUNT(*) n FROM reputation_events WHERE order_id = ?").get(o) as { n: number }).n
+      const good = await arb({ ruling: 'refund_confirmed', reason: '卖家出示了退款转账凭证' })
+      ok('5h. 路由:refund_confirmed 裁决成功', good.status === 200 && good.json.outcome === 'refund_confirmed', JSON.stringify(good.json))
+      const after = (db.prepare("SELECT COUNT(*) n FROM reputation_events WHERE order_id = ?").get(o) as { n: number }).n
+      const rep = db.prepare("SELECT user_id, event_type FROM reputation_events WHERE order_id = ? ORDER BY rowid DESC LIMIT 2").all(o) as Array<{ user_id: string; event_type: string }>
+      ok('5i. 路由裁决原子记信誉(卖家 won / 买家 lost)', after - before === 2 && rep.some(x => x.user_id === 's1' && x.event_type === 'dispute_won') && rep.some(x => x.user_id === 'b1' && x.event_type === 'dispute_lost'), JSON.stringify(rep))
+      ok('5j. ★路由裁决后订单仍 completed + 双方收裁定通知', orderStatus(o) === 'completed' && notifKeys('b1', o).includes('frc_ruled_refund_confirmed'))
+    } finally { srv2.close() }
   }
 
   // ═══ ⑥ 接线锚 + i18n parity ═══

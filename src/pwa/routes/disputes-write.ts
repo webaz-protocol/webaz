@@ -174,7 +174,12 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
       const frcAllow = ['refund_confirmed', 'refund_failed_confirmed']
       if (!frcAllow.includes(ruling)) return void errorRes(res, 400, 'BAD_DECISION', `退款申索仲裁的 ruling 必须是 ${frcAllow.join(' / ')} 之一`)
       try {
-        const r = resolveFaultRefundClaim(db, req.params.id, user.id as string, ruling as FrcDecision, reason, 'arbitrator')
+        // 裁决 + 信誉同一原子边界(Codex R1:信誉写失败 → 整体回滚,绝不出现"已裁决但零信誉"半闭环)
+        const r = db.transaction(() => {
+          const rr = resolveFaultRefundClaim(db, req.params.id, user.id as string, ruling as FrcDecision, reason, 'arbitrator')
+          recordDisputeReputation(db, rr.orderId, rr.winnerId, rr.loserId)
+          return rr
+        })()
         try { notifyFaultRefundRuled(db, r.orderId, r.decision) } catch (e) { console.warn('[notify] frc-resolve:', (e as Error).message) }
         try { logAdminAction(user.id as string, `fault_refund_${r.decision}`, 'order', r.orderId, { source: 'arbitrator', dispute_id: req.params.id, reason }) } catch { /* */ }
         return void res.json({ success: true, outcome: r.decision, order_status: 'completed' })

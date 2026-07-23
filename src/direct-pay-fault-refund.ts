@@ -59,8 +59,12 @@ export function initDirectPayFaultRefundSchema(db: Database.Database): void {
 
 type OrderRow = { id: string; buyer_id: string; seller_id: string; status: string; payment_rail: string; settled_fault_at: string | null }
 
-function loadOrder(db: Database.Database, orderId: string): OrderRow | undefined {
-  return db.prepare('SELECT id, buyer_id, seller_id, status, payment_rail, settled_fault_at FROM orders WHERE id = ?').get(orderId) as OrderRow | undefined
+// 存在性不泄露(Codex R1 BLOCKER):非当事方与订单不存在必须是【同一个】响应,否则 404/403 差异成为
+// 订单枚举 oracle。所有入口一律先做"当事方内加载":查不到 = 不存在【或】非当事方,统一 NOT_A_PARTY。
+const NOT_PARTY = { ok: false as const, error: '订单不存在或你不是订单当事方', error_code: 'NOT_A_PARTY' }
+
+function loadOrderAsParty(db: Database.Database, orderId: string, viewerId: string): OrderRow | undefined {
+  return db.prepare('SELECT id, buyer_id, seller_id, status, payment_rail, settled_fault_at FROM orders WHERE id = ? AND (buyer_id = ? OR seller_id = ?)').get(orderId, viewerId, viewerId) as OrderRow | undefined
 }
 
 /**
@@ -101,8 +105,8 @@ function respondDays(db: Database.Database): number {
 
 /** ① 买家发起退款握手。 */
 export function requestFaultRefund(db: Database.Database, args: { orderId: string; buyerId: string; reason?: string | null; requestId: string }): FaultRefundResult {
-  const order = loadOrder(db, args.orderId)
-  if (!order) return { ok: false, error: '订单不存在', error_code: 'ORDER_NOT_FOUND' }
+  const order = loadOrderAsParty(db, args.orderId, args.buyerId)
+  if (!order) return NOT_PARTY
   if (order.buyer_id !== args.buyerId) return { ok: false, error: '只有订单买家可发起退款握手', error_code: 'NOT_ORDER_BUYER' }
   const el = faultRefundEligible(db, order)
   if (!el.eligible) return { ok: false, error: '仅卖家违约判责关单且已标记付款的直付订单可发起', error_code: el.reason || 'NOT_ELIGIBLE' }
@@ -122,8 +126,8 @@ export function requestFaultRefund(db: Database.Database, args: { orderId: strin
 
 /** ② a. 卖家拒绝(主张已退款/不认可)→ 买家可升级举证。 */
 export function declineFaultRefund(db: Database.Database, args: { orderId: string; sellerId: string }): FaultRefundResult {
-  const order = loadOrder(db, args.orderId)
-  if (!order) return { ok: false, error: '订单不存在', error_code: 'ORDER_NOT_FOUND' }
+  const order = loadOrderAsParty(db, args.orderId, args.sellerId)
+  if (!order) return NOT_PARTY
   if (order.seller_id !== args.sellerId) return { ok: false, error: '只有订单卖家可拒绝', error_code: 'NOT_ORDER_SELLER' }
   const r = db.prepare(`UPDATE direct_fault_refund_requests SET status = 'declined', seller_responded_at = datetime('now'), updated_at = datetime('now')
                         WHERE order_id = ? AND status = 'requested'`).run(args.orderId)
@@ -133,8 +137,8 @@ export function declineFaultRefund(db: Database.Database, args: { orderId: strin
 
 /** ② b. 卖家声明已场外退款(可附退款参考)。此后买家 confirm 或(未收到)升级举证,不可 withdraw。 */
 export function markFaultRefunded(db: Database.Database, args: { orderId: string; sellerId: string; refundReference?: string | null }): FaultRefundResult {
-  const order = loadOrder(db, args.orderId)
-  if (!order) return { ok: false, error: '订单不存在', error_code: 'ORDER_NOT_FOUND' }
+  const order = loadOrderAsParty(db, args.orderId, args.sellerId)
+  if (!order) return NOT_PARTY
   if (order.seller_id !== args.sellerId) return { ok: false, error: '只有订单卖家可声明退款', error_code: 'NOT_ORDER_SELLER' }
   const ref = typeof args.refundReference === 'string' ? args.refundReference.trim().slice(0, 200) : null
   const r = db.prepare(`UPDATE direct_fault_refund_requests SET status = 'refund_marked', refund_reference = ?, seller_responded_at = datetime('now'), updated_at = datetime('now')
@@ -145,8 +149,8 @@ export function markFaultRefunded(db: Database.Database, args: { orderId: string
 
 /** 买家撤回 —— 仅限卖家尚未响应(requested)。 */
 export function withdrawFaultRefund(db: Database.Database, args: { orderId: string; buyerId: string }): FaultRefundResult {
-  const order = loadOrder(db, args.orderId)
-  if (!order) return { ok: false, error: '订单不存在', error_code: 'ORDER_NOT_FOUND' }
+  const order = loadOrderAsParty(db, args.orderId, args.buyerId)
+  if (!order) return NOT_PARTY
   if (order.buyer_id !== args.buyerId) return { ok: false, error: '只有订单买家可撤回', error_code: 'NOT_ORDER_BUYER' }
   const r = db.prepare(`UPDATE direct_fault_refund_requests SET status = 'withdrawn', updated_at = datetime('now')
                         WHERE order_id = ? AND status = 'requested'`).run(args.orderId)
@@ -156,8 +160,8 @@ export function withdrawFaultRefund(db: Database.Database, args: { orderId: stri
 
 /** ③ 买家确认已收到场外退款 → settled(纯记录:零资金、零订单转移、零库存)。 */
 export function confirmFaultRefundReceived(db: Database.Database, args: { orderId: string; buyerId: string }): FaultRefundResult {
-  const order = loadOrder(db, args.orderId)
-  if (!order) return { ok: false, error: '订单不存在', error_code: 'ORDER_NOT_FOUND' }
+  const order = loadOrderAsParty(db, args.orderId, args.buyerId)
+  if (!order) return NOT_PARTY
   if (order.buyer_id !== args.buyerId) return { ok: false, error: '只有订单买家可确认收到退款', error_code: 'NOT_ORDER_BUYER' }
   // 请求行 CAS:仅 refund_marked → settled(卖家未声明退款前买家不可单方确认)
   const cas = db.prepare(`UPDATE direct_fault_refund_requests SET status = 'settled', settled_at = datetime('now'), updated_at = datetime('now')
@@ -175,8 +179,8 @@ export function escalateFaultRefund(
   db: Database.Database,
   args: { orderId: string; buyerId: string; notes: string; disputeId: string },
 ): FaultRefundResult {
-  const order = loadOrder(db, args.orderId)
-  if (!order) return { ok: false, error: '订单不存在', error_code: 'ORDER_NOT_FOUND' }
+  const order = loadOrderAsParty(db, args.orderId, args.buyerId)
+  if (!order) return NOT_PARTY
   if (order.buyer_id !== args.buyerId) return { ok: false, error: '只有订单买家可升级举证', error_code: 'NOT_ORDER_BUYER' }
   const el = faultRefundEligible(db, order)
   if (!el.eligible) return { ok: false, error: '本订单不适用退款申索', error_code: el.reason || 'NOT_ELIGIBLE' }
@@ -215,10 +219,9 @@ export function getFaultRefundState(db: Database.Database, orderId: string, view
   can_request?: boolean; can_respond?: boolean; can_confirm?: boolean; can_withdraw?: boolean; can_escalate?: boolean
   claim?: Record<string, unknown> | null
 } {
-  const order = loadOrder(db, orderId)
-  if (!order) return { ok: false, error: '订单不存在', error_code: 'ORDER_NOT_FOUND' }
+  const order = loadOrderAsParty(db, orderId, viewerId)
+  if (!order) return NOT_PARTY
   const isBuyer = order.buyer_id === viewerId; const isSeller = order.seller_id === viewerId
-  if (!isBuyer && !isSeller) return { ok: false, error: '仅订单当事方可查看', error_code: 'NOT_A_PARTY' }
   const el = faultRefundEligible(db, order)
   const last = latestRequest(db, orderId)
   const eff = last ? effectiveStatus(db, last) : null

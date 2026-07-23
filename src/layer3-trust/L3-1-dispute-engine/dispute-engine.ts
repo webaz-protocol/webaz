@@ -346,6 +346,12 @@ export function arbitrateDispute(
   if (dispute.status === 'resolved' || dispute.status === 'dismissed') {
     return { success: false, error: '该争议已处理完毕' }
   }
+  // P1-D fail-closed(Codex R1 HIGH):退款申索案的订单已是 completed 终态,本函数的结算路径
+  // (executeNonCustodialSettlement/executeSettlement)会尝试非法终态转移。任何调用方(路由/脚本/未来 admin)
+  // 误把该类型送进来一律硬拒 —— 唯一裁决器是 resolveFaultRefundClaim。
+  if ((dispute as DisputeRecord & { dispute_type?: string }).dispute_type === 'fault_refund_claim') {
+    return { success: false, error: '退款申索(fault_refund_claim)不走通用裁决,唯一裁决器为 resolveFaultRefundClaim' }
+  }
 
   // 授权源(PR-B/PR-C):sys_protocol(role=system)或 active arbitrator_whitelist。见 isAuthorizedArbitrator。
   if (!isAuthorizedArbitrator(db, arbitratorId)) {
@@ -820,9 +826,10 @@ export function checkDisputeTimeouts(db: Database.Database): {
       continue
     }
     // P1-D:退款申索(fault_refund_claim)绝不走通用自动裁决 —— arbitrateDispute 的结算路径会对
-    //   completed 终态订单做非法转移。超时兜底走唯一裁决器 timeout_auto(信誉裁决,零资金零状态):
-    //   被诉方(卖家)respond_deadline 内沉默,或过 arbitrate_deadline 仍无人裁 → 判买家申索成立。
-    //   details 不带 winnerId/loserId:信誉由裁决器内 recordDisputeReputation 单点发射,防 cron 双记。
+    //   completed 终态订单做非法转移(引擎侧另有硬拒)。超时兜底走唯一裁决器 timeout_auto(信誉裁决,
+    //   零资金零状态):被诉方(卖家)respond_deadline 内沉默,或过 arbitrate_deadline 仍无人裁 → 判买家申索成立。
+    //   信誉不在此发射(L3 不 import L4):details 带 winner/loser,由 cron/runEnforcement 既有单次机制记录
+    //   (与通用争议自动裁定完全同一路径,天然不双记 —— 每案只被扫出一次)。
     if ((dispute as DisputeRecord & { dispute_type?: string }).dispute_type === 'fault_refund_claim') {
       const rd = dispute.respond_deadline, ad = dispute.arbitrate_deadline
       const due = (dispute.status === 'open' && rd && now > rd) || (ad && now > ad)
@@ -830,7 +837,7 @@ export function checkDisputeTimeouts(db: Database.Database): {
         try {
           const r = resolveFaultRefundClaim(db, dispute.id, 'sys_protocol', 'refund_failed_confirmed', '被诉方超时未回应/仲裁窗口超时,协议自动裁定买家申索成立(卖家未场外退款)', 'timeout_auto')
           try { notifyFaultRefundRuled(db, r.orderId, r.decision) } catch (e) { console.warn('[frc-timeout notify]', (e as Error).message) }
-          details.push({ disputeId: dispute.id, action: 'fault_refund_claim 超时自动裁定(买家申索成立)', orderId: dispute.order_id })
+          details.push({ disputeId: dispute.id, action: 'fault_refund_claim 超时自动裁定(买家申索成立)', orderId: dispute.order_id, winnerId: r.winnerId, loserId: r.loserId })
         } catch (e) { console.warn('[frc-timeout-auto]', (e as Error).message) }
       }
       continue
