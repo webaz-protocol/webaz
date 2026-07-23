@@ -360,6 +360,7 @@
     "test:agent-gateway-resource": "tsx scripts/test-agent-gateway-resource.ts",
     "test:oauth-authorize": "tsx scripts/test-oauth-authorize.ts",
     "test:oauth-approve": "tsx scripts/test-oauth-approve.ts",
+    "test:openai-apps-challenge": "tsx scripts/test-openai-apps-challenge.ts",
     "test:oauth-token": "tsx scripts/test-oauth-token.ts",
     "test:oauth-refresh": "tsx scripts/test-oauth-refresh.ts",
     "test:product-action-schema": "tsx scripts/test-product-action-schema.ts",

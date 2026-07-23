@@ -907,6 +907,7 @@ jobs:
       - run: npm run test:gateway-shadow-observe
       - run: npm run test:oauth-authorize
       - run: npm run test:oauth-approve
+      - run: npm run test:openai-apps-challenge
       - run: npm run test:oauth-token
       - run: npm run test:oauth-refresh
       - run: npm run test:product-action-schema
