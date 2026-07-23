@@ -23,7 +23,7 @@ import crypto from 'crypto'; import { deriveHandleBase } from '../handle-policy.
 
 import { initDatabase, generateId } from '../layer0-foundation/L0-1-database/schema.js'
 import { setSeamDb } from '../layer0-foundation/L0-1-database/db.js'  // RFC-016 异步 DB seam
-import { initSystemUser, transition, getOrderStatus, checkTimeouts, settleFault } from '../layer0-foundation/L0-2-state-machine/engine.js'; import { genuineSalePredicate } from '../layer0-foundation/L0-2-state-machine/genuine-sale.js'; import { settleDirectPayFeeAtCompletion } from '../direct-pay-fee-ar.js'  // RFC-018 PR4 genuine-sale SSOT + Direct Pay Rail 1 平台费链下应收(完成时释放遗留模拟 stake + accrue)
+import { initSystemUser, transition, getOrderStatus, checkTimeouts, settleFault } from '../layer0-foundation/L0-2-state-machine/engine.js'; import { genuineSalePredicate } from '../layer0-foundation/L0-2-state-machine/genuine-sale.js'; import { checkVerifierEligibility as checkVerifierEligibilityImpl, checkArbitratorEligibility as checkArbitratorEligibilityImpl } from './eligibility.js'; import { settleDirectPayFeeAtCompletion } from '../direct-pay-fee-ar.js'  // RFC-018 PR4 genuine-sale SSOT + Direct Pay Rail 1 平台费链下应收(完成时释放遗留模拟 stake + accrue)
 import { endpointToAction, endpointToReadAction } from './endpoint-actions.js'
 import { migrateProtocolToPublicLaunch, seedPublicLaunchConsentV12 } from './public-launch-migrations.js'
 import { AGENT_RATE_PER_MIN_DEFAULTS, CROSS_USER_READ_DAILY_CAP, MASS_ACTION_TYPES, MASS_ACTION_DAILY_CAPS } from './limits.js'
@@ -5061,39 +5061,10 @@ registerAdminVerifierWhitelistRoutes(app, {
   REVOKE_COOLDOWN_DAYS,
 })
 
-interface EligibilityItem { key: string; label: string; current: number | string; required: number | string; ok: boolean }
-
-function checkVerifierEligibility(userId: string): { eligible: boolean; items: EligibilityItem[] } {
-  const user = db.prepare("SELECT id, name, email_verified, reputation, created_at FROM users WHERE id = ?").get(userId) as Record<string, unknown> | undefined
-  if (!user) return { eligible: false, items: [] }
-
-  const items: EligibilityItem[] = []
-  const ageDays = Math.floor((Date.now() - new Date(user.created_at as string).getTime()) / 86400_000)
-  items.push({ key: 'age', label: '账户年龄 ≥ 60 天', current: ageDays, required: 60, ok: ageDays >= 60 })
-  items.push({ key: 'email', label: '邮箱已验证', current: user.email_verified ? '✓' : '✗', required: '✓', ok: !!user.email_verified })
-
-  const orders = (db.prepare(`SELECT COUNT(*) as n FROM orders WHERE (buyer_id = ? OR seller_id = ?) AND ${genuineSalePredicate('orders')}`).get(userId, userId) as { n: number }).n
-  items.push({ key: 'orders', label: '完成订单 ≥ 20 笔', current: orders, required: 20, ok: orders >= 20 })
-
-  const disputeLost = (db.prepare(`
-    SELECT COUNT(*) as n FROM disputes
-    WHERE ((initiator_id = ? AND ruling_type = 'release_seller')
-       OR  (defendant_id = ? AND ruling_type IN ('refund_buyer','partial_refund')))
-       AND status IN ('resolved')
-  `).get(userId, userId) as { n: number }).n
-  items.push({ key: 'no_violations', label: '零仲裁判输', current: disputeLost, required: 0, ok: disputeLost === 0 })
-
-  const wasSuspended = !!db.prepare("SELECT 1 FROM user_moderation WHERE user_id = ?").get(userId)
-  items.push({ key: 'never_suspended', label: '账户未曾被暂停', current: wasSuspended ? '✗' : '✓', required: '✓', ok: !wasSuspended })
-
-  const wallet = db.prepare("SELECT balance FROM wallets WHERE user_id = ?").get(userId) as { balance: number } | undefined
-  const balance = wallet?.balance ?? 0
-  items.push({ key: 'balance', label: '钱包余额 ≥ 200 WAZ', current: Number(balance).toFixed(2), required: 200, ok: balance >= 200 })
-
-  const reputation = Number(user.reputation ?? 0)
-  items.push({ key: 'reputation', label: 'reputation ≥ 110', current: reputation, required: 110, ok: reputation >= 110 })
-
-  return { eligible: items.every(i => i.ok), items }
+// P2-E:资格谓词抽到 src/pwa/eligibility.ts(信誉单一真相源=reputation_scores.total_points;
+// 旧 users.reputation 静止列已废弃不读)。此处只留注入用薄壳。
+function checkVerifierEligibility(userId: string): ReturnType<typeof checkVerifierEligibilityImpl> {
+  return checkVerifierEligibilityImpl(db, userId)
 }
 
 function getVerifierState(userId: string) {
@@ -5216,30 +5187,8 @@ registerAdminVerifierFlowRoutes(app, {
 
 // ─── Arbitrator 访问控制层（与 Verifier 平行；门槛更高）────────
 
-function checkArbitratorEligibility(userId: string): { eligible: boolean; items: EligibilityItem[] } {
-  const user = db.prepare("SELECT id, email_verified, reputation, created_at FROM users WHERE id = ?").get(userId) as Record<string, unknown> | undefined
-  if (!user) return { eligible: false, items: [] }
-  const items: EligibilityItem[] = []
-  const ageDays = Math.floor((Date.now() - new Date(user.created_at as string).getTime()) / 86400_000)
-  items.push({ key: 'age', label: '账户年龄 ≥ 90 天', current: ageDays, required: 90, ok: ageDays >= 90 })
-  items.push({ key: 'email', label: '邮箱已验证', current: user.email_verified ? '✓' : '✗', required: '✓', ok: !!user.email_verified })
-  const orders = (db.prepare(`SELECT COUNT(*) as n FROM orders WHERE (buyer_id = ? OR seller_id = ?) AND ${genuineSalePredicate('orders')}`).get(userId, userId) as { n: number }).n
-  items.push({ key: 'orders', label: '完成订单 ≥ 50 笔', current: orders, required: 50, ok: orders >= 50 })
-  const disputeLost = (db.prepare(`
-    SELECT COUNT(*) as n FROM disputes
-    WHERE ((initiator_id = ? AND ruling_type = 'release_seller')
-       OR  (defendant_id = ? AND ruling_type IN ('refund_buyer','partial_refund')))
-       AND status IN ('resolved')
-  `).get(userId, userId) as { n: number }).n
-  items.push({ key: 'no_violations', label: '零仲裁判输', current: disputeLost, required: 0, ok: disputeLost === 0 })
-  const wasSuspended = !!db.prepare("SELECT 1 FROM user_moderation WHERE user_id = ?").get(userId)
-  items.push({ key: 'never_suspended', label: '账户未曾被暂停', current: wasSuspended ? '✗' : '✓', required: '✓', ok: !wasSuspended })
-  const wallet = db.prepare("SELECT balance FROM wallets WHERE user_id = ?").get(userId) as { balance: number } | undefined
-  const balance = wallet?.balance ?? 0
-  items.push({ key: 'balance', label: '钱包余额 ≥ 500 WAZ', current: balance.toFixed(2), required: 500, ok: balance >= 500 })
-  const rep = Number(user.reputation || 0)
-  items.push({ key: 'reputation', label: 'reputation ≥ 300', current: rep, required: 300, ok: rep >= 300 })
-  return { eligible: items.every(i => i.ok), items }
+function checkArbitratorEligibility(userId: string): ReturnType<typeof checkArbitratorEligibilityImpl> {
+  return checkArbitratorEligibilityImpl(db, userId)
 }
 
 function getArbitratorState(userId: string) {

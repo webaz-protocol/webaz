@@ -75,7 +75,8 @@ export function registerMeDataRoutes(app: Application, deps: MeDataDeps): void {
       notice: 'WebAZ COP 承诺：你的数据属于你。可随时导出，可随时迁出。',
     }
     try {
-      data.profile = await dbOne(`SELECT id, name, handle, role, region, bio, search_anchor, email, phone, permanent_code, created_at, reputation FROM users WHERE id = ?`, [uid])
+      // P2-E:reputation = 真实台账 reputation_scores.total_points(旧 users.reputation 静止列废弃不读)
+      data.profile = await dbOne(`SELECT u.id, u.name, u.handle, u.role, u.region, u.bio, u.search_anchor, u.email, u.phone, u.permanent_code, u.created_at, COALESCE(rs.total_points, 0) AS reputation FROM users u LEFT JOIN reputation_scores rs ON rs.user_id = u.id WHERE u.id = ?`, [uid])
       data.wallet = await dbOne(`SELECT balance, staked, escrowed, earned FROM wallets WHERE user_id = ?`, [uid])
       data.orders = await dbAll(`SELECT * FROM orders WHERE buyer_id = ? OR seller_id = ? ORDER BY created_at DESC LIMIT 1000`, [uid, uid])
       for (const o of data.orders as Array<Record<string, unknown>>) projectDirectPayTargetForViewer(db, o, uid)  // 披露门:自导出按查看者投影(买家行=ack 门/卖家行=收款方保留),JSON + CSV 同源
