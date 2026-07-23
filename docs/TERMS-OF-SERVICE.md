@@ -40,9 +40,9 @@ sellers are responsible for the external payment method they choose.
 
 ## §5 Disputes / 争议
 
-WebAZ provides an internal evidence and ruling workflow. Arbitrators are protocol-onboarded
-participants, not judges or licensed legal practitioners, and a ruling is not a court
-judgment.
+WebAZ provides an internal evidence and ruling workflow. WebAZ does not require or verify
+judicial or legal-professional qualifications for protocol arbitrators. They do not act as a
+court or as legal counsel, and a ruling is not a court judgment.
 
 For Direct Pay, a ruling affects WebAZ records and reputation only and cannot transfer or
 refund principal. No general order-dispute appeal is currently implemented. Nothing in this

@@ -29,21 +29,25 @@
         <li>Saved and order-specific recipient, address, and phone data.</li>
         <li>Listings, orders, conversations, feedback, comments, support information, evidence, and dispute records.</li>
         <li>KYC/KYB and screening decisions for risk-gated seller or withdrawal capabilities.</li>
+        <li>Wallet, ledger, deposit, withdrawal, collateral, commission, and other account-balance or transaction records, including simulated or non-custodial rail records where applicable.</li>
+        <li>Coarse location coordinates when a user enables nearby features.</li>
         <li>Seller receiving instructions, QR references, payment evidence, and push notification endpoints or keys.</li>
+        <li>WebAZ authentication API keys, OAuth grants, delegated-agent permissions, connected-client metadata, and revocation or expiry records.</li>
         <li>Connection IP, browser user-agent, session, security, audit, rate-limit, and derived hash records. Active sessions may contain raw IP and user-agent values.</li>
       </ul>
       <p>Ordinary anonymous catalog browsing does not require account, shipping, KYC, or payment data.</p>
 
       <h2>3. AI providers / AI 服务提供商</h2>
       <p>Feedback submissions are sent to Anthropic to draft an admin-reviewed response. When server AI moderation is configured, sanitized comments may be sent to Anthropic for moderation. Other AI-assisted features send the content needed for the request when the user invokes them.</p>
-      <p>Browser-selected AI provider keys, endpoints, and model settings are stored in browser storage; requests are sent directly from the browser to the selected provider. The submitted <code>shopping_v1</code> tool does not itself invoke an AI provider.</p>
+      <p>An administrator may invoke an Anthropic-assisted account-risk summary using account handle, role, account age, order and GMV summaries, disputes, withdrawals, and negative-reputation signals. This summary supports human review and does not itself make the final account decision.</p>
+      <p>Browser-selected AI provider keys, endpoints, and model settings are stored in browser storage; requests are sent directly from the browser to the selected provider. The WebAZ PWA also stores its WebAZ authentication API key in browser storage, including IndexedDB, so the signed-in browser can call WebAZ. Do not submit or expose unnecessary personal, confidential, authentication, or payment data. The submitted <code>shopping_v1</code> tool does not itself invoke an AI provider.</p>
 
       <h2>4. Public information / 公开信息</h2>
       <p>Public product results may include product IDs and public seller identifiers, names, and reputation summaries. Published dispute cases may include case, product, and seller identifiers, redacted arguments and rulings, and nonanonymous commenters' identifiers, handles, and names.</p>
       <p>Automated redaction reduces disclosure risk but cannot guarantee removal of every identifier. Do not include unnecessary personal data in content intended for publication.</p>
 
       <h2>5. Purposes and protection / 处理目的与保护</h2>
-      <p>WebAZ processes data to provide and secure its services, fulfill orders, prevent fraud and abuse, operate scoped agent permissions, support users, and resolve disputes. Passkey human-presence gates protect fund-moving and identity or sensitive-data-changing actions. Audit identifiers are hashed or anonymized where raw values are not needed.</p>
+      <p>WebAZ processes data to provide and secure its services, fulfill orders, prevent fraud and abuse, operate scoped agent permissions, support users, and resolve disputes. Passkey human-presence gates protect selected high-risk operations, including specified fund-moving, privilege-changing, and other sensitive actions; not every profile or address update requires a Passkey. Audit identifiers are hashed or anonymized where raw values are not needed.</p>
 
       <h2>6. Sharing and processors / 共享与服务商</h2>
       <p>WebAZ does not sell personal data or provide it to third parties for advertising.</p>

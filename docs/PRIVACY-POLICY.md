@@ -31,8 +31,13 @@ Depending on the feature used, WebAZ may process:
 - Listings, orders, conversations, feedback, comments, support information, evidence, and
   dispute records.
 - KYC/KYB and screening decisions for risk-gated seller or withdrawal capabilities.
+- Wallet, ledger, deposit, withdrawal, collateral, commission, and other account-balance or
+  transaction records, including simulated or non-custodial rail records where applicable.
+- Coarse location coordinates when a user enables nearby features.
 - Seller-provided receiving instructions, QR references, payment evidence, and push
   notification endpoints or keys.
+- WebAZ authentication API keys, OAuth grants, delegated-agent permissions, connected-client
+  metadata, and revocation or expiry records.
 - Connection IP, browser user-agent, session, security, audit, rate-limit, and derived hash
   records. Active sessions may contain raw IP and user-agent values.
 
@@ -45,9 +50,16 @@ AI moderation is configured, sanitized comments may be sent to Anthropic for mod
 Other AI-assisted features send the content needed for the request when the user invokes
 them.
 
+An administrator may invoke an Anthropic-assisted account-risk summary using account handle,
+role, account age, order and GMV summaries, disputes, withdrawals, and negative-reputation
+signals. This summary supports human review and does not itself make the final account
+decision.
+
 Browser-selected AI provider keys, endpoints, and model settings are stored in browser
-storage; requests are sent directly from the browser to the selected provider. Users should
-not submit unnecessary personal, confidential, or payment data.
+storage; requests are sent directly from the browser to the selected provider. The WebAZ PWA
+also stores its WebAZ authentication API key in browser storage, including IndexedDB, so the
+signed-in browser can call WebAZ. Users should not submit or expose unnecessary personal,
+confidential, authentication, or payment data.
 
 The submitted `shopping_v1` tool does not itself invoke an AI provider.
 
@@ -65,8 +77,9 @@ Users should not include unnecessary personal data in content intended for publi
 
 WebAZ processes data to provide and secure its services, fulfill orders, prevent fraud and
 abuse, operate scoped agent permissions, support users, and resolve disputes. Passkey
-human-presence gates protect fund-moving and identity or sensitive-data-changing actions.
-Audit identifiers are hashed or anonymized where raw values are not needed.
+human-presence gates protect selected high-risk operations, including specified fund-moving,
+privilege-changing, and other sensitive actions; not every profile or address update requires
+a Passkey. Audit identifiers are hashed or anonymized where raw values are not needed.
 
 ## 6. Recipients / 数据接收方
 

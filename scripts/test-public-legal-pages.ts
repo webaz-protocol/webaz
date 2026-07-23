@@ -5,6 +5,8 @@
  */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { SHOPPING_V1_SURFACE_TOOLS } from '../src/layer1-agent/L1-1-mcp-server/tool-surfaces.js'
+import { TOOL_ANNOTATIONS } from '../src/layer1-agent/L1-1-mcp-server/tool-annotations.js'
 
 const ROOT = resolve(import.meta.dirname, '..')
 let pass = 0
@@ -21,6 +23,7 @@ const terms = read('src/pwa/public/terms/index.html')
 const support = read('src/pwa/public/support/index.html')
 const privacyMd = read('docs/PRIVACY-POLICY.md')
 const termsMd = read('docs/TERMS-OF-SERVICE.md')
+const deletionRoute = read('src/pwa/routes/account-deletion.ts')
 const allPublic = [privacy, terms, support]
 const privacyMdFlat = privacyMd.replace(/\s+/g, ' ')
 const termsMdFlat = termsMd.replace(/\s+/g, ' ')
@@ -35,10 +38,22 @@ ok('all pages are mobile-aware static documents',
 ok('privacy precisely describes the submitted one-tool anonymous read-only surface',
   /shopping_v1[\s\S]*anonymous and read-only[\s\S]*only <code>webaz_search<\/code>/i.test(privacy)
   && /does not connect accounts[\s\S]*create orders[\s\S]*checkout or payment/i.test(privacy))
+ok('legal one-tool claim is bound to the runtime surface and annotation',
+  JSON.stringify([...SHOPPING_V1_SURFACE_TOOLS]) === JSON.stringify(['webaz_search'])
+  && TOOL_ANNOTATIONS.webaz_search?.readOnlyHint === true
+  && TOOL_ANNOTATIONS.webaz_search?.destructiveHint === false)
 ok('privacy discloses automatic Anthropic feedback and configured comment moderation',
   /Feedback submissions are sent to Anthropic[\s\S]*comments may be sent to Anthropic/i.test(privacy))
+ok('privacy discloses admin-invoked AI account-risk review and its advisory role',
+  /administrator may invoke an Anthropic-assisted account-risk summary/i.test(privacy)
+  && /supports human review and does not itself make the final account decision/i.test(privacy))
 ok('privacy discloses browser-selected AI provider storage and direct requests',
-  /keys, endpoints, and model settings are stored in browser storage/i.test(privacy))
+  /keys, endpoints, and model settings are stored in browser storage/i.test(privacy)
+  && /WebAZ authentication API key[\s\S]*IndexedDB/i.test(privacy))
+ok('privacy lists financial, location, OAuth and delegation data categories',
+  /Wallet, ledger, deposit, withdrawal, collateral, commission/i.test(privacy)
+  && /Coarse location coordinates/i.test(privacy)
+  && /OAuth grants, delegated-agent permissions/i.test(privacy))
 ok('privacy discloses public identifiers without an absolute no-PII promise',
   /Public product results may include product IDs and public seller identifiers/i.test(privacy)
   && /cannot guarantee removal of every identifier/i.test(privacy))
@@ -49,6 +64,13 @@ ok('privacy retention and deletion wording matches bounded implementation',
 ok('privacy describes bounded JSON export and orders-only CSV',
   /JSON export containing bounded snapshots/i.test(privacy)
   && /CSV export contains orders only/i.test(privacy))
+ok('privacy accurately limits Passkey protection to selected high-risk operations',
+  /Passkey human-presence gates protect selected high-risk operations/i.test(privacy)
+  && /not every profile or address update requires a Passkey/i.test(privacy))
+ok('account-deletion API notice matches the bounded anonymization policy',
+  /14 天后将匿名化选定的档案和地址字段/.test(deletionRoute)
+  && /关联订单、争议、KYC、审计及安全记录不会全部删除/.test(deletionRoute)
+  && !/PII 永久擦除/.test(deletionRoute))
 
 ok('terms contains all 15 sections',
   Array.from({ length: 15 }, (_, index) => terms.includes(`§${index + 1}`)).every(Boolean))
@@ -61,6 +83,10 @@ ok('terms state Direct Pay is conditional and cannot refund principal',
   && /cannot transfer or refund principal/i.test(terms))
 ok('terms do not invent an order appeal',
   /No general order-dispute appeal is currently implemented/i.test(terms))
+ok('terms do not make an unsupported claim about arbitrator professional credentials',
+  /does not require or verify judicial or legal-professional qualifications/i.test(terms)
+  && /do not act as a court or as legal counsel/i.test(terms)
+  && !/not judges or licensed legal practitioners/i.test(terms))
 ok('terms describe the current reward clamp, self-L1, and referral facts',
   /clamps every region to at most L1/i.test(terms)
   && /eligible buyer may be their own L1/i.test(terms)
@@ -83,9 +109,12 @@ ok('support links both public legal pages',
 ok('canonical Markdown carries the same critical privacy and terms facts',
   /shopping_v1[\s\S]*anonymous and read-only[\s\S]*webaz_search/i.test(privacyMd)
   && privacyMdFlat.includes('Feedback submissions are sent to Anthropic')
+  && privacyMdFlat.includes('administrator may invoke an Anthropic-assisted account-risk summary')
+  && privacyMdFlat.includes('WebAZ authentication API key in browser storage, including IndexedDB')
   && privacyMdFlat.includes('does not erase every linked order, dispute, KYC, audit, security, or other record')
   && termsMdFlat.includes('Direct Pay is available only where deployment controls and seller eligibility gates pass')
-  && termsMdFlat.includes('No general order-dispute appeal is currently implemented'))
+  && termsMdFlat.includes('No general order-dispute appeal is currently implemented')
+  && termsMdFlat.includes('does not require or verify judicial or legal-professional qualifications'))
 
 const forbidden = [
   /Direct Pay is (?:live|the current real-payment rail)/i,
