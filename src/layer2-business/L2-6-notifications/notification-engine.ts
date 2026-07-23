@@ -378,6 +378,24 @@ export function notifyEnforcementTransitions(
   }
 }
 
+/**
+ * P1-D 退款申索(fault_refund_claim)裁决通知:仲裁员裁定与超时自动裁定共用(两个调用点:
+ * disputes-write arbitrate 分支 / checkDisputeTimeouts frc 分支)。信誉裁决,零资金 —— 文案绝不涉平台退款。
+ */
+export function notifyFaultRefundRuled(db: Database.Database, orderId: string, decision: string): void {
+  const o = db.prepare("SELECT o.buyer_id, o.seller_id, COALESCE(p.title, '') AS product FROM orders o LEFT JOIN products p ON p.id = o.product_id WHERE o.id = ?").get(orderId) as { buyer_id: string; seller_id: string; product: string } | undefined
+  if (!o) return
+  const failed = decision === 'refund_failed_confirmed'
+  const title = failed ? '⚖️ 退款申索裁定:买家申索成立' : '⚖️ 退款申索裁定:卖家退款成立'
+  const body = failed
+    ? `订单「${o.product}」退款申索已裁定:卖家未场外退款成立。卖家信誉已追加处罚并留公开违约记录(非托管:协议不代退,退款仍须双方场外完成)。`
+    : `订单「${o.product}」退款申索已裁定:卖家已退款成立,申索不成立(发起方信誉按争议败诉记录)。`
+  const key = failed ? 'frc_ruled_refund_failed' : 'frc_ruled_refund_confirmed'
+  for (const uid of [o.buyer_id, o.seller_id]) {
+    if (uid) createNotification(db, uid, orderId, 'fault_refund_ruled', title, body, { templateKey: key, params: { product: o.product } })
+  }
+}
+
 // ─── 工具函数 ─────────────────────────────────────────────────
 
 function getOrderCtx(db: Database.Database, orderId: string): OrderCtx | null {

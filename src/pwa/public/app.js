@@ -12272,7 +12272,7 @@ async function renderOrderDetail(app, orderId) {
       ${order.content_hash_at_order ? `<div class="detail-row"><span class="detail-label">🔒 ${t('P2P 内容哈希')}</span><span class="detail-value" style="font-family:monospace;font-size:11px;word-break:break-all">${escHtml(order.content_hash_at_order)}</span></div>` : ''}
       ${activeDeadline?.deadline ? `<div class="detail-row"><span class="detail-label">${t('截止')}</span><span class="detail-value" style="color:${isOverdue ? '#dc2626' : '#6b7280'};font-size:12px">${fmtTime(activeDeadline.deadline)}</span></div>` : ''}
     </div>
-    ${order.payment_rail === 'direct_p2p' && isBuyer && order.status !== 'pending_accept' && window.dpOrderDisclosureHtml ? window.dpOrderDisclosureHtml(order) : ''}${window.dpReconcileCard ? window.dpReconcileCard(order, isSeller) : ''}${order.payment_rail === 'direct_p2p' && window.dpNegotiationCard ? window.dpNegotiationCard(order) : ''}${window.dpCancelRefundCard ? window.dpCancelRefundCard(order, isBuyer, isSeller) : ''}${window.dpPendingAcceptCard ? window.dpPendingAcceptCard(order, isBuyer, isSeller) : ''}${window.mutualCancelCard ? window.mutualCancelCard(order, isBuyer, isSeller) : ''}
+    ${order.payment_rail === 'direct_p2p' && isBuyer && order.status !== 'pending_accept' && window.dpOrderDisclosureHtml ? window.dpOrderDisclosureHtml(order) : ''}${window.dpReconcileCard ? window.dpReconcileCard(order, isSeller) : ''}${order.payment_rail === 'direct_p2p' && window.dpNegotiationCard ? window.dpNegotiationCard(order) : ''}${window.dpCancelRefundCard ? window.dpCancelRefundCard(order, isBuyer, isSeller) : ''}${window.dpFaultRefundCard ? window.dpFaultRefundCard(order, isBuyer, isSeller) : ''}${window.dpPendingAcceptCard ? window.dpPendingAcceptCard(order, isBuyer, isSeller) : ''}${window.mutualCancelCard ? window.mutualCancelCard(order, isBuyer, isSeller) : ''}
 
     ${trackingHtml}
     ${disputeHtml}
@@ -13776,7 +13776,7 @@ function buildDisputeHtml(dispute, user) {
     </div>` : ''
 
   // ── 仲裁员裁定（含责任分配）────────────────────
-  const arbitrateSection = isArbitrator && (dispute.status === 'open' || dispute.status === 'in_review') ? (dispute.dispute_type === 'decline_contest' ? (window.dcRulingForm ? window.dcRulingForm(dispute) : '') : `
+  const arbitrateSection = isArbitrator && (dispute.status === 'open' || dispute.status === 'in_review') ? (dispute.dispute_type === 'decline_contest' ? (window.dcRulingForm ? window.dcRulingForm(dispute) : '') : dispute.dispute_type === 'fault_refund_claim' ? (window.frcRulingForm ? window.frcRulingForm(dispute) : '') : `
     <div style="margin-top:12px;border-top:1px solid #fecaca;padding-top:12px">
       <div style="font-weight:600;font-size:13px;margin-bottom:8px">⚖️ 仲裁员裁定（截止 ${fmtTime(dispute.arbitrate_deadline)}）</div>
       ${window.dpArbFeeNote ? window.dpArbFeeNote(dispute.payment_rail) : ''}

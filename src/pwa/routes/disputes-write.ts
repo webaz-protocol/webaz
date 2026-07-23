@@ -43,7 +43,8 @@ import { dbOne, dbAll, dbRun } from '../../layer0-foundation/L0-1-database/db.js
 import { arbitratorHasConflict } from '../arbitrator-lifecycle.js'  // PR-B COI 硬门
 import { dismissDisputeToNegotiation } from '../../layer3-trust/L3-1-dispute-engine/dispute-engine.js'  // 仲裁员驳回仲裁,退回协商(非胜负裁决)
 import { resolveDeclineContestDispute, type DcDecision } from '../../layer3-trust/L3-1-dispute-engine/decline-contest-resolve.js'  // PR3 拒单举证唯一裁决器
-import { notifyDeclineContestResolved } from '../../layer2-business/L2-6-notifications/notification-engine.js'  // 裁决落定通知买卖双方
+import { notifyDeclineContestResolved, notifyFaultRefundRuled } from '../../layer2-business/L2-6-notifications/notification-engine.js'  // 裁决落定通知买卖双方
+import { resolveFaultRefundClaim, type FrcDecision } from '../../layer3-trust/L3-1-dispute-engine/fault-refund-resolve.js'  // P1-D 退款申索唯一裁决器
 
 export interface DisputesWriteDeps {
   db: Database.Database
@@ -164,6 +165,27 @@ export function registerDisputesWriteRoutes(app: Application, deps: DisputesWrit
       } catch (e) {
         const err = e as { code?: string; http?: number; message?: string }
         return void errorRes(res, err.http || 400, err.code || 'DC_RESOLVE_FAILED', err.message || '裁决失败')
+      }
+    }
+
+    // P1-D:退款申索(fault_refund_claim)→ 唯一 domain resolver(两选;信誉裁决,零资金零订单转移 ——
+    //   绝不落入通用 arbitrateDispute,其结算路径会对 completed 终态订单做非法转移)。
+    if ((dispute as Record<string, unknown>).dispute_type === 'fault_refund_claim') {
+      const frcAllow = ['refund_confirmed', 'refund_failed_confirmed']
+      if (!frcAllow.includes(ruling)) return void errorRes(res, 400, 'BAD_DECISION', `退款申索仲裁的 ruling 必须是 ${frcAllow.join(' / ')} 之一`)
+      try {
+        // 裁决 + 信誉同一原子边界(Codex R1:信誉写失败 → 整体回滚,绝不出现"已裁决但零信誉"半闭环)
+        const r = db.transaction(() => {
+          const rr = resolveFaultRefundClaim(db, req.params.id, user.id as string, ruling as FrcDecision, reason, 'arbitrator')
+          recordDisputeReputation(db, rr.orderId, rr.winnerId, rr.loserId)
+          return rr
+        })()
+        try { notifyFaultRefundRuled(db, r.orderId, r.decision) } catch (e) { console.warn('[notify] frc-resolve:', (e as Error).message) }
+        try { logAdminAction(user.id as string, `fault_refund_${r.decision}`, 'order', r.orderId, { source: 'arbitrator', dispute_id: req.params.id, reason }) } catch { /* */ }
+        return void res.json({ success: true, outcome: r.decision, order_status: 'completed' })
+      } catch (e) {
+        const err = e as { code?: string; http?: number; message?: string }
+        return void errorRes(res, err.http || 400, err.code || 'FRC_RESOLVE_FAILED', err.message || '裁决失败')
       }
     }
 

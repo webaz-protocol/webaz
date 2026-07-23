@@ -74,6 +74,7 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-mutual-cancel.js':              54,
   'src/pwa/public/app-dispute-close-ui.js':           38,
   'src/pwa/public/app-direct-pay-cancel-refund.js':   72,
+  'src/pwa/public/app-direct-pay-fault-refund.js':   143,   // P1-D 判责关单退款握手+举证升级(新文件基线,含域内聚 frc_* 通知模板)
   'src/pwa/public/app-direct-pay-returns.js':         56,
   'src/pwa/public/app-order-accept-ui.js':           158,
   'src/pwa/public/app-order-rail-filter.js':          26,

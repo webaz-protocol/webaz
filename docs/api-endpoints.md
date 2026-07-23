@@ -1,6 +1,6 @@
 # WebAZ API Endpoint Inventory
 
-Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (815 endpoints).
+Auto-generated from `src/pwa/server.ts` + `src/pwa/routes/*.ts` (822 endpoints).
 
 Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-docs-fresh`).
 
@@ -246,7 +246,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/agent/discover` | 🎫 grant:buyer_discover |  |  | src/pwa/routes/agent-grants.ts:348 |
 | GET | `/api/agent/economic-participation` |  |  |  | src/pwa/routes/public-utils.ts:383 |
 | GET | `/api/agent/entities` |  |  |  | src/pwa/routes/public-utils.ts:304 |
-| GET | `/api/agent/events` | 🔐 |  | 结构性事件 + 哈希链字段(验链防篡改),完整 payload 仍走 party-gated /chain。 | src/pwa/routes/orders-read.ts:162 |
+| GET | `/api/agent/events` | 🔐 |  | 结构性事件 + 哈希链字段(验链防篡改),完整 payload 仍走 party-gated /chain。 | src/pwa/routes/orders-read.ts:163 |
 | GET | `/api/agent/goals` |  |  |  | src/pwa/routes/public-utils.ts:330 |
 | GET | `/api/agent/integration` |  |  |  | src/pwa/routes/public-utils.ts:348 |
 | GET | `/api/agent/negative-space` |  |  |  | src/pwa/routes/public-utils.ts:391 |
@@ -389,15 +389,15 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | PUT | `/api/direct-receive/store-verification` | 🔐 |  | PUT /api/direct-receive/store-verification — 卖家提交店铺外链(仅存储,不抓取)。 | src/pwa/routes/direct-pay-availability.ts:148 |
 | GET | `/api/disputes` | 🔐 |  | 仲裁员：查看所有开放争议 | src/pwa/routes/disputes-read.ts:43 |
 | GET | `/api/disputes/:id` | 🔐 |  | 详情聚合（含 W4 timeline + chain ruling） | src/pwa/routes/disputes-read.ts:129 |
-| POST | `/api/disputes/:id/add-evidence` | 🔐 |  | 参与方主动举证（text）+ SNF 信封分发 | src/pwa/routes/disputes-write.ts:389 |
-| POST | `/api/disputes/:id/arbitrate` | 🔐 |  | 仲裁员裁定 | src/pwa/routes/disputes-write.ts:131 |
-| POST | `/api/disputes/:id/arbitrator-pause-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:602 |
-| POST | `/api/disputes/:id/arbitrator-resume-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:699 |
-| POST | `/api/disputes/:id/evidence-blob` | 🔐 |  | N: limit 精确 = EVIDENCE_MAX_BYTES | src/pwa/routes/disputes-write.ts:450 |
+| POST | `/api/disputes/:id/add-evidence` | 🔐 |  | 参与方主动举证（text）+ SNF 信封分发 | src/pwa/routes/disputes-write.ts:411 |
+| POST | `/api/disputes/:id/arbitrate` | 🔐 |  | 仲裁员裁定 | src/pwa/routes/disputes-write.ts:132 |
+| POST | `/api/disputes/:id/arbitrator-pause-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:624 |
+| POST | `/api/disputes/:id/arbitrator-resume-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:721 |
+| POST | `/api/disputes/:id/evidence-blob` | 🔐 |  | N: limit 精确 = EVIDENCE_MAX_BYTES | src/pwa/routes/disputes-write.ts:472 |
 | GET | `/api/disputes/:id/evidence-list` | 🔐 |  | 当事人 + 仲裁员可查（meta only，blob 单独拉） | src/pwa/routes/disputes-read.ts:388 |
 | GET | `/api/disputes/:id/parties` | 🔐 |  | 涉案三方（仲裁员选择发证据请求的对象） | src/pwa/routes/disputes-read.ts:400 |
-| POST | `/api/disputes/:id/request-evidence` | 🔐 |  | 仲裁员：请求某方补证 | src/pwa/routes/disputes-write.ts:535 |
-| POST | `/api/disputes/:id/respond` | 🔐 |  | 被诉方反驳 | src/pwa/routes/disputes-write.ts:107 |
+| POST | `/api/disputes/:id/request-evidence` | 🔐 |  | 仲裁员：请求某方补证 | src/pwa/routes/disputes-write.ts:557 |
+| POST | `/api/disputes/:id/respond` | 🔐 |  | 被诉方反驳 | src/pwa/routes/disputes-write.ts:108 |
 | GET | `/api/disputes/:id/similar-cases` | 🔐 |  | A2 同类判例推荐 | src/pwa/routes/disputes-read.ts:64 |
 | GET | `/api/disputes/cases` |  |  | 公开列表（全网 / 可按 seller_id 过滤）— 判例库总览 | src/pwa/routes/dispute-cases.ts:53 |
 | GET | `/api/disputes/cases/:case_id` |  |  | 案件详情（含评论 + 评论者身份标签） | src/pwa/routes/dispute-cases.ts:131 |
@@ -520,9 +520,9 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | DELETE | `/api/offers/:id` | 🔐 |  | 撤回 offer（status=warehouse + 释放 stake；不真删 product） | src/pwa/routes/offers.ts:70 |
 | PATCH | `/api/offers/:id` | 🔐 |  |  | src/pwa/routes/offers.ts:33 |
 | POST | `/api/offers/:id/refresh` | 🔐 |  | 刷新 freshness（卖家点 "现货确认"） | src/pwa/routes/offers.ts:105 |
-| GET | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-read.ts:48 |
+| GET | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-read.ts:49 |
 | POST | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-create.ts:119 |
-| GET | `/api/orders/:id` | 🔐 |  |  | src/pwa/routes/orders-read.ts:174 |
+| GET | `/api/orders/:id` | 🔐 |  |  | src/pwa/routes/orders-read.ts:175 |
 | POST | `/api/orders/:id/action` | 🔐 |  | 通用状态机 action — accept/ship/pickup/transit/deliver/confirm/dispute | src/pwa/routes/orders-action.ts:174 |
 | GET | `/api/orders/:id/cancel-refund` | 🔐 |  |  | src/pwa/routes/direct-pay-cancel-refund.ts:48 |
 | POST | `/api/orders/:id/cancel-refund/confirm` | 🔐 |  |  | src/pwa/routes/direct-pay-cancel-refund.ts:93 |
@@ -530,11 +530,18 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/orders/:id/cancel-refund/mark-refunded` | 🔐 |  |  | src/pwa/routes/direct-pay-cancel-refund.ts:74 |
 | POST | `/api/orders/:id/cancel-refund/request` | 🔐 |  |  | src/pwa/routes/direct-pay-cancel-refund.ts:55 |
 | POST | `/api/orders/:id/cancel-refund/withdraw` | 🔐 |  |  | src/pwa/routes/direct-pay-cancel-refund.ts:84 |
-| GET | `/api/orders/:id/chain` | 🔐 |  | 订单签名链 — 当事人 + 白名单仲裁员(涉争议订单) + admin 可查 | src/pwa/routes/orders-read.ts:143 |
+| GET | `/api/orders/:id/chain` | 🔐 |  | 订单签名链 — 当事人 + 白名单仲裁员(涉争议订单) + admin 可查 | src/pwa/routes/orders-read.ts:144 |
 | GET | `/api/orders/:id/claim-task` | 🔐 |  | 通过 order_id 查关联 task | src/pwa/routes/claim-verify.ts:409 |
 | POST | `/api/orders/:id/claim-verification` | 🔐 |  | 买家发起 claim 验证任务（绑定 paid 及之后的订单） | src/pwa/routes/claim-verify.ts:331 |
 | POST | `/api/orders/:id/confirm-in-person` | 🔐 |  | 买家确认面交完成 → 直接 completed + settleOrder | src/pwa/routes/orders-action.ts:142 |
-| GET | `/api/orders/:id/direct-pay-qr` | 🔐 |  | 取【当时那一版】图字节。未 ack / 非买家 / 无 QR / 非 direct_p2p → 统一 404(不枚举,不泄露)。图字节不入 order JSON | src/pwa/routes/orders-read.ts:282 |
+| GET | `/api/orders/:id/direct-pay-qr` | 🔐 |  | 取【当时那一版】图字节。未 ack / 非买家 / 无 QR / 非 direct_p2p → 统一 404(不枚举,不泄露)。图字节不入 order JSON | src/pwa/routes/orders-read.ts:290 |
+| GET | `/api/orders/:id/fault-refund` | 🔐 |  |  | src/pwa/routes/direct-fault-refund.ts:48 |
+| POST | `/api/orders/:id/fault-refund/confirm` | 🔐 |  |  | src/pwa/routes/direct-fault-refund.ts:93 |
+| POST | `/api/orders/:id/fault-refund/decline` | 🔐 |  |  | src/pwa/routes/direct-fault-refund.ts:65 |
+| POST | `/api/orders/:id/fault-refund/escalate` | 🔐 |  |  | src/pwa/routes/direct-fault-refund.ts:113 |
+| POST | `/api/orders/:id/fault-refund/mark-refunded` | 🔐 |  |  | src/pwa/routes/direct-fault-refund.ts:74 |
+| POST | `/api/orders/:id/fault-refund/request` | 🔐 |  |  | src/pwa/routes/direct-fault-refund.ts:55 |
+| POST | `/api/orders/:id/fault-refund/withdraw` | 🔐 |  |  | src/pwa/routes/direct-fault-refund.ts:84 |
 | POST | `/api/orders/:id/force-timeout-check` | 🔐 |  | 手动触发超时判责（当事人） | src/pwa/routes/orders-action.ts:744 |
 | GET | `/api/orders/:id/mutual-cancel` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:49 |
 | POST | `/api/orders/:id/mutual-cancel/accept` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:69 |
@@ -555,7 +562,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/orders/:order_id/return-request` | 🔐 |  | P1-5: 订单级直查 | src/pwa/routes/returns.ts:194 |
 | POST | `/api/orders/:order_id/return-request` | 🔐 |  | buyer 发起退货 | src/pwa/routes/returns.ts:127 |
 | POST | `/api/orders/batch-ship` | 🔐 |  | C-4: 卖家批量发货 | src/pwa/routes/orders-action.ts:91 |
-| GET | `/api/orders/export` | 🔐 |  | Wave D-2: 订单导出 CSV | src/pwa/routes/orders-read.ts:79 |
+| GET | `/api/orders/export` | 🔐 |  | Wave D-2: 订单导出 CSV | src/pwa/routes/orders-read.ts:80 |
 | GET | `/api/p2p-products` |  |  | 公开：列表 | src/pwa/routes/p2p-products.ts:177 |
 | POST | `/api/p2p-products` | 🔐 |  | 发布 / 重发 P2P 商品 | src/pwa/routes/p2p-products.ts:48 |
 | DELETE | `/api/p2p-products/:id` | 🔐 |  | 下架（保留行 + status='warehouse'，在途订单 hash 仍可证） | src/pwa/routes/p2p-products.ts:165 |
