@@ -20,6 +20,7 @@ const support = read('src/pwa/public/support/index.html')
 
 ok('privacy is a complete published policy, not a teaser', /What we collect[\s\S]*Sharing &amp; third parties[\s\S]*Your rights[\s\S]*Cookies &amp; tracking[\s\S]*Children/.test(privacy))
 ok('privacy includes the real support contact', privacy.includes('contact@webaz.xyz'))
+ok('public pages identify the verified individual publisher consistently', [privacy, terms, support].every(page => page.includes('XU FENGNA')))
 ok('privacy does not claim legal review', !/counsel[- ]reviewed|approved by counsel|lawyer[- ]reviewed/i.test(privacy))
 ok('terms contains all 15 sections', Array.from({ length: 15 }, (_, i) => terms.includes(`§${i + 1}`)).every(Boolean))
 ok('terms retain the source material terms, not only headings', ['Business Source License 1.1', 'L1 70% / L2 20% / L3 10%', 'USD 100', 'Severability'].every(term => terms.includes(term)))

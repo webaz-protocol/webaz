@@ -6,7 +6,8 @@
 > the system's *actual* data practices (code + `protocol_params`). Any claim here must match
 > behavior — update this file when data handling changes. Contact: **contact@webaz.xyz**.
 >
-> Effective date: 2026-07-23. Jurisdiction-specific rights: see LEGAL-DISCLOSURES.md.
+> Effective date: 2026-07-23. Operator and publisher: **XU FENGNA (individual)**.
+> Jurisdiction-specific rights: see LEGAL-DISCLOSURES.md.
 
 ---
 

@@ -3,6 +3,7 @@
 > **Status**: effective for users of the publicly launched WebAZ service. Direct Pay is the current real-payment rail; WebAZ is non-custodial and does not hold transaction principal. The escrow rail remains simulated while additional payment methods are added.
 >
 > **Last updated**: 2026-07-23
+> **Publisher and operator**: XU FENGNA (individual)
 > **Companion docs**: `docs/LEGAL-DISCLOSURES.md` (operator's good-faith legal interpretation) + `docs/CHARTER.md` (project constitution)
 
 ---
@@ -16,6 +17,8 @@ Material changes to these Terms follow `docs/CHARTER.md §6` (RFC + public notic
 ---
 
 ## §2 Nature of WebAZ / WebAZ 的性质
+
+For these Terms, “the operator” means XU FENGNA, the individual who operates and publishes WebAZ.
 
 WebAZ is an **agent-native decentralized commerce protocol** operating under Business Source License 1.1 (auto-converting to MIT on 2030-05-18). It is:
 - **Software protocol**, not a financial institution / bank / broker
