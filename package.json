@@ -198,6 +198,7 @@
     "test:notif-order-templates": "tsx scripts/test-notif-order-templates.ts",
     "test:enforcement-notifications": "tsx scripts/test-enforcement-notifications.ts",
     "test:direct-pay-fault-refund": "tsx scripts/test-direct-pay-fault-refund.ts",
+    "test:reputation-single-source": "tsx scripts/test-reputation-single-source.ts",
     "test:order-timeline-render": "tsx scripts/test-order-timeline-render.ts",
     "test:legacy-arbitrator-role-sweep": "tsx scripts/test-legacy-arbitrator-role-sweep.ts",
     "test:arbitration-entry-frontend": "tsx scripts/test-arbitration-entry-frontend.ts",

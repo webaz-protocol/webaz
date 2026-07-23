@@ -29,7 +29,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 // LOC ceilings — wc -l semantics (newline count). File must not exceed this.
 // Lower a ceiling when you trim the file; never raise one.
 const LOC_CEILINGS: Record<string, number> = {
-  'src/pwa/server.ts': 8394,
+  'src/pwa/server.ts': 8320,   // P2-E 资格谓词抽出 eligibility.ts,锁定收益
   'src/pwa/public/app.js': 25549,   // 2026-07 订单时间线域抽出 app-order-timeline.js(25710→);+2 行 isGenuineCompleted 售后门
   'src/pwa/public/app-api-async.js': 32,   // P0-A A4 读/写分离超时助手(从 app.js 拆出)
   'src/pwa/public/app-cart-actions.js': 121,

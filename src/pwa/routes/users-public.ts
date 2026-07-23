@@ -253,16 +253,17 @@ export function registerUsersPublicRoutes(app: Application, deps: UsersPublicDep
   app.get('/api/users/:user_id', async (req, res) => {
     const me = auth(req, res); if (!me) return
     const ref = String(req.params.user_id || '').trim()
-    const cols = "id, name, role, region, bio, search_anchor, created_at, reputation, COALESCE(feed_visible, 1) as feed_visible"
+    // P2-E:reputation = 真实台账 reputation_scores.total_points(旧 users.reputation 静止列废弃不读)
+    const cols = "u.id, u.name, u.role, u.region, u.bio, u.search_anchor, u.created_at, COALESCE(rs.total_points, 0) AS reputation, COALESCE(u.feed_visible, 1) as feed_visible"
     let target: Record<string, unknown> | undefined
     if (/^usr_[A-Za-z0-9_]+$/.test(ref)) {
-      target = await dbOne<Record<string, unknown>>(`SELECT ${cols} FROM users WHERE id = ? AND id != 'sys_protocol'`, [ref])
+      target = await dbOne<Record<string, unknown>>(`SELECT ${cols} FROM users u LEFT JOIN reputation_scores rs ON rs.user_id = u.id WHERE u.id = ? AND u.id != 'sys_protocol'`, [ref])
     } else if (/^[A-Z0-9]{6,7}$/.test(ref) && !ref.startsWith('@')) {
-      target = await dbOne<Record<string, unknown>>(`SELECT ${cols} FROM users WHERE permanent_code = ? AND id != 'sys_protocol'`, [ref.toUpperCase()])
+      target = await dbOne<Record<string, unknown>>(`SELECT ${cols} FROM users u LEFT JOIN reputation_scores rs ON rs.user_id = u.id WHERE u.permanent_code = ? AND u.id != 'sys_protocol'`, [ref.toUpperCase()])
     }
     if (!target) {
       const h = ref.replace(/^@/, '').toLowerCase()
-      target = await dbOne<Record<string, unknown>>(`SELECT ${cols} FROM users WHERE handle = ? AND id != 'sys_protocol'`, [h])
+      target = await dbOne<Record<string, unknown>>(`SELECT ${cols} FROM users u LEFT JOIN reputation_scores rs ON rs.user_id = u.id WHERE u.handle = ? AND u.id != 'sys_protocol'`, [h])
     }
     if (!target) return void res.status(404).json({ error: '用户不存在' })
 
