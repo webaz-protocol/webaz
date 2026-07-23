@@ -147,6 +147,7 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     if (order.fulfillment_mode !== 'in_person') return void res.status(400).json({ error: '该订单非面交', error_code: 'NOT_IN_PERSON' })
     if (order.buyer_id !== user.id) return void res.status(403).json({ error: '仅买家可确认面交完成', error_code: 'NOT_ORDER_BUYER' })
     if (!['paid', 'accepted'].includes(order.status as string)) return void res.status(400).json({ error: `订单状态 ${order.status} 不可确认面交`, error_code: 'NOT_CONFIRMABLE_IN_PERSON' })
+    if (order.payment_rail === 'usdc_escrow') return void res.status(409).json({ error: 'USDC 担保订单的确认收货经链上释放完成(功能接线中),暂不支持此操作', error_code: 'USDC_ESCROW_CONFIRM_NOT_WIRED' })   // B3 R2:面交完成也是 confirm→settle 路径,同一硬闸(settleOrder 对本轨已 fail-closed throw,这里给友好 409)
     if (order.has_pending_claim) return void res.status(400).json({ error: '存在进行中的验证任务，不可确认', error_code: 'HAS_PENDING_CLAIM' })
     // Rail1:平台费已切换为链下应收(accrue 在完成结算时,与 completed 同一原子边界,fail-closed)。
     //   建单不再锁 fee-stake,故【不再】前置要求 locked stake(AR 订单本就无 stake)。
@@ -427,6 +428,7 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
     //   任一步失败整体回滚(订单仍 disputed、争议仍 open,可重试);两轨同块(escrow 释放托管货款,dp 计提平台费)。
     if (action === 'dispute_withdraw_confirm') {
       if (uid !== buyerId) return void res.status(403).json({ error: '你不是本订单的买家', error_code: 'NOT_ORDER_BUYER' })
+      if (order.payment_rail === 'usdc_escrow') return void res.status(409).json({ error: 'USDC 担保订单的确认收货经链上释放完成(功能接线中),暂不支持此操作', error_code: 'USDC_ESCROW_CONFIRM_NOT_WIRED' })   // B3 R2:撤诉确认=confirm→settle 同路,同一硬闸
       if (order.status !== 'disputed') return void res.status(409).json({ error: `订单状态 ${order.status} 不可撤诉确认收货(仅争议中)`, error_code: 'ORDER_NOT_DISPUTED' })
       // RFC-016:两条纯预检读 → 异步 seam;事务内的 disputes UPDATE + transition + settle 写序列仍同步(原子性)
       const dsp = await dbOne<{ id: string; initiator_id: string }>("SELECT id, initiator_id FROM disputes WHERE order_id = ? AND status IN ('open','in_review') ORDER BY created_at DESC, rowid DESC LIMIT 1", [req.params.id])

@@ -12,6 +12,7 @@
  * 当事方通知(propose/accept/decline;2026-07 订单流遍历审计补齐,accept 通知在事务提交后发)。
  * 无资金/状态语义 —— 那些全在域模块,便于审计与状态机 adapter 复用。
  */
+import { railOutsideWazCustody } from '../../direct-pay-rails.js'
 import type { Application, Request, Response } from 'express'
 import type Database from 'better-sqlite3'
 import { proposeMutualCancel, acceptMutualCancel, declineMutualCancel, withdrawMutualCancel, getMutualCancelState } from '../../layer3-trust/L3-1-dispute-engine/mutual-cancel.js'
@@ -77,7 +78,7 @@ export function registerMutualCancelRoutes(app: Application, deps: MutualCancelD
     // 通知在事务提交之后(回滚不发假通知);rail-fork:direct_p2p 非托管零资金,绝不写"已退款"
     const o = await orderParties(req.params.id)
     if (o) {
-      const direct = o.payment_rail === 'direct_p2p'
+      const direct = railOutsideWazCustody(o.payment_rail)   // B3:usdc_escrow 通知走非托管文案(绝不宣称 WAZ 已退款)
       notifyMc(req.params.id, [o.buyer_id, o.seller_id], 'mutual_cancel_done', '🤝 协商取消达成,订单已关闭',
         direct
           ? `订单「${o.product_title}」双方协商一致无责取消(非托管:零资金操作,场外款项以双方约定为准),双方信誉不受影响。`

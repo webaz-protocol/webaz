@@ -390,15 +390,15 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | PUT | `/api/direct-receive/store-verification` | 🔐 |  | PUT /api/direct-receive/store-verification — 卖家提交店铺外链(仅存储,不抓取)。 | src/pwa/routes/direct-pay-availability.ts:148 |
 | GET | `/api/disputes` | 🔐 |  | 仲裁员：查看所有开放争议 | src/pwa/routes/disputes-read.ts:43 |
 | GET | `/api/disputes/:id` | 🔐 |  | 详情聚合（含 W4 timeline + chain ruling） | src/pwa/routes/disputes-read.ts:129 |
-| POST | `/api/disputes/:id/add-evidence` | 🔐 |  | 参与方主动举证（text）+ SNF 信封分发 | src/pwa/routes/disputes-write.ts:411 |
-| POST | `/api/disputes/:id/arbitrate` | 🔐 |  | 仲裁员裁定 | src/pwa/routes/disputes-write.ts:132 |
-| POST | `/api/disputes/:id/arbitrator-pause-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:624 |
-| POST | `/api/disputes/:id/arbitrator-resume-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:721 |
-| POST | `/api/disputes/:id/evidence-blob` | 🔐 |  | N: limit 精确 = EVIDENCE_MAX_BYTES | src/pwa/routes/disputes-write.ts:472 |
+| POST | `/api/disputes/:id/add-evidence` | 🔐 |  | 参与方主动举证（text）+ SNF 信封分发 | src/pwa/routes/disputes-write.ts:412 |
+| POST | `/api/disputes/:id/arbitrate` | 🔐 |  | 仲裁员裁定 | src/pwa/routes/disputes-write.ts:133 |
+| POST | `/api/disputes/:id/arbitrator-pause-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:625 |
+| POST | `/api/disputes/:id/arbitrator-resume-auto-judge` | 🔐 |  |  | src/pwa/routes/disputes-write.ts:722 |
+| POST | `/api/disputes/:id/evidence-blob` | 🔐 |  | N: limit 精确 = EVIDENCE_MAX_BYTES | src/pwa/routes/disputes-write.ts:473 |
 | GET | `/api/disputes/:id/evidence-list` | 🔐 |  | 当事人 + 仲裁员可查（meta only，blob 单独拉） | src/pwa/routes/disputes-read.ts:388 |
 | GET | `/api/disputes/:id/parties` | 🔐 |  | 涉案三方（仲裁员选择发证据请求的对象） | src/pwa/routes/disputes-read.ts:400 |
-| POST | `/api/disputes/:id/request-evidence` | 🔐 |  | 仲裁员：请求某方补证 | src/pwa/routes/disputes-write.ts:557 |
-| POST | `/api/disputes/:id/respond` | 🔐 |  | 被诉方反驳 | src/pwa/routes/disputes-write.ts:108 |
+| POST | `/api/disputes/:id/request-evidence` | 🔐 |  | 仲裁员：请求某方补证 | src/pwa/routes/disputes-write.ts:558 |
+| POST | `/api/disputes/:id/respond` | 🔐 |  | 被诉方反驳 | src/pwa/routes/disputes-write.ts:109 |
 | GET | `/api/disputes/:id/similar-cases` | 🔐 |  | A2 同类判例推荐 | src/pwa/routes/disputes-read.ts:64 |
 | GET | `/api/disputes/cases` |  |  | 公开列表（全网 / 可按 seller_id 过滤）— 判例库总览 | src/pwa/routes/dispute-cases.ts:53 |
 | GET | `/api/disputes/cases/:case_id` |  |  | 案件详情（含评论 + 评论者身份标签） | src/pwa/routes/dispute-cases.ts:131 |
@@ -524,7 +524,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | GET | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-read.ts:49 |
 | POST | `/api/orders` | 🔐 |  |  | src/pwa/routes/orders-create.ts:119 |
 | GET | `/api/orders/:id` | 🔐 |  |  | src/pwa/routes/orders-read.ts:175 |
-| POST | `/api/orders/:id/action` | 🔐 |  | 通用状态机 action — accept/ship/pickup/transit/deliver/confirm/dispute | src/pwa/routes/orders-action.ts:174 |
+| POST | `/api/orders/:id/action` | 🔐 |  | 通用状态机 action — accept/ship/pickup/transit/deliver/confirm/dispute | src/pwa/routes/orders-action.ts:175 |
 | GET | `/api/orders/:id/cancel-refund` | 🔐 |  |  | src/pwa/routes/direct-pay-cancel-refund.ts:48 |
 | POST | `/api/orders/:id/cancel-refund/confirm` | 🔐 |  |  | src/pwa/routes/direct-pay-cancel-refund.ts:93 |
 | POST | `/api/orders/:id/cancel-refund/decline` | 🔐 |  |  | src/pwa/routes/direct-pay-cancel-refund.ts:65 |
@@ -543,12 +543,12 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/orders/:id/fault-refund/mark-refunded` | 🔐 |  |  | src/pwa/routes/direct-fault-refund.ts:74 |
 | POST | `/api/orders/:id/fault-refund/request` | 🔐 |  |  | src/pwa/routes/direct-fault-refund.ts:55 |
 | POST | `/api/orders/:id/fault-refund/withdraw` | 🔐 |  |  | src/pwa/routes/direct-fault-refund.ts:84 |
-| POST | `/api/orders/:id/force-timeout-check` | 🔐 |  | 手动触发超时判责（当事人） | src/pwa/routes/orders-action.ts:749 |
-| GET | `/api/orders/:id/mutual-cancel` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:49 |
-| POST | `/api/orders/:id/mutual-cancel/accept` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:69 |
-| POST | `/api/orders/:id/mutual-cancel/decline` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:90 |
-| POST | `/api/orders/:id/mutual-cancel/propose` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:56 |
-| POST | `/api/orders/:id/mutual-cancel/withdraw` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:102 |
+| POST | `/api/orders/:id/force-timeout-check` | 🔐 |  | 手动触发超时判责（当事人） | src/pwa/routes/orders-action.ts:751 |
+| GET | `/api/orders/:id/mutual-cancel` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:50 |
+| POST | `/api/orders/:id/mutual-cancel/accept` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:70 |
+| POST | `/api/orders/:id/mutual-cancel/decline` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:91 |
+| POST | `/api/orders/:id/mutual-cancel/propose` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:57 |
+| POST | `/api/orders/:id/mutual-cancel/withdraw` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:103 |
 | POST | `/api/orders/:id/pending-accept/accept` | 🔐 |  | 卖家确认接单 → 开付款窗口(deadline 此刻起表;收款信息此刻起买家可见 —— orders-read 状态门放行) | src/pwa/routes/direct-pay-pending-accept.ts:83 |
 | POST | `/api/orders/:id/pending-accept/cancel` | 🔐 |  | 买家撤单(接单前反悔)→ 无责取消 + 回补库存 | src/pwa/routes/direct-pay-pending-accept.ts:179 |
 | POST | `/api/orders/:id/pending-accept/confirm-quote` | 🔐 |  | CAS:仅 pending_accept 且已报价;总额变更与状态转移同一 db.transaction(要么全生效要么全回滚)。 | src/pwa/routes/direct-pay-pending-accept.ts:153 |

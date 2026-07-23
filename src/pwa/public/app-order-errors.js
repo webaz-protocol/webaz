@@ -42,8 +42,8 @@ window.orderErrorLookup = (code) => ({
   PASSKEY_REQUIRED_FOR_DIRECT_PAY: t('直付需要先注册 Passkey'),
   // 通用(RAIL_DISABLED=WAZ 退役渠道开关关闭时 escrow 建单/购物车被拒)
   RAIL_DISABLED: t('WAZ 模拟托管轨已下架,请选择直付方式下单'), USDC_ESCROW_CONFIRM_NOT_WIRED: t('USDC 担保订单经链上释放完成收货(功能接线中)'), ORDER_NOT_FOUND: t('订单不存在'),
-  MISSING_ORDER_ID: t('缺少订单号'),
-  INVALID_STAGE: t('无效的披露阶段参数'),
+  /* USDC 合约担保(B3)建单/协商码 */ USDC_ESCROW_SELLER_NOT_READY: t('该卖家暂不支持 USDC 担保'), USDC_ESCROW_CAP_EXCEEDED: t('超出 USDC 担保单笔上限'), USDC_ESCROW_NOT_CONFIGURED: t('USDC 担保暂未配置'), USDC_ESCROW_TOO_MANY_OPEN: t('你在该卖家的进行中 USDC 担保订单已达上限'), USDC_ESCROW_SIMPLE_PRODUCT_ONLY: t('USDC 担保暂仅支持无规格商品'), USDC_ESCROW_UNSUPPORTED_OPTION: t('USDC 担保暂不支持所选订单选项'), USDC_ESCROW_CREATE_FAILED: t('USDC 担保订单创建失败,请重试'), USDC_ESCROW_MUTUAL_CANCEL_NOT_WIRED: t('USDC 担保订单的协商取消需链上退款(接线中)'),
+  MISSING_ORDER_ID: t('缺少订单号'), INVALID_STAGE: t('无效的披露阶段参数'),
 }[code])
 
 // 统一取文案:先查映射,未命中回退后端原始 error(仍是文案而非裸 JSON),再回退通用兜底。

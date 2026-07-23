@@ -362,6 +362,9 @@ export function arbitrateDispute(
   // 非 WAZ 托管轨(直付=场外 / usdc_escrow=链上合约):协议不持 WAZ 货款 → 走【只信誉、不动资金】路径,
   //   绝不跑 executeSettlement/executeLiabilitySplit 的托管资金链(链上资金处置由 arbiter key 在 B7 接线)。
   const ord0 = db.prepare('SELECT payment_rail FROM orders WHERE id = ?').get(dispute.order_id) as { payment_rail: string | null } | undefined
+  // usdc_escrow(链上合约持本金):零资金终结是【错的】—— 会让链上 autoRelease 把款放给败诉方。
+  //   B7 接 arbiter key(链上 arbiterResolve)前,一律拒绝裁决(fail-closed,争议保持 open,冻结语义靠链上 flagDispute)。
+  if (ord0 && ord0.payment_rail === 'usdc_escrow') return { success: false, error: 'USDC 担保争议经链上仲裁裁决(arbiter 接线中),暂不可在协议内终结' }
   const nonCustodial = !!ord0 && railOutsideWazCustody(ord0.payment_rail)
 
   // 执行资金处置(非托管 → 零资金终结)

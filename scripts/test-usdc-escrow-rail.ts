@@ -26,6 +26,9 @@ const { createUsdcEscrowResponse, usdcEscrowSellerAvailable } = await import('..
 const { toUnits } = await import('../src/money.js')
 const { computeBuyerQuote } = await import('../src/pwa/buyer-quote.js')
 const { railOutsideWazCustody } = await import('../src/direct-pay-rails.js')
+const { sweepExpiredUsdcEscrowOrders } = await import('../src/usdc-escrow-timeouts.js')
+const { PRE_SHIP_RESTOCK_STATUSES } = await import('../src/direct-pay-stock.js')
+const { transition } = await import('../src/layer0-foundation/L0-2-state-machine/engine.js')
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -34,7 +37,7 @@ const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 applyWebazRuntimeSchema(db)
 for (const col of ['payment_rail TEXT', 'snapshot_commission_rate REAL', 'buyer_region TEXT', 'draft_id TEXT', 'ship_to_region TEXT', 'shipping_fee REAL', 'shipping_est_days TEXT']) { try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
 for (const col of ['default_address_text TEXT', 'default_address_region TEXT']) { try { db.exec(`ALTER TABLE users ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
-db.prepare("INSERT INTO users (id,name,role,api_key,region,default_address_text,default_address_region) VALUES ('sU','sU','seller','k_sU','global',NULL,NULL),('bU','bU','buyer','k_bU','global','1 Test St / SG','SG')").run()
+db.prepare("INSERT INTO users (id,name,role,api_key,region,default_address_text,default_address_region) VALUES ('sU','sU','seller','k_sU','global',NULL,NULL),('bU','bU','buyer','k_bU','global','1 Test St / SG','SG'),('sys_protocol','sys','system','k_sys','global',NULL,NULL)").run()
 db.prepare('INSERT INTO wallets (user_id, balance) VALUES (?, 0), (?, 0)').run('sU', 'bU')
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('pU','sU','U品','d',30,5,'active')").run()
 
@@ -120,9 +123,9 @@ delete cp['usdc_escrow.per_tx_cap']
 ok('predicate: railOutsideWazCustody covers both non-WAZ rails only', railOutsideWazCustody('direct_p2p') && railOutsideWazCustody('usdc_escrow') && !railOutsideWazCustody('escrow') && !railOutsideWazCustody('deferred'))
 const SV2 = readFileSync(new URL('../src/pwa/server.ts', import.meta.url), 'utf8')
 const iSettleFn2 = SV2.indexOf('function settleOrder(orderId: string)')
-const iUsdcGuard = SV2.indexOf("payment_rail === 'usdc_escrow') return", iSettleFn2)
+const iUsdcGuard = SV2.indexOf("payment_rail === 'usdc_escrow') throw", iSettleFn2)
 const iEscrowMath = SV2.indexOf('const total = order.total_amount as number', iSettleFn2)
-ok('settleOrder: usdc_escrow returns BEFORE any WAZ escrow math', iSettleFn2 > 0 && iUsdcGuard > iSettleFn2 && iEscrowMath > iUsdcGuard, `fn=${iSettleFn2} guard=${iUsdcGuard} math=${iEscrowMath}`)
+ok('settleOrder: usdc_escrow fail-closed THROW sits BEFORE any WAZ escrow math', iSettleFn2 > 0 && iUsdcGuard > iSettleFn2 && iEscrowMath > iUsdcGuard, `fn=${iSettleFn2} guard=${iUsdcGuard} math=${iEscrowMath}`)
 const OA = readFileSync(new URL('../src/pwa/routes/orders-action.ts', import.meta.url), 'utf8')
 ok('orders-action: confirm blocked for usdc_escrow until on-chain release wiring (never fake-completes)', /toStatus === 'confirmed' && order\.payment_rail === 'usdc_escrow'/.test(OA) && /USDC_ESCROW_CONFIRM_NOT_WIRED/.test(OA))
 const DE = readFileSync(new URL('../src/layer3-trust/L3-1-dispute-engine/dispute-engine.ts', import.meta.url), 'utf8')
@@ -131,6 +134,33 @@ const MC = readFileSync(new URL('../src/layer3-trust/L3-1-dispute-engine/mutual-
 ok('mutual-cancel: same predicate (zero WAZ movement for on-chain rail)', /nonCustodial = railOutsideWazCustody\(order\.payment_rail\)/.test(MC))
 const RT = readFileSync(new URL('../src/pwa/routes/returns.ts', import.meta.url), 'utf8')
 ok('returns: both rail forks routed through the shared predicate', (RT.match(/railOutsideWazCustody\(railRow\?\.payment_rail\)/g) || []).length === 2)
+
+// ── ④d 付款窗到期清扫(#520 复审:库存泄漏/griefing)──
+db.prepare("UPDATE products SET stock = 5 WHERE id='pU'").run()
+const sweepRes0 = create()
+ok('sweep fixture order created', sweepRes0.body.success === true && (db.prepare("SELECT stock FROM products WHERE id='pU'").get() as { stock: number }).stock === 4)
+const newOrderId = String(sweepRes0.body.order_id)
+db.prepare("UPDATE orders SET pay_deadline = datetime('now','-1 hour') WHERE id = ?").run(newOrderId)
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+const swept = sweepExpiredUsdcEscrowOrders(db, { transition: transition as any })
+ok('sweep: expired created order cancelled + stock RESTORED (atomic, sole restock entry)',
+  swept.some(x => x.orderId === newOrderId && x.ok)
+  && (db.prepare('SELECT status FROM orders WHERE id = ?').get(newOrderId) as { status: string }).status === 'cancelled'
+  && (db.prepare("SELECT stock FROM products WHERE id='pU'").get() as { stock: number }).stock === 5, JSON.stringify(swept))
+ok('sweep: idempotent (second run nothing to do)', sweepExpiredUsdcEscrowOrders(db, { transition: transition as any }).length === 0)
+ok("restock whitelist: 'created' admitted for the pay-window expiry path", PRE_SHIP_RESTOCK_STATUSES.has('created'))
+
+// ── ④e 假完成三旁路 + 仲裁/协商拒绝(源码锁;settleOrder throw = 兜底安全网)──
+const SV3 = readFileSync(new URL('../src/pwa/server.ts', import.meta.url), 'utf8')
+ok('settleOrder: usdc → THROW (fail-closed; auto-confirm sweep rolls back, order stays delivered)', /payment_rail === 'usdc_escrow'\) throw new Error\('USDC_ESCROW_SETTLE_NOT_WIRED/.test(SV3))
+const OA2 = readFileSync(new URL('../src/pwa/routes/orders-action.ts', import.meta.url), 'utf8')
+ok('confirm-in-person + dispute_withdraw_confirm both rail-gated', (OA2.match(/USDC_ESCROW_CONFIRM_NOT_WIRED/g) || []).length >= 3)
+const DE2 = readFileSync(new URL('../src/layer3-trust/L3-1-dispute-engine/dispute-engine.ts', import.meta.url), 'utf8')
+ok('arbitration: usdc ruling REFUSED (zero-fund resolution would gift autoRelease to the loser)', /usdc_escrow'\) return \{ success: false, error: 'USDC 担保争议经链上仲裁/.test(DE2))
+const MC2 = readFileSync(new URL('../src/layer3-trust/L3-1-dispute-engine/mutual-cancel.ts', import.meta.url), 'utf8')
+ok('mutual-cancel: usdc settle REFUSED until on-chain refund wiring', /USDC_ESCROW_MUTUAL_CANCEL_NOT_WIRED/.test(MC2))
+const EG = readFileSync(new URL('../src/layer0-foundation/L0-2-state-machine/engine.ts', import.meta.url), 'utf8')
+ok('engine: all four custody forks keyed on railOutsideWazCustody (settleFault mint risk closed)', (EG.match(/railOutsideWazCustody\(order\.payment_rail\)/g) || []).length === 4)
 
 // ── ⑤ 源码锁 ──
 const RAILS = readFileSync(new URL('../src/direct-pay-rails.ts', import.meta.url), 'utf8')
