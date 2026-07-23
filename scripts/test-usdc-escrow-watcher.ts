@@ -18,11 +18,14 @@
  *   8. 事件消失 + getBlock 佐证 canonical hash 已变(真重组)→ orphan reason='reorg:log_vanished:<hash>'、订单未反转。
  *   8b. 事件消失但 getBlock 返回同一 hash(RPC 抖动,区块仍 canonical)→ 无 orphan、无新告警、订单不动。
  *   8c. 事件消失且 getBlock 抛错(节点滞后)→ 无定论:无 orphan、无告警、tick 不 throw(下 tick 重查)。
- *   9. Released/Disputed/Resolved → 只镜像,订单状态不动;Disputed 有告警,Released/Resolved 无。
+ *   9. Released 落在未 delivered 的 paid 单 → 镜像 + 「提前释放」告警、状态不动(B5:Released 现驱动结算,
+ *      完整 happy path 在 test-usdc-escrow-settle.ts);Disputed + Resolved 也镜像 + 告警(三条告警)。
  *   10. RPC 异常(fake client throw)→ tick 不 crash、游标不推进。
  *   11. 冷启动:watcher_state 空 → 初始化游标为 safeHead、不处理任何历史事件(零 getLogs 调用)。
  *   11b. 冷启动 + USDC_ESCROW_START_BLOCK(< safeHead)→ 游标初始化为该 env 块(非 safeHead)、仍不扫历史。
  *   12. 追赶:游标落后 > MAX_RANGE → 单 tick 多段推进(≤ MAX_RANGES_PER_TICK),最终 cursor=safeHead。
+ *   13. Released E2E:delivered + funded 单,真 bigint log args 经 runWatcherTick → 订单 completed +
+ *       fee_ledger.amount_units===Number(feePaid) + intent released(钉 bigint→string→BigInt 经 watcher JSON replacer 往返)。
  * Usage: npm run test:usdc-escrow-watcher
  */
 import { mkdtempSync } from 'node:fs'
@@ -41,6 +44,7 @@ const { initNotificationSchema } = await import('../src/layer2-business/L2-6-not
 const {
   runWatcherTick, MAX_RANGE, MAX_RANGES_PER_TICK,
 } = await import('../src/pwa/internal/usdc-escrow-watcher.js')
+const { settleUsdcEscrowAtCompletion } = await import('../src/usdc-escrow-settle.js')
 type WatcherLog = import('../src/pwa/internal/usdc-escrow-watcher.js').WatcherLog
 type WatcherChainClient = import('../src/pwa/internal/usdc-escrow-watcher.js').WatcherChainClient
 type WatcherDeps = import('../src/pwa/internal/usdc-escrow-watcher.js').WatcherDeps
@@ -53,7 +57,7 @@ const db = initDatabase(); db.pragma('foreign_keys = OFF'); setSeamDb(db)
 applyWebazRuntimeSchema(db)   // 组合根:usdc 四表 + orders/users/order_state_history 等基础表全建齐
 initNotificationSchema(db)    // notifications 表(alertAdmins 消费方;非组合根自动拾取范围,显式建)
 for (const col of ['payment_rail TEXT']) { try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
-db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('buyer1','buyer1','buyer','k_b1'),('seller1','seller1','seller','k_s1'),('admin1','admin1','admin','k_a1')").run()
+db.prepare("INSERT INTO users (id,name,role,api_key) VALUES ('buyer1','buyer1','buyer','k_b1'),('seller1','seller1','seller','k_s1'),('admin1','admin1','admin','k_a1'),('sys_protocol','sys','system','k_sys')").run()
 db.prepare("INSERT INTO products (id, seller_id, title, description, price, stock, status) VALUES ('p1','seller1','品','d',10,99,'active')").run()
 
 let seq = 0
@@ -123,8 +127,18 @@ class FakeClient implements WatcherChainClient {
   }
 }
 
+// settleOrder isomorphic to server.ts settleOrder's usdc branch (真被测函数 settleUsdcEscrowAtCompletion
+// 在内 —— 不桩被测判定者;与 test-usdc-escrow-settle.ts 同款,与生产分支逐字同构)。
+const settleOrderIso = (id: string): void => {
+  db.transaction(() => {
+    const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(id) as { id: string; payment_rail: string } | undefined
+    if (o && o.payment_rail === 'usdc_escrow') { settleUsdcEscrowAtCompletion(db, o, genId); return }
+    throw new Error('unexpected rail')
+  })()
+}
+
 const makeDeps = (client: WatcherChainClient, extra: Partial<WatcherDeps> = {}): WatcherDeps => ({
-  db, transition: tr, generateId: genId, contractAddress: CONTRACT, client, confirmations: 3n, reorgBuffer: 2n, ...extra,
+  db, transition: tr, settleOrder: settleOrderIso, generateId: genId, contractAddress: CONTRACT, client, confirmations: 3n, reorgBuffer: 2n, ...extra,
 })
 
 // NOTE on block numbering across groups: reorg detection scans usdc_escrow_chain_events by
@@ -306,7 +320,7 @@ const makeDeps = (client: WatcherChainClient, extra: Partial<WatcherDeps> = {}):
   ok('case8c: order untouched (still paid)', orderStatus(OID) === 'paid')
 }
 
-// ══════════ Group D [blocks 4000-4013]: case 9 — Released/Disputed/Resolved only mirror; Disputed alerts, Released/Resolved don't ══════════
+// ══════════ Group D [blocks 4000-4013]: case 9 — Released on a not-yet-delivered order = early-release alert (no transition); Disputed + Resolved also alert (B5: Released now drives settlement; full happy path lives in test-usdc-escrow-settle.ts) ══════════
 {
   const OID = 'ordD9'; const OK = '0x' + '7'.repeat(64)
   mkOrder(OID, 'paid'); mkIntent(OID, OK)
@@ -315,15 +329,13 @@ const makeDeps = (client: WatcherChainClient, extra: Partial<WatcherDeps> = {}):
   const disputedLog: WatcherLog = { eventName: 'Disputed', args: { orderKey: OK, by: BUYER_ADDR }, transactionHash: '0xtxD9d', logIndex: 0, blockNumber: 4002n, blockHash: '0xblockD9d' }
   const resolvedLog: WatcherLog = { eventName: 'Resolved', args: { orderKey: OK, buyerRefund: 0n, sellerPaid: 9_500_000n, feePaid: 500_000n }, transactionHash: '0xtxD9s', logIndex: 0, blockNumber: 4003n, blockHash: '0xblockD9s' }
   const client = new FakeClient(4016n, [releasedLog, disputedLog, resolvedLog])
-  const logged: string[] = []
   const notifBefore = notifCountAdmin()
-  await runWatcherTick(makeDeps(client, { log: (m: string) => logged.push(m) }))
+  await runWatcherTick(makeDeps(client))
   ok('case9: Released mirrored', mirrorCount('0xtxD9r') === 1)
   ok('case9: Disputed mirrored', mirrorCount('0xtxD9d') === 1)
   ok('case9: Resolved mirrored', mirrorCount('0xtxD9s') === 1)
-  ok('case9: order status untouched by all three', orderStatus(OID) === 'paid')
-  ok('case9: exactly one admin alert (Disputed only)', notifCountAdmin() === notifBefore + 1)
-  ok('case9: Released/Resolved routed through log(), not alertAdmins', logged.some(m => m.includes('Released')) && logged.some(m => m.includes('Resolved')))
+  ok('case9: order status untouched (Released on a paid order = early-release alert, NOT a transition)', orderStatus(OID) === 'paid')
+  ok('case9: three admin alerts (Released early-release + Disputed + Resolved arbitration)', notifCountAdmin() === notifBefore + 3, `delta=${notifCountAdmin() - notifBefore}`)
 }
 
 // ══════════ Group E [block 5000, disjoint]: case 10 — RPC exception mid-scan: tick doesn't crash, cursor doesn't advance ══════════
@@ -370,6 +382,28 @@ const makeDeps = (client: WatcherChainClient, extra: Partial<WatcherDeps> = {}):
   const r = await runWatcherTick(makeDeps(client))
   ok('case12: catch-up reaches safeHead in a single tick', r.scanned === true && cursorNow() === safeHead, `cursor=${cursorNow()} safeHead=${safeHead}`)
   ok('case12: bounded by MAX_RANGES_PER_TICK getLogs calls', client.getLogsCalls === MAX_RANGES_PER_TICK, `calls=${client.getLogsCalls}`)
+}
+
+// ══════════ Group H [blocks 200,000+, far above every other group]: case 13 — Released E2E on a delivered+funded order → the watcher drives the FULL settlement through its own JSON.stringify(bigint→string) replacer ══════════
+{
+  // Pins the bigint→string→BigInt round-trip: the watcher serializes REAL bigint log args via its
+  // replacer into payload_json, then applyUsdcEscrowRelease/settleUsdcEscrowAtCompletion parse it back
+  // with BigInt() for the conservation check and Number(feePaid) for the fee mirror.
+  const OID = 'ordH'; const OK = '0x' + '9'.repeat(64); const TX = '0xtxH'
+  mkOrder(OID, 'delivered'); mkIntent(OID, OK, { amount: 1_000_000 })
+  db.prepare("UPDATE usdc_escrow_intents SET status = 'funded' WHERE order_id = ?").run(OID)   // deposit already confirmed
+  setCursor(200_000n)
+  const releasedLog: WatcherLog = {
+    eventName: 'Released',
+    args: { orderKey: OK, auto_: false, sellerPaid: 950_000n, feePaid: 50_000n },   // REAL bigint args (950_000+50_000 = 1_000_000)
+    transactionHash: TX, logIndex: 0, blockNumber: 200_001n, blockHash: '0xblockH',
+  }
+  const client = new FakeClient(200_010n, [releasedLog])   // confirmations=3n → safeHead=200_007 ≥ 200_001 visible
+  await runWatcherTick(makeDeps(client))
+  const fee = db.prepare('SELECT amount_units FROM usdc_escrow_fee_ledger WHERE order_id = ?').get(OID) as { amount_units: number } | undefined
+  ok('case13(E2E): watcher Released on delivered+funded → order completed', orderStatus(OID) === 'completed', orderStatus(OID))
+  ok('case13(E2E): fee_ledger.amount_units === Number(feePaid) (bigint→string→BigInt round-trip through the replacer)', fee?.amount_units === Number(50_000n), JSON.stringify(fee))
+  ok('case13(E2E): intent → released', intentStatus(OID) === 'released')
 }
 
 if (fail > 0) { console.error(`\n❌ usdc-escrow-watcher FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }

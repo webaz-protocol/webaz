@@ -123,9 +123,9 @@ delete cp['usdc_escrow.per_tx_cap']
 ok('predicate: railOutsideWazCustody covers both non-WAZ rails only', railOutsideWazCustody('direct_p2p') && railOutsideWazCustody('usdc_escrow') && !railOutsideWazCustody('escrow') && !railOutsideWazCustody('deferred'))
 const SV2 = readFileSync(new URL('../src/pwa/server.ts', import.meta.url), 'utf8')
 const iSettleFn2 = SV2.indexOf('function settleOrder(orderId: string)')
-const iUsdcGuard = SV2.indexOf("payment_rail === 'usdc_escrow') throw", iSettleFn2)
+const iUsdcGuard = SV2.indexOf("payment_rail === 'usdc_escrow') { settleUsdcEscrowAtCompletion", iSettleFn2)
 const iEscrowMath = SV2.indexOf('const total = order.total_amount as number', iSettleFn2)
-ok('settleOrder: usdc_escrow fail-closed THROW sits BEFORE any WAZ escrow math', iSettleFn2 > 0 && iUsdcGuard > iSettleFn2 && iEscrowMath > iUsdcGuard, `fn=${iSettleFn2} guard=${iUsdcGuard} math=${iEscrowMath}`)
+ok('settleOrder: usdc_escrow branch (accounting mirror; early return) sits BEFORE any WAZ escrow math', iSettleFn2 > 0 && iUsdcGuard > iSettleFn2 && iEscrowMath > iUsdcGuard, `fn=${iSettleFn2} guard=${iUsdcGuard} math=${iEscrowMath}`)
 const OA = readFileSync(new URL('../src/pwa/routes/orders-action.ts', import.meta.url), 'utf8')
 ok('orders-action: confirm blocked for usdc_escrow until on-chain release wiring (never fake-completes)', /toStatus === 'confirmed' && order\.payment_rail === 'usdc_escrow'/.test(OA) && /USDC_ESCROW_CONFIRM_NOT_WIRED/.test(OA))
 const DE = readFileSync(new URL('../src/layer3-trust/L3-1-dispute-engine/dispute-engine.ts', import.meta.url), 'utf8')
@@ -171,7 +171,7 @@ ok("restock whitelist: 'created' admitted for the pay-window expiry path", PRE_S
 
 // ── ④e 假完成三旁路 + 仲裁/协商拒绝(源码锁;settleOrder throw = 兜底安全网)──
 const SV3 = readFileSync(new URL('../src/pwa/server.ts', import.meta.url), 'utf8')
-ok('settleOrder: usdc → THROW (fail-closed; auto-confirm sweep rolls back, order stays delivered)', /payment_rail === 'usdc_escrow'\) throw new Error\('USDC_ESCROW_SETTLE_NOT_WIRED/.test(SV3))
+ok('settleOrder: usdc → settleUsdcEscrowAtCompletion (B5 accounting mirror; internal THROW when no non-orphan Released mirror → still never fake-completes, outer tx rolls back)', /payment_rail === 'usdc_escrow'\) \{ settleUsdcEscrowAtCompletion\(db, order as unknown as \{ id: string \}, generateId\); return \}/.test(SV3))
 const OA2 = readFileSync(new URL('../src/pwa/routes/orders-action.ts', import.meta.url), 'utf8')
 ok('confirm-in-person + dispute_withdraw_confirm both rail-gated', (OA2.match(/USDC_ESCROW_CONFIRM_NOT_WIRED/g) || []).length >= 3)
 const DE2 = readFileSync(new URL('../src/layer3-trust/L3-1-dispute-engine/dispute-engine.ts', import.meta.url), 'utf8')

@@ -419,7 +419,7 @@ import { initBuildReputationSchema } from '../layer2-business/L2-9-contribution/
 import { initGithubCredentialStoreSchema } from '../layer2-business/L2-9-contribution/github-credential-store.js'
 import { initIdentityBindingSchema } from '../layer2-business/L2-9-contribution/identity-binding-store.js'
 import { initIdentityClaimChallengeSchema } from '../layer2-business/L2-9-contribution/identity-claim-challenge-store.js'
-import { initAdminCoordinationSchema } from '../layer2-business/L2-9-contribution/admin-coordination-store.js'; import { initWazSunsetSchema } from '../waz-sunset-store.js'; import { initUsdcEscrowSchema } from '../usdc-escrow-store.js'; import { registerUsdcPayoutAddressRoutes } from './routes/usdc-payout-address.js'; import { startUsdcEscrowWatcher } from './internal/usdc-escrow-watcher.js'
+import { initAdminCoordinationSchema } from '../layer2-business/L2-9-contribution/admin-coordination-store.js'; import { initWazSunsetSchema } from '../waz-sunset-store.js'; import { initUsdcEscrowSchema } from '../usdc-escrow-store.js'; import { registerUsdcPayoutAddressRoutes } from './routes/usdc-payout-address.js'; import { startUsdcEscrowWatcher } from './internal/usdc-escrow-watcher.js'; import { settleUsdcEscrowAtCompletion, sweepPendingUsdcEscrowReleases, sweepStalledUsdcEscrowOrders, alertUsdcAdmins } from '../usdc-escrow-settle.js'
 import { registerContributionIdentityRoutes } from './routes/contribution-identity.js'
 import { registerContributionScoreRoutes } from './routes/contribution-score.js'
 import { registerContributionFactsRoutes } from './routes/contribution-facts.js'
@@ -4692,7 +4692,7 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_gb_status ON group_buys(status, en
 registerGroupBuysRoutes(app, { db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent, getProtocolParam })
 
 // Cron: 过期未成团 → 失败结算（function 已迁出到 routes/group-buys.ts）
-setInterval(() => sweepExpiredGroupBuysRaw(db, generateId, broadcastSystemEvent, getProtocolParam), 60_000); setInterval(() => { try { sweepExpiredUsdcEscrowOrders(db, { transition }) } catch (e) { console.error('[usdc sweep cron]', e) } }, 60_000); if (process.env.USDC_ESCROW_CONTRACT) startUsdcEscrowWatcher({ db, transition, generateId, contractAddress: process.env.USDC_ESCROW_CONTRACT })   // B3 R2 sweep + B4 watcher(env 缺失空转)
+setInterval(() => sweepExpiredGroupBuysRaw(db, generateId, broadcastSystemEvent, getProtocolParam), 60_000); setInterval(() => { try { sweepExpiredUsdcEscrowOrders(db, { transition }); sweepPendingUsdcEscrowReleases(db, { transition, settleOrder, generateId }, (t, b) => alertUsdcAdmins(db, generateId, t, b)); sweepStalledUsdcEscrowOrders(db, generateId) } catch (e) { console.error('[usdc sweep cron]', e) } }, 60_000); if (process.env.USDC_ESCROW_CONTRACT) startUsdcEscrowWatcher({ db, transition, settleOrder, generateId, contractAddress: process.env.USDC_ESCROW_CONTRACT })   // B3 R2 sweep + B5 release/stalled sweep + B4 watcher(env 缺失空转)
 
 // I-2: admin 全平台数据导出
 const ADMIN_EXPORT_LIMIT = 20000
@@ -6811,7 +6811,7 @@ function settleOrder(orderId: string) {
   // Bug-C fix：所有资金/PV/状态写入包在单一事务内，避免迁 PG / 多 worker 后出现部分提交
   // 内部 try/catch 用于非关键 hook（settlePinRewards / metrics 更新）失败不回滚资金主流程
   db.transaction(() => {
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<string, unknown>; if (order && order.payment_rail === 'direct_p2p') { settleDirectPayFeeAtCompletion(db, order as unknown as { id: string; seller_id: string; total_amount: number; source: string | null }, generateId('dpfr')); return }; if (order && order.payment_rail === 'usdc_escrow') throw new Error('USDC_ESCROW_SETTLE_NOT_WIRED: on-chain release drives completion (B5); refusing to settle in the WAZ domain')  // Rail1 直付:跳过 escrow 结算,平台费=链下应收 | B3 硬闸:usdc_escrow 到达 settleOrder = 有路径试图假完成 → fail-closed THROW 整体回滚(auto-confirm sweep 有 per-order catch,订单留 delivered 可重试;B5 接真结算)
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<string, unknown>; if (order && order.payment_rail === 'direct_p2p') { settleDirectPayFeeAtCompletion(db, order as unknown as { id: string; seller_id: string; total_amount: number; source: string | null }, generateId('dpfr')); return }; if (order && order.payment_rail === 'usdc_escrow') { settleUsdcEscrowAtCompletion(db, order as unknown as { id: string }, generateId); return }  // Rail1 直付:跳过 escrow 结算,平台费=链下应收 | B5:链上费已收讫,纯记账镜像(fee ledger + intents released,零 wallets 写);无非孤儿 Released 镜像行时内部 THROW(铁律:绝不假完成 → 整体回滚)
     const total = order.total_amount as number
     const isSecondhand = order.source === 'secondhand'
     const isInPerson = order.fulfillment_mode === 'in_person'
