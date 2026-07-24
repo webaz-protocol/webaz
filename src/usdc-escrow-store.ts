@@ -49,8 +49,15 @@ export function initUsdcEscrowSchema(db: Database.Database): void {
     voucher_sig     TEXT NOT NULL,            -- EIP-712 signature hex
     auth_expires_at TEXT NOT NULL,
     status          TEXT NOT NULL DEFAULT 'issued',  -- issued | funded | released | void(B5:Released 消费后 funded→released)
+    buyer_addr      TEXT,                     -- B6b-2 A3:digest 绑定的买家链上地址(EIP-55;换账号释放的 preflight 校验用)。非 append-only:随重签更新。
+    chain_id        INTEGER,                  -- B6b-2 A5:签发时的链 id 快照(env flip 后在途单取快照,不取 live env)
     created_at      TEXT DEFAULT (datetime('now'))
   )`)
+  // ALTER AFTER CREATE(fresh DB 走 CREATE,存量表走 ALTER;两列均 nullable,存量空表安全)——
+  //   B6b-2 A3/A5 补列:buyer_addr(存款账户校验)、chain_id(链快照)。二者是 voucher 快照的一部分,非 append-only。
+  for (const col of ['buyer_addr TEXT', 'chain_id INTEGER']) {
+    try { db.exec(`ALTER TABLE usdc_escrow_intents ADD COLUMN ${col}`) } catch { /* 已存在 */ }
+  }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_uei_key ON usdc_escrow_intents(order_key)`)
 
   // 一次性守卫重建(B4 审计):旧 UNIQUE(tx_hash,log_index) 使同位重组的新 canonical 行永远进不了镜像
@@ -172,6 +179,7 @@ export interface VoucherIntentInput {
   orderId: string; orderKey: string; contractAddr: string; buyerId: string
   sellerId: string; sellerAddr: string; amountUnits: number; feeBps: number
   autoReleaseAtIso: string; voucherSig: string; authExpiresAtIso: string
+  buyerAddr: string; chainId: number   // B6b-2 A3/A5:买家链上地址快照 + 签发时链 id 快照
 }
 
 /**
@@ -191,26 +199,44 @@ export function upsertUsdcEscrowVoucherIntent(
     if (existing) {
       if (existing.status === 'funded' || existing.status === 'released') return { ok: false as const, error: '该订单已完成链上存入,凭证不可重签', error_code: 'USDC_ESCROW_VOUCHER_ALREADY_FUNDED' }
       if (existing.status === 'void') return { ok: false as const, error: '该订单凭证已作废(订单已取消)', error_code: 'USDC_ESCROW_VOUCHER_VOIDED' }
-      db.prepare(`UPDATE usdc_escrow_intents SET order_key=?, contract_addr=?, buyer_id=?, seller_id=?, seller_addr=?, amount_units=?, fee_bps=?, auto_release_at=?, voucher_sig=?, auth_expires_at=?, status='issued' WHERE order_id=?`)
-        .run(key, i.contractAddr, i.buyerId, i.sellerId, i.sellerAddr, i.amountUnits, i.feeBps, i.autoReleaseAtIso, i.voucherSig, i.authExpiresAtIso, i.orderId)
+      db.prepare(`UPDATE usdc_escrow_intents SET order_key=?, contract_addr=?, buyer_id=?, seller_id=?, seller_addr=?, amount_units=?, fee_bps=?, auto_release_at=?, voucher_sig=?, auth_expires_at=?, buyer_addr=?, chain_id=?, status='issued' WHERE order_id=?`)
+        .run(key, i.contractAddr, i.buyerId, i.sellerId, i.sellerAddr, i.amountUnits, i.feeBps, i.autoReleaseAtIso, i.voucherSig, i.authExpiresAtIso, i.buyerAddr, i.chainId, i.orderId)
       return { ok: true as const, outcome: 'reissued' as const }
     }
-    db.prepare(`INSERT INTO usdc_escrow_intents (order_id, order_key, contract_addr, buyer_id, seller_id, seller_addr, amount_units, fee_bps, auto_release_at, voucher_sig, auth_expires_at, status) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'issued')`)
-      .run(i.orderId, key, i.contractAddr, i.buyerId, i.sellerId, i.sellerAddr, i.amountUnits, i.feeBps, i.autoReleaseAtIso, i.voucherSig, i.authExpiresAtIso)
+    db.prepare(`INSERT INTO usdc_escrow_intents (order_id, order_key, contract_addr, buyer_id, seller_id, seller_addr, amount_units, fee_bps, auto_release_at, voucher_sig, auth_expires_at, buyer_addr, chain_id, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'issued')`)
+      .run(i.orderId, key, i.contractAddr, i.buyerId, i.sellerId, i.sellerAddr, i.amountUnits, i.feeBps, i.autoReleaseAtIso, i.voucherSig, i.authExpiresAtIso, i.buyerAddr, i.chainId)
     return { ok: true as const, outcome: 'issued' as const }
   })()
 }
 
-/** 轮询端点真值(B6b stepper 消费):intent 状态 + 链上 Deposited/Released 是否已【非孤儿】镜像(重组孤儿排除)。 */
-export function getUsdcEscrowStatus(db: Database.Database, orderId: string): { intent_status: string | null; deposited_seen: boolean; released_seen: boolean } {
-  const intent = db.prepare('SELECT order_key, status FROM usdc_escrow_intents WHERE order_id = ?').get(orderId) as { order_key: string; status: string } | undefined
-  if (!intent) return { intent_status: null, deposited_seen: false, released_seen: false }
+/**
+ * 轮询端点真值(B6b stepper 消费):intent 状态 + 链上 Deposited/Released 是否已【非孤儿】镜像(重组孤儿排除)。
+ * B6b-2 增补【只读】投影:voucher 快照的经济参数(金额 / 卖家收款地址 / 费率 / 自动放款时刻 / 签发时合约地址)。
+ *   释放·争议面必须同屏显示这组数字供用户与钱包弹窗交叉核对,倒计时也必须按【存入时冻结的】autoReleaseAt 走,
+ *   而不是重新按 param 现算。纯 SELECT 投影:零写、零语义变化(唯一消费方 = routes/usdc-escrow.ts GET /status)。
+ */
+export interface UsdcEscrowStatusView {
+  intent_status: string | null; deposited_seen: boolean; released_seen: boolean; disputed_seen: boolean
+  contract_addr: string | null; seller_addr: string | null; buyer_addr: string | null; chain_id: number | null
+  amount_units: number | null; fee_bps: number | null; auto_release_at: string | null
+}
+export function getUsdcEscrowStatus(db: Database.Database, orderId: string): UsdcEscrowStatusView {
+  const intent = db.prepare('SELECT order_key, status, contract_addr, seller_addr, buyer_addr, chain_id, amount_units, fee_bps, auto_release_at FROM usdc_escrow_intents WHERE order_id = ?').get(orderId) as
+    { order_key: string; status: string; contract_addr: string; seller_addr: string; buyer_addr: string | null; chain_id: number | null; amount_units: number; fee_bps: number; auto_release_at: string } | undefined
+  if (!intent) return { intent_status: null, deposited_seen: false, released_seen: false, disputed_seen: false, contract_addr: null, seller_addr: null, buyer_addr: null, chain_id: null, amount_units: null, fee_bps: null, auto_release_at: null }
   const seen = (name: string): boolean => !!db.prepare(`
     SELECT 1 FROM usdc_escrow_chain_events ce
     LEFT JOIN usdc_escrow_event_orphans o ON o.event_id = ce.id
     WHERE o.event_id IS NULL AND ce.event_name = ? AND ce.order_key = ? LIMIT 1
   `).get(name, intent.order_key)
-  return { intent_status: intent.status, deposited_seen: seen('Deposited'), released_seen: seen('Released') }
+  return {
+    // disputed_seen:合约 Disputed 后 escrow 只能经 arbiterResolve 退出 —— buyerRelease/flagDispute 都会 revert。
+    //   读面必须暴露它,否则 UI 会渲染出必然失败的按钮(B6b-2 D1 的 calldata 门也用它)。
+    intent_status: intent.status, deposited_seen: seen('Deposited'), released_seen: seen('Released'), disputed_seen: seen('Disputed'),
+    contract_addr: intent.contract_addr, seller_addr: intent.seller_addr,
+    buyer_addr: intent.buyer_addr, chain_id: intent.chain_id === null || intent.chain_id === undefined ? null : Number(intent.chain_id),
+    amount_units: Number(intent.amount_units), fee_bps: Number(intent.fee_bps), auto_release_at: intent.auto_release_at,
+  }
 }
 
 /**

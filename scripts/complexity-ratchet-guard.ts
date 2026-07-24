@@ -105,6 +105,9 @@ const LOC_CEILINGS: Record<string, number> = {
   'src/pwa/public/app-direct-pay-fee-requests-admin.js': 70,
   'src/pwa/public/app-direct-pay-fee-history.js':        39,
   'src/pwa/public/app-escrow-waz-sim.js':              39,
+  'src/pwa/public/app-usdc-wallet.js':                136,   // PR-B6b-2:EIP-1193 基础层(全仓唯一 provider 接触面;新文件基线)
+  'src/pwa/public/app-usdc-escrow-pay.js':            303,   // PR-B6b-2:买家存入 stepper(连钱包→链→授权→读→approve→deposit→等链上确认;新文件基线)
+  'src/pwa/public/app-usdc-escrow-release.js':        157,   // PR-B6b-2:链上释放 / 冻结争议面(新文件基线;round-2 A3 补:存款账户校验 + 存款地址回显 + gas 披露)
   'src/pwa/public/app-chat-poll.js':                   29,
   'src/pwa/public/app-order-poll.js':                  19,
   'src/pwa/public/app-poll-governor.js':               22,
