@@ -345,6 +345,7 @@
     "test:usdc-escrow-rail": "tsx scripts/test-usdc-escrow-rail.ts",
     "test:usdc-escrow-watcher": "tsx scripts/test-usdc-escrow-watcher.ts",
     "test:usdc-escrow-settle": "tsx scripts/test-usdc-escrow-settle.ts",
+    "test:usdc-escrow-arbiter": "tsx scripts/test-usdc-escrow-arbiter.ts",
     "test:usdc-escrow-voucher": "tsx scripts/test-usdc-escrow-voucher.ts",
     "test:usdc-escrow-rail-honesty": "tsx scripts/test-usdc-escrow-rail-honesty.ts",
     "test:usdc-escrow-wallet-ui": "tsx scripts/test-usdc-escrow-wallet-ui.ts",

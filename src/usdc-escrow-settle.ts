@@ -21,7 +21,7 @@ export interface UsdcSettleDeps {
   transition: (
     db: Database.Database,
     orderId: string,
-    to: 'confirmed' | 'completed',
+    to: 'confirmed' | 'completed' | 'cancelled',   // 'cancelled' = B7a Resolved 全退买家有利终态(disputed→cancelled)
     actorId: string,
     evidence: string[],
     note: string,
@@ -32,6 +32,7 @@ export interface UsdcSettleDeps {
 }
 
 export interface ReleasedEventRow { order_key: string; tx_hash: string; payload_json: string }
+export interface ResolvedEventRow { order_key: string; tx_hash: string; payload_json: string }
 
 interface IntentRow { order_id: string; order_key: string; amount_units: number; status: string }
 interface OrderRow { id: string; status: string; buyer_id: string }
@@ -253,6 +254,146 @@ export function sweepPendingUsdcEscrowReleases(
       applyUsdcEscrowRelease(db, deps, ev, alertAdmins)
     } catch (e) {
       console.error('[usdc-escrow settle sweep]', ev.order_key, (e as Error).message)
+    }
+  }
+}
+
+/**
+ * PR-B7a — Resolved 事件消费(链上仲裁裁决驱动 DB 收敛)。B5 的 Released 对应物。
+ *
+ * 铁律(与 applyUsdcEscrowRelease 同哲学):
+ *   - 资金【已在链上终局】(arbiterResolve 已把 buyerRefund/sellerPay/fee 分发,fee 进合约 accruedFees)——
+ *     DB 侧【零 wallets 写】,只做两件确定该做的事:① 按订单当前状态收敛终态(全走 engine.transition,留审计链);
+ *     ② 纯记账镜像:fee_ledger 一行(auto_release=0 区分 arbiter 裁决)+ intents funded→resolved。
+ *   - 守恒核对:buyerRefund+sellerPaid+feePaid === 存入 amount(BigInt);不符 → 去重告警、不动状态。
+ *   - 终态映射【只用既有合法 transition】(不新增订单状态):
+ *       全退(buyerRefund==amount)→ disputed→cancelled(买家有利);否则(部分/零退)→ disputed→completed(卖家侧)。
+ *   - 订单非 disputed(如仅链上 flag、DB 未开争议)→ 绝不强转非法态,告警人工收口(钱已在链上分配)。
+ *   - 全幂等:重扫/重驱/崩溃恢复收口到同一处(INSERT OR IGNORE fee 行 + 条件 UPDATE funded→resolved + 状态机天然幂等)。
+ */
+export function applyUsdcEscrowResolved(
+  db: Database.Database,
+  deps: UsdcSettleDeps,
+  ev: ResolvedEventRow,
+  alertAdmins: (title: string, body: string) => void,
+): void {
+  const orderKey = ev.order_key.toLowerCase()
+  const intent = db.prepare("SELECT order_id, order_key, amount_units, status FROM usdc_escrow_intents WHERE order_key = ?").get(orderKey) as IntentRow | undefined
+  if (!intent) {
+    alertAdmins('🚨 USDC 担保:未知裁决', `order_key ${orderKey} 链上裁决(tx ${ev.tx_hash})但无对应 intent —— 人工核。`)
+    return
+  }
+  if (intent.status === 'issued') {
+    alertAdmins('🚨 USDC 担保:未存入却裁决', `order_key ${orderKey}(order ${intent.order_id})intent 仍 issued(未确认存入)却收到链上裁决,tx ${ev.tx_hash} —— 人工核。`)
+    return
+  }
+  if (intent.status === 'void') {
+    alertAdmins('🚨 USDC 担保:作废凭证却裁决', `order_key ${orderKey}(order ${intent.order_id})intent 已 void(订单已取消)却收到链上裁决,tx ${ev.tx_hash} —— 人工核链上真相。`)
+    return
+  }
+
+  const order = db.prepare('SELECT id, status, buyer_id FROM orders WHERE id = ?').get(intent.order_id) as OrderRow | undefined
+  if (!order) {
+    alertAdmins('🚨 USDC 担保:intent 无对应订单', `intent order_id ${intent.order_id}(order_key ${orderKey})查不到订单,tx ${ev.tx_hash}。`)
+    return
+  }
+
+  // P2b:payload 解析 + BigInt 转换进 try/catch(与守恒/记账同哲学:畸形不抛穿 watcher processLog)。
+  //   若 payload 字段名意外不符 / 非数值,BigInt(undefined|'abc') 会抛;不捕则穿透 watcher processLog 整条崩。
+  //   捕获 → 去重告警、不动状态/记账(与守恒不符分支同处置)。
+  let buyerRefund: bigint, sellerPaid: bigint, feePaid: bigint, amount: bigint
+  try {
+    const payload = JSON.parse(ev.payload_json) as { buyerRefund: string; sellerPaid: string; feePaid: string }
+    buyerRefund = BigInt(payload.buyerRefund)
+    sellerPaid = BigInt(payload.sellerPaid)
+    feePaid = BigInt(payload.feePaid)
+    amount = BigInt(intent.amount_units)
+  } catch (e) {
+    alertUsdcAdmins(db, deps.generateId, '🚨 USDC 担保:裁决 payload 畸形',
+      `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— payload 解析失败:${(e as Error).message};不动状态,人工核。`, order.id)
+    return
+  }
+  if (buyerRefund + sellerPaid + feePaid !== amount) {
+    // 守恒不符 = 链上裁决 payload 与存入金额对不上(理论不该;合约恒等)→ 去重告警、绝不动状态/记账。
+    alertUsdcAdmins(db, deps.generateId, '🚨 USDC 担保:裁决守恒不符',
+      `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— buyerRefund(${buyerRefund})+sellerPaid(${sellerPaid})+feePaid(${feePaid}) != amount(${amount});不动状态,人工核。`, order.id)
+    return
+  }
+  const fullRefund = buyerRefund === amount
+
+  // 纯记账镜像(零 wallets 写;资金已在链上动过)。fee 行 auto_release=0 = arbiter 裁决(区分 B5 自动/买家释放)。
+  const mirror = (): void => {
+    db.prepare(`INSERT OR IGNORE INTO usdc_escrow_fee_ledger (order_id, order_key, amount_units, auto_release, tx_hash) VALUES (?,?,?,?,?)`)
+      .run(order.id, orderKey, Number(feePaid), 0, ev.tx_hash.toLowerCase())
+    db.prepare("UPDATE usdc_escrow_intents SET status = 'resolved' WHERE order_id = ? AND status = 'funded'").run(order.id)
+  }
+
+  switch (order.status) {
+    case 'disputed': {
+      const to: 'cancelled' | 'completed' = fullRefund ? 'cancelled' : 'completed'
+      let done = false
+      try {
+        db.transaction(() => {
+          const r = deps.transition(db, order.id, to, 'sys_protocol', [], `链上仲裁裁决已执行(tx ${ev.tx_hash}, buyerRefund=${buyerRefund}, full=${fullRefund})`)
+          if (!r.success) throw new Error(`disputed→${to} 失败:${r.error}`)
+          mirror()
+        })()
+        done = true
+      } catch (e) {
+        alertUsdcAdmins(db, deps.generateId, '🚨 USDC 担保:裁决结算失败', `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— ${(e as Error).message};状态未变,人工核。`, order.id)
+      }
+      if (done) { try { deps.notifyTransition?.(db, order.id, 'disputed', to) } catch (e) { console.warn('[usdc-escrow settle] resolved notify failed:', (e as Error).message) } }
+      break
+    }
+    case 'completed':
+    case 'cancelled': {
+      // 幂等补记(订单已终态:重驱/重扫/崩溃恢复)—— 只补记账,不改状态、不告警。
+      try {
+        const feeRow = db.prepare('SELECT order_id FROM usdc_escrow_fee_ledger WHERE order_id = ?').get(order.id)
+        if (!feeRow || intent.status === 'funded') db.transaction(() => { mirror() })()
+      } catch (e) {
+        alertUsdcAdmins(db, deps.generateId, '🚨 USDC 担保:裁决补记账失败', `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— ${(e as Error).message};人工核。`, order.id)
+      }
+      break
+    }
+    default:
+      // 到达这里 =【本不该发生】:resolve 路由(usdc-escrow-arbiter.ts)已硬门 order.status==='disputed' 才放行链上
+      //   arbiterResolve,故被认可的 Resolved 必落上面 disputed 分支正常收敛。走进 default = 链上已 Resolved 但 DB 非
+      //   disputed —— 只可能是 arbiter key 被路由外使用,或 flagDispute 后 DB 侧争议尚未开(不合作/丢钱包买家的端到端
+      //   DB 收敛属状态机设计,归 B7b:system/arbiter 代开 DB 争议 + 证据豁免)。资金已在链上分配,绝不强转非法态,
+      //   告警人工核。告警走 watcher rescan 窗口天然有界的 alertAdmins wrapper(sweep 只选 disputed,不入其选择集)。
+      alertAdmins('🚨 USDC 担保:非争议态收到链上裁决',
+        `order ${order.id}(order_key ${orderKey})状态 ${order.status},tx ${ev.tx_hash} —— 链上已 Resolved(buyerRefund=${buyerRefund}),` +
+        '但 DB 订单非 disputed;资金已在链上分配,请人工核对后收口(不自动转移非法态)。')
+  }
+}
+
+/**
+ * 重驱清扫(Resolved 的 sweepPendingUsdcEscrowReleases 姊妹):扫本轨、有非孤儿 Resolved 镜像、
+ * 且订单【仍 disputed】的单,逐行 try/catch 调驱动器 —— 收口"Resolved 事件已滚出 watcher rescan 窗口
+ * 之后订单才进 disputed"的时序缺口(与 B5 提前释放收口同理)。驱动后订单离开 disputed,下轮不再入选(有界)。
+ */
+export function sweepPendingUsdcEscrowResolves(
+  db: Database.Database,
+  deps: UsdcSettleDeps,
+  alertAdmins: (title: string, body: string) => void,
+): void {
+  let rows: ResolvedEventRow[] = []
+  try {
+    rows = db.prepare(`
+      SELECT DISTINCT ce.order_key, ce.tx_hash, ce.payload_json FROM usdc_escrow_chain_events ce
+      LEFT JOIN usdc_escrow_event_orphans o ON o.event_id = ce.id
+      JOIN usdc_escrow_intents i ON i.order_key = ce.order_key
+      JOIN orders ord ON ord.id = i.order_id
+      WHERE o.event_id IS NULL AND ce.event_name = 'Resolved'
+        AND ord.payment_rail = 'usdc_escrow' AND ord.status = 'disputed'
+    `).all() as ResolvedEventRow[]
+  } catch { return }
+  for (const ev of rows) {
+    try {
+      applyUsdcEscrowResolved(db, deps, ev, alertAdmins)
+    } catch (e) {
+      console.error('[usdc-escrow settle resolve-sweep]', ev.order_key, (e as Error).message)
     }
   }
 }
