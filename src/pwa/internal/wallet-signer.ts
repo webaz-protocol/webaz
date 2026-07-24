@@ -32,10 +32,21 @@ export interface WalletSigner {
   /** Off-chain issuer (passport / credential) signing. Signs via the issuer role; address below. */
   issuerSignMessage(message: string): Promise<`0x${string}`>
   issuerAddress(): `0x${string}`
+  /**
+   * USDC-escrow EIP-712 voucher signer (WebazEscrow `deposit` authorization). Its address is the
+   * on-chain `authorizationSigner` (configured at contract deploy, B8/B9). A DISTINCT role — a leaked
+   * voucher key can only mint deposit opportunities, never move funds already locked (contract invariant).
+   * NEVER reuse the hot/issuer/deposit key here.
+   */
+  escrowVoucherAccount(): Account
+  escrowVoucherAddress(): `0x${string}`
 }
 
 /** Seed string for the hot-wallet role (also the issuer role today — see Phase 0.5). */
 export const HOT_WALLET_SEED = 'platform-hot-wallet'
+
+/** Seed string for the USDC-escrow voucher role (distinct — its address is the contract authorizationSigner). */
+export const ESCROW_VOUCHER_SEED = 'usdc-escrow-voucher-signer'
 
 /**
  * In-process signer derived from a single master seed (current production behavior; dev/testnet).
@@ -58,5 +69,8 @@ export function createLocalSeedSigner(masterSeed: string): WalletSigner {
     depositAddress: (userId: string) => privateKeyToAddress(privKey(userId)),
     issuerSignMessage: (message: string) => privateKeyToAccount(privKey(ISSUER_SEED)).signMessage({ message }),
     issuerAddress: () => privateKeyToAddress(privKey(ISSUER_SEED)),
+    // Dedicated voucher role (independent seed) — never shares the hot/issuer/deposit key.
+    escrowVoucherAccount: () => privateKeyToAccount(privKey(ESCROW_VOUCHER_SEED)),
+    escrowVoucherAddress: () => privateKeyToAddress(privKey(ESCROW_VOUCHER_SEED)),
   }
 }

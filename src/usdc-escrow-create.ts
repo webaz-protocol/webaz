@@ -26,6 +26,13 @@ export function usdcEscrowRailEnabled(getProtocolParam: <T>(k: string, fb: T) =>
   return Number(getProtocolParam('payment_rail_usdc_escrow_enabled', 0)) === 1
 }
 
+/**
+ * 建单 + 存入确认后死线【顺延】的小时偏移(单一真相源)。建单时锚在 now(付款窗内),
+ * watcher 收到链上 Deposited 后按【同一组偏移】以确认时刻为起点重锚(见 usdc-escrow-watcher.ts)。
+ * 两处消费同一常量 → 行为逐字一致,杜绝 48/120/168/336/408 在两文件各写一份漂移。
+ */
+export const USDC_ESCROW_DEADLINE_OFFSET_HOURS = { accept: 48, ship: 120, pickup: 168, delivery: 336, confirm: 408 } as const
+
 /** 单笔上限(USDC 整数 units;默认 50 USDC,与合约 perTxCap 初值一致 —— 合约侧仍是权威上限)。 */
 export function usdcEscrowPerTxCapUnits(getProtocolParam: <T>(k: string, fb: T) => T): Units {
   const cap = Number(getProtocolParam('usdc_escrow.per_tx_cap', 50))
@@ -105,7 +112,10 @@ export function createUsdcEscrowResponse(
       ) VALUES (?,?,?,?,?,?,?,0,'created',?,?,?,?,?,?,?,0,?, 'usdc_escrow', ?, ?, ?, ?)`).run(
         orderId, ctx.product.id, ctx.buyerId, sellerId, ctx.reqQty, ctx.basePrice, ctx.totalAmount,
         ctx.shippingAddress,
-        addHours(payWindowHours), addHours(48), addHours(120), addHours(168), addHours(336), addHours(408),
+        addHours(payWindowHours),
+        addHours(USDC_ESCROW_DEADLINE_OFFSET_HOURS.accept), addHours(USDC_ESCROW_DEADLINE_OFFSET_HOURS.ship),
+        addHours(USDC_ESCROW_DEADLINE_OFFSET_HOURS.pickup), addHours(USDC_ESCROW_DEADLINE_OFFSET_HOURS.delivery),
+        addHours(USDC_ESCROW_DEADLINE_OFFSET_HOURS.confirm),
         (db.prepare('SELECT region FROM users WHERE id = ?').get(ctx.buyerId) as { region: string | null } | undefined)?.region || 'global',
         ctx.draftId ?? null, ctx.shipping?.region ?? null, ctx.shipping?.fee ?? null, ctx.shipping?.estDays ?? null,
       )

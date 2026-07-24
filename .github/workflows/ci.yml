@@ -892,6 +892,7 @@ jobs:
       - run: npm run test:usdc-escrow-rail
       - run: npm run test:usdc-escrow-watcher
       - run: npm run test:usdc-escrow-settle
+      - run: npm run test:usdc-escrow-voucher
       - run: npm run test:choose-payment
       - run: npm run test:choose-payment-ui
       - run: npm run test:order-draft

@@ -10,6 +10,7 @@
  */
 import type Database from 'better-sqlite3'
 import { restorePreShipDirectPayStock } from './direct-pay-stock.js'
+import { voidUsdcEscrowIntentOnCancel } from './usdc-escrow-store.js'   // B6a:付款窗超时 → 作废未存入凭证
 
 export interface UsdcEscrowSweepDeps {
   // 直接兼容 engine.transition 的真实签名(toStatus 为受限枚举;本清扫只用 'cancelled')
@@ -32,6 +33,8 @@ export function sweepExpiredUsdcEscrowOrders(db: Database.Database, deps: UsdcEs
         if (!restorePreShipDirectPayStock(db, { fromStatus: 'created', productId: o.product_id, quantity: Number(o.quantity) || 1 })) {
           throw new Error('restock refused for created (must never happen — whitelist regression)')
         }
+        voidUsdcEscrowIntentOnCancel(db, o.id)   // B6a:作废未存入(issued)凭证 —— 之后晚存入由 watcher void 分支拦截告警
+
       })()
       out.push({ orderId: o.id, ok: true })
     } catch (e) {

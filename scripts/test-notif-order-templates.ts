@@ -74,9 +74,10 @@ const lastNotif = (userId: string): Record<string, unknown> | undefined =>
 // ── ② 静态:key 覆盖 + i18n parity + dp 变体无资金话术 ──
 {
   const ENG = readFileSync('src/layer2-business/L2-6-notifications/notification-engine.ts', 'utf8')
-  // 客户端注册表 = orders + lifecycle 两个文件(lifecycle 为 2026-07 遍历审计新增,ratchet 禁续写 orders 文件)
+  // 客户端注册表 = orders + lifecycle + usdc-escrow 三个文件(后两者为 ratchet 禁续写 orders 文件时的新增)
   const TPL = readFileSync('src/pwa/public/app-notif-templates-orders.js', 'utf8')
     + readFileSync('src/pwa/public/app-notif-templates-lifecycle.js', 'utf8')
+    + readFileSync('src/pwa/public/app-notif-templates-usdc-escrow.js', 'utf8')
   const I18N = readFileSync('src/pwa/public/i18n.js', 'utf8')
   const engineKeys = [...ENG.matchAll(/'(ord_[a-z_]+)'/g)].map(m => m[1])
   const registryKeys = new Set([...TPL.matchAll(/^\s{4}(\w+):/gm)].map(m => m[1]))
@@ -90,7 +91,8 @@ const lastNotif = (userId: string): Record<string, unknown> | undefined =>
   const HTML = readFileSync('src/pwa/public/index.html', 'utf8')
   ok('11. notif templates registered via Object.assign (load-order safe)', /Object\.assign\(window\.NOTIF_TEMPLATES,/.test(TPL)
     && HTML.indexOf('app-notif-templates.js') < HTML.indexOf('app-notif-templates-orders.js')
-    && HTML.indexOf('app-notif-templates-orders.js') < HTML.indexOf('app-notif-templates-lifecycle.js'))
+    && HTML.indexOf('app-notif-templates-orders.js') < HTML.indexOf('app-notif-templates-lifecycle.js')
+    && HTML.indexOf('app-notif-templates-lifecycle.js') < HTML.indexOf('app-notif-templates-usdc-escrow.js'))
 }
 
 // ── ③ N3:fee-prepay 三向通知(HTTP e2e)。fee 表已在 initDatabase();admin_audit_log 为 runtime-helper 表。──

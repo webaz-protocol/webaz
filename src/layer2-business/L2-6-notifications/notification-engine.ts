@@ -78,9 +78,14 @@ interface OrderCtx {
 
 const RULES: Record<string, NotifRule> = {
   'created→paid': {
-    recipients: ['seller'], key: 'ord_created_paid',
+    // usdc_escrow 分轨:created→paid 由链上 Deposited 驱动 —— 文案必须如实(货款在【链上合约托管】,非 WAZ、非平台钱包;
+    //   本轨超时执法在链上 autoRelease,非"24h 不接单自动退款")。escrow/其它默认保留原文案。
+    recipients: ['seller'],
+    key: ctx => ctx.paymentRail === 'usdc_escrow' ? 'ord_created_paid_ue' : 'ord_created_paid',
     title: '🛍️ 新订单',
-    body: ctx => `${ctx.buyerName} 下单了「${ctx.productTitle}」，金额 ${ctx.totalAmount} WAZ。请在 24h 内接单，否则自动退款。`,
+    body: ctx => ctx.paymentRail === 'usdc_escrow'
+      ? `${ctx.buyerName} 下单了「${ctx.productTitle}」并已将 ${ctx.totalAmount} USDC 存入链上合约托管，请及时接单发货。`
+      : `${ctx.buyerName} 下单了「${ctx.productTitle}」，金额 ${ctx.totalAmount} WAZ。请在 24h 内接单，否则自动退款。`,
   },
   'paid→accepted': {
     recipients: ['buyer'], key: 'ord_paid_accepted',
@@ -115,17 +120,24 @@ const RULES: Record<string, NotifRule> = {
     body: ctx => `你的包裹已送达，请确认收货。72 小时内未确认将自动完成。`,
   },
   'delivered→confirmed': {
-    recipients: ['seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_delivered_confirmed_dp' : 'ord_delivered_confirmed',
-    title: ctx => ctx.paymentRail === 'direct_p2p' ? '✅ 买家确认收货' : '💰 买家确认收货',
+    // usdc_escrow 分轨:货款经【链上合约释放】给卖家收款地址(平台不经手、无平台钱包入账)—— 绝不写 WAZ / 结算中。
+    recipients: ['seller'],
+    key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_delivered_confirmed_dp' : ctx.paymentRail === 'usdc_escrow' ? 'ord_delivered_confirmed_ue' : 'ord_delivered_confirmed',
+    title: ctx => ctx.paymentRail === 'direct_p2p' ? '✅ 买家确认收货' : ctx.paymentRail === 'usdc_escrow' ? '✅ 买家确认收货，链上释放中' : '💰 买家确认收货',
     body: ctx => ctx.paymentRail === 'direct_p2p'
       ? `${ctx.buyerName} 已确认收货，订单完成。直付为非托管:货款由你与买家场外结算,协议不代收、无平台资金入账。`
+      : ctx.paymentRail === 'usdc_escrow'
+      ? `${ctx.buyerName} 已确认收货，货款经链上合约释放至你的收款地址(平台不经手)。`
       : `${ctx.buyerName} 已确认收货，${ctx.totalAmount} WAZ 结算中。`,
   },
   'confirmed→completed': {
-    recipients: ['seller'], key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_confirmed_completed_dp' : 'ord_confirmed_completed',
-    title: ctx => ctx.paymentRail === 'direct_p2p' ? '✅ 交易完成' : '✅ 交易完成，资金到账',
+    recipients: ['seller'],
+    key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_confirmed_completed_dp' : ctx.paymentRail === 'usdc_escrow' ? 'ord_confirmed_completed_ue' : 'ord_confirmed_completed',
+    title: ctx => ctx.paymentRail === 'direct_p2p' ? '✅ 交易完成' : ctx.paymentRail === 'usdc_escrow' ? '✅ 交易完成，链上已结算' : '✅ 交易完成，资金到账',
     body: ctx => ctx.paymentRail === 'direct_p2p'
       ? `订单「${ctx.productTitle}」交易完成。直付为非托管:无平台资金结算,货款以你与买家场外结算为准。`
+      : ctx.paymentRail === 'usdc_escrow'
+      ? `订单「${ctx.productTitle}」交易完成，货款已由链上合约结算至你的收款地址(平台不经手、无平台钱包入账)。`
       : `订单「${ctx.productTitle}」交易完成，收益已入账，查看钱包确认。`,
   },
   'paid→disputed': {

@@ -32,6 +32,7 @@ import { createPublicClient, http, parseAbiItem } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
 import { alertUsdcAdmins, applyUsdcEscrowRelease } from '../../usdc-escrow-settle.js'
 import type { UsdcSettleDeps } from '../../usdc-escrow-settle.js'
+import { USDC_ESCROW_DEADLINE_OFFSET_HOURS } from '../../usdc-escrow-create.js'
 
 // ─── 可调参数(导出,便于测试引用/覆盖)─────────────────────────
 export const CONFIRMATIONS = 12n
@@ -62,6 +63,7 @@ export interface WatcherDeps {
   settleOrder: (orderId: string) => void   // B5:Released 收口调 server.ts settleOrder(usdc 分支=记账镜像)
   generateId: (p: string) => string
   contractAddress: string
+  notifyTransition?: (db: Database.Database, orderId: string, from: string, to: string) => void   // B6a:created→paid 消费(可选;缺省不发通知)
   client?: WatcherChainClient          // 测试注入;缺省用 viem createPublicClient(env BASE_RPC_URL + NETWORK)
   confirmations?: bigint
   reorgBuffer?: bigint                 // 测试可覆盖;生产用模块常量
@@ -201,15 +203,73 @@ async function detectReorgs(deps: WatcherDeps, client: WatcherChainClient, fromB
   }
 }
 
+/**
+ * 死单存入(订单已 cancelled 收到链上存入)买家+卖家通知:直接 INSERT notifications(带 order_id),
+ * 按 (user_id, order_id, type) 去重(watcher rescan 窗口内会重复驱动 applyDeposited)。双语 template_key
+ * (app-notif-templates-usdc-escrow.js);honest 中文回退。通知失败绝不阻断,由外层 try/catch 包住。
+ */
+function notifyDeadDeposit(deps: WatcherDeps, o: { orderId: string; buyerId: string | null; sellerId: string | null }): void {
+  const ins = (uid: string | null, title: string, body: string, key: string): void => {
+    if (!uid) return
+    const exists = deps.db.prepare('SELECT 1 FROM notifications WHERE user_id = ? AND order_id = ? AND type = ? LIMIT 1').get(uid, o.orderId, 'usdc_dead_deposit')
+    if (exists) return
+    deps.db.prepare('INSERT INTO notifications (id, user_id, order_id, type, title, body, template_key, params) VALUES (?,?,?,?,?,?,?,?)')
+      .run(deps.generateId('ntf'), uid, o.orderId, 'usdc_dead_deposit', title, body, key, JSON.stringify({}))
+  }
+  ins(o.buyerId, '⚠️ 资金已入合约但订单已取消', '你的 USDC 已进入链上担保合约,但该订单已取消。平台将协助你处理链上退款,请勿担心。', 'usdc_dead_deposit_buyer')
+  ins(o.sellerId, '⚠️ 已取消订单收到链上存入,请勿发货', '一笔已取消订单收到了买家的链上存入。请勿发货;平台正在处理链上退款。', 'usdc_dead_deposit_seller')
+}
+
+/**
+ * 存款参数不符(seller/amount/fee/contract 任一不符)买家+卖家通知(镜像 notifyDeadDeposit 结构):
+ * 买家资金已在链上但参数与订单不一致,双方都须知悉(此前仅告警 admin,双方蒙在鼓里而钱在链上)。
+ * 存量 title/body 双语内联(zh / en) —— 不依赖 NOTIF_TEMPLATES(param-mismatch 无模板),notifRender
+ * 未知 key 回退存量双语 body,故双语可达。按 (user_id, order_id, type) 去重(rescan 窗口内重复驱动)。
+ * 通知失败绝不阻断镜像/告警(由外层 try/catch 包住)。
+ */
+function notifyParamMismatch(deps: WatcherDeps, o: { orderId: string; buyerId: string | null; sellerId: string | null }): void {
+  const ins = (uid: string | null, title: string, body: string, key: string): void => {
+    if (!uid) return
+    const exists = deps.db.prepare('SELECT 1 FROM notifications WHERE user_id = ? AND order_id = ? AND type = ? LIMIT 1').get(uid, o.orderId, 'usdc_param_mismatch')
+    if (exists) return
+    deps.db.prepare('INSERT INTO notifications (id, user_id, order_id, type, title, body, template_key, params) VALUES (?,?,?,?,?,?,?,?)')
+      .run(deps.generateId('ntf'), uid, o.orderId, 'usdc_param_mismatch', title, body, key, JSON.stringify({}))
+  }
+  ins(o.buyerId,
+    '⚠️ 链上存入参数与订单不符 / On-chain deposit does not match the order',
+    '你的 USDC 已进入链上担保合约,但存入参数(金额/卖家/费率)与订单不一致。平台已介入核对,请勿担心,暂勿催促发货。 / Your USDC is in the escrow contract, but the deposit parameters (amount/seller/fee) do not match the order. The platform is reconciling — please do not worry, and do not rush shipment.',
+    'usdc_param_mismatch_buyer')
+  ins(o.sellerId,
+    '⚠️ 收到参数不符的链上存入,请勿发货 / Mismatched on-chain deposit — do not ship',
+    '一笔订单收到了参数(金额/卖家/费率)与订单不符的链上存入。请勿发货;平台正在人工核对链上真实状态。 / An order received an on-chain deposit whose parameters (amount/seller/fee) do not match. Do not ship; the platform is manually reconciling the on-chain state.',
+    'usdc_param_mismatch_seller')
+}
+
 /** Deposited 应用步:intents 核对 + created→paid(仅当参数与订单状态皆符合时)。单事务,失败绝不吞。 */
 function applyDeposited(deps: WatcherDeps, orderKey: string, l: WatcherLog): void {
+  const out = {
+    paidOrderId: '' as string,
+    deadDeposit: null as null | { orderId: string; buyerId: string | null; sellerId: string | null },
+    paramMismatch: null as null | { orderId: string; buyerId: string | null; sellerId: string | null },
+  }
   deps.db.transaction(() => {
     const intent = deps.db.prepare('SELECT * FROM usdc_escrow_intents WHERE order_key = ?').get(orderKey) as IntentRow | undefined
     if (!intent) {
       alertAdmins(deps, '🚨 USDC 担保:未知存款', `order_key ${orderKey} 收到链上存款(tx ${l.transactionHash})但无对应 intent —— amount ${String(l.args.amount)}。`)
       return
     }
+    // B6a:作废凭证却收到存入(订单已取消/清扫作废后买家仍存入)—— 告警 + 不动订单(在参数核对前)。
+    if (intent.status === 'void') {
+      alertAdmins(deps, '🚨 USDC 担保:作废凭证却收到存入', `order_key ${orderKey}(order ${intent.order_id})intent 已 void(订单已取消)却收到链上存款,tx ${l.transactionHash} —— 不动订单,人工核链上退款。`)
+      const ord = deps.db.prepare('SELECT status, buyer_id, seller_id FROM orders WHERE id = ?').get(intent.order_id) as { status: string; buyer_id: string | null; seller_id: string | null } | undefined
+      if (ord && ord.status === 'cancelled') out.deadDeposit = { orderId: intent.order_id, buyerId: ord.buyer_id, sellerId: ord.seller_id }
+      return
+    }
 
+    // 匹配集【刻意只含】seller/amount/fee/contract —— autoReleaseAt/authExpiresAt 蓄意排除(finding A4):
+    //   过期凭证重签会得到【新的】 autoReleaseAt/authExpiresAt,但买家可能仍拿旧 voucher 去链上 deposit;
+    //   若把这两个时间字段也纳入匹配,合法的 stale-voucher 存入会被误判不符而永不 fund。存款本金安全只取决于
+    //   seller/amount/fee/contract 四项,时间字段不影响钱去向,故不纳入匹配(留给链上 authExpiresAt 守卫)。
     const argSeller = typeof l.args.seller === 'string' ? (l.args.seller as string).toLowerCase() : ''
     const sellerMatches = argSeller !== '' && argSeller === intent.seller_addr.toLowerCase()
     const amountMatches = l.args.amount !== undefined && BigInt(intent.amount_units) === BigInt(l.args.amount as bigint | number | string)
@@ -222,11 +282,13 @@ function applyDeposited(deps: WatcherDeps, orderKey: string, l: WatcherLog): voi
         `order_key ${orderKey}(order ${intent.order_id})tx ${l.transactionHash} —— ` +
         `seller_match=${sellerMatches} amount_match=${amountMatches} fee_match=${feeMatches} contract_match=${contractMatches}`,
       )
+      // 买家资金已在链上却参数不符 —— 买卖双方须知悉(此前仅告警 admin,双方蒙在鼓里)。通知在 tx 提交后发。
+      out.paramMismatch = { orderId: intent.order_id, buyerId: intent.buyer_id, sellerId: intent.seller_id }
       return
     }
 
-    const order = deps.db.prepare('SELECT id, status, buyer_id, payment_rail FROM orders WHERE id = ?').get(intent.order_id) as
-      { id: string; status: string; buyer_id: string; payment_rail: string } | undefined
+    const order = deps.db.prepare('SELECT id, status, buyer_id, seller_id, payment_rail FROM orders WHERE id = ?').get(intent.order_id) as
+      { id: string; status: string; buyer_id: string; seller_id: string | null; payment_rail: string } | undefined
     if (!order) {
       alertAdmins(deps, '🚨 USDC 担保:intent 无对应订单', `intent order_id ${intent.order_id}(order_key ${orderKey})查不到订单,tx ${l.transactionHash}。`)
       return
@@ -236,6 +298,13 @@ function applyDeposited(deps: WatcherDeps, orderKey: string, l: WatcherLog): voi
       const r = deps.transition(deps.db, order.id, 'paid', order.buyer_id, [], `链上存入已确认(tx ${l.transactionHash}, block ${l.blockNumber})`)
       if (r.success) {
         deps.db.prepare("UPDATE usdc_escrow_intents SET status = 'funded' WHERE order_id = ? AND status = 'issued'").run(order.id)
+        // B6a(B5 审计接缝):存入确认后死线【顺延】—— 本轨付款窗内死线锚在建单会导致晚存入被停摆误报 +
+        //   SLA 不诚实。各偏移与 usdc-escrow-create.ts 建单 addHours(48/120/168/336/408) 一致(付款钟从存入确认起)。
+        const nowMs = Date.now(); const iso = (h: number): string => new Date(nowMs + h * 3600_000).toISOString()
+        const OFS = USDC_ESCROW_DEADLINE_OFFSET_HOURS   // 单一真相源:与 usdc-escrow-create.ts 建单偏移逐字一致
+        deps.db.prepare('UPDATE orders SET accept_deadline=?, ship_deadline=?, pickup_deadline=?, delivery_deadline=?, confirm_deadline=? WHERE id=?')
+          .run(iso(OFS.accept), iso(OFS.ship), iso(OFS.pickup), iso(OFS.delivery), iso(OFS.confirm), order.id)
+        out.paidOrderId = order.id
       } else {
         alertAdmins(deps, '🚨 USDC 担保:created→paid transition 失败', `order ${order.id}(order_key ${orderKey})tx ${l.transactionHash} —— ${r.error}`)
       }
@@ -249,8 +318,13 @@ function applyDeposited(deps: WatcherDeps, orderKey: string, l: WatcherLog): voi
         `order ${order.id}(order_key ${orderKey})在 ${order.status} 状态收到链上存款 tx ${l.transactionHash} —— ` +
         '真钱已在链上而订单非 created/paid,须人工/PR-B7 处置(绝不自动反转)。',
       )
+      if (order.status === 'cancelled') out.deadDeposit = { orderId: order.id, buyerId: order.buyer_id, sellerId: order.seller_id }
     }
   })()
+  // 通知在钱路事务【提交后】发,try/catch 包住 —— 通知失败绝不回滚已确认的 created→paid / 死单标记。
+  if (out.paidOrderId) { try { deps.notifyTransition?.(deps.db, out.paidOrderId, 'created', 'paid') } catch (e) { console.warn('[usdc-escrow watcher] paid notify failed:', (e as Error).message) } }
+  if (out.deadDeposit) { try { notifyDeadDeposit(deps, out.deadDeposit) } catch (e) { console.warn('[usdc-escrow watcher] dead-deposit notify failed:', (e as Error).message) } }
+  if (out.paramMismatch) { try { notifyParamMismatch(deps, out.paramMismatch) } catch (e) { console.warn('[usdc-escrow watcher] param-mismatch notify failed:', (e as Error).message) } }
 }
 
 /** 单条 log 的处理入口:先镜像(链上真相必须落盘),再按事件类型分发应用逻辑。 */
@@ -270,7 +344,7 @@ function processLog(deps: WatcherDeps, l: WatcherLog): void {
       // B5:镜像后收敛状态 + 纯记账镜像(零 wallets 写)。payload 逐字序列化(bigint→string,与镜像同款)。
       applyUsdcEscrowRelease(
         deps.db,
-        { transition: deps.transition as UsdcSettleDeps['transition'], settleOrder: deps.settleOrder, generateId: deps.generateId },
+        { transition: deps.transition as UsdcSettleDeps['transition'], settleOrder: deps.settleOrder, generateId: deps.generateId, notifyTransition: deps.notifyTransition },
         { order_key: orderKey, tx_hash: l.transactionHash.toLowerCase(), payload_json: JSON.stringify(l.args, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) },
         (t, b) => alertAdmins(deps, t, b),
       )
