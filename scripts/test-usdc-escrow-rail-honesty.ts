@@ -277,8 +277,10 @@ ok('10l2. B5 they state what is actually true (funds still in the contract + ale
   /平台已收到告警并会人工跟进/.test(NOTIF) && I18N_SRC.includes('the platform has been alerted and will follow up manually'), '')
 
 // B6 — the model-visible tools/list schema description.
+// 描述文案计入 tools/list 的 44300B 预算(buyer surface headroom 仅 ~0.1%),故用最短的三轨表述:
+//   逐轨都必须出现,但不锁具体措辞的长版本 —— 再加长会直接顶破 test:mcp-definition-budget。
 ok('10m. B6 rail_note schema description is three-rail, not the old binary',
-  /escrow \(WAZ\) = simulated, not real custody; usdc_escrow = real USDC held by the on-chain contract on Base; direct_p2p = no principal held/
+  /escrow\(WAZ\)=simulated;\s*usdc_escrow=real USDC in the Base contract;\s*direct_p2p=no principal held/
     .test(rd('src/layer1-agent/L1-1-mcp-server/tool-output-schemas.ts')), '')
 
 // B8 — the orphaned two-rail tooltip key is gone (i18n has dup/parity tests, so it must be a clean delete).
