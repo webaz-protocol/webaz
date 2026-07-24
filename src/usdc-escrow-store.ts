@@ -190,7 +190,7 @@ export function upsertUsdcEscrowVoucherIntent(
     const existing = db.prepare('SELECT status FROM usdc_escrow_intents WHERE order_id = ?').get(i.orderId) as { status: string } | undefined
     if (existing) {
       if (existing.status === 'funded' || existing.status === 'released') return { ok: false as const, error: '该订单已完成链上存入,凭证不可重签', error_code: 'USDC_ESCROW_VOUCHER_ALREADY_FUNDED' }
-      if (existing.status === 'void') return { ok: false as const, error: '该订单凭证已作废(订单已取消)', error_code: 'USDC_ESCROW_VOUCHER_ALREADY_FUNDED' }
+      if (existing.status === 'void') return { ok: false as const, error: '该订单凭证已作废(订单已取消)', error_code: 'USDC_ESCROW_VOUCHER_VOIDED' }
       db.prepare(`UPDATE usdc_escrow_intents SET order_key=?, contract_addr=?, buyer_id=?, seller_id=?, seller_addr=?, amount_units=?, fee_bps=?, auto_release_at=?, voucher_sig=?, auth_expires_at=?, status='issued' WHERE order_id=?`)
         .run(key, i.contractAddr, i.buyerId, i.sellerId, i.sellerAddr, i.amountUnits, i.feeBps, i.autoReleaseAtIso, i.voucherSig, i.authExpiresAtIso, i.orderId)
       return { ok: true as const, outcome: 'reissued' as const }

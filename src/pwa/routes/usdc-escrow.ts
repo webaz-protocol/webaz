@@ -70,25 +70,30 @@ export interface UsdcEscrowRouteDeps {
   getProtocolParam: <T>(k: string, fb: T) => T
   /** walletSigner.escrowVoucherAccount() seam(独立角色 = 合约 authorizationSigner)。 */
   escrowVoucherAccount: () => Account
+  /** 滑窗限流 seam(server.ts rateLimitOk;缺省=放行,便于单测)。 */
+  rateLimitOk?: (key: string, max?: number, windowMs?: number) => boolean
 }
 
 interface OrderRow {
   id: string; buyer_id: string; seller_id: string; status: string
-  payment_rail: string; total_amount: number; source: string | null; pay_open: number
+  payment_rail: string; total_amount: number; source: string | null; pay_open: number; pay_deadline: string
 }
 
 export function registerUsdcEscrowRoutes(app: Application, deps: UsdcEscrowRouteDeps): void {
   const { db, auth, isTrustedRole, getProtocolParam: gp, escrowVoucherAccount } = deps
+  const rateLimitOk = deps.rateLimitOk ?? ((): boolean => true)
 
   // POST /api/orders/:id/usdc-escrow/voucher —— 买家:签发一次性 EIP-712 存款授权。
   app.post('/api/orders/:id/usdc-escrow/voucher', async (req, res) => {
     const user = auth(req, res); if (!user) return
     if (isTrustedRole(user)) return void res.status(403).json({ error: '运营角色账号不可参与订单流转', error_code: 'TRUSTED_ROLE_NO_TRADE' })
     const uid = String(user.id)
+    // 滑窗限流(签名是每次签发一次 ECDSA + 一次 tx;防同一用户高频刷签)。10 次/分钟/用户,超限 429。
+    if (!rateLimitOk(`usdc_voucher:${uid}`, 10, 60_000)) return void res.status(429).json({ error: '签发过于频繁,请稍后再试', error_code: 'USDC_ESCROW_VOUCHER_RATE_LIMITED' })
 
-    // 订单读(含 pay_deadline 在 SQL 内 datetime() 归一比较,防裸文本 lex 失明)—— 异步 seam
+    // 订单读(含 pay_deadline 在 SQL 内 datetime() 归一比较,防裸文本 lex 失明;另取 pay_deadline 原值供 auth_expires 钳制)—— 异步 seam
     const order = await dbOne<OrderRow>(
-      `SELECT id, buyer_id, seller_id, status, payment_rail, total_amount, source,
+      `SELECT id, buyer_id, seller_id, status, payment_rail, total_amount, source, pay_deadline,
               (datetime(pay_deadline) >= datetime('now')) AS pay_open
        FROM orders WHERE id = ?`, [req.params.id])
     // 守卫顺序(全部 fail-closed)：
@@ -112,7 +117,7 @@ export function registerUsdcEscrowRoutes(app: Application, deps: UsdcEscrowRoute
     const sellerAddr = payouts[0].address
     // ⑦ 金额 ≤ per-tx cap（money units = USDC 6dp，无换算）
     const amountU = toUnits(Number(order.total_amount) || 0)
-    if (amountU <= 0) return void res.status(409).json({ error: '订单金额无效', error_code: 'USDC_ESCROW_VOUCHER_NOT_OPEN' })
+    if (amountU <= 0) return void res.status(409).json({ error: '订单金额无效', error_code: 'USDC_ESCROW_VOUCHER_BAD_AMOUNT' })   // 建单恒 total>0,防御性:金额非法用诚实码(非 NOT_OPEN 误导)
     if (amountU > usdcEscrowPerTxCapUnits(gp)) return void res.status(409).json({ error: '超出 USDC 担保单笔上限', error_code: 'USDC_ESCROW_CAP_EXCEEDED' })
 
     // ── 计算 voucher 经济参数 ──
@@ -121,10 +126,17 @@ export function registerUsdcEscrowRoutes(app: Application, deps: UsdcEscrowRoute
     const amount = BigInt(amountU)                                   // 6dp 链上单位
     const feeBps = order.source === 'secondhand' ? 100 : 200         // 二手 1% / 其它 2%(bps);口径同 direct-pay-fee-ar.ts feeUnitsForOrder(0.01/0.02)
     const nowSec = Math.floor(Date.now() / 1000)
-    const autoReleaseDays = Math.max(3, Number(gp('usdc_escrow.auto_release_days', 14)) || 14)
+    // 路由级自立钳制 [3,90] 天:合约 deposit 对 autoReleaseAt 有上界(perTx 窗),越界的越权 param-store 值
+    //   会让每笔存入链上 revert —— 不能只依赖 param-store bounds,路由层再钳一道(fail-closed)。
+    const autoReleaseDays = Math.min(90, Math.max(3, Number(gp('usdc_escrow.auto_release_days', 14)) || 14))
     const autoReleaseAt = nowSec + autoReleaseDays * 86400           // uint64 范围
     const ttlMin = Math.max(1, Number(gp('usdc_escrow.voucher_ttl_minutes', 60)) || 60)
-    const authExpiresAt = nowSec + ttlMin * 60
+    // authExpiresAt 钳到付款窗:凭证有效期绝不超过 pay_deadline —— 否则订单取消后 voucher 仍可存入(最多长 TTL)。
+    //   pay_deadline 解析失败(理论不该,建单必写)→ 回退 now+ttl(不放宽,与旧行为一致)。
+    const payDeadlineMs = Date.parse(order.pay_deadline)
+    const authExpiresAt = Number.isFinite(payDeadlineMs)
+      ? Math.min(nowSec + ttlMin * 60, Math.floor(payDeadlineMs / 1000))
+      : nowSec + ttlMin * 60
     const chainId = (process.env.NETWORK || 'testnet').toLowerCase() === 'mainnet' ? 8453 : 84532
 
     // ── 签名(walletSigner seam;字段逐字对 TYPEHASH)──
@@ -135,7 +147,8 @@ export function registerUsdcEscrowRoutes(app: Application, deps: UsdcEscrowRoute
       if (!account.signTypedData) throw new Error('voucher signer lacks signTypedData')
       authorization = await account.signTypedData(typedData)
     } catch (e) {
-      return void res.status(409).json({ error: 'voucher 签名失败:' + (e as Error).message, error_code: 'USDC_ESCROW_VOUCHER_NOT_OPEN' })
+      // 签名失败=签名者/seam 故障(500,ops 事故)—— 绝不复用 NOT_OPEN(409,那是订单状态门,会误导 triage)。
+      return void res.status(500).json({ error: 'voucher 签名失败:' + (e as Error).message, error_code: 'USDC_ESCROW_VOUCHER_SIGN_FAILED' })
     }
 
     // ── 落库(单 sync tx;域逻辑在 store)──

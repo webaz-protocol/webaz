@@ -7356,7 +7356,11 @@ const _EN = {
   '该操作仅适用于 USDC 合约担保订单': 'This action only applies to USDC on-chain escrow orders',
   '订单不在可签发存款授权的付款窗口': 'The order is not in a payment window where a deposit authorization can be issued',
   '无效的买家链上地址': 'Invalid buyer on-chain address',
-  '该订单已完成链上存入或已取消,凭证不可重签': 'This order is already deposited on-chain or cancelled — the voucher cannot be re-signed',
+  '该订单已完成链上存入,凭证不可重签': 'This order is already deposited on-chain — the voucher cannot be re-signed',
+  '该订单凭证已作废(订单已取消)': "This order's voucher has been voided (order cancelled)",
+  '凭证签名失败,请重试': 'Failed to sign the deposit authorization — please retry',
+  '签发过于频繁,请稍后再试': 'Voucher requests are too frequent — please retry shortly',
+  '订单金额无效': 'Invalid order amount',
   // PR-B6a: usdc_escrow 分轨通知(链上合约托管,无 WAZ / 平台钱包话术)
   '买家确认收货，链上释放中': 'Buyer confirmed receipt — releasing on-chain',
   '交易完成，链上已结算': 'Trade complete — settled on-chain',

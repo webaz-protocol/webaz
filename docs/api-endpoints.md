@@ -543,7 +543,7 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/orders/:id/fault-refund/mark-refunded` | 🔐 |  |  | src/pwa/routes/direct-fault-refund.ts:74 |
 | POST | `/api/orders/:id/fault-refund/request` | 🔐 |  |  | src/pwa/routes/direct-fault-refund.ts:55 |
 | POST | `/api/orders/:id/fault-refund/withdraw` | 🔐 |  |  | src/pwa/routes/direct-fault-refund.ts:84 |
-| POST | `/api/orders/:id/force-timeout-check` | 🔐 |  | 手动触发超时判责（当事人） | src/pwa/routes/orders-action.ts:755 |
+| POST | `/api/orders/:id/force-timeout-check` | 🔐 |  | 手动触发超时判责（当事人） | src/pwa/routes/orders-action.ts:756 |
 | GET | `/api/orders/:id/mutual-cancel` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:50 |
 | POST | `/api/orders/:id/mutual-cancel/accept` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:70 |
 | POST | `/api/orders/:id/mutual-cancel/decline` | 🔐 |  |  | src/pwa/routes/mutual-cancel.ts:91 |
@@ -554,8 +554,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/orders/:id/pending-accept/confirm-quote` | 🔐 |  | CAS:仅 pending_accept 且已报价;总额变更与状态转移同一 db.transaction(要么全生效要么全回滚)。 | src/pwa/routes/direct-pay-pending-accept.ts:153 |
 | POST | `/api/orders/:id/pending-accept/decline` | 🔐 |  | 卖家谢绝(无法发货/物流不可达等;理由可选,买家可见)→ 无责取消 + 回补库存 | src/pwa/routes/direct-pay-pending-accept.ts:105 |
 | POST | `/api/orders/:id/pending-accept/quote` | 🔐 |  | 可重复报价(买家确认前修正);每次报价重置响应窗(param direct_pay.quote_confirm_hours,默认 48h)。 | src/pwa/routes/direct-pay-pending-accept.ts:127 |
-| GET | `/api/orders/:id/usdc-escrow/status` | 🔐 |  | GET /api/orders/:id/usdc-escrow/status —— 买家或卖家:轮询存入/释放可见性(B6b stepper)。 | src/pwa/routes/usdc-escrow.ts:170 |
-| POST | `/api/orders/:id/usdc-escrow/voucher` | 🔐 |  | POST /api/orders/:id/usdc-escrow/voucher —— 买家:签发一次性 EIP-712 存款授权。 | src/pwa/routes/usdc-escrow.ts:84 |
+| GET | `/api/orders/:id/usdc-escrow/status` | 🔐 |  | GET /api/orders/:id/usdc-escrow/status —— 买家或卖家:轮询存入/释放可见性(B6b stepper)。 | src/pwa/routes/usdc-escrow.ts:183 |
+| POST | `/api/orders/:id/usdc-escrow/voucher` | 🔐 |  | POST /api/orders/:id/usdc-escrow/voucher —— 买家:签发一次性 EIP-712 存款授权。 | src/pwa/routes/usdc-escrow.ts:87 |
 | GET | `/api/orders/:order_id/buyer-rating` | 🔐 |  | 查 seller → buyer 评价（双盲遮蔽：buyer 看不到，除非自己也评过 OR 窗口到期） | src/pwa/routes/ratings.ts:118 |
 | POST | `/api/orders/:order_id/buyer-rating` | 🔐 |  | seller → buyer 反向评价 | src/pwa/routes/ratings.ts:86 |
 | GET | `/api/orders/:order_id/rating` | 🔐 |  | 查 buyer → seller 评价（双盲遮蔽：seller 视角同样） | src/pwa/routes/ratings.ts:137 |

@@ -422,7 +422,8 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
         return void res.status(409).json({ error: (e as Error).message, error_code: 'CANCEL_FAILED' })
       }
       notifyTransition(db, req.params.id, fromStatusCancel, 'cancelled')
-      return void res.json({ success: true, status: 'cancelled', fee_stake_released: true })
+      // usdc_escrow 从无 fee-stake(本金在链上合约,平台不锁质押)—— 诚实按轨返回,勿对 usdc 谎报已释放质押。
+      return void res.json({ success: true, status: 'cancelled', fee_stake_released: order.payment_rail !== 'usdc_escrow' })
     }
 
     // 争议协商收口(买家侧):买家撤诉并确认收货 —— 限【delivered 来源履约争议 + 争议发起人本人 + 裁定前】。

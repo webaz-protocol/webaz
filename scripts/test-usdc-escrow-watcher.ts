@@ -194,6 +194,9 @@ const makeDeps = (client: WatcherChainClient, extra: Partial<WatcherDeps> = {}):
   ok('case4: amount mismatch → order stays created', orderStatus(OID) === 'created')
   ok('case4: amount mismatch → intent stays issued', intentStatus(OID) === 'issued')
   ok('case4: amount mismatch → admin alerted', notifCountAdmin() === notifBefore + 1)
+  // buyer + seller must ALSO learn (funds on-chain while parties are blind was the finding) — order_id set, type usdc_param_mismatch
+  ok('case4: buyer notified of param mismatch', !!db.prepare("SELECT 1 FROM notifications WHERE user_id='buyer1' AND order_id=? AND type='usdc_param_mismatch'").get(OID))
+  ok('case4: seller notified of param mismatch', !!db.prepare("SELECT 1 FROM notifications WHERE user_id='seller1' AND order_id=? AND type='usdc_param_mismatch'").get(OID))
 }
 {
   // case 5 — block 2101 (own window, no overlap with case 4's [1999,2001])

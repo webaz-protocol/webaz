@@ -6081,7 +6081,7 @@ registerAgentBuyRoutes(app, {
 registerCartRoutes(app, {
   db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent,
   checkStockAndMaybeDelist, addHours, getProtocolParam,
-}); registerUsdcPayoutAddressRoutes(app, { db, auth, isTrustedRole, generateId }); registerUsdcEscrowRoutes(app, { db, auth, isTrustedRole, getProtocolParam, escrowVoucherAccount: () => walletSigner.escrowVoucherAccount() })   // USDC 合约担保 PR-B2 收款地址 + B6a voucher 签发/状态
+}); registerUsdcPayoutAddressRoutes(app, { db, auth, isTrustedRole, generateId }); registerUsdcEscrowRoutes(app, { db, auth, isTrustedRole, getProtocolParam, escrowVoucherAccount: () => walletSigner.escrowVoucherAccount(), rateLimitOk })   // USDC 合约担保 PR-B2 收款地址 + B6a voucher 签发/状态(限流 10/min/user)
 
 // POST /api/orders/batch-ship — Phase 84 已迁出
 

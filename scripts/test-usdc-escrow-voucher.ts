@@ -15,7 +15,7 @@
  *   9. 死线顺延:runWatcherTick 处理 Deposited 后 accept_deadline ≈ now+48h(而非建单锚)。
  * Usage: npm run test:usdc-escrow-voucher
  */
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import express, { type Request, type Response } from 'express'
@@ -38,6 +38,7 @@ const { initNotificationSchema, notifyTransition } = await import('../src/layer2
 const { createLocalSeedSigner } = await import('../src/pwa/internal/wallet-signer.js')
 const { toUnits } = await import('../src/money.js')
 const { registerUsdcEscrowRoutes, deriveOrderIdBytes32, deriveOrderKey, buildDepositTypedData } = await import('../src/pwa/routes/usdc-escrow.js')
+const { USDC_ESCROW_DEADLINE_OFFSET_HOURS } = await import('../src/usdc-escrow-create.js')
 const { registerOrdersActionRoutes } = await import('../src/pwa/routes/orders-action.js')
 const { sweepExpiredUsdcEscrowOrders } = await import('../src/usdc-escrow-timeouts.js')
 const { runWatcherTick } = await import('../src/pwa/internal/usdc-escrow-watcher.js')
@@ -97,7 +98,17 @@ const authStub = (req: Request, res: Response): Record<string, unknown> | null =
   return u
 }
 const isTrustedRole = (u: Record<string, unknown>): boolean => ['admin', 'logistics', 'arbitrator'].includes(String(u.role))
-registerUsdcEscrowRoutes(app, { db, auth: authStub, isTrustedRole, getProtocolParam, escrowVoucherAccount: () => signer.escrowVoucherAccount() })
+// Controllable rate-limit stub: OFF by default (so the guard/happy tests can fire many requests as one buyer),
+// flipped ON only for the dedicated rate-limit case (h) so the 11th request in the window trips 429.
+let voucherLimitOn = false
+const voucherHits = new Map<string, number>()
+const testRateLimitOk = (key: string, max = 10): boolean => {
+  if (!voucherLimitOn) return true
+  const n = (voucherHits.get(key) ?? 0) + 1
+  voucherHits.set(key, n)
+  return n <= max
+}
+registerUsdcEscrowRoutes(app, { db, auth: authStub, isTrustedRole, getProtocolParam, escrowVoucherAccount: () => signer.escrowVoucherAccount(), rateLimitOk: testRateLimitOk })
 const noop = (): void => {}
 registerOrdersActionRoutes(app, {
   db, auth: authStub, isTrustedRole, generateId: genId, transition: tr, notifyTransition,
@@ -128,6 +139,14 @@ try {
   ok('2b. orderKey = keccak256(orderIdBytes32) lowercase', /^0x[0-9a-f]{64}$/.test(oKey) && oKey === oKey.toLowerCase())
   // 回归锚:确定性(同 id 同值),且 orderKey != orderIdBytes32(确实做了第二次 keccak)
   ok('2c. deterministic + orderKey != orderIdBytes32', deriveOrderKey(deriveOrderIdBytes32(FIXED)) === oKey && oKey !== b32)
+  // 黄金向量(硬编码全 hex;派生逻辑任何漂移即红 —— viem keccak / utf8 编码 / 二次 keccak 全钉死)。
+  //   ⚠ 命名不带 KEY/TOKEN/SECRET 等词:gitleaks generic-api-key 规则按「关键词 = 长 token」判定,
+  //   `GOLDEN_KEY = '0x…64hex'` 会被误判为凭据而红 CI。此处两个值都是公开可算的 keccak 哈希(非机密),
+  //   改名而非放宽 .gitleaks.toml —— 别把 GOLDEN_ORDER_HASH 改回 *_KEY。
+  const GOLDEN_B32 = '0x8dc79ebcd282902cc826f8804809029b079223802b973e58bb69bc967c87a1b6'
+  const GOLDEN_ORDER_HASH = '0x8602130a1f9552a8a12d9f36b23b04c4e67c56ddd2caf14dfaeab6323d5b2417'   // = 链上 orderKey
+  ok('2d. golden orderIdBytes32 vector for ord_fixture_pin_0001', b32 === GOLDEN_B32, b32)
+  ok('2e. golden orderKey vector for ord_fixture_pin_0001', oKey === GOLDEN_ORDER_HASH, oKey)
 
   // ── 3. 签名可验证 + 篡改验伪 ──
   mkOrder('o_sig', { total: 10 })
@@ -142,6 +161,21 @@ try {
   const good = await verifyTypedData({ address: VOUCHER_ADDR, ...typed, signature: dc.authorization })
   ok('3b. verifyTypedData(escrowVoucherAddress) === true', good === true)
   ok('3c. amount is 6dp string (10 USDC → 10000000)', dc.amount === '10000000' && dc.fee_bps === 200)
+  // ── a. chain_id + EIP-712 domain pinned to LITERAL constants (not the route's echo) ──
+  ok('3c1. chain_id === 84532 literal (Base Sepolia, testnet)', vr.json.chain_id === 84532, String(vr.json.chain_id))
+  ok('3c2. domain name literal WebazEscrow', typed.domain.name === 'WebazEscrow')
+  ok('3c3. domain version literal "1"', typed.domain.version === '1')
+  ok('3c4. domain verifyingContract === fixture env contract', typed.domain.verifyingContract === CONTRACT)
+  ok('3c5. domain chainId literal 84532', typed.domain.chainId === 84532)
+  // ── b. TYPEHASH cross-lock: reconstruct the Deposit type string from buildDepositTypedData().types
+  //       and assert byte-equality with the DEPOSIT_TYPEHASH literal in contracts/WebazEscrow.sol.
+  //       Locks route↔contract EIP-712 struct drift (field order/type/name) that verifyTypedData alone can't catch. ──
+  const SOL = readFileSync('contracts/WebazEscrow.sol', 'utf8')
+  const solTypeStr = (SOL.match(/"(Deposit\([^"]*\))"/) || [])[1]
+  const fields = typed.types.Deposit as ReadonlyArray<{ name: string; type: string }>
+  const reconstructed = `Deposit(${fields.map(f => `${f.type} ${f.name}`).join(',')})`
+  ok('3c6. contract DEPOSIT_TYPEHASH string extracted', !!solTypeStr, String(solTypeStr))
+  ok('3c7. buildDepositTypedData types reconstruct === contract Deposit typestring (no route↔contract drift)', reconstructed === solTypeStr, `${reconstructed}\n    vs\n    ${solTypeStr}`)
   const tampered = buildDepositTypedData({ ...{
     contract: CONTRACT, chainId: vr.json.chain_id, orderIdBytes32: dc.order_id_bytes32,
     buyer: BUYER_ADDR, seller: dc.seller, amount: BigInt(dc.amount) + 1n, feeBps: dc.fee_bps,
@@ -156,7 +190,8 @@ try {
 
   // ── 4. 守卫矩阵 ──
   mkOrder('o_guard', { total: 10 })
-  ok('4a. non-buyer → 403 NOT_ORDER_BUYER', (await call('POST', '/api/orders/o_guard/usdc-escrow/voucher', 'buyer2', { buyer_address: BUYER_ADDR })).status === 403)
+  const g403 = await call('POST', '/api/orders/o_guard/usdc-escrow/voucher', 'buyer2', { buyer_address: BUYER_ADDR })
+  ok('4a. non-buyer → 403 error_code NOT_ORDER_BUYER', g403.status === 403 && g403.json.error_code === 'NOT_ORDER_BUYER', JSON.stringify(g403.json))
   mkOrder('o_rail', { rail: 'direct_p2p' })
   ok('4b. wrong rail → 409 WRONG_RAIL', (await call('POST', '/api/orders/o_rail/usdc-escrow/voucher', 'buyer1', { buyer_address: BUYER_ADDR })).json.error_code === 'USDC_ESCROW_VOUCHER_WRONG_RAIL')
   mkOrder('o_paid', { status: 'paid' })
@@ -173,6 +208,15 @@ try {
   PARAMS.payment_rail_usdc_escrow_enabled = 0
   ok('4h. channel off → 409 RAIL_DISABLED', (await call('POST', '/api/orders/o_off/usdc-escrow/voucher', 'buyer1', { buyer_address: BUYER_ADDR })).json.error_code === 'RAIL_DISABLED')
   PARAMS.payment_rail_usdc_escrow_enabled = 1
+  // 4i. contract env unset → 409 NOT_CONFIGURED(env 在请求时读,delete → 调 → 复原)
+  mkOrder('o_noconf', { total: 10 })
+  const savedContract = process.env.USDC_ESCROW_CONTRACT
+  delete process.env.USDC_ESCROW_CONTRACT
+  ok('4i. contract env unset → 409 NOT_CONFIGURED', (await call('POST', '/api/orders/o_noconf/usdc-escrow/voucher', 'buyer1', { buyer_address: BUYER_ADDR })).json.error_code === 'USDC_ESCROW_NOT_CONFIGURED')
+  process.env.USDC_ESCROW_CONTRACT = savedContract
+  // 4j. amount <= 0 → 409 BAD_AMOUNT(诚实码,非 NOT_OPEN 误导)
+  mkOrder('o_zero', { total: 0 })
+  ok('4j. amount<=0 → 409 BAD_AMOUNT', (await call('POST', '/api/orders/o_zero/usdc-escrow/voucher', 'buyer1', { buyer_address: BUYER_ADDR })).json.error_code === 'USDC_ESCROW_VOUCHER_BAD_AMOUNT')
 
   // ── 5. 重签发(EIP-712 签名确定性:改 autoReleaseAt 参数使 message 变 → 新 sig 覆盖旧行)──
   PARAMS['usdc_escrow.auto_release_days'] = 15
@@ -255,10 +299,34 @@ try {
   await runWatcherTick({ db, transition: tr, settleOrder: settleOrderIso, generateId: genId, notifyTransition, contractAddress: CONTRACT, confirmations: 1n, reorgBuffer: 0n,
     client: new FakeClient(110n, [depLog(aKey, '0xdeadanchor', 10_000_000, 200)]) })
   ok('9a. Deposited → order paid + intent funded', orderStatus('o_anchor') === 'paid' && intentRow('o_anchor').status === 'funded')
-  const acc = (db.prepare("SELECT accept_deadline FROM orders WHERE id='o_anchor'").get() as { accept_deadline: string }).accept_deadline
-  const accMs = new Date(acc).getTime()
-  ok('9b. accept_deadline re-anchored ≈ now+48h (not build-time anchor)', Math.abs(accMs - (nowMs + 48 * 3600_000)) < 5 * 60_000)
+  // item f:ALL FIVE 死线经共享偏移常量重锚(import USDC_ESCROW_DEADLINE_OFFSET_HOURS → 兼作 create↔watcher parity 锁)
+  const dlRow = db.prepare("SELECT accept_deadline, ship_deadline, pickup_deadline, delivery_deadline, confirm_deadline FROM orders WHERE id='o_anchor'").get() as Record<string, string>
+  const dlMap: Array<[keyof typeof USDC_ESCROW_DEADLINE_OFFSET_HOURS, string]> = [['accept', 'accept_deadline'], ['ship', 'ship_deadline'], ['pickup', 'pickup_deadline'], ['delivery', 'delivery_deadline'], ['confirm', 'confirm_deadline']]
+  let allFive = true
+  for (const [k, col] of dlMap) { const ms = new Date(dlRow[col]).getTime(); if (Math.abs(ms - (nowMs + USDC_ESCROW_DEADLINE_OFFSET_HOURS[k] * 3600_000)) >= 5 * 60_000) allFive = false }
+  ok('9b. ALL FIVE deadlines re-anchored via shared offsets constant (create↔watcher parity lock)', allFive, JSON.stringify(dlRow))
   ok('9c. created→paid seller notification (usdc_escrow honest key)', !!db.prepare("SELECT 1 FROM notifications WHERE user_id='seller1' AND order_id='o_anchor' AND template_key='ord_created_paid_ue'").get())
+
+  // ── 10. authExpiresAt 钳到付款窗(item g:pay_deadline ~10min → auth_expires_at ≤ pay_deadline epoch)──
+  const clampDeadline = futureIso(10 / 60)   // 10 分钟后
+  mkOrder('o_clamp', { total: 10, payDeadline: clampDeadline })
+  const cr = await call('POST', '/api/orders/o_clamp/usdc-escrow/voucher', 'buyer1', { buyer_address: BUYER_ADDR })
+  const payEpoch = Math.floor(new Date(clampDeadline).getTime() / 1000)
+  const nowEpoch = Math.floor(Date.now() / 1000)
+  ok('10a. auth_expires_at ≤ pay_deadline epoch (clamped)', cr.status === 200 && cr.json.deposit_call.auth_expires_at <= payEpoch, JSON.stringify(cr.json.deposit_call))
+  ok('10b. clamp active: auth_expires_at < now + full TTL(60min)', cr.json.deposit_call.auth_expires_at < nowEpoch + 60 * 60)
+
+  // ── 11. 限流(item h:同一用户窗口内第 11 次 → 429)──
+  mkOrder('o_rl', { total: 10 })
+  voucherLimitOn = true
+  let lastRl: { status: number; json: any } = { status: 0, json: {} }
+  for (let i = 0; i < 11; i++) lastRl = await call('POST', '/api/orders/o_rl/usdc-escrow/voucher', 'buyer1', { buyer_address: BUYER_ADDR })
+  voucherLimitOn = false
+  ok('11a. 11th request within window → 429 RATE_LIMITED', lastRl.status === 429 && lastRl.json.error_code === 'USDC_ESCROW_VOUCHER_RATE_LIMITED', JSON.stringify(lastRl))
+
+  // ── 12. Anti-WAZ body lock(item e:usdc_escrow 订单通知 body 绝不含 WAZ —— 本轨链上托管,无 WAZ / 平台钱包话术)──
+  const wazLeak = (db.prepare("SELECT COUNT(*) n FROM notifications nt JOIN orders o ON o.id = nt.order_id WHERE o.payment_rail = 'usdc_escrow' AND nt.body LIKE '%WAZ%'").get() as { n: number }).n
+  ok('12a. no usdc_escrow notification body contains WAZ', wazLeak === 0, `leaked=${wazLeak}`)
 } finally { server.close() }
 
 if (fail > 0) { console.error(`\n❌ usdc-escrow-voucher FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
