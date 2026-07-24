@@ -2,7 +2,7 @@
 //
 // 诚实边界(这份文案只描述【今天代码真的会做的事】):
 //   · 放款 = 买家用自己的钱包调合约 buyerRelease(bytes32),合约把货款打给 voucher 绑定的卖家收款地址、
-//     平台费计入合约 accruedFees。平台不经手本金,也不能改收款方。
+//     平台费计入合约 accruedFees。合约只能把钱付给买家/卖家/平台费三个去向,平台无法转给任意地址,也不能改收款方。
 //   · 争议 = 调合约 flagDispute(bytes32),它【只做一件事】:把 escrow 冻结成 Disputed,停掉自动放款。
 //     链上裁决(退款/放款/分账)由平台仲裁 key 的 arbiterResolve 执行 —— 该能力【仍在接线中(B7)】,
 //     现在按下争议不会、也不能得到任何裁决结果。文案必须这样说,绝不暗示"可以裁决/会退款"。
@@ -25,7 +25,7 @@
   const leftText = (sec) => {
     if (!(sec > 0)) return ''
     const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60)
-    return d > 0 ? (d + t('天') + ' ' + h + t('小时')) : (h > 0 ? (h + t('小时') + ' ' + m + t('分钟')) : (Math.max(1, m) + t('分钟')))
+    return d > 0 ? (d + t('天(计时)') + ' ' + h + t('小时(计时)')) : (h > 0 ? (h + t('小时(计时)') + ' ' + m + t('分钟(计时)')) : (Math.max(1, m) + t('分钟(计时)')))
   }
 
   const crossCheck = (st) => `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;margin-top:8px">
@@ -35,7 +35,11 @@
     ${row(t('担保合约'), escHtml(String(st.contract || '—')), true)}
     ${row(t('卖家收款地址'), escHtml(String(st.seller || '—')), true)}
     ${row(t('平台费率'), st.fee_bps != null ? (Number(st.fee_bps) / 100) + '%' : '—')}
+    ${st.buyer_addr ? row(t('你的存款地址'), escHtml(String(st.buyer_addr)), true) : ''}
   </div>`
+
+  // A3:release/dispute 都是买家用自己钱包发起的链上 tx,买家付 Base gas,平台不代付(与存入面同款披露)。
+  const gasNote = () => `<div style="font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 9px;margin-top:8px;line-height:1.6">⛽ ${t('确认收货放款 / 发起链上争议都是你用自己的钱包发起的链上交易,需少量 ETH 支付 Base 网络 gas 费 —— 平台不代付,也不能替你操作。')}</div>`
 
   const say = (msg, kind) => { cur.msg = msg; cur.kind = kind || 'info' }
   const msgBox = () => (cur.msg ? (cur.kind === 'error' ? box('#fef2f2', '#fecaca', '#991b1b', cur.msg) : cur.kind === 'warn' ? box('#fffbeb', '#fde68a', '#92400e', cur.msg) : box('#eff6ff', '#bfdbfe', '#1e40af', cur.msg)) : '')
@@ -65,6 +69,7 @@
       body += box('#eff6ff', '#bfdbfe', '#1e40af', expired
         ? `<b>${t('自动放款窗口已到期')}</b><br>${t('从到期时刻起,链上【任何人】都可以触发把这笔货款自动放给卖家(包括卖家本人),你也不能再发起链上争议。')}`
         : `<b>${t('自动放款')}</b> · ${escHtml(fmtSec(autoAt))}${left > 0 ? ` · ${t('剩余约')} ${leftText(left)}` : ''}<br>${t('到期时刻起,链上【任何人】都可以触发把这笔货款自动放给卖家;同一时刻起你也不能再发起链上争议。请预留时间,不要卡在最后一刻。')}`)
+      if ((canRelease || canDispute) && !cur.pendingKind) body += gasNote()
       if (cur.pendingKind) {
         const link = window.webazWalletExplorerTx(st.chain_id, cur.txHash)
         body += box('#eff6ff', '#bfdbfe', '#1e40af', `<b>${cur.pendingKind === 'release' ? t('等待链上确认放款') : t('等待链上确认冻结')}</b><br>${t('交易已广播。订单状态由链上事件驱动,通常约 1–2 分钟后自动更新;这段时间可以离开本页。')}`)
@@ -85,7 +90,7 @@
     }
     cur.el.innerHTML = `<div class="card" style="border:1px solid #c7d2fe;background:linear-gradient(135deg,#eef2ff,#ffffff)">
       <div style="font-size:14px;font-weight:700;color:#1e3a8a;margin-bottom:4px">🔗 ${t('链上合约担保 · 资金在合约中')}</div>
-      <div style="font-size:12px;color:#374151;line-height:1.7">${t('本金由 Base 链上的 WebAZ 担保合约托管,平台不经手,也无法把它转去任意地址。')}</div>
+      <div style="font-size:12px;color:#374151;line-height:1.7">${t('本金由 Base 链上的 WebAZ 担保合约托管;合约只能把钱付给买家、卖家或平台费三个去向,平台无法转给任意地址(平台费从担保金额中按费率扣除)。')}</div>
       ${body}</div>`
   }
 
@@ -99,6 +104,12 @@
       if (!window.webazWalletAvailable()) return say(t('未检测到链上钱包。请在安装了链上钱包的浏览器中打开本页后重试。'), 'warn')
       const c = await window.webazWalletConnect()
       if (!c.ok) return sayProvider(c, what)
+      // A3:换账号点释放/争议会在链上 NotBuyer revert 白烧 gas —— 发 tx 前先比对存款账户(小写归一)。
+      //   buyer_addr 只对买家自己下发(/status 门控),缺失时(旧凭证/无快照)不阻断,退回链上守卫兜底。
+      const depositor = cur.status.buyer_addr
+      if (depositor && window.webazWalletNormAddr(c.address) !== window.webazWalletNormAddr(depositor)) {
+        return say(t('当前连接的钱包账户与存款账户不一致,请切回存款账户后再操作。'), 'error')
+      }
       const ck = await window.webazWalletChainOk(cur.status.chain_id)
       if (!ck.ok) return sayProvider(ck, t('读取钱包网络失败'))
       if (!ck.matches) {

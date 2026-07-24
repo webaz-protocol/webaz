@@ -222,6 +222,7 @@ export function registerUsdcEscrowRoutes(app: Application, deps: UsdcEscrowRoute
       autoReleaseAtIso: new Date(autoReleaseAt * 1000).toISOString(),
       voucherSig: authorization,
       authExpiresAtIso: new Date(authExpiresAt * 1000).toISOString(),
+      buyerAddr, chainId,   // B6b-2 A3/A5:买家链上地址快照 + 签发时链 id 快照(release preflight / env-flip 保护读它)
     })
     if (!w.ok) return void res.status(409).json({ error: w.error, error_code: w.error_code })
 
@@ -266,7 +267,9 @@ export function registerUsdcEscrowRoutes(app: Application, deps: UsdcEscrowRoute
     if (!order) return void res.status(404).json({ error: '订单不存在', error_code: 'ORDER_NOT_FOUND' })
     if (uid !== order.buyer_id && uid !== order.seller_id) return void res.status(403).json({ error: '只有买卖双方可查询', error_code: 'NOT_ORDER_PARTY' })
     const s = getUsdcEscrowStatus(db, req.params.id)
-    const chainId = (process.env.NETWORK || 'testnet').toLowerCase() === 'mainnet' ? 8453 : 84532
+    // B6b-2 A5:chain_id 取 intent【签发时快照】,与 contract 同源 —— testnet→mainnet env flip 后在途单
+    //   绝不被切到新链却把 tx 发给旧链期合约地址(白烧 gas)。旧凭证无快照(null)→ 退回 live env(不放宽)。
+    const chainId = s.chain_id ?? ((process.env.NETWORK || 'testnet').toLowerCase() === 'mainnet' ? 8453 : 84532)
     const autoReleaseMs = s.auto_release_at ? Date.parse(s.auto_release_at) : NaN
     const autoReleaseAt = Number.isFinite(autoReleaseMs) ? Math.floor(autoReleaseMs / 1000) : null
     // B6b-2 D1:链上可执行时才编 calldata,且【只给买家】—— buyerRelease/flagDispute 的链上授权都是
@@ -275,7 +278,10 @@ export function registerUsdcEscrowRoutes(app: Application, deps: UsdcEscrowRoute
     //     退出,两个买家调用都会 BadState revert);flagDispute 对买家还有 autoReleaseAt 的【exclusive】
     //     边界(t >= autoReleaseAt 买家即不可再 flag,合约 AutoReleaseWindowPassed)。
     //   合约地址用 intent 的【签发时快照】而非当前 env:这单的钱就在那个合约里,env 轮换不能改写历史。
-    const funded = s.deposited_seen && !s.released_seen && !s.disputed_seen
+    // B6b-2 A4:funded 门必须【同时】看链上镜像与 intent 状态 —— 参数失配的存款(陈旧 voucher 可达)会让
+    //   watcher 告警"勿发货、平台核对中"却【不】把 intent 提升到 funded(仍 issued)。只看 deposited_seen 会
+    //   发出释放按钮,与 watcher 告警自相矛盾;加 intent_status==='funded' 后失配单不再下发任何可执行 calldata。
+    const funded = s.deposited_seen && !s.released_seen && !s.disputed_seen && s.intent_status === 'funded'
     const contractAddr = envAddress(s.contract_addr ?? undefined, 'usdc_escrow_intents.contract_addr')
     const calls: Record<string, EvmCall> = {}
     if (uid === order.buyer_id && funded && contractAddr) {
@@ -289,6 +295,8 @@ export function registerUsdcEscrowRoutes(app: Application, deps: UsdcEscrowRoute
       chain_id: chainId, contract: s.contract_addr, seller: s.seller_addr,
       amount: s.amount_units === null ? null : String(s.amount_units), fee_bps: s.fee_bps,
       auto_release_at: autoReleaseAt,
+      // B6b-2 A3:存款账户地址【只给买家自己】(卖家不可见)—— release 面比对当前连接账户,避免换账号白烧 gas。
+      ...(uid === order.buyer_id && s.buyer_addr ? { buyer_addr: s.buyer_addr } : {}),
       ...(Object.keys(calls).length > 0 ? { calls } : {}),
     })
   })

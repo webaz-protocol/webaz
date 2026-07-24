@@ -145,6 +145,9 @@ const mirrorEvent = (orderId: string, name: string, idx: number): void => {
   db.prepare("INSERT INTO usdc_escrow_chain_events (id, order_key, event_name, tx_hash, log_index, block_number, block_hash, payload_json) VALUES (?,?,?,?,?,?,?,'{}')")
     .run(`ce_${orderId}_${name}`, key, name, '0x' + String(idx).padStart(64, '0'), idx, 100 + idx, '0x' + String(idx + 50).padStart(64, '0'))
 }
+// A4:真实语境里 watcher 在【参数匹配】的存款上把 intent issued→funded(见 usdc-escrow-watcher.ts);
+//   /status 的 funded 门现同时看 intent_status。测试里手动补这一步以复现 happy path(失配单则故意不补)。
+const markFunded = (orderId: string): void => { db.prepare("UPDATE usdc_escrow_intents SET status='funded' WHERE order_id=?").run(orderId) }
 const stBefore = await call('GET', '/api/orders/o_pay/usdc-escrow/status', 'b1')
 ok('2a. status before any on-chain event → no calls at all (nothing to sign)',
   stBefore.status === 200 && stBefore.json.deposited_seen === false && stBefore.json.calls === undefined, JSON.stringify(stBefore.json))
@@ -152,9 +155,17 @@ ok('2b. status echoes the cross-check economics the UI must display (amount/sell
   stBefore.json.amount === V.deposit_call.amount && stBefore.json.seller === SELLER_PAYOUT && stBefore.json.contract === CONTRACT
   && stBefore.json.fee_bps === V.deposit_call.fee_bps && stBefore.json.auto_release_at === V.deposit_call.auto_release_at && stBefore.json.chain_id === 84532,
   JSON.stringify(stBefore.json))
-mirrorEvent('o_pay', 'Deposited', 1)
+mirrorEvent('o_pay', 'Deposited', 1); markFunded('o_pay')
 const stFunded = await call('GET', '/api/orders/o_pay/usdc-escrow/status', 'b1')
 ok('2c. Funded → buyer gets release + flag_dispute calldata', stFunded.json.deposited_seen === true && !!stFunded.json.calls?.release?.data && !!stFunded.json.calls?.flag_dispute?.data, JSON.stringify(stFunded.json.calls))
+// A4:参数失配的存款 —— 链上镜像已有 Deposited,但 watcher【拒绝】把 intent 提升到 funded(仍 issued)。
+//   此时 /status 绝不下发任何可执行 calldata(否则会与"勿发货、平台核对中"告警自相矛盾)。
+mkOrder('o_mismatch')
+await call('POST', '/api/orders/o_mismatch/usdc-escrow/voucher', 'b1', { buyer_address: BUYER_ADDR })
+mirrorEvent('o_mismatch', 'Deposited', 20)   // 存款镜像进来了,但故意【不】markFunded(模拟参数失配)
+const stMis = await call('GET', '/api/orders/o_mismatch/usdc-escrow/status', 'b1')
+ok('2c-A4. Deposited mirrored but intent still issued (param mismatch) → deposited_seen true, intent_status issued, and NO calls emitted (no release button while the watcher says "do not ship")',
+  stMis.json.deposited_seen === true && stMis.json.intent_status === 'issued' && stMis.json.calls === undefined, JSON.stringify(stMis.json))
 {
   const r = decodeFunctionData({ abi: ESCROW, data: stFunded.json.calls.release.data })
   const f = decodeFunctionData({ abi: ESCROW, data: stFunded.json.calls.flag_dispute.data })
@@ -170,7 +181,7 @@ ok('2e. the SELLER never gets release/flag_dispute calldata (both are msg.sender
 mkOrder('o_expired')
 await call('POST', '/api/orders/o_expired/usdc-escrow/voucher', 'b1', { buyer_address: BUYER_ADDR })
 db.prepare("UPDATE usdc_escrow_intents SET auto_release_at = ? WHERE order_id = 'o_expired'").run(new Date(Date.now() - 1000).toISOString())
-mirrorEvent('o_expired', 'Deposited', 2)
+mirrorEvent('o_expired', 'Deposited', 2); markFunded('o_expired')
 const stExp = await call('GET', '/api/orders/o_expired/usdc-escrow/status', 'b1')
 ok('2f. at/after auto_release_at the buyer gets NO flag_dispute calldata (contract boundary is EXCLUSIVE) but release is still valid',
   !!stExp.json.calls?.release && stExp.json.calls?.flag_dispute === undefined, JSON.stringify(stExp.json.calls))
@@ -186,6 +197,15 @@ await call('POST', '/api/orders/o_released/usdc-escrow/voucher', 'b1', { buyer_a
 mirrorEvent('o_released', 'Deposited', 5); mirrorEvent('o_released', 'Released', 6)
 const stRel = await call('GET', '/api/orders/o_released/usdc-escrow/status', 'b1')
 ok('2h. after Released → no calls (escrow is terminal)', stRel.json.released_seen === true && stRel.json.calls === undefined)
+// A5:chain_id 取 intent 签发时快照,而非 live env —— testnet→mainnet flip 后在途单绝不被切错链。
+mkOrder('o_chainflip')
+const vFlip = await call('POST', '/api/orders/o_chainflip/usdc-escrow/voucher', 'b1', { buyer_address: BUYER_ADDR })
+ok('2i. voucher is signed for the env-at-issuance chain (testnet → 84532)', vFlip.json.chain_id === 84532, String(vFlip.json.chain_id))
+process.env.NETWORK = 'mainnet'                              // 模拟 env flip
+const stFlip = await call('GET', '/api/orders/o_chainflip/usdc-escrow/status', 'b1')
+ok('2j. A5: after an env flip to mainnet, an in-flight order STILL reports its snapshot chain (84532), not the live env (8453) — so the wallet is never asked to switch to a chain the deposit contract does not live on',
+  stFlip.json.chain_id === 84532, String(stFlip.json.chain_id))
+process.env.NETWORK = 'testnet'                              // 复原,后续 PART 3 用不到 env 但保持干净
 server.close()
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -430,6 +450,30 @@ const expiredVoucher = (base: any, deltaSec: number): any => ({ ...base, deposit
     s.step === 'error' && s.msg.includes('重新获取后仍然过期') && h.sends.length === 0 && h.apiLog.filter(l => l.startsWith('POST')).length === 2, JSON.stringify(s))
 }
 
+// ── ⑨' A2: approve 回执失败 / 超时 → 停下,绝不发 deposit(钱/gas 安全,此前该守卫零覆盖)──
+{
+  // allowance < amount(需 approve)+ approve tx 回执 status=0x0(链上 revert)→ 不发 deposit
+  const h = harness({ cfg: { account: BUYER_ADDR.toLowerCase(), chainIdHex: CHAIN_OK, callResults: reads(AMOUNT * 3n, AMOUNT - 1n), receipt: { status: '0x0' } }, status: STATUS_UNPAID, voucher: V })
+  await h.win.usdcEscrowHydrate(ORDER, true)
+  await h.win.usdcPayAdvance()
+  const s = state(h)
+  ok("⑨'a A2: approve REVERTS on-chain (receipt 0x0) → error state, and the deposit is NEVER sent (exactly ONE tx, and it is the approve)",
+    s.step === 'error' && h.sends.length === 1 && h.sends[0].to === TOKEN, JSON.stringify({ step: s.step, sends: h.sends.length, tos: h.sends.map(x => x.to) }))
+  ok("⑨'b A2: the copy says plainly the approval did not succeed on-chain and no deposit went out",
+    s.kind === 'error' && s.msg.includes('授权交易未能在链上成功'), s.msg)
+}
+{
+  // approve tx 回执一直 null(未上链)→ waitReceipt 45 次轮询后 RECEIPT_TIMEOUT → 不发 deposit
+  const h = harness({ cfg: { account: BUYER_ADDR.toLowerCase(), chainIdHex: CHAIN_OK, callResults: reads(AMOUNT * 3n, AMOUNT - 1n), receipt: null }, status: STATUS_UNPAID, voucher: V })
+  await h.win.usdcEscrowHydrate(ORDER, true)
+  const p = h.win.usdcPayAdvance()   // 不 await:waitReceipt 的 sleep 走 harness 的 fake timer,需 flush 驱动
+  await h.flush(60)                   // 驱动 ≥45 次回执轮询直到 RECEIPT_TIMEOUT
+  await p
+  const s = state(h)
+  ok("⑨'c A2: approve receipt never arrives (timeout) → error state, deposit NEVER sent (only the approve tx)",
+    s.step === 'error' && h.sends.length === 1 && h.sends[0].to === TOKEN, JSON.stringify({ step: s.step, sends: h.sends.length, tos: h.sends.map(x => x.to) }))
+}
+
 // ── ⑩ 释放 / 争议面 ──
 const relStatus = (over: Record<string, unknown> = {}): any => ({ ...stFunded.json, ...over })
 {
@@ -446,6 +490,31 @@ const relStatus = (over: Record<string, unknown> = {}): any => ({ ...stFunded.js
     html.includes('任何人') && html.includes('不能再发起链上争议'))
   ok('⑩f the cross-check panel repeats amount / contract / seller / fee on the same screen as the wallet popup',
     html.includes('担保合约') && html.includes('卖家收款地址') && html.includes('平台费率') && html.includes(String(SELLER_PAYOUT)))
+  ok("⑩f' A3: the deposit account is surfaced on the release face so the user knows which wallet to connect",
+    html.includes('你的存款地址') && html.includes(String(BUYER_ADDR)))
+  ok("⑩f'' A3: the release face carries the same gas disclosure as the deposit face (buyer pays Base gas, platform does not)",
+    html.includes('Base 网络 gas') && html.includes('平台不代付'), html.slice(html.indexOf('⛽'), html.indexOf('⛽') + 200))
+}
+// ── ⑩' A3: release/dispute 存款账户校验(多账户钱包 gas 陷阱)──
+{
+  const OTHER = '0x' + '8'.repeat(40)   // 连接了一个【非存款】账户
+  const h = harness({ cfg: { account: OTHER, chainIdHex: CHAIN_OK }, status: relStatus() })
+  await h.win.usdcEscrowHydrate({ ...ORDER, status: 'delivered' }, true)
+  await h.win.usdcEscrowRelease()
+  const rs = h.win._usdcReleaseState()
+  ok("⑩'a A3: connected account != deposit account → release BLOCKED before any tx (no NotBuyer revert, no wasted gas)",
+    h.sends.length === 0 && rs.pendingKind === null && rs.kind === 'error' && rs.msg.includes('与存款账户不一致'), JSON.stringify({ sends: h.sends.length, kind: rs.kind, msg: rs.msg }))
+  await h.win.usdcEscrowDispute()
+  ok("⑩'b A3: the same guard blocks flagDispute from the wrong account (still zero transactions)",
+    h.sends.length === 0 && h.win._usdcReleaseState().msg.includes('与存款账户不一致'), String(h.sends.length))
+}
+{
+  // 反证:账户一致 → 守卫放行,正常发一笔(证明 ⑩'a 的拦截来自账户比对,不是写死失败)
+  const h = harness({ cfg: { account: BUYER_ADDR.toLowerCase(), chainIdHex: CHAIN_OK }, statusSeq: [relStatus(), relStatus({ released_seen: true, calls: undefined })] })
+  await h.win.usdcEscrowHydrate({ ...ORDER, status: 'delivered' }, true)
+  await h.win.usdcEscrowRelease()
+  ok("⑩'c A3 COUNTER-PROOF: connected == deposit account → release proceeds, exactly one backend-encoded tx",
+    h.sends.length === 1 && h.sends[0].data === stFunded.json.calls.release.data, JSON.stringify(h.sends))
 }
 {
   // exclusive:auto_release_at == now → 到期分支,不渲染争议入口

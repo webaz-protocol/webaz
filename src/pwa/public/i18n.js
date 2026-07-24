@@ -7526,7 +7526,7 @@ const _EN = {
   '链上合约担保 · 存入 USDC': 'On-chain escrow · deposit USDC',
   '本单的 USDC 已在链上担保合约中。请勿重复存入 —— 同一订单在合约里只能存入一次。': 'The USDC for this order is already held by the on-chain escrow contract. Do NOT deposit again — an order can only be funded once in the contract.',
   '链上合约担保 · 资金在合约中': 'On-chain escrow · funds held by the contract',
-  '本金由 Base 链上的 WebAZ 担保合约托管,平台不经手,也无法把它转去任意地址。': 'The principal is held by the WebAZ escrow contract on Base. The platform never handles it and cannot move it to an arbitrary address.',
+  '本金由 Base 链上的 WebAZ 担保合约托管;合约只能把钱付给买家、卖家或平台费三个去向,平台无法转给任意地址(平台费从担保金额中按费率扣除)。': 'The principal is held by the WebAZ escrow contract on Base; the contract can only pay it to the buyer, the seller, or the platform fee — the platform cannot move it to an arbitrary address (the platform fee is deducted from the escrowed amount at the fee rate).',
   '请在钱包弹窗里核对下面这组信息,完全一致才签名:': 'Check this against what your wallet shows, and only sign if every field matches:',
   '存入金额': 'Deposit amount',
   '合约托管金额': 'Amount held in escrow',
@@ -7538,7 +7538,6 @@ const _EN = {
   '你的付款地址': 'Your paying address',
   '存入需要你用自己的钱包完成两笔链上交易(授权 + 存入),并需少量 ETH 支付 Base 网络 gas 费 —— 平台不代付。': 'Depositing takes two on-chain transactions from your own wallet (approve + deposit) and a small amount of ETH for Base network gas — the platform does not pay gas for you.',
   '本次存入授权有效至': 'This deposit authorization is valid until',
-  '剩余': 'left',
   '已过期,将自动重新获取': 'expired — a new authorization will be fetched automatically',
   '连接钱包并获取存入授权': 'Connect wallet and get the deposit authorization',
   '继续存入': 'Continue depositing',
@@ -7584,9 +7583,11 @@ const _EN = {
   '这不影响链上资金:合约状态以链上为准。请稍后重试。': 'This does not affect the on-chain funds — the contract state is whatever the chain says. Please retry later.',
   '自动放款': 'Auto-release',
   '剩余约': 'about',
-  '天': 'd',
-  '小时': 'h',
-  '分钟': 'min',
+  // A1:紧凑倒计时用【带语境的独立键】,避免与已上线的裸键(剩余=Remaining / 天=days / 小时=h / 分钟=min)碰撞。
+  '剩余(计时)': 'left',
+  '天(计时)': 'd',
+  '小时(计时)': 'h',
+  '分钟(计时)': 'min',
   '到期时刻起,链上【任何人】都可以触发把这笔货款自动放给卖家;同一时刻起你也不能再发起链上争议。请预留时间,不要卡在最后一刻。': 'From that moment on, ANYONE on-chain can trigger the auto-release of this payment to the seller — and from that same moment you can no longer open an on-chain dispute. Leave yourself margin; do not wait until the last minute.',
   '自动放款窗口已到期': 'The auto-release window has passed',
   '从到期时刻起,链上【任何人】都可以触发把这笔货款自动放给卖家(包括卖家本人),你也不能再发起链上争议。': 'From that moment on, ANYONE on-chain (including the seller) can trigger the auto-release of this payment to the seller, and you can no longer open an on-chain dispute.',
@@ -7603,6 +7604,10 @@ const _EN = {
   '担保合约已把货款释放给卖家的收款地址,平台费由合约内部计提。平台从未经手本金。': 'The escrow contract released the payment to the seller payout address; the platform fee accrues inside the contract. The platform never handled the principal.',
   '链上已冻结(争议中)': 'Frozen on-chain (disputed)',
   '自动放款已停止,资金仍留在担保合约里。链上裁决(退款 / 放款 / 分账)由平台仲裁 key 执行,该能力仍在接线中,目前无法出具链上裁决 —— 请在订单页联系我们人工跟进。': 'The auto-release is stopped and the funds stay in the escrow contract. An on-chain ruling (refund / release / split) is executed by the platform arbiter key, and that capability is still being wired up — no on-chain ruling can be issued today. Contact us from the order page for manual follow-up.',
+  // A3:存款账户校验(多账户钱包 gas 陷阱)+ release 面 gas 披露。
+  '你的存款地址': 'Your deposit address',
+  '确认收货放款 / 发起链上争议都是你用自己的钱包发起的链上交易,需少量 ETH 支付 Base 网络 gas 费 —— 平台不代付,也不能替你操作。': 'Confirming receipt & releasing, or opening an on-chain dispute, are on-chain transactions you send from your own wallet — each needs a small amount of ETH for Base network gas. The platform does not pay gas for you and cannot act on your behalf.',
+  '当前连接的钱包账户与存款账户不一致,请切回存款账户后再操作。': 'The wallet account you have connected is not the account that made the deposit. Switch back to the deposit account before continuing.',
 }
 
 window.t = (zh) => window._lang === 'en' ? (_EN[zh] || zh) : zh

@@ -68,7 +68,7 @@
   }
 
   const header = () => `<div style="font-size:14px;font-weight:700;color:#1e3a8a;margin-bottom:4px">🔗 ${t('链上合约担保 · 存入 USDC')}</div>
-    <div style="font-size:12px;color:#374151;line-height:1.7">${t('本金由 Base 链上的 WebAZ 担保合约托管,平台不经手,也无法把它转去任意地址。')}</div>`
+    <div style="font-size:12px;color:#374151;line-height:1.7">${t('本金由 Base 链上的 WebAZ 担保合约托管;合约只能把钱付给买家、卖家或平台费三个去向,平台无法转给任意地址(平台费从担保金额中按费率扣除)。')}</div>`
 
   const gasNote = () => `<div style="font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 9px;margin-top:8px;line-height:1.6">⛽ ${t('存入需要你用自己的钱包完成两笔链上交易(授权 + 存入),并需少量 ETH 支付 Base 网络 gas 费 —— 平台不代付。')}</div>`
 
@@ -83,7 +83,7 @@
     const at = Math.min(Number.isFinite(authAt) ? authAt : Infinity, Number.isFinite(payAt) ? payAt : Infinity)
     if (!Number.isFinite(at)) return ''
     const left = at - nowSec()
-    return `<div style="font-size:11px;color:#6b7280;margin-top:6px">${t('本次存入授权有效至')} ${escHtml(fmtSec(at))}${left > 0 ? ' · ' + t('剩余') + ' ' + Math.floor(left / 60) + ' ' + t('分钟') : ' · ' + t('已过期,将自动重新获取')}</div>`
+    return `<div style="font-size:11px;color:#6b7280;margin-top:6px">${t('本次存入授权有效至')} ${escHtml(fmtSec(at))}${left > 0 ? ' · ' + t('剩余(计时)') + ' ' + Math.floor(left / 60) + ' ' + t('分钟(计时)') : ' · ' + t('已过期,将自动重新获取')}</div>`
   }
 
   const msgBox = () => {
