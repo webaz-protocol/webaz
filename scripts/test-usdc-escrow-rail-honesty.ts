@@ -359,7 +359,12 @@ try {
   // bilingual parity for the strings this PR introduced into the PWA
   const I18N = readFileSync('src/pwa/public/i18n.js', 'utf8')
   ok('9k. bilingual: the new split-chip tooltip and 链上担保 label both have _EN entries',
-    I18N.includes("'托管=平台托管收入;链上担保=USDC 存入链上合约,平台不经手本金;直接收款=场外收款,平台不经手':") && I18N.includes("'链上担保':"))
+    I18N.includes("'托管=平台托管收入;链上担保=USDC 存入链上合约,平台不能转给任意地址(合约只认买家/卖家/平台费);直接收款=场外收款,平台不经手':") && I18N.includes("'链上担保':"))
+  // B6b-2 收尾:tooltip 不得再出现"平台不经手本金"式的过度承诺(合约按 feeBps 从担保金额扣平台费,
+  //   且仲裁 key 可对 Funded 单 flag+裁决分账)—— 与 B1 在投影/widget/审批三处的收敛同一口径。
+  ok('9k1. split-chip tooltip drops the over-claim (no 不经手本金 / never touches the principal)',
+    !readFileSync('src/pwa/public/app-gmv-rail-split.js', 'utf8').includes('平台不经手本金')
+    && !/On-chain escrow[^;]*never touches the principal/.test(I18N))
   ok('9k2. bilingual: the residual-bucket label has an _EN entry', I18N.includes("'其他支付轨':"))
 } finally { server!.close() }
 

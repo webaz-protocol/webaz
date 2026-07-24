@@ -930,7 +930,7 @@ const _EN = {
   '托管': 'Escrow',
   // B6b-1 GMV 三轨拆分 tooltip(链上担保 = 真实 USDC 存入 Base 链合约,与 WAZ 模拟托管、场外直接收款并列)。
   //   B6b-2 B8:旧的两轨 tooltip key('托管=平台托管收入;直接收款=场外收款,平台不经手')已无任何消费方 → 删除。
-  '托管=平台托管收入;链上担保=USDC 存入链上合约,平台不经手本金;直接收款=场外收款,平台不经手': 'Escrow = platform-custodied revenue; On-chain escrow = USDC held by the on-chain contract (WebAZ never touches the principal); Direct pay = off-platform receipts the platform never touches',
+  '托管=平台托管收入;链上担保=USDC 存入链上合约,平台不能转给任意地址(合约只认买家/卖家/平台费);直接收款=场外收款,平台不经手': 'Escrow = platform-custodied revenue; On-chain escrow = USDC held by the on-chain contract (WebAZ cannot route it to an arbitrary address — only buyer, seller or platform fee); Direct pay = off-platform receipts the platform never touches',
   '其他支付轨': 'Other rails',   // B6b-2 B7 残差桶标签(未知轨/脏数据;有值才渲染)
   '全部类型': 'All types',
   '直接收款': 'Direct pay',

@@ -12124,7 +12124,7 @@ function nextActionCard(order, isBuyer, isSeller, activeDeadline, isOverdue) {
   // 超时 + 我不是违约方 → 给我一个"立即触发判责"按钮（不必等 5min cron tick）
   // 我自己是违约方时只看到警告，不显示按钮（不能自己触发对自己的判责）
   const meAtFault = hint.overdueFault && hint.overdueFault === ('fault_' + (isBuyer ? 'buyer' : isSeller ? 'seller' : ''))
-  const canForceTrigger = isOverdue && hint.overdueFault && !meAtFault && (isBuyer || isSeller)
+  const canForceTrigger = isOverdue && hint.overdueFault && !meAtFault && (isBuyer || isSeller) && order.payment_rail !== 'usdc_escrow'   // B6b-2:engine.ts checkTimeouts 对本轨整段 continue —— 按钮点了必然 no-op,渲染它本身就是谎
   // 直付(非托管):WebAZ 不退款/不放款 → 超时后果只写信誉责任,绝不写"退款/资金释放"
   const overdueConsequence = order.payment_rail === 'direct_p2p'
     ? ({ paid: '卖家信誉扣分;直付非托管,WebAZ 不退款/不放款', accepted: '卖家信誉扣分;直付非托管,WebAZ 不退款/不放款', in_transit: '物流/履约信誉扣分;直付非托管,WebAZ 不退款', delivered: '系统自动确认直付订单完成;不涉及平台放款' }[order.status] || hint.overdueConsequence)
