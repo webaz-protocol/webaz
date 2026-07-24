@@ -134,6 +134,6 @@ export function createUsdcEscrowResponse(
   res.json({
     success: true, order_id: orderId, status: 'created', payment_rail: 'usdc_escrow',
     pay_deadline_hours: payWindowHours,
-    note: `请在 ${payWindowHours} 小时内用你的链上钱包将 ${ctx.totalAmount} USDC 存入 WebAZ 担保合约(订单页引导连钱包+签名存入);链上确认后订单自动进入已付款。超时未存入订单自动取消,你无需任何操作。本金由链上合约托管,平台不经手。`,
+    note: `请在 ${payWindowHours} 小时内用你的链上钱包将 ${ctx.totalAmount} USDC 存入 WebAZ 担保合约(订单页引导连钱包+签名存入);链上确认后订单自动进入已付款。超时未存入订单自动取消,你无需任何操作。本金由链上合约托管;合约只把钱付给买家、卖家或平台费三个去向,平台无法转给任意地址。`,
   })
 }

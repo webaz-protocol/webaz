@@ -252,7 +252,7 @@ export function registerUsdcEscrowRoutes(app: Application, deps: UsdcEscrowRoute
       chain_id: chainId,
       usdc_token: usdcToken,
       ...(encoded ? { calls: encoded.calls, reads: encoded.reads } : {}),
-      note: `请用你的链上钱包(地址 ${buyerAddr})对 WebAZ 担保合约 approve ${amount.toString()} 个 USDC(6dp)后调用 deposit;本金由链上合约托管,平台不经手。授权将于 ${authExpiresAt} 前有效。 / Approve ${amount.toString()} USDC (6dp) to the WebAZ escrow contract from ${buyerAddr}, then call deposit; funds are held on-chain by the contract, not the platform. This authorization expires at ${authExpiresAt}.`,
+      note: `请用你的链上钱包(地址 ${buyerAddr})对 WebAZ 担保合约 approve ${amount.toString()} 个 USDC(6dp)后调用 deposit;本金由链上合约托管;合约只把钱付给买家、卖家或平台费三个去向,平台无法转给任意地址。授权将于 ${authExpiresAt} 前有效。 / Approve ${amount.toString()} USDC (6dp) to the WebAZ escrow contract from ${buyerAddr}, then call deposit; funds are held on-chain by the contract, which can only pay the buyer, the seller or the platform fee — never an arbitrary address. This authorization expires at ${authExpiresAt}.`,
     })
   })
 

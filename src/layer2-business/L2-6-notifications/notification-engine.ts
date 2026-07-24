@@ -120,7 +120,7 @@ const RULES: Record<string, NotifRule> = {
     body: ctx => `你的包裹已送达，请确认收货。72 小时内未确认将自动完成。`,
   },
   'delivered→confirmed': {
-    // usdc_escrow 分轨:货款经【链上合约释放】给卖家收款地址(平台不经手、无平台钱包入账)—— 绝不写 WAZ / 结算中。
+    // usdc_escrow 分轨:货款经【链上合约释放】给卖家收款地址(平台不经手)—— 绝不写 WAZ / 结算中。
     recipients: ['seller'],
     key: ctx => ctx.paymentRail === 'direct_p2p' ? 'ord_delivered_confirmed_dp' : ctx.paymentRail === 'usdc_escrow' ? 'ord_delivered_confirmed_ue' : 'ord_delivered_confirmed',
     title: ctx => ctx.paymentRail === 'direct_p2p' ? '✅ 买家确认收货' : ctx.paymentRail === 'usdc_escrow' ? '✅ 买家确认收货，链上释放中' : '💰 买家确认收货',
@@ -137,7 +137,7 @@ const RULES: Record<string, NotifRule> = {
     body: ctx => ctx.paymentRail === 'direct_p2p'
       ? `订单「${ctx.productTitle}」交易完成。直付为非托管:无平台资金结算,货款以你与买家场外结算为准。`
       : ctx.paymentRail === 'usdc_escrow'
-      ? `订单「${ctx.productTitle}」交易完成，货款已由链上合约结算至你的收款地址(平台不经手、无平台钱包入账)。`
+      ? `订单「${ctx.productTitle}」交易完成，货款已由链上合约结算至你的收款地址(平台不经手)。`
       : `订单「${ctx.productTitle}」交易完成，收益已入账，查看钱包确认。`,
   },
   'paid→disputed': {
