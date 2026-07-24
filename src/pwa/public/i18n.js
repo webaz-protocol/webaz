@@ -129,7 +129,7 @@ const _EN = {
   '入账流水': 'Credit record',
   // ── 交易流程错误码双语(app-order-errors.js orderErrorLookup;test-order-errors.ts 守 parity)──
   'WAZ 模拟托管轨已下架,请选择直付方式下单': 'The WAZ simulated escrow rail has been retired — please order with a Direct Pay method',
-  'USDC 担保订单经链上释放完成收货(功能接线中)': 'USDC escrow orders are confirmed via on-chain release (wiring in progress)',
+  'USDC 担保订单请在订单页用你的链上钱包完成确认收货并放款,无需此操作': 'For USDC escrow orders, use your on-chain wallet on the order page to confirm receipt and release — this action is not needed here',
   '该卖家暂不支持 USDC 担保': 'This seller does not support USDC escrow yet',
   '超出 USDC 担保单笔上限': 'Over the USDC escrow per-transaction cap',
   'USDC 担保暂未配置': 'USDC escrow is not configured yet',
@@ -7383,7 +7383,7 @@ const _EN = {
   '已取消订单收到链上存入，请勿发货': 'Cancelled order received an on-chain deposit — do not ship',
   '{buyer} 下单了「{product}」并已将 {amount} USDC 存入链上合约托管，请及时接单发货。': '{buyer} ordered "{product}" and deposited {amount} USDC into the on-chain escrow contract — please accept and ship promptly.',
   '{buyer} 已确认收货，货款经链上合约释放至你的收款地址(平台不经手)。': '{buyer} confirmed receipt; the payment is released to your payout address by the on-chain contract (the platform never handles it).',
-  '订单「{product}」交易完成，货款已由链上合约结算至你的收款地址(平台不经手、无平台钱包入账)。': 'Order "{product}" is complete; the payment was settled to your payout address by the on-chain contract (the platform never handles it and no platform wallet is credited).',
+  '订单「{product}」交易完成，货款已由链上合约结算至你的收款地址(平台不经手)。': 'Order "{product}" is complete; the payment was settled to your payout address by the on-chain contract (the platform never handles it).',
   // B6b-2 B5:自动链上退款(B7)未接线 —— 通知不得承诺"平台将协助你处理链上退款/正在处理",只说真实做的事:资金仍在合约里 + 已告警 + 人工跟进。
   '你的 USDC 已进入链上担保合约，但该订单已取消。资金仍在链上合约中；平台已收到告警并会人工跟进，请在订单页联系我们。': 'Your USDC entered the on-chain escrow contract, but this order was cancelled. The funds are still held by the on-chain contract; the platform has been alerted and will follow up manually — please contact us from the order page.',
   '一笔已取消订单收到了买家的链上存入。请勿发货；资金仍在链上合约中，平台已收到告警并会人工跟进。': 'A cancelled order received an on-chain deposit from the buyer. Do not ship; the funds are still held by the on-chain contract and the platform has been alerted and will follow up manually.',

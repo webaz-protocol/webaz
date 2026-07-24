@@ -38,7 +38,7 @@ export interface PaymentOption {
 }
 
 const ESCROW_NOTE = '模拟托管测试轨 —— 批准后从你的钱包扣款入(模拟)托管;金额以 USDC 显示为别名,不代表真实 USDC 或法币结算'
-const USDC_ESCROW_NOTE = '链上担保:你的 USDC 存入 WebAZ 担保合约,确认收货(或超时无争议)才放款给卖家;争议由仲裁裁决退款/放款。平台不经手本金'
+const USDC_ESCROW_NOTE = '链上担保:你的 USDC 存入 WebAZ 担保合约,确认收货(或超时无争议)才放款给卖家;争议由仲裁裁决退款/放款。平台无法把资金转给任意地址;平台费从担保金额中扣除'
 const DIRECT_NOTE = '直付:你按卖家收款说明直接付卖家;WebAZ 不托管本金,实际付款方式/币种以确认页面为准'
 
 export interface PaymentOptionsArgs {
