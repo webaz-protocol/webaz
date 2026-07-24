@@ -298,11 +298,21 @@ export function applyUsdcEscrowResolved(
     return
   }
 
-  const payload = JSON.parse(ev.payload_json) as { buyerRefund: string; sellerPaid: string; feePaid: string }
-  const buyerRefund = BigInt(payload.buyerRefund)
-  const sellerPaid = BigInt(payload.sellerPaid)
-  const feePaid = BigInt(payload.feePaid)
-  const amount = BigInt(intent.amount_units)
+  // P2b:payload 解析 + BigInt 转换进 try/catch(与守恒/记账同哲学:畸形不抛穿 watcher processLog)。
+  //   若 payload 字段名意外不符 / 非数值,BigInt(undefined|'abc') 会抛;不捕则穿透 watcher processLog 整条崩。
+  //   捕获 → 去重告警、不动状态/记账(与守恒不符分支同处置)。
+  let buyerRefund: bigint, sellerPaid: bigint, feePaid: bigint, amount: bigint
+  try {
+    const payload = JSON.parse(ev.payload_json) as { buyerRefund: string; sellerPaid: string; feePaid: string }
+    buyerRefund = BigInt(payload.buyerRefund)
+    sellerPaid = BigInt(payload.sellerPaid)
+    feePaid = BigInt(payload.feePaid)
+    amount = BigInt(intent.amount_units)
+  } catch (e) {
+    alertUsdcAdmins(db, deps.generateId, '🚨 USDC 担保:裁决 payload 畸形',
+      `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— payload 解析失败:${(e as Error).message};不动状态,人工核。`, order.id)
+    return
+  }
   if (buyerRefund + sellerPaid + feePaid !== amount) {
     // 守恒不符 = 链上裁决 payload 与存入金额对不上(理论不该;合约恒等)→ 去重告警、绝不动状态/记账。
     alertUsdcAdmins(db, deps.generateId, '🚨 USDC 担保:裁决守恒不符',
@@ -347,8 +357,11 @@ export function applyUsdcEscrowResolved(
       break
     }
     default:
-      // 订单未处于 disputed(仅链上 flag、DB 未开争议,或其它非终态)—— 资金已在链上分配,绝不强转非法态。
-      // 告警走 watcher rescan 窗口天然有界的 alertAdmins wrapper(sweep 只选 disputed,不入其选择集)。
+      // 到达这里 =【本不该发生】:resolve 路由(usdc-escrow-arbiter.ts)已硬门 order.status==='disputed' 才放行链上
+      //   arbiterResolve,故被认可的 Resolved 必落上面 disputed 分支正常收敛。走进 default = 链上已 Resolved 但 DB 非
+      //   disputed —— 只可能是 arbiter key 被路由外使用,或 flagDispute 后 DB 侧争议尚未开(不合作/丢钱包买家的端到端
+      //   DB 收敛属状态机设计,归 B7b:system/arbiter 代开 DB 争议 + 证据豁免)。资金已在链上分配,绝不强转非法态,
+      //   告警人工核。告警走 watcher rescan 窗口天然有界的 alertAdmins wrapper(sweep 只选 disputed,不入其选择集)。
       alertAdmins('🚨 USDC 担保:非争议态收到链上裁决',
         `order ${order.id}(order_key ${orderKey})状态 ${order.status},tx ${ev.tx_hash} —— 链上已 Resolved(buyerRefund=${buyerRefund}),` +
         '但 DB 订单非 disputed;资金已在链上分配,请人工核对后收口(不自动转移非法态)。')

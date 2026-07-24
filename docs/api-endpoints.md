@@ -179,8 +179,8 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/tokenomics/require-ref/toggle` | 🔐 | 👑 | 注册必须 ref 开关 | src/pwa/routes/admin-tokenomics.ts:53 |
 | POST | `/api/admin/trial/run-eval` | 🔐 | 👑 | Admin 手动触发测评评估（测试 + 紧急 + 立即生效） | src/pwa/routes/trial.ts:355 |
 | GET | `/api/admin/usage` |  |  |  | src/pwa/routes/admin-analytics.ts:53 |
-| POST | `/api/admin/usdc-escrow/:orderId/flag-dispute` | 🔐 | 👑 | POST /api/admin/usdc-escrow/:orderId/flag-dispute —— arbiter 冻结(链上 flagDispute;买 | src/pwa/routes/usdc-escrow-arbiter.ts:82 |
-| POST | `/api/admin/usdc-escrow/:orderId/resolve` | 🔐 | 👑 | POST /api/admin/usdc-escrow/:orderId/resolve —— arbiter 裁决(链上 arbiterResolve;buy | src/pwa/routes/usdc-escrow-arbiter.ts:55 |
+| POST | `/api/admin/usdc-escrow/:orderId/flag-dispute` | 🔐 | 👑 | POST /api/admin/usdc-escrow/:orderId/flag-dispute —— arbiter 冻结(链上 flagDispute;买 | src/pwa/routes/usdc-escrow-arbiter.ts:98 |
+| POST | `/api/admin/usdc-escrow/:orderId/resolve` | 🔐 | 👑 | POST /api/admin/usdc-escrow/:orderId/resolve —— arbiter 裁决(链上 arbiterResolve;buy | src/pwa/routes/usdc-escrow-arbiter.ts:58 |
 | GET | `/api/admin/users` | 🔐 | 👑 |  | src/pwa/routes/admin-users-query.ts:167 |
 | POST | `/api/admin/users/:id/force-delist-all` | 🔐 | 👑 |  | src/pwa/routes/admin-users-lifecycle.ts:74 |
 | POST | `/api/admin/users/:id/grant-role` | 🔐 | 👑 | P0.1: admin 角色提权必须 root；其他角色需 users + scope | src/pwa/routes/admin-users-lifecycle.ts:123 |

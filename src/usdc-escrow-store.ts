@@ -48,7 +48,7 @@ export function initUsdcEscrowSchema(db: Database.Database): void {
     auto_release_at TEXT NOT NULL,            -- ISO;合约里为 unix 秒(voucher 快照的人读镜像)
     voucher_sig     TEXT NOT NULL,            -- EIP-712 signature hex
     auth_expires_at TEXT NOT NULL,
-    status          TEXT NOT NULL DEFAULT 'issued',  -- issued | funded | released | void(B5:Released 消费后 funded→released)
+    status          TEXT NOT NULL DEFAULT 'issued',  -- issued | funded | released | resolved | void(B5:Released 后 funded→released;B7a:Resolved 后 funded→resolved,均终态)
     buyer_addr      TEXT,                     -- B6b-2 A3:digest 绑定的买家链上地址(EIP-55;换账号释放的 preflight 校验用)。非 append-only:随重签更新。
     chain_id        INTEGER,                  -- B6b-2 A5:签发时的链 id 快照(env flip 后在途单取快照,不取 live env)
     created_at      TEXT DEFAULT (datetime('now'))
@@ -186,9 +186,9 @@ export interface VoucherIntentInput {
  * 签发/重签 voucher intent(单 sync tx,better-sqlite3 天然串行 → 无 TOCTOU)。
  *   - 无行 → INSERT(status='issued')。
  *   - issued → 重签:UPDATE 全部凭证字段(旧 voucher 一次性 digest 自然作废,合约 replay guard 不受影响)。
- *   - funded/released → 拒(真钱已入链;不可重签)。void → 拒(订单已取消/凭证已作废)。
+ *   - funded/released/resolved → 拒(真钱已入链 / 已结算 / 已仲裁终态;不可重签)。void → 拒(订单已取消/凭证已作废)。
  * order_key 落库【lowercase】—— B4 watcher 按 lowercase 查询,跨 PR 不变量,签发处 toLowerCase 守卫。
- * (funded/released/void 分支为防御性:路由层 status==='created' 门保证进入此处的 intent 只能是 absent|issued。)
+ * (funded/released/resolved/void 分支为防御性:路由层 status==='created' 门保证进入此处的 intent 只能是 absent|issued。)
  */
 export function upsertUsdcEscrowVoucherIntent(
   db: Database.Database, i: VoucherIntentInput,
@@ -197,7 +197,7 @@ export function upsertUsdcEscrowVoucherIntent(
   return db.transaction(() => {
     const existing = db.prepare('SELECT status FROM usdc_escrow_intents WHERE order_id = ?').get(i.orderId) as { status: string } | undefined
     if (existing) {
-      if (existing.status === 'funded' || existing.status === 'released') return { ok: false as const, error: '该订单已完成链上存入,凭证不可重签', error_code: 'USDC_ESCROW_VOUCHER_ALREADY_FUNDED' }
+      if (existing.status === 'funded' || existing.status === 'released' || existing.status === 'resolved') return { ok: false as const, error: '该订单已完成链上存入,凭证不可重签', error_code: 'USDC_ESCROW_VOUCHER_ALREADY_FUNDED' }
       if (existing.status === 'void') return { ok: false as const, error: '该订单凭证已作废(订单已取消)', error_code: 'USDC_ESCROW_VOUCHER_VOIDED' }
       db.prepare(`UPDATE usdc_escrow_intents SET order_key=?, contract_addr=?, buyer_id=?, seller_id=?, seller_addr=?, amount_units=?, fee_bps=?, auto_release_at=?, voucher_sig=?, auth_expires_at=?, buyer_addr=?, chain_id=?, status='issued' WHERE order_id=?`)
         .run(key, i.contractAddr, i.buyerId, i.sellerId, i.sellerAddr, i.amountUnits, i.feeBps, i.autoReleaseAtIso, i.voucherSig, i.authExpiresAtIso, i.buyerAddr, i.chainId, i.orderId)

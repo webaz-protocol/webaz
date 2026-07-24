@@ -7378,6 +7378,7 @@ const _EN = {
   '订单金额无效': 'Invalid order amount',
   // PR-B7a: admin arbiter 裁决门错误码
   '订单已终结,不可再裁决': 'The order is already final and cannot be arbitrated again',
+  '订单未处于争议态,无法链上裁决;请先在订单页开启争议': 'The order is not in a disputed state — on-chain arbitration is unavailable; open a dispute on the order page first',
   '该订单无 USDC 担保凭证,无法裁决': 'This order has no USDC escrow record — it cannot be arbitrated',
   '退款金额无效(须为不超过托管额的非负整数)': 'Invalid refund amount (must be a non-negative integer not exceeding the escrowed amount)',
   '链上裁决失败,请稍后重试或核对链上状态': 'On-chain arbitration failed — please retry or reconcile the on-chain state',

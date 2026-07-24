@@ -18,7 +18,8 @@
  *  D) applyUsdcEscrowResolved:全退→买家终态(disputed→cancelled)、部分/零退→卖家终态(disputed→completed)、
  *     守恒不符→不动+告警、幂等重放→不重复、非争议态→告警不强转、ZERO wallets 写快照断言、sweep 收口。
  *  E) 铁律 pin:三处既有 fail-closed 拒绝(dispute-engine:367 / decline-contest-resolve:60 / mutual-cancel:125)
- *     本 PR 后【源码锁】仍在(证明自动/超时路径没被本 PR 打开;运行时行为由 test-dispute-noncustodial / test-decline-action 守)。
+ *     本 PR 后仍拒 —— 既有【源码锁】(E)+【运行时行为断言】(E-runtime):对一笔 usdc_escrow 单实际调用
+ *     arbitrateDispute / resolveDeclineContestDispute / acceptMutualCancel,断言三者运行时真的拒绝(不只是源码字符串)。
  * Usage: npm run test:usdc-escrow-arbiter
  */
 import { mkdtempSync, readFileSync } from 'node:fs'
@@ -288,6 +289,20 @@ const call = async (path: string, orderId: string, body: any): Promise<any> => {
   ok('C8: on-chain failure → 502 RESOLVE_FAILED (never fake success), tx_hash echoed', res._s === 502 && res._j.error_code === 'USDC_ESCROW_ARBITER_RESOLVE_FAILED' && res._j.tx_hash === '0x' + 'f'.repeat(64))
   onchainResult = { ok: true, txHash: '0x' + 'a'.repeat(64) }
 }
+// C8b (P1 收口门): resolve on a NON-disputed order → 409 NOT_DISPUTED, on-chain NOT called, Passkey NOT consumed.
+//   保证每个被认可的 Resolved 都落 applyUsdcEscrowResolved 的 disputed 收敛分支(default 分支回归"不该发生"守卫)。
+{
+  const OID = 'ordC8b'; mkOrder(OID, 'delivered'); mkIntent(OID, deriveOrderIdBytes32(OID), { amount: 10_000_000 })   // funded + delivered, NOT disputed
+  seedGateToken('tokC8b', 'usdc_escrow_arbiter_resolve', OID)   // valid Passkey, correct purpose + order
+  onchainCalls = []
+  const res = await call(RESOLVE, OID, { buyer_refund_units: 3_000_000, webauthn_token: 'tokC8b' })
+  ok('C8b: resolve on non-disputed order → 409 NOT_DISPUTED', res._s === 409 && res._j.error_code === 'USDC_ESCROW_ARBITER_NOT_DISPUTED', JSON.stringify(res._j))
+  ok('C8b: on-chain arbiterResolve NOT invoked on non-disputed order', onchainCalls.length === 0)
+  const tok = db.prepare('SELECT consumed_at FROM webauthn_gate_tokens WHERE id = ?').get('tokC8b') as { consumed_at: string | null }
+  ok('C8b: Passkey token NOT consumed (disputed gate refuses before gate consumption)', tok.consumed_at === null)
+  const a = auditAll('usdc_escrow_arbiter_resolve', OID)
+  ok('C8b: audit trail has a fail row (not_disputed)', a.length === 1 && JSON.parse(a[0].detail).ok === false && JSON.parse(a[0].detail).reason === 'not_disputed')
+}
 // C9: flag-dispute happy path
 {
   const OID = 'ordC9'; mkOrder(OID, 'paid'); mkIntent(OID, deriveOrderIdBytes32(OID), { amount: 10_000_000 })
@@ -386,6 +401,21 @@ const okey = (oid: string): string => deriveOrderIdBytes32(oid)   // 用 orderId
   applyUsdcEscrowResolved(db, deps, seedResolved(K, '0xtxD8', 1n, 9_999_999n, 0n), alert)
   ok('D8: intent issued → alert only, stays disputed', orderStatus(OID) === 'disputed' && notifCountAdmin() === nBefore + 1)
 }
+// D8b (P2b): malformed Resolved payload (non-numeric amount field) → BigInt parse caught → alert, NEVER throws through
+//   watcher processLog. Without the try/catch, BigInt('nope') throws and crashes the whole event loop tick.
+{
+  const OID = 'ordD8b'; const K = okey(OID); mkOrder(OID, 'disputed'); mkIntent(OID, K, { amount: 10_000_000 })
+  // seed a Resolved chain event whose payload has a non-numeric buyerRefund → BigInt() will throw on parse
+  const badPayload = JSON.stringify({ orderKey: K.toLowerCase(), buyerRefund: 'not_a_number', sellerPaid: '0', feePaid: '0' })
+  db.prepare(`INSERT INTO usdc_escrow_chain_events (id, order_key, event_name, tx_hash, log_index, block_number, block_hash, payload_json) VALUES (?,?,?,?,?,?,?,?)`)
+    .run(genId('uce'), K.toLowerCase(), 'Resolved', '0xtxD8b', 0, 2500, '0xblk_D8b', badPayload)
+  const badEv: ResolvedEventRow = { order_key: K.toLowerCase(), tx_hash: '0xtxD8b', payload_json: badPayload }
+  const nBefore = notifCountAdmin()
+  let threw = false
+  try { applyUsdcEscrowResolved(db, deps, badEv, alert) } catch { threw = true }
+  ok('D8b: malformed payload → does NOT throw through processLog (caught internally)', threw === false)
+  ok('D8b: malformed payload → admin alerted, order stays disputed, no fee row', orderStatus(OID) === 'disputed' && feeCount(OID) === 0 && notifCountAdmin() === nBefore + 1)
+}
 // D9: sweepPendingUsdcEscrowResolves — Resolved mirror present + order disputed (event scrolled past window) → sweep closes it
 {
   const OID = 'ordD9'; const K = okey(OID); mkOrder(OID, 'disputed'); mkIntent(OID, K, { amount: 10_000_000 })
@@ -417,6 +447,46 @@ ok("E: mutual-cancel STILL fail-closed (USDC_ESCROW_MUTUAL_CANCEL_NOT_WIRED) for
   const importsAutomated = (s: string): boolean => /^\s*import[^\n]*(dispute-engine|decline-contest|mutual-cancel)/m.test(s)
   ok('E: B7a route + signer do NOT import dispute-engine / decline-contest / mutual-cancel (add-only manual path)',
     !importsAutomated(routeSrc) && !importsAutomated(signerSrc))
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// E-runtime) BEHAVIORAL PROOF — the three automated rulers actually REFUSE a usdc_escrow order at runtime
+//   (not just a source-string lock in E). Proves the zero-fund DB ruling paths can never fire the arbiter key.
+// ══════════════════════════════════════════════════════════════════════════════
+{
+  const { arbitrateDispute } = await import('../src/layer3-trust/L3-1-dispute-engine/dispute-engine.js')
+  const { resolveDeclineContestDispute } = await import('../src/layer3-trust/L3-1-dispute-engine/decline-contest-resolve.js')
+  const { acceptMutualCancel, proposeMutualCancel, initMutualCancelSchema } = await import('../src/layer3-trust/L3-1-dispute-engine/mutual-cancel.js')
+  initMutualCancelSchema(db)
+  // mutual-cancel loadCancellable reads orders.stake_backing / bid_stake_held — add columns to the fixture.
+  for (const col of ['stake_backing REAL DEFAULT 0', 'bid_stake_held REAL DEFAULT 0']) { try { db.exec(`ALTER TABLE orders ADD COLUMN ${col}`) } catch { /* 已存在 */ } }
+
+  // arbitrate + decline-contest share one disputed usdc_escrow order + open dispute
+  const OA = 'ordERarb'; mkOrder(OA, 'disputed'); mkIntent(OA, deriveOrderIdBytes32(OA), { amount: 10_000_000 })
+  db.prepare("INSERT INTO disputes (id, order_id, initiator_id, reason, status) VALUES ('dspER1', ?, 'buyer1', 'runtime refusal probe', 'open')").run(OA)
+
+  // sys_protocol is an authorized arbitrator (role=system) — proves refusal is the RAIL gate, not an auth miss.
+  const arb = arbitrateDispute(db, 'dspER1', 'sys_protocol', 'refund_buyer', 'runtime refusal probe')
+  ok('E-runtime: arbitrateDispute on usdc_escrow → success:false (arbiter key NOT fired by zero-fund ruling)',
+    arb.success === false && /链上仲裁裁决|arbiter/.test(arb.error || ''), JSON.stringify(arb))
+  ok('E-runtime: arbitrate refusal left the order disputed (no illegal terminal transition)', orderStatus(OA) === 'disputed')
+
+  // decline-contest: rail gate is the very first check (before dispute_type validation) → throws NOT_WIRED
+  let declineCode = ''
+  try { resolveDeclineContestDispute(db, 'dspER1', 'sys_protocol', 'decline_fault_confirmed', 'runtime refusal probe', 'timeout_auto') }
+  catch (e) { declineCode = (e as { code?: string })?.code || (e as Error).message }
+  ok('E-runtime: resolveDeclineContestDispute on usdc_escrow → throws USDC_ESCROW_ARBITRATION_NOT_WIRED',
+    declineCode === 'USDC_ESCROW_ARBITRATION_NOT_WIRED', declineCode)
+
+  // mutual-cancel: propose (buyer) then accept (seller) reaches settleMutualCancel → rail gate refuses (no zero-fund close)
+  const OM = 'ordERmc'; mkOrder(OM, 'disputed')
+  db.prepare("INSERT INTO disputes (id, order_id, initiator_id, reason, status) VALUES ('dspER2', ?, 'buyer1', 'runtime refusal probe', 'open')").run(OM)
+  const prop = proposeMutualCancel(db, OM, 'buyer1', 'runtime probe', genId('mcp'))
+  ok('E-runtime: mutual-cancel proposal seeded (precondition for accept)', prop.ok === true, JSON.stringify(prop))
+  const acc = acceptMutualCancel(db, OM, 'seller1')
+  ok('E-runtime: acceptMutualCancel on usdc_escrow → ok:false USDC_ESCROW_MUTUAL_CANCEL_NOT_WIRED (zero-fund close refused)',
+    acc.ok === false && acc.error_code === 'USDC_ESCROW_MUTUAL_CANCEL_NOT_WIRED', JSON.stringify(acc))
+  ok('E-runtime: mutual-cancel refusal left the order disputed', orderStatus(OM) === 'disputed')
 }
 
 if (fail > 0) { console.error(`\n❌ usdc-escrow-arbiter FAILED\n  ✅ ${pass}  ❌ ${fail}\n${fails.join('\n')}`); process.exit(1) }
