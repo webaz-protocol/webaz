@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path'
 import { createHmac } from 'node:crypto'
 import { privateKeyToAddress } from 'viem/accounts'
 import { verifyMessage } from 'viem'
-import { createLocalSeedSigner, HOT_WALLET_SEED, ESCROW_VOUCHER_SEED } from '../src/pwa/internal/wallet-signer.js'
+import { createLocalSeedSigner, HOT_WALLET_SEED, ESCROW_VOUCHER_SEED, ESCROW_ARBITER_SEED } from '../src/pwa/internal/wallet-signer.js'
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -45,6 +45,10 @@ ok('A hot address matches pinned expected value', signer.hotAddress() === pinned
 ok('A escrow-voucher address == legacy HMAC derivation', signer.escrowVoucherAddress() === legacyAddr(ESCROW_VOUCHER_SEED))
 const pinnedVoucher = privateKeyToAddress(`0x${createHmac('sha256', SEED).update('usdc-escrow-voucher-signer').digest('hex')}` as `0x${string}`)
 ok('A escrow-voucher matches pinned expected value', signer.escrowVoucherAddress() === pinnedVoucher, `got ${signer.escrowVoucherAddress()} expected ${pinnedVoucher}`)
+// escrow-arbiter role (B7a): distinct seed 'usdc-escrow-arbiter' → its address is the contract `arbiter` (moves funds on arbiterResolve)
+ok('A escrow-arbiter address == legacy HMAC derivation', signer.arbiterAddress() === legacyAddr(ESCROW_ARBITER_SEED))
+const pinnedArbiter = privateKeyToAddress(`0x${createHmac('sha256', SEED).update('usdc-escrow-arbiter').digest('hex')}` as `0x${string}`)
+ok('A escrow-arbiter matches pinned expected value', signer.arbiterAddress() === pinnedArbiter, `got ${signer.arbiterAddress()} expected ${pinnedArbiter}`)
 
 // ── B) invariants ──
 ok('B deterministic (same seed+role → same address)', createLocalSeedSigner(SEED).hotAddress() === signer.hotAddress())
@@ -53,6 +57,11 @@ ok('B different seed → different hot address', createLocalSeedSigner(SEED + 'x
 ok('B issuer currently shares the hot key (Phase 0.5 will separate)', signer.issuerAddress() === signer.hotAddress())
 ok('B escrow-voucher is a DISTINCT key (never hot/issuer/deposit)', signer.escrowVoucherAddress() !== signer.hotAddress() && signer.escrowVoucherAddress() !== signer.issuerAddress() && signer.escrowVoucherAddress() !== signer.depositAddress('usr_x'))
 ok('B escrow-voucher account address == escrowVoucherAddress()', signer.escrowVoucherAccount().address.toLowerCase() === signer.escrowVoucherAddress().toLowerCase())
+// B7a: arbiter is a distinct role — never the hot relayer / issuer / voucher / deposit key. (issuer==hot today, Phase 0.5.)
+ok('B escrow-arbiter is a DISTINCT key (never hot/issuer/voucher/deposit)', signer.arbiterAddress() !== signer.hotAddress() && signer.arbiterAddress() !== signer.issuerAddress() && signer.arbiterAddress() !== signer.escrowVoucherAddress() && signer.arbiterAddress() !== signer.depositAddress('usr_x'))
+// the four independent seeds (hot / voucher / deposit / arbiter) yield four distinct addresses (issuer shares hot until Phase 0.5, asserted above)
+ok('B four independent roles (hot/voucher/deposit/arbiter) mutually distinct', new Set([signer.hotAddress(), signer.escrowVoucherAddress(), signer.depositAddress('usr_x'), signer.arbiterAddress()]).size === 4)
+ok('B escrow-arbiter account address == arbiterAddress()', signer.arbiterAccount().address.toLowerCase() === signer.arbiterAddress().toLowerCase())
 ok('B hot account address == hotAddress()', signer.hotAccount().address.toLowerCase() === signer.hotAddress().toLowerCase())
 ok('B deposit account address == depositAddress()', signer.depositAccount('usr_x').address.toLowerCase() === signer.depositAddress('usr_x').toLowerCase())
 // issuerSignMessage produces a signature that verifies against issuerAddress

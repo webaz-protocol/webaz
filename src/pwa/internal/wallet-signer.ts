@@ -40,6 +40,15 @@ export interface WalletSigner {
    */
   escrowVoucherAccount(): Account
   escrowVoucherAddress(): `0x${string}`
+  /**
+   * USDC-escrow ARBITER signer (WebazEscrow `arbiterResolve` / arbiter-side `flagDispute`). Its address
+   * is the on-chain `arbiter` (configured at contract deploy, B9) — the ONLY key that can move funds out
+   * of a Disputed escrow. A DISTINCT role — NEVER reuse the hot/issuer/voucher/deposit key. Contract gate:
+   * a leaked arbiter key can only split an ALREADY-Disputed escrow (arbiterResolve reverts on any other
+   * state), never touch Funded escrows and never mint deposits. Backend use is Passkey-gated (B7a).
+   */
+  arbiterAccount(): Account
+  arbiterAddress(): `0x${string}`
 }
 
 /** Seed string for the hot-wallet role (also the issuer role today — see Phase 0.5). */
@@ -47,6 +56,9 @@ export const HOT_WALLET_SEED = 'platform-hot-wallet'
 
 /** Seed string for the USDC-escrow voucher role (distinct — its address is the contract authorizationSigner). */
 export const ESCROW_VOUCHER_SEED = 'usdc-escrow-voucher-signer'
+
+/** Seed string for the USDC-escrow arbiter role (distinct — its address is the contract `arbiter`; moves funds on arbiterResolve). */
+export const ESCROW_ARBITER_SEED = 'usdc-escrow-arbiter'
 
 /**
  * In-process signer derived from a single master seed (current production behavior; dev/testnet).
@@ -72,5 +84,8 @@ export function createLocalSeedSigner(masterSeed: string): WalletSigner {
     // Dedicated voucher role (independent seed) — never shares the hot/issuer/deposit key.
     escrowVoucherAccount: () => privateKeyToAccount(privKey(ESCROW_VOUCHER_SEED)),
     escrowVoucherAddress: () => privateKeyToAddress(privKey(ESCROW_VOUCHER_SEED)),
+    // Dedicated arbiter role (independent seed) — never shares the hot/issuer/voucher/deposit key. Moves funds on arbiterResolve.
+    arbiterAccount: () => privateKeyToAccount(privKey(ESCROW_ARBITER_SEED)),
+    arbiterAddress: () => privateKeyToAddress(privKey(ESCROW_ARBITER_SEED)),
   }
 }

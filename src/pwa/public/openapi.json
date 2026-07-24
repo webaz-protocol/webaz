@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (828 endpoints, 20 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (830 endpoints, 20 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -2126,6 +2126,32 @@
         "summary": "GET /api/admin/usage",
         "tags": [],
         "security": []
+      }
+    },
+    "/api/admin/usdc-escrow/:orderId/flag-dispute": {
+      "post": {
+        "summary": "POST /api/admin/usdc-escrow/:orderId/flag-dispute —— arbiter 冻结(链上 flagDispute;买家丢钱包/不配合)。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/usdc-escrow/:orderId/resolve": {
+      "post": {
+        "summary": "POST /api/admin/usdc-escrow/:orderId/resolve —— arbiter 裁决(链上 arbiterResolve;buyerRefund 6dp 整数单位)。",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/admin/users": {

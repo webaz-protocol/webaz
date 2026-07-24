@@ -24,13 +24,14 @@
  *
  * 范围边界(刻意不做,留后续 PR):
  *   - Released:B5 已接线 —— 镜像后调 applyUsdcEscrowRelease 收敛状态 + 纯记账镜像(零 wallets 写)。
- *   - Resolved:B7 才接(链上仲裁裁决消费);现阶段镜像 + alertAdmins(arbiter key 系统外使用=事故级)。
- *   - Disputed 只镜像 + alertAdmins,链上仲裁裁决消费是 PR-B7。
+ *   - Resolved:B7a 已接线 —— 镜像后调 applyUsdcEscrowResolved(admin Passkey 门 arbiterResolve 的合法产物)
+ *     收敛终态(disputed→cancelled 全退 / disputed→completed 卖家侧)+ 纯记账镜像(零 wallets 写)。
+ *   - Disputed:镜像 + alertAdmins(买家或 arbiter 链上冻结皆可);终态由后续 Resolved 收口。
  */
 import type Database from 'better-sqlite3'
 import { createPublicClient, http, parseAbiItem } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
-import { alertUsdcAdmins, applyUsdcEscrowRelease } from '../../usdc-escrow-settle.js'
+import { alertUsdcAdmins, applyUsdcEscrowRelease, applyUsdcEscrowResolved } from '../../usdc-escrow-settle.js'
 import type { UsdcSettleDeps } from '../../usdc-escrow-settle.js'
 import { USDC_ESCROW_DEADLINE_OFFSET_HOURS } from '../../usdc-escrow-create.js'
 
@@ -59,7 +60,7 @@ export interface WatcherChainClient {
 
 export interface WatcherDeps {
   db: Database.Database
-  transition: (db: Database.Database, orderId: string, to: 'paid' | 'confirmed' | 'completed', actorId: string, evidence: string[], note: string) => { success: boolean; error?: string }
+  transition: (db: Database.Database, orderId: string, to: 'paid' | 'confirmed' | 'completed' | 'cancelled', actorId: string, evidence: string[], note: string) => { success: boolean; error?: string }
   settleOrder: (orderId: string) => void   // B5:Released 收口调 server.ts settleOrder(usdc 分支=记账镜像)
   generateId: (p: string) => string
   contractAddress: string
@@ -338,7 +339,8 @@ function processLog(deps: WatcherDeps, l: WatcherLog): void {
       applyDeposited(deps, orderKey, l)
       break
     case 'Disputed':
-      alertAdmins(deps, '🚨 USDC 担保:链上争议', `order_key ${orderKey} 发起链上争议(tx ${l.transactionHash})—— 链上仲裁裁决消费是 PR-B7,现阶段需人工知悉。`)
+      // B7a:链上冻结(买家或 arbiter flagDispute)—— 镜像 + 告警知悉即可;终态由后续 Resolved 事件收口(applyUsdcEscrowResolved)。
+      alertAdmins(deps, '🚨 USDC 担保:链上争议', `order_key ${orderKey} 发起链上争议冻结(tx ${l.transactionHash})—— 已镜像;等 arbiter 裁决(链上 Resolved)后由 watcher 收敛订单终态,现阶段人工知悉。`)
       break
     case 'Released':
       // B5:镜像后收敛状态 + 纯记账镜像(零 wallets 写)。payload 逐字序列化(bigint→string,与镜像同款)。
@@ -350,7 +352,13 @@ function processLog(deps: WatcherDeps, l: WatcherLog): void {
       )
       break
     case 'Resolved':
-      alertAdmins(deps, '🚨 USDC 担保:链上仲裁裁决', `order_key ${orderKey} 出现链上 Resolved(tx ${l.transactionHash})但 B7 未接线 —— arbiter key 在系统外被使用,立即人工核。`)
+      // B7a:链上仲裁裁决【合法】消费 —— 镜像后收敛状态 + 纯记账镜像(零 wallets 写)。payload 逐字序列化(bigint→string,与镜像同款)。
+      applyUsdcEscrowResolved(
+        deps.db,
+        { transition: deps.transition as UsdcSettleDeps['transition'], settleOrder: deps.settleOrder, generateId: deps.generateId, notifyTransition: deps.notifyTransition },
+        { order_key: orderKey, tx_hash: l.transactionHash.toLowerCase(), payload_json: JSON.stringify(l.args, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)) },
+        (t, b) => alertAdmins(deps, t, b),
+      )
       break
     default:
       log(`[usdc-escrow watcher] unknown event ${l.eventName} mirrored, ignored`)
