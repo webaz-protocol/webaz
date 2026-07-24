@@ -105,6 +105,11 @@
   <script src="/app-direct-pay-accounts.js"></script>
   <script src="/app-direct-pay-buyer.js"></script>
   <script src="/app-direct-pay-pay.js"></script>
+  <!-- USDC 合约担保(B6b-2)买家链上面。顺序锁死:wallet 基础层必须在另两个之前(它定义 webazWallet*/webazHexToBigInt),
+       pay 必须在 release 之前(pay 的 hydrate 分派到 release,且 release 复用 pay 的 usdcEscrowPollStatus)。 -->
+  <script src="/app-usdc-wallet.js"></script>
+  <script src="/app-usdc-escrow-pay.js"></script>
+  <script src="/app-usdc-escrow-release.js"></script>
   <script src="/app-direct-pay-memo.js"></script>
   <script src="/app-direct-pay-reveal.js"></script>
   <script src="/app-direct-pay-copy.js"></script>

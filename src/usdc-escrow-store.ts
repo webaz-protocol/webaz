@@ -201,16 +201,33 @@ export function upsertUsdcEscrowVoucherIntent(
   })()
 }
 
-/** 轮询端点真值(B6b stepper 消费):intent 状态 + 链上 Deposited/Released 是否已【非孤儿】镜像(重组孤儿排除)。 */
-export function getUsdcEscrowStatus(db: Database.Database, orderId: string): { intent_status: string | null; deposited_seen: boolean; released_seen: boolean } {
-  const intent = db.prepare('SELECT order_key, status FROM usdc_escrow_intents WHERE order_id = ?').get(orderId) as { order_key: string; status: string } | undefined
-  if (!intent) return { intent_status: null, deposited_seen: false, released_seen: false }
+/**
+ * 轮询端点真值(B6b stepper 消费):intent 状态 + 链上 Deposited/Released 是否已【非孤儿】镜像(重组孤儿排除)。
+ * B6b-2 增补【只读】投影:voucher 快照的经济参数(金额 / 卖家收款地址 / 费率 / 自动放款时刻 / 签发时合约地址)。
+ *   释放·争议面必须同屏显示这组数字供用户与钱包弹窗交叉核对,倒计时也必须按【存入时冻结的】autoReleaseAt 走,
+ *   而不是重新按 param 现算。纯 SELECT 投影:零写、零语义变化(唯一消费方 = routes/usdc-escrow.ts GET /status)。
+ */
+export interface UsdcEscrowStatusView {
+  intent_status: string | null; deposited_seen: boolean; released_seen: boolean; disputed_seen: boolean
+  contract_addr: string | null; seller_addr: string | null
+  amount_units: number | null; fee_bps: number | null; auto_release_at: string | null
+}
+export function getUsdcEscrowStatus(db: Database.Database, orderId: string): UsdcEscrowStatusView {
+  const intent = db.prepare('SELECT order_key, status, contract_addr, seller_addr, amount_units, fee_bps, auto_release_at FROM usdc_escrow_intents WHERE order_id = ?').get(orderId) as
+    { order_key: string; status: string; contract_addr: string; seller_addr: string; amount_units: number; fee_bps: number; auto_release_at: string } | undefined
+  if (!intent) return { intent_status: null, deposited_seen: false, released_seen: false, disputed_seen: false, contract_addr: null, seller_addr: null, amount_units: null, fee_bps: null, auto_release_at: null }
   const seen = (name: string): boolean => !!db.prepare(`
     SELECT 1 FROM usdc_escrow_chain_events ce
     LEFT JOIN usdc_escrow_event_orphans o ON o.event_id = ce.id
     WHERE o.event_id IS NULL AND ce.event_name = ? AND ce.order_key = ? LIMIT 1
   `).get(name, intent.order_key)
-  return { intent_status: intent.status, deposited_seen: seen('Deposited'), released_seen: seen('Released') }
+  return {
+    // disputed_seen:合约 Disputed 后 escrow 只能经 arbiterResolve 退出 —— buyerRelease/flagDispute 都会 revert。
+    //   读面必须暴露它,否则 UI 会渲染出必然失败的按钮(B6b-2 D1 的 calldata 门也用它)。
+    intent_status: intent.status, deposited_seen: seen('Deposited'), released_seen: seen('Released'), disputed_seen: seen('Disputed'),
+    contract_addr: intent.contract_addr, seller_addr: intent.seller_addr,
+    amount_units: Number(intent.amount_units), fee_bps: Number(intent.fee_bps), auto_release_at: intent.auto_release_at,
+  }
 }
 
 /**
