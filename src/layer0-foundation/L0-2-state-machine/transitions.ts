@@ -246,38 +246,47 @@ export const VALID_TRANSITIONS: Record<string, Transition> = {
   },
 
   // ── 发起争议（任何阶段都可触发）──────────────────────────────
+  //
+  // ★ B7b-1(方案 A,链驱动开争议):下列六条 ?→disputed 各加 'system' 到 allowedRoles。
+  //   'system' 【仅供 usdc_escrow watcher 在「非孤儿链上 Disputed 事件」驱动时使用】—— 链上
+  //   flagDispute(买家或 arbiter 地址签名)是密码学可归因的真实争议动作,driver 以链上 tx 作【真实证据】
+  //   (requiresEvidence 保持 true,绝不放松),再以 sys_protocol(role=system)代开 DB 争议,打通「不合作/
+  //   丢钱包买家」→ admin B7a resolve(要求 DB disputed)的端到端缺口。rail-scope 靠调用方纪律 + createDispute
+  //   的本轨 system 分支双守:唯一生产调用方 = usdc watcher,无其它 rail/调用方走 system→disputed
+  //   (见 usdc-escrow-settle.applyUsdcEscrowDisputed;createDispute 对非 usdc_escrow 的 system 发起方仍拒)。
+  //   本 PR 只让订单能【进入】disputed;裁决仍唯经 B7a admin Passkey 路由(engine 通用角色/证据/签名链逻辑不动)。
   'paid→disputed': {
-    allowedRoles: ['buyer', 'seller'],
+    allowedRoles: ['buyer', 'seller', 'system'],   // +system: B7b-1 链驱动开争议(仅 usdc watcher,以链上 tx 为证据)
     requiresEvidence: true,
     evidenceHint: '描述问题并上传相关证据',
     description: '资金托管后发现问题，发起争议'
   },
   'accepted→disputed': {
-    allowedRoles: ['buyer', 'seller'],
+    allowedRoles: ['buyer', 'seller', 'system'],   // +system: B7b-1 链驱动开争议(仅 usdc watcher,以链上 tx 为证据)
     requiresEvidence: true,
     evidenceHint: '描述问题并上传相关证据',
     description: '卖家接单后发现问题'
   },
   'shipped→disputed': {
-    allowedRoles: ['buyer', 'seller', 'logistics'],
+    allowedRoles: ['buyer', 'seller', 'logistics', 'system'],   // +system: B7b-1 链驱动开争议(仅 usdc watcher,以链上 tx 为证据)
     requiresEvidence: true,
     evidenceHint: '描述问题并上传相关证据',
     description: '发货后出现问题'
   },
   'picked_up→disputed': {
-    allowedRoles: ['buyer', 'seller', 'logistics'],
+    allowedRoles: ['buyer', 'seller', 'logistics', 'system'],   // +system: B7b-1 链驱动开争议(仅 usdc watcher,以链上 tx 为证据)
     requiresEvidence: true,
     evidenceHint: '描述问题并上传相关证据',
     description: '揽收后出现问题（如包裹损毁）'
   },
   'in_transit→disputed': {
-    allowedRoles: ['buyer', 'seller', 'logistics'],
+    allowedRoles: ['buyer', 'seller', 'logistics', 'system'],   // +system: B7b-1 链驱动开争议(仅 usdc watcher,以链上 tx 为证据)
     requiresEvidence: true,
     evidenceHint: '描述问题并上传相关证据',
     description: '运输中出现问题'
   },
   'delivered→disputed': {
-    allowedRoles: ['buyer'],
+    allowedRoles: ['buyer', 'system'],   // +system: B7b-1 链驱动开争议(仅 usdc watcher,以链上 tx 为证据)
     requiresEvidence: true,
     evidenceHint: '上传：收到货物的照片 + 问题描述',
     description: '买家收货后发现货不对版或货损'

@@ -26,13 +26,15 @@
  *   - Released:B5 已接线 —— 镜像后调 applyUsdcEscrowRelease 收敛状态 + 纯记账镜像(零 wallets 写)。
  *   - Resolved:B7a 已接线 —— 镜像后调 applyUsdcEscrowResolved(admin Passkey 门 arbiterResolve 的合法产物)
  *     收敛终态(disputed→cancelled 全退 / disputed→completed 卖家侧)+ 纯记账镜像(零 wallets 写)。
- *   - Disputed:镜像 + alertAdmins(买家或 arbiter 链上冻结皆可);终态由后续 Resolved 收口。
+ *   - Disputed:B7b-1 已接线 —— 镜像后调 applyUsdcEscrowDisputed 代开 DB 争议(链驱动开争议,方案 A;买家或
+ *     arbiter 链上 flagDispute 皆可,以链上 tx 为证据,幂等,零 wallets 写);终态由后续 Resolved 收口。
  */
 import type Database from 'better-sqlite3'
 import { createPublicClient, http, parseAbiItem } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
-import { alertUsdcAdmins, applyUsdcEscrowRelease, applyUsdcEscrowResolved } from '../../usdc-escrow-settle.js'
-import type { UsdcSettleDeps } from '../../usdc-escrow-settle.js'
+import { alertUsdcAdmins, applyUsdcEscrowRelease, applyUsdcEscrowResolved, applyUsdcEscrowDisputed } from '../../usdc-escrow-settle.js'
+import type { UsdcSettleDeps, UsdcDisputeDeps } from '../../usdc-escrow-settle.js'
+import { createDispute } from '../../layer3-trust/L3-1-dispute-engine/dispute-engine.js'   // B7b-1:链驱动开争议(system 发起,仅 usdc_escrow)
 import { USDC_ESCROW_DEADLINE_OFFSET_HOURS } from '../../usdc-escrow-create.js'
 
 // ─── 可调参数(导出,便于测试引用/覆盖)─────────────────────────
@@ -60,7 +62,7 @@ export interface WatcherChainClient {
 
 export interface WatcherDeps {
   db: Database.Database
-  transition: (db: Database.Database, orderId: string, to: 'paid' | 'confirmed' | 'completed' | 'cancelled', actorId: string, evidence: string[], note: string) => { success: boolean; error?: string }
+  transition: (db: Database.Database, orderId: string, to: 'paid' | 'confirmed' | 'completed' | 'cancelled' | 'disputed', actorId: string, evidence: string[], note: string) => { success: boolean; error?: string }
   settleOrder: (orderId: string) => void   // B5:Released 收口调 server.ts settleOrder(usdc 分支=记账镜像)
   generateId: (p: string) => string
   contractAddress: string
@@ -339,8 +341,15 @@ function processLog(deps: WatcherDeps, l: WatcherLog): void {
       applyDeposited(deps, orderKey, l)
       break
     case 'Disputed':
-      // B7a:链上冻结(买家或 arbiter flagDispute)—— 镜像 + 告警知悉即可;终态由后续 Resolved 事件收口(applyUsdcEscrowResolved)。
-      alertAdmins(deps, '🚨 USDC 担保:链上争议', `order_key ${orderKey} 发起链上争议冻结(tx ${l.transactionHash})—— 已镜像;等 arbiter 裁决(链上 Resolved)后由 watcher 收敛订单终态,现阶段人工知悉。`)
+      // B7b-1(方案 A,链驱动开争议):镜像后调 applyUsdcEscrowDisputed 代开 DB 争议(链上 flagDispute = 真实争议动作,
+      //   以链上 tx 为证据;买家 flag 与 arbiter flag 同经此,by 地址区分,幂等)。打通「不合作/丢钱包买家」→ admin B7a
+      //   resolve(要求 DB disputed)的端到端缺口。终态仍由后续 Resolved 事件收口(applyUsdcEscrowResolved)。
+      applyUsdcEscrowDisputed(
+        deps.db,
+        { transition: deps.transition as UsdcDisputeDeps['transition'], createDispute, generateId: deps.generateId, notifyTransition: deps.notifyTransition },
+        { order_key: orderKey, tx_hash: l.transactionHash.toLowerCase(), payload_json: JSON.stringify(l.args, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)), block_number: Number(l.blockNumber) },
+        (t, b) => alertAdmins(deps, t, b),
+      )
       break
     case 'Released':
       // B5:镜像后收敛状态 + 纯记账镜像(零 wallets 写)。payload 逐字序列化(bigint→string,与镜像同款)。
