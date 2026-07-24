@@ -165,3 +165,59 @@ export function retirePayoutAddress(db: Database.Database, sellerId: string, id:
   if (row.status !== 'retired') db.prepare("UPDATE seller_payout_addresses SET status = 'retired', retired_at = datetime('now') WHERE id = ?").run(id)
   return { ok: true }
 }
+
+// ─── PR-B6a: voucher intent 生命周期(签发写、状态读、取消/清扫作废)。域逻辑集中于此,路由层零 db.prepare。 ───
+
+export interface VoucherIntentInput {
+  orderId: string; orderKey: string; contractAddr: string; buyerId: string
+  sellerId: string; sellerAddr: string; amountUnits: number; feeBps: number
+  autoReleaseAtIso: string; voucherSig: string; authExpiresAtIso: string
+}
+
+/**
+ * 签发/重签 voucher intent(单 sync tx,better-sqlite3 天然串行 → 无 TOCTOU)。
+ *   - 无行 → INSERT(status='issued')。
+ *   - issued → 重签:UPDATE 全部凭证字段(旧 voucher 一次性 digest 自然作废,合约 replay guard 不受影响)。
+ *   - funded/released → 拒(真钱已入链;不可重签)。void → 拒(订单已取消/凭证已作废)。
+ * order_key 落库【lowercase】—— B4 watcher 按 lowercase 查询,跨 PR 不变量,签发处 toLowerCase 守卫。
+ * (funded/released/void 分支为防御性:路由层 status==='created' 门保证进入此处的 intent 只能是 absent|issued。)
+ */
+export function upsertUsdcEscrowVoucherIntent(
+  db: Database.Database, i: VoucherIntentInput,
+): { ok: true; outcome: 'issued' | 'reissued' } | { ok: false; error: string; error_code: string } {
+  const key = i.orderKey.toLowerCase()   // 跨 PR 不变量守卫(B4 watcher lowercase 查询)
+  return db.transaction(() => {
+    const existing = db.prepare('SELECT status FROM usdc_escrow_intents WHERE order_id = ?').get(i.orderId) as { status: string } | undefined
+    if (existing) {
+      if (existing.status === 'funded' || existing.status === 'released') return { ok: false as const, error: '该订单已完成链上存入,凭证不可重签', error_code: 'USDC_ESCROW_VOUCHER_ALREADY_FUNDED' }
+      if (existing.status === 'void') return { ok: false as const, error: '该订单凭证已作废(订单已取消)', error_code: 'USDC_ESCROW_VOUCHER_ALREADY_FUNDED' }
+      db.prepare(`UPDATE usdc_escrow_intents SET order_key=?, contract_addr=?, buyer_id=?, seller_id=?, seller_addr=?, amount_units=?, fee_bps=?, auto_release_at=?, voucher_sig=?, auth_expires_at=?, status='issued' WHERE order_id=?`)
+        .run(key, i.contractAddr, i.buyerId, i.sellerId, i.sellerAddr, i.amountUnits, i.feeBps, i.autoReleaseAtIso, i.voucherSig, i.authExpiresAtIso, i.orderId)
+      return { ok: true as const, outcome: 'reissued' as const }
+    }
+    db.prepare(`INSERT INTO usdc_escrow_intents (order_id, order_key, contract_addr, buyer_id, seller_id, seller_addr, amount_units, fee_bps, auto_release_at, voucher_sig, auth_expires_at, status) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'issued')`)
+      .run(i.orderId, key, i.contractAddr, i.buyerId, i.sellerId, i.sellerAddr, i.amountUnits, i.feeBps, i.autoReleaseAtIso, i.voucherSig, i.authExpiresAtIso)
+    return { ok: true as const, outcome: 'issued' as const }
+  })()
+}
+
+/** 轮询端点真值(B6b stepper 消费):intent 状态 + 链上 Deposited/Released 是否已【非孤儿】镜像(重组孤儿排除)。 */
+export function getUsdcEscrowStatus(db: Database.Database, orderId: string): { intent_status: string | null; deposited_seen: boolean; released_seen: boolean } {
+  const intent = db.prepare('SELECT order_key, status FROM usdc_escrow_intents WHERE order_id = ?').get(orderId) as { order_key: string; status: string } | undefined
+  if (!intent) return { intent_status: null, deposited_seen: false, released_seen: false }
+  const seen = (name: string): boolean => !!db.prepare(`
+    SELECT 1 FROM usdc_escrow_chain_events ce
+    LEFT JOIN usdc_escrow_event_orphans o ON o.event_id = ce.id
+    WHERE o.event_id IS NULL AND ce.event_name = ? AND ce.order_key = ? LIMIT 1
+  `).get(name, intent.order_key)
+  return { intent_status: intent.status, deposited_seen: seen('Deposited'), released_seen: seen('Released') }
+}
+
+/**
+ * 取消/付款窗清扫时作废【未存入(issued)】凭证——一次性 digest 天然失效,链上不受影响。
+ * 只动 issued:funded/released 是真钱已入链(绝不改),void 已终态。表缺失/无行 → no-op(direct_p2p 无 intent)。
+ * 调用方须在【同一 db.transaction】内先完成 created→cancelled 转移(与库存回补同原子边界)。
+ */
+export function voidUsdcEscrowIntentOnCancel(db: Database.Database, orderId: string): void {
+  try { db.prepare("UPDATE usdc_escrow_intents SET status = 'void' WHERE order_id = ? AND status = 'issued'").run(orderId) } catch { /* 表缺失/无行 → no-op */ }
+}

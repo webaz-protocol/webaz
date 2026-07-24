@@ -31,6 +31,7 @@ import { settleDeclinedNoFault, settleUndeliverableEscrow } from '../../layer0-f
 import { toUnits } from '../../money.js'   // PR-B3b:卖家申报退程运费 → 整数 base-units
 import { releaseFeeStake } from '../../direct-pay-ledger.js'   // Rail1 直付:取消/超时释放任何遗留模拟质押(AR 订单无 stake → no-op)
 import { restorePreShipDirectPayStock } from '../../direct-pay-stock.js'   // D3 库存回补唯一入口(pre-ship 放行;已出库拒绝)
+import { voidUsdcEscrowIntentOnCancel } from '../../usdc-escrow-store.js'   // B6a:买家付款前取消 usdc_escrow → 作废未存入凭证(direct_p2p 无 intent → no-op)
 import { requireBothDisclosuresAcked } from '../../direct-pay-disclosures.js'   // PR-4e: D1/D2 披露契约门
 import { requireDirectPayHumanPasskey } from '../direct-pay-guards.js'          // PR-4e: 现场真人 Passkey/gate-token 门
 
@@ -204,7 +205,9 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
       // 买家取消:付款窗口内(未付/后悔)/ 货款协商阶段(承认未付)/ 付款窗过期宽限期(确认未付,免等 48h 自动关单 ——
       //   审计项 H:状态机本就允许 buyer direct_expired_unconfirmed→cancelled,此 guard 曾与状态机矛盾=死能力)。mark_paid 仍仅付款窗口。
       const cancelInQuery = action === 'cancel' && ['payment_query', 'direct_expired_unconfirmed'].includes(order.status as string)
-      if (order.payment_rail !== 'direct_p2p' || (order.status !== 'direct_pay_window' && !cancelInQuery)) {
+      // B6a:usdc_escrow 买家在链上存入前主动取消(created)—— 本金从未入链,安全走通用 cancel 收口(转移+回补+作废凭证)。
+      const cancelUsdcCreated = action === 'cancel' && order.payment_rail === 'usdc_escrow' && order.status === 'created'
+      if (!cancelUsdcCreated && (order.payment_rail !== 'direct_p2p' || (order.status !== 'direct_pay_window' && !cancelInQuery))) {
         return void res.status(409).json({ error: '该操作仅适用于直付订单的付款窗口/过期宽限/协商阶段', error_code: 'NOT_DIRECT_PAY_WINDOW' })
       }
     }
@@ -413,6 +416,7 @@ export function registerOrdersActionRoutes(app: Application, deps: OrdersActionD
           releaseFeeStake(db, { orderId: req.params.id })
           // D3 库存回补:经唯一守卫入口(仅 pre-ship 来源放行;已出库走退货验收,绝不直接回补 —— 见 direct-pay-stock.ts 情形矩阵)
           restorePreShipDirectPayStock(db, { fromStatus: fromStatusCancel, productId: order.product_id as string, quantity: Number(order.quantity) || 1 })
+          voidUsdcEscrowIntentOnCancel(db, req.params.id)   // B6a:usdc_escrow 作废未存入(issued)凭证;direct_p2p 无 intent → no-op
         })()
       } catch (e) {
         return void res.status(409).json({ error: (e as Error).message, error_code: 'CANCEL_FAILED' })

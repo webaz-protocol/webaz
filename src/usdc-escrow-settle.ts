@@ -28,6 +28,7 @@ export interface UsdcSettleDeps {
   ) => { success: boolean; error?: string }
   settleOrder: (orderId: string) => void
   generateId: (p: string) => string
+  notifyTransition?: (db: Database.Database, orderId: string, from: string, to: string) => void   // B6a:delivered→confirmed / confirmed→completed 消费(可选;通知失败绝不回滚钱路)
 }
 
 export interface ReleasedEventRow { order_key: string; tx_hash: string; payload_json: string }
@@ -128,6 +129,11 @@ export function applyUsdcEscrowRelease(
     alertAdmins('🚨 USDC 担保:未存入却释放', `order_key ${orderKey}(order ${intent.order_id})intent 仍 issued(未确认存入)却收到释放,tx ${ev.tx_hash} —— 人工核。`)
     return
   }
+  if (intent.status === 'void') {
+    // B6a:作废凭证(订单已取消/清扫)却收到链上释放 —— 告警 + 不动订单(现只查 'issued',补 void 分支)。
+    alertAdmins('🚨 USDC 担保:作废凭证却收到释放', `order_key ${orderKey}(order ${intent.order_id})intent 已 void(订单已取消)却收到链上释放,tx ${ev.tx_hash} —— 人工核链上真相。`)
+    return
+  }
 
   const order = db.prepare('SELECT id, status, buyer_id FROM orders WHERE id = ?').get(intent.order_id) as OrderRow | undefined
   if (!order) {
@@ -141,6 +147,7 @@ export function applyUsdcEscrowRelease(
   switch (order.status) {
     case 'delivered': {
       // 正常收口:delivered → confirmed → settleOrder(记账镜像)→ completed,单事务原子。
+      let settled = false
       try {
         db.transaction(() => {
           const actor = auto ? 'sys_protocol' : order.buyer_id
@@ -156,24 +163,31 @@ export function applyUsdcEscrowRelease(
           const r2 = deps.transition(db, order.id, 'completed', 'sys_protocol', [], '链上结算完成')
           if (!r2.success) throw new Error(`confirmed→completed 失败:${r2.error}`)
         })()
+        settled = true
       } catch (e) {
         // Fix A:sweep 可达失败 → 直接调 5-arg 去重 helper(标题稳定、按 order 去重),避免 60s 重驱无界轰炸。
         alertUsdcAdmins(db, deps.generateId, '🚨 USDC 担保:释放结算失败', `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— ${(e as Error).message};状态未变,人工核。`, order.id)
       }
+      // B6a:钱路事务提交后发通知(try/catch;通知失败绝不回滚钱路)。delivered→confirmed 与 confirmed→completed 两条。
+      if (settled) { try { deps.notifyTransition?.(db, order.id, 'delivered', 'confirmed'); deps.notifyTransition?.(db, order.id, 'confirmed', 'completed') } catch (e) { console.warn('[usdc-escrow settle] release notify failed:', (e as Error).message) } }
       break
     }
     case 'confirmed': {
       // 崩溃恢复:上次 confirm 后没走完 completed —— 补 settleOrder + →completed。
+      let settled = false
       try {
         db.transaction(() => {
           deps.settleOrder(order.id)
           const r2 = deps.transition(db, order.id, 'completed', 'sys_protocol', [], '链上结算完成(崩溃恢复补收口)')
           if (!r2.success) throw new Error(`confirmed→completed 失败:${r2.error}`)
         })()
+        settled = true
       } catch (e) {
         // Fix A:sweep 可达失败 → 去重 helper(同上)。
         alertUsdcAdmins(db, deps.generateId, '🚨 USDC 担保:释放结算失败(恢复)', `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— ${(e as Error).message};人工核。`, order.id)
       }
+      // B6a:恢复分支只补 confirmed→completed 一条(delivered→confirmed 上次已发)。
+      if (settled) { try { deps.notifyTransition?.(db, order.id, 'confirmed', 'completed') } catch (e) { console.warn('[usdc-escrow settle] recovery notify failed:', (e as Error).message) } }
       break
     }
     case 'completed': {

@@ -419,7 +419,7 @@ import { initBuildReputationSchema } from '../layer2-business/L2-9-contribution/
 import { initGithubCredentialStoreSchema } from '../layer2-business/L2-9-contribution/github-credential-store.js'
 import { initIdentityBindingSchema } from '../layer2-business/L2-9-contribution/identity-binding-store.js'
 import { initIdentityClaimChallengeSchema } from '../layer2-business/L2-9-contribution/identity-claim-challenge-store.js'
-import { initAdminCoordinationSchema } from '../layer2-business/L2-9-contribution/admin-coordination-store.js'; import { initWazSunsetSchema } from '../waz-sunset-store.js'; import { initUsdcEscrowSchema } from '../usdc-escrow-store.js'; import { registerUsdcPayoutAddressRoutes } from './routes/usdc-payout-address.js'; import { startUsdcEscrowWatcher } from './internal/usdc-escrow-watcher.js'; import { settleUsdcEscrowAtCompletion, sweepPendingUsdcEscrowReleases, sweepStalledUsdcEscrowOrders, alertUsdcAdmins } from '../usdc-escrow-settle.js'
+import { initAdminCoordinationSchema } from '../layer2-business/L2-9-contribution/admin-coordination-store.js'; import { initWazSunsetSchema } from '../waz-sunset-store.js'; import { initUsdcEscrowSchema } from '../usdc-escrow-store.js'; import { registerUsdcPayoutAddressRoutes } from './routes/usdc-payout-address.js'; import { registerUsdcEscrowRoutes } from './routes/usdc-escrow.js'; import { startUsdcEscrowWatcher } from './internal/usdc-escrow-watcher.js'; import { settleUsdcEscrowAtCompletion, sweepPendingUsdcEscrowReleases, sweepStalledUsdcEscrowOrders, alertUsdcAdmins } from '../usdc-escrow-settle.js'
 import { registerContributionIdentityRoutes } from './routes/contribution-identity.js'
 import { registerContributionScoreRoutes } from './routes/contribution-score.js'
 import { registerContributionFactsRoutes } from './routes/contribution-facts.js'
@@ -850,7 +850,7 @@ const DEFAULT_PARAMS: Array<{ key: string; value: string; type: string; descript
   { key: 'max_quota_duration_hours', value: '72', type: 'number', description: 'PR#18 build_task 扩容授权:最长有效期(小时)', category: 'limit', min: 1, max: 2160 },
   { key: 'export_csv_limit', value: '5000', type: 'number', description: '订单导出 CSV 行数上限', category: 'limit', min: 100, max: 50000 },
   { key: 'return_window_extension_days', value: '0', type: 'number', description: '退货窗口全局延长天数', category: 'general', min: 0, max: 90 },
-  { key: 'payment_rail_waz_escrow_enabled', value: '0', type: 'number', description: 'WAZ 模拟托管轨渠道开关(0=下架:支付选项隐藏+建单 409 RAIL_DISABLED;1=admin 恢复)— 2026-07-23 WAZ 退役默认关', category: 'system', min: 0, max: 1 }, /* Wave G-2: USDC / 链上配置 ↓ */ { key: 'payment_rail_usdc_escrow_enabled', value: '0', type: 'number', description: 'USDC 链上合约担保轨开关(B 线;默认关,生产 flip 单独拍板)', category: 'system', min: 0, max: 1 }, { key: 'usdc_escrow.per_tx_cap', value: '50', type: 'number', description: 'USDC 担保单笔上限(USDC;合约 perTxCap 后端镜像,链上仍硬校验)', category: 'limit', min: 1, max: 500 }, { key: 'usdc_escrow.auto_release_days', value: '14', type: 'number', description: 'USDC 担保超时自动放款天数(voucher autoReleaseAt;争议引擎最坏 9d < 14d)', category: 'limit', min: 3, max: 90 }, { key: 'usdc_escrow.pay_window_hours', value: '24', type: 'number', description: 'USDC 担保建单后链上存入窗口(小时);超时取消', category: 'limit', min: 1, max: 168 },
+  { key: 'payment_rail_waz_escrow_enabled', value: '0', type: 'number', description: 'WAZ 模拟托管轨渠道开关(0=下架:支付选项隐藏+建单 409 RAIL_DISABLED;1=admin 恢复)— 2026-07-23 WAZ 退役默认关', category: 'system', min: 0, max: 1 }, /* Wave G-2: USDC / 链上配置 ↓ */ { key: 'payment_rail_usdc_escrow_enabled', value: '0', type: 'number', description: 'USDC 链上合约担保轨开关(B 线;默认关,生产 flip 单独拍板)', category: 'system', min: 0, max: 1 }, { key: 'usdc_escrow.per_tx_cap', value: '50', type: 'number', description: 'USDC 担保单笔上限(USDC;合约 perTxCap 后端镜像,链上仍硬校验)', category: 'limit', min: 1, max: 500 }, { key: 'usdc_escrow.auto_release_days', value: '14', type: 'number', description: 'USDC 担保超时自动放款天数(voucher autoReleaseAt;争议引擎最坏 9d < 14d)', category: 'limit', min: 3, max: 90 }, { key: 'usdc_escrow.pay_window_hours', value: '24', type: 'number', description: 'USDC 担保建单后链上存入窗口(小时);超时取消', category: 'limit', min: 1, max: 168 }, { key: 'usdc_escrow.voucher_ttl_minutes', value: '60', type: 'number', description: 'USDC 担保 voucher 授权有效期(分钟;B6a authExpiresAt),过期须重签', category: 'limit', min: 5, max: 1440 },
   { key: 'waz_usdc_rate', value: '1.0', type: 'number', description: '1 USDC 兑换多少 WAZ', category: 'fee', min: 0.0001, max: 1000 },
   { key: 'usdc_min_deposit', value: '0.01', type: 'number', description: '最低充值 USDC（小于忽略）', category: 'limit', min: 0, max: 1000 },
   { key: 'usdc_min_withdraw_waz', value: '10', type: 'number', description: '最低提现 WAZ', category: 'limit', min: 0, max: 100000 },
@@ -4692,7 +4692,7 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_gb_status ON group_buys(status, en
 registerGroupBuysRoutes(app, { db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent, getProtocolParam })
 
 // Cron: 过期未成团 → 失败结算（function 已迁出到 routes/group-buys.ts）
-setInterval(() => sweepExpiredGroupBuysRaw(db, generateId, broadcastSystemEvent, getProtocolParam), 60_000); setInterval(() => { try { sweepExpiredUsdcEscrowOrders(db, { transition }); sweepPendingUsdcEscrowReleases(db, { transition, settleOrder, generateId }, (t, b) => alertUsdcAdmins(db, generateId, t, b)); sweepStalledUsdcEscrowOrders(db, generateId) } catch (e) { console.error('[usdc sweep cron]', e) } }, 60_000); if (process.env.USDC_ESCROW_CONTRACT) startUsdcEscrowWatcher({ db, transition, settleOrder, generateId, contractAddress: process.env.USDC_ESCROW_CONTRACT })   // B3 R2 sweep + B5 release/stalled sweep + B4 watcher(env 缺失空转)
+setInterval(() => sweepExpiredGroupBuysRaw(db, generateId, broadcastSystemEvent, getProtocolParam), 60_000); setInterval(() => { try { sweepExpiredUsdcEscrowOrders(db, { transition }); sweepPendingUsdcEscrowReleases(db, { transition, settleOrder, generateId, notifyTransition }, (t, b) => alertUsdcAdmins(db, generateId, t, b)); sweepStalledUsdcEscrowOrders(db, generateId) } catch (e) { console.error('[usdc sweep cron]', e) } }, 60_000); if (process.env.USDC_ESCROW_CONTRACT) startUsdcEscrowWatcher({ db, transition, settleOrder, generateId, notifyTransition, contractAddress: process.env.USDC_ESCROW_CONTRACT })   // B3 R2 sweep + B5 release/stalled sweep + B4 watcher(env 缺失空转;B6a notifyTransition 接线)
 
 // I-2: admin 全平台数据导出
 const ADMIN_EXPORT_LIMIT = 20000
@@ -6081,7 +6081,7 @@ registerAgentBuyRoutes(app, {
 registerCartRoutes(app, {
   db, generateId, auth, isTrustedRole, errorRes, broadcastSystemEvent,
   checkStockAndMaybeDelist, addHours, getProtocolParam,
-}); registerUsdcPayoutAddressRoutes(app, { db, auth, isTrustedRole, generateId })   // USDC 合约担保 PR-B2 收款地址
+}); registerUsdcPayoutAddressRoutes(app, { db, auth, isTrustedRole, generateId }); registerUsdcEscrowRoutes(app, { db, auth, isTrustedRole, getProtocolParam, escrowVoucherAccount: () => walletSigner.escrowVoucherAccount() })   // USDC 合约担保 PR-B2 收款地址 + B6a voucher 签发/状态
 
 // POST /api/orders/batch-ship — Phase 84 已迁出
 

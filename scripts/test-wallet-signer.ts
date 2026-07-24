@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path'
 import { createHmac } from 'node:crypto'
 import { privateKeyToAddress } from 'viem/accounts'
 import { verifyMessage } from 'viem'
-import { createLocalSeedSigner, HOT_WALLET_SEED } from '../src/pwa/internal/wallet-signer.js'
+import { createLocalSeedSigner, HOT_WALLET_SEED, ESCROW_VOUCHER_SEED } from '../src/pwa/internal/wallet-signer.js'
 
 let pass = 0, fail = 0; const fails: string[] = []
 const ok = (n: string, c: boolean, d = ''): void => { if (c) pass++; else { fail++; fails.push(`✗ ${n}${d ? `\n    ${d}` : ''}`) } }
@@ -41,12 +41,18 @@ ok('A issuer address == legacy HMAC derivation', signer.issuerAddress() === lega
 // pinned expected (independent of the impl — recompute with viem from the raw HMAC key)
 const pinnedHot = privateKeyToAddress(`0x${createHmac('sha256', SEED).update('platform-hot-wallet').digest('hex')}` as `0x${string}`)
 ok('A hot address matches pinned expected value', signer.hotAddress() === pinnedHot, `got ${signer.hotAddress()} expected ${pinnedHot}`)
+// escrow-voucher role (B6a): distinct seed 'usdc-escrow-voucher-signer' → its address is the contract authorizationSigner
+ok('A escrow-voucher address == legacy HMAC derivation', signer.escrowVoucherAddress() === legacyAddr(ESCROW_VOUCHER_SEED))
+const pinnedVoucher = privateKeyToAddress(`0x${createHmac('sha256', SEED).update('usdc-escrow-voucher-signer').digest('hex')}` as `0x${string}`)
+ok('A escrow-voucher matches pinned expected value', signer.escrowVoucherAddress() === pinnedVoucher, `got ${signer.escrowVoucherAddress()} expected ${pinnedVoucher}`)
 
 // ── B) invariants ──
 ok('B deterministic (same seed+role → same address)', createLocalSeedSigner(SEED).hotAddress() === signer.hotAddress())
 ok('B per-user deposit addresses differ', signer.depositAddress('usr_a') !== signer.depositAddress('usr_b'))
 ok('B different seed → different hot address', createLocalSeedSigner(SEED + 'x').hotAddress() !== signer.hotAddress())
 ok('B issuer currently shares the hot key (Phase 0.5 will separate)', signer.issuerAddress() === signer.hotAddress())
+ok('B escrow-voucher is a DISTINCT key (never hot/issuer/deposit)', signer.escrowVoucherAddress() !== signer.hotAddress() && signer.escrowVoucherAddress() !== signer.issuerAddress() && signer.escrowVoucherAddress() !== signer.depositAddress('usr_x'))
+ok('B escrow-voucher account address == escrowVoucherAddress()', signer.escrowVoucherAccount().address.toLowerCase() === signer.escrowVoucherAddress().toLowerCase())
 ok('B hot account address == hotAddress()', signer.hotAccount().address.toLowerCase() === signer.hotAddress().toLowerCase())
 ok('B deposit account address == depositAddress()', signer.depositAccount('usr_x').address.toLowerCase() === signer.depositAddress('usr_x').toLowerCase())
 // issuerSignMessage produces a signature that verifies against issuerAddress

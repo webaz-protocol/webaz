@@ -3,7 +3,7 @@
   "info": {
     "title": "WebAZ Protocol API",
     "version": "0.4.14",
-    "description": "Auto-generated endpoint inventory (826 endpoints, 20 with full schema). See docs/ for design context."
+    "description": "Auto-generated endpoint inventory (828 endpoints, 20 with full schema). See docs/ for design context."
   },
   "servers": [
     {
@@ -6701,6 +6701,32 @@
     "/api/orders/:id/pending-accept/quote": {
       "post": {
         "summary": "可重复报价(买家确认前修正);每次报价重置响应窗(param direct_pay.quote_confirm_hours,默认 48h)。",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/usdc-escrow/status": {
+      "get": {
+        "summary": "GET /api/orders/:id/usdc-escrow/status —— 买家或卖家:轮询存入/释放可见性(B6b stepper)。",
+        "tags": [
+          "order"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/:id/usdc-escrow/voucher": {
+      "post": {
+        "summary": "POST /api/orders/:id/usdc-escrow/voucher —— 买家:签发一次性 EIP-712 存款授权。",
         "tags": [
           "order"
         ],
