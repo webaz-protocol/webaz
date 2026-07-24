@@ -31,9 +31,12 @@ ok('widget computes seller view', /const isSellerView = state\.user && state\.us
 ok('widget hides the card for a seller when no return exists', /isSellerView && !mine[\s\S]{0,120}card\.style\.display = 'none'[\s\S]{0,20}return/.test(widget))
 
 // 3) widget:卖家内联动作(复用既有 handler),传 order.id 上下文
+// B6b-2 A6:usdc_escrow 的诚实禁用分支插在 accept 按钮之前 → 放宽匹配窗口,并单独锁住那个分支确实存在。
 ok('seller pending → accept/reject inline (decideReturn with orderId ctx; accept label rail-aware)',
-  /isSellerView && item\.status === 'pending'[\s\S]{0,260}decideReturn\('\$\{item\.id\}','accept','\$\{order\.id\}'\)[\s\S]{0,260}decideReturn\('\$\{item\.id\}','reject','\$\{order\.id\}'\)/.test(widget)
+  /isSellerView && item\.status === 'pending'[\s\S]{0,600}decideReturn\('\$\{item\.id\}','accept','\$\{order\.id\}'\)[\s\S]{0,300}decideReturn\('\$\{item\.id\}','reject','\$\{order\.id\}'\)/.test(widget)
   && /同意退货\(场外退款\)/.test(widget))
+ok('seller accept renders a DISABLED honest state on usdc_escrow (returns.ts 409s — on-chain refund unwired)',
+  /order\.payment_rail === 'usdc_escrow' \? `<button class="btn btn-sm"[^`]*disabled>\$\{t\('接受退款\(链上退款接线中\)'\)\}<\/button>`/.test(widget))
 ok('seller picked_up → received inline (confirmReturnReceived with orderId ctx)',
   /isSellerView && item\.status === 'picked_up'/.test(widget) && /confirmReturnReceived\('\$\{item\.id\}','\$\{order\.id\}'\)/.test(widget))
 

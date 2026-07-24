@@ -19,7 +19,10 @@
     if(String(rail)==='direct_p2p') return 'You pay the seller directly; WebAZ holds no principal; the actual method and currency are shown on the confirm page'
     // B6b-1:usdc_escrow = REAL on-chain custody. Explicit branch; the DEFAULT keeps the legacy
     //   simulated-escrow wording (fail-closed — an unknown future rail is never called real custody).
-    if(String(rail)==='usdc_escrow') return 'Payment rail: on-chain escrow — your USDC is held by the WebAZ escrow contract on Base and released to the seller on delivery confirmation (or after the no-dispute timeout); WebAZ never touches the principal'
+    // B6b-2 B1: do NOT claim "WebAZ never touches the principal" — the contract deducts a platform fee
+    //   (feeBps) from the escrowed amount, and the arbiter key can flag+resolve a Funded escrow. Defensible
+    //   claim instead: the platform cannot send the funds to an arbitrary address.
+    if(String(rail)==='usdc_escrow') return 'Payment rail: on-chain escrow — your USDC is held by the WebAZ escrow contract on Base and released to the seller on delivery confirmation (or after the no-dispute timeout). The contract can only pay the buyer, the seller, or the platform fee (deducted from the escrowed amount) — WebAZ cannot move the funds to any other address; in a dispute the platform arbiter key decides the split'
     return 'Payment rail: simulated escrow test — this flow is not real USDC or fiat settlement'
   }
   // Localized payment-rail LABEL. Only 'deferred' is special-cased (shown as pending) — escrow/direct_p2p

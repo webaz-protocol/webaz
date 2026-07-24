@@ -197,8 +197,12 @@ export function buildBuyerOrderFull(db: Database.Database, humanId: string, orde
     },
     refund_status: {
       rail, return_requests: returns,
+      // B6b-2 A4:三轨显式分支,默认 = WAZ 模拟语义(fail-closed)。此 note 无条件输出且 REST 平面无投影层,
+      //   所以 usdc_escrow 必须自己说真话:本金在链上合约、放款由合约执行,协议内没有退款能力(B7 未接线)。
       note: rail === 'direct_p2p'
         ? 'Direct Pay refunds settle OFF-platform (seller→buyer handshake); WebAZ records outcomes but moves no funds.'
+        : rail === 'usdc_escrow'
+        ? 'On-chain escrow rail: the principal is held by the escrow contract on Base and only that contract moves it; WebAZ cannot issue a refund here. Return/refund outcomes recorded by the protocol are settled between buyer and seller off-protocol (on-chain arbitration refunds are not wired yet).'
         : 'Escrow-rail refunds release from escrow per dispute/return outcomes (escrow currently simulated WAZ).',
     },
     available_actions: availableActions(db, o, humanId, returns),

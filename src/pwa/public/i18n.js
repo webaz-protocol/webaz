@@ -19,6 +19,9 @@ window._lang = window.resolveInitialLang(localStorage.getItem('webaz_lang'), typ
 const _EN = {
   // P0-C — approval-card escrow honesty disclosure (USDC display alias, simulated rail)
   '托管(批准后立即从你的钱包扣款入托管)—— 模拟测试轨,金额以 USDC 显示为别名,不代表真实 USDC 或法币托管/结算': 'Escrow (approval immediately debits your wallet into escrow) — SIMULATED test rail; amounts shown in USDC are a display alias and do NOT represent real USDC or fiat custody/settlement',
+  // B6b-2 A1 — the human Passkey card must say what the machine-readable economic_effect says: on this rail
+  //   approval creates the order only (zero wallet writes) and the buyer funds it later from their OWN wallet.
+  '链上合约担保 —— 批准只创建订单,不从任何 WebAZ 余额扣款;之后需你用自己的链上钱包把真实 USDC 存入 Base 上的 WebAZ 担保合约,链上确认后订单才进入已付款': 'On-chain escrow — approval only creates the order; NOTHING is debited from any WebAZ balance. You then send real USDC from your OWN wallet into the WebAZ escrow contract on Base; the order becomes paid only after that on-chain deposit is confirmed',
   // P0-A A2/A3 — approval page state machine (app-agent-approvals.js)
   '加载超时': 'Loading timed out',
   '服务器暂时没有响应。请重试;不会重复创建任何请求或订单。': 'The server did not respond in time. Please retry — no request or order will be duplicated.',
@@ -135,6 +138,8 @@ const _EN = {
   'USDC 担保暂不支持所选订单选项': 'USDC escrow does not support one of the selected order options yet',
   'USDC 担保订单创建失败,请重试': 'Failed to create the USDC escrow order — please retry',
   'USDC 担保订单的协商取消需链上退款(接线中)': 'Mutual cancel for USDC escrow orders requires the on-chain refund flow (wiring in progress)',
+  // B6b-2 A6:退货接受入口 fail-closed —— 场外握手的出口全要求 direct_p2p,接受后本轨会永久卡在 await_refund。
+  'USDC 担保订单的退货退款需链上退款(接线中),请在订单页与对方协商或发起争议': 'Return refunds for USDC escrow orders require the on-chain refund flow (wiring in progress) — please arrange it with the other party on the order page, or open a dispute',
   '链上担保': 'On-chain escrow',
   'WAZ 已退役': 'WAZ retired',
   'WAZ 模拟货币已退役,历史余额已按冲正清零;真实交易请使用直付(Direct Pay)。': 'WAZ (the simulated currency) has been retired; historical balances were zeroed via corrections. Use Direct Pay for real transactions.',
@@ -282,6 +287,8 @@ const _EN = {
   '不走判罚:双方同意即可取消这笔争议订单,任何一方信誉都不受影响。': 'No ruling needed: if both parties agree, this disputed order is cancelled with neither side\'s reputation affected. ',
   '直付非托管:关闭订单,双方零资金往来': 'Direct pay (non-custodial): the order simply closes, with no funds moving either way',
   '托管:货款全额退回买家,卖家质押原样返还': 'Escrow: the payment is fully refunded to the buyer and the seller\'s stake is returned intact',
+  // B6b-2 A8:本轨的协商取消后端直接 409(USDC_ESCROW_MUTUAL_CANCEL_NOT_WIRED) —— 卡片不得承诺退款。
+  '链上合约担保:本金在链上合约中,协商取消需链上退款(接线中),本轨暂不可执行': 'On-chain escrow: the principal sits in the escrow contract, so a mutual cancel needs the on-chain refund flow (wiring in progress) — it cannot be executed on this rail yet',
   '你已提议协商取消,等待对方确认。': 'You proposed a mutual cancellation — waiting for the other party to confirm.',
   '撤回提议': 'Withdraw proposal',
   '对方提议协商取消这笔订单。': 'The other party proposed cancelling this order by mutual agreement.',
@@ -921,9 +928,10 @@ const _EN = {
   '钱包': 'Wallet',
   '质押': 'Staked',
   '托管': 'Escrow',
-  '托管=平台托管收入;直接收款=场外收款,平台不经手': 'Escrow = platform-custodied revenue; Direct pay = off-platform receipts the platform never touches',
-  // B6b-1 GMV 三轨拆分 tooltip(链上担保 = 真实 USDC 存入 Base 链合约,与 WAZ 模拟托管、场外直接收款并列)
+  // B6b-1 GMV 三轨拆分 tooltip(链上担保 = 真实 USDC 存入 Base 链合约,与 WAZ 模拟托管、场外直接收款并列)。
+  //   B6b-2 B8:旧的两轨 tooltip key('托管=平台托管收入;直接收款=场外收款,平台不经手')已无任何消费方 → 删除。
   '托管=平台托管收入;链上担保=USDC 存入链上合约,平台不经手本金;直接收款=场外收款,平台不经手': 'Escrow = platform-custodied revenue; On-chain escrow = USDC held by the on-chain contract (WebAZ never touches the principal); Direct pay = off-platform receipts the platform never touches',
+  '其他支付轨': 'Other rails',   // B6b-2 B7 残差桶标签(未知轨/脏数据;有值才渲染)
   '全部类型': 'All types',
   '直接收款': 'Direct pay',
   '直接收款销售统计 + 对账(仅你可见)': 'Direct-pay sales & reconciliation (private to you)',
@@ -1051,6 +1059,8 @@ const _EN = {
   '卖家信誉扣分;直付非托管,WebAZ 不退款/不放款': 'Seller reputation penalized; direct pay is non-custodial — WebAZ issues no refund/release.',
   '物流/履约信誉扣分;直付非托管,WebAZ 不退款': 'Logistics/fulfillment reputation penalized; direct pay is non-custodial — WebAZ issues no refund.',
   '系统自动确认直付订单完成;不涉及平台放款': 'System auto-confirms the direct-pay order as complete; no platform fund release.',
+  // B6b-2 A8:engine.ts 对 usdc_escrow 整段让位 —— 协议内没有任何超时判责代码会跑,只有链上合约的 autoRelease。
+  '本轨超时执法在链上:协议内不判责、不动资金;担保合约到期无争议后自动放款给卖家': 'Timeout enforcement for this rail happens on-chain: the protocol assigns no fault and moves no funds; once the no-dispute window elapses, the escrow contract releases the payment to the seller.',
   '非托管(直付)争议:仅信誉裁决,不发生退款 / 资金释放 / 仲裁费。': 'Non-custodial (direct-pay) dispute: reputation ruling only — no refund / fund release / arbitration fee.',
   '判买家胜诉(信誉裁决)': 'Rule: buyer wins (reputation)',
   '判卖家胜诉(信誉裁决)': 'Rule: seller wins (reputation)',
@@ -4542,6 +4552,7 @@ const _EN = {
   '退货状态':                          'Return status',
   '待卖家处理':                        'Awaiting seller',
   '接受退款':                          'Accept refund',
+  '接受退款(链上退款接线中)':          'Accept refund (on-chain refund not wired yet)',   // B6b-2 A6:本轨 accept 后端 409,按钮渲染成诚实禁用态
   '拒绝原因（必填，给买家解释）':       'Rejection reason (required, explain to buyer)',
   '必须填写拒绝原因':                  'Rejection reason is required',
   '确认接受退款？资金将从你的钱包扣除并转入买家钱包': 'Accept refund? Funds will be debited from your wallet and credited to the buyer',
@@ -7056,6 +7067,8 @@ const _EN = {
   '已收到退货': 'Return goods received',
   '确定升级到仲裁？直付订单为信誉裁决:仲裁不经手资金,按证据对卖家作信誉处罚。': 'Escalate to arbitration? Direct Pay rulings are reputation-only: arbitration never touches funds and penalizes the seller\'s reputation based on evidence.',
   '直付退款在协议外完成,金额为参考': 'Direct Pay refunds happen off-protocol; this amount is a reference',
+  // B6b-2 A5:usdc_escrow 的退款也在协议外由双方完成(链上仲裁退款未接线),但它不是"直付"轨 —— 不复用上面那句。
+  '本轨退款由买卖双方在协议外完成,金额为参考': 'On this rail the refund is settled between buyer and seller off-protocol; this amount is a reference',
   '同意退货(场外退款)': 'Accept return (off-protocol refund)',
   '直付履约保证金': 'Direct Pay performance bond',
   '未收到货 / 有问题？': 'Not received / something wrong?',
@@ -7371,8 +7384,9 @@ const _EN = {
   '{buyer} 下单了「{product}」并已将 {amount} USDC 存入链上合约托管，请及时接单发货。': '{buyer} ordered "{product}" and deposited {amount} USDC into the on-chain escrow contract — please accept and ship promptly.',
   '{buyer} 已确认收货，货款经链上合约释放至你的收款地址(平台不经手)。': '{buyer} confirmed receipt; the payment is released to your payout address by the on-chain contract (the platform never handles it).',
   '订单「{product}」交易完成，货款已由链上合约结算至你的收款地址(平台不经手、无平台钱包入账)。': 'Order "{product}" is complete; the payment was settled to your payout address by the on-chain contract (the platform never handles it and no platform wallet is credited).',
-  '你的 USDC 已进入链上担保合约，但该订单已取消。平台将协助你处理链上退款，请勿担心。': 'Your USDC entered the on-chain escrow contract, but this order was cancelled. The platform will help you with the on-chain refund — no need to worry.',
-  '一笔已取消订单收到了买家的链上存入。请勿发货;平台正在处理链上退款。': 'A cancelled order received an on-chain deposit from the buyer. Do not ship; the platform is handling the on-chain refund.',
+  // B6b-2 B5:自动链上退款(B7)未接线 —— 通知不得承诺"平台将协助你处理链上退款/正在处理",只说真实做的事:资金仍在合约里 + 已告警 + 人工跟进。
+  '你的 USDC 已进入链上担保合约，但该订单已取消。资金仍在链上合约中；平台已收到告警并会人工跟进，请在订单页联系我们。': 'Your USDC entered the on-chain escrow contract, but this order was cancelled. The funds are still held by the on-chain contract; the platform has been alerted and will follow up manually — please contact us from the order page.',
+  '一笔已取消订单收到了买家的链上存入。请勿发货；资金仍在链上合约中，平台已收到告警并会人工跟进。': 'A cancelled order received an on-chain deposit from the buyer. Do not ship; the funds are still held by the on-chain contract and the platform has been alerted and will follow up manually.',
   '买家发起争议': 'Buyer opened a dispute',
   '{buyer} 对订单「{product}」发起了争议。请在 48 小时内提交反驳证据,否则协议自动裁定退款。': '{buyer} opened a dispute on order "{product}". Submit rebuttal evidence within 48 hours or the protocol auto-rules a refund.',
   '{buyer} 对订单「{product}」发起了争议,请在 48h 内回应。': '{buyer} opened a dispute on order "{product}" — please respond within 48h.',

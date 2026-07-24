@@ -79,7 +79,9 @@ function project(db: Database.Database, r: Record<string, unknown>, nowIso: stri
           //   from their OWN wallet; nothing is ever debited from a WebAZ balance. → moves_funds:false, simulated:false.
           //   Explicit branch; the DEFAULT below stays WAZ-simulated so a future rail can never be mislabelled real.
           : rail === 'usdc_escrow'
-            ? { moves_funds: false, simulated: false, note: 'approval creates the REAL order; usdc_escrow — approval alone moves NO funds. You then deposit real USDC on Base from your own wallet into the WebAZ escrow contract; WebAZ never holds the principal and never debits a WebAZ balance.' }
+            //   B6b-2 B1: the previous absolute custody claim was not defensible (the contract deducts a platform
+            //   fee from the escrowed amount, and the arbiter key can flag+resolve a Funded escrow) → bounded truth.
+            ? { moves_funds: false, simulated: false, note: 'approval creates the REAL order; usdc_escrow — approval alone moves NO funds and never debits a WebAZ balance. You then deposit real USDC on Base from your own wallet into the WebAZ escrow contract. That contract can only pay the buyer, the seller, or the platform fee (deducted from the escrowed amount) — WebAZ cannot move the funds to any other address; in a dispute the platform arbiter key decides the split.' }
             : { moves_funds: true, simulated: true, note: 'approval creates the REAL order; the escrow rail is a SIMULATED test ledger — USDC amounts are a display alias and do NOT represent real USDC or fiat custody/settlement.' }
   }
   return out

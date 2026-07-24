@@ -4468,7 +4468,11 @@ async function handleDispute(args: Record<string, unknown>): Promise<Record<stri
         initiator: `${d.initiator_name}（${d.initiator_role}）`,
         defendant: `${d.defendant_name}（${d.defendant_role}）`,
         reason: d.reason,
-        amount: d.payment_rail === 'direct_p2p' ? `${d.total_amount} USDC（非托管·信誉裁决）` : `${d.total_amount} WAZ`,
+        // B6b-2 B2:三轨显式分支,默认 = WAZ(缺列的历史单就是 WAZ)。usdc_escrow 争议可创建 → 会出现在这个队列,
+        //   金额是真 USDC;协议内裁决对本轨 fail-closed 到 B7(dispute-engine.ts),如实标注,别让仲裁员以为能裁。
+        amount: d.payment_rail === 'direct_p2p' ? `${d.total_amount} USDC（非托管·信誉裁决）`
+          : d.payment_rail === 'usdc_escrow' ? `${d.total_amount} USDC（链上合约担保·协议内裁决未接线）`
+          : `${d.total_amount} WAZ`,
         respond_deadline: d.respond_deadline,
         arbitrate_deadline: d.arbitrate_deadline,
         created_at: d.created_at,

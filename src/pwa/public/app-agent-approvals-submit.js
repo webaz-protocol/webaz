@@ -13,8 +13,8 @@
     var s = r.submit_summary
     var _dw = (window.aaReconcileNoteHtml ? window.aaReconcileNoteHtml(r) : '') + (window.aaDupWarnHtml ? window.aaDupWarnHtml(r) : '')
     if (!s) return '<div style="font-size:12px;color:#dc2626">' + t('草稿摘要不可用(可能已取消/过期)—— 请刷新;无法核对条款时请勿批准') + '</div>'
-    var railLine = s.payment_rail === 'deferred' ? t('支付方式尚未选择 —— 请在确认页从卖家支持的方式中选定后再批准;deferred 轨道不可建单') : s.payment_rail === 'direct_p2p'   // RFC-029 Design A:deferred 绝不谎报成托管;此请求不可批准(见 aaEconomicIncomplete)
-      ? t('直付(WebAZ 不托管资金;你将按卖家收款说明场外支付)')
+    var railLine = s.payment_rail === 'deferred' ? t('支付方式尚未选择 —— 请在确认页从卖家支持的方式中选定后再批准;deferred 轨道不可建单') : s.payment_rail === 'direct_p2p' ? t('直付(WebAZ 不托管资金;你将按卖家收款说明场外支付)')   // RFC-029 Design A:deferred 绝不谎报成托管;此请求不可批准(见 aaEconomicIncomplete)
+      : s.payment_rail === 'usdc_escrow' ? t('链上合约担保 —— 批准只创建订单,不从任何 WebAZ 余额扣款;之后需你用自己的链上钱包把真实 USDC 存入 Base 上的 WebAZ 担保合约,链上确认后订单才进入已付款')   // B6b-2 人机一致:本轨建单零钱包写(usdc-escrow-create),且不是模拟轨
       : t('托管(批准后立即从你的钱包扣款入托管)—— 模拟测试轨,金额以 USDC 显示为别名,不代表真实 USDC 或法币托管/结算')
     return _dw +
       '<div style="font-size:13px;color:#374151;line-height:1.8">🛒 ' + t('创建订单') + ': <b>' + escHtml(String(s.product_title || s.product_id)) + '</b>' +

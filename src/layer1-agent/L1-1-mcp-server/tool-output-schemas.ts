@@ -87,7 +87,7 @@ export const OUTPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
       amounts: { type: 'object', description: 'minor breakdown {item,shipping,other}' },
       destination: { type: 'object', description: 'region tag + masked summary only' },
       shipping: { type: 'object' }, return_days: { type: 'number' }, warranty_days: { type: 'number' },
-      payment_rail: { type: 'string' }, rail_note: { type: 'string', description: 'honesty note: simulated escrow ≠ real custody; direct_p2p = no principal held' },
+      payment_rail: { type: 'string' }, rail_note: { type: 'string', description: 'honesty note per rail: escrow (WAZ) = simulated, not real custody; usdc_escrow = real USDC held by the on-chain contract on Base; direct_p2p = no principal held' },
       expires_at: { type: 'string' },
       stock_reserved: { type: 'boolean', const: false },
       economic_action_executed: { type: 'boolean', const: false },

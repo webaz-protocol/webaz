@@ -7,7 +7,7 @@ window.mutualCancelCard = (order, isBuyer, isSeller) => {
   const mc = order.mutual_cancel
   if (!mc) return ''
   const oid = order.id
-  const settleNote = order.payment_rail === 'direct_p2p' ? t('直付非托管:关闭订单,双方零资金往来') : t('托管:货款全额退回买家,卖家质押原样返还')
+  const settleNote = order.payment_rail === 'direct_p2p' ? t('直付非托管:关闭订单,双方零资金往来') : order.payment_rail === 'usdc_escrow' ? t('链上合约担保:本金在链上合约中,协商取消需链上退款(接线中),本轨暂不可执行') : t('托管:货款全额退回买家,卖家质押原样返还')   // B6b-2 A8:后端 settleMutualCancel 对本轨返回 USDC_ESCROW_MUTUAL_CANCEL_NOT_WIRED,绝不承诺"全额退回买家"
   const head = `<div style="font-size:13px;font-weight:700;color:#3730a3;margin-bottom:4px">🤝 ${t('协商取消订单(无责)')}</div>
     <div style="font-size:12px;color:#4b5563;line-height:1.7;margin-bottom:8px">${t('不走判罚:双方同意即可取消这笔争议订单,任何一方信誉都不受影响。')}${settleNote}。</div>`
   let body

@@ -11,9 +11,9 @@ window.renderAdminDisputes = async function (app, opts = {}) {
   const STATUS_META = { open: ['#fef3c7', '#92400e', t('待响应')], in_review: ['#fde68a', '#b45309', t('仲裁中')], resolved: ['#dcfce7', '#166534', t('已裁定')], dismissed: ['#e5e7eb', '#374151', t('已驳回')] }
   const tabs = [['', t('全部'), data.total || 0], ['open', t('待响应'), c.open || 0], ['in_review', t('仲裁中'), c.in_review || 0], ['resolved', t('已裁定'), c.resolved || 0], ['dismissed', t('已驳回'), c.dismissed || 0]]
   const tabHtml = tabs.map(([val, label, n]) => `<button class="btn btn-sm" style="width:auto;font-size:12px;background:${status === val ? '#4f46e5' : '#fff'};color:${status === val ? '#fff' : '#374151'};border:1px solid ${status === val ? '#4f46e5' : '#e5e7eb'}" onclick="renderAdminDisputes(document.getElementById('app'),{status:'${val}'})">${label} ${n}</button>`).join('')
-  const railBadge = (rail) => rail === 'direct_p2p'
+  const railBadge = (rail) => rail === 'direct_p2p'   // B6b-2 B2:本轨争议【可创建】(orders-action 无轨闸,只有裁决被 fail-closed)→ 真会进这个队列;轨徽章与金额单位都按轨判
     ? `<span style="font-size:10px;background:#eff6ff;color:#1e40af;padding:1px 7px;border-radius:99px">${t('直付')}</span>`
-    : `<span style="font-size:10px;background:#f0fdf4;color:#166534;padding:1px 7px;border-radius:99px">${t('托管')}</span>`
+    : rail === 'usdc_escrow' ? `<span style="font-size:10px;background:#eef2ff;color:#3730a3;padding:1px 7px;border-radius:99px">${t('链上担保')}</span>` : `<span style="font-size:10px;background:#f0fdf4;color:#166534;padding:1px 7px;border-radius:99px">${t('托管')}</span>`
   const urgencyChip = (d) => {
     if (d.status !== 'open' && d.status !== 'in_review') return ''
     const dl = d.status === 'open' ? d.respond_deadline : d.arbitrate_deadline
@@ -40,7 +40,7 @@ window.renderAdminDisputes = async function (app, opts = {}) {
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex-shrink:0">
           <span style="background:${bg};color:${fg};padding:2px 8px;border-radius:8px;font-size:11px;white-space:nowrap">${lbl}</span>
-          ${d.total_amount ? `<div style="font-size:12px;color:#374151;white-space:nowrap">${d.total_amount} WAZ</div>` : ''}
+          ${d.total_amount ? `<div style="font-size:12px;color:#374151;white-space:nowrap">${d.total_amount} ${(!d.payment_rail || d.payment_rail === 'escrow') ? 'WAZ' : 'USDC'}</div>` : ''}
         </div>
       </div>
     </div>`

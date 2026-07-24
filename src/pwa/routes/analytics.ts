@@ -168,6 +168,9 @@ export function registerAnalyticsRoutes(app: Application, deps: AnalyticsDeps): 
         COALESCE(SUM(CASE WHEN status = 'completed' AND payment_rail = 'direct_p2p' THEN total_amount ELSE 0 END), 0) as gmv_direct_pay,
         -- B6b-1 正确性修复:usdc_escrow 完成单此前【两个桶都不进】,在按轨拆分里凭空蒸发(gmv 总额含它,拆分和 < 总额)。
         COALESCE(SUM(CASE WHEN status = 'completed' AND payment_rail = 'usdc_escrow' THEN total_amount ELSE 0 END), 0) as gmv_usdc_escrow,
+        -- B6b-2 B7 残差桶:三桶枚举在【第 4 条轨】出现时会重演"凭空蒸发"。gmv_other = 不属于已知三轨的完成额
+        --   (含 payment_rail='' 这类脏数据)→ 四桶和 === gmv 成为【属性】而非 fixture 算术。
+        COALESCE(SUM(CASE WHEN status = 'completed' AND COALESCE(payment_rail,'escrow') NOT IN ('escrow','direct_p2p','usdc_escrow') THEN total_amount ELSE 0 END), 0) as gmv_other,
         COALESCE(AVG(CASE WHEN status = 'completed' THEN total_amount END), 0) as aov
       FROM orders WHERE seller_id = ? AND created_at > datetime('now', '-' || ? || ' days')
     `, [user.id, windowDays]))!

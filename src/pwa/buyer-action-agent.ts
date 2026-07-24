@@ -35,6 +35,9 @@ function evaluate(db: Database.Database, humanId: string, orderId: string, actio
   const status = String(o.status); const rail = String(o.payment_rail ?? 'escrow')
   if (action === 'confirm_receipt') {
     if (rail === 'direct_p2p') return { ok: false, http: 409, error: '直付确认收货需人本人完成披露确认+现场 Passkey(订单页)—— 不可经 agent 请求', error_code: 'DP_CONFIRM_HUMAN_ONLY' }
+    // B6b-2 A2:执行端 orders-action.ts 对本轨硬 409 (USDC_ESCROW_CONFIRM_NOT_WIRED)。生成请求 = 让人为一个
+    //   必然失败的动作签 Passkey,且审批卡会渲染"结算 N WAZ"+ moves_funds:true 两处假话 → 与 direct_p2p 同形状拒。
+    if (rail === 'usdc_escrow') return { ok: false, http: 409, error: 'USDC 担保订单的确认收货由链上担保合约的释放完成(买家用自己的链上钱包释放,或超时无争议后自动放款)—— 不经 app 内确认动作,agent 不可请求', error_code: 'USDC_ESCROW_CONFIRM_NOT_WIRED' }
     if (status !== 'delivered') return { ok: false, http: 409, error: `仅 delivered 可确认收货(当前 ${status})`, error_code: 'ORDER_NOT_DELIVERED' }
     return { ok: true, c: { snapshot: { order_id: orderId, action, settlement_total: Number(o.total_amount), rail }, summary: { moves_funds: true, settlement_total: Number(o.total_amount), distribution: 'frozen_order_settlement_rules', note: 'confirming settles the frozen order total under its distribution rules; it is not an all-to-seller transfer' } } }
   }
@@ -55,7 +58,12 @@ function evaluate(db: Database.Database, humanId: string, orderId: string, actio
     }
     const active = db.prepare("SELECT id FROM return_requests WHERE order_id = ? AND status IN ('pending','accepted','accepted_pickup_pending','picked_up','await_refund','refund_marked') LIMIT 1").get(orderId)
     if (active) return { ok: false, http: 409, error: '已存在进行中的退货请求', error_code: 'RETURN_ALREADY_ACTIVE' }
-    return { ok: true, c: { snapshot: { order_id: orderId, action, reason, refund_amount: Number(o.total_amount), rail }, summary: { moves_funds: false, note: `files a return request (default refund ${Number(o.total_amount)} ${rail === 'direct_p2p' ? '— Direct Pay refunds settle off-platform' : 'from escrow flow on acceptance path'}); the seller still decides` } } }
+    // B6b-2 A2:退款路径按【真实路径】表述 —— usdc_escrow 的退货接受在 B7 链上退款接线前是 fail-closed(returns.ts),
+    //   所以既不是"escrow flow on acceptance path"(那是 WAZ),也不是直付的场外握手。
+    const refundPath = rail === 'direct_p2p' ? '— Direct Pay refunds settle off-platform'
+      : rail === 'usdc_escrow' ? '— on this rail the principal sits in the on-chain escrow contract and the seller CANNOT accept a return yet (on-chain refund is not wired); expect an off-protocol arrangement or a dispute'
+      : 'from escrow flow on acceptance path'
+    return { ok: true, c: { snapshot: { order_id: orderId, action, reason, refund_amount: Number(o.total_amount), rail }, summary: { moves_funds: false, note: `files a return request (default refund ${Number(o.total_amount)} ${refundPath}); the seller still decides` } } }
   }
   return { ok: false, http: 400, error: `action 须为 ${BUYER_ACTIONS.join('/')}`, error_code: 'BAD_ACTION' }
 }
