@@ -37,6 +37,16 @@ export function draftView(db: Database.Database, row: Record<string, unknown>): 
   //   PR-5a 的提交器将硬拒过期草稿。派生而非 UPDATE = 读路径零写,与"草稿不可变"一致。
   const effectiveStatus = String(row.status) === 'draft' && String(row.expires_at) <= new Date().toISOString() ? 'expired' : String(row.status)
   const promised = parsePromisedEta(typeof row.promised_eta_snapshot === 'string' ? row.promised_eta_snapshot : null)   // BUG-02:继承的配送估计(旧草稿=null)
+  // B6b-2 B4 —— 【只改展示,绝不改存储】:buyer-quote.ts 对所有轨都把 currency 存字面 'WAZ'(存储语义的收敛是
+  //   独立改动,见 PR 说明)。本 REST 平面无投影层,故在此按轨投影:usdc_escrow 的单位是真 USDC,且建单
+  //   【零扣款】(链上存入发生在建单之后、由买家自己的钱包发起),旧的"an escrow order will debit at creation"对它是假话。
+  const railStr = String(row.payment_rail)
+  const displayCurrency = railStr === 'usdc_escrow' ? 'USDC' : String(row.currency ?? 'WAZ')
+  const payableNote = railStr === 'deferred'
+    ? 'total + donation — the amount payable once you choose a payment method on the confirm page (no debit, no rail fixed by this draft)'
+    : railStr === 'usdc_escrow'
+      ? 'total + donation — the real USDC you will deposit on Base into the WebAZ escrow contract from your OWN wallet; creating the order itself debits nothing'
+      : 'total + donation — what an escrow order will debit at creation'
   return {
     draft_id: String(row.id),
     status: effectiveStatus,
@@ -48,8 +58,8 @@ export function draftView(db: Database.Database, row: Record<string, unknown>): 
     quantity: Number(row.quantity),
     destination: { address_source: 'default', address_summary: `Default address · ${row.dest_region ? String(row.dest_region) : 'region unset'}`, region: row.dest_region == null ? null : String(row.dest_region) },
     payment_rail: String(row.payment_rail),
-    total: { amount_minor: Number(row.total_units), currency: String(row.currency ?? 'WAZ'), currency_exponent: 6 },
-    payable_total: { amount_minor: Number(row.payable_units), currency: String(row.currency ?? 'WAZ'), currency_exponent: 6, note: String(row.payment_rail) === 'deferred' ? 'total + donation — the amount payable once you choose a payment method on the confirm page (no debit, no rail fixed by this draft)' : 'total + donation — what an escrow order will debit at creation' },
+    total: { amount_minor: Number(row.total_units), currency: displayCurrency, currency_exponent: 6 },
+    payable_total: { amount_minor: Number(row.payable_units), currency: displayCurrency, currency_exponent: 6, note: payableNote },
     donation_bps: Number(row.donation_bps),
     anonymous_recipient: Number(row.anonymous_recipient) === 1,
     created_at: String(row.created_at),

@@ -16,9 +16,14 @@
   export function railNoteText(rail, zhFallback){
     if(webazLocale()!=='en') return zhFallback||''
     if(String(rail)==='deferred') return 'Payment method not chosen yet — you will choose from the seller\'s supported methods on the confirm page before approval'   // RFC-029 Design A:deferred 绝不显示成模拟托管
-    return String(rail)==='direct_p2p'
-      ? 'You pay the seller directly; WebAZ holds no principal; the actual method and currency are shown on the confirm page'
-      : 'Payment rail: simulated escrow test — this flow is not real USDC or fiat settlement'
+    if(String(rail)==='direct_p2p') return 'You pay the seller directly; WebAZ holds no principal; the actual method and currency are shown on the confirm page'
+    // B6b-1:usdc_escrow = REAL on-chain custody. Explicit branch; the DEFAULT keeps the legacy
+    //   simulated-escrow wording (fail-closed — an unknown future rail is never called real custody).
+    // B6b-2 B1: do NOT claim "WebAZ never touches the principal" — the contract deducts a platform fee
+    //   (feeBps) from the escrowed amount, and the arbiter key can flag+resolve a Funded escrow. Defensible
+    //   claim instead: the platform cannot send the funds to an arbitrary address.
+    if(String(rail)==='usdc_escrow') return 'Payment rail: on-chain escrow — your USDC is held by the WebAZ escrow contract on Base and released to the seller on delivery confirmation (or after the no-dispute timeout). The contract can only pay the buyer, the seller, or the platform fee (deducted from the escrowed amount) — WebAZ cannot move the funds to any other address; in a dispute the platform arbiter key decides the split'
+    return 'Payment rail: simulated escrow test — this flow is not real USDC or fiat settlement'
   }
   // Localized payment-rail LABEL. Only 'deferred' is special-cased (shown as pending) — escrow/direct_p2p
   // keep their existing raw display to avoid churning non-deferred cards.

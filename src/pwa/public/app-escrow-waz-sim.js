@@ -29,9 +29,9 @@ window.wazEscrowRailNote = (selectedRail) => {
   el.style.display = ''
 }
 
-// 生成 escrow 订单后,买家端订单详情顶部的强提醒横幅。非 escrow / 非买家 / 非模拟 → 空串(不渲染)。
+// 买家端订单详情顶部的模拟托管强提醒横幅。B6b-1 由「排除 direct_p2p」改为【白名单 fail-closed】:仅 WAZ 轨(payment_rail 缺省=历史单即 WAZ,或 'escrow')才挂;usdc_escrow 是真实链上合约托管、未来任何新轨也一律不挂,绝不被误标成模拟。
 window.wazEscrowOrderBanner = (order, isBuyer) => {
-  if (!window._wazSimulated || !isBuyer || !order || order.payment_rail === 'direct_p2p') return ''
+  if (!window._wazSimulated || !isBuyer || !order || !(order.payment_rail === 'escrow' || !order.payment_rail)) return ''
   return `<div style="border:1px solid #fde68a;background:linear-gradient(135deg,#fffbeb,#fef3c7);border-radius:12px;padding:12px 14px;margin-bottom:10px">
     <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:4px">🧪 ${t('测试托管订单')}</div>
     <div style="font-size:12px;line-height:1.6;color:#374151">${t('本单使用 escrow 模拟测试流程:WAZ 不代表真实价值,该订单不是真实付款。真实交易请在可用时选择 Direct Pay。')}</div>

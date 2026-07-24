@@ -2643,7 +2643,7 @@ async function renderAdminOrders(app, opts = {}) {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600">${escHtml(o.product_title)}</div>
-          <div style="font-size:12px;color:#6b7280;margin-top:2px">${o.payment_rail === 'direct_p2p' ? `<span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:1px 8px;font-size:10px;font-weight:600;margin-right:4px">${t('直付')}</span>${o.total_amount} USDC` : `${o.total_amount} WAZ`} · ${fmtTime(o.created_at)}</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:2px">${o.payment_rail === 'direct_p2p' ? `<span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:1px 8px;font-size:10px;font-weight:600;margin-right:4px">${t('直付')}</span>${o.total_amount} USDC` : `${o.total_amount} ${(!o.payment_rail || o.payment_rail === 'escrow') ? 'WAZ' : 'USDC'}`} · ${fmtTime(o.created_at)}</div>${'' /* B6b-1:WAZ 只属 WAZ 轨(缺省=历史单);usdc_escrow 金额是真 USDC */}
           <div style="font-size:11px;color:#6b7280;margin-top:4px">${t('买家')}: ${escHtml(o.buyer_name)} · ${t('卖家')}: ${escHtml(o.seller_name)}</div>
           <div style="font-size:11px;color:#9ca3af;margin-top:2px">${o.id}</div>
         </div>
@@ -12124,11 +12124,11 @@ function nextActionCard(order, isBuyer, isSeller, activeDeadline, isOverdue) {
   // 超时 + 我不是违约方 → 给我一个"立即触发判责"按钮（不必等 5min cron tick）
   // 我自己是违约方时只看到警告，不显示按钮（不能自己触发对自己的判责）
   const meAtFault = hint.overdueFault && hint.overdueFault === ('fault_' + (isBuyer ? 'buyer' : isSeller ? 'seller' : ''))
-  const canForceTrigger = isOverdue && hint.overdueFault && !meAtFault && (isBuyer || isSeller)
+  const canForceTrigger = isOverdue && hint.overdueFault && !meAtFault && (isBuyer || isSeller) && order.payment_rail !== 'usdc_escrow'   // B6b-2:engine.ts checkTimeouts 对本轨整段 continue —— 按钮点了必然 no-op,渲染它本身就是谎
   // 直付(非托管):WebAZ 不退款/不放款 → 超时后果只写信誉责任,绝不写"退款/资金释放"
   const overdueConsequence = order.payment_rail === 'direct_p2p'
     ? ({ paid: '卖家信誉扣分;直付非托管,WebAZ 不退款/不放款', accepted: '卖家信誉扣分;直付非托管,WebAZ 不退款/不放款', in_transit: '物流/履约信誉扣分;直付非托管,WebAZ 不退款', delivered: '系统自动确认直付订单完成;不涉及平台放款' }[order.status] || hint.overdueConsequence)
-    : hint.overdueConsequence
+    : order.payment_rail === 'usdc_escrow' ? '本轨超时执法在链上:协议内不判责、不动资金;担保合约到期无争议后自动放款给卖家' : hint.overdueConsequence   // B6b-2 A8:engine.ts 对本轨整段 continue(DB 不判责),旧文案的"信誉 -40 + 全额退款/资金释放"无任何代码执行
   return `<div style="background:${bg};border:0.5px solid ${isOverdue ? '#fecaca' : '#e5e7eb'};border-radius:12px;padding:14px 16px;margin-bottom:10px">
     <div style="display:flex;align-items:center;gap:10px">
       <div style="font-size:22px;line-height:1">${icon}</div>
@@ -12747,7 +12747,7 @@ const RET_TYPE_META = {
   cancelled: { icon: '🚫', title: '已取消',    border: '#6b7280' },
 }
 
-function buildReturnTimelineEvent(ev, isMeBuyer) {
+function buildReturnTimelineEvent(ev, isMeBuyer, rail) {   // B6b-2 A9:rail 用于退款金额单位(缺省=WAZ,即老轨/历史单)
   const typeMeta = RET_TYPE_META[ev.type] || { icon: '·', title: ev.type, border: '#9ca3af' }
   const role = ev.actor_role || 'system'
   const roleMeta = TL_ROLE_META[role] || TL_ROLE_META.unknown
@@ -12756,7 +12756,7 @@ function buildReturnTimelineEvent(ev, isMeBuyer) {
   let body = ''
   if (ev.type === 'created') {
     const reason = RETURN_REASON_LABEL()[ev.meta?.reason] || ev.meta?.reason || ''
-    body = `<div style="font-size:11px;color:#6b7280;margin-bottom:4px">${t('原因')}：${reason}　·　${t('退款金额')}：<strong>${ev.meta?.refund_amount || 0} WAZ</strong></div>
+    body = `<div style="font-size:11px;color:#6b7280;margin-bottom:4px">${t('原因')}：${reason}　·　${t('退款金额')}：<strong>${ev.meta?.refund_amount || 0} ${(!rail || rail === 'escrow') ? 'WAZ' : 'USDC'}</strong></div>
       ${ev.body ? `<div style="font-size:13px;line-height:1.5;white-space:pre-wrap">${escHtml(ev.body)}</div>` : ''}`
   } else if (ev.type === 'escalated') {
     body = `<div style="font-size:13px;line-height:1.5">${t('已创建争议')}
@@ -12827,15 +12827,15 @@ async function renderReturnWidgetForOrder(order, product) {
 
       ${isSellerView && item.status === 'pending' ? `
         <div style="display:flex;gap:8px;margin-bottom:8px">
-          <button class="btn btn-success btn-sm" style="flex:1;font-size:12px" onclick="decideReturn('${item.id}','accept','${order.id}')">${order.payment_rail === 'direct_p2p' ? t('同意退货(场外退款)') : t('接受退款')}</button>
+          ${order.payment_rail === 'usdc_escrow' ? `<button class="btn btn-sm" style="flex:1;font-size:12px" disabled>${t('接受退款(链上退款接线中)')}</button>` : `<button class="btn btn-success btn-sm" style="flex:1;font-size:12px" onclick="decideReturn('${item.id}','accept','${order.id}')">${order.payment_rail === 'direct_p2p' ? t('同意退货(场外退款)') : t('接受退款')}</button>`}${'' /* B6b-2 A6:本轨 accept 后端 409(场外握手对它是死路),不给可点按钮 */}
           <button class="btn btn-outline btn-sm" style="flex:1;font-size:12px;color:#dc2626;border-color:#fecaca" onclick="decideReturn('${item.id}','reject','${order.id}')">${t('拒绝退货')}</button>
         </div>` : ''}
       ${isSellerView && item.status === 'picked_up' ? `
-        <button class="btn btn-success btn-sm" style="width:100%;font-size:12px;margin-bottom:8px" onclick="confirmReturnReceived('${item.id}','${order.id}')">${order.payment_rail === 'direct_p2p' ? '✓ ' + t('已收到退货') : t('✓ 已收到退货 · 触发退款')}</button>` : ''}${window.dpReturnHandshake ? window.dpReturnHandshake(item, isBuyer, isSellerView, order) : ''}
+        ${order.payment_rail === 'usdc_escrow' ? `<button class="btn btn-sm" style="width:100%;font-size:12px;margin-bottom:8px" disabled>${t('接受退款(链上退款接线中)')}</button>` : `<button class="btn btn-success btn-sm" style="width:100%;font-size:12px;margin-bottom:8px" onclick="confirmReturnReceived('${item.id}','${order.id}')">${order.payment_rail === 'direct_p2p' ? '✓ ' + t('已收到退货') : t('✓ 已收到退货 · 触发退款')}</button>`}` : ''}${window.dpReturnHandshake ? window.dpReturnHandshake(item, isBuyer, isSellerView, order) : ''}${'' /* B6b-2 A6:本轨 /received 后端 409 —— 在途行也不给可点按钮 */}
 
       <div style="padding:10px;background:#fafafa;border-radius:8px;margin-bottom:8px">
         <div style="font-size:11px;font-weight:600;color:#6b7280;margin-bottom:8px">🧾 ${t('协商时间线')} · ${events.length} ${t('条')}</div>
-        ${events.map(ev => buildReturnTimelineEvent(ev, isBuyer)).join('')}
+        ${events.map(ev => buildReturnTimelineEvent(ev, isBuyer, order.payment_rail)).join('')}
       </div>
 
       ${isActive ? `
@@ -12863,7 +12863,7 @@ async function renderReturnWidgetForOrder(order, product) {
 
   area.innerHTML = `
     <div style="margin-bottom:8px">${t('退货窗口')}：${returnDays} ${t('天')} · ${remainText}</div>
-    <button class="btn btn-outline btn-sm" onclick="openReturnRequestModal('${order.id}', ${Number(order.total_amount)}, '${order.payment_rail === 'direct_p2p' ? 'USDC' : 'WAZ'}')">${t('申请退货')}</button>
+    <button class="btn btn-outline btn-sm" onclick="openReturnRequestModal('${order.id}', ${Number(order.total_amount)}, '${(!order.payment_rail || order.payment_rail === 'escrow') ? 'WAZ' : 'USDC'}', '${order.payment_rail || 'escrow'}')">${t('申请退货')}</button>${'' /* B6b-1 币种白名单:WAZ 只属 WAZ 轨(缺省=历史单);usdc_escrow 是真 USDC,旧二分法误标 WAZ。B6b-2:同时传 rail,退款提示按轨判 */}
   `
 }
 
@@ -13054,7 +13054,7 @@ function RETURN_REASON_LABEL() {
   }
 }
 
-window.openReturnRequestModal = (orderId, total, cur = 'WAZ') => {
+window.openReturnRequestModal = (orderId, total, cur = 'WAZ', rail = 'escrow') => {
   const labels = RETURN_REASON_LABEL()
   const html = `
     <div class="js-modal" style="background:rgba(0,0,0,0.6);position:fixed;inset:0;z-index:1000;display:flex;align-items:flex-end;justify-content:center" onclick="this.remove()">
@@ -13073,7 +13073,7 @@ window.openReturnRequestModal = (orderId, total, cur = 'WAZ') => {
         <div class="form-group">
           <label class="form-label">${t('退款金额')} (${cur}) *</label>
           <input class="form-control" id="ret-amount" type="number" min="0.01" max="${total}" step="0.01" value="${total}">
-          <div style="font-size:11px;color:#9ca3af;margin-top:2px">${t('订单总额')}: ${total} ${cur} · ${t('可申请部分退款')}${cur === 'USDC' ? ' · ' + t('直付退款在协议外完成,金额为参考') : ''}</div>
+          <div style="font-size:11px;color:#9ca3af;margin-top:2px">${t('订单总额')}: ${total} ${cur} · ${t('可申请部分退款')}${rail === 'direct_p2p' ? ' · ' + t('直付退款在协议外完成,金额为参考') : rail === 'usdc_escrow' ? ' · ' + t('本轨退款由买卖双方在协议外完成,金额为参考') : ''}</div>${'' /* B6b-2 A5:按 rail 判(旧的 cur==='USDC' 会把 usdc_escrow 说成"直付");WAZ 轨无此提示 */}
         </div>
         <div class="form-group" style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 12px">
           <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#166534;cursor:pointer">
@@ -13589,7 +13589,7 @@ function buildTimelineEvent(ev, dispute, user, actors) {
     bodyHtml = `
       ${rulingText ? `<div style="font-weight:700;font-size:14px;color:${typeMeta.border};margin-bottom:4px">${t(rulingText)}</div>` : ''}
       ${ev.body ? `<div style="font-size:13px;line-height:1.5;white-space:pre-wrap;color:#374151">${escHtml(ev.body)}</div>` : ''}
-      ${dispute.payment_rail !== 'direct_p2p' && meta.refund_amount != null ? `<div style="font-size:12px;margin-top:6px">💸 ${t('退款金额')}：<strong>${meta.refund_amount} WAZ</strong></div>` : ''}
+      ${dispute.payment_rail !== 'direct_p2p' && meta.refund_amount != null ? `<div style="font-size:12px;margin-top:6px">💸 ${t('退款金额')}：<strong>${meta.refund_amount} WAZ</strong></div>` : ''}${'' /* B6b-2 A9 已核实为 usdc_escrow 不可达,故【不改】:meta.refund_amount 只有两个来源 —— 签名链 ruling 事件(disputes-write.ts 用 railOutsideWazCustody 对本轨写死 null)与 disputes 行(refund_amount/liability_parties 唯一写入点是 arbitrateDispute,而它在 dispute-engine.ts 对 usdc_escrow 先行 return;INSERT 从不带这两列)。两处都恒 null → 下面两个 != null / length>0 守卫对本轨永假。B7 接线放开裁决时,此处必须同 PR 改成轨感知 */}
       ${dispute.payment_rail !== 'direct_p2p' && liability.length > 0 ? `<div style="margin-top:6px">
         <div style="font-size:11px;color:#6b7280;margin-bottom:2px">${t('责任分配')}：</div>
         ${liability.map(lp => `<div style="font-size:12px;margin-top:2px">${(TL_ROLE_META[lp.role]||TL_ROLE_META.unknown).icon} ${t(lp.role)} ${t('承担')} ${lp.amount} WAZ${lp.insurance_cap!=null?` (${t('保险上限')} ${lp.insurance_cap})`:''}</div>`).join('')}
@@ -14678,8 +14678,8 @@ function renderInsightsBlock(d) {
     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px">
       <div class="card" style="padding:12px">
         <div style="font-size:10px;color:#9ca3af;text-transform:uppercase">${t('30 天 GMV')}</div>
-        <div style="font-size:18px;font-weight:800;color:#15803d;margin-top:2px">${Number(s.gmv||0).toFixed(0)} <span style="font-size:11px;font-weight:600;color:#6b7280">WAZ</span></div>
-        <div style="font-size:10px;color:#6b7280;margin-top:2px">${deltaChip(vs.gmv_pct||0, t('环比'))}</div>${window.gmvRailSplitHtml ? window.gmvRailSplitHtml(s.gmv_escrow, s.gmv_direct_pay) : ''}
+        <div style="font-size:18px;font-weight:800;color:#15803d;margin-top:2px">${Number(s.gmv||0).toFixed(0)} <span style="font-size:11px;font-weight:600;color:#6b7280">USDC</span></div>${'' /* B6b-2 A7:与 app-seller.js 的「GMV (USDC)」统一(同一聚合数不能有两个单位标签);逐轨真相由下方拆分小注承载 */}
+        <div style="font-size:10px;color:#6b7280;margin-top:2px">${deltaChip(vs.gmv_pct||0, t('环比'))}</div>${window.gmvRailSplitHtml ? window.gmvRailSplitHtml(s.gmv_escrow, s.gmv_direct_pay, s.gmv_usdc_escrow, null, s.gmv_other) : ''}
       </div>
       <div class="card" style="padding:12px">
         <div style="font-size:10px;color:#9ca3af;text-transform:uppercase">${t('30 天订单')}</div>
@@ -14688,7 +14688,7 @@ function renderInsightsBlock(d) {
       </div>
       <div class="card" style="padding:12px">
         <div style="font-size:10px;color:#9ca3af;text-transform:uppercase">${t('客单价')}</div>
-        <div style="font-size:18px;font-weight:800;color:#7c3aed;margin-top:2px">${Number(s.aov||0).toFixed(1)} <span style="font-size:11px;font-weight:600;color:#6b7280">WAZ</span></div>
+        <div style="font-size:18px;font-weight:800;color:#7c3aed;margin-top:2px">${Number(s.aov||0).toFixed(1)} <span style="font-size:11px;font-weight:600;color:#6b7280">USDC</span></div>${'' /* B6b-2 A7:客单价与 GMV 同源同单位 */}
         <div style="font-size:10px;color:#6b7280;margin-top:2px">${s.completed_count||0} ${t('单成交')}</div>
       </div>
       <div class="card" style="padding:12px">

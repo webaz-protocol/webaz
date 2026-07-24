@@ -60,7 +60,14 @@ function renderBody(oai, out){
     var w=el('div','warn')
     w.appendChild(el('b',null,L('退款/退货','Refund/return')))
     ;(out.refund.requests||[]).forEach(function(x){ w.appendChild(el('div',null,String(x.status)+' · '+((x.amount&&x.amount.display)||'')+' · '+String(x.created_at||''))) })
-    w.appendChild(el('div','meta',(webazLocale()==='en'&&out.payment_rail)?(String(out.payment_rail)==='direct_p2p'?'The protocol recorded the liability outcome; principal is not held by WebAZ; the actual refund is settled between buyer and seller':'Simulated escrow rail: refunds release from simulated escrow per the dispute/return outcome — not real USDC or fiat fund flow'):String(out.refund.note||'')))
+    // B6b-2 A3 显式分支(默认仍是老轨模拟语义,fail-closed)。usdc_escrow:此块只在有退货申请时渲染,而退货
+    //   要求订单 completed → 链上托管必然已 Released(终态),合约不可能再退款;链上仲裁退款(B7)未接线。
+    function refundMetaEn(rail){
+      if(String(rail)==='direct_p2p') return 'The protocol recorded the liability outcome; principal is not held by WebAZ; the actual refund is settled between buyer and seller'
+      if(String(rail)==='usdc_escrow') return 'On-chain escrow rail: the principal was held by the escrow contract on Base and its on-chain release for this order is already complete; a post-completion return refund is currently settled between buyer and seller off-protocol (on-chain arbitration refunds are not wired yet)'
+      return 'Simulated escrow rail: refunds release from simulated escrow per the dispute/return outcome — not real USDC or fiat fund flow'
+    }
+    w.appendChild(el('div','meta',(webazLocale()==='en'&&out.payment_rail)?refundMetaEn(out.payment_rail):String(out.refund.note||'')))
     box.appendChild(w)
   }
   var btns=el('div','rowbtn')

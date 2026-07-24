@@ -7,7 +7,10 @@
     var s = r.buyer_action
     if (!s) return '<div style="font-size:12px;color:#dc2626">' + t('动作摘要不可用 —— 请刷新;无法核对时请勿批准') + '</div>'
     var snap = s.snapshot || {}
-    var head = s.action === 'confirm_receipt' ? ('✅ ' + t('确认收货并结算订单') + ' <b style="color:#b45309">' + waz(snap.settlement_total) + ' WAZ</b> · ' + t('按订单冻结规则分账'))
+    // B6b-2 A2:币种白名单 —— WAZ 只属 WAZ 模拟托管轨(snapshot 无 rail = 本字段出现前的旧请求,即 WAZ);
+    //   usdc_escrow 金额是真 USDC。本轨的 confirm_receipt 现已在 buyer-action-agent 拒绝生成,此处守既存的旧 pending 请求。
+    var unit = (!snap.rail || snap.rail === 'escrow') ? 'WAZ' : 'USDC'
+    var head = s.action === 'confirm_receipt' ? ('✅ ' + t('确认收货并结算订单') + ' <b style="color:#b45309">' + waz(snap.settlement_total) + ' ' + unit + '</b> · ' + t('按订单冻结规则分账'))
       : s.action === 'cancel' ? ('🚫 ' + t('取消直付订单(未付款,零资金移动)'))
       : ('↩️ ' + t('申请退货') + '(' + escHtml(String(snap.reason || '')) + ',' + t('默认退款') + ' ' + waz(snap.refund_amount) + ')')
     return '' +

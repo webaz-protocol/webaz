@@ -250,6 +250,18 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
     //   (accepted_pickup_pending → picked_up → received 时再进 await_refund)。
     const railRow = await dbOne<{ payment_rail: string | null }>('SELECT payment_rail FROM orders WHERE id = ?', [rr.order_id])
     const isDirectPay = railOutsideWazCustody(railRow?.payment_rail)   // B3:usdc_escrow 同走场外/链上退款握手,不碰 WAZ escrow
+    // B6b-2 A6 入口 fail-closed:usdc_escrow 的本金在链上合约里,而场外退款握手的【所有出口】
+    //   (direct-pay-returns.ts 的 enterAwaitRefund/markReturnRefunded/confirmReturnRefundReceived、
+    //   路由前置守卫、UI app-direct-pay-returns.js)都硬要求 direct_p2p。实证的今日行为:
+    //     · 无取件:accept → enterAwaitRefund 直接 NOT_DIRECT_PAY(「仅直付订单走场外退款握手」)——
+    //       对本轨卖家是【误导性错误】(他的单本来就不是直付),且没有任何可操作指引;
+    //     · 有取件:accept 根本不经 enterAwaitRefund → 落 accepted_pickup_pending → picked_up,
+    //       直到 /received 才撞同一堵墙 → 退货【搁浅】在中间态:无按钮、无端点、无退款、无终态。
+    //   链上退款(B7)接线前在入口就拒,给诚实的分轨 error_code,绝不制造搁浅。
+    //   (拒绝退货 decision='reject' 不动资金、不搁浅,照旧放行。)
+    if (decision === 'accept' && railRow?.payment_rail === 'usdc_escrow') {
+      return void res.status(409).json({ error: 'USDC 担保订单的退货退款需链上退款(接线中),暂不可接受退货;请在订单页与买家协商,或发起争议', error_code: 'USDC_ESCROW_RETURN_NOT_WIRED' })
+    }
 
     if (decision === 'accept') {
       if (Number(rr.pickup_requested) === 1) {
@@ -428,6 +440,11 @@ export function registerReturnsRoutes(app: Application, deps: ReturnsDeps): void
     const note = req.body?.note ? String(req.body.note).slice(0, 300) : null
     // 直付:收到退货后进入场外退款握手(不走 escrow 钱包退款)
     const railRow = await dbOne<{ payment_rail: string | null }>('SELECT payment_rail FROM orders WHERE id = ?', [rr.order_id])
+    // B6b-2 A6:同 /decide —— 场外握手对 usdc_escrow 是死路(出口全要求 direct_p2p)。这里守的是接受闸生效前
+    //   已进 accepted_pickup_pending → picked_up 的在途行,同样绝不让它落进 await_refund。
+    if (railRow?.payment_rail === 'usdc_escrow') {
+      return void res.status(409).json({ error: 'USDC 担保订单的退货退款需链上退款(接线中),暂不可接受退货;请在订单页与买家协商,或发起争议', error_code: 'USDC_ESCROW_RETURN_NOT_WIRED' })
+    }
     if (railOutsideWazCustody(railRow?.payment_rail)) {   // B3:usdc_escrow 同上
       const r = enterAwaitRefund(db, { returnId: String(rr.id), fromStatus: 'picked_up', sellerResponse: note, messageId: generateId('rmsg') })
       if (!r.ok) return void res.status(409).json({ error: r.error, error_code: r.error_code })

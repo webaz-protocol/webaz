@@ -105,8 +105,15 @@ export function registerSellerQuotaRoutes(app: Application, deps: SellerQuotaDep
     const inLast30 = orders.filter(o => o.created_at >= d30)
     const inPrev30 = orders.filter(o => o.created_at < d30)
     const gmv = (arr: typeof orders) => arr.filter(o => completedStatuses.has(o.status)).reduce((s, o) => s + Number(o.total_amount || 0), 0)
-    // GMV 按支付轨拆分:托管=平台真实托管收入,直接收款=场外收款(平台不经手)—— 不再混算(诚实口径)
-    const gmvRail = (arr: typeof orders, rail: 'escrow' | 'direct_p2p') => arr.filter(o => completedStatuses.has(o.status) && (rail === 'direct_p2p' ? o.payment_rail === 'direct_p2p' : (o.payment_rail || 'escrow') === 'escrow')).reduce((s, o) => s + Number(o.total_amount || 0), 0)
+    // GMV 按支付轨拆分:托管(WAZ 模拟)=平台托管收入,链上担保(usdc_escrow)=真实 USDC 存入 Base 链合约,
+    //   直接收款(direct_p2p)=场外收款 —— 三者不混算(诚实口径)。B6b-1:'escrow' 桶【只收】WAZ 轨(缺省=历史单),
+    //   否则 usdc_escrow 完成单两桶都不进、在拆分里凭空蒸发(fail-closed:未来新轨也不会被误并进 WAZ 桶)。
+    // B6b-2 B7:① 谓词与 analytics.ts 的 SQL 统一 —— SQL 是 COALESCE(payment_rail,'escrow'),只有 NULL 归 WAZ 桶,
+    //   而旧的 `(o.payment_rail || 'escrow')` 会把 '' 也算进 WAZ 桶(两处实现分歧)→ 改用 `?? 'escrow'` 对齐。
+    //   ② 补 'other' 残差桶(第 4 条轨 / 脏数据),让「四桶和 === gmv」成为属性而非 fixture 算术。
+    const KNOWN_RAILS = new Set(['escrow', 'direct_p2p', 'usdc_escrow'])
+    const railOf = (o: { payment_rail: string | null }): string => o.payment_rail ?? 'escrow'
+    const gmvRail = (arr: typeof orders, rail: 'escrow' | 'direct_p2p' | 'usdc_escrow' | 'other') => arr.filter(o => completedStatuses.has(o.status) && (rail === 'other' ? !KNOWN_RAILS.has(railOf(o)) : railOf(o) === rail)).reduce((s, o) => s + Number(o.total_amount || 0), 0)
     const curGmv = gmv(inLast30)
     const prevGmv = gmv(inPrev30)
     const curCount = inLast30.length
@@ -169,6 +176,8 @@ export function registerSellerQuotaRoutes(app: Application, deps: SellerQuotaDep
         gmv: curGmv,
         gmv_escrow: gmvRail(inLast30, 'escrow'),
         gmv_direct_pay: gmvRail(inLast30, 'direct_p2p'),
+        gmv_usdc_escrow: gmvRail(inLast30, 'usdc_escrow'),
+        gmv_other: gmvRail(inLast30, 'other'),   // B6b-2 B7 残差桶(未知轨/脏数据):有值才在前端显示
         order_count: curCount,
         completed_count: completedOrders30.length,
         aov,
