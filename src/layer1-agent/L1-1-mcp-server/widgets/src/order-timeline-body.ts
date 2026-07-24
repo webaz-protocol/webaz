@@ -60,7 +60,13 @@ function renderBody(oai, out){
     var w=el('div','warn')
     w.appendChild(el('b',null,L('退款/退货','Refund/return')))
     ;(out.refund.requests||[]).forEach(function(x){ w.appendChild(el('div',null,String(x.status)+' · '+((x.amount&&x.amount.display)||'')+' · '+String(x.created_at||''))) })
-    w.appendChild(el('div','meta',(webazLocale()==='en'&&out.payment_rail)?(String(out.payment_rail)==='direct_p2p'?'The protocol recorded the liability outcome; principal is not held by WebAZ; the actual refund is settled between buyer and seller':'Simulated escrow rail: refunds release from simulated escrow per the dispute/return outcome — not real USDC or fiat fund flow'):String(out.refund.note||'')))
+    // B6b-1 显式分支(默认仍是老轨模拟语义,fail-closed):usdc_escrow 的退款是真实链上 USDC。
+    function refundMetaEn(rail){
+      if(String(rail)==='direct_p2p') return 'The protocol recorded the liability outcome; principal is not held by WebAZ; the actual refund is settled between buyer and seller'
+      if(String(rail)==='usdc_escrow') return 'On-chain escrow rail: the escrow contract on Base releases the real USDC per the arbitration outcome (or the no-dispute timeout); WebAZ never touches the principal'
+      return 'Simulated escrow rail: refunds release from simulated escrow per the dispute/return outcome — not real USDC or fiat fund flow'
+    }
+    w.appendChild(el('div','meta',(webazLocale()==='en'&&out.payment_rail)?refundMetaEn(out.payment_rail):String(out.refund.note||'')))
     box.appendChild(w)
   }
   var btns=el('div','rowbtn')

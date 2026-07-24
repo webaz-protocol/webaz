@@ -80,7 +80,7 @@ async function renderSellerAnalytics(app) {
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">
         <div>
           <div style="font-size:18px;font-weight:700;color:#4f46e5">${fmt2(r.orders.gmv)}${delta(Number(r.orders.gmv), Number(r.prev_window?.gmv))}</div>
-          <div style="font-size:10px;color:#6b7280">GMV (USDC)</div>${window.gmvRailSplitHtml ? window.gmvRailSplitHtml(r.orders.gmv_escrow, r.orders.gmv_direct_pay, fmt2) : ''}
+          <div style="font-size:10px;color:#6b7280">GMV (USDC)</div>${window.gmvRailSplitHtml ? window.gmvRailSplitHtml(r.orders.gmv_escrow, r.orders.gmv_direct_pay, r.orders.gmv_usdc_escrow, fmt2) : ''}
         </div>
         <div>
           <div style="font-size:18px;font-weight:700;color:#16a34a">${fmt(r.orders.completed_orders)}${delta(Number(r.orders.completed_orders), Number(r.prev_window?.completed_orders))}</div>

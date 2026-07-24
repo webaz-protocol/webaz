@@ -2643,7 +2643,7 @@ async function renderAdminOrders(app, opts = {}) {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600">${escHtml(o.product_title)}</div>
-          <div style="font-size:12px;color:#6b7280;margin-top:2px">${o.payment_rail === 'direct_p2p' ? `<span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:1px 8px;font-size:10px;font-weight:600;margin-right:4px">${t('直付')}</span>${o.total_amount} USDC` : `${o.total_amount} WAZ`} · ${fmtTime(o.created_at)}</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:2px">${o.payment_rail === 'direct_p2p' ? `<span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:1px 8px;font-size:10px;font-weight:600;margin-right:4px">${t('直付')}</span>${o.total_amount} USDC` : `${o.total_amount} ${(!o.payment_rail || o.payment_rail === 'escrow') ? 'WAZ' : 'USDC'}`} · ${fmtTime(o.created_at)}</div>${'' /* B6b-1:WAZ 只属 WAZ 轨(缺省=历史单);usdc_escrow 金额是真 USDC */}
           <div style="font-size:11px;color:#6b7280;margin-top:4px">${t('买家')}: ${escHtml(o.buyer_name)} · ${t('卖家')}: ${escHtml(o.seller_name)}</div>
           <div style="font-size:11px;color:#9ca3af;margin-top:2px">${o.id}</div>
         </div>
@@ -12863,7 +12863,7 @@ async function renderReturnWidgetForOrder(order, product) {
 
   area.innerHTML = `
     <div style="margin-bottom:8px">${t('退货窗口')}：${returnDays} ${t('天')} · ${remainText}</div>
-    <button class="btn btn-outline btn-sm" onclick="openReturnRequestModal('${order.id}', ${Number(order.total_amount)}, '${order.payment_rail === 'direct_p2p' ? 'USDC' : 'WAZ'}')">${t('申请退货')}</button>
+    <button class="btn btn-outline btn-sm" onclick="openReturnRequestModal('${order.id}', ${Number(order.total_amount)}, '${(!order.payment_rail || order.payment_rail === 'escrow') ? 'WAZ' : 'USDC'}')">${t('申请退货')}</button>${'' /* B6b-1 币种白名单:WAZ 只属 WAZ 轨(缺省=历史单);usdc_escrow 是真 USDC,旧二分法误标 WAZ */}
   `
 }
 
@@ -14679,7 +14679,7 @@ function renderInsightsBlock(d) {
       <div class="card" style="padding:12px">
         <div style="font-size:10px;color:#9ca3af;text-transform:uppercase">${t('30 天 GMV')}</div>
         <div style="font-size:18px;font-weight:800;color:#15803d;margin-top:2px">${Number(s.gmv||0).toFixed(0)} <span style="font-size:11px;font-weight:600;color:#6b7280">WAZ</span></div>
-        <div style="font-size:10px;color:#6b7280;margin-top:2px">${deltaChip(vs.gmv_pct||0, t('环比'))}</div>${window.gmvRailSplitHtml ? window.gmvRailSplitHtml(s.gmv_escrow, s.gmv_direct_pay) : ''}
+        <div style="font-size:10px;color:#6b7280;margin-top:2px">${deltaChip(vs.gmv_pct||0, t('环比'))}</div>${window.gmvRailSplitHtml ? window.gmvRailSplitHtml(s.gmv_escrow, s.gmv_direct_pay, s.gmv_usdc_escrow) : ''}
       </div>
       <div class="card" style="padding:12px">
         <div style="font-size:10px;color:#9ca3af;text-transform:uppercase">${t('30 天订单')}</div>

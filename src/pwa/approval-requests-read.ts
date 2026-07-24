@@ -67,13 +67,20 @@ function project(db: Database.Database, r: Record<string, unknown>, nowIso: stri
     } catch { out.summary_unavailable = true }
     // P0-C 诚实披露(rail-aware,fail-visible):金额以 USDC 显示为别名,不代表真实 USDC/法币托管;escrow=模拟测试轨。
     //   Codex R2 P1:摘要不可用时 rail 未知,绝不默认成 escrow 语义(否则对 direct_p2p 谎报"模拟托管扣款")→ moves_funds:null。
+    //   B6b-1:usdc_escrow 是【真实链上托管】,单独分支(见下);默认分支保留 WAZ 模拟语义(fail-closed)。
     out.economic_effect = !haveSummary
       ? { moves_funds: null, note: 'economic terms unavailable (draft missing/unreadable) — fund movement cannot be stated; do NOT approve until the terms are readable.' }
       : rail === 'deferred'   // RFC-029 Design A:轨道未选 → 不可批准,绝不谎报成 escrow 语义
         ? { moves_funds: null, rail_choice_pending: true, note: 'payment method NOT chosen yet — choose from the seller\'s supported methods on the confirm page before this request can be approved; do NOT approve until a rail is chosen.' }
         : rail === 'direct_p2p'
           ? { moves_funds: false, simulated: false, note: 'approval creates the REAL order; direct_p2p — WebAZ holds no principal, you pay the seller directly. USDC amounts are a display alias, not a WebAZ settlement.' }
-          : { moves_funds: true, simulated: true, note: 'approval creates the REAL order; the escrow rail is a SIMULATED test ledger — USDC amounts are a display alias and do NOT represent real USDC or fiat custody/settlement.' }
+          // B6b-1:usdc_escrow = REAL on-chain custody, and approval itself moves NO funds — it only creates the
+          //   order (zero wallets writes, order lands in 'created'). The buyer afterwards signs an on-chain deposit
+          //   from their OWN wallet; nothing is ever debited from a WebAZ balance. → moves_funds:false, simulated:false.
+          //   Explicit branch; the DEFAULT below stays WAZ-simulated so a future rail can never be mislabelled real.
+          : rail === 'usdc_escrow'
+            ? { moves_funds: false, simulated: false, note: 'approval creates the REAL order; usdc_escrow — approval alone moves NO funds. You then deposit real USDC on Base from your own wallet into the WebAZ escrow contract; WebAZ never holds the principal and never debits a WebAZ balance.' }
+            : { moves_funds: true, simulated: true, note: 'approval creates the REAL order; the escrow rail is a SIMULATED test ledger — USDC amounts are a display alias and do NOT represent real USDC or fiat custody/settlement.' }
   }
   return out
 }

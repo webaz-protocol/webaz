@@ -151,9 +151,9 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/admin/protocol-params/:key/reset` | 🔐 | 👑 |  | src/pwa/routes/admin-protocol-params.ts:151 |
 | GET | `/api/admin/public-ideas` | 🔐 | 👑 | ─── admin 端 ───────────────────────────────────────────── | src/pwa/routes/welcome.ts:38 |
 | PATCH | `/api/admin/public-ideas/:id` | 🔐 | 👑 |  | src/pwa/routes/welcome.ts:66 |
-| GET | `/api/admin/quota-applications` | 🔐 | 👑 | Admin | src/pwa/routes/seller-quota.ts:226 |
-| POST | `/api/admin/quota-applications/:id/approve` | 🔐 | 👑 |  | src/pwa/routes/seller-quota.ts:239 |
-| POST | `/api/admin/quota-applications/:id/reject` | 🔐 | 👑 |  | src/pwa/routes/seller-quota.ts:256 |
+| GET | `/api/admin/quota-applications` | 🔐 | 👑 | Admin | src/pwa/routes/seller-quota.ts:229 |
+| POST | `/api/admin/quota-applications/:id/approve` | 🔐 | 👑 |  | src/pwa/routes/seller-quota.ts:242 |
+| POST | `/api/admin/quota-applications/:id/reject` | 🔐 | 👑 |  | src/pwa/routes/seller-quota.ts:259 |
 | GET | `/api/admin/quota-requests` | 🔐 | 👑 | list quota requests (optional ?status=) | src/pwa/routes/build-task-quota.ts:74 |
 | GET | `/api/admin/quota-requests/:id` | 🔐 | 👑 | detail of one request + the requester's live 24h create usage (reviewer context) | src/pwa/routes/build-task-quota.ts:82 |
 | POST | `/api/admin/quota-requests/:id/approve` | 🔐 | 👑 | approve → time-boxed counted grant (self-approval rejected in the store) | src/pwa/routes/build-task-quota.ts:90 |
@@ -694,18 +694,18 @@ Regenerate: `npm run gen:api-docs` · drift-guarded in CI (`npm run check:api-do
 | POST | `/api/secondhand/:id/order` | 🔐 |  | 6. 下单（CAS 锁库存）— money/escrow + pragma FK-OFF 窗口,保持同步,Phase 3 随资金路径迁移 | src/pwa/routes/secondhand.ts:194 |
 | GET | `/api/secondhand/mine` | 🔐 |  | 3. 我的二手发布 | src/pwa/routes/secondhand.ts:117 |
 | POST | `/api/seller/accept-mode` | 🔐 |  |  | src/pwa/routes/direct-pay-pending-accept.ts:59 |
-| POST | `/api/seller/apply-quota-increase` | 🔐 |  |  | src/pwa/routes/seller-quota.ts:194 |
+| POST | `/api/seller/apply-quota-increase` | 🔐 |  |  | src/pwa/routes/seller-quota.ts:197 |
 | GET | `/api/seller/insights` | 🔐 |  | 数据中心（30d GMV / 7d 曲线 / Top 5 / 客户洞察 / 状态分布） | src/pwa/routes/seller-quota.ts:71 |
 | GET | `/api/seller/quota-status` | 🔐 |  | 配额状态 | src/pwa/routes/seller-quota.ts:45 |
 | GET | `/api/seller/shipping-settings` | 🔐 |  | 卖家读自己的店铺级设置(设置 UI 回显):接单模式 + 运费模板 + 询价开关。 | src/pwa/routes/shipping-templates.ts:127 |
 | POST | `/api/seller/shipping-template` | 🔐 |  |  | src/pwa/routes/shipping-templates.ts:28 |
-| POST | `/api/seller/withdraw-quota-application` | 🔐 |  |  | src/pwa/routes/seller-quota.ts:217 |
+| POST | `/api/seller/withdraw-quota-application` | 🔐 |  |  | src/pwa/routes/seller-quota.ts:220 |
 | GET | `/api/sellers/:seller_id/ratings` |  |  | 公开：卖家评价聚合（卖家主页）。注册在 /me 之后(见上面注释)。 | src/pwa/routes/ratings.ts:263 |
 | GET | `/api/sellers/me/analytics` | 🔐 |  | 卖家销售分析 (Wave C-5) | src/pwa/routes/analytics.ts:155 |
 | GET | `/api/sellers/me/direct-pay-report` | 🔐 |  | from/to 均可选(闭区间,按日期比较 substr(created_at,1,10));返回汇总 + 按月 + 逐单(含平台费明细)。 | src/pwa/routes/seller-directpay-report.ts:39 |
 | GET | `/api/sellers/me/flash-sales` | 🔐 |  | seller 自己的 flash sales（全部状态） | src/pwa/routes/flash-sales.ts:109 |
 | GET | `/api/sellers/me/ratings` | 🔐 |  | ⚠️ 必须注册在 /api/sellers/:seller_id/ratings 【之前】,否则 'me' 会被 :seller_id 参数路由抢匹配。 | src/pwa/routes/ratings.ts:217 |
-| GET | `/api/sellers/me/return-stats` | 🔐 |  | 卖家退货仪表盘 | src/pwa/routes/analytics.ts:287 |
+| GET | `/api/sellers/me/return-stats` | 🔐 |  | 卖家退货仪表盘 | src/pwa/routes/analytics.ts:289 |
 | GET | `/api/share-link` | 🔐 |  | pre-public 去左右码:不再接受/返回 side,放置侧别由注册时系统自动决定。 | src/pwa/routes/referral.ts:67 |
 | POST | `/api/shareables` | 🔐 |  | 创建 shareable — 双路径：笔记模式 / 外链或 native_text 模式 | src/pwa/routes/shareables.ts:93 |
 | DELETE | `/api/shareables/:id` | 🔐 |  |  | src/pwa/routes/shareables.ts:449 |

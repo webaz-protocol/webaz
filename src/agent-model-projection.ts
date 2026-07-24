@@ -409,13 +409,19 @@ export function fiatEstimate(payableMinor: unknown, region: unknown, fx: FxView 
   }
 }
 
-/** 支付轨道诚信文案(消费者面必须诚实:模拟托管≠真实 USDC 托管;直付=WebAZ 不托管本金)。 */
+/**
+ * 支付轨道诚信文案(消费者面必须诚实)。**显式分支,默认分支 = WAZ 语义(fail-closed)**:
+ * 未来新增轨在接线前会落到 WAZ「模拟托管」文案,绝不会被误标成真实托管。
+ *   - usdc_escrow → 真实链上合约托管(真 USDC / Base 链 / 平台不经手本金)
+ *   - escrow 与 null/缺省(历史单缺列即 WAZ)→ 「模拟托管」原文一字不动(对 WAZ 是真话)
+ */
 export function railHonesty(rail: unknown): string {
   // RFC-029 Design A:'deferred' = 买家尚未在确认页选择支付方式;绝不谎报成 escrow/direct 语义。
   if (String(rail) === 'deferred') return '支付方式尚未选择 —— 将在确认页(webaz.xyz)从卖家支持的方式中选择,选定后才可 Passkey 批准'
-  return String(rail) === 'direct_p2p'
-    ? '买家直接向卖家付款;WebAZ 不托管本金;实际付款方式和币种以确认页面为准'
-    : '支付轨道:模拟托管测试 —— 本流程不代表真实 USDC 或法币结算'
+  if (String(rail) === 'direct_p2p') return '买家直接向卖家付款;WebAZ 不托管本金;实际付款方式和币种以确认页面为准'
+  // B6b-1:链上合约担保轨是【真实支付】—— 真 USDC、Base 链上合约托管、平台不经手本金。
+  if (String(rail) === 'usdc_escrow') return '支付轨道:链上合约担保 —— 你的 USDC 存入 WebAZ 担保合约(Base 链),确认收货或超时无争议才放款给卖家;平台不经手本金'
+  return '支付轨道:模拟托管测试 —— 本流程不代表真实 USDC 或法币结算'
 }
 
 const lineAmt = (r: Record<string, unknown>, code: string): number => {
@@ -579,8 +585,13 @@ export function projectOrderTimelineConsumer(r: Record<string, unknown>, fx: FxV
   const rail = String(o.payment_rail ?? 'escrow')
   const amountMinor = Number(o.amount) ? Math.round(Number(o.amount) * 1_000_000) : null
   const returns = Array.isArray(refund.return_requests) ? refund.return_requests as Array<Record<string, unknown>> : []
-  const railBadge = rail === 'direct_p2p' ? '直付(WebAZ 不托管本金)' : '模拟托管测试订单 — 不代表真实 USDC 或法币托管'
-  const railBadgeEn = rail === 'direct_p2p' ? 'Direct pay (WebAZ holds no principal)' : 'Simulated escrow test order — not real USDC or fiat custody'
+  // B6b-1 显式分支(默认 = WAZ 模拟语义,fail-closed):usdc_escrow 是真实链上托管,不得挂模拟标签。
+  const railBadge = rail === 'direct_p2p' ? '直付(WebAZ 不托管本金)'
+    : rail === 'usdc_escrow' ? '链上合约担保(USDC · Base)'
+    : '模拟托管测试订单 — 不代表真实 USDC 或法币托管'
+  const railBadgeEn = rail === 'direct_p2p' ? 'Direct pay (WebAZ holds no principal)'
+    : rail === 'usdc_escrow' ? 'On-chain escrow (USDC on Base) — funds held by contract, not by WebAZ'
+    : 'Simulated escrow test order — not real USDC or fiat custody'
   return {
     schema_version: SCHEMA_ORDER_TIMELINE,   // BUG-06 v2: add type; quantity coerced to a positive integer (was `?? null`); status already an object
     type: 'order_timeline',
@@ -602,9 +613,13 @@ export function projectOrderTimelineConsumer(r: Record<string, unknown>, fx: FxV
     // 无退货时字段缺席(非 null):buyer_orders 豁免 stripEmpty,null 会被 schema 校验型宿主拒收
     ...(returns.length ? { refund: {
       requests: returns.map(x => ({ status: x.status, amount: { display: fmtUsdcMinor(Number(x.refund_amount) ? Math.round(Number(x.refund_amount) * 1_000_000) : null) }, created_at: toIsoUtc(x.created_at), resolved_at: toIsoUtc(x.resolved_at) })),
-      is_real_funds_flow: false,
+      // B6b-1:usdc_escrow 的退款是【真实链上 USDC】(仲裁裁决 arbiterResolve / 超时 autoRelease),
+      //   其余轨保持原值(direct_p2p=场外由双方完成;WAZ=模拟)。默认分支 = WAZ 语义,fail-closed。
+      is_real_funds_flow: rail === 'usdc_escrow',
       note: rail === 'direct_p2p'
         ? '协议已记录责任结果;本金未由 WebAZ 托管;实际退款需由买卖双方完成'
+        : rail === 'usdc_escrow'
+        ? '链上合约担保轨:退款按争议裁决(仲裁)或超时无争议由担保合约在 Base 链上直接放款,是真实 USDC 资金流;平台不经手本金'
         : '模拟托管轨:退款按争议/退货结果从模拟托管释放,不代表真实 USDC 或法币资金流',
     } } : {}),
     available_actions: Array.isArray(r.available_actions) ? (r.available_actions as Array<Record<string, unknown>>).map(a => ({ action: a.action, executor: a.executor })) : [],

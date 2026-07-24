@@ -922,6 +922,8 @@ const _EN = {
   '质押': 'Staked',
   '托管': 'Escrow',
   '托管=平台托管收入;直接收款=场外收款,平台不经手': 'Escrow = platform-custodied revenue; Direct pay = off-platform receipts the platform never touches',
+  // B6b-1 GMV 三轨拆分 tooltip(链上担保 = 真实 USDC 存入 Base 链合约,与 WAZ 模拟托管、场外直接收款并列)
+  '托管=平台托管收入;链上担保=USDC 存入链上合约,平台不经手本金;直接收款=场外收款,平台不经手': 'Escrow = platform-custodied revenue; On-chain escrow = USDC held by the on-chain contract (WebAZ never touches the principal); Direct pay = off-platform receipts the platform never touches',
   '全部类型': 'All types',
   '直接收款': 'Direct pay',
   '直接收款销售统计 + 对账(仅你可见)': 'Direct-pay sales & reconciliation (private to you)',
