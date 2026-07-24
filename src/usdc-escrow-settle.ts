@@ -33,6 +33,32 @@ export interface UsdcSettleDeps {
 
 export interface ReleasedEventRow { order_key: string; tx_hash: string; payload_json: string }
 export interface ResolvedEventRow { order_key: string; tx_hash: string; payload_json: string }
+export interface DisputedEventRow { order_key: string; tx_hash: string; payload_json: string; block_number?: number }
+
+/**
+ * B7b-1(方案 A,链驱动开争议)专属依赖 —— 只需 disputed 转移 + createDispute + generateId(不搬钱,故无 settleOrder)。
+ * transition 的 `to` 收窄到 'disputed'(本 driver 唯一目标态);createDispute = 真实的 dispute-engine.createDispute
+ * (由 watcher 注入,测试注入真实实现,不桩被测判定者)。
+ */
+export interface UsdcDisputeDeps {
+  transition: (
+    db: Database.Database,
+    orderId: string,
+    to: 'disputed',
+    actorId: string,
+    evidence: string[],
+    note: string,
+  ) => { success: boolean; error?: string }
+  createDispute: (
+    db: Database.Database,
+    orderId: string,
+    initiatorId: string,
+    reason: string,
+    evidenceIds: string[],
+  ) => { success: boolean; disputeId?: string; error?: string }
+  generateId: (p: string) => string
+  notifyTransition?: (db: Database.Database, orderId: string, from: string, to: string) => void
+}
 
 interface IntentRow { order_id: string; order_key: string; amount_units: number; status: string }
 interface OrderRow { id: string; status: string; buyer_id: string }
@@ -396,6 +422,84 @@ export function sweepPendingUsdcEscrowResolves(
       console.error('[usdc-escrow settle resolve-sweep]', ev.order_key, (e as Error).message)
     }
   }
+}
+
+/**
+ * PR-B7b-1 — Disputed 事件消费(链驱动开争议,方案 A)。B5 的 Released / B7a 的 Resolved 的姊妹。
+ *
+ * 语义:链上 flagDispute(买家自 flag 或 admin/arbiter flag)是密码学可归因的【真实争议动作】,链是本轨
+ *   权威 —— 见 Disputed 事件即代表订单进入争议冻结。本 driver 把它落成 DB `disputed`,打通「不合作/丢钱包
+ *   买家」→ admin B7a resolve(要求 DB disputed)的端到端缺口。买家 flag 与 arbiter flag 皆经此,由 `by`
+ *   地址区分(仅入证据留痕;被诉方一律 = 卖家),幂等保证双 flag 事件不重复开争议。
+ *
+ * 铁律(与 applyUsdcEscrowResolved 同哲学):
+ *   - 资金【在链上】—— DB 侧【零 wallets 写】(funds untouched);本 driver 只做状态收敛 + 建争议行 + 证据留痕。
+ *   - 以链上 tx 作【真实证据】:插一条 evidence 行(tx_hash + block + by + "on-chain flagDispute"),供
+ *     ?→disputed 转移(requiresEvidence=true,绝不绕过)与 createDispute 共用;transition 走 sys_protocol(role=system)。
+ *   - 全幂等:订单已 disputed(买家已在 App 自开 / 双 flag 事件 / 重扫)或已终态 → no-op。
+ *   - 单 db.transaction(证据 + 转移 + 建争议同一原子边界);失败 → 去重告警,状态不动(绝不硬闯)。
+ *
+ * sweep:【刻意不加】。Disputed 无「结算」只有「开争议」,订单在收到事件前本就处于可 flag 态(paid..delivered),
+ *   driver 于 rescan 窗口内首见即驱动(无 Resolved 那种「事件先于 disputed 到达」的时序缺口需 sweep 补);
+ *   偶发 transition 失败已告警,买家/admin 亦可重发或走 App。窗口内的重放天然幂等(order 已 disputed → no-op)。
+ */
+export function applyUsdcEscrowDisputed(
+  db: Database.Database,
+  deps: UsdcDisputeDeps,
+  ev: DisputedEventRow,
+  alertAdmins: (title: string, body: string) => void,
+): void {
+  const orderKey = ev.order_key.toLowerCase()
+  const intent = db.prepare("SELECT order_id, order_key, amount_units, status FROM usdc_escrow_intents WHERE order_key = ?").get(orderKey) as IntentRow | undefined
+  if (!intent) {
+    alertAdmins('🚨 USDC 担保:未知争议', `order_key ${orderKey} 链上争议(tx ${ev.tx_hash})但无对应 intent —— 人工核。`)
+    return
+  }
+  const order = db.prepare('SELECT id, status, buyer_id FROM orders WHERE id = ?').get(intent.order_id) as OrderRow | undefined
+  if (!order) {
+    alertAdmins('🚨 USDC 担保:intent 无对应订单', `intent order_id ${intent.order_id}(order_key ${orderKey})查不到订单,tx ${ev.tx_hash}。`)
+    return
+  }
+
+  // flagger 地址(仅证据留痕 + 告警可读;被诉方与之无关,一律卖家)。payload 畸形不抛穿 watcher processLog。
+  let byAddr = ''
+  try { const p = JSON.parse(ev.payload_json) as { by?: string }; byAddr = typeof p.by === 'string' ? p.by.toLowerCase() : '' } catch { /* by 缺失仅影响留痕可读性 */ }
+
+  // 幂等:已 disputed(买家已在 App 自开 / 双 flag 事件 / 重扫)或已终态 → no-op(不重复建争议、不报错)。
+  const TERMINAL = ['completed', 'cancelled', 'fault_buyer', 'fault_seller', 'fault_logistics', 'declined_nofault', 'resolved_for_seller', 'refunded_partial', 'refunded_full', 'dispute_dismissed', 'expired']
+  if (order.status === 'disputed') return
+  if (TERMINAL.includes(order.status)) return
+
+  // 链上 Disputed 要求链上 Funded → 对应 DB 状态 ∈ 这六个可 flag 态。其它异常态(如 direct_pay_* 不可能在本轨、
+  //   或数据修复态)绝不强转,告警人工知悉(钱在链上,不动状态)。
+  const FLAGGABLE = ['paid', 'accepted', 'shipped', 'picked_up', 'in_transit', 'delivered']
+  if (!FLAGGABLE.includes(order.status)) {
+    alertAdmins('🚨 USDC 担保:异常态收到链上争议',
+      `order ${order.id}(order_key ${orderKey})状态 ${order.status},tx ${ev.tx_hash}(by ${byAddr})—— 非可 flag 态,不动状态,人工核链上真相。`)
+    return
+  }
+
+  // 证据留痕 + 转移 + 建争议:单事务原子(零 wallets 写)。
+  let opened = false
+  try {
+    db.transaction(() => {
+      const evidenceId = deps.generateId('evt')
+      db.prepare('INSERT INTO evidence (id, order_id, uploader_id, type, description, file_hash) VALUES (?,?,?,?,?,?)')
+        .run(evidenceId, order.id, 'sys_protocol', 'document',
+          `on-chain flagDispute — tx=${ev.tx_hash.toLowerCase()} block=${ev.block_number ?? '?'} by=${byAddr || '(unknown)'}`,
+          ev.tx_hash.toLowerCase())
+      const r = deps.transition(db, order.id, 'disputed', 'sys_protocol', [evidenceId], `链上争议已发起(tx ${ev.tx_hash}, by ${byAddr || '(unknown)'})`)
+      if (!r.success) throw new Error(`→disputed 失败:${r.error}`)
+      const cr = deps.createDispute(db, order.id, 'sys_protocol', `链上 flagDispute(tx ${ev.tx_hash}, by ${byAddr || '(unknown)'})`, [evidenceId])
+      // createDispute 幂等:若买家已在 App 自开(已有非终态争议)则返回「已有进行中的争议」—— 吞掉不抛(转移已把订单置 disputed 即达目的)。
+      if (!cr.success && !/已有进行中的争议/.test(cr.error || '')) throw new Error(`createDispute 失败:${cr.error}`)
+    })()
+    opened = true
+  } catch (e) {
+    alertUsdcAdmins(db, deps.generateId, '🚨 USDC 担保:链上争议开启失败',
+      `order ${order.id}(order_key ${orderKey})tx ${ev.tx_hash} —— ${(e as Error).message};状态未变,人工核。`, order.id)
+  }
+  if (opened) { try { deps.notifyTransition?.(db, order.id, order.status, 'disputed') } catch (e) { console.warn('[usdc-escrow settle] disputed notify failed:', (e as Error).message) } }
 }
 
 /**

@@ -159,6 +159,13 @@ export function createDispute(
     defendantId = order.buyer_id as string
   } else if (initiator.role === 'logistics') {
     defendantId = order.seller_id as string  // 物流纠纷默认与卖家
+  } else if (initiator.role === 'system') {
+    // B7b-1(方案 A,链驱动开争议):仅 usdc_escrow 放开 system 发起方 —— 链上 flagDispute(买家或 arbiter 地址)
+    //   经 usdc watcher 的 applyUsdcEscrowDisputed 代开 DB 争议(以链上 tx 作真实证据)。被诉方一律 = 卖家:
+    //   卖家是链上 autoRelease 到期的受益方,冻结/争议均针对其(买家自 flag 与 admin flag 同一被诉方)。
+    //   ★ rail-scope 铁律:非 usdc_escrow 轨的 system 发起方【仍拒】—— 只放开本轨,不给任何其它 rail 开 system 争议。
+    if (order.payment_rail !== 'usdc_escrow') return { success: false, error: '此角色不能发起争议' }
+    defendantId = order.seller_id as string
   } else {
     return { success: false, error: '此角色不能发起争议' }
   }
